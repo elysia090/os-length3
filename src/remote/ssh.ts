@@ -1,6 +1,6 @@
 // SSH into a repo's Prompt: which of the account's devices listen, kept here
 // so any page can see them and stop one. The listening itself is the
-// device's (l3's listener, src/cli/src/ssh.rs); what is kept is a row a device,
+// device's (root3's listener, src/cli/src/ssh.rs); what is kept is a row a device,
 // keyed by its session (signing it out takes the row with it), and in it
 // only that the device listens, to whom (its scope: `device`, from that
 // device only, or `network`, from its network's PCs too), since when, and
@@ -15,13 +15,13 @@
 //
 // Turning on is a device's statement about itself, made by the session it
 // listens as: no session can turn another's on, and a request a browser
-// makes (it always carries Origin, which l3 and the app's core never send)
+// makes (it always carries Origin, which root3 and the app's core never send)
 // is refused it, so the web can only turn a device's SSH off. A device asks
 // with its beat every 30 s or so, and stops at once when its row is gone.
 // The beat carries the tag its last answer gave (`tag`): while nothing was
 // written on the Remote it is answered on without the database (mark.ts),
 // and GET /v1/ssh takes when it was heard from the mark. Whatever else a
-// body carries (an older l3 sent its destinations) is not read, and not kept.
+// body carries (an older root3 sent its destinations) is not read, and not kept.
 
 import {and, desc, eq, sql} from 'drizzle-orm';
 import type {Hono} from 'hono';
@@ -52,7 +52,7 @@ export function sshRoutes(d: {db: Db; /** Beats answered without the database sa
   });
 
   v1.put('/ssh/this', async (c) => {
-    // A page cannot turn SSH on: that is done at the device (l3 address, the app's switch).
+    // A page cannot turn SSH on: that is done at the device (root3 address, the app's switch).
     if (c.req.header('Origin')) return c.json({error: 'SSH must be enabled on the physical device'}, 403);
     const scope = scopeOf((await body<{scope?: unknown}>(c))?.scope);
     if (!scope) return c.json({error: 'Must be "device" or "network"'}, 400);

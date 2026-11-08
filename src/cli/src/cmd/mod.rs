@@ -1,5 +1,5 @@
 //! What each form does, by the rail: Home, Forge, File, Git, Runtime,
-//! Remote, then people (Server, Inbox). Each takes where l3 runs (Ctx) and
+//! Remote, then people (Server, Inbox). Each takes where root3 runs (Ctx) and
 //! the call, and answers with a Reply.
 
 // SSH into the Prompts and the app's window are the root's and the desktop's of a Unix: elsewhere (Windows, where
@@ -28,7 +28,7 @@ use crate::out::{Error, Reply, Result};
 use length3_core::{fs::paths, home as core_home, remote as core_remote, repos::store::Repos, tr};
 use serde_json::json;
 
-/// Where l3 runs: in which repo (and where in it), and whether inside the app's Prompt.
+/// Where root3 runs: in which repo (and where in it), and whether inside the app's Prompt.
 pub struct Ctx {
     pub here: Option<length3_core::repos::lines::Here>,
     /// Inside the app's Prompt: only the open repo is here (under /root), written back and sent by the app.
@@ -44,12 +44,12 @@ impl Ctx {
     pub fn new() -> Ctx {
         Ctx {
             here: std::env::current_dir().ok().and_then(|d| length3_core::repos::lines::here(&d)),
-            prompt: std::env::var_os("L3_PROMPT").is_some(),
+            prompt: std::env::var_os("ROOT3_PROMPT").is_some(),
             words: None,
         }
     }
 
-    /// Words alone, in `here`, knowing the repos `known`, on no Remote: what a test reads l3 with.
+    /// Words alone, in `here`, knowing the repos `known`, on no Remote: what a test reads root3 with.
     #[cfg(test)]
     pub fn test(here: Option<&str>, known: Vec<&'static str>) -> Ctx {
         Ctx { here: here.map(|r| length3_core::repos::lines::Here { repo: r.into(), line: length3_core::repos::lines::MAIN.into(), folder: String::new() }), prompt: false,
@@ -95,35 +95,35 @@ pub fn before(ctx: &Ctx, call: &Call) -> Result<()> {
     if ctx.prompt && !needs.in_prompt {
         let why = if needs.remote { tr!("the Remote is the app's to reach", "Remote に届くのはアプリです") }
             else { tr!("{} is the app's", "{} はアプリのものです", call.command.group.name()) };
-        return Err(Error::Refused(tr!("l3 {} cannot be used in this Prompt: {}. Use the app, or l3 on the device", "l3 {} はこの Prompt では使えません（{}）。アプリか、端末の l3 でどうぞ", call.command.name, why)));
+        return Err(Error::Refused(tr!("root3 {} cannot be used in this Prompt: {}. Use the app, or root3 on the device", "root3 {} はこの Prompt では使えません（{}）。アプリか、端末の root3 でどうぞ", call.command.name, why)));
     }
     if needs.remote && core_remote::connection().is_none() {
-        return Err(Error::Offline(tr!("l3 {} needs the Remote, and this device is not signed in to one (l3 login)", "l3 {} には Remote がいります。この端末はサインインしていません（l3 login）", call.command.name)));
+        return Err(Error::Offline(tr!("root3 {} needs the Remote, and this device is not signed in to one (root3 login)", "root3 {} には Remote がいります。この端末はサインインしていません（root3 login）", call.command.name)));
     }
     crate::sync::before(ctx, call);
     Ok(())
 }
 
-/// A call from its checks to its answer: what l3 does with a command typed, and the menu with a deed.
+/// A call from its checks to its answer: what root3 does with a command typed, and the menu with a deed.
 pub fn perform(ctx: &Ctx, call: &Call) -> Result<Reply> {
     before(ctx, call).and_then(|_| (call.form.run)(ctx, call))
 }
 
-/// `l3 version`: l3's, and the root's in use.
-/// `l3 next` off a terminal: there are no keys to choose with (at one, menu::next runs instead).
+/// `root3 version`: root3's, and the root's in use.
+/// `root3 next` off a terminal: there are no keys to choose with (at one, menu::next runs instead).
 pub fn next(_: &Ctx, _: &Call) -> Result<Reply> {
-    Err(Error::Refused(tr!("l3 next chooses with the keys, at a terminal", "l3 next は端末でキーを使って選びます")))
+    Err(Error::Refused(tr!("root3 next chooses with the keys, at a terminal", "root3 next は端末でキーを使って選びます")))
 }
 
 pub fn version(_: &Ctx, _: &Call) -> Result<Reply> {
     let v = include_str!("../../../../RELEASE").trim();
     let root = length3_core::root::current(paths::data_dir()).map(|(_, i)| i);
-    let mut text = format!("l3 {v}");
+    let mut text = format!("root3 {v}");
     if let Some(i) = &root { text += &format!("\nroot {} {} ({})", i.name, i.version, crate::out::short(&i.sha256)); }
     Ok(Reply::data(text, json!({"version": v, "root": root})))
 }
 
-/// `l3` alone: this device at a glance.
+/// `root3` alone: this device at a glance.
 pub fn overview(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
     let list = r.list(false)?;
@@ -140,13 +140,13 @@ pub fn overview(ctx: &Ctx, _: &Call) -> Result<Reply> {
         t.push(format!("Length³ OS  {}", paths::data_dir().display()));
         t.push(match &c {
             Some(c) => tr!("  Remote {} (sent as you change)", "  Remote {}（変えるたびに送ります）", host(&c.url)),
-            None => tr!("  Remote not signed in (l3 login)", "  Remote まだサインインしていません（l3 login）"),
+            None => tr!("  Remote not signed in (root3 login)", "  Remote まだサインインしていません（root3 login）"),
         });
     }
     t.push(format!("  repo   {}", list.len()));
     t.push(format!("  Issue  {issues}"));
     if !ctx.prompt { t.push(tr!("  TODO   {} open of {}", "  TODO   残り {} / {}", open, todos.len())); }
-    t.push(tr!("`l3 help` shows how to use it", "`l3 help` で使い方を見られます"));
+    t.push(tr!("`root3 help` shows how to use it", "`root3 help` で使い方を見られます"));
     Ok(Reply::data(t.join("\n"), data))
 }
 
@@ -161,7 +161,7 @@ pub fn host(url: &str) -> &str {
 pub fn stdin_text(what: &str, empty: bool, limit: u64) -> Result<String> {
     use std::io::{IsTerminal, Read};
     if std::io::stdin().is_terminal() {
-        return Err(Error::Usage(tr!("The text for {} comes from standard input: l3 … < file, or a pipe", "{} の本文は標準入力から渡します：l3 … < file か、パイプで", what)));
+        return Err(Error::Usage(tr!("The text for {} comes from standard input: root3 … < file, or a pipe", "{} の本文は標準入力から渡します：root3 … < file か、パイプで", what)));
     }
     let mut bytes = Vec::new();
     std::io::stdin().take(limit + 1).read_to_end(&mut bytes)?;

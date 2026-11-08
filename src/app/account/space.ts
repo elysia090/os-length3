@@ -1,6 +1,6 @@
 // この端末: everything this OS holds here, largest first, and what can be
 // done with each (src/core/src/storage in the app). In a browser what it holds
-// is its copy of the repos, and what l3 keeps of itself for the Prompt (kept:
+// is its copy of the repos, and what root3 keeps of itself for the Prompt (kept:
 // the Prompt runs on it, so it is said apart and never freed); each repo the Remote has all of can go now, one
 // with changes not sent yet goes once they are sent, and without a Remote
 // nothing goes. A repo that goes stays on the Remote and comes back when
@@ -22,11 +22,11 @@ export async function readSpace(open: string[] = [], fresh = false): Promise<Spa
   // core would let go is kept while a Prompt here has it open; one it keeps already says its own reason (no Remote
   // to free it to), not the Prompt.
   const items: Item[] = s.items.map((i) => (open.includes(i.what) && i.id.startsWith('repo:') && i.room !== 'Keep' ? {...i, room: 'Keep', why: t('Locked by an active Prompt')} : i));
-  // What l3 keeps of itself for the Prompt (its index, the translator, the hot programs): the l3 every Prompt runs on,
+  // What root3 keeps of itself for the Prompt (its index, the translator, the hot programs): the root3 every Prompt runs on,
   // so it is kept, not freed (issue #46), here and in Free all alike; the app keeps its own the same (src/core/src/storage/).
-  // Read from l3's own module only when asked: the Prompt's machine is no part of a page that only lists what is kept.
-  const l3 = await (await import('../prompt/userland.ts')).keptL3();
-  if (l3.files) items.push({id: 'l3', what: 'l3', detail: tn('{n} file reserved for Prompt', '{n} files reserved for Prompt', l3.files), allocated: l3.bytes,
+  // Read from root3's own module only when asked: the Prompt's machine is no part of a page that only lists what is kept.
+  const root3 = await (await import('../prompt/userland.ts')).keptRoot3();
+  if (root3.files) items.push({id: 'root3', what: 'root3', detail: tn('{n} file reserved for Prompt', '{n} files reserved for Prompt', root3.files), allocated: root3.bytes,
     room: 'Keep', why: t('Required for Prompt execution; cannot be removed')});
   items.sort((a, b) => b.allocated - a.allocated || a.what.localeCompare(b.what));
   const c = await readCapacity();
@@ -77,8 +77,8 @@ export async function takeOff(): Promise<[string, string][]> {
 /** 空ける these; each repo is sent first and goes only once the Remote has all of it. */
 export async function free(ids: string[]): Promise<Freed> {
   await flush();
-  // l3 is never among them (readSpace keeps it); asked for all the same, it stays.
-  const result = await core<Freed>('free', {ids: ids.filter((id) => id !== 'l3')});
+  // root3 is never among them (readSpace keeps it); asked for all the same, it stays.
+  const result = await core<Freed>('free', {ids: ids.filter((id) => id !== 'root3')});
   // Whatever went is no longer here for Forge, File and Home either.
   for (const id of result.removed) if (id.startsWith('repo:')) store.changedOutside(id.slice(5), 'space');
   await look();

@@ -1,6 +1,6 @@
-//! SSH into a repo's Prompt from any OpenSSH client. The listener is l3's
-//! (src/cli/src/ssh.rs, `l3 address ssh serve`, started by turning SSH on); what
-//! the app and l3 share of it is here:
+//! SSH into a repo's Prompt from any OpenSSH client. The listener is root3's
+//! (src/cli/src/ssh.rs, `root3 address ssh serve`, started by turning SSH on); what
+//! the app and root3 share of it is here:
 //!
 //!   keys       the Runtime dotfile `.authorized_keys`, one OpenSSH public
 //!              key a line (Home keeps dotfiles on the Remote, so a key added
@@ -21,14 +21,14 @@
 //!              network of the address it came in on (admit), or from the
 //!              device itself
 //!   record     `<data>/ssh/listening.json` while the listener runs, as a
-//!              running Prompt records itself (prompt/running.rs), so l3 and the app
+//!              running Prompt records itself (prompt/running.rs), so root3 and the app
 //!              see it and stop it; the host key beside it, made once
 //!   Remote     only that a device listens, and to whom (its scope word),
 //!              per device (src/remote/ssh.ts): no address, port or repo name
 //!              leaves the device. The listener says so when it starts and
 //!              asks every few seconds whether it still should (off from any
 //!              page stops it); where it is reached is worked out and shown
-//!              on the device alone (`l3 address`, the app's Runtime)
+//!              on the device alone (`root3 address`, the app's Runtime)
 
 // No unsafe code in this layer: the host's interfaces through nix, the kernel's routes over netlink through rustix.
 #![forbid(unsafe_code)]

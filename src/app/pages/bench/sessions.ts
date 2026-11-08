@@ -1,6 +1,6 @@
 // The repos' Prompts this window has started (terminal.ts makes them), as what only asks after them sees them: Home's
 // rows and gear, the reference, Me, Runtime. Apart from the terminal itself, so a page that only asks does not bring
-// the Prompt's whole screen (and l3's machine) with it.
+// the Prompt's whole screen (and root3's machine) with it.
 
 import type {Stopped} from '../../host/host.ts';
 
@@ -16,8 +16,8 @@ export interface Prompt {
   readonly element: HTMLElement;
   readonly runs: Run[];
   readonly running: boolean;
-  /** Where it runs: the root's, or l3 alone (a browser's, or the app's before the root is here); null before it starts. */
-  readonly on: 'root' | 'l3' | null;
+  /** Where it runs: the root's, or root3 alone (a browser's, or the app's before the root is here); null before it starts. */
+  readonly on: 'root' | 'root3' | null;
   /** What its programs hold, in bytes; what it keeps for programs it ran and could let go (a browser's); how many run. */
   readonly memory: number;
   readonly spare: number;

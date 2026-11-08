@@ -24,7 +24,7 @@ pub(super) fn lock(repo: &str) -> Result<Lock> {
     Ok(Lock(f))
 }
 
-/// One sync of a repo at a time, across the app and l3 alike.
+/// One sync of a repo at a time, across the app and root3 alike.
 pub(super) struct Lock(fs::File);
 
 impl Drop for Lock {

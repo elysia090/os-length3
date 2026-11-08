@@ -1,6 +1,6 @@
 //! Runtime: the root Prompts run on, then this device (everything this OS
 //! holds, largest first, each with what can be done with it); what every
-//! Prompt is given (dotfiles); and whether SSH reaches this device's Prompts (l3 address).
+//! Prompt is given (dotfiles); and whether SSH reaches this device's Prompts (root3 address).
 
 use super::{Ctx, stdin_text};
 use crate::args::Call;
@@ -11,13 +11,13 @@ use length3_core::{device::download::Progress, fs::paths, home, remote, root, st
 use serde_json::json;
 
 pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
-    // What a Prompt here holds (the app's or l3's, running or being prepared) stays while it does: the core reads
+    // What a Prompt here holds (the app's or root3's, running or being prepared) stays while it does: the core reads
     // their records itself (storage/), so there is nothing to tell it as open.
     let s = storage::space(paths::data_dir(), paths::repos_dir(), &[], true);
     let current = root::current(paths::data_dir()).map(|(_, r)| r);
     let mut t = vec![match &current {
         Some(r) => tr!("root  {} {} (where Prompts run)", "root  {} {}（Prompt が動く環境）", r.name, r.version),
-        None => tr!("root  none yet (l3 root fetch)", "root  まだありません（l3 root fetch）"),
+        None => tr!("root  none yet (root3 root fetch)", "root  まだありません（root3 root fetch）"),
     }];
     let (ssh_said, ssh) = ssh_here();
     t.push(ssh_said);
@@ -43,22 +43,22 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
         crate::menu::see(|| crate::menu::Subject { on: On::Thing, word: i.id.strip_prefix("repo:").unwrap_or(&i.id).to_string(), repo: None,
             label: i.what.clone(), detail: format!("{} · {said}", bytes(i.allocated)), facts: if i.room == storage::Room::Keep { Vec::new() } else { vec![Fact::Freeable] } });
         t.push(format!("  {:>9}  {}  {}  {}", bytes(i.allocated), act, i.what, i.detail));
-        t.push(format!("             {}{}", i.why, if i.room == storage::Room::Keep { String::new() } else { tr!("  (l3 free {})", "（l3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
+        t.push(format!("             {}{}", i.why, if i.room == storage::Room::Keep { String::new() } else { tr!("  (root3 free {})", "（root3 free {}）", i.id.strip_prefix("repo:").unwrap_or(&i.id)) }));
     }
-    if s.freeable > 0 { t.push(tr!("Can be freed: {} (all of it: l3 free all)", "空けられるもの：{}（全部なら l3 free all）", bytes(s.freeable))); }
+    if s.freeable > 0 { t.push(tr!("Can be freed: {} (all of it: root3 free all)", "空けられるもの：{}（全部なら root3 free all）", bytes(s.freeable))); }
     let items: Vec<_> = s.items.iter().map(|i| json!({"id": i.id, "what": i.what, "allocated": i.allocated, "room": i.room})).collect();
     let compute: Vec<_> = used.iter().map(|(repo, n, u)| json!({"repo": repo, "runs": n, "usage": u})).collect();
     Ok(Reply::data(t.join("\n"), json!({"compute": compute, "root": current, "ssh": ssh, "hostTotal": s.host_total, "hostFree": s.host_free, "host": s.host,
         "allocated": s.allocated, "freeable": s.freeable, "items": items})))
 }
 
-/// `l3 free ID… | all`: each named thing looked at again and freed, or why it stays.
+/// `root3 free ID… | all`: each named thing looked at again and freed, or why it stays.
 pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     let words = call.words(0);
     // A word that is nothing names nothing (bug: it was looked for as a repo with no name, and said as such).
     if words.iter().any(|w| w.trim().is_empty()) {
-        return Err(Error::Usage(tr!("Name what to free: l3 free ID… (l3 runtime lists them), or l3 free all", "空けるものを書いてください：l3 free ID…（l3 runtime で一覧）、または l3 free all")));
+        return Err(Error::Usage(tr!("Name what to free: root3 free ID… (root3 runtime lists them), or root3 free all", "空けるものを書いてください：root3 free ID…（root3 runtime で一覧）、または root3 free all")));
     }
     let space = storage::space(data, paths::repos_dir(), &[], true);
     let ids: Vec<String> = if words == ["all"] {
@@ -67,7 +67,7 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
         words.iter().map(|i| if i.contains(':') || i == "home" { i.clone() } else { format!("repo:{i}") }).collect()
     };
     if let Some(unknown) = ids.iter().find(|id| !space.items.iter().any(|i| &i.id == *id)) {
-        return Err(Error::NotFound(tr!("Nothing here is called {} (l3 runtime lists what there is)", "{} というものはここにありません（l3 runtime で一覧）", unknown.strip_prefix("repo:").unwrap_or(unknown))));
+        return Err(Error::NotFound(tr!("Nothing here is called {} (root3 runtime lists what there is)", "{} というものはここにありません（root3 runtime で一覧）", unknown.strip_prefix("repo:").unwrap_or(unknown))));
     }
     if ids.is_empty() { return Ok(Reply::done(tr!("Nothing can be freed", "空けられるものはありません"), json!({"freed": 0, "removed": [], "kept": []}))); }
     let r = storage::free(data, paths::repos_dir(), &ids, &[]);
@@ -88,7 +88,7 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
         None => tr!("  host free space, observed: {:+} B (not seen to change within 2 s)", "  ホストの空き（観測）：{:+} B（2秒以内には反映が見えませんでした）", change),
     });
     for id in r.removed.iter().filter_map(|i| i.strip_prefix("repo:")) {
-        t.push(tr!("  {} stays on the Remote; l3 repo open {} brings it back", "  {} は Remote にあります。l3 repo open {} で戻ります", id, id));
+        t.push(tr!("  {} stays on the Remote; root3 repo open {} brings it back", "  {} は Remote にあります。root3 repo open {} で戻ります", id, id));
     }
     t.extend(reasons);
     Ok(Reply::done(t.join("\n"), data))
@@ -97,13 +97,13 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
 pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
     let held = root::held(paths::data_dir());
     let data = json!(held.iter().map(|(r, c)| json!({"root": r, "current": c})).collect::<Vec<_>>());
-    if held.is_empty() { return Ok(Reply::data(tr!("No root yet (l3 root fetch)", "root はまだありません（l3 root fetch）"), data)); }
+    if held.is_empty() { return Ok(Reply::data(tr!("No root yet (root3 root fetch)", "root はまだありません（root3 root fetch）"), data)); }
     let t: Vec<String> = held.iter().map(|(r, current)| format!("{} {}  {} · {}  {}{}", r.name, r.version, out::files(r.files as usize), bytes(r.bytes), out::short(&r.sha256),
         if *current { tr!("  in use", "  使用中") } else { String::new() })).collect();
     Ok(Reply::data(t.join("\n"), data))
 }
 
-/// Whether a Prompt runs on the root here: this machine lets l3 make the namespaces one is made in (prompt/launch.rs
+/// Whether a Prompt runs on the root here: this machine lets root3 make the namespaces one is made in (prompt/launch.rs
 /// kept_from_namespaces). Where it does not, the app runs its Prompts translated, as a browser does, and says why.
 pub fn root_check(_: &Ctx, _: &Call) -> Result<Reply> {
     #[cfg(target_os = "linux")]
@@ -151,7 +151,7 @@ pub(crate) fn root_now(data: &std::path::Path) -> Result<(std::path::PathBuf, ro
     if let Some(r) = root::current(data) { return Ok(r); }
     crate::out::note(&tr!("Fetching the root Prompts run on (once)", "Prompt が動く root を取ってきます（最初の一度だけ）"));
     storage::fetch_root(data, &the_remote(), progress())?;
-    root::current(data).ok_or_else(|| Error::NotFound(tr!("No root yet (l3 root fetch)", "root がありません（l3 root fetch）")))
+    root::current(data).ok_or_else(|| Error::NotFound(tr!("No root yet (root3 root fetch)", "root がありません（root3 root fetch）")))
 }
 
 fn installed(r: &root::Installed) -> String {
@@ -163,16 +163,16 @@ pub fn root_fetch(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::done(installed(&r), json!(r)))
 }
 
-/// `l3 root use l3|ubuntu|debian`: l3's own (fetched if not held), or another distribution's root.
+/// `root3 root use root3|ubuntu|debian`: root3's own (fetched if not held), or another distribution's root.
 pub fn root_use(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     let r = match call.word(0).unwrap_or_default() {
-        "l3" => match root::use_held(data, root::RELEASES[0].sha256) {
+        "root3" => match root::use_held(data, root::RELEASES[0].sha256) {
             Some(r) => r,
             None => storage::fetch_root(data, &the_remote(), progress())?,
         },
         id => {
-            let d = root::distro(id).ok_or_else(|| Error::Usage(tr!("No such root: {} (l3, ubuntu or debian)", "そういう root はありません：{}（l3、ubuntu、debian）", id)))?;
+            let d = root::distro(id).ok_or_else(|| Error::Usage(tr!("No such root: {} (root3, ubuntu or debian)", "そういう root はありません：{}（root3、ubuntu、debian）", id)))?;
             storage::fetch_distro(data, &the_remote(), d, progress())?
         }
     };
@@ -187,15 +187,15 @@ pub fn root_install(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(installed(&r), json!(r)))
 }
 
-/// `l3 network`: the repos whose Prompts may reach the network on this device (Runtime's switch; never sent).
+/// `root3 network`: the repos whose Prompts may reach the network on this device (Runtime's switch; never sent).
 pub fn network_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let all = home::networked();
-    let text = if all.is_empty() { tr!("No repo's Prompts reach the network (l3 network on REPO)", "ネットワークに届く repo の Prompt はありません（l3 network on REPO）") }
+    let text = if all.is_empty() { tr!("No repo's Prompts reach the network (root3 network on REPO)", "ネットワークに届く repo の Prompt はありません（root3 network on REPO）") }
         else { all.join("\n") };
     Ok(Reply::data(text, json!(all)))
 }
 
-/// `l3 network on|off REPO`, as Runtime's switch: a Prompt's namespace cannot be given the network once
+/// `root3 network on|off REPO`, as Runtime's switch: a Prompt's namespace cannot be given the network once
 /// made, so it has it from its next start; taken, the repo's Prompts stop at once.
 pub fn network_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let on = call.word(0) == Some("on");
@@ -210,7 +210,7 @@ pub fn network_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
         (false, true) => tr!("The Prompts of {} no longer reach the network", "{} の Prompt はもうネットワークに届きません", repo),
         (false, false) => tr!("The Prompts of {} had no network; nothing changed", "{} の Prompt はネットワークを持っていませんでした。何も変えていません", repo),
     };
-    if on && running > 0 { text += &tr!("\n  the one running has none until it starts again (l3 prompt stop {})", "\n  動いているものは、開き直すまでネットワークなしです（l3 prompt stop {}）", repo); }
+    if on && running > 0 { text += &tr!("\n  the one running has none until it starts again (root3 prompt stop {})", "\n  動いているものは、開き直すまでネットワークなしです（root3 prompt stop {}）", repo); }
     if !stopped.is_empty() { text += &format!("\n  {}", super::forge::said_stopped(&repo, &stopped)); }
     Ok(Reply::done(text, json!({"repo": repo, "network": on, "changed": changed, "stopped": stopped, "granted": home::networked()})))
 }
@@ -219,16 +219,16 @@ pub fn dotfile_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let all = home::dotfiles();
     let waiting = home::dotfiles_waiting();
     let data = json!(all.iter().map(|(n, t)| json!({"name": n, "bytes": t.len(), "inEffect": !waiting.contains(n)})).collect::<Vec<_>>());
-    if all.is_empty() { return Ok(Reply::data(tr!("No dotfiles yet (l3 dotfile write .profile < file)", "dotfile はまだありません（l3 dotfile write .profile < file）"), data)); }
+    if all.is_empty() { return Ok(Reply::data(tr!("No dotfiles yet (root3 dotfile write .profile < file)", "dotfile はまだありません（root3 dotfile write .profile < file）"), data)); }
     let mut lines: Vec<String> = all.iter().map(|(n, t)| {
         let state = if waiting.contains(n) { tr!("  · changed on another device, not run here yet", "  · 別の端末で変わり、ここではまだ動きません") } else { String::new() };
         format!("{n}  {}{state}", bytes(t.len() as u64))
     }).collect();
-    if !waiting.is_empty() { lines.push(tr!("l3 dotfile take runs them here too (l3 dotfile NAME shows one first)", "l3 dotfile take でここでも動きます（先に見るなら l3 dotfile NAME）")); }
+    if !waiting.is_empty() { lines.push(tr!("root3 dotfile take runs them here too (root3 dotfile NAME shows one first)", "root3 dotfile take でここでも動きます（先に見るなら root3 dotfile NAME）")); }
     Ok(Reply::data(lines.join("\n"), data))
 }
 
-/// `l3 dotfile take [NAME]`: what changed on another device (or on the Remote) runs here from now; until then it is
+/// `root3 dotfile take [NAME]`: what changed on another device (or on the Remote) runs here from now; until then it is
 /// kept and runs nowhere here (src/core/src/home/dotfiles.rs dotfiles_in_effect).
 pub fn dotfile_take(_: &Ctx, call: &Call) -> Result<Reply> {
     let names: Vec<String> = call.word(0).map(|n| vec![n.to_string()]).unwrap_or_default();
@@ -240,7 +240,7 @@ pub fn dotfile_take(_: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn dotfile_show(_: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
-    let (_, text) = home::dotfiles().into_iter().find(|(n, _)| n == name).ok_or_else(|| Error::NotFound(tr!("There is no dotfile {} (l3 dotfile lists them)", "dotfile {} はありません（l3 dotfile で一覧）", name)))?;
+    let (_, text) = home::dotfiles().into_iter().find(|(n, _)| n == name).ok_or_else(|| Error::NotFound(tr!("There is no dotfile {} (root3 dotfile lists them)", "dotfile {} はありません（root3 dotfile で一覧）", name)))?;
     Ok(Reply::Raw { json: json!({"name": name, "text": text}), text })
 }
 
@@ -256,19 +256,19 @@ pub fn dotfile_write(_: &Ctx, call: &Call) -> Result<Reply> {
 
 pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
-    if !home::dotfiles().iter().any(|(n, _)| n == name) { return Err(Error::NotFound(tr!("There is no dotfile {} (l3 dotfile lists them)", "dotfile {} はありません（l3 dotfile で一覧）", name))); }
+    if !home::dotfiles().iter().any(|(n, _)| n == name) { return Err(Error::NotFound(tr!("There is no dotfile {} (root3 dotfile lists them)", "dotfile {} はありません（root3 dotfile で一覧）", name))); }
     home::set_dotfile(name, None)?;
     Ok(Reply::done(tr!("Removed {}", "{} を消しました", name), json!({"name": name})))
 }
 
-/// `l3 host`: what this machine has for running this OS's VMs (core vm.rs), and for what it lacks, the one fix.
-/// SSH into the Prompts, said and as data: the listener, when it runs (l3 address lists where; l3 address ssh off stops it).
+/// `root3 host`: what this machine has for running this OS's VMs (core vm.rs), and for what it lacks, the one fix.
+/// SSH into the Prompts, said and as data: the listener, when it runs (root3 address lists where; root3 address ssh off stops it).
 #[cfg(unix)]
 fn ssh_here() -> (String, serde_json::Value) {
     match length3_core::ssh::listening(paths::data_dir()) {
-        Some(l) => (tr!("SSH  on · {} · port {} (l3 address; l3 address ssh off stops it)", "SSH  オン · {} · ポート {}（l3 address。止めるなら l3 address ssh off）", l.scope.said(), l.port),
+        Some(l) => (tr!("SSH  on · {} · port {} (root3 address; root3 address ssh off stops it)", "SSH  オン · {} · ポート {}（root3 address。止めるなら root3 address ssh off）", l.scope.said(), l.port),
             json!({"port": l.port, "scope": l.scope, "destinations": l.destinations(), "fingerprint": l.fingerprint})),
-        None => (tr!("SSH  off (l3 address ssh on)", "SSH  オフ（l3 address ssh on）"), serde_json::Value::Null),
+        None => (tr!("SSH  off (root3 address ssh on)", "SSH  オフ（root3 address ssh on）"), serde_json::Value::Null),
     }
 }
 #[cfg(not(unix))]
@@ -292,7 +292,7 @@ pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::data(t.join("\n"), json!(h)))
 }
 
-/// `l3 host fetch`: what this machine lacks to run VMs (Firecracker, its jailer, the kernel), fetched by digest.
+/// `root3 host fetch`: what this machine lacks to run VMs (Firecracker, its jailer, the kernel), fetched by digest.
 #[cfg(target_os = "linux")]
 pub fn host_fetch(ctx: &Ctx, call: &Call) -> Result<Reply> {
     length3_core::compute::vm::fetch(paths::data_dir(), progress())?;

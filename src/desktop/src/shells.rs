@@ -1,5 +1,5 @@
-// Prompts on the distribution's root (l3 prompt, src/core/src/prompt/launch.rs). Each
-// is an `l3 prompt REPO` process beside the app; what it prints comes to the
+// Prompts on the distribution's root (root3 prompt, src/core/src/prompt/launch.rs). Each
+// is an `root3 prompt REPO` process beside the app; what it prints comes to the
 // webview as `prompt` events, what is typed goes to its standard input.
 // Closing kills its supervisor, and with it (PDEATHSIG, then the pid
 // namespace) every process inside; it is only called stopped once the host
@@ -28,7 +28,7 @@ pub struct Shells {
 
 impl Shells {
     /// Repos a Prompt of this window has open now: they stay on the device while it runs. The core reads every
-    /// other (each l3's, in a terminal too) from its record, with the root it runs on (src/core/src/storage/).
+    /// other (each root3's, in a terminal too) from its record, with the root it runs on (src/core/src/storage/).
     pub fn open_repos(&self) -> Vec<String> {
         let mut all: Vec<String> = self.open.lock().unwrap().values().map(|s| s.repo.clone()).collect();
         all.sort();
@@ -64,7 +64,7 @@ async fn apart<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send +
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-/// Open a Prompt: its `l3 prompt`, which prepares it (.packages, .setup), then runs it.
+/// Open a Prompt: its `root3 prompt`, which prepares it (.packages, .setup), then runs it.
 #[tauri::command]
 pub async fn prompt_open(app: AppHandle, repo: String) -> Result<u32, String> {
     apart(move || open(app, repo)).await
@@ -75,14 +75,14 @@ fn open(app: AppHandle, repo: String) -> Result<u32, String> {
     if root::current(&paths::data_dir()).is_none() {
         return Err(length3_core::tr!("There is no root", "root がありません"));
     }
-    // Said plainly when it is not here, rather than as l3's "which repo?".
+    // Said plainly when it is not here, rather than as root3's "which repo?".
     length3_core::repos::store::Repos::open()?.dir(&repo)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let (mut reader, writer) = std::io::pipe().map_err(|e| e.to_string())?;
     // One pipe for both, so what it prints keeps its order. The repo is named by LENGTH3_REPO from the data
-    // directory, never as a word: l3 reads a word against its forms first, so a repo called ls or stop was
-    // `l3 prompt ls` (the list) or `l3 prompt stop`, and one called --network a flag.
-    let mut child = Command::new(running::l3_path(&exe))
+    // directory, never as a word: root3 reads a word against its forms first, so a repo called ls or stop was
+    // `root3 prompt ls` (the list) or `root3 prompt stop`, and one called --network a flag.
+    let mut child = Command::new(running::root3_path(&exe))
         .arg("prompt")
         .env("LENGTH3_REPO", &repo)
         .current_dir(paths::data_dir())
@@ -90,7 +90,7 @@ fn open(app: AppHandle, repo: String) -> Result<u32, String> {
         .stdout(writer.try_clone().map_err(|e| e.to_string())?)
         .stderr(writer)
         .spawn()
-        .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした：{}", e))?;
+        .map_err(|e| length3_core::tr!("Could not start root3: {}", "root3 を起動できませんでした：{}", e))?;
     let stdin = child.stdin.take().ok_or("stdin")?;
     let id = shells.next.fetch_add(1, Ordering::SeqCst) + 1;
     shells.open.lock().unwrap().insert(id, Shell { repo, child, stdin });
@@ -200,7 +200,7 @@ pub struct Release {
     bytes: u64,
 }
 
-/// Whether Prompts run on the root here, and if not why: the l3 beside the app asked once (`l3 root check`), since it
+/// Whether Prompts run on the root here, and if not why: the root3 beside the app asked once (`root3 root check`), since it
 /// is what makes a Prompt's namespaces, and AppArmor may let it and not the app. Where they do not, the page runs its
 /// Prompts translated, as a browser does.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -216,7 +216,7 @@ pub async fn root_native() -> Native {
         if !cfg!(target_arch = "x86_64") {
             return Native { native: false, why: Some(length3_core::tr!("The root is x86-64, and this machine is {}", "root は x86-64 で、この機械は {} です", std::env::consts::ARCH)) };
         }
-        let asked = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| Command::new(running::l3_path(&exe))
+        let asked = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| Command::new(running::root3_path(&exe))
             .args(["root", "check", "--json"]).stdin(Stdio::null()).stderr(Stdio::null()).output().map_err(|e| e.to_string()));
         match asked {
             Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or_else(|e| Native { native: false, why: Some(e.to_string()) }),
@@ -258,10 +258,10 @@ pub async fn root_list(path: String) -> Result<Vec<root::Entry>, String> {
 /// Fetch the release root from the Remote and install it, saying how far it is.
 #[tauri::command]
 pub async fn root_fetch(app: AppHandle) -> Result<root::Installed, String> {
-    root_use(app, "l3".into()).await
+    root_use(app, "root3".into()).await
 }
 
-/// Make `id` (l3, ubuntu, debian) the root Prompts run on, fetching it first
+/// Make `id` (root3, ubuntu, debian) the root Prompts run on, fetching it first
 /// if it is not held, saying how far it is (`root-fetch`).
 #[tauri::command]
 pub async fn root_use(app: AppHandle, id: String) -> Result<root::Installed, String> {
@@ -278,7 +278,7 @@ pub async fn root_use(app: AppHandle, id: String) -> Result<root::Installed, Str
             }
             _ => {}
         };
-        if id == "l3" {
+        if id == "root3" {
             return match root::use_held(&data, root::RELEASES[0].sha256) {
                 Some(r) => Ok(r),
                 None => storage::fetch_root(&data, &remote_url(), progress),

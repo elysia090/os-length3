@@ -4,7 +4,7 @@
 //! A Spec names what a run is made of, never where it is: the root by its sha256 (root pins it), the
 //! environment by the key of what set it up (prompt/launch.rs environment_key), the repo by its name and line, and what
 //! runs, with what it is told, the network it may have, and its budget. This device builds the run from it
-//! (`l3 agent inside`), and a place elsewhere that can fetch by digest (another device, a machine in the cloud)
+//! (`root3 agent inside`), and a place elsewhere that can fetch by digest (another device, a machine in the cloud)
 //! is given the same Spec and builds the same run: nothing in it says this machine. What it may use is checked
 //! where it runs, not where it was asked for: the network only as the repo was given it there.
 //!

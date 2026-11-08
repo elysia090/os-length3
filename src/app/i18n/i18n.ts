@@ -1,7 +1,7 @@
 // The OS's words, in English by default and wholly in Japanese when chosen.
 // Code is written in English: t('Commit') is the English text itself, and
 // the Japanese is looked up by it (i18n/ja/). Placeholders are {name}.
-// The choice is Home's `lang` setting, the same file l3 reads, so the app
+// The choice is Home's `lang` setting, the same file root3 reads, so the app
 // and the command line speak the same language. The Japanese words are read only once Japanese is chosen (a chunk of
 // their own, an eighth of the app): an OS in English never loads them.
 

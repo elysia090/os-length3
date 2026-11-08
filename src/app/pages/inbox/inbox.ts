@@ -145,7 +145,7 @@ function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLE
     h('div', {class: 'pop-group', role: 'group', 'aria-label': t('Your usernames')}, h('div', {class: 'pop-head muted small'}, t('Your usernames')), ...me.addresses.map((a) =>
       h('div', {class: 'your-row'}, h('span', {}, inbox.shown(a.address)),
         a.lapsed ? h('span', {class: 'small error'}, t('Domain no longer points to this Remote')) : null)));
-  // Letting a name go is not offered here; the Remote's way to do it stays (l3 people release uses it).
+  // Letting a name go is not offered here; the Remote's way to do it stays (root3 people release uses it).
   const fill = () => panel.replaceChildren(yours(), adding());
   // The panel lies over the Inbox under it; Escape or a press outside closes it.
   const holder = h('div', {class: 'stub-holder'}, stub, panel);

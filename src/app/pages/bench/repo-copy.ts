@@ -2,7 +2,7 @@ import {t} from '../../i18n/i18n.ts';
 import {base64, inPieces, onChange, store, unbase64, walkRepo} from '../../repos/repos.ts';
 
 // The repo in a browser's Prompt is the repo (terminal.ts): copied in for the shell as it starts, what the shell
-// changes under /root/<repo> written back through the store, and what is saved elsewhere (Forge, Git, l3 on the host…
+// changes under /root/<repo> written back through the store, and what is saved elsewhere (Forge, Git, root3 on the host…
 // through the store) put into the shell's copy. Binary files and files over the read limit stay where they are.
 
 const LIMIT_FILES = 2000;

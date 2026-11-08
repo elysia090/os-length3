@@ -79,7 +79,7 @@ test('signed out, Server has no right pane and so no line where it would start',
   await expect(app.server.view.locator('.center')).toHaveCSS('border-right-color', 'rgba(0, 0, 0, 0)');
 });
 
-test('a build without l3 says so in Runtime, never a parser\'s words', async ({app}) => {
+test('a build without root3 says so in Runtime, never a parser\'s words', async ({app}) => {
   await app.runtime.open('Environments');
   await expect(app.main.getByRole('heading', {name: /Active environment/})).toBeVisible();
   await expect(app.main).not.toContainText(/Unexpected token|not valid JSON/);

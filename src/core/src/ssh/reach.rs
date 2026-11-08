@@ -251,7 +251,7 @@ pub const VPNS: [&str; 6] = ["tailscale", "wg", "zt", "nebula", "wt", "Cloudflar
 ///   vboxnet   VirtualBox's host-only networks, vboxnet0
 pub const BRIDGES: [&str; 16] = ["docker", "br-", "virbr", "veth", "ve-", "vb-", "lxcbr", "lxdbr", "incusbr", "cni", "flannel", "cali", "cilium_", "podman", "vmnet", "vboxnet"];
 
-/// An address listened on besides loopback, with the interface it is on (what `l3 address` and the card name).
+/// An address listened on besides loopback, with the interface it is on (what `root3 address` and the card name).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Taken {
     pub addr: IpAddr,
@@ -303,7 +303,7 @@ pub enum Scope {
 }
 
 impl Scope {
-    /// The word for it: in `l3 address ssh on device|network`, the record and what the Remote hears.
+    /// The word for it: in `root3 address ssh on device|network`, the record and what the Remote hears.
     pub fn word(self) -> &'static str {
         match self { Scope::Device => "device", Scope::Network => "network" }
     }

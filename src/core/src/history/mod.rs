@@ -1,6 +1,6 @@
 //! History in the issues' terms (issue #17). An issue is the unit of work;
 //! its branch and worktree are the OS's to keep (history/work.rs). The operations
-//! a person does are few, and are the same from the app, l3 and a browser
+//! a person does are few, and are the same from the app, root3 and a browser
 //! (src/app/repos/history.ts):
 //!
 //!   Commit         what is not committed becomes history on the work's line,

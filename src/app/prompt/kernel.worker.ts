@@ -44,7 +44,7 @@
 // the `from`th on, for the page to keep and give the next Prompt.
 //
 // {type: 'hot', files}, after 'start': programs given with their translation
-// once the Prompt is up (the page readies l3's and git's after its first
+// once the Prompt is up (the page readies root3's and git's after its first
 // Prompt starts), each in the root's file (pack.ts provide: each name of it,
 // a hard link, runs it), run from its next run on.
 //
@@ -159,7 +159,7 @@ function ready(data: Ready): Promise<Readied> {
     const translate = await loadTranslator(data.translator);
     const vfs = new Vfs();
     if (data.root) mountPack(vfs, data.root.index, {range: syncRange(data.root.url), decode: translate.unzstd, sha256: translate.sha256});
-    // Over the root, so what was given (l3, its BusyBox) is what runs: a hot program in the root's own node.
+    // Over the root, so what was given (root3, its BusyBox) is what runs: a hot program in the root's own node.
     for (const f of data.files ?? []) provide(vfs, f);
     const r: Readied = {translate, vfs, files: data.files ?? []};
     if (data.rehearse) await rehearse(r, data.rehearse).catch(() => { /* only a start that is not faster */ });
@@ -285,7 +285,7 @@ function runs(k: Kernel, node: File, f: Program, module: WebAssembly.Module): vo
 }
 
 /**
- * Hot programs ready after this Prompt started (l3, git: the page readies them once its first Prompt is up), each put
+ * Hot programs ready after this Prompt started (root3, git: the page readies them once its first Prompt is up), each put
  * in the root's file and run from its next run on; what runs it now goes on as it is. One made for memory not shared
  * cannot run where threads run apart: it stays translated as it runs.
  */

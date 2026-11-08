@@ -1,4 +1,4 @@
-//! `l3 app`: the desktop app, the same OS in a window, opened from here. One
+//! `root3 app`: the desktop app, the same OS in a window, opened from here. One
 //! is open on a device at a time (core device/desktop.rs): the one open is brought
 //! forward, never a second started. Otherwise the app this device has is
 //! started on its own (the terminal stays free) and waited for until it
@@ -6,8 +6,8 @@
 //! Not on this device, it says where to get it: the Remote hands it out for
 //! this release, as Runtime's Desktop app card does.
 //!
-//! `l3 app close` closes it as its window's close button does: what it saved
-//! stays, its own Prompts end with it, and what l3 runs (SSH, a Prompt in a
+//! `root3 app close` closes it as its window's close button does: what it saved
+//! stays, its own Prompts end with it, and what root3 runs (SSH, a Prompt in a
 //! terminal) goes on. Opening it starts nothing else: no SSH, no listening
 //! on a network, no Remote it is not already signed in to.
 
@@ -19,7 +19,7 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// How long a started app has to answer before l3 says it did not.
+/// How long a started app has to answer before root3 says it did not.
 const STARTING: Duration = Duration::from_secs(15);
 /// How long a closed app has to go.
 const CLOSING: Duration = Duration::from_secs(10);
@@ -27,7 +27,7 @@ const CLOSING: Duration = Duration::from_secs(10);
 /// The desktop app's files this release pins, as the Remote serves them (/v1/desktop/<file>).
 const PINS: &str = include_str!("../../../shared/desktop-releases.json");
 
-/// `l3 app`: the one open brought forward; else the app here started and waited for; else where to get it.
+/// `root3 app`: the one open brought forward; else the app here started and waited for; else where to get it.
 pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     if desktop::ask(data, "show").is_some() {
@@ -39,11 +39,11 @@ pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {
         return Err(Error::NotFound(format!("{}\n{}", tr!("LENGTH3_APP names {}, and no program is there", "LENGTH3_APP は {} を指していますが、そこにプログラムはありません", program.display()), where_to_get())));
     }
     if !runnable(&program) {
-        return Err(Error::Refused(tr!("{0} is here but may not run yet: chmod +x {0}, then l3 app", "{0} はありますが、まだ実行できません。chmod +x {0} のあと l3 app", program.display())));
+        return Err(Error::Refused(tr!("{0} is here but may not run yet: chmod +x {0}, then root3 app", "{0} はありますが、まだ実行できません。chmod +x {0} のあと root3 app", program.display())));
     }
     if !screen() {
-        return Err(Error::Refused(tr!("There is no screen here for a window (neither DISPLAY nor WAYLAND_DISPLAY): the app opens on this device's own desktop, and l3 is the way in from elsewhere",
-            "ウィンドウを出す画面がありません（DISPLAY も WAYLAND_DISPLAY もありません）。アプリはこの端末のデスクトップで開きます。ほかからは l3 で使えます")));
+        return Err(Error::Refused(tr!("There is no screen here for a window (neither DISPLAY nor WAYLAND_DISPLAY): the app opens on this device's own desktop, and root3 is the way in from elsewhere",
+            "ウィンドウを出す画面がありません（DISPLAY も WAYLAND_DISPLAY もありません）。アプリはこの端末のデスクトップで開きます。ほかからは root3 で使えます")));
     }
     let mut child = start(&program)?;
     let pid = child.id();
@@ -56,18 +56,18 @@ pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {
                 "アプリを起動できませんでした。すぐに終わり（{1}）、何も開いていません。理由はターミナルで {0} を実行するとわかります", program.display(), status)));
         }
         if desktop::ask(data, "here").is_some() {
-            // Answered by the one this l3 started, or (it ended handing over) by one opened meanwhile.
+            // Answered by the one this root3 started, or (it ended handing over) by one opened meanwhile.
             let started = ended.is_none();
-            let text = if started { tr!("Opened the app. Its window's close button, or l3 app close, closes it", "アプリを開きました。ウィンドウの閉じるボタンか l3 app close で閉じます") }
+            let text = if started { tr!("Opened the app. Its window's close button, or root3 app close, closes it", "アプリを開きました。ウィンドウの閉じるボタンか root3 app close で閉じます") }
                 else { tr!("The app is open already: brought it forward (no second one is started)", "アプリはもう開いています。前に出しました（もうひとつは開きません）") };
             return Ok(Reply::done(text, json!({"open": true, "started": started, "pid": started.then_some(pid), "program": program})));
         }
         if Instant::now() > until {
             return Err(Error::Refused(match ended {
                 Some(_) => tr!("The app ended without opening, and nothing is open", "アプリは開かずに終わりました。何も開いていません"),
-                // Running, but not saying so: an app older than this l3 never does, and the current one is said.
-                None => std::iter::once(tr!("The app was started ({} as pid {}) but has not answered l3 in {} s, so l3 cannot say it is open. An app older than this l3 never answers; the current one:",
-                    "アプリを起動しました（{} を pid {} で）が、{} 秒たっても l3 に応えないので、開いたとは言えません。この l3 より古いアプリは応えません。いまのもの：",
+                // Running, but not saying so: an app older than this root3 never does, and the current one is said.
+                None => std::iter::once(tr!("The app was started ({} as pid {}) but has not answered root3 in {} s, so root3 cannot say it is open. An app older than this root3 never answers; the current one:",
+                    "アプリを起動しました（{} を pid {} で）が、{} 秒たっても root3 に応えないので、開いたとは言えません。この root3 より古いアプリは応えません。いまのもの：",
                     program.display(), pid, STARTING.as_secs())).chain(downloads()).collect::<Vec<_>>().join("\n"),
             }));
         }
@@ -75,13 +75,13 @@ pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {
     }
 }
 
-/// `l3 app close`: the app open closed as its close button closes it, and waited for until it has gone.
+/// `root3 app close`: the app open closed as its close button closes it, and waited for until it has gone.
 pub fn close(_: &Ctx, _: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     match desktop::ask(data, "close").as_deref() {
         None => return Ok(Reply::done(tr!("The app was not open", "アプリは開いていませんでした"), json!({"open": false, "changed": false}))),
         Some("closing") => {}
-        Some(_) => return Err(Error::Refused(tr!("The app open does not take l3 app close: close its window", "開いているアプリは l3 app close を受けません。ウィンドウを閉じてください"))),
+        Some(_) => return Err(Error::Refused(tr!("The app open does not take root3 app close: close its window", "開いているアプリは root3 app close を受けません。ウィンドウを閉じてください"))),
     }
     let until = Instant::now() + CLOSING;
     while desktop::ask(data, "here").is_some() {
@@ -91,8 +91,8 @@ pub fn close(_: &Ctx, _: &Call) -> Result<Reply> {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    Ok(Reply::done(tr!("Closed the app: what it saved stays, its Prompts ended with it, and what l3 runs (SSH, a Prompt in a terminal) goes on",
-        "アプリを閉じました。保存したものは残り、アプリの Prompt は一緒に終わりました。l3 が動かしているもの（SSH、ターミナルの Prompt）はそのままです"),
+    Ok(Reply::done(tr!("Closed the app: what it saved stays, its Prompts ended with it, and what root3 runs (SSH, a Prompt in a terminal) goes on",
+        "アプリを閉じました。保存したものは残り、アプリの Prompt は一緒に終わりました。root3 が動かしているもの（SSH、ターミナルの Prompt）はそのままです"),
         json!({"open": false, "changed": true})))
 }
 
@@ -127,8 +127,8 @@ fn screen() -> bool {
     ["DISPLAY", "WAYLAND_DISPLAY"].iter().any(|v| std::env::var_os(v).is_some_and(|v| !v.is_empty()))
 }
 
-/// The app started on its own: its own session (it outlives this l3, and a terminal's Ctrl-C or hangup is not
-/// its), nothing of the terminal's, from the home folder (wherever this l3 was run from is nothing of the app's).
+/// The app started on its own: its own session (it outlives this root3, and a terminal's Ctrl-C or hangup is not
+/// its), nothing of the terminal's, from the home folder (wherever this root3 was run from is nothing of the app's).
 fn start(program: &Path) -> Result<std::process::Child> {
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
@@ -142,7 +142,7 @@ fn start(program: &Path) -> Result<std::process::Child> {
 
 /// Where to get the app, said where this device has none.
 fn where_to_get() -> String {
-    let first = tr!("The desktop app is not on this device. Get it, then l3 app opens it:", "この端末にデスクトップアプリがありません。入れてから l3 app で開きます：");
+    let first = tr!("The desktop app is not on this device. Get it, then root3 app opens it:", "この端末にデスクトップアプリがありません。入れてから root3 app で開きます：");
     std::iter::once(first).chain(downloads()).collect::<Vec<_>>().join("\n")
 }
 
@@ -186,7 +186,7 @@ mod tests {
         let said = where_to_get();
         // This release's, once pinned; until then the newest pinned.
         assert!(said.contains("/v1/desktop/os-length3-linux-") && said.contains("-desktop-amd64.deb"), "{said}");
-        assert!(said.contains("AppImage") && said.contains("l3 app"), "{said}");
+        assert!(said.contains("AppImage") && said.contains("root3 app"), "{said}");
         // Getting it is installing it: nothing is built.
         for never in ["cargo", "npm", "vite", "build"] { assert!(!said.contains(never), "{never}: {said}"); }
     }

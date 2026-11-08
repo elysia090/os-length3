@@ -134,7 +134,7 @@ pub fn cut(repos: &Repos, repo: &str, issue: Option<&str>, line: &str, note: &st
     if title.trim().is_empty() {
         return Err(crate::tr!("Commit requires a title (e.g. Fix: title)", "コミットにはタイトルが必要です（例：Fix: 件名）"));
     }
-    let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Sign in to it first (l3 login)", "コミットは Remote に残ります。先に Remote にサインインしてください（l3 login）"))?;
+    let client = Client::open().map_err(|_| crate::tr!("Commits are kept on the Remote. Sign in to it first (root3 login)", "コミットは Remote に残ります。先に Remote にサインインしてください（root3 login）"))?;
     let (key, on) = remote::key(repos, repo);
     for _ in 0..4 {
         let s = remote::sync(repos, repo)?;

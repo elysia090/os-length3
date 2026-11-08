@@ -1,5 +1,5 @@
 //! A root fetched over the network (the Remote by digest first, then its makers), room asked for before a byte
-//! comes, then installed and made the one Prompts use. A browser's core fetches none: the web reads l3 its own way.
+//! comes, then installed and made the one Prompts use. A browser's core fetches none: the web reads root3 its own way.
 
 use super::held::{Installed, system_dir, use_held};
 use super::install::{install, install_distro};

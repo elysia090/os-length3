@@ -10,7 +10,7 @@ fn place(name: &str) -> PathBuf {
 
 #[test]
 fn where_there_is_no_keyring_each_is_a_file_of_its_own_private_replaced_and_taken_away() {
-    let d = place("l3-vault-files");
+    let d = place("root3-vault-files");
     let v = Vault { #[cfg(not(target_os = "wasi"))] keyring: None, dir: &d };
     assert_eq!(v.get(Secret::Session), Ok(None));
     v.set(Secret::Session, "one.sig").unwrap();
@@ -33,7 +33,7 @@ fn where_there_is_no_keyring_each_is_a_file_of_its_own_private_replaced_and_take
 #[test]
 fn with_a_keyring_each_is_kept_there_alone_a_file_kept_before_is_moved_in_and_one_it_refuses_stays_a_file() {
     use keyring_core::{api::CredentialStoreApi, CredentialStore, Error, mock};
-    let d = place("l3-vault-keyring");
+    let d = place("root3-vault-keyring");
     let store = mock::Store::new().unwrap();
     let keyring: &CredentialStore = store.as_ref();
     let v = Vault { keyring: Some(keyring), dir: &d };

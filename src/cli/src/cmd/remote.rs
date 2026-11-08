@@ -29,11 +29,11 @@ fn synced(name: &str, cols: usize, r: &std::result::Result<remote::Synced, Strin
     }
 }
 
-/// `l3 remote`: the Remote this device is on, and each repo brought into step with it.
+/// `root3 remote`: the Remote this device is on, and each repo brought into step with it.
 pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let Some(c) = remote::connection() else {
         let t = [tr!("Remote  not signed in", "Remote  まだサインインしていません"),
-            tr!("  l3 login, approved in the browser, signs this device in; then the Remote keeps your repos, and each change goes there by itself.", "  l3 login をブラウザで承認するとこの端末でサインインでき、Remote があなたの repo を持ちます。変更はひとりでに Remote へ届きます。")];
+            tr!("  root3 login, approved in the browser, signs this device in; then the Remote keeps your repos, and each change goes there by itself.", "  root3 login をブラウザで承認するとこの端末でサインインでき、Remote があなたの repo を持ちます。変更はひとりでに Remote へ届きます。")];
         return Ok(Reply::data(t.join("\n"), json!({"url": null})));
     };
     let r = ctx.repos()?;
@@ -69,12 +69,12 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
     for o in there.iter().filter(|o| o.off_at.is_some()) {
         crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("off · kept {} more", "オフ · あと{}残ります", out::left(o.until.unwrap_or(0))), facts: vec![Fact::TurnedOff] });
-        t.push(tr!("  {}  off · kept {} more (l3 remote on {})", "  {}  オフ · あと{}残ります（l3 remote on {}）", name(&o.name), out::left(o.until.unwrap_or(0)), o.name));
+        t.push(tr!("  {}  off · kept {} more (root3 remote on {})", "  {}  オフ · あと{}残ります（root3 remote on {}）", name(&o.name), out::left(o.until.unwrap_or(0)), o.name));
     }
     for o in there.iter().filter(|o| o.off_at.is_none() && !here.iter().any(|h| h.name == o.name)) {
         crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("only on the Remote · {}", "Remote にだけあります · {}", bytes(o.bytes)), facts: vec![Fact::OnlyThere] });
-        t.push(tr!("  {}  only on the Remote · {} (l3 repo open {})", "  {}  Remote にだけあります · {}（l3 repo open {}）", name(&o.name), bytes(o.bytes), o.name));
+        t.push(tr!("  {}  only on the Remote · {} (root3 repo open {})", "  {}  Remote にだけあります · {}（root3 repo open {}）", name(&o.name), bytes(o.bytes), o.name));
     }
     Ok(Reply::data(t.join("\n"), json!({"url": c.url, "account": account.ok().flatten(), "here": rows, "remote": there})))
 }
@@ -82,7 +82,7 @@ pub fn page(ctx: &Ctx, _: &Call) -> Result<Reply> {
 pub fn on(_: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
     let there = remote::remote_repos()?;
-    let o = there.iter().find(|o| o.name == name).ok_or_else(|| Error::NotFound(tr!("The Remote has no repo {} (l3 repo lists them)", "Remote に repo {} はありません（l3 repo で一覧）", name)))?;
+    let o = there.iter().find(|o| o.name == name).ok_or_else(|| Error::NotFound(tr!("The Remote has no repo {} (root3 repo lists them)", "Remote に repo {} はありません（root3 repo で一覧）", name)))?;
     if o.off_at.is_none() { return Err(Error::Refused(tr!("{} is not turned off; there is nothing to bring back", "{} はオフになっていません。戻すものはありません", name))); }
     remote::turn_on(name)?;
     Ok(Reply::done(tr!("{} is on again", "{} を戻しました", name), json!({"repo": name, "on": true})))
@@ -105,7 +105,7 @@ pub fn sign_in(_: &Ctx, _: &Call) -> Result<Reply> {
 pub fn devices(_: &Ctx, _: &Call) -> Result<Reply> {
     let list = account::devices()?;
     let t: Vec<String> = list.iter().enumerate().map(|(k, d)| format!("{}. {}  {}{}", k + 1, account::device_word(d.user_agent.as_deref()), d.updated_at.get(..10).unwrap_or(&d.updated_at),
-        if d.current { tr!("  · this device (l3 logout signs it out)", "  · この端末（l3 logout でサインアウト）") } else { String::new() })).collect();
+        if d.current { tr!("  · this device (root3 logout signs it out)", "  · この端末（root3 logout でサインアウト）") } else { String::new() })).collect();
     // Each device's token stays here: it is the session itself (account::Device never writes it out).
     Ok(Reply::data(t.join("\n"), json!(list)))
 }
@@ -115,14 +115,14 @@ pub fn devices_rm(_: &Ctx, call: &Call) -> Result<Reply> {
     // Said as written: a number too large to read is no device either (it was said as 0).
     let given = call.word(1).unwrap_or_default();
     let k: usize = given.parse().unwrap_or(0);
-    let d = list.get(k.wrapping_sub(1)).ok_or_else(|| Error::NotFound(tr!("There is no device {} (l3 remote devices numbers them, 1 to {})", "{} 番の端末はありません（l3 remote devices の番号、1〜{}）", given, list.len())))?;
-    if d.current { return Err(Error::Refused(tr!("That is this device: l3 logout signs it out", "それはこの端末です。l3 logout でサインアウトします"))); }
+    let d = list.get(k.wrapping_sub(1)).ok_or_else(|| Error::NotFound(tr!("There is no device {} (root3 remote devices numbers them, 1 to {})", "{} 番の端末はありません（root3 remote devices の番号、1〜{}）", given, list.len())))?;
+    if d.current { return Err(Error::Refused(tr!("That is this device: root3 logout signs it out", "それはこの端末です。root3 logout でサインアウトします"))); }
     account::end_device(&d.token)?;
     let word = account::device_word(d.user_agent.as_deref());
     Ok(Reply::done(tr!("Signed out {}; it is approved again to come back", "{} をサインアウトさせました。戻るにはもう一度承認します", word), json!({"removed": k, "device": word})))
 }
 
-/// `l3 login [URL]`: a code to approve in a browser, then every repo here brought into step.
+/// `root3 login [URL]`: a code to approve in a browser, then every repo here brought into step.
 pub fn login(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let url = call.word(0).map_or_else(remote::default_url, |u| u.trim_end_matches('/').to_string());
     if !remote::valid_url(&url) {
@@ -133,23 +133,23 @@ pub fn login(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // repos go to this one first, as signing out sends them.
     if let (Some(c), Ok(Some(a))) = (remote::connection(), remote::account()) {
         if c.url != remote::current_url(&url) {
-            return Err(Error::Refused(tr!("This device is signed in to {}: l3 logout first (it sends every repo there), then l3 login {}", "この端末は {} にサインインしています。先に l3 logout（各 repo をそこへ送ります）、それから l3 login {}", host(&c.url), url)));
+            return Err(Error::Refused(tr!("This device is signed in to {}: root3 logout first (it sends every repo there), then root3 login {}", "この端末は {} にサインインしています。先に root3 logout（各 repo をそこへ送ります）、それから root3 login {}", host(&c.url), url)));
         }
         return Ok(Reply::done(tr!("Signed in already · {} as {}", "サインイン済みです · {}（{}）", host(&c.url), a.name), json!({"url": c.url, "changed": false, "repos": []})));
     }
-    let code = remote::device_start(&url, "l3")?;
-    // Only a page that Remote stands behind is shown to open, as the app opens only such a page (bug: l3
+    let code = remote::device_start(&url, "root3")?;
+    // Only a page that Remote stands behind is shown to open, as the app opens only such a page (bug: root3
     // printed whatever page was named, for a person to open and approve this device on).
     if !remote::device_page_ok(&url, remote::app_origin(&url).as_deref(), &code.verification_uri_complete) {
         return Err(Error::Refused(tr!("{} named a page that is not its own to approve this device on; nothing was signed in", "{} が、この端末を承認するページとして自分のものでないページを示しました。サインインしていません", url)));
     }
-    // Seen before l3 waits (on standard error when standard output is data).
+    // Seen before root3 waits (on standard error when standard output is data).
     let say = |s: &str| if call.flags.json { eprintln!("{s}") } else { out::line(s) };
     say(&tr!("Open this page in a browser and approve:", "ブラウザでこのページを開き、承認してください："));
     say(&format!("  {}", out::plain(&code.verification_uri_complete)));
     say(&tr!("  code {}", "  コード {}", out::plain(&code.user_code)));
     eprint!("{}", tr!("Waiting for approval…", "承認を待っています…"));
-    let done = remote::device_finish(&url, "l3", &code);
+    let done = remote::device_finish(&url, "root3", &code);
     eprintln!();
     done?;
     let mut t = vec![tr!("Signed in · {}", "サインインしました · {}", host(&url))];
@@ -174,8 +174,8 @@ pub fn logout(ctx: &Ctx, _: &Call) -> Result<Reply> {
 
 /// Kept in step by itself (sync.rs): there is nothing to ask for.
 pub fn no_sync(_: &Ctx, _: &Call) -> Result<Reply> {
-    Err(Error::Usage(tr!("There is no l3 sync: every change goes to the Remote by itself, and the Remote's come in when a repo is read. l3 remote shows where each repo stands",
-        "l3 sync はありません。変更はひとりでに Remote へ送られ、Remote の変更は repo を読むときに取り込まれます。l3 remote で各 repo の状態を見られます")))
+    Err(Error::Usage(tr!("There is no root3 sync: every change goes to the Remote by itself, and the Remote's come in when a repo is read. root3 remote shows where each repo stands",
+        "root3 sync はありません。変更はひとりでに Remote へ送られ、Remote の変更は repo を読むときに取り込まれます。root3 remote で各 repo の状態を見られます")))
 }
 
 /// A size as the Remote's allowance is said (a megabyte a million bytes, as the app says it).
@@ -206,9 +206,9 @@ fn price_words(p: &account::Price) -> String {
     format!("{money} {per}")
 }
 
-/// `l3 remote plan`: the tier the account is on, until when, what the Remote keeps against what that tier keeps,
-/// and the tiers beside it, as the Remote says it (it decides; l3 shows). The page to subscribe to a tier on is
-/// `l3 remote plan subscribe TIER`; to change tier or manage, `l3 remote plan switch TIER` and `l3 remote plan manage`.
+/// `root3 remote plan`: the tier the account is on, until when, what the Remote keeps against what that tier keeps,
+/// and the tiers beside it, as the Remote says it (it decides; root3 shows). The page to subscribe to a tier on is
+/// `root3 remote plan subscribe TIER`; to change tier or manage, `root3 remote plan switch TIER` and `root3 remote plan manage`.
 pub fn plan(_: &Ctx, _: &Call) -> Result<Reply> {
     let p = account::plan()?;
     if p.plan == "none" {
@@ -245,15 +245,15 @@ pub fn plan(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(if paid { tr!("Paid gives", "有料プランで使えるもの") } else { tr!("Paid adds", "有料プランで増えるもの") });
     for a in paid_adds() { t.push(format!("  {a}")); }
     t.push(if !p.buy { tr!("Paid features cannot be bought on this Remote yet", "この Remote ではまだ有料プランを購入できません") }
-        else if paid && p.manage { tr!("l3 remote plan manage gives the page to manage or cancel it; l3 remote plan switch go|pro|max, to change tier",
-            "l3 remote plan manage で管理・解約するページを、l3 remote plan switch go|pro|max でプランを変えるページを出します") }
+        else if paid && p.manage { tr!("root3 remote plan manage gives the page to manage or cancel it; root3 remote plan switch go|pro|max, to change tier",
+            "root3 remote plan manage で管理・解約するページを、root3 remote plan switch go|pro|max でプランを変えるページを出します") }
         else if paid { String::new() }
-        else { tr!("l3 remote plan subscribe go|pro|max gives the page to subscribe on", "l3 remote plan subscribe go|pro|max で登録するページを出します") });
+        else { tr!("root3 remote plan subscribe go|pro|max gives the page to subscribe on", "root3 remote plan subscribe go|pro|max で登録するページを出します") });
     t.retain(|l| !l.is_empty());
     Ok(Reply::data(t.join("\n"), json!(p)))
 }
 
-/// `l3 remote plan subscribe [TIER]|manage|switch TIER`: the page, as the Remote makes it for this account (Stripe's),
+/// `root3 remote plan subscribe [TIER]|manage|switch TIER`: the page, as the Remote makes it for this account (Stripe's),
 /// to open in a browser: Checkout for a tier (none named, the least sold), the portal, or the portal at the step
 /// that changes the tier.
 pub fn plan_page(_: &Ctx, call: &Call) -> Result<Reply> {

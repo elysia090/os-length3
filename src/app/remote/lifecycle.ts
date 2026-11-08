@@ -2,7 +2,7 @@
 // is on the Remote; what is here is a copy kept in step with it.
 //
 //                comes by itself                goes by itself
-//   l3 (the OS)  web: fetched each visit        web: with the tab
+//   root3 (the OS)  web: fetched each visit        web: with the tab
 //   Prompt       when a repo is opened          its processes, when closed
 //   repo         the Remote's changes, seen     every change, sent at once as
 //                within seconds (and on focus)  a diff; web: the copy, with the

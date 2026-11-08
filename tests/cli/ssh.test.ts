@@ -48,29 +48,29 @@ const priv = (a: string) => listened.has(a);
 const others = [...new Set(v4.map((i) => i.addr).filter((a) => !a.startsWith('127.')))];
 
 interface Here { on: boolean; scope: string; port: number; bound: string[]; interfaces: {addr: string; interface: string}[]; destinations: string[]; fingerprint: string; keys: number }
-const here = () => ok(d.l3(['address', '--json'])).json as Here;
+const here = () => ok(d.root3(['address', '--json'])).json as Here;
 
 test('SSH: on from this device only, then the same network too, then back; the Remote hears the scope alone; a page turns it off', {skip: spawnSync('ssh-keygen', ['-?']).error ? 'no ssh-keygen' : false}, async () => {
   const port = await freePort();
   (d.env as Record<string, string>).LENGTH3_SSH_PORT = String(port);
   // The Remote asked every half second, not every 30 s: an off said on a page is heard within the test's wait.
   (d.env as Record<string, string>).LENGTH3_SSH_BEAT_MS = '500';
-  ok(d.l3(['repo', 'new', 'notes', '-t', 'empty']));
+  ok(d.root3(['repo', 'new', 'notes', '-t', 'empty']));
   const key = join(d.home, 'key');
   assert.equal(spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'kai@selftest', '-f', key]).status, 0);
-  ok(d.l3(['dotfile', 'write', '.authorized_keys'], readFileSync(`${key}.pub`, 'utf8')));
+  ok(d.root3(['dotfile', 'write', '.authorized_keys'], readFileSync(`${key}.pub`, 'utf8')));
   try {
     // On, with no scope said: this device only, at first.
-    const on = ok(d.l3(['address', 'ssh', 'on']));
+    const on = ok(d.root3(['address', 'ssh', 'on']));
     assert.match(on.out, /^SSH is on\nFrom this device only \(127\.0\.0\.1\): no other PC finds it\n1 key let in \(\.authorized_keys\)\nHost key SHA256:[A-Za-z0-9+/]{43} \(ssh shows it/);
     assert.match(on.out, new RegExp(`\\nssh -p ${port} notes@127\\.0\\.0\\.1\\n$`));
     let h = here();
     assert.deepEqual([h.on, h.scope, h.port, h.keys, h.destinations], [true, 'device', port, 1, [`ssh -p ${port} notes@127.0.0.1`]]);
     assert.ok(h.bound.every((a) => a === '127.0.0.1' || a === '::1') && h.bound.includes('127.0.0.1'), h.bound.join());
-    // l3 address: the destinations on standard output, one a line; what to check of them on standard error.
-    const shown = ok(d.l3(['address']));
+    // root3 address: the destinations on standard output, one a line; what to check of them on standard error.
+    const shown = ok(d.root3(['address']));
     assert.equal(shown.out, `ssh -p ${port} notes@127.0.0.1\n`);
-    assert.match(shown.err, /^l3: From this device only \(127\.0\.0\.1\)[^\n]*\nl3: 1 key let in \(\.authorized_keys\)\nl3: Host key SHA256:/);
+    assert.match(shown.err, /^root3: From this device only \(127\.0\.0\.1\)[^\n]*\nroot3: 1 key let in \(\.authorized_keys\)\nroot3: Host key SHA256:/);
     // Reached on loopback it says the protocol and a plain name; on any other address of this host nothing listens at all.
     assert.equal(await reach('127.0.0.1', port), 'SSH-2.0-length3');
     for (const a of others) assert.equal(await reach(a, port), 'ECONNREFUSED', a);
@@ -80,20 +80,20 @@ test('SSH: on from this device only, then the same network too, then back; the R
     for (const never of [String(port), '127.0.0.1', 'notes', ...others]) assert.ok(!JSON.stringify(seen).includes(never), never);
 
     // The same network too: each private address of this host besides, and never a public one.
-    const wide = ok(d.l3(['address', 'ssh', 'on', 'network']));
+    const wide = ok(d.root3(['address', 'ssh', 'on', 'network']));
     assert.match(wide.out, /^SSH stays on; who may connect changed\nFrom PCs on the same network too/);
     h = here();
     assert.equal(h.scope, 'network');
     assert.deepEqual(h.bound.filter((a) => a !== '127.0.0.1' && a !== '::1').sort(), others.filter(priv).sort());
-    // Each named with its interface, as l3 address and the card say it.
+    // Each named with its interface, as root3 address and the card say it.
     assert.deepEqual(h.interfaces.map((t) => `${t.interface} ${t.addr}`).sort(), v4.filter((i) => priv(i.addr)).map((i) => `${i.name} ${i.addr}`).sort());
     for (const a of others) assert.equal(await reach(a, port), priv(a) ? 'SSH-2.0-length3' : 'ECONNREFUSED', a);
     // The Remote hears the new scope as soon as it is chosen.
     for (let i = 0; i < 100 && ((await r.api(kai, 'GET', '/v1/ssh')).json as {scope: string}[])[0]?.scope !== 'network'; i++) await new Promise((w) => setTimeout(w, 100));
     assert.deepEqual(((await r.api(kai, 'GET', '/v1/ssh')).json as {scope: string}[]).map((s) => s.scope), ['network']);
     // Kept on this device: on, said again with no scope, stays as chosen; then back to this device only.
-    assert.equal((ok(d.l3(['address', 'ssh', 'on', '--json'])).json as {ssh: Here}).ssh.scope, 'network');
-    ok(d.l3(['address', 'ssh', 'on', 'device']));
+    assert.equal((ok(d.root3(['address', 'ssh', 'on', '--json'])).json as {ssh: Here}).ssh.scope, 'network');
+    ok(d.root3(['address', 'ssh', 'on', 'device']));
     h = here();
     assert.equal(h.scope, 'device');
     assert.ok(h.bound.every((a) => a === '127.0.0.1' || a === '::1'), h.bound.join());
@@ -103,11 +103,11 @@ test('SSH: on from this device only, then the same network too, then back; the R
     const id = ((await r.api(kai, 'GET', '/v1/ssh')).json as {device: string}[])[0].device;
     assert.equal((await r.api(kai, 'PUT', '/v1/ssh/this', {scope: 'network'})).status, 403);
     assert.equal((await r.api(kai, 'POST', `/v1/ssh/${id}/off`)).status, 200);
-    let off: Ran = d.l3(['address']);
-    for (let i = 0; i < 150 && off.code !== 5; i++) { await new Promise((w) => setTimeout(w, 100)); off = d.l3(['address']); }
+    let off: Ran = d.root3(['address']);
+    for (let i = 0; i < 150 && off.code !== 5; i++) { await new Promise((w) => setTimeout(w, 100)); off = d.root3(['address']); }
     assert.equal(off.code, 5, off.err);
     assert.equal(await reach('127.0.0.1', port), 'ECONNREFUSED');
   } finally {
-    d.l3(['address', 'ssh', 'off']);
+    d.root3(['address', 'ssh', 'off']);
   }
 });

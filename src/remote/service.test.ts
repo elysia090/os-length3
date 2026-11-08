@@ -57,13 +57,13 @@ test('an account is a provider identity: the same person signs in to the same ac
 test('a device asks for a code, a signed-in browser approves it, the device gets its own session', async () => {
   const s = await service();
   const t = await s.start();
-  const asked = await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}});
+  const asked = await s.call('POST', '/api/auth/device/code', {body: {client_id: 'root3'}});
   assert.equal(asked.status, 200, JSON.stringify(asked.json));
   const {device_code, user_code, verification_uri_complete} = asked.json as unknown as {device_code: string; user_code: string; verification_uri_complete: string};
   assert.ok(verification_uri_complete.startsWith(`${APP}/?device`));
   // On the origin the Remote says its app is on, by whatever name a device reaches it (src/core/src/remote/login.rs device_page_ok).
   assert.ok(verification_uri_complete.startsWith(`${(await s.call('GET', '/v1/about')).json.app}/?device`));
-  const poll = () => s.call('POST', '/api/auth/device/token', {body: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code, client_id: 'l3'}});
+  const poll = () => s.call('POST', '/api/auth/device/token', {body: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code, client_id: 'root3'}});
   assert.equal((await poll()).json.error, 'authorization_pending');
   // Unknown clients cannot ask.
   assert.notEqual((await s.call('POST', '/api/auth/device/code', {body: {client_id: 'someone-else'}})).status, 200);
@@ -101,10 +101,10 @@ test('what would let someone in for good, or shut the person out, asks for a sig
   await s.db.update(schema.guard).set({proofSession: await sessionOf(s, t), proofAt: new Date()}).where(sql`user_id = ${me}`);
   assert.equal((await s.call('GET', '/api/auth/passkey/generate-register-options', {token: t})).status, 200);
   // A device's own session (the device flow's: never a sign-in) does none of it, however new.
-  const asked = (await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}})).json as unknown as {device_code: string; user_code: string};
+  const asked = (await s.call('POST', '/api/auth/device/code', {body: {client_id: 'root3'}})).json as unknown as {device_code: string; user_code: string};
   await s.call('GET', `/api/auth/device?user_code=${encodeURIComponent(asked.user_code)}`, {token: t});
   assert.equal((await s.call('POST', '/api/auth/device/approve', {token: t, body: {userCode: asked.user_code}})).status, 200);
-  const device = (await s.call('POST', '/api/auth/device/token', {body: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: asked.device_code, client_id: 'l3'}})).json.access_token as string;
+  const device = (await s.call('POST', '/api/auth/device/token', {body: {grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: asked.device_code, client_id: 'root3'}})).json.access_token as string;
   assert.ok(device);
   await confirm(device);
 });
@@ -136,7 +136,7 @@ test('Devices: another device is signed out from any of the account\'s, and from
   // Another account cannot end it, even holding the row's token: it is not that account's session.
   await s.call('POST', '/api/auth/revoke-session', {token: mio, body: {token: phoneRow.token}});
   assert.equal((await s.call('GET', '/v1/repos', {token: phone})).status, 200);
-  // The same call l3 makes (`l3 remote devices rm N`) and the row's Sign out makes: the phone is out, the laptop stays.
+  // The same call root3 makes (`root3 remote devices rm N`) and the row's Sign out makes: the phone is out, the laptop stays.
   assert.equal((await s.call('POST', '/api/auth/revoke-session', {token: laptop, body: {token: phoneRow.token}})).status, 200);
   assert.equal((await s.call('GET', '/v1/repos', {token: phone})).status, 401);
   assert.equal((await s.call('GET', '/v1/repos', {token: laptop})).status, 200);
@@ -146,7 +146,7 @@ test('Devices: another device is signed out from any of the account\'s, and from
 test('SSH: a device says it listens, and to whom, but never where; any of the account\'s pages may stop it, a page never starts one, and no one else sees or stops it', async () => {
   const s = await service();
   const laptop = await s.start('Ren'), web = await s.start('Ren'), mio = await s.start('Mio');
-  // As l3 and the app's core call: the bearer, and no Origin (a browser always sends one).
+  // As root3 and the app's core call: the bearer, and no Origin (a browser always sends one).
   const device = async (method: string, path: string, token: string, body?: unknown) => {
     const r = await s.app.request(`${BASE}${path}`, {method, headers: {Authorization: `Bearer ${token}`, ...(body === undefined ? {} : {'Content-Type': 'application/json'})},
       body: body === undefined ? undefined : JSON.stringify(body)});
@@ -163,7 +163,7 @@ test('SSH: a device says it listens, and to whom, but never where; any of the ac
   assert.deepEqual(Object.keys(seen[0]).sort(), ['agent', 'current', 'device', 'scope', 'seen', 'since']);
   assert.ok(seen[0].since > 0 && seen[0].seen >= seen[0].since);
   assert.equal((await listed(laptop))[0].current, true);
-  // An older l3 still sends where it is reached: none of it is kept, and none of it is ever answered.
+  // An older root3 still sends where it is reached: none of it is kept, and none of it is ever answered.
   const old = {port: 22000, destinations: ['ssh -p 22000 notes@192.168.1.5', 'ssh -p 22000 trip@192.168.1.5']};
   assert.equal((await device('PUT', '/v1/ssh/this', laptop, old)).status, 200);
   assert.equal((await device('POST', '/v1/ssh/this/beat', laptop, {destinations: old.destinations})).json.on, true);
@@ -312,7 +312,7 @@ test('an account sees only its own: blobs, repos, settings', async () => {
   assert.deepEqual((await s.call('PUT', '/v1/home/todo', {token: a, body: {value: '["y"]', version: 1}})).json, {value: '["x"]', version: 2});
 });
 
-test('Home\'s settings answer as src/shared/home-sync.json records them, which the app and l3 are written against', async () => {
+test('Home\'s settings answer as src/shared/home-sync.json records them, which the app and root3 are written against', async () => {
   const s = await service();
   const t = await s.start();
   for (const [i, x] of homeSync.exchanges.entries()) {
@@ -508,7 +508,7 @@ test('main takes commits of its own; a review may ask for changes; what was merg
     assert.equal(r.status, 201, JSON.stringify(r.json));
     return r.json.id as string;
   };
-  // Commit on main, named by its line as `l3 commit r "Docs：…"` names it, once and again after an edit.
+  // Commit on main, named by its line as `root3 commit r "Docs：…"` names it, once and again after an edit.
   await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 0, set: {'README.md': readme}, remove: []}});
   const first = await commitOn('main', 'Docs', 'Start');
   await s.call('PATCH', '/v1/repos/r/draft', {token: t, body: {version: 1, set: {'README.md': edited, 'issue/001.md': issue}, remove: []}});
@@ -1485,7 +1485,7 @@ test('The sweep lets go of sessions, devices\' codes and verifications that ran 
   const s = await service();
   const t = await s.start('Ren');
   const me = await idOf(s, t);
-  assert.equal((await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}})).status, 200);
+  assert.equal((await s.call('POST', '/api/auth/device/code', {body: {client_id: 'root3'}})).status, 200);
   // Written as Better Auth writes them (UTC, without a zone): one run out a minute ago of each.
   const ago = new Date(Date.now() - 60_000);
   await s.db.insert(schema.session).values({id: 'gone-session', token: 'gone-token', userId: me, expiresAt: ago, updatedAt: ago});

@@ -118,8 +118,8 @@ function hereRows(u: Space, repo: RepoParts): HTMLElement[] {
   return u.items.map((i) => {
     const isRepo = i.id.startsWith('repo:');
     const repoNote = isRepo ? syncWord(repoState(i.what)) : '';
-    // l3 is a command's name, written as code is (in the sans face its l reads as a capital I).
-    const name = isRepo ? repo.name(i.what) : i.id === 'l3' ? h('code', {class: 'mono'}, i.what) : i.what;
+    // root3 is a command's name, written as code is (in the sans face its l reads as a capital I).
+    const name = isRepo ? repo.name(i.what) : i.id === 'root3' ? h('code', {class: 'mono'}, i.what) : i.what;
     return thing(name, i.allocated, [i.detail, repoNote].filter(Boolean).join(' · '), null,
       i.room === 'Keep' ? i.why : '', isRepo ? repo.gear(i.what, i.room === 'Keep' ? i.why : null) : undefined);
   });
@@ -160,7 +160,7 @@ function remoteColumn(repo: RepoParts, again: (r: Freed | null) => void, error: 
   // What is only there, not all it holds: its size is what would come here.
   const col = column('remote-col', t('Remote only'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,
     connection() ? t('Fully synced locally') : t('Sign in to view Remote data'));
-  // The release root is fetched only where Prompts run on it; elsewhere they run translated, and l3 comes as it is read.
+  // The release root is fetched only where Prompts run on it; elsewhere they run translated, and root3 comes as it is read.
   void rootHere().then((here) => (here.native ? rootStatus() : null)).then((root) => { if (root && !root.current) rootRow(col, root, again); }, (e) => { error.textContent = errorText(e); });
   return col;
 }

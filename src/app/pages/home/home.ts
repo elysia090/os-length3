@@ -406,7 +406,7 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
     const w = header.parentElement?.clientWidth ?? 0;
     if (w !== wide) { wide = w; fitName(header); }
   }).observe(header);
-  // Kept elsewhere meanwhile (the Remote's, taken in as one signs in; l3; another tab): drawn as it is now, unless it
+  // Kept elsewhere meanwhile (the Remote's, taken in as one signs in; root3; another tab): drawn as it is now, unless it
   // is being written.
   const stop = onState((key, outside) => {
     if (key !== 'profile' || !outside) return;

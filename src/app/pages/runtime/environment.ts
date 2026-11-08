@@ -14,7 +14,7 @@ import {button} from './parts.ts';
  * pinned by digest), and a root of one's own. In the app each other one can be
  * used with a press (Use, at its right): fetched if it is not here, then the
  * one Prompts run on, set up from .packages and .setup at the next Prompt. In
- * a browser only l3 runs (through xlat, which does not link programs as they
+ * a browser only root3 runs (through xlat, which does not link programs as they
  * run); the others say where they do. Custom is not yet.
  */
 export function environment(): HTMLElement {
@@ -62,9 +62,9 @@ function use(id: string, note: HTMLElement, again: () => void): HTMLButtonElemen
   return b;
 }
 
-/** In the app: the root in effect at the top (l3's or a distribution's), each other one with Use, and Custom. */
+/** In the app: the root in effect at the top (root3's or a distribution's), each other one with Use, and Custom. */
 function inTheApp(root: RootStatus, again: () => void): Node[] {
-  const now = root.current?.distro ?? (root.current ? 'l3' : null);
+  const now = root.current?.distro ?? (root.current ? 'root3' : null);
   const all = roots(root, now);
   const current = all.find((e) => e.id === now);
   return [...(current ? top(current.name, current.version, current.what, current.sha) : [h('span', {class: 'card-title'}, t('Active environment'))]),
@@ -72,23 +72,23 @@ function inTheApp(root: RootStatus, again: () => void): Node[] {
       custom())];
 }
 
-/** l3 and each distribution the app knows: its version, what it is (its size, when it is the one here), its digest. */
+/** root3 and each distribution the app knows: its version, what it is (its size, when it is the one here), its digest. */
 function roots(root: RootStatus, now: string | null) {
-  const l3 = root.current && now === 'l3' ? root.current : null;
+  const root3 = root.current && now === 'root3' ? root.current : null;
   return [
-    {id: 'l3', name: 'l3', version: l3?.version ?? root.release.version, what: l3 ? t('{name} · {size}', {name: l3.name, size: bytes(l3.bytes)}) : root.release.name, sha: l3?.sha256 ?? ''},
+    {id: 'root3', name: 'root3', version: root3?.version ?? root.release.version, what: root3 ? t('{name} · {size}', {name: root3.name, size: bytes(root3.bytes)}) : root.release.name, sha: root3?.sha256 ?? ''},
     ...root.distros.map((d) => {
       const held = root.current?.distro === d.id ? root.current : null;
       return {id: d.id, name: d.name, version: d.version, what: held ? t('{name} · {size}', {name: d.name, size: bytes(held.bytes)}) : t('apt; provisioned via .packages and .setup'), sha: held?.sha256 ?? ''};
     })];
 }
 
-/** On the web: l3 at the top (`a`, as this build carries it), and the others, which run in the app. */
+/** On the web: root3 at the top (`a`, as this build carries it), and the others, which run in the app. */
 function onTheWeb(a: Awaited<ReturnType<typeof about>>): Node[] {
-  // The same l3 as the app's: its version, and the digest of the root it is (src/core/src/root/), run here through xlat.
-  // A build that carries no l3 says so in l3's own row: Ubuntu, Debian and Custom are under it all the same.
-  return [...(a ? top('l3', a.version, t('{name} · via xlat', {name: a.root.name}), a.sha256)
-    : top('l3', '', t('l3 missing (run: npm run webroot)'), '')),
+  // The same root3 as the app's: its version, and the digest of the root it is (src/core/src/root/), run here through xlat.
+  // A build that carries no root3 says so in root3's own row: Ubuntu, Debian and Custom are under it all the same.
+  return [...(a ? top('root3', a.version, t('{name} · via xlat', {name: a.root.name}), a.sha256)
+    : top('root3', '', t('root3 missing (run: npm run webroot)'), '')),
   others(other('Ubuntu', '26.04.1 LTS', t('App only'), null),
     other('Debian', '13.7', t('App only'), null),
     custom())];

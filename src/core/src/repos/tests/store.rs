@@ -62,7 +62,7 @@ fn a_link_to_nothing_is_known_from_a_file_that_is_not_there() {
     std::os::unix::fs::symlink("nowhere", r.root.join("a/dangling")).unwrap();
     std::os::unix::fs::symlink("README.md", r.root.join("a/readme")).unwrap();
     assert!(r.dangling("a", "dangling"));
-    // What reading it says is "there is no" (l3 says it with 4, as for anything not there).
+    // What reading it says is "there is no" (root3 says it with 4, as for anything not there).
     assert!(r.read("a", "dangling", 100).is_err());
     for not in ["readme", "README.md", "missing", "missing/deeper"] { assert!(!r.dangling("a", not), "{not}"); }
     assert!(!r.dangling("nope", "dangling"));
@@ -365,7 +365,7 @@ mod shared_cases {
 
     #[test]
     fn two_todo_lists_are_joined_as_the_app_joins_them() {
-        // Compared as JSON (l3 writes an item's fields in its own order), or as text where it is none.
+        // Compared as JSON (root3 writes an item's fields in its own order), or as text where it is none.
         let read = |t: &str| serde_json::from_str::<Value>(t).unwrap_or_else(|_| Value::String(t.into()));
         let got = |c: &Value| read(&crate::home::join_todo(s(&c["base"]), s(&c["here"]), s(&c["there"])));
         assert_eq!(disagreeing("todoJoin", |c| read(s(&c["want"])), got), Vec::<String>::new());

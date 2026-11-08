@@ -22,13 +22,13 @@
 //               (test.use({storageState: ({helloC}, use) => use(helloC)})) has
 //               each open the app on that repo in a fresh browser of its own,
 //               as on coming back to it, rather than making it again each time
-//   l3Ahead     (an option, false) true: the translation of l3 made ahead of
+//   root3Ahead     (an option, false) true: the translation of root3 made ahead of
 //               time, which a Prompt fetches and compiles for the Prompts after
-//               it 3 s after its prompt line is up (src/app/prompt/userland.ts warmL3), is
+//               it 3 s after its prompt line is up (src/app/prompt/userland.ts warmRoot3), is
 //               served. Otherwise the browser refuses it, as a line that broke,
 //               and the app goes without it: 20 MB unpacked, checked and
 //               compiled, half of what a test that opens Forge spends on its
-//               Prompt, for l3 in a later Prompt, which only first-prompt.spec.ts
+//               Prompt, for root3 in a later Prompt, which only first-prompt.spec.ts
 //               runs. The Prompt itself (BusyBox's sh) starts and runs in every
 //               test, as it does for a person.
 //
@@ -71,8 +71,8 @@ export function addressOf(info: TestInfo, who = 'Ada'): string {
 }
 
 /**
- * The files of what a Prompt is given ahead of time for the Prompts after it (each translation in the build's l3 but
- * those a Prompt starts with: src/app/prompt/first.ts), as the browser's blocked URLs say them; none in a build without l3.
+ * The files of what a Prompt is given ahead of time for the Prompts after it (each translation in the build's root3 but
+ * those a Prompt starts with: src/app/prompt/first.ts), as the browser's blocked URLs say them; none in a build without root3.
  */
 const AHEAD: string[] = (() => {
   const about = join(OUT, 'webroot', 'webroot.json');
@@ -83,7 +83,7 @@ const AHEAD: string[] = (() => {
 })();
 
 /**
- * In `page`, what a Prompt is given ahead of time does not come (fixtures.ts, l3Ahead), unless `ahead`: refused by the
+ * In `page`, what a Prompt is given ahead of time does not come (fixtures.ts, root3Ahead), unless `ahead`: refused by the
  * browser, which the app takes as a line that broke and, after a few tries, goes without. (Not by a route: a route
  * has every request of the page go through Playwright, and the HTTP cache off.)
  */
@@ -145,11 +145,11 @@ async function opened(browser: Browser, url: string, address: string): Promise<{
   return o;
 }
 
-export const test = base.extend<{l3Ahead: boolean; app: App; signedIn: App; another: (who: string) => Promise<App>; planSignedIn: App}, {helloC: Kept}>({
+export const test = base.extend<{root3Ahead: boolean; app: App; signedIn: App; another: (who: string) => Promise<App>; planSignedIn: App}, {helloC: Kept}>({
   baseURL: async ({}, use) => {
     await use(appURL());
   },
-  l3Ahead: [false, {option: true}],
+  root3Ahead: [false, {option: true}],
   helloC: [async ({browser}, use, info) => {
     // Made through the app, as `app.newRepo.make` makes it, by a browser of its own that no test is.
     const [a, b, c] = createHash('sha256').update(`hello in C, worker ${info.workerIndex}`).digest();
@@ -163,40 +163,40 @@ export const test = base.extend<{l3Ahead: boolean; app: App; signedIn: App; anot
     await o.close();
     await use(kept);
   }, {scope: 'worker'}],
-  app: async ({page, l3Ahead}, use, info) => {
+  app: async ({page, root3Ahead}, use, info) => {
     await remoteAnswers();
     await page.context().setExtraHTTPHeaders({'CF-Connecting-IP': addressOf(info)});
-    await holdAhead(page, l3Ahead);
+    await holdAhead(page, root3Ahead);
     const app = new App(page);
     await app.withPasskeys();
     await app.open();
     await use(app);
   },
   // Opened once, already signed in: not opened signed out first, then signed in.
-  signedIn: async ({page, baseURL, l3Ahead}, use, info) => {
+  signedIn: async ({page, baseURL, root3Ahead}, use, info) => {
     await remoteAnswers();
     await page.context().setExtraHTTPHeaders({'CF-Connecting-IP': addressOf(info)});
-    await holdAhead(page, l3Ahead);
+    await holdAhead(page, root3Ahead);
     const app = new App(page);
     await app.withPasskeys();
     await signInAt(app, baseURL!, personName(info));
     await use(app);
   },
-  another: async ({browser, baseURL, l3Ahead}, use, info) => {
+  another: async ({browser, baseURL, root3Ahead}, use, info) => {
     const opened_: {close(): Promise<void>}[] = [];
     await use(async (who) => {
       // A second device of the same person is somewhere else too.
-      const o = await browserAt(browser, baseURL!, addressOf(info, `${who} ${opened_.length + 1}`), l3Ahead);
+      const o = await browserAt(browser, baseURL!, addressOf(info, `${who} ${opened_.length + 1}`), root3Ahead);
       opened_.push(o);
       await signInAt(o.app, baseURL!, personName(info, who));
       return o.app;
     });
     for (const o of opened_) await o.close();
   },
-  planSignedIn: async ({browser, l3Ahead}, use, info) => {
+  planSignedIn: async ({browser, root3Ahead}, use, info) => {
     const url = process.env.SELFTEST_PLAN_APP;
     if (!url) throw new Error('SELFTEST_PLAN_APP is not set: run the selftest with `npm run selftest` (global-setup.ts starts the Remote with the plan)');
-    const o = await browserAt(browser, url, addressOf(info, 'Plan'), l3Ahead);
+    const o = await browserAt(browser, url, addressOf(info, 'Plan'), root3Ahead);
     await signInAt(o.app, url, personName(info));
     await use(o.app);
     await o.close();

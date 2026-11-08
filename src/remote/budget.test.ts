@@ -189,7 +189,7 @@ test('past its brim too, a full database takes no sign-in, no device\'s code and
   const t = await s.start();
   // Up to the brim, signing in was let through a full database (start() signed in): now past it.
   const past = await service({}, {limits: limits({database: 1, brim: 1})});
-  const code = await past.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}});
+  const code = await past.call('POST', '/api/auth/device/code', {body: {client_id: 'root3'}});
   assert.deepEqual([code.status, code.json.budget], [507, true]);
   assert.equal((await past.call('POST', '/v1/stripe/webhook', {body: {}})).status, 507);
   // Taking away is never refused: a repo discarded, a session ended.

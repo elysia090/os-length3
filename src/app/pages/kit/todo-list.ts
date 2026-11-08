@@ -471,7 +471,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   };
 }
 
-/** Home's TODO: one list for the person, kept in Home's state (the same file l3 todo reads). */
+/** Home's TODO: one list for the person, kept in Home's state (the same file root3 todo reads). */
 export function todoBox(): HTMLElement {
   const status = h('p', {class: 'error', role: 'alert'});
   const remaining = h('small', {});
@@ -480,7 +480,7 @@ export function todoBox(): HTMLElement {
   // Named TODO alone: what is left and Clear done stand on its line, at its right.
   const section = h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
     h('h2', {}, h('span', {id: 'todo-title'}, 'TODO'), h('span', {class: 'todo-left'}, remaining, box.clear)), box.element, status);
-  // Kept elsewhere meanwhile (the Remote's, taken in as one signs in; l3; another tab): the list shows it (bug: Home
+  // Kept elsewhere meanwhile (the Remote's, taken in as one signs in; root3; another tab): the list shows it (bug: Home
   // drawn before the Remote's TODO came in showed none until it was drawn again).
   const stop = onState((key, outside) => {
     if (key !== 'todo' || !outside) return;

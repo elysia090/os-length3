@@ -1,4 +1,4 @@
-// l3's files checked off the page's thread (userland.ts): unpacked when they are packed, and their SHA-256 taken,
+// root3's files checked off the page's thread (userland.ts): unpacked when they are packed, and their SHA-256 taken,
 // which the browser works out on the thread that asks for it (8 MB holds that thread 27 ms): here, never where the
 // page draws and is written in. A buffer lent comes back with the answer, so nothing large is copied on the way.
 //

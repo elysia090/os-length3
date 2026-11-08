@@ -1,5 +1,5 @@
 {
-  "comment": "Cases both the app (TypeScript) and l3 (Rust) must agree on.",
+  "comment": "Cases both the app (TypeScript) and root3 (Rust) must agree on.",
   "kind": [
     [
       "Fix：再起動すると保存内容が消える",

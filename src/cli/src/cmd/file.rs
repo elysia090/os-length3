@@ -11,14 +11,14 @@ use length3_core::repos::store::{is_issues, shown, ISSUES};
 use length3_core::tr;
 use serde_json::json;
 
-/// What l3 reads or writes of a file at most.
+/// What root3 reads or writes of a file at most.
 const LIMIT: u64 = 256 * 1024;
 
-/// A repo's issues are not files to l3 file (length3_core::repos::store::is_issues): they are read and written as issues, with l3 issue.
+/// A repo's issues are not files to root3 file (length3_core::repos::store::is_issues): they are read and written as issues, with root3 issue.
 fn not_issues(repo: &str, rel: &str) -> Result<()> {
     if !is_issues(rel) { return Ok(()); }
-    Err(Error::Refused(tr!("The issues of {0} are kept by the OS: read one with l3 issue {0}#N, write one with l3 issue new {0} \"Fix：title\"",
-        "{0} の Issue は OS が持っています。読むには l3 issue {0}#N、書くには l3 issue new {0} \"Fix：件名\"", repo)))
+    Err(Error::Refused(tr!("The issues of {0} are kept by the OS: read one with root3 issue {0}#N, write one with root3 issue new {0} \"Fix：title\"",
+        "{0} の Issue は OS が持っています。読むには root3 issue {0}#N、書くには root3 issue new {0} \"Fix：件名\"", repo)))
 }
 
 pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -58,7 +58,7 @@ pub fn read(ctx: &Ctx, call: &Call) -> Result<Reply> {
             Ok(Reply::Raw { text: t, json })
         }
         None if call.flags.json => Ok(Reply::data(String::new(), json)),
-        None => Err(Error::Refused(tr!("{} is binary ({}); l3 shows text", "{} はバイナリです（{}）。l3 が見せるのはテキストです", at, bytes(c.size)))),
+        None => Err(Error::Refused(tr!("{} is binary ({}); root3 shows text", "{} はバイナリです（{}）。root3 が見せるのはテキストです", at, bytes(c.size)))),
     }
 }
 

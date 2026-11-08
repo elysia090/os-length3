@@ -1,7 +1,7 @@
-// The tree l3 is, read two ways, so the two can be held side by side:
+// The tree root3 is, read two ways, so the two can be held side by side:
 //
 //   nativeTree(TARBALL)  a release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst)
-//                        as l3 installs it on a device (src/core/src/root/pins.rs unpack):
+//                        as root3 installs it on a device (src/core/src/root/pins.rs unpack):
 //                        what is under root/, directories at least 0700, files
 //                        without set-id bits, symlinks as they are, a hard link the
 //                        same bytes as its file. No other kind is part of a root.
@@ -113,7 +113,7 @@ const inRoot = (name: string) => {
 };
 
 /**
- * The root in a release tarball, as l3 installs it, and its manifest file:
+ * The root in a release tarball, as root3 installs it, and its manifest file:
  * {entries, manifest}. `each(entry, bytes)` sees every file's bytes once
  * (scripts/webroot.ts packs them from here).
  */

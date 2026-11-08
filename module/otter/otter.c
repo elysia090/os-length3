@@ -240,8 +240,8 @@ static int describe(const char *name) {
     say(mark_of(m));
     say(" ");
     if (m == '+') say(ja ? "ここで動きます" : "runs here");
-    else if (m == 't') say(ja ? "あります。画面を描くので、出力だけを見せるこの Prompt では使えません。SSH で手元の端末から使えます (l3 address)"
-                                    : "here; it draws on a screen, and this Prompt shows output only: use it from a terminal over SSH (l3 address)");
+    else if (m == 't') say(ja ? "あります。画面を描くので、出力だけを見せるこの Prompt では使えません。SSH で手元の端末から使えます (root3 address)"
+                                    : "here; it draws on a screen, and this Prompt shows output only: use it from a terminal over SSH (root3 address)");
     else if (m == 'x') { say(ja ? "root にありますが、ここではまだ動きません: " : "in the root, not yet running here: "); say_n(r->why, r->whyn); }
     else {
       say(ja ? "この root にはありません" : "not in this root");

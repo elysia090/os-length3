@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 static SPOKEN: AtomicU8 = AtomicU8::new(0);
 
 /// Whether this process speaks Japanese: read once, and again after Home's `lang` is set (the app's core lives as
-/// long as its tab, and the person may change the language in it; l3 reads it once per command). Asked by every
+/// long as its tab, and the person may change the language in it; root3 reads it once per command). Asked by every
 /// `tr!`, so the asking is a load and a compare where it is written; the reading stays out of line.
 #[inline]
 pub fn ja() -> bool {

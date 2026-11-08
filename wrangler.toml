@@ -87,7 +87,7 @@ crons = ["41 4 * * *"]
 binding = "BLOBS"
 bucket_name = "length3-blobs"
 
-# The one name: the app's origin, the Remote the desktop app and l3 reach, what a domain's
+# The one name: the app's origin, the Remote the desktop app and root3 reach, what a domain's
 # record names (remote=os.length3.com), and the passkeys' (APP_ORIGIN).
 [[routes]]
 pattern = "os.length3.com"

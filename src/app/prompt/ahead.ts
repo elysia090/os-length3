@@ -4,12 +4,12 @@
 // (userland.ts keepTranslation), the run that wants it reads it instead. Nothing more is downloaded than that run
 // would have downloaded, nothing is asked of a server, and it holds offline: the release is not made bigger by
 // translations made for every program, which every browser would have to fetch whether it ran them or not.
-// Only the light are translated here: the heavy are the release's to translate, as BusyBox, l3 and git are. What
+// Only the light are translated here: the heavy are the release's to translate, as BusyBox, root3 and git are. What
 // building C runs (gcc, cc1's 40 MB of code, the assembler, the linker) translated here took a browser's time and
 // memory at every Prompt on a repo with C, built in or not, and held Prompts starting after it for minutes.
 
 import {entriesOf} from '../../../module/muk/runtime/table.ts';
-import {keepTranslation, originOf, threadsApart, translationKept, type Index, type L3} from './userland.ts';
+import {keepTranslation, originOf, threadsApart, translationKept, type Index, type Root3} from './userland.ts';
 
 /**
  * What anyone reaches for at a Prompt and the root has as a program of its own (not BusyBox's, which is hot; nor what
@@ -18,7 +18,7 @@ import {keepTranslation, originOf, threadsApart, translationKept, type Index, ty
 const REACHED = ['/usr/bin/grep', '/usr/bin/rg', '/usr/bin/fd', '/usr/bin/jq', '/usr/bin/make', '/usr/bin/curl', '/usr/bin/tar'];
 /**
  * The root's programs to translate ahead for a Prompt, the most worth it first: what anyone reaches for. The hot
- * programs (translated in the release: BusyBox, l3, git) are not among them.
+ * programs (translated in the release: BusyBox, root3, git) are not among them.
  */
 export function aheadFor(index: Index): string[] {
   const hot = new Set(index.translations.map((t) => t.path));
@@ -69,15 +69,15 @@ const entries = (index: Index) => { if (!tables.has(index)) tables.set(index, en
 /** A translation let go of before it was done (held: holdAhead), to be done again. */
 const DROPPED = 'dropped';
 /** One program translated in a worker of its own, which then ends (its memory goes back with it). */
-function translated(l3: L3, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null | typeof DROPPED> {
-  const pack = entries(l3.index)[f.pack];
+function translated(root3: Root3, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null | typeof DROPPED> {
+  const pack = entries(root3.index)[f.pack];
   return new Promise((resolve) => {
     const w = new Worker(new URL('./ahead.worker.ts', import.meta.url), {type: 'module'});
     const done = (v: Awaited<ReturnType<typeof translated>>) => { dropping = null; w.terminate(); resolve(v); };
     dropping = () => done(DROPPED);
     w.onmessage = ({data}) => done(data.error ? null : data);
     w.onerror = () => done(null);
-    w.postMessage({translator: l3.translator, url: new URL(l3.url, location.href).href, pack: l3.index.packs[f.pack].name,
+    w.postMessage({translator: root3.translator, url: new URL(root3.url, location.href).href, pack: root3.index.packs[f.pack].name,
       at: f.at, len: f.len, size: f.size, raw: !!f.raw, shared: threadsApart(), lines: pack.size, line: pack.get(f.at)?.line});
   });
 }
@@ -87,22 +87,22 @@ let going = false;
  * Translate `paths` ahead, one after another, each when the page has time, skipping what is kept already; each kept
  * is told to every Prompt listening (hearAhead). Once at a time in a page: a call while it goes adds nothing.
  */
-export async function translateAhead(l3: L3, paths: readonly string[]): Promise<void> {
+export async function translateAhead(root3: Root3, paths: readonly string[]): Promise<void> {
   if (going || typeof Worker !== 'function') return;
   going = true;
   try {
     for (const path of paths) {
-      const f = l3.index.files.find((x) => x.path === path);
+      const f = root3.index.files.find((x) => x.path === path);
       if (!f) continue;
-      const origin = originOf(l3.index, f);
-      if (await translationKept(l3, origin)) continue;
+      const origin = originOf(root3.index, f);
+      if (await translationKept(root3, origin)) continue;
       let got: Awaited<ReturnType<typeof translated>> = DROPPED;
       while (got === DROPPED) {
         await free();
         await idle();
-        got = await translated(l3, f);
+        got = await translated(root3, f);
       }
-      const url = got && await keepTranslation(l3, origin, got.wasm, got.segments);
+      const url = got && await keepTranslation(root3, origin, got.wasm, got.segments);
       if (url) for (const ear of ears) ear(origin, url);
     }
   } finally { going = false; }

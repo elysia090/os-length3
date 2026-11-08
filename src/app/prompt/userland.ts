@@ -17,9 +17,9 @@ export type {Segment};
 export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'function' && globalThis.crossOriginIsolated === true
   && typeof (Atomics as {waitAsync?: unknown}).waitAsync === 'function';
 
-// l3, the one thing the Prompt depends on: the release root the desktop app
+// root3, the one thing the Prompt depends on: the release root the desktop app
 // installs (src/core/src/root pins it, one entry for both), read here as the
-// browser reads it (scripts/webroot.ts). webroot.json says which l3 it is (its
+// browser reads it (scripts/webroot.ts). webroot.json says which root3 it is (its
 // version, and the sha256 of the root it was made from) and names its index
 // by digest; everything else is named by its digest too:
 //
@@ -30,18 +30,18 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 //                        Worker, one Range request), and used only once it is
 //                        what the table says (muk/runtime/table.ts)
 //   blobs/<sha256>.bin   the translator, and the hot programs (bash, the
-//                        Prompt's shell; BusyBox and its applets; l3; git,
+//                        Prompt's shell; BusyBox and its applets; root3; git,
 //                        each of its commands a name of it) with their
 //                        translations made ahead of time, gzip'd
 //
 // The first Prompt fetches webroot.json, the index, the translator, bash and BusyBox
-// with their translations; l3's own translation follows once the Prompt is up,
-// compiled quietly, for the Prompts started after (until then l3 is
+// with their translations; root3's own translation follows once the Prompt is up,
+// compiled quietly, for the Prompts started after (until then root3 is
 // translated here as it runs, as every other program is). What is fetched is kept in Cache Storage under
 // its digest (the packs, in the browser's HTTP cache, under theirs), so a
 // Prompt after the first fetches only webroot.json. What is kept is derived and
 // never canonical: it is checked against its digest whenever it is read,
-// whatever the current l3 no longer names goes, and it is only kept while
+// whatever the current root3 no longer names goes, and it is only kept while
 // the browser's storage has room for it (StorageManager.estimate), the
 // least recently used going first. Every Prompt's Worker gets the same
 // compiled modules: a Module is shared, not copied.
@@ -49,7 +49,7 @@ export const threadsApart = (): boolean => typeof SharedArrayBuffer === 'functio
 export interface Blob { path: string; sha256: string; size: number; bytes: number }
 export interface About {
   name: string; version: string;
-  /** The root this l3 was made from, by the digest src/core/src/root pins: the same as the app's. */
+  /** The root this root3 was made from, by the digest src/core/src/root pins: the same as the app's. */
   sha256: string; bytes: number; file: string;
   root: {name: string; profile: string};
   index: {path: string; sha256: string; size: number};
@@ -66,7 +66,7 @@ export interface Index {
   translations: Translation[];
 }
 
-export interface L3 {
+export interface Root3 {
   about: About;
   index: Index;
   translator: WebAssembly.Module;
@@ -93,11 +93,11 @@ export type Stage =
   | {at: 'failed'; message: string};
 
 
-/** Where l3 is read from: the page's own origin in a browser; in the app (on a machine whose Prompts run translated),
+/** Where root3 is read from: the page's own origin in a browser; in the app (on a machine whose Prompts run translated),
  * the site of the Remote it is built for, which serves the same files to anyone (public/_headers). */
 const BASE = isNative ? `${REMOTE_URL}/webroot/` : '/webroot/';
 const CACHE = 'webroot';
-/** Of what the browser says this origin may hold, the part l3's copies may take (the rest is the repos'). */
+/** Of what the browser says this origin may hold, the part root3's copies may take (the rest is the repos'). */
 const SHARE = 0.25;
 
 const watchers = new Set<(s: Stage) => void>();
@@ -111,7 +111,7 @@ export function watchLoad(fn: (s: Stage) => void): () => void {
   return () => watchers.delete(fn);
 }
 
-/** What l3 this build carries; null when it carries none (a build made without `npm run webroot`). Not reached: the reason. */
+/** What root3 this build carries; null when it carries none (a build made without `npm run webroot`). Not reached: the reason. */
 export const about = async (): Promise<About | null> => {
   const r = await fetch(`${BASE}webroot.json`, {cache: 'no-cache'});
   // This build carries none (a server without it answers 404, or with the page itself).
@@ -128,7 +128,7 @@ const uses = (): Record<string, number> => { try { return JSON.parse(localStorag
 const used = (url: string, at = Date.now()) => {
   try { const u = uses(); u[url] = at; localStorage.setItem(USES, JSON.stringify(u)); } catch { /* not remembered: it goes first */ }
 };
-/** What earlier builds kept of l3 under its old name (a cache and two notes) is let go, once a page: nothing reads it now. */
+/** What earlier builds kept under the names before (a cache and two notes) is let go, once a page: nothing reads it now. */
 let before: Promise<unknown> | null = null;
 const forgetBefore = () => (before ??= (async () => {
   try { localStorage.removeItem('length3.l3.used'); localStorage.removeItem('length3.l3.start'); } catch { /* none to let go */ }
@@ -151,11 +151,11 @@ const sizesOf = (c: Cache) => (sizes ??= (async () => {
 const gone = (c: Cache, url: string) => void sizesOf(c).then((m) => m.delete(whole(url)));
 
 /**
- * The page's work that no one waits for (the rest of l3's programs readied after a Prompt is up) is done a step
+ * The page's work that no one waits for (the rest of root3's programs readied after a Prompt is up) is done a step
  * at a time in the moments nothing else is being done, so it never comes between a key and what it writes.
  */
 const idle = () => new Promise<void>((r) => ('requestIdleCallback' in globalThis ? requestIdleCallback(() => r(), {timeout: 3000}) : setTimeout(r, 100)));
-/** The worker that checks l3's files (check.worker.ts), made when first asked; null where there is none. */
+/** The worker that checks root3's files (check.worker.ts), made when first asked; null where there is none. */
 let checker: Worker | null | undefined;
 let asking = 0;
 const answers = new Map<number, (r: {bytes?: ArrayBuffer; sha256?: string; size?: number; error?: string}) => void>();
@@ -190,7 +190,7 @@ async function checked(bytes: Uint8Array, unpack: boolean, lend: boolean, as?: {
     if (r.bytes && r.sha256) return {bytes: new Uint8Array(r.bytes), sha256: r.sha256, ...(as ? {size: r.size, segments: r.segments ?? null} : {})};
     // Not worked out there: here, with what was lent back (or the caller's own, when it was a copy that went).
     if (own) bytes = r.bytes ? new Uint8Array(r.bytes) : bytes;
-    if (own && !r.bytes) throw new Error('l3: a file could not be checked');
+    if (own && !r.bytes) throw new Error('root3: a file could not be checked');
   }
   const b = unpack ? await gunzip(bytes) : bytes;
   const sha256 = await digest(b);
@@ -294,14 +294,14 @@ async function keptBytes(c: Cache): Promise<number> {
   return n;
 }
 
-/** What l3's kept copies hold here, and how many there are (Runtime's On this device). */
-export async function keptL3(): Promise<{bytes: number; files: number}> {
+/** What root3's kept copies hold here, and how many there are (Runtime's On this device). */
+export async function keptRoot3(): Promise<{bytes: number; files: number}> {
   const c = await open();
   if (!c) return {bytes: 0, files: 0};
   return {bytes: await keptBytes(c), files: (await sizesOf(c)).size};
 }
 
-/** Whatever the current l3 does not name goes: an l3 before, or what a browser kept of it. */
+/** Whatever the current root3 does not name goes: an root3 before, or what a browser kept of it. */
 async function forgetOthers(live: (path: string) => boolean) {
   const c = await open();
   if (!c) return;
@@ -314,14 +314,14 @@ async function forgetOthers(live: (path: string) => boolean) {
 }
 
 /**
- * `path` under l3 (its digest checked), from what is kept or else the network; kept for next time. `keptOnly`: from
- * what is kept or not at all (it throws), as what is read ahead on the last start's word is (loadL3).
+ * `path` under root3 (its digest checked), from what is kept or else the network; kept for next time. `keptOnly`: from
+ * what is kept or not at all (it throws), as what is read ahead on the last start's word is (loadRoot3).
  */
 async function bytesOf(path: string, expect: {sha256: string; size: number}, progress?: Parameters<typeof download>[2], keptOnly = false): Promise<Uint8Array> {
   const url = `${BASE}${path}`;
   const have = await kept(url, expect.sha256);
   if (have) { progress?.bytes(expect.size); return have; }
-  if (keptOnly) throw new Error(`l3: ${path} is not kept`);
+  if (keptOnly) throw new Error(`root3: ${path} is not kept`);
   const bytes = await download(url, expect, progress, {check: offThread});
   void keep(url, bytes);
   return bytes;
@@ -335,7 +335,7 @@ async function translation(b: Blob, shared: boolean, progress?: Parameters<typeo
   await step();
   const {bytes, size, segments} = await checked(await bytesOf(b.path, b, progress, keptOnly), true, false, {shared});
   await step();
-  if (size !== b.bytes) throw new Fatal(`l3: ${b.path} is not what its index says`);
+  if (size !== b.bytes) throw new Fatal(`root3: ${b.path} is not what its index says`);
   return {wasm: bytes, segments};
 }
 
@@ -345,7 +345,7 @@ async function unblob(b: Blob, progress?: Parameters<typeof download>[2], sha256
   // Unpacked and checked off the page's thread; a copy goes, as what was fetched may be on its way to be kept.
   const {bytes, sha256: is} = await checked(await bytesOf(b.path, b, progress, keptOnly), true, false);
   await step();
-  if (bytes.length !== b.bytes || (sha256 && is !== sha256)) throw new Fatal(`l3: ${b.path} is not what its index says`);
+  if (bytes.length !== b.bytes || (sha256 && is !== sha256)) throw new Fatal(`root3: ${b.path} is not what its index says`);
   return bytes;
 }
 
@@ -356,7 +356,7 @@ async function unblob(b: Blob, progress?: Parameters<typeof download>[2], sha256
 // to its first prompt line, each translated, compiled, and copied into every thread that runs it. What a Prompt
 // reached is kept, as the kernel made it, for the Prompts after it: in this page, and in what is kept under the
 // program's translation (and the translator, and whether memory is shared), so a Prompt opened tomorrow starts from
-// all its shell reached today. Kept as l3's other copies are (its digest checked when it is read, within the same
+// all its shell reached today. Kept as root3's other copies are (its digest checked when it is read, within the same
 // share of the browser's room, the least recently used going first), and never canonical: lost, it is made again.
 
 /** Of code reached later, at most this many modules are kept for a program: each thread of a Prompt instantiates them all. */
@@ -407,7 +407,7 @@ export function keepMore(path: string, from: number, list: More[]) {
 // code it reached later, and the next Prompt's kernel reads it from here when the program is first run
 // (muk/runtime/keeper.ts), not even reading the program itself unless it reaches code it never reached before.
 
-/** Where the root's programs' translations are kept, under l3's own copies. */
+/** Where the root's programs' translations are kept, under root3's own copies. */
 const TRANSLATED = `${BASE}tr/`;
 /** What a kept translation was made by: this translator, for memory shared or not. */
 const keptTag = (index: Index) => `${index.translator.sha256.slice(0, 16)}-${threadsApart() ? 's' : 'u'}`;
@@ -419,10 +419,10 @@ const keptOrigin = (path: string, tag: string): string | null => {
 };
 
 /** What a Prompt's kernel is told is kept ({cache, at: {[origin]: {main, more}}}, muk/runtime/keeper.ts). */
-export async function keptNow(l3: L3): Promise<{cache: string; at: Record<string, {main: string; more: string | null}>} | null> {
+export async function keptNow(root3: Root3): Promise<{cache: string; at: Record<string, {main: string; more: string | null}>} | null> {
   const c = await open();
   if (!c) return null;
-  const tag = keptTag(l3.index), at: Record<string, {main: string; more: string | null}> = {};
+  const tag = keptTag(root3.index), at: Record<string, {main: string; more: string | null}> = {};
   const paths = new Set((await c.keys()).map((r) => new URL(r.url).pathname).filter((p) => p.startsWith(TRANSLATED)));
   for (const p of paths) {
     const origin = keptOrigin(p, tag);
@@ -453,9 +453,9 @@ const reached = new Map<string, Reached>();
 export const originOf = (index: Index, f: Index['files'][number]) => `${index.packs[f.pack].name.replace(/\.pack$/, '')}_${f.at}_${f.len}`;
 
 /** Whether a translation of the file at `origin`, by this translator, is kept here. */
-export async function translationKept(l3: L3, origin: string): Promise<boolean> {
+export async function translationKept(root3: Root3, origin: string): Promise<boolean> {
   const c = await open();
-  return !!(await c?.match(translatedURL(origin, keptTag(l3.index), 'wasm')).catch(() => undefined));
+  return !!(await c?.match(translatedURL(origin, keptTag(root3.index), 'wasm')).catch(() => undefined));
 }
 
 /**
@@ -463,8 +463,8 @@ export async function translationKept(l3: L3, origin: string): Promise<boolean> 
  * it, and its data segments, or null when they are in it): kept for the Prompts after it, 'L3T1' (sods/runtime/kept.ts). Once
  * kept, the URL it is kept at; null when it is not (no room, no Cache Storage).
  */
-export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segments: Segment[] | null): Promise<string | null> {
-  const tag = keptTag(l3.index);
+export function keepTranslation(root3: Root3, origin: string, wasm: Uint8Array, segments: Segment[] | null): Promise<string | null> {
+  const tag = keptTag(root3.index);
   reached.set(origin, {list: [], saved: 0, timer: 0, url: translatedURL(origin, tag, 'more'), ready: Promise.resolve()});
   return (async () => {
     await idle();
@@ -483,11 +483,11 @@ export function keepTranslation(l3: L3, origin: string, wasm: Uint8Array, segmen
 }
 
 /** The code a translated program reached later (the kernel's modules from the `from`th on): kept with it. */
-export function keepReached(l3: L3, origin: string, from: number, list: {bytes: Uint8Array; base: number}[]) {
+export function keepReached(root3: Root3, origin: string, from: number, list: {bytes: Uint8Array; base: number}[]) {
   let r = reached.get(origin);
   if (!r) {
     // A program read from what was kept, reaching code it never reached before: on from what was kept of it.
-    const url = translatedURL(origin, keptTag(l3.index), 'more');
+    const url = translatedURL(origin, keptTag(root3.index), 'more');
     const entry: Reached = {list: [], saved: 0, timer: 0, url, ready: Promise.resolve()};
     entry.ready = (async () => {
       const c = await open();
@@ -550,19 +550,19 @@ async function hot(t: Translation, mode: number, translator: string, progress?: 
 type Hot = Awaited<ReturnType<typeof hot>>;
 
 /** A hot program's code reached later in Prompts before, taken up for this page's Prompts (once per program). */
-function taken(f: Hot): L3['files'][number] {
+function taken(f: Hot): Root3['files'][number] {
   if (!more.has(f.path)) more.set(f.path, {url: f.moreURL, list: f.reached, saved: f.reached.length, timer: 0});
   const {reached: _r, moreURL: _u, ...file} = f;
   return {...file, root: true};
 }
 
 /**
- * The rest of the hot programs (l3, git), after a Prompt is up: fetched (or
+ * The rest of the hot programs (root3, git), after a Prompt is up: fetched (or
  * read from what is kept) and compiled quietly, then given to every Prompt
  * started after. Never waited for: compiling their translations takes seconds,
  * and until one is ready its program is translated as it runs, as every other.
  */
-const later = new Map<string, L3['files'][number]>();
+const later = new Map<string, Root3['files'][number]>();
 let warming: Promise<void> | null = null;
 function warm(index: Index) {
   warming ??= (async () => {
@@ -578,42 +578,42 @@ function warm(index: Index) {
 }
 
 /** Each Prompt up, told of each hot program as it is ready (hearLater). */
-const hearing = new Set<(f: L3['files'][number]) => void>();
+const hearing = new Set<(f: Root3['files'][number]) => void>();
 /**
  * `hear` each hot program ready after a Prompt started (warm): those ready already at once, the rest as they come, until
- * the function returned is called. A Prompt up gives each to its Worker, so the next run of git or l3 in it runs its
+ * the function returned is called. A Prompt up gives each to its Worker, so the next run of git or root3 in it runs its
  * translation, not one made as it runs (the page's first Prompt is up before they are ready).
  */
-export function hearLater(hear: (f: L3['files'][number]) => void): () => void {
+export function hearLater(hear: (f: Root3['files'][number]) => void): () => void {
   for (const f of later.values()) hear(withMore(f));
   hearing.add(hear);
   return () => { hearing.delete(hear); };
 }
 
-/** l3's index, for what only reads it (File's "/"): from what is kept or fetched; null when this build carries none. */
+/** root3's index, for what only reads it (File's "/"): from what is kept or fetched; null when this build carries none. */
 let indexing: Promise<Index | null> | null = null;
-export const l3Index = (): Promise<Index | null> => (indexing ??= (async () => {
+export const root3Index = (): Promise<Index | null> => (indexing ??= (async () => {
   const a = await about();
   if (!a) return null;
   return JSON.parse(new TextDecoder().decode(await bytesOf(a.index.path, a.index))) as Index;
 })().catch((e) => { indexing = null; throw e; }));
 
 /**
- * What a Prompt starting needed of l3, as the last start found it (which l3, its index, its translator, the hot
+ * What a Prompt starting needed of root3, as the last start found it (which root3, its index, its translator, the hot
  * programs it waits for): read from what is kept at once next time, while webroot.json is asked whether it is still that.
  */
 interface Plan { sha256: string; index: About['index']; translator: Index['translator']; first: {t: Translation; mode: number}[] }
 const PLAN = 'length3.webroot.start';
 const planned = (): Plan | null => { try { return JSON.parse(localStorage.getItem(PLAN) ?? 'null') as Plan | null; } catch { return null; } };
 
-let loading: Promise<L3> | null = null;
+let loading: Promise<Root3> | null = null;
 /**
- * l3 for a Prompt: its index, the translator and the hot programs (once per page; again after a failure). What the
+ * root3 for a Prompt: its index, the translator and the hot programs (once per page; again after a failure). What the
  * last start needed is read ahead from what is kept (only that: nothing is fetched on its word), the translator
  * compiled and the hot programs readied, all at once and while webroot.json is asked for; it is used only when webroot.json
- * names the same l3 and index, and otherwise everything is read as webroot.json says, one after another as before.
+ * names the same root3 and index, and otherwise everything is read as webroot.json says, one after another as before.
  */
-export const loadL3 = (): Promise<L3> => (loading ??= (async () => {
+export const loadRoot3 = (): Promise<Root3> => (loading ??= (async () => {
   // The worker that checks what is read, started now rather than at the first check.
   worker();
   const plan = planned();
@@ -623,13 +623,13 @@ export const loadL3 = (): Promise<L3> => (loading ??= (async () => {
     ...plan.first.map(({t: p, mode}) => hot(p, mode, plan.translator.sha256, undefined, atOnce, true)),
   ]).catch(() => null) : null;
   const a = await download(`${BASE}webroot.json`, {}, undefined, {attempts: 4}).then((b) => {
-    // Not JSON is a build without l3 (the host answered with the page): said so, never the parser's words.
-    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(t('l3 missing (run: npm run webroot)')); }
+    // Not JSON is a build without root3 (the host answered with the page): said so, never the parser's words.
+    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(t('root3 missing (run: npm run webroot)')); }
   });
   const read = plan && plan.sha256 === a.sha256 && plan.index.sha256 === a.index.sha256 ? await ahead : null;
   const index0 = read ? read[0] as Uint8Array : await bytesOf(a.index.path, a.index);
   const index = JSON.parse(new TextDecoder().decode(index0)) as Index;
-  if (index.sha256 !== a.sha256 || index.version !== a.version) throw new Fatal(`l3: its index is of another root (${index.version})`);
+  if (index.sha256 !== a.sha256 || index.version !== a.version) throw new Fatal(`root3: its index is of another root (${index.version})`);
   const modeOf = (path: string) => index.files.find((f) => f.path === path)?.mode ?? 0o755;
   const first = index.translations.filter((t) => FIRST.includes(t.path));
   const live = new Set([`${BASE}${a.index.path}`, `${BASE}${index.translator.path}`,
@@ -672,17 +672,17 @@ export const loadL3 = (): Promise<L3> => (loading ??= (async () => {
 }));
 
 /** Once a Prompt is up: what the next one is given ahead of time comes now, quietly. */
-export const warmL3 = (l3: L3) => warm(l3.index);
+export const warmRoot3 = (root3: Root3) => warm(root3.index);
 
 /**
  * What a Prompt starting now is given beside the packs: BusyBox, and each other hot program once it is ready, each
  * with the code it reached later in the Prompts before.
  */
-export const filesNow = (l3: L3): L3['files'] => [...l3.files, ...later.values()].map(withMore);
+export const filesNow = (root3: Root3): Root3['files'] => [...root3.files, ...later.values()].map(withMore);
 /** A hot program with the code it reached later in the Prompts before. */
-const withMore = (f: L3['files'][number]): L3['files'][number] => ({...f, more: more.get(f.path)?.list ?? []});
+const withMore = (f: Root3['files'][number]): Root3['files'][number] => ({...f, more: more.get(f.path)?.list ?? []});
 
-/** The Prompt's Worker: xlat running l3's root (pages/bench/terminal.ts gives it l3 and the repo). */
+/** The Prompt's Worker: xlat running root3's root (pages/bench/terminal.ts gives it root3 and the repo). */
 export const promptWorker = (): Worker => new Worker(new URL('./kernel.worker.ts', import.meta.url), {type: 'module'});
 
 /**
@@ -693,12 +693,12 @@ export const promptWorker = (): Worker => new Worker(new URL('./kernel.worker.ts
  * is its own, so its start waits for none of that. One at a time; `given`, the paths of the files it was given.
  */
 let spare: {worker: Worker; given: Set<string>} | null = null;
-export function readyPrompt(l3: L3, rehearse: {argv: string[]; env: string[]; cwd: string}) {
+export function readyPrompt(root3: Root3, rehearse: {argv: string[]; env: string[]; cwd: string}) {
   if (spare) return;
   const worker = promptWorker();
-  const files = filesNow(l3);
+  const files = filesNow(root3);
   worker.postMessage({type: 'warm'});
-  worker.postMessage({type: 'ready', translator: l3.translator, files, root: {index: l3.index, url: l3.url}, rehearse});
+  worker.postMessage({type: 'ready', translator: root3.translator, files, root: {index: root3.index, url: root3.url}, rehearse});
   spare = {worker, given: new Set(files.map((f) => f.path))};
 }
 /** The Worker readied ahead, for the Prompt starting now (null when none is). */

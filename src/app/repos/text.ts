@@ -18,14 +18,14 @@ export function kindOf(text: string): {kind: string | null; title: string} {
 /**
  * At most `n` UTF-16 units of `text` (as a field's maxlength counts), never
  * half of a character: one cut in two would be a lone surrogate, which no
- * other reader of the JSON it is kept in (l3) takes.
+ * other reader of the JSON it is kept in (root3) takes.
  */
 export function clipUnits(text: string, n: number): string {
   const cut = text.slice(0, n);
   return cut.length === n && /[\uD800-\uDBFF]$/.test(cut) && /^[\uDC00-\uDFFF]/.test(text.slice(n)) ? cut.slice(0, -1) : cut;
 }
 
-/** At most `n` characters of `text`, as l3 counts them (code points). */
+/** At most `n` characters of `text`, as root3 counts them (code points). */
 export const clipChars = (text: string, n: number): string => (text.length <= n ? text : [...text].slice(0, n).join(''));
 
 /** The first line again: "Kind：title", or the title alone. */

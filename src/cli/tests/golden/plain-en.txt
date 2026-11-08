@@ -1,45 +1,45 @@
-$ l3 repo new notes
+$ root3 repo new notes
 [exit 0]
 --- stdout
 Made notes (standard · 1 file)
 --- stderr
 
-$ l3 issue new notes Fix：restart loses the draft
+$ root3 issue new notes Fix：restart loses the draft
 [exit 0]
 --- stdout
 Wrote notes#1 Fix：restart loses the draft
 --- stderr
 
-$ l3 todo add Fix：the rail's names
+$ root3 todo add Fix：the rail's names
 [exit 0]
 --- stdout
 Added to TODO: Fix：the rail's names (1 open)
 --- stderr
 
-$ l3 todo add Docs：readme
+$ root3 todo add Docs：readme
 [exit 0]
 --- stdout
 Added to TODO: Docs：readme (2 open)
 --- stderr
 
-$ l3 todo done 2
+$ root3 todo done 2
 [exit 0]
 --- stdout
 Done: Docs：readme
 --- stderr
 
-$ l3 
+$ root3 
 [exit 0]
 --- stdout
 Length³ OS  $HOME
-  Remote not signed in (l3 login)
+  Remote not signed in (root3 login)
   repo   1
   Issue  1
   TODO   1 open of 2
-`l3 help` shows how to use it
+`root3 help` shows how to use it
 --- stderr
 
-$ l3 --json
+$ root3 --json
 [exit 0]
 --- stdout
 {
@@ -55,98 +55,98 @@ $ l3 --json
 }
 --- stderr
 
-$ l3 todo
+$ root3 todo
 [exit 0]
 --- stdout
   1 ○ Fix：the rail's names
   2 ✓ Docs：readme
 --- stderr
 
-$ l3 profile
+$ root3 profile
 [exit 0]
 --- stdout
-No name yet (l3 profile name "Your name")
+No name yet (root3 profile name "Your name")
 --- stderr
 
-$ l3 band
+$ root3 band
 [exit 0]
 --- stdout
 notes
 --- stderr
 
-$ l3 file
+$ root3 file
 [exit 0]
 --- stdout
 notes  2 files · 38 B
 --- stderr
 
-$ l3 file notes
+$ root3 file notes
 [exit 0]
 --- stdout
 docs/
 README.md  8 B
 --- stderr
 
-$ l3 file notes/issue/001.md
+$ root3 file notes/issue/001.md
 [exit 1]
 --- stdout
 --- stderr
-l3: The issues of notes are kept by the OS: read one with l3 issue notes#N, write one with l3 issue new notes "Fix：title"
+root3: The issues of notes are kept by the OS: read one with root3 issue notes#N, write one with root3 issue new notes "Fix：title"
 
-$ l3 file /
+$ root3 file /
 [exit 4]
 --- stdout
 --- stderr
-l3: / is not in your repos: l3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
+root3: / is not in your repos: root3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
 
-$ l3 file /root
+$ root3 file /root
 [exit 0]
 --- stdout
 notes  2 files · 38 B
 --- stderr
 
-$ l3 file /bin
+$ root3 file /bin
 [exit 4]
 --- stdout
 --- stderr
-l3: /bin is not in your repos: l3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
+root3: /bin is not in your repos: root3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
 
-$ l3 file /root/vocab
+$ root3 file /root/vocab
 [exit 4]
 --- stdout
 --- stderr
-l3: There is no repo vocab here (l3 repo lists them)
+root3: There is no repo vocab here (root3 repo lists them)
 
-$ l3 file notes/README.md
+$ root3 file notes/README.md
 [exit 0]
 --- stdout
 # notes
 --- stderr
 
-$ l3 file rm notes/docs
+$ root3 file rm notes/docs
 [exit 0]
 --- stdout
 Deleted the folder notes/docs (0 files)
 --- stderr
 
-$ l3 help commit
+$ root3 help commit
 [exit 0]
 --- stdout
-l3 commit — commit the work
+root3 commit — commit the work
 
-  l3 commit [REPO] [-m note]               on an issue, named after it
-  l3 commit [REPO] "Fix：title" [-m note]  with its subject, Kind：subject (on an issue, the words are its note)
+  root3 commit [REPO] [-m note]               on an issue, named after it
+  root3 commit [REPO] "Fix：title" [-m note]  with its subject, Kind：subject (on an issue, the words are its note)
 --- stderr
 
-$ l3 git
+$ root3 git
 [exit 0]
 --- stdout
 #1 Fix：restart loses the draft
     notes · not started
-    next: l3 login
+    next: root3 login
 --- stderr
 
-$ l3 git --json
+$ root3 git --json
 [exit 0]
 --- stdout
 {
@@ -160,7 +160,7 @@ $ l3 git --json
       "kind": "Fix",
       "n": 1,
       "next": [
-        "l3 login"
+        "root3 login"
       ],
       "repo": "notes",
       "startedBy": null,
@@ -176,90 +176,90 @@ $ l3 git --json
 }
 --- stderr
 
-$ l3 issue notes#1
+$ root3 issue notes#1
 [exit 0]
 --- stdout
 #1 Fix：restart loses the draft
     notes · not started
 
 Next
-    Sign in  l3 login
-    Close    l3 issue close notes#1
+    Sign in  root3 login
+    Close    root3 issue close notes#1
 --- stderr
 
-$ l3 issue close notes#1
+$ root3 issue close notes#1
 [exit 0]
 --- stdout
-Closed notes#1; it will not be done (back with: l3 issue reopen notes#1)
+Closed notes#1; it will not be done (back with: root3 issue reopen notes#1)
 --- stderr
 
-$ l3 git
+$ root3 git
 [exit 0]
 --- stdout
 No open issues
 
-1 issue closed in notes: notes#1 (l3 issue reopen REPO#N)
+1 issue closed in notes: notes#1 (root3 issue reopen REPO#N)
 --- stderr
 
-$ l3 issue reopen notes#1
+$ root3 issue reopen notes#1
 [exit 0]
 --- stdout
 Reopened notes#1
 --- stderr
 
-$ l3 help git
+$ root3 help git
 [exit 0]
 --- stdout
-l3 git — the issues not merged, and what comes next
+root3 git — the issues not merged, and what comes next
 
-  l3 git [REPO]  each issue, with what comes next
+  root3 git [REPO]  each issue, with what comes next
 --- stderr
 
-$ l3 comit
+$ root3 comit
 [exit 2]
 --- stdout
 --- stderr
-l3: Not a command: l3 comit
-Did you mean: l3 commit
+root3: Not a command: root3 comit
+Did you mean: root3 commit
 
-$ l3 todo add
+$ root3 todo add
 [exit 2]
 --- stdout
 --- stderr
-l3: Not how l3 todo add is written
+root3: Not how root3 todo add is written
 
-  l3 todo
-  l3 todo add "Fix：title" [-m detail]
-  l3 todo edit N "Fix：title" [-m detail]
-  l3 todo done N
-  l3 todo rm N
+  root3 todo
+  root3 todo add "Fix：title" [-m detail]
+  root3 todo edit N "Fix：title" [-m detail]
+  root3 todo done N
+  root3 todo rm N
 
-$ l3 inbox
+$ root3 inbox
 [exit 3]
 --- stdout
 --- stderr
-l3: l3 inbox needs the Remote, and this device is not signed in to one (l3 login)
+root3: root3 inbox needs the Remote, and this device is not signed in to one (root3 login)
 
-$ l3 start notes#1
+$ root3 start notes#1
 [exit 3]
 --- stdout
 --- stderr
-l3: l3 start needs the Remote, and this device is not signed in to one (l3 login)
+root3: root3 start needs the Remote, and this device is not signed in to one (root3 login)
 
-$ l3 remote
+$ root3 remote
 [exit 0]
 --- stdout
 Remote  not signed in
-  l3 login, approved in the browser, signs this device in; then the Remote keeps your repos, and each change goes there by itself.
+  root3 login, approved in the browser, signs this device in; then the Remote keeps your repos, and each change goes there by itself.
 --- stderr
 
-$ l3 server --json
+$ root3 server --json
 [exit 3]
 --- stdout
 {
   "error": {
     "kind": "offline",
-    "message": "l3 server needs the Remote, and this device is not signed in to one (l3 login)"
+    "message": "root3 server needs the Remote, and this device is not signed in to one (root3 login)"
   }
 }
 --- stderr

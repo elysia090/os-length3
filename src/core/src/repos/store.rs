@@ -50,7 +50,7 @@ pub struct Contents {
 }
 
 /// Where a repo's issues are kept, at its top (repos/issues.rs). It is the OS's to keep: the issues are met as issues
-/// (Git, the box, l3 issue), never among the files File, Forge and l3 file show; the Prompt's copy still has them.
+/// (Git, the box, root3 issue), never among the files File, Forge and root3 file show; the Prompt's copy still has them.
 pub const ISSUES: &str = "issue";
 
 /// Whether `rel` (a path in a repo) is its issues' folder or in it.
@@ -74,7 +74,7 @@ impl Repos {
     /// The repos of this person, where the app keeps them.
     pub fn open() -> Result<Repos> {
         let mut r = Repos::new(crate::fs::paths::repos_dir().to_path_buf())?;
-        r.lines = std::env::var_os("L3_PROMPT").is_none();
+        r.lines = std::env::var_os("ROOT3_PROMPT").is_none();
         Ok(r)
     }
 
@@ -87,7 +87,7 @@ impl Repos {
     pub fn new(root: PathBuf) -> Result<Repos> {
         // Inside the Prompt the repos are the guest's /root; on the host
         // they are the person's alone.
-        if std::env::var_os("L3_PROMPT").is_none() {
+        if std::env::var_os("ROOT3_PROMPT").is_none() {
             crate::fs::write::private_dir(&root).map_err(|e| io_error(root.display(), &e))?;
         } else {
             fs::create_dir_all(&root).map_err(|e| io_error(root.display(), &e))?;

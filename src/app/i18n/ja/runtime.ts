@@ -8,7 +8,7 @@ export default {
   'Custom root (.tar)': 'カスタム root (.tar)',
   '{name} · {size}': '{name} · {size}',
   '{name} · via xlat': '{name} · xlat 経由',
-  'l3 missing (run: npm run webroot)': 'l3 が見つかりません（npm run webroot を実行してください）',
+  'root3 missing (run: npm run webroot)': 'root3 が見つかりません（npm run webroot を実行してください）',
   'No root environment on device; install via Runtime': 'このデバイスにはまだ root がありません。Runtime からインストールできます',
   'Prompts run translated here: {why}': 'ここでは Prompt はブラウザと同じく翻訳して動きます：{why}',
   '{n} file reserved for Prompt': 'Prompt 用の保持ファイル：{n}件',

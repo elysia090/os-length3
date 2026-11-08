@@ -108,7 +108,7 @@ pub fn here(data: &Path) -> Here {
     }
 }
 
-/// This device's SSH as l3 address and the app's card show it, worked out here and never sent: whether it listens,
+/// This device's SSH as root3 address and the app's card show it, worked out here and never sent: whether it listens,
 /// who may connect (the scope chosen, when it is off), where each repo is reached, the host key's fingerprint, and
 /// how many keys `.authorized_keys` lets in.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -140,7 +140,7 @@ pub struct Listening {
     /// The addresses it listens on now (listen_on: loopback, and with Network the private ones).
     #[serde(default)]
     pub bound: Vec<IpAddr>,
-    /// Those besides loopback with the interface each is on (with Network: what `l3 address` and the card name).
+    /// Those besides loopback with the interface each is on (with Network: what `root3 address` and the card name).
     #[serde(default)]
     pub interfaces: Vec<Taken>,
     pub fingerprint: String,

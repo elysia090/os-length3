@@ -1,7 +1,7 @@
 // Home's state: the profile, the TODO list and Forge's band. They are files in the OS's data directory
-// (<data>/home/<key>.json), kept by the core: the same files `l3 todo` reads and writes, in the app or in
+// (<data>/home/<key>.json), kept by the core: the same files `root3 todo` reads and writes, in the app or in
 // a browser's own. Reads are served from memory, filled at start and again whenever the window comes back
-// (or another tab of this browser wrote), so a change made with l3 shows up.
+// (or another tab of this browser wrote), so a change made with root3 shows up.
 
 import {core} from '../host/host.ts';
 import {home, onElsewhere} from '../core/client.ts';
@@ -10,7 +10,7 @@ import {errorText} from '../host/errors.ts';
 
 // `remote` is which Remote this device talks to and as whom; `sync` is,
 // for each repo and setting, the version on the Remote this copy came from;
-// `lang` is the language the OS speaks here (i18n/i18n.ts), l3 included.
+// `lang` is the language the OS speaks here (i18n/i18n.ts), root3 included.
 // `network` is which repos' Prompts may reach the network here (the app only; never sent).
 // `trusted` is the dotfiles this device runs, as taken here (never sent, never set: home/dotfiles.ts).
 export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync' | 'lang' | 'dotfiles' | 'network' | 'trusted';
@@ -65,7 +65,7 @@ export async function loadState(keys: readonly Key[] = KEYS): Promise<void> {
 /** `key` as last read (the page's old copy is never read in place of its file). */
 export const getState = (key: Key): string | null => cache.get(key) ?? null;
 
-/** Each listener hears the key, and whether another writer set it (`outside`): l3, the core syncing, another tab. */
+/** Each listener hears the key, and whether another writer set it (`outside`): root3, the core syncing, another tab. */
 const listeners = new Set<(key: Key, outside: boolean) => void>();
 /** Hear each key set here (or by another tab of this browser); returns how to stop. */
 export function onState(fn: (key: Key, outside: boolean) => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }

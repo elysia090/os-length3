@@ -1,10 +1,10 @@
 //! The Agent's hands as Pi gives them (read, write, edit, bash), with Pi's rules, kept here so the app, its web build
-//! and l3 hold one meaning of each: what is read of a file and where reading goes on (`part`), and an edit as exact
+//! and root3 hold one meaning of each: what is read of a file and where reading goes on (`part`), and an edit as exact
 //! text replaced, each piece found once in the file as it was (`edit`). The model is never shown the screen: what a
 //! tool did goes back to it as text, and with it where in the file it was done (`Edited::spans`), which the screen
 //! plays as a person's doing at a person's pace.
 //!
-//! Only the rules are here: the file is read and written by whoever holds the repo (the app's store, l3's), so what
+//! Only the rules are here: the file is read and written by whoever holds the repo (the app's store, root3's), so what
 //! watches the repo hears of it as of any write.
 
 use serde::{Deserialize, Serialize};

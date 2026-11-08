@@ -1,4 +1,4 @@
-// A Rust program using std the way l3 does: arguments, environment, files,
+// A Rust program using std the way root3 does: arguments, environment, files,
 // directories, renames, collections, formatting, and a panic-free exit code.
 use std::collections::{BTreeMap, HashMap};
 use std::fs;

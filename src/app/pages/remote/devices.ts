@@ -12,7 +12,7 @@ import {every} from '../../host/runs.ts';
 
 /**
  * The devices signed in: each and when it was last used, this one marked.
- * Any other is signed out from its row (the same Remote call as `l3 remote
+ * Any other is signed out from its row (the same Remote call as `root3 remote
  * devices rm N`), asked in the row first, Sign out where it was pressed and
  * Not now at the left; this one signs out from the person's menu.
  */

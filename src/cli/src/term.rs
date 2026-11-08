@@ -1,4 +1,4 @@
-//! The terminal, for the menu (menu.rs): whether l3 talks with a person at
+//! The terminal, for the menu (menu.rs): whether root3 talks with a person at
 //! all, keys read one at a time, and a few lines drawn again in place under
 //! what is already there. Nothing takes the screen over: the menu is lines in
 //! the scrollback, the cursor moves only within the lines it last drew, and
@@ -6,15 +6,15 @@
 
 use std::io::{IsTerminal, Write};
 
-/// Whether l3 may offer and ask: standard input and output are both a
+/// Whether root3 may offer and ask: standard input and output are both a
 /// terminal, the answer is text (not --json), the terminal can move its
 /// cursor (not TERM=dumb), and the person has not asked for the plain
-/// command (L3_PLAIN, any value but empty). Otherwise l3 is exactly the
+/// command (ROOT3_PLAIN, any value but empty). Otherwise root3 is exactly the
 /// command it was: it writes its answer and exits.
 pub fn interactive(json: bool) -> bool {
     !json && std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
         && std::env::var("TERM").as_deref() != Ok("dumb")
-        && std::env::var_os("L3_PLAIN").is_none_or(|v| v.is_empty())
+        && std::env::var_os("ROOT3_PLAIN").is_none_or(|v| v.is_empty())
         && cfg!(unix)
 }
 
@@ -90,14 +90,14 @@ pub fn size() -> (usize, usize) {
 pub enum Key { Up, Down, Left, Right, Home, End, Enter, Esc, Back, Delete, Tab, BackTab, Quit, Interrupt, Ctrl(u8), Char(char), Other }
 
 /// The terminal one key at a time, without echo, while this lives; the
-/// cursor hidden. Dropped (or l3 ending any way), it is as it was.
+/// cursor hidden. Dropped (or root3 ending any way), it is as it was.
 pub struct Keys {
     #[cfg(unix)]
     saved: rustix::termios::Termios,
 }
 
 impl Keys {
-    /// None where the terminal will not be set (it is then not one l3 can ask in).
+    /// None where the terminal will not be set (it is then not one root3 can ask in).
     pub fn take() -> Option<Keys> {
         #[cfg(unix)]
         {
@@ -111,7 +111,7 @@ impl Keys {
             t.special_codes[SpecialCodeIndex::VMIN] = 1;
             t.special_codes[SpecialCodeIndex::VTIME] = 0;
             tcsetattr(input, OptionalActions::Now, &t).ok()?;
-            // Even if l3 fails while it holds the keys (a release aborts on a panic, so no Drop runs), the terminal is given back.
+            // Even if root3 fails while it holds the keys (a release aborts on a panic, so no Drop runs), the terminal is given back.
             static HOOK: std::sync::Once = std::sync::Once::new();
             HOOK.call_once(|| {
                 let before = std::panic::take_hook();
@@ -164,7 +164,7 @@ impl Drop for Keys {
     }
 }
 
-/// The terminal's modes from before the keys were held, to give back if l3 fails meanwhile.
+/// The terminal's modes from before the keys were held, to give back if root3 fails meanwhile.
 #[cfg(unix)]
 static HELD: std::sync::Mutex<Option<rustix::termios::Termios>> = std::sync::Mutex::new(None);
 

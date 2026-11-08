@@ -100,7 +100,7 @@ export interface Stopped { before: Held; left: number; ms: number | null }
 interface RootHere { native: boolean; why: string | null }
 let rootAsked: Promise<RootHere> | null = null;
 /**
- * Whether Prompts run on the root here: the app asks the l3 beside it once (`l3 root check`), which makes a Prompt's
+ * Whether Prompts run on the root here: the app asks the root3 beside it once (`root3 root check`), which makes a Prompt's
  * namespaces (a machine other than Linux on x86-64, or one that keeps user namespaces from it, does not). Where they
  * do not, as in a browser, they run translated (xlat, prompt/userland.ts): never, and with nothing to say, in one.
  */
@@ -119,7 +119,7 @@ export async function rootFetch(progress: (got: number, of: number, retry: strin
   try { return await (fetching ??= native<Installed>('root_fetch').finally(() => { fetching = null; })); } finally { unlisten(); }
 }
 
-/** Make `id` (l3, ubuntu, debian) the root Prompts run on, fetched first if it is not here. */
+/** Make `id` (root3, ubuntu, debian) the root Prompts run on, fetched first if it is not here. */
 export async function rootUse(id: string, progress: (got: number, of: number, retry: string | null) => void): Promise<Installed> {
   const unlisten = await listen<{got: number; of: number; retry: string | null}>('root-fetch', (e) => progress(e.payload.got, e.payload.of, e.payload.retry));
   try { return await native<Installed>('root_use', {id}); } finally { unlisten(); }

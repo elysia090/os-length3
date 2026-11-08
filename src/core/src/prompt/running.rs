@@ -168,9 +168,9 @@ pub fn wait_empty(ns: u64, before: Held, limit: Duration) -> Stopped {
 
 // ---- the Prompts running on this device ----
 //
-// Each `l3 prompt` records itself from the moment it starts, through its
+// Each `root3 prompt` records itself from the moment it starts, through its
 // `.packages` and `.setup` (launch::set_up), until it ends (the app's
-// Prompts are `l3 prompt REPO` too): `<data>/prompts/<pid>.json`, with its
+// Prompts are `root3 prompt REPO` too): `<data>/prompts/<pid>.json`, with its
 // repo, the root it runs on, whether it is still being prepared, whether it
 // has the network, and when its process started, so a pid the host has
 // given to another process since is never taken for it. A record whose
@@ -179,14 +179,14 @@ pub fn wait_empty(ns: u64, before: Held, limit: Duration) -> Stopped {
 // caches and what is derived in it, and its root; none of it is freed while
 // the record is there (storage/).
 
-/// A Prompt running here: its supervisor's pid (the `l3 prompt` process).
+/// A Prompt running here: its supervisor's pid (the `root3 prompt` process).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Running {
     pub repo: String,
     pub pid: u32,
     pub network: bool,
     /// The root it runs on, by its digest (its directory in the system directory); none in a record an
-    /// older l3 made, which does not say.
+    /// older root3 made, which does not say.
     #[serde(default)]
     pub root: Option<String>,
     /// Still being prepared: its `.packages` and `.setup` run before its shell does.
@@ -306,9 +306,9 @@ pub fn stop(data: &Path, r: &Running) -> Stopped {
     }
 }
 
-/// Where l3 is for the app: beside it (installed together), unless named.
-pub fn l3_path(app: &Path) -> std::path::PathBuf {
-    std::env::var_os("LENGTH3_L3").map(Into::into).unwrap_or_else(|| app.with_file_name("l3"))
+/// Where root3 is for the app: beside it (installed together), unless named.
+pub fn root3_path(app: &Path) -> std::path::PathBuf {
+    std::env::var_os("LENGTH3_ROOT3").map(Into::into).unwrap_or_else(|| app.with_file_name("root3"))
 }
 
 #[cfg(test)]

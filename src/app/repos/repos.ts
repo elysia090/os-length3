@@ -134,7 +134,7 @@ export function base64(bytes: Uint8Array): string {
 }
 
 /** Files of a new repo, from the same src/shared/templates.json as the native
- * side and l3. Inbox and TODO belong to the OS, so no template carries them.
+ * side and root3. Inbox and TODO belong to the OS, so no template carries them.
  * Directories map to null. */
 export function templateFiles(name: string, template: Template): Map<string, string | null> {
   // '' is no template at all: a repo whose files all come from the Remote.
@@ -272,8 +272,8 @@ onElsewhere((paths) => {
 
 /**
  * A repo's issues are kept in its issue/ (issues.ts), the OS's to keep: they are met as issues (Git, the box, the
- * pane, l3 issue), never as files where a repo's files are shown (File, Forge, its search, the box's Tab, what the
- * Agent is told is there). The Prompt's copy has them still: l3 there numbers a new issue after those it sees.
+ * pane, root3 issue), never as files where a repo's files are shown (File, Forge, its search, the box's Tab, what the
+ * Agent is told is there). The Prompt's copy has them still: root3 there numbers a new issue after those it sees.
  */
 export const ISSUES = 'issue';
 /** Whether `path` (in a repo) is its issues' or in them. */

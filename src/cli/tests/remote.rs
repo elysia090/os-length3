@@ -1,4 +1,4 @@
-//! l3 against a Remote of the test's own, which answers what a real one
+//! root3 against a Remote of the test's own, which answers what a real one
 //! would not (a captive portal's page, a shape it does not know, another
 //! account's repos): whatever comes back, nothing here is lost by it.
 
@@ -145,7 +145,7 @@ fn discarded() -> FakeRemote {
 
 #[test]
 fn a_repo_made_here_under_a_name_the_remote_discarded_goes_there_as_new() {
-    // Never in step with the Remote, it asks to be taken as new (bug: l3 never did, so it was refused for good
+    // Never in step with the Remote, it asks to be taken as new (bug: root3 never did, so it was refused for good
     // and told to turn on a repo that could not be).
     let remote = discarded();
     let home = Home::new("discarded-fresh");
@@ -162,7 +162,7 @@ fn a_repo_made_here_under_a_name_the_remote_discarded_goes_there_as_new() {
     home.repo("notes", &[("a.txt", "mine\n"), ("b.txt", "changed here\n")]);
     home.agreed("notes", &format!(r#"{{"version":3,"tree":{{"a.txt":"{}","b.txt":"{}"}},"head":null}}"#, sha("mine\n"), sha("b\n")));
     let ran = home.run("en", &["file", "notes"]);
-    assert!(ran.stderr.contains("Repo deleted on Remote; local copy preserved") && !ran.stderr.contains("l3 remote on"), "{ran:?}");
+    assert!(ran.stderr.contains("Repo deleted on Remote; local copy preserved") && !ran.stderr.contains("root3 remote on"), "{ran:?}");
     assert!(home.path("repos/notes/a.txt").exists() && home.path("repos/notes/b.txt").exists(), "the copy here is kept");
     assert!(!remote.said().iter().any(|s| s.contains("anew") || s.starts_with("PATCH")), "{:?}", remote.said());
 }
@@ -190,7 +190,7 @@ fn signing_in_again_where_the_session_is_alive_changes_nothing() {
     // On another Remote, it is refused, and the session here stays.
     let ran = home.run("en", &["login", "http://127.0.0.1:9"]);
     assert_eq!(ran.code, 1, "{ran:?}");
-    assert!(ran.stderr.contains("l3 logout first"), "{ran:?}");
+    assert!(ran.stderr.contains("root3 logout first"), "{ran:?}");
     assert!(std::fs::read_to_string(home.path("home/remote.json")).unwrap().contains("\"session\":\"new\""));
     assert_eq!(std::fs::read_to_string(home.path("secrets/session")).unwrap(), "new");
     assert!(home.path("sync/notes.json").exists());

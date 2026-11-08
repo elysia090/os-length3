@@ -1,7 +1,7 @@
-//! What l3 says, and how. A command answers with a Reply (a sentence or
+//! What root3 says, and how. A command answers with a Reply (a sentence or
 //! lines, and the same as data for --json) or an Error of one kind, each
 //! kind its exit code. Everything for standard output goes through one
-//! writer: a reader that stops early (`| head`) ends l3 quietly, never with
+//! writer: a reader that stops early (`| head`) ends root3 quietly, never with
 //! a panic. Numbers, sizes and times are said one way everywhere.
 
 use length3_core::remote::{last_failure, Failure};
@@ -40,7 +40,7 @@ pub enum Error {
     Remote { status: u16, message: String },
     /// The device's files or streams failed (1).
     Io(String),
-    /// What was asked for is turned off on this device, and the answer says how to turn it on (5): `l3 address`
+    /// What was asked for is turned off on this device, and the answer says how to turn it on (5): `root3 address`
     /// when SSH is off (only where it can be on: cmd/elsewhere/address.rs).
     #[cfg(unix)]
     Off(String),
@@ -94,7 +94,7 @@ impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Error { Error::Io(e.to_string()) }
 }
 
-/// Write to standard output, all of it, now. A reader gone (EPIPE) ends l3 at once, quietly.
+/// Write to standard output, all of it, now. A reader gone (EPIPE) ends root3 at once, quietly.
 pub fn write(s: &str) {
     let mut o = std::io::stdout().lock();
     if let Err(e) = o.write_all(s.as_bytes()).and_then(|_| o.flush()) {
@@ -102,7 +102,7 @@ pub fn write(s: &str) {
     }
 }
 
-/// A line to standard output, now (what must be seen before l3 waits).
+/// A line to standard output, now (what must be seen before root3 waits).
 pub fn line(s: &str) {
     write(&format!("{s}\n"));
 }
@@ -115,10 +115,10 @@ pub fn plain(s: &str) -> String {
     s.chars().map(|c| if c.is_control() && c != '\n' && c != '\t' { '\u{FFFD}' } else { c }).collect()
 }
 
-/// A note beside the answer, on standard error ("l3: …"); never fails. Notes and errors carry what the
+/// A note beside the answer, on standard error ("root3: …"); never fails. Notes and errors carry what the
 /// Remote said in its own words (its `error`), so they are printed plain: a terminal never takes them as commands.
 pub fn note(s: &str) {
-    let _ = writeln!(std::io::stderr().lock(), "l3: {}", plain(s));
+    let _ = writeln!(std::io::stderr().lock(), "root3: {}", plain(s));
 }
 
 /// The answer: its text, or with --json its data (keys in camelCase).
@@ -148,7 +148,7 @@ pub fn fail(e: &Error, json: bool) -> std::process::ExitCode {
 }
 
 /// Keys as the app writes them (camelCase): `host_free` → `hostFree`. Only
-/// keys that are words joined by `_` change; l3's data never keys by a name.
+/// keys that are words joined by `_` change; root3's data never keys by a name.
 fn camel(v: Value) -> Value {
     match v {
         Value::Object(m) => Value::Object(m.into_iter().map(|(k, v)| (camel_key(&k), camel(v))).collect()),
@@ -209,7 +209,7 @@ pub fn left(until: u64) -> String {
     if h >= 24 { count((h / 24) as usize, "day", "days", "{}日") } else { count(h.max(1) as usize, "hour", "hours", "{}時間") }
 }
 
-/// A day as l3 says it (UTC, YYYY-MM-DD), from ms since the epoch.
+/// A day as root3 says it (UTC, YYYY-MM-DD), from ms since the epoch.
 pub fn day(ms: u64) -> String {
     let d = (ms / 86_400_000) as i64;
     // Civil from days (Howard Hinnant's algorithm).
@@ -223,7 +223,7 @@ pub fn day(ms: u64) -> String {
     format!("{}-{m:02}-{dd:02}", yoe + era * 400 + i64::from(m <= 2))
 }
 
-/// Rows of a name and what is said of it, the words after each name starting in one column, as `l3 help`
+/// Rows of a name and what is said of it, the words after each name starting in one column, as `root3 help`
 /// lines up its own: as wide as the widest name (CJK counted as two columns), but never past 24, a longer
 /// name keeping two spaces after it alone. A row with nothing to say is its name alone, with nothing after
 /// it (bug: NAME<TAB>, which a terminal put at the next tab stop, so a name of eight letters or more stood
@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(Error::Usage("x".into()).code(), 2);
         assert_eq!(Error::Offline("x".into()).code(), 3);
         assert_eq!(Error::NotFound("x".into()).code(), 4);
-        // SSH off, when l3 address cannot ask (a script): a code of its own, so a script can tell it from a failure.
+        // SSH off, when root3 address cannot ask (a script): a code of its own, so a script can tell it from a failure.
         #[cfg(unix)]
         assert_eq!((Error::Off("x".into()).code(), Error::Off("x".into()).kind()), (5, "off"));
         assert_eq!(Error::Refused("x".into()).code(), 1);

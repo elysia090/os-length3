@@ -1,5 +1,5 @@
 // Home's settings that are the person's, kept for every device: a few keys
-// (the app and l3 use profile, todo and dotfiles), each a value and its
+// (the app and root3 use profile, todo and dotfiles), each a value and its
 // version, changed only from the version it was read at (src/app/remote/settings.ts
 // syncHome, src/core/src/home/: one protocol, replayed from
 // src/shared/home-sync.json by the tests).

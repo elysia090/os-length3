@@ -1,7 +1,7 @@
 //! Lines added and removed between two texts: the longest common subsequence of lines, as git's diff would count them
 //! for files of the size a repo holds. Past a size where that is too slow, lines are counted as a multiset instead
 //! (still right for appends and removals; only a move reads as both). The same as src/app/repos/linediff.ts, for the app
-//! and l3: the same table, the same choice between two equal ways (a removal before an addition).
+//! and root3: the same table, the same choice between two equal ways (a removal before an addition).
 //!
 //! Each line is a number before the table is filled (the same text, the same number), so each of its cells compares
 //! two numbers, not two lines' bytes.

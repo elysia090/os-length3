@@ -6,7 +6,7 @@ import type {Index} from './userland.ts';
 /** An index of these programs (each executable), the hot ones translated in the release. */
 function index(programs: string[], hot: string[] = ['/usr/bin/busybox', '/usr/bin/git']): Index {
   return {
-    name: 'l3', version: '0', sha256: '', codec: 'zstd', packs: [{name: 'p.pack', owner: 'p', bytes: 0}], dirs: [], links: [],
+    name: 'root3', version: '0', sha256: '', codec: 'zstd', packs: [{name: 'p.pack', owner: 'p', bytes: 0}], dirs: [], links: [],
     files: [...programs, '/etc/gitconfig'].map((path, k) => ({path, mode: path.startsWith('/etc') ? 0o644 : 0o755, size: 1, pack: 0, at: k, len: 1})),
     translator: {path: '', sha256: '', size: 0, bytes: 0, name: 'xlat', version: '0', wasm: ''},
     translations: hot.map((path) => ({path, sha256: '', elf: {path: '', sha256: '', size: 0, bytes: 0}, wasm: {path: '', sha256: '', size: 0, bytes: 0}})),

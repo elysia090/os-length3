@@ -1,4 +1,4 @@
-// Fetching l3's files (its index, the translator, the hot programs) through
+// Fetching root3's files (its index, the translator, the hot programs) through
 // whatever lies between the page and its server: a proxy may cut a transfer midway, stall it, or
 // answer with an error for a moment. A download here keeps what it has,
 // notices a stall instead of waiting forever, continues from the byte it
@@ -63,7 +63,7 @@ const transient = (status: number) => status === 408 || status === 425 || status
 export async function download(url: string, expect: Expect = {}, progress?: Progress, options: Options = {}): Promise<Uint8Array> {
   const {stallMs = 10_000, attempts = 6, backoff = (n) => Math.min(8000, 500 * 2 ** (n - 1)), fetch: get = fetch, check = here} = options;
   // What a download of `url` before this one had, taken as this one's own while it runs: another of the same file
-  // meanwhile (File's tree and a Prompt starting both read l3's index) starts its own. The two writing into one
+  // meanwhile (File's tree and a Prompt starting both read root3's index) starts its own. The two writing into one
   // joined each other's pieces, failed the size check on every try, and gave up after some 16 s.
   const state = partials.get(url) ?? {parts: [], got: 0, validator: null};
   partials.delete(url);
@@ -140,7 +140,7 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
   throw new Error(why || t('Failed to load'));
 }
 
-/** Where an earlier build kept copies of l3; nothing is kept there now. */
+/** Where an earlier build kept copies of root3; nothing is kept there now. */
 const STORE = 'length3-userland';
 
 /** Give back every copy an earlier build kept in Cache Storage except those named in `live`. */

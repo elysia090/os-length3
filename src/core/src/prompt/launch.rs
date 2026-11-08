@@ -153,12 +153,14 @@ fn environment(name: &str, shell: &str, told: &[(String, String)]) -> Vec<CStrin
         format!("SHELL={shell}"),
         format!("TERM={}", term()),
         "LANG=C.UTF-8".into(),
-        // The person's language (Home's), so the root's l3 and shell speak it too.
+        // The person's language (Home's), so the root's root3 and shell speak it too.
         format!("LENGTH3_LANG={}", if crate::text::i18n::ja() { "ja" } else { "en" }),
         "PS1=$PWD $ ".into(),
-        // The root's own l3 sees the open repo where the shell does, and
+        // The root's own root3 sees the open repo where the shell does, and
         // leaves Home, the Remote and the device to the app.
         "LENGTH3_REPOS=/root".into(),
+        "ROOT3_PROMPT=1".into(),
+        // A root released before the command was root3 (0.6.4) has l3, which asks this.
         "L3_PROMPT=1".into(),
         // An interactive sh reads this (the root's /etc/length3/shrc, if it has one).
         "ENV=/etc/length3/shrc".into(),
@@ -190,7 +192,7 @@ fn plain_zone(z: &str) -> bool {
         && z.bytes().all(|b| b.is_ascii_alphanumeric() || b"/_+-".contains(&b))
 }
 
-/// The terminal the Prompt is drawn on: a real one's name when l3 runs in one (so nano and
+/// The terminal the Prompt is drawn on: a real one's name when root3 runs in one (so nano and
 /// less can draw), else dumb. Only a plain name passes; nothing else of the host's does.
 fn term() -> String {
     use std::io::IsTerminal;
@@ -457,7 +459,7 @@ fn init(s: &Sandbox) -> ! {
     // A command named without a path is looked for where the shell would look (the PATH it is given).
     let program = c(find_program(&s.argv[0]));
     // Said if it cannot start, in the child, before it would only end with 127.
-    let not_started = crate::tr!("l3: {} could not start: ", "l3: {} を起動できませんでした：", s.argv[0]);
+    let not_started = crate::tr!("root3: {} could not start: ", "root3: {} を起動できませんでした：", s.argv[0]);
     // The shell a person's programs start for them (an editor's :!, tmux's panes) is the one they were given.
     let shell = if s.argv.first().is_some_and(|a| a.ends_with("/bash")) { "/bin/bash" } else { "/bin/sh" };
     let env = environment(&s.name, shell, &s.env);
@@ -520,7 +522,7 @@ fn init(s: &Sandbox) -> ! {
 /// namespaces a Prompt is made in (a user namespace, and a mount namespace in it) and mounts in them, then ends.
 /// A kernel may have user namespaces off for everyone (user.max_user_namespaces=0, or
 /// kernel.unprivileged_userns_clone=0); Ubuntu 23.10 and later keep them, through AppArmor, from a program no profile
-/// lets make them (the .deb's lets /usr/bin/l3). Where they cannot be made, Prompts run translated, as in a browser.
+/// lets make them (the .deb's lets /usr/bin/root3). Where they cannot be made, Prompts run translated, as in a browser.
 pub fn kept_from_namespaces() -> Option<String> {
     // SAFETY: the child makes only system calls (no allocation, no lock: the caller may have threads), then _exit.
     let child = unsafe { libc::fork() };
@@ -536,17 +538,17 @@ pub fn kept_from_namespaces() -> Option<String> {
         Some(0) => None,
         Some(1) => Some(crate::tr!("This system lets no program make user namespaces, which Prompts are made in (user.max_user_namespaces, kernel.unprivileged_userns_clone)",
             "このシステムは、Prompt が作られるユーザー名前空間をどのプログラムにも作らせません（user.max_user_namespaces、kernel.unprivileged_userns_clone）")),
-        Some(_) => Some(crate::tr!("AppArmor keeps user namespaces from this l3 (Ubuntu 23.10 and later); the .deb installs the profile that lets /usr/bin/l3 make them",
-            "AppArmor がこの l3 にユーザー名前空間を作らせません（Ubuntu 23.10 以降）。.deb で入れると、/usr/bin/l3 に作らせるプロファイルが入ります")),
+        Some(_) => Some(crate::tr!("AppArmor keeps user namespaces from this root3 (Ubuntu 23.10 and later); the .deb installs the profile that lets /usr/bin/root3 make them",
+            "AppArmor がこの root3 にユーザー名前空間を作らせません（Ubuntu 23.10 以降）。.deb で入れると、/usr/bin/root3 に作らせるプロファイルが入ります")),
         None => Some(crate::tr!("The check of user namespaces ended by a signal", "ユーザー名前空間の確認がシグナルで終わりました")),
     }
 }
 
 /// Run `s` and return the shell's exit code. Must be called from a process
-/// with one thread (l3 itself), since it forks and changes namespaces.
+/// with one thread (root3 itself), since it forks and changes namespaces.
 pub fn run(s: &Sandbox) -> io::Result<i32> {
     if !s.root.join("bin").exists() {
-        return Err(io::Error::new(io::ErrorKind::NotFound, crate::tr!("There is no root (l3 root install)", "root がありません（l3 root install）")));
+        return Err(io::Error::new(io::ErrorKind::NotFound, crate::tr!("There is no root (root3 root install)", "root がありません（root3 root install）")));
     }
     let (uid, gid) = (rustix::process::getuid().as_raw(), rustix::process::getgid().as_raw());
     let mut flags = libc::CLONE_NEWNS | libc::CLONE_NEWPID | libc::CLONE_NEWIPC | libc::CLONE_NEWUTS;
@@ -596,7 +598,7 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
                 drop(said_by);
             }
             Err(e) => {
-                eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした：{}", e));
+                eprintln!("{}", crate::tr!("root3: Could not prepare the Prompt: {}", "root3: Prompt を用意できませんでした：{}", e));
                 unsafe { libc::_exit(126) };
             }
         }
@@ -604,7 +606,7 @@ pub fn run(s: &Sandbox) -> io::Result<i32> {
         // init and everything it starts. A kernel that cannot filter runs no Prompt (fails closed).
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if let Err(e) = crate::prompt::seccomp::install() {
-            eprintln!("{}", crate::tr!("l3: Could not prepare the Prompt: {}", "l3: Prompt を用意できませんでした：{}", format!("seccomp: {e}")));
+            eprintln!("{}", crate::tr!("root3: Could not prepare the Prompt: {}", "root3: Prompt を用意できませんでした：{}", format!("seccomp: {e}")));
             unsafe { libc::_exit(126) };
         }
         init(s);
@@ -643,7 +645,7 @@ fn not_joined(s: &Sandbox, e: io::Error) -> io::Error {
 
 /// The terminal's group in front when a Prompt starts. The shell inside takes the terminal (init),
 /// and when it ends its group is gone: whoever started it is left behind, where reading a key stops
-/// it (SIGTTIN) or ends input (bug: Menu → Prompt → exit left l3 instead of the menu). So it is given back.
+/// it (SIGTTIN) or ends input (bug: Menu → Prompt → exit left root3 instead of the menu). So it is given back.
 struct Front(Option<Pid>);
 
 impl Front {
@@ -668,14 +670,14 @@ impl Front {
 /// the child, which Stop ends. The exit code of the child's shell.
 pub fn run_apart_with<G>(s: &Sandbox, keep: impl FnOnce() -> io::Result<G>) -> io::Result<i32> {
     let front = Front::now();
-    // SAFETY: called from a process of one thread (l3), so the child may go on as this process did; it leaves
+    // SAFETY: called from a process of one thread (root3), so the child may go on as this process did; it leaves
     // with _exit, never returning into the caller's code.
     let child = unsafe { libc::fork() };
     if child < 0 { return Err(io::Error::last_os_error()); }
     if child == 0 {
         let code = match keep() {
-            Ok(held) => { let code = run(s).unwrap_or_else(|e| { eprintln!("l3: {e}"); 126 }); drop(held); code }
-            Err(e) => { eprintln!("l3: {e}"); 126 }
+            Ok(held) => { let code = run(s).unwrap_or_else(|e| { eprintln!("root3: {e}"); 126 }); drop(held); code }
+            Err(e) => { eprintln!("root3: {e}"); 126 }
         };
         unsafe { libc::_exit(code) };
     }
@@ -729,7 +731,7 @@ pub fn environment_of(root: &str, dotfiles: &[(String, String)]) -> String {
 /// its own. It runs in a Prompt of its own, with the network (fetching is
 /// what it is for), over the repo's environment, so what it installs is the
 /// repo's and stays; and again only when the root or either file changes.
-/// `apt`: the root has apt (Ubuntu, Debian); l3's own has no archive yet.
+/// `apt`: the root has apt (Ubuntu, Debian); root3's own has no archive yet.
 pub fn set_up(s: &Sandbox, apt: bool) -> io::Result<()> {
     let Some(data) = &s.data else { return Ok(()) };
     let get = |n: &str| s.dotfiles.iter().find(|(k, _)| k == n).map_or("", |(_, v)| v.as_str());
@@ -737,7 +739,7 @@ pub fn set_up(s: &Sandbox, apt: bool) -> io::Result<()> {
     let setup = get(".setup");
     if packages.is_empty() && setup.trim().is_empty() { return Ok(()); }
     if let Some(p) = packages.iter().find(|p| !package_name(p)) {
-        eprintln!("{}", crate::tr!("l3: .packages: not a package name: {}", "l3: .packages：パッケージ名ではありません：{}", p));
+        eprintln!("{}", crate::tr!("root3: .packages: not a package name: {}", "root3: .packages：パッケージ名ではありません：{}", p));
         return Ok(());
     }
     let key = environment_key(&root_digest(&s.root), &packages, setup);
@@ -750,19 +752,19 @@ pub fn set_up(s: &Sandbox, apt: bool) -> io::Result<()> {
             // than say it could not (E: … posix_openpt) of an install that went well.
             script += &format!("export DEBIAN_FRONTEND=noninteractive\n[ -e /dev/ptmx ] || pty='-o Dpkg::Use-Pty=0'\napt-get update -q\napt-get install -y -q --no-install-recommends $pty {}\n", packages.join(" "));
         } else {
-            eprintln!("{}", crate::tr!("l3: this root has no package archive yet: .packages is for Ubuntu and Debian", "l3: この root にはまだパッケージの置き場がありません。.packages は Ubuntu と Debian で使えます"));
+            eprintln!("{}", crate::tr!("root3: this root has no package archive yet: .packages is for Ubuntu and Debian", "root3: この root にはまだパッケージの置き場がありません。.packages は Ubuntu と Debian で使えます"));
         }
     }
     if !setup.trim().is_empty() { script += "sh /root/.setup\n"; }
     let done = || -> io::Result<()> { if let Some(d) = stamp.parent() { std::fs::create_dir_all(d)?; } std::fs::write(&stamp, &key) };
     if script == "set -e\n" { return done(); }
-    eprintln!("{}", crate::tr!("l3: setting up from .packages and .setup…", "l3: .packages と .setup から用意しています…"));
+    eprintln!("{}", crate::tr!("root3: setting up from .packages and .setup…", "root3: .packages と .setup から用意しています…"));
     // It ends with the Prompt it prepares: stopped meanwhile (its supervisor killed, prompt::stop), nothing goes
     // on writing into the repo's environment and caches, which its record no longer keeps.
     let supervisor = std::process::id();
     let code = run_apart_with(&Sandbox { argv: vec!["/bin/sh".into(), "-c".into(), script], network: true, ..s.clone() }, || ends_with(supervisor))?;
     if code == 0 { done() } else {
-        eprintln!("{}", crate::tr!("l3: setting up stopped (exit {}); the Prompt starts with what is there", "l3: 用意が途中で止まりました（終了 {}）。今あるもので Prompt を始めます", code));
+        eprintln!("{}", crate::tr!("root3: setting up stopped (exit {}); the Prompt starts with what is there", "root3: 用意が途中で止まりました（終了 {}）。今あるもので Prompt を始めます", code));
         Ok(())
     }
 }

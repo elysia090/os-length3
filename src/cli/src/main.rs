@@ -1,4 +1,4 @@
-//! l3: Length³ OS on the command line. Its words and its order are the
+//! root3: Length³ OS on the command line. Its words and its order are the
 //! app's rail: Home, Forge (and its Prompt), File, Git, Runtime, Remote,
 //! then Server and Inbox. The same repos, issues, TODO and device, read and
 //! written through the same core, so what one does here is what the app
@@ -8,8 +8,8 @@
 //! One table (spec.rs) says every form; a call is read against it (args.rs),
 //! may run where it is (cmd::before), is kept in step with the Remote around
 //! it (sync.rs), and answers with text or, with --json, data (out.rs). At a
-//! terminal, bare `l3` is the menu (menu.rs), and a command typed is followed
-//! by its next deeds, both read from the same table; anywhere else l3 is only
+//! terminal, bare `root3` is the menu (menu.rs), and a command typed is followed
+//! by its next deeds, both read from the same table; anywhere else root3 is only
 //! the command (term::interactive).
 
 mod args;

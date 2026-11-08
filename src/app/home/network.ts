@@ -1,5 +1,5 @@
 // Which repos' Prompts may reach the network: this device's grant, kept in Home's state (`network`, which the core
-// and l3 read too), given and taken from Runtime and the Agent's cards.
+// and root3 read too), given and taken from Runtime and the Agent's cards.
 
 import {getState, setState} from './state.ts';
 import {onRenamed} from '../repos/repos.ts';

@@ -345,7 +345,7 @@ export class Editor {
   }
 
   /**
-   * A text saved elsewhere (another device, the shell, l3, Git) comes in unless this one has unsaved edits: then it
+   * A text saved elsewhere (another device, the shell, root3, Git) comes in unless this one has unsaved edits: then it
    * is asked, and false.
    */
   take(text: string): boolean {

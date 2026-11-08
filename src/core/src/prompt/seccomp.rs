@@ -23,7 +23,7 @@
 //!     clock_adjtime, adjtimex, and on x86-64 iopl, ioperm, modify_ldt,
 //!     uselib, _sysctl, nfsservctl
 //!   ioctl's TIOCSTI and TIOCLINUX (typing into, or pasting onto, a
-//!     terminal: l3 prompt at a terminal hands the Prompt the person's own,
+//!     terminal: root3 prompt at a terminal hands the Prompt the person's own,
 //!     whose shell would read what was pushed once the Prompt ends)
 //! Refused with ENOSYS, so a program takes its other way, as on a kernel
 //! without them: clone3 (its flags cannot be read by a filter; libc falls
@@ -63,7 +63,7 @@ const ARG0_LOW: u32 = 16;
 const ARG1_LOW: u32 = 24;
 
 /// The ioctl requests that put input into a terminal: TIOCSTI (a byte into its input, as if typed) and TIOCLINUX
-/// (a console's selection pasted, among others). The terminal l3 prompt runs in is the person's, the controlling
+/// (a console's selection pasted, among others). The terminal root3 prompt runs in is the person's, the controlling
 /// one of the session their shell is in; a byte pushed into it is read by that shell once the Prompt ends.
 const TERMINAL_INPUT: [u32; 2] = [libc::TIOCSTI as u32, libc::TIOCLINUX as u32];
 

@@ -42,7 +42,7 @@ fn a_plan_reads_as_the_remote_says_it() {
 
 #[test]
 fn a_devices_token_is_never_written_out() {
-    let d: super::Device = serde_json::from_str(r#"{"token":"secret","userAgent":"l3","updatedAt":"2026-10-17"}"#).unwrap();
+    let d: super::Device = serde_json::from_str(r#"{"token":"secret","userAgent":"root3","updatedAt":"2026-10-17"}"#).unwrap();
     assert_eq!(d.token, "secret");
     let out = serde_json::to_string(&d).unwrap();
     assert!(!out.contains("secret") && !out.contains("token"), "{out}");

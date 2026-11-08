@@ -1,4 +1,4 @@
-//! The roots this l3 knows by their pins: each release and distribution, by its sha256 and size, and where it is
+//! The roots this root3 knows by their pins: each release and distribution, by its sha256 and size, and where it is
 //! fetched from (the Remote by digest first, then its makers).
 
 /// Where a pinned root is fetched from, in turn: the Remote this device
@@ -33,7 +33,7 @@ pub fn distro(id: &str) -> Option<&'static Distro> {
     DISTROS.iter().find(|d| d.id == id)
 }
 
-/// The other roots l3 trusts: Ubuntu's base and Debian's official image root, each at a URL that names that one
+/// The other roots root3 trusts: Ubuntu's base and Debian's official image root, each at a URL that names that one
 /// build (Debian's at the commit of its makers' branch that holds it: the branch itself moves with each build). The
 /// deploy puts each on the Remote by its digest (src/remote/mirror.ts), where a device asks first.
 pub const DISTROS: &[Distro] = &[Distro {
@@ -64,7 +64,7 @@ pub struct Distro {
     pub bytes: u64,
 }
 
-/// The releases l3 trusts, newest first. Nothing else is installed.
+/// The releases root3 trusts, newest first. Nothing else is installed.
 pub const RELEASES: &[Release] = &[Release {
     name: "OS Length3 Linux",
     version: "0.6.4",
@@ -85,10 +85,10 @@ pub struct Release {
     pub file: &'static str,
     /// The GitHub release it was published under (its tag).
     pub tag: &'static str,
-    /// The same root as a browser reads it: the sha256 of l3's index for the
+    /// The same root as a browser reads it: the sha256 of root3's index for the
     /// web (scripts/webroot.ts), made from this bundle in the same release.
     /// Empty for a release made before there was one. The app never reads it;
-    /// it is here so one entry is the whole of l3's pin, for both.
+    /// it is here so one entry is the whole of root3's pin, for both.
     pub web: &'static str,
 }
 

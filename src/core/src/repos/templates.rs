@@ -1,5 +1,5 @@
 //! Repo templates, defined once in `src/shared/templates.json` and read by both
-//! the app and l3. A template holds only the repo's own files; Inbox and TODO
+//! the app and root3. A template holds only the repo's own files; Inbox and TODO
 //! belong to the OS, not to a repo.
 
 use serde::Deserialize;

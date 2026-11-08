@@ -1,11 +1,11 @@
-// npm run selftest:prod: the web app and l3 against the Remote as production
+// npm run selftest:prod: the web app and root3 against the Remote as production
 // runs it (README.md here), each part in turn, one heavy thing at a time:
 //
-//   node tests/prod/run.ts [headers] [research] [web] [l3] [measure] [drills]
+//   node tests/prod/run.ts [headers] [research] [web] [root3] [measure] [drills]
 //
-// With no part named: headers, research, web, l3. L3=path runs l3's part with
-// that binary (the release's: cargo build --profile prompt -p l3
-// --no-default-features --target x86_64-unknown-linux-musl); without it, l3 is
+// With no part named: headers, research, web, root3. ROOT3=path runs root3's part with
+// that binary (the release's: cargo build --profile prompt -p root3
+// --no-default-features --target x86_64-unknown-linux-musl); without it, root3 is
 // built as selftest:cli builds it. Every server it starts (Postgres, the
 // bridge, workerd) is stopped when it ends, however it ends.
 
@@ -20,11 +20,11 @@ import {webPolicy} from '../../src/app/host/policy.ts';
 import {cluster} from './postgres.ts';
 import {appBuild, bridgeProcess, OS, remote} from './stack.ts';
 
-const ALL = ['headers', 'research', 'web', 'l3', 'measure', 'drills'];
+const ALL = ['headers', 'research', 'web', 'root3', 'measure', 'drills'];
 const asked = process.argv.slice(2);
 const bad = asked.filter((a) => !ALL.includes(a));
 if (bad.length) { console.error(`selftest:prod: not a part: ${bad.join(' ')} (${ALL.join(', ')})`); process.exit(2); }
-const parts = asked.length ? asked : ['headers', 'research', 'web', 'l3'];
+const parts = asked.length ? asked : ['headers', 'research', 'web', 'root3'];
 const say = (s: string) => console.log(`selftest:prod: ${s}`);
 
 /** Run `args` with node from os/, its output passed on; its exit code. */
@@ -111,8 +111,8 @@ async function headers() {
   });
 }
 
-/** Run l3 with `args` in its own home against `url`. */
-function l3(bin: string, home: string, url: string, args: string[]) {
+/** Run root3 with `args` in its own home against `url`. */
+function root3(bin: string, home: string, url: string, args: string[]) {
   const r = spawnSync(bin, args, {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', LENGTH3_REMOTE: url, NO_COLOR: '1', LENGTH3_KEYRING: 'off'},
     encoding: 'utf8', cwd: home, timeout: 120_000});
   return {code: r.status ?? -1, out: r.stdout, err: r.stderr};
@@ -130,7 +130,7 @@ const bearerIn = (setCookies: string[]): string | null => {
   return null;
 };
 
-/** A Remote for research (ENTER_AS), as production is configured today: in by the link alone; l3 through the device flow. */
+/** A Remote for research (ENTER_AS), as production is configured today: in by the link alone; root3 through the device flow. */
 async function research() {
   const key = randomBytes(30).toString('base64url');
   await withRemote({enter: {as: 'banana000000', key}}, async (r) => {
@@ -155,9 +155,9 @@ async function research() {
     const token = bearerIn(entered.cookies)!;
     assert.equal((await json('GET', '/api/auth/passkey/list-user-passkeys', {token})).status, 403, 'no passkey for research');
     assert.equal((await json('PUT', '/v1/home/todo', {token, body: {value: '[]', version: 0}})).status, 200);
-    const bin = process.env.L3;
+    const bin = process.env.ROOT3;
     if (bin) {
-      const home = mkdtempSync(join(tmpdir(), 'length3-prod-l3-'));
+      const home = mkdtempSync(join(tmpdir(), 'length3-prod-root3-'));
       try {
         const login = await new Promise<{code: number; out: string}>((resolve, reject) => {
           const p = spawn(bin, ['login', r.url], {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', NO_COLOR: '1', LENGTH3_KEYRING: 'off'}, cwd: home});
@@ -178,13 +178,13 @@ async function research() {
           p.once('exit', (c) => resolve({code: c ?? -1, out}));
         });
         assert.equal(login.code, 0, login.out);
-        const made = l3(bin, home, r.url, ['repo', 'new', 'notes', '-t', 'empty']);
+        const made = root3(bin, home, r.url, ['repo', 'new', 'notes', '-t', 'empty']);
         assert.equal(made.code, 0, made.err);
-        const listed = l3(bin, home, r.url, ['remote']);
+        const listed = root3(bin, home, r.url, ['remote']);
         assert.match(listed.out, /notes {2}in step/, listed.out + listed.err);
-        say('research: l3 signed in through the device flow approved by the entered session, and keeps a repo in step');
+        say('research: root3 signed in through the device flow approved by the entered session, and keeps a repo in step');
       } finally { rmSync(home, {recursive: true, force: true}); }
-    } else say('research: no L3 given: l3\'s part of it is left out');
+    } else say('research: no Root3 given: root3\'s part of it is left out');
     assert.equal((await json('GET', '/v1/repos', {token})).status, 200);
     assert.equal(await r.sweep(), 200);
     for (let i = 0; i < 50 && !/sweep \{/.test(r.log()); i++) await new Promise((x) => setTimeout(x, 100));
@@ -208,10 +208,10 @@ try {
       if (part === 'headers') await headers();
       else if (part === 'research') await research();
       else if (part === 'web') { const c = await node([join(OS, 'node_modules', '@playwright', 'test', 'cli.js'), 'test', '-c', 'tests'], {SELFTEST_REMOTE_KIND: 'worker'}); if (c) throw new Error(`the app's selftest failed (${c})`); }
-      else if (part === 'l3') {
+      else if (part === 'root3') {
         if (spawnSync(process.execPath, [join(OS, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', 'tests/cli'], {cwd: OS, stdio: 'inherit'}).status !== 0) throw new Error('tests/cli does not compile');
         const c = await node(['--test', '--test-concurrency=1', 'tests/cli/*.test.ts'], {SELFTEST_REMOTE_KIND: 'worker'});
-        if (c) throw new Error(`l3's selftest failed (${c})`);
+        if (c) throw new Error(`root3's selftest failed (${c})`);
       } else if (part === 'measure') { const c = await node([join(OS, 'tests', 'prod', 'measure.ts')]); if (c) throw new Error(`measure failed (${c})`); }
       else if (part === 'drills') { const c = await node([join(OS, 'tests', 'prod', 'drills.ts')]); if (c) throw new Error(`drills failed (${c})`); }
       say(`${part}: passed`);

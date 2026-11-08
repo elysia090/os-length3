@@ -17,7 +17,7 @@ fn a_budget_says_what_was_gone_past_time_before_space() {
 #[test]
 fn a_spec_is_named_by_what_it_is_and_nothing_of_where() {
     let s = Spec { root: "a".repeat(64), environment: String::new(), repo: "notes".into(), line: "001".into(), argv: vec!["/bin/sh".into()],
-        env: vec![("L3_TASK".into(), "x".into())], network: false, budget: Budget::minutes(1) };
+        env: vec![("ROOT3_TASK".into(), "x".into())], network: false, budget: Budget::minutes(1) };
     assert_eq!(s.digest(), s.clone().digest());
     assert_ne!(s.digest(), Spec { line: "002".into(), ..s.clone() }.digest());
     assert_eq!(serde_json::from_str::<Spec>(&serde_json::to_string(&s).unwrap()).unwrap(), s);

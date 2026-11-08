@@ -531,7 +531,7 @@ class GitPage {
   // ---- drawn again as the repos change ----
 
   /**
-   * Issues written anywhere (here, in the shell, with l3 in the Prompt) show up at once, and any change in the repo
+   * Issues written anywhere (here, in the shell, with root3 in the Prompt) show up at once, and any change in the repo
    * looked at is read again; not while something is being written in the box or under it, which would be lost.
    */
   private watch() {

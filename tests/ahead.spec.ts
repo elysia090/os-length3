@@ -17,7 +17,7 @@ test.describe('translated ahead', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
 
   test('what is likely run next is translated while a Prompt waits, a C repo\'s compiler not', async ({app}) => {
-    expect(existsSync(join(OS, 'public', 'webroot', 'webroot.json')), 'this build carries no l3 (public/webroot)').toBe(true);
+    expect(existsSync(join(OS, 'public', 'webroot', 'webroot.json')), 'this build carries no root3 (public/webroot)').toBe(true);
     test.setTimeout(600_000);
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');

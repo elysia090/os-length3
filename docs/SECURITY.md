@@ -17,8 +17,8 @@ In scope:
 - the Remote at `os.length3.com` (`src/remote`);
 - the web app (`src/app`);
 - the desktop app (`src/desktop`);
-- `l3` and its core (`src/cli`, `src/core`), including the Prompt's sandbox and
-  `l3 ssh`;
+- `root3` and its core (`src/cli`, `src/core`), including the Prompt's sandbox and
+  `root3 ssh`;
 - the release workflows (`.github/workflows`).
 
 Out of scope:
@@ -35,7 +35,7 @@ is welcome, and so is a Remote of your own (`node src/remote/dev.ts`).
 
 Only the latest release is supported: the release `RELEASE` names, which
 the web app at `os.length3.com` always is. Fixes go into the next release.
-Older desktop apps and `l3` builds are asked to update. Nothing earlier is
+Older desktop apps and `root3` builds are asked to update. Nothing earlier is
 patched.
 
 ## Threat model, in short
@@ -55,7 +55,7 @@ request passes, and the one secret") and are tested in
   that a browser approved by its code (RFC 8628), and any other session can
   end it. In a browser a session is a `__Host-` cookie (HttpOnly: no script
   reads it; the Remote hands a page no token, ever), taken only from the
-  app's own pages; on a device (the app, l3) it is a bearer token from the
+  app's own pages; on a device (the app, root3) it is a bearer token from the
   device flow, kept apart from everything the app's page reads
   (`src/core/src/device/vault.rs`), and the page asks the Remote through the core.
   Either is taken only signed with the Remote's secret.
@@ -63,7 +63,7 @@ request passes, and the one secret") and are tested in
   in the OS's keyring (the Keychain, Credential Manager without roaming, the
   Secret Service), never in Home's state, a repo or a dotfile; where there is
   no keyring that answers, in a file only the person reads (0600), and
-  `l3 remote sign-in` says which. In a browser the Agent's key is sealed by
+  `root3 remote sign-in` says which. In a browser the Agent's key is sealed by
   the person's passkey (WebAuthn PRF, AES-256-GCM) and opened once a session;
   where no passkey can seal it, Runtime says it is kept as given. A program running as the person can still
   ask an unlocked keyring for them, as it can on every desktop; what limits

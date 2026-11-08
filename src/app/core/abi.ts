@@ -15,9 +15,9 @@ const decoder = new TextDecoder();
 
 interface Exports {
   memory: WebAssembly.Memory;
-  l3_alloc(len: number): number;
-  l3_call(ptr: number, len: number): bigint;
-  l3_free(ptr: number, len: number): void;
+  root3_alloc(len: number): number;
+  root3_call(ptr: number, len: number): bigint;
+  root3_free(ptr: number, len: number): void;
   _initialize?(): void;
 }
 
@@ -64,15 +64,15 @@ export class Core {
 
   /** The core's answer to `name` with `args` (src/core/src/api.rs). A trap is thrown, and this instance is done. */
   call(name: string, args: unknown): Answer {
-    const {memory, l3_alloc, l3_call, l3_free} = this.exports;
+    const {memory, root3_alloc, root3_call, root3_free} = this.exports;
     const q = encoder.encode(JSON.stringify({name, args: args ?? {}}));
-    const ptr = l3_alloc(q.length) >>> 0;
+    const ptr = root3_alloc(q.length) >>> 0;
     new Uint8Array(memory.buffer, ptr, q.length).set(q);
-    const r = BigInt.asUintN(64, l3_call(ptr, q.length));
+    const r = BigInt.asUintN(64, root3_call(ptr, q.length));
     const at = Number(r >> 32n);
     const len = Number(r & 0xffffffffn);
     const text = decoder.decode(new Uint8Array(memory.buffer, at, len));
-    l3_free(at, len);
+    root3_free(at, len);
     return JSON.parse(text) as Answer;
   }
 }

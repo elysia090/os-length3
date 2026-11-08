@@ -13,7 +13,7 @@ import {errorText} from '../../host/errors.ts';
 import {busy} from './held.ts';
 
 // What Git shows round the issues: over them, what main has not committed
-// (with its Commit, named by its line as l3 commit names it); under them,
+// (with its Commit, named by its line as root3 commit names it); under them,
 // what is done with, newest first: what was committed on main from here,
 // the issues merged, read only with their diffs, and those closed without
 // being done, each with Reopen.
@@ -144,7 +144,7 @@ export function opened(part: HTMLElement) {
 /**
  * main's card for a repo with something not committed: its files (▸ 2 files,
  * their diff over what is under it) and Commit. Commit asks in the card for
- * its line ("Fix：title", as `l3 commit REPO "Fix：title"` takes it), Not now
+ * its line ("Fix：title", as `root3 commit REPO "Fix：title"` takes it), Not now
  * at the left and Commit at the right, under the pointer.
  */
 function mainCard(repo: string, n: number, events: IssueEvents, after: () => void, brief = false): HTMLElement {

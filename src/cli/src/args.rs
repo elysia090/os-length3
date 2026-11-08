@@ -2,8 +2,8 @@
 //! alias), then the one form its words fit, each word in its slot; flags
 //! anywhere before `--`, and only those the form takes. `--` ends the flags
 //! for every command: what follows is words, even if they begin with `-`
-//! (and for `l3 prompt`, the command to run). A word that is a form's verb is
-//! that form's: `l3 file write` without a path is a mistake, not a repo
+//! (and for `root3 prompt`, the command to run). A word that is a form's verb is
+//! that form's: `root3 file write` without a path is a mistake, not a repo
 //! called "write".
 
 use crate::cmd::Ctx;
@@ -51,7 +51,7 @@ impl Call {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Given { Json, Help, Version, Takes(Flag) }
 
-/// The flags l3 knows by spelling; `value`: it takes the word after it.
+/// The flags root3 knows by spelling; `value`: it takes the word after it.
 fn flag(name: &str) -> Option<(Given, bool)> {
     Some(match name {
         "--json" => (Given::Json, false),
@@ -79,7 +79,7 @@ fn same_flag(a: Flag, b: Flag) -> bool {
 
 fn usage(s: String) -> Error { Error::Usage(s) }
 
-/// Read `argv` (without the program's name). `ctx` says where l3 runs: in a
+/// Read `argv` (without the program's name). `ctx` says where root3 runs: in a
 /// repo, an optional REPO may be left out, and a word that is no repo here is the next slot's.
 pub fn parse(argv: &[String], ctx: &Ctx) -> Result<Call, Error> {
     let mut words: Vec<String> = Vec::new();
@@ -117,7 +117,7 @@ pub fn parse(argv: &[String], ctx: &Ctx) -> Result<Call, Error> {
             }
         }
     }
-    // -h and -V win over everything else: help for the command named, or l3's version.
+    // -h and -V win over everything else: help for the command named, or root3's version.
     if version && !help {
         return Ok(simple("version", Vec::new(), flags));
     }
@@ -129,7 +129,7 @@ pub fn parse(argv: &[String], ctx: &Ctx) -> Result<Call, Error> {
     let name = named.unwrap_or_default();
     let command = spec::find(&name).ok_or_else(|| usage(not_a_command(&name)))?;
     if let Some(u) = unknown {
-        return Err(usage(tr!("l3 does not know the flag {}\n\n{}", "{} というフラグはありません\n\n{}", u, forms_of(command))));
+        return Err(usage(tr!("root3 does not know the flag {}\n\n{}", "{} というフラグはありません\n\n{}", u, forms_of(command))));
     }
     let rest = if words.is_empty() { &[][..] } else { &words[1..] };
     // A form's verb, or a choice its first word must be, is that form's alone.
@@ -198,7 +198,7 @@ pub fn owner_shaped(w: &str) -> bool {
 
 /// Whether `w` can stand in slot `a`. Strictly, in a repo, an optional REPO
 /// takes only a repo that is here, so another word goes to the next slot
-/// (`l3 commit "x"` in a repo is a title).
+/// (`root3 commit "x"` in a repo is a title).
 fn suits(a: Arg, w: &str, strict: bool, ctx: &Ctx) -> bool {
     let repo_shaped = |w: &str| length3_core::text::names::valid_name(w) || owner_shaped(w);
     match a {
@@ -241,23 +241,23 @@ pub fn nearest<'a>(word: &str, among: impl IntoIterator<Item = &'a str>) -> Opti
 pub fn not_a_command(word: &str) -> String {
     let names = spec::shown().flat_map(|c| std::iter::once(c.name).chain(c.aliases.iter().copied()));
     match nearest(word, names) {
-        Some(w) => tr!("Not a command: l3 {}\nDid you mean: l3 {}", "わからないコマンドです：l3 {}\nもしかして：l3 {}", word, w),
-        None => tr!("Not a command: l3 {}\n`l3 help` lists the commands", "わからないコマンドです：l3 {}\n`l3 help` でコマンドの一覧を見られます", word),
+        Some(w) => tr!("Not a command: root3 {}\nDid you mean: root3 {}", "わからないコマンドです：root3 {}\nもしかして：root3 {}", word, w),
+        None => tr!("Not a command: root3 {}\n`root3 help` lists the commands", "わからないコマンドです：root3 {}\n`root3 help` でコマンドの一覧を見られます", word),
     }
 }
 
-/// A command's forms, as help shows them; `l3` alone, which shows none, points to the commands.
+/// A command's forms, as help shows them; `root3` alone, which shows none, points to the commands.
 fn forms_of(c: &Command) -> String {
     let rows: Vec<String> = c.forms.iter().filter(|f| !f.hidden).map(|f| format!("  {}", spec::usage(c, f))).collect();
-    if rows.is_empty() { return tr!("`l3 help` lists the commands", "`l3 help` でコマンドの一覧を見られます"); }
+    if rows.is_empty() { return tr!("`root3 help` lists the commands", "`root3 help` でコマンドの一覧を見られます"); }
     rows.join("\n")
 }
 
 /// `rest`: the words after the command as written, `--` and what follows it included.
 fn not_a_form(c: &Command, rest: &[String]) -> String {
     let verbs = c.forms.iter().flat_map(|f| f.verb.into_iter().chain(match (f.verb, f.args.first()) { (None, Some(Arg::Choice(w))) => w.to_vec(), _ => Vec::new() }));
-    let hint = rest.first().and_then(|w| nearest(w, verbs)).map(|v| tr!("Did you mean: l3 {} {}\n", "もしかして：l3 {} {}\n", c.name, v)).unwrap_or_default();
-    let written = std::iter::once("l3").chain((!c.name.is_empty()).then_some(c.name)).map(String::from).chain(rest.iter().cloned()).collect::<Vec<_>>().join(" ");
+    let hint = rest.first().and_then(|w| nearest(w, verbs)).map(|v| tr!("Did you mean: root3 {} {}\n", "もしかして：root3 {} {}\n", c.name, v)).unwrap_or_default();
+    let written = std::iter::once("root3").chain((!c.name.is_empty()).then_some(c.name)).map(String::from).chain(rest.iter().cloned()).collect::<Vec<_>>().join(" ");
     if ja() { format!("{written} の書き方ではありません\n{hint}\n{}", forms_of(c)) } else { format!("Not how {written} is written\n{hint}\n{}", forms_of(c)) }
 }
 
@@ -295,7 +295,7 @@ mod tests {
         let out = ctx(None, &["hello"]);
         let inside = ctx(Some("hello"), &["hello"]);
         let c = p("commit nope", &out).unwrap();
-        assert_eq!((form(&c), c.slots.clone()), (format!("l3 commit [REPO] [-m {}]", spec::placeholder("note")), vec![Slot::One("nope".into())]));
+        assert_eq!((form(&c), c.slots.clone()), (format!("root3 commit [REPO] [-m {}]", spec::placeholder("note")), vec![Slot::One("nope".into())]));
         let c = p("commit nope", &inside).unwrap();
         assert_eq!(c.slots, vec![Slot::Empty, Slot::One("nope".into())]);
         let c = p("commit hello", &inside).unwrap();
@@ -310,11 +310,11 @@ mod tests {
         // In a repo, a word that is no repo here still reaches the slot when nothing else fits (and is then not found).
         let c = p("log nope", &inside).unwrap();
         assert_eq!(c.slots, vec![Slot::One("nope".into())]);
-        assert_eq!(form(&p("diff hello#1", &out).unwrap()), "l3 diff ISSUE");
-        assert_eq!(form(&p("diff \"restart loses\"", &out).unwrap()), "l3 diff ISSUE");
-        assert_eq!(form(&p("issue hello", &out).unwrap()), "l3 issue [REPO]");
+        assert_eq!(form(&p("diff hello#1", &out).unwrap()), "root3 diff ISSUE");
+        assert_eq!(form(&p("diff \"restart loses\"", &out).unwrap()), "root3 diff ISSUE");
+        assert_eq!(form(&p("issue hello", &out).unwrap()), "root3 issue [REPO]");
         assert_eq!(p("start readme", &out).unwrap().word(0), Some("readme"));
-        assert_eq!(form(&p("diff hello", &out).unwrap()), "l3 diff [REPO]");
+        assert_eq!(form(&p("diff hello", &out).unwrap()), "root3 diff [REPO]");
     }
 
     #[test]
@@ -344,15 +344,15 @@ mod tests {
         assert!(p("todo add x --note=why", &c).is_ok_and(|c| c.note() == "why"));
         assert!(p("repo --json", &c).is_ok_and(|c| c.flags.json));
         assert!(matches!(p("lang --json=1", &c), Err(Error::Usage(_))));
-        // `l3` alone has no forms to show: its mistakes point to the commands (bug: "a flag of l3 " and nothing after).
+        // `root3` alone has no forms to show: its mistakes point to the commands (bug: "a flag of root3 " and nothing after).
         for line in ["--network", "--frob", "-m x", "-- todo"] {
             let Err(Error::Usage(m)) = p(line, &c) else { panic!("{line}") };
-            assert!(m.ends_with("`l3 help`") || m.contains("`l3 help` "), "{line}: {m:?}");
-            assert!(!m.contains("l3  ") && !m.contains("l3 \n"), "{line}: {m:?}");
+            assert!(m.ends_with("`root3 help`") || m.contains("`root3 help` "), "{line}: {m:?}");
+            assert!(!m.contains("root3  ") && !m.contains("root3 \n"), "{line}: {m:?}");
         }
         // What came after `--` is said as it was written.
         let Err(Error::Usage(m)) = p("todo done -- -1", &c) else { panic!() };
-        assert!(m.lines().next().is_some_and(|l| l.contains("l3 todo done -- -1 ")), "{m}");
+        assert!(m.lines().next().is_some_and(|l| l.contains("root3 todo done -- -1 ")), "{m}");
     }
 
     #[test]
@@ -361,11 +361,11 @@ mod tests {
         assert!(matches!(p("file write", &c), Err(Error::Usage(m)) if m.contains("file write")));
         assert!(matches!(p("inbox accept", &c), Err(Error::Usage(_))));
         assert!(matches!(p("dotfile write", &c), Err(Error::Usage(_))));
-        assert_eq!(form(&p("dotfile write .profile", &c).unwrap()), "l3 dotfile write NAME [--empty]");
-        assert_eq!(form(&p("dotfiles", &c).unwrap()), "l3 dotfile");
-        assert_eq!(form(&p("remote devices rm 2", &c).unwrap()), "l3 remote devices rm N");
-        assert_eq!(form(&p("free all", &c).unwrap()), "l3 free all");
-        assert_eq!(form(&p("free repo:a repo:b", &c).unwrap()), "l3 free ID…");
+        assert_eq!(form(&p("dotfile write .profile", &c).unwrap()), "root3 dotfile write NAME [--empty]");
+        assert_eq!(form(&p("dotfiles", &c).unwrap()), "root3 dotfile");
+        assert_eq!(form(&p("remote devices rm 2", &c).unwrap()), "root3 remote devices rm N");
+        assert_eq!(form(&p("free all", &c).unwrap()), "root3 free all");
+        assert_eq!(form(&p("free repo:a repo:b", &c).unwrap()), "root3 free ID…");
     }
 
     #[test]
@@ -378,9 +378,9 @@ mod tests {
         assert_eq!(p("-V", &c).unwrap().command.name, "version");
         assert_eq!(p("", &c).unwrap().command.name, "");
         let Err(Error::Usage(m)) = p("comit", &c) else { panic!() };
-        assert!(m.contains("l3 commit"), "{m}");
+        assert!(m.contains("root3 commit"), "{m}");
         let Err(Error::Usage(m)) = p("todo ad x", &c) else { panic!() };
-        assert!(m.contains("l3 todo add"), "{m}");
+        assert!(m.contains("root3 todo add"), "{m}");
         assert_eq!(nearest("help", ["help", "hello"]), None);
         assert_eq!(nearest("rpeo", ["repo", "root"]), Some("repo"));
         assert_eq!(distance("rpeo", "repo"), 1);

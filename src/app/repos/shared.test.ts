@@ -8,20 +8,20 @@ import {counts, lineOps} from './linediff.ts';
 import {isGitName, validName} from './repos.ts';
 import {kindOf} from './text.ts';
 
-// The same cases the core crate's tests read: the app and l3 must agree.
+// The same cases the core crate's tests read: the app and root3 must agree.
 
 /** Every case whose answer is not the one wanted, each with what came instead: [] when all agree. */
 function disagreeing<C>(list: readonly C[], want: (c: C) => unknown, got: (c: C) => unknown) {
   return list.map((c) => ({c, want: want(c), got: got(c)})).filter((x) => !isDeepStrictEqual(x.want, x.got));
 }
 
-test('a first line is named the same way here and in l3', () => {
+test('a first line is named the same way here and in root3', () => {
   for (const [line, kind, title] of cases.kind as [string, string | null, string][]) {
     assert.deepEqual(kindOf(line), {kind, title}, line);
   }
 });
 
-test('issues are read, written and numbered the same way here and in l3', () => {
+test('issues are read, written and numbered the same way here and in root3', () => {
   for (const [text, kind, title, detail] of cases.issue as [string, string | null, string, string][]) {
     const i = parseIssue('r', 'x.md', text);
     assert.deepEqual([i.kind, i.title, i.detail], [kind, title, detail], text);
@@ -43,11 +43,11 @@ test('issues are read, written and numbered the same way here and in l3', () => 
   for (const [name, git] of cases.gitName as [string, boolean][]) assert.equal(isGitName(name), git, name);
 });
 
-test('an issue file is numbered by its name the same way here and in l3', () => {
+test('an issue file is numbered by its name the same way here and in root3', () => {
   assert.deepEqual(disagreeing(cases.issueNumber as [string, number | null][], ([, n]) => n, ([file]) => numberOf(file)), []);
 });
 
-test('lines changed are counted, and laid out, the same way here and in l3', () => {
+test('lines changed are counted, and laid out, the same way here and in root3', () => {
   const mark = {same: '=', add: '+', del: '-'} as const;
   type Case = [string, string, number, number, string[] | null];
   const list = cases.lineDiff as Case[];
@@ -55,6 +55,6 @@ test('lines changed are counted, and laid out, the same way here and in l3', () 
   assert.deepEqual(disagreeing(list.filter((c) => c[4]), (c) => c[4], ([a, b]) => lineOps(a, b).map((o) => mark[o.kind] + o.text)), []);
 });
 
-test('a dotfile may be written into /root under the same names here and in l3', () => {
+test('a dotfile may be written into /root under the same names here and in root3', () => {
   assert.deepEqual(disagreeing(cases.dotfileName as [string, boolean][], ([, ok]) => ok, ([name]) => validDotfile(name)), []);
 });

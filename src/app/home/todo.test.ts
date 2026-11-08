@@ -40,7 +40,7 @@ test('done toggles, removal and blank lines are not kept', () => {
   assert.deepEqual(remove(list, list[1].id).map((t) => t.title), ['a', '']);
 });
 
-test('an item cut at its limit keeps every character whole, so l3 can still read the list', () => {
+test('an item cut at its limit keeps every character whole, so root3 can still read the list', () => {
   // 199 letters and an emoji (two UTF-16 units): the emoji does not fit, and is not cut in half.
   const long = 'a'.repeat(TEXT_LIMIT - 1) + '😀';
   const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;

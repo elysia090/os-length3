@@ -52,7 +52,7 @@ for name in calls switches signals threads jobs; do
     echo "FAIL $name cut into runs of 3 (exit $native vs $cut)"; status=1
   fi
 done
-# Rust's std (what l3 is made of), when the musl target is installed.
+# Rust's std (what root3 is made of), when the musl target is installed.
 if rustup target list --installed 2>/dev/null | grep -q x86_64-unknown-linux-musl; then
   for r in "$here"/rust/*.rs; do
     name=rust-$(basename "$r" .rs)

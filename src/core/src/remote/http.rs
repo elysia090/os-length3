@@ -1,5 +1,5 @@
 //! Talking to the Remote over HTTP: one client carrying this device's
-//! session, what kind of failure the last request was (l3 says each with
+//! session, what kind of failure the last request was (root3 says each with
 //! its own exit code), and answers taken only as a Remote gives them.
 
 use crate::device::net::{send, Sent};
@@ -58,7 +58,7 @@ pub(crate) enum Reply {
 }
 
 /// Why the last request to the Remote failed, for a caller that says it in
-/// its own way (l3's exit codes). Errors stay text; this is what kind of text.
+/// its own way (root3's exit codes). Errors stay text; this is what kind of text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Failure {
     /// This device is on no Remote.
@@ -105,7 +105,7 @@ pub fn forget_failure() {
 }
 
 pub(super) fn unknown() -> String {
-    failed(Failure::Unknown, crate::tr!("The Remote no longer knows this device. Sign in again (l3 login)", "Remote がこの端末を覚えていません。もう一度サインインしてください（l3 login）"))
+    failed(Failure::Unknown, crate::tr!("The Remote no longer knows this device. Sign in again (root3 login)", "Remote がこの端末を覚えていません。もう一度サインインしてください（root3 login）"))
 }
 
 /// Not reached: `host` (and port), and why (net::send's words).
@@ -128,15 +128,15 @@ pub(super) fn refused(code: u16, r: impl Read) -> String {
         (410, _) if !v["gone"].is_null() => crate::tr!("This repo was discarded on the Remote, and a copy that was in step with it does not bring it back; what changed here since stays on this device (to keep it on the Remote, make a new repo and move it there)",
             "この repo は Remote で破棄されました。同期していた写しからは戻りません。そのあとここで変えたものはこの端末に残ります（Remote に置くなら、新しい repo を作って移してください）"),
         // Turned off: the Remote keeps it for a while, answering only that.
-        (410, _) => crate::tr!("It is turned off on the Remote (l3 remote on brings it back)", "Remote でオフになっています（l3 remote on で戻せます）"),
+        (410, _) => crate::tr!("It is turned off on the Remote (root3 remote on brings it back)", "Remote でオフになっています（root3 remote on で戻せます）"),
         // The plan's (src/remote/plan.ts): what is paid, and what happens to the work (it stays here).
         (402, _) => match v["rule"].as_str().unwrap_or_default() {
-            "repos" => crate::tr!("The free plan keeps no more repos on the Remote: this one stays on this device and waits (l3 remote plan)", "無料プランでは、これ以上の repo を Remote に置けません。この repo はこの端末に残り、待ちます（l3 remote plan）"),
-            "bytes" => crate::tr!("The free plan keeps no more on the Remote: the change stays on this device and waits (l3 remote plan)", "無料プランでは、これ以上を Remote に置けません。変更はこの端末に残り、待ちます（l3 remote plan）"),
-            "server" => crate::tr!("Making a server is part of the paid plan (l3 remote plan)", "サーバーを作るのは有料プランです（l3 remote plan）"),
-            "domain" => crate::tr!("A name on your own domain is part of the paid plan (l3 remote plan)", "自分のドメインの名前は有料プランです（l3 remote plan）"),
-            "names" => crate::tr!("More names on this Remote are part of the paid plan (l3 remote plan)", "この Remote で2つ目からの名前は有料プランです（l3 remote plan）"),
-            _ => crate::tr!("That is part of the paid plan (l3 remote plan)", "それは有料プランです（l3 remote plan）"),
+            "repos" => crate::tr!("The free plan keeps no more repos on the Remote: this one stays on this device and waits (root3 remote plan)", "無料プランでは、これ以上の repo を Remote に置けません。この repo はこの端末に残り、待ちます（root3 remote plan）"),
+            "bytes" => crate::tr!("The free plan keeps no more on the Remote: the change stays on this device and waits (root3 remote plan)", "無料プランでは、これ以上を Remote に置けません。変更はこの端末に残り、待ちます（root3 remote plan）"),
+            "server" => crate::tr!("Making a server is part of the paid plan (root3 remote plan)", "サーバーを作るのは有料プランです（root3 remote plan）"),
+            "domain" => crate::tr!("A name on your own domain is part of the paid plan (root3 remote plan)", "自分のドメインの名前は有料プランです（root3 remote plan）"),
+            "names" => crate::tr!("More names on this Remote are part of the paid plan (root3 remote plan)", "この Remote で2つ目からの名前は有料プランです（root3 remote plan）"),
+            _ => crate::tr!("That is part of the paid plan (root3 remote plan)", "それは有料プランです（root3 remote plan）"),
         },
         (507, _) => crate::tr!("The Remote is full: {} of {} used", "Remote がいっぱいです：{} のうち {} を使用", v["used"], v["quota"]),
         (413, _) => crate::tr!("Too large for the Remote ({})", "Remote には大きすぎます（{}）", said),
@@ -187,11 +187,11 @@ pub(super) fn odd(url: &str) -> String {
 
 impl Client {
     pub(crate) fn open() -> Result<Client> {
-        let c = connection().ok_or_else(|| failed(Failure::NotConnected, crate::tr!("This device is not signed in to a Remote (l3 login)", "この端末は Remote にサインインしていません（l3 login）")))?;
+        let c = connection().ok_or_else(|| failed(Failure::NotConnected, crate::tr!("This device is not signed in to a Remote (root3 login)", "この端末は Remote にサインインしていません（root3 login）")))?;
         // Natively the session is the bearer kept apart: without it, nothing here can be this device's session.
         let bearer = bearer().map_err(|why| failed(Failure::NotConnected, crate::tr!("This device's sign-in could not be read: {}", "この端末のサインイン情報を読めませんでした：{}", why)))?;
         if bearer.is_none() && cfg!(not(target_os = "wasi")) {
-            return Err(failed(Failure::NotConnected, crate::tr!("This device's sign-in is no longer kept here; sign in again (l3 login)", "この端末のサインイン情報がもうありません。もう一度サインインしてください（l3 login）")));
+            return Err(failed(Failure::NotConnected, crate::tr!("This device's sign-in is no longer kept here; sign in again (root3 login)", "この端末のサインイン情報がもうありません。もう一度サインインしてください（root3 login）")));
         }
         Ok(Client { url: c.url, bearer })
     }

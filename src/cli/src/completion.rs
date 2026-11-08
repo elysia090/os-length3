@@ -1,5 +1,5 @@
-//! Shell completion from the table: the scripts ask `l3 complete -- WORDS…`
-//! for what may come next, and l3 answers from the forms: the commands, a
+//! Shell completion from the table: the scripts ask `root3 complete -- WORDS…`
+//! for what may come next, and root3 answers from the forms: the commands, a
 //! command's verbs and choices, its flags, and what fits each slot: repo
 //! names where a repo goes, paths in a repo where a path goes, issues where
 //! an issue goes, dotfiles where a dotfile goes. Nothing asks the Remote.
@@ -16,15 +16,15 @@ pub fn script(_: &Ctx, call: &Call) -> Result<Reply> {
     let shell = call.word(0).unwrap_or_default();
     let text = match shell {
         "bash" | "zsh" => format!(
-            "# l3 completion ({shell}): eval \"$(l3 completion {shell})\"\n{}_l3() {{\n  local IFS=$'\\n'\n  COMPREPLY=($(l3 complete -- \"${{COMP_WORDS[@]:1:$COMP_CWORD}}\" 2>/dev/null))\n  if [ \"${{#COMPREPLY[@]}}\" -eq 1 ] && [ \"${{COMPREPLY[0]%/}}\" != \"${{COMPREPLY[0]}}\" ]; then compopt -o nospace 2>/dev/null; fi\n}}\ncomplete -F _l3 l3\n",
+            "# root3 completion ({shell}): eval \"$(root3 completion {shell})\"\n{}_root3() {{\n  local IFS=$'\\n'\n  COMPREPLY=($(root3 complete -- \"${{COMP_WORDS[@]:1:$COMP_CWORD}}\" 2>/dev/null))\n  if [ \"${{#COMPREPLY[@]}}\" -eq 1 ] && [ \"${{COMPREPLY[0]%/}}\" != \"${{COMPREPLY[0]}}\" ]; then compopt -o nospace 2>/dev/null; fi\n}}\ncomplete -F _root3 root3\n",
             if shell == "zsh" { "autoload -U +X bashcompinit && bashcompinit\n" } else { "" }),
-        "fish" => "# l3 completion (fish): l3 completion fish | source\ncomplete -c l3 -f -a '(l3 complete -- (commandline -opc)[2..-1] (commandline -ct) 2>/dev/null)'\n".to_string(),
-        _ => return Err(Error::Usage("l3 completion bash|zsh|fish".into())),
+        "fish" => "# root3 completion (fish): root3 completion fish | source\ncomplete -c root3 -f -a '(root3 complete -- (commandline -opc)[2..-1] (commandline -ct) 2>/dev/null)'\n".to_string(),
+        _ => return Err(Error::Usage("root3 completion bash|zsh|fish".into())),
     };
     Ok(Reply::Raw { json: json!({"shell": shell, "script": text}), text })
 }
 
-/// `l3 complete -- WORDS…`: what may come as the last word (the one being written), a line each.
+/// `root3 complete -- WORDS…`: what may come as the last word (the one being written), a line each.
 pub fn complete(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let words = call.words(0);
     let list = candidates(ctx, &words);
@@ -136,7 +136,7 @@ fn paths(ctx: &Ctx, cur: &str) -> Vec<String> {
     let Ok((repo, rel)) = target::path_of(ctx, word.filter(|b| !b.is_empty()).or(if cur.starts_with('/') { Some("/") } else { None })) else { return out };
     let Ok(r) = ctx.repos() else { return out };
     for e in r.tree(&repo, &rel).unwrap_or_default() {
-        // Its issues are l3 issue's, not a path to complete.
+        // Its issues are root3 issue's, not a path to complete.
         if length3_core::repos::store::is_issues(&format!("{rel}/{}", e.name)) { continue; }
         out.push(format!("{shown_base}{}{}", e.name, if e.kind == "dir" { "/" } else { "" }));
     }
@@ -163,7 +163,7 @@ mod tests {
         assert!(candidates(&c, &w("com")).contains(&"completion".to_string()));
         assert!(!candidates(&c, &w("")).iter().any(|x| x == "complete" || x == "sync" || x.is_empty()));
         assert_eq!(candidates(&c, &w("name ")), ["ls", "set", "claim", "release", "domain"]);
-        // The listener itself (serve) is l3's own word, never offered.
+        // The listener itself (serve) is root3's own word, never offered.
         assert_eq!(candidates(&c, &w("address ")), ["ssh"]);
         assert_eq!(candidates(&c, &w("address ssh ")), ["on", "off"]);
         assert_eq!(candidates(&c, &w("dotfile ")), ["write", "rm", "take"]);
@@ -186,7 +186,7 @@ mod tests {
             let argv: Vec<String> = vec!["completion".into(), sh.into()];
             let call = crate::args::parse(&argv, &c).unwrap();
             let Ok(Reply::Raw { text, .. }) = script(&c, &call) else { panic!() };
-            assert!(text.contains("l3 complete --"), "{sh}");
+            assert!(text.contains("root3 complete --"), "{sh}");
         }
     }
 }

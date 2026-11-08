@@ -22,7 +22,7 @@ pub fn networked() -> Vec<String> {
     serde_json::from_str::<Vec<String>>(&text).unwrap_or_default()
 }
 
-/// Whether `repo`'s Prompts may reach the network (granted in Runtime; `l3 prompt --network` for one Prompt).
+/// Whether `repo`'s Prompts may reach the network (granted in Runtime; `root3 prompt --network` for one Prompt).
 pub fn network(repo: &str) -> bool {
     networked().iter().any(|r| r == repo)
 }

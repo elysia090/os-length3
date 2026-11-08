@@ -8,7 +8,7 @@ use crate::target;
 use length3_core::{home, remote, tr};
 use serde_json::json;
 
-/// `l3 repo`: each repo here and where it stands, then those only on the Remote.
+/// `root3 repo`: each repo here and where it stands, then those only on the Remote.
 pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
     let here = r.list(false)?;
@@ -38,9 +38,9 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
     for o in &only_there {
         crate::menu::see(|| crate::menu::Subject { on: On::RemoteRepo, word: o.name.clone(), repo: None, label: o.name.clone(),
             detail: tr!("only on the Remote · {}", "Remote にだけあります · {}", bytes(o.bytes)), facts: vec![Fact::OnlyThere] });
-        t.push((o.name.clone(), tr!("only on the Remote · {} (l3 repo open {})", "Remote にだけあります · {}（l3 repo open {} で開けます）", bytes(o.bytes), o.name)));
+        t.push((o.name.clone(), tr!("only on the Remote · {} (root3 repo open {})", "Remote にだけあります · {}（root3 repo open {} で開けます）", bytes(o.bytes), o.name)));
     }
-    let text = if t.is_empty() { tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）") } else { crate::out::columns(&t).join("\n") };
+    let text = if t.is_empty() { tr!("No repos yet (root3 repo new NAME makes one)", "repo はまだありません（root3 repo new NAME で作れます）") } else { crate::out::columns(&t).join("\n") };
     Ok(Reply::data(text, json!({"here": rows, "remote": only_there})))
 }
 
@@ -70,7 +70,7 @@ pub fn repo_mv(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 /// A repo taken from this device whole, as its gear in the app deletes one no Remote has. One the Remote has is
 /// guarded there (turning it off asks for the account's name, the repo's, a code and a passkey): it is not deleted
-/// from here, and l3 says where it is.
+/// from here, and root3 says where it is.
 pub fn repo_rm(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
     if remote::agreed(&repo) {
@@ -111,7 +111,7 @@ pub fn band_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
             crate::menu::Subject { on: On::Repo, word: name.clone(), repo: Some(name.clone()), label: name.clone(), detail, facts }
         });
     }
-    let text = if b.is_empty() { tr!("Nothing on the band (l3 band add REPO)", "帯には何もありません（l3 band add REPO）") } else { b.join("\n") };
+    let text = if b.is_empty() { tr!("Nothing on the band (root3 band add REPO)", "帯には何もありません（root3 band add REPO）") } else { b.join("\n") };
     Ok(Reply::data(text, json!(b)))
 }
 
@@ -148,7 +148,7 @@ fn shell(root: &std::path::Path, other: bool, terminal: bool) -> Vec<String> {
     words.iter().map(|w| w.to_string()).collect()
 }
 
-/// `l3 prompt [REPO] [-- CMD…]`: the repo inside the root, without privileges.
+/// `root3 prompt [REPO] [-- CMD…]`: the repo inside the root, without privileges.
 #[cfg(target_os = "linux")]
 pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     use length3_core::{fs::paths, prompt::launch, prompt::running};
@@ -160,7 +160,7 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let cmd = call.words(1);
     let argv: Vec<String> = if cmd.is_empty() { shell(&root, about.distro.is_some(), std::io::stdin().is_terminal()) } else { cmd };
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: length3_core::device::agent_key::env() };
-    // Recorded from the start, by the process that runs it, so `l3 prompt ls` (and Runtime) see it, `l3 prompt stop`
+    // Recorded from the start, by the process that runs it, so `root3 prompt ls` (and Runtime) see it, `root3 prompt stop`
     // can end it, and nothing it holds is freed (storage/): first being prepared, as what .packages and .setup ask for
     // is set up (once, while they and the root stay as they are), then running.
     let prepared = || -> std::io::Result<running::Recorded> {
@@ -185,7 +185,7 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     };
     let code = code.map_err(|e| Error::Io(e.to_string()))?;
     if ctx.connected() { crate::sync::send(&repo); }
-    // Opened from the menu, the menu goes on once the shell ends, back on the repo it was opened on; typed, l3 ends with the shell's code.
+    // Opened from the menu, the menu goes on once the shell ends, back on the repo it was opened on; typed, root3 ends with the shell's code.
     if crate::menu::active() {
         crate::out::note(&tr!("The Prompt of {} ended ({}); back to the menu", "{} の Prompt が終わりました（{}）。メニューに戻ります", repo, code));
         return Ok(Reply::Nothing);
@@ -195,10 +195,10 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 #[cfg(not(target_os = "linux"))]
 pub fn prompt(_: &Ctx, _: &Call) -> Result<Reply> {
-    Err(Error::Refused(tr!("l3 prompt is Linux only for now", "l3 prompt はいま Linux だけです")))
+    Err(Error::Refused(tr!("root3 prompt is Linux only for now", "root3 prompt はいま Linux だけです")))
 }
 
-/// `l3 prompt ls`: each Prompt running on this device, the app's among them.
+/// `root3 prompt ls`: each Prompt running on this device, the app's among them.
 pub fn prompt_list(_: &Ctx, _: &Call) -> Result<Reply> {
     use length3_core::{fs::paths, prompt::running};
     let all = running::all(paths::data_dir());
@@ -217,34 +217,34 @@ pub fn prompt_list(_: &Ctx, _: &Call) -> Result<Reply> {
         t.push((r.repo.clone(), line));
         rows.push(json!({"repo": r.repo, "pid": r.pid, "network": r.network, "started": r.started, "held": held, "preparing": r.preparing, "root": r.root}));
     }
-    let text = if t.is_empty() { tr!("No Prompt is running (l3 prompt REPO opens one)", "動いている Prompt はありません（l3 prompt REPO で開けます）") } else { crate::out::columns(&t).join("\n") };
+    let text = if t.is_empty() { tr!("No Prompt is running (root3 prompt REPO opens one)", "動いている Prompt はありません（root3 prompt REPO で開けます）") } else { crate::out::columns(&t).join("\n") };
     Ok(Reply::data(text, json!(rows)))
 }
 
-/// `l3 prompt stop [REPO]`: each Prompt of the repo stops, as Stop in Runtime does.
+/// `root3 prompt stop [REPO]`: each Prompt of the repo stops, as Stop in Runtime does.
 pub fn prompt_stop(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
     let stopped = stop_prompts(&repo);
-    if stopped.is_empty() { return Err(Error::NotFound(tr!("No Prompt of {} is running (l3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは l3 prompt ls）", repo))); }
+    if stopped.is_empty() { return Err(Error::NotFound(tr!("No Prompt of {} is running (root3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは root3 prompt ls）", repo))); }
     Ok(Reply::done(said_stopped(&repo, &stopped), json!({"repo": repo, "stopped": stopped})))
 }
 
-/// `l3 prompt pause|resume [REPO]`: its Prompts paused (all they hold stays, they use no CPU) or going on again.
+/// `root3 prompt pause|resume [REPO]`: its Prompts paused (all they hold stays, they use no CPU) or going on again.
 #[cfg(target_os = "linux")]
 pub fn prompt_pause(ctx: &Ctx, call: &Call) -> Result<Reply> {
     use length3_core::{fs::paths, prompt::running};
     let paused = call.word(0) == Some("pause");
     let repo = target::repo(ctx, call, 1)?;
     let told: usize = running::all(paths::data_dir()).iter().filter(|r| r.repo == repo).filter_map(running::ns_of_record).map(|ns| running::pause(ns, paused)).sum();
-    if told == 0 { return Err(Error::NotFound(tr!("No Prompt of {} is running (l3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは l3 prompt ls）", repo))); }
-    let text = if paused { tr!("Paused {}'s Prompt: what it holds stays, it uses no CPU (l3 prompt resume {0})", "{} の Prompt を一時停止しました。持っているものはそのまま、CPU は使いません（l3 prompt resume {0}）", repo) }
+    if told == 0 { return Err(Error::NotFound(tr!("No Prompt of {} is running (root3 prompt ls lists those that are)", "{} の Prompt は動いていません（動いているものは root3 prompt ls）", repo))); }
+    let text = if paused { tr!("Paused {}'s Prompt: what it holds stays, it uses no CPU (root3 prompt resume {0})", "{} の Prompt を一時停止しました。持っているものはそのまま、CPU は使いません（root3 prompt resume {0}）", repo) }
         else { tr!("{}'s Prompt goes on", "{} の Prompt を再開しました", repo) };
     Ok(Reply::done(text, json!({"repo": repo, "paused": paused, "processes": told})))
 }
 
 #[cfg(not(target_os = "linux"))]
 pub fn prompt_pause(_: &Ctx, _: &Call) -> Result<Reply> {
-    Err(Error::Refused(tr!("l3 prompt is Linux only for now", "l3 prompt はいま Linux だけです")))
+    Err(Error::Refused(tr!("root3 prompt is Linux only for now", "root3 prompt はいま Linux だけです")))
 }
 
 /// Stop every Prompt of `repo` running here; what each held and how it ended.

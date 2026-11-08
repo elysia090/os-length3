@@ -1,9 +1,9 @@
-//! l3's commands as one table. Parsing (args.rs), what each form runs, the
+//! root3's commands as one table. Parsing (args.rs), what each form runs, the
 //! help (help.rs), shell completion (completion.rs), what may run inside the
 //! app's Prompt and what is kept in step with the Remote around it all read
 //! this, so none of them can drift from the others. Its order is the app's
 //! rail: Home, Forge (and its Prompt), File, Git, Runtime, Remote; then the
-//! two whose subject is people, Server and Inbox; then l3's own words.
+//! two whose subject is people, Server and Inbox; then root3's own words.
 
 use crate::cmd::{address, agent, app, Ctx, file, forge, git, home, people, remote, runtime};
 use crate::{args::Call, help, out::{Reply, Result}};
@@ -16,7 +16,7 @@ pub fn say(w: Words) -> &'static str {
     if length3_core::text::i18n::ja() { w[1] } else { w[0] }
 }
 
-/// Each command's purpose: the rail's places, then l3's own words. New is
+/// Each command's purpose: the rail's places, then root3's own words. New is
 /// the rail's round + (a new repo): it starts something rather than opening
 /// a place, so no command is its own, only a deed offered there.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -30,7 +30,7 @@ impl Group {
     pub fn name(self) -> &'static str {
         match self {
             Group::Home => "Home", Group::Forge => "Forge", Group::File => "File", Group::Git => "Git", Group::Runtime => "Runtime",
-            Group::Remote => "Remote", Group::Server => "Server", Group::Inbox => "Inbox", Group::Other => "l3", Group::New => "+",
+            Group::Remote => "Remote", Group::Server => "Server", Group::Inbox => "Inbox", Group::Other => "root3", Group::New => "+",
         }
     }
 
@@ -39,7 +39,7 @@ impl Group {
         match self {
             Group::Home => ["Profile", "プロフィール"],
             Group::Forge => ["Your workshop", "自分の作業場"],
-            // The app's File opens all of /; l3 reads the repos only (/root/REPO/PATH), so its line says that.
+            // The app's File opens all of /; root3 reads the repos only (/root/REPO/PATH), so its line says that.
             Group::File => ["Files in your repos", "repo のファイル"],
             Group::Git => ["Issues and commits", "Issue とコミット"],
             Group::Runtime => ["This device and its environments", "この端末と環境"],
@@ -54,11 +54,11 @@ impl Group {
 
 // ---- What the menu offers (menu.rs) ----
 //
-// Bare `l3` on a terminal shows the rail; a purpose shows its page (the
+// Bare `root3` on a terminal shows the rail; a purpose shows its page (the
 // forms marked `page`), and under it the deeds of each thing on the page and
 // of the page itself. A deed is a form of this table, given the words the
 // thing it is pressed on supplies, asking for the rest in place; so every
-// choice in the menu is a command l3 parses and runs, and says as it runs.
+// choice in the menu is a command root3 parses and runs, and says as it runs.
 
 /// What holds of this device or of a thing on a page. Each is read where the
 /// page is made (cmd/*), by the same reading that writes the page itself
@@ -308,7 +308,7 @@ pub static COMMANDS: &[Command] = &[
                 d(["Edit bio", "自己紹介を変える"], On::Page).gives(&[(0, "bio")]).field(["Bio", "自己紹介"]).prefill(|_| home::profile_now("bio")).second()],
             f(None, &[Arg::Choice(&["name", "handle", "bio"]), SAID], &[], ["change one", "ひとつ変える"], DEVICE, Send, home::profile_set)),
     ])),
-    c("lang", &[], Group::Home, ["the language l3 and the app speak", "l3 とアプリが話す言語"], &[
+    c("lang", &[], Group::Home, ["the language root3 and the app speak", "root3 とアプリが話す言語"], &[
         f(None, &[], &[], ["the one spoken now", "いま話している言語"], DEVICE, Send, home::lang_show),
         f(None, &[Arg::Choice(&["en", "ja"])], &[], ["choose", "選ぶ"], DEVICE, Send, home::lang_set),
     ]),
@@ -418,7 +418,7 @@ pub static COMMANDS: &[Command] = &[
         hidden(Some("ls"), &[], DEVICE, Keep, agent::list),
         f(Some("on"), &[Arg::Choice(&["claude", "grok"])], &[], ["hand it work from now, and have it say what it does", "これから仕事を任せ、作業を知らせるようにする"], DEVICE, Keep, agent::on),
         f(Some("off"), &[Arg::Choice(&["claude", "grok"])], &[], ["take that out again", "その設定を外す"], DEVICE, Keep, agent::off),
-        f(Some("hooks"), &[Arg::Choice(&["claude", "grok"])], &[], ["the hooks l3 agent on writes, to set them by hand", "l3 agent on が書くフック（手で設定するなら）"], DEVICE, Keep, agent::hooks),
+        f(Some("hooks"), &[Arg::Choice(&["claude", "grok"])], &[], ["the hooks root3 agent on writes, to set them by hand", "root3 agent on が書くフック（手で設定するなら）"], DEVICE, Keep, agent::hooks),
         f(Some("hook"), &[Arg::Text("HARNESS")], &[], ["what a harness's hooks call: its event's JSON on standard input; says nothing, never fails", "ハーネスのフックが呼ぶもの（イベントの JSON を標準入力に）。何も言わず、失敗しない"], LOCAL, Keep, agent::hook),
         f(Some("hook"), &[Arg::Text("HARNESS"), Arg::Text("EVENT")], &[], ["for one whose JSON does not name its event", "JSON がイベント名を持たないハーネス用"], LOCAL, Keep, agent::hook),
         // What a deed sets off (core agent/tasks.rs): a repo's runner, and one run inside its Prompt.
@@ -432,7 +432,7 @@ pub static COMMANDS: &[Command] = &[
         offer(&[d(["Free all", "すべて空ける"], On::Page).gives(&[(0, "all")]).when(&[F::AnyFreeable]).second().confirm()],
             f(None, &[Arg::Choice(&["all"])], &[], ["everything that can go", "空けられるものすべて"], DEVICE, Keep, runtime::free)),
         offer(&[d(["Free", "空ける"], On::Thing).when(&[F::Freeable]).confirm()],
-            f(None, &[Arg::Many("ID")], &[], ["what l3 runtime names; a repo's changes go to the Remote first", "l3 runtime が示すもの。repo の変更は先に Remote へ"], DEVICE, Keep, runtime::free)),
+            f(None, &[Arg::Many("ID")], &[], ["what root3 runtime names; a repo's changes go to the Remote first", "root3 runtime が示すもの。repo の変更は先に Remote へ"], DEVICE, Keep, runtime::free)),
         hidden(None, &[], DEVICE, Send, runtime::page),
     ]),
     c("root", &[], Group::Runtime, ["the root Prompts run on", "Prompt が動く root"], &[
@@ -440,7 +440,7 @@ pub static COMMANDS: &[Command] = &[
         offer(&[d(["Fetch the root", "root を取ってくる"], On::Page).when(&[F::NoRoot])],
             f(Some("fetch"), &[], &[], ["the newest release", "最新のリリースを取る"], DEVICE, Send, runtime::root_fetch)),
         offer(&[d(["Use a root", "root を選ぶ"], On::Page).second()],
-            f(Some("use"), &[Arg::Choice(&["l3", "ubuntu", "debian"])], &[], ["the one Prompts run on (fetched if not held); .packages and .setup set it up", "Prompt が動くもの（なければ取る）。.packages と .setup で用意"], DEVICE, Send, runtime::root_use)),
+            f(Some("use"), &[Arg::Choice(&["root3", "ubuntu", "debian"])], &[], ["the one Prompts run on (fetched if not held); .packages and .setup set it up", "Prompt が動くもの（なければ取る）。.packages と .setup で用意"], DEVICE, Send, runtime::root_use)),
         f(Some("install"), &[Arg::Text("BUNDLE")], &[], ["from a file", "ファイルから"], DEVICE, Send, runtime::root_install),
         f(Some("check"), &[], &[], ["whether Prompts run on it here, or translated as in a browser, and why", "ここで root の上で Prompt が動くか、ブラウザと同じく翻訳して動くか、その理由"], DEVICE, Send, runtime::root_check),
     ]),
@@ -470,7 +470,7 @@ pub static COMMANDS: &[Command] = &[
     c("app", &[], Group::Runtime, ["the desktop app: the same OS in a window", "デスクトップアプリ：同じ OS をウィンドウで"], &[
         offer(&[d(["Open the app", "アプリを開く"], On::Page).second()],
             f(None, &[], &[], ["open it, or bring forward the one open (not on this device: where to get it)", "開く。開いていれば前に出す（この端末になければ入手先を出す）"], DEVICE, Keep, app::open)),
-        f(Some("close"), &[], &[], ["close it, as its window's close button does (what l3 runs goes on)", "ウィンドウの閉じるボタンと同じに閉じる（l3 が動かしているものはそのまま）"], DEVICE, Keep, app::close),
+        f(Some("close"), &[], &[], ["close it, as its window's close button does (what root3 runs goes on)", "ウィンドウの閉じるボタンと同じに閉じる（root3 が動かしているものはそのまま）"], DEVICE, Keep, app::close),
     ]),
     c("remote", &[], Group::Remote, ["the Remote, and where each repo stands", "Remote と、各 repo の状態"], &[
         page(f(None, &[], &[], ["each repo, and where it stands", "各 repo とその状態"], DEVICE, Keep, remote::page)),
@@ -521,18 +521,18 @@ pub static COMMANDS: &[Command] = &[
         f(Some("release"), &[Arg::Address], &[], ["let another name go: held for you 30 days, claim it again to take it back", "別の名前を手放す（30日はあなたのために取り置き、取り直せば戻る）"], REMOTE, Send, people::name_release),
         f(Some("domain"), &[Arg::Text("DOMAIN")], &[], ["the DNS record that proves it is yours", "あなたのものだと示す DNS レコード"], REMOTE, Send, people::name_domain),
     ]),
-    c("help", &[], Group::Other, ["how to use l3", "l3 の使い方"], &[
+    c("help", &[], Group::Other, ["how to use root3", "root3 の使い方"], &[
         f(None, &[], &[], ["each command", "コマンドの一覧"], LOCAL, Keep, help::run),
         f(None, &[Arg::Text("COMMAND|all")], &[], ["a command's forms, or every form", "コマンドの書き方、またはすべての書き方"], LOCAL, Keep, help::run),
     ]),
     c("next", &[], Group::Other, ["the last command's next deeds, chosen with the keys", "直前のコマンドの次を、キーで選ぶ"], &[
         f(None, &[], &[], ["at a terminal", "端末で"], LOCAL, Keep, crate::cmd::next),
     ]),
-    c("version", &[], Group::Other, ["l3's version, and the root's", "l3 と root の版"], &[
+    c("version", &[], Group::Other, ["root3's version, and the root's", "root3 と root の版"], &[
         f(None, &[], &[], ["", ""], LOCAL, Keep, crate::cmd::version),
     ]),
     c("completion", &[], Group::Other, ["shell completion", "シェルの補完"], &[
-        f(None, &[Arg::Choice(&["bash", "zsh", "fish"])], &[], ["eval \"$(l3 completion bash)\"", "eval \"$(l3 completion bash)\""], LOCAL, Keep, crate::completion::script),
+        f(None, &[Arg::Choice(&["bash", "zsh", "fish"])], &[], ["eval \"$(root3 completion bash)\"", "eval \"$(root3 completion bash)\""], LOCAL, Keep, crate::completion::script),
     ]),
     Command { name: "complete", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, home: &[], forms: &[
         hidden(None, &[Arg::Argv], LOCAL, Keep, crate::completion::complete),
@@ -541,7 +541,7 @@ pub static COMMANDS: &[Command] = &[
         hidden(None, &[], LOCAL, Keep, remote::no_sync),
         hidden(None, &[Arg::Many("…")], LOCAL, Keep, remote::no_sync),
     ] },
-    // `l3` alone: this device at a glance.
+    // `root3` alone: this device at a glance.
     Command { name: "", aliases: &[], group: Group::Other, about: ["", ""], hidden: true, home: &["todo"], forms: &[
         hidden(None, &[], LOCAL, TakeIn, crate::cmd::overview),
     ] },
@@ -572,8 +572,8 @@ pub fn placeholder(w: &str) -> &str {
     }
 }
 
-/// A form as it is written: `l3 issue new [REPO] "Fix：title" [-m detail]`.
-/// A form as a program reads it (`l3 help --json`): its verb, its words in order, each with its kind (the choices
+/// A form as it is written: `root3 issue new [REPO] "Fix：title" [-m detail]`.
+/// A form as a program reads it (`root3 help --json`): its verb, its words in order, each with its kind (the choices
 /// of one that is one of a few words), its flags (with the value each takes), what it needs to run (the Remote; this
 /// device; or nothing more, so it runs in a Prompt too) and how it keeps in step with the Remote. An agent reads the
 /// table once and writes any command from it, as `usage` writes it for a person.
@@ -606,8 +606,8 @@ pub fn schema(f: &Form) -> serde_json::Value {
 }
 
 pub fn usage(c: &Command, f: &Form) -> String {
-    // `l3` alone has no name to follow it.
-    let mut s = if c.name.is_empty() { "l3".to_string() } else { format!("l3 {}", c.name) };
+    // `root3` alone has no name to follow it.
+    let mut s = if c.name.is_empty() { "root3".to_string() } else { format!("root3 {}", c.name) };
     if let Some(v) = f.verb { s += &format!(" {v}"); }
     for a in f.args {
         s += " ";
@@ -651,26 +651,26 @@ mod tests {
             assert!(c.forms.iter().any(|f| !f.hidden), "{}", c.name);
         }
         let all: Vec<String> = shown().flat_map(|c| c.forms.iter().filter(|f| !f.hidden).map(move |f| usage(c, f))).collect();
-        let new = if length3_core::text::i18n::ja() { "l3 issue new [REPO] \"Fix：件名\" [-m 詳細]" } else { "l3 issue new [REPO] \"Fix：title\" [-m detail]" };
+        let new = if length3_core::text::i18n::ja() { "root3 issue new [REPO] \"Fix：件名\" [-m 詳細]" } else { "root3 issue new [REPO] \"Fix：title\" [-m detail]" };
         assert!(all.iter().any(|u| u.starts_with(new)), "{all:?}");
-        assert!(all.contains(&format!("l3 todo edit N {} [-m {}]", placeholder("\"Fix：title\""), placeholder("detail"))), "{all:?}");
-        assert!(all.contains(&"l3 prompt ls".to_string()) && all.contains(&"l3 prompt stop [REPO]".to_string()));
-        assert!(all.contains(&"l3 network on|off REPO".to_string()));
+        assert!(all.contains(&format!("root3 todo edit N {} [-m {}]", placeholder("\"Fix：title\""), placeholder("detail"))), "{all:?}");
+        assert!(all.contains(&"root3 prompt ls".to_string()) && all.contains(&"root3 prompt stop [REPO]".to_string()));
+        assert!(all.contains(&"root3 network on|off REPO".to_string()));
         // In Japanese, what a person writes is named in Japanese (bug: "Fix：title" and "-m note" stayed English).
         if length3_core::text::i18n::ja() {
             for english in ["title", "\"text\"", "-m note", "-m detail", "-m why"] { assert!(!all.iter().any(|u| u.contains(english)), "{english}: {all:?}"); }
         }
-        assert!(all.contains(&"l3 server get SERVER[#BOARD] [--todo] [-o FILE] [--force]".to_string()));
-        assert!(all.contains(&"l3 prompt [REPO] [-- CMD…] [--network]".to_string()));
-        assert!(all.contains(&"l3 issue close ISSUE".to_string()) && all.contains(&"l3 issue reopen ISSUE".to_string()), "{all:?}");
-        assert!(all.contains(&"l3 root use l3|ubuntu|debian".to_string()));
+        assert!(all.contains(&"root3 server get SERVER[#BOARD] [--todo] [-o FILE] [--force]".to_string()));
+        assert!(all.contains(&"root3 prompt [REPO] [-- CMD…] [--network]".to_string()));
+        assert!(all.contains(&"root3 issue close ISSUE".to_string()) && all.contains(&"root3 issue reopen ISSUE".to_string()), "{all:?}");
+        assert!(all.contains(&"root3 root use root3|ubuntu|debian".to_string()));
         // SSH is the device's (Runtime's), names are Inbox's: neither keeps the other's old forms.
-        assert!(all.contains(&"l3 address".to_string()) && all.contains(&"l3 address ssh on|off".to_string()), "{all:?}");
-        assert!(all.contains(&"l3 name claim NAME[@DOMAIN]".to_string()) && !all.iter().any(|u| u.starts_with("l3 address claim") || u.contains("ssh serve")), "{all:?}");
+        assert!(all.contains(&"root3 address".to_string()) && all.contains(&"root3 address ssh on|off".to_string()), "{all:?}");
+        assert!(all.contains(&"root3 name claim NAME[@DOMAIN]".to_string()) && !all.iter().any(|u| u.starts_with("root3 address claim") || u.contains("ssh serve")), "{all:?}");
         assert_eq!(find("address").map(|c| c.group), Some(Group::Runtime));
         assert_eq!(find("name").map(|c| c.group), Some(Group::Inbox));
         // The app is opened and closed from here, as Runtime's: one way each.
-        assert!(all.contains(&"l3 app".to_string()) && all.contains(&"l3 app close".to_string()), "{all:?}");
+        assert!(all.contains(&"root3 app".to_string()) && all.contains(&"root3 app close".to_string()), "{all:?}");
         assert_eq!(find("app").map(|c| c.group), Some(Group::Runtime));
     }
 
@@ -684,7 +684,7 @@ mod tests {
     }
 
     #[test]
-    fn every_deed_the_menu_offers_is_a_form_l3_reads_back_as_itself() {
+    fn every_deed_the_menu_offers_is_a_form_root3_reads_back_as_itself() {
         let ctx = crate::cmd::Ctx::test(None, vec!["notes"]);
         let mut n = 0;
         for c in COMMANDS {

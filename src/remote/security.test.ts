@@ -124,7 +124,7 @@ test('Better Auth\'s own refusals for asking too often are said the same way, an
   const auth = createAuth({db, secret: SECRET, baseURL: BASE, appOrigin: APP, dev: true});
   const app = createApp({db, auth, bucket: null, origins: [APP], appOrigin: APP, providers: ['dev'], baseURL: BASE, secret: SECRET});
   const ask = () => app.request(`${BASE}/api/auth/device/code`, {method: 'POST', headers: {'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9'},
-    body: JSON.stringify({client_id: 'l3'})});
+    body: JSON.stringify({client_id: 'root3'})});
   const max = (AUTH_LIMITS['/device/code'] as {max: number}).max;
   for (let i = 0; i < max; i++) assert.equal((await ask()).status, 200);
   const r = await ask();
@@ -237,7 +237,7 @@ test('the role the Worker connects as reads and writes rows, and can make, chang
   }
 });
 
-test('sign-in is the authorization code flow with state and PKCE, back only to the app, and devices are only the app and l3 (RFC 9700 §2.1, §4.1, §4.7; RFC 8628 §3.2, §5)', async () => {
+test('sign-in is the authorization code flow with state and PKCE, back only to the app, and devices are only the app and root3 (RFC 9700 §2.1, §4.1, §4.7; RFC 8628 §3.2, §5)', async () => {
   const s = await service();
   // A sign-in that would end on another site is refused before any provider is asked (no open redirect).
   const evil = await s.call('POST', '/api/auth/sign-in/social', {body: {provider: 'dev', callbackURL: `${EVIL}/`}});
@@ -257,10 +257,10 @@ test('sign-in is the authorization code flow with state and PKCE, back only to t
   assert.ok(forged.status >= 300, String(forged.status));
   assert.doesNotMatch(forged.headers.get('Location') ?? '', /signed-in/);
 
-  // Only the app and l3 ask for a device code; the code is 8 letters and digits, for ten minutes,
+  // Only the app and root3 ask for a device code; the code is 8 letters and digits, for ten minutes,
   // polled no faster than every 5 s; approving it takes the app's own page.
   assert.equal((await s.call('POST', '/api/auth/device/code', {body: {client_id: 'evil'}})).status, 400);
-  const code = (await s.call('POST', '/api/auth/device/code', {body: {client_id: 'l3'}})).json as unknown as {user_code: string; expires_in: number; interval: number; verification_uri: string};
+  const code = (await s.call('POST', '/api/auth/device/code', {body: {client_id: 'root3'}})).json as unknown as {user_code: string; expires_in: number; interval: number; verification_uri: string};
   assert.match(code.user_code, /^[A-Z0-9]{8}$/);
   assert.deepEqual([code.expires_in, code.interval, code.verification_uri], [600, 5, `${APP}/?device`]);
   const t = await s.start('Ren');

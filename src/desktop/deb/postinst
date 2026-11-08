@@ -1,9 +1,14 @@
 #!/bin/sh
 # Where AppArmor keeps user namespaces from unprivileged programs (Ubuntu 23.10 and later), the profile that lets
-# l3 make its Prompts' (deb/length3-l3.apparmor) is put in place and loaded; elsewhere nothing is changed.
+# root3 make its Prompts' (deb/length3-root3.apparmor) is put in place and loaded; elsewhere nothing is changed.
 set -e
+# The profile of the command before it was root3 (length3-l3, 0.6.4 and older) goes with the l3 it was for.
+if [ "$1" = configure ] && [ -e /etc/apparmor.d/length3-l3 ]; then
+  if command -v apparmor_parser > /dev/null 2>&1; then apparmor_parser -R /etc/apparmor.d/length3-l3 2> /dev/null || true; fi
+  rm -f /etc/apparmor.d/length3-l3
+fi
 if [ "$1" = configure ] && [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] && [ -d /etc/apparmor.d ]; then
-  install -m 0644 /usr/share/length3-os/apparmor/length3-l3 /etc/apparmor.d/length3-l3
-  if command -v apparmor_parser > /dev/null 2>&1; then apparmor_parser -r -T -W /etc/apparmor.d/length3-l3 || true; fi
+  install -m 0644 /usr/share/length3-os/apparmor/length3-root3 /etc/apparmor.d/length3-root3
+  if command -v apparmor_parser > /dev/null 2>&1; then apparmor_parser -r -T -W /etc/apparmor.d/length3-root3 || true; fi
 fi
 exit 0

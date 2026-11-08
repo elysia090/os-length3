@@ -1,6 +1,6 @@
 //! The one way a page asks the core: a command's name and its arguments as JSON, its answer as JSON.
 //! The app's window asks it through Tauri (src/desktop/src/main.rs), a browser through the same core built
-//! for the web (web/), and l3 calls the modules themselves: what a person can do is done by this code alone,
+//! for the web (web/), and root3 calls the modules themselves: what a person can do is done by this code alone,
 //! whichever of the three they are in front of. What only a host can do (open a page in the browser, start a
 //! Prompt on the root, SSH) is the host's, around this.
 

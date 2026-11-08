@@ -2,7 +2,7 @@
 # Build the web release of Length³ OS from source: the app's web build with
 # The web root (public/webroot: the release root itself, as the browser
 # reads it, with the xlat translator; scripts/webroot.sh). Nothing is built
-# beside the root: its BusyBox, l3 and /etc are the Prompt's. Output: dist/
+# beside the root: its BusyBox, root3 and /etc are the Prompt's. Output: dist/
 # and length3-web.zip with its sha256.
 #
 #   sh scripts/web-release.sh [ROOT.tar.zst]

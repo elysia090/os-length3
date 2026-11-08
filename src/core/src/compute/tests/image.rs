@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn a_disk_holds_the_folder_it_was_made_from_and_takes_on_the_host_only_what_it_holds() {
     if Command::new("mkfs.ext4").arg("-V").output().is_err() { eprintln!("skipped: no e2fsprogs here"); return; }
-    let dir = crate::fs::testing::dir("l3-disk");
+    let dir = crate::fs::testing::dir("root3-disk");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("given/notes")).unwrap();
     std::fs::write(dir.join("given/notes/README.md"), "notes\n").unwrap();

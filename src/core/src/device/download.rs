@@ -2,7 +2,7 @@
 //! (src/app/prompt/webroot-fetch.ts): what came is kept in a `.part` file, a cut or stalled
 //! transfer is taken up again from the byte it reached, and the result is
 //! accepted only when it is the file the pin names. Nothing else is read
-//! from the network by l3.
+//! from the network by root3.
 
 use std::fs;
 use std::io::{self, Read, Seek, Write};

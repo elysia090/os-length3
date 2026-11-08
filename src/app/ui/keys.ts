@@ -66,10 +66,10 @@ function play(buffer: AudioBuffer, at: number, gain: number, rate: number, brigh
   src.start(at);
 }
 
-/** A key struck now: pressed, and let go 50–110 ms after. Said on the window too ('l3-key', the key): a film made of
+/** A key struck now: pressed, and let go 50–110 ms after. Said on the window too ('root3-key', the key): a film made of
  * the page hears each stroke as the person does, and lays its sound under the picture at its time. */
 export function strike(key: Key): void {
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('l3-key', {detail: key}));
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('root3-key', {detail: key}));
   if (typeof document !== 'undefined' && document.hidden) return;
   void load().then((s) => {
     if (!s || !ctx) return;

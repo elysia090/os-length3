@@ -1,6 +1,6 @@
 // SSH into a repo's Prompt, as Runtime shows it. SSH is the desktop app's:
-// a device turns it on itself (`l3 address`, or the app's switch, which runs
-// the same l3 there). What the Remote keeps (src/remote/ssh.ts) is only which
+// a device turns it on itself (`root3 address`, or the app's switch, which runs
+// the same root3 there). What the Remote keeps (src/remote/ssh.ts) is only which
 // of the account's devices listen and to whom, so any page sees that and can
 // turn one off; where a device is reached (its addresses, port, repos) is
 // worked out on that device and shown there alone.
@@ -28,12 +28,12 @@ export interface Taken { addr: string; interface: string }
  */
 export interface Here { on: boolean; scope: Scope; port?: number | null; bound: string[]; interfaces?: Taken[]; destinations: string[]; fingerprint?: string | null; keys: number; started?: number | null }
 export const here = (): Promise<Here | null> => (isNative ? native<Here>('ssh_here') : Promise.resolve(null));
-/** Turn this device's SSH on, to `scope`, or off (the app only): l3 address ssh on SCOPE | off. */
+/** Turn this device's SSH on, to `scope`, or off (the app only): root3 address ssh on SCOPE | off. */
 export const setHere = (on: boolean, scope?: Scope) => native<Here>('ssh_set', {on, scope: scope ?? null});
 
 /**
  * The addresses of this device it listens on besides loopback (with `network`: its LAN ones, and a VPN interface's),
- * each after its interface, as l3 address says them: `wlan0 192.168.1.5`. An l3 from before names the addresses alone.
+ * each after its interface, as root3 address says them: `wlan0 192.168.1.5`. An root3 from before names the addresses alone.
  */
 export const lan = (h: Pick<Here, 'bound' | 'interfaces'>) => (h.interfaces?.length
   ? h.interfaces.map((i) => `${i.interface} ${i.addr}`)

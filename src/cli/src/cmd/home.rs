@@ -10,7 +10,7 @@ use serde_json::json;
 pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let list = home::todos()?;
     if list.is_empty() {
-        return Ok(Reply::data(tr!("No TODO yet (l3 todo add \"Fix：title\")", "TODO はまだありません（l3 todo add \"Fix：件名\" で足せます）"), json!([])));
+        return Ok(Reply::data(tr!("No TODO yet (root3 todo add \"Fix：title\")", "TODO はまだありません（root3 todo add \"Fix：件名\" で足せます）"), json!([])));
     }
     let mut t = Vec::new();
     for (k, item) in list.iter().enumerate() {
@@ -27,7 +27,7 @@ pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
 pub fn todo_add(_: &Ctx, call: &Call) -> Result<Reply> {
     let mut list = home::todos()?;
     let item = home::todo_from(call.word(0).unwrap_or_default(), call.note(), now_ms())
-        .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty: l3 todo add \"Fix：title\"", "TODO の1行目が空です：l3 todo add \"Fix：件名\"")))?;
+        .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty: root3 todo add \"Fix：title\"", "TODO の1行目が空です：root3 todo add \"Fix：件名\"")))?;
     fits(&item)?;
     let name = title::named(item.kind.as_deref(), &item.title);
     list.push(item.clone());
@@ -59,14 +59,14 @@ fn fits(item: &home::Todo) -> Result<()> {
     Ok(())
 }
 
-/// `l3 todo edit N "…" [-m detail]`: the Nth item's first line written again, as the app edits it in
+/// `root3 todo edit N "…" [-m detail]`: the Nth item's first line written again, as the app edits it in
 /// place: the same item (its id, whether done, when made). Its detail is what follows the first line
 /// and -m's when either is given; otherwise it stays.
 pub fn todo_edit(_: &Ctx, call: &Call) -> Result<Reply> {
     let mut list = home::todos()?;
     let at = nth(&list, call.word(0).unwrap_or_default())?;
     let item = home::todo_edited(&list[at], call.word(1).unwrap_or_default(), call.flags.note.as_deref())
-        .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty (l3 todo rm {} removes it)", "TODO の1行目が空です（消すなら l3 todo rm {}）", at + 1)))?;
+        .ok_or_else(|| Error::Usage(tr!("The TODO's first line is empty (root3 todo rm {} removes it)", "TODO の1行目が空です（消すなら root3 todo rm {}）", at + 1)))?;
     fits(&item)?;
     let changed = item != list[at];
     list[at] = item.clone();
@@ -76,7 +76,7 @@ pub fn todo_edit(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(text, json!({"number": at + 1, "todo": item, "changed": changed})))
 }
 
-/// Where in `list` the Nth item is, as `l3 todo` numbers them; the number said as it was written.
+/// Where in `list` the Nth item is, as `root3 todo` numbers them; the number said as it was written.
 fn nth(list: &[home::Todo], word: &str) -> Result<usize> {
     match word.parse::<usize>() {
         Ok(k) if (1..=list.len()).contains(&k) => Ok(k - 1),
@@ -98,7 +98,7 @@ pub fn todo_done(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(if done { tr!("Done: {}", "完了にしました：{}", name) } else { tr!("Not done again: {}", "未完了に戻しました：{}", name) }, json!({"number": k, "todo": item})))
 }
 
-/// `l3 todo rm N`: the Nth item goes, as emptying it does in the app.
+/// `root3 todo rm N`: the Nth item goes, as emptying it does in the app.
 pub fn todo_rm(_: &Ctx, call: &Call) -> Result<Reply> {
     let mut list = home::todos()?;
     let at = nth(&list, call.word(0).unwrap_or_default())?;
@@ -112,7 +112,7 @@ pub fn todo_rm(_: &Ctx, call: &Call) -> Result<Reply> {
 pub fn profile_show(_: &Ctx, _: &Call) -> Result<Reply> {
     let p = home::profile();
     let mut t = Vec::new();
-    if p.name.is_empty() && p.handle.is_empty() { t.push(tr!("No name yet (l3 profile name \"Your name\")", "名前はまだありません（l3 profile name \"名前\"）")); }
+    if p.name.is_empty() && p.handle.is_empty() { t.push(tr!("No name yet (root3 profile name \"Your name\")", "名前はまだありません（root3 profile name \"名前\"）")); }
     else { t.push(format!("{}{}", p.name, if p.handle.is_empty() { String::new() } else { format!("  @{}", p.handle) })); }
     if !p.bio.is_empty() { t.push(format!("  {}", p.bio)); }
     Ok(Reply::data(t.join("\n"), json!(p)))

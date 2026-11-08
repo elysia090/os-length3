@@ -76,7 +76,7 @@ pub fn list(data: &Path, path: &str) -> Result<Vec<Entry>, String> {
 }
 
 /// One entry of a directory of the current root, as File's tree of "/" shows it in the app (a browser reads the
-/// same tree from l3's index instead).
+/// same tree from root3's index instead).
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub struct Entry {
     pub name: String,
@@ -141,7 +141,7 @@ pub struct Installed {
     /// say its size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allocated: Option<u64>,
-    /// Another distribution's root (its id: ubuntu, debian); none for l3's own.
+    /// Another distribution's root (its id: ubuntu, debian); none for root3's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distro: Option<String>,
 }

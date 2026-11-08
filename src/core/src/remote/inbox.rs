@@ -58,8 +58,8 @@ pub fn claim(address: &str) -> Result<String> {
         Reply::Ok(v) => Ok(v["address"].as_str().unwrap_or_default().to_string()),
         Reply::Conflict(v) if v["publish"].is_object() => {
             let p = &v["publish"];
-            Err(crate::tr!("Put this record in {}'s DNS, then claim again (l3 name domain {} says when it is there):\n  {}  {}  {}",
-                "{} の DNS にこのレコードを置いてから、もう一度取ってください（置けたかは l3 name domain {}）:\n  {}  {}  {}",
+            Err(crate::tr!("Put this record in {}'s DNS, then claim again (root3 name domain {} says when it is there):\n  {}  {}  {}",
+                "{} の DNS にこのレコードを置いてから、もう一度取ってください（置けたかは root3 name domain {}）:\n  {}  {}  {}",
                 domain.unwrap_or(""), domain.unwrap_or(""), p["name"].as_str().unwrap_or(""), p["type"].as_str().unwrap_or("TXT"), p["value"].as_str().unwrap_or("")))
         }
         Reply::Conflict(_) => Err(crate::tr!("Username already taken", "その名前は既に使用されています")),

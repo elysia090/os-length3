@@ -23,9 +23,9 @@ its log.
 
 ## Running it
 
-    npm run selftest:prod                    # headers, research, web, l3
-    npm run selftest:prod -- web l3          # only those
-    L3=path/to/l3 npm run selftest:prod -- l3 research
+    npm run selftest:prod                    # headers, research, web, root3
+    npm run selftest:prod -- web root3          # only those
+    ROOT3=path/to/root3 npm run selftest:prod -- root3 research
     node tests/prod/measure.ts [--delay MS] [--out FILE]
     node tests/prod/explain.ts
     node tests/prod/drills.ts
@@ -38,9 +38,9 @@ its log.
   the API's CSP, X-Frame-Options, HSTS, CORP, Referrer-Policy, CORS), and
   `/.well-known/security.txt` answers (RFC 9116).
 - **research**: a Remote for research (`ENTER_AS`, as `wrangler.toml` is
-  today): no provider offered, in by the link alone, passkeys refused, l3
+  today): no provider offered, in by the link alone, passkeys refused, root3
   signed in through the device flow approved by the entered session (with
-  `L3`), the sweep fired as the Cron Trigger fires it.
+  `Root3`), the sweep fired as the Cron Trigger fires it.
 - **web**: the app's Playwright selftest (`SELFTEST_REMOTE_KIND=worker npm
   run selftest`): app and Remote on one origin, as `os.length3.com` is. Outside
   research the plan always holds on a Worker, and servers are paid: each
@@ -48,10 +48,10 @@ its log.
   second Worker beside it, its accounts free until they pay through
   Stripe's stand-in (each tier's price `src/remote/devbilling.ts` has), is the
   one the specs about paying meet (`SELFTEST_PLAN_APP`).
-- **l3**: `tests/cli` with `SELFTEST_REMOTE_KIND=worker`, a Postgres and a
+- **root3**: `tests/cli` with `SELFTEST_REMOTE_KIND=worker`, a Postgres and a
   Worker per test file, one file at a time; stopping the Remote is the
-  Worker restarting. `L3` names the binary (the release's:
-  `cargo build --profile prompt -p l3 --no-default-features --target x86_64-unknown-linux-musl`).
+  Worker restarting. `Root3` names the binary (the release's:
+  `cargo build --profile prompt -p root3 --no-default-features --target x86_64-unknown-linux-musl`).
 - **measure** (`measure.ts`): the first load (requests, bytes, until usable,
   how each file is kept, coming back), then each hot route timed at the
   client, by the Worker (`Server-Timing: worker`), in CPU (`cpuserver.ts`: the
@@ -63,7 +63,7 @@ its log.
   accounts and one heavy one.
 - **drills** (`drills.ts`): Postgres restarted mid-session, a slow database,
   the database out of reach, no R2, the Worker restarted, a webhook's clock
-  off by minutes; what the web and l3 are told, and whether anything is lost.
+  off by minutes; what the web and root3 are told, and whether anything is lost.
 
 Postgres will not run as root: as root, the cluster is the `postgres` user's,
 in a directory under the system's temporary one. Every server started

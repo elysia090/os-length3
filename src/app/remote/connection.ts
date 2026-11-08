@@ -5,7 +5,7 @@
 //          with the provider again.
 //   app    the browser does the signing in: the app shows a code, the browser
 //          approves it on the Remote's page, and the app gets a session of
-//          its own (src/core/src/remote/). l3 does the same.
+//          its own (src/core/src/remote/). root3 does the same.
 //
 // Each device is a session that can be seen and ended from any other. What
 // proves it is held where no page can read it: in a browser, the cookie the
@@ -473,7 +473,7 @@ export async function devices(): Promise<Device[]> {
 }
 
 /**
- * End another device's session (as `l3 remote devices rm N` does); it will have to sign in again. This
+ * End another device's session (as `root3 remote devices rm N` does); it will have to sign in again. This
  * device is never ended from the list: it signs out from the person's menu, which forgets it here too.
  */
 export async function endDevice(d: Pick<Device, 'token'>): Promise<void> {
@@ -481,7 +481,7 @@ export async function endDevice(d: Pick<Device, 'token'>): Promise<void> {
   await json('/api/auth/revoke-session', {method: 'POST', body: JSON.stringify({token: d.token})});
 }
 
-/** A device asking to join (l3, the app): which one, before it is let in. */
+/** A device asking to join (root3, the app): which one, before it is let in. */
 export async function deviceAsking(userCode: string): Promise<{clientId: string; status: string}> {
   const r = await json<{client_id?: string; clientId?: string; status: string}>(`/api/auth/device?user_code=${encodeURIComponent(userCode)}`);
   return {clientId: r.client_id ?? r.clientId ?? '', status: r.status};
@@ -493,7 +493,7 @@ export const denyDevice = (userCode: string) => json('/api/auth/device/deny', {m
 /** What a session's user agent is, in a word. */
 export function deviceWord(ua: string | null | undefined): string {
   const u = ua ?? '';
-  if (/^l3\b|ureq/i.test(u)) return t('l3 / App');
+  if (/^root3\b|ureq/i.test(u)) return t('root3 / App');
   const os = /iPhone|iPad/.test(u) ? 'iOS' : /Android/.test(u) ? 'Android' : /Mac OS X/.test(u) ? 'macOS' : /Windows/.test(u) ? 'Windows' : /Linux/.test(u) ? 'Linux' : '';
   const browser = /Edg\//.test(u) ? 'Edge' : /Chrome\//.test(u) ? 'Chrome' : /Firefox\//.test(u) ? 'Firefox' : /Safari\//.test(u) ? 'Safari' : '';
   return [browser, os].filter(Boolean).join(' · ') || t('Device');

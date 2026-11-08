@@ -1,7 +1,7 @@
 [package]
 name = "length3-core"
 version = "0.1.0"
-description = "What Length³ OS means by a repo, a file, an issue and a TODO; shared by the app and l3"
+description = "What Length³ OS means by a repo, a file, an issue and a TODO; shared by the app and root3"
 edition = "2021"
 publish = false
 
@@ -43,6 +43,6 @@ apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = { version = "1.1.0", default-features = false }
 
-# The Secret Service over D-Bus from Rust alone (zbus, and its crypto in Rust): the static l3 reaches it as the app does.
+# The Secret Service over D-Bus from Rust alone (zbus, and its crypto in Rust): the static root3 reaches it as the app does.
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus-secret-service-keyring-store = { version = "1.0.1", features = ["rt-async-io-crypto-rust"] }

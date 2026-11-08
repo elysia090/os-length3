@@ -1,12 +1,12 @@
-//! What l3's tests share: a data directory of their own for each test, and
-//! l3 run in it as a script runs it (off a terminal).
+//! What root3's tests share: a data directory of their own for each test, and
+//! root3 run in it as a script runs it (off a terminal).
 
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// A data directory of its own, made empty for one test under this run's folder (`l3-test-run-<pid>`): gone when
+/// A data directory of its own, made empty for one test under this run's folder (`root3-test-run-<pid>`): gone when
 /// its test passes; left for a look when it fails, until the next run, which first takes away the folders of runs
 /// whose process is gone (passed, failed or killed).
 pub struct Home {
@@ -21,15 +21,15 @@ impl Home {
         Home { dir }
     }
 
-    /// l3 with `args`, as a script runs it: no terminal anywhere, in `lang`.
+    /// root3 with `args`, as a script runs it: no terminal anywhere, in `lang`.
     pub fn run(&self, lang: &str, args: &[&str]) -> Ran {
-        let out = self.command(lang, args).stdin(Stdio::null()).output().expect("l3 runs");
+        let out = self.command(lang, args).stdin(Stdio::null()).output().expect("root3 runs");
         Ran { code: out.status.code().unwrap_or(-1), stdout: self.shown(&out.stdout), stderr: self.shown(&out.stderr) }
     }
 
-    /// l3 in this home with nothing of the person's: no Remote, no language, no settings from outside.
+    /// root3 in this home with nothing of the person's: no Remote, no language, no settings from outside.
     pub fn command(&self, lang: &str, args: &[&str]) -> Command {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_l3"));
+        let mut c = Command::new(env!("CARGO_BIN_EXE_root3"));
         c.args(args).current_dir(&self.dir).env_clear()
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .env("HOME", &self.dir).env("LENGTH3_HOME", &self.dir).env("LENGTH3_LANG", lang)
@@ -59,7 +59,7 @@ impl Drop for Home {
     }
 }
 
-const RUN: &str = "l3-test-run-";
+const RUN: &str = "root3-test-run-";
 
 /// This run's folder, made once, after the folders of runs whose process is gone are taken away.
 fn run() -> PathBuf {
@@ -83,7 +83,7 @@ fn alive(pid: u32) -> bool {
     (unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }) || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
-// ---- l3 at a terminal: a real pty, driven by keys, waited on by what it writes ----
+// ---- root3 at a terminal: a real pty, driven by keys, waited on by what it writes ----
 
 pub const UP: &str = "\x1b[A";
 pub const DOWN: &str = "\x1b[B";
@@ -92,20 +92,20 @@ pub const LEFT: &str = "\x1b[D";
 pub const ENTER: &str = "\r";
 pub const ESC: &str = "\x1b";
 
-/// How long l3 may take to write what a test waits for before the test fails (it never sleeps).
+/// How long root3 may take to write what a test waits for before the test fails (it never sleeps).
 const PATIENCE: std::time::Duration = std::time::Duration::from_secs(20);
 
-/// l3 running on a pty of 100×30, as in a terminal.
+/// root3 running on a pty of 100×30, as in a terminal.
 pub struct Pty {
     master: std::fs::File,
     child: std::process::Child,
-    /// Everything l3 wrote, and where the last key was sent (what is waited for comes after it).
+    /// Everything root3 wrote, and where the last key was sent (what is waited for comes after it).
     out: Vec<u8>,
     mark: usize,
 }
 
 impl Home {
-    /// l3 with `args` at a terminal, `env` over this home's (TERM is xterm's unless given).
+    /// root3 with `args` at a terminal, `env` over this home's (TERM is xterm's unless given).
     pub fn pty(&self, lang: &str, args: &[&str], env: &[(&str, &str)]) -> Pty {
         use std::os::fd::FromRawFd;
         use std::os::unix::process::CommandExt;
@@ -120,29 +120,29 @@ impl Home {
         c.stdin(slave.try_clone().unwrap()).stdout(slave.try_clone().unwrap()).stderr(slave);
         // Its own session, the pty its terminal, as a shell would start it.
         unsafe { c.pre_exec(|| { libc::setsid(); libc::ioctl(0, libc::TIOCSCTTY as _, 0); Ok(()) }); }
-        let child = c.spawn().expect("l3 starts");
+        let child = c.spawn().expect("root3 starts");
         drop(c);
         Pty { master, child, out: Vec::new(), mark: 0 }
     }
 }
 
 impl Pty {
-    /// Wait until l3 has written `text` (escapes aside) since the last key, or fail with what it wrote.
+    /// Wait until root3 has written `text` (escapes aside) since the last key, or fail with what it wrote.
     pub fn expect(&mut self, text: &str) -> &mut Pty {
         let end = std::time::Instant::now() + PATIENCE;
         while !strip(&String::from_utf8_lossy(&self.out[self.mark..])).contains(text) {
-            if !self.read_until(end) { panic!("l3 did not write {text:?}; the terminal shows:\n{}", self.screen()); }
+            if !self.read_until(end) { panic!("root3 did not write {text:?}; the terminal shows:\n{}", self.screen()); }
         }
         self
     }
 
-    /// Wait until l3 has written one of `texts` since the last key: the first written, or fail with what it wrote.
+    /// Wait until root3 has written one of `texts` since the last key: the first written, or fail with what it wrote.
     pub fn wait_for(&mut self, texts: &[&'static str]) -> &'static str {
         let end = std::time::Instant::now() + PATIENCE;
         loop {
             let now = strip(&String::from_utf8_lossy(&self.out[self.mark..]));
             if let Some(t) = texts.iter().filter_map(|t| now.find(t).map(|at| (at, *t))).min().map(|(_, t)| t) { return t; }
-            if !self.read_until(end) { panic!("l3 wrote none of {texts:?}; the terminal shows:\n{}", self.screen()); }
+            if !self.read_until(end) { panic!("root3 wrote none of {texts:?}; the terminal shows:\n{}", self.screen()); }
         }
     }
 
@@ -150,20 +150,20 @@ impl Pty {
     pub fn send(&mut self, keys: &str) -> &mut Pty {
         use std::io::Write;
         self.mark = self.out.len();
-        self.master.write_all(keys.as_bytes()).expect("keys reach l3");
+        self.master.write_all(keys.as_bytes()).expect("keys reach root3");
         self
     }
 
-    /// Wait for l3 to end: its exit code, and the terminal as it was left.
+    /// Wait for root3 to end: its exit code, and the terminal as it was left.
     pub fn finish(&mut self) -> (i32, String) {
         let end = std::time::Instant::now() + PATIENCE;
         while self.read_until(end) {}
         let status = self.child.try_wait().ok().flatten().or_else(|| { let _ = self.child.kill(); None });
-        let status = status.unwrap_or_else(|| panic!("l3 did not end; the terminal shows:\n{}", self.screen()));
+        let status = status.unwrap_or_else(|| panic!("root3 did not end; the terminal shows:\n{}", self.screen()));
         (status.code().unwrap_or(-1), self.screen())
     }
 
-    /// Read what l3 writes before `end`; false once it has ended (or `end` passed).
+    /// Read what root3 writes before `end`; false once it has ended (or `end` passed).
     fn read_until(&mut self, end: std::time::Instant) -> bool {
         use std::io::Read;
         use std::os::fd::AsRawFd;
@@ -173,17 +173,17 @@ impl Pty {
         if unsafe { libc::poll(&mut p, 1, left) } <= 0 { return false; }
         let mut buf = [0u8; 65536];
         match self.master.read(&mut buf) {
-            // EIO: the terminal's other side is closed: l3 has ended.
+            // EIO: the terminal's other side is closed: root3 has ended.
             Ok(0) | Err(_) => { let _ = self.child.wait(); false }
             Ok(n) => { self.out.extend_from_slice(&buf[..n]); true }
         }
     }
 
-    /// The terminal's lines as a person sees them now: l3's redrawing (cursor up, clear below) played out.
+    /// The terminal's lines as a person sees them now: root3's redrawing (cursor up, clear below) played out.
     pub fn screen(&self) -> String { screen(&String::from_utf8_lossy(&self.out)) }
 }
 
-/// A test that fails while l3 waits for a key leaves no l3 behind waiting on a terminal nobody types on.
+/// A test that fails while root3 waits for a key leaves no root3 behind waiting on a terminal nobody types on.
 impl Drop for Pty {
     fn drop(&mut self) {
         if self.child.try_wait().ok().flatten().is_none() { let _ = self.child.kill(); let _ = self.child.wait(); }
@@ -235,7 +235,7 @@ pub fn screen(s: &str) -> String {
     text.join("\n").trim_end().to_string()
 }
 
-/// What one run of l3 gave.
+/// What one run of root3 gave.
 #[derive(Debug, PartialEq)]
 pub struct Ran {
     pub code: i32,
@@ -246,18 +246,18 @@ pub struct Ran {
 impl Ran {
     /// The run as a transcript: what was typed, the exit code, then each stream.
     pub fn transcript(&self, args: &[&str]) -> String {
-        format!("$ l3 {}\n[exit {}]\n--- stdout\n{}--- stderr\n{}\n", args.join(" "), self.code, self.stdout, self.stderr)
+        format!("$ root3 {}\n[exit {}]\n--- stdout\n{}--- stderr\n{}\n", args.join(" "), self.code, self.stdout, self.stderr)
     }
 }
 
-/// Compare `got` with the golden file `name`, or write it when L3_GOLDEN=record.
+/// Compare `got` with the golden file `name`, or write it when ROOT3_GOLDEN=record.
 pub fn golden(name: &str, got: &str) {
     let at = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(name);
-    if std::env::var("L3_GOLDEN").as_deref() == Ok("record") {
+    if std::env::var("ROOT3_GOLDEN").as_deref() == Ok("record") {
         std::fs::write(&at, got).expect("golden written");
         return;
     }
-    let want = std::fs::read_to_string(&at).unwrap_or_else(|_| panic!("{} is missing (L3_GOLDEN=record writes it)", at.display()));
+    let want = std::fs::read_to_string(&at).unwrap_or_else(|_| panic!("{} is missing (ROOT3_GOLDEN=record writes it)", at.display()));
     if want != got {
         let line = want.lines().zip(got.lines()).position(|(a, b)| a != b).unwrap_or(want.lines().count().min(got.lines().count()));
         panic!("{name} differs first at line {}:\n want: {:?}\n  got: {:?}\n\n--- got\n{got}", line + 1, want.lines().nth(line), got.lines().nth(line));
@@ -339,7 +339,7 @@ fn serve_one(mut stream: std::net::TcpStream, answer: &Answer, kept: &std::sync:
 }
 
 impl Home {
-    /// This home signed in to `url` as l3 login leaves it: which session, in Home's `remote` setting; its bearer
+    /// This home signed in to `url` as root3 login leaves it: which session, in Home's `remote` setting; its bearer
     /// ("test-token") apart, in `secrets/`.
     pub fn signed_in(&self, url: &str) {
         for dir in ["home", "secrets"] { std::fs::create_dir_all(self.path(dir)).unwrap(); }
@@ -357,7 +357,7 @@ impl Home {
     }
 
     /// A root for Prompts made of this host's own sh and the libraries it loads (as `ldd` names them), held
-    /// and current as `l3 root install` leaves one. False where the host has no such sh to lend.
+    /// and current as `root3 root install` leaves one. False where the host has no such sh to lend.
     pub fn root(&self) -> bool {
         if !self.root_of("test", "test", &[]) { return false; }
         self.use_root("test");
@@ -396,7 +396,7 @@ impl Home {
         std::os::unix::fs::symlink(digest, self.path("system/current")).unwrap();
     }
 
-    /// Home's dotfiles, as `l3 dotfile write` leaves them.
+    /// Home's dotfiles, as `root3 dotfile write` leaves them.
     pub fn dotfiles(&self, files: &[(&str, &str)]) {
         let all: std::collections::BTreeMap<&str, &str> = files.iter().copied().collect();
         std::fs::create_dir_all(self.path("home")).unwrap();

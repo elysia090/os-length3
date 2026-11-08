@@ -128,10 +128,10 @@ mod system_tests {
         let data = crate::fs::testing::dir("length3-system-held");
         let _ = fs::remove_dir_all(&data);
         let repos = data.join("repos");
-        let l3 = root_dir(&data, 'a', "0.5.0");
+        let root3 = root_dir(&data, 'a', "0.5.0");
         std::os::unix::fs::symlink("a".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
-        // A web server's Prompt on l3's root (this process stands for it), then Ubuntu made current, as `l3 root use ubuntu` does.
-        let mut prompt = crate::prompt::running::record(&data, "os-web", true, &l3.join("root")).unwrap();
+        // A web server's Prompt on root3's root (this process stands for it), then Ubuntu made current, as `root3 root use ubuntu` does.
+        let mut prompt = crate::prompt::running::record(&data, "os-web", true, &root3.join("root")).unwrap();
         prompt.ready().unwrap();
         root_dir(&data, 'b', "24.04.5");
         assert!(crate::root::use_held(&data, &"b".repeat(64)).is_some());
@@ -144,13 +144,13 @@ mod system_tests {
         // Asked for by name, it is looked at again and stays; so with the host's own `open` (the app's) told nothing.
         let r = free(&data, &repos, &[format!("root:{}", "a".repeat(64))], &[]);
         assert!(r.removed.is_empty() && r.kept == [(format!("root:{}", "a".repeat(64)), running)], "{:?}", r.kept);
-        assert!(l3.join("root/bin/busybox").is_file(), "its programs are still there to run");
+        assert!(root3.join("root/bin/busybox").is_file(), "its programs are still there to run");
         // The Prompt ends: the root before is one that can go, as it always was.
         drop(prompt);
         let u = space(&data, &repos, &[], true);
         assert_eq!(room_of(&u, 'a').0, Room::Free);
         assert_eq!(free(&data, &repos, &all_freeable(&u), &[]).removed, [format!("root:{}", "a".repeat(64))]);
-        assert!(!l3.exists() && crate::root::current(&data).is_some_and(|(_, r)| r.version == "24.04.5"));
+        assert!(!root3.exists() && crate::root::current(&data).is_some_and(|(_, r)| r.version == "24.04.5"));
         let _ = fs::remove_dir_all(&data);
     }
 
@@ -161,7 +161,7 @@ mod system_tests {
         root_dir(&data, 'a', "1");
         root_dir(&data, 'b', "2");
         std::os::unix::fs::symlink("b".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
-        // This process's own, as an l3 before roots were recorded wrote it.
+        // This process's own, as an root3 before roots were recorded wrote it.
         let me = std::process::id();
         fs::create_dir_all(data.join("prompts")).unwrap();
         fs::write(data.join(format!("prompts/{me}.json")), format!(r#"{{"repo":"x","pid":{me},"network":false,"started":1,"startTicks":{}}}"#, crate::prompt::running::start_ticks(me).unwrap())).unwrap();
@@ -287,7 +287,7 @@ mod owned_tests {
         fs::create_dir_all(root.join("root/bin")).unwrap();
         fs::write(root.join("installed.json"), format!(r#"{{"name":"Ubuntu","version":"24.04.5 LTS","sha256":"{}","files":0,"bytes":0}}"#, "a".repeat(64))).unwrap();
         std::os::unix::fs::symlink("a".repeat(64), crate::root::system_dir(&data).join("current")).unwrap();
-        // apt and .setup writing (this process stands for the l3 preparing it).
+        // apt and .setup writing (this process stands for the root3 preparing it).
         let mut prompt = crate::prompt::running::record(&data, "os-starting", false, &root.join("root")).unwrap();
         let env = crate::prompt::writes::env_over(&data, "os-starting", &root.join("root"));
         fs::create_dir_all(env.join("upper/usr/bin")).unwrap();

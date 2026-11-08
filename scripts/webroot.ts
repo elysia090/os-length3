@@ -1,15 +1,15 @@
-// The web root: l3 for the browser, made from the release root itself: the same tree the
+// The web root: root3 for the browser, made from the release root itself: the same tree the
 // desktop app installs, so a Prompt in a browser runs the same programs
 // with the same bytes. Nothing is built or chosen apart from the root:
-// BusyBox, l3 and /etc are the root's own.
+// BusyBox, root3 and /etc are the root's own.
 //
 //   node scripts/webroot.ts ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]
 //
 // ROOT is a release root, os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst
-// (checked against the digest in its name), read as l3 installs it
+// (checked against the digest in its name), read as root3 installs it
 // (scripts/webroot-tree.ts). OUT (public/webroot) receives:
 //
-//   webroot.json               what l3 this is: {name: 'l3', version, sha256 and bytes
+//   webroot.json               what root3 this is: {name: 'root3', version, sha256 and bytes
 //                         of the root (the digest src/core/src/root/pins.rs pins), file,
 //                         root: {name, profile}, index: {path, sha256, size},
 //                         translator: {name, version}}. The one name that is not a
@@ -32,12 +32,12 @@
 //   blobs/<sha256>.bin    the translator (xlat.wasm) and each translation made
 //                         ahead of time with its program's bytes, gzip'd: the hot programs (`--hot`, by
 //                         default bash, the Prompt's shell, BusyBox, every coreutils
-//                         applet, l3, and git, which every repo is), translated whole by the same
+//                         applet, root3, and git, which every repo is), translated whole by the same
 //                         translator so no Prompt spends its first seconds on them; every other
 //                         program is translated in the browser when it first runs
 //
 // Names are sorted and nothing depends on time, so the same root and
-// translator give the same files, byte for byte. Unreferenced files of an l3
+// translator give the same files, byte for byte. Unreferenced files of an root3
 // before in OUT go. `--stage DIR` also puts BusyBox, its translation and
 // xlat.wasm in DIR, for ricebox/tests (target/userland).
 import {execFileSync} from 'node:child_process';
@@ -67,7 +67,7 @@ function flag(name: string, d: string | null = null): string | null {
 }
 const translatorWasm = flag('--translator', join(repo, 'module/sods/target/wasm32-unknown-unknown/release/xlat.wasm'));
 const xlat = flag('--xlat', join(repo, 'module/sods/target/release/xlat'));
-const hot = flag('--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/l3,/usr/bin/git').split(',').filter(Boolean);
+const hot = flag('--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/root3,/usr/bin/git').split(',').filter(Boolean);
 const stage = flag('--stage');
 const [rootFile, out] = args;
 if (!rootFile || !out) { console.error('usage: webroot.ts ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]'); process.exit(2); }
@@ -127,12 +127,17 @@ const compress = (bytes: Buffer) => new Promise<Buffer>((resolve) => {
 /** A file's bytes as its pack keeps them: compressed when that is smaller, else raw. */
 type Stored = {z: Buffer; raw?: undefined} | {raw: Buffer; z?: undefined};
 const hotBytes = new Map<string, Buffer>();
+let before: Buffer | undefined;
 const stored: {path: string; bytes: Promise<Stored>}[] = [];
 const {entries, manifest} = await readTarball(rootFile, (e, bytes) => {
   if (!bytes) return; // a second name of a file: the file's bytes
   if (hot.includes(e.path)) hotBytes.set(e.path, bytes);
+  if (e.path === '/usr/bin/l3') before = bytes;
   stored.push({path: e.path, bytes: bytes.length ? compress(bytes).then((z): Stored => (z.length < bytes.length ? {z} : {raw: bytes})) : Promise.resolve({raw: bytes})});
 });
+// The root's own command is root3; a root released before it was named so (0.6.4) has it as l3.
+const cli = hot.indexOf('/usr/bin/root3');
+if (cli >= 0 && !hotBytes.has('/usr/bin/root3') && before) { hot[cli] = '/usr/bin/l3'; hotBytes.set('/usr/bin/l3', before); }
 for (const p of hot) if (!hotBytes.has(p)) throw new Error(`${p} is not a file of this root`);
 const packed = new Map(await Promise.all(stored.map(async (s) => [s.path, await s.bytes] as const)));
 for (const w of pool) void w.terminate();
@@ -201,7 +206,7 @@ const translator = {name: 'xlat', version: crate(join(repo, 'module/sods/Cargo.t
 // Each hot program translated whole by the native build of the same translator (it gives the bytes the wasm one
 // does): what it reaches only through a pointer (BusyBox's applets and its shell's builtins) is there from its first
 // run, not translated as it runs.
-const work = mkdtempSync(join(tmpdir(), 'l3-'));
+const work = mkdtempSync(join(tmpdir(), 'root3-'));
 const translations: Index['translations'] = [];
 try {
   for (const path of hot) {
@@ -229,18 +234,18 @@ const indexPath = `index-${indexSha}.json`;
 writeFileSync(join(out, indexPath), json);
 const profile = /^base\.profile=(.*)$/m.exec(manifest ?? '')?.[1] ?? '';
 const about = {
-  name: 'l3', version, sha256: rootSha, bytes: statSync(rootFile).size, file: basename(rootFile),
+  name: 'root3', version, sha256: rootSha, bytes: statSync(rootFile).size, file: basename(rootFile),
   root: {name: index.name, profile},
   index: {path: indexPath, sha256: indexSha, size: json.length},
   translator: {name: translator.name, version: translator.version},
 };
 writeFileSync(join(out, 'webroot.json'), `${JSON.stringify(about, null, 2)}\n`);
 
-// What an l3 before left here, and this one does not name, goes (only names this script makes).
+// What an root3 before left here, and this one does not name, goes (only names this script makes).
 const keep = new Set([indexPath, 'webroot.json', ...packList.map((p) => `packs/${p.name}`), translator.path, ...translations.flatMap((t) => [t.elf.path, t.wasm.path])]);
 for (const f of readdirSync(out)) if (/^index-[0-9a-f]{64}\.json$/.test(f) && !keep.has(f)) rmSync(join(out, f));
 for (const [dir, re] of [['packs', /^[0-9a-f]{64}\.pack$/], ['blobs', /^[0-9a-f]{64}\.bin$/]] as const) {
   for (const f of readdirSync(join(out, dir))) if (re.test(f) && !keep.has(`${dir}/${f}`)) rmSync(join(out, dir, f));
 }
 const total = packList.reduce((n, p) => n + p.bytes, 0);
-console.log(`l3 ${version} (root sha256 ${rootSha.slice(0, 12)}…): ${packList.length} packs ${total} bytes, ${files.length} files, ${index.dirs.length} dirs, ${index.links.length} links; translator ${translator.size} bytes; ${translations.map((t) => `${t.path} ${t.elf.size}+${t.wasm.size}`).join(', ')}; index ${indexPath} ${json.length} bytes`);
+console.log(`root3 ${version} (root sha256 ${rootSha.slice(0, 12)}…): ${packList.length} packs ${total} bytes, ${files.length} files, ${index.dirs.length} dirs, ${index.links.length} links; translator ${translator.size} bytes; ${translations.map((t) => `${t.path} ${t.elf.size}+${t.wasm.size}`).join(', ')}; index ${indexPath} ${json.length} bytes`);

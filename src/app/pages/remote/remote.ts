@@ -14,7 +14,7 @@ import {planSection} from './plan.ts';
 //
 // Not signed in: one sentence on what it means, and the ways in. A browser
 // signs in with GitHub, Google or Apple, or with a passkey it already has; the app
-// and l3 show a code that a browser approves.
+// and root3 show a code that a browser approves.
 //
 // Signed in: the repos, here and on the Remote only, each with where it
 // stands; then what keeps the account: passkeys, the providers it can sign

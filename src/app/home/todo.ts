@@ -1,7 +1,7 @@
 // TODO lives on Home: one list for the person, not one file per repo.
 // An item's first line is named the way issues are named in this OS, a kind
 // and a title ("Fix：再起動すると保存内容が消える"); the lines after it are the
-// detail. The list is kept in Home's state (state.ts), the same file l3 todo reads.
+// detail. The list is kept in Home's state (state.ts), the same file root3 todo reads.
 
 import {clipUnits, kindOf} from '../repos/text.ts';
 

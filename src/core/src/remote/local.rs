@@ -138,7 +138,7 @@ pub fn held_open(dir: &Path) -> Option<String> {
 }
 
 /// Where the digests of a repo copy are kept between runs, as git keeps its
-/// index: by each file's size, time and inode, so l3 (a new process each
+/// index: by each file's size, time and inode, so root3 (a new process each
 /// time) reads again only what changed instead of every byte of every repo.
 /// They are what sync last read, so they are kept with sync's other records.
 /// Only copies this OS holds are kept for.

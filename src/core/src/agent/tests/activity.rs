@@ -48,7 +48,7 @@ fn a_session_works_waits_and_ends_as_it_last_said_and_goes_quiet_after_an_hour()
 
 #[test]
 fn a_page_reads_only_what_came_since_and_all_again_once_the_journal_was_cut() {
-    let dir = crate::fs::testing::dir("l3-agents");
+    let dir = crate::fs::testing::dir("root3-agents");
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("agents.jsonl");
     let e = |at: u64, kind: Kind| Event { at, harness: "grok".into(), session: "a".into(), repo: "notes".into(), line: "main".into(), kind, text: String::new() };

@@ -1,9 +1,9 @@
-//! The desktop app, one on a device at a time, and how l3 reaches it. While
+//! The desktop app, one on a device at a time, and how root3 reaches it. While
 //! it runs, the app holds a lock in its own folder of the data directory
 //! (owner-only) and answers on a Unix socket beside it, a word a line:
 //! `here` (it is open), `show` (its window comes forward) and `close` (its
 //! window closes, as its close button closes it). Nothing listens on a
-//! network: the socket is a file only this person can open. `l3 app` asks
+//! network: the socket is a file only this person can open. `root3 app` asks
 //! first and starts the app only when nothing answers; an app started while
 //! another holds the lock (from the desktop's menu, say) shows that one and
 //! ends.

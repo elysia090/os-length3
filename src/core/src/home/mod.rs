@@ -1,6 +1,6 @@
 //! Home's state as files the person owns: `<data>/home/<key>.json`. The app
 //! keeps its profile, TODO and band here (in a browser, in its storage), and
-//! l3 reads and writes the same TODO.
+//! root3 reads and writes the same TODO.
 
 // No unsafe code in this layer.
 #![forbid(unsafe_code)]

@@ -1,4 +1,4 @@
-# One workspace for the app, the l3 command and the core they share, so the
+# One workspace for the app, the root3 command and the core they share, so the
 # app and the command can never disagree about what a repo or an issue is.
 [workspace]
 members = ["src/core", "src/core/web", "src/cli", "src/desktop"]
@@ -24,7 +24,7 @@ strip = true
 inherits = "release"
 opt-level = "z"
 
-# l3 for the Prompt: a full strip would drop the relocations xlat reads; debug info can go.
+# root3 for the Prompt: a full strip would drop the relocations xlat reads; debug info can go.
 [profile.prompt]
 inherits = "release"
 strip = "debuginfo"

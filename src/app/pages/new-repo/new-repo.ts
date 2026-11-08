@@ -27,7 +27,7 @@ import {fitSize} from '../../ui/optical.ts';
  */
 
 /**
- * The scaffold (src/shared/templates.json's `standard`, as `l3 repo new` makes
+ * The scaffold (src/shared/templates.json's `standard`, as `root3 repo new` makes
  * it): a README, with docs/, in no language of its own. There is no
  * choosing; what is made from it is changed here, file by file.
  */

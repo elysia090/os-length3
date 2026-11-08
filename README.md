@@ -1,12 +1,21 @@
-# os-length3
+# root3
 
-**Length³ OS**: a work OS that is the same in a window, in a browser and on
-the command line, over one Linux root, **OS Length3 Linux**: thirty packages,
-each made from the source this repository pins by its recipe
-([`root/`](root/)), static, hardened and checked by use, and `l3`.
+**root3** is the OS: everything this repository holds. Its modules ([`module/`](module/)) are each a unit of its
+own, built and shipped on its own; root3 is what is left once they are peeled off (the app, the `root3` command and
+the one Rust core under both, the Remote) together with all of them, and the Linux root its Prompts run, **OS Length3
+Linux** ([`root/`](root/)): thirty packages, each made from the source this repository pins by its recipe, static,
+hardened and checked by use.
+
+| Ships | What it is |
+| --- | --- |
+| root3 | the releases below: the root, the web root, the web app and the desktop app, with `root3` in each |
+| [`module/sods`](module/sods/) | the x86-64 → WebAssembly translator (`xlat`, and as wasm with its runtime) |
+| [`module/ricebox`](module/ricebox/) | the box: the smallest UNIX a browser runs, the kernel a browser's Prompt runs the root on |
+| [`module/muk`](module/muk/) | what is at rest: the root's packs read when first touched, copies kept by digest, the repo in step |
+| [`module/you`](module/you/), [`module/otter`](module/otter/), [`module/lib`](module/lib/) | units of C with no C library: z, rg, fd and fzf; help and what each thing is; what they stand on |
 
 ```
-             the desktop app (Tauri)      the web app        l3 (terminal, SSH)
+             the desktop app (Tauri)      the web app        root3 (terminal, SSH)
                          \                     |                    /
                           one Rust core: repos, history, the Remote's sync, Home
                          /                     |                    \
@@ -14,7 +23,7 @@ each made from the source this repository pins by its recipe
                  kernel (namespaces)       kernel, made wasm by      kernel (namespaces)
                                            sods, in a Worker
                                                |
-                       OS Length3 Linux: BusyBox, gcc, make, git, l3 … (one pinned root)
+                       OS Length3 Linux: BusyBox, gcc, make, git, root3 … (one pinned root)
                                                |
                  root/: each package from its pinned source by its recipe, on one pinned Alpine
 ```
@@ -27,27 +36,27 @@ A release carries:
 
 | File | What it is |
 | --- | --- |
-| `…-desktop-amd64.deb`, `…-desktop-x86_64.AppImage` | the desktop app for x86-64 Linux, with `l3` beside it: `sudo apt install ./….deb` (then `l3`, or `l3 app` for the window), or `chmod +x` the AppImage and run it |
+| `…-desktop-amd64.deb`, `…-desktop-x86_64.AppImage` | the desktop app for x86-64 Linux, with `root3` beside it: `sudo apt install ./….deb` (then `root3`, or `root3 app` for the window), or `chmod +x` the AppImage and run it |
 | `…-web.zip` | the web app, ready for any static server (`npx serve` in the unzipped folder) |
-| `…-x86_64-<sha256>.tar.zst` | the root (with `/usr/bin/l3`), which the app installs and trusts by that digest |
-| `…-webroot.tar` | the same root as a browser reads it (packs by package, BusyBox and l3 translated ahead of time) |
+| `…-x86_64-<sha256>.tar.zst` | the root (with `/usr/bin/root3`), which the app installs and trusts by that digest |
+| `…-webroot.tar` | the same root as a browser reads it (packs by package, BusyBox and root3 translated ahead of time) |
 | `SHA256SUMS` | the digests of everything above |
 
 [os.length3.com](https://os.length3.com) is the web app and its Remote,
 where a signed-in person's repos, TODO and settings are kept between
-devices. Building from source, `l3` is `cargo install --path src/cli`.
+devices. Building from source, `root3` is `cargo install --path src/cli`.
 
 ## Layout
 
 | Directory | What is there | Start at |
 | --- | --- | --- |
-| [`src/`](src/) | **Length³ OS**: the app ([`app/`](src/app/), TypeScript, no framework; [`desktop/`](src/desktop/), Tauri for the window), [`cli/`](src/cli/), the `l3` command, the core both use ([`core/`](src/core/), also built for `wasm32-wasip1` for the browser), and the Remote ([`remote/`](src/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design language in [`docs/DESIGN.md`](docs/DESIGN.md) |
+| [`src/`](src/) | **Length³ OS**: the app ([`app/`](src/app/), TypeScript, no framework; [`desktop/`](src/desktop/), Tauri for the window), [`cli/`](src/cli/), the `root3` command, the core both use ([`core/`](src/core/), also built for `wasm32-wasip1` for the browser), and the Remote ([`remote/`](src/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design language in [`docs/DESIGN.md`](docs/DESIGN.md) |
 | [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`ricebox/`](module/ricebox/) the box (the smallest UNIX a browser runs: the kernel the root runs on in a browser's Prompt), [`muk/`](module/muk/) what is at rest (packs and translations by digest, the repo in step); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
 | [`root/`](root/) | the root the Prompts run: its pins, a recipe per package and what makes it (below) | `build.sh` |
 | [`scripts/`](scripts/), [`tests/`](tests/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
 | [`docs/`](docs/) | what the OS is and how it ships ([`README.md`](docs/README.md)), its design language ([`DESIGN.md`](docs/DESIGN.md)), what it promises about security ([`SECURITY.md`](docs/SECURITY.md)) | |
 
-`package.json`, `Cargo.toml` (one workspace: the core, the app's window and l3), `vite.config.ts`, `index.html` and
+`package.json`, `Cargo.toml` (one workspace: the core, the app's window and root3), `vite.config.ts`, `index.html` and
 `public/`, `wrangler.toml` (the Remote's Worker) and `RELEASE` (this tree's version) are at the top, as each tool
 looks for them.
 
@@ -59,7 +68,7 @@ The root is [`root/`](root/): what it is made from (`sources.env`, the pins), on
 
 What the directories hold is being sorted into units, each one responsibility, peeled from the outside in by how
 easily a person changes it; what is left inside is ricebox's, the smallest UNIX a browser runs. Every byte is
-running (ricebox), at rest (muk) or on its way (funk). The faces (the app's pages and window, l3's words) hold no
+running (ricebox), at rest (muk) or on its way (funk). The faces (the app's pages and window, root3's words) hold no
 judgement of their own. [`scripts/units.ts`](scripts/units.ts) is the table: each unit's files and the units it
 may take from, checked by `npm test` (an import a unit still makes and may not is listed there as owed, with the step
 below that ends it).
@@ -88,7 +97,7 @@ Length³ OS (Node 22 and Rust with the `wasm32-wasip1` target):
 npm ci
 npm run check            # types, then every unit test (npm test)
 npm run selftest         # the web app end to end in Chromium
-npm run selftest:cli     # l3 end to end against a Remote of its own
+npm run selftest:cli     # root3 end to end against a Remote of its own
 npx tauri dev            # the desktop app against the dev server
 ```
 

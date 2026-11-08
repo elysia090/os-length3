@@ -1,4 +1,4 @@
-//! `l3 address`: where to reach this device over SSH, one destination a
+//! `root3 address`: where to reach this device over SSH, one destination a
 //! line as OpenSSH takes it (`ssh -p 22000 notes@127.0.0.1`, one a repo),
 //! as `ip addr` answers with an address; beside it, on standard error, who
 //! may connect, how many keys are let in and the host key's fingerprint.
@@ -8,9 +8,9 @@
 //! SSH is off until it is turned on: asked on a terminal (y/N, then from
 //! where: this device only, the default, or PCs on the same network too),
 //! never in a script (it says so, exit 5), or set with
-//! `l3 address ssh on [device|network]` and `l3 address ssh off`. The scope
+//! `root3 address ssh on [device|network]` and `root3 address ssh off`. The scope
 //! chosen is kept on this device; `on` alone takes it again. Turning on
-//! starts l3's listener in the background (src/cli/src/ssh.rs), which says so to the
+//! starts root3's listener in the background (src/cli/src/ssh.rs), which says so to the
 //! Remote; Runtime shows on every device that it listens, and any of them
 //! can turn it off.
 
@@ -52,11 +52,11 @@ fn facts(h: &ssh::Here) -> Vec<String> {
 
 /// How to turn it on, said wherever it is off.
 fn how_on() -> String {
-    tr!("l3 address ssh on turns it on, from this device only (on network: from the same network too); your key goes in the {} dotfile",
-        "l3 address ssh on でオンにできます。この端末からだけです（on network なら同じネットワークからも）。鍵は {} の dotfile に置きます", ssh::KEYS)
+    tr!("root3 address ssh on turns it on, from this device only (on network: from the same network too); your key goes in the {} dotfile",
+        "root3 address ssh on でオンにできます。この端末からだけです（on network なら同じネットワークからも）。鍵は {} の dotfile に置きます", ssh::KEYS)
 }
 
-/// `l3 address`: each destination, one a line, and what to check of it on standard error; off, it asks on a
+/// `root3 address`: each destination, one a line, and what to check of it on standard error; off, it asks on a
 /// terminal (whether, then from where) and says so elsewhere.
 pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
@@ -94,7 +94,7 @@ pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::data(h.destinations.join("\n"), shown(&h)))
 }
 
-/// `l3 address ssh on [device|network]` and `l3 address ssh off`: without asking. `on` alone takes the scope kept.
+/// `root3 address ssh on [device|network]` and `root3 address ssh off`: without asking. `on` alone takes the scope kept.
 pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     if call.word(0) == Some("on") {
@@ -124,20 +124,20 @@ fn turn_on(scope: ssh::Scope) -> Result<ssh::Here> {
     let data = paths::data_dir();
     if ssh::listening(data).is_some() {
         ssh::set_scope(data, scope)?;
-        ssh::rescope(data, scope).ok_or_else(|| Error::Io(tr!("The SSH listener did not take the scope asked; l3 address ssh off, then on", "SSH の待ち受けが範囲の変更を受けませんでした。l3 address ssh off のあと、もう一度 on にしてください")))?;
+        ssh::rescope(data, scope).ok_or_else(|| Error::Io(tr!("The SSH listener did not take the scope asked; root3 address ssh off, then on", "SSH の待ち受けが範囲の変更を受けませんでした。root3 address ssh off のあと、もう一度 on にしてください")))?;
         return Ok(ssh::here(data));
     }
     if remote::connection().is_none() {
-        return Err(Error::Offline(tr!("SSH is turned on for a device signed in to a Remote, so any of your devices can see it and turn it off (l3 login)",
-            "SSH は Remote にサインインした端末でオンにします。どの端末からも見えて、オフにできるように（l3 login）")));
+        return Err(Error::Offline(tr!("SSH is turned on for a device signed in to a Remote, so any of your devices can see it and turn it off (root3 login)",
+            "SSH は Remote にサインインした端末でオンにします。どの端末からも見えて、オフにできるように（root3 login）")));
     }
     // The keys as the Remote has them (a key added on another device counts); out of reach, this device's.
     let _ = remote::sync_home("dotfiles");
     let keys = ssh::keys();
     for (line, why) in &keys.skipped { note(&tr!("{} line {}: {}", "{} の {} 行目：{}", ssh::KEYS, line, why)); }
     if keys.keys.is_empty() {
-        return Err(Error::Refused(tr!("Add a key first: your OpenSSH public key, one a line, in the {0} dotfile (Runtime → Dotfiles, or l3 dotfile write {0} < ~/.ssh/id_ed25519.pub)",
-            "先に鍵を置いてください：OpenSSH の公開鍵を1行にひとつ、{0} の dotfile に（Runtime → Dotfiles、または l3 dotfile write {0} < ~/.ssh/id_ed25519.pub）", ssh::KEYS)));
+        return Err(Error::Refused(tr!("Add a key first: your OpenSSH public key, one a line, in the {0} dotfile (Runtime → Dotfiles, or root3 dotfile write {0} < ~/.ssh/id_ed25519.pub)",
+            "先に鍵を置いてください：OpenSSH の公開鍵を1行にひとつ、{0} の dotfile に（Runtime → Dotfiles、または root3 dotfile write {0} < ~/.ssh/id_ed25519.pub）", ssh::KEYS)));
     }
     ssh::set_scope(data, scope)?;
     start_listener()?;
@@ -153,9 +153,9 @@ fn start_listener() -> Result<()> {
     use std::process::{Command, Stdio};
     let exe = std::env::current_exe()?;
     let mut cmd = Command::new(exe);
-    // From the data directory: wherever this l3 was run from is nothing of the listener's (nor its sessions').
+    // From the data directory: wherever this root3 was run from is nothing of the listener's (nor its sessions').
     cmd.args(["address", "ssh", "serve"]).current_dir(paths::data_dir()).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
-    // A group of its own: it outlives this l3, and a terminal's Ctrl-C or hangup, which go to the group in front, are
+    // A group of its own: it outlives this root3, and a terminal's Ctrl-C or hangup, which go to the group in front, are
     // not its.
     cmd.process_group(0);
     let mut child = cmd.spawn()?;
@@ -179,7 +179,7 @@ fn start_listener() -> Result<()> {
     Err(Error::Refused(tr!("SSH into a Prompt is Linux only for now", "Prompt への SSH はいま Linux だけです")))
 }
 
-/// `l3 address ssh serve`: the listener itself (what turning on starts). Why it cannot start goes to standard
+/// `root3 address ssh serve`: the listener itself (what turning on starts). Why it cannot start goes to standard
 /// output, where turning on reads it.
 pub fn serve(_: &Ctx, _: &Call) -> Result<Reply> {
     #[cfg(all(target_os = "linux", feature = "ssh"))]

@@ -1,5 +1,5 @@
 // The plan: what an account may do on this Remote, decided here and only
-// here. Every client (the web app, the desktop app, l3) shows what this says
+// here. Every client (the web app, the desktop app, root3) shows what this says
 // and asks; none decides.
 //
 // Free, a signed-in account keeps on the Remote up to an allowance (FREE:

@@ -60,7 +60,7 @@ export function dotfilesSection(restarted: () => void, counted: (n: number) => v
     else if (pressed !== undefined) section.querySelector<HTMLElement>(`.dot-row[data-name="${CSS.escape(pressed)}"]`)?.focus();
   };
   paint();
-  // Taken in from the Remote, or taken here (l3 too): drawn again, unless one is being written in.
+  // Taken in from the Remote, or taken here (root3 too): drawn again, unless one is being written in.
   onState((key) => { if ((key === 'dotfiles' || key === 'trusted') && section.isConnected && !section.querySelector('.dot-editor')) paint(); });
   return section;
 }

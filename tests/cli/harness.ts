@@ -1,12 +1,12 @@
-// l3 end to end, against a Remote of its own: what the tests in this folder
+// root3 end to end, against a Remote of its own: what the tests in this folder
 // share. One Remote per test file: src/remote/dev.ts on a free port with a data
-// directory made for it, stopped when the file is done. l3 is built once (or
-// taken from $L3) and copied beside it, so another build cannot swap it
+// directory made for it, stopped when the file is done. root3 is built once (or
+// taken from $ROOT3) and copied beside it, so another build cannot swap it
 // mid-run. Each device is a home directory of its own, signed in through the
 // Remote's stand-in provider and its device approval, as a person would.
 //
 // Nothing here waits by the clock: the Remote is ready when it says so, and
-// l3 login is done when l3 exits (it polls the Remote at the interval the
+// root3 login is done when root3 exits (it polls the Remote at the interval the
 // Remote names).
 //
 // SELFTEST_REMOTE_KIND=worker: the Remote as production runs it instead
@@ -31,14 +31,14 @@ let APP = 'http://localhost:4173';
 /** Ports this machine's other servers use: never taken here. */
 const TAKEN = (p: number) => [1420, 8787, 1430, 8797].includes(p) || (p >= 1450 && p <= 1580) || (p >= 8810 && p <= 8950);
 
-/** l3 built from this tree (cargo build -p l3), or $L3 when given; its path. */
-function buildL3(): string {
-  if (process.env.L3) return process.env.L3;
-  const r = spawnSync('cargo', ['build', '-p', 'l3', '--message-format=json-render-diagnostics'], {cwd: OS, encoding: 'utf8', maxBuffer: 1 << 28});
+/** root3 built from this tree (cargo build -p root3), or $ROOT3 when given; its path. */
+function buildRoot3(): string {
+  if (process.env.ROOT3) return process.env.ROOT3;
+  const r = spawnSync('cargo', ['build', '-p', 'root3', '--message-format=json-render-diagnostics'], {cwd: OS, encoding: 'utf8', maxBuffer: 1 << 28});
   assert.equal(r.status, 0, r.stderr);
   const exe = r.stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l) as {reason?: string; target?: {name: string}; executable?: string | null})
-    .find((m) => m.reason === 'compiler-artifact' && m.target?.name === 'l3' && m.executable)?.executable;
-  assert.ok(exe, 'cargo named no l3 executable');
+    .find((m) => m.reason === 'compiler-artifact' && m.target?.name === 'root3' && m.executable)?.executable;
+  assert.ok(exe, 'cargo named no root3 executable');
   return exe;
 }
 
@@ -57,7 +57,7 @@ async function freePort(): Promise<number> {
 
 /**
  * One HTTP exchange on a connection of its own: a connection kept between
- * requests can be closed by the Remote while l3 runs, and a request sent on
+ * requests can be closed by the Remote while root3 runs, and a request sent on
  * it then fails for no fault of either.
  */
 function http(method: string, url: string | URL, headers: Record<string, string> = {}, body?: string) {
@@ -92,9 +92,9 @@ export interface Ran { code: number; out: string; err: string; json: any } // es
  * LENGTH3_NO_BUCKET=1: it holds no files, as a Worker without R2 is).
  */
 export async function remote(env: Record<string, string> = {}) {
-  const dir = scratch('l3-selftest-');
-  const l3bin = join(dir, 'l3');
-  copyFileSync(buildL3(), l3bin);
+  const dir = scratch('root3-selftest-');
+  const root3bin = join(dir, 'root3');
+  copyFileSync(buildRoot3(), root3bin);
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   let server: ChildProcess | null = null;
@@ -165,7 +165,7 @@ export async function remote(env: Record<string, string> = {}) {
   };
 
   let devices = 0;
-  /** A device of its own: l3 with its own home, on no Remote until it logs in. */
+  /** A device of its own: root3 with its own home, on no Remote until it logs in. */
   function device() {
     const home = join(dir, `device-${++devices}`);
     mkdirSync(home);
@@ -173,14 +173,14 @@ export async function remote(env: Record<string, string> = {}) {
       // What it keeps it keeps in files of its home, never in the keyring of whoever runs it.
       LENGTH3_KEYRING: 'off'};
     const parse = (out: string) => { try { return JSON.parse(out); } catch { return null; } };
-    /** Run l3 with these words (and standard input), to its end. */
-    const l3 = (args: string[], input = ''): Ran => {
-      const r = spawnSync(l3bin, args, {env, input, encoding: 'utf8', cwd: home, timeout: 120_000});
+    /** Run root3 with these words (and standard input), to its end. */
+    const root3 = (args: string[], input = ''): Ran => {
+      const r = spawnSync(root3bin, args, {env, input, encoding: 'utf8', cwd: home, timeout: 120_000});
       return {code: r.status ?? -1, out: r.stdout, err: r.stderr, json: parse(r.stdout)};
     };
-    /** l3 login, approved in `token`'s browser when l3 shows its code. */
+    /** root3 login, approved in `token`'s browser when root3 shows its code. */
     const login = (token: string) => new Promise<Ran>((resolve, reject) => {
-      const p = spawn(l3bin, ['login', url], {env, cwd: home, stdio: ['ignore', 'pipe', 'pipe']});
+      const p = spawn(root3bin, ['login', url], {env, cwd: home, stdio: ['ignore', 'pipe', 'pipe']});
       let out = '', err = '', approved = false;
       p.stderr.on('data', (d: Buffer) => { err += d; });
       p.stdout.on('data', (d: Buffer) => {
@@ -198,7 +198,7 @@ export async function remote(env: Record<string, string> = {}) {
       });
       p.once('exit', (code) => resolve({code: code ?? -1, out, err, json: null}));
     });
-    return {home, env, l3, login};
+    return {home, env, root3, login};
   }
 
   return {url, app: APP, dir, browser, api, device, start, stop, log: () => prod ? prod.remote.log() : log};

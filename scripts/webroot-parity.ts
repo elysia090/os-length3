@@ -1,5 +1,5 @@
 // The web root is the native root: the same paths, types, modes, link
-// targets and bytes (sha256). Reads the release root as l3 installs it on
+// targets and bytes (sha256). Reads the release root as root3 installs it on
 // a device and the web root, file by file from its packs, and
 // says where they differ; exits 1 when they do.
 //
@@ -23,7 +23,7 @@ if (!rootAt || !webAt) { console.error('usage: webroot-parity.ts ROOT WEB [--man
 
 const native = await nativeTree(rootAt);
 const web = webTree(webAt);
-// The web's l3 names the root it was made from: a tarball given is that one, by its digest.
+// The web's root3 names the root it was made from: a tarball given is that one, by its digest.
 if (web.about && !statSync(rootAt).isDirectory()) {
   const got = sha256(readFileSync(rootAt));
   if (got !== web.about.sha256) { console.error(`${basename(rootAt)} is sha256 ${got}; webroot.json says it was made from ${web.about.sha256}`); process.exit(1); }

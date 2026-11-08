@@ -1,8 +1,8 @@
-// Pin the l3 this tree releases: its entry is src/core/src/root/pins.rs's RELEASES,
+// Pin the root3 this tree releases: its entry is src/core/src/root/pins.rs's RELEASES,
 // the whole of its pin for both ways in: the root (the bundle the
 // desktop app installs, by sha256 and size) and `web`, the sha256 of the
 // index the browser reads the same root by (scripts/webroot.ts, made from that
-// bundle). l3 and the app built from this tree install that root (and no
+// bundle). root3 and the app built from this tree install that root (and no
 // other new one), and the web build takes only that index
 // (scripts/prompt-files.ts). The release does it before building what
 // ships beside the root, so the app in a release trusts that release's
@@ -35,7 +35,7 @@ const bytes = statSync(file).size.toLocaleString('en').replace(/,/g, '_');
 let webSha = '';
 if (web) {
   const about = JSON.parse(readFileSync(join(web, 'webroot.json'), 'utf8'));
-  if (about.sha256 !== sha256 || about.version !== version) throw new Error(`${web}/webroot.json is l3 ${about.version} from root ${about.sha256}, not ${version} from ${sha256}`);
+  if (about.sha256 !== sha256 || about.version !== version) throw new Error(`${web}/webroot.json is root3 ${about.version} from root ${about.sha256}, not ${version} from ${sha256}`);
   const got = sha(readFileSync(join(web, about.index.path)));
   if (got !== about.index.sha256) throw new Error(`${web}/${about.index.path}: sha256 ${got}, webroot.json says ${about.index.sha256}`);
   webSha = got;

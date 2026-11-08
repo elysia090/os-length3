@@ -1,6 +1,6 @@
 //! Figures measured of folders, kept for as long as this process lives, so asking again costs a look-up, not a walk:
 //! the list of repos and Storage answer from them at once, and the page asks for them measured afresh just after (the
-//! person sees the numbers at once, and the true ones a moment later). l3 lives for one command, so it measures each
+//! person sees the numbers at once, and the true ones a moment later). root3 lives for one command, so it measures each
 //! folder the once it asks.
 
 use std::collections::HashMap;

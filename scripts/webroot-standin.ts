@@ -1,4 +1,4 @@
-// A stand-in release root, a few files of each kind a root has, and l3 for
+// A stand-in release root, a few files of each kind a root has, and root3 for
 // the browser made from it with a stand-in translator: for tests
 // (scripts/webroot.test.ts, src/app/prompt/userland.test.ts), so they need neither the real
 // root nor Rust.
@@ -40,7 +40,7 @@ export function standIn(dir: string, version: string) {
 }
 
 /** webroot.ts into `dir` with a stand-in translator (kept in `work`): a wasm module with nothing in it, and a "translation" that is the same. */
-export function makeL3(root: string, dir: string, work: string) {
+export function makeRoot3(root: string, dir: string, work: string) {
   const wasm = join(work, 'xlat.wasm');
   writeFileSync(wasm, Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
   const xlat = join(work, 'xlat');

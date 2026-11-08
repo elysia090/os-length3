@@ -89,7 +89,7 @@ function runningCard(repo: string, s: Prompt): HTMLElement {
   free?.addEventListener('click', () => s.free());
   // Being prepared (.packages, .setup), what it holds is what prepares it; Stop ends that too.
   const processes = tn('{n} process', '{n} processes', s.processes);
-  const on = s.on !== 'root' ? 'l3' : s.preparing ? `root · ${t('Provisioning (.packages, .setup)')} · ${processes}` : `root · ${processes}`;
+  const on = s.on !== 'root' ? 'root3' : s.preparing ? `root · ${t('Provisioning (.packages, .setup)')} · ${processes}` : `root · ${processes}`;
   const lines: (string | Node)[] = [[on, s.memory ? bytes(s.memory) : ''].filter(Boolean).join(' · ')];
   if (s.freed !== null) lines.push(t('Freed {size}', {size: bytes(s.freed)}));
   // Only the root's Prompt can have a network: in a browser its programs have none (their sockets are local, between themselves).

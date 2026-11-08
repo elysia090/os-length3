@@ -89,7 +89,7 @@ pub struct DeviceCode {
     pub expires_in: u64,
 }
 
-/// Ask for a code to approve in a browser; `client` is "l3" or "length3-app".
+/// Ask for a code to approve in a browser; `client` is "root3" or "length3-app".
 pub fn device_start(url: &str, client: &str) -> Result<DeviceCode> {
     match request("POST", &format!("{url}/api/auth/device/code"), None, Body::Json(serde_json::json!({"client_id": client}))) {
         Got::Ok(r) => serde_json::from_value(answer(url, r)?).map_err(|_| odd(url)),
@@ -174,7 +174,7 @@ pub(super) fn expired() -> String {
 
 /// How long to wait for approval, and between asks, from what the Remote said: held to a minute to half
 /// an hour, and to 1 to 60 seconds (bug: an expires_in near u64::MAX, from a Remote or from the page that
-/// hands the code back to the app, overflowed the deadline and l3 panicked; an interval as large waited
+/// hands the code back to the app, overflowed the deadline and root3 panicked; an interval as large waited
 /// for ever).
 pub(super) fn polling(code: &DeviceCode) -> (Duration, Duration) {
     (Duration::from_secs(code.expires_in.clamp(60, 1800)), Duration::from_secs(code.interval.clamp(1, 60)))

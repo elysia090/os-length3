@@ -35,7 +35,7 @@ const ALONE = new Set([
   // Transfers over sockets, timed: seconds of waiting for stalls and retries, which would hold up the files after
   // it in a shared process, and an interval of prompt/webroot-fetch.ts's own.
   'src/app/prompt/webroot-fetch.test.ts',
-  // Builds l3 with child processes, and waits for them.
+  // Builds root3 with child processes, and waits for them.
   'scripts/webroot.test.ts',
 ]);
 

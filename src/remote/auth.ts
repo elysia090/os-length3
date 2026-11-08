@@ -4,7 +4,7 @@
 //   then      a passkey, added from the first session, so later sign-ins
 //             need no provider (discoverable: nothing to type)
 //   recover   sign in with the provider again, and add a passkey there
-//   app, l3   device authorization: the app shows a code, a browser where
+//   app, root3   device authorization: the app shows a code, a browser where
 //             the person is signed in approves it, and the device gets a
 //             session of its own
 //
@@ -13,7 +13,7 @@
 // anonymous store or relay (app.ts sets the limits).
 //
 // A browser's session is its cookie (HttpOnly: no script reads it, so none
-// can carry it off); the app and l3 hold a bearer (the bearer plugin), each
+// can carry it off); the app and root3 hold a bearer (the bearer plugin), each
 // its own from the device flow, and a page is handed none. Each session can
 // be seen and ended from any device. A session is taken only signed
 // (`token.signature`, the cookie's form and the bearer's alike): the token the
@@ -41,8 +41,9 @@ import {nameFor} from './names.ts';
 import type {Db, Vars} from './request.ts';
 import * as schema from './schema.ts';
 
-/** The desktop app and l3, the only clients that may ask for a device code. */
-const DEVICE_CLIENTS = ['length3-app', 'l3'] as const;
+/** The desktop app and root3, the only clients that may ask for a device code. */
+// 'l3': the command line as it was named before it was root3 (0.6.4 and older), still signing in.
+const DEVICE_CLIENTS = ['length3-app', 'root3', 'l3'] as const;
 
 export interface Provider { clientId: string; clientSecret: string }
 
@@ -352,7 +353,7 @@ const kept = new Map<string, {until: number; user: string; session: string; name
 const forgetSessions = () => kept.clear();
 
 /**
- * Who is asking, or 401: a bearer token (the app, l3, the web once it took its token), or the session
+ * Who is asking, or 401: a bearer token (the app, root3, the web once it took its token), or the session
  * cookie. A page elsewhere can make a browser send the cookie, never the bearer token: a write that
  * comes with the cookie alone is taken only from the app's own pages.
  *

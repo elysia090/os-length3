@@ -163,7 +163,7 @@ export default {
   'Enter a title on the first line': '1行目にタイトルを入力してください',
 
   // The Prompt (the repo's shell)
-  'Loading l3 ({size})': 'l3 を読み込み中 ({size})',
+  'Loading root3 ({size})': 'root3 を読み込み中 ({size})',
   'Waiting for reply ({n}s)': '応答待機中 ({n}秒)',
   '{why}. Resuming download (attempt {n})': '{why}。中断した箇所から再開します（{n}回目）',
   'Preparing…': '準備中…',

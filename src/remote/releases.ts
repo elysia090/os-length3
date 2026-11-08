@@ -1,5 +1,5 @@
 // What of a release the Remote serves to anyone, and the digests this tree
-// pins for it: the roots src/core/src/root/pins.rs pins (RELEASES, each l3's one pin:
+// pins for it: the roots src/core/src/root/pins.rs pins (RELEASES, each root3's one pin:
 // the root, and the index the browser reads it by; and DISTROS, other
 // distributions' roots), by digest under os/<sha256>, and the desktop app
 // src/shared/desktop-releases.json pins, by its file's name under desktop/<file>.
@@ -37,7 +37,7 @@ const tagOf = (version: string) => `os-length3-linux-v${version}`;
 export const rootKey = (sha256: string) => `os/${sha256}`;
 const desktopKey = (file: string) => `desktop/${file}`;
 
-/** A root as src/core/src/root/pins.rs pins it: its version, and l3's index for the browser made from it (`web`, its sha256; '' before l3 had one). */
+/** A root as src/core/src/root/pins.rs pins it: its version, and root3's index for the browser made from it (`web`, its sha256; '' before root3 had one). */
 interface PinnedRoot extends Pinned { version: string; web: string }
 
 /** The roots src/core/src/root/pins.rs pins, newest first, as RELEASES lists them. */

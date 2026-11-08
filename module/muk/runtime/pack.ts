@@ -12,7 +12,7 @@
 import {Dir, File, Link, type Vfs} from '../../ricebox/runtime/fs.ts';
 import {LINE, checkFile, checkTable, checkedRange, type Sha256} from './table.ts';
 
-/** l3's index, as far as mounting it reads it (src/app/prompt/userland.ts Index has all of it). */
+/** root3's index, as far as mounting it reads it (src/app/prompt/userland.ts Index has all of it). */
 export interface Packed {
   codec: string;
   /** Each pack: its name (its table's digest), the package whose files it holds (or local), its length. */

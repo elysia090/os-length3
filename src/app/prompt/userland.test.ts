@@ -5,11 +5,11 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {gunzipSync} from 'node:zlib';
-import {makeL3, standIn} from '../../../scripts/webroot-standin.ts';
+import {makeRoot3, standIn} from '../../../scripts/webroot-standin.ts';
 import type {About, Index} from './userland.ts';
 
-// What a Prompt in a browser is given of l3: the root's own files at their
-// own paths, nothing in place of them. Served from l3 made from a stand-in
+// What a Prompt in a browser is given of root3: the root's own files at their
+// own paths, nothing in place of them. Served from root3 made from a stand-in
 // root (scripts/webroot-standin.ts), as the page fetches it.
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -19,7 +19,7 @@ const asked: string[] = [];
 before(() => {
   work = mkdtempSync(join(tmpdir(), 'webroot-page-'));
   out = join(work, 'webroot');
-  const r = makeL3(standIn(work, '9.9.9'), out, work);
+  const r = makeRoot3(standIn(work, '9.9.9'), out, work);
   assert.equal(r.status, 0, r.stderr);
   // The page's origin: /webroot/… is the directory webroot.ts wrote.
   Object.assign(globalThis, {location: new URL('http://page.test/')});
@@ -34,16 +34,16 @@ before(() => {
 after(() => rmSync(work, {recursive: true, force: true}));
 
 test('a Prompt is given the root\'s own BusyBox at its own path, its translation beside it, and the whole root by its index', async () => {
-  const {loadL3} = await import('./userland.ts');
-  const l3 = await loadL3();
+  const {loadRoot3} = await import('./userland.ts');
+  const root3 = await loadRoot3();
   const about = JSON.parse(readFileSync(join(out, 'webroot.json'), 'utf8')) as About;
   const index = JSON.parse(readFileSync(join(out, about.index.path), 'utf8')) as Index;
-  assert.deepEqual([l3.about.version, l3.about.sha256], ['9.9.9', about.sha256]);
-  assert.deepEqual(l3.index, index);
-  assert.equal(l3.url, 'http://page.test/webroot/');
+  assert.deepEqual([root3.about.version, root3.about.sha256], ['9.9.9', about.sha256]);
+  assert.deepEqual(root3.index, index);
+  assert.equal(root3.url, 'http://page.test/webroot/');
   // Each file given is one of the root's, the same bytes and mode as the index (and so the tarball) has: none is the page's own.
-  assert.deepEqual(l3.files.map((f) => f.path), ['/usr/bin/busybox']);
-  for (const f of l3.files) {
+  assert.deepEqual(root3.files.map((f) => f.path), ['/usr/bin/busybox']);
+  for (const f of root3.files) {
     const t = index.translations.find((x) => x.path === f.path)!;
     assert.equal(sha(f.bytes), t.sha256);
     assert.equal(f.mode, index.files.find((x) => x.path === f.path)!.mode);
@@ -55,7 +55,7 @@ test('a Prompt is given the root\'s own BusyBox at its own path, its translation
     ...index.translations.flatMap((t) => [`/webroot/${t.elf.path}`, `/webroot/${t.wasm.path}`])].filter((p, k, all) => all.indexOf(p) === k).sort());
 });
 
-test('webroot.json names what l3 is: the version and the root digest core/src/root.rs pins, and the index by its digest', () => {
+test('webroot.json names what root3 is: the version and the root digest core/src/root.rs pins, and the index by its digest', () => {
   const about = JSON.parse(readFileSync(join(out, 'webroot.json'), 'utf8')) as About;
   const bytes = readFileSync(join(out, about.index.path));
   assert.equal(sha(bytes), about.index.sha256);
@@ -66,9 +66,9 @@ test('webroot.json names what l3 is: the version and the root digest core/src/ro
   assert.ok(index.links.some((l) => l.path === '/bin' && l.target === 'usr/bin'));
 });
 
-// l3 this build carries, when it carries one (npm run webroot, or prompt-files.ts): what webroot.json names is beside it.
+// root3 this build carries, when it carries one (npm run webroot, or prompt-files.ts): what webroot.json names is beside it.
 const built = new URL('../../../public/webroot/', import.meta.url);
-test('the l3 in public/ is whole: its index is the digest webroot.json says, and names only what is there', {skip: !existsSync(new URL('webroot.json', built))}, () => {
+test('the root3 in public/ is whole: its index is the digest webroot.json says, and names only what is there', {skip: !existsSync(new URL('webroot.json', built))}, () => {
   const about = JSON.parse(readFileSync(new URL('webroot.json', built), 'utf8')) as About;
   const bytes = readFileSync(new URL(about.index.path, built));
   assert.equal(sha(bytes), about.index.sha256);

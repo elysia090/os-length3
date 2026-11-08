@@ -1,7 +1,7 @@
 // "/" is the root of the whole system, the same tree the Prompt's shell
 // sees: in the app, the root installed on this machine (src/core/src/root/
-// list); in a browser, l3's root (userland.ts), read from its index. Each top-level
-// directory says where it comes from: the distribution (l3), the kernel
+// list); in a browser, root3's root (userland.ts), read from its index. Each top-level
+// directory says where it comes from: the distribution (root3), the kernel
 // (/dev, /proc, /sys, made when a shell starts), the person's repos
 // (/root), or nothing (/tmp, /run start empty).
 
@@ -42,11 +42,11 @@ export function inRepo(path: string): {repo: string; path: string} | null {
 
 const join = (dir: string, name: string) => (dir === '/' ? `/${name}` : `${dir}/${name}`);
 
-/** Every entry of l3's root under each directory, from its index (what l3 this build carries; none without one). */
+/** Every entry of root3's root under each directory, from its index (what root3 this build carries; none without one). */
 let distribution: Promise<Map<string, SystemEntry[]>> | null = null;
 async function root(): Promise<Map<string, SystemEntry[]>> {
-  // l3's own module, brought when its root is first listed: the tree of / is drawn without the Prompt's machine.
-  const index = await (await import('./userland.ts')).l3Index();
+  // root3's own module, brought when its root is first listed: the tree of / is drawn without the Prompt's machine.
+  const index = await (await import('./userland.ts')).root3Index();
   if (!index) throw new Error(t('Distribution not fetched'));
   const under = new Map<string, SystemEntry[]>();
   const add = (e: SystemEntry) => {
@@ -84,10 +84,10 @@ export async function list(path: string): Promise<SystemEntry[]> {
     if (path === '/') return [{name: 'root', kind: 'dir' as const, path: '/root'}];
     throw e;
   }));
-  // In a browser, l3's root as its index has it: the same tree as the app's.
+  // In a browser, root3's root as its index has it: the same tree as the app's.
   distribution ??= root().catch((e) => { distribution = null; throw e; });
-  // Its index not here yet (offline, or l3 still on its way): "/" still has /root, the repos, which are this
-  // device's own; the rest of the tree comes with l3.
+  // Its index not here yet (offline, or root3 still on its way): "/" still has /root, the repos, which are this
+  // device's own; the rest of the tree comes with root3.
   const entries = path === '/' ? await distribution.then((d) => d.get('/') ?? [], () => [{name: 'root', kind: 'dir' as const, path: '/root'}])
     : (await distribution).get(path) ?? [];
   return origins(path, entries);

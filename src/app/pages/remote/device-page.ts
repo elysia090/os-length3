@@ -5,12 +5,12 @@ import {signInBox} from '../kit/sign-in.ts';
 import {answers} from '../kit/common.ts';
 import {errorText} from '../../host/errors.ts';
 
-// The page a device's code opens (?device&user_code=…): l3 or the app asks
+// The page a device's code opens (?device&user_code=…): root3 or the app asks
 // to join this account. The person signs in here if not already (and comes
 // back here from the provider), sees which device asks and its code, and
 // lets it in or not. Remote's Devices takes a code the same way (joining).
 
-const client = (id: string) => (id === 'l3' ? t('l3 (CLI)') : id === 'length3-app' ? t('Length³ OS App') : id);
+const client = (id: string) => (id === 'root3' ? t('root3 (CLI)') : id === 'length3-app' ? t('Length³ OS App') : id);
 
 /** The page for the code `given` (none: it is typed here first). */
 export function devicePage(given: string): HTMLElement {

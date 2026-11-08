@@ -73,7 +73,7 @@ function card(k: Task, open: (repo: string, issue: string) => void): HTMLElement
   } else if (k.state === 'stopped') {
     head = t('{agent} could not proceed with {at}', {agent, at});
     // The network it needs is asked for here, once: given, it is the repo's from then on, and the work goes on.
-    const network = k.fix === `l3 network on ${k.repo}`;
+    const network = k.fix === `root3 network on ${k.repo}`;
     quote = [document.createTextNode(k.said ?? ''), ...(k.fix && !network ? [h('code', {class: 'agent-fix'}, k.fix)] : [])];
     acts.push(network ? button(t('Enable network for {repo} Prompt', {repo: k.repo}), true, async () => { await grant(k.repo, true); await onTask(k.id, 'take'); })
       : button(t('Try again'), true, () => onTask(k.id, 'take')), away());

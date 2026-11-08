@@ -59,7 +59,7 @@ ${hidden(q, ['redirect_uri', 'state'])}<div class="foot"><button class="go">Cont
     const q = new URL(c.req.url).searchParams;
     const name = nameOf(q), {email} = who(name);
     const back = new URLSearchParams({redirect_uri: q.get('redirect_uri') ?? '', state: q.get('state') ?? '', name});
-    return c.html(page('length3 wants to access your account', `<div class="pair" aria-hidden="true"><span class="app">l3</span><span class="dots">• • •</span><span class="mark">D</span></div>
+    return c.html(page('length3 wants to access your account', `<div class="pair" aria-hidden="true"><span class="app">root3</span><span class="dots">• • •</span><span class="mark">D</span></div>
 <h1>length3 wants to access your Development account</h1>
 <div class="as"><span>${esc(name)}<br><span class="muted small">${esc(email)}</span></span><a class="small" href="authorize?${esc(back.toString())}">Not you?</a></div>
 <p>This will let length3:</p>

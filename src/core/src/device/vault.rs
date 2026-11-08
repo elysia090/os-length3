@@ -5,7 +5,7 @@
 //!
 //! Each is kept in the OS's own keyring, the one its other programs keep theirs in: the Keychain (macOS), Credential
 //! Manager (Windows, this computer's alone, never roaming with a profile), the Secret Service (Linux: GNOME Keyring,
-//! KWallet, KeePassXC), reached by D-Bus from Rust alone, so the static l3 reaches it as the app does. There it is
+//! KWallet, KeePassXC), reached by D-Bus from Rust alone, so the static root3 reaches it as the app does. There it is
 //! encrypted at rest with what the person signs in with, and it is in no file a backup, a synced home folder or a
 //! program reading files for tokens comes across. Where there is none that answers (a server, a container, SSH with no
 //! session bus, a locked keyring nobody unlocks within `WAIT`), or `LENGTH3_KEYRING=off` says not to use it, it is a

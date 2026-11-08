@@ -78,7 +78,7 @@ export class Me {
         group(t('Account'), ...(signedIn
           ? [item(t('Sign-in'), to('remote', 'sign-in')), item(t('Devices'), to('remote', 'devices')), this.signingOut()]
           : [item(t('Sign in'), to('remote'))])),
-        // The language is Home's setting, so l3 speaks the same one.
+        // The language is Home's setting, so root3 speaks the same one.
         group(t('Language'), ...(this.choosing
           ? LANGS.map((l) => item(l.name, () => { this.choosing = false; void setLang(l.id); void setState('lang', JSON.stringify(l.id)); }, l.id === currentLang()))
           : [now()])));

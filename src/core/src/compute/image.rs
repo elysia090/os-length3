@@ -48,13 +48,13 @@ pub fn root_disk(data: &Path, digest: &str, root: &Path) -> io::Result<PathBuf> 
     if out.is_file() { return Ok(out); }
     // Room for its files and their folders, and a quarter more for ext4's own.
     let bytes = (size_of(root) * 5 / 4 + (64 << 20)).next_multiple_of(1 << 20);
-    make(root, &out, bytes, "l3root")?;
+    make(root, &out, bytes, "root3root")?;
     Ok(out)
 }
 
 /// A run's own disk at `out`: `given` (a folder: the repo's copy, the dotfiles) and `room` bytes more to write in.
 pub fn run_disk(given: &Path, out: &Path, room: u64) -> io::Result<()> {
-    make(given, out, (size_of(given) * 5 / 4 + room).next_multiple_of(1 << 20), "l3run")
+    make(given, out, (size_of(given) * 5 / 4 + room).next_multiple_of(1 << 20), "root3run")
 }
 
 /// A file of a disk, read without mounting it (debugfs): what a run left there.

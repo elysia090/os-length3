@@ -1,4 +1,4 @@
-//! The SSH listener (`l3 address ssh serve`) against an ordinary OpenSSH
+//! The SSH listener (`root3 address ssh serve`) against an ordinary OpenSSH
 //! client, beside a Remote of the test's own that says SSH is on.
 
 #![cfg(target_os = "linux")]
@@ -51,7 +51,7 @@ fn a_connection_kept_open_takes_one_session_after_another() {
             .env("HOME", &home.dir).stdin(Stdio::null());
         c.output().unwrap()
     };
-    // Each session runs its command by `l3 prompt` in notes, on the test's root, and ends with the command's code.
+    // Each session runs its command by `root3 prompt` in notes, on the test's root, and ends with the command's code.
     let mut codes = Vec::new();
     for _ in 0..6 { codes.push(ssh(&["notes@127.0.0.1", "exit 3"]).status.code()); }
     let _ = ssh(&["-O", "exit", "notes@127.0.0.1"]);

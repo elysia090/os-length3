@@ -28,7 +28,7 @@ export const webPolicy = (remote: string) => [
  * The desktop app's webview policy (src/desktop/tauri.conf.json, which says it for DEFAULT_REMOTE; scripts/desktop.sh
  * gives Tauri this for the Remote a build is for): the web's, with the app's ipc: channel, and no inline style. Its
  * core is its own, but where Prompts do not run on the root (a machine other than Linux on x86-64, or one that keeps
- * user namespaces from l3) they run translated, as in a browser: WebAssembly is compiled and Workers run, its own.
+ * user namespaces from root3) they run translated, as in a browser: WebAssembly is compiled and Workers run, its own.
  */
 export const desktopPolicy = (remote: string) => [
   "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "worker-src 'self'", "style-src 'self'", "img-src 'self' data:",

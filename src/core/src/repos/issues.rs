@@ -6,8 +6,8 @@
 //! next one when an issue is written, and the next free one for a file there
 //! that has none (one written by hand, or two devices' issues that met under
 //! one number). Dates go in the text, never in the name. Its issue/ is the OS's
-//! (crate::repos::store::ISSUES): never among the files File, Forge and l3 file show, nor
-//! made by a scaffold; an issue is met as an issue (Git, the box, l3 issue).
+//! (crate::repos::store::ISSUES): never among the files File, Forge and root3 file show, nor
+//! made by a scaffold; an issue is met as an issue (Git, the box, root3 issue).
 
 use crate::text::title::{kind_of, named};
 use serde::Serialize;

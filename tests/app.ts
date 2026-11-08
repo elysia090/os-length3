@@ -233,7 +233,7 @@ class NewRepo extends Part {
 
   /**
    * Create a repo and see it made: Forge opens it. `template: 'C'`: then C's files are written into it from File, as
-   * someone would (src/main.c and its Makefile, as `l3 repo new -t c` makes them), and Forge shows it.
+   * someone would (src/main.c and its Makefile, as `root3 repo new -t c` makes them), and Forge shows it.
    */
   async make(name: string, o: {template?: 'C'; summary?: string} = {}) {
     await this.fill(name, o);

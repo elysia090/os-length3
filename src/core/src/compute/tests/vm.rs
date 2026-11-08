@@ -15,13 +15,13 @@ fn a_vm_is_as_large_as_its_budget_and_holds_the_root_read_only() {
     let plan = p(None);
     assert!(plan.drives[0].is_root_device && plan.drives[0].is_read_only && !plan.drives[1].is_read_only);
     assert_eq!((plan.vsock.guest_cid, plan.vsock.uds_path.as_path()), (3, Path::new("/vm/1/v.sock")));
-    assert!(plan.boot.boot_args.contains("init=/usr/bin/l3 -- guest") && plan.boot.boot_args.contains(" ro "));
+    assert!(plan.boot.boot_args.contains("init=/usr/bin/root3 -- guest") && plan.boot.boot_args.contains(" ro "));
 }
 
 #[test]
 fn a_host_says_what_it_lacks_and_how_to_have_it() {
-    let h = host(&std::env::temp_dir().join("l3-no-such-data"));
-    assert!(h.kernel.is_none() && h.lacks.iter().any(|(_, fix)| fix == "l3 host fetch"));
+    let h = host(&std::env::temp_dir().join("root3-no-such-data"));
+    assert!(h.kernel.is_none() && h.lacks.iter().any(|(_, fix)| fix == "root3 host fetch"));
     assert_eq!(h.kvm, std::fs::OpenOptions::new().read(true).write(true).open("/dev/kvm").is_ok());
     assert!(h.cpus >= 1);
 }

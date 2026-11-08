@@ -3,7 +3,7 @@
 use super::*;
 
 fn book_in(name: &str) -> PathBuf {
-    let d = crate::fs::testing::dir(&format!("l3-tasks-{name}"));
+    let d = crate::fs::testing::dir(&format!("root3-tasks-{name}"));
     let _ = std::fs::remove_dir_all(&d);
     d
 }

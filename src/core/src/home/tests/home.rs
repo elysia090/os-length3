@@ -19,7 +19,7 @@ fn a_list_is_read_without_the_items_the_app_cannot_read() {
 
 #[test]
 fn a_list_that_cannot_be_read_is_refused_not_taken_for_empty() {
-    // Taken for empty, the next `l3 todo add` would write the one new item over every item there.
+    // Taken for empty, the next `root3 todo add` would write the one new item over every item there.
     for text in ["", "not json", "{\"a\":1}", "[1,", "\"[]\""] {
         assert!(parse_todos(text).is_err(), "{text:?}");
     }
@@ -140,7 +140,7 @@ fn the_remote_here_answers_as_the_service_does() {
     let r = Remote::default();
     for (i, x) in recorded().iter().enumerate() {
         let body = x.get("body");
-        // What l3 sends is the shape the Remote was recorded taking.
+        // What root3 sends is the shape the Remote was recorded taking.
         if let (Some(b), Some(v), Some(n)) = (body, body.and_then(|b| b["value"].as_str()), body.and_then(|b| b["version"].as_i64())) {
             assert_eq!(&put_body(v, n), b, "exchange {}", i + 1);
         }

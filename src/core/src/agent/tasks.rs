@@ -12,7 +12,7 @@
 //! A task goes offered → waiting → working → ready, or asking (it needs the person: their reply sends it on again),
 //! done (looked at, or its issue merged), dropped (not now), stopped (it could not run, and the one fix). The person
 //! sees none of those words: an offer to hand over, the work going on in its issue's box, a question, something to
-//! look at. One runs at a time in a repo (`l3 agent run`, set off by `kick`), on its own Prompt: the issue's copy for
+//! look at. One runs at a time in a repo (`root3 agent run`, set off by `kick`), on its own Prompt: the issue's copy for
 //! what writes, so it is the work the person would have started; the change's copy for a review.
 //!
 //! Kept in `<data>/tasks/tasks.json` (each run's output beside it, by repo), this device's alone (never sent).
@@ -104,7 +104,7 @@ pub struct Task {
     /// Its last words: what it did, the answer, or why it stopped.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub said: String,
-    /// Stopped: the one thing that lets it run (an l3 line).
+    /// Stopped: the one thing that lets it run (an root3 line).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub fix: String,
     /// The agent's session, to go on in with the person's reply.
@@ -128,7 +128,7 @@ fn now() -> u64 {
 
 fn dir() -> PathBuf { crate::fs::paths::data_dir().join("tasks") }
 
-/// The book, changed by `f` under its lock (the app, l3 and each repo's runner change it).
+/// The book, changed by `f` under its lock (the app, root3 and each repo's runner change it).
 fn with<T>(f: impl FnOnce(&mut Book) -> T) -> Result<T> {
     with_in(&dir(), f)
 }
@@ -191,7 +191,7 @@ fn put(book: &mut Book, a: Ask, state: State) -> Task {
     k
 }
 
-/// The agent this device hands work to (`l3 agent on`), if one.
+/// The agent this device hands work to (`root3 agent on`), if one.
 pub fn agent() -> Option<String> {
     std::fs::read_to_string(dir().join("agent")).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
@@ -210,14 +210,14 @@ pub fn agent_name(harness: &str) -> String {
     match harness { "box" => "Agent".into(), "claude" => "Claude Code".into(), "grok" => "Grok Build".into(), "dsh" => "DeepSeek Harness".into(), "codex" => "Codex".into(), h => h.into() }
 }
 
-/// How the agent is run in a Prompt, told `$L3_TASK` (and `$L3_RESUME`, its session to go on in): the first line of
+/// How the agent is run in a Prompt, told `$ROOT3_TASK` (and `$ROOT3_RESUME`, its session to go on in): the first line of
 /// the person's `.agent` dotfile when they keep one, else the harness's own way.
 pub fn agent_command(harness: &str) -> Option<String> {
     let own = crate::home::dotfiles_in_effect().into_iter().find(|(n, _)| n == ".agent")
         .and_then(|(_, t)| t.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#')).map(String::from));
     own.or_else(|| match harness {
         // Its own Prompt is the sandbox: nothing outside the repo, the network only as the repo was given it.
-        "claude" => Some(r#"IS_SANDBOX=1 claude -p "$L3_TASK" --output-format stream-json --verbose --dangerously-skip-permissions ${L3_RESUME:+--resume "$L3_RESUME"}"#.into()),
+        "claude" => Some(r#"IS_SANDBOX=1 claude -p "$ROOT3_TASK" --output-format stream-json --verbose --dangerously-skip-permissions ${ROOT3_RESUME:+--resume "$ROOT3_RESUME"}"#.into()),
         _ => None,
     })
 }
@@ -291,7 +291,7 @@ pub fn reply(id: u64, words: &str) -> Result<Task> {
 
 /// A question about `repo` (its main, or the line it shows): answered by the agent, reading only.
 pub fn ask(repo: &str, words: &str) -> Result<Task> {
-    if agent().is_none() { return Err(crate::tr!("No agent to ask (l3 agent on claude)", "聞けるエージェントがいません（l3 agent on claude）")); }
+    if agent().is_none() { return Err(crate::tr!("No agent to ask (root3 agent on claude)", "聞けるエージェントがいません（root3 agent on claude）")); }
     let line = crate::repos::lines::current(repo);
     let k = with(|b| put(b, Ask { repo, line: &line, issue: "", deed: Deed::Ask, unit: Unit::Question, words: words.trim(), weight: 0 }, State::Waiting))?;
     kick(&k.repo);
@@ -439,7 +439,7 @@ pub fn weigh(files: &[(String, u64, String)]) -> (Weighed, Weighed) {
 }
 
 /// The words a deed is given to the agent: what it is for, the order to read in (a review's, the hardest first),
-/// and the lines to end with, which l3 reads back.
+/// and the lines to end with, which root3 reads back.
 pub fn instructions(k: &Task, number: &str, detail: &str, parts: &[(String, u64)], files: &[(String, u64)]) -> String {
     let list = |v: &[(String, u64)]| v.iter().take(12).map(|(p, _)| format!("   - {p}")).collect::<Vec<_>>().join("\n");
     let ending = "End with one line per question only the person can answer, `QUESTION <question>`, if you cannot go on without them; \
@@ -459,20 +459,20 @@ pub fn instructions(k: &Task, number: &str, detail: &str, parts: &[(String, u64)
     }
 }
 
-/// Set `repo`'s runner off in the background, if none runs (`l3 agent run`, by this process when it is l3, else by
-/// the l3 beside the app). Never waited for, never failing what set it off.
+/// Set `repo`'s runner off in the background, if none runs (`root3 agent run`, by this process when it is root3, else by
+/// the root3 beside the app). Never waited for, never failing what set it off.
 pub fn kick(repo: &str) {
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
         let Ok(exe) = std::env::current_exe() else { return };
-        let l3 = if exe.file_name().is_some_and(|n| n == "l3") { exe } else { crate::prompt::running::l3_path(&exe) };
+        let root3 = if exe.file_name().is_some_and(|n| n == "root3") { exe } else { crate::prompt::running::root3_path(&exe) };
         // The repo named by LENGTH3_REPO from the data directory, never as a word (a repo called --network is no flag).
-        let mut c = Command::new(l3);
+        let mut c = Command::new(root3);
         c.args(["agent", "run"]).env("LENGTH3_REPO", repo).current_dir(crate::fs::paths::data_dir())
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
-            // Its own group: a terminal's Ctrl-C to the l3 that set it off does not reach it.
+            // Its own group: a terminal's Ctrl-C to the root3 that set it off does not reach it.
             .process_group(0);
         if let Ok(mut child) = c.spawn() { std::thread::spawn(move || { let _ = child.wait(); }); }
     }

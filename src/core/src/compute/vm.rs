@@ -2,7 +2,7 @@
 //! driven through Firecracker (firecracker.rs): a kernel, the root as a read-only disk shared by every VM booted
 //! from it (image.rs), a small disk of its own, no network unless the repo was given it, and one vsock to its host,
 //! over which the host gives it its run (compute/spec.rs Spec) and it says what it prints (wire.rs). A host is any Linux
-//! with /dev/kvm: `l3 host` says what it has and what it lacks.
+//! with /dev/kvm: `root3 host` says what it has and what it lacks.
 //!
 //! What scales worst on a host, in order, and how each is met:
 //!
@@ -101,7 +101,7 @@ pub struct Host {
 /// Where the kernel VMs boot is kept.
 fn kernel_path(data: &Path) -> PathBuf { data.join("vm").join("kernel").join("vmlinux") }
 
-/// A program's version, the host's own copy first (`l3 host fetch`), then one on PATH.
+/// A program's version, the host's own copy first (`root3 host fetch`), then one on PATH.
 fn version(data: &Path, program: &str) -> Option<String> {
     let own = bin(data).join(program);
     let out = std::process::Command::new(if own.is_file() { own.as_os_str() } else { std::ffi::OsStr::new(program) }).arg("--version").output().ok()?;
@@ -121,8 +121,8 @@ pub fn host(data: &Path) -> Host {
         Err(_) => lacks.push((crate::tr!("/dev/kvm cannot be opened by you", "/dev/kvm をあなたが開けません"), "sudo usermod -aG kvm $USER".into())),
         Ok(_) => {}
     }
-    if firecracker.is_none() { lacks.push((crate::tr!("No firecracker", "firecracker がありません"), "l3 host fetch".into())); }
-    if kernel.is_none() { lacks.push((crate::tr!("No kernel for VMs", "VM のカーネルがありません"), "l3 host fetch".into())); }
+    if firecracker.is_none() { lacks.push((crate::tr!("No firecracker", "firecracker がありません"), "root3 host fetch".into())); }
+    if kernel.is_none() { lacks.push((crate::tr!("No kernel for VMs", "VM のカーネルがありません"), "root3 host fetch".into())); }
     Host { kvm: kvm.is_ok(), firecracker, jailer, kernel, cpus: std::thread::available_parallelism().map_or(1, |n| n.get()), memory, lacks }
 }
 
@@ -131,8 +131,8 @@ pub fn host(data: &Path) -> Host {
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct Plan { pub machine: MachineConfig, pub boot: BootSource, pub drives: Vec<Drive>, pub vsock: Vsock, pub balloon: Balloon }
 
-/// What the kernel is told: the root disk, read-only, and l3 as the first process (`l3 guest`, the run's agent).
-const BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda ro rootfstype=ext4 init=/usr/bin/l3 -- guest";
+/// What the kernel is told: the root disk, read-only, and root3 as the first process (`root3 guest`, the run's agent).
+const BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda ro rootfstype=ext4 init=/usr/bin/root3 -- guest";
 
 /// A VM for `spec`: as much memory as its budget lets it hold (512 MB when it says none; 128 MB to 32 GB), two
 /// vCPUs, the root disk and its own, the vsock at `dir`, a balloon that gives back what the guest frees.

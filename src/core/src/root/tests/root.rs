@@ -48,7 +48,7 @@ fn the_current_roots_directories_are_listed_and_nothing_through_a_link_or_up() {
     fs::write(root.join("usr/bin/busybox"), b"#!elf").unwrap();
     symlink("busybox", root.join("usr/bin/sh")).unwrap();
     symlink("usr/bin", root.join("bin")).unwrap();
-    fs::write(sys.join("abc/installed.json"), r#"{"name":"l3","version":"1","sha256":"abc","files":1,"bytes":5}"#).unwrap();
+    fs::write(sys.join("abc/installed.json"), r#"{"name":"root3","version":"1","sha256":"abc","files":1,"bytes":5}"#).unwrap();
     assert!(list(&data, "/").is_err(), "no root current yet");
     symlink("abc", sys.join("current")).unwrap();
     let top = list(&data, "/").unwrap();

@@ -28,7 +28,7 @@ fn prompt_on_this_host(script: &str, network: bool) -> Option<String> {
     if !Path::new("/usr/bin/cc").exists() || !Path::new("/usr/bin/python3").exists() { return None; }
     // A place of each call's own: the tests that call this run side by side.
     static CALLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let top = crate::fs::testing::dir(&format!("l3-prompt-test-{}", CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+    let top = crate::fs::testing::dir(&format!("root3-prompt-test-{}", CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
     let (root, repo) = (top.join("root"), top.join("repo"));
     std::fs::create_dir_all(&root).ok()?;
     std::fs::create_dir_all(&repo).ok()?;
@@ -179,7 +179,7 @@ fn copied_root(root: &Path, programs: &[&str]) -> Option<()> {
 /// copy-up), renaming and writing after another was stopped (its supervisor killed, as Stop does) or ended.
 #[test]
 fn prompts_of_one_repo_share_its_environment_whatever_order_they_start_and_end_in() {
-    let top = crate::fs::testing::dir("l3-environment-test");
+    let top = crate::fs::testing::dir("root3-environment-test");
     let (root, repo, data) = (top.join("root"), top.join("repo"), top.join("data"));
     let _ = std::fs::remove_dir_all(&top);
     for d in ["etc", "usr/share/doc", "usr/lib", "opt", "srv", "var/lib", "root", "tmp", "run", "dev", "proc"] {

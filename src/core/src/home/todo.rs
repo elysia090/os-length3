@@ -74,7 +74,7 @@ pub fn todo_from(line: &str, detail: &str, now: u64) -> Option<Todo> {
     }
     let detail = [more.trim(), detail.trim_end()].into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>().join("\n");
     // The moment, and a part of its own: two made in one millisecond (a script, two devices) are two items.
-    let id = format!("{}-l3{}", radix36(now), radix36(unique() % 36u64.pow(6)));
+    let id = format!("{}-root3{}", radix36(now), radix36(unique() % 36u64.pow(6)));
     Some(Todo { id, kind, title: title.trim().into(), detail, done: false, repo: None, created: now })
 }
 

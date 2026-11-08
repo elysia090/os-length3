@@ -605,9 +605,9 @@ onLang(() => {
   if (opened) render();
 });
 // Home's state is read before the first page, and again when the window
-// comes back, so what l3 changed meanwhile is what the page shows.
+// comes back, so what root3 changed meanwhile is what the page shows.
 // Then what the Remote has is taken in; the page shows as it comes.
-// A device's code (?device&user_code=…, from l3 or the app) opens only the page that approves it.
+// A device's code (?device&user_code=…, from root3 or the app) opens only the page that approves it.
 const asking = new URLSearchParams(location.search);
 // A link for research (…/#enter=KEY): the key is taken out of the address before anything else runs,
 // so it is not left in the history, a bookmark or a screenshot, and is sent once (remote.ts enterWith).
@@ -680,7 +680,7 @@ if (asking.has('device')) {
     // Busy until what the Remote has is taken in and the page drawn from it (the first look). Signed out, that look
     // reads the repos' names alone, and what shows where a repo stands follows it (onSync): the page drawn as the OS
     // opened is the page, not drawn whole a second time.
-    // What an earlier build kept of l3 goes; l3 now keeps its own copies, by digest, and lets them go itself (userland.ts).
+    // What an earlier build kept of root3 goes; root3 now keeps its own copies, by digest, and lets them go itself (userland.ts).
     void forgetExcept(new Set());
     // What the shell of a page reloaded mid-write left to write back, written before the repos are read (repo-copy.ts).
     void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => { if (connection()) render(); }).finally(() => {

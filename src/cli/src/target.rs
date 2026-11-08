@@ -27,7 +27,7 @@ fn missing(ctx: &Ctx, repo: &str) -> Error {
         return Error::Usage(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", repo));
     }
     let there = !ctx.prompt && remote::connection().is_some() && remote::remote_repos().is_ok_and(|l| l.iter().any(|r| r.name == repo));
-    Error::NotFound(if there { tr!("{} is only on the Remote (l3 repo open {} brings it here)", "{} は Remote にだけあります（l3 repo open {} でこの端末に）", repo, repo) } else { tr!("There is no repo {} here (l3 repo lists them)", "この端末に repo {} はありません（l3 repo で一覧）", repo) })
+    Error::NotFound(if there { tr!("{} is only on the Remote (root3 repo open {} brings it here)", "{} は Remote にだけあります（root3 repo open {} でこの端末に）", repo, repo) } else { tr!("There is no repo {} here (root3 repo lists them)", "この端末に repo {} はありません（root3 repo で一覧）", repo) })
 }
 
 /// The repo a word names (or, none given, the one you are in), once it is here.
@@ -49,9 +49,9 @@ pub fn repo(ctx: &Ctx, call: &Call, i: usize) -> Result<String> {
             let here: Option<Vec<String>> = ctx.repos().and_then(|r| Ok(r.names()?)).ok();
             let some = match here {
                 None => String::new(),
-                Some(h) if h.is_empty() => tr!(" (there is none yet: l3 repo new NAME)", "（まだありません：l3 repo new NAME）"),
+                Some(h) if h.is_empty() => tr!(" (there is none yet: root3 repo new NAME)", "（まだありません：root3 repo new NAME）"),
                 Some(h) if h.len() <= 5 => tr!(": {}", "：{}", h.join(", ")),
-                Some(h) => tr!(": {}, … (l3 repo)", "：{}、…（l3 repo）", h[..5].join(", ")),
+                Some(h) => tr!(": {}, … (root3 repo)", "：{}、…（root3 repo）", h[..5].join(", ")),
             };
             Error::Usage(tr!("Name a repo ({}), or run it in one{}", "repo を書くか（{}）、repo の中で実行してください{}", form, some))
         }
@@ -59,7 +59,7 @@ pub fn repo(ctx: &Ctx, call: &Call, i: usize) -> Result<String> {
     })
 }
 
-/// A path as l3 is given it, as (repo, path from its top): `/root/REPO/…`
+/// A path as root3 is given it, as (repo, path from its top): `/root/REPO/…`
 /// and, outside a repo, `REPO/…` from the repos' top; in a repo, from where
 /// you are (`/…` from its top, `..` up and out of it to another repo).
 /// The repo is checked to be here; the path is not.
@@ -84,12 +84,12 @@ pub fn path_of(ctx: &Ctx, word: Option<&str>) -> Result<(String, String)> {
         // At the top of a repo, a word naming another repo here (and nothing in this one) is that repo.
         if !w.starts_with(['.', '/']) && first != h.repo && !ctx.exists(&r, &p) && ctx.has_repo(first) { split(w) } else { (r, p) }
     } else if w.starts_with('/') {
-        // Outside a repo, / is the device's own: l3 reads the repos only, kept under /root (as a Prompt sees them).
+        // Outside a repo, / is the device's own: root3 reads the repos only, kept under /root (as a Prompt sees them).
         if w.trim_end_matches('/') == "/root" {
-            return Err(Error::Usage(tr!("Name a repo in /root: /root/REPO/PATH (l3 file lists them)", "/root の中の repo を書いてください：/root/REPO/PATH（l3 file で一覧）")));
+            return Err(Error::Usage(tr!("Name a repo in /root: /root/REPO/PATH (root3 file lists them)", "/root の中の repo を書いてください：/root/REPO/PATH（root3 file で一覧）")));
         }
-        return Err(Error::NotFound(tr!("{} is not in your repos: l3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)",
-            "{} は repo の中ではありません。l3 が読むのは /root/REPO/PATH か REPO/PATH です（/ のほかは Prompt の root で、その中から見えます）", w)));
+        return Err(Error::NotFound(tr!("{} is not in your repos: root3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)",
+            "{} は repo の中ではありません。root3 が読むのは /root/REPO/PATH か REPO/PATH です（/ のほかは Prompt の root で、その中から見えます）", w)));
     } else {
         split(w)
     };
@@ -144,7 +144,7 @@ impl IssueRef {
 }
 
 /// How an issue is called where a command names it: hello#1; one without a
-/// number yet, by its first line in quotes (as l3 finds it by its words).
+/// number yet, by its first line in quotes (as root3 finds it by its words).
 pub fn called(repo: &str, file: &str, first_line: &str) -> String {
     match issues::number_of(file) { Some(n) => format!("{repo}#{n}"), None => format!("\"{first_line}\"") }
 }
@@ -209,7 +209,7 @@ fn by_number(r: &length3_core::repos::store::Repos, n: &str) -> Result<(String, 
     }
     match found.len() {
         1 => Ok(found.remove(0)),
-        0 => Err(Error::NotFound(tr!("No repo here has an issue #{} (l3 git lists them)", "#{} の Issue がある repo はありません（l3 git で一覧）", n.trim_start_matches('0')))),
+        0 => Err(Error::NotFound(tr!("No repo here has an issue #{} (root3 git lists them)", "#{} の Issue がある repo はありません（root3 git で一覧）", n.trim_start_matches('0')))),
         _ => Err(Error::Usage(tr!("#{} is in more than one repo: {}", "#{} は複数の repo にあります：{}", n.trim_start_matches('0'),
             found.iter().map(|(repo, _)| format!("{repo}#{}", n.trim_start_matches('0'))).collect::<Vec<_>>().join(", ")))),
     }
@@ -224,8 +224,8 @@ fn by_title(ctx: &Ctx, r: &length3_core::repos::store::Repos, words: &str) -> Re
     match issues::by_title(&all, words).as_slice() {
         [one] => Ok((one.repo.clone(), one.file.clone())),
         [] => Err(Error::NotFound(match &ctx.here {
-            Some(h) => tr!("No issue of {} is called \"{}\" (l3 git lists them)", "{} に「{}」という Issue はありません（l3 git で一覧）", h.repo, words),
-            None => tr!("No issue here is called \"{}\" (l3 git lists them)", "「{}」という Issue はここにありません（l3 git で一覧）", words),
+            Some(h) => tr!("No issue of {} is called \"{}\" (root3 git lists them)", "{} に「{}」という Issue はありません（root3 git で一覧）", h.repo, words),
+            None => tr!("No issue here is called \"{}\" (root3 git lists them)", "「{}」という Issue はここにありません（root3 git で一覧）", words),
         })),
         many => {
             let rows: Vec<String> = many.iter().map(|i| {
@@ -291,7 +291,7 @@ mod tests {
         // None named outside a repo: the form with REPO in it (bug: "Name a repo, or run this in one").
         let call = crate::args::parse(&["commit".to_string()], &out).unwrap();
         let Err(Error::Usage(m)) = repo(&out, &call, 0) else { panic!() };
-        assert!(m.contains(&format!("l3 commit REPO [-m {}]", crate::spec::placeholder("note"))), "{m}");
+        assert!(m.contains(&format!("root3 commit REPO [-m {}]", crate::spec::placeholder("note"))), "{m}");
         let i = IssueRef { repo: "hello".into(), file: "003.md".into(), title: "Fix：x".into() };
         assert_eq!((i.name(), i.shown(), i.line()), ("hello#3".into(), "hello#3 Fix：x".into(), "003".into()));
         assert!(numbered("#3") && numbered("hello#3") && numbered("3") && !numbered("restart loses") && !numbered("3rd"));

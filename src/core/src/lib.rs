@@ -1,5 +1,5 @@
 //! What Length³ OS means by a repo, a file, an issue and a TODO, in one place.
-//! The app (through Tauri commands) and `l3` (on the command line, on the host
+//! The app (through Tauri commands) and `root3` (on the command line, on the host
 //! or inside the app's Prompt) both use this crate, so the two cannot drift.
 //!
 //! Unsafe code is only where the OS is called and no safe interface has the call yet, each block a single call with

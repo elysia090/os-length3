@@ -39,7 +39,7 @@ fn file_name(server: &str, board: &str, todo: bool) -> String {
         .chars().map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '-' }).collect()
 }
 
-/// What is there already stays unless --force says to write over it, as l3 writes over nothing
+/// What is there already stays unless --force says to write over it, as root3 writes over nothing
 /// unasked (bug: `-o` replaced a file without a word). Nothing is written when any of them is there.
 fn not_over<'a>(files: impl Iterator<Item = &'a std::path::Path>, force: bool) -> Result<()> {
     if force { return Ok(()); }
@@ -48,7 +48,7 @@ fn not_over<'a>(files: impl Iterator<Item = &'a std::path::Path>, force: bool) -
     Err(Error::Refused(tr!("{} is there already; nothing was written (--force writes over it)", "{} はもうあります。何も書いていません（上書きするなら --force）", there.join(", "))))
 }
 
-/// `l3 server get SERVER[#BOARD]`: the boards as text on standard output;
+/// `root3 server get SERVER[#BOARD]`: the boards as text on standard output;
 /// with -o, into that file (or, a folder, a file each).
 pub fn server_get(_: &Ctx, call: &Call) -> Result<Reply> {
     let (server, boards) = find(call.word(0).unwrap_or_default())?;
@@ -85,7 +85,7 @@ pub fn server_post(_: &Ctx, call: &Call) -> Result<Reply> {
     if words.trim().is_empty() { return Err(Error::Usage(tr!("A post needs words", "投稿には本文がいります"))); }
     let (server, boards) = find(target)?;
     let [b] = boards.as_slice() else {
-        return Err(Error::Usage(tr!("Name the board: l3 server post {}#BOARD \"text\"", "板を書いてください：l3 server post {}#BOARD \"本文\"", target)));
+        return Err(Error::Usage(tr!("Name the board: root3 server post {}#BOARD \"text\"", "板を書いてください：root3 server post {}#BOARD \"本文\"", target)));
     };
     servers::post(&b.id, words)?;
     Ok(Reply::done(tr!("Wrote in {}#{}", "{}#{} に書きました", server.name, b.name), json!({"server": server.name, "board": b.name})))
@@ -110,7 +110,7 @@ pub fn inbox_list(_: &Ctx, _: &Call) -> Result<Reply> {
     let list = inbox::threads()?;
     let me = inbox::me()?;
     let mut t = Vec::new();
-    if list.is_empty() { t.push(tr!("No messages yet (l3 inbox send NAME \"text\")", "まだメッセージはありません（l3 inbox send NAME \"本文\"）")); }
+    if list.is_empty() { t.push(tr!("No messages yet (root3 inbox send NAME \"text\")", "まだメッセージはありません（root3 inbox send NAME \"本文\"）")); }
     let mut rows = Vec::new();
     for th in &list {
         let yours = mine(&me, &th.address);
@@ -138,7 +138,7 @@ pub fn inbox_thread(_: &Ctx, call: &Call) -> Result<Reply> {
     let yours = mine(&me, &c.address);
     crate::menu::see(|| crate::menu::Subject { on: On::Thread, word: me.shown(&c.address).to_string(), repo: None, label: me.shown(&c.address).to_string(),
         detail: String::new(), facts: if c.state == "request" && !yours { vec![Fact::Request] } else { Vec::new() } });
-    let mut t = vec![format!("{}{}", me.shown(&c.address), if c.state == "request" && !yours { tr!("  (request: l3 inbox accept {})", "  （リクエスト：l3 inbox accept {}）", me.shown(&c.address)) } else { String::new() })];
+    let mut t = vec![format!("{}{}", me.shown(&c.address), if c.state == "request" && !yours { tr!("  (request: root3 inbox accept {})", "  （リクエスト：root3 inbox accept {}）", me.shown(&c.address)) } else { String::new() })];
     if c.messages.is_empty() { t.push(tr!("  Nothing written yet", "  まだ何も書かれていません")); }
     for m in &c.messages {
         let who = if m.mine { tr!("you", "あなた") } else { me.shown(&c.address).to_string() };
@@ -166,14 +166,14 @@ pub fn inbox_decide(_: &Ctx, call: &Call) -> Result<Reply> {
     Ok(Reply::done(if accept { tr!("Accepted {}", "{} を受けました", who) } else { tr!("Blocked {}", "{} をブロックしました", who) }, json!({"address": who, "state": if accept { "accepted" } else { "blocked" }})))
 }
 
-/// `l3 name`: your names alone, one a line (your username first), for a script or a quick look.
+/// `root3 name`: your names alone, one a line (your username first), for a script or a quick look.
 pub fn name_only(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
     let all: Vec<&str> = me.addresses.iter().map(|x| x.address.as_str()).collect();
     Ok(Reply::data(all.join("\n"), json!(all)))
 }
 
-/// `l3 name ls`: each, and the code one is found by.
+/// `root3 name ls`: each, and the code one is found by.
 pub fn names(_: &Ctx, _: &Call) -> Result<Reply> {
     let me = inbox::me()?;
     let mut t = Vec::new();
@@ -185,7 +185,7 @@ pub fn names(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::data(t.join("\n"), json!(me)))
 }
 
-/// `l3 name set NAME`: your username changed; the one before is held for you 30 days.
+/// `root3 name set NAME`: your username changed; the one before is held for you 30 days.
 pub fn name_set(_: &Ctx, call: &Call) -> Result<Reply> {
     let a = inbox::set_username(call.word(0).unwrap_or_default())?;
     let me = inbox::me()?;
@@ -202,7 +202,7 @@ fn yours(word: &str) -> Result<(inbox::Me, String)> {
     let address = target::address(word)?;
     let me = inbox::me()?;
     if !mine(&me, &address) {
-        return Err(Error::NotFound(tr!("{} is not one of your names (l3 name lists them)", "{} はあなたの名前ではありません（l3 name で一覧）", me.shown(&address))));
+        return Err(Error::NotFound(tr!("{} is not one of your names (root3 name lists them)", "{} はあなたの名前ではありません（root3 name で一覧）", me.shown(&address))));
     }
     Ok((me, address))
 }
@@ -219,7 +219,7 @@ pub fn name_domain(_: &Ctx, call: &Call) -> Result<Reply> {
     let t = [
         tr!("Put this record in {}'s DNS (it says this account holds names there, and on which Remote):", "{} の DNS にこのレコードを置きます（このアカウントがそこの名前を持つこと、どの Remote かを示します）：", domain),
         format!("  {}  {}  {}", r.name, r.kind, r.value),
-        if r.found { tr!("Found: l3 name claim NAME@{} takes a name on it", "見つかりました：l3 name claim NAME@{} で名前を取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") },
+        if r.found { tr!("Found: root3 name claim NAME@{} takes a name on it", "見つかりました：root3 name claim NAME@{} で名前を取れます", domain) } else { tr!("Not found yet", "まだ見つかりません") },
     ];
     Ok(Reply::data(t.join("\n"), json!(r)))
 }
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn a_board_taken_home_writes_over_nothing_unless_forced() {
-        let d = std::env::temp_dir().join(format!("l3-server-get-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("root3-server-get-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let (kept, new) = (d.join("trip-plan.md"), d.join("trip-talk.md"));
         std::fs::write(&kept, "mine").unwrap();

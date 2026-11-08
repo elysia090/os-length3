@@ -57,7 +57,7 @@ test('the Remote\'s own routes answer so: a setting\'s version past what Postgre
   } finally { console.error = quiet; }
 });
 
-test('a moment is read as whole milliseconds, though Postgres keeps microseconds (core and l3 read a u64)', async () => {
+test('a moment is read as whole milliseconds, though Postgres keeps microseconds (core and root3 read a u64)', async () => {
   const db = await freshDb();
   const [r] = await rows<{t: number}>(db, sql`select ${ms(sql`'2026-10-18 06:49:17.528123+00'::timestamptz`)} as t`);
   assert.equal(r.t, Date.UTC(2026, 9, 18, 6, 49, 17, 528));

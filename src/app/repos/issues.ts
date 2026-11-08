@@ -1,13 +1,13 @@
 // An issue is a number and its words: "#3 Fix：件名", then the detail. That
 // is all a person meets; how it is kept is the OS's business. It is kept as
-// one plain file in the repo's issue/ (so l3 and a Prompt see the same
+// one plain file in the repo's issue/ (so root3 and a Prompt see the same
 // thing, and nothing is kept twice), written the way TODO items are: the
 // first line names it, the lines after are the detail. The file is named by
 // the issue's number, which the OS gives: the next one when an issue is
 // written, and the next free one for a file there that has none (one written
 // by hand, or two devices' issues that met under one number). Its issue/ is the OS's: never among the files File,
-// Forge and l3 file show (repos.ts ISSUES), nor made by a scaffold; an issue is met as an issue, in Git, the box, the
-// pane and l3 issue.
+// Forge and root3 file show (repos.ts ISSUES), nor made by a scaffold; an issue is met as an issue, in Git, the box, the
+// pane and root3 issue.
 
 import type {RepoStore} from './repos.ts';
 import {kindOf, named} from './text.ts';

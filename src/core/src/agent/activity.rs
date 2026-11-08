@@ -1,7 +1,7 @@
 //! What agents do in the person's repos, as their own harnesses say it: Claude Code, Grok Build, DeepSeek Harness
-//! (which runs Claude Code's hooks) and the like each call `l3 agent hook HARNESS` from their hooks, with the
+//! (which runs Claude Code's hooks) and the like each call `root3 agent hook HARNESS` from their hooks, with the
 //! event's JSON on standard input. Nothing of the agent runs through here; each report is a line appended to
-//! `<data>/agents.jsonl`, this device's alone (never sent), and what the app and `l3 agent` show is read from it
+//! `<data>/agents.jsonl`, this device's alone (never sent), and what the app and `root3 agent` show is read from it
 //! (`sessions`): which agent works on which repo and issue, what it does now, whether it waits for the person.
 //!
 //! The journal is a log, not a state: a line is never changed, only added. It is cut to its latest half once it

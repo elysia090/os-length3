@@ -1,6 +1,6 @@
 // The webview reaches the host only through these named commands. Nothing
 // here reads or writes outside the OS's own data directory, and every one of
-// them is what `l3` does on the command line, through the same core.
+// them is what `root3` does on the command line, through the same core.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use length3_core::api;
@@ -115,7 +115,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-// ---- SSH into this device's Prompts (src/core/src/ssh/; the listener is l3's) ----
+// ---- SSH into this device's Prompts (src/core/src/ssh/; the listener is root3's) ----
 
 /// This device's SSH as its card shows it (core ssh::Here): whether it listens, who may connect, where each repo is
 /// reached, its host key and how many keys are let in. Worked out here; none of it goes to the Remote.
@@ -135,7 +135,7 @@ async fn ssh_here() -> Result<serde_json::Value, String> {
 }
 
 /// Turn it on (to `scope`: "device", this device only, or "network", the same network's PCs too; none: the one kept)
-/// or off, as `l3 address ssh on|off` does, by the l3 beside the app: the same listener, kept by l3 in the background
+/// or off, as `root3 address ssh on|off` does, by the root3 beside the app: the same listener, kept by root3 in the background
 /// whether or not the app stays open, and the same checks (a key in .authorized_keys first).
 #[tauri::command]
 async fn ssh_set(on: bool, scope: Option<String>) -> Result<serde_json::Value, String> {
@@ -144,9 +144,9 @@ async fn ssh_set(on: bool, scope: Option<String>) -> Result<serde_json::Value, S
         let mut args = vec!["address", "ssh", if on { "on" } else { "off" }];
         if on { if let Some(s) = scope.as_deref().filter(|s| matches!(*s, "device" | "network")) { args.push(s); } }
         args.push("--json");
-        let out = std::process::Command::new(length3_core::prompt::running::l3_path(&exe)).args(&args)
+        let out = std::process::Command::new(length3_core::prompt::running::root3_path(&exe)).args(&args)
             .stdin(std::process::Stdio::null()).output()
-            .map_err(|e| length3_core::tr!("Could not start l3: {}", "l3 を起動できませんでした：{}", e))?;
+            .map_err(|e| length3_core::tr!("Could not start root3: {}", "root3 を起動できませんでした：{}", e))?;
         if !out.status.success() {
             let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
             return Err(v["error"]["message"].as_str().map(String::from).unwrap_or_else(|| String::from_utf8_lossy(&out.stderr).trim().to_string()));
@@ -155,9 +155,9 @@ async fn ssh_set(on: bool, scope: Option<String>) -> Result<serde_json::Value, S
     }).await
 }
 
-// ---- one app on a device, and l3 app (src/core/src/device/desktop.rs) ----
+// ---- one app on a device, and root3 app (src/core/src/device/desktop.rs) ----
 
-/// What the app answers l3 on its socket: it is here; its window forward; its window closed, as its close
+/// What the app answers root3 on its socket: it is here; its window forward; its window closed, as its close
 /// button closes it (the last window closed, the app ends as it always does).
 #[cfg(unix)]
 fn answer(app: &tauri::AppHandle, word: &str) -> String {
@@ -175,7 +175,7 @@ fn answer(app: &tauri::AppHandle, word: &str) -> String {
 
 fn main() {
     // One app on a device: one started while another is open brings that one forward and ends. A data
-    // directory that cannot hold the lock still opens the app, only l3 app cannot find it.
+    // directory that cannot hold the lock still opens the app, only root3 app cannot find it.
     #[cfg(unix)]
     let held = match length3_core::device::desktop::hold(&paths::data_dir()) {
         Ok(Some(h)) => Some(h),

@@ -24,7 +24,7 @@ pub fn change_diff(repo: &str, id: &str, limit: usize) -> Result<Vec<FileDiff>> 
 pub fn reset(repos: &Repos, repo: &str) -> Result<Change> {
     let on = repos.line(repo);
     if on == crate::repos::lines::MAIN {
-        return Err(crate::tr!("{} shows main: reset takes back the change of the issue being worked on (l3 start REPO#N first)", "{} は main を見せています。reset は作業中の Issue の Change を取り下げます（先に l3 start REPO#N）", repo));
+        return Err(crate::tr!("{} shows main: reset takes back the change of the issue being worked on (root3 start REPO#N first)", "{} は main を見せています。reset は作業中の Issue の Change を取り下げます（先に root3 start REPO#N）", repo));
     }
     let c = find(repo, &on)?;
     placed(repo, change_call(repo, &c.id, "reset", serde_json::json!({}))?)
@@ -123,7 +123,7 @@ impl HandIn {
 pub fn submit(repos: &Repos, repo: &str, note: &str) -> Result<Change> {
     let on = repos.line(repo);
     if on == crate::repos::lines::MAIN {
-        return Err(crate::tr!("A change comes from an issue's work (l3 start REPO#N)", "Change は Issue の作業から渡します（l3 start REPO#N）"));
+        return Err(crate::tr!("A change comes from an issue's work (root3 start REPO#N)", "Change は Issue の作業から渡します（root3 start REPO#N）"));
     }
     let (kind, title, _) = words(repos, repo, None, "")?;
     let client = Client::open()?;

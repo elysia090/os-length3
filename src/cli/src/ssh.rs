@@ -1,9 +1,9 @@
-//! The SSH listener: `l3 address ssh serve`, started in the background by
-//! turning SSH on (cmd/address.rs; the app's switch runs the same l3). An
+//! The SSH listener: `root3 address ssh serve`, started in the background by
+//! turning SSH on (cmd/address.rs; the app's switch runs the same root3). An
 //! ordinary OpenSSH client lands in a repo's Prompt: the SSH user is the
-//! repo, and each session is `l3 prompt REPO` (`-- /bin/sh -c CMD` for a
+//! repo, and each session is `root3 prompt REPO` (`-- /bin/sh -c CMD` for a
 //! command), so it is the same shell, the same sandbox, the same network
-//! grant and the same record (`l3 prompt ls` lists it) as any Prompt.
+//! grant and the same record (`root3 prompt ls` lists it) as any Prompt.
 //!
 //!   auth      public keys only, those in the `.authorized_keys` dotfile
 //!             (taken in from the Remote at most every 10 s as keys are
@@ -34,7 +34,7 @@
 //!             Remote every 30 s or so whether it is still on (saying only the
 //!             scope's word), and stops, ending every session, when it is
 //!             off, the device is signed out, or it is told to (SIGTERM:
-//!             l3 address ssh off, logout, the app)
+//!             root3 address ssh off, logout, the app)
 
 use length3_core::{fs::paths, remote, ssh, tr};
 use russh::keys::{PrivateKey, PublicKey};
@@ -109,7 +109,7 @@ pub fn fingerprint(key: &PrivateKey) -> String {
 
 /// What every connection shares.
 struct Shared {
-    /// l3 itself, which each session runs as `l3 prompt REPO`.
+    /// root3 itself, which each session runs as `root3 prompt REPO`.
     exe: PathBuf,
     keys: Mutex<(Instant, Vec<ssh::Key>)>,
     tries: Mutex<ssh::Tries>,
@@ -294,17 +294,17 @@ fn started(s: Started) -> (Option<Input>, Option<u32>, Option<tokio::sync::onesh
     match s { Some((i, p, e)) => (Some(i), Some(p), Some(e)), None => (None, None, None) }
 }
 
-/// Start the session's program, `l3 prompt REPO` (with `-- /bin/sh -c CMD` for a command), on a terminal when
+/// Start the session's program, `root3 prompt REPO` (with `-- /bin/sh -c CMD` for a command), on a terminal when
 /// one was asked for; what it prints goes to the client, and its exit code once it ends, then the channel is
 /// closed and `ended` (the third) is told.
 async fn start(shared: &Arc<Shared>, handle: &server::Handle, id: ChannelId, repo: &str, command: Option<String>, asked: &Asked) -> Started {
     let mut cmd = tokio::process::Command::new(&shared.exe);
-    // The repo (the SSH user) is named by LENGTH3_REPO from the data directory, never as a word: l3 reads a
-    // word against its forms first, so `ssh ls@host` was `l3 prompt ls`, the list of every Prompt on the
+    // The repo (the SSH user) is named by LENGTH3_REPO from the data directory, never as a word: root3 reads a
+    // word against its forms first, so `ssh ls@host` was `root3 prompt ls`, the list of every Prompt on the
     // device, and a repo called stop or --network could not be reached at all.
     cmd.arg("prompt").env("LENGTH3_REPO", repo).current_dir(paths::data_dir());
     if let Some(c) = &command { cmd.args(["--", "/bin/sh", "-c", c]); }
-    cmd.env_remove("L3_PROMPT").env("TERM", asked.pty.as_ref().map_or("dumb", |p| p.0.as_str())).kill_on_drop(false);
+    cmd.env_remove("ROOT3_PROMPT").env("TERM", asked.pty.as_ref().map_or("dumb", |p| p.0.as_str())).kill_on_drop(false);
     log(&format!("session {repo}: {}", command.as_deref().map_or("shell".to_string(), |c| format!("exec {} bytes", c.len()))));
     let started = match &asked.pty {
         Some((_, cols, rows)) => on_pty(cmd, *cols, *rows).map(|(child, master)| (child, Input::Pty(master), None)),
@@ -342,14 +342,14 @@ async fn start(shared: &Arc<Shared>, handle: &server::Handle, id: ChannelId, rep
 
 /// What a session's program is told to make of itself as it starts (`session_start`): `tty` or `pipe`, and the
 /// listener's pid. Made there, not between the fork and the exec, where nothing but raw system calls may run.
-const SESSION: &str = "L3_SSH_SESSION";
+const SESSION: &str = "ROOT3_SSH_SESSION";
 
 /// What every session's process is started with: its own session, and an end with the listener's.
 fn detach(cmd: &mut tokio::process::Command, tty: bool) {
     cmd.env(SESSION, format!("{}:{}", if tty { "tty" } else { "pipe" }, std::process::id()));
 }
 
-/// In a session's program (l3, started by `detach`), before anything else: its own session, so the job control of
+/// In a session's program (root3, started by `detach`), before anything else: its own session, so the job control of
 /// its Prompt is its own; on a terminal, that terminal as its own (it is standard input); and an end with the
 /// listener, or one now if the listener has gone already.
 pub fn session_start() {
@@ -604,7 +604,7 @@ pub fn serve() -> Result<(), String> {
                     missed = if heard == remote::ssh::Heard::Unreachable { missed + 1 } else { 0 };
                     beat.as_mut().reset(tokio::time::Instant::now() + next_beat(missed));
                 }
-                // Another scope was chosen (l3 address ssh on device|network): taken now, not at the next beat,
+                // Another scope was chosen (root3 address ssh on device|network): taken now, not at the next beat,
                 // and said to the Remote now too, so its pages show the scope chosen rather than the one before.
                 _ = usr1.recv() => {
                     let was = scope;
@@ -622,7 +622,7 @@ pub fn serve() -> Result<(), String> {
         if pid > 0 { length3_core::prompt::running::signal(pid, length3_core::prompt::running::Signal::Kill); }
     }
     // The sockets close before the record goes (bug: they lived as long as the runtime, after the record was gone,
-    // so l3 said SSH was off while the port still took a connection, reset when the process ended).
+    // so root3 said SSH was off while the port still took a connection, reset when the process ended).
     drop(sockets);
     drop(rt);
     if why == Why::Asked {

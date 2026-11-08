@@ -1,19 +1,19 @@
-//! The menu: l3 for a person at a terminal, who need not know its words.
+//! The menu: root3 for a person at a terminal, who need not know its words.
 //!
-//! Bare `l3` shows the rail (Home, Forge, File, Git, Runtime, Remote,
+//! Bare `root3` shows the rail (Home, Forge, File, Git, Runtime, Remote,
 //! Server, Inbox, +), each with what is there now; a purpose picked prints
-//! its page as `l3 <page>` prints it, then the deeds of each thing on the page
+//! its page as `root3 <page>` prints it, then the deeds of each thing on the page
 //! and of the page itself, picked with the keyboard. A deed is a form of the
 //! table (spec.rs): the thing it is pressed on gives it its word, the rest is
 //! asked in place, one line each, and it runs as the command it is, said
-//! first (`→ l3 start notes#1`), so the words are learned by seeing them.
+//! first (`→ root3 start notes#1`), so the words are learned by seeing them.
 //! After a command typed by hand, its next deeds are said in a line, no key
-//! taken from what the person types next; `l3 next` offers them the same way.
+//! taken from what the person types next; `root3 next` offers them the same way.
 //!
 //! What it offers is read from the table and from what each page shows
 //! (its things and their facts, noted while the page is made: `see`), so the
 //! menu, the help and the completion cannot drift apart. Off a terminal, with
-//! --json, TERM=dumb or L3_PLAIN set, none of this happens (term::interactive).
+//! --json, TERM=dumb or ROOT3_PLAIN set, none of this happens (term::interactive).
 
 use crate::args;
 use crate::cmd::{self, Ctx};
@@ -87,7 +87,7 @@ pub fn active() -> bool { ACTIVE.with(|a| a.get()) }
 
 // ---- What is offered ----
 
-/// Where l3 runs, as far as what may run there goes.
+/// Where root3 runs, as far as what may run there goes.
 #[derive(Clone, Copy, Debug)]
 pub struct Env { pub prompt: bool, pub connected: bool }
 
@@ -157,7 +157,7 @@ pub fn deed_line(o: Offer, s: &Subject) -> String {
             _ => None,
         }
     }).collect();
-    format!("l3 {}", command_line(o.command, o.form, &words, &[]).join(" "))
+    format!("root3 {}", command_line(o.command, o.form, &words, &[]).join(" "))
 }
 
 /// The forms that make a purpose's page, in the table's order.
@@ -298,9 +298,9 @@ fn hint_after() -> Hint { Hint::of(&[tr!("←→ choose, then Enter", "←→ �
 fn hint_page() -> Hint {
     Hint::of(&[tr!("↑↓ choose", "↑↓ 選ぶ"), tr!("←→ deed", "←→ 操作"), tr!("Enter do", "Enter 実行")], &[tr!("Backspace purposes", "Backspace 目的"), tr!("q leaves", "q 終わる")])
 }
-/// In a field: Enter keeps what is written, Esc goes back to the rows with nothing done, Ctrl-C leaves l3 (as in the rows).
+/// In a field: Enter keeps what is written, Esc goes back to the rows with nothing done, Ctrl-C leaves root3 (as in the rows).
 fn hint_field() -> Hint {
-    Hint::of(&[tr!("Enter done", "Enter 決定")], &[tr!("Esc not now", "Esc やめる"), tr!("Ctrl-C leaves l3", "Ctrl-C で l3 を終わる")])
+    Hint::of(&[tr!("Enter done", "Enter 決定")], &[tr!("Esc not now", "Esc やめる"), tr!("Ctrl-C leaves root3", "Ctrl-C で root3 を終わる")])
 }
 
 // ---- Picking ----
@@ -375,7 +375,7 @@ fn lead_lines(first: &str, dim: bool, words: &[String], cols: usize) -> Vec<Stri
 }
 
 /// One line of choices (a repo, a template, yes or no, the next deeds), walked with the keys.
-/// `start`: the choice focused first; None: none, and Enter passes by (the row `l3 next` opens).
+/// `start`: the choice focused first; None: none, and Enter passes by (the row `root3 next` opens).
 fn choose(lead: &str, dim: bool, items: &[String], start: Option<usize>, hint: &Hint) -> Option<usize> {
     let keys = Keys::take()?;
     let style = Style::now();
@@ -394,14 +394,14 @@ fn choose(lead: &str, dim: bool, items: &[String], start: Option<usize>, hint: &
             Key::Char(c) if c.is_ascii_digit() && c != '0' && (c as usize - '1' as usize) < n => at = Some(c as usize - '1' as usize),
             Key::Enter => { block.clear(); return at; }
             Key::Esc | Key::Quit | Key::Back | Key::Char('q') => { block.clear(); return None; }
-            // Ctrl-C leaves l3 here as in the rows, the terminal as it was.
+            // Ctrl-C leaves root3 here as in the rows, the terminal as it was.
             Key::Interrupt => { block.clear(); drop(keys); interrupted() }
             _ => {}
         }
     }
 }
 
-/// Ctrl-C where l3 asks: l3 ends as a program Ctrl-C ends does (130), with nothing half done left behind.
+/// Ctrl-C where root3 asks: root3 ends as a program Ctrl-C ends does (130), with nothing half done left behind.
 fn interrupted() -> ! {
     term::put("^C\n");
     std::process::exit(130);
@@ -518,11 +518,11 @@ enum Done { Ran { ok: bool, seen: Seen, argv: Vec<String> }, NotNow }
 /// Say what is being done, as the command it is.
 fn said(argv: &[String]) {
     let style = Style::now();
-    term::put(&format!("{}\n", style.dim(&format!("→ l3 {}", argv.iter().map(|w| shell_word(w)).collect::<Vec<_>>().join(" ")))));
+    term::put(&format!("{}\n", style.dim(&format!("→ root3 {}", argv.iter().map(|w| shell_word(w)).collect::<Vec<_>>().join(" ")))));
 }
 
-/// Run a command line through l3 as if typed: parsed, checked, run, answered, kept in step.
-/// An error the person's words caused is given back (to be said under the field), the rest said as l3 says it.
+/// Run a command line through root3 as if typed: parsed, checked, run, answered, kept in step.
+/// An error the person's words caused is given back (to be said under the field), the rest said as root3 says it.
 fn perform(ctx: &Ctx, argv: &[String], words_asked: bool) -> (Result<(), Error>, Seen) {
     let call = match args::parse(argv, ctx) {
         Ok(c) => c,
@@ -558,7 +558,7 @@ fn run(ctx: &Ctx, offer: Offer, subject: Option<&Subject>, place: Option<&str>) 
                 let here: Vec<String> = ctx.repos().and_then(|r| Ok(r.names()?)).unwrap_or_default();
                 let at = ctx.here.as_ref().and_then(|h| here.iter().position(|n| *n == h.repo));
                 let pick = match (here.len(), at) {
-                    (0, _) => { out::note(&tr!("No repos yet (l3 repo new NAME makes one)", "repo はまだありません（l3 repo new NAME で作れます）")); return Done::NotNow; }
+                    (0, _) => { out::note(&tr!("No repos yet (root3 repo new NAME makes one)", "repo はまだありません（root3 repo new NAME で作れます）")); return Done::NotNow; }
                     (1, _) => Some(0),
                     (_, start) => choose(&format!("  {}  ", say(label)), false, &here, Some(start.unwrap_or(0)), &Hint::default()),
                 };
@@ -634,7 +634,7 @@ fn page(ctx: &Ctx, group: Group, print: bool) -> View {
     View { group, subjects: seen.subjects, facts: seen.facts, own: true, made_by, place: seen.place }
 }
 
-/// Run these command lines as l3 runs them, for what they show; printed (each said first), or not.
+/// Run these command lines as root3 runs them, for what they show; printed (each said first), or not.
 fn read(ctx: &Ctx, lines: &[Vec<String>], print: bool) -> Seen {
     let mut all = Seen::default();
     for argv in lines {
@@ -664,7 +664,7 @@ fn next_view(ctx: &Ctx, view: &View, seen: Seen, argv: Vec<String>) -> View {
     View { group: view.group, subjects: again.subjects, facts: again.facts, own: view.own, made_by: view.made_by.clone(), place: again.place }
 }
 
-/// What is there now in each place on the rail, in a few words (as bare `l3` says it off a terminal).
+/// What is there now in each place on the rail, in a few words (as bare `root3` says it off a terminal).
 fn states(ctx: &Ctx) -> Vec<String> {
     let r = ctx.repos().ok();
     let names: Vec<String> = r.as_ref().and_then(|r| r.names().ok()).unwrap_or_default();
@@ -728,7 +728,7 @@ fn heading(ctx: &Ctx) -> String {
     format!("Length³ OS · {where_}")
 }
 
-/// Bare `l3` on a terminal: the rail, then whatever the person goes to, until they leave.
+/// Bare `root3` on a terminal: the rail, then whatever the person goes to, until they leave.
 pub fn rail(ctx: &Ctx) -> ExitCode {
     ACTIVE.with(|a| a.set(true));
     let style = Style::now();
@@ -825,7 +825,7 @@ fn named(ctx: &Ctx, call: &args::Call) -> Option<String> {
     })
 }
 
-/// Whether a thing is what `word` names: by its word, or (an issue) by its repo, as `l3 commit notes` names the work in notes.
+/// Whether a thing is what `word` names: by its word, or (an issue) by its repo, as `root3 commit notes` names the work in notes.
 fn is(s: &Subject, word: &str) -> bool {
     s.word == word || (s.on == On::Issue && s.repo.as_deref() == Some(word))
 }
@@ -876,12 +876,12 @@ fn next_deeds(ctx: &Ctx, view: &View, word: Option<&str>) -> (String, Vec<Next>,
     (lead, items, left)
 }
 
-/// Where the last command's next deeds are kept for `l3 next`: its words, and the thing it was about.
-fn next_file() -> std::path::PathBuf { paths::data_dir().join("l3").join("next.json") }
+/// Where the last command's next deeds are kept for `root3 next`: its words, and the thing it was about.
+fn next_file() -> std::path::PathBuf { paths::data_dir().join("root3").join("next.json") }
 
 /// After a command typed by hand, on a terminal: its next deeds, said in a line and not asked. Nothing is
 /// read from the terminal, so what the person types next is all the shell's (bug: a key typed while a row
-/// of choices waited was taken by it, and `printf` reached the shell as `rintf`). `l3 next` opens them.
+/// of choices waited was taken by it, and `printf` reached the shell as `rintf`). `root3 next` opens them.
 pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen, made: Option<String>) {
     let c = call.command;
     if c.group == Group::Other || c.hidden || call.form.args.contains(&Arg::Argv) { return; }
@@ -900,9 +900,9 @@ pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen, made: Op
     let cols = term::size().0.saturating_sub(1);
     // Listed by the page itself just above: only the way to choose one with the keys, not the same words again.
     let mut lines = if said { Vec::new() } else { lead_lines(&first, true, &words, cols) };
-    lines.push(style.dim(&tr!("  l3 next chooses one with the keys", "  l3 next でキーで選べます")));
+    lines.push(style.dim(&tr!("  root3 next chooses one with the keys", "  root3 next でキーで選べます")));
     for l in lines { term::put(&format!("{l}\n")); }
-    // Kept for `l3 next`; not kept, `l3 next` says there is nothing, and nothing is lost.
+    // Kept for `root3 next`; not kept, `root3 next` says there is nothing, and nothing is lost.
     let kept = serde_json::json!({"argv": argv, "word": word, "shown": shown});
     let file = next_file();
     if file.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok()) {
@@ -910,7 +910,7 @@ pub fn after(ctx: &Ctx, call: &args::Call, argv: &[String], seen: Seen, made: Op
     }
 }
 
-/// `l3 next` on a terminal: the next deeds of the last command typed, walked with the keys as the menu's,
+/// `root3 next` on a terminal: the next deeds of the last command typed, walked with the keys as the menu's,
 /// done as the commands they are, and those after each, until Enter alone or Esc goes on.
 pub fn next(ctx: &Ctx) -> ExitCode {
     let kept: Option<serde_json::Value> = std::fs::read(next_file()).ok().and_then(|b| serde_json::from_slice(&b).ok());
@@ -928,7 +928,7 @@ pub fn next(ctx: &Ctx) -> ExitCode {
         let seen = read(ctx, std::slice::from_ref(&argv), false);
         View { group: call.command.group, subjects: seen.subjects, facts: seen.facts, own: call.form.page, made_by: vec![argv.clone()], place: seen.place }
     } else { page(ctx, call.command.group, false) };
-    term::put(&format!("{}\n", Style::now().dim(&format!("→ l3 {}", argv.iter().map(|w| shell_word(w)).collect::<Vec<_>>().join(" ")))));
+    term::put(&format!("{}\n", Style::now().dim(&format!("→ root3 {}", argv.iter().map(|w| shell_word(w)).collect::<Vec<_>>().join(" ")))));
     loop {
         let (lead, items, left) = next_deeds(ctx, &view, word.as_deref());
         if items.is_empty() { break; }

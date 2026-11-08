@@ -1,13 +1,13 @@
-//! How a Prompt's repo is named when l3 starts l3 for it (the SSH listener,
+//! How a Prompt's repo is named when root3 starts root3 for it (the SSH listener,
 //! the app): by LENGTH3_REPO, from the data directory, never as a word, which
-//! l3 reads against the forms of `l3 prompt` first.
+//! root3 reads against the forms of `root3 prompt` first.
 
 mod common;
 use common::Home;
 use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
-/// An `l3 prompt` started for a test, ended with it whatever happens (its Prompt with it).
+/// An `root3 prompt` started for a test, ended with it whatever happens (its Prompt with it).
 struct Started(Child);
 
 impl Drop for Started {
@@ -16,20 +16,20 @@ impl Drop for Started {
     }
 }
 
-/// `l3 prompt REPO -- /bin/sh -c SCRIPT`, as the app starts one (the repo named by LENGTH3_REPO, no terminal).
+/// `root3 prompt REPO -- /bin/sh -c SCRIPT`, as the app starts one (the repo named by LENGTH3_REPO, no terminal).
 fn start(home: &Home, repo: &str, script: &str) -> Started {
     Started(home.command("en", &["prompt", "--", "/bin/sh", "-c", script]).env("LENGTH3_REPO", repo)
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped()).spawn().expect("l3 starts"))
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped()).spawn().expect("root3 starts"))
 }
 
 /// Wait for the Prompt to write `file` in its repo: true once it has, false if it ended first (this host lends
 /// no user namespace: what it said is shown).
-fn wrote(home: &Home, repo: &str, file: &str, l3: &mut Started) -> bool {
+fn wrote(home: &Home, repo: &str, file: &str, root3: &mut Started) -> bool {
     let end = Instant::now() + Duration::from_secs(30);
     while !home.path(&format!("repos/{repo}/{file}")).exists() {
-        if l3.0.try_wait().unwrap().is_some() || Instant::now() > end {
+        if root3.0.try_wait().unwrap().is_some() || Instant::now() > end {
             let mut said = String::new();
-            let _ = std::io::Read::read_to_string(l3.0.stderr.as_mut().unwrap(), &mut said);
+            let _ = std::io::Read::read_to_string(root3.0.stderr.as_mut().unwrap(), &mut said);
             eprintln!("skipped: the Prompt did not start here ({said})");
             return false;
         }
@@ -64,8 +64,8 @@ fn a_prompt_being_prepared_is_listed_kept_and_stopped_with_its_setting_up() {
     if !home.root_of(&"5".repeat(64), "test", &["sleep", "touch"]) { eprintln!("skipped: no programs to lend a root"); return; }
     home.use_root(&"5".repeat(64));
     home.dotfiles(&[(".setup", "touch /root/os-starting/began\nsleep 60\ntouch /root/os-starting/set-up\n")]);
-    let mut l3 = start(&home, "os-starting", "touch ran");
-    if !wrote(&home, "os-starting", "began", &mut l3) { return; }
+    let mut root3 = start(&home, "os-starting", "touch ran");
+    if !wrote(&home, "os-starting", "began", &mut root3) { return; }
 
     let ls = home.run("en", &["prompt", "ls"]);
     assert!(ls.stdout.contains("os-starting") && ls.stdout.contains("preparing (.packages, .setup)"), "{ls:?}");
@@ -83,7 +83,7 @@ fn a_prompt_being_prepared_is_listed_kept_and_stopped_with_its_setting_up() {
     // Stopped while it is prepared: its setting up ends with it, nothing of it left running.
     let stop = home.run("en", &["prompt", "stop", "os-starting"]);
     assert!(stop.code == 0 && stop.stdout.contains("Stopped os-starting's Prompt") && !stop.stdout.contains("still there"), "{stop:?}");
-    assert!(!l3.0.wait().unwrap().success());
+    assert!(!root3.0.wait().unwrap().success());
     assert!(home.run("en", &["prompt", "ls"]).stdout.contains("No Prompt is running"));
     std::thread::sleep(Duration::from_millis(300));
     assert!(!home.path("repos/os-starting/ran").exists() && !home.path("repos/os-starting/set-up").exists(), "it went no further");
@@ -103,11 +103,11 @@ fn a_setup_that_fails_starts_the_prompt_with_what_is_there_and_is_tried_again() 
     home.use_root(&"5".repeat(64));
     home.dotfiles(&[(".setup", "echo tried >> /root/os-starting/tries\nexit 3\n")]);
     for n in 1..=2 {
-        let mut l3 = start(&home, "os-starting", "touch ran");
-        if !wrote(&home, "os-starting", "ran", &mut l3) { return; }
-        let ended = l3.0.wait().unwrap();
+        let mut root3 = start(&home, "os-starting", "touch ran");
+        if !wrote(&home, "os-starting", "ran", &mut root3) { return; }
+        let ended = root3.0.wait().unwrap();
         let mut said = String::new();
-        std::io::Read::read_to_string(l3.0.stderr.as_mut().unwrap(), &mut said).unwrap();
+        std::io::Read::read_to_string(root3.0.stderr.as_mut().unwrap(), &mut said).unwrap();
         assert!(ended.success() && said.contains("setting up stopped (exit 3); the Prompt starts with what is there"), "{said}");
         assert_eq!(std::fs::read_to_string(home.path("repos/os-starting/tries")).unwrap().lines().count(), n);
         assert!(home.run("en", &["prompt", "ls"]).stdout.contains("No Prompt is running"));
@@ -137,11 +137,11 @@ fn a_prompt_interrupted_or_lost_while_prepared_leaves_no_record_or_process() {
     assert!(home.run("en", &["prompt", "ls"]).stdout.contains("No Prompt is running"));
 
     std::fs::remove_file(home.path("repos/os-starting/began")).unwrap();
-    let mut l3 = start(&home, "os-starting", "touch ran-again");
-    if !wrote(&home, "os-starting", "began", &mut l3) { return; }
-    let ns = length3_core::prompt::running::ns_of(l3.0.id()).expect("what prepares it, in a namespace of its own");
-    l3.0.kill().unwrap();
-    l3.0.wait().unwrap();
+    let mut root3 = start(&home, "os-starting", "touch ran-again");
+    if !wrote(&home, "os-starting", "began", &mut root3) { return; }
+    let ns = length3_core::prompt::running::ns_of(root3.0.id()).expect("what prepares it, in a namespace of its own");
+    root3.0.kill().unwrap();
+    root3.0.wait().unwrap();
     let gone = length3_core::prompt::running::wait_empty(ns, length3_core::prompt::running::Held { processes: 0, memory: 0 }, Duration::from_secs(3));
     assert_eq!(gone.left, 0, "nothing of its setting up is left");
     assert!(home.run("en", &["prompt", "ls"]).stdout.contains("No Prompt is running"));
@@ -155,13 +155,13 @@ fn a_prompt_interrupted_or_lost_while_prepared_leaves_no_record_or_process() {
 fn a_prompt_keeps_its_root_when_another_is_made_current() {
     let home = Home::new("prompt-root-switch");
     home.repo("os-web", &[("README", "web\n")]);
-    let (old, l3s) = ("5".repeat(64), length3_core::root::RELEASES[0].sha256);
-    if !home.root_of(&old, "Ubuntu", &["sleep", "touch"]) || !home.root_of(l3s, "OS Length3 Linux", &[]) { eprintln!("skipped: no programs to lend a root"); return; }
+    let (old, root3s) = ("5".repeat(64), length3_core::root::RELEASES[0].sha256);
+    if !home.root_of(&old, "Ubuntu", &["sleep", "touch"]) || !home.root_of(root3s, "OS Length3 Linux", &[]) { eprintln!("skipped: no programs to lend a root"); return; }
     home.use_root(&old);
-    let mut l3 = start(&home, "os-web", "touch up; while [ ! -e go ]; do sleep 0.05; done; touch after");
-    if !wrote(&home, "os-web", "up", &mut l3) { return; }
-    // l3's own root, held here, made current while it runs.
-    let used = home.run("en", &["root", "use", "l3"]);
+    let mut root3 = start(&home, "os-web", "touch up; while [ ! -e go ]; do sleep 0.05; done; touch after");
+    if !wrote(&home, "os-web", "up", &mut root3) { return; }
+    // root3's own root, held here, made current while it runs.
+    let used = home.run("en", &["root", "use", "root3"]);
     assert!(used.stdout.contains("Prompts run on OS Length3 Linux"), "{used:?}");
 
     let page = home.run("en", &["runtime"]);
@@ -172,13 +172,13 @@ fn a_prompt_keeps_its_root_when_another_is_made_current() {
     assert!(home.path(&format!("system/{old}/root/bin/touch")).is_file());
     // Its programs still run from it.
     std::fs::write(home.path("repos/os-web/go"), "").unwrap();
-    assert!(l3.0.wait().unwrap().success() && home.path("repos/os-web/after").exists());
+    assert!(root3.0.wait().unwrap().success() && home.path("repos/os-web/after").exists());
 
     // Ended, the root before is one that can go, and goes; the current one stays (#46).
     let freed = home.run("en", &["free", &format!("root:{old}")]);
     assert_eq!(freed.code, 0, "{freed:?}");
-    assert!(!home.path(&format!("system/{old}")).exists() && home.path(&format!("system/{l3s}/installed.json")).is_file());
-    assert!(home.run("en", &["free", &format!("root:{l3s}")]).stderr.contains("The root Prompts run on"));
+    assert!(!home.path(&format!("system/{old}")).exists() && home.path(&format!("system/{root3s}/installed.json")).is_file());
+    assert!(home.run("en", &["free", &format!("root:{root3s}")]).stderr.contains("The root Prompts run on"));
 }
 
 /// The tasks in this home's book, by id: their state and last words.
@@ -205,10 +205,10 @@ fn a_question_runs_in_the_prompt_asks_back_and_goes_on_with_the_reply() {
     let home = Home::new("tasks-ask");
     assert!(home.root(), "this host lends no sh for a root");
     home.repo("notes", &[("README.md", "notes\n")]);
-    let agent = r#"printf '%s' "$L3_TASK" > told.txt
+    let agent = r#"printf '%s' "$ROOT3_TASK" > told.txt
 echo '{"type":"system","subtype":"init","session_id":"s-1"}'
 echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"README.md"}}]}}'
-if [ -n "$L3_RESUME" ]; then echo "$L3_RESUME" > resumed.txt; R='DONE it is the loop'; else R='Looked.\nQUESTION Keep the old name?'; fi
+if [ -n "$ROOT3_RESUME" ]; then echo "$ROOT3_RESUME" > resumed.txt; R='DONE it is the loop'; else R='Looked.\nQUESTION Keep the old name?'; fi
 printf '{"type":"result","result":"%s"}\n' "$R""#;
     home.dotfiles(&[(".agent", "sh /root/.fakeagent\n"), (".fakeagent", agent)]);
     assert_eq!(home.run("en", &["agent", "on", "claude"]).code, 0);
@@ -224,7 +224,7 @@ printf '{"type":"result","result":"%s"}\n' "$R""#;
     };
     assert!(told.starts_with("Why is it slow?"), "{told}");
     assert_eq!((k["questions"][0].as_str(), k["session"].as_str()), (Some("Keep the old name?"), Some("s-1")), "{k}");
-    assert!(home.run("en", &["agent"]).stdout.contains("Asks you\n    1  notes  Keep the old name? (l3 agent reply 1 \"…\")"));
+    assert!(home.run("en", &["agent"]).stdout.contains("Asks you\n    1  notes  Keep the old name? (root3 agent reply 1 \"…\")"));
     assert_eq!(home.run("en", &["agent", "reply", "1", "Yes, keep it"]).code, 0);
     let k = until(&home, 1, "ready");
     assert_eq!(k["said"], "it is the loop", "{k}");
@@ -255,10 +255,10 @@ fn an_issue_written_is_offered_and_handed_over_it_says_what_it_needs() {
     assert!(home.run("en", &["issue", "new", "notes", "Fix：the draft is lost"]).stdout.starts_with("Wrote notes#2"));
     let k = until(&home, 1, "offered");
     assert_eq!((k["deed"].as_str(), k["unit"].as_str(), k["words"].as_str(), k["issue"].as_str()), (Some("take"), Some("goal"), Some("the draft is lost"), Some("issue/002.md")), "{k}");
-    assert!(home.run("en", &["agent"]).stdout.contains("Claude Code can take it: the draft is lost (l3 agent take 1)"));
+    assert!(home.run("en", &["agent"]).stdout.contains("Claude Code can take it: the draft is lost (root3 agent take 1)"));
     assert_eq!(home.run("en", &["agent", "take", "1"]).code, 0);
     let k = until(&home, 1, "stopped");
-    assert_eq!((k["state"].as_str(), k["fix"].as_str()), (Some("stopped"), Some("l3 login")), "{k}");
+    assert_eq!((k["state"].as_str(), k["fix"].as_str()), (Some("stopped"), Some("root3 login")), "{k}");
 }
 
 /// A Prompt paused keeps what it holds and uses no CPU; going on, it uses it again (counted by the kernel, every
@@ -268,9 +268,9 @@ fn a_prompt_paused_uses_no_cpu_until_it_goes_on() {
     let home = Home::new("prompt-pause");
     assert!(home.root(), "this host lends no sh for a root");
     home.repo("busy", &[("README", "busy\n")]);
-    let mut l3 = start(&home, "busy", ": > up; while :; do :; done");
-    if !wrote(&home, "busy", "up", &mut l3) { return; }
-    let ns = length3_core::prompt::running::ns_of(l3.0.id()).expect("its namespace");
+    let mut root3 = start(&home, "busy", ": > up; while :; do :; done");
+    if !wrote(&home, "busy", "up", &mut root3) { return; }
+    let ns = length3_core::prompt::running::ns_of(root3.0.id()).expect("its namespace");
     let cpu = || length3_core::prompt::running::cpu_ms(ns);
     let spun = cpu();
     std::thread::sleep(Duration::from_millis(300));

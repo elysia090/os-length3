@@ -1,4 +1,4 @@
-//! `l3 app`: the desktop app opened from the command line. The help leads
+//! `root3 app`: the desktop app opened from the command line. The help leads
 //! to it; the one open is brought forward and never a second started; a
 //! device without it is told where to get it (exit 4); a start that fails
 //! or never answers is never said as open; closing closes only the app.
@@ -13,14 +13,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// l3 with `args` off a terminal, `env` over this home's, PATH holding nothing (no app is on it).
+/// root3 with `args` off a terminal, `env` over this home's, PATH holding nothing (no app is on it).
 fn run(home: &Home, args: &[&str], env: &[(&str, &str)]) -> Ran {
     let empty = home.path("empty-bin");
     std::fs::create_dir_all(&empty).unwrap();
     let mut c = home.command("en", args);
     c.env("PATH", &empty).stdin(std::process::Stdio::null());
     for (k, v) in env { c.env(k, v); }
-    let out = c.output().expect("l3 runs");
+    let out = c.output().expect("root3 runs");
     Ran { code: out.status.code().unwrap_or(-1), stdout: home.shown(&out.stdout), stderr: home.shown(&out.stderr) }
 }
 
@@ -28,13 +28,13 @@ fn run(home: &Home, args: &[&str], env: &[(&str, &str)]) -> Ran {
 fn program(home: &Home, body: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let at = home.path("fake-app");
-    // The shell's own words alone: l3 runs it with a PATH that holds nothing.
+    // The shell's own words alone: root3 runs it with a PATH that holds nothing.
     std::fs::write(&at, format!("#!/bin/sh\n: > \"{}\"\n{body}\n", home.path("started").display())).unwrap();
     std::fs::set_permissions(&at, std::fs::Permissions::from_mode(0o755)).unwrap();
     at
 }
 
-/// The app open, as l3 reaches it: a socket in the app's folder answering each word as the app does, and keeping
+/// The app open, as root3 reaches it: a socket in the app's folder answering each word as the app does, and keeping
 /// the words. `close` closes it (its socket goes, and nothing answers after).
 fn open_app(data: &Path) -> Arc<Mutex<Vec<String>>> {
     let dir = length3_core::device::desktop::dir(data);
@@ -76,10 +76,10 @@ fn the_help_leads_to_the_app() {
         let runtime = help.stdout.split("\nRuntime\n").nth(1).and_then(|r| r.split("\n\n").next()).unwrap_or_default();
         assert!(runtime.lines().any(|l| l.trim_start().starts_with("app ")), "{lang}: {}", help.stdout);
         let line = help.stdout.lines().find(|l| l.starts_with("App ") || l.starts_with("アプリ ")).unwrap_or_default();
-        assert!(line.contains("l3 app ") && line.contains("l3 app close"), "{lang}: {}", help.stdout);
+        assert!(line.contains("root3 app ") && line.contains("root3 app close"), "{lang}: {}", help.stdout);
         let forms = home.run(lang, &["help", "app"]);
-        assert!(forms.stdout.lines().any(|l| l.trim_start().starts_with("l3 app ") || l.trim() == "l3 app"), "{lang}: {}", forms.stdout);
-        assert!(forms.stdout.contains("l3 app close"), "{lang}: {}", forms.stdout);
+        assert!(forms.stdout.lines().any(|l| l.trim_start().starts_with("root3 app ") || l.trim() == "root3 app"), "{lang}: {}", forms.stdout);
+        assert!(forms.stdout.contains("root3 app close"), "{lang}: {}", forms.stdout);
         // What a person is told never has them build anything.
         for never in ["cargo", "npm", "vite"] { assert!(!help.stdout.contains(never) && !forms.stdout.contains(never), "{lang}: {never}"); }
     }

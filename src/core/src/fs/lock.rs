@@ -1,4 +1,4 @@
-//! One at a time, across the app and l3: a Prompt recording what it holds (prompt/running.rs), the root made current
+//! One at a time, across the app and root3: a Prompt recording what it holds (prompt/running.rs), the root made current
 //! (root/), and a thing looked at again and let go (storage's `free`). What a Prompt took, or the root made current,
 //! before the look is seen by it; after, it finds the thing there, or not at all, never going.
 

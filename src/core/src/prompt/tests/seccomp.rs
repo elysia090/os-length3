@@ -122,7 +122,7 @@ fn ioctl(fd: i32, cmd: u64, arg: *const libc::c_void) -> i64 {
 
 #[test]
 fn nothing_in_a_prompt_types_into_the_terminal_it_was_started_from() {
-    // l3 prompt at a terminal hands the Prompt that terminal, which is its session's own: TIOCSTI on it puts
+    // root3 prompt at a terminal hands the Prompt that terminal, which is its session's own: TIOCSTI on it puts
     // keys in its input as if typed, read by the person's shell once the Prompt ends (a way out of the
     // sandbox, as bubblewrap's CVE-2017-5226), and TIOCLINUX pastes on a console. Both are refused, by their
     // number in the low half of the argument as the kernel reads it (an `unsigned int`), whatever is above.

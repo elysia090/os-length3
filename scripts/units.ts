@@ -1,7 +1,7 @@
 // The units os-length3 is made of, each one responsibility: the files it holds and the units it may take from. They
 // are peeled from the outside in, in the order a person changes them most easily; what is left inside is ricebox's,
 // the smallest UNIX a browser runs. Every byte is running (ricebox), at rest (muk) or on its way (funk). A face (the
-// app's pages and window, l3's words) holds no judgement of its own and takes from any unit.
+// app's pages and window, root3's words) holds no judgement of its own and takes from any unit.
 //
 //   node scripts/units.ts        what each file is, and every import from one unit to another the table does not allow
 //
@@ -54,7 +54,7 @@ export const UNITS: Unit[] = [
   {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
   {name: 'app', says: 'a face: the pages, the window and what the core says to them; no judgement of its own',
     holds: ['src/app', 'src/desktop', 'src/core', 'src/boot.ts', 'src/shared', 'index.html', 'vite.config.ts'], takes: ['*']},
-  {name: 'l3', says: "a face: l3's words, read against its one table, and what it prints; no judgement of its own",
+  {name: 'root3', says: "a face: root3's words, read against its one table, and what it prints; no judgement of its own",
     holds: ['src/cli'], takes: ['*']},
 ];
 

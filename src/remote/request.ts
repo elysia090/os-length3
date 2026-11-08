@@ -117,7 +117,7 @@ export const lock = (tx: Db, key: string) => tx.execute(sql`select pg_advisory_x
 
 /**
  * A moment as whole milliseconds since the epoch, as clients read them. Postgres keeps microseconds:
- * unfloored, a moment made by now() reads as 1792307357528.123, which core and l3 refuse (a u64).
+ * unfloored, a moment made by now() reads as 1792307357528.123, which core and root3 refuse (a u64).
  */
 export const ms = (moment: SQL) => sql<number>`floor(extract(epoch from ${moment}) * 1000)::float8`;
 

@@ -18,7 +18,7 @@ pub fn all_freeable(s: &Space) -> Vec<String> {
 /// Everything this OS holds under `data` (repos in `repos`), largest first: each folder's size as last measured
 /// in this process (fs/kept.rs), or with `fresh` measured now.
 /// `open`: repos a Prompt the host knows of has open now (a browser's own);
-/// every Prompt on a root, the app's and l3's, is read from its record here.
+/// every Prompt on a root, the app's and root3's, is read from its record here.
 pub fn space(data: &Path, repos_dir: &Path, open: &[String], fresh: bool) -> Space {
     let (host_total, host_free, host) = host(data);
     let mut items = Vec::new();
@@ -157,7 +157,7 @@ fn leftover_item(l: Leftover) -> Item {
 }
 
 fn root_item(row: SystemUsage, in_use: &InUse) -> Item {
-    // The current one stays whether or not a Prompt runs now (the l3 every Prompt starts on); one a Prompt
+    // The current one stays whether or not a Prompt runs now (the root3 every Prompt starts on); one a Prompt
     // runs on stays while it does, current or not, so making another current takes nothing from under it.
     let (room, why) = match (row.held, in_use.root(&row.sha256)) {
         (Held::Current, _) => (Room::Keep, crate::tr!("The root Prompts run on", "Prompt が動く root です")),
@@ -239,7 +239,7 @@ fn preparing_why() -> String {
 pub(super) struct InUse {
     repos: Vec<(String, bool)>,
     roots: Vec<(String, bool)>,
-    /// A Prompt whose record does not say its root (an older l3's): any root may be the one, so all stay.
+    /// A Prompt whose record does not say its root (an older root3's): any root may be the one, so all stay.
     unsaid: bool,
 }
 

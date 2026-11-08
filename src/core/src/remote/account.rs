@@ -190,7 +190,7 @@ fn ask_page(base: &str, ask: &str, repo: Option<&str>) -> Result<String> {
 /// What a session is, from its user agent, in the app's words.
 pub fn device_word(ua: Option<&str>) -> String {
     let u = ua.unwrap_or_default();
-    if u.starts_with("l3") || u.to_ascii_lowercase().contains("ureq") { return crate::tr!("l3 / App", "l3 / アプリ"); }
+    if u.starts_with("root3") || u.starts_with("l3") || u.to_ascii_lowercase().contains("ureq") { return crate::tr!("root3 / App", "root3 / アプリ"); }
     let has = |s: &str| u.contains(s);
     let os = if has("iPhone") || has("iPad") { "iOS" } else if has("Android") { "Android" } else if has("Mac OS X") { "macOS" } else if has("Windows") { "Windows" } else if has("Linux") { "Linux" } else { "" };
     let browser = if has("Edg/") { "Edge" } else if has("Chrome/") { "Chrome" } else if has("Firefox/") { "Firefox" } else if has("Safari/") { "Safari" } else { "" };

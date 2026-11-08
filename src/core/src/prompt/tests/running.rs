@@ -29,7 +29,7 @@ fn a_running_prompt_is_listed_while_its_process_runs_and_stopped_with_it() {
     let mine = record(&data, "here", false, &root).unwrap();
     let mut child = std::process::Command::new("cat").stdin(std::process::Stdio::piped()).spawn().unwrap();
     let theirs = record_as(&data, child.id(), "there", true, &root).unwrap();
-    // A record left by a process that is gone (an older l3's, which said no root), and one whose pid another process has now.
+    // A record left by a process that is gone (an older root3's, which said no root), and one whose pid another process has now.
     fs::write(records(&data).join("4194304.json"), r#"{"repo":"gone","pid":4194304,"network":false,"started":1,"startTicks":1}"#).unwrap();
     let reused = Running { repo: "reused".into(), pid: std::process::id(), network: false, root: None, preparing: false, started: 2, start_ticks: start_ticks(std::process::id()).unwrap() + 1 };
     fs::write(records(&data).join("reused.json"), serde_json::to_vec(&reused).unwrap()).unwrap();
@@ -52,7 +52,7 @@ fn a_record_being_written_is_never_taken_for_one_whose_prompt_is_gone() {
     let data = crate::fs::testing::dir("length3-prompts-race");
     let _ = fs::remove_dir_all(&data);
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    // Another l3 (or the app) looking at what runs, all the while.
+    // Another root3 (or the app) looking at what runs, all the while.
     let looking = {
         let (data, stop) = (data.clone(), stop.clone());
         std::thread::spawn(move || while !stop.load(std::sync::atomic::Ordering::Relaxed) { all(&data); })
@@ -138,7 +138,7 @@ fn a_prompt_being_prepared_is_measured_in_its_own_namespace() {
 #[test]
 fn a_process_whose_name_holds_a_parenthesis_and_spaces_is_read_rightly() {
     // A program named as if its name ended early and said it was a zombie: the state is read after the last `)`.
-    let dir = crate::fs::testing::dir("l3-running-name");
+    let dir = crate::fs::testing::dir("root3-running-name");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let Ok(sleep) = std::fs::canonicalize("/bin/sleep") else { return };

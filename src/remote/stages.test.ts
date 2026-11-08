@@ -44,7 +44,7 @@ test('SSH: the Worker before keeps working through the expand step; no address i
   // The Worker after it writes neither.
   await pg.exec(`delete from ssh; insert into ssh (session_id, user_id, scope) values ('s', 'u', 'network')`);
   await assert.rejects(pg.exec(`update ssh set scope = 'everyone'`));
-  // The contract step, once the new Worker answers: the columns, and whatever an old l3 sent meanwhile, are gone.
+  // The contract step, once the new Worker answers: the columns, and whatever an old root3 sent meanwhile, are gone.
   await migrate(db, {migrationsFolder: MIGRATIONS});
   const columns = (await pg.query<{column_name: string}>(`select column_name from information_schema.columns where table_name = 'ssh' order by ordinal_position`)).rows.map((r) => r.column_name);
   assert.deepEqual(columns, ['session_id', 'user_id', 'since', 'seen_at', 'scope']);
