@@ -105,6 +105,9 @@ const fn l_u(k: u32) -> u32 { 32 + k }
 const fn l_x(n: u32) -> u32 { 34 + n }
 const fn l_v(k: u32) -> u32 { 50 + k }
 const fn l_d(k: u32) -> u32 { 52 + k }
+/// The stack pointer the function was entered with at its start (all ones when it was entered at another block):
+/// an indirect jump that leaves rsp above it goes to code of a frame further out (a longjmp), handed up to it.
+const L_SP0: u32 = 54;
 
 const RSP: u32 = 4;
 const RAX: u32 = 0;
@@ -798,12 +801,13 @@ impl<'p> Fx<'p> {
         }
     }
 
-    /// After a call returned `next address` in l_t(0): continue at `ret`
-    /// if that is where the callee returned, else propagate upward.
+    /// After a call: on at its return address, or, handed another (a longjmp out of the callee, handed up by each
+    /// frame it left, in l_t(0)), to the function's resume (lower_function): on there in this frame when it is this
+    /// function's own, else up to the caller.
     fn after_call(&mut self, ret: u64, next: Option<u64>) {
         self.get(l_t(0)); self.c64(ret as i64); self.e(W::I64Ne);
         self.e(W::If(BlockType::Empty));
-        self.get(l_t(0)); self.e(W::Return);
+        self.e(W::Br(self.depth + 2));
         self.e(W::End);
         self.load();
         self.set_flags(Flags::Held);
@@ -2381,10 +2385,17 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, depth: 0, program, function, report, handed, backward: false, at: 0 };
 
     // Everything the prologue depends on is known, so the function is made in order.
+    // Only where it is read: past a call (the resume) or an indirect jump; a leaf pays nothing for it.
+    if function.blocks.iter().any(|b| matches!(b.exit, Exit::Call { .. } | Exit::IndirectCall { .. } | Exit::IndirectJump)) {
+        fx.e(W::GlobalGet(RSP)); fx.c64(-1); fx.get(L_ENTRY); fx.e(W::I32Eqz); fx.e(W::Select); fx.set(L_SP0);
+    }
+    // Entered at L_ENTRY: from outside, or again from the resume below, as from outside.
+    fx.e(W::Loop(BlockType::Empty));
     fx.get(L_ENTRY); fx.set(L_BLK);
     fx.load();
     // What the entries handed flags read (almost always none).
     fx.load_flags(cases);
+    fx.e(W::Block(BlockType::Empty));
     fx.e(W::Loop(BlockType::Empty));
     for _ in 0..n { fx.e(W::Block(BlockType::Empty)); }
     fx.get(L_BLK);
@@ -2458,8 +2469,13 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
                 fx.e(W::Br(fx.depth + 1));
                 fx.e(W::End);
                 fx.save();
-                // Elsewhere, it is handed what this function's own cases read.
+                // Elsewhere, it is handed what this function's own cases read: up to the frames further out when rsp
+                // is above where this one began (a longjmp; after_call), else to the dispatcher.
                 fx.save_flags(cases);
+                fx.get(l_reg(RSP)); fx.get(L_SP0); fx.e(W::I64GtU);
+                fx.e(W::If(BlockType::Empty));
+                fx.get(l_t(0)); fx.e(W::Return);
+                fx.e(W::End);
                 fx.get(l_t(0)); fx.e(W::ReturnCall(F_DISPATCH));
             }
             Exit::Call { target, ret } => {
@@ -2506,6 +2522,24 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     fx.e(W::End);
     fx.e(W::Unreachable);
     fx.e(W::End);
+    // The resume: a call came back to an address other than its own (after_call), in l_t(0). One of this function's
+    // entries is entered again here, its registers and flags taken from their globals as from outside, so a longjmp
+    // to a frame of this function's goes on in it; anything else goes up to the caller, at once when rsp is above
+    // where this frame began (the code is a frame's further out).
+    fx.e(W::GlobalGet(RSP)); fx.get(L_SP0); fx.e(W::I64GtU);
+    fx.e(W::If(BlockType::Empty));
+    fx.get(l_t(0)); fx.e(W::Return);
+    fx.e(W::End);
+    fx.get(l_t(0)); fx.e(W::Call(F_RESOLVE)); fx.set(l_t(1));
+    fx.get(l_t(1)); fx.c64(32); fx.e(W::I64ShrU); fx.c64((base + index) as i64); fx.e(W::I64Eq);
+    fx.e(W::If(BlockType::Empty));
+    fx.get(l_t(1)); fx.e(W::I32WrapI64); fx.set(L_ENTRY);
+    fx.e(W::Br(1));
+    fx.e(W::End);
+    fx.get(l_t(0)); fx.e(W::Return);
+    fx.e(W::End);
+    fx.e(W::Unreachable);
+    fx.e(W::End);
 
     // The locals, then the code with each sync put in: only the registers it
     // must move (sync_masks). One it never touches stays in its global, where
@@ -2514,7 +2548,7 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     let (used, syncs, code) = (fx.used, fx.syncs, fx.f.into_raw_body());
     let mut f = WasmFunction::new([
         (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
-        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64),
+        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64), (1, ValType::I64),
     ]);
     let sync = |f: &mut WasmFunction, save: bool, mask: u32| {
         let mut sink = f.instructions();
