@@ -118,6 +118,11 @@ same -r X needle
 same -o -r '[$0]' needle
 same -r '${0}!' needle ctx.txt
 same -r '$$ $nothing' needle src/b.ts
+same -r '[$1]' '(needle)(\d)' ctx.txt
+same -o -r '$2-$1' '(\w+) (needle)' src/b.ts
+same -r '${n}!' '(?P<n>need)le' src/b.ts
+same -r '<$1a>' '(n)eedle' ctx.txt
+same -r '($1)' '(x)?needle' ctx.txt
 # Patterns from a file, a line each; none at all, nothing found.
 same -f pats.txt src
 same -f /dev/null ctx.txt

@@ -444,7 +444,7 @@ static struct re *pattern(void) {
   }
   const char *post = o.whole ? ")$" : o.word ? ")\\b" : ")";
   for (const char *s = post; *s; s++) *q++ = (u8)*s;
-  int flags = RE_LINES | (o.kase == 1 || (o.kase == 2 && !capital) ? RE_ICASE : 0);
+  int flags = RE_LINES | (o.kase == 1 || (o.kase == 2 && !capital) ? RE_ICASE : 0) | (o.replace ? RE_CAPTURE : 0);
   struct re *r = re_compile(p, (u32)(q - p), flags);
   if (!r) usage("regex parse error: ", re_error);
   return r;
@@ -778,8 +778,27 @@ static void separate(u64 lnum) {
   last_ctx_file = 0;
 }
 
-/* -r's replacement for the match t[ms..me): $0 or ${0} the match, $$ a $, a name of a group not there nothing (the
- * groups past the whole are captures.c's), as Rust's regex crate expands it. */
+/* -r's replacement for the match t[ms..me): $N or ${N} group N's text (0 the match), $name or ${name} a named group's,
+ * $$ a $; a group not there, or that took no part, nothing; as Rust's regex crate expands it. A $name takes all the
+ * letters, digits and _ after it ($1a is the group named 1a). */
+static struct re *rx;
+static u64 text_n, cap[256], cap_at = ~0ull; /* the groups of the match at cap_at, found once for all its $s */
+static void group(const u8 *t, u64 ms, u64 me, const char *nm, u32 len) {
+  u32 k = 0, digits = 1;
+  for (u32 i = 0; i < len; i++) digits &= nm[i] >= '0' && nm[i] <= '9';
+  if (digits) for (u32 i = 0; i < len && k < 1000; i++) k = k * 10 + (u32)(nm[i] - '0');
+  else {
+    for (k = 1; k <= rx->groups && k < 128; k++) if (rx->gnamen[k] == len && !memcmp(rx->gname[k], nm, len)) break;
+    if (k > rx->groups || k >= 128) return;
+  }
+  if (!k) { put(t + ms, me - ms); return; }
+  if (k > rx->groups || k >= 128) return;
+  if (cap_at != ms) {
+    cap_at = ms;
+    if (!re_captures(rx, t, text_n, ms, cap)) for (u32 i = 0; i < 256; i++) cap[i] = ~0ull;
+  }
+  if (cap[2 * k] != ~0ull && cap[2 * k + 1] != ~0ull) put(t + cap[2 * k], cap[2 * k + 1] - cap[2 * k]);
+}
 static void replaced(const u8 *t, u64 ms, u64 me) {
   const char *r = o.replace;
   for (const char *p = r;;) {
@@ -793,7 +812,7 @@ static void replaced(const u8 *t, u64 ms, u64 me) {
     if (braced) { for (e = ++nm; *e && *e != '}'; e++) {} }
     else for (; (*e >= '0' && *e <= '9') || (*e >= 'a' && *e <= 'z') || (*e >= 'A' && *e <= 'Z') || *e == '_'; e++) {}
     if (e == nm || (braced && !*e)) { put("$", 1); p = d + 1; continue; } /* (a $ before nothing that names: itself) */
-    if (e - nm == 1 && *nm == '0') put(t + ms, me - ms);
+    group(t, ms, me, nm, (u32)(e - nm));
     p = braced ? e + 1 : e;
   }
 }
@@ -891,6 +910,7 @@ static u64 after_lines(const u8 *t, u64 n, u64 c, u64 to, u64 num, u32 *left) {
 
 /* t[0..n) searched; `named`: a file named, not one the walk came to. Whether a line was selected. */
 static int search_text(const u8 *t, u64 n, int named) {
+  text_n = n, cap_at = ~0ull;
   u64 nul = o.text ? n : first_nul(t, n);
   heading_said = 0, last_printed = 0;
   grep_text(&g, t, n);
@@ -1138,7 +1158,7 @@ static int main_(int argc, char **argv, char **envp) {
       o.filename = !sys4(SYS_newfstatat, AT_FDCWD, (i64)o.path[i], (i64)&st, 0) && IS_DIR(st.mode);
   }
   if (!o.files) {
-    struct re *r = pattern();
+    struct re *r = rx = pattern();
     spans = o.only || o.vimgrep || o.column || o.colour || o.count_matches || o.max_columns || o.replace;
     re_classes(r);
     if (spans && !r->only_lit) re_classes(re_reverse(r));

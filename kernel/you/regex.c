@@ -5,6 +5,8 @@
  * Text is UTF-8, and Unicode's as the crate's is: . and a negated class take a whole character; \w, \d, \s and \b are
  * Unicode's; case aside is Unicode's simple folding (k is K and K, the Kelvin sign) — the tables, unicode.h, made from
  * ripgrep's own answers. Not here: \p{…}, back-references and look-around (the last two not in the crate either).
+ * Groups are numbered by their ( from the left, and named ((?P<name>…), (?<name>…)): where asked (RE_CAPTURE), where
+ * each begins and ends in a match is found by re_captures, as -r's $1 and $name want it.
  *
  * Compiled to a Thompson automaton over bytes (a class's characters as a trie of their UTF-8 bytes, like branches made
  * one), run three ways: as a DFA made as it runs (dfa.c), which says which lines hold a match, and where one ends;
@@ -14,11 +16,11 @@
  */
 #include "unicode.h"
 
-enum { RE_ICASE = 1, RE_MULTILINE = 2, RE_LINES = 4 };
+enum { RE_ICASE = 1, RE_MULTILINE = 2, RE_LINES = 4, RE_CAPTURE = 8 };
 
 /* A state: one byte of a set (SET), a choice of two (SPLIT, `out` first), a jump (JUMP), an assertion (ASSERT),
- * or the match (MATCH). */
-enum { S_SET, S_SPLIT, S_JUMP, S_ASSERT, S_MATCH };
+ * the match (MATCH), or where a group begins or ends (SAVE: slot `a`, 2 a group; a jump to all but re_captures). */
+enum { S_SET, S_SPLIT, S_JUMP, S_ASSERT, S_MATCH, S_SAVE };
 enum { A_BOL, A_EOL, A_BOT, A_EOT, A_WORD, A_NOTWORD };
 struct rstate { u8 op, a; u16 set; u32 out, out1; };
 /* A fragment as it is built: its first state and the list of its dangling exits (each an out to patch, threaded
@@ -47,12 +49,16 @@ struct re {
   u32 nfirst;
   u8 first[4][4][2], nrange[4];
   struct re *rev; /* backwards (re_reverse), made when first asked for */
+  /* Its groups (RE_CAPTURE): how many, and each one's name (gname[k][0..gnamen[k]), none: 0) by its number. */
+  u32 groups;
+  const u8 *gname[128];
+  u32 gnamen[128];
 };
 
 static const char *re_error;
 static const u8 *rp, *rend;
 static struct re *R;
-static int icase, multiline, lines;
+static int icase, multiline, lines, capture;
 
 static u32 state(u8 op, u8 a, u16 set, u32 out, u32 out1) {
   if (R->n == R->cap) {
@@ -536,7 +542,18 @@ static struct frag atom(int depth) {
   if (c == '(') {
     rp++;
     int save = icase, save_m = multiline;
-    if (more() && *rp == '?') {
+    const u8 *name = 0;
+    u32 namen = 0;
+    int captures = 1;
+    if (more() && *rp == '?' && rp + 1 < rend && (rp[1] == '<' || (rp[1] == 'P' && rp + 2 < rend && rp[2] == '<'))) {
+      rp += rp[1] == 'P' ? 3 : 2; /* (?P<name>…) or (?<name>…): a group with a name */
+      name = rp;
+      while (more() && *rp != '>') rp++;
+      namen = (u32)(rp - name);
+      if (!more() || !namen) { bad("a group's name not closed"); return NONE; }
+      rp++;
+    } else if (more() && *rp == '?') {
+      captures = 0;
       rp++;
       int on = 1, group = 0;
       while (more() && *rp != ')' && *rp != ':') {
@@ -553,11 +570,15 @@ static struct frag atom(int depth) {
         return NONE;
       }
     }
+    /* Its number, from the left by its (, before those inside it. */
+    u32 k = captures ? ++R->groups : 0;
+    if (k && k < 128) R->gname[k] = name, R->gnamen[k] = namen;
     struct frag f = alternation(depth + 1);
     if (!more() || *rp != ')') bad("a ( not closed");
     else rp++;
     icase = save, multiline = save_m;
-    return f;
+    if (!capture || !k || k > 127) return f;
+    return cat(cat(one(S_SAVE, (u8)(2 * k), 0), f), one(S_SAVE, (u8)(2 * k + 1), 0));
   }
   rp++;
   switch (c) {
@@ -599,12 +620,17 @@ static u32 number(void) {
 /* The atom at `a0` again, as it was first read (a fresh copy of its states, for a counted repetition). */
 static const u8 *atom_at;
 static int atom_icase, atom_multiline;
+static u32 atom_groups;
 static struct frag atom_again(int depth) {
-  const u8 *save = rp;
-  int ic = icase, ml = multiline;
-  rp = atom_at, icase = atom_icase, multiline = atom_multiline;
+  const u8 *save = rp, *at = atom_at;
+  int ic = icase, ml = multiline, aic = atom_icase, aml = atom_multiline;
+  u32 g = R->groups, ag = atom_groups;
+  /* Its groups numbered as they were the first time; and what a repetition inside it sets here, put back after (an
+   * atom repeated holding one repeated: ((a){2}){3}). */
+  rp = atom_at, icase = atom_icase, multiline = atom_multiline, R->groups = atom_groups;
   struct frag f = atom(depth);
-  rp = save, icase = ic, multiline = ml;
+  rp = save, icase = ic, multiline = ml, R->groups = g;
+  atom_at = at, atom_icase = aic, atom_multiline = aml, atom_groups = ag;
   return f;
 }
 
@@ -636,6 +662,7 @@ static struct frag concatenation(int depth) {
   while (more() && *rp != '|' && *rp != ')' && !re_error) {
     const u8 *a0 = rp;
     int ic = icase, ml = multiline;
+    u32 g0 = R->groups;
     struct frag a = atom(depth);
     while (more() && !re_error && (*rp == '*' || *rp == '+' || *rp == '?' || *rp == '{')) {
       u8 q = *rp++;
@@ -651,7 +678,7 @@ static struct frag concatenation(int depth) {
       }
       int lazy = more() && *rp == '?';
       if (lazy) rp++;
-      atom_at = a0, atom_icase = ic, atom_multiline = ml;
+      atom_at = a0, atom_icase = ic, atom_multiline = ml, atom_groups = g0;
       a = repeat(a, lo, hi, lazy, depth);
       break; /* one quantifier an atom: another after it is a repetition of nothing, as in Rust's crate */
     }
@@ -858,7 +885,7 @@ static struct re *re_compile(const u8 *pat, u32 n, int flags) {
   r->cap = 64, r->st = (struct rstate *)grab(sizeof *r->st * 64);
   r->setcap = 16, r->sets = (u64 *)grab(32 * 16);
   R = r, re_error = 0, rp = pat, rend = pat + n, icase = flags & RE_ICASE, multiline = flags & RE_MULTILINE;
-  lines = flags & RE_LINES;
+  lines = flags & RE_LINES, capture = flags & RE_CAPTURE;
   struct frag f = alternation(0);
   if (more() && !re_error) bad("a ) not opened");
   if (re_error) return 0;
@@ -1099,7 +1126,7 @@ static void pk_add(struct pike *pk, struct re *r, int l, u32 s0, u64 from, const
     pk->dense[l][pk->n[l]] = s;
     pk->from[l][pk->n[l]++] = from;
     struct rstate *st = &r->st[s];
-    if (st->op == S_JUMP) pk->stack[top++] = st->out;
+    if (st->op == S_JUMP || st->op == S_SAVE) pk->stack[top++] = st->out;
     else if (st->op == S_SPLIT) pk->stack[top++] = st->out1, pk->stack[top++] = st->out;
     else if (st->op == S_ASSERT && holds(st->a, t, n, i)) pk->stack[top++] = st->out;
   }
@@ -1129,6 +1156,63 @@ static int re_run(struct pike *pk, struct re *r, const u8 *t, u64 n, u64 from, u
       struct rstate *st = &r->st[pk->dense[cur][k]];
       if (st->op == S_MATCH) { *ms = pk->from[cur][k], *me = i, found = 1; break; }
       if (st->op == S_SET && i < n && set_has(r->sets + 4 * st->set, t[i])) pk_add(pk, r, nx, st->out, pk->from[cur][k], t, n, i + 1);
+    }
+    if (i >= n) break;
+    cur = nx;
+  }
+  return found;
+}
+
+/* ---- The groups of a match (RE_CAPTURE): where each begins and ends. A Pike machine whose threads each carry their
+ * own (cap[2k], cap[2k+1]: group k's; 0 the whole), begun only at the match's start: the thread the leftmost-first
+ * order ranks first gives them, as Rust's crate gives them. */
+struct caps { u32 *dense[2], *sparse[2], n[2], cap, ncap; u64 *at[2]; };
+static void cap_add(struct caps *c, struct re *r, int l, u32 s, u64 *cap, const u8 *t, u64 n, u64 i) {
+  u32 k = c->sparse[l][s];
+  if (k < c->n[l] && c->dense[l][k] == s) return;
+  k = c->n[l]++;
+  c->sparse[l][s] = k, c->dense[l][k] = s;
+  struct rstate *st = &r->st[s];
+  switch (st->op) {
+    case S_JUMP: cap_add(c, r, l, st->out, cap, t, n, i); return;
+    case S_SPLIT: cap_add(c, r, l, st->out, cap, t, n, i); cap_add(c, r, l, st->out1, cap, t, n, i); return;
+    case S_ASSERT: if (holds(st->a, t, n, i)) cap_add(c, r, l, st->out, cap, t, n, i); return;
+    case S_SAVE: {
+      u64 was = cap[st->a];
+      cap[st->a] = i;
+      cap_add(c, r, l, st->out, cap, t, n, i);
+      cap[st->a] = was;
+      return;
+    }
+    default: memcpy(c->at[l] + (u64)k * c->ncap, cap, 8 * (u64)c->ncap); /* a byte's state, or the match */
+  }
+}
+/* The groups of the leftmost-first match that begins at `ms` in t[0..n): 1 and cap (2 a group, ~0 where a group took
+ * no part), or 0 for none there. */
+static int re_captures(struct re *r, const u8 *t, u64 n, u64 ms, u64 *cap) {
+  static struct caps c;
+  u32 ncap = 2 * (r->groups < 127 ? r->groups + 1 : 128);
+  if (c.cap < r->n || c.ncap < ncap) {
+    c.cap = r->n, c.ncap = ncap;
+    for (int l = 0; l < 2; l++) {
+      c.dense[l] = (u32 *)grab(4 * (u64)c.cap), c.sparse[l] = (u32 *)grab(4 * (u64)c.cap);
+      c.at[l] = (u64 *)grab(8 * (u64)c.cap * ncap);
+    }
+  }
+  c.ncap = ncap;
+  u64 start[256];
+  for (u32 k = 0; k < ncap; k++) start[k] = ~0ull;
+  int cur = 0, found = 0;
+  c.n[0] = 0;
+  cap_add(&c, r, 0, r->start, start, t, n, ms);
+  for (u64 i = ms; c.n[cur]; i++) {
+    int nx = cur ^ 1;
+    c.n[nx] = 0;
+    for (u32 k = 0; k < c.n[cur]; k++) {
+      struct rstate *st = &r->st[c.dense[cur][k]];
+      u64 *th = c.at[cur] + (u64)k * ncap;
+      if (st->op == S_MATCH) { memcpy(cap, th, 8 * (u64)ncap); cap[0] = ms, cap[1] = i, found = 1; break; }
+      if (st->op == S_SET && i < n && set_has(r->sets + 4 * st->set, t[i])) cap_add(&c, r, nx, st->out, th, t, n, i + 1);
     }
     if (i >= n) break;
     cur = nx;

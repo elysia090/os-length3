@@ -121,7 +121,7 @@ static u32 dfa_closure(struct dfa *d, const u32 *in, u32 n, u32 flags, int next)
       d->mark[s] = g;
       struct rstate *st = &r->st[s];
       switch (st->op) {
-        case S_JUMP: d->stack[top++] = st->out; break;
+        case S_JUMP: case S_SAVE: d->stack[top++] = st->out; break;
         case S_SPLIT: d->stack[top++] = st->out1; d->stack[top++] = st->out; break;
         case S_ASSERT: {
           int ok;
