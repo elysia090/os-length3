@@ -14,7 +14,7 @@
 // one at a time.
 
 import {CH, OP, Outbox, PARK, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
-import {INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
+import {CALL_SAMPLE, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import type {Saved} from '../../sods/runtime/x87.ts';
 import type {Call, Mem, Range} from './parts.ts';
@@ -131,6 +131,8 @@ export class RemoteKernel extends Kernel {
   override newTask(proc: Process): RemoteTask { return new RemoteTask(proc, this.nextPid++); }
   override ready(t: Task): void { this.go(t); }
   override go(t: Task): void { (t as RemoteTask).answer(); }
+  // Its run ends at the call: counted to here, so the wait is not (answer counts from when it goes on).
+  override block(t: Task): void { this.lap(t, performance.now()); super.block(t); }
   /**
    * A memory let go of is taken again: its threads' lock is free, as a new one would be (no thread runs on a memory let
    * go of; one ended in guest code leaves it tainted, never taken again). The same lock, so a Worker that keeps an
@@ -250,12 +252,16 @@ export class RemoteKernel extends Kernel {
     for (const t of asking) {
       if (t.dead || Atomics.load(t.i32, CH.STATE) !== 1) continue;
       Atomics.store(t.i32, CH.STATE, 3);
-      // Its time in its program since it went on (answer), up to here; the kernel's on what it asked.
-      const at = performance.now();
-      this.charge(t, at - t.since, 0);
+      // Timed, the kernel's time on it owed to the kernel's side (Kernel.lap): one call in CALL_SAMPLE, as CALL_SAMPLE
+      // calls, and each of what else a thread asks for (code reached later, its time slice's end) as itself.
+      const weight = t.i32[CH.OP] !== OP.SYSCALL ? 1 : ++this.calls % CALL_SAMPLE === 0 ? CALL_SAMPLE : 0;
+      const at = weight ? performance.now() : 0;
       this.handle(t);
-      // Answered (answer stamped when): the kernel's time on it ended there.
-      this.charge(t, 0, (t.since >= at ? t.since : performance.now()) - at);
+      if (weight || t.state !== 'running') {
+        const now = performance.now();
+        t.owed += (now - at) * weight;
+        this.lap(t, now);
+      }
     }
     return true;
   }
@@ -496,8 +502,9 @@ class RemoteTask extends Task {
   /** It goes on: its Worker starts, or hears its call is done (its value, other registers, or a new image). */
   answer(): void {
     if (this.dead) return;
+    // One answered at once runs on (its time counted on); one that waited, stopped or is new runs from now.
+    if (this.state !== 'running') this.since = performance.now();
     this.state = 'running';
-    this.since = performance.now();
     if (!this.worker) {
       this.worker = this.kernel.worker(this);
       if (!this.offer(this.worker)) this.post();

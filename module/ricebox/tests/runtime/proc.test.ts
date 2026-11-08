@@ -44,12 +44,13 @@ test('the bytes through a pipe are the bytes written (checksum)', {skip: !have},
   assert.equal(r.out, 'same\n');
 });
 
+// ash's times: the shell's user and system time, then its waited-for children's, each as 0m0.12s.
+const secs = (line: string): number[] => [...line.matchAll(/(\d+)m([\d.]+)s/g)].map(([, m, s]) => Number(m) * 60 + Number(s));
+
 test('time on the processor is counted as it is had: the shell\'s loop in its stat, a child\'s in times once waited for, a sleep not at all', {skip: !have}, async () => {
   const loop = 'i=0; while [ $i -lt 20000 ]; do i=$((i+1)); done';
   const r = await run(`${loop}; set -- $(cat /proc/$$/stat); echo "utime \${14}"; times; sh -c '${loop}'; times; sleep 1; times`);
   const [own, ...times] = r.out.trim().split('\n');
-  // ash's times: the shell's user and system time, then its waited-for children's, each as 0m0.12s.
-  const secs = (line: string): number[] => [...line.matchAll(/(\d+)m([\d.]+)s/g)].map(([, m, s]) => Number(m) * 60 + Number(s));
   assert.match(own, /^utime [1-9]\d*$/, 'the shell ran its loop: it had the processor');
   const [, before, , after, , slept] = times.map(secs);
   assert.equal(before[0] + before[1], 0, 'no child waited for yet');
@@ -57,6 +58,12 @@ test('time on the processor is counted as it is had: the shell\'s loop in its st
   // A second asleep is not time on the processor: the children's grew by a sleep's start and end only.
   assert.ok(slept[0] + slept[1] - after[0] - after[1] < 0.2, `sleep had the processor: ${times[3]} then ${times[5]}`);
   assert.ok(r.ms >= 1000);
+});
+
+test('the kernel\'s time on the calls is counted (one in CALL_SAMPLE timed): a child making calls and little else has most of its time there', {skip: !have}, async () => {
+  const r = await run('dd if=/dev/zero of=/dev/null bs=1 count=100000 2>/dev/null; times');
+  const [, [user, sys]] = r.out.trim().split('\n').map(secs);
+  assert.ok(sys > 0 && sys >= user, `dd's 200000 calls: user ${user} s, system ${sys} s`);
 });
 
 test('a trap runs its handler and the shell goes on; TERM, INT and USR1', {skip: !have}, async () => {

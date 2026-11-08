@@ -446,6 +446,7 @@ export const PROC_CALLS: Calls = {
   97(resource, limit) { return rlimit(this, this, resource, 0n, limit); }, // getrlimit
   98(who, usage) { // getrusage: itself (its threads, ended and running), the children it waited for, or this thread
     const w = Number(BigInt.asIntN(32, who));
+    this.kernel.lap(this.task, performance.now());
     const c = w === 0 ? cpuOf(this) : w === -1 ? this.waited : w === 1 ? this.task.cpu : fail(E.INVAL);
     putUsage(this, N(usage), c, w === -1 ? 0 : Math.ceil((this.memory?.buffer.byteLength ?? 0) / 1024));
     return 0;
@@ -462,6 +463,7 @@ export const PROC_CALLS: Calls = {
   },
   100(buf) { // times: its time on the processor and its waited-for children's, in clock ticks (100 a second)
     if (N(buf)) {
+      this.kernel.lap(this.task, performance.now());
       const c = cpuOf(this), w = this.waited, at = N(buf);
       [c.user, c.sys, w.user, w.sys].forEach((ms, k) => this.view.setBigInt64(at + 8 * k, BigInt(Math.floor(ms / 10)), true));
     }
@@ -551,6 +553,7 @@ export const PROC_CALLS: Calls = {
   218(tidptr) { this.task.clearTid = N(tidptr); return this.task.tid; }, // set_tid_address
   228(clock, ts) { // clock_gettime: a CPU-time clock is the kernel's (clock.ts cpuClock)
     const id = Number(BigInt.asIntN(32, clock)), at = CLOCK.read(id);
+    if (at === null) this.kernel.lap(this.task, performance.now());
     const ns = at === null ? cpuClock(this, id) : at;
     if (ns === undefined) return fail(E.INVAL);
     writeTime(this, N(ts), ns);

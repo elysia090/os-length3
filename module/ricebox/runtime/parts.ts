@@ -279,7 +279,7 @@ export interface Thread {
   redirected: boolean;
   state: 'new' | 'ready' | 'running' | 'blocked' | 'stopped' | 'dead';
   dead: boolean;
-  /** Its time on the processor so far. */
+  /** Its time on the processor so far (to `since`: Kern.lap). */
   cpu: Cpu;
   /** Its x87 registers' handle in the kernel's x87 (x87.ts); 0 where it has none here. */
   x87: number;
@@ -335,6 +335,8 @@ export interface Kern {
   memoryBytes(): number;
   say(fd: number, bytes: Uint8Array): void;
   go(t: Thread): void;
+  /** `t`'s time up to `now` (performance.now() ms) counted to it (process.ts Kernel.lap). */
+  lap(t: Thread, now: number): void;
   lookIn(p: Proc): void;
   addTimer(at: number, fire: () => void): Timer;
   removeTimer(timer: Timer): void;

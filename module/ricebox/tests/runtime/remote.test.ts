@@ -58,6 +58,13 @@ test('apart: time on the processor is counted in each Worker as it runs, and a s
   assert.ok(slept[0] + slept[1] - after[0] - after[1] < 0.2, `sleep had the processor: ${times[1]} then ${times[3]}`);
 });
 
+test('apart: the kernel\'s time on the calls is counted (one in CALL_SAMPLE timed), a good part of a child\'s that makes calls and little else', {skip: !have}, async () => {
+  const r = await shell('dd if=/dev/zero of=/dev/null bs=1 count=50000 2>/dev/null; times');
+  const [user, sys] = [...r.out.trim().split('\n')[1].matchAll(/(\d+)m([\d.]+)s/g)].map(([, m, s]) => Number(m) * 60 + Number(s));
+  // Its own share holds the round trips to the kernel too (its Worker waits on them).
+  assert.ok(sys > 0 && sys >= user / 4, `dd's 100000 calls: user ${user} s, system ${sys} s`);
+});
+
 test('apart: a pipe streams between two Workers, every byte', {skip: !have}, async () => {
   const r = await shell('dd if=/dev/zero bs=64k count=200 2>/dev/null | wc -c');
   assert.equal(r.out.trim(), String(200 * 65536));

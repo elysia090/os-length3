@@ -79,8 +79,16 @@ const CLOCK = clocks();
 const CALLS: Calls = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS};
 const enc = new TextEncoder();
 
-/** How long a thread runs before another that can run gets a turn (checked at the calls in YIELDS). */
+/** How long a thread runs before another that can run gets a turn (checked at the calls in YIELDS that are timed). */
 const SLICE = 10;
+/**
+ * One call in CALL_SAMPLE is timed: a clock read costs as much as a third of a call that does little, and each call
+ * had two. The kernel's time on the calls is then a sample, as Linux's ticks sample it: what a timed call took, as
+ * CALL_SAMPLE calls, is owed to the kernel's side and paid from the thread's time as it is counted (Kernel.lap). What
+ * the thread had on the processor in all stays exact, the share each side had of it near (Linux's cputime_adjust
+ * scales the ticks to that exact sum the same way); a browser's clock, coarse, read each call no closer.
+ */
+export const CALL_SAMPLE = 8;
 /** Calls a thread may be made to wait at for another's turn: ones that may wait anyway, so nothing a program relies on across them (its flags) is held. */
 const YIELDS = new Set([0, 1, 7, 17, 18, 19, 20, 23, 24, 35, 61, 202, 230, 232, 247, 270, 271, 281]);
 /**
@@ -315,6 +323,8 @@ export class Kernel implements Kern {
   declare domainname?: string;
   declare loopbackTraffic?: {bytes: number; packets: number};
   declare readonly cpu: Cpu;
+  /** Calls made, so that one in CALL_SAMPLE is timed. */
+  declare calls: number;
   declare readonly x87Module: WebAssembly.Module | null;
   /**
    * vfs: the filesystem. translate(bytes) -> wasm bytes for an ELF.
@@ -358,6 +368,7 @@ export class Kernel implements Kern {
     this.shared = false; // memories are SharedArrayBuffers (remote.ts)
     this.timers = new Set(); // {at, fire}: alarms (performance.now() ms)
     this.cpu = {user: 0, sys: 0}; // all the time threads ran their programs, and the kernel made their calls (ms)
+    this.calls = 0;
     // Memories processes let go of (exec, exit), for the next to take: a new one costs its pages faulted in and the
     // old one collected; a used one costs zeroing what is given out of it (Kernel.takeMemory).
     this.spareMemories = [];
@@ -699,8 +710,7 @@ export class Kernel implements Kern {
         } catch (e) {
           if (e instanceof Preempted) {
             const now = performance.now();
-            this.charge(t, now - t.since, 0);
-            t.since = now;
+            this.lap(t, now);
             t.resumeAt = e.address;
             // What it wrote and the console gathered goes on its way at a turn, not only once every thread waits.
             this.console.flush?.(false);
@@ -737,31 +747,35 @@ export class Kernel implements Kern {
    * the call once it is done.
    */
   enter(t: Task, nr: bigint, args: bigint[], next: bigint): bigint {
-    // Its time in its program, up to here; the kernel's on the call, however it leaves.
-    const at = performance.now();
-    this.charge(t, at - t.since, 0);
+    // Timed (one in CALL_SAMPLE): when it began, so its time is owed to the kernel's side once it ends. Its thread's
+    // time is counted then, and whenever its run here ends at the call (it waits, ends, goes elsewhere).
+    const at = ++this.calls % CALL_SAMPLE === 0 ? performance.now() : 0;
+    let runsOn = false;
     try {
       t.resumeAt = next;
       const call: Call = {nr: Number(nr), args, next, state: {}};
       if (TRACE_SYSCALLS) trace(t, call);
       // Another's turn, if this one has had its time: it makes this call when it runs again.
-      if (YIELDS.has(call.nr) && (call.nr === 24 || at - t.sliceStart > SLICE) && (this.runq.length || this.dirty)) {
+      if (YIELDS.has(call.nr) && (call.nr === 24 || (at && at - t.sliceStart > SLICE)) && (this.runq.length || this.dirty)) {
         t.call = call;
         this.ready(t);
         throw new Wait();
       }
       const v = this.attempt(t, call);
       if (v === WAITS) { t.call = call; this.block(t); throw new Wait(); }
-      if (!t.dead && !t.proc.stopped && !deliverable(t)) return v;
+      if (!t.dead && !t.proc.stopped && !deliverable(t)) { runsOn = true; return v; }
       this.resumeWith(t, call, v, true);
       if (t.dead) throw new Exit(0);
       if (t.state !== 'running') throw new Wait();
       if (t.redirected) throw new Redirect();
+      runsOn = true;
       return v;
     } finally {
-      const now = performance.now();
-      this.charge(t, 0, now - at);
-      t.since = now;
+      if (at || !runsOn) {
+        const now = performance.now();
+        if (at) t.owed += (now - at) * CALL_SAMPLE;
+        this.lap(t, now);
+      }
     }
   }
 
@@ -769,6 +783,17 @@ export class Kernel implements Kern {
   get x87(): X87 {
     if (!this.x87Module) throw new Error('no x87: a kernel made without the translator\'s module runs no x87 code');
     return x87Of(this.x87Module);
+  }
+
+  /**
+   * `t`'s time from `since` to `now` is counted, and counts from `now` on: the kernel's as far as it is owed that (its
+   * timed calls, CALL_SAMPLE), its program's the rest.
+   */
+  lap(t: Task, now: number): void {
+    const ran = now - t.since, sys = Math.min(ran, t.owed);
+    t.owed -= sys;
+    this.charge(t, ran - sys, sys);
+    t.since = now;
   }
 
   /**
@@ -1678,9 +1703,13 @@ export class Task implements Thread {
   declare attached: number;
   declare sliceStart: number;
   declare ranAt: number;
-  /** Its time on the processor (Kernel.charge), and since when it is not counted yet (performance.now() ms). */
+  /**
+   * Its time on the processor (Kernel.charge), since when it is not counted yet (performance.now() ms), and how much of
+   * what is to be counted is the kernel's (Kernel.lap: its timed calls, each as CALL_SAMPLE calls).
+   */
   declare cpu: Cpu;
   declare since: number;
+  declare owed: number;
   declare bytesBuffer: ArrayBufferLike | undefined;
   declare bytesOf: Uint8Array;
   /** The backend's: it stopped (SIGSTOP), it goes on (SIGCONT). */
@@ -1704,6 +1733,7 @@ export class Task implements Thread {
     this.dead = false;
     this.cpu = {user: 0, sys: 0};
     this.since = 0;
+    this.owed = 0;
     this.trail = null;
     this.x87 = 0;
   }
