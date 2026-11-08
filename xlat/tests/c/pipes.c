@@ -1,7 +1,7 @@
 // Pipes and readiness: a producer and a consumer at once, a full pipe that
 // holds its writer, O_NONBLOCK and EAGAIN, PIPE_BUF writes landing whole,
-// SIGPIPE and EPIPE, poll, select and epoll on pipes, F_GETPIPE_SZ, and
-// background work while the parent goes on.
+// SIGPIPE and EPIPE, poll, select and epoll on pipes, F_GETPIPE_SZ, each
+// pipe a file of its own, and background work while the parent goes on.
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
@@ -12,6 +12,7 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -22,6 +23,19 @@ static long ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); re
 int main(void) {
   setvbuf(stdout, 0, _IONBF, 0);
   int p[2];
+
+  // Each pipe a file of its own, its two ends one (the same device and inode, as diff and cmp tell a file by): two
+  // pipes compared are never the same file.
+  int a[2], b[2];
+  struct stat ra, wa, rb;
+  pipe(a);
+  pipe(b);
+  fstat(a[0], &ra);
+  fstat(a[1], &wa);
+  fstat(b[0], &rb);
+  printf("a fifo: %d, its ends one file: %d, two pipes two files: %d\n", S_ISFIFO(ra.st_mode),
+         ra.st_dev == wa.st_dev && ra.st_ino == wa.st_ino, ra.st_dev != rb.st_dev || ra.st_ino != rb.st_ino);
+  close(a[0]), close(a[1]), close(b[0]), close(b[1]);
 
   // A producer and consumer making progress together: 8 MiB through a 64 KiB pipe, checked.
   pipe(p);

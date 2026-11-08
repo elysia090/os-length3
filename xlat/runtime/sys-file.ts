@@ -26,6 +26,8 @@ declare module './fs.ts' {
 /** What a stat says of: a node, or what a descriptor without one stands for (a pipe, the console, a socket). */
 interface Statted {
   mode: number; ino: number; nlink: number; uid: number; gid: number; mtime: number; rdev?: number; size?: number;
+  /** The device it is on: the root's file system (1) unless said (a pipe's is pipefs). */
+  dev?: number;
   atime?: number; atimeNs?: number; mtimeNs?: number; ctime?: number;
   readonly isFile: boolean; readonly isDir: boolean; readonly isLink: boolean;
 }
@@ -33,6 +35,8 @@ interface Statted {
 type Time = 'now' | 'omit' | [number, number];
 
 const N = (x: bigint): number => Number(BigInt.asIntN(64, x));
+/** pipefs's device, as Linux numbers it (0:12). */
+const PIPEFS = 12;
 const fail = (errno: number): never => { throw new FsError(errno); };
 const enc = new TextEncoder();
 
@@ -61,7 +65,7 @@ function writeStat(p: Proc, address: bigint, node: Statted): number {
   const v = p.view, at = N(address);
   p.bytes.fill(0, at, at + 144);
   const size = node.isFile || node.isLink ? node.size ?? 0 : node.isDir ? 4096 : 0;
-  v.setBigUint64(at, 1n, true); // dev
+  v.setBigUint64(at, BigInt(node.dev ?? 1), true);
   v.setBigUint64(at + 8, BigInt(node.ino), true);
   v.setBigUint64(at + 16, BigInt(node.nlink), true);
   v.setUint32(at + 24, node.mode, true);
@@ -128,7 +132,9 @@ function timevals(p: Proc, address: bigint): Time[] {
 function describe(p: Proc, d: Description): Statted {
   // Something to stat for a descriptor without a node.
   if (d.node) return d.node;
-  if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw') return {mode: S_IFIFO | 0o600, ino: 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+  // A pipe is an inode of pipefs as on Linux (the N of /proc/PID/fd's pipe:[N]), each pipe its own: two pipes are never one
+  // file to what compares them so (diff, cmp, cp: the same device and inode, the same file).
+  if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw') return {mode: S_IFIFO | 0o600, dev: PIPEFS, ino: d.pipe?.id ?? 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
   if (d.kind === 'socket') return net.stat(d);
   // The console: the terminal it is, /dev/pts/0 (fs.ts), so a stat of that name is the same file.
   return p.kernel.vfs.terminal as Statted | undefined ?? {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
