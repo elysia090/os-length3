@@ -426,17 +426,18 @@ static i64 escape(struct cls *k, int *named) {
     case 'v': return '\v';
     case 'a': return 7;
     case '0': return 0;
-    case 'x': {
-      u32 v = 0, n = 0, brace = more() && *rp == '{';
+    case 'x': case 'u': case 'U': {
+      /* \x7F \x{10FFFF}; \u007F \u{7F}; \U0000007F \U{7F}: two, four or eight hex digits, or any in braces. */
+      u32 v = 0, n = 0, brace = more() && *rp == '{', most = c == 'x' ? 2 : c == 'u' ? 4 : 8;
       if (brace) rp++;
-      while (more() && (brace || n < 2)) {
+      while (more() && (brace || n < most)) {
         u8 h = *rp;
         u32 d = h >= '0' && h <= '9' ? h - '0' : (h | 0x20) >= 'a' && (h | 0x20) <= 'f' ? (h | 0x20) - 'a' + 10 : 99;
         if (d == 99) break;
         v = v * 16 + d, rp++, n++;
       }
       if (brace) { if (more() && *rp == '}') rp++; else bad("\\x{ not closed"); }
-      if (!n) bad("\\x without digits");
+      if (!n || (!brace && n < most)) bad("\\x without its digits");
       if (v > 0x10ffff || (v >= 0xd800 && v <= 0xdfff)) bad("\\x of no character");
       return v;
     }
@@ -724,10 +725,11 @@ static u32 skip_class(const u8 *p, u32 n, u32 i) {
 static u32 skip_token(const u8 *p, u32 n, u32 i) {
   if (p[i] == '\\') {
     i++;
-    if (i < n && p[i] == 'x') {
+    if (i < n && (p[i] == 'x' || p[i] == 'u' || p[i] == 'U')) {
+      u32 most = p[i] == 'x' ? 2 : p[i] == 'u' ? 4 : 8;
       i++;
       if (i < n && p[i] == '{') { while (i < n && p[i] != '}') i++; return i + 1; }
-      return i + 2 > n ? n : i + 2;
+      return i + most > n ? n : i + most;
     }
     return i + 1;
   }
