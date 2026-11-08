@@ -1,8 +1,8 @@
 /*
  * A text searched as rg searches it: the lines that hold a match, in order, and each match on a line. Which way the
  * lines are found is the pattern's:
- *   - a literal and nothing more: found by the literal (lit_find: where its two rarest bytes both are, 32 or 64 places
- *     at a time), each place its line;
+ *   - a literal and nothing more: found by the literal (lit_find: where its two rarest bytes both are, 64 or 128 places
+ *     at a time, two others taken where the text has those two together often), each place its line;
  *   - one that begins with a literal: the literal's places, each asked of the DFA anchored there (dfa_at: a few bytes,
  *     not the line);
  *   - one with no literal of three bytes, whose matches all begin with bytes rare in text (re firsts: [A-Z]{3,}, \d{4},
@@ -31,6 +31,7 @@ struct grep {
   int spans;           /* the caller asks each line for its matches (grep_span): a line the literal finds is not asked
                         * of the DFA first, the first grep_span is that question (one pass over it, not two) */
   u64 passed, verified, tried;
+  struct pair pair;    /* the literal's two places it is looked for by, as this search's texts have them (lit_find) */
 };
 
 static void grep_init(struct grep *g, struct re *r) {
@@ -38,6 +39,7 @@ static void grep_init(struct grep *g, struct re *r) {
   if (!asked) asked = 1, avx2_ask();
   memset(g, 0, sizeof *g);
   g->r = r;
+  pair_init(&g->pair, r);
   /* (A literal of three or more is found faster than what a match begins with is: its first and last bytes.) */
   g->firsts = !r->only_lit && !r->lit_first && r->nfirst && r->litn < 3;
   if (!r->only_lit) g->lines = dfa_new(r, D_LINES);
@@ -118,7 +120,7 @@ static u64 grep_line(struct grep *g) {
       g->took = 0, g->at = to;
       continue;
     }
-    u64 p = g->firsts ? cls_find(r, t, n, g->at) : lit_find(t, n, g->at, r->lit, r->litn, r->icase, r->rare);
+    u64 p = g->firsts ? cls_find(r, t, n, g->at) : lit_find(t, n, g->at, r->lit, r->litn, r->icase, &g->pair);
     if (p == n) { g->at = n; break; }
     int k = 1, first = r->lit_first || g->firsts;
     /* Too many places that come to nothing (one in every 16 bytes, past the first 256): the lanes from here. */
@@ -151,7 +153,7 @@ static int grep_span(struct grep *g, u64 ls, u64 le, u64 *x, u64 *last, u64 *ms,
   for (u64 from = *x - ls; from <= n;) {
     u64 s, e;
     if (r->only_lit) {
-      s = lit_find(t, n, from, r->lit, r->litn, r->icase, r->rare);
+      s = lit_find(t, n, from, r->lit, r->litn, r->icase, &g->pair);
       if (s == n) return 0;
       e = s + r->litn;
     } else {

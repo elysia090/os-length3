@@ -26,7 +26,11 @@ trap 'rm -rf "$o"' EXIT
   -c -o "$o/$name.o" "$src"
 "${CC:-cc}" -nostdlib -static-pie -Wl,-z,relro,-z,now,-z,noexecstack,--gc-sections,--build-id=none -o "$out" "$o/$name.o"
 bad() { echo "$name: $*" >&2; exit 1; }
-objdump -d "$out" | grep -q 'call.*<__stack_chk_fail>' || bad "no stack protector"
+d=$(objdump -d "$out")
+echo "$d" | grep -q 'call.*<__stack_chk_fail>' || bad "no stack protector"
+# (A function given its own target, as target("avx2"), is compiled with the stack protector's guard read from a thread's
+# storage, -mstack-protector-guard=global forgotten: there is no such storage, the first read faults.)
+! echo "$d" | grep -q '%fs:' || bad "a read of a thread's storage (an array in a function of its own target?): $(echo "$d" | grep -B30 '%fs:' | grep '>:$' | tail -1)"
 h=$(readelf -hlrdsW "$out")
 echo "$h" | grep -q 'Type: *DYN' || bad "not position-independent"
 echo "$h" | grep -q 'There are no relocations in this file' || bad "something to relocate"

@@ -121,3 +121,4 @@ caf\u{e9}
 é
 caf\U000000E9
 \x{E9}
+performance

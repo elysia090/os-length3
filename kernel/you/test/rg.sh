@@ -192,6 +192,12 @@ same -n needle second.txt
 same -B1 -n needle early.txt
 same -A1 needle early.txt
 same -c -B1 needle early.txt
+# A literal whose two rarest bytes are often together where it is not (performance's f and m, three apart, as in from
+# and form): the pair it is looked for by chosen again by the text, what is found the same.
+awk 'BEGIN { for (i = 0; i < 20000; i++) print (i % 50 == 7 ? "the performance of it" : "from a form, the firm from forms") }' > pair.txt
+same -c performance pair.txt
+same -n -o performance pair.txt
+same -c -i PERFORMANCE pair.txt
 cd "$t/w"
 # Standard input searched when it is a pipe and no path is named.
 n=$((n + 1))
