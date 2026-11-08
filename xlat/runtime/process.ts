@@ -19,7 +19,7 @@
 //     memory shared (SharedArrayBuffer) and system calls made to this
 //     kernel through Atomics: preempted by the host, as a Linux thread is.
 
-import {CAPS, Exec, Exit, Redirect, Wait, randomBytes} from './flow.ts';
+import {CAPS, Exec, Exit, Redirect, Wait, randomBytes, utf8} from './flow.ts';
 import {zero} from './bulk.ts';
 import {Fpu} from './fpu.ts';
 import {machine} from './machine.ts';
@@ -75,7 +75,7 @@ const GUARD = 1 << 16;
 const CLOCK = clocks();
 
 const CALLS: Calls = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS};
-const dec = new TextDecoder(), enc = new TextEncoder();
+const enc = new TextEncoder();
 
 /** How long a thread runs before another that can run gets a turn (checked at the calls in YIELDS). */
 const SLICE = 10;
@@ -185,7 +185,7 @@ export class Image implements Program {
     this.segments = segments;
     this.source = source; // () => the ELF's bytes, for code reached later
     this.size = size; // bytes of wasm made for it (what its translations hold, before the engine compiles them)
-    const section = (name: string): string => dec.decode(WebAssembly.Module.customSections(module, name)[0]);
+    const section = (name: string): string => utf8(WebAssembly.Module.customSections(module, name)[0] ?? new ArrayBuffer(0));
     this.facts = JSON.parse(section('xlat.facts'));
     this.fpuOps = section('xlat.fpu').split(',');
     this.known = new Set(u64s(module, 'xlat.starts'));
@@ -1276,7 +1276,7 @@ export class Process implements Proc {
     const b = this.bytes;
     let end = address;
     while (b[end]) end++;
-    return dec.decode(b.slice(address, end));
+    return utf8(b.subarray(address, end));
   }
 
   /** NULL-terminated array of string pointers. */
@@ -1394,7 +1394,7 @@ export class Process implements Proc {
     const head = this.kernel.translated(node) || this.kernel.keptFor(node) ? null : node.read(0, 128);
     if (head && head[0] === 0x23 && head[1] === 0x21) {
       // #!interpreter [arg]
-      const line = dec.decode(head).split('\n')[0].slice(2).trim();
+      const line = utf8(head).split('\n')[0].slice(2).trim();
       const [interpreter = '', ...rest] = line.split(/\s+/);
       return this.execve(interpreter, [interpreter, ...rest.slice(0, 1), path, ...argv.slice(1)], env);
     }

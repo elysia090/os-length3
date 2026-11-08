@@ -21,6 +21,16 @@ export class Wait {}
 /** Thrown through wasm frames once a thread's registers were replaced (a signal handler, sigreturn): it goes on at resumeAt. */
 export class Redirect {}
 
+/**
+ * Bytes read as UTF-8 text, copied first where they are a view of shared memory (the guest's when its threads run
+ * apart, or a thread's channel): a browser's TextDecoder refuses such a view, where Node's takes it, so only the
+ * browser showed it (git, faulting in the web Prompt, halted the kernel as its message was read). Every text the
+ * kernel reads goes through here (tests/boundary.test.ts).
+ */
+const decoder = new TextDecoder();
+export const utf8 = (b: Uint8Array | ArrayBuffer): string =>
+  decoder.decode(b instanceof Uint8Array && typeof SharedArrayBuffer !== 'undefined' && b.buffer instanceof SharedArrayBuffer ? b.slice() : b);
+
 /** Random bytes drawn ahead (a draw costs tens of microseconds however few it gives: an exec's AT_RANDOM took one). */
 const pool = {bytes: new Uint8Array(0), at: 0};
 /** `n` random bytes (at most 65536), each given once. */

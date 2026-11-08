@@ -27,7 +27,7 @@
 import {Description, Pipe} from './fd.ts';
 import {E, FsError, SocketName, S_IFSOCK} from './fs.ts';
 import {answer, interfaceControl, traffic, type Address} from './net-view.ts';
-import {Wait} from './flow.ts';
+import {Wait, utf8} from './flow.ts';
 import type {Calls, Kern, Proc} from './parts.ts';
 import {SIG, SI, send} from './signal.ts';
 
@@ -295,7 +295,7 @@ function readAddress(p: Proc, s: Endpoint, address: bigint, length: bigint): Giv
     if (raw[0] === 0) return {abstract: [...raw.subarray(1)].join(','), bytes: raw};
     const end = raw.indexOf(0);
     const bytes = end < 0 ? raw : raw.subarray(0, end);
-    return {path: new TextDecoder().decode(bytes), bytes};
+    return {path: utf8(bytes), bytes};
   }
   if (family === AF.INET && s.family === AF.INET) {
     if (len < 16) fail(E.INVAL);

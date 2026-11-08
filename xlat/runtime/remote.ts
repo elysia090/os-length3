@@ -15,14 +15,14 @@
 
 import {CH, OP, Outbox, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
 import {INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
-import {Exec, Exit, Redirect} from './flow.ts';
+import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import type {Saved} from './fpu.ts';
 import type {Call, Mem, Range} from './parts.ts';
 import {deliverable, take} from './signal.ts';
 
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;
 const NodeWorker = isNode ? (await import('node:worker_threads')).Worker : null;
-const enc = new TextEncoder(), dec = new TextDecoder();
+const enc = new TextEncoder();
 
 /** How long the kernel waits for a running thread's next call blocking (then it waits on the event loop), and serves at most before the host gets a turn. */
 const BLOCK_MS = 4, YIELD_MS = 8;
@@ -452,7 +452,7 @@ class RemoteTask extends Task {
   }
 
   /** Text the thread left in the data area. */
-  text(): string { return dec.decode(new Uint8Array(this.channel, CH.DATA, this.i32[CH.LENGTH])); }
+  text(): string { return utf8(new Uint8Array(this.channel, CH.DATA, this.i32[CH.LENGTH])); }
 
   reply(kind: number): void {
     this.i32[CH.REPLY] = kind;

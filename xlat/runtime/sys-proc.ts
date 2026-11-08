@@ -6,7 +6,7 @@
 import {move, zero} from './bulk.ts';
 import {answerTime, clocks, cpuClock, cpuOf} from './clock.ts';
 import {E, File, FsError} from './fs.ts';
-import {Exec, Exit, Wait, randomBytes} from './flow.ts';
+import {Exec, Exit, Wait, randomBytes, utf8} from './flow.ts';
 import type {Calls, Cpu, Proc} from './parts.ts';
 import {CLD, SIG, send, writeInfo} from './signal.ts';
 
@@ -312,7 +312,7 @@ function prctl(p: Proc, option: number, arg2: bigint, arg3: bigint, arg4: bigint
     case 8: if (a !== 0 && a !== 1) fail(E.INVAL); p.keepCaps = a === 1; return 0; // PR_SET_KEEPCAPS
     case 15: { // PR_SET_NAME: its name, as /proc says it (15 bytes at most)
       const b = p.bytes, end = b.subarray(a, a + 16).indexOf(0);
-      p.comm = new TextDecoder().decode(b.subarray(a, a + (end < 0 ? 15 : Math.min(end, 15))));
+      p.comm = utf8(b.subarray(a, a + (end < 0 ? 15 : Math.min(end, 15))));
       return 0;
     }
     case 16: { // PR_GET_NAME
@@ -346,7 +346,7 @@ function prctl(p: Proc, option: number, arg2: bigint, arg3: bigint, arg4: bigint
 function names(p: Proc, address: bigint, length: bigint): string {
   const n = N(length);
   if (n < 0 || n > 64) fail(E.INVAL);
-  return new TextDecoder().decode(p.bytes.subarray(N(address), N(address) + n));
+  return utf8(p.bytes.subarray(N(address), N(address) + n));
 }
 
 export const PROC_CALLS: Calls = {

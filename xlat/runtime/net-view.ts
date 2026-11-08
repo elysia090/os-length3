@@ -10,6 +10,8 @@
 //
 // The sockets are sys-net.ts's (its Endpoint), read here and never changed: this module makes answers, no calls.
 
+import {utf8} from './flow.ts';
+
 const enc = new TextEncoder();
 const AF = {UNSPEC: 0, UNIX: 1, INET: 2, INET6: 10, NETLINK: 16};
 const SOCK = {STREAM: 1, DGRAM: 2, RAW: 3, SEQPACKET: 5};
@@ -124,7 +126,7 @@ function attrs(bytes: Uint8Array, at: number): Map<number, Uint8Array> {
   }
   return out;
 }
-const textOf = (value: Uint8Array): string => new TextDecoder().decode(value.subarray(0, value.indexOf(0) < 0 ? value.length : value.indexOf(0)));
+const textOf = (value: Uint8Array): string => utf8(value.subarray(0, value.indexOf(0) < 0 ? value.length : value.indexOf(0)));
 
 // ---- NETLINK_ROUTE ----
 
@@ -240,7 +242,7 @@ function unixDiag(kernel: Net, states: number, show: number): Uint8Array[] {
     const st = stateOf(s);
     if (!(states & (1 << st))) continue;
     const more: Uint8Array[] = [], name = s.local?.bytes;
-    if (show & 1 && name) more.push(attr(0, name[0] === 0 ? name : cstr(new TextDecoder().decode(name))));
+    if (show & 1 && name) more.push(attr(0, name[0] === 0 ? name : cstr(utf8(name))));
     if (show & 4 && s.peer) more.push(attr(2, u32(s.peer.ino)));
     if (show & 8 && s.state === 'listening') more.push(attr(3, concat(s.backlog.map((x) => u32(x.peer?.ino ?? 0)))));
     if (show & 16) more.push(attr(4, concat([u32(queued(s)), u32(room(s))])));
@@ -329,7 +331,7 @@ export function interfaceControl(p: {view: DataView; bytes: Uint8Array}, request
   const GETS = [0x8910, 0x8913, 0x8915, 0x8917, 0x8919, 0x891b, 0x891d, 0x8921, 0x8927, 0x8933, 0x8942, 0x8970];
   // The rest of SIOC*IF*: a change to lo is not made here.
   if (!GETS.includes(request)) return request >= 0x8910 && request < 0x8980 ? -E.OPNOTSUPP : false;
-  const name = new TextDecoder().decode(b.subarray(arg, arg + 16)).replace(/\0[\s\S]*$/, '');
+  const name = utf8(b.subarray(arg, arg + 16)).replace(/\0[\s\S]*$/, '');
   if (request === 0x8910) { // SIOCGIFNAME: by its index
     if (v.getInt32(arg + 16, true) !== LO.index) return -E.NODEV;
     b.fill(0, arg, arg + 16);
@@ -385,7 +387,7 @@ function unixTable(kernel: Net): string {
   for (const s of live(kernel).filter((x) => x.family === AF.UNIX)) {
     const st = s.state === 'listening' ? 1 : s.state === 'connected' ? 3 : 1; // SS_UNCONNECTED, SS_CONNECTED
     const bytes = s.local?.bytes;
-    const name = bytes ? (bytes[0] === 0 ? '@' + new TextDecoder().decode(bytes.subarray(1)) : new TextDecoder().decode(bytes)) : '';
+    const name = bytes ? (bytes[0] === 0 ? '@' + utf8(bytes.subarray(1)) : utf8(bytes)) : '';
     lines.push(`0000000000000000: 00000002 00000000 ${s.state === 'listening' ? '00010000' : '00000000'} ${hex4(s.type)} ${hex4(st).slice(2)} ${String(s.ino).padStart(5)}${name ? ' ' + name : ''}`);
   }
   return lines.join('\n') + '\n';
