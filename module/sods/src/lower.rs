@@ -3049,9 +3049,12 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     // The bytes no correct run can change (segments not writable): a memory that ran this program holds them still.
     let read_only: Vec<String> = elf.segments.iter().filter(|s| !s.writable && !s.data.is_empty())
         .map(|s| format!("[{},{}]", s.vaddr, s.vaddr + s.data.len() as u64)).collect();
+    // What the translation itself keeps past the program's image, the entry table and the dispatch cache: the same for
+    // every process of this translation (the cache holds only what is found the same way in each), so a memory that
+    // ran this very translation holds it still.
     let facts = format!(
-        "{{\"entry\":{},\"imageStart\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56,\"readOnly\":[{}]{}}}",
-        elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, read_only.join(","), tls
+        "{{\"entry\":{},\"imageStart\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56,\"readOnly\":[{}],\"derived\":[{},{}]{}}}",
+        elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, read_only.join(","), table_base, end, tls
     );
     let facts = CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) };
     let fpu = CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(crate::x87::NAMES.join(",").into_bytes()) };

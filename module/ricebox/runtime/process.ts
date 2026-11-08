@@ -516,9 +516,10 @@ export class Kernel implements Kern {
     const have = m.buffer.byteLength / WASM_PAGE;
     if (have < pages) m.grow(pages - have);
     m.keeps = same(m);
+    m.exact = !!image && m.imageOf === image;
     PROFILE.memoriesReused++;
     if (m.keeps) PROFILE.imagesKept++;
-    clean(m, pages, [...m.keeps && image ? image.facts.readOnly ?? [] : [], ...over]);
+    clean(m, pages, [...m.keeps && image ? kept(image, m.exact) : [], ...over]);
     this.reuseMemory(m);
     return m;
   }
@@ -529,9 +530,10 @@ export class Kernel implements Kern {
   renew(memory: Mem, written: Range[] | null, pages: number, image: Image, over: Range[] = []): void {
     memory.written = merge([...memory.written, ...written ?? []]);
     memory.keeps = true;
+    memory.exact = memory.imageOf === image;
     memory.imageOf = image;
     memory.deepest = undefined;
-    clean(memory, pages, [...image.facts.readOnly ?? [], ...over]);
+    clean(memory, pages, [...kept(image, memory.exact), ...over]);
     PROFILE.renewed++;
   }
   /**
@@ -1482,7 +1484,7 @@ export class Process implements Proc {
     // Handled signals go back to their default; ignored ones stay ignored.
     for (const [sig, h] of this.actions) if (h.handler > 1n) this.actions.delete(sig);
     t.altstack = {sp: 0n, size: 0n, flags: 2};
-    if (image.segments) lay(this.bytes, fresh.keeps ? image.segments.filter((x) => !within(x, image.facts.readOnly)) : image.segments);
+    if (image.segments) { const keep = kept(image, !!fresh.exact); lay(this.bytes, fresh.keeps ? image.segments.filter((x) => !within(x, keep)) : image.segments); }
     if (again) t.renew(); else t.load(image, fresh);
     // A program starts with every register zero but its stack pointer (as Linux's start_thread leaves them).
     t.setContext(REG.map(() => 0n), 0n);
@@ -1555,7 +1557,7 @@ export class Process implements Proc {
     const from = this.bytes, to = child.bytes, memory = child.memory;
     const span = ([a, b]: Range): void => { if (b > a) to.set(from.subarray(a, b), a); };
     // What no correct run changes, a memory that ran the same program has already.
-    for (const r of gaps(...live.image, memory?.keeps ? this.image.facts.readOnly ?? [] : [])) span(r);
+    for (const r of gaps(...live.image, memory?.keeps ? kept(this.image, !!memory.exact) : [])) span(r);
     for (const r of live.rest) span(r);
     if (memory) memory.deepest = live.low; // its stack is written from here up (Process.written), as its own calls go deeper
   }
@@ -1834,6 +1836,15 @@ export const REG: RegName[] = [...Array.from({length: 16}, (_, n): RegName => `r
  * and cpu.ts): a shell's fork child and the command it runs take turns on one memory.
  */
 export const KEEP_INSTANCES = 2;
+
+/**
+ * What of `image` a memory that ran its program holds still, and is neither zeroed, copied nor laid again: what no
+ * correct run writes, and, where it ran this very translation (`exact`), the translation's own table and cache.
+ */
+export const kept = (image: Image, exact: boolean): Range[] => {
+  const f = image.facts;
+  return exact && f.derived ? [...f.readOnly ?? [], f.derived] : f.readOnly ?? [];
+};
 
 /**
  * Whether an instance of `image` made before on the memory it is to run on may run it in place of a new one

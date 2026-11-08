@@ -98,6 +98,8 @@ export interface Mem extends WebAssembly.Memory {
   deepest?: number;
   /** It ran the program it is given to (what of the program no correct run changes is in it already). */
   keeps: boolean;
+  /** It ran this very translation of it, whose own table and cache (Facts.derived) are in it already. */
+  exact?: boolean;
   imageOf: Program | null;
   /** Instances kept on it (Task.load). */
   pooled?: Pooled[];
@@ -117,6 +119,8 @@ export interface Facts {
   imageEnd: number;
   /** What no correct run writes ([[start, end]]). */
   readOnly?: Range[];
+  /** The translation's own entry table and dispatch cache, past the image: the same in every process of it. */
+  derived?: Range;
 }
 /** A module of code reached later: its module, its first slot in the table, how many, and its bytes. */
 export interface Extra { module: WebAssembly.Module; base: number; count: number; bytes: Uint8Array }
