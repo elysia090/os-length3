@@ -196,7 +196,12 @@ class Thread {
 
   // ---- the kernel ----
 
-  /** Make request `op` and wait for the answer; returns the reply's kind (the registers sent first if the kernel asks). */
+  /**
+   * Make request `op` and wait for the answer; returns the reply's kind (the registers sent first if the kernel asks).
+   * The answer may be to leave (Away), to any request: a thread ended while it asked for a module's bytes or code at an
+   * address, had it asked again, would have waited on a channel no one serves, and its Worker, kept for the next
+   * thread (remote.ts end), would never have heard the next run (a shell's command that hung after a screen program).
+   */
   ask(op: number): number {
     const {i32} = this;
     this.i64[CH.LOW] = this.low ? this.low.value : 0n;
@@ -212,7 +217,9 @@ class Thread {
           sleep(i32, CH.STATE, state, CH.ASLEEP);
         }
       }
-      if (i32[CH.REPLY] !== REPLY.SEND_REGS) return i32[CH.REPLY];
+      const reply = i32[CH.REPLY];
+      if (reply === REPLY.AWAY) throw new Away();
+      if (reply !== REPLY.SEND_REGS) return reply;
       this.putRegs();
       op = OP.REGS;
     }
@@ -231,7 +238,6 @@ class Thread {
     if (nr === 56n || nr === 57n || nr === 58n) this.put(JSON.stringify(this.fpu.saved()));
     this.unlock();
     const reply = this.ask(OP.SYSCALL);
-    if (reply === REPLY.AWAY) throw new Away();
     if (reply === REPLY.EXEC) throw new Exec(Number(i64[CH.ARG0]), Number(i64[CH.ARG1]));
     this.lock();
     this.catchUp();
@@ -343,7 +349,6 @@ class Thread {
     this.putRegs();
     this.unlock();
     const reply = this.ask(OP.YIELD);
-    if (reply === REPLY.AWAY) throw new Away();
     this.lock();
     this.catchUp();
     if (reply === REPLY.REDIRECT) {
@@ -388,7 +393,8 @@ class Thread {
         this.put(translatorsLimit(e) ? `xlat: ${e.message}\n` : '');
         this.i64[CH.ARG0] = BigInt(sig);
         this.unlock();
-        this.ask(OP.FAULT);
+        // The kernel ends its process: the answer is to leave.
+        try { this.ask(OP.FAULT); } catch (away) { if (!(away instanceof Away)) throw away; }
         return;
       }
     }

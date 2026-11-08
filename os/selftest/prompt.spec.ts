@@ -450,3 +450,58 @@ test('the Prompt is a real terminal: colours as programs give them, a line rewri
   await box.press('Enter');
   await expect(out).toContainText(/^after$/m);
 });
+
+test('what draws on a screen runs on it: a pager, an editor, top and htop, a picker; watch draws in place; each gives the line back', async ({app}) => {
+  test.setTimeout(600_000);
+  const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out'), screen = app.page.locator('.vt-screen');
+  const p = app.page;
+  // Each one's screen comes up saying what it shows, takes its keys, and goes; the box is the line one types at again.
+  const runs: [string, string, () => Promise<void>][] = [
+    ['less README.md', 'README', () => p.keyboard.press('q')],
+    ['top', 'PID', () => p.keyboard.press('q')],
+    ['htop', 'Load', () => p.keyboard.press('q')],
+    ['nano notes.txt', 'GNU nano', async () => {
+      await p.keyboard.type('From nano.');
+      await p.keyboard.press('Control+X');
+      await expect(screen).toContainText('Save modified buffer');
+      await p.keyboard.press('y');
+      await expect(screen).toContainText('Write to File');
+      await p.keyboard.press('Enter');
+    }],
+    ["printf 'alpha\\nbeta\\ngamma\\n' | fzf", 'gamma', async () => {
+      await p.keyboard.type('bet');
+      await expect(screen).toContainText('1/3');
+      await p.keyboard.press('Enter');
+    }],
+  ];
+  for (const [line, shows, leave] of runs) {
+    await box.fill(line);
+    await box.press('Enter');
+    await expect(screen).toBeVisible({timeout: 150_000});
+    await expect(screen).toContainText(shows, {timeout: 60_000});
+    await leave();
+    await expect(screen, line).toHaveCount(0, {timeout: 60_000});
+    await expect(p.locator('form.prompt[data-raw]')).toHaveCount(0);
+    // The shell's prompt line again before the next is typed, as a person waits for it (typed sooner, a line is typed
+    // ahead, echoed before the prompt as a terminal echoes it).
+    await expect(app.forge.prompt).toContainText(/hello \$\s*$/, {timeout: 30_000});
+  }
+  // What fzf was given back to the shell, and what nano wrote, are where they belong.
+  await expect(out).toContainText(/^beta$/m);
+  await box.fill('cat notes.txt');
+  await box.press('Enter');
+  await expect(out).toContainText(/^From nano\.$/m, {timeout: 60_000});
+  await expect(app.forge.prompt).toContainText(/hello \$\s*$/, {timeout: 30_000});
+  // watch draws in place on the Prompt's own lines, again each second, until Ctrl+C.
+  await box.fill('watch -n 1 date +%s');
+  await box.press('Enter');
+  await expect(out).toContainText('Every 1.0s', {timeout: 120_000});
+  const first = (await out.innerText()).match(/^\d{10}$/m)?.[0];
+  await expect.poll(async () => (await out.innerText()).match(/^\d{10}$/m)?.[0], {timeout: 30_000}).not.toBe(first);
+  // (Caps Lock on: the key comes as C, and is still Ctrl+C to what runs.)
+  await box.dispatchEvent('keydown', {key: 'C', code: 'KeyC', ctrlKey: true, bubbles: true, cancelable: true});
+  await expect(app.forge.prompt).toContainText(/\^C\nhello \$\s*$/, {timeout: 15_000});
+  await box.fill('echo after watch');
+  await box.press('Enter');
+  await expect(out).toContainText(/^after watch$/m, {timeout: 60_000});
+});

@@ -384,7 +384,10 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       // comes (then the page sends keys as they are pressed: it is told each change, `mode`).
       interactive: !!data.screen,
       screen: !!data.screen, cols: data.cols ?? 80, rows: data.rows ?? 24,
-      mode: (tio) => { rawKeys = !(tio.lflag & 2); self.postMessage({type: 'tty', ...tio}); },
+      // What was written before the change goes first: a program leaving the screen (nano, less) writes its last of it
+      // and then gives the terminal back, and the page, told of the change before those last bytes, drew them on the
+      // shell's lines (the prompt line came up as `hello $ ng... ][ Wrote 1 line ]`).
+      mode: (tio) => { rawKeys = !(tio.lflag & 2); send(); self.postMessage({type: 'tty', ...tio}); },
       write: gather,
       // The kernel's turns (process.ts, remote.ts): what gathered goes when it is due, or now (`all`, it stops).
       flush: (all) => (all ? send() : due()),

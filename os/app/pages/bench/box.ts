@@ -767,15 +767,16 @@ export class Box {
     // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
     if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain(event) && caret) { this.#walkTo(event, event.key); return; }
     // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal; at the prompt line, the line
-    // written is let go, said cut, as a terminal's line editor does.
-    if (event.key === 'c' && event.ctrlKey && !event.altKey && !event.metaKey && caret && repo) {
+    // written is let go, said cut, as a terminal's line editor does. (With Caps Lock on, it is still C: Shift held is a
+    // terminal's copy, Ctrl+Shift+C, and left to the page.)
+    if (event.key.toLowerCase() === 'c' && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && caret && repo) {
       event.preventDefault();
       const s = sessionFor(repo);
       if (s.abandon(prompt.value)) this.#emptied(); else s.interrupt();
       return;
     }
     // Ctrl-Z while a line runs stops it, a job the shell holds (fg brings it back), as in a terminal.
-    if (event.key === 'z' && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && repo && sessionFor(repo).suspend()) {
+    if (event.key.toLowerCase() === 'z' && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && repo && sessionFor(repo).suspend()) {
       event.preventDefault();
       return;
     }
