@@ -416,8 +416,6 @@ jobs:
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - if: steps.kept.outputs.cache-hit != 'true'
-        uses: ./.github/actions/root-packages
-      - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -435,6 +433,10 @@ jobs:
             os -> target
           shared-key: root-${{ hashFiles('xlat/Cargo.toml', 'os/Cargo.toml') }}
           cache-on-failure: true
+      # After rust-cache, never before: when what it restores was kept for another lockfile, it cleans the targets,
+      # and with them all of os/target that is not Cargo's (the packages, made there, were gone at assemble.sh).
+      - if: steps.kept.outputs.cache-hit != 'true'
+        uses: ./.github/actions/root-packages
       - name: The root, put together, and used
         if: steps.kept.outputs.cache-hit != 'true'
         working-directory: os
