@@ -408,13 +408,17 @@ impl<'p> Fx<'p> {
     /// Registers from their globals, after code outside this function ran.
     fn load(&mut self) { self.sync(false); }
 
+    /// The i64 on top, its upper half zeroed: a wrap and an extend (2 bytes, one 32-bit move), not an and with
+    /// 0xffffffff (7 bytes, a constant made and anded in V8's first tier).
+    fn zext32(&mut self) { self.e(W::I32WrapI64); self.e(W::I64ExtendI32U); }
+
     /// Push a register's value, zero-extended from its width.
     fn read_reg(&mut self, r: Register) -> bool {
         let Some((n, part)) = gpr(r) else { return false };
         self.get(l_reg(n));
         match part {
             Part::Full => {}
-            Part::Low32 => { self.c64(0xffff_ffff); self.e(W::I64And); }
+            Part::Low32 => self.zext32(),
             Part::Low16 => { self.c64(0xffff); self.e(W::I64And); }
             Part::Low8 => { self.c64(0xff); self.e(W::I64And); }
             Part::High8 => { self.c64(8); self.e(W::I64ShrU); self.c64(0xff); self.e(W::I64And); }
@@ -429,7 +433,7 @@ impl<'p> Fx<'p> {
         let l = l_reg(n);
         match part {
             Part::Full => self.set(l),
-            Part::Low32 => { self.c64(0xffff_ffff); self.e(W::I64And); self.set(l); }
+            Part::Low32 => { self.zext32(); self.set(l); }
             Part::Low16 | Part::Low8 | Part::High8 => {
                 let (m, shift) = match part { Part::Low16 => (0xffffi64, 0), Part::Low8 => (0xff, 0), _ => (0xff, 8) };
                 self.c64(m); self.e(W::I64And);
@@ -1641,7 +1645,7 @@ impl Fx<'_> {
     fn cpuid(&mut self) {
         // A plain core: SSE2 and SSE3, CMPXCHG16B and POPCNT; no SSSE3, SSE4 or AVX, so a
         // libc choosing its string routines by cpuid takes the SSE2 ones xlat translates.
-        self.get(l_reg(RAX)); self.c64(0xffff_ffff); self.e(W::I64And); self.e(W::I64Eqz);
+        self.get(l_reg(RAX)); self.e(W::I32WrapI64); self.e(W::I32Eqz);
         self.e(W::If(BlockType::Empty));
         self.c64(1); self.set(l_reg(RAX));
         self.c64(0x756e_6547); self.set(l_reg(3)); // "Genu"
@@ -1867,7 +1871,7 @@ impl Fx<'_> {
             Cpuid => { self.cpuid(); true }
             Rdtsc => {
                 self.e(W::Call(F_CLOCK)); self.set(l_t(1));
-                self.get(l_t(1)); self.c64(0xffff_ffff); self.e(W::I64And); self.set(l_reg(RAX));
+                self.get(l_t(1)); self.zext32(); self.set(l_reg(RAX));
                 self.get(l_t(1)); self.c64(32); self.e(W::I64ShrU); self.set(l_reg(RDX));
                 true
             }
@@ -2094,7 +2098,7 @@ impl Fx<'_> {
                     else {
                         self.e(W::I32WrapI64); self.e(W::I32x4Splat);
                         self.c32(0); self.e(W::I32x4ReplaceLane(1));
-                        self.e(W::I64x2ExtractLane(0)); self.c64(0xffff_ffff); self.e(W::I64And);
+                        self.e(W::I64x2ExtractLane(0)); self.zext32();
                         self.e(W::I64x2Splat); self.c64(0); self.e(W::I64x2ReplaceLane(1));
                     }
                     self.set(l_v(0));
@@ -2102,7 +2106,7 @@ impl Fx<'_> {
                 } else if is_x1 && !is_x0 && i.op0_kind() == OpKind::Register {
                     self.xread(i, 1, 16);
                     self.e(W::I64x2ExtractLane(0));
-                    if bytes == 4 { self.c64(0xffff_ffff); self.e(W::I64And); }
+                    if bytes == 4 { self.zext32(); }
                     self.write_reg(i.op0_register())
                 } else if is_x0 && i.op1_kind() == OpKind::Memory {
                     self.xread(i, 1, bytes) && { self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) }
