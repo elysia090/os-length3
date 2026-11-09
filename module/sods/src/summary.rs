@@ -21,9 +21,9 @@ use std::collections::HashMap;
 /// A function's registers as a call to it sees them: bit n for r_n, 16 + n for xmm_n (as lower.rs Fx::used).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Summary {
-    /// What it, or anything it calls, may read.
+    /// What it, or anything it calls, may read (where it does not go out).
     pub reads: u32,
-    /// What it, or anything it calls, may write.
+    /// What it, or anything it calls, may write (where it does not go out).
     pub writes: u32,
     /// It may go out to the kernel before it returns (a loop's time slice, a system call, a trap, code it reaches
     /// only through a pointer or not translated with it, recursion, a callee that may): called as any call is.
@@ -47,29 +47,17 @@ fn bit(r: Register) -> Option<u32> {
     (Register::RAX as u32..=Register::R15 as u32).contains(&full).then(|| full - Register::RAX as u32)
 }
 
-/// What `f` itself reads and writes, whether it may go out on its own, and the functions it calls directly.
+/// What `f` itself reads and writes, whether it may go out on its own, and the functions it calls directly. What it
+/// reads and writes is found only where it does not go out: a call to one that may is made as any call is, reading
+/// neither, and so is a call to anything that calls it.
 fn own(f: &Function, starts: &HashMap<u64, usize>, info: &mut InstructionInfoFactory) -> (Summary, Vec<usize>) {
     // rsp: every call pushes and every return pops.
     let rsp = 1 << (Register::RSP as u32 - Register::RAX as u32);
     let mut s = Summary { reads: rsp, writes: rsp, exits: crate::lower::has_loop(f) };
     let mut callees = Vec::new();
     for b in &f.blocks {
-        for i in &b.code {
-            if matches!(i.mnemonic(), Mnemonic::Syscall | Mnemonic::Sysenter | Mnemonic::Int | Mnemonic::Int1 | Mnemonic::Int3 | Mnemonic::Into) {
-                s.exits = true;
-            }
-            for u in info.info(i).used_registers() {
-                let Some(b) = bit(u.register()) else { continue };
-                // A write that keeps any of what was there reads it too: an 8- or 16-bit register's (merged into
-                // the rest), an xmm register's (a scalar or a lane written, the others kept), a conditional one's.
-                let keeps = b >= 16 || u.register().size() < 4;
-                match u.access() {
-                    OpAccess::Read | OpAccess::CondRead => s.reads |= 1 << b,
-                    OpAccess::Write if !keeps => s.writes |= 1 << b,
-                    OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite => { s.reads |= 1 << b; s.writes |= 1 << b; }
-                    _ => {}
-                }
-            }
+        if b.code.iter().any(|i| matches!(i.mnemonic(), Mnemonic::Syscall | Mnemonic::Sysenter | Mnemonic::Int | Mnemonic::Int1 | Mnemonic::Int3 | Mnemonic::Into)) {
+            s.exits = true;
         }
         let within = |a: u64| f.block_index(a).is_some();
         match b.exit {
@@ -78,6 +66,21 @@ fn own(f: &Function, starts: &HashMap<u64, usize>, info: &mut InstructionInfoFac
             Exit::Branch { taken, fall } => if !within(taken) || !within(fall) { s.exits = true },
             Exit::TailJump(_) | Exit::IndirectJump | Exit::IndirectCall { .. } | Exit::Trap => s.exits = true,
             Exit::Return => {}
+        }
+    }
+    if s.exits { return (s, callees); }
+    for i in f.blocks.iter().flat_map(|b| &b.code) {
+        for u in info.info(i).used_registers() {
+            let Some(b) = bit(u.register()) else { continue };
+            // A write that keeps any of what was there reads it too: an 8- or 16-bit register's (merged into
+            // the rest), an xmm register's (a scalar or a lane written, the others kept), a conditional one's.
+            let keeps = b >= 16 || u.register().size() < 4;
+            match u.access() {
+                OpAccess::Read | OpAccess::CondRead => s.reads |= 1 << b,
+                OpAccess::Write if !keeps => s.writes |= 1 << b,
+                OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite => { s.reads |= 1 << b; s.writes |= 1 << b; }
+                _ => {}
+            }
         }
     }
     (s, callees)

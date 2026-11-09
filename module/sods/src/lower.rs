@@ -8,7 +8,7 @@
 //! a return compares the popped address with the expected continuation and
 //! hands anything unexpected (longjmp, tail tricks) to the dispatcher.
 
-use crate::discover::{goes_to, loops_of, resumes_after, Block, Exit, Function, Loop, Program};
+use crate::discover::{goes_to, loops_of, resumes_after, Exit, Function, Loop, Program};
 use crate::elf::Elf;
 use crate::summary::{summarize, Summary};
 use iced_x86::{ConditionCode, Instruction, Mnemonic, OpKind, Register, RflagsBits};
@@ -242,8 +242,8 @@ struct Fx<'p> {
     program: &'p Program,
     function: &'p Function,
     report: &'p mut Report,
-    /// Flags each entry reads before writing them (entry_flags).
-    handed: &'p BTreeMap<u64, u32>,
+    /// Flags each entry reads before writing them.
+    handed: &'p Liveness,
     /// Direction flag, tracked statically within a block (std ... cld).
     backward: bool,
     /// The block being lowered: a goto to it or one before it closes a loop.
@@ -1032,7 +1032,7 @@ impl<'p> Fx<'p> {
         self.e(W::If(BlockType::Empty));
         self.depth += 1;
         self.save();
-        self.save_flags(handed(self.handed, address));
+        self.save_flags(self.handed.handed(address));
         self.c64(address as i64); self.c32(TRAP_YIELD); self.e(W::Call(F_TRAP)); self.e(W::Unreachable);
         self.depth -= 1;
         self.e(W::End);
@@ -1063,7 +1063,7 @@ impl<'p> Fx<'p> {
     /// Transfer to code outside this function without growing the stack.
     fn tail(&mut self, address: u64) {
         self.save();
-        self.save_flags(handed(self.handed, address));
+        self.save_flags(self.handed.handed(address));
         match self.program.entries.get(&address) {
             Some(&(f, b)) => {
                 self.c32(b as i32);
@@ -2597,102 +2597,163 @@ impl Fx<'_> {
 fn flags_read(i: &Instruction) -> u32 { if i.mnemonic() == Mnemonic::Syscall { 0 } else { i.rflags_read() & ALL_FLAGS } }
 fn flags_written(i: &Instruction) -> u32 { if i.mnemonic() == Mnemonic::Syscall { 0 } else { i.rflags_modified() & ALL_FLAGS } }
 
-/// The flags code going on to `address`, outside the function, must hand
-/// over: those its entry reads first, or all of them where it is not known
-/// (code found later).
-fn handed(handed: &BTreeMap<u64, u32>, address: u64) -> u32 {
-    handed.get(&address).copied().unwrap_or(ALL_FLAGS)
+/// Flag liveness over the whole program, in flat arrays: every function's blocks in turn (function f's from
+/// `first[f]`), each with the flags it reads before it writes them and those it writes, where it goes on to (two
+/// places at most: a block of its own function, an entry of another's, or other code, which is handed every flag),
+/// and the flags live into it.
+///
+/// The post-link compiler gives states whose futures are equal one body, across functions too, so a compare can end
+/// one function and the jump that reads it begin another: such an entry is handed what it reads, in G_FLAGS. Every
+/// other entry reads none and costs nothing. Each entry starts reading nothing and grows to what its code reads (the
+/// least fixed point), a function solved again only when an entry it goes on to grew.
+pub(crate) struct Liveness {
+    /// The program's entries (its `entries`, by address) and the flags each reads first.
+    entries: Vec<u64>,
+    reads: Vec<u8>,
+    first: Vec<u32>,
+    used: Vec<u8>,
+    defined: Vec<u8>,
+    /// A block of its own function, ENTRY and an entry, or NONE.
+    to: Vec<[u32; 2]>,
+    /// The flags handed to code outside that is no entry (every one), and INDIRECT where the block ends in an
+    /// indirect jump: it keeps what its function's entries read, as it may land on any of them (a jump table's case).
+    fixed: Vec<u8>,
+    /// The entry a block is, or NONE.
+    entry: Vec<u32>,
+    live: Vec<u8>,
+    /// What each function's entries read.
+    cases: Vec<u8>,
 }
 
-/// The blocks of `f` that `b` goes on to by a fall or a jump, and the flags
-/// code it goes on to outside them reads first.
-/// A block's successors in its function (two at most) and the flags handed to those outside.
-type Successors = ([Option<usize>; 2], u32);
+const NONE: u32 = u32::MAX;
+const ENTRY: u32 = 1 << 31;
+const INDIRECT: u8 = 0x80;
 
-fn successors(f: &Function, b: &Block, outside: &BTreeMap<u64, u32>) -> Successors {
-    let mut out = [None; 2];
-    let mut ext = 0;
-    let mut add = |a: u64| match f.block_index(a) { Some(k) => { let at = out[0].is_some() as usize; out[at] = Some(k); } None => ext |= handed(outside, a) };
-    match b.exit {
-        Exit::Fall(a) | Exit::Jump(a) | Exit::TailJump(a) => add(a),
-        Exit::Branch { taken, fall } => { add(taken); add(fall); }
-        _ => {}
-    }
-    (out, ext)
-}
-
-/// The flags each entry of the program reads before it writes them. The
-/// post-link compiler gives states whose futures are equal one body, across
-/// functions too, so a compare can end one function and the jump that reads
-/// it begin another; such an entry is handed what it reads in G_FLAGS.
-/// Every other entry reads none and costs nothing. The least fixed point:
-/// each entry starts reading nothing and grows to what its code reads.
-fn entry_flags(program: &Program) -> BTreeMap<u64, u32> {
-    let mut map: BTreeMap<u64, u32> = program.entries.keys().map(|&a| (a, 0)).collect();
-    let mut todo: Vec<usize> = (0..program.functions.len()).collect();
-    while !todo.is_empty() {
-        let mut changed = false;
-        let mut again = Vec::new();
-        for &fi in &todo {
-            let f = &program.functions[fi];
-            let succs: Vec<Successors> = f.blocks.iter().map(|b| successors(f, b, &map)).collect();
-            let (live, _) = live_flags(program, fi as u32, &succs);
-            // Only a function that goes on to code outside it can change again.
-            let mut leaves = false;
-            for (k, b) in f.blocks.iter().enumerate() {
-                let outside = |a: u64| f.block_index(a).is_none();
-                leaves |= match b.exit {
-                    Exit::Fall(a) | Exit::Jump(a) | Exit::TailJump(a) => outside(a),
-                    Exit::Branch { taken, fall } => outside(taken) || outside(fall),
-                    _ => false,
+impl Liveness {
+    fn new(program: &Program) -> Liveness {
+        let entries: Vec<u64> = program.entries.keys().copied().collect();
+        let blocks: usize = program.functions.iter().map(|f| f.blocks.len()).sum();
+        let mut l = Liveness {
+            reads: vec![0; entries.len()], first: Vec::with_capacity(program.functions.len() + 1),
+            used: Vec::with_capacity(blocks), defined: Vec::with_capacity(blocks), to: Vec::with_capacity(blocks),
+            fixed: Vec::with_capacity(blocks), entry: vec![NONE; blocks], live: vec![0; blocks],
+            cases: vec![0; program.functions.len()], entries,
+        };
+        for f in &program.functions {
+            l.first.push(l.used.len() as u32);
+            for b in &f.blocks {
+                let (mut used, mut defined) = (0, 0);
+                for i in &b.code {
+                    used |= flags_read(i) & !defined;
+                    defined |= flags_written(i);
+                }
+                let mut to = [NONE; 2];
+                let mut fixed = if b.exit == Exit::IndirectJump { INDIRECT } else { 0 };
+                let mut add = |a: u64| {
+                    let t = match f.block_index(a) {
+                        Some(k) => k as u32,
+                        None => match l.entries.binary_search(&a) { Ok(e) => e as u32 | ENTRY, Err(_) => { fixed |= ALL_FLAGS as u8; return; } },
+                    };
+                    to[(to[0] != NONE) as usize] = t;
                 };
-                if program.entries.get(&b.start) == Some(&(fi as u32, k as u32)) && map[&b.start] != live[k] {
-                    map.insert(b.start, live[k]);
+                match b.exit {
+                    Exit::Fall(a) | Exit::Jump(a) | Exit::TailJump(a) => add(a),
+                    Exit::Branch { taken, fall } => { add(taken); add(fall); }
+                    _ => {}
+                }
+                l.used.push(used as u8);
+                l.defined.push(defined as u8);
+                l.to.push(to);
+                l.fixed.push(fixed);
+            }
+        }
+        l.first.push(l.used.len() as u32);
+        for (e, &(f, b)) in program.entries.values().enumerate() {
+            l.entry[(l.first[f as usize] + b) as usize] = e as u32;
+        }
+        // The functions that go on to each entry, and each function once at first.
+        let mut count = vec![0u32; l.entries.len() + 1];
+        l.each_going(|e, _| count[e + 1] += 1);
+        for e in 0..l.entries.len() { count[e + 1] += count[e]; }
+        let mut by = vec![0u32; count[l.entries.len()] as usize];
+        let mut at = count.clone();
+        l.each_going(|e, f| { by[at[e] as usize] = f; at[e] += 1; });
+        let mut queued = vec![true; program.functions.len()];
+        let mut work: std::collections::VecDeque<u32> = (0..program.functions.len() as u32).collect();
+        while let Some(f) = work.pop_front() {
+            queued[f as usize] = false;
+            l.solve(f as usize);
+            for g in l.first[f as usize] as usize..l.first[f as usize + 1] as usize {
+                let e = l.entry[g];
+                if e == NONE || l.reads[e as usize] == l.live[g] { continue; }
+                l.reads[e as usize] = l.live[g];
+                for &d in &by[count[e as usize] as usize..count[e as usize + 1] as usize] {
+                    if !queued[d as usize] { queued[d as usize] = true; work.push_back(d); }
+                }
+            }
+        }
+        l
+    }
+
+    /// Each entry another function goes on to, and that function.
+    fn each_going(&self, mut on: impl FnMut(usize, u32)) {
+        for f in 0..self.cases.len() {
+            for g in self.first[f] as usize..self.first[f + 1] as usize {
+                for t in self.to[g] {
+                    if t != NONE && t & ENTRY != 0 { on((t & !ENTRY) as usize, f as u32); }
+                }
+            }
+        }
+    }
+
+    /// The flags live into each block of function `f`, from nothing, as its entries now read.
+    fn solve(&mut self, f: usize) {
+        let (lo, hi) = (self.first[f] as usize, self.first[f + 1] as usize);
+        self.live[lo..hi].fill(0);
+        let mut cases = 0;
+        loop {
+            let mut changed = false;
+            for g in (lo..hi).rev() {
+                let (held, ext) = self.out(lo, g, cases);
+                let new = self.used[g] | ((held | ext) & !self.defined[g]);
+                if new != self.live[g] {
+                    self.live[g] = new;
+                    if self.entry[g] != NONE { cases |= new; }
                     changed = true;
                 }
             }
-            if leaves { again.push(fi); }
+            if !changed { break; }
         }
-        if !changed { break; }
-        todo = again;
+        self.cases[f] = cases;
     }
-    map
-}
 
-/// Flags live on entry to each block, as an RflagsBits mask, and those the
-/// function's entries read: an indirect jump lands on one of them (a case of
-/// a jump table), so it keeps those.
-fn live_flags(program: &Program, index: u32, succs: &[Successors]) -> (Vec<u32>, u32) {
-    let f = &program.functions[index as usize];
-    let n = f.blocks.len();
-    let entry: Vec<bool> = f.blocks.iter().enumerate().map(|(k, b)| program.entries.get(&b.start) == Some(&(index, k as u32))).collect();
-    let mut cases = 0;
-    let summary: Vec<(u32, u32)> = f.blocks.iter().map(|b| {
-        let (mut used, mut defined) = (0, 0);
-        for i in &b.code {
-            used |= flags_read(i) & !defined;
-            defined |= flags_written(i);
+    /// The flags live out of block `g` (its function's from `lo`): into the blocks of its own function it goes on
+    /// to, and handed to code outside.
+    fn out(&self, lo: usize, g: usize, cases: u8) -> (u8, u8) {
+        let mut held = if self.fixed[g] & INDIRECT != 0 { cases } else { 0 };
+        let mut ext = self.fixed[g] & !INDIRECT;
+        for t in self.to[g] {
+            if t == NONE { continue; }
+            if t & ENTRY != 0 { ext |= self.reads[(t & !ENTRY) as usize]; } else { held |= self.live[lo + t as usize]; }
         }
-        (used, defined)
-    }).collect();
-    let mut live_in = vec![0u32; n];
-    loop {
-        let mut changed = false;
-        for k in (0..n).rev() {
-            let (succ, ext) = succs[k];
-            let ext = if f.blocks[k].exit == Exit::IndirectJump { cases } else { ext };
-            let out = succ.iter().flatten().fold(ext, |acc, &s| acc | live_in[s]);
-            let new = summary[k].0 | (out & !summary[k].1);
-            if new != live_in[k] {
-                live_in[k] = new;
-                if entry[k] { cases |= new; }
-                changed = true;
-            }
-        }
-        if !changed {
-            return (live_in, cases);
-        }
+        (held, ext)
     }
+
+    /// As `out`, for block `k` of function `f`, once solved.
+    fn live_out(&self, f: u32, k: usize) -> (u32, u32) {
+        let lo = self.first[f as usize] as usize;
+        let (held, ext) = self.out(lo, lo + k, self.cases[f as usize]);
+        (held as u32, ext as u32)
+    }
+
+    /// The flags code going on to `address`, outside its function, must hand over: those that entry reads first, or
+    /// all of them where it is no entry (code found later).
+    fn handed(&self, address: u64) -> u32 {
+        self.entries.binary_search(&address).map_or(ALL_FLAGS, |e| self.reads[e] as u32)
+    }
+
+    /// Whether block `k` of function `f` is an entry of the program.
+    fn is_entry(&self, f: u32, k: usize) -> bool { self.entry[self.first[f as usize] as usize + k] != NONE }
 }
 
 // ---- Functions ----
@@ -2798,7 +2859,7 @@ fn quiet(program: &Program, summaries: &[Summary], target: u64) -> Option<(u32, 
 /// making it tells; then it is made as any is. V8's first tier (where most of a compile's code runs) checks the stack
 /// at each loop's head and keeps every local in memory across it, and zeroes the locals of a function that has more
 /// than a few: a leaf made lean has neither.
-fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u64, u32>, summaries: &[Summary], options: Options, report: &mut Report) -> Vec<u8> {
+fn lower_function(program: &Program, index: u32, base: u32, handed: &Liveness, summaries: &[Summary], options: Options, report: &mut Report) -> Vec<u8> {
     let function = &program.functions[index as usize];
     let entered_within = function.blocks.iter().any(|b| b.exit == Exit::IndirectJump)
         || function.blocks.iter().enumerate().skip(1).any(|(k, b)| program.entries.get(&b.start) == Some(&(index, k as u32)));
@@ -2816,11 +2877,9 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
 
 /// lower_function's making of function `index` (numbered in the table from `base`), lean or not; None when made lean
 /// and a jump within needed the dispatch loop.
-fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<u64, u32>, summaries: &[Summary], options: Options, report: &mut Report, lean: bool) -> Option<Vec<u8>> {
+fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness, summaries: &[Summary], options: Options, report: &mut Report, lean: bool) -> Option<Vec<u8>> {
     let function = &program.functions[index as usize];
-    // Each block's successors, once: the analyses below go over them again and again.
-    let succs: Vec<Successors> = function.blocks.iter().map(|b| successors(function, b, handed)).collect();
-    let (live, cases) = live_flags(program, index, &succs);
+    let cases = handed.cases[index as usize] as u32;
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
     let mut fx = Fx { f: Vec::with_capacity(function.blocks.iter().map(|b| b.code.len()).sum::<usize>() * 24), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), rsp_up: false, entry: Vec::new(), dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
@@ -2831,7 +2890,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<
     fx.block_at = vec![None; function.blocks.len()];
     fx.loop_at = vec![None; loops.len()];
     (fx.loops, fx.within) = (loops, within);
-    fx.entry = function.blocks.iter().enumerate().map(|(k, b)| program.entries.get(&b.start) == Some(&(index, k as u32))).collect();
+    fx.entry = (0..function.blocks.len()).map(|k| handed.is_entry(index, k)).collect();
 
     // Everything the prologue depends on is known, so the function is made in order.
     // Only where it is read: past a call (the resume) or an indirect jump; a leaf pays nothing for it.
@@ -2904,9 +2963,8 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<
             fx.e(W::Call(F_TRACE));
         }
         let next = function.blocks.get(k + 1).map(|b| b.start);
-        let (succ, ext) = succs[k];
         // An indirect jump may land on an entry of this function, whose flags stay in the locals.
-        let held = succ.iter().flatten().fold(0, |acc, &s| acc | live[s]) | if block.exit == Exit::IndirectJump { cases } else { 0 };
+        let (held, ext) = handed.live_out(index, k);
         let live_out = held | ext;
         // Flags needed after each instruction, from the end backward.
         let mut needed = vec![0u32; block.code.len()];
@@ -2997,7 +3055,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<
             Exit::Call { target, ret } => {
                 fx.push_with(|fx| { fx.c64(ret as i64); true });
                 fx.save();
-                fx.enter_call(crate::lower::handed(handed_flags, target), |fx| fx.c64(target as i64));
+                fx.enter_call(handed_flags.handed(target), |fx| fx.c64(target as i64));
                 match program.entries.get(&target) {
                     Some(&(f, b)) => { fx.c32(b as i32); fx.e(W::Call(FIRST_GUEST + f)); }
                     None => { fx.c64(target as i64); fx.e(W::Call(F_DISPATCH)); }
@@ -3307,7 +3365,7 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
 /// on its own, so natively they share the cores; wasm has one thread and lowers in turn, each into the section as it
 /// is made (a big program's functions are most of what the translator would otherwise hold at once).
 fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report, code: &mut CodeSection) {
-    let handed = entry_flags(program);
+    let handed = Liveness::new(program);
     let summaries = summarize(program);
     let n = program.functions.len();
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
