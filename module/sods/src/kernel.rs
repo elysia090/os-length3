@@ -388,7 +388,7 @@ impl Fx<'_> {
         self.if_();
         self.depth += 1;
         self.save();
-        self.save_flags(self.handed.handed(address));
+        self.save_flags(self.handed.handed_at(self.program.entries.index(address)));
         self.c64(address as i64); self.c32(TRAP_YIELD); self.call(F_TRAP); self.op(UNREACHABLE);
         self.depth -= 1;
         self.end();
@@ -643,7 +643,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
         needed.clear();
         needed.resize(code.len(), 0);
         let mut live = held | ext;
-        for (j, i) in code.iter().enumerate().rev() { needed[j] = live; live = (live & !flags_written(i)) | flags_read(i); }
+        for (j, i) in code.iter().enumerate().rev() { needed[j] = live; let k = crate::program::kind(i); live = (live & !k.writes as u32) | k.reads as u32; }
         let last = code.len() - 1;
         for (j, i) in code.iter().enumerate() {
             fx.report.instructions += 1;

@@ -49,7 +49,7 @@ impl Liveness {
                 let (mut to, mut fixed) = ([NONE; 2], if b.exit == Exit::IndirectJump { INDIRECT } else { 0 });
                 let mut add = |a: u64, k: u32| {
                     let t = if k != NO { k } else {
-                        match l.entries.binary_search(&a) { Ok(e) => e as u32 | ENTRY, Err(_) => { fixed |= ALL_FLAGS as u8; return; } }
+                        match program.entries.index(a) { Some(e) => e as u32 | ENTRY, None => { fixed |= ALL_FLAGS as u8; return; } }
                     };
                     to[(to[0] != NONE) as usize] = t;
                 };

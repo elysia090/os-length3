@@ -106,20 +106,24 @@ fn find(elf: &Elf, walk: Find) -> Program {
             match sizes.get(&s) { Some(&size) if size > 0 => s + size, _ => next }
         };
         let inside = |all: &[u64], s: u64, e: u64| (all.partition_point(|&a| a <= s), all.partition_point(|&a| a < e));
-        let jobs: Vec<Job> = sorted.iter().filter(|s| !done.contains_key(s)).map(|&s| {
+        // The starts not walked yet: both lists in order, gone through together.
+        let mut walked = done.keys().copied().peekable();
+        let jobs: Vec<Job> = sorted.iter().filter(|&&s| { while walked.next_if(|&d| d < s).is_some() {} walked.next_if_eq(&s).is_none() }).map(|&s| {
             let e = end(s);
             let ((p, q), (i, j)) = (inside(&pointers, s, e), inside(&sorted, s, e));
             (s, e, &pointers[p..q], &sorted[i..j])
         }).collect();
-        let mut found = Vec::new();
-        let mut switches = Vec::new();
+        let (mut found, mut switches) = (Vec::new(), Vec::new());
         for (s, blocks, calls) in walk_all(elf, &jobs, collect.then_some(&mut references)) {
             if guess && follow.tables { switches.extend(switch_targets(elf, &blocks, s, end(s))); }
             // Not following calls, code it goes on to all the same: what it jumps or runs into past its range.
-            let next = if follow.calls { calls } else { continuations(&blocks) };
-            found.extend(next.into_iter().filter(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t)));
+            found.extend(if follow.calls { calls } else { continuations(&blocks) });
             done.insert(s, blocks);
         }
+        // Each place once (a function is called from many), then only those not known yet.
+        found.sort_unstable();
+        found.dedup();
+        found.retain(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t));
         if collect { references.sort_unstable(); references.dedup(); }
         if follow.taken { found.extend(references.iter().copied().filter(|&a| elf.is_code(a) && !starts.contains(&a))); }
         let mut tables = if !follow.tables { Vec::new() } else if guess { switches } else { relative_table_targets(elf, &references) };
@@ -523,8 +527,7 @@ fn runs(start: u64, name: String, blocks: Vec<Block>, scratch: &mut Layout) -> V
     // A cut before block p breaks each loop with head < p <= last (a walk's blocks are in address order).
     let mut breaks = vec![false; blocks.len()];
     if exact.is_none() {
-        let at = |a: u64| blocks.binary_search_by_key(&a, |b| b.start).ok();
-        for lp in loops_of(&blocks, at).0.into_iter().filter(|lp| lp.last - lp.head < KEEP) { breaks[lp.head + 1..=lp.last].fill(true); }
+        for lp in loops_of(&blocks).0.into_iter().filter(|lp| lp.last - lp.head < KEEP) { breaks[lp.head + 1..=lp.last].fill(true); }
     }
     let mut out: Vec<Function> = Vec::with_capacity(blocks.len().div_ceil(run));
     let mut held: Vec<Block> = Vec::with_capacity(run);

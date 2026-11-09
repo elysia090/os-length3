@@ -181,13 +181,8 @@ impl Function {
     pub fn new(start: u64, name: String, blocks: Vec<Block>) -> Function { Function::laid_out(start, name, blocks, &mut Layout::default()) }
     /// As `new`, laid out in `scratch`.
     pub fn laid_out(start: u64, name: String, blocks: Vec<Block>, scratch: &mut Layout) -> Function {
-        // Successors found once, in address order (most often the next block); laid out, each index goes where its
-        // block went.
-        let at = |k: usize, a: u64| match blocks.get(k + 1) {
-            Some(b) if b.start == a => (k + 1) as u32,
-            _ => blocks.binary_search_by_key(&a, |b| b.start).ok().map_or(NO, |k| k as u32),
-        };
-        let succ: Vec<[u32; 2]> = blocks.iter().enumerate().map(|(k, b)| goes_to(b).map(|a| a.map_or(NO, |a| at(k, a)))).collect();
+        // Successors found once, in address order; laid out, each index goes where its block went.
+        let succ = successors(&blocks);
         if !scratch.lay_out(&succ) {
             return Function { start, name, by_address: (0..blocks.len() as u32).collect(), blocks, succ };
         }
@@ -221,19 +216,49 @@ pub struct Program {
 /// Each entry's address and the function and block it is, sorted by address: one each, the first marked where a
 /// place was marked more than once.
 #[derive(Debug, Default)]
-pub struct Entries(Vec<(u64, (u32, u32))>);
+pub struct Entries(Vec<(u64, (u32, u32))>, Buckets);
+
+/// Where in a sorted list of addresses each stretch of 2^shift bytes from `base` begins: a look-up is a load and a
+/// search of the few addresses in one stretch, not of all of them.
+#[derive(Debug, Default)]
+pub(crate) struct Buckets { base: u64, shift: u32, at: Vec<u32> }
+
+impl Buckets {
+    /// Over `sorted` (ascending), about as many stretches as addresses.
+    pub(crate) fn of(sorted: impl ExactSizeIterator<Item = u64> + Clone) -> Buckets {
+        let (n, mut all) = (sorted.len(), sorted.clone());
+        let (Some(base), Some(last)) = (all.next(), sorted.clone().last()) else { return Buckets::default() };
+        let shift = ((last - base) / n as u64).max(1).ilog2();
+        let count = ((last - base) >> shift) as usize + 1;
+        let mut at = vec![0u32; count + 1];
+        for a in sorted { at[((a - base) >> shift) as usize + 1] += 1; }
+        for k in 0..count { at[k + 1] += at[k]; }
+        Buckets { base, shift, at }
+    }
+    /// The range of the list where `address` would be.
+    #[inline]
+    pub(crate) fn range(&self, address: u64) -> std::ops::Range<usize> {
+        let b = (address.wrapping_sub(self.base) >> self.shift) as usize;
+        if b + 1 >= self.at.len() { return 0..0; }
+        self.at[b] as usize..self.at[b + 1] as usize
+    }
+}
 
 impl Entries {
     pub(crate) fn of(mut marks: Vec<(u64, (u32, u32))>) -> Entries {
         // The first marked of an address is the one of the lowest function (a function marks an address one way).
-        marks.sort_unstable_by_key(|&(a, (f, _))| (a, f));
+        marks.sort_unstable_by_key(|&(a, (f, _))| (a as u128) << 32 | f as u128);
         marks.dedup_by_key(|&mut (a, _)| a);
         marks.shrink_to_fit();
-        Entries(marks)
+        let buckets = Buckets::of(marks.iter().map(|&(a, _)| a));
+        Entries(marks, buckets)
     }
     pub fn get(&self, address: &u64) -> Option<&(u32, u32)> { self.index(*address).map(|k| &self.0[k].1) }
     /// Where `address` is among the entries (as Liveness numbers them), found once for all that is asked of it.
-    pub fn index(&self, address: u64) -> Option<usize> { self.0.binary_search_by_key(&address, |&(a, _)| a).ok() }
+    pub fn index(&self, address: u64) -> Option<usize> {
+        let r = self.1.range(address);
+        self.0[r.clone()].binary_search_by_key(&address, |&(a, _)| a).ok().map(|k| r.start + k)
+    }
     pub fn at(&self, k: usize) -> (u32, u32) { self.0[k].1 }
     pub fn contains_key(&self, address: &u64) -> bool { self.get(address).is_some() }
     pub fn len(&self) -> usize { self.0.len() }
@@ -267,8 +292,19 @@ pub struct Loop { pub head: usize, pub last: usize, pub parent: Option<usize> }
 /// The loops `blocks`' back edges make (to a block at or before their own, `at` finding a block by address), each
 /// from its head through the last block that goes back to it (one overlapping another without lying within it is not
 /// made); and the innermost each block lies within past its head.
-pub fn loops_of(blocks: &[Block], at: impl Fn(u64) -> Option<usize>) -> (Vec<Loop>, Vec<Option<usize>>) {
-    let succ: Vec<[u32; 2]> = blocks.iter().map(|b| goes_to(b).map(|a| a.and_then(&at).map_or(NO, |k| k as u32))).collect();
+/// Each block's successors among `blocks` (in address order) by index, NO for none there: most often the next block,
+/// else searched for.
+pub(crate) fn successors(blocks: &[Block]) -> Vec<[u32; 2]> {
+    let at = |k: usize, a: u64| match blocks.get(k + 1) {
+        Some(b) if b.start == a => (k + 1) as u32,
+        _ => blocks.binary_search_by_key(&a, |b| b.start).ok().map_or(NO, |k| k as u32),
+    };
+    blocks.iter().enumerate().map(|(k, b)| goes_to(b).map(|a| a.map_or(NO, |a| at(k, a)))).collect()
+}
+
+/// The loops of `blocks` (in address order) and the innermost each block is in.
+pub fn loops_of(blocks: &[Block]) -> (Vec<Loop>, Vec<Option<usize>>) {
+    let succ = successors(blocks);
     let (mut loops, mut within, mut last, mut open) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     loops_into(&succ, &mut loops, (&mut last, &mut open));
     within_of(&loops, blocks.len(), &mut within);
