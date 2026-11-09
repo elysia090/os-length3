@@ -62,6 +62,19 @@ impl Block {
         }
     }
 
+    /// The block of `steps` (at `start`, each after the one before), ending as `exit` says.
+    fn of_steps(start: u64, steps: &[Step], exit: Exit) -> Block {
+        let (mut reads, mut writes, mut traps) = (0, 0, false);
+        for s in steps {
+            reads |= s.reads & !writes;
+            writes |= s.writes;
+            traps |= s.bits & TRAPS != 0;
+        }
+        let last = steps.last().expect("a block holds an instruction");
+        let len: u32 = steps.iter().map(|s| s.len as u32).sum();
+        Block { start, len, count: steps.len() as u32, reads, writes, last: last.len, resumes: last.bits & SYSCALL != 0, traps, exit }
+    }
+
     /// Where it ends: the address after its last instruction.
     pub fn end(&self) -> u64 { self.start + self.len as u64 }
 
@@ -470,8 +483,58 @@ fn ranges(starts: &BTreeSet<u64>, sizes: &BTreeMap<u64, u64>) -> BTreeMap<u64, u
     out
 }
 
+/// What a walk keeps of an instruction it decoded: what makes blocks of it, and what a block keeps of it (as
+/// Block::of finds from an instruction), in 16 bytes, not an iced Instruction's 40 copied in and out.
+#[derive(Clone, Copy)]
+struct Step {
+    /// Where its direct branch or call goes (with TARGET).
+    target: u64,
+    len: u8,
+    /// How it goes on: one of NEXT .. STOP.
+    flow: u8,
+    reads: u8,
+    writes: u8,
+    /// TARGET, TRAPS, SYSCALL.
+    bits: u8,
+}
+
+// A step's flow (flow() as a walk reads it).
+const NEXT: u8 = 0;
+const CALL: u8 = 1;
+const INDIRECT_CALL: u8 = 2;
+const BRANCH: u8 = 3;
+const JUMP: u8 = 4;
+const INDIRECT_JUMP: u8 = 5;
+const RETURN: u8 = 6;
+/// Anything else: undecodable, trapping, or a flow translation does not follow (int3, ud2, hlt, xbegin).
+const STOP: u8 = 7;
+// A step's bits.
+const TARGET: u8 = 1;
+const TRAPS: u8 = 2;
+const SYSCALL: u8 = 4;
+
+impl Step {
+    fn of(i: &Instruction) -> Step {
+        let flow = match flow(i) {
+            FlowControl::Next | FlowControl::Interrupt if i.mnemonic() != Mnemonic::Int3 => NEXT,
+            FlowControl::Call => CALL,
+            FlowControl::IndirectCall => INDIRECT_CALL,
+            FlowControl::ConditionalBranch => BRANCH,
+            FlowControl::UnconditionalBranch => JUMP,
+            FlowControl::IndirectBranch => INDIRECT_JUMP,
+            FlowControl::Return => RETURN,
+            _ => STOP,
+        };
+        let target = direct_target(i);
+        let traps = matches!(i.mnemonic(), Mnemonic::Syscall | Mnemonic::Sysenter | Mnemonic::Int | Mnemonic::Int1 | Mnemonic::Int3 | Mnemonic::Into);
+        let bits = if target.is_some() { TARGET } else { 0 } | if traps { TRAPS } else { 0 } | if resumes_after(i) { SYSCALL } else { 0 };
+        Step { target: target.unwrap_or(0), len: i.len() as u8, flow, reads: flags_read(i) as u8, writes: flags_written(i) as u8, bits }
+    }
+    fn target(&self) -> Option<u64> { (self.bits & TARGET != 0).then_some(self.target) }
+}
+
 /// What a walk keeps while it walks, by each byte's offset from its start (not hashed: a byte's place is its own
-/// address): the instructions it decoded, in order, and for each byte 1 + the index of the one that starts there (0:
+/// address): the steps it decoded, in order, and for each byte 1 + the index of the one that starts there (0:
 /// none), with LEADER where a block starts. Code past its range (a call's continuation past the end) goes in
 /// `outside`, a few places at most. A thread keeps one from walk to walk, cleared, not freed.
 #[derive(Default)]
@@ -482,9 +545,11 @@ struct Scratch {
     high: usize,
     at: Vec<u32>,
     outside: Vec<(u64, u32)>,
-    decoded: Vec<Instruction>,
-    /// A block's instructions as it is made.
-    code: Vec<Instruction>,
+    steps: Vec<Step>,
+    /// Every place marked a leader, as marked.
+    leads: Vec<u64>,
+    /// A block's steps as it is made.
+    block: Vec<Step>,
 }
 
 /// A block starts at this byte (Scratch::at).
@@ -493,8 +558,9 @@ const LEADER: u32 = 1 << 31;
 impl Scratch {
     fn begin(&mut self, base: u64, span: usize) {
         (self.base, self.span) = (base, span);
-        self.decoded.clear();
+        self.steps.clear();
         self.outside.clear();
+        self.leads.clear();
     }
     fn offset(&self, a: u64) -> Option<usize> { a.checked_sub(self.base).filter(|&o| o < self.span as u64).map(|o| o as usize) }
     fn entry(&mut self, a: u64) -> &mut u32 {
@@ -512,24 +578,27 @@ impl Scratch {
             None => self.outside.iter().find(|&&(x, _)| x == a).map_or(0, |&(_, v)| v),
         }
     }
-    fn lead(&mut self, a: u64) { *self.entry(a) |= LEADER; }
+    fn lead(&mut self, a: u64) {
+        let e = self.entry(a);
+        if *e & LEADER == 0 {
+            *e |= LEADER;
+            self.leads.push(a);
+        }
+    }
     fn is_leader(&self, a: u64) -> bool { self.get(a) & LEADER != 0 }
     fn is_decoded(&self, a: u64) -> bool { self.get(a) & !LEADER != 0 }
-    fn record(&mut self, a: u64, i: Instruction) {
-        self.decoded.push(i);
-        let n = self.decoded.len() as u32;
+    fn record(&mut self, a: u64, s: Step) {
+        self.steps.push(s);
+        let n = self.steps.len() as u32;
         let e = self.entry(a);
         *e = (*e & LEADER) | n;
     }
-    fn instruction(&self, a: u64) -> Instruction { self.decoded[(self.get(a) & !LEADER) as usize - 1] }
+    fn step(&self, a: u64) -> Step { self.steps[(self.get(a) & !LEADER) as usize - 1] }
     /// Where blocks start in what was decoded, in order.
-    fn leaders(&self) -> Vec<u64> {
-        let found = |v: u32| v & LEADER != 0 && v & !LEADER != 0;
-        let mut out: Vec<u64> = (0..self.high).filter(|&o| found(self.at[o])).map(|o| self.base + o as u64).collect();
-        // Past the range, every place is after it.
-        let mut past: Vec<u64> = self.outside.iter().filter(|&&(_, v)| found(v)).map(|&(a, _)| a).collect();
-        past.sort_unstable();
-        out.extend(past);
+    fn leaders(&mut self) -> Vec<u64> {
+        let mut out = std::mem::take(&mut self.leads);
+        out.sort_unstable();
+        out.retain(|&a| self.is_decoded(a));
         out
     }
     fn end(&mut self) {
@@ -568,7 +637,7 @@ fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut r
             let Some(i) = decode(at) else {
                 break;
             };
-            scratch.record(at, i);
+            scratch.record(at, Step::of(&i));
             if resumes_after(&i) {
                 scratch.lead(at);
                 scratch.lead(i.next_ip());
@@ -639,28 +708,28 @@ fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut r
     // even when a wrong table guess decoded bytes inside an instruction.
     let order = scratch.leaders();
     let mut blocks = Vec::with_capacity(order.len());
-    let mut code = std::mem::take(&mut scratch.code);
+    let mut steps = std::mem::take(&mut scratch.block);
     for block_start in order {
-        code.clear();
+        steps.clear();
         let mut at = block_start;
         let exit = loop {
-            let i = scratch.instruction(at);
-            code.push(i);
-            let next = i.next_ip();
-            match flow(&i) {
-                FlowControl::Call => break match direct_target(&i) {
+            let s = scratch.step(at);
+            steps.push(s);
+            let next = at + s.len as u64;
+            match s.flow {
+                CALL => break match s.target() {
                     Some(target) => Exit::Call { target, ret: next },
                     None => Exit::IndirectCall { ret: next },
                 },
-                FlowControl::IndirectCall => break Exit::IndirectCall { ret: next },
-                FlowControl::ConditionalBranch => break Exit::Branch { taken: direct_target(&i).unwrap(), fall: next },
-                FlowControl::UnconditionalBranch => {
-                    let t = direct_target(&i).unwrap();
+                INDIRECT_CALL => break Exit::IndirectCall { ret: next },
+                BRANCH => break Exit::Branch { taken: s.target().unwrap(), fall: next },
+                JUMP => {
+                    let t = s.target().unwrap();
                     break if inside(t) { Exit::Jump(t) } else { Exit::TailJump(t) };
                 }
-                FlowControl::IndirectBranch => break Exit::IndirectJump,
-                FlowControl::Return => break Exit::Return,
-                FlowControl::Next | FlowControl::Interrupt if i.mnemonic() != Mnemonic::Int3 => {
+                INDIRECT_JUMP => break Exit::IndirectJump,
+                RETURN => break Exit::Return,
+                NEXT => {
                     if !scratch.is_decoded(next) {
                         // Running into the next function is a tail call to it.
                         break if inside(next) { Exit::Trap } else { Exit::TailJump(next) };
@@ -673,9 +742,9 @@ fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut r
                 _ => break Exit::Trap,
             }
         };
-        blocks.push(Block::of(block_start, &code, exit));
+        blocks.push(Block::of_steps(block_start, &steps, exit));
     }
-    scratch.code = code;
+    scratch.block = steps;
     scratch.end();
     (blocks, calls)
 }
