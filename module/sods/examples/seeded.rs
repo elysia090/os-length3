@@ -6,7 +6,7 @@ fn main() {
     let t = std::time::Instant::now();
     let elf = xlat::elf::Elf::parse_owned(std::fs::read(&a[1]).unwrap()).unwrap();
     let parse = t.elapsed();
-    let program = xlat::kernel::discover_seeded(&elf, &seeds);
+    let program = xlat::find::discover_seeded(&elf, &seeds);
     let discover = t.elapsed();
     let blocks: usize = program.functions.iter().map(|f| f.blocks.len()).sum();
     let out = xlat::image::translate(&elf, &program, Default::default());

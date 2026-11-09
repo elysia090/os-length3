@@ -8,7 +8,7 @@ fn main() {
     let elf = xlat::elf::Elf::parse(&bytes).unwrap();
     let parse = t.elapsed();
     let known: std::collections::BTreeSet<u64> = words(&a[3]).into_iter().collect();
-    let program = xlat::kernel::discover_from(&elf, &words(&a[2]), &known);
+    let program = xlat::find::discover_from(&elf, &words(&a[2]), &known);
     let discover = t.elapsed();
     let out = xlat::image::translate_more(&elf, &program, known.len() as u32, xlat::image::Options::default());
     let lower = t.elapsed();

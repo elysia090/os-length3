@@ -11,10 +11,12 @@ runs what it makes is ricebox's (`../ricebox`).
   `memory.copy`. Code is found from symbols, call targets and the
   relocations kept by `--emit-relocs` (including position-relative jump
   tables); anything reached another way goes through an address dispatcher.
-  `kernel.rs` finds the code, decides what the whole program shares (the
-  flags each entry reads, what a call may touch) and makes each function's
-  frame; `ops.rs` is what each instruction means on it; `image.rs` the module
-  around the code; `op.rs` the operators, as their bytes.
+  In one direction: `find.rs` finds the code into a `program.rs`;
+  `facts.rs` decides what the whole program shares (the flags each entry
+  reads, what a call may touch); `kernel.rs` makes each function's frame
+  (layout, labels, dispatch, syncs); `ops.rs` is what each instruction means
+  on it; `image.rs` the module around the code; `op.rs` the operators, as
+  their bytes.
 - The translator also builds as wasm (`--target wasm32-unknown-unknown
   --lib`, wrapped by `runtime/translator.ts`) and gives byte-identical
   output, so a browser translates the programs it runs.

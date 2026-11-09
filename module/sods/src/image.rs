@@ -3,7 +3,9 @@
 //! the code itself written into one buffer as the kernel makes each function.
 
 use crate::elf::Elf;
+use crate::facts::{summarize, Liveness};
 use crate::kernel::*;
+use crate::program::Program;
 use crate::ops::Report;
 use std::borrow::Cow;
 use wasm_encoder::{

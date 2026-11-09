@@ -73,7 +73,7 @@ thread_local! {
     static OPEN: RefCell<Vec<(u32, crate::elf::Elf, BTreeSet<u64>)>> = const { RefCell::new(Vec::new()) };
     static NEXT: Cell<u32> = const { Cell::new(1) };
     /// How many instructions one module of code reached later may hold, past its seeds' own (xlat_budget).
-    static BUDGET: Cell<usize> = const { Cell::new(crate::kernel::BUDGET) };
+    static BUDGET: Cell<usize> = const { Cell::new(crate::find::BUDGET) };
     /// The x87's registers of each thread whose translated code calls xlat_fpu, by handle (an instance of this module
     /// of its own holds them: runtime/x87.ts). The first is no thread's: an instance whose handle was never set uses
     /// it, and never another thread's.
@@ -111,7 +111,7 @@ pub unsafe extern "C" fn xlat_free(ptr: *mut u8, len: usize) {
 pub unsafe extern "C" fn xlat_translate(ptr: *mut u8, len: usize) -> i32 {
     let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
         Ok(elf) => {
-            let program = crate::kernel::discover(&elf);
+            let program = crate::find::discover(&elf);
             (0, crate::image::translate(&elf, &program, crate::image::Options::default()).wasm)
         }
         Err(e) => (1, e.to_string().into_bytes()),
@@ -129,7 +129,7 @@ pub unsafe extern "C" fn xlat_translate(ptr: *mut u8, len: usize) -> i32 {
 pub unsafe extern "C" fn xlat_translate_whole(ptr: *mut u8, len: usize) -> i32 {
     let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
         Ok(elf) => {
-            let program = crate::kernel::discover_whole(&elf);
+            let program = crate::find::discover_whole(&elf);
             (0, crate::image::translate(&elf, &program, crate::image::Options::default()).wasm)
         }
         Err(e) => (1, e.to_string().into_bytes()),
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn xlat_translate_seeded(ptr: *mut u8, len: usize, seeds: 
     let seeds = words(seeds, n_seeds);
     let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
         Ok(elf) => {
-            let program = crate::kernel::discover_seeded(&elf, &seeds);
+            let program = crate::find::discover_seeded(&elf, &seeds);
             (0, crate::image::translate(&elf, &program, crate::image::Options::default()).wasm)
         }
         Err(e) => (1, e.to_string().into_bytes()),
@@ -197,7 +197,7 @@ pub unsafe extern "C" fn xlat_translate_more(handle: u32, seeds: *const u8, n_se
     let seeds = words(seeds, n_seeds);
     let (status, out) = OPEN.with(|o| match o.borrow_mut().iter_mut().find(|(h, _, _)| *h == handle) {
         Some((_, elf, known)) => {
-            let program = crate::kernel::discover_within(elf, &seeds, known, BUDGET.with(|b| b.get()));
+            let program = crate::find::discover_within(elf, &seeds, known, BUDGET.with(|b| b.get()));
             known.extend(program.functions.iter().map(|f| f.start));
             (0, crate::image::translate_more(elf, &program, base, crate::image::Options::default()).wasm)
         }
@@ -255,7 +255,7 @@ pub extern "C" fn xlat_budget(instructions: u32) {
 /// Cut functions into runs of `blocks` blocks (discover::RUN) from now on: for testing the cut on small programs.
 #[no_mangle]
 pub extern "C" fn xlat_run(blocks: u32) {
-    crate::kernel::set_run(blocks as usize);
+    crate::find::set_run(blocks as usize);
 }
 
 /// Let go of the ELF opened as `handle`, and of what was remembered with it.

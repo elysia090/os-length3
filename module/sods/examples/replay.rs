@@ -15,7 +15,7 @@ fn main() {
     let (mut functions, mut instructions, mut bytes) = (0, 0, 0);
     for s in seeds {
         let t = std::time::Instant::now();
-        let program = xlat::kernel::discover_within(&elf, &[s], &known, budget);
+        let program = xlat::find::discover_within(&elf, &[s], &known, budget);
         discover += t.elapsed();
         known.extend(program.functions.iter().map(|f| f.start));
         let t = std::time::Instant::now();

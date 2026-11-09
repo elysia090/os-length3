@@ -1,8 +1,11 @@
 pub mod elf;
+pub mod facts;
+pub mod find;
 pub mod image;
 pub mod kernel;
 pub mod op;
 pub mod ops;
+pub mod program;
 pub mod x87;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
