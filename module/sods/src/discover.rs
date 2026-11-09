@@ -103,23 +103,26 @@ pub struct Function {
     pub name: String,
     /// In the order they are lowered (`lowered`): index 0 is the function entry.
     pub blocks: Vec<Block>,
-    /// Each block's address and index, sorted by address.
-    by_address: Vec<(u64, u32)>,
+    /// Its blocks' indices, by their addresses.
+    by_address: Vec<u32>,
 }
 
 impl Function {
     /// The function of `blocks` (sorted by address, the entry first), in the order they are lowered.
     pub fn new(start: u64, name: String, mut blocks: Vec<Block>) -> Function {
         lowered(&mut blocks);
-        let mut by_address: Vec<(u64, u32)> = blocks.iter().enumerate().map(|(k, b)| (b.start, k as u32)).collect();
-        by_address.sort_unstable();
+        let mut by_address: Vec<u32> = (0..blocks.len() as u32).collect();
+        by_address.sort_unstable_by_key(|&k| blocks[k as usize].start);
         Function { start, name, blocks, by_address }
     }
     pub fn block_index(&self, address: u64) -> Option<usize> {
-        self.by_address.binary_search_by_key(&address, |&(a, _)| a).ok().map(|i| self.by_address[i].1 as usize)
+        self.by_address.binary_search_by_key(&address, |&k| self.blocks[k as usize].start).ok().map(|i| self.by_address[i] as usize)
     }
     /// The first and last of its blocks' addresses.
-    pub fn span(&self) -> Option<(u64, u64)> { Some((self.by_address.first()?.0, self.by_address.last()?.0)) }
+    pub fn span(&self) -> Option<(u64, u64)> {
+        let at = |k: &u32| self.blocks[*k as usize].start;
+        Some((at(self.by_address.first()?), at(self.by_address.last()?)))
+    }
 }
 
 /// Where a block may go on to within its function, by address: where it falls or jumps, both sides of a branch,
@@ -338,14 +341,14 @@ fn runs(start: u64, name: String, blocks: Vec<Block>) -> Vec<Function> {
 
 /// Where a run of a function cut into `runs` (the program's functions from `first`) goes on in another run: each such
 /// place an entry of the run that holds it, so the jump is a tail call to it.
-fn joined(runs: &[Function], first: usize, entries: &mut BTreeMap<u64, (u32, u32)>) {
+fn joined(runs: &[Function], first: usize, entries: &mut Vec<(u64, (u32, u32))>) {
     if runs.len() < 2 { return; }
     let holder = |a: u64| runs.iter().enumerate().find_map(|(r, f)| f.block_index(a).map(|b| (r, b)));
     for f in runs {
         for b in &f.blocks {
             for a in goes_to(b).into_iter().flatten() {
                 if f.block_index(a).is_some() { continue; }
-                if let Some((r, k)) = holder(a) { entries.entry(a).or_insert(((first + r) as u32, k as u32)); }
+                if let Some((r, k)) = holder(a) { entries.push((a, ((first + r) as u32, k as u32))); }
             }
         }
     }
@@ -357,7 +360,38 @@ pub struct Program {
     pub functions: Vec<Function>,
     /// Code addresses execution may arrive at from outside a function's own
     /// direct control flow: entries, call continuations and stored pointers.
-    pub entries: BTreeMap<u64, (u32, u32)>,
+    pub entries: Entries,
+}
+
+/// Each entry's address and the function and block it is, sorted by address: one each, the first marked where a
+/// place was marked more than once.
+#[derive(Debug, Default)]
+pub struct Entries(Vec<(u64, (u32, u32))>);
+
+impl Entries {
+    /// The entries `marks` (in the order marked) name.
+    fn of(mut marks: Vec<(u64, (u32, u32))>) -> Entries {
+        // A stable sort: of the marks at one address, the first stays first.
+        marks.sort_by_key(|&(a, _)| a);
+        marks.dedup_by_key(|&mut (a, _)| a);
+        marks.shrink_to_fit();
+        Entries(marks)
+    }
+    pub fn get(&self, address: &u64) -> Option<&(u32, u32)> {
+        self.0.binary_search_by_key(address, |&(a, _)| a).ok().map(|k| &self.0[k].1)
+    }
+    pub fn contains_key(&self, address: &u64) -> bool { self.get(address).is_some() }
+    pub fn len(&self) -> usize { self.0.len() }
+    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+    pub fn keys(&self) -> impl Iterator<Item = &u64> + '_ { self.0.iter().map(|(a, _)| a) }
+    pub fn values(&self) -> impl Iterator<Item = &(u32, u32)> + '_ { self.0.iter().map(|(_, v)| v) }
+    pub fn iter(&self) -> impl Iterator<Item = (&u64, &(u32, u32))> + '_ { self.0.iter().map(|(a, v)| (a, v)) }
+}
+
+impl<'a> IntoIterator for &'a Entries {
+    type Item = (&'a u64, &'a (u32, u32));
+    type IntoIter = std::iter::Map<std::slice::Iter<'a, (u64, (u32, u32))>, fn(&'a (u64, (u32, u32))) -> (&'a u64, &'a (u32, u32))>;
+    fn into_iter(self) -> Self::IntoIter { self.0.iter().map(|(a, v)| (a, v)) }
 }
 
 fn decode(elf: &Elf, address: u64) -> Option<Instruction> {
@@ -854,13 +888,13 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
         starts.extend(found);
     }
     let mut functions = Vec::new();
-    let mut entries = BTreeMap::new();
+    let mut entries = Vec::new();
     for (start, blocks) in done {
         let first = functions.len();
         for function in runs(start, format!("fn_{start:x}"), blocks) {
             let f = functions.len() as u32;
             let mut mark = |address: u64| {
-                if let Some(b) = function.block_index(address) { entries.entry(address).or_insert((f, b as u32)); }
+                if let Some(b) = function.block_index(address) { entries.push((address, (f, b as u32))); }
             };
             mark(function.start);
             for (k, b) in function.blocks.iter().enumerate() {
@@ -876,7 +910,7 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
         }
         joined(&functions[first..], first, &mut entries);
     }
-    Program { entry: elf.entry, functions, entries }
+    Program { entry: elf.entry, functions, entries: Entries::of(entries) }
 }
 
 /// The program's code from its entry, its function symbols and what its relocations point at: what a running program
@@ -986,7 +1020,7 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
     }
 
     let mut functions = Vec::new();
-    let mut entries = BTreeMap::new();
+    let mut entries = Vec::new();
     for (start, blocks) in done {
         let name = names.get(&start).cloned().unwrap_or_else(|| format!("fn_{start:x}"));
         let first_run = functions.len();
@@ -994,7 +1028,7 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
             let f = functions.len() as u32;
             let mut mark = |address: u64, function: &Function| {
                 if let Some(b) = function.block_index(address) {
-                    entries.entry(address).or_insert((f, b as u32));
+                    entries.push((address, (f, b as u32)));
                 }
             };
             mark(function.start, &function);
@@ -1020,5 +1054,5 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
         }
         joined(&functions[first_run..], first_run, &mut entries);
     }
-    Program { entry: elf.entry, functions, entries }
+    Program { entry: elf.entry, functions, entries: Entries::of(entries) }
 }
