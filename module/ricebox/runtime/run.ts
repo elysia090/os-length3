@@ -25,7 +25,7 @@ const wasmTranslator = join(here, '..', '..', 'sods', 'target', 'wasm32-unknown-
 
 // XLAT_BLOCKS=1: translate with --trace, so every block entered is reported (process.ts prints it).
 const traced = process.env.XLAT_BLOCKS ? ['--trace'] : [];
-// XLAT_RUN=N: functions cut into runs of N blocks (discover.rs RUN), so the cut is tested on small programs.
+// XLAT_RUN=N: functions cut into runs of N blocks (kernel.rs RUN), so the cut is tested on small programs.
 const cut = process.env.XLAT_RUN ? [`--run=${process.env.XLAT_RUN}`] : [];
 
 // The translator built as wasm, run in this process as the browser runs

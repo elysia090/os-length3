@@ -39,7 +39,7 @@ for c in "$here"/*.c; do
     echo "FAIL $name (exit $native vs $translated)"; status=1
   fi
 done
-# Functions cut into runs of a few blocks (discover.rs RUN cuts only functions of thousands): every jump between runs a
+# Functions cut into runs of a few blocks (kernel.rs RUN cuts only functions of thousands): every jump between runs a
 # tail call to the run that holds its target, loops round them still taking their turns; the same output as native.
 for name in calls switches signals threads jobs; do
   set +e

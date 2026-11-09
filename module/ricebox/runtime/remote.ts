@@ -455,7 +455,7 @@ class RemoteTask extends Task {
   }
 
   override attach(): void {}
-  /** How deep its stack has gone, as its Worker last said (lower.rs G_LOW); null if not known. */
+  /** How deep its stack has gone, as its Worker last said (kernel.rs G_LOW); null if not known. */
   override low(): bigint | null { const v = this.i64[CH.LOW]; return v === 0n ? null : v; }
   /** Its process stops: it does too, at its next loop's head if it runs guest code. */
   override stop = (): void => { this.kernel.lookIn(this.proc); };

@@ -5,9 +5,9 @@ fn main() {
     let bytes = std::fs::read(&p).unwrap();
     let elf = xlat::elf::Elf::parse(&bytes).unwrap();
     let a = t.elapsed();
-    let program = xlat::discover::discover(&elf);
+    let program = xlat::kernel::discover(&elf);
     let b = t.elapsed();
-    let out = xlat::lower::translate(&elf, &program, Default::default());
+    let out = xlat::image::translate(&elf, &program, Default::default());
     let c = t.elapsed();
     println!("read+parse {a:?} discover {:?} translate {:?} ({} bytes)", b - a, c - b, out.wasm.len());
 }

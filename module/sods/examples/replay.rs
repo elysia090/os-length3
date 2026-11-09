@@ -15,11 +15,11 @@ fn main() {
     let (mut functions, mut instructions, mut bytes) = (0, 0, 0);
     for s in seeds {
         let t = std::time::Instant::now();
-        let program = xlat::discover::discover_within(&elf, &[s], &known, budget);
+        let program = xlat::kernel::discover_within(&elf, &[s], &known, budget);
         discover += t.elapsed();
         known.extend(program.functions.iter().map(|f| f.start));
         let t = std::time::Instant::now();
-        let out = xlat::lower::translate_more(&elf, &program, 0, Default::default());
+        let out = xlat::image::translate_more(&elf, &program, 0, Default::default());
         lower += t.elapsed();
         functions += program.functions.len();
         for f in &program.functions {

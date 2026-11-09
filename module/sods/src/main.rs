@@ -28,24 +28,24 @@ fn main() -> ExitCode {
     let started = std::time::Instant::now();
     let flag = |name: &str| args.iter().find_map(|a| a.strip_prefix(&format!("--{name}=")).map(str::to_string));
     // --run=N: functions cut into runs of N blocks (discover::RUN), for testing the cut on small programs.
-    if let Some(n) = flag("run").and_then(|n| n.parse().ok()) { xlat::discover::set_run(n); }
+    if let Some(n) = flag("run").and_then(|n| n.parse().ok()) { xlat::kernel::set_run(n); }
     let list = |path: Option<String>| -> Vec<u64> {
         path.and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default().lines().filter_map(|l| l.trim().parse().ok()).collect()
     };
     let translation = if let Some(seeds) = flag("more") {
         let known: std::collections::BTreeSet<u64> = list(flag("known")).into_iter().collect();
         let base: u32 = flag("base").and_then(|b| b.parse().ok()).unwrap_or(0);
-        let program = xlat::discover::discover_within(&elf, &list(Some(seeds)), &known, xlat::discover::BUDGET);
-        xlat::lower::translate_more(&elf, &program, base, xlat::lower::Options { trace })
+        let program = xlat::kernel::discover_within(&elf, &list(Some(seeds)), &known, xlat::kernel::BUDGET);
+        xlat::image::translate_more(&elf, &program, base, xlat::image::Options { trace })
     } else {
         let program = if args.iter().any(|a| a == "--whole") {
-            xlat::discover::discover_whole(&elf)
+            xlat::kernel::discover_whole(&elf)
         } else if let Some(seeds) = flag("seeds") {
-            xlat::discover::discover_seeded(&elf, &list(Some(seeds)))
+            xlat::kernel::discover_seeded(&elf, &list(Some(seeds)))
         } else {
-            xlat::discover::discover(&elf)
+            xlat::kernel::discover(&elf)
         };
-        xlat::lower::translate(&elf, &program, xlat::lower::Options { trace })
+        xlat::image::translate(&elf, &program, xlat::image::Options { trace })
     };
     if let Err(e) = std::fs::write(output, &translation.wasm) {
         eprintln!("xlat: {output}: {e}");

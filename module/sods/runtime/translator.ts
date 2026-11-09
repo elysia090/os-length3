@@ -47,7 +47,7 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
   // XLAT_BUDGET=N (node): how much code reached later one module may hold, for measuring (0: all it reaches).
   const budget = globalThis.process?.env?.XLAT_BUDGET;
   if (budget) x.xlat_budget(Number(budget));
-  // XLAT_RUN=N (node): functions cut into runs of N blocks (discover.rs RUN), so the cut is tested on small programs.
+  // XLAT_RUN=N (node): functions cut into runs of N blocks (kernel.rs RUN), so the cut is tested on small programs.
   const run = globalThis.process?.env?.XLAT_RUN;
   if (run) x.xlat_run(Number(run));
   // What a fresh instance holds: that much never goes back.
