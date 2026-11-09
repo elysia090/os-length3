@@ -1,5 +1,6 @@
 pub mod discover;
 pub mod elf;
+pub mod emit;
 pub mod lower;
 pub mod summary;
 pub mod x87;
