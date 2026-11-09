@@ -117,6 +117,21 @@ const L_SP0: u32 = 54;
 /// moved to and from its global where the registers are (sync). A function with no loop counts it down in its global
 /// at each call, as before: it would move it in and out at each.
 const L_BUDGET: u32 = 55;
+/// How many locals there are in all (L_ENTRY the parameter, then the rest).
+const LOCALS: usize = 56;
+
+/// Each local's type. A function declares only those it touches, numbered in the order it first touches them
+/// (Fx::slot): where a function declares more than a few, or any but i32 and i64, V8's first tier zeroes them at every
+/// entry, a `rep stos` that costs about 10 ns a call, 15 with all of them (most functions touch no vector register).
+const fn kind(l: u32) -> ValType {
+    match l {
+        L_BLK | L_CF..=L_PF | L_BUDGET => ValType::I32,
+        _ if l >= l_u(0) && l < l_x(0) => ValType::I32,
+        _ if l >= l_x(0) && l < l_d(0) => ValType::V128,
+        _ if l >= l_d(0) && l < L_SP0 => ValType::F64,
+        _ => ValType::I64,
+    }
+}
 
 const RSP: u32 = 4;
 const RAX: u32 = 0;
@@ -207,6 +222,14 @@ struct Fx<'p> {
     /// A compare (cmp or test) whose flags only the branch right after it reads: not lowered where it is, but
     /// as that branch's condition, from its operands (lower_function, condition).
     fused: Option<Instruction>,
+    /// Each local's number in the function made (0 for one not touched yet, L_ENTRY being the parameter, 0), and the
+    /// types of those numbered, in order.
+    slots: [u32; LOCALS],
+    kinds: Vec<ValType>,
+    /// Whether there is a dispatch loop (one made lean has none: lower_function), and whether a jump within went round
+    /// it all the same.
+    dispatch: bool,
+    dispatched: bool,
     /// Nesting of wasm blocks between the current code and the dispatch loop.
     depth: u32,
     program: &'p Program,
@@ -283,24 +306,43 @@ fn xmm(r: Register) -> Option<u32> {
 
 impl<'p> Fx<'p> {
     fn e(&mut self, i: I) {
-        match i { W::If(_) | W::Block(_) | W::Loop(_) => self.nest += 1, W::End => self.nest = self.nest.saturating_sub(1), _ => {} }
+        let i = match i {
+            W::If(_) | W::Block(_) | W::Loop(_) => { self.nest += 1; i }
+            W::End => { self.nest = self.nest.saturating_sub(1); i }
+            W::LocalGet(l) => W::LocalGet(self.slot(l)),
+            W::LocalSet(l) => W::LocalSet(self.slot(l)),
+            W::LocalTee(l) => W::LocalTee(self.slot(l)),
+            _ => i,
+        };
         self.f.instruction(&i);
+    }
+    /// A local's number in the function made: numbered as it is first touched.
+    fn slot(&mut self, l: u32) -> u32 {
+        let s = &mut self.slots[l as usize];
+        if l != L_ENTRY && *s == 0 {
+            self.kinds.push(kind(l));
+            *s = self.kinds.len() as u32;
+        }
+        *s
     }
     fn note(&mut self, e: Ev) { if let Some(v) = self.ev.last_mut() { v.push(e); } }
     // The most frequent, straight to their bytes.
     fn get(&mut self, l: u32) {
         self.touch(l);
         if let Some(b) = reg_bit(l) { self.note(Ev::Read(b)); }
+        let l = self.slot(l);
         self.f.instructions().local_get(l);
     }
     fn set(&mut self, l: u32) {
         self.touch(l);
         if let Some(b) = reg_bit(l) { let top = self.nest == 0; self.note(Ev::Write(b, top)); }
+        let l = self.slot(l);
         self.f.instructions().local_set(l);
     }
     fn tee(&mut self, l: u32) {
         self.touch(l);
         if let Some(b) = reg_bit(l) { let top = self.nest == 0; self.note(Ev::Write(b, top)); }
+        let l = self.slot(l);
         self.f.instructions().local_tee(l);
     }
     /// Note a register's local in use (every access to one goes through get and set).
@@ -891,7 +933,7 @@ impl<'p> Fx<'p> {
                     Some(at) => self.e(W::Br(self.to(at))),
                     // Its label is not open here: round the dispatch loop (a block within a loop is never one: nothing
                     // jumps into a loop from outside it but to its head, clean_loops).
-                    None => { self.c32(b as i32); self.set(L_BLK); self.e(W::Br(self.depth)); }
+                    None => { self.dispatched = true; self.c32(b as i32); self.set(L_BLK); self.e(W::Br(self.depth)); }
                 }
             }
             Some(b) => {
@@ -901,6 +943,7 @@ impl<'p> Fx<'p> {
                     // Back to the head of a loop this code is in: round that loop.
                     Some(at) => self.e(W::Br(self.to(at))),
                     None => {
+                        self.dispatched = true;
                         self.c32(b as i32);
                         self.set(L_BLK);
                         self.e(W::Br(self.depth));
@@ -992,7 +1035,7 @@ impl<'p> Fx<'p> {
         self.get(l_t(0)); self.c64(ret as i64); self.e(W::I64Ne);
         self.e(W::If(BlockType::Empty));
         self.save();
-        self.e(W::Br(self.depth + 2));
+        self.e(W::Br(self.depth + 1 + self.dispatch as u32));
         self.e(W::End);
         self.sync_in(false, writes);
         self.set_flags(Flags::Held);
@@ -1002,7 +1045,7 @@ impl<'p> Fx<'p> {
     fn after_call(&mut self, ret: u64, next: Option<u64>) {
         self.get(l_t(0)); self.c64(ret as i64); self.e(W::I64Ne);
         self.e(W::If(BlockType::Empty));
-        self.e(W::Br(self.depth + 2));
+        self.e(W::Br(self.depth + 1 + self.dispatch as u32));
         self.e(W::End);
         self.load();
         self.set_flags(Flags::Held);
@@ -2668,14 +2711,38 @@ fn quiet(program: &Program, summaries: &[Summary], target: u64) -> Option<(u32, 
     (b == 0 && program.functions[f as usize].start == target && !s.exits).then_some((f, s))
 }
 
+/// A function made lean when it may be: entered only at its start, with no indirect jump, it needs no dispatch loop
+/// and br_table (a resume enters it again at its start: the loop round it does), and with no call no resume either,
+/// unless a jump within it goes round the dispatch (one back to a block that heads no loop it is in), which only
+/// making it tells; then it is made as any is. V8's first tier (where most of a compile's code runs) checks the stack
+/// at each loop's head and keeps every local in memory across it, and zeroes the locals of a function that has more
+/// than a few: a leaf made lean has neither.
 fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u64, u32>, summaries: &[Summary], options: Options, report: &mut Report) -> WasmFunction {
+    let function = &program.functions[index as usize];
+    let entered_within = function.blocks.iter().any(|b| b.exit == Exit::IndirectJump)
+        || function.blocks.iter().enumerate().skip(1).any(|(k, b)| program.entries.get(&b.start) == Some(&(index, k as u32)));
+    if !entered_within {
+        let mut lean = Report::default();
+        if let Some(f) = lower_shaped(program, (index, base), handed, summaries, options, &mut lean, true) {
+            report.blocks += lean.blocks;
+            report.instructions += lean.instructions;
+            for (m, k) in lean.unsupported { *report.unsupported.entry(m).or_default() += k; }
+            return f;
+        }
+    }
+    lower_shaped(program, (index, base), handed, summaries, options, report, false).unwrap_or_else(|| WasmFunction::new([]))
+}
+
+/// lower_function's making of function `index` (numbered in the table from `base`), lean or not; None when made lean
+/// and a jump within needed the dispatch loop.
+fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<u64, u32>, summaries: &[Summary], options: Options, report: &mut Report, lean: bool) -> Option<WasmFunction> {
     let function = &program.functions[index as usize];
     // Each block's successors, once: the analyses below go over them again and again.
     let succs: Vec<Successors> = function.blocks.iter().map(|b| successors(function, b, handed)).collect();
     let (live, cases) = live_flags(program, index, &succs);
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
-    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
         loops: Vec::new(), within: Vec::new(), heads: Vec::new(), labels: Vec::new(), block_at: Vec::new(), loop_at: Vec::new() };
     let (loops, within) = clean_loops(program, index, function, loops_of(&function.blocks, |a| function.block_index(a)).0);
     fx.heads = vec![None; function.blocks.len()];
@@ -2686,17 +2753,19 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
 
     // Everything the prologue depends on is known, so the function is made in order.
     // Only where it is read: past a call (the resume) or an indirect jump; a leaf pays nothing for it.
-    if function.blocks.iter().any(|b| matches!(b.exit, Exit::Call { .. } | Exit::IndirectCall { .. } | Exit::IndirectJump)) {
+    let calls = function.blocks.iter().any(|b| matches!(b.exit, Exit::Call { .. } | Exit::IndirectCall { .. }));
+    if calls || function.blocks.iter().any(|b| b.exit == Exit::IndirectJump) {
         fx.e(W::GlobalGet(RSP)); fx.c64(-1); fx.get(L_ENTRY); fx.e(W::I32Eqz); fx.e(W::Select); fx.set(L_SP0);
     }
     // Entered at L_ENTRY: from outside, or again from the resume below, as from outside.
-    fx.e(W::Loop(BlockType::Empty));
-    fx.get(L_ENTRY); fx.set(L_BLK);
+    let resume = !lean || calls;
+    if resume { fx.e(W::Loop(BlockType::Empty)); }
+    if !lean { fx.get(L_ENTRY); fx.set(L_BLK); }
     fx.load();
     // What the entries handed flags read (almost always none).
     fx.load_flags(cases);
-    fx.e(W::Block(BlockType::Empty));
-    fx.e(W::Loop(BlockType::Empty));
+    if resume { fx.e(W::Block(BlockType::Empty)); }
+    if !lean { fx.e(W::Loop(BlockType::Empty)); }
     // A label for each block within no loop past its head, the last block's outermost: each ends where its block's
     // code starts. Those within a loop open inside it (enter_loop).
     let outermost: Vec<usize> = (0..n as usize).rev().filter(|&b| fx.within[b].is_none()).collect();
@@ -2713,8 +2782,13 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
         while let Some(w) = l { t = fx.loops[w].head; l = fx.loops[w].parent; }
         fx.to(fx.block_at[t].unwrap_or_default())
     }).collect();
-    fx.get(L_BLK);
-    fx.e(W::BrTable(Cow::Owned(targets), 0));
+    // Lean, the code goes straight on into block 0's. Else block 0 (a call's way in) is gone to first: a br_table of
+    // n is a search of log n compares in V8's first tier.
+    if !lean {
+        fx.get(L_BLK); fx.e(W::I32Eqz); fx.e(W::BrIf(targets[0]));
+        fx.get(L_BLK);
+        fx.e(W::BrTable(Cow::Owned(targets), 0));
+    }
     for (k, block) in function.blocks.iter().enumerate() {
         // Close block k's label so its code starts here, inside the labels of
         // the blocks after it and of the loops it lies within; a loop it heads
@@ -2857,8 +2931,14 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
             fx.close(Lab::Loop(l));
         }
     }
+    if lean && fx.dispatched { return None; }
+    if !resume {
+        fx.e(W::Unreachable);
+        fx.e(W::End);
+        return Some(finish(program, index, fx));
+    }
     // Leaving the last block falls out of the loop.
-    fx.e(W::End);
+    if !lean { fx.e(W::End); }
     fx.e(W::Unreachable);
     fx.e(W::End);
     // The resume: a call came back to an address other than its own (after_call), in l_t(0). One of this function's
@@ -2870,34 +2950,50 @@ fn lower_function(program: &Program, index: u32, base: u32, handed: &BTreeMap<u6
     fx.get(l_t(0)); fx.e(W::Return);
     fx.e(W::End);
     fx.get(l_t(0)); fx.e(W::Call(F_RESOLVE)); fx.set(l_t(1));
-    fx.get(l_t(1)); fx.c64(32); fx.e(W::I64ShrU); fx.c64((base + index) as i64); fx.e(W::I64Eq);
-    fx.e(W::If(BlockType::Empty));
-    fx.get(l_t(1)); fx.e(W::I32WrapI64); fx.set(L_ENTRY);
-    fx.e(W::Br(1));
-    fx.e(W::End);
+    if lean {
+        // Entered only at its start: at that (block 0), nowhere else.
+        fx.get(l_t(1)); fx.c64(((base + index) as i64) << 32); fx.e(W::I64Eq);
+        fx.e(W::BrIf(0));
+    } else {
+        fx.get(l_t(1)); fx.c64(32); fx.e(W::I64ShrU); fx.c64((base + index) as i64); fx.e(W::I64Eq);
+        fx.e(W::If(BlockType::Empty));
+        fx.get(l_t(1)); fx.e(W::I32WrapI64); fx.set(L_ENTRY);
+        fx.e(W::Br(1));
+        fx.e(W::End);
+    }
     fx.get(l_t(0)); fx.e(W::Return);
     fx.e(W::End);
     fx.e(W::Unreachable);
     fx.e(W::End);
 
-    // The locals, then the code with each sync put in: only the registers it
-    // must move (sync_masks). One it never touches stays in its global, where
-    // code it calls and the host find it.
+    Some(finish(program, index, fx))
+}
+
+/// The locals, then the code with each sync put in: only the registers it
+/// must move (sync_masks). One it never touches stays in its global, where
+/// code it calls and the host find it.
+fn finish(program: &Program, index: u32, mut fx: Fx) -> WasmFunction {
     let masks = sync_masks(program, index, &fx.ev, &fx.syncs);
-    let (used, budget, syncs, code) = (fx.used, fx.budget, fx.syncs, fx.f.into_raw_body());
-    let mut f = WasmFunction::new([
-        (16, ValType::I64), (1, ValType::I32), (5, ValType::I32), (3, ValType::I64), (6, ValType::I64),
-        (2, ValType::I32), (16, ValType::V128), (2, ValType::V128), (2, ValType::F64), (1, ValType::I64), (1, ValType::I32),
-    ]);
+    // What the syncs move is touched by the code already (each register they may move, and the budget's local).
+    if fx.budget { fx.slot(L_BUDGET); }
+    let (used, budget, syncs, slots) = (fx.used, fx.budget, fx.syncs, fx.slots);
+    let mut groups: Vec<(u32, ValType)> = Vec::new();
+    for &k in &fx.kinds {
+        match groups.last_mut() { Some((n, t)) if *t == k => *n += 1, _ => groups.push((1, k)) }
+    }
+    let code = fx.f.into_raw_body();
+    let mut f = WasmFunction::new(groups);
     let sync = |f: &mut WasmFunction, save: bool, scope: u32, mask: u32| {
         let mut sink = f.instructions();
         for n in (0..32).filter(|n| used & mask & (1 << n) != 0) {
             let (local, global) = if n < 16 { (l_reg(n), n) } else { (l_x(n - 16), g_xmm(n - 16)) };
+            let local = slots[local as usize];
             if save { sink.local_get(local).global_set(global); } else { sink.global_get(global).local_set(local); }
         }
         // (A call to a function that never goes out leaves the budget alone: it has no loop, and counts no call.)
         if budget && scope == ALL {
-            if save { sink.local_get(L_BUDGET).global_set(G_BUDGET); } else { sink.global_get(G_BUDGET).local_set(L_BUDGET); }
+            let local = slots[L_BUDGET as usize];
+            if save { sink.local_get(local).global_set(G_BUDGET); } else { sink.global_get(G_BUDGET).local_set(local); }
         }
     };
     // The code made without locals starts with their count, 0.
