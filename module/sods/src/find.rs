@@ -164,9 +164,14 @@ fn find(elf: &Elf, walk: Find) -> Program {
                 for &t in to { if t != NO && t as usize <= j { marks.push(at(t)); } }
                 if b.resumes { marks.extend(found(b.last_ip())); marks.extend(found(b.end())); }
             }
-            // Only the pointers between its first and last block can land in it.
+            // Only the pointers between its first and last block can land in it: both in address order, gone through
+            // together.
             if let Some((lo, hi)) = f.span() {
-                marks.extend(pointers[pointers.partition_point(|&a| a < lo)..pointers.partition_point(|&a| a <= hi)].iter().filter_map(|&p| found(p)));
+                let mut by_address = f.by_address.iter().map(|&b| (f.blocks[b as usize].start, b)).peekable();
+                for &p in &pointers[pointers.partition_point(|&a| a < lo)..pointers.partition_point(|&a| a <= hi)] {
+                    while by_address.next_if(|&(a, _)| a < p).is_some() {}
+                    if let Some(&(a, b)) = by_address.peek() { if a == p { marks.push((p, (k, b))); } }
+                }
             }
             functions.push(f);
         }
@@ -246,7 +251,15 @@ const LEADER: u32 = 1 << 31;
 impl Scratch {
     #[inline]
     fn offset(&self, a: u64) -> Option<usize> { let o = a.wrapping_sub(self.base); (o < self.span as u64).then_some(o as usize) }
+    #[inline]
     fn entry(&mut self, a: u64) -> &mut u32 {
+        let o = a.wrapping_sub(self.base);
+        if o < self.at.len() as u64 { self.high = self.high.max(o as usize + 1); return &mut self.at[o as usize]; }
+        self.entry_past(a)
+    }
+    /// An entry past what `at` holds yet: grown to it, or one of the few outside the walk's range.
+    #[cold]
+    fn entry_past(&mut self, a: u64) -> &mut u32 {
         if let Some(o) = self.offset(a) {
             if o >= self.at.len() { self.at.resize((o + 1).next_multiple_of(4096).min(self.span), 0); }
             self.high = self.high.max(o + 1);
@@ -286,6 +299,8 @@ fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut r
     let mut decoder = Decoder::with_ip(64, code, start, DecoderOptions::NONE);
     let mut i = Instruction::default();
     (s.base, s.span) = (start, (end.min(start + code.len() as u64) - start) as usize);
+    // (What a walk before held past this one's range is zero, and no entry of this one.)
+    s.at.truncate(s.span);
     s.steps.clear();
     s.outside.clear();
     s.leads.clear();

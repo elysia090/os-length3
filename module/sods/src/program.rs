@@ -66,17 +66,16 @@ impl<'e> Code<'e> {
         Code { base, decoder: Decoder::with_ip(64, elf.code_at(base).unwrap_or_default(), base, DecoderOptions::NONE) }
     }
     pub(crate) fn decode(&mut self, elf: &Elf, b: &Block, into: &mut Vec<Instruction>) {
+        // Each instruction decoded where it is kept, the decoder moved only where the block starts.
         into.clear();
-        let (base, max) = (self.base, self.decoder.max_position() as u64);
-        let within = |a: u64| a.checked_sub(base).filter(|&o| o < max);
+        into.resize(b.count as usize, Instruction::default());
+        let o = b.start.wrapping_sub(self.base);
+        if o < self.decoder.max_position() as u64 { let _ = self.decoder.set_position(o as usize); self.decoder.set_ip(b.start); }
         let mut at = b.start;
-        if let Some(o) = within(at) { let _ = self.decoder.set_position(o as usize); self.decoder.set_ip(at); }
-        for _ in 0..b.count {
+        for i in into.iter_mut() {
             // (A block running on past this segment's end, or in another, decodes the rest on its own.)
-            let here = within(at).is_some_and(|o| o == self.decoder.position() as u64);
-            let i = if here { self.decoder.decode() } else { decode(elf, at).unwrap_or_default() };
+            if self.decoder.ip() == at && self.decoder.can_decode() { self.decoder.decode_out(i) } else { *i = decode(elf, at).unwrap_or_default() }
             at = i.next_ip();
-            into.push(i);
         }
     }
 }
@@ -173,7 +172,7 @@ pub struct Function {
     /// Each block's successors within (as goes_to has them), by index; NO where none or not this function's.
     pub succ: Vec<[u32; 2]>,
     /// Its blocks' indices, by their addresses.
-    by_address: Vec<u32>,
+    pub(crate) by_address: Vec<u32>,
 }
 
 impl Function {
