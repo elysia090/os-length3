@@ -341,12 +341,15 @@ fn direct_target(i: &Instruction) -> Option<u64> {
     matches!(i.op0_kind(), OpKind::NearBranch64 | OpKind::NearBranch32 | OpKind::NearBranch16).then(|| i.near_branch_target())
 }
 
-/// Walk each (start, end, extra) on its own: natively they share the cores,
-/// in wasm (one thread) they go in turn. Returns each start's blocks and the
-/// code it goes on to, in the order given.
-fn walk_all(elf: &Elf, jobs: &[(u64, u64, &[u64])], is_start: &(dyn Fn(u64) -> bool + Sync), references: &mut BTreeSet<u64>) -> Vec<(u64, Vec<Block>, Vec<u64>)> {
-    let go = |part: &[(u64, u64, &[u64])], references: &mut BTreeSet<u64>| -> Vec<(u64, Vec<Block>, Vec<u64>)> {
-        part.iter().map(|&(start, end, extra)| { let (b, c) = walk(elf, start, end, extra, is_start, Some(&mut *references)); (start, b, c) }).collect()
+/// A walk's work: its start, the end of its range, the pointers into the range (sorted), and the other function
+/// starts inside it (sorted; almost always none).
+type Job<'a> = (u64, u64, &'a [u64], &'a [u64]);
+
+/// Walk each job on its own: natively they share the cores, in wasm (one thread) they go in turn. Returns each
+/// start's blocks and the code it goes on to, in the order given.
+fn walk_all(elf: &Elf, jobs: &[Job], references: &mut BTreeSet<u64>) -> Vec<(u64, Vec<Block>, Vec<u64>)> {
+    let go = |part: &[Job], references: &mut BTreeSet<u64>| -> Vec<(u64, Vec<Block>, Vec<u64>)> {
+        part.iter().map(|&(start, end, extra, inner)| { let (b, c) = walk(elf, start, end, extra, inner, Some(&mut *references)); (start, b, c) }).collect()
     };
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few walks are not worth a thread.
@@ -387,8 +390,19 @@ fn ranges(starts: &BTreeSet<u64>, sizes: &BTreeMap<u64, u64>) -> BTreeMap<u64, u
     out
 }
 
-fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) -> bool + Sync), mut references: Option<&mut BTreeSet<u64>>) -> (Vec<Block>, Vec<u64>) {
-    let inside = |a: u64| a >= start && a < end && (a == start || !is_start(a));
+fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut references: Option<&mut BTreeSet<u64>>) -> (Vec<Block>, Vec<u64>) {
+    let inside = |a: u64| a >= start && a < end && (a == start || inner.binary_search(&a).is_err());
+    // One decoder over the code from the start to its segment's end, moved to each instruction; code elsewhere (a
+    // call's continuation past the range's segment) is decoded on its own.
+    let code = elf.code_at(start).unwrap_or_default();
+    let mut decoder = Decoder::with_ip(64, code, start, DecoderOptions::NONE);
+    let mut decode = |at: u64| -> Option<Instruction> {
+        let Some(offset) = at.checked_sub(start).filter(|&o| o < code.len() as u64) else { return decode(elf, at) };
+        decoder.set_position(offset as usize).ok()?;
+        decoder.set_ip(at);
+        let instruction = decoder.decode();
+        (!instruction.is_invalid()).then_some(instruction)
+    };
     // Looked up by address while walking, put in order once at the end.
     let mut first: Vec<u64> = std::iter::once(start).chain(extra.iter().copied().filter(|&a| inside(a))).collect();
     first.sort_unstable();
@@ -404,7 +418,7 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], is_start: &(dyn Fn(u64) 
                 leaders.insert(at);
                 break;
             }
-            let Some(i) = decode(elf, at) else {
+            let Some(i) = decode(at) else {
                 break;
             };
             instructions.insert(at, i);
@@ -709,7 +723,7 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
             // instruction. Nor are data references wanted (they find jump tables when the whole program is walked).
             // Nor the cases of its switches: a compiler's are hundreds, of which a run takes a few (each is reached
             // later as it is taken).
-            let (blocks, calls) = walk(elf, start, end, &[], &|_| false, None);
+            let (blocks, calls) = walk(elf, start, end, &[], &[], None);
             found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
@@ -816,14 +830,17 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
         let range = ranges(&starts, &sizes);
         let mut found = Vec::new();
         // The pointers (sorted) inside each function's range.
-        let jobs: Vec<(u64, u64, &[u64])> = starts.iter().filter(|s| !done.contains_key(s)).map(|&start| {
+        let sorted: Vec<u64> = starts.iter().copied().collect();
+        let jobs: Vec<Job> = starts.iter().filter(|s| !done.contains_key(s)).map(|&start| {
             let end = range[&start];
-            (start, end, &pointers[pointers.partition_point(|&a| a <= start)..pointers.partition_point(|&a| a < end)])
+            let within = |all: &[u64]| (all.partition_point(|&a| a <= start), all.partition_point(|&a| a < end));
+            let ((p, q), (i, j)) = (within(&pointers), within(&sorted));
+            (start, end, &pointers[p..q], &sorted[i..j])
         }).collect();
         // Without relocations that say where its tables are, those its switches read (switch_targets).
         let guess = elf.relative_slots.is_empty();
         let mut switches = Vec::new();
-        for (start, blocks, calls) in walk_all(elf, &jobs, &|a| starts.contains(&a), &mut references) {
+        for (start, blocks, calls) in walk_all(elf, &jobs, &mut references) {
             if guess && follow != Follow::Not { switches.extend(switch_targets(elf, &blocks, start, range[&start])); }
             // Not following calls, code it goes on to all the same: what it jumps or runs into past its range is code
             // the runs reached as part of it before more starts cut it there.
