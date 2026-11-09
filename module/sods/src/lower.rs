@@ -213,7 +213,9 @@ struct Fx<'p> {
     /// What each part did with the registers, in order: [0] the prologue,
     /// [k + 1] block k. Which registers each sync moves is found from these
     /// once the whole function is made (sync_masks).
-    ev: Vec<Vec<Ev>>,
+    /// What each part notes (the prologue's, then each block's), in one list: part k's from `ev_at[k]`.
+    ev: Vec<Ev>,
+    ev_at: Vec<usize>,
     /// Nesting of wasm blocks inside the current block's code: a write
     /// inside one may not happen.
     nest: u32,
@@ -332,7 +334,7 @@ impl<'p> Fx<'p> {
         }
         *s
     }
-    fn note(&mut self, e: Ev) { if let Some(v) = self.ev.last_mut() { v.push(e); } }
+    fn note(&mut self, e: Ev) { self.ev.push(e); }
     // The most frequent, straight to their bytes.
     fn get(&mut self, l: u32) {
         self.touch(l);
@@ -2882,7 +2884,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
     let cases = handed.cases[index as usize] as u32;
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
-    let mut fx = Fx { f: Vec::with_capacity(function.blocks.iter().map(|b| b.code.len()).sum::<usize>() * 24), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), rsp_up: false, entry: Vec::new(), dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
+    let mut fx = Fx { f: Vec::with_capacity(function.blocks.iter().map(|b| b.code.len()).sum::<usize>() * 24), syncs: Vec::new(), used: 0, ev: Vec::with_capacity(function.blocks.iter().map(|b| b.code.len()).sum::<usize>() * 6), ev_at: vec![0], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), rsp_up: false, entry: Vec::new(), dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
         loops: Vec::new(), within: Vec::new(), heads: Vec::new(), labels: Vec::new(), block_at: Vec::new(), loop_at: Vec::new() };
     let (loops, within) = clean_loops(program, index, function, loops_of(&function.blocks, |a| function.block_index(a)).0);
     fx.heads = vec![None; function.blocks.len()];
@@ -2944,6 +2946,8 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
         fx.get(L_BLK);
         fx.e(W::BrTable(Cow::Owned(targets), 0));
     }
+    // Flags needed after each instruction of a block (made again for each).
+    let mut needed: Vec<u32> = Vec::new();
     for (k, block) in function.blocks.iter().enumerate() {
         // Close block k's label so its code starts here, inside the labels of
         // the blocks after it and of the loops it lies within; a loop it heads
@@ -2951,7 +2955,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
         fx.e(W::End);
         fx.close(Lab::Block(k));
         if let Some(l) = fx.heads[k] { fx.enter_loop(l); }
-        fx.ev.push(Vec::with_capacity(block.code.len() * 6));
+        fx.ev_at.push(fx.ev.len());
         fx.nest = 0;
         fx.depth = fx.labels.len() as u32;
         fx.set_flags(Flags::Held);
@@ -2967,7 +2971,8 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
         let (held, ext) = handed.live_out(index, k);
         let live_out = held | ext;
         // Flags needed after each instruction, from the end backward.
-        let mut needed = vec![0u32; block.code.len()];
+        needed.clear();
+        needed.resize(block.code.len(), 0);
         let mut l = live_out;
         for (j, i) in block.code.iter().enumerate().rev() {
             needed[j] = l;
@@ -3140,7 +3145,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
 /// must move (sync_masks). One it never touches stays in its global, where
 /// code it calls and the host find it.
 fn finish(program: &Program, index: u32, mut fx: Fx) -> Vec<u8> {
-    let masks = sync_masks(program, index, &fx.ev, &fx.syncs);
+    let masks = sync_masks(program, index, (&fx.ev, &fx.ev_at), &fx.entry, &fx.syncs);
     // What the syncs move is touched by the code already (each register they may move, and the budget's local).
     if fx.budget { fx.slot(L_BUDGET); }
     let (used, budget, syncs, slots) = (fx.used, fx.budget, fx.syncs, fx.slots);
@@ -3185,20 +3190,30 @@ fn finish(program: &Program, index: u32, mut fx: Fx) -> Vec<u8> {
 /// count as reads, so a register a save may store is one a load took in;
 /// and only a write that surely happens (not inside a conditional) ends a
 /// register's life. Around every call this was most of a function's code.
-fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bool, u32)]) -> Vec<u32> {
+fn sync_masks(program: &Program, index: u32, (events, ev_at): (&[Ev], &[usize]), entry: &[bool], syncs: &[(usize, bool, u32)]) -> Vec<u32> {
     let function = &program.functions[index as usize];
     let n = function.blocks.len();
     let at = |a: u64| function.block_index(a);
+    // What part k noted: the prologue's (0), then each block's.
+    let ev = |k: usize| &events[ev_at[k]..ev_at.get(k + 1).copied().unwrap_or(events.len())];
     // Where the prologue's dispatch, and an indirect jump within, may go.
-    let entries: Vec<usize> = (0..n).filter(|&k| k == 0 || program.entries.get(&function.blocks[k].start) == Some(&(index, k as u32))).collect();
-    let succ: Vec<Vec<usize>> = function.blocks.iter().map(|b| match b.exit {
-        Exit::Fall(a) | Exit::Jump(a) | Exit::Call { ret: a, .. } | Exit::IndirectCall { ret: a } => at(a).into_iter().collect(),
-        Exit::Branch { taken, fall } => at(taken).into_iter().chain(at(fall)).collect(),
-        Exit::IndirectJump => entries.clone(),
-        Exit::TailJump(_) | Exit::Return | Exit::Trap => Vec::new(),
+    let entries: Vec<usize> = (0..n).filter(|&k| k == 0 || entry[k]).collect();
+    // Each block's successors within: up to two, or (INDIRECT) the entries.
+    const INDIRECT: u8 = u8::MAX;
+    let succ: Vec<([usize; 2], u8)> = function.blocks.iter().map(|b| {
+        let mut to = ([0; 2], 0u8);
+        let mut add = |a: u64| if let Some(k) = at(a) { to.0[to.1 as usize] = k; to.1 += 1; };
+        match b.exit {
+            Exit::Fall(a) | Exit::Jump(a) | Exit::Call { ret: a, .. } | Exit::IndirectCall { ret: a } => add(a),
+            Exit::Branch { taken, fall } => { add(taken); add(fall); }
+            Exit::IndirectJump => to.1 = INDIRECT,
+            Exit::TailJump(_) | Exit::Return | Exit::Trap => {}
+        }
+        to
     }).collect();
+    let succ = |k: usize| -> &[usize] { let (to, len) = &succ[k]; if *len == INDIRECT { &entries } else { &to[..*len as usize] } };
     let mut mask = vec![0u32; syncs.len()];
-    let edged: Vec<bool> = (0..n).map(|k| ev[k + 1].iter().any(|e| matches!(e, Ev::Edge))).collect();
+    let edged: Vec<bool> = (0..n).map(|k| ev(k + 1).iter().any(|e| matches!(e, Ev::Edge))).collect();
 
     // Forward: written since the last sync on some path.
     let mut dirty = vec![0u32; n];
@@ -3207,7 +3222,7 @@ fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bo
         for k in 0..n {
             let mut d = dirty[k];
             let mut out = 0;
-            for e in &ev[k + 1] {
+            for e in ev(k + 1) {
                 match *e {
                     Ev::Write(r, _) => d |= 1 << r,
                     Ev::Sync(m, top) if syncs[m].1 => { mask[m] |= d & syncs[m].2; if top { d &= !syncs[m].2; } }
@@ -3217,7 +3232,7 @@ fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bo
             }
             // Successors no goto was noted for (none should be) see the block's end.
             if !edged[k] { out |= d; }
-            for &s in &succ[k] {
+            for &s in succ(k) {
                 if dirty[s] | out != dirty[s] { dirty[s] |= out; changed = true; }
             }
         }
@@ -3229,9 +3244,9 @@ fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bo
     loop {
         let mut changed = false;
         for k in (0..n).rev() {
-            let after = succ[k].iter().fold(0, |acc, &s| acc | live[s]);
+            let after = succ(k).iter().fold(0, |acc, &s| acc | live[s]);
             let mut l = if edged[k] { 0 } else { after };
-            for e in ev[k + 1].iter().rev() {
+            for e in ev(k + 1).iter().rev() {
                 match *e {
                     Ev::Read(r) => l |= 1 << r,
                     Ev::Write(r, true) => l &= !(1 << r),
@@ -3247,7 +3262,7 @@ fn sync_masks(program: &Program, index: u32, ev: &[Vec<Ev>], syncs: &[(usize, bo
     }
     // The prologue takes in what any block it may start at reads.
     let start = entries.iter().fold(0, |acc, &k| acc | live[k]);
-    for e in &ev[0] {
+    for e in ev(0) {
         if let Ev::Sync(m, _) = *e { if !syncs[m].1 { mask[m] |= start; } }
     }
     mask
