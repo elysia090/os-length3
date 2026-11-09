@@ -119,17 +119,28 @@ pub struct Function {
     pub name: String,
     /// In the order they are lowered (`lay_out`): index 0 is the function's entry.
     pub blocks: Vec<Block>,
+    /// Each block's successors within (as goes_to has them), by index; NO where none or not this function's.
+    pub succ: Vec<[u32; 2]>,
     /// Its blocks' indices, by their addresses.
     by_address: Vec<u32>,
 }
 
 impl Function {
     /// The function of `blocks` (sorted by address, the entry first), in the order they are lowered.
-    pub fn new(start: u64, name: String, mut blocks: Vec<Block>) -> Function {
-        lay_out(&mut blocks);
-        let mut by_address: Vec<u32> = (0..blocks.len() as u32).collect();
-        by_address.sort_unstable_by_key(|&k| blocks[k as usize].start);
-        Function { start, name, blocks, by_address }
+    pub fn new(start: u64, name: String, blocks: Vec<Block>) -> Function {
+        // Successors found once, in address order; laid out, each index goes where its block went.
+        let at = |a: u64| blocks.binary_search_by_key(&a, |b| b.start).ok().map_or(NO, |k| k as u32);
+        let succ: Vec<[u32; 2]> = blocks.iter().map(|b| goes_to(b).map(|a| a.map_or(NO, at))).collect();
+        let Some(order) = lay_out(&succ) else {
+            return Function { start, name, by_address: (0..blocks.len() as u32).collect(), blocks, succ };
+        };
+        let mut place = vec![0u32; order.len()];
+        for (new, &old) in order.iter().enumerate() { place[old] = new as u32; }
+        let moved = |t: u32| if t == NO { NO } else { place[t as usize] };
+        let succ = order.iter().map(|&old| succ[old].map(moved)).collect();
+        let mut old: Vec<Option<Block>> = blocks.into_iter().map(Some).collect();
+        let blocks = order.iter().filter_map(|&k| old[k].take()).collect();
+        Function { start, name, blocks, succ, by_address: place }
     }
     pub fn block_index(&self, address: u64) -> Option<usize> {
         self.by_address.binary_search_by_key(&address, |&k| self.blocks[k as usize].start).ok().map(|i| self.by_address[i] as usize)
@@ -157,7 +168,8 @@ pub struct Entries(Vec<(u64, (u32, u32))>);
 
 impl Entries {
     fn of(mut marks: Vec<(u64, (u32, u32))>) -> Entries {
-        marks.sort_by_key(|&(a, _)| a);
+        // The first marked of an address is the one of the lowest function (a function marks an address one way).
+        marks.sort_unstable_by_key(|&(a, (f, _))| (a, f));
         marks.dedup_by_key(|&mut (a, _)| a);
         marks.shrink_to_fit();
         Entries(marks)
@@ -315,8 +327,13 @@ fn find(elf: &Elf, walk: Find) -> Program {
         for t in &tables { if let Some(h) = starts.range(..=*t).next_back() { done.remove(h); } }
         pointers.extend(tables);
         pointers.sort_unstable();
+        // (Only when what it walked reaches the new start: a walk that stopped short of it would be walked again to the
+        // same blocks.)
         for &t in &found {
-            if let Some(b) = before(&starts, t) { if before(known, t).is_none_or(|k| k < b) { done.remove(&b); } }
+            if let Some(b) = before(&starts, t) {
+                let reaches = done.get(&b).is_some_and(|blocks| blocks.iter().any(|k| k.end() >= t));
+                if reaches && before(known, t).is_none_or(|k| k < b) { done.remove(&b); }
+            }
         }
         starts.extend(found);
     }
@@ -327,17 +344,18 @@ fn find(elf: &Elf, walk: Find) -> Program {
         let first = functions.len();
         for f in runs(start, name, blocks) {
             let k = functions.len() as u32;
-            let mut mark = |a: u64| if let Some(b) = f.block_index(a) { marks.push((a, (k, b as u32))); };
-            mark(f.start);
-            for (j, b) in f.blocks.iter().enumerate() {
-                if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { mark(ret); }
+            let found = |a: u64| f.block_index(a).map(|b| (a, (k, b as u32)));
+            let at = |t: u32| (f.blocks[t as usize].start, (k, t));
+            marks.extend(found(f.start));
+            for (j, (b, to)) in f.blocks.iter().zip(&f.succ).enumerate() {
+                if matches!(b.exit, Exit::Call { .. } | Exit::IndirectCall { .. }) && to[0] != NO { marks.push(at(to[0])); }
                 // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
-                for a in goes_to(b).into_iter().flatten() { if f.block_index(a).is_some_and(|t| t <= j) { mark(a); } }
-                if b.resumes { mark(b.last_ip()); mark(b.end()); }
+                for &t in to { if t != NO && t as usize <= j { marks.push(at(t)); } }
+                if b.resumes { marks.extend(found(b.last_ip())); marks.extend(found(b.end())); }
             }
             // Only the pointers between its first and last block can land in it.
             if let Some((lo, hi)) = f.span() {
-                for &p in &pointers[pointers.partition_point(|&a| a < lo)..pointers.partition_point(|&a| a <= hi)] { mark(p); }
+                marks.extend(pointers[pointers.partition_point(|&a| a < lo)..pointers.partition_point(|&a| a <= hi)].iter().filter_map(|&p| found(p)));
             }
             functions.push(f);
         }
@@ -741,19 +759,23 @@ pub struct Loop { pub head: usize, pub last: usize, pub parent: Option<usize> }
 /// from its head through the last block that goes back to it (one overlapping another without lying within it is not
 /// made); and the innermost each block lies within past its head.
 pub fn loops_of(blocks: &[Block], at: impl Fn(u64) -> Option<usize>) -> (Vec<Loop>, Vec<Option<usize>>) {
+    let succ: Vec<[u32; 2]> = blocks.iter().map(|b| goes_to(b).map(|a| a.and_then(&at).map_or(NO, |k| k as u32))).collect();
     let (mut loops, mut within, mut last, mut open) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    loops_into(blocks, at, &mut loops, (&mut last, &mut open));
+    loops_into(&succ, &mut loops, (&mut last, &mut open));
     within_of(&loops, blocks.len(), &mut within);
     (loops, within)
 }
 
-/// As `loops_of`, into `loops`, with `last` and `open` for scratch.
-fn loops_into(blocks: &[Block], at: impl Fn(u64) -> Option<usize>, loops: &mut Vec<Loop>, (last, open): (&mut Vec<usize>, &mut Vec<usize>)) {
+/// No block (in a block's successors, by index within its function).
+const NO: u32 = u32::MAX;
+
+/// As `loops_of`, from each block's successors, into `loops`, with `last` and `open` for scratch.
+fn loops_into(succ: &[[u32; 2]], loops: &mut Vec<Loop>, (last, open): (&mut Vec<usize>, &mut Vec<usize>)) {
     const NO: usize = usize::MAX;
     last.clear();
-    last.resize(blocks.len(), NO);
-    for (k, b) in blocks.iter().enumerate() {
-        for h in goes_to(b).into_iter().flatten().filter_map(&at).filter(|&h| h <= k) { last[h] = if last[h] == NO { k } else { last[h].max(k) }; }
+    last.resize(succ.len(), NO);
+    for (k, to) in succ.iter().enumerate() {
+        for h in to.iter().map(|&h| h as usize).filter(|&h| h <= k) { last[h] = if last[h] == NO { k } else { last[h].max(k) }; }
     }
     loops.clear();
     open.clear();
@@ -773,16 +795,16 @@ fn within_of(loops: &[Loop], n: usize, within: &mut Vec<Option<usize>>) {
     for (l, lp) in loops.iter().enumerate() { within[lp.head + 1..=lp.last].fill(Some(l)); }
 }
 
-/// `blocks` (by address, the entry first) put in the order they are lowered: each loop's blocks together, its head
+/// The order (new place → place by address) blocks with successors `succ` (by address, the entry first) are lowered in,
+/// None where it stays: each loop's blocks together, its head
 /// first, the rest in reverse postorder, so a jump to a block before is a loop's round and any other a jump forward
 /// (a compiler's while loop, its test last and jumped into, and its rare paths after it jumping back in, laid out by
 /// address goes round through the dispatch; laid out so, it is a wasm loop).
-fn lay_out(blocks: &mut Vec<Block>) {
-    let n = blocks.len();
-    if n < 3 { return; }
+fn lay_out(succ: &[[u32; 2]]) -> Option<Vec<usize>> {
+    let n = succ.len();
+    if n < 3 { return None; }
     const NONE: usize = usize::MAX;
-    let index = |a: u64| blocks.binary_search_by_key(&a, |b| b.start).ok();
-    let succ: Vec<[usize; 2]> = blocks.iter().map(|b| goes_to(b).map(|a| a.and_then(index).unwrap_or(NONE))).collect();
+    let succ: Vec<[usize; 2]> = succ.iter().map(|to| to.map(|t| if t == NO { NONE } else { t as usize })).collect();
     // Depth first from the entry, then from each block not reached (only through the dispatch): each walk's reverse
     // postorder after the ones before; a jump to a block on the walk's path is a loop's round.
     let (mut rpo, mut state, mut rounds) = (vec![0usize; n], vec![0u8; n], Vec::new());
@@ -802,7 +824,7 @@ fn lay_out(blocks: &mut Vec<Block>) {
         for (i, &u) in post.iter().rev().enumerate() { rpo[u] = numbered + i; }
         numbered += post.len();
     }
-    if rounds.is_empty() { return; }
+    if rounds.is_empty() { return None; }
     let mut first = vec![0usize; n + 1];
     for &v in succ.iter().flatten() { if v != NONE { first[v + 1] += 1; } }
     for k in 0..n { first[k + 1] += first[k]; }
@@ -862,9 +884,7 @@ fn lay_out(blocks: &mut Vec<Block>) {
         *at += 1;
         if item < n { order.push(item); } else { stack.push((item - n, start[item - n])); }
     }
-    if order.len() != n || order[0] != 0 { return; }
-    let mut old: Vec<Option<Block>> = std::mem::take(blocks).into_iter().map(Some).collect();
-    *blocks = order.into_iter().filter_map(|k| old[k].take()).collect();
+    (order.len() == n && order[0] == 0).then_some(order)
 }
 
 // ---- Facts ----
@@ -906,18 +926,18 @@ impl Liveness {
         };
         for f in &program.functions {
             l.first.push(l.used.len() as u32);
-            for b in &f.blocks {
+            for (b, at) in f.blocks.iter().zip(&f.succ) {
                 let (mut to, mut fixed) = ([NONE; 2], if b.exit == Exit::IndirectJump { INDIRECT } else { 0 });
-                let mut add = |a: u64| {
-                    let t = match f.block_index(a) {
-                        Some(k) => k as u32,
-                        None => match l.entries.binary_search(&a) { Ok(e) => e as u32 | ENTRY, Err(_) => { fixed |= ALL_FLAGS as u8; return; } },
+                let mut add = |a: u64, k: u32| {
+                    let t = if k != NO { k } else {
+                        match l.entries.binary_search(&a) { Ok(e) => e as u32 | ENTRY, Err(_) => { fixed |= ALL_FLAGS as u8; return; } }
                     };
                     to[(to[0] != NONE) as usize] = t;
                 };
                 match b.exit {
-                    Exit::Fall(a) | Exit::Jump(a) | Exit::TailJump(a) => add(a),
-                    Exit::Branch { taken, fall } => { add(taken); add(fall); }
+                    Exit::Fall(a) | Exit::Jump(a) => add(a, at[0]),
+                    Exit::TailJump(a) => add(a, NO),
+                    Exit::Branch { taken, fall } => { add(taken, at[0]); add(fall, at[1]); }
                     _ => {}
                 }
                 l.used.push(b.reads);
@@ -1033,12 +1053,11 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
     let (mut summaries, callees): (Vec<Summary>, Vec<Vec<usize>>) = program.functions.iter().map(|f| {
         let mut s = Summary { reads: rsp, writes: rsp, exits: has_loop(f) };
         let mut callees = Vec::new();
-        let within = |a: u64| f.block_index(a).is_some();
-        for b in &f.blocks {
+        for (b, to) in f.blocks.iter().zip(&f.succ) {
             s.exits |= b.traps || match b.exit {
                 Exit::Call { target, .. } => match starts.binary_search_by_key(&target, |&(a, _)| a) { Ok(k) => { callees.push(starts[k].1); false } Err(_) => true },
-                Exit::Fall(a) | Exit::Jump(a) => !within(a),
-                Exit::Branch { taken, fall } => !within(taken) || !within(fall),
+                Exit::Fall(_) | Exit::Jump(_) => to[0] == NO,
+                Exit::Branch { .. } => to[0] == NO || to[1] == NO,
                 Exit::TailJump(_) | Exit::IndirectJump | Exit::IndirectCall { .. } | Exit::Trap => true,
                 Exit::Return => false,
             };
@@ -1085,7 +1104,9 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
 /// Whether `function` goes backward anywhere (a loop's head), within it or out to an address before a block's (a run
 /// of the same function).
 pub fn has_loop(function: &Function) -> bool {
-    function.blocks.iter().enumerate().any(|(k, b)| goes_to(b).into_iter().flatten().any(|a| function.block_index(a).map_or(a <= b.start, |t| t <= k)))
+    function.blocks.iter().zip(&function.succ).enumerate().any(|(k, (b, to))| {
+        goes_to(b).into_iter().zip(to).any(|(a, &t)| if t != NO { t as usize <= k } else { a.is_some_and(|a| a <= b.start) })
+    })
 }
 
 // ---- Frame ----
@@ -1193,7 +1214,7 @@ enum Lab { Block(usize), Loop(usize) }
 /// A register read or written (as Fx::used; a write's `true` where it surely happens, not inside a conditional), a
 /// sync (its index, `true` where not inside a conditional), or a place the code may go on to this function's blocks.
 #[derive(Clone, Copy)]
-enum Ev { Read(u8), Write(u8, bool), Sync(usize, bool), Edge }
+enum Ev { Read(u8), Write(u8, bool), Sync(u32, bool), Edge }
 
 /// What every function's lowering reads.
 #[derive(Clone, Copy)]
@@ -1229,6 +1250,8 @@ pub struct Fx<'p> {
     pub rsp_up: bool,
     pub backward: bool,
     entry: Vec<bool>,
+    /// Each block's successors within, by index (NO: none).
+    succ: &'p [[u32; 2]],
     /// Whether there is a dispatch loop (a lean function has none).
     dispatch: bool,
     pub program: &'p Program,
@@ -1272,10 +1295,14 @@ pub trait Emit { fn emit(self, fx: &mut Fx); }
 impl Emit for Op { fn emit(self, fx: &mut Fx) { fx.op(self) } }
 impl Emit for Mem { fn emit(self, fx: &mut Fx) { fx.mem(self.0, self.1, self.2) } }
 
-/// The bit of a register's local.
-fn reg_bit(l: u32) -> Option<u8> {
-    if (l_reg(0)..l_reg(16)).contains(&l) { Some((l - l_reg(0)) as u8) } else if (l_x(0)..l_x(16)).contains(&l) { Some((16 + l - l_x(0)) as u8) } else { None }
-}
+/// The bit (as Fx::used) of each local that holds a register, or NOT_REG.
+const NOT_REG: u8 = u8::MAX;
+const REG_BIT: [u8; LOCALS] = {
+    let mut t = [NOT_REG; LOCALS];
+    let mut k = 0;
+    while k < 16 { t[l_reg(k) as usize] = k as u8; t[l_x(k) as usize] = 16 + k as u8; k += 1; }
+    t
+};
 
 impl Fx<'_> {
     // ---- Emit ----
@@ -1283,8 +1310,11 @@ impl Fx<'_> {
         if o.1 == 1 { self.f.push(o.0 as u8) } else { self.f.extend_from_slice(&o.0.to_le_bytes()[..o.1 as usize]) }
     }
     fn imm(&mut self, o: Op, v: u32) { self.op(o); uleb(&mut self.f, v as u64); }
-    pub fn c32(&mut self, v: i32) { self.f.push(0x41); sleb(&mut self.f, v as i64); }
-    pub fn c64(&mut self, v: i64) { self.f.push(0x42); sleb(&mut self.f, v); }
+    pub fn c32(&mut self, v: i32) { self.konst(0x41, v as i64) }
+    pub fn c64(&mut self, v: i64) { self.konst(0x42, v) }
+    fn konst(&mut self, opcode: u8, v: i64) {
+        if (-64..64).contains(&v) { self.f.extend_from_slice(&[opcode, v as u8 & 0x7f]) } else { self.f.push(opcode); sleb(&mut self.f, v) }
+    }
     pub fn f64c(&mut self, v: f64) { self.f.push(0x44); self.f.extend_from_slice(&v.to_le_bytes()); }
     pub fn v128c(&mut self, v: i128) { self.f.extend_from_slice(&[0xfd, 0x0c]); self.f.extend_from_slice(&v.to_le_bytes()); }
     pub fn shuffle(&mut self, lanes: [u8; 16]) { self.f.extend_from_slice(&[0xfd, 0x0d]); self.f.extend_from_slice(&lanes); }
@@ -1316,14 +1346,13 @@ impl Fx<'_> {
     }
     /// A local moved, and the register it holds noted.
     fn local(&mut self, opcode: u8, l: u32) {
-        if let Some(b) = reg_bit(l) {
+        let b = REG_BIT[l as usize];
+        if b != NOT_REG {
             self.used |= 1 << b;
-            let top = self.nest == 0;
-            self.ev.push(if opcode == 0x20 { Ev::Read(b) } else { Ev::Write(b, top) });
+            self.ev.push(if opcode == 0x20 { Ev::Read(b) } else { Ev::Write(b, self.nest == 0) });
         }
         let s = self.slot(l);
-        self.f.push(opcode);
-        uleb(&mut self.f, s as u64);
+        if s < 0x80 { self.f.extend_from_slice(&[opcode, s as u8]) } else { self.f.push(opcode); uleb(&mut self.f, s as u64) }
     }
     pub fn get(&mut self, l: u32) { self.local(0x20, l) }
     pub fn set(&mut self, l: u32) { self.local(0x21, l) }
@@ -1340,7 +1369,7 @@ impl Fx<'_> {
     /// A sync (put in by `finish`, once the whole function says what it moves) that moves at most `scope`.
     fn sync_in(&mut self, save: bool, scope: u32) {
         self.syncs.push((self.f.len(), save, scope));
-        self.ev.push(Ev::Sync(self.syncs.len() - 1, self.nest == 0));
+        self.ev.push(Ev::Sync(self.syncs.len() as u32 - 1, self.nest == 0));
     }
 
     // ---- Labels ----
@@ -1357,8 +1386,8 @@ impl Fx<'_> {
     /// The depth of a br from here to the label at `at` among those open.
     fn to(&self, at: u32) -> u32 { self.depth - 1 - at }
     /// The depth of a br to `address` when it is a block after this one whose label is open.
-    fn forward(&self, address: u64) -> Option<u32> {
-        let b = self.function.block_index(address).filter(|&b| b > self.at)?;
+    fn forward(&self, target: u32) -> Option<u32> {
+        let b = (target != NO && target as usize > self.at).then_some(target as usize)?;
         self.block_at[b].map(|at| self.to(at))
     }
 
@@ -1397,9 +1426,9 @@ impl Fx<'_> {
 
     /// On at `address`: falling through to the next block, out to a block after this one, round a loop it is in,
     /// round the dispatch loop, or out of the function.
-    fn goto(&mut self, address: u64, next: Option<u64>) {
+    fn goto(&mut self, (address, target): (u64, u32), next: Option<u64>) {
         if Some(address) == next { self.ev.push(Ev::Edge); return; }
-        match self.function.block_index(address) {
+        match (target != NO).then_some(target as usize) {
             Some(b) => {
                 if b <= self.at { self.time_slice(address); }
                 self.ev.push(Ev::Edge);
@@ -1472,8 +1501,8 @@ impl Fx<'_> {
     /// After a call: on at its return address (taking back `writes`, or all of them, from the globals), or, handed
     /// another (a longjmp out of the callee, in l_t(0)), to the function's resume (after what this frame holds is
     /// saved, where a quiet call left it in the locals).
-    fn after_call(&mut self, ret: u64, next: Option<u64>, writes: Option<u32>) {
-        self.get(l_t(0)); self.c64(ret as i64); self.op(I64_NE);
+    fn after_call(&mut self, ret: (u64, u32), next: Option<u64>, writes: Option<u32>) {
+        self.get(l_t(0)); self.c64(ret.0 as i64); self.op(I64_NE);
         self.if_();
         if writes.is_some() { self.save(); }
         self.br(self.depth + 1 + self.dispatch as u32);
@@ -1529,12 +1558,13 @@ const TO_ENTRIES: u8 = u8::MAX;
 /// Entries the dispatch starts at only to go on after the thread went to the kernel there, or a longjmp: a call's
 /// continuation, a loop's head, a system call's or the instruction after it. A loop entered past its head at one is
 /// still a wasm loop (enter_loop routes it); one entered at others (a switch's cases, another run's code) is not.
-fn cold_entries(function: &Function, cold: &mut Vec<bool>) {
+fn cold_entries(function: &Function, succ: &[[u32; 2]], cold: &mut Vec<bool>) {
     cold.clear();
     cold.resize(function.blocks.len(), false);
     for (k, b) in function.blocks.iter().enumerate() {
-        if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { if let Some(t) = function.block_index(ret) { cold[t] = true; } }
-        for t in goes_to(b).into_iter().flatten().filter_map(|a| function.block_index(a)) { if t <= k { cold[t] = true; } }
+        // (A call's return is its first successor.)
+        if matches!(b.exit, Exit::Call { .. } | Exit::IndirectCall { .. }) && succ[k][0] != NO { cold[succ[k][0] as usize] = true; }
+        for &t in &succ[k] { if t != NO && t as usize <= k { cold[t as usize] = true; } }
         if b.resumes {
             if let Some(t) = function.block_index(b.end()) { cold[t] = true; }
             if b.count == 1 { cold[k] = true; }
@@ -1545,10 +1575,10 @@ fn cold_entries(function: &Function, cold: &mut Vec<bool>) {
 /// Of the function's loops (into `s.loops`, with `s.within` and `s.heads`), those made wasm loops: the ones no jump
 /// from outside enters past their head and no entry but a cold one lies in past their head, each within the nearest
 /// such. Returns whether the function needs no dispatch loop beyond its entry: no jump back but a kept loop's round.
-fn clean_loops(program: &Program, index: u32, function: &Function, s: &mut Frame) -> bool {
+fn clean_loops(function: &Function, s: &mut Frame) -> bool {
     let n = function.blocks.len();
-    loops_into(&function.blocks, |a| function.block_index(a), &mut s.loops, (&mut s.marks.0, &mut s.marks.1));
-    cold_entries(function, &mut s.cold);
+    loops_into(&function.succ, &mut s.loops, (&mut s.marks.0, &mut s.marks.1));
+    cold_entries(function, &function.succ, &mut s.cold);
     loop {
         s.heads.clear();
         s.heads.resize(n, None);
@@ -1560,9 +1590,9 @@ fn clean_loops(program: &Program, index: u32, function: &Function, s: &mut Frame
         let mut mark = |t: usize, from: Option<usize>| for (l, lp) in loops.iter().enumerate() {
             if t > lp.head && t <= lp.last && from.is_none_or(|k| k < lp.head || k > lp.last) { entered[l] = true; }
         };
-        for (k, b) in function.blocks.iter().enumerate() {
-            if !s.cold[k] && program.entries.get(&b.start) == Some(&(index, k as u32)) { mark(k, None); }
-            for t in goes_to(b).into_iter().flatten().filter_map(|a| function.block_index(a)) {
+        for (k, to) in function.succ.iter().enumerate() {
+            if !s.cold[k] && s.entry[k] { mark(k, None); }
+            for t in to.iter().filter(|&&t| t != NO).map(|&t| t as usize) {
                 if t > k { mark(t, Some(k)); continue; }
                 if !heads[t].is_some_and(|l| (loops[l].head..=loops[l].last).contains(&k)) { mark(t, None); rounds_only = false; }
             }
@@ -1599,14 +1629,14 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
     let Lowering { elf, program, handed, summaries, trace } = *cx;
     let function = &program.functions[index as usize];
     let n = function.blocks.len();
-    let rounds_only = clean_loops(program, index, function, frame);
-    let entered_within = function.blocks.iter().any(|b| b.exit == Exit::IndirectJump)
-        || (1..n).any(|k| program.entries.get(&function.blocks[k].start) == Some(&(index, k as u32)));
+    // Whether each block is an entry, found once here.
+    frame.entry.clear();
+    frame.entry.extend((0..n).map(|k| handed.is_entry(index, k)));
+    let rounds_only = clean_loops(function, frame);
+    let entered_within = function.blocks.iter().any(|b| b.exit == Exit::IndirectJump) || frame.entry.iter().skip(1).any(|&e| e);
     let lean = !entered_within && rounds_only;
     let cases = handed.cases[index as usize] as u32;
     let mut s = std::mem::take(frame);
-    s.entry.clear();
-    s.entry.extend((0..n).map(|k| handed.is_entry(index, k)));
     s.loop_at.clear();
     s.loop_at.resize(s.loops.len(), None);
     s.block_at.clear();
@@ -1617,7 +1647,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
     let mut fx = Fx {
         f: s.f, syncs: s.syncs, used: 0, ev: s.ev, ev_at: s.ev_at, nest: 0, depth: 0,
         slots: [0; LOCALS], kinds: s.kinds, flags: Flags::Held, fr_pending: false, fused: None, rsp_up: false, backward: false,
-        entry: s.entry, dispatch: !lean, program, function, report, handed, at: 0, budget: has_loop(function), summaries,
+        entry: s.entry, dispatch: !lean, program, function, report, handed, at: 0, budget: has_loop(function), summaries, succ: &function.succ,
         loop_at: s.loop_at, loops: s.loops, within: s.within, heads: s.heads, labels: s.labels, block_at: s.block_at,
     };
     let (mut code, mut needed) = (s.code, s.needed);
@@ -1697,20 +1727,22 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
             fx.instruction(i, needed[j] != 0);
         }
         let term = code[last];
+        let to = fx.succ[k];
         if held != 0 && !matches!(block.exit, Exit::Branch { .. }) { fx.hold_flags(); }
         match block.exit {
-            Exit::Fall(a) | Exit::Jump(a) => fx.goto(a, next),
+            Exit::Fall(a) | Exit::Jump(a) => fx.goto((a, to[0]), next),
             Exit::TailJump(a) => fx.tail(a),
             Exit::Branch { taken, fall } => {
                 fx.condition(term.condition_code());
                 if held != 0 { fx.set(l_u(1)); fx.hold_flags(); fx.get(l_u(1)); }
                 // A side going forward to a label open here is a br_if to it; where the taken side is the next block,
                 // the condition turned round goes to the other.
-                if let Some(d) = fx.forward(taken) {
+                let (taken, fall) = ((taken, to[0]), (fall, to[1]));
+                if let Some(d) = fx.forward(taken.1) {
                     fx.ev.push(Ev::Edge);
                     fx.br_if(d);
                     fx.goto(fall, next);
-                } else if let Some(d) = fx.forward(fall).filter(|_| Some(taken) == next) {
+                } else if let Some(d) = fx.forward(fall.1).filter(|_| Some(taken.0) == next) {
                     fx.op(I32_EQZ);
                     fx.ev.push(Ev::Edge);
                     fx.br_if(d);
@@ -1753,7 +1785,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                     fx.sync_in(true, s.reads | s.writes);
                     fx.c32(0); fx.call(FIRST_GUEST + f);
                     fx.set(l_t(0));
-                    fx.after_call(ret, next, Some(s.writes));
+                    fx.after_call((ret, to[0]), next, Some(s.writes));
                 } else {
                     fx.save();
                     fx.enter_call(handed.handed(target), |fx| fx.c64(target as i64));
@@ -1763,7 +1795,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                     }
                     fx.set(l_t(0));
                     fx.leave_call();
-                    fx.after_call(ret, next, None);
+                    fx.after_call((ret, to[0]), next, None);
                 }
             }
             Exit::IndirectCall { ret } => {
@@ -1776,7 +1808,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                 fx.get(l_t(2)); fx.call(F_DISPATCH);
                 fx.set(l_t(0));
                 fx.leave_call();
-                fx.after_call(ret, next, None);
+                fx.after_call((ret, to[0]), next, None);
             }
             Exit::Return => {
                 fx.pop_value(l_t(0));
@@ -1902,10 +1934,10 @@ fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Masks) {
     starts.clear();
     starts.extend((0..n).filter(|&k| k == 0 || fx.entry[k]));
     flow.clear();
-    flow.extend(function.blocks.iter().map(|b| {
+    flow.extend(function.blocks.iter().zip(fx.succ).map(|(b, to)| {
         let mut f = Flow::default();
         if b.exit == Exit::IndirectJump { f.n = TO_ENTRIES; return f; }
-        for k in goes_to(b).into_iter().flatten().filter_map(|a| function.block_index(a)) { f.to[f.n as usize] = k as u32; f.n += 1; }
+        for &k in to.iter().filter(|&&k| k != NO) { f.to[f.n as usize] = k; f.n += 1; }
         f
     }));
     let to = |flow: &[Flow], k: usize, each: &mut dyn FnMut(usize)| {
@@ -1921,7 +1953,7 @@ fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Masks) {
         for e in ev(k + 1) {
             match *e {
                 Ev::Write(r, _) => g |= 1 << r,
-                Ev::Sync(m, top) if syncs[m].1 => { notes.push((m, k, p, g)); if top { p &= !syncs[m].2; g &= !syncs[m].2; } }
+                Ev::Sync(m, top) if syncs[m as usize].1 => { let m = m as usize; notes.push((m, k, p, g)); if top { p &= !syncs[m].2; g &= !syncs[m].2; } }
                 Ev::Edge => { out_p |= p; out_g |= g; f.edged = true; }
                 _ => {}
             }
@@ -1949,8 +1981,8 @@ fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Masks) {
                 Ev::Read(r) => g |= 1 << r,
                 Ev::Write(r, true) => { p &= !(1 << r); g &= !(1 << r); }
                 Ev::Write(_, false) => {}
-                Ev::Sync(m, _) if syncs[m].1 => g |= mask[m],
-                Ev::Sync(m, top) => { notes.push((m, k, p, g)); if top { p &= !syncs[m].2; g &= !syncs[m].2; } }
+                Ev::Sync(m, _) if syncs[m as usize].1 => g |= mask[m as usize],
+                Ev::Sync(m, top) => { let m = m as usize; notes.push((m, k, p, g)); if top { p &= !syncs[m].2; g &= !syncs[m].2; } }
                 Ev::Edge => p = ALL,
             }
         }
@@ -1968,7 +2000,7 @@ fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Masks) {
     for &(m, k, p, g) in notes.iter() { mask[m] |= ((after(flow, k) & p) | g) & syncs[m].2; }
     // The prologue takes in what any block it may start at reads.
     let start = starts.iter().fold(0, |acc, &k| acc | flow[k].live);
-    for e in ev(0) { if let Ev::Sync(m, _) = *e { if !syncs[m].1 { mask[m] |= start; } } }
+    for e in ev(0) { if let Ev::Sync(m, _) = *e { if !syncs[m as usize].1 { mask[m as usize] |= start; } } }
 }
 
 impl Fx<'_> {
