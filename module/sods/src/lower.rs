@@ -314,16 +314,20 @@ fn xmm(r: Register) -> Option<u32> {
 }
 
 impl<'p> Fx<'p> {
-    fn e(&mut self, i: I) {
-        let i = match i {
-            W::If(_) | W::Block(_) | W::Loop(_) => { self.nest += 1; i }
-            W::End => { self.nest = self.nest.saturating_sub(1); i }
-            W::LocalGet(l) => W::LocalGet(self.slot(l)),
-            W::LocalSet(l) => W::LocalSet(self.slot(l)),
-            W::LocalTee(l) => W::LocalTee(self.slot(l)),
-            _ => i,
-        };
-        crate::emit::op(&mut self.f, &i);
+    fn e(&mut self, i: &I) {
+        match *i {
+            W::If(_) | W::Block(_) | W::Loop(_) => self.nest += 1,
+            W::End => self.nest = self.nest.saturating_sub(1),
+            // A local as the function numbers it (slot), and nothing noted: get, set and tee note what they move.
+            W::LocalGet(l) | W::LocalSet(l) | W::LocalTee(l) => {
+                let opcode = match *i { W::LocalGet(_) => 0x20, W::LocalSet(_) => 0x21, _ => 0x22 };
+                let l = self.slot(l);
+                self.f.push(opcode);
+                return crate::emit::uleb(&mut self.f, l as u64);
+            }
+            _ => {}
+        }
+        crate::emit::op(&mut self.f, i);
     }
     /// A local's number in the function made: numbered as it is first touched.
     fn slot(&mut self, l: u32) -> u32 {
@@ -366,8 +370,8 @@ impl<'p> Fx<'p> {
         *self.report.unsupported.entry(format!("{:?}", i.mnemonic())).or_default() += 1;
         self.c64(i.ip() as i64);
         self.c32(TRAP_UNSUPPORTED);
-        self.e(W::Call(F_TRAP));
-        self.e(W::Unreachable);
+        self.e(&W::Call(F_TRAP));
+        self.e(&W::Unreachable);
     }
 
     // ---- Register file ----
@@ -392,23 +396,23 @@ impl<'p> Fx<'p> {
         for (k, &(f, bit, _)) in FLAG_BITS.iter().enumerate() {
             if mask & bit == 0 { continue; }
             self.flag(f);
-            if k > 0 { self.c32(k as i32); self.e(W::I32Shl); }
-            if !first { self.e(W::I32Or); }
+            if k > 0 { self.c32(k as i32); self.e(&W::I32Shl); }
+            if !first { self.e(&W::I32Or); }
             first = false;
         }
         if first { return; }
-        self.e(W::I64ExtendI32U);
-        self.e(W::GlobalSet(G_FLAGS));
+        self.e(&W::I64ExtendI32U);
+        self.e(&W::GlobalSet(G_FLAGS));
     }
 
     /// Take the flags in `mask` that the code before left in G_FLAGS.
     fn load_flags(&mut self, mask: u32) {
         for (k, &(_, bit, l)) in FLAG_BITS.iter().enumerate() {
             if mask & bit == 0 { continue; }
-            self.e(W::GlobalGet(G_FLAGS));
-            self.e(W::I32WrapI64);
-            if k > 0 { self.c32(k as i32); self.e(W::I32ShrU); }
-            self.c32(1); self.e(W::I32And);
+            self.e(&W::GlobalGet(G_FLAGS));
+            self.e(&W::I32WrapI64);
+            if k > 0 { self.c32(k as i32); self.e(&W::I32ShrU); }
+            self.c32(1); self.e(&W::I32And);
             self.set(l);
         }
         self.set_flags(Flags::Held);
@@ -419,7 +423,7 @@ impl<'p> Fx<'p> {
 
     /// The i64 on top, its upper half zeroed: a wrap and an extend (2 bytes, one 32-bit move), not an and with
     /// 0xffffffff (7 bytes, a constant made and anded in V8's first tier).
-    fn zext32(&mut self) { self.e(W::I32WrapI64); self.e(W::I64ExtendI32U); }
+    fn zext32(&mut self) { self.e(&W::I32WrapI64); self.e(&W::I64ExtendI32U); }
 
     /// Push a register's value, zero-extended from its width.
     fn read_reg(&mut self, r: Register) -> bool {
@@ -428,9 +432,9 @@ impl<'p> Fx<'p> {
         match part {
             Part::Full => {}
             Part::Low32 => self.zext32(),
-            Part::Low16 => { self.c64(0xffff); self.e(W::I64And); }
-            Part::Low8 => { self.c64(0xff); self.e(W::I64And); }
-            Part::High8 => { self.c64(8); self.e(W::I64ShrU); self.c64(0xff); self.e(W::I64And); }
+            Part::Low16 => { self.c64(0xffff); self.e(&W::I64And); }
+            Part::Low8 => { self.c64(0xff); self.e(&W::I64And); }
+            Part::High8 => { self.c64(8); self.e(&W::I64ShrU); self.c64(0xff); self.e(&W::I64And); }
         }
         true
     }
@@ -445,10 +449,10 @@ impl<'p> Fx<'p> {
             Part::Low32 => { self.zext32(); self.set(l); }
             Part::Low16 | Part::Low8 | Part::High8 => {
                 let (m, shift) = match part { Part::Low16 => (0xffffi64, 0), Part::Low8 => (0xff, 0), _ => (0xff, 8) };
-                self.c64(m); self.e(W::I64And);
-                if shift > 0 { self.c64(shift); self.e(W::I64Shl); }
-                self.get(l); self.c64(!(m << shift)); self.e(W::I64And);
-                self.e(W::I64Or);
+                self.c64(m); self.e(&W::I64And);
+                if shift > 0 { self.c64(shift); self.e(&W::I64Shl); }
+                self.get(l); self.c64(!(m << shift)); self.e(&W::I64And);
+                self.e(&W::I64Or);
                 self.set(l);
             }
         }
@@ -459,10 +463,10 @@ impl<'p> Fx<'p> {
     /// low = min(low, rsp) (G_LOW): a read and a compare, and a store only at a new low (rarely, once a thread's
     /// stack has been as deep once), not a select stored at every call.
     fn note_low(&mut self) {
-        self.get(l_reg(RSP)); self.e(W::GlobalGet(G_LOW)); self.e(W::I64LtU);
-        self.e(W::If(BlockType::Empty));
-        self.get(l_reg(RSP)); self.e(W::GlobalSet(G_LOW));
-        self.e(W::End);
+        self.get(l_reg(RSP)); self.e(&W::GlobalGet(G_LOW)); self.e(&W::I64LtU);
+        self.e(&W::If(BlockType::Empty));
+        self.get(l_reg(RSP)); self.e(&W::GlobalSet(G_LOW));
+        self.e(&W::End);
     }
 
     // ---- Memory operands ----
@@ -495,7 +499,7 @@ impl<'p> Fx<'p> {
         let cst = |fx: &mut Self, v: i64| if narrow { fx.c32(v as i32) } else { fx.c64(v) };
         let term = |fx: &mut Self, r: Register| {
             match gpr(r) {
-                Some((n, _)) if narrow => { fx.get(l_reg(n)); fx.e(W::I32WrapI64); }
+                Some((n, _)) if narrow => { fx.get(l_reg(n)); fx.e(&W::I32WrapI64); }
                 _ => { fx.read_reg(r); }
             }
         };
@@ -512,7 +516,7 @@ impl<'p> Fx<'p> {
             if !registers || disp - offset as i64 != 0 { cst(self, disp - offset as i64); first = false; }
             if base != Register::None {
                 term(self, base);
-                if !first { self.e(add.clone()); }
+                if !first { self.e(&add); }
                 first = false;
             }
             if index != Register::None {
@@ -520,15 +524,15 @@ impl<'p> Fx<'p> {
                 let scale = i.memory_index_scale();
                 if scale > 1 {
                     cst(self, scale.trailing_zeros() as i64);
-                    self.e(if narrow { W::I32Shl } else { W::I64Shl });
+                    self.e(&if narrow { W::I32Shl } else { W::I64Shl });
                 }
-                if !first { self.e(add.clone()); }
+                if !first { self.e(&add); }
             }
         }
         if segment && i.memory_segment() == Register::FS {
-            self.e(W::GlobalGet(G_FS));
-            if narrow { self.e(W::I32WrapI64); }
-            self.e(add);
+            self.e(&W::GlobalGet(G_FS));
+            if narrow { self.e(&W::I32WrapI64); }
+            self.e(&add);
         }
         offset
     }
@@ -547,7 +551,7 @@ impl<'p> Fx<'p> {
 
     fn load_at(&mut self, size: u8, offset: u64) {
         let m = mem_at(offset, 0);
-        self.e(match size {
+        self.e(&match size {
             1 => W::I64Load8U(m),
             2 => W::I64Load16U(m),
             4 => W::I64Load32U(m),
@@ -557,7 +561,7 @@ impl<'p> Fx<'p> {
 
     fn store_at(&mut self, size: u8, offset: u64) {
         let m = mem_at(offset, 0);
-        self.e(match size {
+        self.e(&match size {
             1 => W::I64Store8(m),
             2 => W::I64Store16(m),
             4 => W::I64Store32(m),
@@ -603,9 +607,9 @@ impl<'p> Fx<'p> {
 
     fn sign_extend(&mut self, size: u8) {
         match size {
-            1 => self.e(W::I64Extend8S),
-            2 => self.e(W::I64Extend16S),
-            4 => self.e(W::I64Extend32S),
+            1 => self.e(&W::I64Extend8S),
+            2 => self.e(&W::I64Extend16S),
+            4 => self.e(&W::I64Extend32S),
             _ => {}
         }
     }
@@ -613,7 +617,7 @@ impl<'p> Fx<'p> {
     fn mask_to(&mut self, size: u8) {
         if size < 8 {
             self.c64(mask(size));
-            self.e(W::I64And);
+            self.e(&W::I64And);
         }
     }
 
@@ -623,10 +627,10 @@ impl<'p> Fx<'p> {
 
     /// Push what `value` puts on the stack, made after rsp moved (so it must not read rsp).
     fn push_with(&mut self, value: impl FnOnce(&mut Self) -> bool) -> bool {
-        self.get(l_reg(RSP)); self.c64(8); self.e(W::I64Sub); self.tee(l_reg(RSP));
-        self.e(W::I32WrapI64);
+        self.get(l_reg(RSP)); self.c64(8); self.e(&W::I64Sub); self.tee(l_reg(RSP));
+        self.e(&W::I32WrapI64);
         if !value(self) { return false; }
-        self.e(W::I64Store(mem(3)));
+        self.e(&W::I64Store(mem(3)));
         true
     }
 
@@ -660,8 +664,8 @@ impl<'p> Fx<'p> {
     }
 
     fn pop_value(&mut self, into: u32) {
-        self.get(l_reg(RSP)); self.e(W::I32WrapI64); self.e(W::I64Load(mem(3))); self.set(into);
-        self.get(l_reg(RSP)); self.c64(8); self.e(W::I64Add); self.set(l_reg(RSP));
+        self.get(l_reg(RSP)); self.e(&W::I32WrapI64); self.e(&W::I64Load(mem(3))); self.set(into);
+        self.get(l_reg(RSP)); self.c64(8); self.e(&W::I64Add); self.set(l_reg(RSP));
     }
 
     // ---- Flags ----
@@ -675,7 +679,7 @@ impl<'p> Fx<'p> {
     /// Push the deferred result (L_FR), making it from the operands if a compare left it unmade.
     fn fr(&mut self) {
         if let (true, Flags::Sub(size)) = (self.fr_pending, self.flags) {
-            self.get(L_FA); self.get(L_FB); self.e(W::I64Sub); self.mask_to(size);
+            self.get(L_FA); self.get(L_FB); self.e(&W::I64Sub); self.mask_to(size);
         } else {
             self.get(L_FR);
         }
@@ -684,10 +688,10 @@ impl<'p> Fx<'p> {
     fn sign_bit(&mut self, local: u32, size: u8) {
         if local == L_FR { self.fr(); } else { self.get(local); }
         self.c64(size as i64 * 8 - 1);
-        self.e(W::I64ShrU);
+        self.e(&W::I64ShrU);
         self.c64(1);
-        self.e(W::I64And);
-        self.e(W::I32WrapI64);
+        self.e(&W::I64And);
+        self.e(&W::I32WrapI64);
     }
 
     /// Push one flag of the current state as i32 0/1.
@@ -705,30 +709,30 @@ impl<'p> Fx<'p> {
             Flags::Dec(s) => (4, s),
         };
         match f {
-            Flag::Z => { self.fr(); self.e(W::I64Eqz); }
+            Flag::Z => { self.fr(); self.e(&W::I64Eqz); }
             Flag::S => self.sign_bit(L_FR, size),
             Flag::P => {
-                self.fr(); self.c64(0xff); self.e(W::I64And); self.e(W::I64Popcnt);
-                self.c64(1); self.e(W::I64And); self.e(W::I64Eqz);
+                self.fr(); self.c64(0xff); self.e(&W::I64And); self.e(&W::I64Popcnt);
+                self.c64(1); self.e(&W::I64And); self.e(&W::I64Eqz);
             }
             Flag::C => match kind {
-                0 => { self.get(L_FA); self.get(L_FB); self.e(W::I64LtU); }
-                1 => { self.fr(); self.get(L_FA); self.e(W::I64LtU); }
+                0 => { self.get(L_FA); self.get(L_FB); self.e(&W::I64LtU); }
+                1 => { self.fr(); self.get(L_FA); self.e(&W::I64LtU); }
                 2 => self.c32(0),
                 _ => self.get(L_CF),
             },
             Flag::O => match kind {
                 0 | 4 => {
                     // (a ^ b) & (a ^ r), sign bit
-                    self.get(L_FA); self.get(L_FB); self.e(W::I64Xor);
-                    self.get(L_FA); self.fr(); self.e(W::I64Xor);
-                    self.e(W::I64And); self.set(l_t(4));
+                    self.get(L_FA); self.get(L_FB); self.e(&W::I64Xor);
+                    self.get(L_FA); self.fr(); self.e(&W::I64Xor);
+                    self.e(&W::I64And); self.set(l_t(4));
                     self.sign_bit(l_t(4), size);
                 }
                 1 | 3 => {
-                    self.get(L_FA); self.get(L_FR); self.e(W::I64Xor);
-                    self.get(L_FB); self.get(L_FR); self.e(W::I64Xor);
-                    self.e(W::I64And); self.set(l_t(4));
+                    self.get(L_FA); self.get(L_FR); self.e(&W::I64Xor);
+                    self.get(L_FB); self.get(L_FR); self.e(&W::I64Xor);
+                    self.e(&W::I64And); self.set(l_t(4));
                     self.sign_bit(l_t(4), size);
                 }
                 _ => self.c32(0),
@@ -753,13 +757,13 @@ impl<'p> Fx<'p> {
     fn read32(&mut self, i: &Instruction, n: u32, size: u8) -> bool {
         match i.op_kind(n) {
             OpKind::Register => match gpr(i.op_register(n)) {
-                Some((k, Part::Full | Part::Low32)) => { self.get(l_reg(k)); self.e(W::I32WrapI64); true }
-                Some(_) => { self.read_reg(i.op_register(n)); self.e(W::I32WrapI64); true }
+                Some((k, Part::Full | Part::Low32)) => { self.get(l_reg(k)); self.e(&W::I32WrapI64); true }
+                Some(_) => { self.read_reg(i.op_register(n)); self.e(&W::I32WrapI64); true }
                 None => false,
             },
             OpKind::Memory => {
                 let at = self.place(i);
-                self.e(match size { 1 => W::I32Load8U(mem_at(at, 0)), 2 => W::I32Load16U(mem_at(at, 0)), _ => W::I32Load(mem_at(at, 0)) });
+                self.e(&match size { 1 => W::I32Load8U(mem_at(at, 0)), 2 => W::I32Load16U(mem_at(at, 0)), _ => W::I32Load(mem_at(at, 0)) });
                 true
             }
             OpKind::Immediate8 | OpKind::Immediate16 | OpKind::Immediate32 | OpKind::Immediate8to16 | OpKind::Immediate8to32 => {
@@ -794,7 +798,7 @@ impl<'p> Fx<'p> {
         let operand = |fx: &mut Self, n: u32| {
             if narrow {
                 fx.read32(i, n, size);
-                if signed && size < 4 { fx.e(if size == 1 { W::I32Extend8S } else { W::I32Extend16S }); }
+                if signed && size < 4 { fx.e(&if size == 1 { W::I32Extend8S } else { W::I32Extend16S }); }
             } else {
                 fx.read(i, n, size);
             }
@@ -809,15 +813,15 @@ impl<'p> Fx<'p> {
             operand(self, 0);
             operand(self, 1);
             match cc {
-                C::e => self.e(eq), C::ne => self.e(ne),
-                C::b => self.e(lt_u), C::ae => self.e(ge_u), C::be => self.e(le_u), C::a => self.e(gt_u),
-                C::l => self.e(lt_s), C::ge => self.e(ge_s), C::le => self.e(le_s), C::g => self.e(gt_s),
+                C::e => self.e(&eq), C::ne => self.e(&ne),
+                C::b => self.e(&lt_u), C::ae => self.e(&ge_u), C::be => self.e(&le_u), C::a => self.e(&gt_u),
+                C::l => self.e(&lt_s), C::ge => self.e(&ge_s), C::le => self.e(&le_s), C::g => self.e(&gt_s),
                 // The sign of the difference at the compare's width.
                 _ => {
-                    self.e(if narrow { W::I32Sub } else { W::I64Sub });
-                    if signed && size < 4 { self.e(if size == 1 { W::I32Extend8S } else { W::I32Extend16S }); }
+                    self.e(&if narrow { W::I32Sub } else { W::I64Sub });
+                    if signed && size < 4 { self.e(&if size == 1 { W::I32Extend8S } else { W::I32Extend16S }); }
                     zero(self);
-                    self.e(if cc == C::s { lt_s } else { ge_s });
+                    self.e(&if cc == C::s { lt_s } else { ge_s });
                 }
             }
             return;
@@ -825,16 +829,16 @@ impl<'p> Fx<'p> {
         // test: the and of its operands, with CF and OF clear.
         operand(self, 0);
         operand(self, 1);
-        self.e(if narrow { W::I32And } else { W::I64And });
+        self.e(&if narrow { W::I32And } else { W::I64And });
         match cc {
-            C::e | C::be => { zero(self); self.e(eq); }
-            C::ne | C::a => { zero(self); self.e(ne); }
-            C::s | C::l => { zero(self); self.e(lt_s); }
-            C::ns | C::ge => { zero(self); self.e(ge_s); }
-            C::le => { zero(self); self.e(le_s); }
-            C::g => { zero(self); self.e(gt_s); }
-            C::b | C::o => { self.e(W::Drop); self.c32(0); }
-            _ => { self.e(W::Drop); self.c32(1); }
+            C::e | C::be => { zero(self); self.e(&eq); }
+            C::ne | C::a => { zero(self); self.e(&ne); }
+            C::s | C::l => { zero(self); self.e(&lt_s); }
+            C::ns | C::ge => { zero(self); self.e(&ge_s); }
+            C::le => { zero(self); self.e(&le_s); }
+            C::g => { zero(self); self.e(&gt_s); }
+            C::b | C::o => { self.e(&W::Drop); self.c32(0); }
+            _ => { self.e(&W::Drop); self.c32(1); }
         }
     }
 
@@ -854,19 +858,19 @@ impl<'p> Fx<'p> {
                 if signed { self.sign_extend(size); }
                 self.get(L_FB);
                 if signed { self.sign_extend(size); }
-                self.e(op);
+                self.e(&op);
                 return;
             }
         }
         if let Flags::Logic(size) = self.flags {
             match cc {
-                C::e => { self.fr(); self.e(W::I64Eqz); return; }
-                C::ne => { self.fr(); self.c64(0); self.e(W::I64Ne); return; }
+                C::e => { self.fr(); self.e(&W::I64Eqz); return; }
+                C::ne => { self.fr(); self.c64(0); self.e(&W::I64Ne); return; }
                 C::s | C::l => { self.sign_bit(L_FR, size); return; }
-                C::ns | C::ge => { self.sign_bit(L_FR, size); self.e(W::I32Eqz); return; }
+                C::ns | C::ge => { self.sign_bit(L_FR, size); self.e(&W::I32Eqz); return; }
                 C::le | C::g => {
                     self.fr(); if size < 8 { self.sign_extend(size); } self.c64(0);
-                    self.e(if cc == C::le { W::I64LeS } else { W::I64GtS });
+                    self.e(&if cc == C::le { W::I64LeS } else { W::I64GtS });
                     return;
                 }
                 _ => {}
@@ -874,24 +878,24 @@ impl<'p> Fx<'p> {
         }
         match cc {
             C::o => self.flag(Flag::O),
-            C::no => { self.flag(Flag::O); self.e(W::I32Eqz); }
+            C::no => { self.flag(Flag::O); self.e(&W::I32Eqz); }
             C::b => self.flag(Flag::C),
-            C::ae => { self.flag(Flag::C); self.e(W::I32Eqz); }
+            C::ae => { self.flag(Flag::C); self.e(&W::I32Eqz); }
             C::e => self.flag(Flag::Z),
-            C::ne => { self.flag(Flag::Z); self.e(W::I32Eqz); }
-            C::be => { self.flag(Flag::C); self.flag(Flag::Z); self.e(W::I32Or); }
-            C::a => { self.flag(Flag::C); self.flag(Flag::Z); self.e(W::I32Or); self.e(W::I32Eqz); }
+            C::ne => { self.flag(Flag::Z); self.e(&W::I32Eqz); }
+            C::be => { self.flag(Flag::C); self.flag(Flag::Z); self.e(&W::I32Or); }
+            C::a => { self.flag(Flag::C); self.flag(Flag::Z); self.e(&W::I32Or); self.e(&W::I32Eqz); }
             C::s => self.flag(Flag::S),
-            C::ns => { self.flag(Flag::S); self.e(W::I32Eqz); }
+            C::ns => { self.flag(Flag::S); self.e(&W::I32Eqz); }
             C::p => self.flag(Flag::P),
-            C::np => { self.flag(Flag::P); self.e(W::I32Eqz); }
-            C::l => { self.flag(Flag::S); self.flag(Flag::O); self.e(W::I32Ne); }
-            C::ge => { self.flag(Flag::S); self.flag(Flag::O); self.e(W::I32Eq); }
-            C::le => { self.flag(Flag::Z); self.flag(Flag::S); self.flag(Flag::O); self.e(W::I32Ne); self.e(W::I32Or); }
+            C::np => { self.flag(Flag::P); self.e(&W::I32Eqz); }
+            C::l => { self.flag(Flag::S); self.flag(Flag::O); self.e(&W::I32Ne); }
+            C::ge => { self.flag(Flag::S); self.flag(Flag::O); self.e(&W::I32Eq); }
+            C::le => { self.flag(Flag::Z); self.flag(Flag::S); self.flag(Flag::O); self.e(&W::I32Ne); self.e(&W::I32Or); }
             C::g => {
-                self.flag(Flag::Z); self.e(W::I32Eqz);
-                self.flag(Flag::S); self.flag(Flag::O); self.e(W::I32Eq);
-                self.e(W::I32And);
+                self.flag(Flag::Z); self.e(&W::I32Eqz);
+                self.flag(Flag::S); self.flag(Flag::O); self.e(&W::I32Eq);
+                self.e(&W::I32And);
             }
             C::None => self.c32(1),
         }
@@ -925,11 +929,11 @@ impl<'p> Fx<'p> {
     /// within it). Nothing comes to those from outside the loop (clean_loops).
     fn enter_loop(&mut self, l: usize) {
         let Loop { head, last, .. } = self.loops[l];
-        self.e(W::Loop(BlockType::Empty));
+        self.e(&W::Loop(BlockType::Empty));
         self.open(Lab::Loop(l));
         let mine: Vec<usize> = (head + 1..=last).rev().filter(|&b| self.within[b] == Some(l)).collect();
         for b in mine {
-            self.e(W::Block(BlockType::Empty));
+            self.e(&W::Block(BlockType::Empty));
             self.open(Lab::Block(b));
         }
         // Entered past its head (only ever from the dispatch: a call's continuation, a loop within it, after the
@@ -951,19 +955,19 @@ impl<'p> Fx<'p> {
             if t == b { Ok(at) } else { Err(at) }
         }).collect();
         self.get(L_INTO);
-        self.e(W::If(BlockType::Empty));
-        self.e(W::Block(BlockType::Empty));
+        self.e(&W::If(BlockType::Empty));
+        self.e(&W::Block(BlockType::Empty));
         // Inside the if and this block: 2 deeper than the labels.
         let outer: Vec<u32> = route.iter().map(|r| match *r { Ok(_) => 0, Err(at) => self.to(at) + 2 }).collect();
-        self.get(L_INTO); self.c32(head as i32 + 2); self.e(W::I32Sub);
-        self.e(W::BrTable(Cow::Owned(outer), 1));
-        self.e(W::End);
+        self.get(L_INTO); self.c32(head as i32 + 2); self.e(&W::I32Sub);
+        self.e(&W::BrTable(Cow::Owned(outer), 1));
+        self.e(&W::End);
         // Within this loop itself: spent, and on to its block (inside the if: 1 deeper).
         let inner: Vec<u32> = route.iter().map(|r| match *r { Ok(at) => self.to(at) + 1, Err(_) => 0 }).collect();
         self.get(L_INTO); self.c32(0); self.set(L_INTO);
-        self.c32(head as i32 + 2); self.e(W::I32Sub);
-        self.e(W::BrTable(Cow::Owned(inner), 0));
-        self.e(W::End);
+        self.c32(head as i32 + 2); self.e(&W::I32Sub);
+        self.e(&W::BrTable(Cow::Owned(inner), 0));
+        self.e(&W::End);
     }
 
     /// The depth of a br to `address`, when it is a block after this one whose label is open here.
@@ -983,10 +987,10 @@ impl<'p> Fx<'p> {
                 match self.block_at[b] {
                     // Its label is open here (lower_function): out to it, with no round of the dispatch loop (its
                     // br_table an indirect jump, and every local merged at its head).
-                    Some(at) => self.e(W::Br(self.to(at))),
+                    Some(at) => self.e(&W::Br(self.to(at))),
                     // Its label is not open here: round the dispatch loop (a block within a loop is never one: nothing
                     // jumps into a loop from outside it but to its head, clean_loops).
-                    None => { self.dispatched = true; self.c32(b as i32); self.set(L_BLK); self.e(W::Br(self.depth)); }
+                    None => { self.dispatched = true; self.c32(b as i32); self.set(L_BLK); self.e(&W::Br(self.depth)); }
                 }
             }
             Some(b) => {
@@ -994,12 +998,12 @@ impl<'p> Fx<'p> {
                 self.note(Ev::Edge);
                 match self.heads[b].and_then(|l| self.loop_at[l]) {
                     // Back to the head of a loop this code is in: round that loop.
-                    Some(at) => self.e(W::Br(self.to(at))),
+                    Some(at) => self.e(&W::Br(self.to(at))),
                     None => {
                         self.dispatched = true;
                         self.c32(b as i32);
                         self.set(L_BLK);
-                        self.e(W::Br(self.depth));
+                        self.e(&W::Br(self.depth));
                     }
                 }
             }
@@ -1017,10 +1021,10 @@ impl<'p> Fx<'p> {
     /// Nonzero when the thread's budget is spent (one less now).
     fn spent(&mut self) {
         if self.budget {
-            self.get(L_BUDGET); self.c32(1); self.e(W::I32Sub); self.tee(L_BUDGET); self.e(W::I32Eqz);
+            self.get(L_BUDGET); self.c32(1); self.e(&W::I32Sub); self.tee(L_BUDGET); self.e(&W::I32Eqz);
         } else {
-            self.e(W::GlobalGet(G_BUDGET)); self.c32(1); self.e(W::I32Sub); self.e(W::GlobalSet(G_BUDGET));
-            self.e(W::GlobalGet(G_BUDGET)); self.e(W::I32Eqz);
+            self.e(&W::GlobalGet(G_BUDGET)); self.c32(1); self.e(&W::I32Sub); self.e(&W::GlobalSet(G_BUDGET));
+            self.e(&W::GlobalGet(G_BUDGET)); self.e(&W::I32Eqz);
         }
     }
 
@@ -1029,15 +1033,15 @@ impl<'p> Fx<'p> {
     /// call that waits for one, as in `while (!got) pause();`, is taken there, by the call, as at a system call).
     fn time_slice(&mut self, address: u64) {
         self.spent();
-        self.c32(0); self.e(W::I32Load(mem_at(INTERRUPT as u64, 2)));
-        self.e(W::I32Or);
-        self.e(W::If(BlockType::Empty));
+        self.c32(0); self.e(&W::I32Load(mem_at(INTERRUPT as u64, 2)));
+        self.e(&W::I32Or);
+        self.e(&W::If(BlockType::Empty));
         self.depth += 1;
         self.save();
         self.save_flags(self.handed.handed(address));
-        self.c64(address as i64); self.c32(TRAP_YIELD); self.e(W::Call(F_TRAP)); self.e(W::Unreachable);
+        self.c64(address as i64); self.c32(TRAP_YIELD); self.e(&W::Call(F_TRAP)); self.e(&W::Unreachable);
         self.depth -= 1;
-        self.e(W::End);
+        self.e(&W::End);
     }
 
     /// Before a call (registers saved, the return address pushed): past DEPTH_LIMIT frames, or when the thread's
@@ -1045,22 +1049,22 @@ impl<'p> Fx<'p> {
     /// kernel instead, to the target in `target` (pushes its address); else it counts as one frame more.
     fn enter_call(&mut self, flags: u32, target: impl FnOnce(&mut Self)) {
         self.note_low();
-        self.e(W::GlobalGet(G_DEPTH)); self.c32(DEPTH_LIMIT); self.e(W::I32GeU);
+        self.e(&W::GlobalGet(G_DEPTH)); self.c32(DEPTH_LIMIT); self.e(&W::I32GeU);
         self.spent();
-        self.e(W::I32Or);
-        self.e(W::If(BlockType::Empty));
+        self.e(&W::I32Or);
+        self.e(&W::If(BlockType::Empty));
         self.depth += 1;
         self.save_flags(flags);
         target(self);
         self.c32(TRAP_UNWIND); self.c32(TRAP_YIELD);
-        self.e(W::GlobalGet(G_DEPTH)); self.c32(DEPTH_LIMIT); self.e(W::I32GeU);
-        self.e(W::Select);
-        self.e(W::Call(F_TRAP)); self.e(W::Unreachable);
+        self.e(&W::GlobalGet(G_DEPTH)); self.c32(DEPTH_LIMIT); self.e(&W::I32GeU);
+        self.e(&W::Select);
+        self.e(&W::Call(F_TRAP)); self.e(&W::Unreachable);
         self.depth -= 1;
-        self.e(W::End);
-        self.e(W::GlobalGet(G_DEPTH)); self.c32(1); self.e(W::I32Add); self.e(W::GlobalSet(G_DEPTH));
+        self.e(&W::End);
+        self.e(&W::GlobalGet(G_DEPTH)); self.c32(1); self.e(&W::I32Add); self.e(&W::GlobalSet(G_DEPTH));
     }
-    fn leave_call(&mut self) { self.e(W::GlobalGet(G_DEPTH)); self.c32(1); self.e(W::I32Sub); self.e(W::GlobalSet(G_DEPTH)); }
+    fn leave_call(&mut self) { self.e(&W::GlobalGet(G_DEPTH)); self.c32(1); self.e(&W::I32Sub); self.e(&W::GlobalSet(G_DEPTH)); }
 
     /// Transfer to code outside this function without growing the stack.
     fn tail(&mut self, address: u64) {
@@ -1069,11 +1073,11 @@ impl<'p> Fx<'p> {
         match self.program.entries.get(&address) {
             Some(&(f, b)) => {
                 self.c32(b as i32);
-                self.e(W::ReturnCall(FIRST_GUEST + f));
+                self.e(&W::ReturnCall(FIRST_GUEST + f));
             }
             None => {
                 self.c64(address as i64);
-                self.e(W::ReturnCall(F_DISPATCH));
+                self.e(&W::ReturnCall(F_DISPATCH));
             }
         }
     }
@@ -1085,21 +1089,21 @@ impl<'p> Fx<'p> {
     /// return address with those taken back, the rest still in this frame's locals; handed another, all this frame
     /// holds goes to the globals first, where the resume reads it (after_call).
     fn after_call_in(&mut self, ret: u64, next: Option<u64>, writes: u32) {
-        self.get(l_t(0)); self.c64(ret as i64); self.e(W::I64Ne);
-        self.e(W::If(BlockType::Empty));
+        self.get(l_t(0)); self.c64(ret as i64); self.e(&W::I64Ne);
+        self.e(&W::If(BlockType::Empty));
         self.save();
-        self.e(W::Br(self.depth + 1 + self.dispatch as u32));
-        self.e(W::End);
+        self.e(&W::Br(self.depth + 1 + self.dispatch as u32));
+        self.e(&W::End);
         self.sync_in(false, writes);
         self.set_flags(Flags::Held);
         self.goto(ret, next);
     }
 
     fn after_call(&mut self, ret: u64, next: Option<u64>) {
-        self.get(l_t(0)); self.c64(ret as i64); self.e(W::I64Ne);
-        self.e(W::If(BlockType::Empty));
-        self.e(W::Br(self.depth + 1 + self.dispatch as u32));
-        self.e(W::End);
+        self.get(l_t(0)); self.c64(ret as i64); self.e(&W::I64Ne);
+        self.e(&W::If(BlockType::Empty));
+        self.e(&W::Br(self.depth + 1 + self.dispatch as u32));
+        self.e(&W::End);
         self.load();
         self.set_flags(Flags::Held);
         self.goto(ret, next);
@@ -1128,12 +1132,12 @@ impl Fx<'_> {
         let memory = i.op0_kind() == OpKind::Memory;
         if !need && !write {
             // Nothing reads what it sets; only a read that may fault is kept.
-            if memory { let at = self.place(i); self.load_at(size, at); self.e(W::Drop); }
+            if memory { let at = self.place(i); self.load_at(size, at); self.e(&W::Drop); }
             return true;
         }
         // The destination's address once, kept for the store.
         let mut at = 0;
-        if memory && write { at = self.place(i); self.e(W::LocalTee(l_u(0))); self.e(W::LocalGet(l_u(0))); self.load_at(size, at); } else if !self.read(i, 0, size) { return false; }
+        if memory && write { at = self.place(i); self.e(&W::LocalTee(l_u(0))); self.e(&W::LocalGet(l_u(0))); self.load_at(size, at); } else if !self.read(i, 0, size) { return false; }
         let logic = matches!(state, Flags::Logic(_));
         if need && !logic {
             self.set(L_FA);
@@ -1143,11 +1147,11 @@ impl Fx<'_> {
             if !write { self.fr_pending = true; return true; }
             self.get(L_FA); self.get(L_FB);
         } else if !self.read(i, 1, size) { return false; }
-        self.e(wasm);
+        self.e(&wasm);
         if need {
             // The flags read the result at its width; a store or register write masks it anyway.
             self.mask_to(size);
-            if write { self.e(W::LocalTee(L_FR)); } else { self.set(L_FR); }
+            if write { self.e(&W::LocalTee(L_FR)); } else { self.set(L_FR); }
             self.set_flags(state);
             if !write { return true; }
         } else {
@@ -1164,26 +1168,26 @@ impl Fx<'_> {
 
     fn carry(&mut self, i: &Instruction, subtract: bool) -> bool {
         let size = Self::size(i, 0);
-        self.flag(Flag::C); self.e(W::I64ExtendI32U); self.set(l_t(1));
+        self.flag(Flag::C); self.e(&W::I64ExtendI32U); self.set(l_t(1));
         if !self.read(i, 0, size) { return false; }
         self.set(L_FA);
         if !self.read(i, 1, size) { return false; }
         self.set(L_FB);
         self.get(L_FA); self.get(L_FB);
-        self.e(if subtract { W::I64Sub } else { W::I64Add });
+        self.e(&if subtract { W::I64Sub } else { W::I64Add });
         self.get(l_t(1));
-        self.e(if subtract { W::I64Sub } else { W::I64Add });
+        self.e(&if subtract { W::I64Sub } else { W::I64Add });
         self.mask_to(size); self.set(L_FR);
         // CF: with carry-in the comparison includes equality.
         if subtract {
-            self.get(L_FA); self.get(L_FB); self.e(W::I64LeU);
-            self.get(L_FA); self.get(L_FB); self.e(W::I64LtU);
+            self.get(L_FA); self.get(L_FB); self.e(&W::I64LeU);
+            self.get(L_FA); self.get(L_FB); self.e(&W::I64LtU);
         } else {
-            self.get(L_FR); self.get(L_FA); self.e(W::I64LeU);
-            self.get(L_FR); self.get(L_FA); self.e(W::I64LtU);
+            self.get(L_FR); self.get(L_FA); self.e(&W::I64LeU);
+            self.get(L_FR); self.get(L_FA); self.e(&W::I64LtU);
         }
-        self.get(l_t(1)); self.e(W::I32WrapI64);
-        self.e(W::Select);
+        self.get(l_t(1)); self.e(&W::I32WrapI64);
+        self.e(&W::Select);
         self.set(l_u(0));
         self.set_flags(if subtract { Flags::Sub(size) } else { Flags::Add(size) });
         for (f, l) in [(Flag::Z, L_ZF), (Flag::S, L_SF), (Flag::O, L_OF), (Flag::P, L_PF)] {
@@ -1207,23 +1211,23 @@ impl Fx<'_> {
         if !self.read(i, 0, size) { return false; }
         match op {
             Mnemonic::Not => {
-                self.c64(mask(size)); self.e(W::I64Xor); self.set(l_t(1));
+                self.c64(mask(size)); self.e(&W::I64Xor); self.set(l_t(1));
                 return self.write(i, 0, size, l_t(1));
             }
             Mnemonic::Neg => {
                 self.set(L_FB); self.c64(0); self.set(L_FA);
-                self.c64(0); self.get(L_FB); self.e(W::I64Sub);
+                self.c64(0); self.get(L_FB); self.e(&W::I64Sub);
                 self.mask_to(size); self.set(L_FR);
                 self.defer(Flags::Sub(size));
             }
             Mnemonic::Inc => {
                 self.set(L_FA); self.c64(1); self.set(L_FB);
-                self.get(L_FA); self.c64(1); self.e(W::I64Add); self.mask_to(size); self.set(L_FR);
+                self.get(L_FA); self.c64(1); self.e(&W::I64Add); self.mask_to(size); self.set(L_FR);
                 self.defer(Flags::Inc(size));
             }
             Mnemonic::Dec => {
                 self.set(L_FA); self.c64(1); self.set(L_FB);
-                self.get(L_FA); self.c64(1); self.e(W::I64Sub); self.mask_to(size); self.set(L_FR);
+                self.get(L_FA); self.c64(1); self.e(&W::I64Sub); self.mask_to(size); self.set(L_FR);
                 self.defer(Flags::Dec(size));
             }
             _ => return false,
@@ -1243,28 +1247,28 @@ impl Fx<'_> {
             OpKind::Immediate8 => { let c = i.immediate8() as i64 & count_mask; self.c64(c); Some(c) }
             _ => { self.c64(1); Some(1) }
         };
-        self.c64(count_mask); self.e(W::I64And); self.set(l_t(2));
+        self.c64(count_mask); self.e(&W::I64And); self.set(l_t(2));
         if constant == Some(0) {
             return true;
         }
         // Rotates of sub-64-bit values are done on a replicated value.
         match op {
-            Mnemonic::Shl | Mnemonic::Sal => { self.get(l_t(1)); self.get(l_t(2)); self.e(W::I64Shl); self.mask_to(size); }
-            Mnemonic::Shr => { self.get(l_t(1)); self.get(l_t(2)); self.e(W::I64ShrU); }
+            Mnemonic::Shl | Mnemonic::Sal => { self.get(l_t(1)); self.get(l_t(2)); self.e(&W::I64Shl); self.mask_to(size); }
+            Mnemonic::Shr => { self.get(l_t(1)); self.get(l_t(2)); self.e(&W::I64ShrU); }
             Mnemonic::Sar => {
-                self.get(l_t(1)); self.sign_extend(size); self.get(l_t(2)); self.e(W::I64ShrS); self.mask_to(size);
+                self.get(l_t(1)); self.sign_extend(size); self.get(l_t(2)); self.e(&W::I64ShrS); self.mask_to(size);
             }
             Mnemonic::Rol | Mnemonic::Ror => {
                 if size == 8 {
                     self.get(l_t(1)); self.get(l_t(2));
-                    self.e(if op == Mnemonic::Rol { W::I64Rotl } else { W::I64Rotr });
+                    self.e(&if op == Mnemonic::Rol { W::I64Rotl } else { W::I64Rotr });
                 } else {
                     // rotate within `bits`: (x << c | x >> (bits - c)) & mask, c taken mod bits
-                    self.get(l_t(2)); self.c64(bits); self.e(W::I64RemU); self.set(l_t(2));
+                    self.get(l_t(2)); self.c64(bits); self.e(&W::I64RemU); self.set(l_t(2));
                     let (a, b) = if op == Mnemonic::Rol { (W::I64Shl, W::I64ShrU) } else { (W::I64ShrU, W::I64Shl) };
-                    self.get(l_t(1)); self.get(l_t(2)); self.e(a);
-                    self.get(l_t(1)); self.c64(bits); self.get(l_t(2)); self.e(W::I64Sub); self.e(b);
-                    self.e(W::I64Or); self.mask_to(size);
+                    self.get(l_t(1)); self.get(l_t(2)); self.e(&a);
+                    self.get(l_t(1)); self.c64(bits); self.get(l_t(2)); self.e(&W::I64Sub); self.e(&b);
+                    self.e(&W::I64Or); self.mask_to(size);
                 }
             }
             _ => return false,
@@ -1276,29 +1280,29 @@ impl Fx<'_> {
             let variable = constant.is_none();
             let put = |fx: &mut Self, local: u32, compute: &dyn Fn(&mut Self)| {
                 compute(fx);
-                if variable { fx.get(local); fx.get(l_t(2)); fx.c64(0); fx.e(W::I64Ne); fx.e(W::Select); }
+                if variable { fx.get(local); fx.get(l_t(2)); fx.c64(0); fx.e(&W::I64Ne); fx.e(&W::Select); }
                 fx.set(local);
             };
             put(self, L_CF, &|fx| {
                 match op {
                     Mnemonic::Shl | Mnemonic::Sal => {
-                        fx.get(l_t(1)); fx.c64(bits); fx.get(l_t(2)); fx.e(W::I64Sub); fx.e(W::I64ShrU);
+                        fx.get(l_t(1)); fx.c64(bits); fx.get(l_t(2)); fx.e(&W::I64Sub); fx.e(&W::I64ShrU);
                     }
                     Mnemonic::Sar => {
-                        fx.get(l_t(1)); fx.sign_extend(size); fx.get(l_t(2)); fx.c64(1); fx.e(W::I64Sub); fx.e(W::I64ShrS);
+                        fx.get(l_t(1)); fx.sign_extend(size); fx.get(l_t(2)); fx.c64(1); fx.e(&W::I64Sub); fx.e(&W::I64ShrS);
                     }
-                    _ => { fx.get(l_t(1)); fx.get(l_t(2)); fx.c64(1); fx.e(W::I64Sub); fx.e(W::I64ShrU); }
+                    _ => { fx.get(l_t(1)); fx.get(l_t(2)); fx.c64(1); fx.e(&W::I64Sub); fx.e(&W::I64ShrU); }
                 }
-                fx.c64(1); fx.e(W::I64And); fx.e(W::I32WrapI64);
+                fx.c64(1); fx.e(&W::I64And); fx.e(&W::I32WrapI64);
             });
-            put(self, L_ZF, &|fx| { fx.get(l_t(3)); fx.e(W::I64Eqz); });
+            put(self, L_ZF, &|fx| { fx.get(l_t(3)); fx.e(&W::I64Eqz); });
             put(self, L_SF, &|fx| fx.sign_bit(l_t(3), size));
             put(self, L_PF, &|fx| {
-                fx.get(l_t(3)); fx.c64(0xff); fx.e(W::I64And); fx.e(W::I64Popcnt); fx.c64(1); fx.e(W::I64And); fx.e(W::I64Eqz);
+                fx.get(l_t(3)); fx.c64(0xff); fx.e(&W::I64And); fx.e(&W::I64Popcnt); fx.c64(1); fx.e(&W::I64And); fx.e(&W::I64Eqz);
             });
             put(self, L_OF, &|fx| match op {
                 Mnemonic::Shl | Mnemonic::Sal => {
-                    fx.sign_bit(l_t(3), size); fx.get(L_CF); fx.e(W::I32Xor);
+                    fx.sign_bit(l_t(3), size); fx.get(L_CF); fx.e(&W::I32Xor);
                 }
                 Mnemonic::Shr => fx.sign_bit(l_t(1), size),
                 _ => fx.c32(0),
@@ -1307,9 +1311,9 @@ impl Fx<'_> {
             self.hold_flags();
             // Rotates: CF is the bit that wrapped around.
             self.get(l_t(3));
-            if op == Mnemonic::Rol { self.c64(1); self.e(W::I64And); } else { self.c64(bits - 1); self.e(W::I64ShrU); self.c64(1); self.e(W::I64And); }
-            self.e(W::I32WrapI64);
-            if constant.is_none() { self.get(L_CF); self.get(l_t(2)); self.c64(0); self.e(W::I64Ne); self.e(W::Select); }
+            if op == Mnemonic::Rol { self.c64(1); self.e(&W::I64And); } else { self.c64(bits - 1); self.e(&W::I64ShrU); self.c64(1); self.e(&W::I64And); }
+            self.e(&W::I32WrapI64);
+            if constant.is_none() { self.get(L_CF); self.get(l_t(2)); self.c64(0); self.e(&W::I64Ne); self.e(&W::Select); }
             self.set(L_CF);
         }
         self.write(i, 0, size, l_t(3))
@@ -1333,30 +1337,30 @@ impl Fx<'_> {
         }
         if !self.read(i, 0, size) { return false; }
         self.set(l_t(1));
-        self.flag(Flag::C); self.e(W::I64ExtendI32U); self.set(l_t(2));
+        self.flag(Flag::C); self.e(&W::I64ExtendI32U); self.set(l_t(2));
         let left = op == Mnemonic::Rcl;
         // rcr: x >> c | CF << (bits - c) | x << (bits + 1 - c); rcl: x << c | CF << (c - 1) | x >> (bits + 1 - c).
         // A term shifted by the whole width holds nothing (wasm would take the shift mod 64): it is left out.
         let (near, far) = if left { (W::I64Shl, W::I64ShrU) } else { (W::I64ShrU, W::I64Shl) };
-        if c < bits { self.get(l_t(1)); self.c64(c); self.e(near); } else { self.c64(0); }
-        self.get(l_t(2)); self.c64(if left { c - 1 } else { bits - c }); self.e(W::I64Shl); self.e(W::I64Or);
-        if c > 1 { self.get(l_t(1)); self.c64(bits + 1 - c); self.e(far); self.e(W::I64Or); }
+        if c < bits { self.get(l_t(1)); self.c64(c); self.e(&near); } else { self.c64(0); }
+        self.get(l_t(2)); self.c64(if left { c - 1 } else { bits - c }); self.e(&W::I64Shl); self.e(&W::I64Or);
+        if c > 1 { self.get(l_t(1)); self.c64(bits + 1 - c); self.e(&far); self.e(&W::I64Or); }
         self.mask_to(size); self.set(l_t(3));
         if need {
             self.hold_flags();
             // CF: the last bit rotated out of the value.
-            self.get(l_t(1)); self.c64(if left { bits - c } else { c - 1 }); self.e(W::I64ShrU);
-            self.c64(1); self.e(W::I64And); self.e(W::I32WrapI64); self.set(L_CF);
+            self.get(l_t(1)); self.c64(if left { bits - c } else { c - 1 }); self.e(&W::I64ShrU);
+            self.c64(1); self.e(&W::I64And); self.e(&W::I32WrapI64); self.set(L_CF);
             // OF, defined for a count of 1: the result's top bit against CF after (rcl) or its next bit (rcr).
             if c == 1 {
                 self.sign_bit(l_t(3), size);
                 if left {
                     self.get(L_CF);
                 } else {
-                    self.get(l_t(3)); self.c64(bits - 2); self.e(W::I64ShrU); self.c64(1); self.e(W::I64And);
-                    self.e(W::I32WrapI64);
+                    self.get(l_t(3)); self.c64(bits - 2); self.e(&W::I64ShrU); self.c64(1); self.e(&W::I64And);
+                    self.e(&W::I32WrapI64);
                 }
-                self.e(W::I32Xor); self.set(L_OF);
+                self.e(&W::I32Xor); self.set(L_OF);
             }
         }
         self.write(i, 0, size, l_t(3))
@@ -1375,25 +1379,25 @@ impl Fx<'_> {
             OpKind::Register => { self.read_reg(Register::CL); }
             _ => self.c64(i.immediate8() as i64),
         }
-        self.c64(if size == 8 { 63 } else { 31 }); self.e(W::I64And); self.set(l_t(3));
+        self.c64(if size == 8 { 63 } else { 31 }); self.e(&W::I64And); self.set(l_t(3));
         // c == 0 leaves everything unchanged; wasm shifts by `bits` are
         // shifts by 0, so guard that case with a select.
         let (a, b) = if left { (W::I64Shl, W::I64ShrU) } else { (W::I64ShrU, W::I64Shl) };
-        self.get(l_t(1)); self.get(l_t(3)); self.e(a.clone());
-        self.get(l_t(2)); self.c64(bits); self.get(l_t(3)); self.e(W::I64Sub); self.e(b);
-        self.e(W::I64Or); self.mask_to(size);
-        self.get(l_t(1)); self.get(l_t(3)); self.c64(0); self.e(W::I64Ne); self.e(W::Select);
+        self.get(l_t(1)); self.get(l_t(3)); self.e(&a);
+        self.get(l_t(2)); self.c64(bits); self.get(l_t(3)); self.e(&W::I64Sub); self.e(&b);
+        self.e(&W::I64Or); self.mask_to(size);
+        self.get(l_t(1)); self.get(l_t(3)); self.c64(0); self.e(&W::I64Ne); self.e(&W::Select);
         self.set(l_t(4));
         if need {
             self.hold_flags();
             // CF: last bit shifted out of dst.
             self.get(l_t(1));
-            if left { self.c64(bits); self.get(l_t(3)); self.e(W::I64Sub); self.e(W::I64ShrU); }
-            else { self.get(l_t(3)); self.c64(1); self.e(W::I64Sub); self.e(W::I64ShrU); }
-            self.c64(1); self.e(W::I64And); self.e(W::I32WrapI64);
-            self.get(L_CF); self.get(l_t(3)); self.c64(0); self.e(W::I64Ne); self.e(W::Select); self.set(L_CF);
-            self.get(l_t(4)); self.e(W::I64Eqz); self.get(L_ZF); self.get(l_t(3)); self.c64(0); self.e(W::I64Ne); self.e(W::Select); self.set(L_ZF);
-            self.sign_bit(l_t(4), size); self.get(L_SF); self.get(l_t(3)); self.c64(0); self.e(W::I64Ne); self.e(W::Select); self.set(L_SF);
+            if left { self.c64(bits); self.get(l_t(3)); self.e(&W::I64Sub); self.e(&W::I64ShrU); }
+            else { self.get(l_t(3)); self.c64(1); self.e(&W::I64Sub); self.e(&W::I64ShrU); }
+            self.c64(1); self.e(&W::I64And); self.e(&W::I32WrapI64);
+            self.get(L_CF); self.get(l_t(3)); self.c64(0); self.e(&W::I64Ne); self.e(&W::Select); self.set(L_CF);
+            self.get(l_t(4)); self.e(&W::I64Eqz); self.get(L_ZF); self.get(l_t(3)); self.c64(0); self.e(&W::I64Ne); self.e(&W::Select); self.set(L_ZF);
+            self.sign_bit(l_t(4), size); self.get(L_SF); self.get(l_t(3)); self.c64(0); self.e(&W::I64Ne); self.e(&W::Select); self.set(L_SF);
             self.c32(0); self.set(L_OF);
         }
         self.write(i, 0, size, l_t(4))
@@ -1411,31 +1415,31 @@ impl Fx<'_> {
             if signed { self.sign_extend(size); }
             self.set(l_t(2));
             if size == 8 {
-                self.get(l_t(1)); self.get(l_t(2)); self.e(W::Call(if signed { F_MULHS } else { F_MULHU })); self.set(l_t(3));
-                self.get(l_t(1)); self.get(l_t(2)); self.e(W::I64Mul); self.set(l_reg(RAX));
+                self.get(l_t(1)); self.get(l_t(2)); self.e(&W::Call(if signed { F_MULHS } else { F_MULHU })); self.set(l_t(3));
+                self.get(l_t(1)); self.get(l_t(2)); self.e(&W::I64Mul); self.set(l_reg(RAX));
                 self.get(l_t(3)); self.set(l_reg(RDX));
                 if need {
                     // Overflow when the high half is not the extension of the low.
                     self.get(l_t(3));
-                    if signed { self.get(l_reg(RAX)); self.c64(63); self.e(W::I64ShrS); } else { self.c64(0); }
-                    self.e(W::I64Ne);
+                    if signed { self.get(l_reg(RAX)); self.c64(63); self.e(&W::I64ShrS); } else { self.c64(0); }
+                    self.e(&W::I64Ne);
                     self.set(l_u(0));
                 }
             } else {
-                self.get(l_t(1)); self.get(l_t(2)); self.e(W::I64Mul); self.set(l_t(3));
+                self.get(l_t(1)); self.get(l_t(2)); self.e(&W::I64Mul); self.set(l_t(3));
                 let bits = size as i64 * 8;
                 if size == 1 {
-                    self.get(l_t(3)); self.c64(0xffff); self.e(W::I64And); self.set(l_t(4));
+                    self.get(l_t(3)); self.c64(0xffff); self.e(&W::I64And); self.set(l_t(4));
                     self.get(l_t(4)); self.write_reg(Register::AX);
                 } else {
                     let (lo, hi) = match size { 2 => (Register::AX, Register::DX), _ => (Register::EAX, Register::EDX) };
                     self.get(l_t(3)); self.write_reg(lo);
-                    self.get(l_t(3)); self.c64(bits); self.e(W::I64ShrU); self.write_reg(hi);
+                    self.get(l_t(3)); self.c64(bits); self.e(&W::I64ShrU); self.write_reg(hi);
                 }
                 if need {
                     self.get(l_t(3));
-                    if signed { self.get(l_t(3)); self.sign_extend(size); self.e(W::I64Ne); }
-                    else { self.c64(bits); self.e(W::I64ShrU); self.c64(0); self.e(W::I64Ne); }
+                    if signed { self.get(l_t(3)); self.sign_extend(size); self.e(&W::I64Ne); }
+                    else { self.c64(bits); self.e(&W::I64ShrU); self.c64(0); self.e(&W::I64Ne); }
                     self.set(l_u(0));
                 }
             }
@@ -1447,13 +1451,13 @@ impl Fx<'_> {
             self.sign_extend(size); self.set(l_t(1));
             if !self.read(i, b, size) { return false; }
             self.sign_extend(size); self.set(l_t(2));
-            self.get(l_t(1)); self.get(l_t(2)); self.e(W::I64Mul); self.set(l_t(3));
+            self.get(l_t(1)); self.get(l_t(2)); self.e(&W::I64Mul); self.set(l_t(3));
             if need {
                 if size == 8 {
-                    self.get(l_t(1)); self.get(l_t(2)); self.e(W::Call(F_MULHS));
-                    self.get(l_t(3)); self.c64(63); self.e(W::I64ShrS); self.e(W::I64Ne);
+                    self.get(l_t(1)); self.get(l_t(2)); self.e(&W::Call(F_MULHS));
+                    self.get(l_t(3)); self.c64(63); self.e(&W::I64ShrS); self.e(&W::I64Ne);
                 } else {
-                    self.get(l_t(3)); self.get(l_t(3)); self.sign_extend(size); self.e(W::I64Ne);
+                    self.get(l_t(3)); self.get(l_t(3)); self.sign_extend(size); self.e(&W::I64Ne);
                 }
                 self.set(l_u(0));
             }
@@ -1479,18 +1483,18 @@ impl Fx<'_> {
         if size == 8 {
             // 128/64 in the host only when rdx is not the extension of rax.
             self.get(l_reg(RDX));
-            if signed { self.get(l_reg(RAX)); self.c64(63); self.e(W::I64ShrS); } else { self.c64(0); }
-            self.e(W::I64Eq);
-            self.e(W::If(BlockType::Empty));
+            if signed { self.get(l_reg(RAX)); self.c64(63); self.e(&W::I64ShrS); } else { self.c64(0); }
+            self.e(&W::I64Eq);
+            self.e(&W::If(BlockType::Empty));
             self.depth += 1;
-            self.get(l_reg(RAX)); self.get(l_t(2)); self.e(if signed { W::I64DivS } else { W::I64DivU }); self.set(l_t(3));
-            self.get(l_reg(RAX)); self.get(l_t(2)); self.e(if signed { W::I64RemS } else { W::I64RemU }); self.set(l_reg(RDX));
+            self.get(l_reg(RAX)); self.get(l_t(2)); self.e(&if signed { W::I64DivS } else { W::I64DivU }); self.set(l_t(3));
+            self.get(l_reg(RAX)); self.get(l_t(2)); self.e(&if signed { W::I64RemS } else { W::I64RemU }); self.set(l_reg(RDX));
             self.get(l_t(3)); self.set(l_reg(RAX));
-            self.e(W::Else);
+            self.e(&W::Else);
             self.get(l_reg(RDX)); self.get(l_reg(RAX)); self.get(l_t(2)); self.c32(signed as i32);
-            self.e(W::Call(F_DIV128));
+            self.e(&W::Call(F_DIV128));
             self.set(l_reg(RDX)); self.set(l_reg(RAX));
-            self.e(W::End);
+            self.e(&W::End);
             self.depth -= 1;
             return true;
         }
@@ -1501,18 +1505,18 @@ impl Fx<'_> {
             if signed { self.sign_extend(2); }
         } else {
             let (lo, hi) = match size { 2 => (Register::AX, Register::DX), _ => (Register::EAX, Register::EDX) };
-            self.read_reg(hi); self.c64(bits); self.e(W::I64Shl);
-            self.read_reg(lo); self.e(W::I64Or);
-            if signed && size == 2 { self.e(W::I64Extend32S); }
+            self.read_reg(hi); self.c64(bits); self.e(&W::I64Shl);
+            self.read_reg(lo); self.e(&W::I64Or);
+            if signed && size == 2 { self.e(&W::I64Extend32S); }
         }
         self.set(l_t(1));
         if signed { self.get(l_t(2)); self.sign_extend(size); self.set(l_t(2)); }
-        self.get(l_t(1)); self.get(l_t(2)); self.e(if signed { W::I64DivS } else { W::I64DivU }); self.set(l_t(3));
-        self.get(l_t(1)); self.get(l_t(2)); self.e(if signed { W::I64RemS } else { W::I64RemU }); self.set(l_t(4));
+        self.get(l_t(1)); self.get(l_t(2)); self.e(&if signed { W::I64DivS } else { W::I64DivU }); self.set(l_t(3));
+        self.get(l_t(1)); self.get(l_t(2)); self.e(&if signed { W::I64RemS } else { W::I64RemU }); self.set(l_t(4));
         match size {
             1 => {
-                self.get(l_t(4)); self.c64(0xff); self.e(W::I64And); self.c64(8); self.e(W::I64Shl);
-                self.get(l_t(3)); self.c64(0xff); self.e(W::I64And); self.e(W::I64Or);
+                self.get(l_t(4)); self.c64(0xff); self.e(&W::I64And); self.c64(8); self.e(&W::I64Shl);
+                self.get(l_t(3)); self.c64(0xff); self.e(&W::I64And); self.e(&W::I64Or);
                 self.write_reg(Register::AX);
             }
             2 => { self.get(l_t(3)); self.write_reg(Register::AX); self.get(l_t(4)); self.write_reg(Register::DX); }
@@ -1533,57 +1537,57 @@ impl Fx<'_> {
             // Descending copy (memmove's overlapping case): the same bytes
             // as one memory.copy of the whole span, which is overlap-safe.
             if store || !rep { return false; }
-            self.get(l_reg(RCX)); if size > 1 { self.c64(size.trailing_zeros() as i64); self.e(W::I64Shl); } self.set(l_t(1));
-            self.get(l_reg(RDI)); self.get(l_t(1)); self.e(W::I64Sub); self.c64(size as i64); self.e(W::I64Add); self.e(W::I32WrapI64);
-            self.get(l_reg(RSI)); self.get(l_t(1)); self.e(W::I64Sub); self.c64(size as i64); self.e(W::I64Add); self.e(W::I32WrapI64);
-            self.get(l_t(1)); self.e(W::I32WrapI64);
-            self.e(W::MemoryCopy { src_mem: 0, dst_mem: 0 });
-            self.get(l_reg(RSI)); self.get(l_t(1)); self.e(W::I64Sub); self.set(l_reg(RSI));
-            self.get(l_reg(RDI)); self.get(l_t(1)); self.e(W::I64Sub); self.set(l_reg(RDI));
+            self.get(l_reg(RCX)); if size > 1 { self.c64(size.trailing_zeros() as i64); self.e(&W::I64Shl); } self.set(l_t(1));
+            self.get(l_reg(RDI)); self.get(l_t(1)); self.e(&W::I64Sub); self.c64(size as i64); self.e(&W::I64Add); self.e(&W::I32WrapI64);
+            self.get(l_reg(RSI)); self.get(l_t(1)); self.e(&W::I64Sub); self.c64(size as i64); self.e(&W::I64Add); self.e(&W::I32WrapI64);
+            self.get(l_t(1)); self.e(&W::I32WrapI64);
+            self.e(&W::MemoryCopy { src_mem: 0, dst_mem: 0 });
+            self.get(l_reg(RSI)); self.get(l_t(1)); self.e(&W::I64Sub); self.set(l_reg(RSI));
+            self.get(l_reg(RDI)); self.get(l_t(1)); self.e(&W::I64Sub); self.set(l_reg(RDI));
             self.c64(0); self.set(l_reg(RCX));
             return true;
         }
         if rep {
             // count bytes = rcx * size
-            self.get(l_reg(RCX)); if size > 1 { self.c64(size.trailing_zeros() as i64); self.e(W::I64Shl); } self.set(l_t(1));
+            self.get(l_reg(RCX)); if size > 1 { self.c64(size.trailing_zeros() as i64); self.e(&W::I64Shl); } self.set(l_t(1));
         } else {
             self.c64(size as i64); self.set(l_t(1));
         }
         if store {
             if size == 1 || !rep {
                 if size == 1 {
-                    self.get(l_reg(RDI)); self.e(W::I32WrapI64);
-                    self.get(l_reg(RAX)); self.e(W::I32WrapI64);
-                    self.get(l_t(1)); self.e(W::I32WrapI64);
-                    self.e(W::MemoryFill(0));
+                    self.get(l_reg(RDI)); self.e(&W::I32WrapI64);
+                    self.get(l_reg(RAX)); self.e(&W::I32WrapI64);
+                    self.get(l_t(1)); self.e(&W::I32WrapI64);
+                    self.e(&W::MemoryFill(0));
                 } else {
-                    self.get(l_reg(RDI)); self.e(W::I32WrapI64); self.get(l_reg(RAX)); self.store_sized(size);
+                    self.get(l_reg(RDI)); self.e(&W::I32WrapI64); self.get(l_reg(RAX)); self.store_sized(size);
                 }
             } else {
                 // Wider fills: loop over elements.
                 self.get(l_reg(RDI)); self.set(l_t(2));
                 self.get(l_reg(RCX)); self.set(l_t(3));
-                self.e(W::Block(BlockType::Empty));
-                self.e(W::Loop(BlockType::Empty));
-                self.get(l_t(3)); self.e(W::I64Eqz); self.e(W::BrIf(1));
-                self.get(l_t(2)); self.e(W::I32WrapI64); self.get(l_reg(RAX)); self.store_sized(size);
-                self.get(l_t(2)); self.c64(size as i64); self.e(W::I64Add); self.set(l_t(2));
-                self.get(l_t(3)); self.c64(1); self.e(W::I64Sub); self.set(l_t(3));
-                self.e(W::Br(0));
-                self.e(W::End);
-                self.e(W::End);
+                self.e(&W::Block(BlockType::Empty));
+                self.e(&W::Loop(BlockType::Empty));
+                self.get(l_t(3)); self.e(&W::I64Eqz); self.e(&W::BrIf(1));
+                self.get(l_t(2)); self.e(&W::I32WrapI64); self.get(l_reg(RAX)); self.store_sized(size);
+                self.get(l_t(2)); self.c64(size as i64); self.e(&W::I64Add); self.set(l_t(2));
+                self.get(l_t(3)); self.c64(1); self.e(&W::I64Sub); self.set(l_t(3));
+                self.e(&W::Br(0));
+                self.e(&W::End);
+                self.e(&W::End);
             }
         } else {
             // x86 forward rep movs copies element by element, so overlapping
             // forward copies replicate; memory.copy is exact for the
             // non-overlapping and backward-safe cases compilers emit.
-            self.get(l_reg(RDI)); self.e(W::I32WrapI64);
-            self.get(l_reg(RSI)); self.e(W::I32WrapI64);
-            self.get(l_t(1)); self.e(W::I32WrapI64);
-            self.e(W::MemoryCopy { src_mem: 0, dst_mem: 0 });
-            self.get(l_reg(RSI)); self.get(l_t(1)); self.e(W::I64Add); self.set(l_reg(RSI));
+            self.get(l_reg(RDI)); self.e(&W::I32WrapI64);
+            self.get(l_reg(RSI)); self.e(&W::I32WrapI64);
+            self.get(l_t(1)); self.e(&W::I32WrapI64);
+            self.e(&W::MemoryCopy { src_mem: 0, dst_mem: 0 });
+            self.get(l_reg(RSI)); self.get(l_t(1)); self.e(&W::I64Add); self.set(l_reg(RSI));
         }
-        self.get(l_reg(RDI)); self.get(l_t(1)); self.e(W::I64Add); self.set(l_reg(RDI));
+        self.get(l_reg(RDI)); self.get(l_t(1)); self.e(&W::I64Add); self.set(l_reg(RDI));
         if rep { self.c64(0); self.set(l_reg(RCX)); }
         true
     }
@@ -1598,33 +1602,33 @@ impl Fx<'_> {
         if register_offset_into_memory {
             // The offset is signed and may select a different word.
             self.effective(i, true);
-            self.get(l_t(2)); self.sign_extend(size); self.c64(3); self.e(W::I64ShrS);
-            self.c64(-(size as i64)); self.e(W::I64And);
-            self.e(W::I64Add); self.set(l_t(5));
-            self.get(l_t(5)); self.e(W::I32WrapI64); self.load_sized(size); self.set(l_t(1));
+            self.get(l_t(2)); self.sign_extend(size); self.c64(3); self.e(&W::I64ShrS);
+            self.c64(-(size as i64)); self.e(&W::I64And);
+            self.e(&W::I64Add); self.set(l_t(5));
+            self.get(l_t(5)); self.e(&W::I32WrapI64); self.load_sized(size); self.set(l_t(1));
         } else {
             if !self.read(i, 0, size) { return false; }
             self.set(l_t(1));
         }
-        self.get(l_t(2)); self.c64(bits - 1); self.e(W::I64And); self.set(l_t(2));
+        self.get(l_t(2)); self.c64(bits - 1); self.e(&W::I64And); self.set(l_t(2));
         self.hold_flags();
-        self.get(l_t(1)); self.get(l_t(2)); self.e(W::I64ShrU); self.c64(1); self.e(W::I64And); self.e(W::I32WrapI64);
+        self.get(l_t(1)); self.get(l_t(2)); self.e(&W::I64ShrU); self.c64(1); self.e(&W::I64And); self.e(&W::I32WrapI64);
         self.set(L_CF);
         let op = match i.mnemonic() {
             Mnemonic::Bt => return true,
             Mnemonic::Bts => 0, Mnemonic::Btr => 1, _ => 2,
         };
-        self.c64(1); self.get(l_t(2)); self.e(W::I64Shl); self.set(l_t(3));
+        self.c64(1); self.get(l_t(2)); self.e(&W::I64Shl); self.set(l_t(3));
         self.get(l_t(1));
         match op {
-            0 => { self.get(l_t(3)); self.e(W::I64Or); }
-            1 => { self.get(l_t(3)); self.c64(-1); self.e(W::I64Xor); self.e(W::I64And); }
-            _ => { self.get(l_t(3)); self.e(W::I64Xor); }
+            0 => { self.get(l_t(3)); self.e(&W::I64Or); }
+            1 => { self.get(l_t(3)); self.c64(-1); self.e(&W::I64Xor); self.e(&W::I64And); }
+            _ => { self.get(l_t(3)); self.e(&W::I64Xor); }
         }
         self.mask_to(size);
         self.set(l_t(1));
         if register_offset_into_memory {
-            self.get(l_t(5)); self.e(W::I32WrapI64); self.get(l_t(1)); self.store_sized(size);
+            self.get(l_t(5)); self.e(&W::I32WrapI64); self.get(l_t(1)); self.store_sized(size);
             true
         } else {
             self.write(i, 0, size, l_t(1))
@@ -1639,16 +1643,16 @@ impl Fx<'_> {
         let m = i.mnemonic();
         // wasm `select(a, b, c)` is `c ? a : b`.
         match m {
-            Mnemonic::Popcnt => { self.get(l_t(1)); self.e(W::I64Popcnt); }
+            Mnemonic::Popcnt => { self.get(l_t(1)); self.e(&W::I64Popcnt); }
             Mnemonic::Tzcnt | Mnemonic::Bsf => {
                 // tzcnt of 0 is the operand width.
-                self.c64(bits); self.get(l_t(1)); self.e(W::I64Ctz);
-                self.get(l_t(1)); self.e(W::I64Eqz); self.e(W::Select);
+                self.c64(bits); self.get(l_t(1)); self.e(&W::I64Ctz);
+                self.get(l_t(1)); self.e(&W::I64Eqz); self.e(&W::Select);
             }
             Mnemonic::Lzcnt | Mnemonic::Bsr => {
                 // Leading zeros within the operand width (0 gives the width).
-                self.get(l_t(1)); self.e(W::I64Clz); self.c64(64 - bits); self.e(W::I64Sub);
-                if m == Mnemonic::Bsr { self.set(l_t(3)); self.c64(bits - 1); self.get(l_t(3)); self.e(W::I64Sub); }
+                self.get(l_t(1)); self.e(&W::I64Clz); self.c64(64 - bits); self.e(&W::I64Sub);
+                if m == Mnemonic::Bsr { self.set(l_t(3)); self.c64(bits - 1); self.get(l_t(3)); self.e(&W::I64Sub); }
             }
             _ => return false,
         }
@@ -1657,18 +1661,18 @@ impl Fx<'_> {
             // Source zero: destination unchanged, ZF set.
             if !self.read(i, 0, size) { return false; }
             self.set(l_t(4));
-            self.get(l_t(4)); self.get(l_t(3)); self.get(l_t(1)); self.e(W::I64Eqz); self.e(W::Select); self.set(l_t(3));
+            self.get(l_t(4)); self.get(l_t(3)); self.get(l_t(1)); self.e(&W::I64Eqz); self.e(&W::Select); self.set(l_t(3));
         }
         if need {
             self.hold_flags();
-            self.get(l_t(1)); self.e(W::I64Eqz);
+            self.get(l_t(1)); self.e(&W::I64Eqz);
             self.set(if m == Mnemonic::Tzcnt || m == Mnemonic::Lzcnt { L_CF } else { L_ZF });
             if m == Mnemonic::Popcnt {
-                self.get(l_t(1)); self.e(W::I64Eqz); self.set(L_ZF);
+                self.get(l_t(1)); self.e(&W::I64Eqz); self.set(L_ZF);
                 self.c32(0); self.set(L_CF);
             }
             if m == Mnemonic::Tzcnt || m == Mnemonic::Lzcnt {
-                self.get(l_t(3)); self.e(W::I64Eqz); self.set(L_ZF);
+                self.get(l_t(3)); self.e(&W::I64Eqz); self.set(L_ZF);
             }
             self.c32(0); self.set(L_OF);
         }
@@ -1680,38 +1684,38 @@ impl Fx<'_> {
     /// and out of the two blocks around this. Any other call, a clock the kernel keeps (a CPU-time one), or rsi not
     /// a timespec in memory past the kernel's low page (the kernel says EFAULT): on, to the kernel.
     fn clock_gettime(&mut self) {
-        self.get(l_reg(RAX)); self.c64(228); self.e(W::I64Ne); self.e(W::BrIf(0));
-        self.get(l_reg(RSI)); self.c64(4096); self.e(W::I64Sub);
-        self.e(W::MemorySize(0)); self.e(W::I64ExtendI32U); self.c64(16); self.e(W::I64Shl); self.c64(4096 + 16); self.e(W::I64Sub);
-        self.e(W::I64GtU); self.e(W::BrIf(0));
-        self.get(l_reg(RDI)); self.e(W::I32WrapI64); self.e(W::Call(F_TIME));
-        self.e(W::LocalTee(l_d(0))); self.e(W::LocalGet(l_d(0))); self.e(W::F64Ne); self.e(W::BrIf(0));
+        self.get(l_reg(RAX)); self.c64(228); self.e(&W::I64Ne); self.e(&W::BrIf(0));
+        self.get(l_reg(RSI)); self.c64(4096); self.e(&W::I64Sub);
+        self.e(&W::MemorySize(0)); self.e(&W::I64ExtendI32U); self.c64(16); self.e(&W::I64Shl); self.c64(4096 + 16); self.e(&W::I64Sub);
+        self.e(&W::I64GtU); self.e(&W::BrIf(0));
+        self.get(l_reg(RDI)); self.e(&W::I32WrapI64); self.e(&W::Call(F_TIME));
+        self.e(&W::LocalTee(l_d(0))); self.e(&W::LocalGet(l_d(0))); self.e(&W::F64Ne); self.e(&W::BrIf(0));
         // Seconds, and the rest in nanoseconds rounded as Math.round does (clock.ts answerTime), at most 999999999.
-        self.e(W::LocalGet(l_d(0))); self.e(W::F64Const(1000.0.into())); self.e(W::F64Div); self.e(W::F64Floor); self.e(W::LocalSet(l_d(1)));
-        self.get(l_reg(RSI)); self.e(W::I32WrapI64); self.e(W::LocalGet(l_d(1))); self.e(W::I64TruncSatF64S); self.e(W::I64Store(mem(3)));
-        self.get(l_reg(RSI)); self.e(W::I32WrapI64);
-        self.e(W::LocalGet(l_d(0))); self.e(W::LocalGet(l_d(1))); self.e(W::F64Const(1000.0.into())); self.e(W::F64Mul); self.e(W::F64Sub);
-        self.e(W::F64Const(1e6.into())); self.e(W::F64Mul); self.e(W::F64Const(0.5.into())); self.e(W::F64Add); self.e(W::F64Floor);
-        self.e(W::F64Const(999_999_999.0.into())); self.e(W::F64Min); self.e(W::I64TruncSatF64S); self.e(W::I64Store(mem_at(8, 3)));
+        self.e(&W::LocalGet(l_d(0))); self.e(&W::F64Const(1000.0.into())); self.e(&W::F64Div); self.e(&W::F64Floor); self.e(&W::LocalSet(l_d(1)));
+        self.get(l_reg(RSI)); self.e(&W::I32WrapI64); self.e(&W::LocalGet(l_d(1))); self.e(&W::I64TruncSatF64S); self.e(&W::I64Store(mem(3)));
+        self.get(l_reg(RSI)); self.e(&W::I32WrapI64);
+        self.e(&W::LocalGet(l_d(0))); self.e(&W::LocalGet(l_d(1))); self.e(&W::F64Const(1000.0.into())); self.e(&W::F64Mul); self.e(&W::F64Sub);
+        self.e(&W::F64Const(1e6.into())); self.e(&W::F64Mul); self.e(&W::F64Const(0.5.into())); self.e(&W::F64Add); self.e(&W::F64Floor);
+        self.e(&W::F64Const(999_999_999.0.into())); self.e(&W::F64Min); self.e(&W::I64TruncSatF64S); self.e(&W::I64Store(mem_at(8, 3)));
         self.c64(0); self.set(l_t(1));
-        self.e(W::Br(1));
+        self.e(&W::Br(1));
     }
 
     fn cpuid(&mut self) {
         // A plain core: SSE2 and SSE3, CMPXCHG16B and POPCNT; no SSSE3, SSE4 or AVX, so a
         // libc choosing its string routines by cpuid takes the SSE2 ones xlat translates.
-        self.get(l_reg(RAX)); self.e(W::I32WrapI64); self.e(W::I32Eqz);
-        self.e(W::If(BlockType::Empty));
+        self.get(l_reg(RAX)); self.e(&W::I32WrapI64); self.e(&W::I32Eqz);
+        self.e(&W::If(BlockType::Empty));
         self.c64(1); self.set(l_reg(RAX));
         self.c64(0x756e_6547); self.set(l_reg(3)); // "Genu"
         self.c64(0x4965_6e69); self.set(l_reg(RDX)); // "ineI"
         self.c64(0x6c65_746e); self.set(l_reg(RCX)); // "ntel"
-        self.e(W::Else);
+        self.e(&W::Else);
         self.c64(0x0006_06a6); self.set(l_reg(RAX));
         self.c64(0); self.set(l_reg(3));
         self.c64((1 << 0) | (1 << 13) | (1 << 23)); self.set(l_reg(RCX));
         self.c64((1 << 0) | (1 << 4) | (1 << 8) | (1 << 15) | (1 << 23) | (1 << 25) | (1 << 26)); self.set(l_reg(RDX));
-        self.e(W::End);
+        self.e(&W::End);
     }
 
     fn instruction(&mut self, i: &Instruction, need: bool) {
@@ -1762,9 +1766,9 @@ impl Fx<'_> {
             Cbw => { self.read_reg(Register::AL); self.sign_extend(1); self.write_reg(Register::AX) }
             Cwde => { self.read_reg(Register::AX); self.sign_extend(2); self.write_reg(Register::EAX) }
             Cdqe => { self.read_reg(Register::EAX); self.sign_extend(4); self.write_reg(Register::RAX) }
-            Cwd => { self.read_reg(Register::AX); self.sign_extend(2); self.c64(16); self.e(W::I64ShrS); self.write_reg(Register::DX) }
-            Cdq => { self.read_reg(Register::EAX); self.sign_extend(4); self.c64(32); self.e(W::I64ShrS); self.write_reg(Register::EDX) }
-            Cqo => { self.get(l_reg(RAX)); self.c64(63); self.e(W::I64ShrS); self.set(l_reg(RDX)); true }
+            Cwd => { self.read_reg(Register::AX); self.sign_extend(2); self.c64(16); self.e(&W::I64ShrS); self.write_reg(Register::DX) }
+            Cdq => { self.read_reg(Register::EAX); self.sign_extend(4); self.c64(32); self.e(&W::I64ShrS); self.write_reg(Register::EDX) }
+            Cqo => { self.get(l_reg(RAX)); self.c64(63); self.e(&W::I64ShrS); self.set(l_reg(RDX)); true }
             Push => {
                 let size = Self::size(i, 0).max(if i.op0_kind() == OpKind::Register { 8 } else { 1 });
                 let size = if i.op0_kind() == OpKind::Memory { size } else { 8 };
@@ -1793,7 +1797,7 @@ impl Fx<'_> {
                 let size = Self::size(i, 0);
                 self.read(i, 0, size) && { self.set(L_FA); self.read(i, 1, size) } && {
                     self.set(L_FB);
-                    self.get(L_FA); self.get(L_FB); self.e(W::I64Add); self.mask_to(size); self.set(L_FR);
+                    self.get(L_FA); self.get(L_FB); self.e(&W::I64Add); self.mask_to(size); self.set(L_FR);
                     self.defer(Flags::Add(size));
                     self.write(i, 1, size, L_FA) && self.write(i, 0, size, L_FR)
                 }
@@ -1805,15 +1809,15 @@ impl Fx<'_> {
                 self.read_reg(acc); self.set(L_FA);
                 self.read(i, 0, size) && {
                     self.set(L_FB);
-                    self.get(L_FA); self.get(L_FB); self.e(W::I64Sub); self.mask_to(size); self.set(L_FR);
+                    self.get(L_FA); self.get(L_FB); self.e(&W::I64Sub); self.mask_to(size); self.set(L_FR);
                     self.defer(Flags::Sub(size));
-                    self.get(L_FA); self.get(L_FB); self.e(W::I64Eq);
-                    self.e(W::If(BlockType::Empty));
+                    self.get(L_FA); self.get(L_FB); self.e(&W::I64Eq);
+                    self.e(&W::If(BlockType::Empty));
                     self.depth += 1;
                     let ok = self.read(i, 1, size) && { self.set(l_t(1)); self.write(i, 0, size, l_t(1)) };
-                    self.e(W::Else);
+                    self.e(&W::Else);
                     self.get(L_FB); self.write_reg(acc);
-                    self.e(W::End);
+                    self.e(&W::End);
                     self.depth -= 1;
                     ok
                 }
@@ -1823,9 +1827,9 @@ impl Fx<'_> {
                 self.read(i, 0, size) && {
                     self.set(l_t(1)); self.c64(0); self.set(l_t(2));
                     for k in 0..size as i64 {
-                        self.get(l_t(1)); self.c64(k * 8); self.e(W::I64ShrU); self.c64(0xff); self.e(W::I64And);
-                        self.c64((size as i64 - 1 - k) * 8); self.e(W::I64Shl);
-                        self.get(l_t(2)); self.e(W::I64Or); self.set(l_t(2));
+                        self.get(l_t(1)); self.c64(k * 8); self.e(&W::I64ShrU); self.c64(0xff); self.e(&W::I64And);
+                        self.c64((size as i64 - 1 - k) * 8); self.e(&W::I64Shl);
+                        self.get(l_t(2)); self.e(&W::I64Or); self.set(l_t(2));
                     }
                     self.write(i, 0, size, l_t(2))
                 }
@@ -1836,7 +1840,7 @@ impl Fx<'_> {
                 if i.op0_kind() == OpKind::MemoryESRDI => self.string(i),
             Seto | Setno | Setb | Setae | Sete | Setne | Setbe | Seta | Sets | Setns | Setp | Setnp | Setl | Setge
             | Setle | Setg => {
-                self.condition(i.condition_code()); self.e(W::I64ExtendI32U); self.set(l_t(1));
+                self.condition(i.condition_code()); self.e(&W::I64ExtendI32U); self.set(l_t(1));
                 self.write(i, 0, 1, l_t(1))
             }
             Cmovo | Cmovno | Cmovb | Cmovae | Cmove | Cmovne | Cmovbe | Cmova | Cmovs | Cmovns | Cmovp | Cmovnp
@@ -1845,23 +1849,23 @@ impl Fx<'_> {
                 let size = Self::size(i, 0);
                 self.read(i, 1, size) && { self.read(i, 0, size) } && {
                     self.condition(i.condition_code());
-                    self.e(W::Select); self.set(l_t(1));
+                    self.e(&W::Select); self.set(l_t(1));
                     self.write(i, 0, size, l_t(1))
                 }
             }
             Syscall => {
                 self.save();
-                self.e(W::Block(BlockType::Empty));
-                self.e(W::Block(BlockType::Empty));
+                self.e(&W::Block(BlockType::Empty));
+                self.e(&W::Block(BlockType::Empty));
                 self.clock_gettime();
-                self.e(W::End);
+                self.e(&W::End);
                 // The last argument is where execution resumes; a forked
                 // child starts there.
                 for r in [RAX, RDI, RSI, RDX, 10, 8, 9] { self.get(l_reg(r)); }
                 self.c64(i.next_ip() as i64);
-                self.e(W::Call(F_SYSCALL));
+                self.e(&W::Call(F_SYSCALL));
                 self.set(l_t(1));
-                self.e(W::End);
+                self.e(&W::End);
                 self.load();
                 self.get(l_t(1)); self.set(l_reg(RAX));
                 self.c64(i.next_ip() as i64); self.set(l_reg(RCX));
@@ -1874,13 +1878,13 @@ impl Fx<'_> {
                 self.push_with(|fx| {
                     fx.c64(0x202 | if fx.backward { 0x400 } else { 0 });
                     for (f, bit) in [(Flag::C, 0), (Flag::P, 2), (Flag::Z, 6), (Flag::S, 7), (Flag::O, 11)] {
-                        fx.flag(f); fx.e(W::I64ExtendI32U);
-                        if bit > 0 { fx.c64(bit); fx.e(W::I64Shl); }
-                        fx.e(W::I64Or);
+                        fx.flag(f); fx.e(&W::I64ExtendI32U);
+                        if bit > 0 { fx.c64(bit); fx.e(&W::I64Shl); }
+                        fx.e(&W::I64Or);
                     }
                     if let Flags::Add(_) | Flags::Sub(_) | Flags::Inc(_) | Flags::Dec(_) = fx.flags {
-                        fx.get(L_FA); fx.get(L_FB); fx.e(W::I64Xor); fx.fr(); fx.e(W::I64Xor);
-                        fx.c64(0x10); fx.e(W::I64And); fx.e(W::I64Or);
+                        fx.get(L_FA); fx.get(L_FB); fx.e(&W::I64Xor); fx.fr(); fx.e(&W::I64Xor);
+                        fx.c64(0x10); fx.e(&W::I64And); fx.e(&W::I64Or);
                     }
                     true
                 })
@@ -1890,21 +1894,21 @@ impl Fx<'_> {
             Popfq => {
                 self.pop_value(l_t(1));
                 for (l, bit) in [(L_CF, 0), (L_PF, 2), (L_ZF, 6), (L_SF, 7), (L_OF, 11)] {
-                    self.get(l_t(1)); if bit > 0 { self.c64(bit); self.e(W::I64ShrU); }
-                    self.c64(1); self.e(W::I64And); self.e(W::I32WrapI64); self.set(l);
+                    self.get(l_t(1)); if bit > 0 { self.c64(bit); self.e(&W::I64ShrU); }
+                    self.c64(1); self.e(&W::I64And); self.e(&W::I32WrapI64); self.set(l);
                 }
                 self.set_flags(Flags::Held);
                 self.backward = false;
-                self.get(l_t(1)); self.c64(0x400); self.e(W::I64And); self.e(W::I64Eqz); self.e(W::I32Eqz);
-                self.e(W::If(BlockType::Empty));
-                self.c64(i.ip() as i64); self.c32(TRAP_UNSUPPORTED); self.e(W::Call(F_TRAP)); self.e(W::Unreachable);
-                self.e(W::End);
+                self.get(l_t(1)); self.c64(0x400); self.e(&W::I64And); self.e(&W::I64Eqz); self.e(&W::I32Eqz);
+                self.e(&W::If(BlockType::Empty));
+                self.c64(i.ip() as i64); self.c32(TRAP_UNSUPPORTED); self.e(&W::Call(F_TRAP)); self.e(&W::Unreachable);
+                self.e(&W::End);
                 true
             }
             Clc | Stc | Cmc => {
                 // CF set, cleared or flipped; the other flags as they were (held first if a producer defers them).
                 self.hold_flags();
-                match i.mnemonic() { Clc => self.c32(0), Stc => self.c32(1), _ => { self.get(L_CF); self.c32(1); self.e(W::I32Xor); } }
+                match i.mnemonic() { Clc => self.c32(0), Stc => self.c32(1), _ => { self.get(L_CF); self.c32(1); self.e(&W::I32Xor); } }
                 self.set(L_CF);
                 true
             }
@@ -1916,18 +1920,18 @@ impl Fx<'_> {
             Stmxcsr => { self.c64(0x1f80); self.set(l_t(1)); self.write(i, 0, 4, l_t(1)) }
             Ldmxcsr => {
                 self.read(i, 0, 4) && {
-                    self.c64(0xffc0); self.e(W::I64And); self.c64(0x1f80); self.e(W::I64Ne);
-                    self.e(W::If(BlockType::Empty));
-                    self.c64(i.ip() as i64); self.c32(TRAP_UNSUPPORTED); self.e(W::Call(F_TRAP)); self.e(W::Unreachable);
-                    self.e(W::End);
+                    self.c64(0xffc0); self.e(&W::I64And); self.c64(0x1f80); self.e(&W::I64Ne);
+                    self.e(&W::If(BlockType::Empty));
+                    self.c64(i.ip() as i64); self.c32(TRAP_UNSUPPORTED); self.e(&W::Call(F_TRAP)); self.e(&W::Unreachable);
+                    self.e(&W::End);
                     true
                 }
             }
             Cpuid => { self.cpuid(); true }
             Rdtsc => {
-                self.e(W::Call(F_CLOCK)); self.set(l_t(1));
+                self.e(&W::Call(F_CLOCK)); self.set(l_t(1));
                 self.get(l_t(1)); self.zext32(); self.set(l_reg(RAX));
-                self.get(l_t(1)); self.c64(32); self.e(W::I64ShrU); self.set(l_reg(RDX));
+                self.get(l_t(1)); self.c64(32); self.e(&W::I64ShrU); self.set(l_reg(RDX));
                 true
             }
             _ => match self.x87(i) { Some(done) => done, None => self.vector(i) },
@@ -1950,9 +1954,9 @@ impl Fx<'_> {
             OpKind::Memory => {
                 self.address(i);
                 match bytes {
-                    16 => self.e(W::V128Load(mem(0))),
-                    8 => self.e(W::V128Load64Zero(mem(0))),
-                    4 => self.e(W::V128Load32Zero(mem(0))),
+                    16 => self.e(&W::V128Load(mem(0))),
+                    8 => self.e(&W::V128Load64Zero(mem(0))),
+                    4 => self.e(&W::V128Load32Zero(mem(0))),
                     _ => return false,
                 }
                 true
@@ -1971,9 +1975,9 @@ impl Fx<'_> {
                 self.address(i);
                 self.get(from);
                 match bytes {
-                    16 => self.e(W::V128Store(mem(0))),
-                    8 => self.e(W::V128Store64Lane { memarg: mem(0), lane: 0 }),
-                    4 => self.e(W::V128Store32Lane { memarg: mem(0), lane: 0 }),
+                    16 => self.e(&W::V128Store(mem(0))),
+                    8 => self.e(&W::V128Store64Lane { memarg: mem(0), lane: 0 }),
+                    4 => self.e(&W::V128Store32Lane { memarg: mem(0), lane: 0 }),
                     _ => return false,
                 }
                 true
@@ -1998,12 +2002,12 @@ impl Fx<'_> {
         let done = |fx: &mut Self| { fx.set(l_v(0)); fx.xwrite(i, 0, 16, l_v(0)) };
         Some(match m {
             _ if arith.is_some() => {
-                self.xread(i, 0, 16) && { self.set(l_v(1)); self.get(l_v(1)); self.get(l_v(1)); self.e(extract.clone());
-                    self.xread(i, 1, bytes) } && { self.e(extract); self.e(arith.unwrap()); self.e(replace); done(self) }
+                self.xread(i, 0, 16) && { self.set(l_v(1)); self.get(l_v(1)); self.get(l_v(1)); self.e(&extract);
+                    self.xread(i, 1, bytes) } && { self.e(&extract); self.e(&arith.unwrap()); self.e(&replace); done(self) }
             }
             Sqrtsd | Sqrtss => {
                 self.xread(i, 0, 16) && { self.xread(i, 1, bytes) } && {
-                    self.e(extract); self.e(if double { W::F64Sqrt } else { W::F32Sqrt }); self.e(replace); done(self)
+                    self.e(&extract); self.e(&if double { W::F64Sqrt } else { W::F32Sqrt }); self.e(&replace); done(self)
                 }
             }
             Minsd | Maxsd | Minss | Maxss => {
@@ -2012,13 +2016,13 @@ impl Fx<'_> {
                 self.xread(i, 0, 16) && { self.set(l_v(1)); self.xread(i, 1, bytes) } && {
                     self.set(l_v(0));
                     self.get(l_v(1));
-                    self.get(l_v(1)); self.e(extract.clone());
-                    self.get(l_v(0)); self.e(extract.clone());
-                    self.get(l_v(1)); self.e(extract.clone());
-                    self.get(l_v(0)); self.e(extract.clone());
-                    self.e(match (double, lt) { (true, true) => W::F64Lt, (true, false) => W::F64Gt, (false, true) => W::F32Lt, _ => W::F32Gt });
-                    self.e(W::Select);
-                    self.e(replace); done(self)
+                    self.get(l_v(1)); self.e(&extract);
+                    self.get(l_v(0)); self.e(&extract);
+                    self.get(l_v(1)); self.e(&extract);
+                    self.get(l_v(0)); self.e(&extract);
+                    self.e(&match (double, lt) { (true, true) => W::F64Lt, (true, false) => W::F64Gt, (false, true) => W::F32Lt, _ => W::F32Gt });
+                    self.e(&W::Select);
+                    self.e(&replace); done(self)
                 }
             }
             Movsd | Movss => {
@@ -2027,21 +2031,21 @@ impl Fx<'_> {
                 } else if i.op0_kind() == OpKind::Memory {
                     self.xread(i, 1, 16) && { self.set(l_v(0)); self.xwrite(i, 0, bytes, l_v(0)) }
                 } else {
-                    self.xread(i, 0, 16) && { self.xread(i, 1, 16) } && { self.e(extract); self.e(replace); done(self) }
+                    self.xread(i, 0, 16) && { self.xread(i, 1, 16) } && { self.e(&extract); self.e(&replace); done(self) }
                 }
             }
             Cvtsi2sd | Cvtsi2ss => {
                 let size = Self::size(i, 1);
                 self.xread(i, 0, 16) && self.read(i, 1, size) && {
-                    if size == 4 { self.e(W::I32WrapI64); self.e(if double { W::F64ConvertI32S } else { W::F32ConvertI32S }); }
-                    else { self.e(if double { W::F64ConvertI64S } else { W::F32ConvertI64S }); }
-                    self.e(replace); done(self)
+                    if size == 4 { self.e(&W::I32WrapI64); self.e(&if double { W::F64ConvertI32S } else { W::F32ConvertI32S }); }
+                    else { self.e(&if double { W::F64ConvertI64S } else { W::F32ConvertI64S }); }
+                    self.e(&replace); done(self)
                 }
             }
             Cvtss2sd | Cvtsd2ss => {
                 self.xread(i, 0, 16) && { self.xread(i, 1, if m == Cvtss2sd { 4 } else { 8 }) } && {
-                    if m == Cvtss2sd { self.e(W::F32x4ExtractLane(0)); self.e(W::F64PromoteF32); self.e(W::F64x2ReplaceLane(0)); }
-                    else { self.e(W::F64x2ExtractLane(0)); self.e(W::F32DemoteF64); self.e(W::F32x4ReplaceLane(0)); }
+                    if m == Cvtss2sd { self.e(&W::F32x4ExtractLane(0)); self.e(&W::F64PromoteF32); self.e(&W::F64x2ReplaceLane(0)); }
+                    else { self.e(&W::F64x2ExtractLane(0)); self.e(&W::F32DemoteF64); self.e(&W::F32x4ReplaceLane(0)); }
                     done(self)
                 }
             }
@@ -2050,44 +2054,44 @@ impl Fx<'_> {
                 let size = Self::size(i, 0);
                 let round = matches!(m, Cvtsd2si | Cvtss2si);
                 self.xread(i, 1, bytes) && {
-                    self.e(extract);
-                    if !double { self.e(W::F64PromoteF32); }
-                    if round { self.e(W::F64Nearest); }
-                    self.e(W::LocalSet(l_d(0)));
+                    self.e(&extract);
+                    if !double { self.e(&W::F64PromoteF32); }
+                    if round { self.e(&W::F64Nearest); }
+                    self.e(&W::LocalSet(l_d(0)));
                     let limit = if size == 8 { (1u64 << 63) as f64 } else { 2147483648.0 };
-                    self.e(W::LocalGet(l_d(0)));
-                    self.e(if size == 8 { W::I64TruncSatF64S } else { W::I32TruncSatF64S });
-                    if size != 8 { self.e(W::I64ExtendI32U); }
+                    self.e(&W::LocalGet(l_d(0)));
+                    self.e(&if size == 8 { W::I64TruncSatF64S } else { W::I32TruncSatF64S });
+                    if size != 8 { self.e(&W::I64ExtendI32U); }
                     self.c64(if size == 8 { i64::MIN } else { 0x8000_0000 });
                     // in range: -limit <= v < limit (false for NaN)
-                    self.get(l_d(0)); self.e(W::F64Const(limit.into())); self.e(W::F64Lt);
-                    self.get(l_d(0)); self.e(W::F64Const((-limit).into())); self.e(W::F64Ge);
-                    self.e(W::I32And);
-                    self.e(W::Select);
+                    self.get(l_d(0)); self.e(&W::F64Const(limit.into())); self.e(&W::F64Lt);
+                    self.get(l_d(0)); self.e(&W::F64Const((-limit).into())); self.e(&W::F64Ge);
+                    self.e(&W::I32And);
+                    self.e(&W::Select);
                     self.write_reg(i.op0_register())
                 }
             }
             Cmpsd | Cmpss if i.op_count() == 3 => {
                 // Predicate mask in lane 0: all ones when true.
-                self.xread(i, 0, 16) && { self.set(l_v(1)); self.get(l_v(1)); self.e(extract.clone());
-                    if !double { self.e(W::F64PromoteF32); } self.set(l_d(0)); self.xread(i, 1, bytes) } && {
-                    self.e(extract); if !double { self.e(W::F64PromoteF32); } self.set(l_d(1));
+                self.xread(i, 0, 16) && { self.set(l_v(1)); self.get(l_v(1)); self.e(&extract);
+                    if !double { self.e(&W::F64PromoteF32); } self.set(l_d(0)); self.xread(i, 1, bytes) } && {
+                    self.e(&extract); if !double { self.e(&W::F64PromoteF32); } self.set(l_d(1));
                     self.predicate(i.immediate8());
                     self.get(l_v(1));
                     if double {
-                        self.c64(-1); self.c64(0); self.get(l_u(0)); self.e(W::Select);
-                        self.e(W::I64x2ReplaceLane(0));
+                        self.c64(-1); self.c64(0); self.get(l_u(0)); self.e(&W::Select);
+                        self.e(&W::I64x2ReplaceLane(0));
                     } else {
-                        self.c32(-1); self.c32(0); self.get(l_u(0)); self.e(W::Select);
-                        self.e(W::I32x4ReplaceLane(0));
+                        self.c32(-1); self.c32(0); self.get(l_u(0)); self.e(&W::Select);
+                        self.e(&W::I32x4ReplaceLane(0));
                     }
                     done(self)
                 }
             }
             Ucomisd | Comisd | Ucomiss | Comiss => {
-                self.xread(i, 0, 16) && { self.e(extract.clone()); if !double { self.e(W::F64PromoteF32); } self.e(W::LocalSet(l_d(0)));
+                self.xread(i, 0, 16) && { self.e(&extract); if !double { self.e(&W::F64PromoteF32); } self.e(&W::LocalSet(l_d(0)));
                     self.xread(i, 1, bytes) } && {
-                    self.e(extract); if !double { self.e(W::F64PromoteF32); } self.e(W::LocalSet(l_d(1)));
+                    self.e(&extract); if !double { self.e(&W::F64PromoteF32); } self.e(&W::LocalSet(l_d(1)));
                     self.compare_flags();
                     self.c32(0); self.set(L_OF); self.c32(0); self.set(L_SF);
                     self.set_flags(Flags::Held);
@@ -2101,18 +2105,18 @@ impl Fx<'_> {
     /// SSE compare predicate (cmpsd imm8 & 7) of l_d(0) against l_d(1) into l_u(0).
     fn predicate(&mut self, imm: u8) {
         let unordered = |fx: &mut Self| {
-            fx.get(l_d(0)); fx.get(l_d(0)); fx.e(W::F64Ne); fx.get(l_d(1)); fx.get(l_d(1)); fx.e(W::F64Ne); fx.e(W::I32Or);
+            fx.get(l_d(0)); fx.get(l_d(0)); fx.e(&W::F64Ne); fx.get(l_d(1)); fx.get(l_d(1)); fx.e(&W::F64Ne); fx.e(&W::I32Or);
         };
-        let pair = |fx: &mut Self, op: I| { fx.get(l_d(0)); fx.get(l_d(1)); fx.e(op); };
+        let pair = |fx: &mut Self, op: I| { fx.get(l_d(0)); fx.get(l_d(1)); fx.e(&op); };
         match imm & 7 {
             0 => pair(self, W::F64Eq),
             1 => pair(self, W::F64Lt),
             2 => pair(self, W::F64Le),
             3 => unordered(self),
             4 => pair(self, W::F64Ne),
-            5 => { pair(self, W::F64Lt); self.e(W::I32Eqz); }
-            6 => { pair(self, W::F64Le); self.e(W::I32Eqz); }
-            _ => { unordered(self); self.e(W::I32Eqz); }
+            5 => { pair(self, W::F64Lt); self.e(&W::I32Eqz); }
+            6 => { pair(self, W::F64Le); self.e(&W::I32Eqz); }
+            _ => { unordered(self); self.e(&W::I32Eqz); }
         }
         self.set(l_u(0));
     }
@@ -2120,10 +2124,10 @@ impl Fx<'_> {
     /// ucomisd/fucomi flags from l_d(0) against l_d(1):
     /// unordered sets ZF, PF and CF; less sets CF; equal sets ZF.
     fn compare_flags(&mut self) {
-        self.get(l_d(0)); self.get(l_d(0)); self.e(W::F64Ne); self.get(l_d(1)); self.get(l_d(1)); self.e(W::F64Ne); self.e(W::I32Or);
+        self.get(l_d(0)); self.get(l_d(0)); self.e(&W::F64Ne); self.get(l_d(1)); self.get(l_d(1)); self.e(&W::F64Ne); self.e(&W::I32Or);
         self.set(L_PF);
-        self.get(l_d(0)); self.get(l_d(1)); self.e(W::F64Eq); self.get(L_PF); self.e(W::I32Or); self.set(L_ZF);
-        self.get(l_d(0)); self.get(l_d(1)); self.e(W::F64Lt); self.get(L_PF); self.e(W::I32Or); self.set(L_CF);
+        self.get(l_d(0)); self.get(l_d(1)); self.e(&W::F64Eq); self.get(L_PF); self.e(&W::I32Or); self.set(L_ZF);
+        self.get(l_d(0)); self.get(l_d(1)); self.e(&W::F64Lt); self.get(L_PF); self.e(&W::I32Or); self.set(L_CF);
     }
 
     fn vector(&mut self, i: &Instruction) -> bool {
@@ -2138,7 +2142,7 @@ impl Fx<'_> {
             return false;
         }
         let binary = |fx: &mut Self, op: I| -> bool {
-            fx.xread(i, 0, 16) && fx.xread(i, 1, 16) && { fx.e(op); fx.set(l_v(0)); fx.xwrite(i, 0, 16, l_v(0)) }
+            fx.xread(i, 0, 16) && fx.xread(i, 1, 16) && { fx.e(&op); fx.set(l_v(0)); fx.xwrite(i, 0, 16, l_v(0)) }
         };
         match m {
             Movdqa | Movdqu | Movaps | Movups | Movapd | Movupd | Lddqu => {
@@ -2149,18 +2153,18 @@ impl Fx<'_> {
                 if is_x0 && !is_x1 && i.op1_kind() == OpKind::Register {
                     // gpr -> xmm, zeroing the rest
                     self.read_reg(i.op1_register());
-                    if bytes == 8 { self.e(W::I64x2Splat); self.c64(0); self.e(W::I64x2ReplaceLane(1)); }
+                    if bytes == 8 { self.e(&W::I64x2Splat); self.c64(0); self.e(&W::I64x2ReplaceLane(1)); }
                     else {
-                        self.e(W::I32WrapI64); self.e(W::I32x4Splat);
-                        self.c32(0); self.e(W::I32x4ReplaceLane(1));
-                        self.e(W::I64x2ExtractLane(0)); self.zext32();
-                        self.e(W::I64x2Splat); self.c64(0); self.e(W::I64x2ReplaceLane(1));
+                        self.e(&W::I32WrapI64); self.e(&W::I32x4Splat);
+                        self.c32(0); self.e(&W::I32x4ReplaceLane(1));
+                        self.e(&W::I64x2ExtractLane(0)); self.zext32();
+                        self.e(&W::I64x2Splat); self.c64(0); self.e(&W::I64x2ReplaceLane(1));
                     }
                     self.set(l_v(0));
                     self.xwrite(i, 0, 16, l_v(0))
                 } else if is_x1 && !is_x0 && i.op0_kind() == OpKind::Register {
                     self.xread(i, 1, 16);
-                    self.e(W::I64x2ExtractLane(0));
+                    self.e(&W::I64x2ExtractLane(0));
                     if bytes == 4 { self.zext32(); }
                     self.write_reg(i.op0_register())
                 } else if is_x0 && i.op1_kind() == OpKind::Memory {
@@ -2169,8 +2173,8 @@ impl Fx<'_> {
                     self.xread(i, 1, 16) && { self.set(l_v(0)); self.xwrite(i, 0, bytes, l_v(0)) }
                 } else if is_x0 && is_x1 {
                     // movq xmm, xmm keeps the low qword and zeroes the high one.
-                    self.xread(i, 1, 16); self.e(W::I64x2ExtractLane(0)); self.e(W::I64x2Splat);
-                    self.c64(0); self.e(W::I64x2ReplaceLane(1)); self.set(l_v(0));
+                    self.xread(i, 1, 16); self.e(&W::I64x2ExtractLane(0)); self.e(&W::I64x2Splat);
+                    self.c64(0); self.e(&W::I64x2ReplaceLane(1)); self.set(l_v(0));
                     self.xwrite(i, 0, 16, l_v(0))
                 } else { false }
             }
@@ -2179,13 +2183,13 @@ impl Fx<'_> {
                 let lane = if matches!(m, Movhps | Movhpd) { 1 } else { 0 };
                 if is_x0 && i.op1_kind() == OpKind::Memory {
                     self.xread(i, 0, 16);
-                    self.address(i); self.e(W::I64Load(mem(0)));
-                    self.e(W::I64x2ReplaceLane(lane)); self.set(l_v(0));
+                    self.address(i); self.e(&W::I64Load(mem(0)));
+                    self.e(&W::I64x2ReplaceLane(lane)); self.set(l_v(0));
                     self.xwrite(i, 0, 16, l_v(0))
                 } else if is_x1 && i.op0_kind() == OpKind::Memory {
                     self.address(i);
-                    self.xread(i, 1, 16); self.e(W::I64x2ExtractLane(lane));
-                    self.e(W::I64Store(mem(0)));
+                    self.xread(i, 1, 16); self.e(&W::I64x2ExtractLane(lane));
+                    self.e(&W::I64Store(mem(0)));
                     true
                 } else { false }
             }
@@ -2193,20 +2197,20 @@ impl Fx<'_> {
             Movhlps | Movlhps if is_x0 && is_x1 => {
                 let (from, to) = if m == Movhlps { (1, 0) } else { (0, 1) };
                 self.xread(i, 0, 16);
-                self.xread(i, 1, 16); self.e(W::I64x2ExtractLane(from));
-                self.e(W::I64x2ReplaceLane(to)); self.set(l_v(0));
+                self.xread(i, 1, 16); self.e(&W::I64x2ExtractLane(from));
+                self.e(&W::I64x2ReplaceLane(to)); self.set(l_v(0));
                 self.xwrite(i, 0, 16, l_v(0))
             }
             Pxor | Xorps | Xorpd => {
                 if is_x1 && i.op0_register() == i.op1_register() {
-                    self.e(W::V128Const(0)); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                    self.e(&W::V128Const(0)); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
                 } else { binary(self, W::V128Xor) }
             }
             Por | Orps | Orpd => binary(self, W::V128Or),
             Pand | Andps | Andpd => binary(self, W::V128And),
             Pandn | Andnps | Andnpd => {
                 self.xread(i, 1, 16) && self.xread(i, 0, 16) && {
-                    self.e(W::V128AndNot); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                    self.e(&W::V128AndNot); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
                 }
             }
             Paddb => binary(self, W::I8x16Add), Paddw => binary(self, W::I16x8Add),
@@ -2245,13 +2249,13 @@ impl Fx<'_> {
             Punpcklqdq => binary(self, W::I8x16Shuffle([0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23])),
             Punpckhqdq => binary(self, W::I8x16Shuffle([8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31])),
             Pmovmskb => {
-                self.xread(i, 1, 16) && { self.e(W::I8x16Bitmask); self.e(W::I64ExtendI32U); self.write_reg(i.op0_register()) }
+                self.xread(i, 1, 16) && { self.e(&W::I8x16Bitmask); self.e(&W::I64ExtendI32U); self.write_reg(i.op0_register()) }
             }
             Movmskps => {
-                self.xread(i, 1, 16) && { self.e(W::I32x4Bitmask); self.e(W::I64ExtendI32U); self.write_reg(i.op0_register()) }
+                self.xread(i, 1, 16) && { self.e(&W::I32x4Bitmask); self.e(&W::I64ExtendI32U); self.write_reg(i.op0_register()) }
             }
             Movmskpd => {
-                self.xread(i, 1, 16) && { self.e(W::I64x2Bitmask); self.e(W::I64ExtendI32U); self.write_reg(i.op0_register()) }
+                self.xread(i, 1, 16) && { self.e(&W::I64x2Bitmask); self.e(&W::I64ExtendI32U); self.write_reg(i.op0_register()) }
             }
             Pshufd => {
                 let imm = i.immediate8();
@@ -2262,7 +2266,7 @@ impl Fx<'_> {
                         let s = (imm >> (k * 2)) & 3;
                         for b in 0..4 { lanes[k * 4 + b] = s * 4 + b as u8; }
                     }
-                    self.get(l_v(1)); self.get(l_v(1)); self.e(W::I8x16Shuffle(lanes)); self.set(l_v(0));
+                    self.get(l_v(1)); self.get(l_v(1)); self.e(&W::I8x16Shuffle(lanes)); self.set(l_v(0));
                     self.xwrite(i, 0, 16, l_v(0))
                 }
             }
@@ -2276,8 +2280,8 @@ impl Fx<'_> {
                     _ => (8, W::I64x2ReplaceLane(lane & 1)),
                 };
                 self.xread(i, 0, 16) && self.read(i, 1, size) && {
-                    if size < 8 { self.e(W::I32WrapI64); }
-                    self.e(op); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                    if size < 8 { self.e(&W::I32WrapI64); }
+                    self.e(&op); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
                 }
             }
             // Take one lane out, zero-extended, to a register or memory.
@@ -2285,10 +2289,10 @@ impl Fx<'_> {
                 let lane = i.immediate8();
                 self.xread(i, 1, 16) && {
                     let size = match m {
-                        Pextrb => { self.e(W::I8x16ExtractLaneU(lane & 15)); self.e(W::I64ExtendI32U); 1 }
-                        Pextrw => { self.e(W::I16x8ExtractLaneU(lane & 7)); self.e(W::I64ExtendI32U); 2 }
-                        Pextrd => { self.e(W::I32x4ExtractLane(lane & 3)); self.e(W::I64ExtendI32U); 4 }
-                        _ => { self.e(W::I64x2ExtractLane(lane & 1)); 8 }
+                        Pextrb => { self.e(&W::I8x16ExtractLaneU(lane & 15)); self.e(&W::I64ExtendI32U); 1 }
+                        Pextrw => { self.e(&W::I16x8ExtractLaneU(lane & 7)); self.e(&W::I64ExtendI32U); 2 }
+                        Pextrd => { self.e(&W::I32x4ExtractLane(lane & 3)); self.e(&W::I64ExtendI32U); 4 }
+                        _ => { self.e(&W::I64x2ExtractLane(lane & 1)); 8 }
                     };
                     self.set(l_t(0));
                     // A register destination takes the whole zero-extended value.
@@ -2325,7 +2329,7 @@ impl Fx<'_> {
                         let s = (imm >> (k * 2)) & 3;
                         for b in 0..2u8 { lanes[((base + k) * 2 + b) as usize] = (base + s) * 2 + b; }
                     }
-                    self.get(l_v(1)); self.get(l_v(1)); self.e(W::I8x16Shuffle(lanes)); self.set(l_v(0));
+                    self.get(l_v(1)); self.get(l_v(1)); self.e(&W::I8x16Shuffle(lanes)); self.set(l_v(0));
                     self.xwrite(i, 0, 16, l_v(0))
                 }
             }
@@ -2339,7 +2343,7 @@ impl Fx<'_> {
                         if (0..16).contains(&src) { lanes[k as usize] = src as u8; }
                     }
                     // Lanes >= 16 select from the zero vector.
-                    self.get(l_v(1)); self.e(W::V128Const(0)); self.e(W::I8x16Shuffle(lanes)); self.set(l_v(0));
+                    self.get(l_v(1)); self.e(&W::V128Const(0)); self.e(&W::I8x16Shuffle(lanes)); self.set(l_v(0));
                     self.xwrite(i, 0, 16, l_v(0))
                 }
             }
@@ -2352,9 +2356,9 @@ impl Fx<'_> {
                 };
                 self.xread(i, 0, 16) && {
                     if n >= width && !matches!(m, Psraw | Psrad) {
-                        self.e(W::Drop); self.e(W::V128Const(0));
+                        self.e(&W::Drop); self.e(&W::V128Const(0));
                     } else {
-                        self.c32(n.min(width - 1)); self.e(op);
+                        self.c32(n.min(width - 1)); self.e(&op);
                     }
                     self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
                 }
@@ -2369,15 +2373,15 @@ impl Fx<'_> {
                 };
                 let arith = matches!(m, Psraw | Psrad);
                 self.xread(i, 1, 16) && {
-                    self.e(W::I64x2ExtractLane(0)); self.set(l_t(0));
+                    self.e(&W::I64x2ExtractLane(0)); self.set(l_t(0));
                     self.xread(i, 0, 16) && {
                         self.set(l_v(1));
-                        self.get(l_t(0)); self.c64(width as i64); self.e(W::I64GeU);
-                        self.e(W::If(BlockType::Result(ValType::V128)));
-                        if arith { self.get(l_v(1)); self.c32(width - 1); self.e(op.clone()); } else { self.e(W::V128Const(0)); }
-                        self.e(W::Else);
-                        self.get(l_v(1)); self.get(l_t(0)); self.e(W::I32WrapI64); self.e(op);
-                        self.e(W::End);
+                        self.get(l_t(0)); self.c64(width as i64); self.e(&W::I64GeU);
+                        self.e(&W::If(BlockType::Result(ValType::V128)));
+                        if arith { self.get(l_v(1)); self.c32(width - 1); self.e(&op); } else { self.e(&W::V128Const(0)); }
+                        self.e(&W::Else);
+                        self.get(l_v(1)); self.get(l_t(0)); self.e(&W::I32WrapI64); self.e(&op);
+                        self.e(&W::End);
                         self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
                     }
                 }
@@ -2387,12 +2391,12 @@ impl Fx<'_> {
             Sqrtps => self.unary_v(i, 16, &[W::F32x4Sqrt]),
             Sqrtpd => self.unary_v(i, 16, &[W::F64x2Sqrt]),
             // Approximations x86 leaves to each CPU (within 1.5 * 2^-12): given exactly.
-            Rcpps => self.xread(i, 1, 16) && { self.set(l_v(1)); self.e(W::V128Const(f32x4_splat(1.0))); self.get(l_v(1)); self.e(W::F32x4Div); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) },
-            Rsqrtps => self.xread(i, 1, 16) && { self.e(W::F32x4Sqrt); self.set(l_v(1)); self.e(W::V128Const(f32x4_splat(1.0))); self.get(l_v(1)); self.e(W::F32x4Div); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) },
+            Rcpps => self.xread(i, 1, 16) && { self.set(l_v(1)); self.e(&W::V128Const(f32x4_splat(1.0))); self.get(l_v(1)); self.e(&W::F32x4Div); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) },
+            Rsqrtps => self.xread(i, 1, 16) && { self.e(&W::F32x4Sqrt); self.set(l_v(1)); self.e(&W::V128Const(f32x4_splat(1.0))); self.get(l_v(1)); self.e(&W::F32x4Div); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) },
             // max: a > b ? a : b, so the second operand wins on a NaN or two zeros, as wasm's pmax(b, a) does.
             Maxps | Minps | Maxpd | Minpd => {
                 let op = match m { Maxps => W::F32x4PMax, Minps => W::F32x4PMin, Maxpd => W::F64x2PMax, _ => W::F64x2PMin };
-                self.xread(i, 1, 16) && self.xread(i, 0, 16) && { self.e(op); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) }
+                self.xread(i, 1, 16) && self.xread(i, 0, 16) && { self.e(&op); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0)) }
             }
             Cmpps | Cmppd => {
                 let ps = m == Cmpps;
@@ -2400,12 +2404,12 @@ impl Fx<'_> {
                 let pred = i.immediate8() & 7;
                 self.xread(i, 0, 16) && { self.set(l_v(1)); self.xread(i, 1, 16) } && {
                     self.set(l_v(0));
-                    let unordered = |fx: &mut Self| { fx.get(l_v(1)); fx.get(l_v(1)); fx.e(ne.clone()); fx.get(l_v(0)); fx.get(l_v(0)); fx.e(ne.clone()); fx.e(W::V128Or); };
-                    let pair = |fx: &mut Self, op: I| { fx.get(l_v(1)); fx.get(l_v(0)); fx.e(op); };
+                    let unordered = |fx: &mut Self| { fx.get(l_v(1)); fx.get(l_v(1)); fx.e(&ne); fx.get(l_v(0)); fx.get(l_v(0)); fx.e(&ne); fx.e(&W::V128Or); };
+                    let pair = |fx: &mut Self, op: I| { fx.get(l_v(1)); fx.get(l_v(0)); fx.e(&op); };
                     match pred {
                         0 => pair(self, eq.clone()), 1 => pair(self, lt.clone()), 2 => pair(self, le.clone()), 3 => unordered(self),
-                        4 => pair(self, ne.clone()), 5 => { pair(self, lt.clone()); self.e(W::V128Not); }
-                        6 => { pair(self, le.clone()); self.e(W::V128Not); } _ => { unordered(self); self.e(W::V128Not); }
+                        4 => pair(self, ne.clone()), 5 => { pair(self, lt.clone()); self.e(&W::V128Not); }
+                        6 => { pair(self, le.clone()); self.e(&W::V128Not); } _ => { unordered(self); self.e(&W::V128Not); }
                     }
                     self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
                 }
@@ -2418,40 +2422,40 @@ impl Fx<'_> {
             Cvtpd2ps => self.unary_v(i, 16, &[W::F32x4DemoteF64x2Zero]),
             // To integers: a lane out of range (or NaN) is the "integer indefinite" 0x80000000, where wasm saturates.
             Cvttps2dq | Cvtps2dq => self.xread(i, 1, 16) && {
-                if m == Cvtps2dq { self.e(W::F32x4Nearest); }
+                if m == Cvtps2dq { self.e(&W::F32x4Nearest); }
                 self.set(l_v(1));
-                self.get(l_v(1)); self.e(W::I32x4TruncSatF32x4S);
-                self.e(W::V128Const(i32x4_splat(i32::MIN)));
-                self.get(l_v(1)); self.e(W::V128Const(f32x4_splat(2147483648.0))); self.e(W::F32x4Lt);
-                self.get(l_v(1)); self.e(W::V128Const(f32x4_splat(-2147483648.0))); self.e(W::F32x4Ge);
-                self.e(W::V128And);
-                self.e(W::V128Bitselect); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                self.get(l_v(1)); self.e(&W::I32x4TruncSatF32x4S);
+                self.e(&W::V128Const(i32x4_splat(i32::MIN)));
+                self.get(l_v(1)); self.e(&W::V128Const(f32x4_splat(2147483648.0))); self.e(&W::F32x4Lt);
+                self.get(l_v(1)); self.e(&W::V128Const(f32x4_splat(-2147483648.0))); self.e(&W::F32x4Ge);
+                self.e(&W::V128And);
+                self.e(&W::V128Bitselect); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
             },
             Cvttpd2dq | Cvtpd2dq => self.xread(i, 1, 16) && {
-                if m == Cvtpd2dq { self.e(W::F64x2Nearest); }
+                if m == Cvtpd2dq { self.e(&W::F64x2Nearest); }
                 self.set(l_v(1));
-                self.get(l_v(1)); self.e(W::I32x4TruncSatF64x2SZero);
-                self.e(W::V128Const(i32x4_splat(i32::MIN)));
+                self.get(l_v(1)); self.e(&W::I32x4TruncSatF64x2SZero);
+                self.e(&W::V128Const(i32x4_splat(i32::MIN)));
                 // In range: -2^31 - 1 < v < 2^31 (those truncate into 32 bits); the two upper lanes are zero either way.
-                self.get(l_v(1)); self.e(W::V128Const(f64x2_splat(2147483648.0))); self.e(W::F64x2Lt);
-                self.get(l_v(1)); self.e(W::V128Const(f64x2_splat(-2147483649.0))); self.e(W::F64x2Gt);
-                self.e(W::V128And);
-                self.e(W::V128Const(-1));
-                self.e(W::I8x16Shuffle([0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23]));
-                self.e(W::V128Bitselect); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                self.get(l_v(1)); self.e(&W::V128Const(f64x2_splat(2147483648.0))); self.e(&W::F64x2Lt);
+                self.get(l_v(1)); self.e(&W::V128Const(f64x2_splat(-2147483649.0))); self.e(&W::F64x2Gt);
+                self.e(&W::V128And);
+                self.e(&W::V128Const(-1));
+                self.e(&W::I8x16Shuffle([0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23]));
+                self.e(&W::V128Bitselect); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
             },
             // Unsigned 32 x 32 -> 64 of each qword's low half.
-            Pmuludq => self.xread(i, 0, 16) && { self.e(W::V128Const(LOW32)); self.e(W::V128And); self.xread(i, 1, 16) } && {
-                self.e(W::V128Const(LOW32)); self.e(W::V128And); self.e(W::I64x2Mul); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+            Pmuludq => self.xread(i, 0, 16) && { self.e(&W::V128Const(LOW32)); self.e(&W::V128And); self.xread(i, 1, 16) } && {
+                self.e(&W::V128Const(LOW32)); self.e(&W::V128And); self.e(&W::I64x2Mul); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
             },
             // The high halves of the eight 16 x 16 products.
             Pmulhw | Pmulhuw => {
                 let (lo, hi) = if m == Pmulhw { (W::I32x4ExtMulLowI16x8S, W::I32x4ExtMulHighI16x8S) } else { (W::I32x4ExtMulLowI16x8U, W::I32x4ExtMulHighI16x8U) };
                 self.xread(i, 0, 16) && { self.set(l_v(1)); self.xread(i, 1, 16) } && {
                     self.set(l_v(0));
-                    self.get(l_v(1)); self.get(l_v(0)); self.e(lo);
-                    self.get(l_v(1)); self.get(l_v(0)); self.e(hi);
-                    self.e(W::I8x16Shuffle([2, 3, 6, 7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31]));
+                    self.get(l_v(1)); self.get(l_v(0)); self.e(&lo);
+                    self.get(l_v(1)); self.get(l_v(0)); self.e(&hi);
+                    self.e(&W::I8x16Shuffle([2, 3, 6, 7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31]));
                     self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
                 }
             }
@@ -2459,24 +2463,24 @@ impl Fx<'_> {
             // Sums of the bytes' absolute differences, each half into its qword.
             Psadbw => self.xread(i, 0, 16) && { self.set(l_v(1)); self.xread(i, 1, 16) } && {
                 self.set(l_v(0));
-                self.get(l_v(1)); self.get(l_v(0)); self.e(W::I8x16MaxU);
-                self.get(l_v(1)); self.get(l_v(0)); self.e(W::I8x16MinU);
-                self.e(W::I8x16Sub);
-                self.e(W::I16x8ExtAddPairwiseI8x16U); self.e(W::I32x4ExtAddPairwiseI16x8U);
+                self.get(l_v(1)); self.get(l_v(0)); self.e(&W::I8x16MaxU);
+                self.get(l_v(1)); self.get(l_v(0)); self.e(&W::I8x16MinU);
+                self.e(&W::I8x16Sub);
+                self.e(&W::I16x8ExtAddPairwiseI8x16U); self.e(&W::I32x4ExtAddPairwiseI16x8U);
                 self.set(l_v(1));
-                self.get(l_v(1)); self.e(W::V128Const(LOW32)); self.e(W::V128And);
-                self.get(l_v(1)); self.c32(32); self.e(W::I64x2ShrU);
-                self.e(W::I64x2Add); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
+                self.get(l_v(1)); self.e(&W::V128Const(LOW32)); self.e(&W::V128And);
+                self.get(l_v(1)); self.c32(32); self.e(&W::I64x2ShrU);
+                self.e(&W::I64x2Add); self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
             },
             // The bytes of the first whose mask byte (in the second) has its top bit, to [rdi] (operand 0, implied).
             Maskmovdqu => {
-                self.get(l_reg(RDI)); self.e(W::I32WrapI64); self.set(l_u(1));
+                self.get(l_reg(RDI)); self.e(&W::I32WrapI64); self.set(l_u(1));
                 self.xread(i, 1, 16) && {
-                    self.get(l_u(1)); self.e(W::V128Load(mem(0)));
+                    self.get(l_u(1)); self.e(&W::V128Load(mem(0)));
                     self.xread(i, 2, 16) && {
-                        self.c32(7); self.e(W::I8x16ShrS);
-                        self.e(W::V128Bitselect); self.set(l_v(0));
-                        self.get(l_u(1)); self.get(l_v(0)); self.e(W::V128Store(mem(0)));
+                        self.c32(7); self.e(&W::I8x16ShrS);
+                        self.e(&W::V128Bitselect); self.set(l_v(0));
+                        self.get(l_u(1)); self.get(l_v(0)); self.e(&W::V128Store(mem(0)));
                         true
                     }
                 }
@@ -2488,7 +2492,7 @@ impl Fx<'_> {
     /// One operand in (operand 1, `bytes` of it from memory), `ops` on it, the result to operand 0.
     fn unary_v(&mut self, i: &Instruction, bytes: u32, ops: &[I]) -> bool {
         self.xread(i, 1, bytes) && {
-            for op in ops { self.e(op.clone()); }
+            for op in ops { self.e(op); }
             self.set(l_v(0)); self.xwrite(i, 0, 16, l_v(0))
         }
     }
@@ -2543,17 +2547,17 @@ impl Fx<'_> {
         let stores = memory && op.stores();
         // A store's address first, kept for an 80-bit one's second part.
         let mut at = 0;
-        if stores { at = self.place(i); self.e(W::LocalTee(l_u(0))); }
-        self.e(W::GlobalGet(G_X87));
+        if stores { at = self.place(i); self.e(&W::LocalTee(l_u(0))); }
+        self.e(&W::GlobalGet(G_X87));
         self.c32(index as i32);
         self.c32(if integer { -size } else { size });
         self.c32(a); self.c32(b);
         if memory && !stores {
             let at = self.place(i);
             if size == 10 {
-                self.e(W::LocalTee(l_u(0)));
+                self.e(&W::LocalTee(l_u(0)));
                 self.load_at(8, at);
-                self.e(W::LocalGet(l_u(0))); self.e(W::I32Load16U(mem_at(at + 8, 0)));
+                self.e(&W::LocalGet(l_u(0))); self.e(&W::I32Load16U(mem_at(at + 8, 0)));
             } else {
                 self.load_at(size as u8, at);
                 self.c32(0);
@@ -2561,15 +2565,15 @@ impl Fx<'_> {
         } else {
             self.c64(0); self.c32(0);
         }
-        self.e(W::Call(F_FPU));
+        self.e(&W::Call(F_FPU));
         if stores {
             if size == 10 {
                 self.store_at(8, at);
-                self.e(W::LocalGet(l_u(0)));
-                self.e(W::GlobalGet(G_X87));
+                self.e(&W::LocalGet(l_u(0)));
+                self.e(&W::GlobalGet(G_X87));
                 self.c32(crate::x87::Op::High as i32);
                 self.c32(0); self.c32(0); self.c32(1); self.c64(0); self.c32(0);
-                self.e(W::Call(F_FPU));
+                self.e(&W::Call(F_FPU));
                 self.store_at(2, at + 8);
             } else {
                 self.store_at(size as u8, at);
@@ -2578,16 +2582,16 @@ impl Fx<'_> {
         }
         match name.as_str() {
             "fucomi" | "fcomi" | "fucomip" | "fcomip" => {
-                self.e(W::I32WrapI64);
+                self.e(&W::I32WrapI64);
                 self.set(l_u(0));
                 for (bit, l) in [(0, L_CF), (1, L_ZF), (2, L_PF)] {
-                    self.get(l_u(0)); if bit > 0 { self.c32(bit); self.e(W::I32ShrU); } self.c32(1); self.e(W::I32And); self.set(l);
+                    self.get(l_u(0)); if bit > 0 { self.c32(bit); self.e(&W::I32ShrU); } self.c32(1); self.e(&W::I32And); self.set(l);
                 }
                 self.c32(0); self.set(L_OF); self.c32(0); self.set(L_SF);
                 self.set_flags(Flags::Held);
             }
             "fnstsw" => { self.write_reg(Register::AX); }
-            _ => self.e(W::Drop),
+            _ => self.e(&W::Drop),
         }
         Some(true)
     }
@@ -2898,22 +2902,22 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
     // Only where it is read: past a call (the resume) or an indirect jump; a leaf pays nothing for it.
     let calls = function.blocks.iter().any(|b| matches!(b.exit, Exit::Call { .. } | Exit::IndirectCall { .. }));
     if calls || function.blocks.iter().any(|b| b.exit == Exit::IndirectJump) {
-        fx.e(W::GlobalGet(RSP)); fx.c64(-1); fx.get(L_ENTRY); fx.e(W::I32Eqz); fx.e(W::Select); fx.set(L_SP0);
+        fx.e(&W::GlobalGet(RSP)); fx.c64(-1); fx.get(L_ENTRY); fx.e(&W::I32Eqz); fx.e(&W::Select); fx.set(L_SP0);
     }
     // Entered at L_ENTRY: from outside, or again from the resume below, as from outside.
     let resume = !lean || calls;
-    if resume { fx.e(W::Loop(BlockType::Empty)); }
+    if resume { fx.e(&W::Loop(BlockType::Empty)); }
     if !lean { fx.get(L_ENTRY); fx.set(L_BLK); }
     fx.load();
     // What the entries handed flags read (almost always none).
     fx.load_flags(cases);
-    if resume { fx.e(W::Block(BlockType::Empty)); }
-    if !lean { fx.e(W::Loop(BlockType::Empty)); }
+    if resume { fx.e(&W::Block(BlockType::Empty)); }
+    if !lean { fx.e(&W::Loop(BlockType::Empty)); }
     // A label for each block within no loop past its head, the last block's outermost: each ends where its block's
     // code starts. Those within a loop open inside it (enter_loop).
     let outermost: Vec<usize> = (0..n as usize).rev().filter(|&b| fx.within[b].is_none()).collect();
     for b in outermost {
-        fx.e(W::Block(BlockType::Empty));
+        fx.e(&W::Block(BlockType::Empty));
         fx.open(Lab::Block(b));
     }
     fx.depth = fx.labels.len() as u32;
@@ -2930,21 +2934,21 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
     // n is a search of log n compares in V8's first tier.
     if !lean && into {
         let heads: Vec<u32> = (0..n as usize).map(|b| outermost_head(&fx, b)).collect();
-        fx.e(W::Block(BlockType::Empty));
+        fx.e(&W::Block(BlockType::Empty));
         // Inside that block: 1 deeper, and 0 is it (an entry within a loop).
         let targets: Vec<u32> = (0..n as usize).map(|b| if fx.within[b].is_some() { 0 } else { outermost_head(&fx, b) + 1 }).collect();
-        fx.get(L_BLK); fx.e(W::I32Eqz); fx.e(W::BrIf(targets[0]));
+        fx.get(L_BLK); fx.e(&W::I32Eqz); fx.e(&W::BrIf(targets[0]));
         fx.get(L_BLK);
-        fx.e(W::BrTable(Cow::Owned(targets), 0));
-        fx.e(W::End);
-        fx.get(L_BLK); fx.c32(1); fx.e(W::I32Add); fx.set(L_INTO);
+        fx.e(&W::BrTable(Cow::Owned(targets), 0));
+        fx.e(&W::End);
+        fx.get(L_BLK); fx.c32(1); fx.e(&W::I32Add); fx.set(L_INTO);
         fx.get(L_BLK);
-        fx.e(W::BrTable(Cow::Owned(heads), 0));
+        fx.e(&W::BrTable(Cow::Owned(heads), 0));
     } else if !lean {
         let targets: Vec<u32> = (0..n as usize).map(|b| outermost_head(&fx, b)).collect();
-        fx.get(L_BLK); fx.e(W::I32Eqz); fx.e(W::BrIf(targets[0]));
+        fx.get(L_BLK); fx.e(&W::I32Eqz); fx.e(&W::BrIf(targets[0]));
         fx.get(L_BLK);
-        fx.e(W::BrTable(Cow::Owned(targets), 0));
+        fx.e(&W::BrTable(Cow::Owned(targets), 0));
     }
     // Flags needed after each instruction of a block (made again for each).
     let mut needed: Vec<u32> = Vec::new();
@@ -2952,7 +2956,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
         // Close block k's label so its code starts here, inside the labels of
         // the blocks after it and of the loops it lies within; a loop it heads
         // is gone round from here.
-        fx.e(W::End);
+        fx.e(&W::End);
         fx.close(Lab::Block(k));
         if let Some(l) = fx.heads[k] { fx.enter_loop(l); }
         fx.ev_at.push(fx.ev.len());
@@ -2964,7 +2968,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
         fx.report.blocks += 1;
         if options.trace {
             fx.c64(block.start as i64);
-            fx.e(W::Call(F_TRACE));
+            fx.e(&W::Call(F_TRACE));
         }
         let next = function.blocks.get(k + 1).map(|b| b.start);
         // An indirect jump may land on an entry of this function, whose flags stay in the locals.
@@ -3009,42 +3013,42 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
                 // taken side is the next block, the condition turned round goes to the other.
                 if let Some(d) = fx.forward(taken) {
                     fx.note(Ev::Edge);
-                    fx.e(W::BrIf(d));
+                    fx.e(&W::BrIf(d));
                     fx.goto(fall, next);
                 } else if let Some(d) = fx.forward(fall).filter(|_| Some(taken) == next) {
-                    fx.e(W::I32Eqz);
+                    fx.e(&W::I32Eqz);
                     fx.note(Ev::Edge);
-                    fx.e(W::BrIf(d));
+                    fx.e(&W::BrIf(d));
                     fx.goto(taken, next);
                 } else {
-                    fx.e(W::If(BlockType::Empty));
+                    fx.e(&W::If(BlockType::Empty));
                     fx.depth += 1;
                     fx.goto(taken, None);
                     fx.depth -= 1;
-                    fx.e(W::End);
+                    fx.e(&W::End);
                     fx.goto(fall, next);
                 }
             }
             Exit::IndirectJump => {
                 fx.read(&term, 0, 8);
                 fx.set(l_t(0));
-                fx.get(l_t(0)); fx.e(W::Call(F_RESOLVE)); fx.set(l_t(1));
+                fx.get(l_t(0)); fx.e(&W::Call(F_RESOLVE)); fx.set(l_t(1));
                 // Found as this function's own (by the table's numbering, which a module made later starts at its base).
-                fx.get(l_t(1)); fx.c64(32); fx.e(W::I64ShrU); fx.c64((base + index) as i64); fx.e(W::I64Eq);
+                fx.get(l_t(1)); fx.c64(32); fx.e(&W::I64ShrU); fx.c64((base + index) as i64); fx.e(&W::I64Eq);
                 fx.note(Ev::Edge);
-                fx.e(W::If(BlockType::Empty));
-                fx.get(l_t(1)); fx.e(W::I32WrapI64); fx.set(L_BLK);
-                fx.e(W::Br(fx.depth + 1));
-                fx.e(W::End);
+                fx.e(&W::If(BlockType::Empty));
+                fx.get(l_t(1)); fx.e(&W::I32WrapI64); fx.set(L_BLK);
+                fx.e(&W::Br(fx.depth + 1));
+                fx.e(&W::End);
                 fx.save();
                 // Elsewhere, it is handed what this function's own cases read: up to the frames further out when rsp
                 // is above where this one began (a longjmp; after_call), else to the dispatcher.
                 fx.save_flags(cases);
-                fx.get(l_reg(RSP)); fx.get(L_SP0); fx.e(W::I64GtU);
-                fx.e(W::If(BlockType::Empty));
-                fx.get(l_t(0)); fx.e(W::Return);
-                fx.e(W::End);
-                fx.get(l_t(0)); fx.e(W::ReturnCall(F_DISPATCH));
+                fx.get(l_reg(RSP)); fx.get(L_SP0); fx.e(&W::I64GtU);
+                fx.e(&W::If(BlockType::Empty));
+                fx.get(l_t(0)); fx.e(&W::Return);
+                fx.e(&W::End);
+                fx.get(l_t(0)); fx.e(&W::ReturnCall(F_DISPATCH));
             }
             Exit::Call { target, ret } if quiet(program, fx.summaries, target).is_some() => {
                 // To a function that never goes out (summary.rs): only what it may read or write is moved, and its
@@ -3053,7 +3057,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
                 fx.push_with(|fx| { fx.c64(ret as i64); true });
                 fx.note_low();
                 fx.sync_in(true, s.reads | s.writes);
-                fx.c32(0); fx.e(W::Call(FIRST_GUEST + f));
+                fx.c32(0); fx.e(&W::Call(FIRST_GUEST + f));
                 fx.set(l_t(0));
                 fx.after_call_in(ret, next, s.writes);
             }
@@ -3062,8 +3066,8 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
                 fx.save();
                 fx.enter_call(handed_flags.handed(target), |fx| fx.c64(target as i64));
                 match program.entries.get(&target) {
-                    Some(&(f, b)) => { fx.c32(b as i32); fx.e(W::Call(FIRST_GUEST + f)); }
-                    None => { fx.c64(target as i64); fx.e(W::Call(F_DISPATCH)); }
+                    Some(&(f, b)) => { fx.c32(b as i32); fx.e(&W::Call(FIRST_GUEST + f)); }
+                    None => { fx.c64(target as i64); fx.e(&W::Call(F_DISPATCH)); }
                 }
                 fx.set(l_t(0));
                 fx.leave_call();
@@ -3076,7 +3080,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
                 fx.push_with(|fx| { fx.c64(ret as i64); true });
                 fx.save();
                 fx.enter_call(ALL_FLAGS, |fx| fx.get(l_t(2)));
-                fx.get(l_t(2)); fx.e(W::Call(F_DISPATCH));
+                fx.get(l_t(2)); fx.e(&W::Call(F_DISPATCH));
                 fx.set(l_t(0));
                 fx.leave_call();
                 fx.after_call(ret, next);
@@ -3084,59 +3088,59 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
             Exit::Return => {
                 fx.pop_value(l_t(0));
                 if term.op_count() == 1 {
-                    fx.get(l_reg(RSP)); fx.c64(term.immediate16() as i64); fx.e(W::I64Add); fx.set(l_reg(RSP));
+                    fx.get(l_reg(RSP)); fx.c64(term.immediate16() as i64); fx.e(&W::I64Add); fx.set(l_reg(RSP));
                 }
                 fx.save();
-                fx.get(l_t(0)); fx.e(W::Return);
+                fx.get(l_t(0)); fx.e(&W::Return);
             }
             Exit::Trap => {
                 fx.c64(term.ip() as i64);
                 fx.c32(match term.mnemonic() { Mnemonic::Ud2 => TRAP_UD2, Mnemonic::Int3 => TRAP_INT3, Mnemonic::Hlt => TRAP_HLT, _ => TRAP_UNDECODED });
-                fx.e(W::Call(F_TRAP));
-                fx.e(W::Unreachable);
+                fx.e(&W::Call(F_TRAP));
+                fx.e(&W::Unreachable);
             }
         }
         // The loops this is the last block of end here, the innermost first.
         while let Some(&Lab::Loop(l)) = fx.labels.last() {
             if fx.loops[l].last != k { break; }
-            fx.e(W::End);
+            fx.e(&W::End);
             fx.close(Lab::Loop(l));
         }
     }
     if lean && fx.dispatched { return None; }
     if !resume {
-        fx.e(W::Unreachable);
-        fx.e(W::End);
+        fx.e(&W::Unreachable);
+        fx.e(&W::End);
         return Some(finish(program, index, fx));
     }
     // Leaving the last block falls out of the loop.
-    if !lean { fx.e(W::End); }
-    fx.e(W::Unreachable);
-    fx.e(W::End);
+    if !lean { fx.e(&W::End); }
+    fx.e(&W::Unreachable);
+    fx.e(&W::End);
     // The resume: a call came back to an address other than its own (after_call), in l_t(0). One of this function's
     // entries is entered again here, its registers and flags taken from their globals as from outside, so a longjmp
     // to a frame of this function's goes on in it; anything else goes up to the caller, at once when rsp is above
     // where this frame began (the code is a frame's further out).
-    fx.e(W::GlobalGet(RSP)); fx.get(L_SP0); fx.e(W::I64GtU);
-    fx.e(W::If(BlockType::Empty));
-    fx.get(l_t(0)); fx.e(W::Return);
-    fx.e(W::End);
-    fx.get(l_t(0)); fx.e(W::Call(F_RESOLVE)); fx.set(l_t(1));
+    fx.e(&W::GlobalGet(RSP)); fx.get(L_SP0); fx.e(&W::I64GtU);
+    fx.e(&W::If(BlockType::Empty));
+    fx.get(l_t(0)); fx.e(&W::Return);
+    fx.e(&W::End);
+    fx.get(l_t(0)); fx.e(&W::Call(F_RESOLVE)); fx.set(l_t(1));
     if lean {
         // Entered only at its start: at that (block 0), nowhere else.
-        fx.get(l_t(1)); fx.c64(((base + index) as i64) << 32); fx.e(W::I64Eq);
-        fx.e(W::BrIf(0));
+        fx.get(l_t(1)); fx.c64(((base + index) as i64) << 32); fx.e(&W::I64Eq);
+        fx.e(&W::BrIf(0));
     } else {
-        fx.get(l_t(1)); fx.c64(32); fx.e(W::I64ShrU); fx.c64((base + index) as i64); fx.e(W::I64Eq);
-        fx.e(W::If(BlockType::Empty));
-        fx.get(l_t(1)); fx.e(W::I32WrapI64); fx.set(L_ENTRY);
-        fx.e(W::Br(1));
-        fx.e(W::End);
+        fx.get(l_t(1)); fx.c64(32); fx.e(&W::I64ShrU); fx.c64((base + index) as i64); fx.e(&W::I64Eq);
+        fx.e(&W::If(BlockType::Empty));
+        fx.get(l_t(1)); fx.e(&W::I32WrapI64); fx.set(L_ENTRY);
+        fx.e(&W::Br(1));
+        fx.e(&W::End);
     }
-    fx.get(l_t(0)); fx.e(W::Return);
-    fx.e(W::End);
-    fx.e(W::Unreachable);
-    fx.e(W::End);
+    fx.get(l_t(0)); fx.e(&W::Return);
+    fx.e(&W::End);
+    fx.e(&W::Unreachable);
+    fx.e(&W::End);
 
     Some(finish(program, index, fx))
 }
