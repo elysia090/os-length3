@@ -407,8 +407,13 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut refer
     let mut first: Vec<u64> = std::iter::once(start).chain(extra.iter().copied().filter(|&a| inside(a))).collect();
     first.sort_unstable();
     first.dedup();
-    let mut leaders: HashSet<u64, ByAddress> = first.iter().copied().collect();
-    let mut instructions: HashMap<u64, Instruction, ByAddress> = HashMap::default();
+    // Room for about what the range holds (an instruction is about four bytes; a block, four instructions), so the
+    // maps are not grown and rehashed as the walk goes; no more than a large function's, where the range is the
+    // rest of the code up to a start not found yet.
+    let room = (end.min(start + code.len() as u64) - start) as usize / 4;
+    let mut leaders: HashSet<u64, ByAddress> = HashSet::with_capacity_and_hasher(room.min(1 << 11) / 4, Default::default());
+    leaders.extend(first.iter().copied());
+    let mut instructions: HashMap<u64, Instruction, ByAddress> = HashMap::with_capacity_and_hasher(room.min(1 << 11), Default::default());
     let mut work: VecDeque<u64> = first.into_iter().collect();
     let mut calls = Vec::new();
     while let Some(mut at) = work.pop_front() {
