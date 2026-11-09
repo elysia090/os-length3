@@ -3176,7 +3176,11 @@ fn finish(program: &Program, index: u32, mut fx: Fx) -> Vec<u8> {
         f.push(first); uleb(f, a as u64); f.push(second); uleb(f, b as u64);
     };
     let sync = |f: &mut Vec<u8>, save: bool, scope: u32, mask: u32| {
-        for n in (0..32).filter(|n| used & mask & (1 << n) != 0) {
+        // Each register it moves, lowest first.
+        let mut moved = used & mask;
+        while moved != 0 {
+            let n = moved.trailing_zeros();
+            moved &= moved - 1;
             let (local, global) = if n < 16 { (l_reg(n), n) } else { (l_x(n - 16), g_xmm(n - 16)) };
             pair(f, save, slots[local as usize], global);
         }
@@ -3225,53 +3229,76 @@ fn sync_masks(program: &Program, index: u32, (events, ev_at): (&[Ev], &[usize]),
     }).collect();
     let succ = |k: usize| -> &[usize] { let (to, len) = &succ[k]; if *len == INDIRECT { &entries } else { &to[..*len as usize] } };
     let mut mask = vec![0u32; syncs.len()];
-    let edged: Vec<bool> = (0..n).map(|k| ev(k + 1).iter().any(|e| matches!(e, Ev::Edge))).collect();
-
-    // Forward: written since the last sync on some path.
+    // Both flows below, through a block, are of the form value & P | G of the value coming in (where the code is
+    // left, forward; where it is entered, backward): each block's events are gone through once for its P and G, and
+    // each sync's, then the fixed points are found block by block. (A write and a sync's kill clear bits of both; a
+    // read, a write and an edge set them.)
+    const ALL: u32 = u32::MAX;
+    // Forward: written since the last sync on some path. A save takes what is dirty where it is.
+    let mut forward = vec![(0u32, 0u32); n];
+    let mut edged = vec![false; n];
+    let mut saves: Vec<(usize, usize, u32, u32)> = Vec::new();
+    for k in 0..n {
+        let (mut p, mut g, mut out_p, mut out_g) = (ALL, 0, 0, 0);
+        for e in ev(k + 1) {
+            match *e {
+                Ev::Write(r, _) => g |= 1 << r,
+                Ev::Sync(m, top) if syncs[m].1 => {
+                    saves.push((m, k, p, g));
+                    if top { p &= !syncs[m].2; g &= !syncs[m].2; }
+                }
+                Ev::Edge => { out_p |= p; out_g |= g; edged[k] = true; }
+                _ => {}
+            }
+        }
+        // Successors no goto was noted for (none should be) see the block's end.
+        if !edged[k] { out_p |= p; out_g |= g; }
+        forward[k] = (out_p, out_g);
+    }
     let mut dirty = vec![0u32; n];
     loop {
         let mut changed = false;
         for k in 0..n {
-            let mut d = dirty[k];
-            let mut out = 0;
-            for e in ev(k + 1) {
-                match *e {
-                    Ev::Write(r, _) => d |= 1 << r,
-                    Ev::Sync(m, top) if syncs[m].1 => { mask[m] |= d & syncs[m].2; if top { d &= !syncs[m].2; } }
-                    Ev::Edge => out |= d,
-                    _ => {}
-                }
-            }
-            // Successors no goto was noted for (none should be) see the block's end.
-            if !edged[k] { out |= d; }
+            let out = (dirty[k] & forward[k].0) | forward[k].1;
             for &s in succ(k) {
                 if dirty[s] | out != dirty[s] { dirty[s] |= out; changed = true; }
             }
         }
         if !changed { break; }
     }
+    for &(m, k, p, g) in &saves { mask[m] |= ((dirty[k] & p) | g) & syncs[m].2; }
 
-    // Backward: read before surely written again.
+    // Backward: read before surely written again. A load takes what is live where it is; a save's stores read.
+    let mut backward = vec![(0u32, 0u32); n];
+    let mut loads: Vec<(usize, usize, u32, u32)> = Vec::new();
+    for k in 0..n {
+        let (mut p, mut g) = (if edged[k] { 0 } else { ALL }, 0);
+        for e in ev(k + 1).iter().rev() {
+            match *e {
+                Ev::Read(r) => g |= 1 << r,
+                Ev::Write(r, true) => { p &= !(1 << r); g &= !(1 << r); }
+                Ev::Write(_, false) => {}
+                Ev::Sync(m, _) if syncs[m].1 => g |= mask[m],
+                Ev::Sync(m, top) => {
+                    loads.push((m, k, p, g));
+                    if top { p &= !syncs[m].2; g &= !syncs[m].2; }
+                }
+                Ev::Edge => p = ALL,
+            }
+        }
+        backward[k] = (p, g);
+    }
+    let after = |live: &[u32], k: usize| succ(k).iter().fold(0, |acc, &s| acc | live[s]);
     let mut live = vec![0u32; n];
     loop {
         let mut changed = false;
         for k in (0..n).rev() {
-            let after = succ(k).iter().fold(0, |acc, &s| acc | live[s]);
-            let mut l = if edged[k] { 0 } else { after };
-            for e in ev(k + 1).iter().rev() {
-                match *e {
-                    Ev::Read(r) => l |= 1 << r,
-                    Ev::Write(r, true) => l &= !(1 << r),
-                    Ev::Write(_, false) => {}
-                    Ev::Sync(m, _) if syncs[m].1 => l |= mask[m],
-                    Ev::Sync(m, top) => { mask[m] |= l & syncs[m].2; if top { l &= !syncs[m].2; } }
-                    Ev::Edge => l |= after,
-                }
-            }
+            let l = (after(&live, k) & backward[k].0) | backward[k].1;
             if live[k] | l != live[k] { live[k] |= l; changed = true; }
         }
         if !changed { break; }
     }
+    for &(m, k, p, g) in &loads { mask[m] |= ((after(&live, k) & p) | g) & syncs[m].2; }
     // The prologue takes in what any block it may start at reads.
     let start = entries.iter().fold(0, |acc, &k| acc | live[k]);
     for e in ev(0) {
