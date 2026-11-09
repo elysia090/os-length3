@@ -120,37 +120,94 @@ pub fn loops_of(blocks: &[Block], at: impl Fn(u64) -> Option<usize>) -> (Vec<Loo
     (loops, within)
 }
 
-/// `blocks` (sorted by address, the entry first) put in the order they are lowered: a loop that code from outside it
-/// enters at one block only, past its first, starts at that block. A compiler lays a while loop out with its test last
-/// and jumps in to the test (`jmp test; body: ...; test: ...; jne body`); in that order the loop's head (where a wasm
-/// loop is entered and gone round from, lower.rs) is the block it is entered at, and going round it asks nothing of
-/// where it was entered.
-fn lowered(blocks: &mut [Block]) {
-    let mut rounds = 0;
-    loop {
-        let at: HashMap<u64, usize> = blocks.iter().enumerate().map(|(k, b)| (b.start, k)).collect();
-        let (loops, within) = loops_of(blocks, |a| at.get(&a).copied());
-        // Each turn changes the order, so at most a few turns a loop (a turn's loop then starts where it is entered).
-        if rounds > 2 * loops.len() { return; }
-        rounds += 1;
-        let turn = loops.iter().enumerate().find_map(|(l, lp)| {
-            let inside = |k: usize| (lp.head..=lp.last).contains(&k);
-            let mut entered = None;
-            for b in blocks.iter().enumerate().filter(|&(k, _)| !inside(k)).map(|(_, b)| b) {
-                for t in goes_to(b).into_iter().flatten().filter_map(|a| at.get(&a).copied()).filter(|&t| inside(t)) {
-                    if entered.is_some_and(|e| e != t) { return None; }
-                    entered = Some(t);
+/// `blocks` (sorted by address, the entry first) put in the order they are lowered: each loop's blocks together, its
+/// head (where it is entered) first, and the rest in reverse postorder, so a jump to a block before it is a loop's round
+/// and any other a jump forward. A compiler lays a while loop out with its test last and jumps in to the test, and puts
+/// what seldom runs (an error's path, a slow case) after the loop with a jump back into it; laid out by address, such a
+/// loop is entered past its first block and goes round through the dispatch (lower.rs), where laid out so it is a wasm
+/// loop. A loop entered at more than one block (not one a compiler makes from structured code) is laid out from where
+/// the walk first came in, and still goes round through the dispatch.
+fn lowered(blocks: &mut Vec<Block>) {
+    let n = blocks.len();
+    if n < 3 { return; }
+    let at: HashMap<u64, usize> = blocks.iter().enumerate().map(|(k, b)| (b.start, k)).collect();
+    let succ: Vec<Vec<usize>> = blocks.iter().map(|b| goes_to(b).into_iter().flatten().filter_map(|a| at.get(&a).copied()).collect()).collect();
+    // A walk from the entry, then from each block not reached yet (reached through the dispatch only), in order: each
+    // walk's reverse postorder after the ones before it. A jump to a block still on the walk's path is a loop's round.
+    let mut rpo = vec![0usize; n];
+    let mut state = vec![0u8; n];
+    let mut latches: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut numbered = 0;
+    for root in 0..n {
+        if state[root] != 0 { continue; }
+        let mut post = Vec::new();
+        let mut path: Vec<(usize, usize)> = vec![(root, 0)];
+        state[root] = 1;
+        while let Some(&mut (u, ref mut next)) = path.last_mut() {
+            if let Some(&v) = succ[u].get(*next) {
+                *next += 1;
+                match state[v] {
+                    0 => { state[v] = 1; path.push((v, 0)); }
+                    1 => latches[v].push(u),
+                    _ => {}
                 }
+            } else {
+                state[u] = 2;
+                post.push(u);
+                path.pop();
             }
-            // Entered past its head at a block of its own, or at the head of a loop directly within it. (The function's
-            // first block is entered from outside, and stays first.)
-            let e = entered.filter(|&e| e != lp.head && lp.head != 0)?;
-            let own = within[e] == Some(l) || within[e].is_some_and(|w| loops[w].head == e && loops[w].parent == Some(l));
-            own.then_some((lp.head, lp.last, e))
-        });
-        let Some((head, last, e)) = turn else { return };
-        blocks[head..=last].rotate_left(e - head);
+        }
+        for (i, &u) in post.iter().rev().enumerate() { rpo[u] = numbered + i; }
+        numbered += post.len();
     }
+    // Each loop's blocks: those that reach a round to its head without going through the head, after the head in the
+    // walk's order (none before it lies within it).
+    let mut preds: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (u, s) in succ.iter().enumerate() { for &v in s { preds[v].push(u); } }
+    let heads: Vec<usize> = (0..n).filter(|&h| !latches[h].is_empty()).collect();
+    if heads.is_empty() { return; }
+    let body: Vec<Vec<bool>> = heads.iter().map(|&h| {
+        let mut inside = vec![false; n];
+        inside[h] = true;
+        let mut work: Vec<usize> = Vec::new();
+        for &u in &latches[h] { if rpo[u] > rpo[h] && !inside[u] { inside[u] = true; work.push(u); } }
+        while let Some(u) = work.pop() {
+            for &p in &preds[u] { if !inside[p] && rpo[p] > rpo[h] { inside[p] = true; work.push(p); } }
+        }
+        inside
+    }).collect();
+    let size: Vec<usize> = body.iter().map(|b| b.iter().filter(|&&x| x).count()).collect();
+    // Loops ordered from the least (fewest blocks, then latest head): a block's loop is the least holding it, a loop's
+    // the least holding its head that comes after it in that order, so they nest as a tree.
+    let rank = |l: usize| (size[l], usize::MAX - rpo[heads[l]]);
+    let least = |b: usize, above: Option<usize>| -> Option<usize> {
+        (0..heads.len()).filter(|&m| body[m][b] && above.is_none_or(|a| m != a && rank(m) > rank(a))).min_by_key(|&m| rank(m))
+    };
+    let owner: Vec<Option<usize>> = (0..n).map(|b| least(b, None)).collect();
+    let parent: Vec<Option<usize>> = (0..heads.len()).map(|l| least(heads[l], Some(l))).collect();
+    // Laid out from the outside in: a region's blocks and the loops directly within it in the walk's order, each loop's
+    // whole where its head falls.
+    enum Item { Block(usize), Loop(usize) }
+    fn place(region: Option<usize>, owner: &[Option<usize>], parent: &[Option<usize>], heads: &[usize], rpo: &[usize], order: &mut Vec<usize>) {
+        let mut items: Vec<(usize, Item)> = Vec::new();
+        for (b, &o) in owner.iter().enumerate() { if o == region { items.push((rpo[b], Item::Block(b))); } }
+        for (l, &p) in parent.iter().enumerate() {
+            if p == region && Some(l) != region { items.push((rpo[heads[l]], Item::Loop(l))); }
+        }
+        items.sort_unstable_by_key(|&(r, _)| r);
+        for (_, item) in items {
+            match item {
+                Item::Block(b) => order.push(b),
+                Item::Loop(l) => place(Some(l), owner, parent, heads, rpo, order),
+            }
+        }
+    }
+    let mut order = Vec::with_capacity(n);
+    place(None, &owner, &parent, &heads, &rpo, &mut order);
+    // (The entry is first in the walk, in no loop but one it heads: it stays first.)
+    if order.len() != n || order[0] != 0 { return; }
+    let mut old: Vec<Option<Block>> = std::mem::take(blocks).into_iter().map(Some).collect();
+    *blocks = order.into_iter().filter_map(|k| old[k].take()).collect();
 }
 
 /// About how many blocks one wasm function is made of. An optimizing compile takes time that grows faster than a

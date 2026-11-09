@@ -8,7 +8,7 @@
 //! a return compares the popped address with the expected continuation and
 //! hands anything unexpected (longjmp, tail tricks) to the dispatcher.
 
-use crate::discover::{goes_to, loops_of, Block, Exit, Function, Loop, Program};
+use crate::discover::{goes_to, loops_of, resumes_after, Block, Exit, Function, Loop, Program};
 use crate::elf::Elf;
 use crate::summary::{summarize, Summary};
 use iced_x86::{ConditionCode, Instruction, Mnemonic, OpKind, Register, RflagsBits};
@@ -117,15 +117,18 @@ const L_SP0: u32 = 54;
 /// moved to and from its global where the registers are (sync). A function with no loop counts it down in its global
 /// at each call, as before: it would move it in and out at each.
 const L_BUDGET: u32 = 55;
+/// Where a loop entered past its head (from the dispatch, at an entry within it: a call's continuation, a loop within
+/// it) goes on: that block's number + 1, read at each loop's head (enter_loop), 0 once there.
+const L_INTO: u32 = 56;
 /// How many locals there are in all (L_ENTRY the parameter, then the rest).
-const LOCALS: usize = 56;
+const LOCALS: usize = 57;
 
 /// Each local's type. A function declares only those it touches, numbered in the order it first touches them
 /// (Fx::slot): where a function declares more than a few, or any but i32 and i64, V8's first tier zeroes them at every
 /// entry, a `rep stos` that costs about 10 ns a call, 15 with all of them (most functions touch no vector register).
 const fn kind(l: u32) -> ValType {
     match l {
-        L_BLK | L_CF..=L_PF | L_BUDGET => ValType::I32,
+        L_BLK | L_CF..=L_PF | L_BUDGET | L_INTO => ValType::I32,
         _ if l >= l_u(0) && l < l_x(0) => ValType::I32,
         _ if l >= l_x(0) && l < l_d(0) => ValType::V128,
         _ if l >= l_d(0) && l < L_SP0 => ValType::F64,
@@ -228,6 +231,8 @@ struct Fx<'p> {
     kinds: Vec<ValType>,
     /// The rsp written next only goes up (add rsp, n; sub rsp, -n), so it is no new low (note_low).
     rsp_up: bool,
+    /// Which blocks are entries (the dispatch may start at them).
+    entry: Vec<bool>,
     /// Whether there is a dispatch loop (one made lean has none: lower_function), and whether a jump within went round
     /// it all the same.
     dispatch: bool,
@@ -925,6 +930,38 @@ impl<'p> Fx<'p> {
             self.e(W::Block(BlockType::Empty));
             self.open(Lab::Block(b));
         }
+        // Entered past its head (only ever from the dispatch: a call's continuation, a loop within it, after the
+        // thread was taken back to the kernel there): on to that block, or to the head of the loop within this one
+        // that holds it, which sends it on in turn. A test of a local every time round, the rest only then.
+        if !(head + 1..=last).any(|b| self.entry[b]) { return; }
+        self.depth = self.labels.len() as u32;
+        // Where each block from the head on is sent: Ok(its label) when within this loop itself (L_INTO spent),
+        // Err(the label of the head of the loop within this one that holds it).
+        let route: Vec<Result<u32, u32>> = (head + 1..=last).map(|b| {
+            let mut w = self.within[b];
+            let mut t = b;
+            while let Some(c) = w {
+                if c == l { break; }
+                t = self.loops[c].head;
+                w = self.loops[c].parent;
+            }
+            let at = self.block_at[t].unwrap_or_default();
+            if t == b { Ok(at) } else { Err(at) }
+        }).collect();
+        self.get(L_INTO);
+        self.e(W::If(BlockType::Empty));
+        self.e(W::Block(BlockType::Empty));
+        // Inside the if and this block: 2 deeper than the labels.
+        let outer: Vec<u32> = route.iter().map(|r| match *r { Ok(_) => 0, Err(at) => self.to(at) + 2 }).collect();
+        self.get(L_INTO); self.c32(head as i32 + 2); self.e(W::I32Sub);
+        self.e(W::BrTable(Cow::Owned(outer), 1));
+        self.e(W::End);
+        // Within this loop itself: spent, and on to its block (inside the if: 1 deeper).
+        let inner: Vec<u32> = route.iter().map(|r| match *r { Ok(at) => self.to(at) + 1, Err(_) => 0 }).collect();
+        self.get(L_INTO); self.c32(0); self.set(L_INTO);
+        self.c32(head as i32 + 2); self.e(W::I32Sub);
+        self.e(W::BrTable(Cow::Owned(inner), 0));
+        self.e(W::End);
     }
 
     fn goto(&mut self, address: u64, next: Option<u64>) {
@@ -2669,7 +2706,30 @@ pub(crate) fn has_loop(function: &Function) -> bool {
 
 /// Whether each loop may be come to past its head other than by a jump straight to its label: as an entry (from the
 /// dispatch), by a jump in from outside the loop, or by a jump back that is not a round of a loop it lies within.
+/// Entries the dispatch starts at only to go on after the thread was taken back to the kernel there, or a longjmp: a
+/// call's continuation, a loop's head (its time slice), a system call's or the instruction after it. A loop entered
+/// past its head at such an entry is still made a wasm loop (enter_loop routes it), where one entered at others (a
+/// switch's cases, a run's code reached from another run) goes round through the dispatch.
+fn cold_entries(function: &Function) -> Vec<bool> {
+    let blocks = &function.blocks;
+    let mut cold = vec![false; blocks.len()];
+    for (k, b) in blocks.iter().enumerate() {
+        if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit {
+            if let Some(t) = function.block_index(ret) { cold[t] = true; }
+        }
+        for t in goes_to(b).into_iter().flatten().filter_map(|a| function.block_index(a)) {
+            if t <= k { cold[t] = true; }
+        }
+        if let Some(last) = b.code.last().filter(|i| resumes_after(i)) {
+            if let Some(t) = function.block_index(last.next_ip()) { cold[t] = true; }
+            if b.code.len() == 1 { cold[k] = true; }
+        }
+    }
+    cold
+}
+
 fn entered_past_head(program: &Program, index: u32, function: &Function, loops: &[Loop], heads: &[Option<usize>]) -> Vec<bool> {
+    let cold = cold_entries(function);
     let mut entered = vec![false; loops.len()];
     let mut mark = |t: usize, from: Option<usize>| {
         for (l, lp) in loops.iter().enumerate() {
@@ -2677,7 +2737,7 @@ fn entered_past_head(program: &Program, index: u32, function: &Function, loops: 
         }
     };
     for (k, b) in function.blocks.iter().enumerate() {
-        if program.entries.get(&b.start) == Some(&(index, k as u32)) { mark(k, None); }
+        if !cold[k] && program.entries.get(&b.start) == Some(&(index, k as u32)) { mark(k, None); }
         for t in goes_to(b).into_iter().flatten().filter_map(|a| function.block_index(a)) {
             if t > k { mark(t, Some(k)); continue; }
             let round = heads[t].is_some_and(|l| (loops[l].head..=loops[l].last).contains(&k));
@@ -2687,13 +2747,14 @@ fn entered_past_head(program: &Program, index: u32, function: &Function, loops: 
     entered
 }
 
-/// Of `loops`, those made wasm loops: the ones never entered past their head (entered_past_head), each within the
-/// nearest such it lies within; with the innermost each block lies within past its head. A wasm loop is entered at
-/// its top only, so one entered elsewhere would have to ask, every time round, where it was entered (a compare and a
-/// branch) and be taken in through its top with the block to go on to: that made a compiler's code (cc1's loops call,
-/// switch and are entered at their cases) a sixth slower than going round through the dispatch loop as before. Those
-/// left (a byte loop's, a sort's) take two thirds the time to go round, or less (code.c's floors: strlen and memchr of
-/// 4K 1.43 µs -> 0.73, strcmp of 2K 3.3 -> 2.5), and the rest go round as before.
+/// Of `loops`, those made wasm loops: the ones no jump from outside enters past their head and no entry but a cold
+/// one (cold_entries) lies in past their head (entered_past_head), each within the nearest such it lies within; with
+/// the innermost each block lies within past its head. A wasm loop is entered at its top only: one entered at a cold
+/// entry (a call's continuation after the thread was taken back to the kernel there, a loop within it) is entered at
+/// its top with L_INTO saying where to go on (a local tested once a round, enter_loop). One entered at a switch's case
+/// would be entered so at every case (asking at each round where, and more, made cc1 a sixth slower), and goes round
+/// through the dispatch loop as before, as does one a jump enters past its head (discover.rs lays loops out so that
+/// none from structured code is).
 fn clean_loops(program: &Program, index: u32, function: &Function, mut loops: Vec<Loop>) -> (Vec<Loop>, Vec<Option<usize>>) {
     loop {
         let mut heads = vec![None; function.blocks.len()];
@@ -2756,7 +2817,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<
     let (live, cases) = live_flags(program, index, &succs);
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
-    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), rsp_up: false, dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), rsp_up: false, entry: Vec::new(), dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
         loops: Vec::new(), within: Vec::new(), heads: Vec::new(), labels: Vec::new(), block_at: Vec::new(), loop_at: Vec::new() };
     let (loops, within) = clean_loops(program, index, function, loops_of(&function.blocks, |a| function.block_index(a)).0);
     fx.heads = vec![None; function.blocks.len()];
@@ -2764,6 +2825,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<
     fx.block_at = vec![None; function.blocks.len()];
     fx.loop_at = vec![None; loops.len()];
     (fx.loops, fx.within) = (loops, within);
+    fx.entry = function.blocks.iter().enumerate().map(|(k, b)| program.entries.get(&b.start) == Some(&(index, k as u32))).collect();
 
     // Everything the prologue depends on is known, so the function is made in order.
     // Only where it is read: past a call (the resume) or an indirect jump; a leaf pays nothing for it.
@@ -2788,17 +2850,31 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<
         fx.open(Lab::Block(b));
     }
     fx.depth = fx.labels.len() as u32;
-    // Each entry to its block's label (none lies within a loop past its head: clean_loops; one that did would be
-    // taken to the head of the outermost loop it lies within).
-    let targets: Vec<u32> = (0..n as usize).map(|b| {
+    // Each entry to its block's label; one within a loop past its head (a call's continuation in a loop, clean_loops)
+    // to the head of the outermost loop it lies within, with L_INTO saying where to go on (enter_loop).
+    let outermost_head = |fx: &Fx, b: usize| {
         let mut l = fx.within[b];
         let mut t = b;
         while let Some(w) = l { t = fx.loops[w].head; l = fx.loops[w].parent; }
         fx.to(fx.block_at[t].unwrap_or_default())
-    }).collect();
+    };
+    let into = (0..n as usize).any(|b| fx.entry[b] && fx.within[b].is_some());
     // Lean, the code goes straight on into block 0's. Else block 0 (a call's way in) is gone to first: a br_table of
     // n is a search of log n compares in V8's first tier.
-    if !lean {
+    if !lean && into {
+        let heads: Vec<u32> = (0..n as usize).map(|b| outermost_head(&fx, b)).collect();
+        fx.e(W::Block(BlockType::Empty));
+        // Inside that block: 1 deeper, and 0 is it (an entry within a loop).
+        let targets: Vec<u32> = (0..n as usize).map(|b| if fx.within[b].is_some() { 0 } else { outermost_head(&fx, b) + 1 }).collect();
+        fx.get(L_BLK); fx.e(W::I32Eqz); fx.e(W::BrIf(targets[0]));
+        fx.get(L_BLK);
+        fx.e(W::BrTable(Cow::Owned(targets), 0));
+        fx.e(W::End);
+        fx.get(L_BLK); fx.c32(1); fx.e(W::I32Add); fx.set(L_INTO);
+        fx.get(L_BLK);
+        fx.e(W::BrTable(Cow::Owned(heads), 0));
+    } else if !lean {
+        let targets: Vec<u32> = (0..n as usize).map(|b| outermost_head(&fx, b)).collect();
         fx.get(L_BLK); fx.e(W::I32Eqz); fx.e(W::BrIf(targets[0]));
         fx.get(L_BLK);
         fx.e(W::BrTable(Cow::Owned(targets), 0));
