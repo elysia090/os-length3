@@ -130,25 +130,33 @@ pub fn loops_of(blocks: &[Block], at: impl Fn(u64) -> Option<usize>) -> (Vec<Loo
 fn lowered(blocks: &mut Vec<Block>) {
     let n = blocks.len();
     if n < 3 { return; }
-    let at: HashMap<u64, usize> = blocks.iter().enumerate().map(|(k, b)| (b.start, k)).collect();
-    let succ: Vec<Vec<usize>> = blocks.iter().map(|b| goes_to(b).into_iter().flatten().filter_map(|a| at.get(&a).copied()).collect()).collect();
+    // Each block's successors within, by index (at most two).
+    let mut by_start: Vec<(u64, usize)> = blocks.iter().enumerate().map(|(k, b)| (b.start, k)).collect();
+    by_start.sort_unstable();
+    let index = |a: u64| by_start.binary_search_by_key(&a, |&(s, _)| s).ok().map(|i| by_start[i].1);
+    const NONE: usize = usize::MAX;
+    let succ: Vec<[usize; 2]> = blocks.iter().map(|b| goes_to(b).map(|a| a.and_then(index).unwrap_or(NONE))).collect();
     // A walk from the entry, then from each block not reached yet (reached through the dispatch only), in order: each
     // walk's reverse postorder after the ones before it. A jump to a block still on the walk's path is a loop's round.
     let mut rpo = vec![0usize; n];
     let mut state = vec![0u8; n];
-    let mut latches: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut rounds: Vec<(usize, usize)> = Vec::new();
     let mut numbered = 0;
+    let mut post = Vec::with_capacity(n);
+    let mut path: Vec<(usize, usize)> = Vec::new();
     for root in 0..n {
         if state[root] != 0 { continue; }
-        let mut post = Vec::new();
-        let mut path: Vec<(usize, usize)> = vec![(root, 0)];
+        post.clear();
+        path.push((root, 0));
         state[root] = 1;
         while let Some(&mut (u, ref mut next)) = path.last_mut() {
-            if let Some(&v) = succ[u].get(*next) {
+            if *next < 2 {
+                let v = succ[u][*next];
                 *next += 1;
+                if v == NONE { continue; }
                 match state[v] {
                     0 => { state[v] = 1; path.push((v, 0)); }
-                    1 => latches[v].push(u),
+                    1 => rounds.push((v, u)),
                     _ => {}
                 }
             } else {
@@ -160,50 +168,75 @@ fn lowered(blocks: &mut Vec<Block>) {
         for (i, &u) in post.iter().rev().enumerate() { rpo[u] = numbered + i; }
         numbered += post.len();
     }
-    // Each loop's blocks: those that reach a round to its head without going through the head, after the head in the
-    // walk's order (none before it lies within it).
-    let mut preds: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for (u, s) in succ.iter().enumerate() { for &v in s { preds[v].push(u); } }
-    let heads: Vec<usize> = (0..n).filter(|&h| !latches[h].is_empty()).collect();
-    if heads.is_empty() { return; }
-    let body: Vec<Vec<bool>> = heads.iter().map(|&h| {
-        let mut inside = vec![false; n];
-        inside[h] = true;
-        let mut work: Vec<usize> = Vec::new();
-        for &u in &latches[h] { if rpo[u] > rpo[h] && !inside[u] { inside[u] = true; work.push(u); } }
+    // No loop: the order stays.
+    if rounds.is_empty() { return; }
+    // Predecessors, packed.
+    let mut first = vec![0usize; n + 1];
+    for s in &succ { for &v in s { if v != NONE { first[v + 1] += 1; } } }
+    for k in 0..n { first[k + 1] += first[k]; }
+    let mut preds = vec![0usize; first[n]];
+    let mut fill = first.clone();
+    for (u, s) in succ.iter().enumerate() { for &v in s { if v != NONE { preds[fill[v]] = u; fill[v] += 1; } } }
+    // Each loop (one a head), its blocks: those that reach a round to its head without going through the head, after
+    // the head in the walk's order (none before it lies within it).
+    rounds.sort_unstable();
+    let mut heads: Vec<usize> = rounds.iter().map(|&(h, _)| h).collect();
+    heads.dedup();
+    let mut mark = vec![usize::MAX; n];
+    let mut work: Vec<usize> = Vec::new();
+    let body: Vec<Vec<usize>> = heads.iter().enumerate().map(|(l, &h)| {
+        let mut inside = vec![h];
+        mark[h] = l;
+        let at = rounds.partition_point(|&(g, _)| g < h);
+        for &(_, u) in rounds[at..].iter().take_while(|&&(g, _)| g == h) {
+            if rpo[u] > rpo[h] && mark[u] != l { mark[u] = l; inside.push(u); work.push(u); }
+        }
         while let Some(u) = work.pop() {
-            for &p in &preds[u] { if !inside[p] && rpo[p] > rpo[h] { inside[p] = true; work.push(p); } }
+            for &p in &preds[first[u]..first[u + 1]] {
+                if mark[p] != l && rpo[p] > rpo[h] { mark[p] = l; inside.push(p); work.push(p); }
+            }
         }
         inside
     }).collect();
-    let size: Vec<usize> = body.iter().map(|b| b.iter().filter(|&&x| x).count()).collect();
     // Loops ordered from the least (fewest blocks, then latest head): a block's loop is the least holding it, a loop's
     // the least holding its head that comes after it in that order, so they nest as a tree.
-    let rank = |l: usize| (size[l], usize::MAX - rpo[heads[l]]);
-    let least = |b: usize, above: Option<usize>| -> Option<usize> {
-        (0..heads.len()).filter(|&m| body[m][b] && above.is_none_or(|a| m != a && rank(m) > rank(a))).min_by_key(|&m| rank(m))
-    };
-    let owner: Vec<Option<usize>> = (0..n).map(|b| least(b, None)).collect();
-    let parent: Vec<Option<usize>> = (0..heads.len()).map(|l| least(heads[l], Some(l))).collect();
-    // Laid out from the outside in: a region's blocks and the loops directly within it in the walk's order, each loop's
-    // whole where its head falls.
-    enum Item { Block(usize), Loop(usize) }
-    fn place(region: Option<usize>, owner: &[Option<usize>], parent: &[Option<usize>], heads: &[usize], rpo: &[usize], order: &mut Vec<usize>) {
-        let mut items: Vec<(usize, Item)> = Vec::new();
-        for (b, &o) in owner.iter().enumerate() { if o == region { items.push((rpo[b], Item::Block(b))); } }
-        for (l, &p) in parent.iter().enumerate() {
-            if p == region && Some(l) != region { items.push((rpo[heads[l]], Item::Loop(l))); }
-        }
-        items.sort_unstable_by_key(|&(r, _)| r);
-        for (_, item) in items {
-            match item {
-                Item::Block(b) => order.push(b),
-                Item::Loop(l) => place(Some(l), owner, parent, heads, rpo, order),
-            }
+    let mut ranked: Vec<usize> = (0..heads.len()).collect();
+    ranked.sort_unstable_by_key(|&l| (body[l].len(), usize::MAX - rpo[heads[l]]));
+    let mut place_of = vec![0usize; heads.len()];
+    for (i, &l) in ranked.iter().enumerate() { place_of[l] = i; }
+    let mut head_of = vec![NONE; n];
+    for (l, &h) in heads.iter().enumerate() { head_of[h] = l; }
+    let mut owner = vec![NONE; n];
+    let mut parent = vec![NONE; heads.len()];
+    for &m in &ranked {
+        for &b in &body[m] {
+            if owner[b] == NONE { owner[b] = m; }
+            let l = head_of[b];
+            if l != NONE && l != m && parent[l] == NONE && place_of[m] > place_of[l] { parent[l] = m; }
         }
     }
+    // Laid out from the outside in: a region's blocks and the loops directly within it in the walk's order, each
+    // loop's whole where its head falls. Each region's items, packed (region heads.len() is the outside).
+    let regions = heads.len() + 1;
+    let region = |o: usize| if o == NONE { heads.len() } else { o };
+    let mut start = vec![0usize; regions + 1];
+    for &o in &owner { start[region(o) + 1] += 1; }
+    for &p in &parent { start[region(p) + 1] += 1; }
+    for r in 0..regions { start[r + 1] += start[r]; }
+    // An item: a block (b), or a loop (n + l); with its place in the walk's order.
+    let mut items = vec![(0usize, 0usize); start[regions]];
+    let mut put = start.clone();
+    for (b, &o) in owner.iter().enumerate() { let r = region(o); items[put[r]] = (rpo[b], b); put[r] += 1; }
+    for (l, &p) in parent.iter().enumerate() { let r = region(p); items[put[r]] = (rpo[heads[l]], n + l); put[r] += 1; }
+    for r in 0..regions { items[start[r]..start[r + 1]].sort_unstable(); }
     let mut order = Vec::with_capacity(n);
-    place(None, &owner, &parent, &heads, &rpo, &mut order);
+    let mut stack: Vec<(usize, usize)> = vec![(heads.len(), start[heads.len()])];
+    while let Some(&mut (r, ref mut at)) = stack.last_mut() {
+        if *at == start[r + 1] { stack.pop(); continue; }
+        let (_, item) = items[*at];
+        *at += 1;
+        if item < n { order.push(item); } else { let l = item - n; stack.push((l, start[l])); }
+    }
     // (The entry is first in the walk, in no loop but one it heads: it stays first.)
     if order.len() != n || order[0] != 0 { return; }
     let mut old: Vec<Option<Block>> = std::mem::take(blocks).into_iter().map(Some).collect();

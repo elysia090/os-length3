@@ -964,6 +964,12 @@ impl<'p> Fx<'p> {
         self.e(W::End);
     }
 
+    /// The depth of a br to `address`, when it is a block after this one whose label is open here.
+    fn forward(&self, address: u64) -> Option<u32> {
+        let b = self.function.block_index(address).filter(|&b| b > self.at)?;
+        self.block_at[b].map(|at| self.to(at))
+    }
+
     fn goto(&mut self, address: u64, next: Option<u64>) {
         if Some(address) == next {
             self.note(Ev::Edge);
@@ -2936,12 +2942,25 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<
             Exit::Branch { taken, fall } => {
                 fx.condition(term.condition_code());
                 if held != 0 { fx.set(l_u(1)); fx.hold_flags(); fx.get(l_u(1)); }
-                fx.e(W::If(BlockType::Empty));
-                fx.depth += 1;
-                fx.goto(taken, None);
-                fx.depth -= 1;
-                fx.e(W::End);
-                fx.goto(fall, next);
+                // A side going forward to a label open here is a br_if to it (not an if, a br and an end); where the
+                // taken side is the next block, the condition turned round goes to the other.
+                if let Some(d) = fx.forward(taken) {
+                    fx.note(Ev::Edge);
+                    fx.e(W::BrIf(d));
+                    fx.goto(fall, next);
+                } else if let Some(d) = fx.forward(fall).filter(|_| Some(taken) == next) {
+                    fx.e(W::I32Eqz);
+                    fx.note(Ev::Edge);
+                    fx.e(W::BrIf(d));
+                    fx.goto(taken, next);
+                } else {
+                    fx.e(W::If(BlockType::Empty));
+                    fx.depth += 1;
+                    fx.goto(taken, None);
+                    fx.depth -= 1;
+                    fx.e(W::End);
+                    fx.goto(fall, next);
+                }
             }
             Exit::IndirectJump => {
                 fx.read(&term, 0, 8);
