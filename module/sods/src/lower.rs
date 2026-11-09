@@ -15,7 +15,7 @@ use iced_x86::{ConditionCode, Instruction, Mnemonic, OpKind, Register, RflagsBit
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use wasm_encoder::{
-    BlockType, CodeSection, ConstExpr, CustomSection, ElementSection, Elements, Encode, EntityType, ExportKind,
+    BlockType, ConstExpr, CustomSection, ElementSection, Elements, Encode, EntityType, ExportKind,
     ExportSection, Function as WasmFunction, FunctionSection, GlobalSection, GlobalType, ImportSection,
     Instruction as W, MemArg, MemArgTarget, MemoryType, Module, RefType, Section, SectionId, TableSection, TableType, TypeSection, ValType,
 };
@@ -52,6 +52,8 @@ const F_DISPATCH: u32 = 11;
 #[allow(dead_code)] // run is exported with the shared helpers, as SHARED[4]
 const F_RUN: u32 = 12;
 const FIRST_GUEST: u32 = 13;
+/// The first module's own functions (mulhu to run), made before the guest's.
+const HELPERS: u32 = FIRST_GUEST - F_MULHU;
 /// Imported functions, in index order: the host's, then (in a module made later) the first module's.
 const HOST_IMPORTS: [&str; 8] = ["syscall", "trap", "div128", "clock", "fpu", "trace", "miss", "time"];
 const SHARED: [&str; 5] = ["mulhu", "mulhs", "resolve", "dispatch", "run"];
@@ -3280,7 +3282,7 @@ const DISPATCH_CACHE: u64 = 1 << 14;
 /// Helpers: 64x64 high products, entry resolution and the dispatcher.
 /// `table` is where the sorted entry table sits in guest memory, `cache`
 /// where the dispatcher keeps what it found (DISPATCH_CACHE slots).
-fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
+fn helpers(code: &mut Out, entries: u32, table: u64, cache: u64) {
     // mulhu(a, b): schoolbook on 32-bit halves.
     let mut f = WasmFunction::new([(6, ValType::I64)]);
     let (a, b, al, ah, bl, bh, mid, t) = (0, 1, 2, 3, 4, 5, 6, 7);
@@ -3298,7 +3300,7 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
         W::LocalGet(ah), W::LocalGet(bh), W::I64Mul, W::LocalGet(mid), W::I64Const(32), W::I64ShrU, W::I64Add,
         W::LocalGet(t), W::I64Const(32), W::I64ShrU, W::I64Add, W::End,
     ] { f.instruction(&i); }
-    code.function(&f);
+    code.encoded(&f);
 
     // mulhs(a, b) = mulhu(a, b) - (a < 0 ? b : 0) - (b < 0 ? a : 0)
     let mut f = WasmFunction::new([]);
@@ -3308,7 +3310,7 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
         W::LocalGet(0), W::I64Const(0), W::LocalGet(1), W::I64Const(0), W::I64LtS, W::Select, W::I64Sub,
         W::End,
     ] { f.instruction(&i); }
-    code.function(&f);
+    code.encoded(&f);
 
     // resolve(addr): what the dispatch cache (below) holds for it, else a binary search of the sorted 16-byte entries
     // in memory 1, what it finds kept there: an indirect jump within a function (a switch's table), and the frame a
@@ -3339,7 +3341,7 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
         W::Br(0), W::End, W::End,
         W::I64Const(-1), W::End,
     ] { f.instruction(&i); }
-    code.function(&f);
+    code.encoded(&f);
 
     // dispatch(addr): enter the function holding addr at that block. Where
     // an address was found is kept in a direct-mapped cache past the entry
@@ -3369,28 +3371,28 @@ fn helpers(code: &mut CodeSection, entries: u32, table: u64, cache: u64) {
         W::ReturnCallIndirect { type_index: T_FN, table_index: 0 },
         W::End,
     ] { f.instruction(&i); }
-    code.function(&f);
+    code.encoded(&f);
 
     // run(addr): follow returns that leave every translated frame.
     let mut f = WasmFunction::new([]);
     for i in [
         W::Loop(BlockType::Empty), W::LocalGet(0), W::Call(F_DISPATCH), W::LocalSet(0), W::Br(0), W::End, W::End,
     ] { f.instruction(&i); }
-    code.function(&f);
+    code.encoded(&f);
 
 }
 
 /// Every function of `program`, lowered into `code` in order, as the table holds them from `base`. Each is lowered
-/// on its own, so natively they share the cores; wasm has one thread and lowers in turn, each into the section as it
+/// on its own, so natively they share the cores; wasm has one thread and lowers in turn, each into the module as it
 /// is made (a big program's functions are most of what the translator would otherwise hold at once).
-fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report, code: &mut CodeSection) {
+fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report, code: &mut Out) {
     let handed = Liveness::new(program);
     let summaries = summarize(program);
     let n = program.functions.len();
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few functions are not worth a thread.
     if threads == 1 || n < 64 {
-        for f in 0..n { code.raw(&lower_function(program, f as u32, base, &handed, &summaries, options, report)); }
+        for f in 0..n { code.function(&lower_function(program, f as u32, base, &handed, &summaries, options, report)); }
         return;
     }
     let size = n.div_ceil(threads);
@@ -3406,29 +3408,67 @@ fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report
         workers.into_iter().map(|w| w.join().expect("a lowering thread panicked")).collect()
     });
     for (functions, r) in parts {
-        for f in &functions { code.raw(f); }
+        for f in &functions { code.function(f); }
         report.blocks += r.blocks;
         report.instructions += r.instructions;
         for (m, k) in r.unsupported { *report.unsupported.entry(m).or_default() += k; }
     }
 }
 
-/// A module of `head`, `code`, `image` and `tail` (sections, in that order), written once into room for all of it.
-/// A big program's translation is nearly all its code and its own bytes; a module grown as it is written held them
-/// a few times over at once, in a memory that only grows (and each time it grows, an engine may collect its whole
-/// heap).
-fn assemble(head: &[&dyn Section], code: &CodeSection, image: Option<&Image>, tail: &[&dyn Section]) -> Vec<u8> {
-    let mut after = Vec::new();
-    for s in tail { s.append_to(&mut after); }
-    let mut wasm = Module::new().finish(); // the header
-    for s in head { s.append_to(&mut wasm); }
-    // Each section's id and two LEB128 u32s (its size, its count) at most, besides its contents.
-    const FRAME: usize = 11;
-    wasm.reserve_exact(FRAME + code.byte_len() + image.map_or(0, |i| FRAME + i.byte_len()) + after.len());
-    code.append_to(&mut wasm);
-    if let Some(i) = image { i.append_to(&mut wasm); }
-    wasm.extend_from_slice(&after);
-    wasm
+/// A module written into one buffer as it is made: the sections before its code, then the code section as its
+/// functions are lowered (its size, not known until they all are, written last in as few bytes as it takes), then the
+/// sections after. A big program's translation is nearly all its code, held once: not in a section of its own and
+/// then again in the module. (A module grown as it is written holds it a few times over at once, in a memory that
+/// only grows, and each time it grows, an engine may collect its whole heap: room for it all is made at the start.)
+struct Out {
+    wasm: Vec<u8>,
+    /// Where the code section's size goes: five bytes kept for it.
+    size_at: usize,
+}
+
+impl Out {
+    /// The header and `head`, then the code section's id, room for its size, and its count of `functions`; room in
+    /// all for about `room` bytes more.
+    fn new(head: &[&dyn Section], functions: u32, room: usize) -> Out {
+        let mut wasm = Module::new().finish();
+        for s in head { s.append_to(&mut wasm); }
+        wasm.reserve(room);
+        wasm.push(SectionId::Code as u8);
+        let size_at = wasm.len();
+        wasm.extend_from_slice(&[0; 5]);
+        crate::emit::uleb(&mut wasm, functions as u64);
+        Out { wasm, size_at }
+    }
+
+    /// A function's body (its locals, then its code), with its size before it.
+    fn function(&mut self, body: &[u8]) {
+        crate::emit::uleb(&mut self.wasm, body.len() as u64);
+        self.wasm.extend_from_slice(body);
+    }
+
+    /// A function wasm-encoder made.
+    fn encoded(&mut self, f: &WasmFunction) { f.encode(&mut self.wasm); }
+
+    /// The code section ends here: its size written in and the code moved up to it; then `image` and `tail`.
+    fn finish(mut self, image: Option<&Image>, tail: &[&dyn Section]) -> Vec<u8> {
+        let from = self.size_at + 5;
+        let mut size = Vec::new();
+        crate::emit::uleb(&mut size, (self.wasm.len() - from) as u64);
+        let to = self.size_at + size.len();
+        self.wasm[self.size_at..to].copy_from_slice(&size);
+        self.wasm.copy_within(from.., to);
+        self.wasm.truncate(self.wasm.len() - (from - to));
+        if let Some(i) = image { i.append_to(&mut self.wasm); }
+        for s in tail { s.append_to(&mut self.wasm); }
+        self.wasm
+    }
+}
+
+/// About how many bytes a module of `program` takes past its head: its code (35 or so for each instruction, every
+/// program measured), `data` bytes of image, the names, starts and entries.
+fn room(program: &Program, data: usize) -> usize {
+    let instructions: usize = program.functions.iter().flat_map(|f| &f.blocks).map(|b| b.code.len()).sum();
+    instructions * 40 + data + program.functions.len() * 48 + program.entries.len() * 16 + 4096
 }
 
 /// The data section: each segment's bytes (an address, then the bytes there), written from where they lie (an
@@ -3543,7 +3583,7 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(Cow::Owned(indices)));
 
-    let mut code = CodeSection::new();
+    let mut code = Out::new(&[&types(), &imports, &functions, &tables, &exports, &elements], program.functions.len() as u32, room(program, 0));
     lower_all(program, base, options, &mut report, &mut code);
 
     // Its functions by the guest's names, as in the first module: every module numbers its own from the
@@ -3564,7 +3604,7 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
     let starts = CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) };
 
-    let wasm = assemble(&[&types(), &imports, &functions, &tables, &exports, &elements], &code, None, &[&name_section, &entries, &starts]);
+    let wasm = code.finish(None, &[&name_section, &entries, &starts]);
     Translation { wasm, report }
 }
 
@@ -3629,7 +3669,8 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     let indices: Vec<u32> = (0..program.functions.len() as u32).map(|f| FIRST_GUEST + f).collect();
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(Cow::Owned(indices)));
 
-    let mut code = CodeSection::new();
+    let data: usize = elf.segments.iter().map(|s| s.data.len()).sum();
+    let mut code = Out::new(&[&types(), &imports, &functions, &tables, &globals, &exports, &elements], HELPERS + program.functions.len() as u32, room(program, data));
     helpers(&mut code, entries as u32, table_base, cache);
     lower_all(program, 0, options, &mut report, &mut code);
 
@@ -3669,9 +3710,6 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
     let starts = CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) };
 
-    let wasm = assemble(
-        &[&types(), &imports, &functions, &tables, &globals, &exports, &elements], &code, Some(&image),
-        &[&name_section, &facts, &fpu, &starts],
-    );
+    let wasm = code.finish(Some(&image), &[&name_section, &facts, &fpu, &starts]);
     Translation { wasm, report }
 }

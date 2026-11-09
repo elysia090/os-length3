@@ -21,7 +21,7 @@ fn main() -> ExitCode {
         Ok(b) => b,
         Err(e) => { eprintln!("xlat: {input}: {e}"); return ExitCode::FAILURE; }
     };
-    let elf = match xlat::elf::Elf::parse(&bytes) {
+    let elf = match xlat::elf::Elf::parse_owned(bytes) {
         Ok(e) => e,
         Err(e) => { eprintln!("xlat: {input}: {e}"); return ExitCode::FAILURE; }
     };
