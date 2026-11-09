@@ -167,8 +167,6 @@ fn bit(r: Register) -> Option<u32> {
 /// only there), then its callees' taken on, callees first (Kahn's order: what is never taken is on a cycle of calls).
 pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
     let n = program.functions.len();
-    let mut starts: Vec<(u64, usize)> = program.functions.iter().enumerate().map(|(k, f)| (f.start, k)).collect();
-    starts.sort_unstable();
     let (mut info, mut code) = (InstructionInfoFactory::new(), Vec::new());
     let rsp = 1 << (Register::RSP as u32 - Register::RAX as u32);
     let (mut summaries, callees): (Vec<Summary>, Vec<Vec<usize>>) = program.functions.iter().map(|f| {
@@ -176,7 +174,11 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
         let mut callees = Vec::new();
         for (b, to) in f.blocks.iter().zip(&f.succ) {
             s.exits |= b.traps || match b.exit {
-                Exit::Call { target, .. } => match starts.binary_search_by_key(&target, |&(a, _)| a) { Ok(k) => { callees.push(starts[k].1); false } Err(_) => true },
+                // (Every function's start is an entry of it, its first block.)
+                Exit::Call { target, .. } => match program.entries.index(target).map(|e| program.entries.at(e)) {
+                    Some((g, 0)) if program.functions[g as usize].start == target => { callees.push(g as usize); false }
+                    _ => true,
+                },
                 Exit::Fall(_) | Exit::Jump(_) => to[0] == NO,
                 Exit::Branch { .. } => to[0] == NO || to[1] == NO,
                 Exit::TailJump(_) | Exit::IndirectJump | Exit::IndirectCall { .. } | Exit::Trap => true,

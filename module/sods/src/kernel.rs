@@ -188,16 +188,22 @@ pub struct Fx<'p> {
 pub fn uleb(out: &mut Vec<u8>, v: u64) { if v < 0x80 { out.push(v as u8) } else { uleb_long(out, v) } }
 #[cold]
 fn uleb_long(out: &mut Vec<u8>, mut v: u64) {
-    while v >= 0x80 { out.push(v as u8 | 0x80); v >>= 7; }
-    out.push(v as u8);
+    let (mut bytes, mut n) = ([0u8; 10], 0);
+    while v >= 0x80 { bytes[n] = v as u8 | 0x80; n += 1; v >>= 7; }
+    bytes[n] = v as u8;
+    out.extend_from_slice(&bytes[..=n]);
 }
+/// (Its bytes made in a buffer of its own, then put in at once: one check of room, not one a byte.)
 pub fn sleb(out: &mut Vec<u8>, mut v: i64) {
+    let (mut bytes, mut n) = ([0u8; 10], 0);
     loop {
         let b = (v & 0x7f) as u8;
         v >>= 7;
-        if (v == 0 && b & 0x40 == 0) || (v == -1 && b & 0x40 != 0) { out.push(b); return; }
-        out.push(b | 0x80);
+        if (v == 0 && b & 0x40 == 0) || (v == -1 && b & 0x40 != 0) { bytes[n] = b; break; }
+        bytes[n] = b | 0x80;
+        n += 1;
     }
+    out.extend_from_slice(&bytes[..=n]);
 }
 
 /// An access to memory 0: its operator, alignment and offset.
@@ -821,7 +827,7 @@ fn finish(mut fx: Fx, rest: Rest, frame: &mut Frame, out: &mut Vec<u8>) {
     // A move: local.get, global.set (a save), or global.get, local.set (a load).
     let pair = |f: &mut Vec<u8>, save: bool, local: u32, global: u32| {
         let (first, a, second, b) = if save { (0x20, local, 0x24, global) } else { (0x23, global, 0x21, local) };
-        f.push(first); uleb(f, a as u64); f.push(second); uleb(f, b as u64);
+        if a < 0x80 && b < 0x80 { f.extend_from_slice(&[first, a as u8, second, b as u8]) } else { f.push(first); uleb(f, a as u64); f.push(second); uleb(f, b as u64); }
     };
     let mut from = 0;
     for (&(offset, save, scope), &m) in fx.syncs.iter().zip(&masks.mask) {
