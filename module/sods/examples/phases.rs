@@ -10,7 +10,7 @@ fn main() {
     let known: std::collections::BTreeSet<u64> = words(&a[3]).into_iter().collect();
     let program = xlat::discover::discover_from(&elf, &words(&a[2]), &known);
     let discover = t.elapsed();
-    let out = xlat::lower::translate_more(&program, known.len() as u32, xlat::lower::Options::default());
+    let out = xlat::lower::translate_more(&elf, &program, known.len() as u32, xlat::lower::Options::default());
     let lower = t.elapsed();
     println!("read {read:?} parse {:?} discover {:?} lower {:?}; {} functions, {} bytes", parse - read, discover - parse, lower - discover, program.functions.len(), out.wasm.len());
 }

@@ -8,7 +8,7 @@
 //! a return compares the popped address with the expected continuation and
 //! hands anything unexpected (longjmp, tail tricks) to the dispatcher.
 
-use crate::discover::{goes_to, loops_of, resumes_after, Exit, Function, Loop, Program};
+use crate::discover::{flags_read, flags_written, goes_to, loops_of, Exit, Function, Loop, Program, ALL_FLAGS};
 use crate::elf::Elf;
 use crate::summary::{summarize, Summary};
 use iced_x86::{ConditionCode, Instruction, Mnemonic, OpKind, Register, RflagsBits};
@@ -160,7 +160,6 @@ pub const TRAP_UD2: i32 = 7;
 pub const TRAP_INT3: i32 = 8;
 pub const TRAP_HLT: i32 = 9;
 
-const ALL_FLAGS: u32 = RflagsBits::OF | RflagsBits::SF | RflagsBits::ZF | RflagsBits::CF | RflagsBits::PF;
 
 fn mem(align: u32) -> MemArg {
     mem_at(0, align)
@@ -2601,9 +2600,6 @@ impl Fx<'_> {
 
 // ---- Flag liveness ----
 
-// A system call keeps the flags here (r11 is not given them), so it neither reads nor writes them.
-fn flags_read(i: &Instruction) -> u32 { if i.mnemonic() == Mnemonic::Syscall { 0 } else { i.rflags_read() & ALL_FLAGS } }
-fn flags_written(i: &Instruction) -> u32 { if i.mnemonic() == Mnemonic::Syscall { 0 } else { i.rflags_modified() & ALL_FLAGS } }
 
 /// Flag liveness over the whole program, in flat arrays: every function's blocks in turn (function f's from
 /// `first[f]`), each with the flags it reads before it writes them and those it writes, where it goes on to (two
@@ -2650,11 +2646,7 @@ impl Liveness {
         for f in &program.functions {
             l.first.push(l.used.len() as u32);
             for b in &f.blocks {
-                let (mut used, mut defined) = (0, 0);
-                for i in &b.code {
-                    used |= flags_read(i) & !defined;
-                    defined |= flags_written(i);
-                }
+                let (used, defined) = (b.reads, b.writes);
                 let mut to = [NONE; 2];
                 let mut fixed = if b.exit == Exit::IndirectJump { INDIRECT } else { 0 };
                 let mut add = |a: u64| {
@@ -2669,8 +2661,8 @@ impl Liveness {
                     Exit::Branch { taken, fall } => { add(taken); add(fall); }
                     _ => {}
                 }
-                l.used.push(used as u8);
-                l.defined.push(defined as u8);
+                l.used.push(used);
+                l.defined.push(defined);
                 l.to.push(to);
                 l.fixed.push(fixed);
             }
@@ -2795,9 +2787,9 @@ fn cold_entries(function: &Function) -> Vec<bool> {
         for t in goes_to(b).into_iter().flatten().filter_map(|a| function.block_index(a)) {
             if t <= k { cold[t] = true; }
         }
-        if let Some(last) = b.code.last().filter(|i| resumes_after(i)) {
-            if let Some(t) = function.block_index(last.next_ip()) { cold[t] = true; }
-            if b.code.len() == 1 { cold[k] = true; }
+        if b.resumes {
+            if let Some(t) = function.block_index(b.end()) { cold[t] = true; }
+            if b.count == 1 { cold[k] = true; }
         }
     }
     cold
@@ -2867,30 +2859,43 @@ fn quiet(program: &Program, summaries: &[Summary], target: u64) -> Option<(u32, 
 /// making it tells; then it is made as any is. V8's first tier (where most of a compile's code runs) checks the stack
 /// at each loop's head and keeps every local in memory across it, and zeroes the locals of a function that has more
 /// than a few: a leaf made lean has neither.
-fn lower_function(program: &Program, index: u32, base: u32, handed: &Liveness, summaries: &[Summary], options: Options, report: &mut Report) -> Vec<u8> {
+fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report) -> Vec<u8> {
+    let program = cx.program;
     let function = &program.functions[index as usize];
     let entered_within = function.blocks.iter().any(|b| b.exit == Exit::IndirectJump)
         || function.blocks.iter().enumerate().skip(1).any(|(k, b)| program.entries.get(&b.start) == Some(&(index, k as u32)));
     if !entered_within {
         let mut lean = Report::default();
-        if let Some(f) = lower_shaped(program, (index, base), handed, summaries, options, &mut lean, true) {
+        if let Some(f) = lower_shaped(cx, (index, base), &mut lean, true) {
             report.blocks += lean.blocks;
             report.instructions += lean.instructions;
             for (m, k) in lean.unsupported { *report.unsupported.entry(m).or_default() += k; }
             return f;
         }
     }
-    lower_shaped(program, (index, base), handed, summaries, options, report, false).unwrap_or_default()
+    lower_shaped(cx, (index, base), report, false).unwrap_or_default()
+}
+
+/// What every function's lowering reads: the program, the ELF it was found in (a block's instructions are decoded
+/// again from there as it is lowered), the flags each entry reads, and what each function does to the registers.
+#[derive(Clone, Copy)]
+struct Lowering<'p> {
+    elf: &'p Elf,
+    program: &'p Program,
+    handed: &'p Liveness,
+    summaries: &'p [Summary],
+    options: Options,
 }
 
 /// lower_function's making of function `index` (numbered in the table from `base`), lean or not; None when made lean
 /// and a jump within needed the dispatch loop.
-fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness, summaries: &[Summary], options: Options, report: &mut Report, lean: bool) -> Option<Vec<u8>> {
+fn lower_shaped(cx: &Lowering, (index, base): (u32, u32), report: &mut Report, lean: bool) -> Option<Vec<u8>> {
+    let Lowering { elf, program, handed, summaries, options } = *cx;
     let function = &program.functions[index as usize];
     let cases = handed.cases[index as usize] as u32;
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
-    let mut fx = Fx { f: Vec::with_capacity(function.blocks.iter().map(|b| b.code.len()).sum::<usize>() * 24), syncs: Vec::new(), used: 0, ev: Vec::with_capacity(function.blocks.iter().map(|b| b.code.len()).sum::<usize>() * 6), ev_at: vec![0], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), rsp_up: false, entry: Vec::new(), dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
+    let mut fx = Fx { f: Vec::with_capacity(function.blocks.iter().map(|b| b.count as usize).sum::<usize>() * 24), syncs: Vec::new(), used: 0, ev: Vec::with_capacity(function.blocks.iter().map(|b| b.count as usize).sum::<usize>() * 6), ev_at: vec![0], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), rsp_up: false, entry: Vec::new(), dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
         loops: Vec::new(), within: Vec::new(), heads: Vec::new(), labels: Vec::new(), block_at: Vec::new(), loop_at: Vec::new() };
     let (loops, within) = clean_loops(program, index, function, loops_of(&function.blocks, |a| function.block_index(a)).0);
     fx.heads = vec![None; function.blocks.len()];
@@ -2952,9 +2957,10 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
         fx.get(L_BLK);
         fx.e(&W::BrTable(Cow::Owned(targets), 0));
     }
-    // Flags needed after each instruction of a block (made again for each).
-    let mut needed: Vec<u32> = Vec::new();
+    // Each block's instructions, decoded again, and the flags needed after each (made again for each block).
+    let (mut code, mut needed): (Vec<Instruction>, Vec<u32>) = (Vec::new(), Vec::new());
     for (k, block) in function.blocks.iter().enumerate() {
+        block.decode(elf, &mut code);
         // Close block k's label so its code starts here, inside the labels of
         // the blocks after it and of the loops it lies within; a loop it heads
         // is gone round from here.
@@ -2978,14 +2984,14 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
         let live_out = held | ext;
         // Flags needed after each instruction, from the end backward.
         needed.clear();
-        needed.resize(block.code.len(), 0);
+        needed.resize(code.len(), 0);
         let mut l = live_out;
-        for (j, i) in block.code.iter().enumerate().rev() {
+        for (j, i) in code.iter().enumerate().rev() {
             needed[j] = l;
             l = (l & !flags_written(i)) | flags_read(i);
         }
-        let last = block.code.len() - 1;
-        for (j, i) in block.code.iter().enumerate() {
+        let last = code.len() - 1;
+        for (j, i) in code.iter().enumerate() {
             fx.report.instructions += 1;
             if j == last && !matches!(crate::discover::flow(i), iced_x86::FlowControl::Next | iced_x86::FlowControl::Interrupt) {
                 break;
@@ -2994,13 +3000,13 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &Liveness,
                 break;
             }
             // A compare whose flags only the branch that ends the block reads is that branch's condition.
-            if j + 1 == last && live_out == 0 && matches!(block.exit, Exit::Branch { .. }) && Fx::fusable(i, block.code[last].condition_code()) {
+            if j + 1 == last && live_out == 0 && matches!(block.exit, Exit::Branch { .. }) && Fx::fusable(i, code[last].condition_code()) {
                 fx.fused = Some(*i);
                 continue;
             }
             fx.instruction(i, needed[j] != 0);
         }
-        let term = block.code[last];
+        let term = code[last];
         // Flags for code outside are handed from the state as it is.
         if held != 0 && !matches!(block.exit, Exit::Branch { .. }) {
             fx.hold_flags();
@@ -3385,30 +3391,33 @@ fn helpers(code: &mut Out, entries: u32, table: u64, cache: u64) {
 /// Every function of `program`, lowered into `code` in order, as the table holds them from `base`. Each is lowered
 /// on its own, so natively they share the cores; wasm has one thread and lowers in turn, each into the module as it
 /// is made (a big program's functions are most of what the translator would otherwise hold at once).
-fn lower_all(program: &Program, base: u32, options: Options, report: &mut Report, code: &mut Out) {
+fn lower_all(elf: &Elf, program: &Program, base: u32, options: Options, report: &mut Report, code: &mut Out) {
     let handed = Liveness::new(program);
-    let summaries = summarize(program);
+    let summaries = summarize(elf, program);
+    let cx = Lowering { elf, program, handed: &handed, summaries: &summaries, options };
     let n = program.functions.len();
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few functions are not worth a thread.
     if threads == 1 || n < 64 {
-        for f in 0..n { code.function(&lower_function(program, f as u32, base, &handed, &summaries, options, report)); }
+        for f in 0..n { code.function(&lower_function(&cx, f as u32, base, report)); }
         return;
     }
     let size = n.div_ceil(threads);
-    let parts: Vec<(Vec<Vec<u8>>, Report)> = std::thread::scope(|scope| {
+    // Each thread's functions in one buffer, each with its size before it, as the code section holds them.
+    let parts: Vec<(Vec<u8>, Report)> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..n).step_by(size).map(|at| {
-            let (handed, summaries) = (&handed, &summaries);
+            let cx = &cx;
             scope.spawn(move || {
                 let mut r = Report::default();
-                let made = (at..(at + size).min(n)).map(|f| lower_function(program, f as u32, base, handed, summaries, options, &mut r)).collect();
+                let mut made = Vec::new();
+                for f in at..(at + size).min(n) { Out::frame(&mut made, &lower_function(cx, f as u32, base, &mut r)); }
                 (made, r)
             })
         }).collect();
         workers.into_iter().map(|w| w.join().expect("a lowering thread panicked")).collect()
     });
     for (functions, r) in parts {
-        for f in &functions { code.function(f); }
+        code.wasm.extend_from_slice(&functions);
         report.blocks += r.blocks;
         report.instructions += r.instructions;
         for (m, k) in r.unsupported { *report.unsupported.entry(m).or_default() += k; }
@@ -3441,9 +3450,12 @@ impl Out {
     }
 
     /// A function's body (its locals, then its code), with its size before it.
-    fn function(&mut self, body: &[u8]) {
-        crate::emit::uleb(&mut self.wasm, body.len() as u64);
-        self.wasm.extend_from_slice(body);
+    fn function(&mut self, body: &[u8]) { Out::frame(&mut self.wasm, body); }
+
+    /// `body` with its size before it, into `into`.
+    fn frame(into: &mut Vec<u8>, body: &[u8]) {
+        crate::emit::uleb(into, body.len() as u64);
+        into.extend_from_slice(body);
     }
 
     /// A function wasm-encoder made.
@@ -3467,7 +3479,7 @@ impl Out {
 /// About how many bytes a module of `program` takes past its head: its code (35 or so for each instruction, every
 /// program measured), `data` bytes of image, the names, starts and entries.
 fn room(program: &Program, data: usize) -> usize {
-    let instructions: usize = program.functions.iter().flat_map(|f| &f.blocks).map(|b| b.code.len()).sum();
+    let instructions: usize = program.functions.iter().flat_map(|f| &f.blocks).map(|b| b.count as usize).sum();
     instructions * 40 + data + program.functions.len() * 48 + program.entries.len() * 16 + 4096
 }
 
@@ -3554,7 +3566,7 @@ fn types() -> TypeSection {
 /// put in the first module's table from `base`. Its entries, slots counted
 /// from `base`, are in the `xlat.entries` custom section as (address,
 /// function << 32 | block) pairs.
-pub fn translate_more(program: &Program, base: u32, options: Options) -> Translation {
+pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options) -> Translation {
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
     let mut imports = ImportSection::new();
     imports.import("env", "memory", EntityType::Memory(MemoryType { minimum: 1, maximum: Some(65536), memory64: false, shared: false, page_size_log2: None }));
@@ -3584,7 +3596,7 @@ pub fn translate_more(program: &Program, base: u32, options: Options) -> Transla
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(Cow::Owned(indices)));
 
     let mut code = Out::new(&[&types(), &imports, &functions, &tables, &exports, &elements], program.functions.len() as u32, room(program, 0));
-    lower_all(program, base, options, &mut report, &mut code);
+    lower_all(elf, program, base, options, &mut report, &mut code);
 
     // Its functions by the guest's names, as in the first module: every module numbers its own from the
     // same index, so without them a profile or a trace cannot tell one module's function from another's.
@@ -3672,7 +3684,7 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     let data: usize = elf.segments.iter().map(|s| s.data.len()).sum();
     let mut code = Out::new(&[&types(), &imports, &functions, &tables, &globals, &exports, &elements], HELPERS + program.functions.len() as u32, room(program, data));
     helpers(&mut code, entries as u32, table_base, cache);
-    lower_all(program, 0, options, &mut report, &mut code);
+    lower_all(elf, program, 0, options, &mut report, &mut code);
 
     let mut table = Vec::with_capacity(program.entries.len() * 16);
     for (&address, &(f, b)) in &program.entries {

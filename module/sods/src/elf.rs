@@ -143,6 +143,20 @@ fn pointers_of(r: &Reader, offset: u64, size: u64, entsize: u64, base: u64, into
     Ok(())
 }
 
+#[cfg(test)]
+impl Elf {
+    /// A program of one executable segment holding `code` at `vaddr`, for tests.
+    pub fn of_code(vaddr: u64, code: Vec<u8>) -> Elf {
+        let len = code.len();
+        let data = Bytes { file: Arc::new(code), start: 0, len };
+        Elf {
+            entry: vaddr, segments: vec![Segment { offset: 0, vaddr, memsz: len as u64, data, executable: true, writable: false }],
+            symbols: Vec::new(), relocation_targets: Vec::new(), data_pointers: Vec::new(), fixed: false, relative_slots: Vec::new(),
+            tls: None, phoff: 0, phnum: 0,
+        }
+    }
+}
+
 impl Elf {
     pub fn parse(file: &[u8]) -> Result<Elf, Error> {
         Elf::parse_owned(file.to_vec())

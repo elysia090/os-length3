@@ -19,16 +19,16 @@ fn main() {
         discover += t.elapsed();
         known.extend(program.functions.iter().map(|f| f.start));
         let t = std::time::Instant::now();
-        let out = xlat::lower::translate_more(&program, 0, Default::default());
+        let out = xlat::lower::translate_more(&elf, &program, 0, Default::default());
         lower += t.elapsed();
         functions += program.functions.len();
         for f in &program.functions {
             blocks += f.blocks.len();
             let r = f.blocks.iter().filter(|b| ran.contains(&b.start)).count();
             ran_blocks += r;
-            if r > 0 { ran_functions += 1; ran_instructions += f.blocks.iter().map(|b| b.code.len()).sum::<usize>(); }
+            if r > 0 { ran_functions += 1; ran_instructions += f.blocks.iter().map(|b| b.count as usize).sum::<usize>(); }
         }
-        instructions += program.functions.iter().flat_map(|f| &f.blocks).map(|b| b.code.len()).sum::<usize>();
+        instructions += program.functions.iter().flat_map(|f| &f.blocks).map(|b| b.count as usize).sum::<usize>();
         bytes += out.wasm.len();
     }
     println!("discover {discover:?} lower {lower:?}; {functions} functions, {blocks} blocks, {instructions} instructions, {bytes} bytes of wasm");

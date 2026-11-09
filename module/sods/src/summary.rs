@@ -15,8 +15,8 @@
 //! (process.ts fault), with whatever was in the locals lost as it is now within any one function.
 
 use crate::discover::{Exit, Function, Program};
-use iced_x86::{InstructionInfoFactory, Mnemonic, OpAccess, Register};
-use std::collections::HashMap;
+use crate::elf::Elf;
+use iced_x86::{Instruction, InstructionInfoFactory, OpAccess, Register};
 
 /// A function's registers as a call to it sees them: bit n for r_n, 16 + n for xmm_n (as lower.rs Fx::used).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -50,18 +50,16 @@ fn bit(r: Register) -> Option<u32> {
 /// What `f` itself reads and writes, whether it may go out on its own, and the functions it calls directly. What it
 /// reads and writes is found only where it does not go out: a call to one that may is made as any call is, reading
 /// neither, and so is a call to anything that calls it.
-fn own(f: &Function, starts: &HashMap<u64, usize>, info: &mut InstructionInfoFactory) -> (Summary, Vec<usize>) {
+fn own(elf: &Elf, f: &Function, starts: &[(u64, usize)], (info, code): (&mut InstructionInfoFactory, &mut Vec<Instruction>)) -> (Summary, Vec<usize>) {
     // rsp: every call pushes and every return pops.
     let rsp = 1 << (Register::RSP as u32 - Register::RAX as u32);
     let mut s = Summary { reads: rsp, writes: rsp, exits: crate::lower::has_loop(f) };
     let mut callees = Vec::new();
     for b in &f.blocks {
-        if b.code.iter().any(|i| matches!(i.mnemonic(), Mnemonic::Syscall | Mnemonic::Sysenter | Mnemonic::Int | Mnemonic::Int1 | Mnemonic::Int3 | Mnemonic::Into)) {
-            s.exits = true;
-        }
+        if b.traps { s.exits = true; }
         let within = |a: u64| f.block_index(a).is_some();
         match b.exit {
-            Exit::Call { target, .. } => match starts.get(&target) { Some(&g) => callees.push(g), None => s.exits = true },
+            Exit::Call { target, .. } => match starts.binary_search_by_key(&target, |&(a, _)| a) { Ok(k) => callees.push(starts[k].1), Err(_) => s.exits = true },
             Exit::Fall(a) | Exit::Jump(a) => if !within(a) { s.exits = true },
             Exit::Branch { taken, fall } => if !within(taken) || !within(fall) { s.exits = true },
             Exit::TailJump(_) | Exit::IndirectJump | Exit::IndirectCall { .. } | Exit::Trap => s.exits = true,
@@ -69,17 +67,20 @@ fn own(f: &Function, starts: &HashMap<u64, usize>, info: &mut InstructionInfoFac
         }
     }
     if s.exits { return (s, callees); }
-    for i in f.blocks.iter().flat_map(|b| &b.code) {
-        for u in info.info(i).used_registers() {
-            let Some(b) = bit(u.register()) else { continue };
-            // A write that keeps any of what was there reads it too: an 8- or 16-bit register's (merged into
-            // the rest), an xmm register's (a scalar or a lane written, the others kept), a conditional one's.
-            let keeps = b >= 16 || u.register().size() < 4;
-            match u.access() {
-                OpAccess::Read | OpAccess::CondRead => s.reads |= 1 << b,
-                OpAccess::Write if !keeps => s.writes |= 1 << b,
-                OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite => { s.reads |= 1 << b; s.writes |= 1 << b; }
-                _ => {}
+    for b in &f.blocks {
+        b.decode(elf, code);
+        for i in code.iter() {
+            for u in info.info(i).used_registers() {
+                let Some(b) = bit(u.register()) else { continue };
+                // A write that keeps any of what was there reads it too: an 8- or 16-bit register's (merged into
+                // the rest), an xmm register's (a scalar or a lane written, the others kept), a conditional one's.
+                let keeps = b >= 16 || u.register().size() < 4;
+                match u.access() {
+                    OpAccess::Read | OpAccess::CondRead => s.reads |= 1 << b,
+                    OpAccess::Write if !keeps => s.writes |= 1 << b,
+                    OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite => { s.reads |= 1 << b; s.writes |= 1 << b; }
+                    _ => {}
+                }
             }
         }
     }
@@ -87,11 +88,13 @@ fn own(f: &Function, starts: &HashMap<u64, usize>, info: &mut InstructionInfoFac
 }
 
 /// Every function's summary, in `program.functions`' order.
-pub fn summarize(program: &Program) -> Vec<Summary> {
+pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
     let n = program.functions.len();
-    let starts: HashMap<u64, usize> = program.functions.iter().enumerate().map(|(k, f)| (f.start, k)).collect();
-    let mut info = InstructionInfoFactory::new();
-    let (mut summaries, callees): (Vec<Summary>, Vec<Vec<usize>>) = program.functions.iter().map(|f| own(f, &starts, &mut info)).unzip();
+    // Each function's start and place, by start.
+    let mut starts: Vec<(u64, usize)> = program.functions.iter().enumerate().map(|(k, f)| (f.start, k)).collect();
+    starts.sort_unstable();
+    let (mut info, mut code) = (InstructionInfoFactory::new(), Vec::new());
+    let (mut summaries, callees): (Vec<Summary>, Vec<Vec<usize>>) = program.functions.iter().map(|f| own(elf, f, &starts, (&mut info, &mut code))).unzip();
     // Callees first (Kahn's order over the calls, so no depth of recursion is needed here): a function is taken
     // once everything it calls has been. What is never taken is on a cycle of calls (recursion), or calls into one.
     let mut waiting: Vec<usize> = callees.iter().map(|c| c.len()).collect();
@@ -124,15 +127,22 @@ pub fn summarize(program: &Program) -> Vec<Summary> {
 mod tests {
     use super::*;
     use crate::discover::{Block, Function, Program};
-    use iced_x86::{Decoder, DecoderOptions};
+    use iced_x86::{Decoder, DecoderOptions, Instruction};
 
-    /// A function of one block made of `code` (x86 bytes at `start`), ending as `exit` says.
-    fn function(start: u64, code: &[u8], exit: Exit) -> Function {
-        let mut d = Decoder::with_ip(64, code, start, DecoderOptions::NONE);
-        let code = std::iter::from_fn(|| d.can_decode().then(|| d.decode())).collect();
-        Function::new(start, format!("f_{start:x}"), vec![Block { start, code, exit }])
+    /// Functions of one block each (x86 bytes at an address, ending as given), in a program of one executable
+    /// segment that holds them all.
+    fn program(functions: &[(u64, &[u8], Exit)]) -> (Elf, Program) {
+        let base = 0x1000;
+        let end = functions.iter().map(|&(a, c, _)| a + c.len() as u64).max().unwrap();
+        let mut bytes = vec![0; (end - base) as usize];
+        for &(a, c, _) in functions { bytes[(a - base) as usize..][..c.len()].copy_from_slice(c); }
+        let made = functions.iter().map(|(start, code, exit)| {
+            let mut d = Decoder::with_ip(64, code, *start, DecoderOptions::NONE);
+            let code: Vec<Instruction> = std::iter::from_fn(|| d.can_decode().then(|| d.decode())).collect();
+            Function::new(*start, format!("f_{start:x}"), vec![Block::of(*start, &code, exit.clone())])
+        }).collect::<Vec<_>>();
+        (Elf::of_code(base, bytes), Program { entry: made[0].start, functions: made, entries: Default::default() })
     }
-    fn program(functions: Vec<Function>) -> Program { Program { entry: functions[0].start, functions, entries: Default::default() } }
     const RAX: u32 = 1 << 0;
     const RSP: u32 = 1 << 4;
     const RDI: u32 = 1 << 7;
@@ -141,27 +151,29 @@ mod tests {
     #[test]
     fn a_leaf_reads_and_writes_what_its_instructions_do() {
         // lea rax, [rdi + rdi*2 + 1]; ret
-        let p = program(vec![function(0x1000, &[0x48, 0x8d, 0x44, 0x7f, 0x01, 0xc3], Exit::Return)]);
-        let s = summarize(&p)[0];
+        let (elf, p) = program(&[(0x1000, &[0x48, 0x8d, 0x44, 0x7f, 0x01, 0xc3], Exit::Return)]);
+        let s = summarize(&elf, &p)[0];
         assert_eq!(s, Summary { reads: RDI | RSP, writes: RAX | RSP, exits: false });
     }
 
     #[test]
     fn a_caller_takes_on_its_callees_and_recursion_goes_out() {
         // 0x2000: call 0x1000 (then ret); 0x1000: lea rax, [rdi + rdi*2 + 1]; ret
-        let leaf = function(0x1000, &[0x48, 0x8d, 0x44, 0x7f, 0x01, 0xc3], Exit::Return);
-        let caller = function(0x2000, &[0xe8, 0xfb, 0xef, 0xff, 0xff], Exit::Call { target: 0x1000, ret: 0x2005 });
-        let s = summarize(&program(vec![caller, leaf]));
+        let (elf, p) = program(&[
+            (0x2000, &[0xe8, 0xfb, 0xef, 0xff, 0xff], Exit::Call { target: 0x1000, ret: 0x2005 }),
+            (0x1000, &[0x48, 0x8d, 0x44, 0x7f, 0x01, 0xc3], Exit::Return),
+        ]);
+        let s = summarize(&elf, &p);
         assert_eq!(s[0], Summary { reads: RDI | RSP, writes: RAX | RSP, exits: false });
         // 0x3000: call 0x3000, itself.
-        let own = function(0x3000, &[0xe8, 0xfb, 0xff, 0xff, 0xff], Exit::Call { target: 0x3000, ret: 0x3005 });
-        assert!(summarize(&program(vec![own]))[0].exits);
+        let (elf, p) = program(&[(0x3000, &[0xe8, 0xfb, 0xff, 0xff, 0xff], Exit::Call { target: 0x3000, ret: 0x3005 })]);
+        assert!(summarize(&elf, &p)[0].exits);
         // cvtsi2sd xmm0, rdi; ret: what it writes in xmm0 (keeping its high half) is read and written.
-        let double = function(0x5000, &[0xf2, 0x48, 0x0f, 0x2a, 0xc7, 0xc3], Exit::Return);
-        let s = summarize(&program(vec![double]))[0];
+        let (elf, p) = program(&[(0x5000, &[0xf2, 0x48, 0x0f, 0x2a, 0xc7, 0xc3], Exit::Return)]);
+        let s = summarize(&elf, &p)[0];
         assert_eq!((s.reads & XMM0, s.writes & XMM0), (XMM0, XMM0));
         // A system call goes out.
-        let sys = function(0x4000, &[0x0f, 0x05, 0xc3], Exit::Return);
-        assert!(summarize(&program(vec![sys]))[0].exits);
+        let (elf, p) = program(&[(0x4000, &[0x0f, 0x05, 0xc3], Exit::Return)]);
+        assert!(summarize(&elf, &p)[0].exits);
     }
 }

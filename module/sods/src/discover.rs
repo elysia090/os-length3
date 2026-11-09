@@ -6,28 +6,8 @@
 //! twice, so no block ever needs an owner.
 
 use crate::elf::Elf;
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic, OpKind, Register};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::hash::{BuildHasherDefault, Hasher};
-
-/// Addresses hashed by one multiply: a walk looks up every instruction it
-/// decodes, and the standard hasher (made to resist chosen keys, which
-/// addresses are not here) costs more than the lookup.
-#[derive(Default)]
-struct Address(u64);
-
-impl Hasher for Address {
-    fn finish(&self) -> u64 { self.0 }
-    fn write(&mut self, bytes: &[u8]) {
-        for &b in bytes { self.0 = (self.0.rotate_left(8) ^ b as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15); }
-    }
-    fn write_u64(&mut self, n: u64) {
-        let h = n.wrapping_mul(0x9e37_79b9_7f4a_7c15);
-        self.0 = h ^ (h >> 32);
-    }
-}
-
-type ByAddress = BuildHasherDefault<Address>;
+use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic, OpKind, Register, RflagsBits};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Exit {
@@ -45,13 +25,77 @@ pub enum Exit {
     Trap,
 }
 
+/// A block: where it is, what lowering and the analyses before it need of its instructions, and how it ends. Its
+/// instructions are not kept (40 bytes each, most of what a translator would hold): they are decoded again where
+/// they are lowered (`decode`), from the program's own bytes.
 #[derive(Clone, Debug)]
 pub struct Block {
     pub start: u64,
-    /// Every instruction including the terminator.
-    pub code: Vec<Instruction>,
+    /// Its bytes (every instruction's, the terminator's too) and how many instructions they are.
+    pub len: u32,
+    pub count: u32,
+    /// The flags (as ALL_FLAGS) it reads before it writes them, and those it writes.
+    pub reads: u8,
+    pub writes: u8,
+    /// Its last instruction's length.
+    pub last: u8,
+    /// Its last instruction is a system call (resumes_after).
+    pub resumes: bool,
+    /// One of its instructions goes out to the kernel (a system call, an int).
+    pub traps: bool,
     pub exit: Exit,
 }
+
+impl Block {
+    /// The block of `code` (at `start`, each instruction after the one before), ending as `exit` says.
+    pub fn of(start: u64, code: &[Instruction], exit: Exit) -> Block {
+        let (mut reads, mut writes, mut traps) = (0, 0, false);
+        for i in code {
+            reads |= flags_read(i) & !writes;
+            writes |= flags_written(i);
+            traps |= matches!(i.mnemonic(), Mnemonic::Syscall | Mnemonic::Sysenter | Mnemonic::Int | Mnemonic::Int1 | Mnemonic::Int3 | Mnemonic::Into);
+        }
+        let last = code.last().expect("a block holds an instruction");
+        Block {
+            start, len: (last.next_ip() - start) as u32, count: code.len() as u32, reads: reads as u8, writes: writes as u8,
+            last: last.len() as u8, resumes: resumes_after(last), traps, exit,
+        }
+    }
+
+    /// Where it ends: the address after its last instruction.
+    pub fn end(&self) -> u64 { self.start + self.len as u64 }
+
+    /// Its last instruction's address.
+    pub fn last_ip(&self) -> u64 { self.end() - self.last as u64 }
+
+    /// Its instructions, decoded again from `elf` (the program it was found in) into `into`.
+    pub fn decode(&self, elf: &Elf, into: &mut Vec<Instruction>) {
+        into.clear();
+        let bytes = elf.code_at(self.start).unwrap_or_default();
+        let mut decoder = Decoder::with_ip(64, bytes, self.start, DecoderOptions::NONE);
+        let mut at = self.start;
+        for _ in 0..self.count {
+            // (A block running on past its segment's end, which none found has, decodes the rest on its own.)
+            let i = if at - self.start < bytes.len() as u64 { decoder.decode() } else { decode(elf, at).unwrap_or_default() };
+            at = i.next_ip();
+            into.push(i);
+        }
+    }
+
+    /// Its instructions, as `decode`.
+    pub fn instructions(&self, elf: &Elf) -> Vec<Instruction> {
+        let mut out = Vec::with_capacity(self.count as usize);
+        self.decode(elf, &mut out);
+        out
+    }
+}
+
+/// CF, ZF, SF, OF and PF: the flags translated code keeps (as RflagsBits).
+pub const ALL_FLAGS: u32 = RflagsBits::OF | RflagsBits::SF | RflagsBits::ZF | RflagsBits::CF | RflagsBits::PF;
+
+// A system call keeps the flags here (r11 is not given them), so it neither reads nor writes them.
+pub fn flags_read(i: &Instruction) -> u32 { if i.mnemonic() == Mnemonic::Syscall { 0 } else { i.rflags_read() & ALL_FLAGS } }
+pub fn flags_written(i: &Instruction) -> u32 { if i.mnemonic() == Mnemonic::Syscall { 0 } else { i.rflags_modified() & ALL_FLAGS } }
 
 #[derive(Clone, Debug)]
 pub struct Function {
@@ -272,8 +316,9 @@ fn runs(start: u64, name: String, blocks: Vec<Block>) -> Vec<Function> {
     // A cut before block p breaks each loop with head < p <= last.
     let mut breaks = vec![false; blocks.len()];
     if exact.is_none() {
-        let at: HashMap<u64, usize> = blocks.iter().enumerate().map(|(k, b)| (b.start, k)).collect();
-        for lp in loops_of(&blocks, |a| at.get(&a).copied()).0.into_iter().filter(|lp| lp.last - lp.head < KEEP) {
+        // (A walk's blocks are in address order.)
+        let at = |a: u64| blocks.binary_search_by_key(&a, |b| b.start).ok();
+        for lp in loops_of(&blocks, at).0.into_iter().filter(|lp| lp.last - lp.head < KEEP) {
             for b in &mut breaks[lp.head + 1..=lp.last] { *b = true; }
         }
     }
@@ -349,7 +394,8 @@ type Job<'a> = (u64, u64, &'a [u64], &'a [u64]);
 /// start's blocks and the code it goes on to, in the order given.
 fn walk_all(elf: &Elf, jobs: &[Job], references: &mut BTreeSet<u64>) -> Vec<(u64, Vec<Block>, Vec<u64>)> {
     let go = |part: &[Job], references: &mut BTreeSet<u64>| -> Vec<(u64, Vec<Block>, Vec<u64>)> {
-        part.iter().map(|&(start, end, extra, inner)| { let (b, c) = walk(elf, start, end, extra, inner, Some(&mut *references)); (start, b, c) }).collect()
+        let mut scratch = Scratch::default();
+        part.iter().map(|&(start, end, extra, inner)| { let (b, c) = walk(elf, (start, end), extra, inner, Some(&mut *references), &mut scratch); (start, b, c) }).collect()
     };
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
     // A few walks are not worth a thread.
@@ -390,7 +436,75 @@ fn ranges(starts: &BTreeSet<u64>, sizes: &BTreeMap<u64, u64>) -> BTreeMap<u64, u
     out
 }
 
-fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut references: Option<&mut BTreeSet<u64>>) -> (Vec<Block>, Vec<u64>) {
+/// What a walk keeps while it walks, by each byte's offset from its start (not hashed: a byte's place is its own
+/// address): the instructions it decoded, in order, and for each byte 1 + the index of the one that starts there (0:
+/// none), with LEADER where a block starts. Code past its range (a call's continuation past the end) goes in
+/// `outside`, a few places at most. A thread keeps one from walk to walk, cleared, not freed.
+#[derive(Default)]
+struct Scratch {
+    base: u64,
+    /// The bytes from `base` kept by offset, and how far into them this walk has been.
+    span: usize,
+    high: usize,
+    at: Vec<u32>,
+    outside: Vec<(u64, u32)>,
+    decoded: Vec<Instruction>,
+    /// A block's instructions as it is made.
+    code: Vec<Instruction>,
+}
+
+/// A block starts at this byte (Scratch::at).
+const LEADER: u32 = 1 << 31;
+
+impl Scratch {
+    fn begin(&mut self, base: u64, span: usize) {
+        (self.base, self.span) = (base, span);
+        self.decoded.clear();
+        self.outside.clear();
+    }
+    fn offset(&self, a: u64) -> Option<usize> { a.checked_sub(self.base).filter(|&o| o < self.span as u64).map(|o| o as usize) }
+    fn entry(&mut self, a: u64) -> &mut u32 {
+        if let Some(o) = self.offset(a) {
+            if o >= self.at.len() { self.at.resize((o + 1).next_multiple_of(4096).min(self.span), 0); }
+            self.high = self.high.max(o + 1);
+            return &mut self.at[o];
+        }
+        let k = self.outside.iter().position(|&(x, _)| x == a).unwrap_or_else(|| { self.outside.push((a, 0)); self.outside.len() - 1 });
+        &mut self.outside[k].1
+    }
+    fn get(&self, a: u64) -> u32 {
+        match self.offset(a) {
+            Some(o) => self.at.get(o).copied().unwrap_or(0),
+            None => self.outside.iter().find(|&&(x, _)| x == a).map_or(0, |&(_, v)| v),
+        }
+    }
+    fn lead(&mut self, a: u64) { *self.entry(a) |= LEADER; }
+    fn is_leader(&self, a: u64) -> bool { self.get(a) & LEADER != 0 }
+    fn is_decoded(&self, a: u64) -> bool { self.get(a) & !LEADER != 0 }
+    fn record(&mut self, a: u64, i: Instruction) {
+        self.decoded.push(i);
+        let n = self.decoded.len() as u32;
+        let e = self.entry(a);
+        *e = (*e & LEADER) | n;
+    }
+    fn instruction(&self, a: u64) -> Instruction { self.decoded[(self.get(a) & !LEADER) as usize - 1] }
+    /// Where blocks start in what was decoded, in order.
+    fn leaders(&self) -> Vec<u64> {
+        let found = |v: u32| v & LEADER != 0 && v & !LEADER != 0;
+        let mut out: Vec<u64> = (0..self.high).filter(|&o| found(self.at[o])).map(|o| self.base + o as u64).collect();
+        // Past the range, every place is after it.
+        let mut past: Vec<u64> = self.outside.iter().filter(|&&(_, v)| found(v)).map(|&(a, _)| a).collect();
+        past.sort_unstable();
+        out.extend(past);
+        out
+    }
+    fn end(&mut self) {
+        self.at[..self.high].fill(0);
+        self.high = 0;
+    }
+}
+
+fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut references: Option<&mut BTreeSet<u64>>, scratch: &mut Scratch) -> (Vec<Block>, Vec<u64>) {
     let inside = |a: u64| a >= start && a < end && (a == start || inner.binary_search(&a).is_err());
     // One decoder over the code from the start to its segment's end, moved to each instruction; code elsewhere (a
     // call's continuation past the range's segment) is decoded on its own.
@@ -403,33 +517,27 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut refer
         let instruction = decoder.decode();
         (!instruction.is_invalid()).then_some(instruction)
     };
-    // Looked up by address while walking, put in order once at the end.
+    scratch.begin(start, (end.min(start + code.len() as u64) - start) as usize);
     let mut first: Vec<u64> = std::iter::once(start).chain(extra.iter().copied().filter(|&a| inside(a))).collect();
     first.sort_unstable();
     first.dedup();
-    // Room for about what the range holds (an instruction is about four bytes; a block, four instructions), so the
-    // maps are not grown and rehashed as the walk goes; no more than a large function's, where the range is the
-    // rest of the code up to a start not found yet.
-    let room = (end.min(start + code.len() as u64) - start) as usize / 4;
-    let mut leaders: HashSet<u64, ByAddress> = HashSet::with_capacity_and_hasher(room.min(1 << 11) / 4, Default::default());
-    leaders.extend(first.iter().copied());
-    let mut instructions: HashMap<u64, Instruction, ByAddress> = HashMap::with_capacity_and_hasher(room.min(1 << 11), Default::default());
+    for &a in &first { scratch.lead(a); }
     let mut work: VecDeque<u64> = first.into_iter().collect();
     let mut calls = Vec::new();
     while let Some(mut at) = work.pop_front() {
         loop {
-            if instructions.contains_key(&at) {
+            if scratch.is_decoded(at) {
                 // Joining code decoded from another path starts a block.
-                leaders.insert(at);
+                scratch.lead(at);
                 break;
             }
             let Some(i) = decode(at) else {
                 break;
             };
-            instructions.insert(at, i);
+            scratch.record(at, i);
             if resumes_after(&i) {
-                leaders.insert(at);
-                leaders.insert(i.next_ip());
+                scratch.lead(at);
+                scratch.lead(i.next_ip());
             }
             if let Some(r) = references.as_deref_mut() {
                 if i.is_ip_rel_memory_operand() { r.insert(i.ip_rel_memory_address()); }
@@ -455,12 +563,12 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut refer
                     if let Some(t) = direct_target(&i) {
                         calls.push(t);
                     }
-                    leaders.insert(next);
+                    scratch.lead(next);
                     work.push_back(next);
                     break;
                 }
                 FlowControl::IndirectCall => {
-                    leaders.insert(next);
+                    scratch.lead(next);
                     work.push_back(next);
                     break;
                 }
@@ -468,7 +576,7 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut refer
                     let t = direct_target(&i).unwrap();
                     for a in [t, next] {
                         if inside(a) {
-                            leaders.insert(a);
+                            scratch.lead(a);
                             work.push_back(a);
                         } else {
                             calls.push(a);
@@ -479,7 +587,7 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut refer
                 FlowControl::UnconditionalBranch => {
                     if let Some(t) = direct_target(&i) {
                         if inside(t) {
-                            leaders.insert(t);
+                            scratch.lead(t);
                             work.push_back(t);
                         } else {
                             calls.push(t);
@@ -495,17 +603,14 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut refer
     // Each block runs from a leader along next_ip until a terminator or the
     // next leader. Following next_ip (not address order) keeps blocks right
     // even when a wrong table guess decoded bytes inside an instruction.
-    let mut order: Vec<u64> = leaders.iter().copied().filter(|a| instructions.contains_key(a)).collect();
-    order.sort_unstable();
-    // Each block's code is gathered in one buffer, then kept at its size: a big program's instructions are most of
-    // what the translator holds, and vectors grown as they go held half again as many.
+    let order = scratch.leaders();
     let mut blocks = Vec::with_capacity(order.len());
-    let mut code = Vec::new();
+    let mut code = std::mem::take(&mut scratch.code);
     for block_start in order {
         code.clear();
         let mut at = block_start;
         let exit = loop {
-            let i = instructions[&at];
+            let i = scratch.instruction(at);
             code.push(i);
             let next = i.next_ip();
             match flow(&i) {
@@ -522,11 +627,11 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut refer
                 FlowControl::IndirectBranch => break Exit::IndirectJump,
                 FlowControl::Return => break Exit::Return,
                 FlowControl::Next | FlowControl::Interrupt if i.mnemonic() != Mnemonic::Int3 => {
-                    if !instructions.contains_key(&next) {
+                    if !scratch.is_decoded(next) {
                         // Running into the next function is a tail call to it.
                         break if inside(next) { Exit::Trap } else { Exit::TailJump(next) };
                     }
-                    if leaders.contains(&next) {
+                    if scratch.is_leader(next) {
                         break Exit::Fall(next);
                     }
                     at = next;
@@ -534,8 +639,10 @@ fn walk(elf: &Elf, start: u64, end: u64, extra: &[u64], inner: &[u64], mut refer
                 _ => break Exit::Trap,
             }
         };
-        blocks.push(Block { start: block_start, code: code.to_vec(), exit });
+        blocks.push(Block::of(block_start, &code, exit));
     }
+    scratch.code = code;
+    scratch.end();
     (blocks, calls)
 }
 
@@ -604,10 +711,10 @@ const TABLE_ENTRIES: u64 = 4096;
 fn switch_targets(elf: &Elf, blocks: &[Block], start: u64, end: u64) -> Vec<u64> {
     let mut out = Vec::new();
     for b in blocks.iter().filter(|b| b.exit == Exit::IndirectJump) {
-        let Some((table, index, relative)) = table_read(&b.code) else { continue };
-        let Some(table) = table.or_else(|| only_lea(blocks, index.1)) else { continue };
+        let Some((table, index, relative)) = table_read(&b.instructions(elf)) else { continue };
+        let Some(table) = table.or_else(|| only_lea(elf, blocks, index.1)) else { continue };
         let index = index.0;
-        let bound = bound_of(blocks, b.start, index);
+        let bound = bound_of(elf, blocks, b.start, index);
         for k in 0..bound.unwrap_or(TABLE_ENTRIES) {
             let target = if relative {
                 let Some(entry) = elf.read_i32(table + 4 * k) else { break };
@@ -661,20 +768,23 @@ fn table_read(code: &[Instruction]) -> Option<(Option<u64>, (Register, Register)
 /// The constant `register` holds where a function puts it in one place only (`lea register, [rip + constant]`, as a
 /// loop over a switch does once, before the loop), and writes it nowhere else (its caller's value saved and put back
 /// around it, push and pop, is not the function's).
-fn only_lea(blocks: &[Block], register: Register) -> Option<u64> {
-    let writes_it = |i: &&Instruction| i.op0_kind() == OpKind::Register && i.op0_register().full_register() == register.full_register()
+fn only_lea(elf: &Elf, blocks: &[Block], register: Register) -> Option<u64> {
+    let writes_it = |i: &Instruction| i.op0_kind() == OpKind::Register && i.op0_register().full_register() == register.full_register()
         && !matches!(i.mnemonic(), Mnemonic::Push | Mnemonic::Pop | Mnemonic::Cmp | Mnemonic::Test);
-    let mut writes = blocks.iter().flat_map(|b| &b.code).filter(writes_it);
+    let mut writes = blocks.iter().flat_map(|b| b.instructions(elf)).filter(writes_it);
     let i = writes.next()?;
     (writes.next().is_none() && i.mnemonic() == Mnemonic::Lea && i.is_ip_rel_memory_operand() && i.op0_register() == register).then(|| i.ip_rel_memory_address())
 }
 
 /// How many entries the table read at block `at` has, from the bounds check before it: `cmp I, N` then `ja` past it
 /// or `jbe` to it, in a block of the function's that goes on to `at`.
-fn bound_of(blocks: &[Block], at: u64, index: Register) -> Option<u64> {
+fn bound_of(elf: &Elf, blocks: &[Block], at: u64, index: Register) -> Option<u64> {
     blocks.iter().find_map(|p| {
         let Exit::Branch { taken, fall } = p.exit else { return None };
-        let [.., cmp, jcc] = p.code.as_slice() else { return None };
+        // (Only a block that goes on to it can bound it: the others are not decoded.)
+        if taken != at && fall != at { return None; }
+        let code = p.instructions(elf);
+        let [.., cmp, jcc] = code.as_slice() else { return None };
         let to_table = (jcc.mnemonic() == Mnemonic::Ja && fall == at) || (jcc.mnemonic() == Mnemonic::Jbe && taken == at);
         let same = cmp.op0_kind() == OpKind::Register && cmp.op0_register().full_register() == index.full_register();
         let n = match cmp.op1_kind() {
@@ -719,6 +829,7 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
     let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
     let after = |set: &BTreeSet<u64>, a: u64| set.range(a + 1..).next().copied().unwrap_or(u64::MAX);
     let before = |set: &BTreeSet<u64>, a: u64| set.range(..a).next_back().copied();
+    let mut scratch = Scratch::default();
     loop {
         let mut found = BTreeSet::new();
         for &start in &starts {
@@ -728,11 +839,11 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
             // instruction. Nor are data references wanted (they find jump tables when the whole program is walked).
             // Nor the cases of its switches: a compiler's are hundreds, of which a run takes a few (each is reached
             // later as it is taken).
-            let (blocks, calls) = walk(elf, start, end, &[], &[], None);
+            let (blocks, calls) = walk(elf, (start, end), &[], &[], None, &mut scratch);
             found.extend(calls.into_iter().filter(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t)));
             done.insert(start, blocks);
         }
-        let walked: usize = done.values().flatten().map(|b| b.code.len()).sum();
+        let walked: usize = done.values().flatten().map(|b| b.count as usize).sum();
         if found.is_empty() || walked >= budget { break; }
         // A new start splits the walk whose range held it, when that walk is one of these.
         for &t in &found {
@@ -756,9 +867,9 @@ pub fn discover_within(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>, budget: 
                 if let Exit::Call { ret, .. } | Exit::IndirectCall { ret } = b.exit { mark(ret); }
                 // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
                 for a in back_edges(&function, k, b) { mark(a); }
-                if b.code.last().is_some_and(resumes_after) {
-                    mark(b.code.last().unwrap().ip());
-                    mark(b.code.last().unwrap().next_ip());
+                if b.resumes {
+                    mark(b.last_ip());
+                    mark(b.end());
                 }
             }
             functions.push(function);
@@ -893,9 +1004,9 @@ fn walk_program(elf: &Elf, targets: &[u64], pointed_start: bool, seeds: &[u64], 
                 }
                 // A loop's head: where a thread that has run long is taken back to the kernel, and goes on later.
                 for a in back_edges(&function, k, b) { mark(a, &function); }
-                if b.code.last().is_some_and(resumes_after) {
-                    mark(b.code.last().unwrap().ip(), &function);
-                    mark(b.code.last().unwrap().next_ip(), &function);
+                if b.resumes {
+                    mark(b.last_ip(), &function);
+                    mark(b.end(), &function);
                 }
             }
             // Only the pointers (sorted) between its first and last block can land in it.

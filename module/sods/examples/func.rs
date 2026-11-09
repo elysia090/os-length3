@@ -8,7 +8,7 @@ fn main() {
         println!("function {:#x} {} ({} blocks)", f.start, f.name, f.blocks.len());
         for b in &f.blocks {
             println!("  block {:#x} {:?}{}", b.start, b.exit, if p.entries.contains_key(&b.start) { "  [entry]" } else { "" });
-            for i in &b.code { println!("    {:#x}  {:?}", i.ip(), i.mnemonic()); }
+            for i in &b.instructions(&elf) { println!("    {:#x}  {:?}", i.ip(), i.mnemonic()); }
         }
     }
 }

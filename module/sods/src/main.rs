@@ -36,7 +36,7 @@ fn main() -> ExitCode {
         let known: std::collections::BTreeSet<u64> = list(flag("known")).into_iter().collect();
         let base: u32 = flag("base").and_then(|b| b.parse().ok()).unwrap_or(0);
         let program = xlat::discover::discover_within(&elf, &list(Some(seeds)), &known, xlat::discover::BUDGET);
-        xlat::lower::translate_more(&program, base, xlat::lower::Options { trace })
+        xlat::lower::translate_more(&elf, &program, base, xlat::lower::Options { trace })
     } else {
         let program = if args.iter().any(|a| a == "--whole") {
             xlat::discover::discover_whole(&elf)

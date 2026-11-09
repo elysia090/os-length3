@@ -199,7 +199,7 @@ pub unsafe extern "C" fn xlat_translate_more(handle: u32, seeds: *const u8, n_se
         Some((_, elf, known)) => {
             let program = crate::discover::discover_within(elf, &seeds, known, BUDGET.with(|b| b.get()));
             known.extend(program.functions.iter().map(|f| f.start));
-            (0, crate::lower::translate_more(&program, base, crate::lower::Options::default()).wasm)
+            (0, crate::lower::translate_more(elf, &program, base, crate::lower::Options::default()).wasm)
         }
         None => (1, b"that ELF is not open".to_vec()),
     });

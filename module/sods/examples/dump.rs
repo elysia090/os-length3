@@ -6,9 +6,9 @@ fn main() {
     let at = u64::from_str_radix(a[2].trim_start_matches("0x"), 16).unwrap();
     let p = xlat::discover::discover(&elf);
     for f in &p.functions {
-        if f.blocks.iter().any(|b| b.start <= at && at < b.start + b.code.iter().map(|i| i.len() as u64).sum::<u64>()) {
+        if f.blocks.iter().any(|b| b.start <= at && at < b.end()) {
             println!("function {:#x} {}", f.start, f.name);
-            for b in &f.blocks { println!("  block {:#x} ({} instr) {:?}{}", b.start, b.code.len(), b.exit, if p.entries.contains_key(&b.start) { "  [entry]" } else { "" }); }
+            for b in &f.blocks { println!("  block {:#x} ({} instr) {:?}{}", b.start, b.count, b.exit, if p.entries.contains_key(&b.start) { "  [entry]" } else { "" }); }
         }
     }
 }
