@@ -226,6 +226,8 @@ struct Fx<'p> {
     /// types of those numbered, in order.
     slots: [u32; LOCALS],
     kinds: Vec<ValType>,
+    /// The rsp written next only goes up (add rsp, n; sub rsp, -n), so it is no new low (note_low).
+    rsp_up: bool,
     /// Whether there is a dispatch loop (one made lean has none: lower_function), and whether a jump within went round
     /// it all the same.
     dispatch: bool,
@@ -443,15 +445,17 @@ impl<'p> Fx<'p> {
                 self.set(l);
             }
         }
-        if n == RSP { self.note_low(); }
+        if n == RSP && !std::mem::take(&mut self.rsp_up) { self.note_low(); }
         true
     }
 
-    /// low = min(low, rsp), without a branch (G_LOW).
+    /// low = min(low, rsp) (G_LOW): a read and a compare, and a store only at a new low (rarely, once a thread's
+    /// stack has been as deep once), not a select stored at every call.
     fn note_low(&mut self) {
-        self.get(l_reg(RSP)); self.e(W::GlobalGet(G_LOW));
         self.get(l_reg(RSP)); self.e(W::GlobalGet(G_LOW)); self.e(W::I64LtU);
-        self.e(W::Select); self.e(W::GlobalSet(G_LOW));
+        self.e(W::If(BlockType::Empty));
+        self.get(l_reg(RSP)); self.e(W::GlobalSet(G_LOW));
+        self.e(W::End);
     }
 
     // ---- Memory operands ----
@@ -1104,7 +1108,13 @@ impl Fx<'_> {
         } else {
             self.set_flags(Flags::Held);
         }
-        if memory { self.store_at(size, at); true } else { self.write_reg(i.op0_register()) }
+        if memory { self.store_at(size, at); true } else {
+            // A frame let go (add rsp, n at a function's end) is no new low.
+            let up = i.op0_register() == Register::RSP && matches!(i.op1_kind(), OpKind::Immediate8to64 | OpKind::Immediate32to64)
+                && match op { Mnemonic::Add => i.immediate(1) as i64 >= 0, Mnemonic::Sub => i.immediate(1) as i64 <= 0, _ => false };
+            self.rsp_up = up;
+            self.write_reg(i.op0_register())
+        }
     }
 
     fn carry(&mut self, i: &Instruction, subtract: bool) -> bool {
@@ -2746,7 +2756,7 @@ fn lower_shaped(program: &Program, (index, base): (u32, u32), handed: &BTreeMap<
     let (live, cases) = live_flags(program, index, &succs);
     let n = function.blocks.len() as u32;
     let handed_flags = handed;
-    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
+    let mut fx = Fx { f: WasmFunction::new([]), syncs: Vec::new(), used: 0, ev: vec![Vec::new()], nest: 0, flags: Flags::Held, fr_pending: false, fused: None, slots: [0; LOCALS], kinds: Vec::new(), rsp_up: false, dispatch: !lean, dispatched: false, depth: 0, program, function, report, handed, backward: false, at: 0, budget: has_loop(function), summaries,
         loops: Vec::new(), within: Vec::new(), heads: Vec::new(), labels: Vec::new(), block_at: Vec::new(), loop_at: Vec::new() };
     let (loops, within) = clean_loops(program, index, function, loops_of(&function.blocks, |a| function.block_index(a)).0);
     fx.heads = vec![None; function.blocks.len()];
