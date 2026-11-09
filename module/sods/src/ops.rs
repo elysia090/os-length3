@@ -1972,6 +1972,19 @@ fn st(r: Register) -> Option<u32> {
     (Register::ST0 as u32..=Register::ST7 as u32).contains(&n).then(|| n - Register::ST0 as u32)
 }
 
+/// The x87 runtime's number (x87::NAMES) of what `m` names, if it does one: by mnemonic, found once for all of them
+/// (not by name, formatted and searched for, at each instruction that comes this way).
+fn x87_index(m: Mnemonic) -> Option<usize> {
+    static INDEX: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    let index = INDEX.get_or_init(|| Mnemonic::values().map(|m| {
+        let name = format!("{m:?}").to_ascii_lowercase();
+        let name = if name == "wait" { "fwait".to_string() } else { name };
+        crate::x87::NAMES.iter().position(|&n| n == name).map_or(u8::MAX, |k| k as u8)
+    }).collect());
+    let k = index[m as usize];
+    (k != u8::MAX).then_some(k as usize)
+}
+
 impl Fx<'_> {
     /// One x87 instruction: fpu(registers, op, memory size, st a, st b, operand, its top word) -> i64, called
     /// wasm to wasm, for the thread whose registers its instance names (G_X87). A memory operand read is loaded
@@ -1979,9 +1992,8 @@ impl Fx<'_> {
     /// 80-bit one's top word asked for after, Op::High). The value is otherwise fcomi's flags (CF|ZF<<1|PF<<2), or
     /// the word fnstsw puts in AX.
     pub(crate) fn x87(&mut self, i: &Instruction) -> Option<bool> {
-        let name = format!("{:?}", i.mnemonic()).to_ascii_lowercase();
-        let name = if name == "wait" { "fwait".to_string() } else { name };
-        let index = crate::x87::NAMES.iter().position(|&n| n == name)?;
+        let index = x87_index(i.mnemonic())?;
+        let name = crate::x87::NAMES[index];
         let op = crate::x87::Op::at(index)?;
         let mut size = 0;
         let (mut a, mut b) = (0i32, 1i32);
@@ -2039,7 +2051,7 @@ impl Fx<'_> {
             }
             return Some(true);
         }
-        match name.as_str() {
+        match name {
             "fucomi" | "fcomi" | "fucomip" | "fcomip" => {
                 self.e(I32_WRAP_I64);
                 self.set(l_u(0));

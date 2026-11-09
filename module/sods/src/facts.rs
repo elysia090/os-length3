@@ -133,7 +133,9 @@ impl Liveness {
         (held as u32, ext as u32)
     }
     /// The flags code going to `address`, outside its function, hands over: what that entry reads, or all.
-    pub fn handed(&self, address: u64) -> u32 { self.entries.binary_search(&address).map_or(ALL_FLAGS, |e| self.reads[e] as u32) }
+    pub fn handed(&self, address: u64) -> u32 { self.handed_at(self.entries.binary_search(&address).ok()) }
+    /// As `handed`, for the entry found already (Entries::index).
+    pub fn handed_at(&self, entry: Option<usize>) -> u32 { entry.map_or(ALL_FLAGS, |e| self.reads[e] as u32) }
     pub(crate) fn is_entry(&self, f: u32, k: usize) -> bool { self.entry[self.first[f as usize] as usize + k] != NONE }
 }
 
@@ -185,16 +187,18 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
         let mut at = Code::new(elf, f.span().map_or(f.start, |(lo, _)| lo));
         for b in &f.blocks {
             at.decode(elf, b, &mut code);
-            for u in code.iter().flat_map(|i| info.info(i).used_registers().to_vec()) {
-                let Some(k) = bit(u.register()) else { continue };
-                // A write that keeps any of what was there reads it too (an 8- or 16-bit register's, an xmm's, a
-                // conditional one's).
-                let keeps = k >= 16 || u.register().size() < 4;
-                match u.access() {
-                    OpAccess::Read | OpAccess::CondRead => s.reads |= 1 << k,
-                    OpAccess::Write if !keeps => s.writes |= 1 << k,
-                    OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite => { s.reads |= 1 << k; s.writes |= 1 << k; }
-                    _ => {}
+            for i in &code {
+                for u in info.info(i).used_registers() {
+                    let Some(k) = bit(u.register()) else { continue };
+                    // A write that keeps any of what was there reads it too (an 8- or 16-bit register's, an xmm's, a
+                    // conditional one's).
+                    let keeps = k >= 16 || u.register().size() < 4;
+                    match u.access() {
+                        OpAccess::Read | OpAccess::CondRead => s.reads |= 1 << k,
+                        OpAccess::Write if !keeps => s.writes |= 1 << k,
+                        OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite => { s.reads |= 1 << k; s.writes |= 1 << k; }
+                        _ => {}
+                    }
                 }
             }
         }

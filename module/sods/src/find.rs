@@ -5,7 +5,7 @@
 
 use crate::elf::Elf;
 use crate::program::*;
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic, OpKind, Register};
+use iced_x86::{Decoder, DecoderOptions, Instruction, Mnemonic, OpKind, Register};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 
@@ -145,10 +145,11 @@ fn find(elf: &Elf, walk: Find) -> Program {
     }
     let mut functions = Vec::new();
     let mut marks = Vec::new();
+    let mut scratch = Layout::default();
     for (start, blocks) in done {
         let name = names.get(&start).cloned().unwrap_or_else(|| format!("fn_{start:x}"));
         let first = functions.len();
-        for f in runs(start, name, blocks) {
+        for f in runs(start, name, blocks, &mut scratch) {
             let k = functions.len() as u32;
             let found = |a: u64| f.block_index(a).map(|b| (a, (k, b as u32)));
             let at = |t: u32| (f.blocks[t as usize].start, (k, t));
@@ -217,41 +218,16 @@ impl Block {
 #[derive(Clone, Copy)]
 struct Step { target: u64, len: u8, flow: u8, reads: u8, writes: u8, bits: u8 }
 
-/// A step's flow.
-mod go {
-    pub const NEXT: u8 = 0;
-    pub const CALL: u8 = 1;
-    pub const INDIRECT_CALL: u8 = 2;
-    pub const BRANCH: u8 = 3;
-    pub const JUMP: u8 = 4;
-    pub const INDIRECT_JUMP: u8 = 5;
-    pub const RETURN: u8 = 6;
-    /// Undecodable, trapping, or a flow translation does not follow (int3, ud2, hlt, xbegin).
-    pub const STOP: u8 = 7;
-}
-use go::{BRANCH, CALL, INDIRECT_CALL, INDIRECT_JUMP, JUMP, NEXT, STOP};
-// A step's bits.
+use go::{BRANCH, CALL, INDIRECT_CALL, INDIRECT_JUMP, JUMP, NEXT};
+// A step's bits besides Kind's (TRAPS, SYSCALL).
 const TARGET: u8 = 1;
-const TRAPS: u8 = 2;
-const SYSCALL: u8 = 4;
 
 impl Step {
     fn of(i: &Instruction) -> Step {
-        let m = i.mnemonic();
-        let flow = match i.flow_control() {
-            _ if runs_on(i) => NEXT,
-            FlowControl::Call => CALL,
-            FlowControl::IndirectCall => INDIRECT_CALL,
-            FlowControl::ConditionalBranch => BRANCH,
-            FlowControl::UnconditionalBranch => JUMP,
-            FlowControl::IndirectBranch => INDIRECT_JUMP,
-            FlowControl::Return => go::RETURN,
-            _ => STOP,
-        };
-        let target = matches!(i.op0_kind(), OpKind::NearBranch64 | OpKind::NearBranch32 | OpKind::NearBranch16).then(|| i.near_branch_target());
-        let traps = matches!(m, Mnemonic::Syscall | Mnemonic::Sysenter | Mnemonic::Int | Mnemonic::Int1 | Mnemonic::Int3 | Mnemonic::Into);
-        let bits = if target.is_some() { TARGET } else { 0 } | if traps { TRAPS } else { 0 } | if m == Mnemonic::Syscall { SYSCALL } else { 0 };
-        Step { target: target.unwrap_or(0), len: i.len() as u8, flow, reads: flags_read(i) as u8, writes: flags_written(i) as u8, bits }
+        let k = kind(i);
+        let target = matches!(i.op0_kind(), OpKind::NearBranch64 | OpKind::NearBranch32 | OpKind::NearBranch16);
+        let bits = k.bits & (TRAPS | SYSCALL) | if target { TARGET } else { 0 };
+        Step { target: if target { i.near_branch_target() } else { 0 }, len: i.len() as u8, flow: k.flow, reads: k.reads, writes: k.writes, bits }
     }
 }
 
@@ -264,7 +240,8 @@ struct Scratch { base: u64, span: usize, high: usize, at: Vec<u32>, outside: Vec
 const LEADER: u32 = 1 << 31;
 
 impl Scratch {
-    fn offset(&self, a: u64) -> Option<usize> { a.checked_sub(self.base).filter(|&o| o < self.span as u64).map(|o| o as usize) }
+    #[inline]
+    fn offset(&self, a: u64) -> Option<usize> { let o = a.wrapping_sub(self.base); (o < self.span as u64).then_some(o as usize) }
     fn entry(&mut self, a: u64) -> &mut u32 {
         if let Some(o) = self.offset(a) {
             if o >= self.at.len() { self.at.resize((o + 1).next_multiple_of(4096).min(self.span), 0); }
@@ -274,6 +251,7 @@ impl Scratch {
         let k = self.outside.iter().position(|&(x, _)| x == a).unwrap_or_else(|| { self.outside.push((a, 0)); self.outside.len() - 1 });
         &mut self.outside[k].1
     }
+    #[inline]
     fn get(&self, a: u64) -> u32 {
         match self.offset(a) {
             Some(o) => self.at.get(o).copied().unwrap_or(0),
@@ -291,7 +269,6 @@ impl Scratch {
         let e = self.entry(a);
         *e = (*e & LEADER) | n;
     }
-    fn step(&self, a: u64) -> Step { self.steps[(self.get(a) & !LEADER) as usize - 1] }
 }
 
 /// The blocks of the function at `start` within its range (and `extra` places in it pointers name, but not the
@@ -361,8 +338,10 @@ fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut r
     let mut blocks = Vec::with_capacity(order.len());
     for &b in &order {
         let (mut at, mut reads, mut writes, mut traps, mut count) = (b, 0u8, 0u8, false, 0u32);
+        // Each instruction's entry looked up once: its step, and where it is the next one, whether it was decoded and leads.
+        let mut e = s.get(b);
         let (exit, last) = loop {
-            let step = s.step(at);
+            let step = s.steps[(e & !LEADER) as usize - 1];
             reads |= step.reads & !writes;
             writes |= step.writes;
             traps |= step.bits & TRAPS != 0;
@@ -377,9 +356,12 @@ fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut r
                 INDIRECT_JUMP => Exit::IndirectJump,
                 go::RETURN => Exit::Return,
                 // Running into the next function is a tail call to it.
-                NEXT if !s.decoded(next) => if inside(next) { Exit::Trap } else { Exit::TailJump(next) },
-                NEXT if s.get(next) & LEADER != 0 => Exit::Fall(next),
-                NEXT => { at = next; continue; }
+                NEXT => {
+                    e = s.get(next);
+                    if e & !LEADER == 0 { if inside(next) { Exit::Trap } else { Exit::TailJump(next) } }
+                    else if e & LEADER != 0 { Exit::Fall(next) }
+                    else { at = next; continue; }
+                }
                 _ => Exit::Trap,
             };
             break (exit, step);
@@ -393,11 +375,6 @@ fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut r
     (blocks, calls)
 }
 
-/// Whether `i` goes on to the next instruction as translation sees it (a system call returns in place; int3 traps).
-pub(crate) fn runs_on(i: &Instruction) -> bool {
-    let m = i.mnemonic();
-    m == Mnemonic::Syscall || (matches!(i.flow_control(), FlowControl::Next | FlowControl::Interrupt) && m != Mnemonic::Int3)
-}
 
 pub(crate) fn decode(elf: &Elf, address: u64) -> Option<Instruction> {
     let bytes = elf.code_at(address)?;
@@ -539,10 +516,10 @@ pub fn set_run(blocks: usize) { RUN_BLOCKS.with(|r| r.set(Some(blocks.max(1))));
 
 /// `start`'s function as wasm functions are made of it: whole, or cut into runs of about RUN blocks, a run cut no
 /// sooner than where it breaks no loop of up to KEEP blocks (the first keeps its name; the others are `name.2`...).
-fn runs(start: u64, name: String, blocks: Vec<Block>) -> Vec<Function> {
+fn runs(start: u64, name: String, blocks: Vec<Block>, scratch: &mut Layout) -> Vec<Function> {
     let exact = RUN_BLOCKS.with(|r| r.get());
     let run = exact.unwrap_or(RUN);
-    if blocks.len() <= run { return vec![Function::new(start, name, blocks)]; }
+    if blocks.len() <= run { return vec![Function::laid_out(start, name, blocks, scratch)]; }
     // A cut before block p breaks each loop with head < p <= last (a walk's blocks are in address order).
     let mut breaks = vec![false; blocks.len()];
     if exact.is_none() {
@@ -555,12 +532,12 @@ fn runs(start: u64, name: String, blocks: Vec<Block>) -> Vec<Function> {
     for (p, b) in blocks.into_iter().enumerate() {
         if held.len() >= run + KEEP * exact.is_none() as usize || (held.len() >= run && !breaks[p]) {
             let n = named(&out);
-            out.push(Function::new(held[0].start, n, std::mem::take(&mut held)));
+            out.push(Function::laid_out(held[0].start, n, std::mem::take(&mut held), scratch));
         }
         held.push(b);
     }
     let n = named(&out);
-    out.push(Function::new(held[0].start, n, held));
+    out.push(Function::laid_out(held[0].start, n, held, scratch));
     out
 }
 

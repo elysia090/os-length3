@@ -11,7 +11,6 @@
 use crate::facts::{has_loop, Liveness, Summary};
 use crate::op::*;
 use crate::ops::{Flags, Report, FLAG_BITS};
-use crate::find::runs_on;
 use crate::program::*;
 use crate::elf::Elf;
 use iced_x86::{Instruction, Mnemonic};
@@ -117,10 +116,14 @@ pub const ALL: u32 = u32::MAX;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Lab { Block(usize), Loop(usize) }
 
-/// A register read or written (as Fx::used; a write's `true` where it surely happens, not inside a conditional), a
-/// sync (its index, `true` where not inside a conditional), or a place the code may go on to this function's blocks.
+/// What a stretch of code between syncs and edges did to the registers (bits as Fx::used): read before surely
+/// written in it, surely written (not inside a conditional), written at all; a sync (its index, `true` where not
+/// inside a conditional); or a place the code may go on to this function's blocks.
 #[derive(Clone, Copy)]
-enum Ev { Read(u8), Write(u8, bool), Sync(u32, bool), Edge }
+enum Ev { Run(Run), Sync(u32, bool), Edge }
+
+/// A stretch's registers: [read before surely written, surely written, written].
+type Run = [u32; 3];
 
 /// What every function's lowering reads.
 #[derive(Clone, Copy)]
@@ -142,6 +145,8 @@ pub struct Fx<'p> {
     used: u32,
     ev: Vec<Ev>,
     ev_at: Vec<usize>,
+    /// The stretch since the last event.
+    run: Run,
     /// Nesting of wasm blocks in the current block's code (a write inside one may not happen), and between the code
     /// and the dispatch loop.
     nest: u32,
@@ -179,7 +184,10 @@ pub struct Fx<'p> {
 }
 
 /// A LEB128, unsigned and signed.
-pub fn uleb(out: &mut Vec<u8>, mut v: u64) {
+#[inline]
+pub fn uleb(out: &mut Vec<u8>, v: u64) { if v < 0x80 { out.push(v as u8) } else { uleb_long(out, v) } }
+#[cold]
+fn uleb_long(out: &mut Vec<u8>, mut v: u64) {
     while v >= 0x80 { out.push(v as u8 | 0x80); v >>= 7; }
     out.push(v as u8);
 }
@@ -245,24 +253,37 @@ impl Fx<'_> {
     pub fn else_(&mut self) { self.f.push(0x05); }
     pub fn end(&mut self) { self.nest = self.nest.saturating_sub(1); self.f.push(0x0b); }
     /// A local as the function numbers it: numbered as it is first touched.
+    #[inline]
     fn slot(&mut self, l: u32) -> u32 {
-        let s = &mut self.slots[l as usize];
-        if l != L_ENTRY && *s == 0 { self.kinds.push(kind(l)); *s = self.kinds.len() as u32; }
-        *s
+        let s = self.slots[l as usize];
+        if s == 0 && l != L_ENTRY { self.first_touch(l) } else { s }
+    }
+    #[cold]
+    fn first_touch(&mut self, l: u32) -> u32 {
+        self.kinds.push(kind(l));
+        self.slots[l as usize] = self.kinds.len() as u32;
+        self.kinds.len() as u32
     }
     /// A local moved, and the register it holds noted.
+    #[inline]
     fn local(&mut self, opcode: u8, l: u32) {
         let b = REG_BIT[l as usize];
         if b != NOT_REG {
-            self.used |= 1 << b;
-            self.ev.push(if opcode == 0x20 { Ev::Read(b) } else { Ev::Write(b, self.nest == 0) });
+            let bit = 1 << b;
+            self.used |= bit;
+            if opcode == 0x20 { self.run[0] |= bit & !self.run[1] } else { self.run[2] |= bit; if self.nest == 0 { self.run[1] |= bit } }
         }
         let s = self.slot(l);
-        if s < 0x80 { self.f.extend_from_slice(&[opcode, s as u8]) } else { self.f.push(opcode); uleb(&mut self.f, s as u64) }
+        if s < 0x80 { self.f.extend_from_slice(&[opcode, s as u8]) } else { self.wide(opcode, s) }
     }
+    #[cold]
+    fn wide(&mut self, opcode: u8, s: u32) { self.f.push(opcode); uleb(&mut self.f, s as u64) }
     pub fn get(&mut self, l: u32) { self.local(0x20, l) }
     pub fn set(&mut self, l: u32) { self.local(0x21, l) }
     pub fn tee(&mut self, l: u32) { self.local(0x22, l) }
+    /// An event, after the stretch before it.
+    fn note(&mut self, e: Ev) { self.end_run(); self.ev.push(e); }
+    fn end_run(&mut self) { if self.run != [0; 3] { self.ev.push(Ev::Run(self.run)); self.run = [0; 3]; } }
     /// A local moved with nothing noted.
     fn raw(&mut self, opcode: u8, l: u32) { let s = self.slot(l); self.f.push(opcode); uleb(&mut self.f, s as u64); }
     pub fn get_raw(&mut self, l: u32) { self.raw(0x20, l) }
@@ -275,7 +296,7 @@ impl Fx<'_> {
     /// A sync (put in by `finish`, once the whole function says what it moves) that moves at most `scope`.
     fn sync_in(&mut self, save: bool, scope: u32) {
         self.syncs.push((self.f.len(), save, scope));
-        self.ev.push(Ev::Sync(self.syncs.len() as u32 - 1, self.nest == 0));
+        self.note(Ev::Sync(self.syncs.len() as u32 - 1, self.nest == 0));
     }
 
     // ---- Labels ----
@@ -333,11 +354,11 @@ impl Fx<'_> {
     /// On at `address`: falling through to the next block, out to a block after this one, round a loop it is in,
     /// round the dispatch loop, or out of the function.
     fn goto(&mut self, (address, target): (u64, u32), next: Option<u64>) {
-        if Some(address) == next { self.ev.push(Ev::Edge); return; }
+        if Some(address) == next { self.note(Ev::Edge); return; }
         match (target != NO).then_some(target as usize) {
             Some(b) => {
                 if b <= self.at { self.time_slice(address); }
-                self.ev.push(Ev::Edge);
+                self.note(Ev::Edge);
                 let label = if b > self.at { self.block_at[b] } else { self.heads[b].and_then(|l| self.loop_at[l]) };
                 match label {
                     Some(at) => self.br(self.to(at)),
@@ -397,9 +418,10 @@ impl Fx<'_> {
     /// To code outside this function without growing the stack.
     fn tail(&mut self, address: u64) {
         self.save();
-        self.save_flags(self.handed.handed(address));
-        match self.program.entries.get(&address) {
-            Some(&(f, b)) => { self.c32(b as i32); self.return_call(FIRST_GUEST + f); }
+        let e = self.program.entries.index(address);
+        self.save_flags(self.handed.handed_at(e));
+        match e.map(|e| self.program.entries.at(e)) {
+            Some((f, b)) => { self.c32(b as i32); self.return_call(FIRST_GUEST + f); }
             None => { self.c64(address as i64); self.return_call(F_DISPATCH); }
         }
     }
@@ -419,9 +441,9 @@ impl Fx<'_> {
     }
 }
 
-/// The function `target` starts and its summary, when it is one of this program's that never goes out.
-fn quiet(program: &Program, summaries: &[Summary], target: u64) -> Option<(u32, Summary)> {
-    let &(f, b) = program.entries.get(&target)?;
+/// The function `target` (entry `e`) starts and its summary, when it is one of this program's that never goes out.
+fn quiet(program: &Program, summaries: &[Summary], target: u64, e: Option<usize>) -> Option<(u32, Summary)> {
+    let (f, b) = program.entries.at(e?);
     let s = *summaries.get(f as usize)?;
     (b == 0 && program.functions[f as usize].start == target && !s.exits).then_some((f, s))
 }
@@ -551,7 +573,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
     s.ev_at.push(0);
     s.f.clear(); s.ev.clear(); s.syncs.clear(); s.kinds.clear(); s.labels.clear();
     let mut fx = Fx {
-        f: s.f, syncs: s.syncs, used: 0, ev: s.ev, ev_at: s.ev_at, nest: 0, depth: 0,
+        f: s.f, syncs: s.syncs, used: 0, ev: s.ev, ev_at: s.ev_at, run: [0; 3], nest: 0, depth: 0,
         slots: [0; LOCALS], kinds: s.kinds, flags: Flags::Held, fr_pending: false, fused: None, rsp_up: false, backward: false,
         entry: s.entry, dispatch: !lean, program, function, report, handed, at: 0, budget: has_loop(function), summaries, succ: &function.succ,
         loop_at: s.loop_at, loops: s.loops, within: s.within, heads: s.heads, labels: s.labels, block_at: s.block_at,
@@ -606,6 +628,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
         fx.end();
         fx.close(Lab::Block(k));
         if let Some(l) = fx.heads[k] { fx.enter_loop(l); }
+        fx.end_run();
         fx.ev_at.push(fx.ev.len());
         fx.nest = 0;
         fx.depth = fx.labels.len() as u32;
@@ -645,12 +668,12 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                 // the condition turned round goes to the other.
                 let (taken, fall) = ((taken, to[0]), (fall, to[1]));
                 if let Some(d) = fx.forward(taken.1) {
-                    fx.ev.push(Ev::Edge);
+                    fx.note(Ev::Edge);
                     fx.br_if(d);
                     fx.goto(fall, next);
                 } else if let Some(d) = fx.forward(fall.1).filter(|_| Some(taken.0) == next) {
                     fx.op(I32_EQZ);
-                    fx.ev.push(Ev::Edge);
+                    fx.note(Ev::Edge);
                     fx.br_if(d);
                     fx.goto(taken, next);
                 } else {
@@ -668,7 +691,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                 fx.get(l_t(0)); fx.call(F_RESOLVE); fx.set(l_t(1));
                 // This function's own (by the table's numbering, which a module made later starts at its base).
                 fx.get(l_t(1)); fx.c64(32); fx.op(I64_SHR_U); fx.c64((base + index) as i64); fx.op(I64_EQ);
-                fx.ev.push(Ev::Edge);
+                fx.note(Ev::Edge);
                 fx.if_();
                 fx.get(l_t(1)); fx.op(I32_WRAP_I64); fx.set(L_BLK);
                 fx.br(fx.depth + 1);
@@ -685,7 +708,8 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
             }
             Exit::Call { target, ret } => {
                 fx.push_with(|fx| { fx.c64(ret as i64); true });
-                if let Some((f, s)) = quiet(program, fx.summaries, target) {
+                let e = program.entries.index(target);
+                if let Some((f, s)) = quiet(program, fx.summaries, target, e) {
                     // To a function that never goes out: only what it may touch is moved, and its depth not counted.
                     fx.note_low();
                     fx.sync_in(true, s.reads | s.writes);
@@ -694,9 +718,9 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                     fx.after_call((ret, to[0]), next, Some(s.writes));
                 } else {
                     fx.save();
-                    fx.enter_call(handed.handed(target), |fx| fx.c64(target as i64));
-                    match program.entries.get(&target) {
-                        Some(&(f, b)) => { fx.c32(b as i32); fx.call(FIRST_GUEST + f); }
+                    fx.enter_call(handed.handed_at(e), |fx| fx.c64(target as i64));
+                    match e.map(|e| program.entries.at(e)) {
+                        Some((f, b)) => { fx.c32(b as i32); fx.call(FIRST_GUEST + f); }
                         None => { fx.c64(target as i64); fx.call(F_DISPATCH); }
                     }
                     fx.set(l_t(0));
@@ -777,6 +801,7 @@ type Rest = (Vec<Instruction>, Vec<u32>, (Vec<usize>, Vec<usize>), Vec<bool>, Ve
 /// every buffer back into `frame`.
 fn finish(mut fx: Fx, rest: Rest, frame: &mut Frame, out: &mut Vec<u8>) {
     let (code, needed, marks, cold, entered, mut masks) = rest;
+    fx.end_run();
     sync_masks(&fx, &mut masks);
     if fx.budget { fx.slot(L_BUDGET); }
     let (used, budget, slots) = (fx.used, fx.budget, fx.slots);
@@ -858,7 +883,7 @@ fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Masks) {
         let (mut p, mut g, mut out_p, mut out_g) = (ALL, 0, 0, 0);
         for e in ev(k + 1) {
             match *e {
-                Ev::Write(r, _) => g |= 1 << r,
+                Ev::Run([_, _, w]) => g |= w,
                 Ev::Sync(m, top) if syncs[m as usize].1 => { let m = m as usize; notes.push((m, k, p, g)); if top { p &= !syncs[m].2; g &= !syncs[m].2; } }
                 Ev::Edge => { out_p |= p; out_g |= g; f.edged = true; }
                 _ => {}
@@ -884,9 +909,7 @@ fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Masks) {
         let (mut p, mut g) = (if f.edged { 0 } else { ALL }, 0);
         for e in ev(k + 1).iter().rev() {
             match *e {
-                Ev::Read(r) => g |= 1 << r,
-                Ev::Write(r, true) => { p &= !(1 << r); g &= !(1 << r); }
-                Ev::Write(_, false) => {}
+                Ev::Run([u, k, _]) => { p &= !k; g = (g & !k) | u; }
                 Ev::Sync(m, _) if syncs[m as usize].1 => g |= mask[m as usize],
                 Ev::Sync(m, top) => { let m = m as usize; notes.push((m, k, p, g)); if top { p &= !syncs[m].2; g &= !syncs[m].2; } }
                 Ev::Edge => p = ALL,
