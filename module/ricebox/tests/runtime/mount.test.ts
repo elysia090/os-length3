@@ -3,14 +3,14 @@ import {createHash, randomBytes} from 'node:crypto';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {constants, zstdCompressSync, zstdDecompressSync} from 'node:zlib';
-import {Vfs} from '../../ricebox/runtime/fs.ts';
-import {mountPack, provide} from '../runtime/pack.ts';
-import {checkPacks, packOf} from '../runtime/table.ts';
-import {loadTranslator} from '../../sods/runtime/translator.ts';
+import {Vfs} from '../../runtime/fs.ts';
+import {mountPack, provide} from '../../runtime/mount.ts';
+import {checkPacks, packOf} from '../../../muk/runtime/table.ts';
+import {loadTranslator} from '../../../sods/runtime/translator.ts';
 
 const enc = new TextEncoder(), dec = new TextDecoder();
 
-const translator = new URL('../../sods/target/wasm32-unknown-unknown/release/xlat.wasm', import.meta.url);
+const translator = new URL('../../../sods/target/wasm32-unknown-unknown/release/xlat.wasm', import.meta.url);
 
 test('the translator decodes what zstd encoded, at every level and size, as the browser reads a pack', async () => {
   const translate = await loadTranslator(readFileSync(translator));

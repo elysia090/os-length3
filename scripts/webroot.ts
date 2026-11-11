@@ -16,7 +16,7 @@
 //                         digest; everything it names is.
 //   index-<sha256>.json   every path of the root ({codec: 'zstd', packs, dirs,
 //                         links, files: [{path, mode, size, pack, at, len, raw?}]},
-//                         as muk/runtime/pack.ts mounts it), the translator and
+//                         as ricebox/runtime/mount.ts mounts it), the translator and
 //                         the translations made ahead of time ({path, sha256 of the
 //                         program, elf, wasm}, each a blob: {path, sha256, size,
 //                         bytes}); its digest is what a

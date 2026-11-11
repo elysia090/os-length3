@@ -14,7 +14,7 @@ import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zstdDecompressSync} from 'node:zlib';
 import {File, Link, Vfs} from './fs.ts';
-import {mountPack, type Packed} from '../../muk/runtime/pack.ts';
+import {mountPack, type Packed} from './mount.ts';
 import {Kernel, PROFILE, type Translator} from './process.ts';
 import {RemoteKernel, canRunApart} from './remote.ts';
 import {loadTranslator} from '../../sods/runtime/translator.ts';

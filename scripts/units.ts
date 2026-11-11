@@ -1,7 +1,11 @@
-// The units os-length3 is made of, each one responsibility: the files it holds and the units it may take from. They
-// are peeled from the outside in, in the order a person changes them most easily; what is left inside is ricebox's,
-// the smallest UNIX a browser runs. Every byte is running (ricebox), at rest (muk) or on its way (funk). A face (the
-// app's pages and window, root3's words) holds no judgement of its own and takes from any unit.
+// The units os-length3 is made of, each one responsibility: the files it holds and the units it may take from. Three
+// things, one inside the next. muk is the thinnest: an OCI-compatible VMM, in C on lib alone. ricebox is the neutral
+// distribution, as BusyBox is one: muk, what makes a browser its machine (sods, its kernel), its own tools (you,
+// otter) and the root's packages; no window, a command line that is ordinary POSIX, served from any web host as it is.
+// It knows no service, so it can be cut out whole and put under another's: nothing of it takes from what is not of it
+// (RICEBOX, checked). root3 is the product, as Alpine stands on BusyBox: ricebox and the modules over it, of which
+// shipto alone holds what a service wants. A face (the app's pages and window, root3's words) holds no judgement of
+// its own and takes from any unit.
 //
 //   node scripts/units.ts        what each file is, and every import from one unit to another the table does not allow
 //
@@ -27,39 +31,40 @@ export interface Unit {
 }
 
 export const UNITS: Unit[] = [
+  {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
+  {name: 'muk', says: 'the thinnest: an OCI-compatible VMM. An image\'s layers at rest, named by their digest, each byte fetched when first touched, and a bundle run from them (created, started, signalled, deleted); no KVM and no Firecracker under it, C on lib as you is',
+    holds: ['module/muk', 'src/core/src/prompt', 'src/core/src/compute'],
+    takes: ['lib']},
   {name: 'sods', says: 'instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS',
     holds: ['module/sods/src', 'module/sods/runtime'],
     takes: []},
-  {name: 'ricebox', says: 'the box: the smallest UNIX inside it (processes, memory and its page cache, files, descriptors, the terminal, signals) and the box started, frozen and copied',
-    holds: ['module/ricebox/runtime', 'src/core/src/prompt', 'src/core/src/compute'],
-    takes: ['sods']},
-  {name: 'muk', says: 'what is at rest: layers named by their digest, a layer written over them, names for digests; each byte fetched when first touched',
-    holds: ['root', 'module/muk/runtime',
-      'src/remote/bytes',
-      'src/core/src/fs', 'src/core/src/root', 'src/core/src/history', 'src/core/src/repos'],
-    takes: ['ricebox']},
+  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the root\'s packages, what #80 lists; no window, ordinary POSIX, and no service known to it',
+    holds: ['module/ricebox/runtime', 'root'],
+    takes: ['lib', 'muk', 'sods']},
+  {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
+  {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
+    holds: ['module/otter', 'src/core/src/storage'],
+    takes: ['lib', 'ricebox', 'muk', 'sods']},
   {name: 'funk', says: 'what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH)',
     holds: ['src/core/src/ssh', 'src/cli/src/cmd/ssh.rs', 'src/cli/src/cmd/address.rs'],
     takes: ['ricebox']},
-  {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
-    holds: ['module/otter', 'src/core/src/storage'],
-    takes: ['ricebox', 'muk', 'sods']},
-  {name: 'shipto', says: 'deliveries: what goes where and who takes it (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
+  {name: 'shipto', says: 'what a service wants, all of it and nowhere else: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
     holds: ['src/remote', 'src/core/src/remote', 'src/cli/src/cmd/sync.rs', 'src/cli/src/cmd/git.rs', 'src/cli/src/cmd/remote.rs',
       'src/shared/desktop-releases.json'],
-    takes: ['muk', 'funk']},
+    takes: ['ricebox', 'muk', 'funk']},
   {name: 'm8', says: 'where and how many boxes run: a state wanted, and one loop that makes it so (none yet: it is made when boxes run on more than one machine)',
     holds: [], takes: ['ricebox', 'muk', 'shipto']},
-  {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
-  {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
   {name: 'app', says: 'a face: the pages, the window and what the core says to them; no judgement of its own',
     holds: ['src/app', 'src/desktop', 'src/core', 'src/shared'], takes: ['*']},
   {name: 'root3', says: "a face: root3's words, read against its one table, and what it prints; no judgement of its own",
     holds: ['src/cli'], takes: ['*']},
 ];
 
+/** The units ricebox is made of: what is cut out with it. None takes from a unit that is not one of them. */
+export const RICEBOX = ['lib', 'muk', 'sods', 'ricebox', 'you', 'otter'];
+
 /** What is no unit's: the tests, the scripts that build and check, what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'tests', 'module/ricebox/runtime/run.ts', 'module/ricebox/tests', 'module/muk/tests', 'module/sods/examples', 'module/otter/test',
+export const NOT_UNITS = ['scripts', 'tests', 'module/ricebox/runtime/run.ts', 'module/ricebox/tests', 'module/sods/examples', 'module/otter/test',
   'src/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/ricebox/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);

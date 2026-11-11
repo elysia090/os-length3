@@ -1,7 +1,9 @@
-# ricebox — the box
+# ricebox — the neutral distribution
 
-The smallest UNIX a browser runs, and the box it runs in. `runtime/` is the
-user-mode kernel (TypeScript, for now): processes, a POSIX tree, file
+As BusyBox is one: no window, a command line that is ordinary POSIX (what #80 lists), served from any web host as
+it is. It knows no service and nothing of root3's, so it can be cut out whole: muk (`../muk`), sods (`../sods`),
+its tools (`../you`, `../otter`) on `../lib`, the root's packages (`../../root`), and what is here, the smallest
+UNIX a browser runs. `runtime/` is that user-mode kernel (TypeScript, for now): processes, a POSIX tree, file
 descriptors and pipes, fork/exec/wait, threads, signals.
 
 - Processes run at once, as on Linux: fork returns in the parent at once; a
@@ -21,9 +23,9 @@ descriptors and pipes, fork/exec/wait, threads, signals.
   outbox the kernel takes from, `runtime/channel.ts`), not asked of the kernel
   a line at a time.
 
-The code it runs is sods' (`../sods`); what it reads at rest is muk's
-(`../muk`), handed to it: a Prompt's Worker (`src/app/prompt/kernel.worker.ts`)
-mounts the root and the repo in its tree and gives it the translations kept.
+The code it runs is sods' (`../sods`); what it reads at rest is read by muk (`../muk`) and put in its tree here
+(`runtime/mount.ts`; a repo kept in step with the outside, `runtime/mirror.ts`). A Prompt's Worker
+(`src/app/prompt/kernel.worker.ts`, root3's for now) mounts the root and the repo and gives it the translations kept.
 
 ```
 node runtime/run.ts PROGRAM [args...]            # host ELF as /bin/PROGRAM

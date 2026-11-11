@@ -84,7 +84,7 @@ async function keptIn(dir: string) {
 /** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
 async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV}: Asked) {
   const {Vfs} = await import('../module/ricebox/runtime/fs.ts');
-  const {mountPack, provide} = await import('../module/muk/runtime/pack.ts');
+  const {mountPack, provide} = await import('../module/ricebox/runtime/mount.ts');
   const {Kernel} = await import('../module/ricebox/runtime/process.ts');
   // As a cross-origin isolated page runs it: each thread in a Worker of its own (XLAT_INLINE=1: all in turn here).
   const {RemoteKernel, canRunApart} = await import('../module/ricebox/runtime/remote.ts');

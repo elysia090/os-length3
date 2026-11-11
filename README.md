@@ -10,8 +10,8 @@ hardened and checked by use.
 | --- | --- |
 | root3 | the releases below: the root, the web root, the web app and the desktop app, with `root3` in each |
 | [`module/sods`](module/sods/) | the x86-64 → WebAssembly translator (`xlat`, and as wasm with its runtime) |
-| [`module/ricebox`](module/ricebox/) | the box: the smallest UNIX a browser runs, the kernel a browser's Prompt runs the root on |
-| [`module/muk`](module/muk/) | what is at rest: the root's packs read when first touched, copies kept by digest, the repo in step |
+| [`module/ricebox`](module/ricebox/) | the neutral distribution, as BusyBox is one: the smallest UNIX a browser runs, the kernel a browser's Prompt runs the root on |
+| [`module/muk`](module/muk/) | the thinnest part of it: an OCI-compatible VMM (today the root's packs read when first touched and copies kept by digest) |
 | [`module/you`](module/you/), [`module/otter`](module/otter/), [`module/lib`](module/lib/) | units of C with no C library: z, rg, fd and fzf; help and what each thing is; what they stand on |
 
 ```
@@ -51,7 +51,7 @@ devices. Building from source, `root3` is `cargo install --path src/cli`.
 | Directory | What is there | Start at |
 | --- | --- | --- |
 | [`src/`](src/) | **Length³ OS**: the app ([`app/`](src/app/), TypeScript, no framework; [`desktop/`](src/desktop/), Tauri for the window), [`cli/`](src/cli/), the `root3` command, the core both use ([`core/`](src/core/), also built for `wasm32-wasip1` for the browser), and the Remote ([`remote/`](src/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design language in [`docs/DESIGN.md`](docs/DESIGN.md) |
-| [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`ricebox/`](module/ricebox/) the box (the smallest UNIX a browser runs: the kernel the root runs on in a browser's Prompt), [`muk/`](module/muk/) what is at rest (packs and translations by digest, the repo in step); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
+| [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`ricebox/`](module/ricebox/) the neutral distribution's own (the smallest UNIX a browser runs: the kernel the root runs on in a browser's Prompt), [`muk/`](module/muk/) its thinnest part, the OCI-compatible VMM (today a pack's bytes read by digest when first touched); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
 | [`root/`](root/) | the root the Prompts run: its pins, a recipe per package and what makes it (below) | `make/build.sh` |
 | [`scripts/`](scripts/), [`tests/`](tests/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
 | [`docs/`](docs/) | what the OS is and how it ships ([`README.md`](docs/README.md)), its design language ([`DESIGN.md`](docs/DESIGN.md)), what it promises about security ([`SECURITY.md`](docs/SECURITY.md)) | |
@@ -70,28 +70,64 @@ its own files (`etc/`, `usr/`), and what makes it (`make/`: `build.sh`, each pac
 
 ## Units
 
-What the directories hold is being sorted into units, each one responsibility, peeled from the outside in by how
-easily a person changes it; what is left inside is ricebox's, the smallest UNIX a browser runs. Every byte is
-running (ricebox), at rest (muk) or on its way (funk). The faces (the app's pages and window, root3's words) hold no
-judgement of their own. [`scripts/units.ts`](scripts/units.ts) is the table: each unit's files and the units it
-may take from, checked by `npm test` (an import a unit still makes and may not is listed there as owed, with the step
-below that ends it).
+Three things, one inside the next:
 
-| Unit | Its responsibility | Takes from |
-| --- | --- | --- |
-| you | the tools a person reaches for: z, rg, fd, fzf | lib |
-| m8 | where and how many boxes run: a state wanted, one loop that makes it so (made when boxes run on more than one machine) | ricebox, muk, shipto |
-| shipto | deliveries: what goes where and who takes it (commits, reviews, merges, messages, releases), the Remote that receives them, its own deploy | muk, funk |
-| funk | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | ricebox |
-| muk | what is at rest: layers by digest, a layer written over them, names for digests; each byte fetched when first touched | ricebox |
-| otter | to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said | ricebox, muk, sods |
-| sods | instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS | — |
-| ricebox | the box: the smallest UNIX inside (processes, memory and its page cache, files, descriptors, the terminal, signals) and the box started, frozen and copied | sods |
+- **muk**, the thinnest: an OCI-compatible VMM. An image's layers at rest, named by their digest, and a bundle run
+  from them (created, started, signalled, deleted, as the OCI runtime says). No KVM and no Firecracker under it: it
+  is C on `lib` alone, with no C library, written as `you` is.
+- **ricebox**, the neutral distribution, as BusyBox is one: muk, what makes a browser its machine (sods and the
+  kernel), its own tools (you, otter) and the root's packages. No window; a command line that is ordinary POSIX,
+  what [#80](https://github.com/elysia090/os-length3/issues/80) lists, on the Web as on Linux; served from any web
+  host as it is. It knows no service, so anyone can cut it out whole and put it under a service of their own:
+  nothing of it takes from what is not of it.
+- **root3**, the product, as Alpine stands on BusyBox: ricebox, and the modules over it. What a service wants (who
+  one is, what one may use, the Remote and its sync, its gateway's rules, its deploy) is shipto's, and nowhere else.
 
-The steps, each moving files without changing what they do before changing anything, the tests green at each:
-0 the table and its check; 1 #80's requirements as tests of the web Prompt; 2 sods out of xlat; 3 ricebox made of the
-rest of xlat's runtime, the box and its UNIX apart; 4 otter's hooks and `otter -- CMD`; 5 the floors lowered, each
-measured beside Linux on the same machine; 6 muk; 7 shipto; 8 funk with the HTTP gateway; 9 m8.
+[`scripts/units.ts`](scripts/units.ts) is the table: each unit's files and the units it may take from, checked by
+`npm test`, with ricebox's cut (an import a unit still makes and may not is listed there as owed, with the step below
+that ends it).
+
+| Unit | Of | Its responsibility | Takes from |
+| --- | --- | --- | --- |
+| lib | ricebox | what the units of C stand on: system calls, words, output; no C library | — |
+| muk | ricebox | the OCI-compatible VMM: layers by digest, each byte fetched when first touched, and a bundle run from them | lib |
+| sods | ricebox | instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS | — |
+| ricebox | ricebox | the distribution itself: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the root's packages | lib, muk, sods |
+| you | ricebox | the tools a person reaches for: z, rg, fd, fzf | lib |
+| otter | ricebox | to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said | lib, ricebox, muk, sods |
+| funk | root3 | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | ricebox |
+| shipto | root3 | what a service wants: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, its own deploy | ricebox, muk, funk |
+| m8 | root3 | where and how many boxes run: a state wanted, one loop that makes it so (made when boxes run on more than one machine) | ricebox, muk, shipto |
+
+Where each is to be, so that ricebox is one folder to cut:
+
+```
+module/ricebox/   lib/  muk/  sods/  kernel/  you/  otter/    its units
+                  root/                                       the packages: pins, recipes, settings
+                  web/                                        the distribution as a web host serves it: its index,
+                                                              its packs, a Prompt's Worker
+module/shipto/    the Remote, its client, its words           what a service wants
+src/              app/  cli/  desktop/  core/                 root3's faces and the core under them
+```
+
+How a part is made, the same for each: what it is for in a sentence, and what is not its; its bytes at rest and on
+their way laid out first, since the layout decides the bound; the bound counted by hand for one unit of its work
+(an instruction translated, a call answered, a line searched, a bundle started) in instructions, cache lines and
+system calls; written in C on `lib` until callgrind and the disassembly show that sequence; checked against what it
+stands in for over everything there is (Linux, runc, ripgrep, the one before it), byte for byte; written again in
+Rust only where it must be (what runs as wasm beside sods); and the one before it deleted in the change that puts
+it in its place, nothing kept beside. Its bound stays a test.
+
+The order, the part furthest from its bound first:
+1 muk in C: a bundle run on Linux by namespaces, beside runc on the same bundle; what root3 hands a Prompt becomes
+the bundle it writes (`src/core/src/prompt`), and the Firecracker driver goes (`src/core/src/compute`);
+2 ricebox's kernel out of TypeScript: its state laid out in one shared memory and each call answered on the thread
+that makes it (a call is 24× Linux's across Workers today, a write 31×);
+3 what serves ricebox on the Web out of the app (`src/app/prompt`, `scripts/webroot*.ts`) into ricebox, with no
+word of the app's or the Remote's in it;
+4 sods to its bound (a first translation is 3.8× it);
+5 shipto gathered from `src/remote`, the core's `remote` and root3's words, into its folder;
+6 the folders above.
 
 ## Develop
 

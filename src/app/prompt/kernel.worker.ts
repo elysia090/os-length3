@@ -83,8 +83,9 @@
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
 import {Vfs, type File} from '../../../module/ricebox/runtime/fs.ts';
-import {Mirror} from '../../../module/muk/runtime/mirror.ts';
-import {mountPack, provide, syncRange, type Given, type Packed} from '../../../module/muk/runtime/pack.ts';
+import {Mirror} from '../../../module/ricebox/runtime/mirror.ts';
+import {mountPack, provide, type Given, type Packed} from '../../../module/ricebox/runtime/mount.ts';
+import {syncRange} from '../../../module/muk/runtime/pack.ts';
 import {Kernel, type Image, type Pumped} from '../../../module/ricebox/runtime/process.ts';
 import {RemoteKernel, canRunApart, warmThreads} from '../../../module/ricebox/runtime/remote.ts';
 import {keeper, type Kept, type Reading} from '../../../module/muk/runtime/keeper.ts';
