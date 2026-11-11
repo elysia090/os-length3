@@ -193,6 +193,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sods"
+version = "0.1.0"
+dependencies = [
+ "iced-x86",
+ "ruzstd",
+ "sha2",
+ "wasm-encoder",
+ "wasmparser",
+]
+
+[[package]]
 name = "syn"
 version = "3.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -236,15 +247,4 @@ dependencies = [
  "indexmap",
  "semver",
  "serde",
-]
-
-[[package]]
-name = "sods"
-version = "0.1.0"
-dependencies = [
- "iced-x86",
- "ruzstd",
- "sha2",
- "wasm-encoder",
- "wasmparser",
 ]
