@@ -174,14 +174,23 @@ test("Home's repos are a column of their names beside the TODO at a laptop's wid
   const cards = repos.getByRole('group').or(repos.getByRole('button', {name: 'New repo'}));
   await expect(cards).toHaveCount(4);
   const at = async (l: Locator) => (await l.boundingBox())!;
-  await app.page.setViewportSize({width: 1180, height: 800});
+  // (As tall as the rail's places stand a step apart: in a shorter window they close up.)
+  await app.page.setViewportSize({width: 1180, height: 900});
   await expect(async () => {
     const boxes = await Promise.all((await cards.all()).map(at));
     expect(boxes.every((b, i) => i === 0 || b.y >= boxes[i - 1].y + boxes[i - 1].height - 1)).toBe(true);
-    // Beside the TODO: to its right, from its top.
-    const todo = await at(app.home.todo);
+    // Beside the TODO: to its right, their first name on the line the TODO box's top is on.
+    const todo = await at(app.main.locator('.todo-box'));
     expect(boxes[0].x).toBeGreaterThan(todo.x + todo.width);
-    expect(Math.abs(boxes[0].y - todo.y)).toBeLessThan(80);
+    expect(Math.abs(boxes[0].y - todo.y)).toBeLessThan(4);
+    // Home is set on the rail's rows: the name's line level with the rail's first place, the box's top with its
+    // second, its foot (nothing written in it) with the fifth's.
+    const places = await Promise.all((await app.page.locator('.rail-item').all()).slice(0, 5).map(at));
+    const name = await at(app.main.locator('.identity > h1'));
+    expect(Math.abs(name.y - places[0].y)).toBeLessThan(2);
+    expect(Math.abs(name.height - places[0].height)).toBeLessThan(2);
+    expect(Math.abs(todo.y - places[1].y)).toBeLessThan(2);
+    expect(Math.abs(todo.y + todo.height - (places[4].y + places[4].height))).toBeLessThan(2);
   }).toPass();
   await app.page.setViewportSize({width: 390, height: 844});
   await expect(async () => {
@@ -289,13 +298,13 @@ test('Home come back to is where it was read to, and the page between starts at 
   await app.page.setViewportSize({width: 1280, height: 300});
   await app.rail.go('home');
   const read = () => app.page.evaluate(() => Math.round(document.scrollingElement!.scrollTop));
-  // Read down to 120 px, once Home is that long (what it lists is drawn as it is read from the store).
+  // Read down to 60 px, once Home is that long (what it lists is drawn as it is read from the store).
   await expect(async () => {
-    await app.page.evaluate(() => { document.scrollingElement!.scrollTop = 120; });
-    expect(await read()).toBe(120);
+    await app.page.evaluate(() => { document.scrollingElement!.scrollTop = 60; });
+    expect(await read()).toBe(60);
   }).toPass();
   await app.rail.go('runtime');
   await expect.poll(read).toBe(0);
   await app.rail.go('home');
-  await expect.poll(read).toBe(120);
+  await expect.poll(read).toBe(60);
 });

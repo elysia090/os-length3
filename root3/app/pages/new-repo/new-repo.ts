@@ -280,23 +280,23 @@ export function newRepo(ctx: Context): Node[] {
   // The files' box says over it, as the name's does, where it shows them: File's tree (heard with the tree, as its caption).
   const filesLabel = h('div', {class: 'nr-label nr-files-label', 'aria-hidden': 'true'}, h('span', {class: 'nr-path'}, t('File')));
   const form = h('form', {class: 'new-repo', novalidate: ''}, label, box, filesLabel, card);
-  // The name on its one line as large as the box lets it be: 104 px while it is short, smaller as it grows longer (never
+  // The name on its one line as large as the box lets it be: 64 px while it is short, smaller as it grows longer (never
   // under 28, where it goes on past the box's edge as a field's words do), never cut at the edge before that; nothing
-  // written, the word for it the same way. A name that would stand under 72 px in the box beside the files has the
-  // column alone, the files inside its box (styles: .alone), until it would stand at 80 there again.
+  // written, the word for it the same way. A name that would stand under 44 px in the box beside the files has the
+  // column alone, the files inside its box (styles: .alone), until it would stand at 50 there again.
   const fitted = () => {
     const cs = getComputedStyle(name), pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 4, words = name.value || t('name');
     // The box beside the files is as wide as Home's TODO there (styles: .new-repo's columns), wherever the box stands now.
     const across = form.clientWidth, gap = Math.min(80, Math.max(24, .06 * across)), beside = Math.min(520, across - gap - 280);
     const there = across >= 600 ? fitSize(name, words, beside - pad, -.04, fitted) : 0;
-    const alone = !!there && there < (form.classList.contains('alone') ? 80 : 72);
+    const alone = !!there && there < (form.classList.contains('alone') ? 50 : 44);
     if (alone !== form.classList.contains('alone')) {
       form.classList.toggle('alone', alone);
       if (alone) box.insertBefore(card, actions); else form.append(filesLabel, card);
       if (!still()) card.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: 'ease-out'});
     }
     const fits = fitSize(name, words, name.clientWidth - pad, -.04, fitted);
-    if (fits) box.style.setProperty('--nr-name', `${Math.floor(Math.max(28, Math.min(104, fits)))}px`);
+    if (fits) box.style.setProperty('--nr-name', `${Math.floor(Math.max(28, Math.min(64, fits)))}px`);
   };
   let across = 0;
   new ResizeObserver(() => { if (box.clientWidth !== across) { across = box.clientWidth; fitted(); } }).observe(box);

@@ -37,5 +37,6 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .agent-model { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-said { margin: 0; padding: 0 var(--s3) var(--s2); }
 .agent-said:empty { display: none; }
-.agent-note { margin: var(--s2) 0 0; }
+/* Its note ends where the box does, under Use: set to the right, the small words of what the key is for and where it is kept. */
+.agent-note { max-width: 760px; margin: var(--s2) 0 0; text-align: right; }
 .agent-note > span { display: block; }

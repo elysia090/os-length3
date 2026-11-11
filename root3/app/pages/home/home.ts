@@ -52,7 +52,9 @@ export function home(ctx: Context): Node[] {
   const places = h('div', {class: 'home-places'},
     h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
     h('section', {class: 'section', 'aria-labelledby': 'servers-title'}, h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx)));
-  const main = h('div', {class: 'home-main'}, header, ...unread, h('div', {class: 'home-desk'}, todoBox(), places));
+  // Two columns from the page's top: the person's own (the name, then what is theirs to do) and, beside it from the
+  // name's height, where their work is (home.css .home-desk).
+  const main = h('div', {class: 'home-main'}, h('div', {class: 'home-desk'}, h('div', {class: 'home-own'}, header, ...unread, todoBox()), places));
   return [onTheGround(main, ctx, listed)];
 }
 
@@ -267,18 +269,15 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
 }
 
 /**
- * The name on its one line, as large as the line is long: up to 168 px, and never under 40, where a name longer than
- * its line breaks instead. Its size is the profile's --home-name, so the line it is written on is as large.
+ * The name on its one line, at the size a name is said at (styles: --t-name, about a place of the rail's beside it);
+ * one longer than its line breaks instead, balanced over its lines.
  */
 function fitName(header: HTMLElement) {
-  // Home's column, not the profile's own box: written in, the profile is a sheet a little wider, and the name read
-  // again after it is the size it was.
+  // Home's column, not the profile's own box: written in, the profile is a sheet a little wider.
   const name = header.querySelector<HTMLElement>('.identity > h1'), room = header.parentElement?.clientWidth ?? 0;
   if (!name) return;
   const fits = fitSize(name, name.textContent ?? '', room, -.04, () => fitName(header));
-  if (!fits) return;
-  header.style.setProperty('--home-name', `${Math.floor(Math.max(40, Math.min(168, fits)))}px`);
-  name.classList.toggle('long', fits < 40);
+  if (fits) name.classList.toggle('long', fits < parseFloat(getComputedStyle(name).fontSize));
 }
 
 function identity(counts: HTMLElement, fitted: () => void): HTMLElement {

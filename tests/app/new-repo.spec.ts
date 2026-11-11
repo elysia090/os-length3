@@ -77,15 +77,26 @@ test("what will be made stands beside the name's box at a laptop's width, as Hom
     expect(Math.abs(f.y - b.y)).toBeLessThan(1);
     expect(f.width).toBeLessThan(b.width * .7);
   }).toPass();
+  // The box where Home's TODO is, on the rail's rows: its top level with the rail's second place.
+  const second = (await app.page.locator('.rail-item').nth(1).boundingBox())!;
+  expect(Math.abs((await at(box)).y - second.y)).toBeLessThan(2);
   // A short name as large as the box gives it.
   const size = () => app.newRepo.name.evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
-  expect(await size()).toBe(104);
+  expect(await size()).toBe(64);
+  // Set to the box's top left corner: its first letter a step in from the left edge, its capitals as far from the top.
+  const corner = await app.newRepo.name.evaluate((e: HTMLInputElement) => {
+    const b = e.closest('.nr-box')!.getBoundingClientRect(), n = e.getBoundingClientRect(), cs = getComputedStyle(e);
+    return {left: n.left + parseFloat(cs.paddingLeft) - b.left, top: n.top + parseFloat(cs.paddingTop) - b.top, align: cs.textAlign};
+  });
+  expect(corner.left).toBeLessThan(32);
+  expect(corner.top).toBeLessThan(20);
+  expect(['start', 'left']).toContain(corner.align);
   // One too long to stand large beside the files has the column alone, what will be made inside its box; on its one
   // line, not cut at the box's edge. Short again, the files stand beside it again.
   const inside = box.locator('.tree-still');
-  await app.newRepo.name.fill('length3-blobs');
+  await app.newRepo.name.fill('length3-blobs-mirror-of-main');
   await expect(inside).toBeVisible();
-  expect(await size()).toBeGreaterThan(80);
+  expect(await size()).toBeGreaterThan(44);
   expect(await app.newRepo.name.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
   await app.newRepo.name.fill('count');
   await expect(inside).toHaveCount(0);

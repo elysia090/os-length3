@@ -7,29 +7,35 @@
 .card-summary:empty { display: none; }
 .card-summary ~ .muted { font-size: var(--t-meta); }
 
-/* Home: profile. The name alone at Home's top, as large as Home is wide (the --home-name of home.css), Cancel and
-   Save at its right while it is written. */
+/* Home: profile. The name at Home's top, small (home.css --home-name: its capitals an icon of the rail's tall), Cancel
+   and Save at its right while it is written. */
 .profile { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); align-items: start; }
 .profile:has(> .edit-acts) { grid-template-columns: minmax(0, 1fr) auto; }
-/* A name, handle or bio with a word longer than the line breaks in the word, never pushing the page sideways. */
-.identity { min-width: 0; }
+/* One line at Home's top, a place of the rail's tall and level with its first: the name at its left (the handle after
+   it), and at its right end, on the name's own line, the counts and Edit profile, quiet: two ends of one line, the
+   room between them empty (a line about the person, where there is one, under them). A name, handle or bio with a
+   word longer than the line breaks in the word, never pushing the page sideways. */
+.identity { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); }
 .identity :is(h1, .handle, .bio) { overflow-wrap: anywhere; }
-/* The name: as large as Home is wide, black and tight (DESIGN.md § Home), a long one balanced over lines; its left
-   edge set back by its first letter's own side bearing, so its ink stands on the TODO's edge under it. The handle a
-   step under it, clear of its descenders. */
-.identity h1 { margin-left: -.015em; font: 900 var(--home-name, var(--t-name))/.92 var(--display); letter-spacing: -.04em; white-space: nowrap; }
-/* Longer than its line at the least size (home.ts fitName): it breaks, balanced over its lines. */
-.identity h1.long { white-space: normal; text-wrap: balance; line-height: 1; }
-.identity > .handle { margin-top: var(--s2); font-family: var(--mono); }
+/* The name: black and tight, its capitals as tall as an icon of the rail's beside it, on a line as tall as a place
+   there (DESIGN.md § Home), so what is the person's to do stands high under it; its left edge set back by its first
+   letter's own side bearing, so its ink stands on the TODO's edge under it. */
+.identity h1 { margin-left: -.015em; font: 900 var(--home-name, var(--t-name))/var(--h-place) var(--display); letter-spacing: -.04em; white-space: nowrap; }
+/* Longer than its line (home.ts fitName): it breaks, balanced over its lines. */
+.identity h1.long { white-space: normal; text-wrap: balance; line-height: 1.1; padding-block: var(--s2); }
+.identity > .handle { font: var(--t-meta)/1.6 var(--mono); }
 /* No name yet: the words for it as large, in the ground's own rule, a place for it rather than a name. */
 .identity .unset { color: var(--rule); }
 .handle { color: var(--sub); }
-.bio { margin-top: var(--s3); max-width: 60ch; white-space: pre-wrap; }
-/* Under the name, one quiet line in the mono face, as a desk's labels are: each count its figure in ink and its word,
-   then Edit profile, a dot between them. */
-.counts { margin-top: var(--s4); display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); color: var(--sub); font: var(--t-meta)/1.6 var(--mono); }
+.bio { order: 2; flex-basis: 100%; margin-bottom: var(--s2); max-width: 60ch; white-space: pre-wrap; }
+/* At the line's right end, quiet in the mono face, as a desk's labels are: each count its figure in ink and its word,
+   then Edit profile, a dot between them. The dot stands in the room between two, not in the one after it: under
+   the pointer or the keyboard, each one's fill and ring are round its own words (before: Edit profile's ring ran
+   over the dot and onto the word before it). */
+.counts { order: 1; margin-left: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 calc(2 * var(--s2) + 1ch); color: var(--sub); font: var(--t-meta)/1.6 var(--mono); }
 .counts b { color: var(--ink); font-weight: 700; }
-.counts > * + *::before { content: '·'; content: '·' / ''; margin-right: var(--s2); color: var(--sub); }
+.counts > * { position: relative; }
+.counts > * + *::before { content: '·'; content: '·' / ''; position: absolute; right: 100%; width: 1ch; text-align: center; color: var(--sub); pointer-events: none; }
 .profile-edit { color: var(--sub); }
 .profile-edit:hover { color: var(--ink); }
 /* Each count is the way to its section (home.ts toSection): under the pointer a raised fill round it, as a row's. */

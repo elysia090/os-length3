@@ -2,11 +2,14 @@
 
 /* New repo: one box being born where Forge will lay the repo's README (paper, an ink edge, its shadow, as a box on
    the desk is), its place said over it as a desk box's is (~/ and the name as written, then New repo): in it the name,
-   its first line, as large as Home's name, the word for it quiet where nothing is written yet; under it what the repo is
+   its first line, set to its top left corner, the word for it quiet where nothing is written yet; under it what the repo is
    for; Create at its foot. Beside it a box of what will be made with it, as File will show it, File said over it: in
    Home's two columns (home.css .home-desk), the name's box where Home's TODO stands, the files where its repos do; the
    files' box under the name's on a narrow column. */
-.new-repo-main { padding-top: var(--s6); }
+/* On the rail's rows, as Home is (home.css): its place said on the first, level with the rail's first place, on the
+   line Home's name stands on; its box from the second, where Home's TODO is and as tall at the least, so the box does
+   not move between the two pages. */
+.new-repo-main { padding-top: 0; }
 .new-repo { display: grid; grid-template-columns: minmax(0, 520px) minmax(280px, 1fr); grid-template-areas: "label files-label" "box files";
   column-gap: clamp(var(--s5), 6cqi, 80px); align-items: start; }
 .new-repo > .nr-label:not(.nr-files-label) { grid-area: label; }
@@ -23,29 +26,31 @@
 .new-repo.alone > .nr-files-label { display: none; }
 .nr-box > .tree.tree-still { margin: 0 var(--s5) var(--s3) calc(var(--nr-in) - 10px); padding: var(--s3) 0 0; border: 0; border-top: 1.5px solid var(--rule);
   border-radius: 0; background: transparent; box-shadow: none; }
-.nr-box { position: relative; min-width: 0; background: var(--paper); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 8px 8px 0 0 var(--ink); }
+.nr-box { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: calc(4 * var(--home-row) + 3 * var(--home-step)); background: var(--paper); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 8px 8px 0 0 var(--ink); }
 /* Its place over it, as a desk box's label: the path in ink, what it is quiet after it, why the name cannot be in the
    off colour after that (an off dot before it, as everywhere a written thing is refused). */
-.nr-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s2); padding: 4px 8px 7px 0;
-  font: 600 15px/1.3 var(--mono); color: var(--ink); }
+.nr-label { display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 0 var(--s2); min-height: var(--home-row); margin-bottom: var(--home-step);
+  padding: 0 8px 0 0; font: 600 15px/1.3 var(--mono); color: var(--ink); translate: 0 calc((var(--home-name) - 15px) * .36); }
 .nr-kind { font-weight: 400; color: var(--sub); }
 .nr-kind::before { content: '·'; content: '·' / ''; margin-right: var(--s2); }
 .nr-label > .error { min-width: 0; margin: 0; font: 400 13px/1.3 var(--mono); }
 .nr-label > .error:empty { display: none; }
 /* The name: the box's first line, the display face as large as the box lets the name written be (new-repo.ts fitted
-   sets it on the box: 104 px while the name is short). */
-.new-repo-main { --nr-name: 104px; --nr-in: 36px; }
+   sets it on the box: 64 px while the name is short). */
+.new-repo-main { --nr-name: 64px; --nr-in: var(--s5); --nr-top: var(--s3); }
 /* On a phone's column the box keeps less room inside its edge, for the name and its words. */
 @container (width < 480px) { .new-repo { --nr-in: 20px; } }
-.nr-name { display: block; width: 100%; min-width: 0; margin: 0; padding: 30px var(--nr-in) 2px; border: 0; background: transparent; color: var(--ink);
+/* Set to the box's top left corner: its first letter a step in from the left edge, its capitals as far from the top
+   (not large in the box's middle, the box's room round it on every side). */
+.nr-name { display: block; width: 100%; min-width: 0; margin: 0; padding: var(--nr-top) var(--nr-in) 2px; border: 0; background: transparent; color: var(--ink);
   font: 900 var(--nr-name)/1.1 var(--display); letter-spacing: -.04em; outline: none; }
 .nr-name[aria-invalid] { color: var(--off); }
 /* Nothing written yet: the word for what goes there, in the ground's rule colour where the name will stand (not an
    example of one, and not the field's own words: the field holds nothing). */
-.nr-box:has(> .nr-name:invalid)::before { content: attr(data-empty); position: absolute; left: var(--nr-in); top: 30px; pointer-events: none;
+.nr-box:has(> .nr-name:invalid)::before { content: attr(data-empty); position: absolute; left: var(--nr-in); top: var(--nr-top); pointer-events: none;
   font: 900 var(--nr-name)/1.1 var(--display); letter-spacing: -.04em; color: var(--rule); }
 /* What it is for, under the name: the words written straight in it, a sentence's size; the box grows with them. */
-.nr-box > .summary-box { min-height: 0; padding: var(--s2) calc(var(--nr-in) + 4px) var(--s4); border: 0; border-radius: 0; background: transparent; }
+.nr-box > .summary-box { flex: 1; min-height: 0; padding: var(--s2) calc(var(--nr-in) + 4px) var(--s4); border: 0; border-radius: 0; background: transparent; }
 .nr-box > .summary-box > .todo-detail { min-height: 1.45em; font: 19px/1.45 var(--sans); overflow: hidden; }
 /* Its foot: the plan's word if any, Create at the right, the key that makes it beside its word. */
 .nr-box > .answers { margin: 0; padding: 0 var(--s4) var(--s4) var(--nr-in); }

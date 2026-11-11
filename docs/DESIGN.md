@@ -2026,18 +2026,34 @@ Each page below says only what is its own; the rest is Part I.
 ### Home
 
 A profile that reads the same for its owner and for anyone else; only the
-owner gets "edit". Bold, minimal, sure of itself: on the desk's dotted ground
-(the dots Forge's boxes lie on), the person's name alone across the top, as
-large as Home's column lets it be on one line (up to 168 px, fitted by
-measuring it; never under 40 px, where a longer name breaks instead), and
-under it one quiet mono line: the counts of repos and servers, then Edit
-profile. No face in the column: the rail's own icon is the face. No name
-written yet, it is the one signed in with, as Remote and the Me menu say it:
-one person, one name, never "No name yet" beside "Signed in as Sora"; none at
-all, "No name" stands as large in the ground's rule colour. Under the
-name, side by side: **TODO**, a box as Forge's are (paper, an ink edge, its
-shadow), as tall as what is in it and most of half the column wide; and
-beside it the repos and servers, each a name in the display face, what it is
+owner gets "edit". Minimal and sure of itself, on the desk's dotted ground
+(the dots Forge's boxes lie on), and set on the rail's rows (a place tall, a
+step between them), from the rail's first place down, so that what is beside
+the rail lines up with it. The first row is what each thing is called: the
+person's name at the top left, small (28 px: its capitals as tall as an icon
+of the rail's beside it, on a line a place tall; one longer than its line
+breaks instead), the handle after it; and at that line's right end, over the
+box's right edge, quiet in mono, the counts of repos and servers, then Edit
+profile: two ends of one line, the room between them empty, never a row of
+small words packed after the name (a dot stands between each two, in the room
+between them: each one's fill and ring are round its own words; where the
+column is too narrow for the name and all of them, the counts go and Edit
+profile alone ends the line, so the first row stays one row; a line about
+the person, where
+there is one, under them). No face in the column: the rail's own icon is the
+face. No name written yet, it is the one signed in with, as Remote and the Me
+menu say it: one person, one name, never "No name yet" beside "Signed in as
+Sora"; none at all, "No name" stands there in the ground's rule colour. From
+the second row down, what each holds: under the name the **TODO**, a box as
+Forge's are (paper, an ink edge, its shadow), with no word over it (under the
+person's name it needs none; it is heard, and what is left of it and Clear
+completed are said at the sheet's own foot, at its right), its top
+level with the rail's second place, four places tall at the least (its foot
+level with the fifth's; longer as what is in it is) and most of half the
+column wide; and beside the two, the repos and servers: their first heading on
+the name's own line (its letters' feet where the name's are), their names from
+the line the box's top is on, the
+repos and servers, each a name in the display face, what it is
 beside it in mono (a repo: when it last changed), New repo a quiet mono line
 after them. Each server one is in opens Server on it; after them each board
 this browser writes in as a guest, #board with its server and guest beside
@@ -2089,8 +2105,9 @@ keeps its own turning: past its end, the page behind it does not go on.
 
 The profile is edited where it is read, not in a form put in its place:
 written in, the top is a sheet of its own as the TODO is when written in
-(`paper`, an `ink` edge, grown out around the lines so nothing on it
-moves). The name becomes the line it is written on, where it stands
+(`paper`, an `ink` edge, from the row's own top: nothing is over it to grow
+into, so it is longer downward, and what is under it goes down with it,
+never under it; nothing on it moves). The name becomes the line it is written on, where it stands
 and as large, holding the name shown (none written yet, the one signed in
 with, to be changed, never an empty line beside it); @ and the handle, and
 the line about the person, come in under
@@ -3991,16 +4008,22 @@ One box being born on the desk's ground, with Home's and Forge's band and
 pane round it (the rail goes between the three as a camera over one desk):
 paper, an ink edge, its shadow, as a box on the desk is, and over it, as a
 desk box's label says its place, ~/ and the name as written, then New repo.
+It is set on the rail's rows as Home is: its label on the first, on the line
+Home's name stands on; the box from the second, where Home's TODO is and as
+tall at the least, so the box does not move between the two pages.
 Beside it a box of what will be made with it, File said over it, in Home's two
 columns: the name's box where Home's TODO stands (up to 520 px), the files
 where its repos do (280 px at the least); on a narrow column the files' box
 goes under the name's. A name too long to stand large beside the files (under
-72 px there) has the column alone, as the box had before the files stood
+44 px there) has the column alone, as the box had before the files stood
 beside it (up to 760 px), what will be made inside it under what the repo is
-for, a rule over it; shortened again (to stand at 80 px beside them), the
+for, a rule over it; shortened again (to stand at 50 px beside them), the
 files go back beside it.
-In the box, its first line, the name, in the display face as large as the
-box lets the name written be: 104 px while it is short, smaller as it grows
+In the box, its first line, the name, set to the box's top left corner (its
+first letter a step in from the left edge, its capitals as far from the top;
+not large in the box's middle with the box's room round it), in the display
+face as large as the
+box lets the name written be: 64 px while it is short, smaller as it grows
 longer so it is never cut at the box's edge (never under 28 px, past which it
 runs on as a field's words do); nothing written yet, the word name
 stands there in the ground's rule colour (the field itself holds no
