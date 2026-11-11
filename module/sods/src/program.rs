@@ -237,8 +237,11 @@ impl Buckets {
     /// The range of the list where `address` would be.
     #[inline]
     pub(crate) fn range(&self, address: u64) -> std::ops::Range<usize> {
-        let b = (address.wrapping_sub(self.base) >> self.shift) as usize;
-        if b + 1 >= self.at.len() { return 0..0; }
+        // (In 64 bits throughout: an address before `base` wraps to far past the last stretch, and a 32-bit usize
+        // would cut it to a stretch it is not in.)
+        let b = address.wrapping_sub(self.base) >> self.shift;
+        if b >= self.at.len().saturating_sub(1) as u64 { return 0..0; }
+        let b = b as usize;
         self.at[b] as usize..self.at[b + 1] as usize
     }
 }
