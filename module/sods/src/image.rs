@@ -356,7 +356,8 @@ pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options)
     // same index, so without them a profile or a trace cannot tell one module's function from another's.
     let mut names = wasm_encoder::NameMap::new();
     for (k, n) in HOST_IMPORTS.iter().chain(SHARED.iter()).enumerate() { names.append(k as u32, n); }
-    for (k, f) in program.functions.iter().enumerate() { names.append(FIRST_GUEST + k as u32, &format!("{}@{:x}", f.name, f.start)); }
+    let mut name = String::new();
+    for (k, f) in program.functions.iter().enumerate() { names.append(FIRST_GUEST + k as u32, f.shown(&mut name)); }
     let mut name_section = wasm_encoder::NameSection::new();
     name_section.functions(&names);
 
@@ -452,9 +453,8 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     for (k, n) in HOST_IMPORTS.iter().chain(SHARED.iter()).enumerate() {
         names.append(k as u32, n);
     }
-    for (k, f) in program.functions.iter().enumerate() {
-        names.append(FIRST_GUEST + k as u32, &format!("{}@{:x}", f.name, f.start));
-    }
+    let mut name = String::new();
+    for (k, f) in program.functions.iter().enumerate() { names.append(FIRST_GUEST + k as u32, f.shown(&mut name)); }
     let mut name_section = wasm_encoder::NameSection::new();
     name_section.functions(&names);
 

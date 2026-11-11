@@ -5,7 +5,7 @@ fn main() {
     let start = u64::from_str_radix(a[2].trim_start_matches("0x"), 16).unwrap();
     let p = sods::find::discover_within(&elf, &[start], &Default::default(), 0);
     for f in p.functions.iter().filter(|f| f.start == start) {
-        println!("function {:#x} {} ({} blocks)", f.start, f.name, f.blocks.len());
+        println!("function {:#x} {} ({} blocks)", f.start, f.shown(&mut String::new()), f.blocks.len());
         for b in &f.blocks {
             println!("  block {:#x} {:?}{}", b.start, b.exit, if p.entries.contains_key(&b.start) { "  [entry]" } else { "" });
             for i in &b.instructions(&elf) { println!("    {:#x}  {:?}", i.ip(), i.mnemonic()); }

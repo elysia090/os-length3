@@ -209,29 +209,31 @@ thread_local! {
 pub fn set_run(blocks: usize) { RUN_BLOCKS.with(|r| r.set(Some(blocks.max(1)))); }
 
 /// `start`'s function as wasm functions are made of it: whole, or cut into runs of about RUN blocks, a run cut no
-/// sooner than where it breaks no loop of up to KEEP blocks (the first keeps its name; the others are `name.2`...).
-pub(crate) fn runs(start: u64, name: String, blocks: Vec<Block>, scratch: &mut Layout) -> Vec<Function> {
+/// sooner than where it breaks no loop of up to KEEP blocks (the first keeps its name; the others are `name.2`...):
+/// onto `out`.
+pub(crate) fn runs(start: u64, name: String, blocks: Vec<Block>, scratch: &mut Layout, out: &mut Vec<Function>) {
     let exact = RUN_BLOCKS.with(|r| r.get());
     let run = exact.unwrap_or(RUN);
-    if blocks.len() <= run { return vec![Function::laid_out(start, name, blocks, scratch)]; }
+    if blocks.len() <= run { return out.push(Function::laid_out(start, name, blocks, scratch)); }
+    // (Cut, each run is named for the whole: one with no name of its own by where the whole starts.)
+    let name = if name.is_empty() { format!("fn_{start:x}") } else { name };
     // A cut before block p breaks each loop with head < p <= last (a walk's blocks are in address order).
     let mut breaks = vec![false; blocks.len()];
     if exact.is_none() {
         for lp in loops_of(&blocks).0.into_iter().filter(|lp| lp.last - lp.head < KEEP) { breaks[lp.head + 1..=lp.last].fill(true); }
     }
-    let mut out: Vec<Function> = Vec::with_capacity(blocks.len().div_ceil(run));
+    let first = out.len();
     let mut held: Vec<Block> = Vec::with_capacity(run);
-    let named = |out: &Vec<Function>| if out.is_empty() { name.clone() } else { format!("{name}.{}", out.len() + 1) };
+    let named = |out: &Vec<Function>| if out.len() == first { name.clone() } else { format!("{name}.{}", out.len() - first + 1) };
     for (p, b) in blocks.into_iter().enumerate() {
         if held.len() >= run + KEEP * exact.is_none() as usize || (held.len() >= run && !breaks[p]) {
-            let n = named(&out);
+            let n = named(out);
             out.push(Function::laid_out(held[0].start, n, std::mem::take(&mut held), scratch));
         }
         held.push(b);
     }
-    let n = named(&out);
+    let n = named(out);
     out.push(Function::laid_out(held[0].start, n, held, scratch));
-    out
 }
 
 /// Where a run of a function cut into `runs` (the program's from `first`) goes on in another: an entry of that run.

@@ -37,29 +37,35 @@ impl Fx<'_> {
         let Loop { head, last, .. } = self.loops[l];
         self.loop_();
         self.open(Lab::Loop(l));
-        let mine: Vec<usize> = (head + 1..=last).rev().filter(|&b| self.within[b] == Some(l)).collect();
-        for b in mine { self.block(); self.open(Lab::Block(b)); }
+        for b in (head + 1..=last).rev() { if self.within[b] == Some(l) { self.block(); self.open(Lab::Block(b)); } }
         if !(head + 1..=last).any(|b| self.entry[b]) { return; }
         self.depth = self.labels.len() as u32;
-        // Ok(its label) within this loop itself, Err(the label of the head of the loop within this one that holds it).
-        let route: Vec<Result<u32, u32>> = (head + 1..=last).map(|b| {
+        // Each block's way: its label within this loop itself, or (WITHIN) the label of the head of the loop within
+        // this one that holds it.
+        const WITHIN: u32 = 1 << 31;
+        let (mut route, mut table) = (std::mem::take(&mut self.tables[0]), std::mem::take(&mut self.tables[1]));
+        route.clear();
+        route.extend((head + 1..=last).map(|b| {
             let (mut w, mut t) = (self.within[b], b);
             while let Some(c) = w { if c == l { break; } t = self.loops[c].head; w = self.loops[c].parent; }
             let at = self.block_at[t].unwrap_or_default();
-            if t == b { Ok(at) } else { Err(at) }
-        }).collect();
+            if t == b { at } else { at | WITHIN }
+        }));
         self.get(L_INTO);
         self.if_();
         self.block();
-        let outer: Vec<u32> = route.iter().map(|r| match *r { Ok(_) => 0, Err(at) => self.to(at) + 2 }).collect();
+        table.clear();
+        table.extend(route.iter().map(|&r| if r & WITHIN == 0 { 0 } else { self.to(r & !WITHIN) + 2 }));
         self.get(L_INTO); self.c32(head as i32 + 2); self.op(I32_SUB);
-        self.br_table(&outer, 1);
+        self.br_table(&table, 1);
         self.end();
-        let inner: Vec<u32> = route.iter().map(|r| match *r { Ok(at) => self.to(at) + 1, Err(_) => 0 }).collect();
+        table.clear();
+        table.extend(route.iter().map(|&r| if r & WITHIN == 0 { self.to(r) + 1 } else { 0 }));
         self.get(L_INTO); self.c32(0); self.set(L_INTO);
         self.c32(head as i32 + 2); self.op(I32_SUB);
-        self.br_table(&inner, 0);
+        self.br_table(&table, 0);
         self.end();
+        self.tables = [route, table];
     }
 
     /// On at `address`: falling through to the next block, out to a block after this one, round a loop it is in,
@@ -181,6 +187,8 @@ pub struct Frame {
     cold: Vec<bool>,
     entered: Vec<bool>,
     masks: Masks,
+    /// Two lists of labels: a function's dispatch and each loop's are made in them.
+    tables: [Vec<u32>; 2],
 }
 
 /// Entries the dispatch starts at only to go on after the thread went to the kernel there, or a longjmp: a call's
@@ -276,7 +284,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
         f: s.f, syncs: s.syncs, used: 0, ev: s.ev, ev_at: s.ev_at, run: [0; 3], nest: 0, depth: 0,
         slots: [0; LOCALS], kinds: s.kinds, flags: Flags::Held, fr_pending: false, fused: None, rsp_up: false, backward: false,
         entry: s.entry, dispatch: !lean, program, function, report, handed, at: 0, budget: has_loop(function), summaries, succ: &function.succ,
-        loop_at: s.loop_at, loops: s.loops, within: s.within, heads: s.heads, labels: s.labels, block_at: s.block_at,
+        loop_at: s.loop_at, loops: s.loops, within: s.within, heads: s.heads, labels: s.labels, block_at: s.block_at, tables: s.tables,
     };
     let (mut code, mut needed) = (s.code, s.needed);
     // The stack pointer it began with, only where it is read: past a call (the resume) or an indirect jump.
@@ -293,8 +301,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
     if resume { fx.block(); }
     if !lean { fx.loop_(); }
     // A label for each block within no loop past its head, the last block's outermost: each ends where its code starts.
-    let outside: Vec<usize> = (0..n).rev().filter(|&b| fx.within[b].is_none()).collect();
-    for b in outside { fx.block(); fx.open(Lab::Block(b)); }
+    for b in (0..n).rev() { if fx.within[b].is_none() { fx.block(); fx.open(Lab::Block(b)); } }
     fx.depth = fx.labels.len() as u32;
     if !lean {
         // Each entry to its label; one within a loop past its head to the head of the outermost loop it lies within,
@@ -304,10 +311,13 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
             while let Some(w) = l { t = fx.loops[w].head; l = fx.loops[w].parent; }
             fx.to(fx.block_at[t].unwrap_or_default())
         };
-        let heads: Vec<u32> = (0..n).map(|b| outermost(&fx, b)).collect();
+        let (mut heads, mut targets) = (std::mem::take(&mut fx.tables[0]), std::mem::take(&mut fx.tables[1]));
+        heads.clear();
+        heads.extend((0..n).map(|b| outermost(&fx, b)));
         if (0..n).any(|b| fx.entry[b] && fx.within[b].is_some()) {
             fx.block();
-            let targets: Vec<u32> = (0..n).map(|b| if fx.within[b].is_some() { 0 } else { heads[b] + 1 }).collect();
+            targets.clear();
+            targets.extend((0..n).map(|b| if fx.within[b].is_some() { 0 } else { heads[b] + 1 }));
             fx.get(L_BLK); fx.op(I32_EQZ); fx.br_if(targets[0]);
             fx.get(L_BLK);
             fx.br_table(&targets, 0);
@@ -320,6 +330,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
             fx.get(L_BLK);
             fx.br_table(&heads, 0);
         }
+        fx.tables = [heads, targets];
     }
     let mut decoder = Code::new(elf, function.span().map_or(function.start, |(lo, _)| lo));
     for (k, block) in function.blocks.iter().enumerate() {
@@ -548,6 +559,6 @@ fn finish(mut fx: Fx, rest: Rest, frame: &mut Frame, out: &mut Vec<u8>) {
     out.truncate(out.len() - (5 - n));
     *frame = Frame {
         f: fx.f, ev: fx.ev, ev_at: fx.ev_at, syncs: fx.syncs, kinds: fx.kinds, entry: fx.entry, loops: fx.loops, within: fx.within,
-        heads: fx.heads, labels: fx.labels, block_at: fx.block_at, loop_at: fx.loop_at, code, needed, marks, cold, entered, masks,
+        heads: fx.heads, labels: fx.labels, block_at: fx.block_at, loop_at: fx.loop_at, code, needed, marks, cold, entered, masks, tables: fx.tables,
     };
 }

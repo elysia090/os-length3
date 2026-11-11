@@ -72,6 +72,7 @@ impl Block {
 #[derive(Clone, Debug)]
 pub struct Function {
     pub start: u64,
+    /// Its symbol's name; none where it has none (it is then shown as `fn_` and where it starts).
     pub name: String,
     /// In the order they are lowered (`lay_out`): index 0 is the function's entry.
     pub blocks: Vec<Block>,
@@ -82,6 +83,13 @@ pub struct Function {
 }
 
 impl Function {
+    /// Its name as a profile shows it, with where it starts: written into `into`, and given back.
+    pub fn shown<'a>(&self, into: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        into.clear();
+        let _ = if self.name.is_empty() { write!(into, "fn_{:x}@{:x}", self.start, self.start) } else { write!(into, "{}@{:x}", self.name, self.start) };
+        into
+    }
     pub fn block_index(&self, address: u64) -> Option<usize> {
         self.by_address.binary_search_by_key(&address, |&k| self.blocks[k as usize].start).ok().map(|i| self.by_address[i] as usize)
     }

@@ -103,6 +103,8 @@ fn find(elf: &Elf, walk: Find) -> Program {
     let before = |set: &BTreeSet<u64>, a: u64| set.range(..a).next_back().copied();
     let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
     let seen = Seen::new(elf);
+    // (The instructions of a block read for its switch: one list, read into again and again.)
+    let mut read: Vec<Instruction> = Vec::new();
     loop {
         let sorted: Vec<u64> = starts.iter().copied().collect();
         let end = |s: u64| {
@@ -117,11 +119,13 @@ fn find(elf: &Elf, walk: Find) -> Program {
             let ((p, q), (i, j)) = (inside(&pointers, s, e), inside(&sorted, s, e));
             (s, e, &pointers[p..q], &sorted[i..j])
         }).collect();
-        let (mut found, mut switches) = (Vec::new(), Vec::new());
-        for (s, blocks, calls) in walk_all(elf, &seen, &jobs, collect.then_some(&mut references)) {
-            if guess && follow.tables { switches.extend(switch_targets(elf, &blocks, s, end(s))); }
-            // Not following calls, code it goes on to all the same: what it jumps or runs into past its range.
-            found.extend(if follow.calls { calls } else { continuations(&blocks) });
+        let (walked, mut found) = walk_all(elf, &seen, &jobs, collect.then_some(&mut references));
+        let mut switches = Vec::new();
+        // Not following calls, code it goes on to all the same: what it jumps or runs into past its range.
+        if !follow.calls { found.clear(); }
+        for (s, blocks) in walked {
+            if guess && follow.tables { switch_targets(elf, &blocks, s, end(s), &mut read, &mut switches); }
+            if !follow.calls { found.extend(continuations(&blocks)); }
             done.insert(s, blocks);
         }
         // Only those not known yet, then each place once (a function is called from many): the few that are new are
@@ -156,10 +160,11 @@ fn find(elf: &Elf, walk: Find) -> Program {
     let mut marks = Vec::new();
     let mut scratch = Layout::default();
     for (start, blocks) in done {
-        let name = names.get(&start).cloned().unwrap_or_else(|| format!("fn_{start:x}"));
+        let name = names.get(&start).cloned().unwrap_or_default();
         let (first, from) = (functions.len(), marks.len());
-        for f in runs(start, name, blocks, &mut scratch) {
-            let k = functions.len() as u32;
+        runs(start, name, blocks, &mut scratch, &mut functions);
+        for (k, f) in functions.iter().enumerate().skip(first) {
+            let k = k as u32;
             let found = |a: u64| f.block_index(a).map(|b| (a, (k, b as u32)));
             let at = |t: u32| (f.blocks[t as usize].start, (k, t));
             marks.extend(found(f.start));
@@ -178,7 +183,6 @@ fn find(elf: &Elf, walk: Find) -> Program {
                     if let Some(&(a, b)) = by_address.peek() { if a == p { marks.push((p, (k, b))); } }
                 }
             }
-            functions.push(f);
         }
         joined(&functions[first..], first, &mut marks);
         // (Each function's marks in order as they are made: functions come in the order of their addresses, so all of
@@ -191,25 +195,27 @@ fn find(elf: &Elf, walk: Find) -> Program {
 /// A walk's work: its start, the end of its range, the pointers into the range and the other starts inside it.
 type Job<'a> = (u64, u64, &'a [u64], &'a [u64]);
 
-/// Each job walked: natively on every core, in wasm (one thread) in turn; in the order given.
-fn walk_all(elf: &Elf, seen: &Seen, jobs: &[Job], references: Option<&mut Vec<u64>>) -> Vec<(u64, Vec<Block>, Vec<u64>)> {
+/// Each job walked: natively on every core, in wasm (one thread) in turn; in the order given. With what they call
+/// or go on to outside, all together.
+fn walk_all(elf: &Elf, seen: &Seen, jobs: &[Job], references: Option<&mut Vec<u64>>) -> (Vec<(u64, Vec<Block>)>, Vec<u64>) {
     let collect = references.is_some();
-    let go = |part: &[Job], r: &mut Vec<u64>| -> Vec<(u64, Vec<Block>, Vec<u64>)> {
+    let go = |part: &[Job], r: &mut Vec<u64>, calls: &mut Vec<u64>| -> Vec<(u64, Vec<Block>)> {
         let mut scratch = Scratch::default();
-        part.iter().map(|&(s, e, extra, inner)| { let (b, c) = walk(elf, seen, (s, e), extra, inner, collect.then_some(&mut *r), &mut scratch); (s, b, c) }).collect()
+        part.iter().map(|&job| (job.0, walk(elf, seen, job, collect.then_some(&mut *r), calls, &mut scratch))).collect()
     };
     let mut own = Vec::new();
     let r = references.unwrap_or(&mut own);
+    let mut calls = Vec::new();
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };
-    if threads == 1 || jobs.len() < 64 { return go(jobs, r); }
+    if threads == 1 || jobs.len() < 64 { let walked = go(jobs, r, &mut calls); return (walked, calls); }
     let size = jobs.len().div_ceil(threads);
     let parts: Vec<_> = std::thread::scope(|scope| {
-        let workers: Vec<_> = jobs.chunks(size).map(|part| { let go = &go; scope.spawn(move || { let mut r = Vec::new(); let out = go(part, &mut r); (out, r) }) }).collect();
+        let workers: Vec<_> = jobs.chunks(size).map(|part| { let go = &go; scope.spawn(move || { let (mut r, mut calls) = (Vec::new(), Vec::new()); let out = go(part, &mut r, &mut calls); (out, r, calls) }) }).collect();
         workers.into_iter().map(|w| w.join().expect("a walking thread panicked")).collect()
     });
     let mut out = Vec::with_capacity(jobs.len());
-    for (walked, mine) in parts { out.extend(walked); r.extend(mine); }
-    out
+    for (walked, mine, called) in parts { out.extend(walked); r.extend(mine); calls.extend(called); }
+    (out, calls)
 }
 
 /// What finding keeps of every instruction it has decoded, for as long as it looks: 16 bits each, by its address (a
@@ -294,9 +300,9 @@ impl Scratch {
 use go::{BRANCH, CALL, INDIRECT_CALL, INDIRECT_JUMP, JUMP, NEXT};
 
 /// The blocks of the function at `start` within its range (and `extra` places in it pointers name, but not the
-/// `inner` starts of others), and the code it calls or goes on to outside: each block from a leader along next_ip
+/// `inner` starts of others), and (onto `calls`) the code it calls or goes on to outside: each block from a leader along next_ip
 /// (not address order, so a wrong table guess decoding bytes inside an instruction leaves the real blocks as they are).
-fn walk(elf: &Elf, seen: &Seen, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut references: Option<&mut Vec<u64>>, s: &mut Scratch) -> (Vec<Block>, Vec<u64>) {
+fn walk(elf: &Elf, seen: &Seen, (start, end, extra, inner): Job, mut references: Option<&mut Vec<u64>>, calls: &mut Vec<u64>, s: &mut Scratch) -> Vec<Block> {
     let inside = |a: u64| a >= start && a < end && (a == start || inner.is_empty() || inner.binary_search(&a).is_err());
     // The code from the start to its segment's end; code elsewhere (a call's continuation past the segment) found
     // on its own.
@@ -322,7 +328,6 @@ fn walk(elf: &Elf, seen: &Seen, (start, end): (u64, u64), extra: &[u64], inner: 
     s.lead(start);
     s.work.push(start);
     for &a in extra { if inside(a) { s.lead(a); s.work.push(a); } }
-    let mut calls = Vec::new();
     let go = |a: u64, s: &mut Scratch, calls: &mut Vec<u64>| if inside(a) { s.lead(a); s.work.push(a); } else { calls.push(a); };
     while let Some(mut at) = s.work.pop() {
         loop {
@@ -355,8 +360,8 @@ fn walk(elf: &Elf, seen: &Seen, (start, end): (u64, u64), extra: &[u64], inner: 
                     s.lead(next);
                     s.work.push(next);
                 }
-                BRANCH => { go(target(at, e), s, &mut calls); go(next, s, &mut calls); }
-                JUMP if e >> 7 & 3 != 0 => go(target(at, e), s, &mut calls),
+                BRANCH => { go(target(at, e), s, calls); go(next, s, calls); }
+                JUMP if e >> 7 & 3 != 0 => go(target(at, e), s, calls),
                 _ => {}
             }
             break;
@@ -401,7 +406,7 @@ fn walk(elf: &Elf, seen: &Seen, (start, end): (u64, u64), extra: &[u64], inner: 
     s.leads = order;
     s.mark[..s.high].fill(0);
     s.high = 0;
-    (blocks, calls)
+    blocks
 }
 
 /// Where a function's blocks jump or run on to outside it (its tail jumps, branches out of it): not its calls.
@@ -452,19 +457,18 @@ const TABLE_ENTRIES: u64 = 4096;
 ///
 /// or absolute (`jmp [table + I*8]`, or `mov T, [table + I*8]; jmp T`). N + 1 entries; where the bound is not found,
 /// those that land in the function, at most TABLE_ENTRIES.
-fn switch_targets(elf: &Elf, blocks: &[Block], start: u64, end: u64) -> Vec<u64> {
-    let mut out = Vec::new();
+fn switch_targets(elf: &Elf, blocks: &[Block], start: u64, end: u64, read: &mut Vec<Instruction>, out: &mut Vec<u64>) {
     for b in blocks.iter().filter(|b| b.exit == Exit::IndirectJump) {
-        let Some((table, (index, base), relative)) = table_read(&b.instructions(elf)) else { continue };
-        let Some(table) = table.or_else(|| only_lea(elf, blocks, base)) else { continue };
-        let bound = bound_of(elf, blocks, b.start, index);
+        b.decode(elf, read);
+        let Some((table, (index, base), relative)) = table_read(read) else { continue };
+        let Some(table) = table.or_else(|| only_lea(elf, blocks, base, read)) else { continue };
+        let bound = bound_of(elf, blocks, b.start, index, read);
         for k in 0..bound.unwrap_or(TABLE_ENTRIES) {
             let target = if relative { elf.read_i32(table + 4 * k).map(|e| table.wrapping_add(e as i64 as u64)) } else { elf.read_u64(table + 8 * k) };
             let Some(t) = target.filter(|&t| elf.is_code(t) && (bound.is_some() || (t >= start && t < end))) else { break };
             out.push(t);
         }
     }
-    out
 }
 
 /// The table a block ending in an indirect jump reads: its address (None: in the register given with the index, put
@@ -497,22 +501,29 @@ fn table_read(code: &[Instruction]) -> Option<(Option<u64>, (Register, Register)
 
 /// The constant `register` holds where the function puts it in one place only (`lea register, [rip + constant]`) and
 /// writes it nowhere else (push and pop of the caller's value aside).
-fn only_lea(elf: &Elf, blocks: &[Block], register: Register) -> Option<u64> {
+fn only_lea(elf: &Elf, blocks: &[Block], register: Register, read: &mut Vec<Instruction>) -> Option<u64> {
     let writes_it = |i: &Instruction| i.op0_kind() == OpKind::Register && i.op0_register().full_register() == register.full_register()
         && !matches!(i.mnemonic(), Mnemonic::Push | Mnemonic::Pop | Mnemonic::Cmp | Mnemonic::Test);
-    let mut writes = blocks.iter().flat_map(|b| b.instructions(elf)).filter(writes_it);
-    let i = writes.next()?;
-    (writes.next().is_none() && i.mnemonic() == Mnemonic::Lea && i.is_ip_rel_memory_operand() && i.op0_register() == register).then(|| i.ip_rel_memory_address())
+    let mut only = None;
+    for b in blocks {
+        b.decode(elf, read);
+        for i in read.iter().filter(|i| writes_it(i)) {
+            if only.is_some() { return None; }
+            only = Some(*i);
+        }
+    }
+    let i = only?;
+    (i.mnemonic() == Mnemonic::Lea && i.is_ip_rel_memory_operand() && i.op0_register() == register).then(|| i.ip_rel_memory_address())
 }
 
 /// How many entries the table read at block `at` has, from `cmp I, N` then `ja` past it or `jbe` to it in a block
 /// that goes on to `at`.
-fn bound_of(elf: &Elf, blocks: &[Block], at: u64, index: Register) -> Option<u64> {
+fn bound_of(elf: &Elf, blocks: &[Block], at: u64, index: Register, read: &mut Vec<Instruction>) -> Option<u64> {
     blocks.iter().find_map(|p| {
         let Exit::Branch { taken, fall } = p.exit else { return None };
         if taken != at && fall != at { return None; }
-        let code = p.instructions(elf);
-        let [.., cmp, jcc] = code.as_slice() else { return None };
+        p.decode(elf, read);
+        let [.., cmp, jcc] = read.as_slice() else { return None };
         let to_table = (jcc.mnemonic() == Mnemonic::Ja && fall == at) || (jcc.mnemonic() == Mnemonic::Jbe && taken == at);
         let same = cmp.op0_kind() == OpKind::Register && cmp.op0_register().full_register() == index.full_register();
         let n = matches!(cmp.op1_kind(), OpKind::Immediate8 | OpKind::Immediate8to32 | OpKind::Immediate8to64 | OpKind::Immediate32 | OpKind::Immediate32to64).then(|| cmp.immediate(1));

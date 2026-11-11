@@ -122,6 +122,8 @@ pub struct Fx<'p> {
     pub(crate) labels: Vec<Lab>,
     pub(crate) block_at: Vec<Option<u32>>,
     pub(crate) loop_at: Vec<Option<u32>>,
+    /// Two lists of labels, for the tables its dispatch and its loops branch by.
+    pub(crate) tables: [Vec<u32>; 2],
 }
 
 /// An access to memory 0: its operator, alignment and offset.
