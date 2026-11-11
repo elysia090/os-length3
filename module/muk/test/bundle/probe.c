@@ -3,13 +3,13 @@
  * in /dev. muk's test (muk.sh) runs it in a bundle under muk and under runc, and the two say the same. On lib, with no
  * C library, so a bundle's root is this one file.
  *
- *   probe [see:PATH]... [seven] [wait]    each PATH: what it is, where it leads, its first line; `seven` ends 7;
- *                                         `wait` does not end
+ *   probe [see:PATH]... [seven] [wait]    each PATH: what it is, where it leads, its first line (or why it is not
+ *                                         opened); `seven` ends 7; `wait` ends when it is sent a signal, 128 + it
  */
 #define UNIT "probe"
 #include "../../../lib/io.h"
 
-enum { SYS_pause = 34, SYS_getpid = 39, SYS_uname = 63, SYS_fcntl = 72, SYS_readlink = 89, SYS_getuid = 102, SYS_getgid = 104, SYS_getgroups = 115, SYS_prlimit64 = 302 };
+enum { SYS_rt_sigprocmask = 14, SYS_rt_sigtimedwait = 128, SYS_getpid = 39, SYS_uname = 63, SYS_fcntl = 72, SYS_readlink = 89, SYS_getuid = 102, SYS_getgid = 104, SYS_getgroups = 115, SYS_prlimit64 = 302 };
 
 static void say(const char *s) { put(s, slen(s)); }
 static void number(u64 v, u32 base) {
@@ -69,7 +69,7 @@ static void see(const char *path) {
     while (k < n && text[k] != '\n') k++;
     if (n > 0) say(" = "), put(text, (u64)k);
     sys1(SYS_close, fd);
-  }
+  } else say(" !"), number((u64)-fd, 10);
   say("\n");
 }
 
@@ -117,6 +117,12 @@ static int main_(int argc, char **argv, char **envp) {
     ends = same(argv[i], "seven") ? 7 : ends, waits |= same(argv[i], "wait");
   }
   flush();
-  while (waits) sys1(SYS_pause, 0);
+  /* (waited for, not taken: the first process of a pid namespace is sent only what it has asked to be) */
+  u64 all = ~0ull;
+  if (waits) sys4(SYS_rt_sigprocmask, 0 /* SIG_BLOCK */, (i64)&all, 0, 8);
+  while (waits) {
+    i64 sig = sys4(SYS_rt_sigtimedwait, (i64)&all, 0, 0, 8);
+    if (sig > 0) return 128 + (int)sig;
+  }
   return ends;
 }

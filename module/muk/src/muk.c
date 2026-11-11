@@ -7,6 +7,14 @@
  *
  *   muk run [-b BUNDLE] [ID]      the bundle's process, started and waited for; muk ends as it ends
  *
+ * The floor: what every box has, whatever config.json says (it may ask for more, never for less). Its mount, pid,
+ * ipc and uts namespaces are its own or another box's, never the host's, and it has a cgroup namespace; it gains
+ * no privilege by what it runs (no_new_privs); it has the capabilities config.json names and no others (none, where
+ * it names none); a device is what muk made in a /dev that is the box's own, never a file of its root (which is
+ * mounted nodev) and never one the box makes (CAP_MKNOD is a user namespace's alone); and, where it is not in a user
+ * namespace, what of /proc and /sys tells of the host or changes it is hidden or read-only (FLOOR_MASKED,
+ * FLOOR_READONLY).
+ *
  * config.json is read once, where it is: a string is used in its place in the text, a NUL put over its closing
  * quote, so nothing is copied. The box is made by one clone into its namespaces; in it, the root is bound on itself
  * and made the root (pivot_root), the host's root taken away, and only then is anything mounted in it: a
@@ -82,9 +90,23 @@ __attribute__((noreturn, cold)) static void undone(const char *in, const char *k
   m[n] = 0;
   fail("config.json: it asks what is not done here: ", (const char *)m);
 }
-static u8 peek(void) {
-  while (*j == ' ' || *j == '\n' || *j == '\t' || *j == '\r') j++;
-  return *j;
+/* The next byte that is not between words (a space, or a byte below one; never the NUL at the text's end): where
+ * there is nothing to pass over, one test; a run of it (a line's end and what the next is set in by), sixteen bytes
+ * at a time. */
+typedef u8 bytes16 __attribute__((vector_size(16)));
+typedef char chars16 __attribute__((vector_size(16)));
+static inline u8 peek(void) {
+  u8 b = *j;
+  if (b > ' ' || !b) return b;
+  b = *++j; /* (one space, as after a colon: one more test) */
+  if (b > ' ' || !b) return b;
+  for (;;) {
+    bytes16 v;
+    __builtin_memcpy(&v, j, 16);
+    u32 word = (u32)__builtin_ia32_pmovmskb128((chars16)((v > ' ') | (v == 0)));
+    if (word) return *(j += __builtin_ctz(word));
+    j += 16;
+  }
 }
 static void take(u8 c) {
   if (peek() != c) bad("it is not as JSON is written");
@@ -100,21 +122,25 @@ static u32 hex4(void) {
   }
   return v;
 }
-/* A string, where it is: a NUL over its closing quote; one with escapes is made shorter in its place first. */
+/* Sixteen bytes at once (x86-64 has them): which of them is a quote, a backslash or a byte below a space. */
+static inline u32 stops(const u8 *p) {
+  bytes16 v;
+  __builtin_memcpy(&v, p, 16);
+  return (u32)__builtin_ia32_pmovmskb128((chars16)((v == '"') | (v == '\\') | (v < ' ')));
+}
+/* A string, where it is: a NUL over its closing quote; one with escapes is made shorter in its place first. Its
+ * length is left in `sl`. */
+static u32 sl;
 static char *string(void) {
   take('"');
   u8 *s = j;
-  /* Its end, eight bytes at a time: the first quote, backslash or control byte (a NUL ends the text, and SLACK is
-   * past it to read). */
-  for (;;) {
-    u64 w = ld64(j), stop = zeros(w ^ '"' * ONES) | zeros(w ^ '\\' * ONES) | (~w & (w - 0x20 * ONES) & 0x80 * ONES);
-    if (stop) {
-      j += __builtin_ctzll(stop) >> 3;
-      break;
-    }
-    j += 8;
-  }
+  /* Its end: the first quote, backslash or control byte (a NUL ends the text, and sixteen bytes past it are there
+   * to read). */
+  u32 stop;
+  while (!(stop = stops(j))) j += 16;
+  j += __builtin_ctz(stop);
   if (*j == '"') {
+    sl = (u32)(j - s);
     *j++ = 0;
     return (char *)s;
   }
@@ -145,6 +171,7 @@ static char *string(void) {
     *d++ = (u8)c;
   }
   *d = 0;
+  sl = (u32)(d - s);
   return (char *)s;
 }
 /* A whole number from zero to `most`: none below zero, none with a fraction, none that is cut to fit. */
@@ -182,12 +209,25 @@ static void skip(void) {
   } while (depth);
 }
 /* The next member's key of the object the reader is in, or 0 at its end; the next element of an array, or 0. */
+/* A member's key as it is asked about: its first eight bytes as one word (those past its end zero), its length,
+ * and where it is. IS("name") is one comparison of words for a name of up to eight letters. */
+static char *key;
+static u64 kw;
+static u32 kl;
+static inline u64 head(const char *s, u64 n) { return n >= 8 ? ld64((const u8 *)s) : ld64((const u8 *)s) & ((1ull << 8 * n) - 1); }
+__attribute__((always_inline)) static inline int key_is(const char *name, u64 n) {
+  u64 w = 0;
+  __builtin_memcpy(&w, name, n < 8 ? n : 8);
+  return kw == w && (n < 8 || (kl == n && (n == 8 || same(key + 8, name + 8))));
+}
+#define IS(name) key_is(name, sizeof(name) - 1)
 static char *member(int *first) {
   for (;;) {
     if (peek() == '}') return j++, (char *)0;
     if (!*first) take(',');
     *first = 0;
     char *k = string();
+    key = k, kl = sl, kw = head(k, sl);
     take(':');
     if (peek() != 'n') return k;
     /* (null: as if the member were not there) */
@@ -224,7 +264,7 @@ static struct {
   i64 umask;
   u32 uid, gid, groups[PATHS];
   u32 nargs, nenv, nmasked, nreadonly, nmounts, njoined, nlimits, nuids, ngids, ngroups;
-  u8 read_only, no_new_privs, has_caps, dev;
+  u8 read_only, dev, user; /* user: in a user namespace, made or joined */
 } c;
 
 static void words(char **into, u32 *n, u32 most) {
@@ -235,78 +275,99 @@ static void words(char **into, u32 *n, u32 most) {
   }
 }
 
-/* A name of a list of names NUL after NUL (ended by an empty one): which it is, or -1. */
-static int which(const char *names, const char *name) {
-  for (int i = 0; *names; i++) {
-    if (*names == *name && same(names, name)) return i;
-    names += slen(names) + 1;
-  }
+/* Which row of a table of names `name` (of `len` bytes) is, or -1. The rows are of one width, each name with
+ * zeros after it: the next is a step away, and each begins with a word to compare (a name of fewer than eight
+ * letters is that word and nothing else). */
+static int which(const char *rows, u32 width, u32 count, const char *name, u32 len) {
+  u64 h = head(name, len);
+  for (u32 i = 0; i < count; i++, rows += width)
+    if (ld64((const u8 *)rows) == h && (len < 8 || same(rows + 8, name + 8))) return (int)i;
   return -1;
 }
-static const char CAPS[] =
-  "CHOWN\0DAC_OVERRIDE\0DAC_READ_SEARCH\0FOWNER\0FSETID\0KILL\0SETGID\0SETUID\0SETPCAP\0LINUX_IMMUTABLE\0"
-  "NET_BIND_SERVICE\0NET_BROADCAST\0NET_ADMIN\0NET_RAW\0IPC_LOCK\0IPC_OWNER\0SYS_MODULE\0SYS_RAWIO\0SYS_CHROOT\0"
-  "SYS_PTRACE\0SYS_PACCT\0SYS_ADMIN\0SYS_BOOT\0SYS_NICE\0SYS_RESOURCE\0SYS_TIME\0SYS_TTY_CONFIG\0MKNOD\0LEASE\0"
-  "AUDIT_WRITE\0AUDIT_CONTROL\0SETFCAP\0MAC_OVERRIDE\0MAC_ADMIN\0SYSLOG\0WAKE_ALARM\0BLOCK_SUSPEND\0AUDIT_READ\0"
-  "PERFMON\0BPF\0CHECKPOINT_RESTORE\0";
-static const char LIMITS[] =
-  "CPU\0FSIZE\0DATA\0STACK\0CORE\0RSS\0NPROC\0NOFILE\0MEMLOCK\0AS\0LOCKS\0SIGPENDING\0MSGQUEUE\0NICE\0RTPRIO\0RTTIME\0";
-static const char KINDS[] = "bounding\0effective\0permitted\0inheritable\0ambient\0";
-static const char SPACES[] = "mount\0cgroup\0uts\0ipc\0user\0pid\0network\0";
+#define WHICH(table, name, len) which(table[0], sizeof table[0], sizeof table / sizeof table[0], name, len)
+/* The same of a long table, by one look: the name's first word, multiplied, names one of 128 slots, and each name
+ * of the table has a slot of its own (TABLE_MUL and TABLE_AT, a row and one: slots.ts makes them). */
+static int slot(const char *rows, u32 width, const u8 *at, u64 mul, const char *name, u32 len) {
+  u64 h = head(name, len);
+  u32 row = at[h * mul >> 57];
+  if (!row) return -1;
+  rows += (row - 1) * width;
+  return ld64((const u8 *)rows) == h && (len < 8 || same(rows + 8, name + 8)) ? (int)row - 1 : -1;
+}
+#define SLOT(table, name, len) slot(table[0], sizeof table[0], table##_AT, table##_MUL, name, len)
+static const char CAPS[][24] = {
+  "CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH", "FOWNER", "FSETID", "KILL", "SETGID", "SETUID", "SETPCAP",
+  "LINUX_IMMUTABLE", "NET_BIND_SERVICE", "NET_BROADCAST", "NET_ADMIN", "NET_RAW", "IPC_LOCK", "IPC_OWNER", "SYS_MODULE",
+  "SYS_RAWIO", "SYS_CHROOT", "SYS_PTRACE", "SYS_PACCT", "SYS_ADMIN", "SYS_BOOT", "SYS_NICE", "SYS_RESOURCE", "SYS_TIME",
+  "SYS_TTY_CONFIG", "MKNOD", "LEASE", "AUDIT_WRITE", "AUDIT_CONTROL", "SETFCAP", "MAC_OVERRIDE", "MAC_ADMIN", "SYSLOG",
+  "WAKE_ALARM", "BLOCK_SUSPEND", "AUDIT_READ", "PERFMON", "BPF", "CHECKPOINT_RESTORE"};
+#define CAPS_MUL 0xc21756716e34d86bull /* (41 names; slots.ts, 6 tries) */
+static const u8 CAPS_AT[128] = {0, 0, 0, 0, 0, 39, 0, 0, 0, 0, 0, 0, 0, 16, 3, 0, 0, 0, 0, 14, 1, 0, 12, 0, 0, 0, 19, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 24, 0, 0, 0, 26, 0, 29, 0, 0, 0, 15, 0, 33, 0, 0, 35, 0, 0, 20, 41, 0, 0, 0, 0, 0, 32, 0, 7, 13, 36, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 27, 0, 5, 17, 0, 34, 0, 21, 10, 0, 0, 0, 0, 8, 0, 0, 11, 0, 0, 0, 0, 31, 23, 22, 0, 0, 0, 0, 0, 28, 4, 0, 6, 0, 0, 0, 0, 25, 0, 0, 9, 37, 30, 18, 0, 0, 0, 40, 0, 0, 0};
+static const char LIMITS[][16] = {"CPU", "FSIZE", "DATA", "STACK", "CORE", "RSS", "NPROC", "NOFILE", "MEMLOCK", "AS", "LOCKS",
+                                  "SIGPENDING", "MSGQUEUE", "NICE", "RTPRIO", "RTTIME"};
+static const char KINDS[][16] = {"bounding", "effective", "permitted", "inheritable", "ambient"};
+static const char SPACES[][16] = {"mount", "cgroup", "uts", "ipc", "user", "pid", "network"};
 static const u32 SPACE[] = {CLONE_NEWNS, CLONE_NEWCGROUP, CLONE_NEWUTS, CLONE_NEWIPC, CLONE_NEWUSER, CLONE_NEWPID, CLONE_NEWNET};
 
-/* A name with its prefix (CAP_, RLIMIT_) taken off, among `names`. */
-static int named(const char *names, const char *prefix, char *name) {
-  const char *n = name;
-  while (*prefix && *prefix == *n) prefix++, n++;
-  int i = *prefix ? -1 : which(names, n);
-  if (i < 0) fail("config.json: no such name: ", name);
-  return i;
+/* The string just read with its prefix (CAP_, RLIMIT_) taken off, or 0 where it has not that prefix. */
+static char *bare(const char *prefix, char *name) {
+  while (*prefix && *prefix == *name) prefix++, name++, sl--;
+  return *prefix ? 0 : name;
 }
+__attribute__((noreturn, cold)) static void no_name(const char *name) { fail("config.json: no such name: ", name); }
 
 static void process(void) {
   char *k, *k2;
   OBJECT(k) {
-    if (same(k, "args")) words(c.args, &c.nargs, WORDS - 1);
-    else if (same(k, "env")) words(c.env, &c.nenv, WORDS - 1);
-    else if (same(k, "cwd")) c.cwd = string();
-    else if (same(k, "noNewPrivileges")) c.no_new_privs = (u8)boolean();
-    else if (same(k, "terminal")) {
+    if (IS("args")) words(c.args, &c.nargs, WORDS - 1);
+    else if (IS("env")) words(c.env, &c.nenv, WORDS - 1);
+    else if (IS("cwd")) c.cwd = string();
+    else if (IS("noNewPrivileges")) boolean(); /* (the floor: it gains none, said or not) */
+    else if (IS("terminal")) {
       if (boolean()) bad("process.terminal: a terminal is not made yet");
-    } else if (same(k, "consoleSize")) skip(); /* (a terminal's, and none is made) */
-    else if (same(k, "user")) {
+    } else if (IS("consoleSize")) skip(); /* (a terminal's, and none is made) */
+    else if (IS("user")) {
       OBJECT(k2) {
-        if (same(k2, "uid")) c.uid = (u32)natural(ID);
-        else if (same(k2, "gid")) c.gid = (u32)natural(ID);
-        else if (same(k2, "umask")) c.umask = (i64)natural(0777);
-        else if (same(k2, "additionalGids")) {
+        if (IS("uid")) c.uid = (u32)natural(ID);
+        else if (IS("gid")) c.gid = (u32)natural(ID);
+        else if (IS("umask")) c.umask = (i64)natural(0777);
+        else if (IS("additionalGids")) {
           c.ngroups = 0;
           ARRAY {
             if (c.ngroups == PATHS) bad("a list is longer than is read");
             c.groups[c.ngroups++] = (u32)natural(ID);
           }
-        } else if (same(k2, "username")) skip(); /* (another system's) */
+        } else if (IS("username")) skip(); /* (another system's) */
         else undone("process.user.", k2);
       }
-    } else if (same(k, "capabilities")) {
-      c.has_caps = 1;
+    } else if (IS("capabilities")) {
       for (int i = 0; i < 5; i++) c.caps[i] = 0;
       OBJECT(k2) {
-        int kind = which(KINDS, k2);
+        int kind = WHICH(KINDS, k2, kl);
         if (kind < 0) undone("process.capabilities.", k2);
         c.caps[kind] = 0;
-        ARRAY c.caps[kind] |= 1ull << named(CAPS, "CAP_", string());
+        ARRAY {
+          char *whole = string(), *name = bare("CAP_", whole);
+          int cap = name ? SLOT(CAPS, name, sl) : -1;
+          if (cap < 0) no_name(whole);
+          c.caps[kind] |= 1ull << cap;
+        }
       }
-    } else if (same(k, "rlimits")) {
+    } else if (IS("rlimits")) {
       c.nlimits = 0;
       ARRAY {
         if (c.nlimits == 16) bad("a list is longer than is read");
         int typed = 0;
         c.limits[c.nlimits].now = c.limits[c.nlimits].most = 0;
         OBJECT(k2) {
-          if (same(k2, "type")) c.limits[c.nlimits].what = (u32)named(LIMITS, "RLIMIT_", string()), typed = 1;
-          else if (same(k2, "soft")) c.limits[c.nlimits].now = natural(~0ull);
-          else if (same(k2, "hard")) c.limits[c.nlimits].most = natural(~0ull);
+          if (IS("type")) {
+            char *whole = string(), *name = bare("RLIMIT_", whole);
+            int limit = name ? WHICH(LIMITS, name, sl) : -1;
+            if (limit < 0) no_name(whole);
+            c.limits[c.nlimits].what = (u32)limit, typed = 1;
+          }
+          else if (IS("soft")) c.limits[c.nlimits].now = natural(~0ull);
+          else if (IS("hard")) c.limits[c.nlimits].most = natural(~0ull);
           else undone("process.rlimits.", k2);
         }
         if (!typed) bad("process.rlimits: a limit does not say which it is");
@@ -318,10 +379,13 @@ static void process(void) {
 
 /* A mount's options: those that are the kernel's flags, those that say how it spreads, and the rest, the file
  * system's own, put together again with commas between. */
-static const char OPTIONS[] = /* (those a bundle has most, first) */
-  "nosuid\0suid\0noexec\0exec\0nodev\0dev\0ro\0rw\0relatime\0norelatime\0strictatime\0nostrictatime\0bind\0rbind\0"
-  "noatime\0atime\0nodiratime\0diratime\0sync\0async\0dirsync\0nosymfollow\0symfollow\0lazytime\0nolazytime\0defaults\0"
-  "private\0rprivate\0slave\0rslave\0shared\0rshared\0unbindable\0runbindable\0";
+static const char OPTIONS[][16] = { /* (those a bundle has most, first) */
+  "nosuid", "suid", "noexec", "exec", "nodev", "dev", "ro", "rw", "relatime", "norelatime", "strictatime", "nostrictatime",
+  "bind", "rbind", "noatime", "atime", "nodiratime", "diratime", "sync", "async", "dirsync", "nosymfollow", "symfollow",
+  "lazytime", "nolazytime", "defaults", "private", "rprivate", "slave", "rslave", "shared", "rshared", "unbindable",
+  "runbindable"};
+#define OPTIONS_MUL 0x2fa4d7b94517fed5ull /* (34 names; slots.ts, 124 tries) */
+static const u8 OPTIONS_AT[128] = {0, 0, 0, 21, 0, 0, 0, 0, 0, 34, 6, 0, 0, 0, 0, 0, 0, 0, 9, 0, 5, 0, 18, 10, 0, 0, 0, 0, 0, 0, 1, 31, 0, 25, 0, 0, 0, 0, 0, 0, 0, 0, 33, 29, 0, 0, 0, 16, 0, 0, 20, 14, 0, 0, 0, 0, 3, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 24, 0, 0, 0, 26, 19, 0, 0, 0, 7, 0, 0, 0, 27, 15, 0, 0, 22, 0, 0, 0, 0, 30, 0, 0, 11, 4, 28, 8, 0, 0, 0, 0, 0, 32, 17, 0, 0, 13, 0, 23, 0, 0, 0, 0, 0, 0, 0, 0};
 /* What each sets; a zero among the first twenty-five clears what the one before it sets. */
 static const u32 SETS[] = {
   MS_NOSUID, 0, MS_NOEXEC, 0, MS_NODEV, 0, MS_RDONLY, 0, MS_RELATIME, 0, MS_STRICTATIME, 0, MS_BIND, MS_BIND | MS_REC,
@@ -334,12 +398,10 @@ static void options(struct mount *m) {
   u32 nrest = 0, bytes = 1;
   ARRAY {
     char *o = string();
-    int own = 0; /* (one with a value is the file system's own: no flag has one) */
-    for (char *s = o; *s; s++) own |= *s == '=';
-    int i = own ? -1 : which(OPTIONS, o);
+    int i = SLOT(OPTIONS, o, sl); /* (one that is no flag, as every one with a value is, is the file system's own) */
     if (i < 0) {
       if (nrest == 32) bad("a mount has more options than are read");
-      rest[nrest++] = o, bytes += (u32)slen(o) + 1;
+      rest[nrest++] = o, bytes += sl + 1;
     } else if (SETS[i] & MS_SPREAD) m->spread = SETS[i];
     else if (SETS[i]) m->flags |= SETS[i], m->clear &= ~(u64)SETS[i];
     else if (i < 25) m->flags &= ~(u64)SETS[i - 1], m->clear |= SETS[i - 1];
@@ -361,9 +423,9 @@ static void lines(struct line *into, u32 *n) {
     if (*n == LINES) bad("a list is longer than is read");
     into[*n].in = into[*n].out = into[*n].n = 0;
     OBJECT(k) {
-      if (same(k, "containerID")) into[*n].in = natural(ID);
-      else if (same(k, "hostID")) into[*n].out = natural(ID);
-      else if (same(k, "size")) into[*n].n = natural(ID + 1);
+      if (IS("containerID")) into[*n].in = natural(ID);
+      else if (IS("hostID")) into[*n].out = natural(ID);
+      else if (IS("size")) into[*n].n = natural(ID + 1);
       else undone("linux.uidMappings.", k);
     }
     (*n)++;
@@ -373,17 +435,17 @@ static void lines(struct line *into, u32 *n) {
 static void linux_(void) {
   char *k, *k2;
   OBJECT(k) {
-    if (same(k, "namespaces")) {
+    if (IS("namespaces")) {
       c.spaces = 0, c.njoined = 0;
       u32 seen = 0;
       ARRAY {
         int kind = -1;
         char *path = 0;
         OBJECT(k2) {
-          if (same(k2, "type")) {
+          if (IS("type")) {
             char *name = string();
-            if ((kind = which(SPACES, name)) < 0) fail("config.json: no such namespace is made here: ", name);
-          } else if (same(k2, "path")) path = string();
+            if ((kind = WHICH(SPACES, name, sl)) < 0) fail("config.json: no such namespace is made here: ", name);
+          } else if (IS("path")) path = string();
           else undone("linux.namespaces.", k2);
         }
         if (kind < 0) bad("a namespace has no type");
@@ -396,42 +458,73 @@ static void linux_(void) {
           c.joined[c.njoined].flag = SPACE[kind], c.joined[c.njoined++].path = path;
         }
       }
-    } else if (same(k, "uidMappings")) lines(c.uids, &c.nuids);
-    else if (same(k, "gidMappings")) lines(c.gids, &c.ngids);
-    else if (same(k, "maskedPaths")) words(c.masked, &c.nmasked, PATHS);
-    else if (same(k, "readonlyPaths")) words(c.readonly, &c.nreadonly, PATHS);
-    else if (same(k, "resources")) { /* (none asked for is none to set) */
-      take('{');
-      if (peek() != '}') undone("linux.", k);
-      j++;
+    } else if (IS("uidMappings")) lines(c.uids, &c.nuids);
+    else if (IS("gidMappings")) lines(c.gids, &c.ngids);
+    else if (IS("maskedPaths")) words(c.masked, &c.nmasked, PATHS);
+    else if (IS("readonlyPaths")) words(c.readonly, &c.nreadonly, PATHS);
+    else if (IS("resources")) {
+      /* None asked for is none to set; devices all denied is what the floor is (no device but what muk made). */
+      char *k3;
+      OBJECT(k2) {
+        if (!IS("devices")) undone("linux.resources.", k2); /* (no cgroup is made yet) */
+        ARRAY OBJECT(k3) {
+          if (IS("allow") && boolean()) undone("linux.resources.devices: ", "one allowed");
+          else if (!IS("allow")) skip();
+        }
+      }
     } else undone("linux.", k); /* (seccomp, cgroupsPath, sysctl, devices, rootfsPropagation: a box is not run without what it asks for) */
   }
+}
+
+/* The floor's paths (as every runtime's defaults have them), each put in a list that does not have it. */
+static const char FLOOR_MASKED[][24] = {"/proc/acpi", "/proc/asound", "/proc/kcore", "/proc/keys", "/proc/latency_stats",
+                                        "/proc/timer_list", "/proc/timer_stats", "/proc/sched_debug", "/proc/scsi"};
+static const char FLOOR_MASKED_SYS[][24] = {"/sys/firmware"};
+static const char FLOOR_READONLY[][24] = {"/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"};
+/* (each of them eight bytes or more: one word says a path is not it, and a path shorter than that never is) */
+static void floor_(const char *rows, u32 count, char **into, u32 *n) {
+  for (u32 r = 0; r < count; r++, rows += 24) {
+    u64 h = ld64((const u8 *)rows);
+    int there = 0;
+    for (u32 i = 0; i < *n; i++) there |= ld64((const u8 *)into[i]) == h && same(into[i] + 8, rows + 8);
+    if (there) continue;
+    if (*n == PATHS) bad("a list is longer than is read");
+    into[(*n)++] = (char *)rows;
+  }
+}
+#define FLOOR(table, into, n) floor_(table[0], sizeof table / sizeof table[0], into, n)
+/* The /dev a box has where config.json mounts none: a tmpfs of its own (as config.json would say it). Not inlined:
+ * four addresses stored side by side are stored as one constant, which a program with nothing to relocate has not. */
+__attribute__((noinline)) static void own_dev(struct mount *m) {
+  m->to = "/dev", m->type = "tmpfs";
+  m->flags = MS_NOSUID | MS_STRICTATIME, m->clear = 0, m->spread = 0, m->tree = -1, m->fresh = 0;
+  m->from = 0, m->data = "mode=755,size=65536k";
 }
 
 static void config(void) {
   char *k, *k2;
   c.umask = -1, c.dev = 1;
   OBJECT(k) {
-    if (same(k, "process")) process();
-    else if (same(k, "root")) {
+    if (IS("process")) process();
+    else if (IS("root")) {
       OBJECT(k2) {
-        if (same(k2, "path")) c.root = string();
-        else if (same(k2, "readonly")) c.read_only = (u8)boolean();
+        if (IS("path")) c.root = string();
+        else if (IS("readonly")) c.read_only = (u8)boolean();
         else undone("root.", k2);
       }
-    } else if (same(k, "hostname")) c.hostname = string();
-    else if (same(k, "domainname")) c.domainname = string();
-    else if (same(k, "mounts")) {
+    } else if (IS("hostname")) c.hostname = string();
+    else if (IS("domainname")) c.domainname = string();
+    else if (IS("mounts")) {
       c.nmounts = 0, c.dev = 1;
       ARRAY {
         if (c.nmounts == MOUNTS) bad("a list is longer than is read");
         struct mount *m = &c.mounts[c.nmounts++];
         *m = (struct mount){.tree = -1};
         OBJECT(k2) {
-          if (same(k2, "destination")) m->to = string();
-          else if (same(k2, "type")) m->type = string();
-          else if (same(k2, "source")) m->from = string();
-          else if (same(k2, "options")) options(m);
+          if (IS("destination")) m->to = string();
+          else if (IS("type")) m->type = string();
+          else if (IS("source")) m->from = string();
+          else if (IS("options")) options(m);
           else undone("mounts.", k2); /* (uidMappings, gidMappings: a mount is not given other owners) */
         }
         if (!m->to || m->to[0] != '/') bad("a mount's destination is not a path from the root");
@@ -445,8 +538,8 @@ static void config(void) {
         /* What is in /dev is made here, unless /dev is the host's, bound. */
         if (same(m->to, "/dev") && m->flags & MS_BIND) c.dev = 0;
       }
-    } else if (same(k, "linux")) linux_();
-    else if (same(k, "hooks")) { /* (a kind with none in it asks for nothing) */
+    } else if (IS("linux")) linux_();
+    else if (IS("hooks")) { /* (a kind with none in it asks for nothing) */
       OBJECT(k2) ARRAY bad("hooks: none is run yet");
     } else skip(); /* (ociVersion, annotations, and what other systems read) */
   }
@@ -456,10 +549,37 @@ static void config(void) {
   if (!c.cwd || c.cwd[0] != '/') bad("process.cwd: where it runs, a path from the root");
   if (!(c.spaces & CLONE_NEWNS)) bad("linux.namespaces: a box has a mount namespace of its own");
   if ((c.spaces & CLONE_NEWUSER) && (!c.nuids || !c.ngids)) bad("a user namespace has uidMappings and gidMappings");
-  /* A name is given to a box's own UTS namespace (made, or joined), never to the host's. */
-  int uts = (c.spaces & CLONE_NEWUTS) != 0;
-  for (u32 i = 0; i < c.njoined; i++) uts |= c.joined[i].flag == CLONE_NEWUTS;
-  if ((c.hostname || c.domainname) && !uts) bad("hostname: a box with no UTS namespace of its own is not named: the name would be the host's");
+
+  /* The floor. Its namespaces: each its own or another box's (so a name it is given is never the host's, and
+   * what it sees and signals is never the host's processes); a cgroup namespace besides. */
+  u32 own = (u32)c.spaces;
+  for (u32 i = 0; i < c.njoined; i++) own |= c.joined[i].flag;
+  if (~own & (CLONE_NEWPID | CLONE_NEWIPC | CLONE_NEWUTS))
+    bad("linux.namespaces: a box has pid, ipc and uts namespaces of its own (or another box's): the host's are never its");
+  if (!(own & CLONE_NEWCGROUP)) c.spaces |= CLONE_NEWCGROUP;
+  c.user = (own & CLONE_NEWUSER) != 0;
+  /* No device is the box's to make, but in a user namespace, where the ones it could make are no one's. */
+  if (!c.user && (c.caps[0] | c.caps[1] | c.caps[2] | c.caps[3] | c.caps[4]) >> 27 & 1)
+    bad("process.capabilities: CAP_MKNOD: a box makes no device, but in a user namespace");
+  /* A /dev of its own, where config.json mounts none: before everything else, since what is mounted under it
+   * comes after it. */
+  int has_dev = 0, has_proc = 0, has_sys = 0;
+  for (u32 i = 0; i < c.nmounts; i++)
+    has_dev |= same(c.mounts[i].to, "/dev"), has_proc |= same(c.mounts[i].to, "/proc"), has_sys |= same(c.mounts[i].to, "/sys");
+  if (!has_dev) {
+    if (c.nmounts == MOUNTS) bad("a list is longer than is read");
+    for (u32 i = c.nmounts++; i; i--) {
+      c.mounts[i] = c.mounts[i - 1];
+      const char *to = c.mounts[i].to; /* (under the /dev now mounted before it: nothing is there to mount it on) */
+      c.mounts[i].fresh |= to[0] == '/' && to[1] == 'd' && to[2] == 'e' && to[3] == 'v' && to[4] == '/';
+    }
+    own_dev(&c.mounts[0]);
+  }
+  /* What of /proc and /sys tells of the host or changes it: hidden, or read-only, to one who is root there. */
+  if (!c.user) {
+    if (has_proc) FLOOR(FLOOR_MASKED, c.masked, &c.nmasked), FLOOR(FLOOR_READONLY, c.readonly, &c.nreadonly);
+    if (has_sys) FLOOR(FLOOR_MASKED_SYS, c.masked, &c.nmasked);
+  }
 }
 
 /* ---- The box. */
@@ -616,9 +736,8 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
   /* The root: nothing mounted here spreads out; the root bound on itself, a mount of its own to turn on. */
   ok(sys6(SYS_mount, 0, (i64)"/", 0, MS_SLAVE | MS_REC, 0, 0), "mount: ", "/ is not made the box's own");
   ok(sys6(SYS_mount, (i64)root, (i64)root, 0, MS_BIND | MS_REC, 0, 0), "root.path: ", root);
-  /* (one in a user namespace, made or joined, may not make devices, and is given a /proc or a /sys on terms) */
-  int user = (c.spaces & CLONE_NEWUSER) != 0, host[6];
-  for (u32 i = 0; i < c.njoined; i++) user |= c.joined[i].flag == CLONE_NEWUSER;
+  /* (one in a user namespace may not make devices, and is given a /proc or a /sys on terms) */
+  int user = c.user, host[6];
   /* What binds take from the host, while the host's paths are the host's. */
   for (u32 i = 0; i < c.nmounts; i++) {
     struct mount *m = &c.mounts[i];
@@ -677,7 +796,8 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
     ok(r, "readonlyPaths: ", c.readonly[i]);
     remount(c.readonly[i], MS_RDONLY | MS_REC);
   }
-  if (c.read_only) remount("/", MS_RDONLY);
+  /* (the floor: no file of the root is a device, whatever the root holds) */
+  remount("/", MS_NODEV | (c.read_only ? MS_RDONLY : 0));
   sys1(SYS_umask, c.umask >= 0 ? c.umask : old_umask);
 
   if (c.hostname) ok(sys2(SYS_sethostname, (i64)c.hostname, (i64)slen(c.hostname)), "hostname: ", c.hostname);
@@ -686,19 +806,18 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
     ok(sys4(SYS_prlimit64, 0, c.limits[i].what, (i64)&c.limits[i].now, 0), "rlimits: ", "one is not set");
 
   /* Who it is and what it may do: what it may never gain first, while that may still be given up. */
-  if (c.has_caps)
-    for (i64 cap = 0; cap < 64; cap++) {
-      if (c.caps[0] >> cap & 1) continue;
-      r = sys2(SYS_prctl, 24 /* PR_CAPBSET_DROP */, cap);
-      if (r == -EINVAL) break; /* (past the kernel's last) */
-      ok(r, "capabilities: ", "the bounding set is not dropped");
-    }
+  for (i64 cap = 0; cap < 64; cap++) {
+    if (c.caps[0] >> cap & 1) continue;
+    r = sys2(SYS_prctl, 24 /* PR_CAPBSET_DROP */, cap);
+    if (r == -EINVAL) break; /* (past the kernel's last) */
+    ok(r, "capabilities: ", "the bounding set is not dropped");
+  }
   if (c.uid) sys2(SYS_prctl, 8 /* PR_SET_KEEPCAPS */, 1);
   r = sys2(SYS_setgroups, c.ngroups, (i64)c.groups);
   if (r < 0 && (c.ngroups || r != -EPERM)) die("user: ", "its groups are not set", r);
   ok(sys3(SYS_setresgid, c.gid, c.gid, c.gid), "user: ", "its gid is not set");
   ok(sys3(SYS_setresuid, c.uid, c.uid, c.uid), "user: ", "its uid is not set");
-  if (c.has_caps) {
+  {
     struct { u32 version; int pid; } head = {0x20080522, 0};
     struct { u32 effective, permitted, inheritable; } sets[2];
     for (int i = 0; i < 2; i++)
@@ -707,7 +826,7 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
     for (i64 cap = 0; cap < 64; cap++)
       if (c.caps[4] >> cap & 1) ok(sys6(SYS_prctl, 47 /* PR_CAP_AMBIENT */, 2 /* RAISE */, cap, 0, 0, 0), "capabilities: ", "an ambient one is not raised");
   }
-  if (c.no_new_privs) ok(sys6(SYS_prctl, 38 /* PR_SET_NO_NEW_PRIVS */, 1, 0, 0, 0, 0), "noNewPrivileges", "");
+  ok(sys6(SYS_prctl, 38 /* PR_SET_NO_NEW_PRIVS */, 1, 0, 0, 0, 0), "no_new_privs", "");
   sys2(SYS_prctl, 1, SIGKILL); /* (again: who it is changed, which clears it) */
 
   /* HOME, where the box's own /etc/passwd has the one it runs as (as runc gives it), when it is given none. */
@@ -795,7 +914,7 @@ static int main_(int argc, char **argv, char **envp) {
     fd = ok(sys3(SYS_open, (i64)"config.json", O_RDONLY | O_CLOEXEC, 0), "open ", "config.json");
   }
   enum { MOST = 1 << 20 };
-  u8 *text = grab(MOST);
+  u8 *text = grab(MOST + 16); /* (sixteen past its end, for a string's end to be looked for there) */
   i64 n = 0, got; /* (read to its end: one read is all of a file, and not all of a pipe) */
   while ((got = ok(sys3(SYS_read, fd, (i64)(text + n), MOST - n), "read ", "config.json")) > 0) n += got;
   if (n == MOST) bad("it is longer than is read");
