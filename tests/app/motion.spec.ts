@@ -320,6 +320,10 @@ test('a TODO started between two: the lines under it make way from where they st
   await app.home.detail(items.first()).press('Enter');
   await app.home.title(items.nth(1)).fill('Feat: two');
   await app.home.title(items.first()).press('Enter');
+  // A detail that is kept: its line and the day under it stay as the next is started, so what moves the lines
+  // under it is the new line alone (an empty detail goes with its day as the new line comes, and nothing moves).
+  await app.home.detail(items.first()).pressSequentially('kept');
+  await app.home.detail(items.first()).press('Enter');
   await still(app);
   const two = app.home.title(items.nth(1));
   const stood = (await two.boundingBox())!.y;
