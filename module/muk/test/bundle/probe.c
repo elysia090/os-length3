@@ -3,8 +3,11 @@
  * in /dev. muk's test (muk.sh) runs it in a bundle under muk and under runc, and the two say the same. On lib, with no
  * C library, so a bundle's root is this one file.
  *
- *   probe [see:PATH]... [seven] [wait]    each PATH: what it is, where it leads, its first line (or why it is not
- *                                         opened); `seven` ends 7; `wait` ends when it is sent a signal, 128 + it
+ *   probe [see:PATH]... [asks:N[:A[:B]]]... [seven] [wait]
+ *
+ * Each PATH: what it is, where it leads, its first line (or why it is not opened). Each N: the kernel asked call
+ * number N (with A and B, else nothing), and what it answered (0, or why not). `seven` ends 7; `wait` ends when it
+ * is sent a signal, 128 + it.
  */
 #define UNIT "probe"
 #include "../../../lib/io.h"
@@ -73,6 +76,21 @@ static void see(const char *path) {
   say("\n");
 }
 
+/* A call made by its number, with up to two things asked of it, and the kernel's answer. */
+static u64 count(const char **s) {
+  u64 v = 0;
+  while (**s >= '0' && **s <= '9') v = v * 10 + (u64)(*(*s)++ - '0');
+  return v;
+}
+static void asks(const char *what) {
+  const char *s = what;
+  u64 nr = count(&s), a = 0, b = 0;
+  if (*s == ':') s++, a = count(&s);
+  if (*s == ':') s++, b = count(&s);
+  i64 r = sys6((i64)nr, (i64)a, (i64)b, 0, 0, 0, 0);
+  say("asks "), say(what), say(" "), number(r < 0 ? (u64)-r : 0, 10), say("\n");
+}
+
 static int main_(int argc, char **argv, char **envp) {
   /* What it was started with open, before it opens anything: a box has its three, and nothing of what ran it. */
   say("fds");
@@ -114,6 +132,7 @@ static int main_(int argc, char **argv, char **envp) {
   int ends = 0, waits = 0;
   for (int i = 1; i < argc; i++) {
     if (argv[i][0] == 's' && argv[i][1] == 'e' && argv[i][2] == 'e' && argv[i][3] == ':') see(argv[i] + 4);
+    if (argv[i][0] == 'a' && argv[i][1] == 's' && argv[i][2] == 'k' && argv[i][3] == 's' && argv[i][4] == ':') asks(argv[i] + 5);
     ends = same(argv[i], "seven") ? 7 : ends, waits |= same(argv[i], "wait");
   }
   flush();

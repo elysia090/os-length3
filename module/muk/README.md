@@ -39,7 +39,13 @@ What every box has, whatever config.json says. It may ask for more, never for le
 - **The host's kernel.** Where a box is not in a user namespace, what of /proc and /sys tells of the host or
   changes it is hidden or read-only, listed by config.json or not (/proc/kcore, /proc/keys, /proc/sys,
   /proc/sysrq-trigger and the rest every runtime's defaults name).
-- **What is asked and not done is refused**, by name: a seccomp filter, a terminal, hooks that are there, cgroup
+- **What no box asks the kernel.** A filter over every call it makes (seccomp), there from the program's first
+  instruction and for every process it starts: the host's kernel itself (kexec, reboot, modules), another
+  process's memory (ptrace and its kin), the mounts, a namespace inside its own (unshare, setns, clone with any
+  CLONE_NEW), bpf, perf_event_open, userfaultfd, the kernel's keys, typing into the terminal of the one who ran
+  it, are refused as the kernel refuses one who may not; clone3 and io_uring, and every call of another ABI, as a
+  kernel without them. 54 calls, made a tree: one that is none of them is found to be none in six comparisons.
+- **What is asked and not done is refused**, by name: a seccomp filter of config.json's own, a terminal, hooks that are there, cgroup
   limits and `cgroupsPath`, `sysctl`, `rootfsPropagation`, an AppArmor profile or SELinux label, `oomScoreAdj`,
   a mount given other owners, a mount namespace joined. A number is what it says or it is refused (a uid of
   4294967296 is not 0). Not yet at all: `create`, `start`, `state`, `kill`, `delete` apart from `run`.
@@ -48,10 +54,11 @@ Where it reads config.json as runc does: null is a member not there, a member gi
 on a link lands on what the link leads to (in the box), where it runs is made when nothing is there. Where it does
 not: a mount's destination through a link that leads nowhere is refused (runc makes what it leads to).
 
-`test/bundle/muk.sh` is the check: 122 as root, 64 as another user. The same bundles under runc where it runs
+`test/bundle/muk.sh` is the check: 131 as root, 73 as another user. The same bundles under runc where it runs
 them (what each box says of itself the same, line for line, the floor said to runc in its config.json); what is
 refused; every cut of a config.json and bytes changed in it (never a signal, never a wait); 24 runs at once on
-one root; muk killed; a signal passed on; its three descriptors closed; every name of its tables.
+one root; muk killed; a signal passed on; its three descriptors closed; every name of its tables; every call the
+filter names, asked from inside a box.
 
 ## Its counts
 
@@ -61,7 +68,7 @@ guest):
 
 | | by hand | muk | runc 1.5.2 |
 | --- | --- | --- | --- |
-| system calls, the whole run | 116 | 122 | 5,761 |
+| system calls, the whole run | 117 | 123 | 5,761 |
 | instructions in muk itself | 12,000 | 31,700 | (a Go runtime) |
 | time, start to end | 1.9 ms | 2.0 ms | 24 ms |
 | the program, its bytes | | 40 KB | 9.7 MB |
@@ -74,7 +81,7 @@ in the new /dev 3; six devices and five names 11; where it runs 1; ten paths hid
 two calls each); five read-only 9 (one is not there); the root nodev and read-only 1; the mask back, the name, a
 limit 3; the 38 capabilities it may never gain and the first past the kernel's last 39; groups and ids 3; the three
 sets 1; no new privileges 1; its end with muk's again (who it is changed) 1; descriptors closed, signals as they
-were, the program 3. Outside: muk's word, the wait, the box's end taken, muk's own 4. The six more muk makes are
+were, the filter, the program 4. Outside: muk's word, the wait, the box's end taken, muk's own 4. The six more muk makes are
 HOME read from the box's /etc/passwd, as runc gives it (3), and the cgroup tree as a host with the old
 hierarchies has it, bound with its flags (4 calls for 1). The time by hand is what the kernel takes for a clone
 into six namespaces and two programs started, which nothing in muk can lower.

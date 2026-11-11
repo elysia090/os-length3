@@ -33,11 +33,13 @@ both() { # both NAME STATUS
     # (A copy of the bundle for each: what one makes in a root with no /dev mounted, the other would find there.)
     st=0; (cd "$t/$1.for-runc" && runc --root "$t/state" run -b . "runc$n") > "$t/$1.runc" 2> "$t/$1.runc.err" || st=$?
     [ "$st" = "$2" ] || no "$1: runc ended $st, not $2: $(cat "$t/$1.runc.err")"
-    # (the root mounted nodev is the floor, which runc has not: said of muk's alone, and left out of what is compared)
-    sed 's|^\(mount / [a-z,]*\)nodev,|\1|' "$t/$1.muk" | sort > "$t/$1.a"; sort "$t/$1.runc" > "$t/$1.b"
+    # (the root mounted nodev and the filter are the floor, which runc has not: said of muk's alone, and left out of
+    # what is compared)
+    sed 's|^\(mount / [a-z,]*\)nodev,|\1|; /^Seccomp:/d' "$t/$1.muk" | sort > "$t/$1.a"; sed '/^Seccomp:/d' "$t/$1.runc" | sort > "$t/$1.b"
     cmp -s "$t/$1.a" "$t/$1.b" || { diff "$t/$1.a" "$t/$1.b" | head -20 >&2; no "$1: muk (<) and runc (>) differ"; }
   fi
   grep -q '^mount / [a-z,]*nodev' "$t/$1.muk" || no "$1: the root is not mounted nodev"
+  grep -qx 'Seccomp:	2' "$t/$1.muk" || no "$1: the box has no filter"
 }
 # The floor, as config.json says it: what runc is told so that the two are told the same (muk gives it unasked).
 dev='{"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]}'
@@ -258,6 +260,32 @@ st=0; (cd "$t/every" && "$muk" run -b . x) > "$t/every.muk" 2> "$t/every.err" ||
 has every "CapBnd:	$(printf '%016x' $(( (1 << $(($(cat /proc/sys/kernel/cap_last_cap) + 1))) - 1 )))"
 has every "CapEff:	$(printf '%016x' $(( (1 << $(($(cat /proc/sys/kernel/cap_last_cap) + 1))) - 1 )))"
 begins every 'mount /every '
+
+# What no box asks the kernel: each call muk.c's filter names is answered as it says (EPERM, or ENOSYS as a kernel
+# without it would), the two that are refused by what they are asked are refused for that and not otherwise,
+# another ABI's calls are not there, and what is not named is the box's to ask.
+named=$(sed -n '/^static const struct { u16 nr; u8 how; } FILTER/,/^};/p' "$here/../../src/muk.c" | grep -o '{[0-9]*, F_E[A-Z]*}' | tr -d '{},' | sed 's/F_EPERM/1/; s/F_ENOSYS/38/')
+n=$((n + 1)); [ "$(echo "$named" | wc -l)" -ge 50 ] || no "muk.c's filter is not read"
+bundle asked <<JSON
+{"process": {"args": ["/probe", $(echo "$named" | sed 's/^\([0-9]*\) .*/"asks:\1",/' | tr '\n' ' ')
+   "asks:16:0:21522", "asks:16:0:21532", "asks:16:0:21505", "asks:56:268435456", "asks:1073741863", "asks:39"], "cwd": "/"},
+ "root": {"path": "$t/asked/rootfs"}, "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+  "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
+JSON
+n=$((n + 1))
+st=0; (cd "$t/asked" && "$muk" run -b . x < /dev/null) > "$t/asked.muk" 2> "$t/asked.err" || st=$?
+[ "$st" = 0 ] || no "asked: muk ended $st: $(cat "$t/asked.err")"
+has asked 'Seccomp:	2'
+echo "$named" | while read -r nr answer; do
+  grep -qx "asks $nr $answer" "$t/asked.muk" || { echo "not ok: asked: call $nr was answered $(sed -n "s/^asks $nr //p" "$t/asked.muk"), not $answer" >&2; exit 1; }
+done || exit 1
+has asked 'asks 16:0:21522 1'
+has asked 'asks 16:0:21532 1'
+n=$((n + 1)); ! grep -qx 'asks 16:0:21505 1' "$t/asked.muk" || no "asked: an ioctl that types nothing was refused"
+has asked 'asks 56:268435456 1'
+has asked 'asks 1073741863 38'
+has asked 'asks 39 0'
 
 # What it does not run: a filter it cannot make yet is not left out; a terminal; hooks; no program; what is not JSON.
 bundle filter <<'JSON'
