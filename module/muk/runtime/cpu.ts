@@ -168,7 +168,7 @@ class Thread {
       fpu: theX87().fpu,
       trace: () => {},
       miss: (address: bigint) => this.miss(address),
-      // clock_gettime of a wall or steady clock, answered in the translated code itself (ops.rs clock_gettime): the
+      // clock_gettime of a wall or steady clock, answered in the translated code itself (sods' integer.rs clock_gettime): the
       // clock's time in ms, a number crossing as it is; NaN where the kernel answers (a CPU-time clock, no clock).
       time: (id: number) => this.clock.readMs(id) ?? NaN,
     }};

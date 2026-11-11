@@ -2,11 +2,13 @@
 //! resolution and the dispatcher), the program's image and entry table, its names and the facts the loader reads;
 //! the code itself written into one buffer as the kernel makes each function.
 
+use crate::abi::*;
 use crate::elf::Elf;
 use crate::facts::{summarize, Liveness};
-use crate::kernel::*;
+use crate::frame::Report;
+use crate::lower::{lower_function, Frame, Lowering};
 use crate::program::Program;
-use crate::ops::Report;
+use crate::wasm::uleb;
 use std::borrow::Cow;
 use wasm_encoder::{
     BlockType, ConstExpr, CustomSection, ElementSection, Elements, Encode, EntityType, ExportKind, ExportSection,

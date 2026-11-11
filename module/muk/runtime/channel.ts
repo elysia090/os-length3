@@ -21,7 +21,7 @@ export const CH = {
   TID: 126, // the thread a Worker is offered (PARK.OFFERED)
   // BigInt64 indices
   NR: 2, ARGS: 3, NEXT: 9, VALUE: 10, RIP: 11, ARG0: 12, ARG1: 13, REGS: 16,
-  LOW: 40, // how deep the thread's stack has gone (kernel.rs G_LOW), as of its last request; 0: not known
+  LOW: 40, // how deep the thread's stack has gone (sods' abi.rs G_LOW), as of its last request; 0: not known
   // bytes
   DATA: 512, DATA_BYTES: 256 << 10,
   /** Bytes of a channel. */

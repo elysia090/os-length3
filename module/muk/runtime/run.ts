@@ -25,7 +25,7 @@ const wasmTranslator = join(here, '..', '..', 'sods', 'target', 'wasm32-unknown-
 
 // SODS_BLOCKS=1: translate with --trace, so every block entered is reported (process.ts prints it).
 const traced = process.env.SODS_BLOCKS ? ['--trace'] : [];
-// SODS_RUN=N: functions cut into runs of N blocks (kernel.rs RUN), so the cut is tested on small programs.
+// SODS_RUN=N: functions cut into runs of N blocks (sods' layout.rs RUN), so the cut is tested on small programs.
 const cut = process.env.SODS_RUN ? [`--run=${process.env.SODS_RUN}`] : [];
 
 // The translator built as wasm, run in this process as the browser runs

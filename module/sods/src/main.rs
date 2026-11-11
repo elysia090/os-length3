@@ -1,6 +1,6 @@
 //! `sods [--whole] INPUT.elf OUTPUT.wasm` — translate a static x86-64 Linux
 //! program: what it runs first, or with --whole all of it, ahead of time
-//! (discover::discover_whole).
+//! (find::discover_whole).
 //! `sods --seeds=SEEDS INPUT.elf OUTPUT.wasm` — as the first, and from the function starts listed in SEEDS (one
 //! address a line) too: a program with the code its runs reached later, in one module.
 //! `sods --more=SEEDS --known=KNOWN --base=N INPUT.elf OUTPUT.wasm` — code
@@ -27,8 +27,8 @@ fn main() -> ExitCode {
     };
     let started = std::time::Instant::now();
     let flag = |name: &str| args.iter().find_map(|a| a.strip_prefix(&format!("--{name}=")).map(str::to_string));
-    // --run=N: functions cut into runs of N blocks (discover::RUN), for testing the cut on small programs.
-    if let Some(n) = flag("run").and_then(|n| n.parse().ok()) { sods::find::set_run(n); }
+    // --run=N: functions cut into runs of N blocks (layout::RUN), for testing the cut on small programs.
+    if let Some(n) = flag("run").and_then(|n| n.parse().ok()) { sods::layout::set_run(n); }
     let list = |path: Option<String>| -> Vec<u64> {
         path.and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default().lines().filter_map(|l| l.trim().parse().ok()).collect()
     };

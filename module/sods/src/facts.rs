@@ -3,10 +3,10 @@
 //! registers as a call sees it.
 
 use crate::elf::Elf;
+use crate::layout::has_loop;
 use crate::program::*;
-use iced_x86::{InstructionInfoFactory, OpAccess, Register};
+use crate::x86::*;
 use std::collections::VecDeque;
-
 
 /// Flag liveness over the whole program in flat arrays, every function's blocks in turn (function f's from
 /// `first[f]`): the flags each block reads before writing and writes, where it goes (a block of its own function, an
@@ -151,18 +151,6 @@ pub struct Summary { pub reads: u32, pub writes: u32, pub exits: bool }
 /// more than this many frames past what DEPTH_LIMIT allows.
 const QUIET_CHAIN: u32 = 16;
 
-/// The bit of a register a summary keeps (a vector register by its own number: iced's full register of an xmm is its
-/// zmm).
-fn bit(r: Register) -> Option<u32> {
-    let n = r as u32;
-    for first in [Register::XMM0, Register::YMM0, Register::ZMM0] {
-        let first = first as u32;
-        if (first..first + 16).contains(&n) { return Some(16 + n - first); }
-    }
-    let full = r.full_register() as u32;
-    (Register::RAX as u32..=Register::R15 as u32).contains(&full).then(|| full - Register::RAX as u32)
-}
-
 /// Every function's summary, in the program's order: what it itself may do, where it does not go out (decoded again
 /// only there), then its callees' taken on, callees first (Kahn's order: what is never taken is on a cycle of calls).
 pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
@@ -190,7 +178,7 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
         if s.exits { return (s, callees); }
         let mut at = Code::new(elf, f.span().map_or(f.start, |(lo, _)| lo));
         for b in &f.blocks {
-            at.decode(elf, b, &mut code);
+            at.decode(elf, b.start, b.count, &mut code);
             for i in &code {
                 for u in info.info(i).used_registers() {
                     let Some(k) = bit(u.register()) else { continue };
@@ -228,18 +216,9 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
     summaries
 }
 
-/// Whether `function` goes backward anywhere (a loop's head), within it or out to an address before a block's (a run
-/// of the same function).
-pub fn has_loop(function: &Function) -> bool {
-    function.blocks.iter().zip(&function.succ).enumerate().any(|(k, (b, to))| {
-        goes_to(b).into_iter().zip(to).any(|(a, &t)| if t != NO { t as usize <= k } else { a.is_some_and(|a| a <= b.start) })
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iced_x86::{Decoder, DecoderOptions, Instruction};
 
     /// Functions of one block each (x86 bytes at an address, ending as given), in a program of one executable
     /// segment that holds them all.
@@ -249,8 +228,7 @@ mod tests {
         let mut bytes = vec![0; (end - base) as usize];
         for &(a, c, _) in functions { bytes[(a - base) as usize..][..c.len()].copy_from_slice(c); }
         let made = functions.iter().map(|(start, code, exit)| {
-            let mut d = Decoder::with_ip(64, code, *start, DecoderOptions::NONE);
-            let code: Vec<Instruction> = std::iter::from_fn(|| d.can_decode().then(|| d.decode())).collect();
+            let code = decode_all(code, *start);
             Function::new(*start, format!("f_{start:x}"), vec![Block::of(*start, &code, exit.clone())])
         }).collect::<Vec<_>>();
         (Elf::of_code(base, bytes), Program { entry: made[0].start, functions: made, entries: Default::default() })

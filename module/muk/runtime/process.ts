@@ -147,7 +147,7 @@ export const TRAP_YIELD = 5, TRAP_UNWIND = 6;
  */
 export const SLICE_MS = 1, SLICE_LOOPS = 1 << 16;
 export const nextSlice = (loops: number, ms: number): number => Math.max(1 << 10, Math.min(1 << 26, Math.round(loops * Math.sqrt(SLICE_MS / Math.max(ms, SLICE_MS / 64)))));
-/** Where translated code looks for the kernel's call to look in (kernel.rs INTERRUPT): a word, and whether its process shares memory with another. */
+/** Where translated code looks for the kernel's call to look in (sods' abi.rs INTERRUPT): a word, and whether its process shares memory with another. */
 export const INTERRUPT = 0x100, SHARES = INTERRUPT + 4;
 /** The low words the kernel writes for translated code (INTERRUPT, SHARES): below Linux's vm.mmap_min_addr. */
 const LOW_WORDS = 0x10000;
@@ -1560,7 +1560,7 @@ export class Process implements Proc {
    */
   /**
    * Where this process may have written ([[start, end]]): the kernel's low words, its image, what it mapped, and of
-   * its stack what it used: down to the least rsp its threads had (translated code keeps it, kernel.rs G_LOW) or the
+   * its stack what it used: down to the least rsp its threads had (translated code keeps it, sods' abi.rs G_LOW) or the
    * kernel wrote at (Memory.deepest), less STACK_SLACK for what goes below rsp with no write to it (pushes, the red
    * zone); all of the stack, and the guard under it, where that is not known. The memory keeps what was learnt, for
    * another process on it (a vfork child's depth is its parent's memory's).
@@ -1815,7 +1815,7 @@ export class Task implements Thread {
         if (TRACE_BLOCKS) console.error(`[${t.tid}] block 0x${BigInt.asUintN(64, BigInt(address)).toString(16)}`); else if (t.trail) t.trail[t.trailAt++ & 255] = address;
       },
       miss: (address: bigint) => (slot.task as Task).miss(address),
-      // clock_gettime of a wall or steady clock, answered in the translated code (ops.rs clock_gettime), as above.
+      // clock_gettime of a wall or steady clock, answered in the translated code (sods' integer.rs clock_gettime), as above.
       time: (id: number) => CLOCK.readMs(id) ?? NaN,
     }};
   }
@@ -1847,7 +1847,7 @@ export class Task implements Thread {
   // ---- registers: 0..15 as x86 numbers them (rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8..r15), 16 fs, 17 the flags, 18 the rest of rflags and MXCSR ----
 
   reg(n: number): bigint { return this.exports[REG[n]]?.value ?? 0n; }
-  /** How deep its stack has gone (kernel.rs G_LOW: all ones before it moved); null for a translation without it. */
+  /** How deep its stack has gone (sods' abi.rs G_LOW: all ones before it moved); null for a translation without it. */
   low(): bigint | null { return this.instance ? this.exports.low?.value ?? null : null; }
   setReg(n: number, v: bigint | number): void { const g = this.exports[REG[n]]; if (g) g.value = BigInt.asIntN(64, BigInt(v)); }
   /** Its registers and where it goes on. */

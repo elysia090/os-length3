@@ -71,7 +71,7 @@ pub struct Elf {
     /// finds them (the dynamic segment's RELA rows; a post-link tool keeps no section headers but the symbol table),
     /// or, in a program neither position-independent nor keeping relocations, every aligned eight bytes of its data
     /// that are an address in its code (its function tables, .init_array). Read only to translate the whole program
-    /// ahead of time (discover::discover_whole): one that is not a pointer adds code that never runs.
+    /// ahead of time (find::discover_whole): one that is not a pointer adds code that never runs.
     pub data_pointers: Vec<u64>,
     /// Loaded where it says (ET_EXEC), its code's addresses numbers in it (a function passed as `mov $f, %edi`).
     pub fixed: bool,

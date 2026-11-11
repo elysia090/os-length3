@@ -16,14 +16,15 @@ runs what it makes is ricebox's (`../ricebox`).
   `memory.copy`. Code is found from symbols, call targets and the
   relocations kept by `--emit-relocs` (including position-relative jump
   tables); anything reached another way goes through an address dispatcher.
-  In one direction: `find.rs` finds the code into a `program.rs`;
-  `facts.rs` decides what the whole program shares (the flags each entry
-  reads, what a call may touch); `kernel.rs` makes each function's frame
-  (layout, labels, dispatch, syncs); `ops.rs` is what each instruction means
-  on it; `image.rs` the module around the code; `op.rs` the operators, as
-  their bytes.
+  In one direction, each file one thing: `elf.rs` the program at rest; `x86.rs` an instruction as sods reads it
+  (the decoder is taken in there and nowhere else); `find.rs` finds the code into a `program.rs`, its blocks in
+  the order `layout.rs` gives them; `facts.rs` decides what the whole program shares (the flags each entry
+  reads, what a call may touch); `frame.rs` is a function as it is made (its locals, its bytes, its labels) and
+  `sync.rs` which registers it moves to their globals; `operand.rs`, `flags.rs`, `integer.rs`, `sse.rs` and
+  `fpu.rs` are what each instruction means on it; `lower.rs` its control flow; `image.rs` the module around
+  the code. `abi.rs` is what the code and what runs it agree on; `wasm.rs` WebAssembly as bytes.
 - The translator also builds as wasm (`--target wasm32-unknown-unknown
-  --lib`, wrapped by `runtime/translator.ts`) and gives byte-identical
+  --lib`; `src/web.rs` is what it exports there, wrapped by `runtime/translator.ts`) and gives byte-identical
   output, so a browser translates the programs it runs.
 - The exact 80-bit x87 is Rust too (`src/x87.rs`), in the translator's wasm:
   an instance of that module of its own holds each thread's registers, and

@@ -61,7 +61,6 @@ inside out, so that nothing of a product is left further in than the product.
 | tests | `tests/` | root3's, driven as a person drives it | `root3/test` |
 | runtime, src, test, tests | each unit's folders, named four ways | what runs in a page; the unit itself; its checks | one name each, the same in every unit |
 | unit, module | `module/`, `scripts/units.ts` | one thing | module |
-| a second kernel | sods' `kernel.rs` | where a function's control flow is made wasm | a name that says so |
 
 ## Today, against that
 
@@ -77,7 +76,7 @@ inside out, so that nothing of a product is left further in than the product.
   Prompt) and is checked beside runc; it makes the box's terminal and gives its other end away. It does not yet make a filter
   of config.json's own or a cgroup. A box kept beyond a run, and everything a terminal is to the one at it, are
   not muk's to make: they are prompt's, which today is the rest of `root3/core/src/prompt` and `root3/app/prompt`.
-- **sods holds what is muk's**: unzstd and SHA-256 in `wasm.rs`, with their two crates.
+- **sods holds what is muk's**: unzstd and SHA-256 in `web.rs`, with their two crates.
 - **shipto is in five places**: `root3/remote` (8,403 lines), `root3/core/src/remote` (2,479), and three of the
   command's files (1,095).
 
@@ -116,7 +115,7 @@ Names first, from the inside out, since a wrong name is paid at every reading; t
    it. First cut: the tree (`src/tree.h`, written, and what Linux says of every name of a whole root; the calls do
    not walk it yet), then descriptors and pipes, then processes.
 3. **sods.** The foreign decoder is run twice an instruction (0.32 G of the 1.40 G) and the lowering is keyed on its
-   types (`ops.rs`, 2,070 lines). First cut: its own decoder, one pass, a table per opcode; then the calls it makes
+   types (`operand.rs`, `flags.rs`, `integer.rs`, `sse.rs`, `fpu.rs`: 2,070 lines). First cut: its own decoder, one pass, a table per opcode; then the calls it makes
    (a call is 8.5× native).
 4. **muk on Linux takes the box from root3's core.** The seccomp filter and the terminal in `muk run`; then a
    Prompt is the bundle root3 writes, and the Firecracker driver goes.

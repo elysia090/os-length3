@@ -1,13 +1,13 @@
 //! Finding the code: from the entry, the symbols, the pointers the relocations name and the calls each walk makes,
 //! each function walked in its range (to the next start or its symbol's size), its switches' tables read, and its
-//! blocks cut into runs of about RUN. Each instruction is decoded once here, kept as 16 bytes by its offset (no map is
+//! blocks laid out and cut into runs (layout.rs). Each instruction is decoded once here, kept as 16 bytes by its offset (no map is
 //! hashed); a walk is made again only where a new start lies in what it reached.
 
 use crate::elf::Elf;
+use crate::layout::{joined, runs, Layout};
 use crate::program::*;
-use iced_x86::{Decoder, DecoderOptions, Instruction, Mnemonic, OpKind, Register};
+use crate::x86::*;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-
 
 /// Where a walk of the program starts and how far it goes: from `starts`, the symbols in code (with `symbols`) and
 /// `targets` (sorted pointers, each a start of its own when `pointed_start`); each function in its range (to the next
@@ -204,25 +204,6 @@ fn walk_all(elf: &Elf, jobs: &[Job], references: Option<&mut Vec<u64>>) -> Vec<(
     out
 }
 
-impl Block {
-    /// The block of `code` (at `start`, each instruction after the one before), ending as `exit` says.
-    pub fn of(start: u64, code: &[Instruction], exit: Exit) -> Block {
-        let steps: Vec<Step> = code.iter().map(Step::of).collect();
-        Block::of_steps(start, &steps, exit)
-    }
-    fn of_steps(start: u64, steps: &[Step], exit: Exit) -> Block {
-        let (mut reads, mut writes, mut traps, mut len) = (0, 0, false, 0);
-        for s in steps {
-            reads |= s.reads & !writes;
-            writes |= s.writes;
-            traps |= s.bits & TRAPS != 0;
-            len += s.len as u32;
-        }
-        let last = steps.last().expect("a block holds an instruction");
-        Block { start, len, count: steps.len() as u32, reads, writes, last: last.len, resumes: last.bits & SYSCALL != 0, traps, exit }
-    }
-}
-
 /// What a walk keeps of an instruction it decoded, in 16 bytes.
 #[derive(Clone, Copy)]
 struct Step { target: u64, len: u8, flow: u8, reads: u8, writes: u8, bits: u8 }
@@ -394,13 +375,6 @@ fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut r
     (blocks, calls)
 }
 
-
-pub(crate) fn decode(elf: &Elf, address: u64) -> Option<Instruction> {
-    let bytes = elf.code_at(address)?;
-    let i = Decoder::with_ip(64, &bytes[..bytes.len().min(15)], address, DecoderOptions::NONE).decode();
-    (!i.is_invalid()).then_some(i)
-}
-
 /// Where a function's blocks jump or run on to outside it (its tail jumps, branches out of it): not its calls.
 fn continuations(blocks: &[Block]) -> Vec<u64> {
     let own = |a: &u64| blocks.binary_search_by_key(a, |b| b.start).is_ok();
@@ -516,57 +490,3 @@ fn bound_of(elf: &Elf, blocks: &[Block], at: u64, index: Register) -> Option<u64
         (to_table && cmp.mnemonic() == Mnemonic::Cmp && same).then_some(n?).filter(|&n| n < TABLE_ENTRIES).map(|n| n + 1)
     })
 }
-
-/// About how many blocks one wasm function is made of: an optimizing compile takes time that grows faster than a
-/// function's size, and a browser optimizes what runs long enough whatever its size (cc1 cut into runs of 1024 blocks
-/// had V8 optimize 36 MB of them while a small C file compiled; in runs of 64, 7 MB). A function past this is cut
-/// into runs of consecutive blocks, each a wasm function; from one into another is a tail call to its entry.
-pub const RUN: usize = 64;
-/// The most blocks of a loop that a run grows past RUN to hold whole (to twice RUN at most).
-const KEEP: usize = RUN;
-
-thread_local! {
-    /// Runs of exactly this many blocks, loops cut as anything is, when set for testing the cut (set_run).
-    static RUN_BLOCKS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
-}
-
-/// Cut functions into runs of exactly `blocks` blocks from now on (at least one): for testing the cut.
-pub fn set_run(blocks: usize) { RUN_BLOCKS.with(|r| r.set(Some(blocks.max(1)))); }
-
-/// `start`'s function as wasm functions are made of it: whole, or cut into runs of about RUN blocks, a run cut no
-/// sooner than where it breaks no loop of up to KEEP blocks (the first keeps its name; the others are `name.2`...).
-fn runs(start: u64, name: String, blocks: Vec<Block>, scratch: &mut Layout) -> Vec<Function> {
-    let exact = RUN_BLOCKS.with(|r| r.get());
-    let run = exact.unwrap_or(RUN);
-    if blocks.len() <= run { return vec![Function::laid_out(start, name, blocks, scratch)]; }
-    // A cut before block p breaks each loop with head < p <= last (a walk's blocks are in address order).
-    let mut breaks = vec![false; blocks.len()];
-    if exact.is_none() {
-        for lp in loops_of(&blocks).0.into_iter().filter(|lp| lp.last - lp.head < KEEP) { breaks[lp.head + 1..=lp.last].fill(true); }
-    }
-    let mut out: Vec<Function> = Vec::with_capacity(blocks.len().div_ceil(run));
-    let mut held: Vec<Block> = Vec::with_capacity(run);
-    let named = |out: &Vec<Function>| if out.is_empty() { name.clone() } else { format!("{name}.{}", out.len() + 1) };
-    for (p, b) in blocks.into_iter().enumerate() {
-        if held.len() >= run + KEEP * exact.is_none() as usize || (held.len() >= run && !breaks[p]) {
-            let n = named(&out);
-            out.push(Function::laid_out(held[0].start, n, std::mem::take(&mut held), scratch));
-        }
-        held.push(b);
-    }
-    let n = named(&out);
-    out.push(Function::laid_out(held[0].start, n, held, scratch));
-    out
-}
-
-/// Where a run of a function cut into `runs` (the program's from `first`) goes on in another: an entry of that run.
-fn joined(runs: &[Function], first: usize, marks: &mut Vec<(u64, (u32, u32))>) {
-    if runs.len() < 2 { return; }
-    let holder = |a: u64| runs.iter().enumerate().find_map(|(r, f)| f.block_index(a).map(|b| (r, b)));
-    for f in runs {
-        for a in f.blocks.iter().flat_map(|b| goes_to(b).into_iter().flatten()) {
-            if f.block_index(a).is_none() { if let Some((r, k)) = holder(a) { marks.push((a, ((first + r) as u32, k as u32))); } }
-        }
-    }
-}
-

@@ -47,7 +47,7 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
   // SODS_BUDGET=N (node): how much code reached later one module may hold, for measuring (0: all it reaches).
   const budget = globalThis.process?.env?.SODS_BUDGET;
   if (budget) x.sods_budget(Number(budget));
-  // SODS_RUN=N (node): functions cut into runs of N blocks (kernel.rs RUN), so the cut is tested on small programs.
+  // SODS_RUN=N (node): functions cut into runs of N blocks (layout.rs RUN), so the cut is tested on small programs.
   const run = globalThis.process?.env?.SODS_RUN;
   if (run) x.sods_run(Number(run));
   // What a fresh instance holds: that much never goes back.
