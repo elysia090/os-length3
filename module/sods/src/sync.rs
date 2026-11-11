@@ -9,10 +9,11 @@ use crate::program::*;
 #[derive(Default)]
 pub(crate) struct Masks { flow: Vec<Flow>, notes: Vec<(usize, usize, u32, u32)>, pub(crate) mask: Vec<u32>, starts: Vec<usize> }
 
-/// A block as the sync masks see it: where it goes within (up to two, or INDIRECT: any entry), its forward and
-/// backward transfers (`value & P | G`), and what is dirty into it and live into it.
+/// A block as the sync masks see it: where it goes within (up to two, or INDIRECT: any entry), whether a block at
+/// or after it goes to it (`back`), its forward and backward transfers (`value & P | G`), and what is dirty into it
+/// and live into it.
 #[derive(Clone, Copy, Default)]
-struct Flow { to: [u32; 2], n: u8, edged: bool, forward: (u32, u32), backward: (u32, u32), dirty: u32, live: u32 }
+struct Flow { to: [u32; 2], n: u8, edged: bool, back: bool, forward: (u32, u32), backward: (u32, u32), dirty: u32, live: u32 }
 const TO_ENTRIES: u8 = u8::MAX;
 
 /// Which registers each sync must move (into `mask`, by sync). Between syncs a register lives in its local; its
@@ -38,6 +39,13 @@ pub(crate) fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Mask
         let f = &flow[k];
         if f.n == TO_ENTRIES { for &s in starts.iter() { each(s) } } else { for &s in &f.to[..f.n as usize] { each(s as usize) } }
     };
+    // The blocks one at or after them goes to: where a round may hand something to what it has gone through.
+    let mut anywhere = false;
+    for k in 0..n {
+        let (to, count) = (flow[k].to, flow[k].n);
+        if count == TO_ENTRIES { anywhere = true; } else { for &s in &to[..count as usize] { if s as usize <= k { flow[s as usize].back = true; } } }
+    }
+    if anywhere { for &s in starts.iter() { flow[s].back = true; } }
     mask.clear();
     mask.resize(syncs.len(), 0);
     notes.clear();
@@ -55,15 +63,17 @@ pub(crate) fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Mask
         if !f.edged { out_p |= p; out_g |= g; }
         f.forward = (out_p, out_g);
     }
+    // (Blocks gone through in order: what one hands a block after it is taken up in the same round, so another round
+    // is made only where one handed something new to itself or a block before it.)
     loop {
-        let mut changed = false;
+        let mut again = false;
         for k in 0..n {
             let out = (flow[k].dirty & flow[k].forward.0) | flow[k].forward.1;
-            let f = flow[k];
-            let mut go = |s: usize| if flow[s].dirty | out != flow[s].dirty { flow[s].dirty |= out; changed = true; };
-            if f.n == TO_ENTRIES { for &s in starts.iter() { go(s) } } else { for &s in &f.to[..f.n as usize] { go(s as usize) } }
+            let (to, count) = (flow[k].to, flow[k].n);
+            let mut go = |s: usize| if flow[s].dirty | out != flow[s].dirty { flow[s].dirty |= out; again |= s <= k; };
+            if count == TO_ENTRIES { for &s in starts.iter() { go(s) } } else { for &s in &to[..count as usize] { go(s as usize) } }
         }
-        if !changed { break; }
+        if !again { break; }
     }
     for &(m, k, p, g) in notes.iter() { mask[m] |= ((flow[k].dirty & p) | g) & syncs[m].2; }
     notes.clear();
@@ -81,13 +91,14 @@ pub(crate) fn sync_masks(fx: &Fx, Masks { flow, notes, mask, starts }: &mut Mask
         f.backward = (p, g);
     }
     let after = |flow: &[Flow], k: usize| { let mut a = 0; to(flow, k, &mut |s| a |= flow[s].live); a };
+    // (From the last block back: another round only where a block that one at or after it goes to has grown.)
     loop {
-        let mut changed = false;
+        let mut again = false;
         for k in (0..n).rev() {
             let l = (after(flow, k) & flow[k].backward.0) | flow[k].backward.1;
-            if flow[k].live | l != flow[k].live { flow[k].live |= l; changed = true; }
+            if flow[k].live | l != flow[k].live { flow[k].live |= l; again |= flow[k].back; }
         }
-        if !changed { break; }
+        if !again { break; }
     }
     for &(m, k, p, g) in notes.iter() { mask[m] |= ((after(flow, k) & p) | g) & syncs[m].2; }
     // The prologue takes in what any block it may start at reads.

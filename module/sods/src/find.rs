@@ -98,7 +98,8 @@ fn find(elf: &Elf, walk: Find) -> Program {
     // Without relocations that say where its tables are, the tables its switches read (switch_targets).
     let guess = elf.relative_slots.is_empty();
     let collect = follow.taken || (follow.tables && !guess);
-    let mut references: Vec<u64> = Vec::new();
+    // What the code names: this round's (`fresh`), and all so far where tables are found by them.
+    let (mut references, mut fresh): (Vec<u64>, Vec<u64>) = (Vec::new(), Vec::new());
     let after = |set: &BTreeSet<u64>, a: u64| set.range(a + 1..).next().copied().unwrap_or(u64::MAX);
     let before = |set: &BTreeSet<u64>, a: u64| set.range(..a).next_back().copied();
     let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
@@ -119,7 +120,8 @@ fn find(elf: &Elf, walk: Find) -> Program {
             let ((p, q), (i, j)) = (inside(&pointers, s, e), inside(&sorted, s, e));
             (s, e, &pointers[p..q], &sorted[i..j])
         }).collect();
-        let (walked, mut found) = walk_all(elf, &seen, &jobs, collect.then_some(&mut references));
+        fresh.clear();
+        let (walked, mut found) = walk_all(elf, &seen, &jobs, collect.then_some(&mut fresh));
         let mut switches = Vec::new();
         // Not following calls, code it goes on to all the same: what it jumps or runs into past its range.
         if !follow.calls { found.clear(); }
@@ -133,9 +135,12 @@ fn find(elf: &Elf, walk: Find) -> Program {
         found.retain(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t));
         found.sort_unstable();
         found.dedup();
-        if collect { references.sort_unstable(); references.dedup(); }
-        if follow.taken { found.extend(references.iter().copied().filter(|&a| elf.is_code(a) && !starts.contains(&a))); }
-        let mut tables = if !follow.tables { Vec::new() } else if guess { switches } else { relative_table_targets(elf, &references) };
+        // What this round's code names, each place once: an instruction is asked what it names when it is first
+        // scanned, and what the rounds before named are starts by now, or are no code.
+        fresh.sort_unstable();
+        fresh.dedup();
+        if follow.taken { found.extend(fresh.iter().copied().filter(|&a| elf.is_code(a) && !starts.contains(&a))); }
+        let mut tables = if !follow.tables { Vec::new() } else if guess { switches } else { references.extend_from_slice(&fresh); relative_table_targets(elf, &references) };
         tables.sort_unstable();
         tables.dedup();
         tables.retain(|t| pointers.binary_search(t).is_err());
