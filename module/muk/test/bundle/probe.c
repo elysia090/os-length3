@@ -2,11 +2,14 @@
  * What a box is, said from inside it: who the process is and what it may do, where it is, what is mounted and what is
  * in /dev. muk's test (muk.sh) runs it in a bundle under muk and under runc, and the two say the same. On lib, with no
  * C library, so a bundle's root is this one file.
+ *
+ *   probe [see:PATH]... [seven] [wait]    each PATH: what it is, where it leads, its first line; `seven` ends 7;
+ *                                         `wait` does not end
  */
 #define UNIT "probe"
 #include "../../../lib/io.h"
 
-enum { SYS_readlink = 89, SYS_getuid = 102, SYS_getgid = 104, SYS_getpid = 39, SYS_uname = 63, SYS_prlimit64 = 302, SYS_getgroups = 115 };
+enum { SYS_pause = 34, SYS_getpid = 39, SYS_uname = 63, SYS_fcntl = 72, SYS_readlink = 89, SYS_getuid = 102, SYS_getgid = 104, SYS_getgroups = 115, SYS_prlimit64 = 302 };
 
 static void say(const char *s) { put(s, slen(s)); }
 static void number(u64 v, u32 base) {
@@ -48,7 +51,34 @@ static void mounted(u8 *l, u8 *e) {
   say("mount "), put(f, (u64)(g - f)), put(kind, (u64)(kind_end - kind)), say("\n");
 }
 
+/* What a path is (not followed), where it leads if it is a link, and the first line of what is read there. */
+static void see(const char *path) {
+  __attribute__((uninitialized)) struct kstat st;
+  say("see "), say(path);
+  if (sys4(SYS_newfstatat, AT_FDCWD, (i64)path, (i64)&st, 0x100 /* AT_SYMLINK_NOFOLLOW */) < 0) { say(" none\n"); return; }
+  say(" "), number(st.mode, 8);
+  if ((st.mode & 0170000) == 0120000) {
+    u8 *to = grab(256);
+    i64 n = sys3(SYS_readlink, (i64)path, (i64)to, 255);
+    say(" -> "), put(to, n > 0 ? (u64)n : 0);
+  }
+  i64 fd = sys3(SYS_open, (i64)path, O_RDONLY | O_NONBLOCK, 0);
+  if (fd >= 0) {
+    u8 *text = grab(256);
+    i64 n = sys3(SYS_read, fd, (i64)text, 255), k = 0;
+    while (k < n && text[k] != '\n') k++;
+    if (n > 0) say(" = "), put(text, (u64)k);
+    sys1(SYS_close, fd);
+  }
+  say("\n");
+}
+
 static int main_(int argc, char **argv, char **envp) {
+  /* What it was started with open, before it opens anything: a box has its three, and nothing of what ran it. */
+  say("fds");
+  for (i64 fd = 0; fd < 64; fd++)
+    if (sys2(SYS_fcntl, fd, 1 /* F_GETFD */) >= 0) say(" "), number((u64)fd, 10);
+  say("\n");
   say("uid "), number((u64)sys1(SYS_getuid, 0), 10), say(" gid "), number((u64)sys1(SYS_getgid, 0), 10);
   say(" groups "), number((u64)sys2(SYS_getgroups, 0, 0), 10), say(" pid "), number((u64)sys1(SYS_getpid, 0), 10), say("\n");
   u8 *names = grab(6 * 65);
@@ -81,6 +111,12 @@ static int main_(int argc, char **argv, char **envp) {
   i64 fd = sys3(SYS_open, (i64)"/made-by-probe", O_WRONLY | O_CREAT, 0600);
   say("write in / "), number(fd < 0 ? (u64)-fd : 0, 10), say("\n");
   if (fd >= 0) sys1(SYS_close, fd), sys1(SYS_unlink, (i64)"/made-by-probe");
+  int ends = 0, waits = 0;
+  for (int i = 1; i < argc; i++) {
+    if (argv[i][0] == 's' && argv[i][1] == 'e' && argv[i][2] == 'e' && argv[i][3] == ':') see(argv[i] + 4);
+    ends = same(argv[i], "seven") ? 7 : ends, waits |= same(argv[i], "wait");
+  }
   flush();
-  return argc > 1 && same(argv[1], "seven") ? 7 : 0;
+  while (waits) sys1(SYS_pause, 0);
+  return ends;
 }
