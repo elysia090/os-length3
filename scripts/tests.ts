@@ -1,4 +1,4 @@
-// npm test: every test file (root3/app/**/*.test.ts, root3/remote/**/*.test.ts, scripts/*.test.ts) under node:test, each
+// npm test: every test file (root3/app/**/*.test.ts, root3/remote/**/*.test.ts, module/everyday, scripts/*.test.ts) under node:test, each
 // process with the core a page runs (root3/app/testing/core.ts), reported as node --test reports.
 //
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
@@ -58,7 +58,7 @@ const named = positionals.map((p) => relative(OS, resolve(HERE, p)));
 // Every path from here on is from os/, as the tests expect to be run.
 process.chdir(OS);
 let files = named.length ? named : [...under('root3/app', (n) => n.endsWith('.test.ts'), true), ...under('root3/remote', (n) => n.endsWith('.test.ts'), true),
-  ...under('scripts', (n) => n.endsWith('.test.ts'))].sort();
+  ...under('module/everyday', (n) => n.endsWith('.test.ts'), true), ...under('scripts', (n) => n.endsWith('.test.ts'))].sort();
 
 // A shard: every n-th file from the i-th, as node --test gives one.
 const shard = values['test-shard'] ?? /--test-shard[= ](\S+)/.exec(process.env.NODE_OPTIONS ?? '')?.[1];

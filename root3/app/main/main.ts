@@ -19,7 +19,9 @@ import {about, claim, connection, enterWith, holdAsk, justSignedIn, mayAsk, onCo
 import {cameBackFromStripe, isPaidTier} from '../remote/plan.ts';
 import {every} from '../host/runs.ts';
 import {heldInvite, holdInvite, inviteIn, openBoards} from '../remote/servers.ts';
-import {getState, loadState} from '../home/state.ts';
+import {getState, loadState, onState} from '../home/state.ts';
+import {inEffect} from '../home/dotfiles.ts';
+import {NAME as LOOK, wear} from '../ui/look.ts';
 import {onLang, t, useLang} from '../i18n/i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
 import {LAND, glide, morph, paced, paneOut, stage, still, where, type Carry} from '../ui/glide.ts';
@@ -146,6 +148,10 @@ touch();
 caret();
 optical();
 scrollbars();
+// The look as the person at this device has changed it (their .everyday, of the dotfiles taken here: ui/look.ts): worn
+// once what Home keeps is read, and again whenever the dotfiles move. With none, the page is as its sheets have it.
+const worn = () => { wear(inEffect()[LOOK]); };
+onState((key) => { if (key === 'dotfiles' || key === 'trusted') worn(); });
 // Server glanced at: a rest on its icon brings one's servers out beside the rail, to jump to; a press goes to its page.
 const serverSwitch = new ServerSwitcher(ctx);
 
@@ -626,6 +632,7 @@ if (asking.has('device')) {
 } else {
   void loadState().finally(async () => {
     await useLang(getState('lang'));
+    worn();
     if (entering) await enterWith(decodeURIComponent(entering));
     // Back from a provider: take up the session it made, then go on where the person began (the page they signed
     // in from is the one kept; Remote's page offers a passkey next, and a tier chosen signed out goes on to Checkout).

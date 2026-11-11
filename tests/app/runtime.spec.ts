@@ -335,3 +335,29 @@ test('signed in, a repo on the Remote is deleted from its gear as turning it off
   await expect(app.remote.power('hello')).toHaveAttribute('aria-checked', 'false');
   await expect(app.remote.card('hello')).toContainText('Disabled · Recoverable until');
 });
+
+// The look, changed by the one at it: the lines of a dotfile, .everyday (module/everyday holds each to what the
+// sheets let be changed and to the words that must stay read). Worn as it is saved and when the app is opened
+// again; a line that would not be read, or is no change, is left out and the rest stands; with the file gone, the
+// page is as its sheets have it.
+test('a look changed in .everyday is worn, what would not be read left out, and gone with the file', async ({app, page}) => {
+  const ground = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ground').trim());
+  const worn = () => page.evaluate(() => document.getElementById('everyday')?.textContent ?? null);
+  expect(await ground()).toBe('#dcd9d4');
+  expect(await worn()).toBeNull();
+
+  // The ground a shade warmer and moves at half their length; then ink the ground's own colour (not read), and a line that says nothing.
+  await app.runtime.makeDotfile('.everyday', 'ground: #e9e4d8\npace: 0.5\nink: #e9e4d8\nnonsense; } body { display: none\n');
+  await expect.poll(worn).toBe(':root { --ground: #e9e4d8; --pace: 0.5; }');
+  expect(await ground()).toBe('#e9e4d8');
+
+  await app.open();
+  await expect.poll(ground).toBe('#e9e4d8');
+
+  await app.runtime.open('Dotfiles');
+  await app.runtime.dotfile('.everyday').click();
+  const ask = await app.runtime.askRemove('.everyday');
+  await app.answer(ask.getByRole('button', {name: 'Remove', exact: true}), ask);
+  await expect.poll(worn).toBeNull();
+  expect(await ground()).toBe('#dcd9d4');
+});

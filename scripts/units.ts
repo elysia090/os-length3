@@ -44,7 +44,9 @@ export const UNITS: Unit[] = [
     takes: []},
   {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, and the command line #80 lists; no window, ordinary POSIX, and no service known to it',
     holds: ['module/ricebox'],
-    takes: ['lib', 'muk', 'sods']},
+    takes: ['lib', 'muk', 'sods', 'everyday']},
+  {name: 'everyday', says: 'the look and feel, changed by the one who uses it: what a face is drawn through. A sheet of names and values, a person\'s lines held to it, the way back the file itself; no window of its own',
+    holds: ['module/everyday'], takes: []},
   {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
     holds: ['module/otter', 'root3/core/src/storage'],
@@ -65,7 +67,7 @@ export const UNITS: Unit[] = [
 ];
 
 /** ricebox and the units under it: what is cut out with it. None takes from a unit over them. */
-export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'ricebox'];
+export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'everyday', 'ricebox'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
 export const NOT_UNITS = ['scripts', 'tests', 'module/muk/runtime/run.ts', 'module/muk/test', 'module/sods/examples', 'module/otter/test',

@@ -31,6 +31,8 @@ sods       module/sods       the translator (Rust), and what loads it in a page
 ricebox    module/ricebox    the distribution, 0.6.4 (RELEASE): pins/, packages/, etc/, usr/, make/
              module/you      its command line's own programs, each one file of C: z, rg, fd, fzf
              module/otter    help, and what each thing is
+             module/everyday the look and feel, changed by the one who uses it: what a face is drawn through
+                             (ricebox has no window of its own, and this layer for one); it knows no product
 root3      root3/            the product, 0.0.1 (VERSION): app/, desktop/, cli/, core/, remote/
 under all  module/lib        what the C stands on: system calls, words, output. On no release: it is in each
                              program made of it

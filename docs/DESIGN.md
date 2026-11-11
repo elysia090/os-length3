@@ -21,7 +21,10 @@ seen the OS could make its look again and arrive at the same one. Each rule
 says what it is for; the rules that were tried against their neighbours say
 what the neighbour lost (§1, *Tried*). A rule with no reason is a habit, and
 a habit is the first thing to go when a page is made in a hurry. The values
-themselves are data: the tokens (§2).
+themselves are data: the tokens (§2), which the person at the OS may change,
+a line each, in their `.everyday` (`module/everyday` holds each change to its
+kind, its bounds and the words that must stay read; a line taken out is the
+value as it came).
 
 # Part I. Common to every page
 
