@@ -37,7 +37,7 @@ import type {Taken} from '../../sods/runtime/kept.ts';
 import type {Machine} from './machine.ts';
 import type {Translate} from '../../sods/runtime/translator.ts';
 import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
-import {said} from '../../sods/runtime/host.ts';
+import {said, steady} from '../../sods/runtime/host.ts';
 
 /** The translator a kernel is given: a program's bytes in, a module out, and what else it can do where it can. */
 export type Translator = ((elf: Uint8Array) => Uint8Array) & {[K in keyof Translate]?: Translate[K]};
@@ -216,12 +216,12 @@ export class Image implements Program {
   /** Translate the code at `address` into one more module; false if there is none to be had. */
   more(translateMore: Translate['more'] | null, address: bigint, prepare: (w: Uint8Array<ArrayBuffer>) => {wasm: Uint8Array<ArrayBuffer>} = (w) => ({wasm: w})): boolean {
     if (!translateMore || !this.source) return false;
-    let t = performance.now();
+    let t = steady();
     // The starts known go as they are: the translator reads them only when it opens the ELF (it keeps them after).
     const wasm = prepare(translateMore(this.source(), [address], this.known, this.slots)).wasm;
-    PROFILE.translate += performance.now() - t; t = performance.now();
+    PROFILE.translate += steady() - t; t = steady();
     const module = new WebAssembly.Module(wasm);
-    PROFILE.compile += performance.now() - t; PROFILE.modules++; PROFILE.bytes += wasm.length;
+    PROFILE.compile += steady() - t; PROFILE.modules++; PROFILE.bytes += wasm.length;
     const starts = u64s(module, 'sods.starts');
     if (!starts.length) return false;
     const entries = u64s(module, 'sods.entries');
@@ -367,7 +367,7 @@ export class Kernel implements Kern {
     this.tty = {sid: 0, fg: 0};
     this.status = null; // init's wait status once it ended
     this.shared = false; // memories are SharedArrayBuffers (remote.ts)
-    this.timers = new Set(); // {at, fire}: alarms (performance.now() ms)
+    this.timers = new Set(); // {at, fire}: alarms (steady() ms)
     this.cpu = {user: 0, sys: 0}; // all the time threads ran their programs, and the kernel made their calls (ms)
     this.calls = 0;
     // Memories processes let go of (exec, exit), for the next to take: a new one costs its pages faulted in and the
@@ -418,12 +418,12 @@ export class Kernel implements Kern {
     const bytes = node.share();
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
     if (!this.translate) throw new FsError(E.NOEXEC);
-    let t = performance.now();
+    let t = steady();
     const {wasm, segments} = this.prepare(this.translate(bytes));
-    PROFILE.translate += performance.now() - t; t = performance.now();
+    PROFILE.translate += steady() - t; t = steady();
     // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
-    PROFILE.compile += performance.now() - t; PROFILE.images++;
+    PROFILE.compile += steady() - t; PROFILE.images++;
     // A root file unchanged: its translation can be kept (the host hears of it once the kernel pauses: kernel.worker.ts).
     if (node.version === 0 && node.origin) { image.origin = node.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
     this.remember(node, {version: node.version, image, used: ++this.uses, kept: false});
@@ -468,11 +468,11 @@ export class Kernel implements Kern {
     const old = cached.image, seeded = this.translate?.seeded;
     if (!old.source || !seeded) return;
     const bytes = old.source();
-    let t = performance.now();
+    let t = steady();
     const {wasm, segments} = this.prepare(seeded(bytes, [...old.known]));
-    PROFILE.translate += performance.now() - t; t = performance.now();
+    PROFILE.translate += steady() - t; t = steady();
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
-    PROFILE.compile += performance.now() - t; PROFILE.images++; PROFILE.consolidated++;
+    PROFILE.compile += steady() - t; PROFILE.images++; PROFILE.consolidated++;
     if (old.origin) { image.origin = old.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
     image.file = cached;
     cached.image = image;
@@ -658,7 +658,7 @@ export class Kernel implements Kern {
 
   /**
    * Run until every process has exited or every thread waits (for input, a
-   * child, or until a time: `until`, in performance.now() ms, the soonest a
+   * child, or until a time: `until`, in steady() ms, the soonest a
    * waiting call times out or a sleep ends). Returns {waiting: true, until?}
    * or {status} of the first process.
    */
@@ -686,7 +686,7 @@ export class Kernel implements Kern {
     if (t.dead || t.proc.stopped) { t.state = t.dead ? 'dead' : 'stopped'; return; }
     this.current = t;
     t.state = 'running';
-    t.sliceStart = performance.now();
+    t.sliceStart = steady();
     try {
       // A call it was made to wait at for this turn, first.
       if (t.call) {
@@ -706,11 +706,11 @@ export class Kernel implements Kern {
           // A full time slice, and no frames yet.
           if (x.budget) x.budget.value = t.slice;
           if (x.depth) x.depth.value = 0;
-          t.ranAt = t.since = performance.now();
+          t.ranAt = t.since = steady();
           x.run(t.resumeAt);
         } catch (e) {
           if (e instanceof Preempted) {
-            const now = performance.now();
+            const now = steady();
             this.lap(t, now);
             t.resumeAt = e.address;
             // What it wrote and the console gathered goes on its way at a turn, not only once every thread waits.
@@ -750,7 +750,7 @@ export class Kernel implements Kern {
   enter(t: Task, nr: bigint, args: bigint[], next: bigint): bigint {
     // Timed (one in CALL_SAMPLE): when it began, so its time is owed to the kernel's side once it ends. Its thread's
     // time is counted then, and whenever its run here ends at the call (it waits, ends, goes elsewhere).
-    const at = ++this.calls % CALL_SAMPLE === 0 ? performance.now() : 0;
+    const at = ++this.calls % CALL_SAMPLE === 0 ? steady() : 0;
     let runsOn = false;
     try {
       t.resumeAt = next;
@@ -773,7 +773,7 @@ export class Kernel implements Kern {
       return v;
     } finally {
       if (at || !runsOn) {
-        const now = performance.now();
+        const now = steady();
         if (at) t.owed += (now - at) * CALL_SAMPLE;
         this.lap(t, now);
       }
@@ -868,7 +868,7 @@ export class Kernel implements Kern {
   /** Make the waiting calls again while something changed; the ones done go on. */
   retry(): void {
     if (this.timers.size) {
-      const now = performance.now();
+      const now = steady();
       for (const timer of [...this.timers]) if (timer.at <= now) { this.timers.delete(timer); timer.fire(); }
     }
     for (let pass = 0; pass < 64; pass++) {
@@ -896,12 +896,12 @@ export class Kernel implements Kern {
     let now: number | undefined;
     for (const t of this.blocked) {
       const d = t.call?.state.deadline;
-      if (d !== undefined && d <= (now ??= performance.now())) return true;
+      if (d !== undefined && d <= (now ??= steady())) return true;
     }
     return false;
   }
 
-  /** The soonest a waiting call times out (performance.now() ms), if any does. */
+  /** The soonest a waiting call times out (steady() ms), if any does. */
   deadline(): number | undefined {
     let until: number | undefined;
     for (const timer of this.timers) if (until === undefined || timer.at < until) until = timer.at;
@@ -1168,7 +1168,7 @@ export class Kernel implements Kern {
     this.start(path, argv, env, cwd);
     let r = this.pump();
     while (r.waiting && r.until !== undefined) {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, r.until - performance.now()));
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, r.until - steady()));
       r = this.pump();
     }
     if (r.waiting) throw new Error(`process waits for input that will never come (${[...this.blocked].map((t) => `${t.tid}:${t.call?.nr}`).join(' ')})`);
@@ -1317,7 +1317,7 @@ export class Process implements Proc {
     this.actions = new Map(parent?.actions ?? []); // signal -> {handler, flags, restorer, mask}
     this.pending = new Pending();
     this.state = 'live'; // or 'zombie', once it ended and until it is waited for
-    this.started = performance.now(); // for /proc/PID/stat's start time
+    this.started = steady(); // for /proc/PID/stat's start time
     this.cpu = {user: 0, sys: 0}; // its threads' time on the processor, once each ended (ms)
     this.waited = {user: 0, sys: 0}; // its children's that it waited for, theirs and what they waited for
     this.maps = []; // its MAP_SHARED file mappings, {proc, node, start, length, off} (fs.ts File.map)
@@ -1705,7 +1705,7 @@ export class Task implements Thread {
   declare sliceStart: number;
   declare ranAt: number;
   /**
-   * Its time on the processor (Kernel.charge), since when it is not counted yet (performance.now() ms), and how much of
+   * Its time on the processor (Kernel.charge), since when it is not counted yet (steady() ms), and how much of
    * what is to be counted is the kernel's (Kernel.lap: its timed calls, each as CALL_SAMPLE calls).
    */
   declare cpu: Cpu;
@@ -1808,7 +1808,7 @@ export class Task implements Thread {
       },
       trap: trapOrPreempt,
       div128: (hi: bigint, lo: bigint, d: bigint, signed: number) => div128(hi, lo, d, signed),
-      clock: () => BigInt(Math.round(performance.now() * 1e6)),
+      clock: () => BigInt(Math.round(steady() * 1e6)),
       // Wasm to wasm, the x87's own (x87.ts): the instance's x87 global names whose registers.
       fpu: this.kernel.x87.fpu,
       trace: (address: bigint | number) => {

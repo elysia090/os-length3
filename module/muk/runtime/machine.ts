@@ -10,7 +10,7 @@
 // A process of its own still has at most 4 GiB of memory (a 32-bit WebAssembly memory): that is the address space a
 // program is given, not the machine's memory, and mmap past it fails as on a machine out of address space.
 
-import {builtin} from '../../sods/runtime/host.ts';
+import {builtin, steady} from '../../sods/runtime/host.ts';
 
 const GiB = 2 ** 30;
 /** What is said when the host cannot say: a small machine's. */
@@ -33,7 +33,7 @@ export function machine({directory = '/'}: {directory?: string} = {}): Machine {
   // node: statfs as asked. A browser: the last estimate, asked again in the background once it is old.
   let estimate: Storage | null = null, asked = 0;
   const browser = (): Storage | null => {
-    const now = performance.now();
+    const now = steady();
     const estimated = nav?.storage?.estimate;
     if (now - asked > STORAGE_EVERY_MS && estimated) {
       asked = now;

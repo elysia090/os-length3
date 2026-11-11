@@ -9,6 +9,7 @@ import {E, File, FsError} from './fs.ts';
 import {Exec, Exit, Wait, randomBytes, utf8} from './flow.ts';
 import type {Calls, Cpu, Proc} from './parts.ts';
 import {CLD, SIG, send, writeInfo} from './signal.ts';
+import {steady} from '../../sods/runtime/host.ts';
 
 const N = (x: bigint): number => Number(BigInt.asIntN(64, x));
 const fail = (errno: number): never => { throw new FsError(errno); };
@@ -32,7 +33,7 @@ const readTime = (p: Proc, at: number): bigint => p.view.getBigInt64(at, true) *
 const ms = (ns: bigint): number => Number(ns) / 1e6;
 
 /**
- * Sleep until `deadline` (performance.now() ms) for real: the call waits
+ * Sleep until `deadline` (steady() ms) for real: the call waits
  * and is made again once the time has come, so the host waits on a timer
  * instead of running anything. A handler that interrupts it has `rem`
  * (when given) say how long was left.
@@ -40,8 +41,8 @@ const ms = (ns: bigint): number => Number(ns) / 1e6;
 function sleepUntil(p: Proc, deadline: number, rem = 0): number {
   const s = p.call!.state;
   const until = s.deadline ??= deadline;
-  if (performance.now() >= until) return 0;
-  if (rem) s.interrupted = () => writeTime(p, rem, BigInt(Math.max(0, Math.round((until - performance.now()) * 1e6))));
+  if (steady() >= until) return 0;
+  if (rem) s.interrupted = () => writeTime(p, rem, BigInt(Math.max(0, Math.round((until - steady()) * 1e6))));
   throw new Wait();
 }
 
@@ -179,12 +180,12 @@ function futex(p: Proc, uaddr: bigint, op: bigint, val: bigint, timeout: bigint,
           const t = readTime(p, N(timeout));
           // WAIT: an interval; WAIT_BITSET: a time on its clock.
           const left = cmd === 0 ? t : t - (realtime ? wall() : monotonic());
-          s.deadline = performance.now() + Math.max(0, ms(left));
+          s.deadline = steady() + Math.max(0, ms(left));
           s.timed = true;
         }
       }
       if (s.waiter?.woken) return 0;
-      if (s.deadline !== undefined && performance.now() >= s.deadline) { s.cancel?.(); fail(E.TIMEDOUT); }
+      if (s.deadline !== undefined && steady() >= s.deadline) { s.cancel?.(); fail(E.TIMEDOUT); }
       throw new Wait();
     }
     case 1: return k.futexWake(p.futexKey(address), N(val), -1); // WAKE
@@ -226,9 +227,9 @@ function setAlarm(p: Proc, ms: number, interval = 0): {left: number; interval: n
   const k = p.kernel, was = p.alarm;
   if (was) k.removeTimer(was.timer);
   p.alarm = null;
-  const left = was ? Math.max(0, was.at - performance.now()) : 0;
+  const left = was ? Math.max(0, was.at - steady()) : 0;
   if (ms > 0) {
-    const at = performance.now() + ms;
+    const at = steady() + ms;
     const fire = () => {
       send(k, p, SIG.ALRM, {code: 0x80});
       if (p.alarm?.interval && p.state === 'live') setAlarm(p, p.alarm.interval, p.alarm.interval); else p.alarm = null;
@@ -414,11 +415,11 @@ export const PROC_CALLS: Calls = {
     }
     return 0;
   },
-  35(req, rem) { return sleepUntil(this, performance.now() + ms(readTime(this, N(req))), N(rem)); }, // nanosleep
+  35(req, rem) { return sleepUntil(this, steady() + ms(readTime(this, N(req))), N(rem)); }, // nanosleep
   36(which, value) { // getitimer
     if (N(which) !== 0) { this.bytes.fill(0, N(value), N(value) + 32); return 0; }
     writeTimeval(this, N(value), this.alarm?.interval ?? 0);
-    writeTimeval(this, N(value) + 16, this.alarm ? Math.max(0, this.alarm.at - performance.now()) : 0);
+    writeTimeval(this, N(value) + 16, this.alarm ? Math.max(0, this.alarm.at - steady()) : 0);
     return 0;
   },
   37(seconds) { return Math.ceil(setAlarm(this, N(seconds) * 1000).left / 1000); }, // alarm
@@ -446,7 +447,7 @@ export const PROC_CALLS: Calls = {
   97(resource, limit) { return rlimit(this, this, resource, 0n, limit); }, // getrlimit
   98(who, usage) { // getrusage: itself (its threads, ended and running), the children it waited for, or this thread
     const w = Number(BigInt.asIntN(32, who));
-    this.kernel.lap(this.task, performance.now());
+    this.kernel.lap(this.task, steady());
     const c = w === 0 ? cpuOf(this) : w === -1 ? this.waited : w === 1 ? this.task.cpu : fail(E.INVAL);
     putUsage(this, N(usage), c, w === -1 ? 0 : Math.ceil((this.memory?.buffer.byteLength ?? 0) / 1024));
     return 0;
@@ -454,7 +455,7 @@ export const PROC_CALLS: Calls = {
   99(info) { // sysinfo: the machine's memory (machine.ts), what the kernel's processes hold of it, how many there are
     const at = N(info), v = this.view, total = BigInt(this.kernel.machine.memory), used = BigInt(this.kernel.memoryBytes());
     this.bytes.fill(0, at, at + 112);
-    v.setBigInt64(at, BigInt(Math.floor(performance.now() / 1000)), true); // uptime
+    v.setBigInt64(at, BigInt(Math.floor(steady() / 1000)), true); // uptime
     v.setBigUint64(at + 32, total, true); // totalram
     v.setBigUint64(at + 40, total > used ? total - used : 0n, true); // freeram
     v.setUint16(at + 80, this.kernel.live().length, true); // procs
@@ -463,7 +464,7 @@ export const PROC_CALLS: Calls = {
   },
   100(buf) { // times: its time on the processor and its waited-for children's, in clock ticks (100 a second)
     if (N(buf)) {
-      this.kernel.lap(this.task, performance.now());
+      this.kernel.lap(this.task, steady());
       const c = cpuOf(this), w = this.waited, at = N(buf);
       [c.user, c.sys, w.user, w.sys].forEach((ms, k) => this.view.setBigInt64(at + 8 * k, BigInt(Math.floor(ms / 10)), true));
     }
@@ -553,7 +554,7 @@ export const PROC_CALLS: Calls = {
   218(tidptr) { this.task.clearTid = N(tidptr); return this.task.tid; }, // set_tid_address
   228(clock, ts) { // clock_gettime: a CPU-time clock is the kernel's (clock.ts cpuClock)
     const id = Number(BigInt.asIntN(32, clock)), at = CLOCK.read(id);
-    if (at === null) this.kernel.lap(this.task, performance.now());
+    if (at === null) this.kernel.lap(this.task, steady());
     const ns = at === null ? cpuClock(this, id) : at;
     if (ns === undefined) return fail(E.INVAL);
     writeTime(this, N(ts), ns);
@@ -567,9 +568,9 @@ export const PROC_CALLS: Calls = {
   },
   230(clock, flags, req, rem) { // clock_nanosleep: by an interval, or until a time on that clock (TIMER_ABSTIME)
     const t = readTime(this, N(req));
-    if (!(N(flags) & 1)) return sleepUntil(this, performance.now() + ms(t), N(rem));
+    if (!(N(flags) & 1)) return sleepUntil(this, steady() + ms(t), N(rem));
     const now = N(clock) === 0 ? wall() : monotonic();
-    return sleepUntil(this, performance.now() + ms(t > now ? t - now : 0n));
+    return sleepUntil(this, steady() + ms(t > now ? t - now : 0n));
   },
   231(code) { this.kernel.exitProcess(this, exitStatus(N(code))); throw new Exit(exitStatus(N(code))); },
   247(idtype, id, infop, options) { return waitid(this, idtype, id, infop, options); },

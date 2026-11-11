@@ -1,6 +1,7 @@
 // An in-memory POSIX tree: directories, regular files, symlinks and
 // character devices. Files may be lazy: their bytes arrive from a loader
 // (a host directory, an archive, browser storage) on first read.
+import {epoch} from '../../sods/runtime/host.ts';
 
 export const S_IFMT = 0o170000, S_IFDIR = 0o040000, S_IFREG = 0o100000, S_IFLNK = 0o120000, S_IFCHR = 0o020000,
   S_IFIFO = 0o010000, S_IFSOCK = 0o140000;
@@ -46,7 +47,7 @@ export class Node {
     this.uid = 0;
     this.gid = 0;
     this.nlink = 1;
-    this.mtime = Date.now();
+    this.mtime = epoch();
   }
   get type() { return this.mode & S_IFMT; }
   get isDir() { return this.type === S_IFDIR; }
@@ -144,7 +145,7 @@ export class File extends Node {
     }
     data.set(bytes, at);
     this.size = Math.max(this.size, need);
-    this.mtime = Date.now();
+    this.mtime = epoch();
     this.version++;
     counted.changes++;
     if (this.maps) this.#show(at, need);
@@ -162,7 +163,7 @@ export class File extends Node {
       data.fill(0, length, this.size);
     }
     this.size = length;
-    this.mtime = Date.now();
+    this.mtime = epoch();
     this.version++;
     counted.changes++;
     if (this.maps) this.#show(Math.min(was, length), Math.max(was, length));
@@ -211,7 +212,7 @@ export class File extends Node {
           this.#show(k, e, run);
           k = e;
         }
-        this.mtime = Date.now();
+        this.mtime = epoch();
         this.version++;
         counted.changes++;
       }

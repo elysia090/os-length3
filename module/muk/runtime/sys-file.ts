@@ -13,6 +13,7 @@ import {Dir, Device, E, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_
 import {Wait} from './flow.ts';
 import type {Calls, Kern, Proc, Termios} from './parts.ts';
 import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.ts';
+import {epoch, steady} from '../../sods/runtime/host.ts';
 
 const AT_FDCWD = -100;
 const O = {WRONLY: 1, RDWR: 2, CREAT: 0x40, EXCL: 0x80, TRUNC: 0x200, APPEND: 0x400, NONBLOCK: 0x800,
@@ -112,7 +113,7 @@ function timed(p: Proc, dirfd: bigint, name: bigint, follow: boolean): Entry {
 
 /** Set a file's access and modification times, each [seconds, nanoseconds], 'now' or 'omit'; its ctime is now. */
 function setTimes(node: Entry, access: Time, modify: Time): number {
-  const now = Date.now();
+  const now = epoch();
   const at = (t: 'now' | [number, number]): [number, number] => t === 'now' ? [now, (now % 1000) * 1e6] : [t[0] * 1000 + Math.floor(t[1] / 1e6), t[1]];
   if (access !== 'omit') { const [ms, ns] = at(access); node.atime = ms; node.atimeNs = ns; }
   if (modify !== 'omit') { const [ms, ns] = at(modify); node.mtime = ms; node.mtimeNs = ns; }
@@ -146,10 +147,10 @@ function describe(p: Proc, d: Description): Statted {
   if (d.node) return d.node;
   // A pipe is an inode of pipefs as on Linux (the N of /proc/PID/fd's pipe:[N]), each pipe its own: two pipes are never one
   // file to what compares them so (diff, cmp, cp: the same device and inode, the same file).
-  if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw') return {mode: S_IFIFO | 0o600, dev: PIPEFS, ino: d.pipe?.id ?? 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+  if (d.kind === 'pipe-r' || d.kind === 'pipe-w' || d.kind === 'pipe-rw') return {mode: S_IFIFO | 0o600, dev: PIPEFS, ino: d.pipe?.id ?? 0, nlink: 1, uid: 0, gid: 0, mtime: epoch(), isFile: false, isDir: false, isLink: false};
   if (d.kind === 'socket') return net.stat(d);
   // The console: the terminal it is, /dev/pts/0 (fs.ts), so a stat of that name is the same file.
-  return p.kernel.vfs.terminal as Statted | undefined ?? {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: Date.now(), isFile: false, isDir: false, isLink: false};
+  return p.kernel.vfs.terminal as Statted | undefined ?? {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: epoch(), isFile: false, isDir: false, isLink: false};
 }
 
 /** /dev/fd/N, /dev/stdin and the rest, and /proc/self/fd/N, as the /proc/PID/fd/N they are. */
@@ -665,8 +666,8 @@ function restoreMask(p: Proc): void {
 function timedOut(p: Proc, ms: number | null): boolean {
   const s = p.call!.state;
   if (ms === null) return false;
-  s.deadline ??= performance.now() + ms;
-  return performance.now() >= s.deadline;
+  s.deadline ??= steady() + ms;
+  return steady() >= s.deadline;
 }
 
 /** poll/ppoll. With nothing ready and a timeout other than 0 the call waits, like a blocking read. */
@@ -955,7 +956,7 @@ export const FILE_CALLS: Calls = {
     const ms = timevalMs(this, N(tv)), s = this.call!.state;
     const n = select(this, nfds, [r, w, e], ms ?? -1);
     if (N(tv) && ms !== null) {
-      const left = Math.max(0, (s.deadline ?? performance.now()) - performance.now());
+      const left = Math.max(0, (s.deadline ?? steady()) - steady());
       this.view.setBigInt64(N(tv), BigInt(Math.floor(left / 1000)), true);
       this.view.setBigInt64(N(tv) + 8, BigInt(Math.floor((left % 1000) * 1000)), true);
     }

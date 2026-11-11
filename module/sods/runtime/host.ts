@@ -1,7 +1,7 @@
 // The host, asked in one place. What sods makes runs as the same code in a browser's page, in one of its Workers
 // and in node; what differs between them is answered here and nowhere else: whether this is node, what was said to
 // it from outside, its own modules where it has them, its threads, how many processors it has, whether memory is
-// shared between threads, whether they may run apart on it and whether this one may wait. A browser's constraints
+// shared between threads, whether they may run apart on it and whether this one may wait, and its clocks. A browser's constraints
 // and a host system's differences are sods' to take on: what runs over this asks, and never looks for itself.
 
 /** node (or what stands in for it), not a browser. */
@@ -31,3 +31,13 @@ export const mayWait = isNode || 'WorkerGlobalScope' in globalThis;
 
 /** How many processors the host says it has, from 1 to 64. */
 export const processors = (): number => Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcurrency ?? 1));
+
+/**
+ * The host's clocks. `steady()`: milliseconds since this thread of the host began, as finely as the host tells them,
+ * never set back. `began`: when that was, in milliseconds since 1970 by the same clock (a thread elsewhere began at
+ * another time, and is told this one's: muk's clock.ts). `epoch()`: the calendar's time now, in milliseconds since
+ * 1970, which the host may set.
+ */
+export const steady = (): number => performance.now();
+export const began: number = performance.timeOrigin;
+export const epoch = (): number => Date.now();

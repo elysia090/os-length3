@@ -30,6 +30,7 @@ import {answer, interfaceControl, traffic, type Address} from './net-view.ts';
 import {Wait, utf8} from './flow.ts';
 import type {Calls, Kern, Proc} from './parts.ts';
 import {SIG, SI, send} from './signal.ts';
+import {epoch} from '../../sods/runtime/host.ts';
 
 declare module './fd.ts' {
   interface Description {
@@ -715,7 +716,7 @@ export function ready(d: Description): number {
 export const changes = (d: Description): number => d.sock?.changes ?? 0;
 
 /** fstat of a socket. */
-export const stat = (d: Description) => ({mode: S_IFSOCK | 0o777, ino: d.sock?.ino ?? 0, nlink: 1, uid: 0, gid: 0, mtime: Date.now(), isFile: false, isDir: false, isLink: false});
+export const stat = (d: Description) => ({mode: S_IFSOCK | 0o777, ino: d.sock?.ino ?? 0, nlink: 1, uid: 0, gid: 0, mtime: epoch(), isFile: false, isDir: false, isLink: false});
 
 /** A socket's ioctl (FIONREAD aside, sys-file.ts's): SIOCOUTQ, and what an interface is (net-view.ts). */
 export function control(p: Proc, _d: Description, request: number, arg: number): number {

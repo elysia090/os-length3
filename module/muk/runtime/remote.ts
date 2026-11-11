@@ -16,7 +16,7 @@
 import {CH, OP, Outbox, PARK, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
 import {CALL_SAMPLE, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
-import {canRunApart, mayWait, nodeThreads} from '../../sods/runtime/host.ts';
+import {began, canRunApart, mayWait, nodeThreads, steady} from '../../sods/runtime/host.ts';
 import type {Saved} from '../../sods/runtime/x87.ts';
 import type {Call, Mem, Range} from './parts.ts';
 import {deliverable, take} from './signal.ts';
@@ -104,7 +104,7 @@ export class RemoteKernel extends Kernel {
   declare readonly onIdle: ((r: Pumped) => void) | null;
   declare serving: Promise<number> | null;
   declare closing: boolean;
-  /** Until when (performance.now() ms) a thread just handed to its Worker may make its first call: watched for, not slept through. */
+  /** Until when (steady() ms) a thread just handed to its Worker may make its first call: watched for, not slept through. */
   declare starting: number;
   declare readonly passOn: boolean;
   constructor(options: Apart) {
@@ -131,7 +131,7 @@ export class RemoteKernel extends Kernel {
   override ready(t: Task): void { this.go(t); }
   override go(t: Task): void { (t as RemoteTask).answer(); }
   // Its run ends at the call: counted to here, so the wait is not (answer counts from when it goes on).
-  override block(t: Task): void { this.lap(t, performance.now()); super.block(t); }
+  override block(t: Task): void { this.lap(t, steady()); super.block(t); }
   /**
    * A memory let go of is taken again: its threads' lock is free, as a new one would be (no thread runs on a memory let
    * go of; one ended in guest code leaves it tainted, never taken again). The same lock, so a Worker that keeps an
@@ -254,10 +254,10 @@ export class RemoteKernel extends Kernel {
       // Timed, the kernel's time on it owed to the kernel's side (Kernel.lap): one call in CALL_SAMPLE, as CALL_SAMPLE
       // calls, and each of what else a thread asks for (code reached later, its time slice's end) as itself.
       const weight = t.i32[CH.OP] !== OP.SYSCALL ? 1 : ++this.calls % CALL_SAMPLE === 0 ? CALL_SAMPLE : 0;
-      const at = weight ? performance.now() : 0;
+      const at = weight ? steady() : 0;
       this.handle(t);
       if (weight || t.state !== 'running') {
-        const now = performance.now();
+        const now = steady();
         t.owed += (now - at) * weight;
         this.lap(t, now);
       }
@@ -346,18 +346,18 @@ export class RemoteKernel extends Kernel {
   /** Start the first process and serve every thread until init ends; its wait status. */
   serve(): Promise<number> {
     this.serving ??= (async () => {
-      let yielded = performance.now();
+      let yielded = steady();
       while (this.status === null) {
         const seen = Atomics.load(this.door, 0);
         this.drain();
         this.retry();
         this.takeOutbox();
         if (this.status !== null) break;
-        const now = performance.now();
+        const now = steady();
         // Served without a break for a while: the host gets its turn (input, Ctrl-C) before more.
         // What the console gathered goes on its way when due (root3/app/prompt/kernel.worker.ts), and before a wait that may be long, whole.
         this.console.flush?.(false);
-        if (now - yielded > YIELD_MS) { await macrotask(); yielded = performance.now(); continue; }
+        if (now - yielded > YIELD_MS) { await macrotask(); yielded = steady(); continue; }
         if (Atomics.load(this.door, 0) !== seen) continue;
         const until = this.deadline();
         const busy = this.busy();
@@ -371,8 +371,8 @@ export class RemoteKernel extends Kernel {
         }
         this.console.flush?.(true);
         Atomics.store(this.door, 1, 1);
-        const r = Atomics.waitAsync(this.door, 0, seen, until === undefined ? Infinity : Math.max(0, until - performance.now()));
-        if (r.async) { await r.value; yielded = performance.now(); }
+        const r = Atomics.waitAsync(this.door, 0, seen, until === undefined ? Infinity : Math.max(0, until - steady()));
+        if (r.async) { await r.value; yielded = steady(); }
         Atomics.store(this.door, 1, 0);
       }
       this.takeOutbox(true);
@@ -502,7 +502,7 @@ class RemoteTask extends Task {
   answer(): void {
     if (this.dead) return;
     // One answered at once runs on (its time counted on); one that waited, stopped or is new runs from now.
-    if (this.state !== 'running') this.since = performance.now();
+    if (this.state !== 'running') this.since = steady();
     this.state = 'running';
     if (!this.worker) {
       this.worker = this.kernel.worker(this);
@@ -583,7 +583,7 @@ class RemoteTask extends Task {
     PROFILE.offered++;
     Atomics.store(to, CH.PARKED, PARK.OFFERED);
     Atomics.notify(to, CH.PARKED);
-    k.starting = performance.now() + STARTING_MS;
+    k.starting = steady() + STARTING_MS;
     this.again = false;
     return true;
   }
@@ -606,12 +606,12 @@ class RemoteTask extends Task {
       memory: known ? undefined : this.memory, channel: this.channel, door: k.door.buffer, gil: k.gil(this.memory), count: count(image).buffer,
       outbox: k.outbox.buffer,
       regs: REG.map((_, n) => this.reg(n)), resumeAt: this.resumeAt, x87: w.x87 ? undefined : k.x87Module ?? undefined, fpu: this.fpuState, keep: this.keep,
-      origin: performance.timeOrigin, // the kernel's clocks begin here (clock.ts)
+      origin: began, // the kernel's clocks begin here (clock.ts)
     });
     w.x87 = true;
     // Its Worker takes a moment to hear it and run it: its first call is watched for over that (STARTING_MS), as a
     // call in a row is, rather than slept through and woken for (each side's sleep ~35 µs).
-    k.starting = performance.now() + STARTING_MS;
+    k.starting = steady() + STARTING_MS;
     this.again = false;
   }
 

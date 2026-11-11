@@ -11,6 +11,7 @@
 //                                                            program and the kernel made its calls (Kernel.charge)
 
 import type {Cpu, Proc} from './parts.ts';
+import {began, steady} from '../../sods/runtime/host.ts';
 
 /** Clock ids Linux has: which clock each reads (1 the wall, 2 the steady, 3 a CPU-time one; 0 none), by id. */
 const KIND = new Uint8Array([1, 2, 3, 3, 2, 1, 2, 2, 1, 2, 0, 1]);
@@ -28,11 +29,11 @@ export interface Clocks {
 }
 
 /**
- * The clocks of a kernel that began at `origin` (its realm's performance.timeOrigin, which a thread elsewhere is
+ * The clocks of a kernel that began at `origin` (when its realm began: host.ts began, which a thread elsewhere is
  * told): each in ns, as a BigInt.
  */
-export function clocks(origin: number = performance.timeOrigin): Clocks {
-  const ms = () => performance.timeOrigin + performance.now();
+export function clocks(origin: number = began): Clocks {
+  const ms = () => began + steady();
   const wall = () => BigInt(Math.round(ms() * 1e6));
   const monotonic = () => BigInt(Math.round((ms() - origin) * 1e6));
   const wallMs = ms, steadyMs = () => ms() - origin;

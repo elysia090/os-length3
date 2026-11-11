@@ -6,6 +6,7 @@
 import type {Saved} from '../../sods/runtime/x87.ts';
 import type {Range} from './parts.ts';
 import {REG} from './process.ts';
+import {steady} from '../../sods/runtime/host.ts';
 
 export const CH = {
   // Int32 indices
@@ -196,10 +197,10 @@ export class Outbox {
 export function watch(words: Int32Array, index: number, ready: (word: number) => boolean, ms = WATCH_MS): boolean {
   // Most answers come before the clock need be read at all.
   for (let k = 0; k < 256; k++) if (ready(Atomics.load(words, index))) return true;
-  const end = performance.now() + ms;
+  const end = steady() + ms;
   do {
     for (let k = 0; k < 256; k++) if (ready(Atomics.load(words, index))) return true;
-  } while (performance.now() < end);
+  } while (steady() < end);
   return false;
 }
 /** How long: about what a call takes the kernel, and what a program computes between two calls that come quickly. */

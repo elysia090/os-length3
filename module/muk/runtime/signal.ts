@@ -14,6 +14,7 @@
 import {E, FsError} from './fs.ts';
 import {Redirect, Wait} from './flow.ts';
 import type {Calls, Kern, Proc, SigAction, SigInfo, Thread} from './parts.ts';
+import {steady} from '../../sods/runtime/host.ts';
 
 export const SIG = {HUP: 1, INT: 2, QUIT: 3, ILL: 4, TRAP: 5, ABRT: 6, BUS: 7, FPE: 8, KILL: 9, USR1: 10, SEGV: 11,
   USR2: 12, PIPE: 13, ALRM: 14, TERM: 15, STKFLT: 16, CHLD: 17, CONT: 18, STOP: 19, TSTP: 20, TTIN: 21, TTOU: 22,
@@ -325,8 +326,8 @@ export const SIGNAL_CALLS: Calls = {
       }
     }
     if (N(timeout)) {
-      s.deadline ??= performance.now() + (Number(this.view.getBigInt64(N(timeout), true)) * 1e3 + Number(this.view.getBigInt64(N(timeout) + 8, true)) / 1e6);
-      if (performance.now() >= s.deadline) fail(E.AGAIN);
+      s.deadline ??= steady() + (Number(this.view.getBigInt64(N(timeout), true)) * 1e3 + Number(this.view.getBigInt64(N(timeout) + 8, true)) / 1e6);
+      if (steady() >= s.deadline) fail(E.AGAIN);
     }
     // Waiting, the set is taken as unblocked so that sending one wakes this call (Linux does the same).
     s.waitFor = want;

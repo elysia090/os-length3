@@ -18,6 +18,7 @@ import {mountPack, type Packed} from './mount.ts';
 import {Kernel, PROFILE, type Translator} from './process.ts';
 import {RemoteKernel, canRunApart} from './remote.ts';
 import {loadTranslator} from '../../sods/runtime/translator.ts';
+import {steady} from '../../sods/runtime/host.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const translator = join(here, '..', '..', 'sods', 'target', 'release', 'sods');
@@ -179,13 +180,13 @@ const kernel = new (apart ? RemoteKernel : Kernel)({
     read: (n: number) => { const out = stdin.subarray(stdinAt, stdinAt + n); stdinAt += out.length; return out; },
   },
 });
-const started = performance.now();
+const started = steady();
 const status = await kernel.spawn(path, [path, ...rest], ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'], cwd);
 if (process.env.MUK_TIMING) {
   // What the run still holds once its programs have ended (after a collection, when node allows one).
   globalThis.gc?.();
   const m = process.memoryUsage(), mb = (n: number): number => Math.round(n / 2 ** 20);
-  writeSync(2, JSON.stringify({ms: Math.round(performance.now() - started), ...PROFILE, translate: Math.round(PROFILE.translate), compile: Math.round(PROFILE.compile),
+  writeSync(2, JSON.stringify({ms: Math.round(steady() - started), ...PROFILE, translate: Math.round(PROFILE.translate), compile: Math.round(PROFILE.compile),
     heldMB: {rss: mb(m.rss), heap: mb(m.heapUsed), buffers: mb(m.arrayBuffers), external: mb(m.external)},
     kernelMB: Object.fromEntries(Object.entries(kernel.held()).map(([k, v]) => [k, mb(v)]))}) + '\n');
   // MUK_FREE=1: then give back all that can go, and say what the host shows.

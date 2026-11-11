@@ -41,7 +41,7 @@ export interface PendingSet {
  * `cancel` and `interrupted`).
  */
 export interface CallState {
-  /** When it times out (performance.now() ms). */
+  /** When it times out (steady() ms). */
   deadline?: number;
   /** What it moved already (its value, should a handler interrupt it). */
   done?: number;
@@ -70,7 +70,7 @@ export type FutexKey = [WebAssembly.Memory | File, number];
 /** A thread waiting on a futex. */
 export interface FutexWaiter { task: Thread; bitset: number; woken: boolean; key: FutexKey }
 
-/** A timer the kernel fires (alarms, timeouts): at `at` (performance.now() ms). */
+/** A timer the kernel fires (alarms, timeouts): at `at` (steady() ms). */
 export interface Timer { at: number; fire(): void }
 
 /** A system call's handler: `this` is the calling process; its arguments the registers, as BigInts. */
@@ -335,7 +335,7 @@ export interface Kern {
   memoryBytes(): number;
   say(fd: number, bytes: Uint8Array): void;
   go(t: Thread): void;
-  /** `t`'s time up to `now` (performance.now() ms) counted to it (process.ts Kernel.lap). */
+  /** `t`'s time up to `now` (steady() ms) counted to it (process.ts Kernel.lap). */
   lap(t: Thread, now: number): void;
   lookIn(p: Proc): void;
   addTimer(at: number, fire: () => void): Timer;

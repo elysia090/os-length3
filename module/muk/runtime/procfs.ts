@@ -12,7 +12,7 @@ import {CAPS} from './flow.ts';
 import type {Description} from './fd.ts';
 import type {Entry} from './fs.ts';
 import type {Kern, Proc} from './parts.ts';
-import {processors} from '../../sods/runtime/host.ts';
+import {epoch, processors, steady} from '../../sods/runtime/host.ts';
 
 const enc = new TextEncoder();
 const HZ = 100;
@@ -94,13 +94,13 @@ function pointsAt(d: Description): string {
 /** Mount /proc on `kernel.vfs`, made from `kernel`. */
 export function mountProc(kernel: Kern): void {
   const vfs = kernel.vfs;
-  const booted = performance.now();
-  const bootEpoch = Math.floor(Date.now() / 1000);
+  const booted = steady();
+  const bootEpoch = Math.floor(epoch() / 1000);
   const cpus = processors();
   const ticks = (ms: number): number => Math.floor(ms * HZ / 1000);
-  const uptime = () => (performance.now() - booted) / 1000;
+  const uptime = () => (steady() - booted) / 1000;
   /** Every processor's time since it began that no thread had (ms). */
-  const idle = () => Math.max(0, (performance.now() - booted) * cpus - kernel.cpu.user - kernel.cpu.sys);
+  const idle = () => Math.max(0, (steady() - booted) * cpus - kernel.cpu.user - kernel.cpu.sys);
   const total = kernel.machine.memory; // the machine's (machine.ts)
   const caller = () => kernel.current?.proc ?? kernel.procs.get(1);
   const live = () => [...kernel.procs.values()];

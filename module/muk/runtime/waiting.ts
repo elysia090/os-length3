@@ -16,7 +16,7 @@ export type Said =
   | {type: 'waiting'; for: 'time'; ms: number; memory: number; held: Held};
 
 /**
- * The message for pump result `r`, with what the kernel holds (Kernel.held) and the time now (performance.now());
+ * The message for pump result `r`, with what the kernel holds (Kernel.held) and the time now (steady());
  * `reading`: a kept translation is being read, which what waits is waiting for.
  */
 export function said(r: Pumped, held: Held, now: number, reading = false): Said {

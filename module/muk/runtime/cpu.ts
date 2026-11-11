@@ -14,7 +14,7 @@
 // only while no other thread of the process runs.
 
 import {ANSWER_MS, CH, OP, OUTBOX_BYTES, Outbox, PARK, PARK_MS, PARK_WATCH_MS, READS_REGS, REPLY, REGS, rouse, sleep, watch, type Attached, type Forget, type Run} from './channel.ts';
-import {isNode, nodeThreads, said} from '../../sods/runtime/host.ts';
+import {began, isNode, nodeThreads, said, steady} from '../../sods/runtime/host.ts';
 import {namesIn, x87Of, type X87} from '../../sods/runtime/x87.ts';
 import {answerTime, clocks, type Clocks} from './clock.ts';
 import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt, type Translation} from './process.ts';
@@ -163,7 +163,7 @@ class Thread {
       syscall: (nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint) => this.syscall(nr, a, b, c, d, e, f, next),
       trap: trapOrPreempt,
       div128,
-      clock: () => BigInt(Math.round((performance.timeOrigin + performance.now()) * 1e6)),
+      clock: () => BigInt(Math.round((began + steady()) * 1e6)),
       // Wasm to wasm, the x87's own (x87.ts): the instance's x87 global names whose registers.
       fpu: theX87().fpu,
       trace: () => {},
@@ -382,7 +382,7 @@ class Thread {
         const x = this.exports;
         if (x.budget) x.budget.value = this.slice;
         if (x.depth) x.depth.value = 0;
-        this.ranAt = performance.now();
+        this.ranAt = steady();
         x.run(this.resumeAt);
         return;
       } catch (e) {
@@ -396,7 +396,7 @@ class Thread {
           if (e.code !== TRAP_YIELD) continue;
           const words = new Int32Array(this.memory.buffer);
           const spent = Atomics.load(words, INTERRUPT >> 2) === 0;
-          if (spent) this.slice = nextSlice(this.slice, performance.now() - this.ranAt);
+          if (spent) this.slice = nextSlice(this.slice, steady() - this.ranAt);
           if (!spent || Atomics.load(words, SHARES >> 2)) {
             try { this.pause(e.address); } catch (away) { if (away instanceof Away) return; throw away; }
           }
