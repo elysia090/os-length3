@@ -3,7 +3,7 @@
 // with the same bytes. Nothing is built or chosen apart from the root:
 // BusyBox, root3 and /etc are the root's own.
 //
-//   node scripts/webroot.ts ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]
+//   node scripts/webroot.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR]
 //
 // ROOT is a release root, os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst
 // (checked against the digest in its name), read as root3 installs it
@@ -29,7 +29,7 @@
 //                         file read alone from it is checked (muk/runtime/table.ts),
 //                         and a release that changes a few packages leaves every
 //                         other pack's name, and what a browser has of it
-//   blobs/<sha256>.bin    the translator (xlat.wasm) and each translation made
+//   blobs/<sha256>.bin    the translator (sods.wasm) and each translation made
 //                         ahead of time with its program's bytes, gzip'd: the hot programs (`--hot`, by
 //                         default bash, the Prompt's shell, BusyBox, every coreutils
 //                         applet, root3, and git, which every repo is), translated whole by the same
@@ -39,7 +39,7 @@
 // Names are sorted and nothing depends on time, so the same root and
 // translator give the same files, byte for byte. Unreferenced files of an root3
 // before in OUT go. `--stage DIR` also puts BusyBox, its translation and
-// xlat.wasm in DIR, for muk/test (target/userland).
+// sods.wasm in DIR, for muk/test (target/userland).
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
@@ -65,12 +65,12 @@ function flag(name: string, d: string | null = null): string | null {
   args.splice(i, 2);
   return v;
 }
-const translatorWasm = flag('--translator', join(repo, 'module/sods/target/wasm32-unknown-unknown/release/xlat.wasm'));
-const xlat = flag('--xlat', join(repo, 'module/sods/target/release/xlat'));
+const translatorWasm = flag('--translator', join(repo, 'module/sods/target/wasm32-unknown-unknown/release/sods.wasm'));
+const sods = flag('--sods', join(repo, 'module/sods/target/release/sods'));
 const hot = flag('--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/root3,/usr/bin/git').split(',').filter(Boolean);
 const stage = flag('--stage');
 const [rootFile, out] = args;
-if (!rootFile || !out) { console.error('usage: webroot.ts ROOT OUT [--translator XLAT.wasm] [--xlat XLAT] [--hot PATH,…] [--stage DIR]'); process.exit(2); }
+if (!rootFile || !out) { console.error('usage: webroot.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR]'); process.exit(2); }
 
 // A root is a few hundred megabytes: past a few gigabytes held, something is wrong, and it stops before the machine does.
 setInterval(() => { const rss = process.memoryUsage().rss; if (rss > 3e9) { console.error(`webroot.ts: holding ${(rss / 1e9).toFixed(1)} GB; stopped`); process.exit(1); } }, 500).unref();
@@ -202,7 +202,7 @@ function strip(b: Buffer): Buffer {
   return Buffer.concat(kept);
 }
 const wasm = strip(readFileSync(translatorWasm));
-const translator = {name: 'xlat', version: crate(join(repo, 'module/sods/Cargo.toml')), wasm: sha256(wasm), ...blob(wasm)};
+const translator = {name: 'sods', version: crate(join(repo, 'module/sods/Cargo.toml')), wasm: sha256(wasm), ...blob(wasm)};
 // Each hot program translated whole by the native build of the same translator (it gives the bytes the wasm one
 // does): what it reaches only through a pointer (BusyBox's applets and its shell's builtins) is there from its first
 // run, not translated as it runs.
@@ -213,13 +213,13 @@ try {
     const elf = join(work, 'in'), made = join(work, 'out.wasm');
     const bytes = hotBytes.get(path) ?? Buffer.alloc(0);
     writeFileSync(elf, bytes);
-    execFileSync(xlat, ['--whole', elf, made], {stdio: ['ignore', 'ignore', 'inherit']});
+    execFileSync(sods, ['--whole', elf, made], {stdio: ['ignore', 'ignore', 'inherit']});
     // The program's own bytes beside it (the same as in its pack), so a page has both without a zstd decoder of its own.
     translations.push({path, sha256: sha256(bytes), elf: blob(bytes), wasm: blob(readFileSync(made))});
     if (stage && path === '/usr/bin/busybox') { mkdirSync(stage, {recursive: true}); copyFileSync(elf, join(stage, 'busybox')); copyFileSync(made, join(stage, 'busybox.wasm')); }
   }
 } finally { rmSync(work, {recursive: true, force: true}); }
-if (stage) writeFileSync(join(stage, 'xlat.wasm'), wasm);
+if (stage) writeFileSync(join(stage, 'sods.wasm'), wasm);
 
 const index: Index = {
   name: release.NAME ?? 'OS Length3 Linux', version, sha256: rootSha, codec: 'zstd',

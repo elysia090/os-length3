@@ -1,7 +1,7 @@
 // ICMP over loopback, as ping makes it: a raw socket sends an echo request to 127.0.0.1 and reads what comes back
 // (the request itself, as each raw ICMP socket sees what arrives, and the kernel's echo reply), each with its IPv4
 // header; ICMP_FILTER keeps the request out; what an interface is (SIOCGIFINDEX, SIOCGIFFLAGS, SIOCGIFADDR, ...).
-// xlat: raw sockets (run.sh runs the native side as root: a raw socket wants CAP_NET_RAW).
+// muk: raw sockets (run.sh runs the native side as root: a raw socket wants CAP_NET_RAW).
 #define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <errno.h>

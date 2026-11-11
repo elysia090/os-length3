@@ -31,8 +31,8 @@ runs what it makes is ricebox's (`../ricebox`).
 
 ```
 cargo build --release
-xlat --trace IN OUT.wasm      # record block entries
-xlat --whole IN OUT.wasm      # every function, ahead of time
+sods --trace IN OUT.wasm      # record block entries
+sods --whole IN OUT.wasm      # every function, ahead of time
 ```
 
 Inputs must be static executables linked with `--emit-relocs`; post-linked

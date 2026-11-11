@@ -33,7 +33,7 @@ async function kernel({keeper = null}: {keeper?: Keeper | null} = {}): Promise<{
   file.origin = 'pack_0_1';
   vfs.mkdirp('/usr/bin').entries.set('echo', file);
   let out = '';
-  const translate = await loadTranslator(readFileSync(new URL('xlat.wasm', stage)));
+  const translate = await loadTranslator(readFileSync(new URL('sods.wasm', stage)));
   const k = new Kernel({
     vfs, keeper, translate,
     console: {interactive: false, write: (_, b) => { out += new TextDecoder().decode(b); }, read: () => null, ready: () => false},
@@ -107,7 +107,7 @@ test('kept: a root program translated ahead (ahead.ts, as the page does while a 
   const {translatedAhead} = await import('../../../sods/runtime/ahead.ts');
   const elf = readFileSync(new URL('busybox', stage));
   // As its pack holds it, zstd's frame or as it is: here as it is.
-  const {wasm, segments} = await translatedAhead(readFileSync(new URL('xlat.wasm', stage)), new Uint8Array(elf), {raw: true, size: elf.length, shared: false});
+  const {wasm, segments} = await translatedAhead(readFileSync(new URL('sods.wasm', stage)), new Uint8Array(elf), {raw: true, size: elf.length, shared: false});
   const kept: Taken = {module: new WebAssembly.Module(wasm), segments, size: wasm.length, more: []};
   let asked = 0;
   const keeper: Keeper = {has: (origin) => origin === 'pack_0_1', take: () => (++asked === 1 ? undefined : kept)};

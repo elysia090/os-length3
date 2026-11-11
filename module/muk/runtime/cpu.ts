@@ -404,9 +404,9 @@ class Thread {
         }
         const sig = fault(e);
         if (!sig) throw e;
-        if (isNode && process.env.XLAT_FAULTS) console.error(`[${this.tid}] fault: ${e instanceof Error ? e.stack : e}`);
+        if (isNode && process.env.MUK_FAULTS) console.error(`[${this.tid}] fault: ${e instanceof Error ? e.stack : e}`);
         // A fault ends the process, as the kernel decides; what the translator cannot run yet is said.
-        this.put(translatorsLimit(e) ? `xlat: ${e.message}\n` : '');
+        this.put(translatorsLimit(e) ? `sods: ${e.message}\n` : '');
         this.i64[CH.ARG0] = BigInt(sig);
         this.unlock();
         // The kernel ends its process: the answer is to leave.

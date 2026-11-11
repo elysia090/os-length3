@@ -204,8 +204,8 @@ export class Image implements Program {
     this.source = source; // () => the ELF's bytes, for code reached later
     this.size = size; // bytes of wasm made for it (what its translations hold, before the engine compiles them)
     const section = (name: string): string => utf8(WebAssembly.Module.customSections(module, name)[0] ?? new ArrayBuffer(0));
-    this.facts = JSON.parse(section('xlat.facts'));
-    this.known = new Set(u64s(module, 'xlat.starts'));
+    this.facts = JSON.parse(section('sods.facts'));
+    this.known = new Set(u64s(module, 'sods.starts'));
     this.slots = this.known.size; // the first module's table, then with each module of code reached later
     this.firstSlots = this.slots;
     this.extras = []; // {module, base, count, bytes}
@@ -221,9 +221,9 @@ export class Image implements Program {
     PROFILE.translate += performance.now() - t; t = performance.now();
     const module = new WebAssembly.Module(wasm);
     PROFILE.compile += performance.now() - t; PROFILE.modules++; PROFILE.bytes += wasm.length;
-    const starts = u64s(module, 'xlat.starts');
+    const starts = u64s(module, 'sods.starts');
     if (!starts.length) return false;
-    const entries = u64s(module, 'xlat.entries');
+    const entries = u64s(module, 'sods.entries');
     for (let k = 0; k < entries.length; k += 2) this.entries.set(entries[k], entries[k + 1]);
     for (const a of starts) this.known.add(a);
     this.extras.push({module, base: this.slots, count: starts.length, bytes: wasm});
@@ -242,9 +242,9 @@ export class Image implements Program {
     let n = 0;
     for (const {module, bytes, base} of list) {
       if (base !== this.slots) break;
-      const starts = u64s(module, 'xlat.starts');
+      const starts = u64s(module, 'sods.starts');
       if (!starts.length) break;
-      const entries = u64s(module, 'xlat.entries');
+      const entries = u64s(module, 'sods.entries');
       for (let k = 0; k < entries.length; k += 2) this.entries.set(entries[k], entries[k + 1]);
       for (const a of starts) this.known.add(a);
       this.extras.push({module, base: this.slots, count: starts.length, bytes});
@@ -727,7 +727,7 @@ export class Kernel implements Kern {
           const sig = fault(e);
           if (sig) {
             // What the translator cannot run yet is said, so it is not taken for the program's own fault.
-            if (translatorsLimit(e)) this.say(2, enc.encode(`xlat: ${e.message}\n`));
+            if (translatorsLimit(e)) this.say(2, enc.encode(`sods: ${e.message}\n`));
             if (TRACE_FAULTS) console.error(`[${t.tid}] ${t.proc.argv?.[0] ?? ''} fault: ${e instanceof Error ? e.stack : e}`);
             this.exitProcess(t.proc, sig);
             return;
@@ -1691,7 +1691,7 @@ export class Task implements Thread {
   declare redirected: boolean;
   declare state: 'new' | 'ready' | 'running' | 'blocked' | 'stopped' | 'dead';
   declare dead: boolean;
-  /** XLAT_BLOCKS's last 256 blocks entered, where kept (cpu.ts). */
+  /** SODS_BLOCKS's last 256 blocks entered, where kept (cpu.ts). */
   declare trail: (bigint | number)[] | null;
   declare trailAt: number;
   declare image: Image;
@@ -1891,18 +1891,18 @@ export const kept = (image: Image, exact: boolean): Range[] => {
 export const goesOn = (image: Image, from: Task | null): boolean => !!from || !!image.segments;
 
 
-/** Where the time went (run.ts prints it with XLAT_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
+/** Where the time went (run.ts prints it with MUK_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
 export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, instancesKept: 0, zeroed: 0, renewed: 0, offered: 0};
 /** Modules of code reached later past which a program run again is translated again as one (Kernel.consolidate). */
 const CONSOLIDATE = 16;
 /** Memories let go of that are kept for the next process, and the largest kept (Kernel.letGo). */
 const SPARE_MEMORIES = 4, SPARE_MEMORY_BYTES = 256 << 20;
-/** XLAT_SYSCALLS=1 lists every system call on stderr (node only). */
-export const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.XLAT_SYSCALLS;
-/** XLAT_FAULTS=1 says what each fault that ends a process was (node only). */
-const TRACE_FAULTS = typeof process !== 'undefined' && !!process.env?.XLAT_FAULTS;
-/** XLAT_BLOCKS=1 lists every block entered (node only; run.ts then translates with --trace). */
-const TRACE_BLOCKS = typeof process !== 'undefined' && !!process.env?.XLAT_BLOCKS;
+/** MUK_SYSCALLS=1 lists every system call on stderr (node only). */
+export const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.MUK_SYSCALLS;
+/** MUK_FAULTS=1 says what each fault that ends a process was (node only). */
+const TRACE_FAULTS = typeof process !== 'undefined' && !!process.env?.MUK_FAULTS;
+/** SODS_BLOCKS=1 lists every block entered (node only; run.ts then translates with --trace). */
+const TRACE_BLOCKS = typeof process !== 'undefined' && !!process.env?.SODS_BLOCKS;
 /** Which argument of a call names a path (0: the first, 1: the second, after a directory). */
 const PATH_ARG: Record<number, number> = {2: 0, 4: 0, 6: 0, 21: 0, 59: 0, 80: 0, 83: 0, 84: 0, 87: 0, 89: 0, 257: 1, 262: 1, 263: 1, 269: 1, 439: 1};
 

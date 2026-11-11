@@ -14,26 +14,26 @@ cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manife
 status=0
 for c in "$here"/*.c; do
   name=$(basename "$c" .c)
-  # A test marked "xlat: stripped" is built as a distribution ships a program: no symbols, no relocations kept.
-  if grep -q 'xlat: stripped' "$c"; then
+  # A test marked "sods: stripped" is built as a distribution ships a program: no symbols, no relocations kept.
+  if grep -q 'sods: stripped' "$c"; then
     musl-gcc -static -O2 -pthread -s "$c" -o "$out/$name"
   else
     musl-gcc -static -O2 -pthread -Wl,--emit-relocs "$c" -o "$out/$name"
   fi
-  "$sods/target/release/xlat" "$out/$name" "$out/$name.wasm" >/dev/null 2>&1
+  "$sods/target/release/sods" "$out/$name" "$out/$name.wasm" >/dev/null 2>&1
   set +e
-  # A test marked "xlat: raw sockets" wants CAP_NET_RAW natively (the Prompt's root has it in its own network), one
-  # marked "xlat: root" what root may do (every process translated is root): run as root, through sudo when it can be
+  # A test marked "muk: raw sockets" wants CAP_NET_RAW natively (the Prompt's root has it in its own network), one
+  # marked "muk: root" what root may do (every process translated is root): run as root, through sudo when it can be
   # had without a word, or not at all.
-  if grep -q 'xlat: raw sockets\|xlat: root' "$c" && [ "$(id -u)" != 0 ]; then
+  if grep -q 'muk: raw sockets\|muk: root' "$c" && [ "$(id -u)" != 0 ]; then
     if sudo -n true 2>/dev/null; then sudo -n "$out/$name" a b > "$out/$name.native"; native=$?
     else echo "skip $name (it wants root natively)"; set -e; continue; fi
   else
     "$out/$name" a b > "$out/$name.native"; native=$?
   fi
-  node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.xlat"; translated=$?
+  node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.box"; translated=$?
   set -e
-  if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then
+  if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.box"; then
     echo "ok   $name"
   else
     echo "FAIL $name (exit $native vs $translated)"; status=1
@@ -43,7 +43,7 @@ done
 # tail call to the run that holds its target, loops round them still taking their turns; the same output as native.
 for name in calls switches signals threads jobs; do
   set +e
-  XLAT_RUN=3 node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.cut"; cut=$?
+  SODS_RUN=3 node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.cut"; cut=$?
   "$out/$name" a b > "$out/$name.native"; native=$?
   set -e
   if [ "$native" = "$cut" ] && cmp -s "$out/$name.native" "$out/$name.cut"; then
@@ -60,9 +60,9 @@ if rustup target list --installed 2>/dev/null | grep -q x86_64-unknown-linux-mus
       -C relocation-model=static -C link-arg=-no-pie -C link-arg=-Wl,--emit-relocs "$r" -o "$out/$name"
     set +e
     "$out/$name" a b > "$out/$name.native"; native=$?
-    node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.xlat"; translated=$?
+    node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.box"; translated=$?
     set -e
-    if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then
+    if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.box"; then
       echo "ok   $name"
     else
       echo "FAIL $name (exit $native vs $translated)"; status=1
@@ -79,9 +79,9 @@ if command -v go >/dev/null; then
     (cd "$dir" && CC=musl-gcc CGO_ENABLED=1 go build -ldflags '-linkmode=external -extldflags "-static -Wl,--emit-relocs"' -o "$out/$name" .)
     set +e
     "$out/$name" a b > "$out/$name.native"; native=$?
-    node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.xlat"; translated=$?
+    node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.box"; translated=$?
     set -e
-    if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then echo "ok   $name"; else echo "FAIL $name (exit $native vs $translated)"; status=1; fi
+    if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.box"; then echo "ok   $name"; else echo "FAIL $name (exit $native vs $translated)"; status=1; fi
   done
 fi
 # The tree (src/tree.h), every name of a directory asked of it and of Linux.

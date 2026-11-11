@@ -20,7 +20,7 @@
  * What it is made for: a shell runs it at every cd, so learning a place is the program's start and five calls
  * (newfstatat, open, flock, fstat, write), reading nothing, and finding one four (open, pread, newfstatat, writev).
  * No C library, no allocation, nothing to relocate: the program is its own few pages, which the kernel maps and it
- * runs, and which a browser's Prompt translates in a moment (xlat), each of its calls one a Linux kernel and xlat's
+ * runs, and which a browser's Prompt translates in a moment (sods), each of its calls one a Linux kernel and muk's
  * answer alike. Its time is the vDSO's, not a call. What it works in is one arena, used from its start as far as a run
  * needs and no further, so a run touches the pages its own data reaches and no others.
  *

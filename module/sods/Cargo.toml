@@ -1,5 +1,5 @@
 [package]
-name = "xlat"
+name = "sods"
 version = "0.1.0"
 edition = "2021"
 description = "Ahead-of-time translation of static x86-64 Linux ELF programs to WebAssembly"

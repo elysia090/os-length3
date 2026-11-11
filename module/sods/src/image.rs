@@ -316,7 +316,7 @@ fn types() -> TypeSection {
 /// helpers and registers) and carries no data, so instantiating it changes
 /// nothing in memory. It exports its functions as `table`, for the host to
 /// put in the first module's table from `base`. Its entries, slots counted
-/// from `base`, are in the `xlat.entries` custom section as (address,
+/// from `base`, are in the `sods.entries` custom section as (address,
 /// function << 32 | block) pairs.
 pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options) -> Translation {
     let mut report = Report { functions: program.functions.len(), entries: program.entries.len(), ..Default::default() };
@@ -363,10 +363,10 @@ pub fn translate_more(elf: &Elf, program: &Program, base: u32, options: Options)
         table.extend_from_slice(&address.to_le_bytes());
         table.extend_from_slice(&((((f + base) as u64) << 32) | b as u64).to_le_bytes());
     }
-    let entries = CustomSection { name: Cow::Borrowed("xlat.entries"), data: Cow::Owned(table) };
+    let entries = CustomSection { name: Cow::Borrowed("sods.entries"), data: Cow::Owned(table) };
     // Where each function starts, so code translated later stops there instead of repeating it.
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
-    let starts = CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) };
+    let starts = CustomSection { name: Cow::Borrowed("sods.starts"), data: Cow::Owned(starts) };
 
     let wasm = code.finish(None, &[&name_section, &entries, &starts]);
     Translation { wasm, report }
@@ -468,11 +468,11 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
         "{{\"entry\":{},\"imageStart\":{},\"imageEnd\":{},\"phdr\":{},\"phnum\":{},\"phent\":56,\"readOnly\":[{}],\"derived\":[{},{}]{}}}",
         elf.entry, image_start(elf), end, elf.phdr_address().unwrap_or(0), elf.phnum, read_only.join(","), table_base, end, tls
     );
-    let facts = CustomSection { name: Cow::Borrowed("xlat.facts"), data: Cow::Owned(facts.into_bytes()) };
-    let fpu = CustomSection { name: Cow::Borrowed("xlat.fpu"), data: Cow::Owned(crate::x87::NAMES.join(",").into_bytes()) };
+    let facts = CustomSection { name: Cow::Borrowed("sods.facts"), data: Cow::Owned(facts.into_bytes()) };
+    let fpu = CustomSection { name: Cow::Borrowed("sods.fpu"), data: Cow::Owned(crate::x87::NAMES.join(",").into_bytes()) };
     // Where each function starts, so code translated later stops there instead of repeating it.
     let starts: Vec<u8> = program.functions.iter().flat_map(|f| f.start.to_le_bytes()).collect();
-    let starts = CustomSection { name: Cow::Borrowed("xlat.starts"), data: Cow::Owned(starts) };
+    let starts = CustomSection { name: Cow::Borrowed("sods.starts"), data: Cow::Owned(starts) };
 
     let wasm = code.finish(Some(&image), &[&name_section, &facts, &fpu, &starts]);
     Translation { wasm, report }

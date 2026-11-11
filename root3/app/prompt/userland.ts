@@ -175,7 +175,7 @@ const worker = (): Worker | null => {
  * worked out here, as before; a worker stopped with lent bytes in it fails the check (they are read again).
  */
 async function checked(bytes: Uint8Array, unpack: boolean, lend: boolean): Promise<{bytes: Uint8Array; sha256: string}>;
-/** The same for a translation, given back as the kernel runs it (`as`: xlat's share.ts prepare), with its size before. */
+/** The same for a translation, given back as the kernel runs it (`as`: sods' share.ts prepare), with its size before. */
 async function checked(bytes: Uint8Array, unpack: boolean, lend: boolean, as: {shared: boolean}): Promise<{bytes: Uint8Array; sha256: string; size: number; segments: Segment[] | null}>;
 async function checked(bytes: Uint8Array, unpack: boolean, lend: boolean, as?: {shared: boolean}): Promise<{bytes: Uint8Array; sha256: string; size?: number; segments?: Segment[] | null}> {
   const w = worker();
@@ -474,7 +474,7 @@ export function keepTranslation(root3: Root3, origin: string, wasm: Uint8Array, 
     const main = translatedURL(origin, tag, 'wasm');
     const kept = await keepParts(main, parts, true, true);
     // The code an earlier translation of it reached later went with that one (a program translated again as one
-    // module: xlat's Kernel.consolidate): a Prompt after would read it all, to take none of it.
+    // module: muk's Kernel.consolidate): a Prompt after would read it all, to take none of it.
     const c = await open();
     const more = translatedURL(origin, tag, 'more');
     if (c && reached.get(origin)?.saved === 0 && await c.delete(more).catch(() => false)) gone(c, more);
@@ -682,7 +682,7 @@ export const filesNow = (root3: Root3): Root3['files'] => [...root3.files, ...la
 /** A hot program with the code it reached later in the Prompts before. */
 const withMore = (f: Root3['files'][number]): Root3['files'][number] => ({...f, more: more.get(f.path)?.list ?? []});
 
-/** The Prompt's Worker: xlat running root3's root (pages/bench/terminal.ts gives it root3 and the repo). */
+/** The Prompt's Worker: muk running root3's root (pages/bench/terminal.ts gives it root3 and the repo). */
 export const promptWorker = (): Worker => new Worker(new URL('./kernel.worker.ts', import.meta.url), {type: 'module'});
 
 /**

@@ -193,7 +193,7 @@ export function mountProc(kernel: Kern): void {
   const used = () => live().reduce((n, p) => n + (p.state === 'live' ? memoryBytes(p) : 0), 0);
   const sys = new Map<string, Entry>([
     ['kernel', new Listing(() => new Map<string, Entry>([
-      ['ostype', new Made(() => 'Linux\n')], ['osrelease', new Made(() => '6.1.0\n')], ['version', new Made(() => '#1 xlat\n')],
+      ['ostype', new Made(() => 'Linux\n')], ['osrelease', new Made(() => '6.1.0\n')], ['version', new Made(() => '#1 muk\n')],
       ['hostname', new Made(() => `${kernel.hostname ?? 'length3'}\n`)], ['pid_max', new Made(() => '4194304\n')], ['threads-max', new Made(() => '63432\n')],
       ['random', new Listing(() => new Map<string, Entry>([['uuid', new Made(() => crypto.randomUUID() + '\n')], ['boot_id', new Made(() => bootId + '\n')]]))],
     ]))],
@@ -223,9 +223,9 @@ export function mountProc(kernel: Kern): void {
         ['VmallocUsed', 0], ['HugePages_Total', null], ['Hugepagesize', 2 << 20]] as [string, number | null][])
         .map(([k, v]) => v === null ? `${k}:       0` : `${(k + ':').padEnd(16)}${kb(v)}`).join('\n') + '\n';
     })],
-    ['cpuinfo', new Made(() => Array.from({length: cpus}, (_, k) => `processor\t: ${k}\nvendor_id\t: GenuineIntel\nmodel name\t: xlat x86-64\ncpu MHz\t\t: 3000.000\ncpu cores\t: ${cpus}\nflags\t\t: fpu tsc cx8 cmov sse sse2 ssse3 sse4_1 sse4_2 popcnt\n\n`).join(''))],
+    ['cpuinfo', new Made(() => Array.from({length: cpus}, (_, k) => `processor\t: ${k}\nvendor_id\t: GenuineIntel\nmodel name\t: sods x86-64\ncpu MHz\t\t: 3000.000\ncpu cores\t: ${cpus}\nflags\t\t: fpu tsc cx8 cmov sse sse2 ssse3 sse4_1 sse4_2 popcnt\n\n`).join(''))],
     ['mounts', new Made(mounts)],
-    ['version', new Made(() => 'Linux version 6.1.0 (xlat) #1 xlat\n')],
+    ['version', new Made(() => 'Linux version 6.1.0 (muk) #1 muk\n')],
     ['filesystems', new Made(() => 'nodev\tproc\nnodev\ttmpfs\nnodev\tdevtmpfs\n')],
     ['cmdline', new Made(() => 'console=ttyS0\n')],
     ['self', new Pointer(() => String(caller()?.pid ?? 1))],

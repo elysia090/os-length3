@@ -14,7 +14,7 @@ import {button} from './parts.ts';
  * pinned by digest), and a root of one's own. In the app each other one can be
  * used with a press (Use, at its right): fetched if it is not here, then the
  * one Prompts run on, set up from .packages and .setup at the next Prompt. In
- * a browser only root3 runs (through xlat, which does not link programs as they
+ * a browser only root3 runs (through muk, which does not link programs as they
  * run); the others say where they do. Custom is not yet.
  */
 export function environment(): HTMLElement {
@@ -85,9 +85,9 @@ function roots(root: RootStatus, now: string | null) {
 
 /** On the web: root3 at the top (`a`, as this build carries it), and the others, which run in the app. */
 function onTheWeb(a: Awaited<ReturnType<typeof about>>): Node[] {
-  // The same root3 as the app's: its version, and the digest of the root it is (root3/core/src/root/), run here through xlat.
+  // The same root3 as the app's: its version, and the digest of the root it is (root3/core/src/root/), run here through muk.
   // A build that carries no root3 says so in root3's own row: Ubuntu, Debian and Custom are under it all the same.
-  return [...(a ? top('root3', a.version, t('{name} · via xlat', {name: a.root.name}), a.sha256)
+  return [...(a ? top('root3', a.version, t('{name} · via muk', {name: a.root.name}), a.sha256)
     : top('root3', '', t('root3 missing (run: npm run webroot)'), '')),
   others(other('Ubuntu', '26.04.1 LTS', t('App only'), null),
     other('Debian', '13.7', t('App only'), null),

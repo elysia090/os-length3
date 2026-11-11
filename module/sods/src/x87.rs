@@ -2,7 +2,7 @@
 //! is made of, so a result rounds as the hardware's does for the control word's precision and rounding mode (libc's
 //! printf and strtod depend on that); the transcendentals go through f64. Translated code calls it for each x87
 //! instruction (lower.rs `x87`), wasm to wasm: an instance of the translator's own module (runtime/x87.ts) holds each
-//! thread's registers, named by a handle in the thread's instance (wasm.rs `xlat_fpu`). A memory operand is the
+//! thread's registers, named by a handle in the thread's instance (wasm.rs `sods_fpu`). A memory operand is the
 //! translated code's to read and write: one read comes in as its bits, one written goes back as the call's value.
 
 use std::cmp::Ordering;

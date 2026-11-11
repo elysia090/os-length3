@@ -8,7 +8,7 @@ function index(programs: string[], hot: string[] = ['/usr/bin/busybox', '/usr/bi
   return {
     name: 'root3', version: '0', sha256: '', codec: 'zstd', packs: [{name: 'p.pack', owner: 'p', bytes: 0}], dirs: [], links: [],
     files: [...programs, '/etc/gitconfig'].map((path, k) => ({path, mode: path.startsWith('/etc') ? 0o644 : 0o755, size: 1, pack: 0, at: k, len: 1})),
-    translator: {path: '', sha256: '', size: 0, bytes: 0, name: 'xlat', version: '0', wasm: ''},
+    translator: {path: '', sha256: '', size: 0, bytes: 0, name: 'sods', version: '0', wasm: ''},
     translations: hot.map((path) => ({path, sha256: '', elf: {path: '', sha256: '', size: 0, bytes: 0}, wasm: {path: '', sha256: '', size: 0, bytes: 0}})),
   };
 }

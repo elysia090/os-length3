@@ -1,9 +1,9 @@
-//! `xlat [--whole] INPUT.elf OUTPUT.wasm` — translate a static x86-64 Linux
+//! `sods [--whole] INPUT.elf OUTPUT.wasm` — translate a static x86-64 Linux
 //! program: what it runs first, or with --whole all of it, ahead of time
 //! (discover::discover_whole).
-//! `xlat --seeds=SEEDS INPUT.elf OUTPUT.wasm` — as the first, and from the function starts listed in SEEDS (one
+//! `sods --seeds=SEEDS INPUT.elf OUTPUT.wasm` — as the first, and from the function starts listed in SEEDS (one
 //! address a line) too: a program with the code its runs reached later, in one module.
-//! `xlat --more=SEEDS --known=KNOWN --base=N INPUT.elf OUTPUT.wasm` — code
+//! `sods --more=SEEDS --known=KNOWN --base=N INPUT.elf OUTPUT.wasm` — code
 //! reached later from the addresses in SEEDS (one per line), past what
 //! KNOWN lists as translated, as a module filling table slots from N.
 
@@ -14,41 +14,41 @@ fn main() -> ExitCode {
     let trace = args.iter().any(|a| a == "--trace");
     let paths: Vec<&String> = args.iter().skip(1).filter(|a| !a.starts_with("--")).collect();
     let [input, output] = paths.as_slice() else {
-        eprintln!("usage: xlat [--trace] [--whole] INPUT.elf OUTPUT.wasm");
+        eprintln!("usage: sods [--trace] [--whole] INPUT.elf OUTPUT.wasm");
         return ExitCode::from(2);
     };
     let bytes = match std::fs::read(input) {
         Ok(b) => b,
-        Err(e) => { eprintln!("xlat: {input}: {e}"); return ExitCode::FAILURE; }
+        Err(e) => { eprintln!("sods: {input}: {e}"); return ExitCode::FAILURE; }
     };
-    let elf = match xlat::elf::Elf::parse_owned(bytes) {
+    let elf = match sods::elf::Elf::parse_owned(bytes) {
         Ok(e) => e,
-        Err(e) => { eprintln!("xlat: {input}: {e}"); return ExitCode::FAILURE; }
+        Err(e) => { eprintln!("sods: {input}: {e}"); return ExitCode::FAILURE; }
     };
     let started = std::time::Instant::now();
     let flag = |name: &str| args.iter().find_map(|a| a.strip_prefix(&format!("--{name}=")).map(str::to_string));
     // --run=N: functions cut into runs of N blocks (discover::RUN), for testing the cut on small programs.
-    if let Some(n) = flag("run").and_then(|n| n.parse().ok()) { xlat::find::set_run(n); }
+    if let Some(n) = flag("run").and_then(|n| n.parse().ok()) { sods::find::set_run(n); }
     let list = |path: Option<String>| -> Vec<u64> {
         path.and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default().lines().filter_map(|l| l.trim().parse().ok()).collect()
     };
     let translation = if let Some(seeds) = flag("more") {
         let known: std::collections::BTreeSet<u64> = list(flag("known")).into_iter().collect();
         let base: u32 = flag("base").and_then(|b| b.parse().ok()).unwrap_or(0);
-        let program = xlat::find::discover_within(&elf, &list(Some(seeds)), &known, xlat::find::BUDGET);
-        xlat::image::translate_more(&elf, &program, base, xlat::image::Options { trace })
+        let program = sods::find::discover_within(&elf, &list(Some(seeds)), &known, sods::find::BUDGET);
+        sods::image::translate_more(&elf, &program, base, sods::image::Options { trace })
     } else {
         let program = if args.iter().any(|a| a == "--whole") {
-            xlat::find::discover_whole(&elf)
+            sods::find::discover_whole(&elf)
         } else if let Some(seeds) = flag("seeds") {
-            xlat::find::discover_seeded(&elf, &list(Some(seeds)))
+            sods::find::discover_seeded(&elf, &list(Some(seeds)))
         } else {
-            xlat::find::discover(&elf)
+            sods::find::discover(&elf)
         };
-        xlat::image::translate(&elf, &program, xlat::image::Options { trace })
+        sods::image::translate(&elf, &program, sods::image::Options { trace })
     };
     if let Err(e) = std::fs::write(output, &translation.wasm) {
-        eprintln!("xlat: {output}: {e}");
+        eprintln!("sods: {output}: {e}");
         return ExitCode::FAILURE;
     }
     let r = &translation.report;

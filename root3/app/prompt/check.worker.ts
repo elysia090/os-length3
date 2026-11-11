@@ -3,7 +3,7 @@
 // page draws and is written in. A buffer lent comes back with the answer, so nothing large is copied on the way.
 //
 // Page → worker: {id, bytes, unpack, prepare?}. Worker → page: {id, bytes, sha256}, or {id, error, bytes} (what was
-// lent, back). With `prepare: {shared}` the bytes are a translation, given back as the kernel runs it (xlat's
+// lent, back). With `prepare: {shared}` the bytes are a translation, given back as the kernel runs it (sods'
 // share.ts prepare: copying a 16 MB module held the page's thread for a tenth of a second, as a Prompt was in use):
 // {id, bytes, sha256, size, segments}, its digest and size those of the translation as it was.
 

@@ -1,4 +1,4 @@
-// xlat: stripped
+// sods: stripped
 // Switches that jump through tables, and functions passed as pointers, in a program that keeps no symbols and no
 // relocations (as a distribution ships it): translated whole (whole.test.ts), all of it is found ahead of time.
 #include <stdio.h>

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // node runtime/run.ts [--root DIR | --pack DIR] [--cwd DIR] PROGRAM [args...]
 //
-// Run a static x86-64 program translated by xlat. PROGRAM is a host path
+// Run a static x86-64 program translated by sods. PROGRAM is a host path
 // (placed at /bin/<name>) or, with --root, a path inside that tree; --pack
 // mounts the web root (scripts/webroot.ts: webroot.json, its index and its
 // packs) as the browser does, each file read from its pack when first
@@ -20,13 +20,13 @@ import {RemoteKernel, canRunApart} from './remote.ts';
 import {loadTranslator} from '../../sods/runtime/translator.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const translator = join(here, '..', '..', 'sods', 'target', 'release', 'xlat');
-const wasmTranslator = join(here, '..', '..', 'sods', 'target', 'wasm32-unknown-unknown', 'release', 'xlat.wasm');
+const translator = join(here, '..', '..', 'sods', 'target', 'release', 'sods');
+const wasmTranslator = join(here, '..', '..', 'sods', 'target', 'wasm32-unknown-unknown', 'release', 'sods.wasm');
 
-// XLAT_BLOCKS=1: translate with --trace, so every block entered is reported (process.ts prints it).
-const traced = process.env.XLAT_BLOCKS ? ['--trace'] : [];
-// XLAT_RUN=N: functions cut into runs of N blocks (kernel.rs RUN), so the cut is tested on small programs.
-const cut = process.env.XLAT_RUN ? [`--run=${process.env.XLAT_RUN}`] : [];
+// SODS_BLOCKS=1: translate with --trace, so every block entered is reported (process.ts prints it).
+const traced = process.env.SODS_BLOCKS ? ['--trace'] : [];
+// SODS_RUN=N: functions cut into runs of N blocks (kernel.rs RUN), so the cut is tested on small programs.
+const cut = process.env.SODS_RUN ? [`--run=${process.env.SODS_RUN}`] : [];
 
 // The translator built as wasm, run in this process as the browser runs
 // it, when it is built from the same source as the native one (or newer):
@@ -43,7 +43,7 @@ const translatorId = fileDigest(inProcess ? wasmTranslator : translator);
 // Each translator's translations in a folder of its own, named by its digest. A translator rebuilt starts a new
 // one, and then the folders of translators no longer built (neither the native one's nor the wasm one's) go: an
 // older translator's modules are never read again.
-const cacheRoot = join(here, '..', 'target', 'xlat-cache');
+const cacheRoot = join(here, '..', 'target', 'sods-cache');
 const cacheDir = join(cacheRoot, translatorId);
 if (!existsSync(cacheDir)) {
   const built = new Set([translator, wasmTranslator].filter(existsSync).map(fileDigest));
@@ -105,10 +105,10 @@ translate.more = inProcess ? inProcess.more : function more(bytes: Uint8Array, s
     writeFileSync(`${wasm}.seeds`, seeds.join('\n'));
     writeFileSync(`${wasm}.known`, known.join('\n'));
     const done = spawnSync(translator, [...traced, ...cut, `--more=${wasm}.seeds`, `--known=${wasm}.known`, `--base=${base}`, elf, wasm], {stdio: ['ignore', 'ignore', 'pipe']});
-    if (done.status !== 0) throw new Error(`xlat --more failed: ${done.stderr}`);
+    if (done.status !== 0) throw new Error(`sods --more failed: ${done.stderr}`);
     const report = done.stderr.toString();
-    // XLAT_UNSUPPORTED=1: say which instructions code reached later uses that are not translated yet.
-    if (process.env.XLAT_UNSUPPORTED && !report.includes('"unsupported":{}')) process.stderr.write(`xlat: at ${seeds}: ${report.trim()}\n`);
+    // SODS_UNSUPPORTED=1: say which instructions code reached later uses that are not translated yet.
+    if (process.env.SODS_UNSUPPORTED && !report.includes('"unsupported":{}')) process.stderr.write(`sods: at ${seeds}: ${report.trim()}\n`);
   }
   return new Uint8Array(readFileSync(wasm));
 };
@@ -164,8 +164,8 @@ vfs.mkdirp(cwd);
 
 let stdin = new Uint8Array(0), stdinAt = 0;
 try { if (!process.stdin.isTTY) stdin = new Uint8Array(readFileSync(0)); } catch { /* no input */ }
-// Each thread in a Worker of its own, as a cross-origin isolated page runs them; XLAT_INLINE=1: all here, in turn.
-const apart = canRunApart() && !process.env.XLAT_INLINE;
+// Each thread in a Worker of its own, as a cross-origin isolated page runs them; MUK_INLINE=1: all here, in turn.
+const apart = canRunApart() && !process.env.MUK_INLINE;
 const kernel = new (apart ? RemoteKernel : Kernel)({
   vfs,
   translate,
@@ -181,15 +181,15 @@ const kernel = new (apart ? RemoteKernel : Kernel)({
 });
 const started = performance.now();
 const status = await kernel.spawn(path, [path, ...rest], ['HOME=/root', 'PATH=/bin:/usr/bin', 'LANG=C.UTF-8', 'TERM=dumb'], cwd);
-if (process.env.XLAT_TIMING) {
+if (process.env.MUK_TIMING) {
   // What the run still holds once its programs have ended (after a collection, when node allows one).
   globalThis.gc?.();
   const m = process.memoryUsage(), mb = (n: number): number => Math.round(n / 2 ** 20);
   writeSync(2, JSON.stringify({ms: Math.round(performance.now() - started), ...PROFILE, translate: Math.round(PROFILE.translate), compile: Math.round(PROFILE.compile),
     heldMB: {rss: mb(m.rss), heap: mb(m.heapUsed), buffers: mb(m.arrayBuffers), external: mb(m.external)},
     kernelMB: Object.fromEntries(Object.entries(kernel.held()).map(([k, v]) => [k, mb(v)]))}) + '\n');
-  // XLAT_FREE=1: then give back all that can go, and say what the host shows.
-  if (process.env.XLAT_FREE) {
+  // MUK_FREE=1: then give back all that can go, and say what the host shows.
+  if (process.env.MUK_FREE) {
     const r = kernel.free(0);
     globalThis.gc?.();
     const n = process.memoryUsage();

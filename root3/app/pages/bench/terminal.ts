@@ -147,7 +147,7 @@ export class Session implements Prompt {
   processes = 0;
   /** On the root, still being prepared (.packages, .setup), as its record says: what it holds is what prepares it. */
   preparing = false;
-  /** What it runs on: the distribution's root on this machine, or root3 through xlat. */
+  /** What it runs on: the distribution's root on this machine, or root3 through muk. */
   on: 'root' | 'root3' | null = null;
   /** How the last stop went, on the root: what it held, and how long until none was left. */
   stopped: Stopped | null = null;
@@ -501,7 +501,7 @@ export class Session implements Prompt {
   }
 
   /**
-   * In the app the Prompt is the distribution's root on this machine, and nothing else: root3 through xlat is the
+   * In the app the Prompt is the distribution's root on this machine, and nothing else: root3 through muk is the
    * browser's (its build carries none). The first one fetches the root it runs on, as the browser's first fetches root3,
    * the status saying how far it is (Runtime fetches it ahead, and chooses another).
    */

@@ -6,7 +6,7 @@ use std::fs;
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     println!("args {args:?}");
-    let dir = format!("/tmp/xlat-rust-{}", args.join("-"));
+    let dir = format!("/tmp/muk-rust-{}", args.join("-"));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(format!("{dir}/issue")).unwrap();
     for n in 1..=3 {

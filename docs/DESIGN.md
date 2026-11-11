@@ -1039,12 +1039,12 @@ the same thing for the desktop app and for the web.
   asked of OSV with every change and every week (`module/ricebox/make/advisories.sh`), and
   what no lift answers is written down with why and until when
   (`module/ricebox/pins/advisories.toml`). For the web it also holds the translator
-  (xlat, as WebAssembly) and the translations of the hot programs made
+  (sods, as WebAssembly) and the translations of the hot programs made
   ahead of time.
 - **On a device**, the app and `root3` install the root by its digest: from the
   device's Remote, then the publisher's (each deploy mirrors every pinned
   root to its bucket), then the release itself.
-- **In a browser**, the same root is read through xlat (`public/webroot`, made
+- **In a browser**, the same root is read through muk (`public/webroot`, made
   from the root itself by `scripts/webroot.ts`, never from anything built
   beside it): `webroot.json` (which root3: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes
@@ -1078,7 +1078,7 @@ the same thing for the desktop app and for the web.
   mode, link target and sha256 the same as the root root3 installs
   (directories at least 0700, files without set-id bits, as the installer
   makes them). `scripts/webroot-parity.ts` proves it on every release and in CI;
-  a program that xlat cannot run yet still ships, and
+  a program that muk cannot run yet still ships, and
   `scripts/webroot-runnable.ts` says which, against the same root run natively.
 - **One release, one pin.** The release makes the root, then root3 for the
   browser from it (checked by the parity), pins both in one entry, and only
@@ -2927,7 +2927,7 @@ or goes).
   the row has no room, each goes under). The one in
   effect is the card's head: root3, with its version (in the mono face, as a
   version is), what it is here (in the app, the root installed, on this
-  device's kernel; in a browser, the same root through xlat) and its
+  device's kernel; in a browser, the same root through muk) and its
   digest: the same version and digest in both, the root's (root3: the one
   base). Under it the others, a row each, quiet:
   Ubuntu, Debian, Custom (a root of one's own, known by its digest), what
@@ -2936,7 +2936,7 @@ or goes).
   root, from their makers or the Remote, taken only at the digest pinned
   in root3/core/src/root/pins.rs), then the one Prompts run on, each with its own
   environment per repo. In a browser they say In the app only: their
-  programs are linked as they run, which xlat does not do. Custom is not
+  programs are linked as they run, which muk does not do. Custom is not
   yet.
 - **Packages and runtimes are dotfiles**, so nothing is kept twice: the
   OS has no package list or runtime manager of its own. `.packages` names

@@ -102,7 +102,7 @@ let rootAsked: Promise<RootHere> | null = null;
 /**
  * Whether Prompts run on the root here: the app asks the root3 beside it once (`root3 root check`), which makes a Prompt's
  * namespaces (a machine other than Linux on x86-64, or one that keeps user namespaces from it, does not). Where they
- * do not, as in a browser, they run translated (xlat, prompt/userland.ts): never, and with nothing to say, in one.
+ * do not, as in a browser, they run translated (sods, prompt/userland.ts): never, and with nothing to say, in one.
  */
 export const rootHere = (): Promise<RootHere> => (rootAsked ??= isNative
   ? native<RootHere>('root_native').catch((e: unknown) => ({native: false, why: e instanceof Error ? e.message : String(e)}))

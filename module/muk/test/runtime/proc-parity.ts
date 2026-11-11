@@ -2,7 +2,7 @@
 // node tests/proc-parity.ts [--table FILE] [NAME...]
 //
 // The process and I/O cases, each run by the same BusyBox ELF on this Linux
-// and under xlat (runtime/run.ts), compared on stdout and exit status,
+// and under muk (runtime/run.ts), compared on stdout and exit status,
 // with the time each took and when its first line came (a background job
 // that holds its shell shows there). Prints a Markdown table; exits 1 if
 // any case differs. BusyBox is the one the Prompt has (scripts/userland.sh
@@ -51,11 +51,11 @@ function sh(argv: string[], env: NodeJS.ProcessEnv): Promise<Ran> {
   });
 }
 
-export async function runCase(c: Case, bin: string): Promise<{native: Ran; xlat: Ran; same: boolean}> {
+export async function runCase(c: Case, bin: string): Promise<{native: Ran; box: Ran; same: boolean}> {
   const env = {PATH: `${bin}:/usr/bin:/bin`, HOME: '/root', LANG: 'C.UTF-8'};
   const native = await sh([BUSYBOX, 'sh', '-c', c.script], env);
-  const xlat = await sh([process.execPath, RUN, BUSYBOX, 'sh', '-c', c.script], env);
-  return {native, xlat, same: native.out === xlat.out && native.status === xlat.status};
+  const box = await sh([process.execPath, RUN, BUSYBOX, 'sh', '-c', c.script], env);
+  return {native, box, same: native.out === box.out && native.status === box.status};
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
@@ -70,14 +70,14 @@ if (isMain) {
   const bin = mkdtempSync(join(tmpdir(), 'proc-parity-'));
   symlinkSync(BUSYBOX, join(bin, 'busybox'));
   const f = (ms: number | null): string => (ms === null ? '-' : `${(ms / 1000).toFixed(3)} s`);
-  const rows = ['| case | native | xlat | same | first line native / xlat |', '|---|---|---|---|---|'];
+  const rows = ['| case | native | muk | same | first line native / muk |', '|---|---|---|---|---|'];
   let bad = 0;
   try {
     for (const c of want) {
       const r = await runCase(c, bin);
       if (!r.same) bad++;
       const show = (x: Ran): string => `${JSON.stringify(x.out.length > 60 ? x.out.slice(0, 57) + '...' : x.out)} (${x.status}) ${f(x.ms)}`;
-      rows.push(`| ${c.name} | ${show(r.native)} | ${show(r.xlat)} | ${r.same ? 'yes' : '**no**'} | ${f(r.native.first)} / ${f(r.xlat.first)} |`);
+      rows.push(`| ${c.name} | ${show(r.native)} | ${show(r.box)} | ${r.same ? 'yes' : '**no**'} | ${f(r.native.first)} / ${f(r.box.first)} |`);
       console.error(`${r.same ? 'ok  ' : 'FAIL'} ${c.name}`);
     }
   } finally {

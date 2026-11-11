@@ -108,7 +108,7 @@ jobs:
           path: public/webroot
           key: ${{ steps.key.outputs.key }}
 
-  # Every command of issue #80 run under xlat and natively in the pinned root; the table `help` reads
+  # Every command of issue #80 run under muk and natively in the pinned root; the table `help` reads
   # (module/ricebox/etc/length3/commands) checked against the results.
   commands:
     name: Commands
@@ -244,8 +244,8 @@ jobs:
           npm run selftest:cli
 
   # The x86-64 → wasm translator against native; and root3 (static, musl) run under it as the browser runs it.
-  xlat:
-    name: xlat (${{ matrix.part }})
+  browser:
+    name: muk in a browser (${{ matrix.part }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -269,14 +269,14 @@ jobs:
           workspaces: |
             module/sods -> target
             . -> target
-          shared-key: xlat-${{ matrix.part }}-${{ hashFiles('module/sods/Cargo.toml', 'Cargo.toml') }}
+          shared-key: sods-${{ matrix.part }}-${{ hashFiles('module/sods/Cargo.toml', 'Cargo.toml') }}
           cache-on-failure: true
       - name: Test against native
         if: matrix.part == 'native'
         working-directory: module/muk
         run: sh test/programs/run.sh
       # run.ts takes the wasm build of the translator when it is current.
-      - name: Run root3 under xlat
+      - name: Run root3 under muk
         if: matrix.part == 'prompt'
         run: |
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
@@ -381,7 +381,7 @@ jobs:
           sudo sh module/muk/test/bundle/muk.sh
 
   # The root as a release builds it (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), then used inside as a Prompt uses it and
-  # under xlat. Runs only when what the root is made of changed.
+  # under muk. Runs only when what the root is made of changed.
   root:
     name: Root
     runs-on: ubuntu-24.04
@@ -473,7 +473,7 @@ jobs:
           says "prompt 'cd /tmp/p/src && direnv allow . && echo \$MADE'" here
           # clear sends the clear sequence even on a dumb terminal (ncurses' clear prints nothing there).
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
-          # The same programs under xlat.
+          # The same programs under muk.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
           node module/muk/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
           node module/muk/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "

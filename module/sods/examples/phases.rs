@@ -5,12 +5,12 @@ fn main() {
     let t = std::time::Instant::now();
     let bytes = std::fs::read(&a[1]).unwrap();
     let read = t.elapsed();
-    let elf = xlat::elf::Elf::parse(&bytes).unwrap();
+    let elf = sods::elf::Elf::parse(&bytes).unwrap();
     let parse = t.elapsed();
     let known: std::collections::BTreeSet<u64> = words(&a[3]).into_iter().collect();
-    let program = xlat::find::discover_from(&elf, &words(&a[2]), &known);
+    let program = sods::find::discover_from(&elf, &words(&a[2]), &known);
     let discover = t.elapsed();
-    let out = xlat::image::translate_more(&elf, &program, known.len() as u32, xlat::image::Options::default());
+    let out = sods::image::translate_more(&elf, &program, known.len() as u32, sods::image::Options::default());
     let lower = t.elapsed();
     println!("read {read:?} parse {:?} discover {:?} lower {:?}; {} functions, {} bytes", parse - read, discover - parse, lower - discover, program.functions.len(), out.wasm.len());
 }

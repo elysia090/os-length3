@@ -17,7 +17,7 @@ static long size_of(int fd) { struct stat st; fstat(fd, &st); return (long)st.st
 
 int main(void) {
   setvbuf(stdout, 0, _IONBF, 0);
-  const char *a = "/tmp/xlat-calls-a", *b = "/tmp/xlat-calls-b";
+  const char *a = "/tmp/muk-calls-a", *b = "/tmp/muk-calls-b";
   int fa = open(a, O_RDWR | O_CREAT | O_TRUNC, 0644);
   for (int i = 0; i < 1000; i++) dprintf(fa, "line %04d\n", i);
   printf("written: %ld\n", size_of(fa));
@@ -42,7 +42,7 @@ int main(void) {
   printf("copy_file_range: %zd, from %ld to %ld, \"%.35s\"\n", n, (long)from, (long)to, buf);
 
   // fallocate: room made (size grows, reads zero), kept size, a hole punched.
-  int fc = open("/tmp/xlat-calls-c", O_RDWR | O_CREAT | O_TRUNC, 0644);
+  int fc = open("/tmp/muk-calls-c", O_RDWR | O_CREAT | O_TRUNC, 0644);
   write(fc, "abcdefghij", 10);
   printf("fallocate: %d size %ld\n", fallocate(fc, 0, 0, 4096), size_of(fc));
   printf("keep size: %d size %ld\n", fallocate(fc, FALLOC_FL_KEEP_SIZE, 0, 8192), size_of(fc));
@@ -53,7 +53,7 @@ int main(void) {
   printf("fallocate a pipe: %d %s\n", r, strerror(errno));
 
   // memfd_create: a file in no directory, written, mapped, read back.
-  int fm = memfd_create("xlat", MFD_CLOEXEC);
+  int fm = memfd_create("muk", MFD_CLOEXEC);
   write(fm, "memory file", 11);
   char *p = mmap(0, 4096, PROT_READ, MAP_SHARED, fm, 0);
   printf("memfd: %ld \"%.11s\" cloexec %d\n", size_of(fm), p, !!(fcntl(fm, F_GETFD) & FD_CLOEXEC));
@@ -76,6 +76,6 @@ int main(void) {
   printf("pwritev2 at its own offset: %zd, now %ld, \"%.8s\"\n", n, (long)lseek(fb, 0, SEEK_CUR), buf);
 
   printf("personality: %d\n", personality(0xffffffff));
-  unlink(a); unlink(b); unlink("/tmp/xlat-calls-c");
+  unlink(a); unlink(b); unlink("/tmp/muk-calls-c");
   return 0;
 }

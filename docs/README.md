@@ -64,7 +64,7 @@ tracked in issue #20.
   that root and nothing else: with none installed yet it says so and
   Runtime installs one (it never falls back to the browser's way, whose
   files its build does not carry). In a browser, the same root through
-  the xlat translator in a Worker, on the open repo: its own BusyBox `sh`, coreutils, git, gcc, make and root3, at the
+  sods in a Worker, on the open repo: its own BusyBox `sh`, coreutils, git, gcc, make and root3, at the
   same paths with the same bytes. What the shell changes under `/root/<repo>` is
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,
@@ -82,7 +82,7 @@ tracked in issue #20.
   with `npm run webroot` (`scripts/webroot.sh`: the translator from this tree and the
   newest root `root3/core/src/root/pins.rs` pins), and check it against that root
   with `npm run webroot:parity -- ROOT public/webroot`; `node scripts/webroot-runnable.ts
-  public/webroot ROOT_DIR` says which programs of it run under xlat today.
+  public/webroot ROOT_DIR` says which programs of it run under muk today.
 
 ## root3: the same OS on the command line
 
@@ -349,7 +349,7 @@ signed in, since forgetting what was agreed would undo an unsent change (a
 file removed here) at the next sign-in.
 
 On the host it uses the app's data directory (`$LENGTH3_HOME` overrides):
-`cargo install --path cli`. The same binary, built static for xlat, is
+`cargo install --path cli`. The same binary, built static for sods, is
 `/usr/bin/root3` in the root and `/bin/root3` in a browser's Prompt, where only
 the open repo is present and Home, the Remote and the device are left to
 the app.
@@ -625,7 +625,7 @@ its requests answered by the test's own Remote.
 
 Each build carries only its own host's part, decided when it is built
 (`vite.config.ts`: the desktop app's when Tauri's CLI runs the build). The
-web's alone (the browser's core and its worker, the web root and xlat,
+web's alone (the browser's core and its worker, the web root and muk,
 passkeys) each has a `.desktop.ts` beside it with the same exports, which the
 app's build takes instead, and leaves out `public/webroot`; Tauri's API
 (`root3/app/host/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
@@ -656,13 +656,13 @@ cancels the older run. Jobs run side by side, so a run takes as long as its long
 | --- | --- |
 | Core (wasm) | the core for the browser (`root3/core/web`, `wasm32-wasip1`), cached by its sources |
 | Web root | `public/webroot` from the pinned root, checked against that root; cached by the root and the translator |
-| Commands | every command of issue #80 under xlat and natively; the table `help` reads checked against the results |
+| Commands | every command of issue #80 under muk and natively; the table `help` reads checked against the results |
 | Typecheck | `tsc --noEmit` |
 | Unit (n/4) | `npm test`, each shard every fourth file (`NODE_OPTIONS=--test-shard=1/4 npm test` locally) |
 | Selftest (n/4) | Playwright in Chromium, one Remote and one build of the app per shard, `@slow` Prompt tests included |
 | Lint | clippy `-D warnings` on the core, root3/core/web and root3, natively and for `wasm32-wasip1` |
 | Rust | `cargo test` for the core and root3, then `npm run selftest:cli` |
-| xlat (native, prompt) | the translator against native; root3 (static, musl) run under it |
+| muk in a browser (native, prompt) | the translator against native; root3 (static, musl) run under it |
 | Desktop (target) | the app built and bundled on macOS, Windows and Linux on Arm |
 | AppArmor | the .deb's profile on stock Ubuntu 24.04 |
 | Root | the root built, assembled and used as a Prompt uses it; only when its inputs change |

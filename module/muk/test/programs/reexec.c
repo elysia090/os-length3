@@ -4,7 +4,7 @@
 // memory one before it let go of (Kernel.takeMemory): what it computes is the same throughout. The first run goes on
 // after a child of it has run it again (and so gathered it), calling functions it had not reached: those are still
 // translated for it, the first translation it runs on.
-// xlat: stripped
+// sods: stripped
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

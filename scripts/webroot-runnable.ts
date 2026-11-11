@@ -1,13 +1,13 @@
 // Which of root3's programs the browser's Prompt can run today: each program
 // of the root (every executable under /usr/bin, /usr/sbin and /usr/libexec,
 // BusyBox's applets by their links) is run once with `--version` under the
-// xlat kernel in node, mounted from root3's packs as the browser mounts it
+// muk in node, mounted from root3's packs as the browser mounts it
 // (with its translations made ahead of time), and once on this machine's
 // kernel in the same root (bwrap: its own /, /dev, /proc, as a Prompt has), and the two are compared:
 //
 //   runs     the same exit status and output as native (or, as native, no end)
-//   not yet  xlat cannot run it yet: it ends otherwise than native (and the
-//            system calls it was answered ENOSYS), what xlat said (an
+//   not yet  muk cannot run it yet: it ends otherwise than native (and the
+//            system calls it was answered ENOSYS), what muk said (an
 //            instruction it does not translate, a refusal), or no end
 //            within the time given
 //
@@ -16,13 +16,13 @@
 //
 //   node scripts/webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm]
 //
-// --fresh: this checkout's translator (../module/sods's wasm build), every program translated as it runs, not what WEB carries.
+// --fresh: this checkout's translator (../module/sods' wasm build), every program translated as it runs, not what WEB carries.
 // --warm: each line run once before the run timed, what it translated kept between runs as a browser keeps it (Cache
 // Storage, keeper.ts): the time of a Prompt that ran its programs before, not of the first one.
 //
 // WEB is the web root (public/webroot; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
-// is root3's own (its index names it), else ../module/sods's wasm build.
+// is root3's own (its index names it), else ../module/sods' wasm build.
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
@@ -30,7 +30,7 @@ import {fileURLToPath} from 'node:url';
 import type {Kernel} from '../module/muk/runtime/process.ts';
 import {openWeb, type Index} from './webroot-tree.ts';
 
-/** What one program run under xlat says: its wait status, its output, and how long it took. */
+/** What one program run under muk says: its wait status, its output, and how long it took. */
 interface Ran { status: number | null; stdout: string; stderr: string; error: string | null; ms: number }
 /** What the child (`--child`) is asked to run, and in what environment (ENV unless said). */
 export interface Asked { web: string; path: string; args: string[]; translator: string; fresh: boolean; kept: string | null; env?: string[] }
@@ -81,14 +81,14 @@ async function keptIn(dir: string) {
   return {kept: {cache: 'webroot', at}, save};
 }
 
-/** One program under xlat, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
+/** One program under muk, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
 async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV}: Asked) {
   const {Vfs} = await import('../module/muk/runtime/fs.ts');
   const {mountPack, provide} = await import('../module/muk/runtime/mount.ts');
   const {Kernel} = await import('../module/muk/runtime/process.ts');
-  // As a cross-origin isolated page runs it: each thread in a Worker of its own (XLAT_INLINE=1: all in turn here).
+  // As a cross-origin isolated page runs it: each thread in a Worker of its own (MUK_INLINE=1: all in turn here).
   const {RemoteKernel, canRunApart} = await import('../module/muk/runtime/remote.ts');
-  const apart = canRunApart() && !process.env.XLAT_INLINE;
+  const apart = canRunApart() && !process.env.MUK_INLINE;
   const {loadTranslator} = await import('../module/sods/runtime/translator.ts');
   const {keeper} = await import('../module/muk/runtime/keeper.ts');
   const {taken} = await import('../module/sods/runtime/kept.ts');
@@ -216,7 +216,7 @@ async function main() {
   const [web, rootDir] = args;
   if (!web || !rootDir) { console.error('usage: webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
   const w = openWeb(web);
-  const translator = new URL('../module/sods/target/wasm32-unknown-unknown/release/xlat.wasm', import.meta.url).pathname;
+  const translator = new URL('../module/sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url).pathname;
   if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: root3 names none, and ${translator} is not built`);
   // What each file is, by its first bytes (ELF, a script and its interpreter).
   const head = (path: string) => { const f = w.index.files.find((x) => x.path === path); return f ? w.read(f).subarray(0, 128) : Buffer.alloc(0); };
@@ -239,20 +239,20 @@ async function main() {
   const md = [
     `# Which programs of root3 the browser's Prompt runs`,
     '',
-    `${about}. Each program is run under the xlat kernel in node (mounted from root3's packs as the browser mounts it, with its translations made ahead of time) and natively in the same root (bwrap: its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node scripts/webroot-runnable.ts\`.`,
+    `${about}. Each program is run under the muk in node (mounted from root3's packs as the browser mounts it, with its translations made ahead of time) and natively in the same root (bwrap: its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node scripts/webroot-runnable.ts\`.`,
     '',
     `- **runs**: the same exit status and output as native (or, as native, no end)`,
-    `- **not yet**: present, not yet runnable under xlat: it ends otherwise than native (what differs, the system calls it was answered ENOSYS), xlat said why, or no end within the time`,
+    `- **not yet**: present, not yet runnable under muk: it ends otherwise than native (what differs, the system calls it was answered ENOSYS), box said why, or no end within the time`,
     '',
     `## Work, a line of sh each (${work.length}): ${tally(work, 'runs')} run, ${tally(work, 'not yet')} not yet`,
     '',
-    '| Work | Line | Under xlat | Why | Native exit | ms | Says |',
+    '| Work | Line | Under muk | Why | Native exit | ms | Says |',
     '| --- | --- | --- | --- | --- | --- | --- |',
     ...work.map((r) => `| ${r.name} | \`${cell(r.what)}\` | ${r.verdict} | ${cell(r.why)} | ${r.native} | ${r.ms ?? ''} | ${cell(r.first)} |`),
     '',
     `## Every program, \`--version\` (${rows.length}): ${tally(rows, 'runs')} run, ${tally(rows, 'not yet')} not yet`,
     '',
-    '| Program | What | Under xlat | Why | Native exit | ms | Says |',
+    '| Program | What | Under muk | Why | Native exit | ms | Says |',
     '| --- | --- | --- | --- | --- | --- | --- |',
     ...rows.map((r) => `| \`${r.name}\` | ${r.what} | ${r.verdict} | ${cell(r.why)} | ${r.native} | ${r.ms ?? ''} | ${cell(r.first)} |`),
     '',
@@ -264,7 +264,7 @@ async function main() {
     console.log(`${work.length} lines of work: ${tally(work, 'runs')} run as native, ${tally(work, 'not yet')} not yet`);
     // How long each took, natively and in the browser's kernel (its own work: the program, not node starting).
     const timed = work.flatMap((w) => (w.verdict === 'runs' && w.ms && w.nativeMs ? [{...w, ms: w.ms}] : []));
-    for (const w of timed) console.log(`  ${String(w.nativeMs).padStart(6)} ms native  ${String(w.ms).padStart(6)} ms xlat  ${(w.ms / w.nativeMs).toFixed(2).padStart(6)}x  ${w.name}`);
+    for (const w of timed) console.log(`  ${String(w.nativeMs).padStart(6)} ms native  ${String(w.ms).padStart(6)} ms box  ${(w.ms / w.nativeMs).toFixed(2).padStart(6)}x  ${w.name}`);
     const geo = Math.exp(timed.reduce((a, w) => a + Math.log(w.ms / w.nativeMs), 0) / Math.max(1, timed.length));
     if (timed.length) console.log(`  geometric mean ${geo.toFixed(2)}x over ${timed.length}`);
   }
@@ -369,7 +369,7 @@ function sameShape(path: string, a: string, b: string): boolean {
   return path === '/usr/bin/ps' ? kinds(x) === kinds(y) : x.join('\n') === y.join('\n');
 }
 
-/** Each of `items` ({name, what, path, args}) under xlat and natively, `jobs` at a time: one row each. */
+/** Each of `items` ({name, what, path, args}) under muk and natively, `jobs` at a time: one row each. */
 async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, fresh, kept}:
   {web: string; rootDir: string; translator: string; jobs: number; seconds: number; fresh: boolean; kept: string | null}): Promise<Row[]> {
   const rows: Row[] = [];
@@ -386,21 +386,21 @@ async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, 
       // Warm: run once first, keeping what it translates (a Prompt that ran it before).
       if (kept) await under({});
       // Timed as it runs; traced (every system call, which costs) only when it did not run, to say what it lacked.
-      const xlat = await under({});
+      const box = await under({});
       let x: Ran | null = null;
-      try { x = JSON.parse(xlat.stdout); } catch { /* ended without saying: killed, or the kernel threw */ }
+      try { x = JSON.parse(box.stdout); } catch { /* ended without saying: killed, or the kernel threw */ }
       const nativeStatus = native.timedOut ? 'no end' : native.signal ? `signal ${native.signal}` : native.code;
       let verdict: Row['verdict'], why = '';
-      if (xlat.timedOut) {
+      if (box.timedOut) {
         if (native.timedOut) verdict = 'runs';
         else { verdict = 'not yet'; why = `no end within ${seconds} s`; }
       }
-      else if (!x) { verdict = 'not yet'; why = (xlat.stderr.split('\n').filter((l) => l && !l.startsWith('[')).pop() ?? 'the kernel stopped').slice(0, 160); }
+      else if (!x) { verdict = 'not yet'; why = (box.stderr.split('\n').filter((l) => l && !l.startsWith('[')).pop() ?? 'the kernel stopped').slice(0, 160); }
       else if (x.error) { verdict = 'not yet'; why = x.error.slice(0, 160); }
       else {
         const st = x.status ?? 0;
         const xs = st & 0x7f ? `signal ${st & 0x7f}` : st >> 8;
-        const said = x.stderr.split('\n').find((l) => l.startsWith('xlat:'));
+        const said = x.stderr.split('\n').find((l) => /^(sods|muk):/.test(l));
         if (said) { verdict = 'not yet'; why = said.slice(0, 160); }
         else if (xs === nativeStatus && (x.stdout === native.stdout || sameShape(p.path, x.stdout, native.stdout))) verdict = 'runs';
         else {
@@ -411,9 +411,9 @@ async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, 
         }
       }
       if (verdict !== 'runs') {
-        // The system calls xlat has no answer for, by number, from a trace of a run again (a trace costs, so the run
+        // The system calls muk has no answer for, by number, from a trace of a run again (a trace costs, so the run
         // timed has none).
-        const trace = (await under({XLAT_SYSCALLS: '1'})).stderr;
+        const trace = (await under({MUK_SYSCALLS: '1'})).stderr;
         const missing = [...trace.matchAll(/syscall (\d+) \(none\)/g)].map((m) => Number(m[1]));
         const enosys = [...trace.matchAll(/\] syscall (\d+)[^\n]*\n\[\d+\]   = -38\n/g)].map((m) => Number(m[1]));
         const calls = [...new Set([...missing, ...enosys])].sort((a, b) => a - b);

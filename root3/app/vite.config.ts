@@ -88,7 +88,7 @@ const coreWasm = (): Plugin => ({
 /**
  * What only one host has, left out of the other's build. A module of one host's alone has a stand-in beside
  * it with the same exports, which the other host's build takes in its place: `X.desktop.ts` for the web's
- * (the browser's core and its worker, the web root and xlat that runs it, passkeys), since the app
+ * (the browser's core and its worker, the web root and muk that runs it, passkeys), since the app
  * runs its own core, the root installed on the machine and signs in through the browser; `X.web.ts` for the
  * app's (Tauri's API), which a browser never has.
  */
@@ -177,7 +177,7 @@ export default defineConfig({
   server: {port: 1420, strictPort: true, fs: {allow: [TOP]}, headers: ISOLATED,
     proxy: DEV_REMOTE ? Object.fromEntries(WORKER_FIRST.map((p) => [p, DEV_REMOTE])) : undefined},
   worker: {format: 'es'},
-  // xlat's runtime reaches for Node's workers only under Node: in the browser bundle that module is nothing.
+  // muk's runtime reaches for Node's workers only under Node: in the browser bundle that module is nothing.
   resolve: {alias: [{find: 'node:worker_threads', replacement: fileURLToPath(new URL('./shims/worker-threads.ts', import.meta.url))}]},
   define: {__LENGTH3_HOST__: JSON.stringify(HOST)},
   // Most of a build is the core compiled for the browser (coreWasm's buildStart, cargo), which Rolldown would

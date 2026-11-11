@@ -10,7 +10,7 @@ import type {Termios} from '../../runtime/parts.ts';
 import {loadTranslator} from '../../../sods/runtime/translator.ts';
 
 const stage = new URL('../../../../target/userland/', import.meta.url);
-export const have = ['busybox', 'busybox.wasm', 'xlat.wasm'].every((f) => existsSync(new URL(f, stage)));
+export const have = ['busybox', 'busybox.wasm', 'sods.wasm'].every((f) => existsSync(new URL(f, stage)));
 
 /** A shell run: its kernel, what is to be typed, how its terminal was set at each change, and what it wrote. */
 export interface Shell { kernel: Kernel; input: Uint8Array[]; modes: Pick<Termios, 'iflag' | 'oflag' | 'lflag'>[]; out: () => string }
@@ -23,7 +23,7 @@ export async function shell(script: string, applets = ['sh', 'cat', 'sleep'], {i
   const modes: Shell['modes'] = [];
   let out = '';
   const kernel = new Kernel({
-    vfs, translate: await loadTranslator(readFileSync(new URL('xlat.wasm', stage))),
+    vfs, translate: await loadTranslator(readFileSync(new URL('sods.wasm', stage))),
     console: {
       interactive,
       screen: interactive, cols: 80, rows: 24,

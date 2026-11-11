@@ -23,7 +23,7 @@ static void said(const char *what, long r) { printf("%s: %ld %s\n", what, r, r <
 
 int main(void) {
   setvbuf(stdout, 0, _IONBF, 0);
-  const char *f = "/tmp/xlat-xattrs", *l = "/tmp/xlat-xattrs-link";
+  const char *f = "/tmp/muk-xattrs", *l = "/tmp/muk-xattrs-link";
   unlink(f); unlink(l);
   FILE *o = fopen(f, "w"); fputs("x", o); fclose(o);
   said("set user.colour", setxattr(f, "user.colour", "blue", 4, 0));

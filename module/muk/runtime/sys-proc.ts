@@ -437,7 +437,7 @@ export const PROC_CALLS: Calls = {
   60(code) { this.kernel.exitThread(this.task, exitStatus(N(code))); throw new Exit(exitStatus(N(code))); },
   61(pid, status, options, rusage) { return wait4(this, pid, status, options, rusage); },
   63(buf) {
-    const fields = ['Linux', this.kernel.hostname ?? 'length3', '6.1.0', '#1 xlat', 'x86_64', this.kernel.domainname ?? '(none)'];
+    const fields = ['Linux', this.kernel.hostname ?? 'length3', '6.1.0', '#1 muk', 'x86_64', this.kernel.domainname ?? '(none)'];
     this.bytes.fill(0, N(buf), N(buf) + 390);
     fields.forEach((s, k) => this.bytes.set(enc.encode(s), N(buf) + k * 65));
     return 0;

@@ -1,11 +1,11 @@
 // What a Prompt can do, command by command (issue #80's list, in its kinds): each tried by a line of sh that uses it
-// as a person would, run under the browser's kernel (xlat, in node, from the web root) and natively in the same
+// as a person would, run under muk as a browser has it (in node, from the web root) and natively in the same
 // root (bwrap), and the two compared. A command is marked by what was seen, never by what is hoped:
 //
 //   +  runs here: every line that uses it ends as natively, saying the same
 //   t  draws on a screen (an editor, a pager, top): runs where the Prompt is a terminal (the app's on the web, one
 //      over SSH), not where it shows output alone (TERM=dumb, the desktop app's); `help` says which holds there
-//   x  in the root, but some line that uses it does not end as natively under xlat (what differs is said)
+//   x  in the root, but some line that uses it does not end as natively under muk (what differs is said)
 //   -  not in the root (and what to reach for instead, where there is something)
 //
 // The table it writes, module/ricebox/etc/length3/commands, is what `help` shows (otter): one line a command, its name,
@@ -210,12 +210,12 @@ const sandbox = (root: string) => ['--unshare-all', '--unshare-user', '--uid', '
 /** What a line did, natively and here, and whether those are the same. */
 export interface Tried { line: Line; same: boolean; native: Ended; here: Ended & {error: string | null} }
 
-/** A line natively, then under xlat (webroot-runnable.ts --child runs one program as the browser's Prompt runs it). */
+/** A line natively, then under muk (webroot-runnable.ts --child runs one program as the browser's Prompt runs it). */
 async function attempt(line: Line, web: string, root: string, seconds: number): Promise<Tried> {
   const native = await run('bwrap', [...sandbox(root), '/bin/sh', '-c', line.line], seconds);
   // The same environment as natively: what a person's Prompt has.
-  const asked: Asked = {web, path: '/bin/sh', args: ['-c', line.line], translator: `${OS}module/sods/target/wasm32-unknown-unknown/release/xlat.wasm`, fresh: false, kept: null, env: ENV};
-  const child = await run(process.execPath, [`${OS}scripts/webroot-runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, XLAT_INLINE: '1'});
+  const asked: Asked = {web, path: '/bin/sh', args: ['-c', line.line], translator: `${OS}module/sods/target/wasm32-unknown-unknown/release/sods.wasm`, fresh: false, kept: null, env: ENV};
+  const child = await run(process.execPath, [`${OS}scripts/webroot-runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, MUK_INLINE: '1'});
   let said: {status: number | null; stdout: string; stderr: string; error: string | null} | null = null;
   try { said = JSON.parse(child.stdout); } catch { /* it ended without saying: killed, or the kernel threw */ }
   // A wait status: an exit's code, or 128 and the signal, as a shell says it.

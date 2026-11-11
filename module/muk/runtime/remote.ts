@@ -211,12 +211,12 @@ export class RemoteKernel extends Kernel {
       const k = w.kernel;
       if (k && m?.type === 'error') {
         const t = [...k.tasks.values()].find((x) => x.worker === w);
-        k.say(2, enc.encode(`xlat: ${m.message.split('\n')[0]}\n`));
+        k.say(2, enc.encode(`muk: ${m.message.split('\n')[0]}\n`));
         if (t) k.exitProcess(t.proc, 11);
         k.kick();
       }
     });
-    w.onError((e) => { w.kernel?.say(2, enc.encode(`xlat: ${e?.message ?? e}\n`)); });
+    w.onError((e) => { w.kernel?.say(2, enc.encode(`muk: ${e?.message ?? e}\n`)); });
     return w;
   }
 

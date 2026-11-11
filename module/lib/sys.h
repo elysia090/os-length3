@@ -166,7 +166,7 @@ __attribute__((noreturn, cold)) void __stack_chk_fail(void) {
 
 /* ---- The time, in seconds since 1970: the kernel's own clock_gettime, in the vDSO it maps into a process
  * (AT_SYSINFO_EHDR), with no call into it. Found by name among the vDSO's symbols (its DT_HASH says how many); where
- * there is none (xlat's processes), the call. */
+ * there is none (muk's processes), the call. */
 
 static const u8 *vdso_at;
 static inline u32 clock_s(void) {

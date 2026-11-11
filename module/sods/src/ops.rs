@@ -1159,7 +1159,7 @@ impl Fx<'_> {
 
     pub(crate) fn cpuid(&mut self) {
         // A plain core: SSE2 and SSE3, CMPXCHG16B and POPCNT; no SSSE3, SSE4 or AVX, so a
-        // libc choosing its string routines by cpuid takes the SSE2 ones xlat translates.
+        // libc choosing its string routines by cpuid takes the SSE2 ones sods translates.
         self.get(l_reg(RAX)); self.e(I32_WRAP_I64); self.e(I32_EQZ);
         self.if_();
         self.c64(1); self.set(l_reg(RAX));
@@ -1965,7 +1965,7 @@ fn f64x2_splat(v: f64) -> i128 { let u = v.to_bits() as u128; (u | u << 64) as i
 // ---- x87: an exact 80-bit coprocessor, the translator's own (x87.rs) ----
 
 // The operations it does are crate::x87::NAMES, in the order of the `fpu` op index; the list is embedded in the
-// module (xlat.fpu), so the host runs it only with a coprocessor that numbers them the same.
+// module (sods.fpu), so the host runs it only with a coprocessor that numbers them the same.
 
 fn st(r: Register) -> Option<u32> {
     let n = r as u32;

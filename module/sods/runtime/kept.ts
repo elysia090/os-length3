@@ -63,7 +63,7 @@ export function taken(main: Uint8Array<ArrayBuffer>, more: Uint8Array | null): T
   const module = new WebAssembly.Module(wasm);
   // Only the modules that follow on from this one (each from the table slot the one before it ended at): what was
   // kept of code reached later from an earlier translation of the program (before it was consolidated) is not.
-  let slots = (WebAssembly.Module.customSections(module, 'xlat.starts')[0]?.byteLength ?? 0) / 8;
+  let slots = (WebAssembly.Module.customSections(module, 'sods.starts')[0]?.byteLength ?? 0) / 8;
   const extras: More[] = [];
   for (const e of more ? unpackMore(more) : []) {
     if (e.base !== slots) break;
@@ -74,10 +74,10 @@ export function taken(main: Uint8Array<ArrayBuffer>, more: Uint8Array | null): T
   return {module, segments, size: wasm.length, more: extras.map((e, k) => ({module: modules[k], bytes: e.bytes, base: e.base}))};
 }
 
-/** How many functions a module of code reached later adds (its xlat.starts section, read from its bytes). */
+/** How many functions a module of code reached later adds (its sods.starts section, read from its bytes). */
 function startsIn(bytes: Uint8Array): number {
   const leb = (at: number): [number, number] => { let v = 0, shift = 0, b; do { b = bytes[at++]; v += (b & 0x7f) * 2 ** shift; shift += 7; } while (b & 0x80); return [v, at]; };
-  const name = new TextEncoder().encode('xlat.starts');
+  const name = new TextEncoder().encode('sods.starts');
   for (let at = 8; at < bytes.length;) {
     const id = bytes[at];
     const [size, body] = leb(at + 1);

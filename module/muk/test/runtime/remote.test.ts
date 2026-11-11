@@ -21,7 +21,7 @@ async function shell(script: string, {input = null, said = null}: {input?: strin
   let out = '';
   const typed = input ? [new TextEncoder().encode(input)] : [];
   const kernel = new RemoteKernel({
-    vfs, translate: await loadTranslator(readFileSync(new URL('xlat.wasm', stage))),
+    vfs, translate: await loadTranslator(readFileSync(new URL('sods.wasm', stage))),
     console: {
       interactive: false,
       write: (fd, b) => { const text = new TextDecoder().decode(b); out += text; said?.push([fd, text]); },

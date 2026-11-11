@@ -4,7 +4,7 @@
 //! while gcc runs.
 fn main() {
     let a: Vec<String> = std::env::args().collect();
-    let elf = xlat::elf::Elf::parse_owned(std::fs::read(&a[1]).unwrap()).unwrap();
+    let elf = sods::elf::Elf::parse_owned(std::fs::read(&a[1]).unwrap()).unwrap();
     let seeds: Vec<u64> = std::fs::read_to_string(&a[2]).unwrap().split_whitespace().map(|w| w.parse().unwrap()).collect();
     let mut known = std::collections::BTreeSet::new();
     let budget: usize = std::env::var("BUDGET").ok().and_then(|b| b.parse().ok()).unwrap_or(usize::MAX);
@@ -15,11 +15,11 @@ fn main() {
     let (mut functions, mut instructions, mut bytes) = (0, 0, 0);
     for s in seeds {
         let t = std::time::Instant::now();
-        let program = xlat::find::discover_within(&elf, &[s], &known, budget);
+        let program = sods::find::discover_within(&elf, &[s], &known, budget);
         discover += t.elapsed();
         known.extend(program.functions.iter().map(|f| f.start));
         let t = std::time::Instant::now();
-        let out = xlat::image::translate_more(&elf, &program, 0, Default::default());
+        let out = sods::image::translate_more(&elf, &program, 0, Default::default());
         lower += t.elapsed();
         functions += program.functions.len();
         for f in &program.functions {

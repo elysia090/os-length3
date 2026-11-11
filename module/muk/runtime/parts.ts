@@ -109,7 +109,7 @@ export interface Mem extends WebAssembly.Memory {
 
 // ---- a loaded program ----
 
-/** The loader's facts of a translation (image.rs's xlat.facts). */
+/** The loader's facts of a translation (image.rs's sods.facts). */
 export interface Facts {
   entry: number;
   phdr: number;

@@ -9,7 +9,7 @@ repository pins by its recipe, static, hardened and checked by use.
 | Ships | What it is |
 | --- | --- |
 | root3 | the releases below: the root, the web root, the web app and the desktop app, with `root3` in each |
-| [`module/sods`](module/sods/) | the x86-64 → WebAssembly translator (`xlat`, and as wasm with its runtime) |
+| [`module/sods`](module/sods/) | the x86-64 → WebAssembly translator (`sods`, and as wasm with its runtime) |
 | [`module/muk`](module/muk/) | the machine, an OCI-compatible VMM: a box run from an image's layers, on Linux by its namespaces, in a browser by answering its system calls itself |
 | [`module/ricebox`](module/ricebox/) | the neutral distribution, as BusyBox is one: the root, each package from its pinned source by its recipe |
 | [`module/you`](module/you/), [`module/otter`](module/otter/), [`module/lib`](module/lib/) | units of C with no C library: z, rg, fd and fzf; help and what each thing is; what they stand on |

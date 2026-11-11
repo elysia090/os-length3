@@ -10,7 +10,7 @@ vfs.mkdirp('/root');
 const input = [new TextEncoder().encode('echo hi\nexit\n')];
 let out = '';
 const kernel = new Kernel({
-  vfs, translate: await loadTranslator(readFileSync('../os/target/userland/xlat.wasm')),
+  vfs, translate: await loadTranslator(readFileSync('../os/target/userland/sods.wasm')),
   console: {interactive: true, screen: true, cols: 80, rows: 24, write: (_, b) => { out += new TextDecoder().decode(b); }, read: () => input.shift() ?? null, ready: () => input.length > 0},
 });
 kernel.prebuilt(bash, new WebAssembly.Module(readFileSync(`${S}/bash.wasm`)));

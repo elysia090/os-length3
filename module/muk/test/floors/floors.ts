@@ -2,9 +2,9 @@
 //
 //   node tests/floors/floors.ts [os|code] [N]     os: the OS's primitives (os.c); code: translated code (code.c)
 //
-// Each is built static (musl-gcc, its relocations kept, as xlat needs) and run three ways: natively; translated,
+// Each is built static (musl-gcc, its relocations kept, as sods needs) and run three ways: natively; translated,
 // each thread in a Worker of its own (as a cross-origin isolated page runs them); and translated, every thread in
-// this one (XLAT_INLINE=1, as a page that is not runs them). N runs only the Nth floor. A floor beside Linux is its
+// this one (MUK_INLINE=1, as a page that is not runs them). N runs only the Nth floor. A floor beside Linux is its
 // ratio, translated over native: under 1, it is lower than Linux's.
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync, rmSync} from 'node:fs';
@@ -15,7 +15,7 @@ import {fileURLToPath} from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const kinds = process.argv[2] === 'code' ? ['code'] : process.argv[2] === 'os' ? ['os'] : ['os', 'code'];
 const only = process.argv[3] ? [process.argv[3]] : [];
-const dir = mkdtempSync(join(tmpdir(), 'xlat-floors-'));
+const dir = mkdtempSync(join(tmpdir(), 'muk-floors-'));
 
 /** "name   12.34 us" lines as [name, value]. */
 const read = (out: string): [string, number][] =>
@@ -29,7 +29,7 @@ try {
       read(execFileSync(cmd[0], [...cmd.slice(1), ...only], {encoding: 'utf8', env: {...process.env, ...env}, maxBuffer: 1 << 24}));
     const native = run({}, exe);
     const apart = run({}, process.execPath, join(here, '..', '..', 'runtime', 'run.ts'), exe);
-    const inline = run({XLAT_INLINE: '1'}, process.execPath, join(here, '..', '..', 'runtime', 'run.ts'), exe);
+    const inline = run({MUK_INLINE: '1'}, process.execPath, join(here, '..', '..', 'runtime', 'run.ts'), exe);
     const unit = kind === 'os' ? 'us' : 'ns';
     console.log(`${kind === 'os' ? 'the OS' : 'translated code'} (${unit} a time)`.padEnd(28) + 'Linux'.padStart(12) + 'Workers'.padStart(12) + 'in turn'.padStart(12) + '   ×Linux');
     native.forEach(([name, n], k) => {

@@ -11,7 +11,7 @@ import {loadTranslator} from '../../../sods/runtime/translator.ts';
 // it printed the same as it printed natively.
 
 const out = new URL('../programs/out/', import.meta.url);
-const wasm = new URL('../../../sods/target/wasm32-unknown-unknown/release/xlat.wasm', import.meta.url);
+const wasm = new URL('../../../sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url);
 const have = existsSync(new URL('reexec', out)) && existsSync(new URL('reexec.native', out)) && existsSync(wasm);
 
 test('a program run again is one module, on a memory let go of, and says what it said natively', {skip: !have}, async () => {

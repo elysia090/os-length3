@@ -114,7 +114,7 @@ static void server(const char *how, struct sockaddr_un *a, socklen_t len) {
 
 static void named(void) {
   struct sockaddr_un a = {.sun_family = AF_UNIX};
-  snprintf(a.sun_path, sizeof a.sun_path, "/tmp/xlat-sockets-test");
+  snprintf(a.sun_path, sizeof a.sun_path, "/tmp/muk-sockets-test");
   unlink(a.sun_path);
   server("path", &a, sizeof a);
   struct stat st;
@@ -126,7 +126,7 @@ static void named(void) {
   close(c);
   unlink(a.sun_path);
   struct sockaddr_un b = {.sun_family = AF_UNIX};
-  memcpy(b.sun_path + 1, "xlat-abstract", 13);
+  memcpy(b.sun_path + 1, "muk-abstract", 13);
   server("abstract", &b, sizeof(sa_family_t) + 14);
 }
 

@@ -1089,7 +1089,7 @@ static void pair_change(struct pair *pp, const u8 *s, u64 i, const u8 *lit, u32 
   pp->changes++, pp->miss = pp->seen = 0;
 }
 /* Whether this core runs AVX2 and the kernel keeps its registers (cpuid's leaf 7, and XGETBV's YMM state): a part of
- * the text is then looked at 64 bytes a step. xlat (the browser) says it has no AVX: there the 16-byte way. Asked once,
+ * the text is then looked at 64 bytes a step. sods (the browser) says it has no AVX: there the 16-byte way. Asked once,
  * before any thread (grep_init). */
 static int avx2;
 static void avx2_ask(void) {
@@ -1161,7 +1161,7 @@ __attribute__((target("avx2"))) static u64 lit_find_avx2(const u8 *s, u64 n, u64
   return !ci || (up(lit[a]) == lit[a] && up(lit[b]) == lit[b]) ? lit_steps(s, n, from, lit, litn, ci, pp, 1)
                                                                 : lit_steps(s, n, from, lit, litn, ci, pp, 0);
 }
-/* lit_find (below), 64 places a step, in 16-byte registers (xlat's: the browser has no AVX). */
+/* lit_find (below), 64 places a step, in 16-byte registers (sods': the browser has no AVX). */
 static u64 lit_find16(const u8 *s, u64 n, u64 from, const u8 *lit, u32 litn, int ci, struct pair *pp) {
   u32 a = pp->a, b = pp->b;
   u8 f0 = lit[a], l0 = lit[b];

@@ -67,7 +67,7 @@ export function violations(): [string, string, string, string, string][] {
  * takes from another that takes back from it, however far round), in any of ACYCLIC. None is allowed: within a module
  * too, what a file stands on is under it.
  */
-/** Where no file may reach back to itself: the app, the Remote, these scripts, and xlat's runtime the Prompt runs. */
+/** Where no file may reach back to itself: the app, the Remote, these scripts, and muk's runtime the Prompt runs. */
 export const ACYCLIC = ['root3/app', 'root3/remote', 'scripts', 'module/sods/runtime', 'module/muk/runtime'];
 
 export function cycles(): string[][] {

@@ -49,7 +49,7 @@ inside out, so that nothing of a product is left further in than the product.
 | the kernel | was `module/ricebox/kernel` | the machine in a browser | muk's `runtime/` and `src/tree.h`: done |
 | the root | was `root/` | the distribution | ricebox, its folder: done |
 | src, the OS | was `src/` | the product | `root3/`: done |
-| xlat | sods' crate, its program and its wasm; `XLAT_*`; the jobs' names; 338 mentions | sods, and where it meant the box's runner, muk | `sods`; `SODS_*` and `MUK_*` |
+| xlat | was sods' crate, its program and its wasm, `XLAT_*`, the jobs' names; 338 mentions | sods, and where it meant what runs a box, muk | `sods`, `SODS_*`; `MUK_*`: done |
 | length3, Length³ OS, os-length3, OS Length3 Linux, l3 | the crates (`length3-core`, `length3-os`), `LENGTH3_*`, `/etc/length3` and the hostname in ricebox, the releases' names; 1,111 mentions | root3 where it is the product; ricebox where it is the root; nothing where it is muk's | `root3-*`, `ROOT3_*`; `/etc/ricebox`; `ricebox-0.6.4-…`, `root3-0.0.1-…` |
 | the core | `root3/core`, 15,687 lines, fourteen parts that take from each other in rings | what root3 says of a repo, its history, Home, a device; with a box run (muk's) and the Remote's client (shipto's) in it | a folder of root3 to each part; `prompt` the bundle root3 writes for muk; `compute` gone |
 | the web root | `scripts/webroot*.ts`, `public/webroot`, `…-l3-web.tar`; 260 mentions | ricebox as layers | ricebox's layers, made by ricebox, read by muk |
@@ -102,7 +102,7 @@ own for the same work.
 
 Names first, from the inside out, since a wrong name is paid at every reading; then the furthest from its bound.
 
-1. **The names**, as the table above: xlat; length3 in ricebox, then everywhere; the core's parts as root3's
+1. **The names**, as the table above: length3 in ricebox, then everywhere; the core's parts as root3's
    folders; the web root; shipto; each unit's scripts and tests in it.
 2. **muk in a browser.** The largest, the least thin, and paid on every call. It is one thread's objects behind a
    channel: a call from another Worker is a round trip (1.9 µs), each makes an array and an object and carries its
@@ -114,7 +114,8 @@ Names first, from the inside out, since a wrong name is paid at every reading; t
    (a call is 8.5× native).
 4. **muk on Linux takes the box from root3's core.** The seccomp filter and the terminal in `muk run`; then a
    Prompt is the bundle root3 writes, and the Firecracker driver goes.
-5. **A release per thing**: `muk`, `sods`, ricebox 0.6.4, root3 0.0.1.
+5. **A release per thing**: `muk`, `sods`, ricebox 0.6.4, root3 0.0.1. Until ricebox is released from this tree, the
+   root a web build takes is the one pinned (0.6.4), whose translator is the one before these names.
 
 ## How a part is made
 

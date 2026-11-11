@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
     waitpid(pid, &status, 0);
     printf("exec child exit=%d\n", WEXITSTATUS(status));
 
-    int fd = open("/tmp/xlat-procs-test", O_CREAT | O_TRUNC | O_RDWR, 0644);
+    int fd = open("/tmp/muk-procs-test", O_CREAT | O_TRUNC | O_RDWR, 0644);
     write(fd, "0123456789", 10);
     lseek(fd, 3, SEEK_SET);
     char c[4] = {0};
@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
     fstat(fd, &st);
     printf("file %s size=%lld\n", c, (long long)st.st_size);
     close(fd);
-    unlink("/tmp/xlat-procs-test");
-    printf("gone=%d\n", access("/tmp/xlat-procs-test", F_OK) != 0);
+    unlink("/tmp/muk-procs-test");
+    printf("gone=%d\n", access("/tmp/muk-procs-test", F_OK) != 0);
     return 0;
 }

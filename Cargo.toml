@@ -24,7 +24,7 @@ strip = true
 inherits = "release"
 opt-level = "z"
 
-# root3 for the Prompt: a full strip would drop the relocations xlat reads; debug info can go.
+# root3 for the Prompt: a full strip would drop the relocations sods reads; debug info can go.
 [profile.prompt]
 inherits = "release"
 strip = "debuginfo"

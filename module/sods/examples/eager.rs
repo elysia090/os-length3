@@ -3,11 +3,11 @@ fn main() {
     let p = std::env::args().nth(1).unwrap();
     let t = std::time::Instant::now();
     let bytes = std::fs::read(&p).unwrap();
-    let elf = xlat::elf::Elf::parse(&bytes).unwrap();
+    let elf = sods::elf::Elf::parse(&bytes).unwrap();
     let a = t.elapsed();
-    let program = xlat::find::discover(&elf);
+    let program = sods::find::discover(&elf);
     let b = t.elapsed();
-    let out = xlat::image::translate(&elf, &program, Default::default());
+    let out = sods::image::translate(&elf, &program, Default::default());
     let c = t.elapsed();
     println!("read+parse {a:?} discover {:?} translate {:?} ({} bytes)", b - a, c - b, out.wasm.len());
 }

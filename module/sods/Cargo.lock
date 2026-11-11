@@ -239,7 +239,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "xlat"
+name = "sods"
 version = "0.1.0"
 dependencies = [
  "iced-x86",
