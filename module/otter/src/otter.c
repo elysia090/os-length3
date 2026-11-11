@@ -260,11 +260,12 @@ static int describe(const char *name) {
 /* whatis: `NAME (1) - what it is`, or that there is nothing. */
 static int whatis(const char *name) {
   u64 mark = used;
+  struct written before = written();
   say(name);
   say(" (1) - ");
   u32 had = words_of(name, first_line);
   if (!had) {
-    niov -= 2;
+    unput(before);
     used = mark;
     say(name);
     say(": nothing appropriate.");

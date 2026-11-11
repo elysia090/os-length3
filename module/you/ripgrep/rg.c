@@ -31,9 +31,9 @@
 #define UNIT "rg"
 #define ARENA (1 << 25) /* the patterns' automata and DFAs, and standard input's text */
 #include "../../lib/io.h"
-#include "regex.c"
-#include "dfa.c"
-#include "grep.c"
+#include "../lib/regex.c"
+#include "../lib/dfa.c"
+#include "../lib/grep.c"
 #include "types.h"
 
 enum { SYS_munmap = 11, SYS_ioctl = 16, SYS_openat = 257 };
@@ -775,6 +775,7 @@ static void head(void) {
 /* What a printed line begins with: its path, number, column and byte offset (-b: `off`), each and its separator (`:`
  * for a line that holds a match, `-` for one around it: --field-match-separator, --field-context-separator). */
 static void prefix(u64 lnum, u64 col, u64 off, u8 sep) {
+  if (!(o.filename && !o.heading) && !o.number && !col && !o.byte_offset) return;
   const char *s = sep == ':' ? (o.field_match ? o.field_match : ":") : (o.field_ctx ? o.field_ctx : "-");
   u64 sn = slen(s);
   if (o.filename && !o.heading) { put_path(); o.nul ? put("\0", 1) : put(s, sn); }
@@ -840,6 +841,7 @@ static void replaced(const u8 *t, u64 ms, u64 me) {
  * that holds one is said to be binary in its place (where it is), and nothing more of the file is printed. */
 static int convert, bin_hit;
 static u64 first_nul(const u8 *t, u64 n);
+static int span(u64 ls, u64 le, u64 *x, u64 *last, u64 *ms, u64 *me);
 /* The line t[ls..le) printed as one that holds a match (`sep` ':') or one around it ('-'). */
 static void print_line(const u8 *t, u64 ls, u64 le, u64 lnum, u8 sep) {
   head();
@@ -859,11 +861,12 @@ static void print_line(const u8 *t, u64 ls, u64 le, u64 lnum, u8 sep) {
   u64 x = ls, last = ~0ull, ms, me;
   if (sep == ':' && (o.only || o.vimgrep || o.column)) {
     int any = 0;
-    while (grep_span(&g, ls, le, &x, &last, &ms, &me)) {
-      if (o.only && ms == me) continue;
+    while (span(ls, le, &x, &last, &ms, &me)) {
+      /* (An empty match is printed too, -o: an empty line, as ripgrep prints it.) */
       any = 1;
       prefix(lnum, o.column || o.vimgrep ? ms - ls + 1 : 0, o.only ? ms : ls, sep);
       if (o.only) {
+        if (!o.colour && !o.replace) { put_line(t + ms, me - ms); continue; }
         if (o.colour) S(MATCH_IN);
         o.replace ? replaced(t, ms, me) : put(t + ms, me - ms);
         if (o.colour) S(OUT);
@@ -888,7 +891,7 @@ static void print_line(const u8 *t, u64 ls, u64 le, u64 lnum, u8 sep) {
   if ((o.colour || o.replace) && sep == ':' && !o.invert) {
     /* Each match in its colour, or replaced (-r: an empty match too, as ripgrep replaces it). */
     u64 at = from;
-    while (grep_span(&g, ls, le, &x, &last, &ms, &me)) {
+    while (span(ls, le, &x, &last, &ms, &me)) {
       if ((ms == me && !o.replace) || ms < at) continue;
       put(t + at, ms - at);
       if (o.colour) S(MATCH_IN);
@@ -901,15 +904,31 @@ static void print_line(const u8 *t, u64 ls, u64 le, u64 lnum, u8 sep) {
   S("\n");
 }
 
+/* The first match on the line at first_ls, as next_match found it, handed to the first walk of that line's matches
+ * (span), which goes on from it: no match is looked for twice. */
+static u64 first_ls = ~0ull, first_x, first_last, first_ms, first_me;
 /* The next line that holds a match (its start), or n: grep.c's, each line it gives checked where it may hold none
- * (spans: the first match found, which grep_span is asked for again as the line is printed). */
+ * (spans: its first match found, and kept for the line's printing). */
 static u64 next_match(const u8 *t, u64 n) {
   for (;;) {
     u64 ls = grep_line(&g);
     if (ls >= n || !spans) return ls;
     u64 le = line_end(t, n, ls), x = ls, last = ~0ull, ms, me;
-    if (grep_span(&g, ls, le, &x, &last, &ms, &me)) return ls;
+    if (grep_span(&g, ls, le, &x, &last, &ms, &me)) {
+      first_ls = ls, first_x = x, first_last = last, first_ms = ms, first_me = me;
+      return ls;
+    }
   }
+}
+/* The next match on the line t[ls..le) (grep_span), the first one as next_match found it when it is asked from the
+ * line's start. */
+static int span(u64 ls, u64 le, u64 *x, u64 *last, u64 *ms, u64 *me) {
+  if (ls == first_ls && *x == ls && *last == ~0ull) {
+    first_ls = ~0ull;
+    *x = first_x, *last = first_last, *ms = first_ms, *me = first_me;
+    return 1;
+  }
+  return grep_span(&g, ls, le, x, last, ms, me);
 }
 /* The next line selected at or after *at: the next that holds a match, or with -v the next that holds none (`nm` the
  * next that does, found once and passed). */
@@ -986,6 +1005,9 @@ static int search_text(const u8 *t, u64 n, int named) {
   convert = !quit && !o.text, bin_hit = 0;
   u64 look = named && n > 65536 ? 65536 : n, nul = o.text || quit ? n : first_nul(t, look);
   if (nul == look) nul = n;
+  /* A printed line is looked at for a NUL (convert) only where the text holds one: looked for once, at the speed of a
+   * pass over memory, not line by line. */
+  if (convert && nul == n && first_nul(t, n) == n) convert = 0;
   grep_text(&g, t, n);
   g.spans = spans;
   if (nul < n) {
@@ -1034,7 +1056,7 @@ counted:;
     u64 le = line_end(t, upto, ls), num = numbered ? line_no(t, ls, &lnum, &lat) : 0;
     if (o.quiet) leave(0);
     count++;
-    if (o.count_matches) for (u64 x = ls, last = ~0ull, ms, me; grep_span(&g, ls, le, &x, &last, &ms, &me);) matches++;
+    if (o.count_matches) for (u64 x = ls, last = ~0ull, ms, me; span(ls, le, &x, &last, &ms, &me);) matches++;
     if (o.with || o.without) break;
     if (!o.count && !o.count_matches) {
       /* What is around it: after the last one selected (until this), and before this one (from the last printed on). */
@@ -1076,6 +1098,7 @@ counted:;
 
 /* The file at `path` (opened at `dir`, by `name`) searched. */
 static u64 searched; /* how many files were: none, where no path was named, is said */
+#define READ_AT_ONCE (256u << 10)
 static void search_file(int dir, const char *name, int named) {
   struct kstat st;
   if (o.files) {
@@ -1094,6 +1117,9 @@ static void search_file(int dir, const char *name, int named) {
     i64 m = sys6(SYS_mmap, 0, st.size, 1, 2, fd, 0);
     if (m < 0 && m > -4096) warn((const char *)path + shown, m);
     else {
+      /* A large file's pages read in at once (MADV_POPULATE_READ; a kernel without it: as each is first touched), not
+       * one fault a page as the search comes to it. */
+      if ((u64)st.size >= READ_AT_ONCE) sys3(SYS_madvise, m, st.size, 22);
       found |= search_text((const u8 *)m, (u64)st.size, named);
       flush();
       sys2(SYS_munmap, m, st.size);

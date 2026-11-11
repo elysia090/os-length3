@@ -12,8 +12,7 @@
  *     a quarter of what is passed over, when the lanes are cheaper;
  *   - else the DFA's four lanes over the whole text (dfa_lanes), a block at a time.
  * A match's place: where it ends by the forward DFA, where it begins by the reverse one; the Pike machine where
- * either cannot say (a \b beside a character past ASCII). A text of more than a piece may be searched by as many threads
- * as there are cores (pieces.c).
+ * either cannot say (a \b beside a character past ASCII). One way for every text: rg's (ripgrep/rg.c), one thread.
  */
 
 #define GREP_BLOCK (1u << 16)

@@ -1,24 +1,25 @@
 # you (z): the places a person has been, and back to one by a part of its name: what the Prompt's shell learns at
-# every cd and z finds a place by (/etc/length3/shrc). Made from this repository's own source (you/src/zoxide.c, a
-# unit of C with no C library, on lib's three headers, its own checks in you/test): a program of a few
+# every cd and z finds a place by (/etc/length3/shrc). Made from this repository's own source (you/zoxide/zoxide.c, a
+# unit of C with no C library, on lib's three headers, its own checks beside it): a program of a few
 # pages that starts, does five calls, and ends.
 version=6
 # ripgrep: what you's regular expressions, and its rg, are checked against (Rust's regex crate, as ripgrep runs it).
 needs="ripgrep"
-inputs="../module/lib/word.h ../module/lib/sys.h ../module/lib/io.h ../module/lib/build.sh ../module/you/src/zoxide.c ../module/you/test/zoxide.sh ../module/you/test/zoxide-stress.sh
-  ../module/you/src/regex.c ../module/you/src/unicode.h ../module/you/src/dfa.c ../module/you/src/grep.c ../module/you/src/pieces.c ../module/you/test/regex.sh ../module/you/test/regex-driver.c ../module/you/test/regex-corpus.txt
-  ../module/you/test/regex-patterns.txt ../module/you/src/rg.c ../module/you/src/types.h ../module/you/test/rg.sh"
+inputs="../module/lib/word.h ../module/lib/sys.h ../module/lib/io.h ../module/lib/build.sh ../module/you/zoxide/zoxide.c ../module/you/zoxide/zoxide.sh
+  ../module/you/zoxide/zoxide-stress.sh ../module/you/lib/regex.c ../module/you/lib/unicode.h ../module/you/lib/dfa.c ../module/you/lib/grep.c
+  ../module/you/ripgrep/rg.c ../module/you/ripgrep/types.h ../module/you/ripgrep/regex.sh ../module/you/ripgrep/regex-corpus.txt
+  ../module/you/ripgrep/regex-patterns.txt ../module/you/ripgrep/rg.sh"
 build() {
   mkdir -p "$dest/usr/bin"
-  sh "$here/../module/lib/build.sh" "$here/../module/you/src/zoxide.c" "$dest/usr/bin/you"
+  sh "$here/../module/lib/build.sh" "$here/../module/you/zoxide/zoxide.c" "$dest/usr/bin/you"
 }
 # Its checks, then what goes wrong: learners killed while the file is remade, a full disk, garbage, its limits, time.
 check() {
-  sh "$here/../module/you/test/zoxide.sh" "$dest/usr/bin/you"
-  sh "$here/../module/you/test/zoxide-stress.sh" "$dest/usr/bin/you"
-  sh "$here/../module/you/test/regex.sh" "$deps/usr/bin/rg"
-  # Its rg (you/src/rg.c), what it prints and how it ends, against ripgrep's; built here, not yet in the root.
+  sh "$here/../module/you/zoxide/zoxide.sh" "$dest/usr/bin/you"
+  sh "$here/../module/you/zoxide/zoxide-stress.sh" "$dest/usr/bin/you"
+  sh "$here/../module/you/ripgrep/regex.sh" "$deps/usr/bin/rg"
+  # Its rg (you/ripgrep/rg.c), what it prints and how it ends, against ripgrep's; built here, not yet in the root.
   mkdir -p you-rg
-  sh "$here/../module/lib/build.sh" "$here/../module/you/src/rg.c" you-rg/rg
-  sh "$here/../module/you/test/rg.sh" "$deps/usr/bin/rg" "$PWD/you-rg/rg"
+  sh "$here/../module/lib/build.sh" "$here/../module/you/ripgrep/rg.c" you-rg/rg
+  sh "$here/../module/you/ripgrep/rg.sh" "$deps/usr/bin/rg" "$PWD/you-rg/rg"
 }

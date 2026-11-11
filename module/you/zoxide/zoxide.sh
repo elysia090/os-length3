@@ -2,7 +2,7 @@
 # you, checked as it is used: what a query finds and in what order, what is not learnt, what is forgotten, and what
 # it keeps through what goes wrong (learners at once with its remaking, a record written in part, a byte changed).
 #
-#   sh you/test/zoxide.sh [YOU]     YOU: the program (you/you, as lib/build.sh makes it)
+#   sh you/zoxide/zoxide.sh [YOU]     YOU: the program (you/you, as lib/build.sh makes it)
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 you=$(cd "$(dirname "${1:-$here/../you}")" && pwd)/$(basename "${1:-$here/../you}")

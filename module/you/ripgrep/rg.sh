@@ -3,7 +3,7 @@
 # !, .ignore, .rgignore, hidden files, a binary one, a directory too deep), each case run by both, what they print and
 # how they end the same. ripgrep is run with --sort path (its order: the names' order, as you's rg walks).
 #
-#   sh you/test/rg.sh RG YOU_RG     RG: ripgrep; YOU_RG: you/src/rg.c, as lib/build.sh makes it
+#   sh you/ripgrep/rg.sh RG YOU_RG     RG: ripgrep; YOU_RG: you/ripgrep/rg.c, as lib/build.sh makes it
 set -eu
 rg=$1 you=$2
 t=$(mktemp -d)

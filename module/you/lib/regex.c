@@ -1093,7 +1093,7 @@ static void pair_change(struct pair *pp, const u8 *s, u64 i, const u8 *lit, u32 
  * before any thread (grep_init). */
 static int avx2;
 static void avx2_ask(void) {
-#ifdef YOU_16 /* (built so by its checks, test/regex.sh: the 16-byte way, as the browser goes, on a core that has more) */
+#ifdef YOU_16 /* (built so by its checks, ripgrep/regex.sh: the 16-byte way, as the browser goes, on a core that has more) */
   return;
 #endif
   u32 a, b, c, d;

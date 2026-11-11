@@ -59,7 +59,7 @@ export const UNITS: Unit[] = [
 ];
 
 /** What is no unit's: the tests, the scripts that build and check, what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'tests', 'module/ricebox/runtime/run.ts', 'module/ricebox/tests', 'module/muk/tests', 'module/sods/examples', 'module/you/test', 'module/otter/test',
+export const NOT_UNITS = ['scripts', 'tests', 'module/ricebox/runtime/run.ts', 'module/ricebox/tests', 'module/muk/tests', 'module/sods/examples', 'module/otter/test',
   'src/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/ricebox/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
