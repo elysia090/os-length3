@@ -4,6 +4,8 @@
 # `tldr --update` fetches newer pages over TLS by rustls, a crate, trusting the root's CA bundle.
 pins="TEALDEER TLDR_PAGES_EN TLDR_PAGES_JA"
 tools="rust cargo"
+# Past what its lockfile is still open to (module/ricebox/make/advisories.sh): rustix (RUSTSEC-2026-0486).
+lifts="rustix=1.1.6"
 inputs="etc/tealdeer/config.toml"
 build() {
   cargo build --release --locked --target "$target"

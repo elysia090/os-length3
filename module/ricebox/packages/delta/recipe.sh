@@ -5,9 +5,9 @@ pins="DELTA"
 tools="rust cargo"
 # Past what its lockfile is still open to (module/ricebox/make/advisories.sh): anyhow (RUSTSEC-2026-0190), git2 (RUSTSEC-2026-0008),
 # libz-sys (RUSTSEC-2026-0418), plist, whose 1.10 takes quick-xml past RUSTSEC-2026-0194 and -0195, rand
-# (RUSTSEC-2026-0097), serde_with (GHSA-7gcf-g7xr-8hxj), time (RUSTSEC-2026-0009), and url, whose 2.5.4 takes idna past
-# RUSTSEC-2024-0421.
-lifts="anyhow=1.0.103 git2=0.20.4 libz-sys=1.1.31 plist=1.10.3 rand=0.8.6 serde_with=3.21.0 time=0.3.47 url=2.5.4"
+# (RUSTSEC-2026-0097), rustix (RUSTSEC-2026-0486), serde_with (GHSA-7gcf-g7xr-8hxj), time (RUSTSEC-2026-0009), and url,
+# whose 2.5.4 takes idna past RUSTSEC-2024-0421.
+lifts="anyhow=1.0.103 git2=0.20.4 libz-sys=1.1.31 plist=1.10.3 rand=0.8.6 rustix=1.1.6 serde_with=3.21.0 time=0.3.47 url=2.5.4"
 build() {
   cargo build --release --locked --target "$target"
   install -D -m 0755 "$CARGO_TARGET_DIR/$target/release/delta" "$dest/usr/bin/delta"

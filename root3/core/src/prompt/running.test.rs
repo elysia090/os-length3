@@ -143,7 +143,9 @@ fn a_process_whose_name_holds_a_parenthesis_and_spaces_is_read_rightly() {
     std::fs::create_dir_all(&dir).unwrap();
     let Ok(sleep) = std::fs::canonicalize("/bin/sleep") else { return };
     let named = dir.join("a) Z 1");
-    std::fs::copy(&sleep, &named).unwrap();
+    // A link, not a copy: a copy is a file written, and another test's fork made while it was open keeps exec from it
+    // ("Text file busy"). The kernel names the process by the link's name.
+    std::os::unix::fs::symlink(&sleep, &named).unwrap();
     let mut child = std::process::Command::new(&named).arg("5").spawn().unwrap();
     let (state, start) = state_and_start(child.id()).unwrap();
     assert_ne!(state, b'Z');
