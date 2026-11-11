@@ -69,7 +69,7 @@ pub type Page = fn(head: &str, body: &[u8]) -> (u32, Vec<u8>);
 #[cfg(target_os = "wasi")]
 static PAGE: std::sync::OnceLock<Page> = std::sync::OnceLock::new();
 
-/// The page's way of sending, given once by root3/core/web as the core starts (its `length3.http` import, root3/app/core/abi.ts):
+/// The page's way of sending, given once by root3/core/web as the core starts (its `root3.http` import, root3/app/core/abi.ts):
 /// the call out of the module is root3/core/web's, so this crate holds no unsafe code for it.
 #[cfg(target_os = "wasi")]
 pub fn through_page(page: Page) {

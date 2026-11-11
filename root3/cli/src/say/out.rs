@@ -4,8 +4,8 @@
 //! writer: a reader that stops early (`| head`) ends root3 quietly, never with
 //! a panic. Numbers, sizes and times are said one way everywhere.
 
-use length3_core::remote::{last_failure, Failure};
-use length3_core::tr;
+use root3_core::remote::{last_failure, Failure};
+use root3_core::tr;
 use serde_json::Value;
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -179,7 +179,7 @@ pub fn bytes(n: u64) -> String {
 
 /// `n` things: English says one and many apart; Japanese puts the counter right after the number (3件).
 pub fn count(n: usize, one: &str, many: &str, ja: &str) -> String {
-    if length3_core::text::i18n::ja() { ja.replace("{}", &n.to_string()) } else if n == 1 { format!("1 {one}") } else { format!("{n} {many}") }
+    if root3_core::text::i18n::ja() { ja.replace("{}", &n.to_string()) } else if n == 1 { format!("1 {one}") } else { format!("{n} {many}") }
 }
 
 pub fn files(n: usize) -> String { count(n, "file", "files", "{}ファイル") }

@@ -1,5 +1,5 @@
 //! The OS's words in English by default and in Japanese when chosen: Home's
-//! `lang` setting (the same one the app writes), or $LENGTH3_LANG over it.
+//! `lang` setting (the same one the app writes), or $ROOT3_LANG over it.
 //! `tr!("English {}", "日本語 {}", x)` picks one; both take the same arguments.
 
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -19,11 +19,11 @@ pub fn ja() -> bool {
     }
 }
 
-/// The language read where it is said: $LENGTH3_LANG, else Home's `lang`; kept for the next asking.
+/// The language read where it is said: $ROOT3_LANG, else Home's `lang`; kept for the next asking.
 #[cold]
 #[inline(never)]
 fn read() -> bool {
-    let ja = match std::env::var("LENGTH3_LANG").ok().filter(|v| !v.is_empty()) {
+    let ja = match std::env::var("ROOT3_LANG").ok().filter(|v| !v.is_empty()) {
         Some(v) => v.starts_with("ja"),
         // Home's `lang`, read where Home keeps it (home/), as the one setting the words hang on.
         None => std::fs::read_to_string(crate::fs::paths::home_dir().join("lang.json")).ok()

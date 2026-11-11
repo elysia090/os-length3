@@ -24,7 +24,7 @@ const waiting = new Map<number, {resolve(v: Answer): void; reject(e: Error): voi
 const heard = new Set<(paths: string[]) => void>();
 
 /** What the core is told about where it runs: its files, the Remote, this device's name (a page has no host name). */
-let environment: Record<string, string> = {LENGTH3_HOME: '/data', LENGTH3_DEVICE: deviceOf(globalThis.navigator?.userAgent ?? '')};
+let environment: Record<string, string> = {ROOT3_HOME: '/data', ROOT3_DEVICE: deviceOf(globalThis.navigator?.userAgent ?? '')};
 
 /** This device in words a file's name can carry ("Chrome Linux"): what a file both sides changed is kept beside under. */
 function deviceOf(ua: string): string {
@@ -125,7 +125,7 @@ function started(): Worker {
   };
   // Another tab's core wrote: what this tab shows is read again.
   if (typeof BroadcastChannel === 'function') {
-    new BroadcastChannel('length3-core').onmessage = (e: MessageEvent<{from?: string; paths?: string[]}>) => {
+    new BroadcastChannel('root3-core').onmessage = (e: MessageEvent<{from?: string; paths?: string[]}>) => {
       if (e.data?.from !== tab) { sharing.clear(); for (const fn of [...heard]) fn(e.data?.paths ?? []); }
     };
   }
@@ -177,5 +177,5 @@ const asked: Ask = (name, args) => new Promise<Answer>((resolve, reject) => {
 /** Hear another tab's core change what is kept: the paths it wrote or removed, as the core names them. */
 export function onElsewhere(fn: (paths: string[]) => void): () => void { heard.add(fn); return () => heard.delete(fn); }
 
-/** Where the core keeps the repos and Home's state, as it names them (its LENGTH3_HOME). */
-export const home = () => environment.LENGTH3_HOME;
+/** Where the core keeps the repos and Home's state, as it names them (its ROOT3_HOME). */
+export const home = () => environment.ROOT3_HOME;

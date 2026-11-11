@@ -3,7 +3,7 @@
 # The web root (public/webroot: the release root itself, as the browser
 # reads it, with sods; scripts/webroot.sh). Nothing is built
 # beside the root: its BusyBox, root3 and /etc are the Prompt's. Output: dist/
-# and length3-web.zip with its sha256.
+# and root3-web.zip with its sha256.
 #
 #   sh scripts/web-release.sh [ROOT.tar.zst]
 #
@@ -26,6 +26,6 @@ npm run check
 # The web app talks to the origin it is served from (one Worker: wrangler.toml).
 # The check has just run tsc, so only the bundle is made (npm run build would run tsc again).
 VITE_LENGTH3_REMOTE="${VITE_LENGTH3_REMOTE-}" npx vite build --config root3/app/vite.config.ts
-rm -f length3-web.zip
-(cd dist && zip -qr ../length3-web.zip .)
-sha256sum length3-web.zip | tee length3-web.zip.sha256
+rm -f root3-web.zip
+(cd dist && zip -qr ../root3-web.zip .)
+sha256sum root3-web.zip | tee root3-web.zip.sha256

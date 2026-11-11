@@ -6,7 +6,7 @@ import {join} from 'node:path';
 export async function deployWorker(give: Record<string, string>, run: (args: string[]) => Promise<void>): Promise<void> {
   if (!Object.keys(give).length) { await run(['deploy']); return; }
   // Outside the source/build tree, so the secrets cannot become a served asset or a committed file.
-  const dir = mkdtempSync(join(tmpdir(), 'length3-secrets-'));
+  const dir = mkdtempSync(join(tmpdir(), 'root3-secrets-'));
   try {
     chmodSync(dir, 0o700);
     const file = join(dir, 'secrets.json');

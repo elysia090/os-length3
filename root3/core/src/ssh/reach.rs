@@ -321,9 +321,9 @@ impl Scope {
     }
 }
 
-/// This person's port: $LENGTH3_SSH_PORT when it names one above 1023 (another is in use, or a test), else theirs.
+/// This person's port: $ROOT3_SSH_PORT when it names one above 1023 (another is in use, or a test), else theirs.
 pub fn port() -> u16 {
-    std::env::var("LENGTH3_SSH_PORT").ok().and_then(|p| p.parse::<u16>().ok()).filter(|p| *p > 1023)
+    std::env::var("ROOT3_SSH_PORT").ok().and_then(|p| p.parse::<u16>().ok()).filter(|p| *p > 1023)
         .unwrap_or_else(|| port_for(rustix::process::getuid().as_raw()))
 }
 

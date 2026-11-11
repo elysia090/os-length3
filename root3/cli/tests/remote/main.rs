@@ -7,7 +7,7 @@ mod common;
 use common::{FakeRemote, Home};
 
 fn sha(text: &str) -> String {
-    length3_core::fs::hash::sha256(text.as_bytes())
+    root3_core::fs::hash::sha256(text.as_bytes())
 }
 
 const NOT_FOUND: (u16, &str) = (404, r#"{"error":"Not found"}"#);

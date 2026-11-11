@@ -126,7 +126,7 @@ test('a Node-only build takes root3 from its release only at the pin, and refuse
   const port = typeof at === 'object' && at ? at.port : 0;
   // Run in a child the server here can answer (spawnSync would hold this process, and the server, still).
   const go = () => new Promise<{status: number; stdout: string; stderr: string}>((resolve) => {
-    const env = {...process.env, LENGTH3_RELEASES: `http://127.0.0.1:${port}`};
+    const env = {...process.env, ROOT3_RELEASES: `http://127.0.0.1:${port}`};
     execFile(process.execPath, [join(tree, 'scripts/prompt-files.ts')], {env}, (e, stdout, stderr) =>
       resolve({status: e ? (typeof e.code === 'number' ? e.code : 1) : 0, stdout, stderr}));
   });

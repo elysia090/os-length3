@@ -123,7 +123,7 @@ export const about = async (): Promise<About | null> => {
 // ---- what is kept: Cache Storage, by digest ----
 
 /** When each kept copy was last used (this browser's; lost, the oldest is simply unknown). */
-const USES = 'length3.webroot.used';
+const USES = 'root3.webroot.used';
 const uses = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem(USES) ?? '{}'); } catch { return {}; } };
 const used = (url: string, at = Date.now()) => {
   try { const u = uses(); u[url] = at; localStorage.setItem(USES, JSON.stringify(u)); } catch { /* not remembered: it goes first */ }
@@ -131,7 +131,7 @@ const used = (url: string, at = Date.now()) => {
 /** What earlier builds kept under the names before (a cache and two notes) is let go, once a page: nothing reads it now. */
 let before: Promise<unknown> | null = null;
 const forgetBefore = () => (before ??= (async () => {
-  try { localStorage.removeItem('length3.l3.used'); localStorage.removeItem('length3.l3.start'); } catch { /* none to let go */ }
+  try { localStorage.removeItem('root3.l3.used'); localStorage.removeItem('root3.l3.start'); } catch { /* none to let go */ }
   try { await caches.delete('l3'); } catch { /* none to let go */ }
 })());
 const open = async (): Promise<Cache | null> => {
@@ -603,7 +603,7 @@ export const root3Index = (): Promise<Index | null> => (indexing ??= (async () =
  * programs it waits for): read from what is kept at once next time, while webroot.json is asked whether it is still that.
  */
 interface Plan { sha256: string; index: About['index']; translator: Index['translator']; first: {t: Translation; mode: number}[] }
-const PLAN = 'length3.webroot.start';
+const PLAN = 'root3.webroot.start';
 const planned = (): Plan | null => { try { return JSON.parse(localStorage.getItem(PLAN) ?? 'null') as Plan | null; } catch { return null; } };
 
 let loading: Promise<Root3> | null = null;

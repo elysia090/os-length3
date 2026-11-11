@@ -109,10 +109,10 @@ test('the boards this browser writes in as a guest come the one written in last 
     getItem: (k: string) => shelf.get(k) ?? null, setItem: (k: string, v: string) => void shelf.set(k, v), removeItem: (k: string) => void shelf.delete(k)}});
   try {
     const at = (name: string, wrote?: number) => JSON.stringify({token: 't', as: 'Cy', name, server: 'Trip', ...(wrote ? {wrote} : {})});
-    shelf.set('length3.guest.aaa', at('packing', 1));
-    shelf.set('length3.other', 'not a guest\'s');
-    shelf.set('length3.guest.bbb', at('general', 3));
-    shelf.set('length3.guest.ccc', at('food'));
+    shelf.set('root3.guest.aaa', at('packing', 1));
+    shelf.set('root3.other', 'not a guest\'s');
+    shelf.set('root3.guest.bbb', at('general', 3));
+    shelf.set('root3.guest.ccc', at('food'));
     assert.deepEqual(guestBoards().map((g) => g.id), ['bbb', 'aaa', 'ccc']);
   } finally { Object.assign(globalThis, {localStorage: was}); }
 });

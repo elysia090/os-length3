@@ -20,7 +20,7 @@
 // signed with the webhook secret, to its own webhook, before the page goes
 // on. Stripe's own state (customers, subscriptions, cards, invoices) is kept
 // here, in `keep` when given (dev.ts: a file beside the Remote's database).
-// Mounted only by dev.ts when it is asked for a plan (LENGTH3_PLAN=1), and by
+// Mounted only by dev.ts when it is asked for a plan (ROOT3_PLAN=1), and by
 // the production-like selftest's Worker; never on Workers, and nothing
 // reaches Stripe. A card number is never kept or written anywhere: only its
 // brand and last four digits, as Stripe shows them.
@@ -52,15 +52,15 @@ const money = (cents: number) => `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 1
  * As Stripe says them where it is known how; a Latin word a space apart from kana and kanji (DESIGN.md §1).
  */
 const JA: Record<string, string> = {
-  'Test mode': 'テストモード', 'Back to length3': 'length3 に戻る', 'Return to length3': 'length3 に戻る', 'Expired': '期限切れ',
-  'This {what} has expired': 'この{what}は期限切れです', 'Go back to length3 and start again.': 'length3 に戻って、もう一度始めてください。',
+  'Test mode': 'テストモード', 'Back to root3': 'root3 に戻る', 'Return to root3': 'root3 に戻る', 'Expired': '期限切れ',
+  'This {what} has expired': 'この{what}は期限切れです', 'Go back to root3 and start again.': 'root3 に戻って、もう一度始めてください。',
   'Checkout session': 'Checkout セッション', 'portal session': 'ポータルセッション', 'authentication': '認証',
   'A stand-in for Stripe on this machine, in test mode: nothing is charged, and nothing leaves it.': 'このマシン上の Stripe の代役（テストモード）です。請求は一切なく、何も外に出ません。',
   'Subscribe to {tier}': '{tier} に申し込む', 'per month': '月額', 'Billed monthly': '毎月請求', 'Subtotal': '小計', 'Total due today': '本日のお支払い合計',
   'Pay with card': 'カードで支払う', 'Email': 'メールアドレス', 'Card information': 'カード情報', 'Card number': 'カード番号', 'Expiration': '有効期限',
   'Cardholder name': 'カード名義人', 'Full name on card': 'カードに記載の名前', 'Country or region': '国または地域', 'Subscribe': '申し込む',
-  'By confirming your subscription, you allow length3 to charge you for future payments in accordance with their terms. You can always cancel your subscription.':
-    'サブスクリプションを確定すると、length3 がその規約に従って今後のお支払いを請求することを許可したものとみなされます。サブスクリプションはいつでもキャンセルできます。',
+  'By confirming your subscription, you allow root3 to charge you for future payments in accordance with their terms. You can always cancel your subscription.':
+    'サブスクリプションを確定すると、root3 がその規約に従って今後のお支払いを請求することを許可したものとみなされます。サブスクリプションはいつでもキャンセルできます。',
   'Test cards': 'テストカード', 'pays': '支払いが通る', 'is declined': '拒否される', 'asks for 3-D Secure': '3D セキュアを求める', 'Any expiry to come, any CVC': '有効期限は先の日付、CVC は任意',
   '{gb} on the Remote': 'Remote に {gb}', 'Unlimited repos (within storage)': 'リポジトリ無制限（容量の範囲で）', '{n} repos': 'リポジトリ {n} 個',
   'Unlimited usernames on this Remote': 'この Remote のユーザー名は無制限', '{n} names on this Remote': 'この Remote の名前 {n} 個',
@@ -75,7 +75,7 @@ const JA: Record<string, string> = {
   'This Checkout session has expired.': 'この Checkout セッションは期限切れです。', 'This session has expired.': 'このセッションは期限切れです。',
   'Something went wrong. Try again.': '問題が発生しました。もう一度お試しください。', 'Processing': '処理中',
   'We are unable to authenticate your payment method. Please choose a different payment method and try again.': 'お支払い方法を認証できませんでした。別のお支払い方法を選んで、もう一度お試しください。',
-  'length3 partners with Stripe for simplified billing.': 'length3 は Stripe と連携し、請求をシンプルにしています。',
+  'root3 partners with Stripe for simplified billing.': 'root3 は Stripe と連携し、請求をシンプルにしています。',
   'Your subscription has been updated.': 'サブスクリプションを更新しました。', 'Your subscription has been canceled. It stays until the end of the period.': 'サブスクリプションをキャンセルしました。期間の終わりまではご利用いただけます。',
   'Your subscription has been renewed.': 'サブスクリプションを再開しました。', 'Your payment method has been updated.': 'お支払い方法を更新しました。',
   'A payment failed (a test control).': '支払いが失敗しました（テスト操作）。', 'A payment went through (a test control).': '支払いが通りました（テスト操作）。',
@@ -325,14 +325,14 @@ export function devBilling(base: string, secret: string, origins: string[], deli
   const page = (left: string, right: string, extra = '') => `<div class="page${extra}"><div class="side"><div class="col">${left}</div></div>
 <div class="main"><div class="col">${right}</div></div></div>`;
   const head = (w: Say, to: string, label: string) => `<div class="head"><a class="back" href="${esc(to)}" aria-label="${esc(w(label))}"><span aria-hidden="true">&larr;</span>
-${iconOf() ? `<img class="logo" src="${iconOf()}" alt="">` : ''}<span>length3</span></a><span class="badge">${esc(w('Test mode'))}</span></div>`;
+${iconOf() ? `<img class="logo" src="${iconOf()}" alt="">` : ''}<span>root3</span></a><span class="badge">${esc(w('Test mode'))}</span></div>`;
   const fine = (w: Say) => `<p class="standin">${esc(w('A stand-in for Stripe on this machine, in test mode: nothing is charged, and nothing leaves it.'))}</p>`;
   /** A session not there (or done): in the language it was asked in when it is known, else the browser's. */
   const gone = (what: string, locale?: Locale, asked?: string) => {
     const l = locale ?? (/^ja\b/i.test(asked ?? '') ? 'ja' : 'en'), w = sayIn(l);
-    return html(l, w('Expired'), page(head(w, origins[0], 'Back to length3'),
-      `<h1 class="h">${esc(w('This {what} has expired', {what: w(what)}))}</h1><p class="muted">${esc(w('Go back to length3 and start again.'))}</p>
-<a class="pay link" href="${esc(origins[0])}">${esc(w('Back to length3'))}</a>`), '', 404);
+    return html(l, w('Expired'), page(head(w, origins[0], 'Back to root3'),
+      `<h1 class="h">${esc(w('This {what} has expired', {what: w(what)}))}</h1><p class="muted">${esc(w('Go back to root3 and start again.'))}</p>
+<a class="pay link" href="${esc(origins[0])}">${esc(w('Back to root3'))}</a>`), '', 404);
   };
   const lang = (c: {req: {header(k: string): string | undefined}}) => c.req.header('Accept-Language');
 
@@ -360,7 +360,7 @@ ${email === null ? '' : `<div class="row"><label for="email">${esc(w('Email'))}<
     if (!s || s.done) return gone('Checkout session', s?.locale, lang(c));
     const cust = state.customers[s.customer], w = sayIn(s.locale);
     const t = s.tier, error = c.req.query('declined') === '3ds' ? w(unauthenticated) : '';
-    const left = `${head(w, back(s.cancel), 'Back to length3')}
+    const left = `${head(w, back(s.cancel), 'Back to root3')}
 <p class="what">${esc(w('Subscribe to {tier}', {tier: TIER_NAME[t]}))}</p>
 <p class="price" id="total">${money(COST[t])}<small>${s.locale === 'ja' ? esc(w('per month')) : 'per<br>month'}</small></p>
 <div class="items"><div class="item"><div><p class="item-name">${esc(TIER_NAME[t])}</p><p class="muted small">${esc(w('Billed monthly'))}</p></div><p>${money(COST[t])}</p></div>
@@ -369,9 +369,9 @@ ${email === null ? '' : `<div class="row"><label for="email">${esc(w('Email'))}<
 <div class="sum total"><span>${esc(w('Total due today'))}</span><span>${money(COST[t])}</span></div></div>`;
     const right = `<h1 class="h">${esc(w('Pay with card'))}</h1><form id="pay-form" novalidate>${cardFields(w, s.locale, cust?.email ?? '', error)}
 <button class="pay" id="pay" type="submit"><span class="label">${esc(w('Subscribe'))}</span></button>
-<p class="fine">${esc(w('By confirming your subscription, you allow length3 to charge you for future payments in accordance with their terms. You can always cancel your subscription.'))}</p>
+<p class="fine">${esc(w('By confirming your subscription, you allow root3 to charge you for future payments in accordance with their terms. You can always cancel your subscription.'))}</p>
 </form>${testCards(w)}${fine(w)}`;
-    return html(s.locale, `length3 · ${w('Subscribe to {tier}', {tier: TIER_NAME[t]})}`, page(left, right), FORM_JS('pay', w('Subscribe'), s.locale));
+    return html(s.locale, `root3 · ${w('Subscribe to {tier}', {tier: TIER_NAME[t]})}`, page(left, right), FORM_JS('pay', w('Subscribe'), s.locale));
   });
 
   /** A card tried: its fields checked, then what it comes to (declined: said, and nothing sent; 3-D Secure: its page). */
@@ -415,7 +415,7 @@ ${email === null ? '' : `<div class="row"><label for="email">${esc(w('Email'))}<
     return html('en', '3D Secure 2 Test Page', `<div class="secure"><div class="secure-box" role="dialog" aria-labelledby="secure-title">
 <p class="badge">Test mode</p><h1 class="h" id="secure-title">3D Secure 2 Test Page</h1>
 <p class="muted">This is a test page for 3-D Secure authentication. In a live payment, your bank would ask you to confirm it is you.</p>
-<dl class="facts"><dt>Merchant</dt><dd>length3</dd><dt>Amount</dt><dd>${esc(amount)}</dd><dt>Card</dt><dd>${esc(BRAND[a.card.brand])} •••• ${esc(a.card.last4)}</dd></dl>
+<dl class="facts"><dt>Merchant</dt><dd>root3</dd><dt>Amount</dt><dd>${esc(amount)}</dd><dt>Card</dt><dd>${esc(BRAND[a.card.brand])} •••• ${esc(a.card.last4)}</dd></dl>
 <div class="secure-foot"><form method="post" action="${esc(a.id)}/fail"><button class="plain" type="submit">Fail</button></form>
 <form method="post" action="${esc(a.id)}/complete"><button class="pay narrow" type="submit">Complete</button></form></div></div>${fine(w)}</div>`);
   });
@@ -443,8 +443,8 @@ ${email === null ? '' : `<div class="row"><label for="email">${esc(w('Email'))}<
   // ---- the customer portal ----
 
   const portalOf = (pid: string) => { const p = state.portals[pid]; const cust = p && state.customers[p.customer]; return p && cust ? {p, cust, w: sayIn(p.locale)} : null; };
-  const portalHead = (w: Say, p: PortalSession) => `${head(w, back(p.back), 'Return to length3')}
-<p class="what">${esc(w('length3 partners with Stripe for simplified billing.'))}</p>${fine(w)}`;
+  const portalHead = (w: Say, p: PortalSession) => `${head(w, back(p.back), 'Return to root3')}
+<p class="what">${esc(w('root3 partners with Stripe for simplified billing.'))}</p>${fine(w)}`;
   const done: Record<string, string> = {change: 'Your subscription has been updated.', cancel: 'Your subscription has been canceled. It stays until the end of the period.',
     renew: 'Your subscription has been renewed.', card: 'Your payment method has been updated.', fail: 'A payment failed (a test control).',
     paid: 'A payment went through (a test control).', end: 'The subscription ended (a test control).'};
@@ -481,7 +481,7 @@ ${cust.invoices.length ? `<table class="invoices"><thead><tr><th>${esc(w('Date')
 <div class="acts">${live ? `<form method="post" action="${pid}/test/fail"><button class="btn" type="submit">${esc(w('A payment fails'))}</button></form>
 <form method="post" action="${pid}/test/paid"><button class="btn" type="submit">${esc(w('A payment goes through'))}</button></form>
 <form method="post" action="${pid}/test/end"><button class="btn" type="submit">${esc(w('End it now'))}</button></form>` : `<p class="muted small">${esc(w('There is no subscription to act on.'))}</p>`}</div></section>`;
-    return html(p.locale, `length3 · ${w('Billing')}`, page(portalHead(w, p), right));
+    return html(p.locale, `root3 · ${w('Billing')}`, page(portalHead(w, p), right));
   });
 
   // Changing tier: each tier, the one now marked; then what it costs now, and Confirm.
@@ -493,7 +493,7 @@ ${cust.invoices.length ? `<table class="invoices"><thead><tr><th>${esc(w('Date')
 <p class="item-name">${esc(TIER_NAME[t])}</p><p class="price-line">${perMonth(w, COST[t])}</p><ul class="keeps">${keeps(t, w).slice(0, 2).map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
 ${t === s.tier ? `<p class="tag">${esc(w('Current plan'))}</p>` : `<a class="btn" href="change/${t}" aria-label="${esc(w('Select {tier}', {tier: TIER_NAME[t]}))}">${esc(w('Select'))}</a>`}</div>`).join('')}</div>
 <p><a class="link-back" href="../${esc(p.id)}">${esc(w('Go back'))}</a></p>`;
-    return html(p.locale, `length3 · ${w('Update your plan')}`, page(portalHead(w, p), right));
+    return html(p.locale, `root3 · ${w('Update your plan')}`, page(portalHead(w, p), right));
   });
   app.get('/portal/:id/change/:tier', (c) => {
     const at = portalOf(c.req.param('id')), to = c.req.param('tier');
@@ -513,7 +513,7 @@ ${t === s.tier ? `<p class="tag">${esc(w('Current plan'))}</p>` : `<a class="btn
     : w('What is left of this period on the plan you have now is credited to your next invoice.'))}${p.locale === 'ja' ? '' : ' '}${esc(w('Then {price} per month from {day}.', {price: money(COST[to]), day: longDay(s.end, p.locale)}))}</p></div>
 <form method="post" action="${esc(to)}"><button class="pay" type="submit">${esc(w('Confirm'))}</button></form>
 <p><a class="link-back" href="${esc(away)}">${esc(w('Go back'))}</a></p>`;
-    return html(p.locale, `length3 · ${w('Confirm your updated plan')}`, page(portalHead(w, p), right));
+    return html(p.locale, `root3 · ${w('Confirm your updated plan')}`, page(portalHead(w, p), right));
   });
   app.post('/portal/:id/change/:tier', async (c) => {
     const at = portalOf(c.req.param('id')), to = c.req.param('tier');
@@ -535,7 +535,7 @@ ${t === s.tier ? `<p class="tag">${esc(w('Current plan'))}</p>` : `<a class="btn
 <p class="muted">${esc(w('If you change your mind, you can renew your subscription before then.'))}</p>
 <form method="post" action="cancel"><button class="pay danger" type="submit">${esc(w('Cancel plan'))}</button></form>
 <p><a class="link-back" href="../${esc(p.id)}">${esc(w('Go back'))}</a></p>`;
-    return html(p.locale, `length3 · ${w('Cancel your plan')}`, page(portalHead(w, p), right));
+    return html(p.locale, `root3 · ${w('Cancel your plan')}`, page(portalHead(w, p), right));
   });
   app.post('/portal/:id/cancel', async (c) => {
     const at = portalOf(c.req.param('id'));
@@ -561,7 +561,7 @@ ${t === s.tier ? `<p class="tag">${esc(w('Current plan'))}</p>` : `<a class="btn
     const right = `<h1 class="h">${esc(w(cust.card ? 'Update payment method' : 'Add payment method'))}</h1><form id="pay-form" novalidate>${cardFields(w, p.locale, null, error)}
 <button class="pay" id="pay" type="submit"><span class="label">${esc(label)}</span></button></form>
 <p><a class="link-back" href="../${esc(p.id)}">${esc(w('Go back'))}</a></p>${testCards(w)}`;
-    return html(p.locale, `length3 · ${w('Payment method')}`, page(portalHead(w, p), right), FORM_JS('here', label, p.locale));
+    return html(p.locale, `root3 · ${w('Payment method')}`, page(portalHead(w, p), right), FORM_JS('here', label, p.locale));
   });
   app.post('/portal/:id/card', async (c) => {
     const at = portalOf(c.req.param('id')), w = at?.w ?? sayIn();

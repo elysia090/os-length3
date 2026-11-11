@@ -2,7 +2,7 @@
 // it. Each node of its files by its path in one store (what a listing needs: kind, size, times, a link's target),
 // a file's bytes by the same path in another, so a page reads what it lists without reading what it never opens.
 
-export const NAME = 'length3-core';
+export const NAME = 'root3-core';
 /** 2: a file's bytes kept apart from it (1 kept them in the node). */
 export const VERSION = 2;
 export const NODES = 'nodes';

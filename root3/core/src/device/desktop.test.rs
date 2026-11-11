@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn one_app_holds_the_device_and_answers_what_it_is_asked() {
-    let data = crate::fs::testing::dir("length3-desktop");
+    let data = crate::fs::testing::dir("root3-desktop");
     let _ = std::fs::remove_dir_all(&data);
     // None open: nothing answers, and the first to start holds the device.
     assert_eq!(ask(&data, "here"), None);

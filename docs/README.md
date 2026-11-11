@@ -181,7 +181,7 @@ Opened the app. Its window's close button, or root3 app close, closes it
 ```
 
 The .deb and the AppImage carry root3 beside the app (`scripts/desktop.sh`): the
-.deb puts `/usr/bin/root3` on the PATH beside `/usr/bin/length3-os`, so after
+.deb puts `/usr/bin/root3` on the PATH beside `/usr/bin/root3-desktop`, so after
 `sudo apt install ./os-length3-linux-X.Y.Z-desktop-amd64.deb` both `root3` and
 `root3 app` work at once, and the app runs that root3 for its Prompts and SSH. It
 is static (musl), with SSH; the root's own `/usr/bin/root3` is built without it.
@@ -208,7 +208,7 @@ passes only on a window that drew; `release.sh` runs it on what it ships.
   AppImage (`/v1/desktop/<file>`, as Runtime's Desktop app card on the
   web offers them): `sudo apt install ./os-length3-linux-X.Y.Z-desktop-amd64.deb`,
   or the AppImage made runnable (`chmod +x`) in `~/Applications`. root3 takes
-  the program `LENGTH3_APP` names, if it names one; else `length3-os` on
+  the program `ROOT3_APP` names, if it names one; else `root3-desktop` on
   the PATH (where the .deb puts it); else the newest such AppImage in
   `~/Applications`, `~/Downloads`, `~/.local/bin` or `~`.
 - **Could not start**: an app that ends at once, a device without a
@@ -258,7 +258,7 @@ What others see, in each scope:
 | Who | この端末だけ (this device only) | 同じネットワークにも (the same network too) |
 |---|---|---|
 | this device | the port on 127.0.0.1 (and ::1); `root3 address` and the app's card show the destinations, the host key and the keys let in | the same, and the LAN addresses too |
-| another PC on the LAN/VPN | nothing: the port is closed (connection refused, no handshake, no banner) | the port on each LAN address and VPN address: `SSH-2.0-length3` and the host key, then only a key from `.authorized_keys` gets in |
+| another PC on the LAN/VPN | nothing: the port is closed (connection refused, no handshake, no banner) | the port on each LAN address and VPN address: `SSH-2.0-root3` and the host key, then only a key from `.authorized_keys` gets in |
 | a sender on another segment (the public side) that routes to the LAN or VPN address through this device | nothing: the port is closed | the TCP handshake (Linux takes a packet for any of its addresses on any interface), then closed at accept: no banner, no host key |
 | the carrier's other customers, when an ordinary interface has a 100.64/10 address (a carrier's shared NAT) | nothing | nothing: connection refused, no socket there; at the VPN address, closed at accept |
 | containers and VMs behind a bridge (`docker0`, `br-*`, `virbr0`, `veth*`, …), whatever its address | nothing | nothing: connection refused, no socket on a bridge's address |
@@ -311,8 +311,8 @@ too") with the off switch.
   turning on says which.
 - **Port**: one per person on the host, the same every time: 22000 plus
   their user number (uid 1000 → 23000), whatever repos there are, never
-  another person's; `LENGTH3_SSH_PORT` names another when that one is taken.
-- **What it says of itself**: `SSH-2.0-length3`, not the SSH library or
+  another person's; `ROOT3_SSH_PORT` names another when that one is taken.
+- **What it says of itself**: `SSH-2.0-root3`, not the SSH library or
   its version. The host key is Ed25519, made once per device in
   `<data>/ssh/host_ed25519`; `root3 address` and the app's card show its
   SHA256 fingerprint, the one ssh asks about the first time.
@@ -348,7 +348,7 @@ app's) sends every copy first; one that cannot be sent keeps the device
 signed in, since forgetting what was agreed would undo an unsent change (a
 file removed here) at the next sign-in.
 
-On the host it uses the app's data directory (`$LENGTH3_HOME` overrides):
+On the host it uses the app's data directory (`$ROOT3_HOME` overrides):
 `cargo install --path cli`. The same binary, built static for sods, is
 `/usr/bin/root3` in the root and `/bin/root3` in a browser's Prompt, where only
 the open repo is present and Home, the Remote and the device are left to
@@ -458,9 +458,9 @@ of them the app and root3 need: `root3/remote/README.md`.
 ```
 node root3/remote/serve/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
 node root3/remote/serve/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
-LENGTH3_PLAN=1 node root3/remote/serve/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe (its test cards: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined, 4000 0025 0000 3155 asks for 3-D Secure)
-LENGTH3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
-LENGTH3_REMOTE=http://127.0.0.1:8787 root3 login
+ROOT3_PLAN=1 node root3/remote/serve/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe (its test cards: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined, 4000 0025 0000 3155 asks for 3-D Secure)
+ROOT3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
+ROOT3_REMOTE=http://127.0.0.1:8787 root3 login
 ```
 
 The database and the files are apart: Postgres holds every row, R2 only
@@ -684,7 +684,7 @@ its own origin into `tests/app/.dist` (again only when a source is newer),
 starts a fresh Remote (`root3/remote/serve/dev.ts` with a new temporary data
 directory) and `vite preview` on free ports, and beside them, at the same
 time, a second pair whose Remote has the plan and Stripe's stand-in
-(`LENGTH3_PLAN=1`, for `billing.spec.ts`), runs every `tests/app/*.spec.ts`
+(`ROOT3_PLAN=1`, for `billing.spec.ts`), runs every `tests/app/*.spec.ts`
 in parallel, and stops them all whatever happened (`global-setup.ts`). The
 browser reaches both as `localhost` (a passkey's relying party is a name,
 never an address); nothing listens on a fixed port and nothing outside the

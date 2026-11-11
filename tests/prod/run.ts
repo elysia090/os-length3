@@ -35,7 +35,7 @@ const node = (args: string[], env: NodeJS.ProcessEnv = {}) => new Promise<number
 
 /** A Postgres, the bridge and one Worker, for `f`; all stopped after. */
 async function withRemote<T>(o: Omit<Parameters<typeof remote>[1], 'dir' | 'assets' | 'bridge'>, f: (r: Awaited<ReturnType<typeof remote>>) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), 'length3-prod-run-'));
+  const dir = mkdtempSync(join(tmpdir(), 'root3-prod-run-'));
   const pg = await cluster();
   const b = await bridgeProcess();
   let r: Awaited<ReturnType<typeof remote>> | null = null;
@@ -113,7 +113,7 @@ async function headers() {
 
 /** Run root3 with `args` in its own home against `url`. */
 function root3(bin: string, home: string, url: string, args: string[]) {
-  const r = spawnSync(bin, args, {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', LENGTH3_REMOTE: url, NO_COLOR: '1', LENGTH3_KEYRING: 'off'},
+  const r = spawnSync(bin, args, {env: {PATH: process.env.PATH ?? '', HOME: home, ROOT3_HOME: join(home, 'root3'), ROOT3_LANG: 'en', ROOT3_REMOTE: url, NO_COLOR: '1', ROOT3_KEYRING: 'off'},
     encoding: 'utf8', cwd: home, timeout: 120_000});
   return {code: r.status ?? -1, out: r.stdout, err: r.stderr};
 }
@@ -157,10 +157,10 @@ async function research() {
     assert.equal((await json('PUT', '/v1/home/todo', {token, body: {value: '[]', version: 0}})).status, 200);
     const bin = process.env.ROOT3;
     if (bin) {
-      const home = mkdtempSync(join(tmpdir(), 'length3-prod-root3-'));
+      const home = mkdtempSync(join(tmpdir(), 'root3-prod-root3-'));
       try {
         const login = await new Promise<{code: number; out: string}>((resolve, reject) => {
-          const p = spawn(bin, ['login', r.url], {env: {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', NO_COLOR: '1', LENGTH3_KEYRING: 'off'}, cwd: home});
+          const p = spawn(bin, ['login', r.url], {env: {PATH: process.env.PATH ?? '', HOME: home, ROOT3_HOME: join(home, 'root3'), ROOT3_LANG: 'en', NO_COLOR: '1', ROOT3_KEYRING: 'off'}, cwd: home});
           let out = '', approved = false;
           p.stdout.on('data', (d: Buffer) => {
             out += d;
@@ -194,7 +194,7 @@ async function research() {
 }
 
 let failed = 0;
-const assets = mkdtempSync(join(tmpdir(), 'length3-prod-assets-'));
+const assets = mkdtempSync(join(tmpdir(), 'root3-prod-assets-'));
 try {
   say('building the app for its own origin, as build:cloudflare does');
   const built = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--config', join(OS, 'root3', 'app', 'vite.config.ts'), '--outDir', assets, '--logLevel', 'error'],

@@ -52,9 +52,9 @@ const here = () => ok(d.root3(['address', '--json'])).json as Here;
 
 test('SSH: on from this device only, then the same network too, then back; the Remote hears the scope alone; a page turns it off', {skip: spawnSync('ssh-keygen', ['-?']).error ? 'no ssh-keygen' : false}, async () => {
   const port = await freePort();
-  (d.env as Record<string, string>).LENGTH3_SSH_PORT = String(port);
+  (d.env as Record<string, string>).ROOT3_SSH_PORT = String(port);
   // The Remote asked every half second, not every 30 s: an off said on a page is heard within the test's wait.
-  (d.env as Record<string, string>).LENGTH3_SSH_BEAT_MS = '500';
+  (d.env as Record<string, string>).ROOT3_SSH_BEAT_MS = '500';
   ok(d.root3(['repo', 'new', 'notes', '-t', 'empty']));
   const key = join(d.home, 'key');
   assert.equal(spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'kai@selftest', '-f', key]).status, 0);
@@ -72,7 +72,7 @@ test('SSH: on from this device only, then the same network too, then back; the R
     assert.equal(shown.out, `ssh -p ${port} notes@127.0.0.1\n`);
     assert.match(shown.err, /^root3: From this device only \(127\.0\.0\.1\)[^\n]*\nroot3: 1 key let in \(\.authorized_keys\)\nroot3: Host key SHA256:/);
     // Reached on loopback it says the protocol and a plain name; on any other address of this host nothing listens at all.
-    assert.equal(await reach('127.0.0.1', port), 'SSH-2.0-length3');
+    assert.equal(await reach('127.0.0.1', port), 'SSH-2.0-root3');
     for (const a of others) assert.equal(await reach(a, port), 'ECONNREFUSED', a);
     // The Remote hears that this device listens, and to whom: no address, port or repo.
     const seen = (await r.api(kai, 'GET', '/v1/ssh')).json as {device: string; scope: string}[];
@@ -87,7 +87,7 @@ test('SSH: on from this device only, then the same network too, then back; the R
     assert.deepEqual(h.bound.filter((a) => a !== '127.0.0.1' && a !== '::1').sort(), others.filter(priv).sort());
     // Each named with its interface, as root3 address and the card say it.
     assert.deepEqual(h.interfaces.map((t) => `${t.interface} ${t.addr}`).sort(), v4.filter((i) => priv(i.addr)).map((i) => `${i.name} ${i.addr}`).sort());
-    for (const a of others) assert.equal(await reach(a, port), priv(a) ? 'SSH-2.0-length3' : 'ECONNREFUSED', a);
+    for (const a of others) assert.equal(await reach(a, port), priv(a) ? 'SSH-2.0-root3' : 'ECONNREFUSED', a);
     // The Remote hears the new scope as soon as it is chosen.
     for (let i = 0; i < 100 && ((await r.api(kai, 'GET', '/v1/ssh')).json as {scope: string}[])[0]?.scope !== 'network'; i++) await new Promise((w) => setTimeout(w, 100));
     assert.deepEqual(((await r.api(kai, 'GET', '/v1/ssh')).json as {scope: string}[]).map((s) => s.scope), ['network']);

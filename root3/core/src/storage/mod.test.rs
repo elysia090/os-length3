@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime};
 
 #[test]
 fn only_this_oss_dead_old_temporaries_are_reclaimed() {
-    let data = crate::fs::testing::dir("length3-usage");
+    let data = crate::fs::testing::dir("root3-usage");
     let _ = fs::remove_dir_all(&data);
     let repo = data.join("repos/a");
     fs::create_dir_all(repo.join(".git")).unwrap();
@@ -18,16 +18,16 @@ fn only_this_oss_dead_old_temporaries_are_reclaimed() {
     fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     // A leftover of a writer that died (pid 1 is never this OS's writer:
     // it runs, so pick a pid that cannot exist).
-    let dead = repo.join(".main.c.length3-4000000-0");
+    let dead = repo.join(".main.c.root3-4000000-0");
     fs::write(&dead, vec![b'y'; 50_000]).unwrap();
     // Same name, but its writer is alive: this process.
-    let live = repo.join(format!(".x.length3-{}", std::process::id()));
+    let live = repo.join(format!(".x.root3-{}", std::process::id()));
     fs::write(&live, "z").unwrap();
     // Looks like one, but lives in .git: never touched.
-    let in_git = repo.join(".git/.HEAD.length3-4000000");
+    let in_git = repo.join(".git/.HEAD.root3-4000000");
     fs::write(&in_git, "q").unwrap();
     // A person's own file with a similar name.
-    let mine = repo.join("notes.length3-draft");
+    let mine = repo.join("notes.root3-draft");
     fs::write(&mine, "mine").unwrap();
     // Named like a setting's temporary, but in a repo: a person's file.
     let dated = repo.join("data.json.2024");
@@ -64,7 +64,7 @@ fn only_this_oss_dead_old_temporaries_are_reclaimed() {
 
 #[test]
 fn a_sparse_file_counts_what_it_holds() {
-    let data = crate::fs::testing::dir("length3-sparse");
+    let data = crate::fs::testing::dir("root3-sparse");
     let _ = fs::remove_dir_all(&data);
     let repo = data.join("repos/s");
     fs::create_dir_all(&repo).unwrap();
@@ -92,7 +92,7 @@ mod system_tests {
 
     #[test]
     fn the_root_in_use_and_the_one_before_are_held_older_ones_go() {
-        let data = crate::fs::testing::dir("length3-system");
+        let data = crate::fs::testing::dir("root3-system");
         let _ = fs::remove_dir_all(&data);
         let old = root_dir(&data, 'a', "0.0.1");
         std::thread::sleep(Duration::from_millis(20));
@@ -125,7 +125,7 @@ mod system_tests {
 
     #[test]
     fn a_root_a_prompt_runs_on_stays_when_another_is_made_current_and_goes_once_it_ends() {
-        let data = crate::fs::testing::dir("length3-system-held");
+        let data = crate::fs::testing::dir("root3-system-held");
         let _ = fs::remove_dir_all(&data);
         let repos = data.join("repos");
         let root3 = root_dir(&data, 'a', "0.5.0");
@@ -156,7 +156,7 @@ mod system_tests {
 
     #[test]
     fn a_record_older_l3_made_without_its_root_keeps_every_root() {
-        let data = crate::fs::testing::dir("length3-system-unsaid");
+        let data = crate::fs::testing::dir("root3-system-unsaid");
         let _ = fs::remove_dir_all(&data);
         root_dir(&data, 'a', "1");
         root_dir(&data, 'b', "2");
@@ -176,7 +176,7 @@ mod system_tests {
     /// free waited keeps it, however the free decided before.
     #[test]
     fn a_prompt_recorded_while_a_free_waits_keeps_its_root() {
-        let data = crate::fs::testing::dir("length3-system-race");
+        let data = crate::fs::testing::dir("root3-system-race");
         let _ = fs::remove_dir_all(&data);
         let old = root_dir(&data, 'a', "1");
         root_dir(&data, 'b', "2");
@@ -200,7 +200,7 @@ mod system_tests {
     /// The root made current under the same lock: one freed meanwhile is not made current.
     #[test]
     fn a_root_freed_as_it_is_made_current_is_not_made_current() {
-        let data = crate::fs::testing::dir("length3-system-switch");
+        let data = crate::fs::testing::dir("root3-system-switch");
         let _ = fs::remove_dir_all(&data);
         root_dir(&data, 'a', "1");
         let other = root_dir(&data, 'b', "2");
@@ -223,7 +223,7 @@ mod owned_tests {
     #[test]
     fn a_repos_environment_and_caches_are_listed_as_its_and_go_with_it() {
         use std::os::unix::fs::PermissionsExt;
-        let data = crate::fs::testing::dir("length3-owned");
+        let data = crate::fs::testing::dir("root3-owned");
         let _ = fs::remove_dir_all(&data);
         let repos = data.join("repos");
         fs::create_dir_all(repos.join("here")).unwrap();
@@ -232,7 +232,7 @@ mod owned_tests {
         fs::create_dir_all(env.join("upper/usr/bin")).unwrap();
         fs::write(env.join("upper/usr/bin/tool"), vec![b'x'; 30_000]).unwrap();
         // A temporary-looking name inside an environment is the environment's, not a leftover.
-        fs::write(env.join("upper/usr/bin/.tool.length3-4000000-0"), "x").unwrap();
+        fs::write(env.join("upper/usr/bin/.tool.root3-4000000-0"), "x").unwrap();
         fs::create_dir_all(env.join("work/work")).unwrap();
         fs::set_permissions(env.join("work/work"), fs::Permissions::from_mode(0o000)).unwrap();
         // Caches of a repo that is no longer on this device: nothing owns them here.
@@ -277,7 +277,7 @@ mod owned_tests {
 
     #[test]
     fn what_a_prompt_being_prepared_holds_stays_and_says_so() {
-        let data = crate::fs::testing::dir("length3-owned-prep");
+        let data = crate::fs::testing::dir("root3-owned-prep");
         let _ = fs::remove_dir_all(&data);
         let repos = data.join("repos");
         fs::create_dir_all(repos.join("os-starting")).unwrap();
@@ -328,14 +328,14 @@ mod id_tests {
 
     #[test]
     fn an_id_from_the_page_cannot_lead_out_of_the_data_directory() {
-        let top = crate::fs::testing::dir("length3-ids");
+        let top = crate::fs::testing::dir("root3-ids");
         let data = top.join("data");
         std::fs::create_dir_all(&data).unwrap();
         // Named like a temporary file left by a process long gone, but outside.
-        let outside = top.join(".x.length3-4194300-0");
+        let outside = top.join(".x.root3-4194300-0");
         std::fs::write(&outside, b"keep").unwrap();
         std::fs::File::options().write(true).open(&outside).unwrap().set_modified(SystemTime::now() - Duration::from_secs(3 * 86_400)).unwrap();
-        let id = format!("path:{}/../.x.length3-4194300-0", data.display());
+        let id = format!("path:{}/../.x.root3-4194300-0", data.display());
         assert!(item(&data, &data.join("repos"), &id, &InUse::now(&data, &[])).is_none());
         let _ = std::fs::remove_dir_all(&top);
     }

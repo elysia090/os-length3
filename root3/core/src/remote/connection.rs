@@ -1,4 +1,4 @@
-//! This device's session on the Remote: which Remote it is (the default, or $LENGTH3_REMOTE), its bearer (kept in
+//! This device's session on the Remote: which Remote it is (the default, or $ROOT3_REMOTE), its bearer (kept in
 //! the device's vault; a browser keeps none, its session being a cookie no script reads), and all of it let go on
 //! signing out.
 
@@ -7,9 +7,9 @@ use std::fs;
 use crate::Result;
 use std::path::PathBuf;
 
-/// The Remote to sign in to: $LENGTH3_REMOTE, else the one this OS ships with.
+/// The Remote to sign in to: $ROOT3_REMOTE, else the one this OS ships with.
 pub fn default_url() -> String {
-    current_url(&std::env::var("LENGTH3_REMOTE").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| DEFAULT_URL.into()))
+    current_url(&std::env::var("ROOT3_REMOTE").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| DEFAULT_URL.into()))
 }
 
 /// A removal whose target is already gone has done its work.

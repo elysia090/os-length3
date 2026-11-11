@@ -3,7 +3,7 @@
 use super::*;
 
 fn scratch(tag: &str) -> PathBuf {
-    let d = crate::fs::testing::dir(&format!("length3-atomic-{tag}"));
+    let d = crate::fs::testing::dir(&format!("root3-atomic-{tag}"));
     let _ = fs::remove_dir_all(&d);
     fs::create_dir_all(&d).unwrap();
     d
@@ -66,7 +66,7 @@ fn a_link_planted_at_the_temporarys_name_is_not_written_through() {
     let outside = d.join("outside");
     fs::write(&outside, "the person's own").unwrap();
     let pid = std::process::id();
-    for n in 0..8 { std::os::unix::fs::symlink(&outside, d.join(format!(".a.length3-{pid}-{n}"))).unwrap(); }
+    for n in 0..8 { std::os::unix::fs::symlink(&outside, d.join(format!(".a.root3-{pid}-{n}"))).unwrap(); }
     replace(&d.join("a"), b"new", How::RECORD).unwrap();
     assert_eq!(fs::read_to_string(&outside).unwrap(), "the person's own");
     assert_eq!(fs::read_to_string(d.join("a")).unwrap(), "new");
@@ -76,14 +76,14 @@ fn a_link_planted_at_the_temporarys_name_is_not_written_through() {
 #[test]
 fn a_temporary_is_known_by_its_whole_name_from_the_end() {
     for (name, settings, pid) in [
-        (".state.json.length3-12-3", false, Some(12)), ("..length3-7-0", false, Some(7)), (".a1.length3-4-10", false, Some(4)),
-        ("k.json.99", true, Some(99)), ("k.json.99", false, None), (".a.length3-12", false, None), (".a.length3-x-1", false, None),
-        (".length3-1-2", false, None), (".gitignore", false, None), ("main.rs", false, None), (".a.length3--1", false, None),
-        (".notes.length3-1-draft", false, None),
+        (".state.json.root3-12-3", false, Some(12)), ("..root3-7-0", false, Some(7)), (".a1.root3-4-10", false, Some(4)),
+        ("k.json.99", true, Some(99)), ("k.json.99", false, None), (".a.root3-12", false, None), (".a.root3-x-1", false, None),
+        (".root3-1-2", false, None), (".gitignore", false, None), ("main.rs", false, None), (".a.root3--1", false, None),
+        (".notes.root3-1-draft", false, None),
     ] {
         assert_eq!(temporary_writer(name, settings), pid, "{name}");
     }
-    assert!(is_temporary(".length3-1-x") && is_temporary(".x.length3-1-0") && !is_temporary(".gitignore"));
+    assert!(is_temporary(".root3-1-x") && is_temporary(".x.root3-1-0") && !is_temporary(".gitignore"));
 }
 
 #[cfg(unix)]

@@ -39,7 +39,7 @@
     var pre = document.createElement('pre');
     pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;font:13px/1.4 ui-monospace,monospace;padding:.75rem;border:1px solid currentColor;border-radius:8px;opacity:.85';
     // Which build this is (vite.config.ts), so a report says which deploy it came from.
-    var build = document.querySelector('meta[name="length3-build"]');
+    var build = document.querySelector('meta[name="root3-build"]');
     pre.textContent = (failed.length ? failed.join('\n') : (ja ? '(エラーは届いていません)' : '(no error was reported)')) + '\n\n' + navigator.userAgent
       + (build ? '\nLength³ OS ' + build.getAttribute('content') : '');
     var again = document.createElement('button');

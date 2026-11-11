@@ -308,7 +308,7 @@ pub fn stop(data: &Path, r: &Running) -> Stopped {
 
 /// Where root3 is for the app: beside it (installed together), unless named.
 pub fn root3_path(app: &Path) -> std::path::PathBuf {
-    std::env::var_os("LENGTH3_ROOT3").map(Into::into).unwrap_or_else(|| app.with_file_name("root3"))
+    std::env::var_os("ROOT3_COMMAND").map(Into::into).unwrap_or_else(|| app.with_file_name("root3"))
 }
 
 #[cfg(test)]

@@ -185,7 +185,7 @@ there is no bucket to take their bytes from; it still counts each changed room
 again, which the plan reads.
 
 On Workers that is a Worker without its `BLOBS` binding; here,
-`node root3/remote/serve/dev.ts DIR --no-bucket` (or `LENGTH3_NO_BUCKET=1`). The
+`node root3/remote/serve/dev.ts DIR --no-bucket` (or `ROOT3_NO_BUCKET=1`). The
 contract tests run twice, with a bucket and without
 (`tests/contract.test.ts`, `tests/contract.nobucket.test.ts`), and `serve/worker.test.ts`
 runs the Worker itself, with no bucket, through its Neon driver.

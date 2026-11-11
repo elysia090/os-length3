@@ -120,7 +120,7 @@ test('another device opens the repo from the Remote, and takes in each change ma
 });
 
 test('a script\'s execute bit goes to the Remote and comes back with it: opened on another device, after a change, and after Free and opening again', async () => {
-  const at = (d: {home: string}, path: string) => join(d.home, 'length3', 'repos', path);
+  const at = (d: {home: string}, path: string) => join(d.home, 'root3', 'repos', path);
   const mode = (d: {home: string}, path: string) => statSync(at(d, path)).mode & 0o777;
   const runs = (d: {home: string}, path: string) => spawnSync(at(d, path), [], {encoding: 'utf8'});
   ok(laptop.root3(['repo', 'new', 'scripts', '-t', 'empty']));

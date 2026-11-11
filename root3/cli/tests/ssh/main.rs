@@ -38,7 +38,7 @@ fn a_connection_kept_open_takes_one_session_after_another() {
     });
     home.signed_in(&remote.url);
     let port = free_port();
-    let mut serve = home.command("en", &["address", "ssh", "serve"]).env("LENGTH3_SSH_PORT", port.to_string())
+    let mut serve = home.command("en", &["address", "ssh", "serve"]).env("ROOT3_SSH_PORT", port.to_string())
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
     let mut ready = String::new();
     std::io::BufReader::new(serve.stdout.take().unwrap()).read_line(&mut ready).unwrap();

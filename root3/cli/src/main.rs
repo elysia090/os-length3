@@ -3,7 +3,7 @@
 //! then Server and Inbox. The same repos, issues, TODO and device, read and
 //! written through the same core, so what one does here is what the app
 //! shows, and back. It speaks English, or Japanese when Home's language is
-//! (or LENGTH3_LANG=ja).
+//! (or ROOT3_LANG=ja).
 //!
 //! One table (words/spec.rs) says every form; a call is read against it (words/args.rs),
 //! may run where it is (cmd::before), is kept in step with the Remote around

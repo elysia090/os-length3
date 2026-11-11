@@ -48,7 +48,7 @@ async function writeBatch(repo: string, by: string, b: Batch, skipped: string[])
 // and the next start writes what is left (writeLeftBack) before anything is shown. sessionStorage, as a reload keeps
 // it and another tab never reads it (that tab's batches, older, would be written over newer). A batch past JOURNAL
 // bytes is not kept so: the tab's storage holds a few megabytes.
-const JOURNAL = 1 << 20, KEPT = 'length3.os.writeback.';
+const JOURNAL = 1 << 20, KEPT = 'root3.os.writeback.';
 interface Kept { repo: string; by: string; dirs: string[]; files: {path: string; b64: string}[]; removed: string[] }
 let batches = 0;
 /** `b` kept under a key that sorts in the order it came; null when it is not kept (too large, or no storage). */

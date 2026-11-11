@@ -136,7 +136,7 @@ export class App {
   }
 
   /**
-   * At the development provider, gone to from a sign-in card: who one is there (`name`), then what length3 asks
+   * At the development provider, gone to from a sign-in card: who one is there (`name`), then what root3 asks
    * of it, answered `answer` (Allow signs in; Cancel goes back with nothing shared). (Not reached: the card says
    * why, in its alert.)
    */
@@ -145,7 +145,7 @@ export class App {
     await expect(this.page, 'the provider\'s page').toHaveTitle(/Development provider/);
     await this.page.getByRole('textbox', {name: 'Name'}).fill(name);
     await this.page.getByRole('button', {name: 'Continue'}).click();
-    await expect(this.page.getByRole('heading', {name: 'length3 wants to access your Development account'})).toBeVisible();
+    await expect(this.page.getByRole('heading', {name: 'root3 wants to access your Development account'})).toBeVisible();
     await this.page.getByRole('button', {name: answer, exact: true}).click();
   }
 }

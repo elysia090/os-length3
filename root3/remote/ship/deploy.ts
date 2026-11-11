@@ -62,7 +62,7 @@ function built(dir: string): string | null {
   const page = `${dir}/index.html`;
   if (!existsSync(page)) return `${page} is not there: build the app first (npm run build:cloudflare)`;
   const html = readFileSync(page, 'utf8');
-  if (/src="\/src\/[^"]+\.ts"/.test(html) || !html.includes('name="length3-build"')) return `${page} is the sources' page, not a build's: build the app first (npm run build:cloudflare)`;
+  if (/src="\/src\/[^"]+\.ts"/.test(html) || !html.includes('name="root3-build"')) return `${page} is the sources' page, not a build's: build the app first (npm run build:cloudflare)`;
   if (!existsSync(`${dir}/boot.js`)) return `${dir}/boot.js is not there: the build is not whole`;
   return null;
 }

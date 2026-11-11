@@ -20,7 +20,7 @@ pub(crate) fn show_for_free(repo: &str, line: &str) -> Result<()> {
 
 /// Where `cwd` is: in a repo's copy (`<repos>/<repo>/…`), or an issue's copy
 /// of one (`<data>/work/<repo>/<line>/…`); else, in a Prompt, its repo
-/// (`$LENGTH3_REPO`).
+/// (`$ROOT3_REPO`).
 pub fn here(cwd: &std::path::Path) -> Option<Here> {
     let parts = |rel: &std::path::Path| -> Vec<String> { rel.iter().map(|p| p.to_string_lossy().into_owned()).collect() };
     let repos = crate::fs::paths::repos_dir();
@@ -42,7 +42,7 @@ pub fn here(cwd: &std::path::Path) -> Option<Here> {
             }
         }
     }
-    std::env::var("LENGTH3_REPO").ok().filter(|r| crate::text::names::valid_name(r)).map(|repo| Here { repo, line: MAIN.into(), folder: String::new() })
+    std::env::var("ROOT3_REPO").ok().filter(|r| crate::text::names::valid_name(r)).map(|repo| Here { repo, line: MAIN.into(), folder: String::new() })
 }
 
 /// Where a directory is, as this OS sees it: in which repo, on which line

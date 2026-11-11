@@ -8,8 +8,8 @@
 import {start} from '../core/client.ts';
 
 /** Which host this build is for (vite.config.ts); run from source, the page says (as app/host.ts reads it). */
-declare const __LENGTH3_HOST__: 'native' | 'web' | undefined;
-const web = typeof __LENGTH3_HOST__ === 'string' ? __LENGTH3_HOST__ === 'web' : !('__TAURI_INTERNALS__' in globalThis);
+declare const __ROOT3_HOST__: 'native' | 'web' | undefined;
+const web = typeof __ROOT3_HOST__ === 'string' ? __ROOT3_HOST__ === 'web' : !('__TAURI_INTERNALS__' in globalThis);
 if (web) start();
 
 /** Once the page is read and each of its stylesheets is in (or has failed): where a deferred script runs. */

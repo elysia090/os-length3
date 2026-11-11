@@ -77,7 +77,7 @@ export const TERMS = (tier: PaidTier) => [t('Renews automatically until cancelle
  * from Checkout; ?plan=managed from the portal), kept for this tab until the Plan says it.
  */
 export interface Back { how: 'paid' | 'cancelled' | 'managed'; tier: PaidTier | null }
-const RETURN = 'length3.plan-return';
+const RETURN = 'root3.plan-return';
 export function cameBackFromStripe(how: string, tier: string | null) {
   if (how !== 'paid' && how !== 'cancelled' && how !== 'managed') return;
   try { sessionStorage.setItem(RETURN, JSON.stringify({how, tier: isPaidTier(tier) ? tier : null})); } catch { /* said nothing, then: the plan shows as it is */ }
@@ -91,7 +91,7 @@ export function takeStripeReturn(): Back | null {
 }
 
 /** The plan as it was when this tab left for the portal: what came back is said against it, once. */
-const LEFT = 'length3.plan-left';
+const LEFT = 'root3.plan-left';
 export interface Left { tier: Tier; ends: number | null; paid: boolean }
 export function leftFor(p: Plan) {
   try { sessionStorage.setItem(LEFT, JSON.stringify({tier: p.tier ?? 'free', ends: p.ends ?? null, paid: p.plan === 'paid'} satisfies Left)); } catch { /* nothing to say against, then */ }

@@ -14,7 +14,7 @@ default = ["ssh"]
 ssh = ["dep:russh", "dep:tokio"]
 
 [dependencies]
-length3-core = { path = "../core" }
+root3-core = { path = "../core" }
 serde_json = "1"
 libc = "0.2"
 # SSH into a repo's Prompt (cmd/ssh.rs): a pure-Rust SSH server (Apache-2.0), with

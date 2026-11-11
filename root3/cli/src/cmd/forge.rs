@@ -5,7 +5,7 @@ use crate::words::args::Call;
 use crate::say::out::{bytes, Error, files, Reply, Result};
 use crate::words::spec::{Fact, On};
 use crate::words::target;
-use length3_core::{home, remote, tr};
+use root3_core::{home, remote, tr};
 use serde_json::json;
 
 /// `root3 repo`: each repo here and where it stands, then those only on the Remote.
@@ -18,7 +18,7 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let mut rows = Vec::new();
     let mut t = Vec::new();
     for s in &here {
-        let line = if ctx.prompt { length3_core::repos::lines::MAIN.to_string() } else { r.line(&s.name) };
+        let line = if ctx.prompt { root3_core::repos::lines::MAIN.to_string() } else { r.line(&s.name) };
         let st = if ctx.prompt { None } else { remote::status_of(&r, &s.name).ok() };
         // Where it stands with the Remote, as a word for data and words for a person.
         let (state, said) = match &st {
@@ -28,7 +28,7 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
             Some(st) if st.changed > 0 => ("changed", tr!(" · {} not sent", " · {}件未送信", st.changed)),
             Some(_) => ("inStep", tr!(" · in step", " · Remote と同じ")),
         };
-        let working = if line != length3_core::repos::lines::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
+        let working = if line != root3_core::repos::lines::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
         crate::say::menu::see(|| crate::say::menu::Subject { on: On::Repo, word: s.name.clone(), repo: Some(s.name.clone()), label: s.name.clone(),
             detail: format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes)), facts: Vec::new() });
         t.push((s.name.clone(), format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes))));
@@ -46,13 +46,13 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
 
 pub fn repo_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
-    if !length3_core::text::names::valid_name(name) {
+    if !root3_core::text::names::valid_name(name) {
         return Err(Error::Usage(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", name)));
     }
     let template = call.flags.template.as_deref().unwrap_or("standard");
     // One of the words -t shows, like any choice: another is not how it is written (2).
-    if length3_core::repos::templates::find(template).is_none() {
-        let ids: Vec<String> = length3_core::repos::templates::all().into_iter().map(|t| t.id).collect();
+    if root3_core::repos::templates::find(template).is_none() {
+        let ids: Vec<String> = root3_core::repos::templates::all().into_iter().map(|t| t.id).collect();
         return Err(Error::Usage(tr!("No template {} ({})", "テンプレート {} はありません（{}）", template, ids.join(", "))));
     }
     let s = ctx.repos()?.create(name, template)?;
@@ -86,7 +86,7 @@ pub fn repo_open(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let name = call.word(0).unwrap_or_default();
     let r = ctx.repos()?;
     let was_here = r.dir(name).is_ok();
-    let s = length3_core::storage::bring_repo(&r, name)?;
+    let s = root3_core::storage::bring_repo(&r, name)?;
     let text = if was_here { tr!("{} was here already; brought into step ({} taken in, {} sent)", "{} はもうこの端末にありました。Remote とそろえました（取り込み{}件、送信{}件）", name, s.taken, s.sent) }
         else { tr!("{} is here now ({})", "{} をこの端末に開きました（{}）", name, files(s.taken)) };
     Ok(Reply::done(text, json!({"repo": name, "synced": s, "wasHere": was_here})))
@@ -100,7 +100,7 @@ pub fn band_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let here = here_names(ctx)?;
     let b = home::band(&here)?;
     // Each repo here, for the menu: those out on the band first, as the band reads.
-    let running: Vec<String> = length3_core::prompt::running::all(length3_core::fs::paths::data_dir()).into_iter().map(|r| r.repo).collect();
+    let running: Vec<String> = root3_core::prompt::running::all(root3_core::fs::paths::data_dir()).into_iter().map(|r| r.repo).collect();
     for name in b.iter().chain(here.iter().filter(|n| !b.contains(n))) {
         let on = b.contains(name);
         crate::say::menu::see(|| {
@@ -151,7 +151,7 @@ fn shell(root: &std::path::Path, other: bool, terminal: bool) -> Vec<String> {
 /// `root3 prompt [REPO] [-- CMD…]`: the repo inside the root, without privileges.
 #[cfg(target_os = "linux")]
 pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use length3_core::{fs::paths, prompt::launch, prompt::running};
+    use root3_core::{fs::paths, prompt::launch, prompt::running};
     use std::io::IsTerminal;
     let repo = target::repo(ctx, call, 0)?;
     let data = paths::data_dir();
@@ -159,14 +159,14 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let (root, about) = super::runtime::root_now(data)?;
     let cmd = call.words(1);
     let argv: Vec<String> = if cmd.is_empty() { shell(&root, about.distro.is_some(), std::io::stdin().is_terminal()) } else { cmd };
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || length3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: length3_core::device::agent_key::env() };
+    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || root3_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: root3_core::device::agent_key::env() };
     // Recorded from the start, by the process that runs it, so `root3 prompt ls` (and Runtime) see it, `root3 prompt stop`
     // can end it, and nothing it holds is freed (storage/): first being prepared, as what .packages and .setup ask for
     // is set up (once, while they and the root stay as they are), then running.
     let prepared = || -> std::io::Result<running::Recorded> {
         let mut recorded = running::record(data, &repo, s.network, &s.root)?;
         // Recorded, what it holds stays; room is made round it if the device is short (storage/free.rs make_room).
-        length3_core::storage::make_room(data, paths::repos_dir(), PROMPT_ROOM);
+        root3_core::storage::make_room(data, paths::repos_dir(), PROMPT_ROOM);
         launch::set_up(&s, about.distro.is_some())?;
         recorded.ready()?;
         Ok(recorded)
@@ -200,7 +200,7 @@ pub fn prompt(_: &Ctx, _: &Call) -> Result<Reply> {
 
 /// `root3 prompt ls`: each Prompt running on this device, the app's among them.
 pub fn prompt_list(_: &Ctx, _: &Call) -> Result<Reply> {
-    use length3_core::{fs::paths, prompt::running};
+    use root3_core::{fs::paths, prompt::running};
     let all = running::all(paths::data_dir());
     let mut t = Vec::new();
     let mut rows = Vec::new();
@@ -232,7 +232,7 @@ pub fn prompt_stop(ctx: &Ctx, call: &Call) -> Result<Reply> {
 /// `root3 prompt pause|resume [REPO]`: its Prompts paused (all they hold stays, they use no CPU) or going on again.
 #[cfg(target_os = "linux")]
 pub fn prompt_pause(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use length3_core::{fs::paths, prompt::running};
+    use root3_core::{fs::paths, prompt::running};
     let paused = call.word(0) == Some("pause");
     let repo = target::repo(ctx, call, 1)?;
     let told: usize = running::all(paths::data_dir()).iter().filter(|r| r.repo == repo).filter_map(running::ns_of_record).map(|ns| running::pause(ns, paused)).sum();
@@ -248,14 +248,14 @@ pub fn prompt_pause(_: &Ctx, _: &Call) -> Result<Reply> {
 }
 
 /// Stop every Prompt of `repo` running here; what each held and how it ended.
-pub fn stop_prompts(repo: &str) -> Vec<length3_core::prompt::running::Stopped> {
-    use length3_core::{fs::paths, prompt::running};
+pub fn stop_prompts(repo: &str) -> Vec<root3_core::prompt::running::Stopped> {
+    use root3_core::{fs::paths, prompt::running};
     let data = paths::data_dir();
     running::all(data).iter().filter(|r| r.repo == repo).map(|r| running::stop(data, r)).collect()
 }
 
 /// What stopping gave back, as Runtime says it.
-pub fn said_stopped(repo: &str, stopped: &[length3_core::prompt::running::Stopped]) -> String {
+pub fn said_stopped(repo: &str, stopped: &[root3_core::prompt::running::Stopped]) -> String {
     let memory: u64 = stopped.iter().map(|s| s.before.memory).sum();
     let left: u32 = stopped.iter().map(|s| s.left).sum();
     if left > 0 { return tr!("Stopped {}'s Prompt, but {} processes are still there", "{} の Prompt を止めましたが、まだプロセスが {} 残っています", repo, left); }

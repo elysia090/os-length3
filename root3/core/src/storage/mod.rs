@@ -36,7 +36,7 @@
 //! attributed, because other programs write too.
 //!
 //! A leftover is disposable by proof, not by name: a temporary file this OS
-//! itself writes while replacing a file (`.<name>.length3-<pid>-<n>`,
+//! itself writes while replacing a file (`.<name>.root3-<pid>-<n>`,
 //! `<key>.json.<pid>` in Home) whose writer is gone and which is older than
 //! a minute; in the system directory, a root half unpacked by an install
 //! that died, and a release bundle or partial download not in use. Nothing

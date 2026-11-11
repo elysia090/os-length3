@@ -2399,51 +2399,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "length3-core"
-version = "0.0.1"
-dependencies = [
- "apple-native-keyring-store",
- "base64 0.23.1",
- "flate2",
- "keyring-core",
- "libc",
- "memchr",
- "nix",
- "rustix",
- "rustls",
- "rustls-native-certs",
- "ruzstd",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "ureq",
- "webpki-root-certs",
- "windows-native-keyring-store",
- "zbus-secret-service-keyring-store",
-]
-
-[[package]]
-name = "length3-core-web"
-version = "0.0.1"
-dependencies = [
- "length3-core",
- "serde_json",
-]
-
-[[package]]
-name = "length3-os"
-version = "0.0.1"
-dependencies = [
- "length3-core",
- "libc",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
-]
-
-[[package]]
 name = "libappindicator"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3675,12 +3630,57 @@ dependencies = [
 name = "root3"
 version = "0.0.1"
 dependencies = [
- "length3-core",
  "libc",
+ "root3-core",
  "russh",
  "rustix",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "root3-core"
+version = "0.0.1"
+dependencies = [
+ "apple-native-keyring-store",
+ "base64 0.23.1",
+ "flate2",
+ "keyring-core",
+ "libc",
+ "memchr",
+ "nix",
+ "rustix",
+ "rustls",
+ "rustls-native-certs",
+ "ruzstd",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "ureq",
+ "webpki-root-certs",
+ "windows-native-keyring-store",
+ "zbus-secret-service-keyring-store",
+]
+
+[[package]]
+name = "root3-core-web"
+version = "0.0.1"
+dependencies = [
+ "root3-core",
+ "serde_json",
+]
+
+[[package]]
+name = "root3-desktop"
+version = "0.0.1"
+dependencies = [
+ "libc",
+ "root3-core",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
 ]
 
 [[package]]

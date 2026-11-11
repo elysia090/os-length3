@@ -138,12 +138,12 @@ export function reveal(id: string) {
 
 /** Show `part` of `page` the next time that page is drawn (as if it had been chosen there last). */
 export function choosePart(page: string, part: string) {
-  try { localStorage.setItem(`length3.part.${page}`, part); } catch { /* convenience only */ }
+  try { localStorage.setItem(`root3.part.${page}`, part); } catch { /* convenience only */ }
 }
 
 export function parts<K extends string>(page: string, list: readonly {id: K; label: string}[],
   label = RAIL.some((p) => p.id === page) ? t(purpose(page as PurposeId).label) : ''): Parts<K> {
-  const key = `length3.part.${page}`;
+  const key = `root3.part.${page}`;
   const tabs = new Map<K, {tab: HTMLButtonElement; small: HTMLElement; panel: HTMLElement}>();
   const heard: ((k: K) => void)[] = [];
   // Heard by the name it is given (the page's, in the language spoken), never by the key it is kept under.

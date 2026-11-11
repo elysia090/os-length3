@@ -8,7 +8,7 @@
 //! KWallet, KeePassXC), reached by D-Bus from Rust alone, so the static root3 reaches it as the app does. There it is
 //! encrypted at rest with what the person signs in with, and it is in no file a backup, a synced home folder or a
 //! program reading files for tokens comes across. Where there is none that answers (a server, a container, SSH with no
-//! session bus, a locked keyring nobody unlocks within `WAIT`), or `LENGTH3_KEYRING=off` says not to use it, it is a
+//! session bus, a locked keyring nobody unlocks within `WAIT`), or `ROOT3_KEYRING=off` says not to use it, it is a
 //! file of its own, `<data>/secrets/<name>`, the person's alone (0600, its folder 0700), as `gh`, Claude Code and
 //! git's credential stores do there; what is kept says which (`kept_in`). A file kept before is moved into the keyring
 //! the first time it is read where there is one.
@@ -156,11 +156,11 @@ mod keyring {
     /// a test's and the person's, never share one).
     const SERVICE: &str = crate::fs::paths::IDENTIFIER;
 
-    /// This device's keyring, made once; none where it has none that answers, or `LENGTH3_KEYRING=off`.
+    /// This device's keyring, made once; none where it has none that answers, or `ROOT3_KEYRING=off`.
     pub fn store() -> Option<&'static Arc<CredentialStore>> {
         static STORE: OnceLock<Option<Arc<CredentialStore>>> = OnceLock::new();
         STORE.get_or_init(|| {
-            if std::env::var("LENGTH3_KEYRING").is_ok_and(|v| v.trim() == "off") { return None; }
+            if std::env::var("ROOT3_KEYRING").is_ok_and(|v| v.trim() == "off") { return None; }
             within(open).and_then(|r| r.ok())
         }).as_ref()
     }

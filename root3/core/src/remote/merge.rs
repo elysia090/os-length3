@@ -59,9 +59,9 @@ pub fn beside_as(path: &str, who: &str, n: u32) -> String {
 pub fn device_tag() -> String {
     #[cfg(unix)]
     let raw = rustix::system::uname().nodename().to_string_lossy().into_owned();
-    // In a browser the page names the device (its host gives LENGTH3_DEVICE), as it has no host name.
+    // In a browser the page names the device (its host gives ROOT3_DEVICE), as it has no host name.
     #[cfg(not(unix))]
-    let raw = std::env::var("LENGTH3_DEVICE").unwrap_or_default();
+    let raw = std::env::var("ROOT3_DEVICE").unwrap_or_default();
     tag_of(&raw)
 }
 

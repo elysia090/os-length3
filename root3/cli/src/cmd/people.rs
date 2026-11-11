@@ -6,7 +6,7 @@ use crate::words::args::Call;
 use crate::say::out::{ago, day, Error, plain, Reply, Result};
 use crate::words::spec::{Fact, On};
 use crate::words::target;
-use length3_core::{remote::inbox, remote::servers, tr};
+use root3_core::{remote::inbox, remote::servers, tr};
 use serde_json::json;
 
 pub fn servers(_: &Ctx, _: &Call) -> Result<Reply> {

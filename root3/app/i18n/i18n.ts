@@ -8,7 +8,7 @@
 type Lang = 'en' | 'ja';
 export const LANGS: readonly {id: Lang; name: string}[] = [{id: 'en', name: 'English'}, {id: 'ja', name: '日本語'}];
 
-const MIRROR = 'length3.os.lang';
+const MIRROR = 'root3.os.lang';
 let lang: Lang = (() => {
   try { return localStorage.getItem(MIRROR) === 'ja' ? 'ja' : 'en'; } catch { return 'en'; }
 })();

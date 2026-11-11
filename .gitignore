@@ -26,8 +26,8 @@ agent-key
 # What the build and the tests make (the OS's own: the app, the web root, the Worker, the selftests' runs).
 /target/
 /public/webroot/
-/length3-web.zip
-/length3-web.zip.sha256
+/root3-web.zip
+/root3-web.zip.sha256
 /.wrangler/
 /tests/app/.dist/
 /tests/app/.logs/

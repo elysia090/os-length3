@@ -25,7 +25,7 @@
 //!             this a sender on another segment could route to the LAN
 //!             address through the host. Anything else is closed at accept,
 //!             before the banner
-//!   says      `SSH-2.0-length3` when a client connects: not the library or
+//!   says      `SSH-2.0-root3` when a client connects: not the library or
 //!             its version
 //!   channels  sessions only: no port or agent forwarding, no X11, no
 //!             subsystem (sftp); a command's exit code goes back to ssh
@@ -36,7 +36,7 @@
 //!             off, the device is signed out, or it is told to (SIGTERM:
 //!             root3 address ssh off, logout, the app)
 
-use length3_core::{fs::paths, remote, ssh, tr};
+use root3_core::{fs::paths, remote, ssh, tr};
 use russh::keys::{PrivateKey, PublicKey};
 use russh::server::{self, Auth, Msg, Session};
 use russh::{Channel, ChannelId, ChannelMsg, MethodKind, MethodSet};
@@ -53,10 +53,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 /// request to the Remote and a write in its database; every 5 s it was 17,280 a day for each device left on.
 const BEAT: Duration = Duration::from_secs(30);
 
-/// The beat: BEAT, or LENGTH3_SSH_BEAT_MS for a test that waits on what the Remote hears.
+/// The beat: BEAT, or ROOT3_SSH_BEAT_MS for a test that waits on what the Remote hears.
 fn beat_every() -> Duration {
     static EVERY: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
-    *EVERY.get_or_init(|| std::env::var("LENGTH3_SSH_BEAT_MS").ok().and_then(|v| v.parse().ok()).map_or(BEAT, Duration::from_millis))
+    *EVERY.get_or_init(|| std::env::var("ROOT3_SSH_BEAT_MS").ok().and_then(|v| v.parse().ok()).map_or(BEAT, Duration::from_millis))
 }
 /// Out of reach, asked less often each time (60 s, 120 s, …), up to this.
 const BEAT_MOST: Duration = Duration::from_secs(300);
@@ -88,13 +88,13 @@ pub fn host_key(data: &Path) -> Result<PrivateKey, String> {
     let read = |text: Vec<u8>| PrivateKey::from_openssh(text).map_err(|e| tr!("The host key {} cannot be read: {}. Remove it to make a new one (each ssh client then says the host key changed)",
         "ホスト鍵 {} を読めません：{}。消せば新しく作ります（そのあと各 ssh クライアントはホスト鍵が変わったと言います）", at.display(), e));
     if let Ok(text) = std::fs::read(&at) { return read(text); }
-    length3_core::fs::write::private_dir(&ssh::dir(data)).map_err(|e| e.to_string())?;
+    root3_core::fs::write::private_dir(&ssh::dir(data)).map_err(|e| e.to_string())?;
     let mut seed = [0u8; 32];
     std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut seed)).map_err(|e| e.to_string())?;
     let pair = russh::keys::ssh_key::private::Ed25519Keypair::from_seed(&seed);
-    let key = PrivateKey::new(pair.into(), "length3").map_err(|e| e.to_string())?;
+    let key = PrivateKey::new(pair.into(), "root3").map_err(|e| e.to_string())?;
     let text = key.to_openssh(russh::keys::ssh_key::LineEnding::LF).map_err(|e| e.to_string())?;
-    match length3_core::fs::write::create(&at, text.as_bytes(), length3_core::fs::write::How::PRIVATE) {
+    match root3_core::fs::write::create(&at, text.as_bytes(), root3_core::fs::write::How::PRIVATE) {
         Ok(()) => Ok(key),
         // Another start made it first: that one is this device's.
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => read(std::fs::read(&at).map_err(|e| e.to_string())?),
@@ -133,7 +133,7 @@ impl Shared {
 
 /// Whether `user` names a repo here (an SSH user is a repo).
 fn is_repo(user: &str) -> bool {
-    length3_core::text::names::valid_name(user) && length3_core::repos::store::Repos::open().is_ok_and(|r| r.dir(user).is_ok())
+    root3_core::text::names::valid_name(user) && root3_core::repos::store::Repos::open().is_ok_and(|r| r.dir(user).is_ok())
 }
 
 struct Conn {
@@ -283,7 +283,7 @@ async fn run_channel(mut ch: Channel<Msg>, handle: server::Handle, shared: Arc<S
     // and its Prompt with it, as a terminal's hangup would.
     if let Some(pid) = pid.filter(|p| *p > 0 && shared.sessions.lock().is_ok_and(|s| s.contains(p))) {
         log(&format!("session {repo}: the client went; ended"));
-        length3_core::prompt::running::signal(pid, length3_core::prompt::running::Signal::Kill);
+        root3_core::prompt::running::signal(pid, root3_core::prompt::running::Signal::Kill);
     }
 }
 
@@ -299,10 +299,10 @@ fn started(s: Started) -> (Option<Input>, Option<u32>, Option<tokio::sync::onesh
 /// closed and `ended` (the third) is told.
 async fn start(shared: &Arc<Shared>, handle: &server::Handle, id: ChannelId, repo: &str, command: Option<String>, asked: &Asked) -> Started {
     let mut cmd = tokio::process::Command::new(&shared.exe);
-    // The repo (the SSH user) is named by LENGTH3_REPO from the data directory, never as a word: root3 reads a
+    // The repo (the SSH user) is named by ROOT3_REPO from the data directory, never as a word: root3 reads a
     // word against its forms first, so `ssh ls@host` was `root3 prompt ls`, the list of every Prompt on the
     // device, and a repo called stop or --network could not be reached at all.
-    cmd.arg("prompt").env("LENGTH3_REPO", repo).current_dir(paths::data_dir());
+    cmd.arg("prompt").env("ROOT3_REPO", repo).current_dir(paths::data_dir());
     if let Some(c) = &command { cmd.args(["--", "/bin/sh", "-c", c]); }
     cmd.env_remove("ROOT3_PROMPT").env("TERM", asked.pty.as_ref().map_or("dumb", |p| p.0.as_str())).kill_on_drop(false);
     log(&format!("session {repo}: {}", command.as_deref().map_or("shell".to_string(), |c| format!("exec {} bytes", c.len()))));
@@ -439,7 +439,7 @@ enum Why { Off, SignedOut, Asked }
 
 /// What it says of itself when a client connects, before anything else: the protocol and a plain name, not the
 /// SSH library or its version.
-const SERVER_ID: &str = "SSH-2.0-length3";
+const SERVER_ID: &str = "SSH-2.0-root3";
 
 /// The key kinds offered and taken, for the host key and the clients' (ssh::KINDS): no RSA.
 const KEY_KINDS: [russh::keys::ssh_key::Algorithm; 4] = {
@@ -489,7 +489,7 @@ impl Sockets {
                     self.open.push((*ip, tokio::spawn(take_connections(l, shared.clone(), config.clone(), self.bound.subscribe()))));
                 }
                 Err(e) if *ip == IpAddr::V4(Ipv4Addr::LOCALHOST) => {
-                    return Err(tr!("Port {} cannot be listened on ({}); LENGTH3_SSH_PORT names another", "ポート {} で待てません（{}）。LENGTH3_SSH_PORT で別のポートを選べます", self.port, e));
+                    return Err(tr!("Port {} cannot be listened on ({}); ROOT3_SSH_PORT names another", "ポート {} で待てません（{}）。ROOT3_SSH_PORT で別のポートを選べます", self.port, e));
                 }
                 // ::1 where IPv6 is off, an address gone meanwhile: listened on at a later look if it is there then.
                 Err(e) => log(&format!("not listening on {ip}: {e}")),
@@ -619,7 +619,7 @@ pub fn serve() -> Result<(), String> {
     })?;
     // Every session ends with it: its Prompt's supervisor is killed, and with it everything in the Prompt.
     for pid in shared.sessions.lock().map(|s| s.clone()).unwrap_or_default() {
-        if pid > 0 { length3_core::prompt::running::signal(pid, length3_core::prompt::running::Signal::Kill); }
+        if pid > 0 { root3_core::prompt::running::signal(pid, root3_core::prompt::running::Signal::Kill); }
     }
     // The sockets close before the record goes (bug: they lived as long as the runtime, after the record was gone,
     // so root3 said SSH was off while the port still took a connection, reset when the process ended).

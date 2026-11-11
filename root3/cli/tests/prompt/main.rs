@@ -1,5 +1,5 @@
 //! How a Prompt's repo is named when root3 starts root3 for it (the SSH listener,
-//! the app): by LENGTH3_REPO, from the data directory, never as a word, which
+//! the app): by ROOT3_REPO, from the data directory, never as a word, which
 //! root3 reads against the forms of `root3 prompt` first.
 
 #[path = "../common/mod.rs"]
@@ -17,9 +17,9 @@ impl Drop for Started {
     }
 }
 
-/// `root3 prompt REPO -- /bin/sh -c SCRIPT`, as the app starts one (the repo named by LENGTH3_REPO, no terminal).
+/// `root3 prompt REPO -- /bin/sh -c SCRIPT`, as the app starts one (the repo named by ROOT3_REPO, no terminal).
 fn start(home: &Home, repo: &str, script: &str) -> Started {
-    Started(home.command("en", &["prompt", "--", "/bin/sh", "-c", script]).env("LENGTH3_REPO", repo)
+    Started(home.command("en", &["prompt", "--", "/bin/sh", "-c", script]).env("ROOT3_REPO", repo)
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped()).spawn().expect("root3 starts"))
 }
 
@@ -49,7 +49,7 @@ fn a_repo_called_like_a_verb_is_reached_by_its_name() {
     // Named as the listener and the app name it now, it is the repo: its shell starts, and ends with no input.
     if !home.root() { eprintln!("skipped: no sh to lend a root"); return; }
     for name in ["ls", "stop"] {
-        let out = home.command("en", &["prompt", "--", "/bin/sh", "-c", ": > here"]).env("LENGTH3_REPO", name).stdin(std::process::Stdio::null()).output().unwrap();
+        let out = home.command("en", &["prompt", "--", "/bin/sh", "-c", ": > here"]).env("ROOT3_REPO", name).stdin(std::process::Stdio::null()).output().unwrap();
         let err = String::from_utf8_lossy(&out.stderr);
         if out.status.code() != Some(0) && err.contains("namespace") { eprintln!("skipped: the Prompt did not start here ({err})"); return; }
         assert!(out.status.success() && home.path(&format!("repos/{name}/here")).exists(), "{name}: {err}");
@@ -126,7 +126,7 @@ fn a_prompt_interrupted_or_lost_while_prepared_leaves_no_record_or_process() {
     if !home.root_of(&"5".repeat(64), "test", &["sleep", "touch"]) { eprintln!("skipped: no programs to lend a root"); return; }
     home.use_root(&"5".repeat(64));
     home.dotfiles(&[(".setup", "touch /root/os-starting/began\nsleep 60\n")]);
-    let mut pty = home.pty("en", &["prompt", "--", "/bin/sh", "-c", "touch ran"], &[("LENGTH3_REPO", "os-starting")]);
+    let mut pty = home.pty("en", &["prompt", "--", "/bin/sh", "-c", "touch ran"], &[("ROOT3_REPO", "os-starting")]);
     let end = Instant::now() + Duration::from_secs(30);
     while !home.path("repos/os-starting/began").exists() {
         if Instant::now() > end { eprintln!("skipped: the Prompt did not start here: {}", pty.screen()); return; }
@@ -140,10 +140,10 @@ fn a_prompt_interrupted_or_lost_while_prepared_leaves_no_record_or_process() {
     std::fs::remove_file(home.path("repos/os-starting/began")).unwrap();
     let mut root3 = start(&home, "os-starting", "touch ran-again");
     if !wrote(&home, "os-starting", "began", &mut root3) { return; }
-    let ns = length3_core::prompt::running::ns_of(root3.0.id()).expect("what prepares it, in a namespace of its own");
+    let ns = root3_core::prompt::running::ns_of(root3.0.id()).expect("what prepares it, in a namespace of its own");
     root3.0.kill().unwrap();
     root3.0.wait().unwrap();
-    let gone = length3_core::prompt::running::wait_empty(ns, length3_core::prompt::running::Held { processes: 0, memory: 0 }, Duration::from_secs(3));
+    let gone = root3_core::prompt::running::wait_empty(ns, root3_core::prompt::running::Held { processes: 0, memory: 0 }, Duration::from_secs(3));
     assert_eq!(gone.left, 0, "nothing of its setting up is left");
     assert!(home.run("en", &["prompt", "ls"]).stdout.contains("No Prompt is running"));
     assert_eq!(home.run("en", &["free", "env:os-starting", "cache:os-starting"]).code, 0, "its record holds nothing now");
@@ -156,7 +156,7 @@ fn a_prompt_interrupted_or_lost_while_prepared_leaves_no_record_or_process() {
 fn a_prompt_keeps_its_root_when_another_is_made_current() {
     let home = Home::new("prompt-root-switch");
     home.repo("os-web", &[("README", "web\n")]);
-    let (old, root3s) = ("5".repeat(64), length3_core::root::RELEASES[0].sha256);
+    let (old, root3s) = ("5".repeat(64), root3_core::root::RELEASES[0].sha256);
     if !home.root_of(&old, "Ubuntu", &["sleep", "touch"]) || !home.root_of(root3s, "OS Length3 Linux", &[]) { eprintln!("skipped: no programs to lend a root"); return; }
     home.use_root(&old);
     let mut root3 = start(&home, "os-web", "touch up; while [ ! -e go ]; do sleep 0.05; done; touch after");
@@ -271,8 +271,8 @@ fn a_prompt_paused_uses_no_cpu_until_it_goes_on() {
     home.repo("busy", &[("README", "busy\n")]);
     let mut root3 = start(&home, "busy", ": > up; while :; do :; done");
     if !wrote(&home, "busy", "up", &mut root3) { return; }
-    let ns = length3_core::prompt::running::ns_of(root3.0.id()).expect("its namespace");
-    let cpu = || length3_core::prompt::running::cpu_ms(ns);
+    let ns = root3_core::prompt::running::ns_of(root3.0.id()).expect("its namespace");
+    let cpu = || root3_core::prompt::running::cpu_ms(ns);
     let spun = cpu();
     std::thread::sleep(Duration::from_millis(300));
     assert!(cpu() > spun + 100, "running, it spins");

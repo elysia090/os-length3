@@ -14,7 +14,7 @@
 use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{Error, Reply, Result};
-use length3_core::{device::desktop, fs::paths, remote, tr};
+use root3_core::{device::desktop, fs::paths, remote, tr};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -36,7 +36,7 @@ pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {
     }
     let program = program().ok_or_else(|| Error::NotFound(where_to_get()))?;
     if !program.is_file() {
-        return Err(Error::NotFound(format!("{}\n{}", tr!("LENGTH3_APP names {}, and no program is there", "LENGTH3_APP は {} を指していますが、そこにプログラムはありません", program.display()), where_to_get())));
+        return Err(Error::NotFound(format!("{}\n{}", tr!("ROOT3_APP names {}, and no program is there", "ROOT3_APP は {} を指していますが、そこにプログラムはありません", program.display()), where_to_get())));
     }
     if !runnable(&program) {
         return Err(Error::Refused(tr!("{0} is here but may not run yet: chmod +x {0}, then root3 app", "{0} はありますが、まだ実行できません。chmod +x {0} のあと root3 app", program.display())));
@@ -96,10 +96,10 @@ pub fn close(_: &Ctx, _: &Call) -> Result<Reply> {
         json!({"open": false, "changed": true})))
 }
 
-/// Where the app is: $LENGTH3_APP; else `length3-os` on PATH, where the .deb puts it (/usr/bin); else the newest
+/// Where the app is: $ROOT3_APP; else `root3-desktop` on PATH, where the .deb puts it (/usr/bin); else the newest
 /// AppImage of it as downloaded, in ~/Applications, ~/Downloads, ~/.local/bin or ~.
 fn program() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("LENGTH3_APP").filter(|v| !v.is_empty()) { return Some(p.into()); }
+    if let Some(p) = std::env::var_os("ROOT3_APP").filter(|v| !v.is_empty()) { return Some(p.into()); }
     let path = std::env::var_os("PATH").unwrap_or_default();
     if let Some(p) = std::env::split_paths(&path).map(|d| d.join(desktop::PROGRAM)).find(|p| runnable(p)) { return Some(p); }
     let home = PathBuf::from(std::env::var_os("HOME")?);
@@ -163,7 +163,7 @@ fn downloads() -> Vec<String> {
     }
     if let Some((link, _)) = file("appimage") {
         t.push(tr!("  Any x86-64 Linux (AppImage)  {}", "  x86-64 の Linux なら（AppImage）  {}", link));
-        t.push(tr!("    then: chmod +x it, kept in ~/Applications (or LENGTH3_APP=its path)", "    そのあと：chmod +x して ~/Applications に置く（または LENGTH3_APP=そのパス）"));
+        t.push(tr!("    then: chmod +x it, kept in ~/Applications (or ROOT3_APP=its path)", "    そのあと：chmod +x して ~/Applications に置く（または ROOT3_APP=そのパス）"));
     }
     if t.is_empty() { t.push(tr!("  Runtime's Desktop app card on the web offers it", "  Web の Runtime にある「デスクトップアプリ」から入手できます")); }
     t

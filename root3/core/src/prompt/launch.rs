@@ -145,6 +145,7 @@ const PROMPT_PATH: &str = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 /// What a Prompt runs with: set here, never taken from the host; then what it is told besides (`told`), each by
 /// a name of capitals, digits and _ that is none of these, its words without a NUL.
 fn environment(name: &str, shell: &str, told: &[(String, String)]) -> Vec<CString> {
+    let lang = if crate::text::i18n::ja() { "ja" } else { "en" };
     let mut all: Vec<String> = [
         format!("PATH={PROMPT_PATH}"),
         "HOME=/root".into(),
@@ -153,18 +154,20 @@ fn environment(name: &str, shell: &str, told: &[(String, String)]) -> Vec<CStrin
         format!("SHELL={shell}"),
         format!("TERM={}", term()),
         "LANG=C.UTF-8".into(),
-        // The person's language (Home's), so the root's root3 and shell speak it too.
-        format!("LENGTH3_LANG={}", if crate::text::i18n::ja() { "ja" } else { "en" }),
         "PS1=$PWD $ ".into(),
-        // The root's own root3 sees the open repo where the shell does, and
-        // leaves Home, the Remote and the device to the app.
-        "LENGTH3_REPOS=/root".into(),
+        // The root's own root3 sees the open repo where the shell does, and leaves Home, the Remote and the
+        // device to the app; it speaks the person's language (Home's).
+        "ROOT3_REPOS=/root".into(),
         "ROOT3_PROMPT=1".into(),
-        // A root released before the command was root3 (0.6.4) has l3, which asks this.
+        format!("ROOT3_REPO={name}"),
+        format!("ROOT3_LANG={lang}"),
+        // The same four by the names the root released as 0.6.4 reads them by (its l3 and its shell's settings),
+        // and where an interactive sh finds those settings: all five go when the pin is of a root made after it.
+        "LENGTH3_REPOS=/root".into(),
         "L3_PROMPT=1".into(),
-        // An interactive sh reads this (the root's /etc/length3/shrc, if it has one).
-        "ENV=/etc/length3/shrc".into(),
         format!("LENGTH3_REPO={name}"),
+        format!("LENGTH3_LANG={lang}"),
+        "ENV=/etc/length3/shrc".into(),
     ].into();
     // The person's clock: the root has every zone the host may name, so date, ls -l and git's log read as theirs.
     if let Some(z) = zone() { all.push(format!("TZ={z}")); }
@@ -272,7 +275,7 @@ fn build(s: &Sandbox, joined: Option<OwnedFd>) -> io::Result<bool> {
     rustix::process::pivot_root(".", ".").map_err(failed("pivot_root"))?;
     rustix::mount::unmount(".", rustix::mount::UnmountFlags::DETACH).map_err(failed("umount old root"))?;
     chdir(&Path::new("/root").join(&s.name))?;
-    let _ = rustix::system::sethostname(b"length3");
+    let _ = rustix::system::sethostname(b"root3");
     Ok(layered.is_some())
 }
 
@@ -292,7 +295,7 @@ fn resolver(top: &Path) -> io::Result<()> {
             }
         }
         Ok(m) if m.is_file() => {
-            let file = top.join("run/length3-resolv.conf");
+            let file = top.join("run/root3-resolv.conf");
             std::fs::write(&file, text)?;
             bind(&file, &at, true)?;
         }

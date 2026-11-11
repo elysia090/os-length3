@@ -8,4 +8,4 @@ import {nodeCore} from './node-core.ts';
 import {useCore} from '../host/host.ts';
 
 let ask: Ask | undefined;
-useCore((name, args) => (ask ??= nodeCore(buildCoreWasm({quiet: true}), {LENGTH3_HOME: '/data', LENGTH3_REMOTE: ''}))(name, args));
+useCore((name, args) => (ask ??= nodeCore(buildCoreWasm({quiet: true}), {ROOT3_HOME: '/data', ROOT3_REMOTE: ''}))(name, args));

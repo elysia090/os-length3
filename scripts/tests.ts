@@ -71,7 +71,7 @@ if (shard) {
 const text = new Map<string, string>();
 const read = (f: string): string => { let t = text.get(f); if (t === undefined) { t = readFileSync(f, 'utf8'); text.set(f, t); } return t; };
 /** How long each file took in the runs before on this machine (ms, its tests'), kept in its temporary directory. */
-const TOOK = join(tmpdir(), 'length3-test-times.json');
+const TOOK = join(tmpdir(), 'root3-test-times.json');
 let took: Record<string, number> = {};
 try { took = JSON.parse(readFileSync(TOOK, 'utf8')); } catch { /* the first run here */ }
 /**
@@ -101,7 +101,7 @@ units.sort((a, b) => unitWeight(b) - unitWeight(a));
 
 // Each one's module, and the folder the files are taken in (a folder each, made once, by whichever process makes
 // it first); made for this run, gone when it ends.
-const kept = scratch('length3-tests-');
+const kept = scratch('root3-tests-');
 process.on('exit', () => rmSync(kept, {recursive: true, force: true}));
 const together = pathToFileURL(join(OS, 'root3/remote/tests/testing-together.ts')).href;
 const entries = Array.from({length: processes}, (_, k) => {

@@ -1,5 +1,5 @@
 // The core built for the browser (root3/core/web/src/lib.rs): its three exports, and the one import of its own
-// (length3.http, root3/core/web/src/lib.rs mod page) beside WASI. core/worker.ts runs it; wasi.test.ts runs it in Node.
+// (root3.http, root3/core/web/src/lib.rs mod page) beside WASI. core/worker.ts runs it; wasi.test.ts runs it in Node.
 
 import type {WASI} from './wasi.ts';
 
@@ -33,7 +33,7 @@ export class Core {
     let next = 0;
     let memory: WebAssembly.Memory | undefined;
     const view = () => new DataView(memory!.buffer);
-    const length3 = {
+    const root3 = {
       http: (head: number, headLen: number, body: number, bodyLen: number, status: number, len: number) => {
         const bytes = (p: number, n: number) => new Uint8Array(memory!.buffer, p >>> 0, n >>> 0).slice();
         let sent: Sent;
@@ -54,7 +54,7 @@ export class Core {
         if (b) new Uint8Array(memory!.buffer, out >>> 0, b.length).set(b);
       },
     };
-    const instance = await WebAssembly.instantiate(module, {wasi_snapshot_preview1: wasi.imports, length3});
+    const instance = await WebAssembly.instantiate(module, {wasi_snapshot_preview1: wasi.imports, root3});
     const exports = instance.exports as unknown as Exports;
     memory = exports.memory;
     wasi.bind(instance);

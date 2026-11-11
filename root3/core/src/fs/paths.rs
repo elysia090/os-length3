@@ -8,21 +8,21 @@ use std::sync::OnceLock;
 /// The app's identifier; the platform data directory is named after it.
 pub const IDENTIFIER: &str = "com.length3.os";
 
-/// The data directory: `$LENGTH3_HOME` if set, else the platform's place for app data (the same place the app uses),
-/// else `./.length3`.
+/// The data directory: `$ROOT3_HOME` if set, else the platform's place for app data (the same place the app uses),
+/// else `./.root3`.
 pub fn data_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
-    DIR.get_or_init(|| match set("LENGTH3_HOME") {
+    DIR.get_or_init(|| match set("ROOT3_HOME") {
         Some(home) => home,
-        None => platform().map(|d| d.join(IDENTIFIER)).unwrap_or_else(|| PathBuf::from(".length3")),
+        None => platform().map(|d| d.join(IDENTIFIER)).unwrap_or_else(|| PathBuf::from(".root3")),
     })
 }
 
-/// Where repos live. Inside the app's Prompt this is `/root` (set through `$LENGTH3_REPOS`), the same place the
+/// Where repos live. Inside the app's Prompt this is `/root` (set through `$ROOT3_REPOS`), the same place the
 /// shell sees them.
 pub fn repos_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
-    DIR.get_or_init(|| set("LENGTH3_REPOS").unwrap_or_else(|| data_dir().join("repos")))
+    DIR.get_or_init(|| set("ROOT3_REPOS").unwrap_or_else(|| data_dir().join("repos")))
 }
 
 /// Home's state: profile, TODO and the band.

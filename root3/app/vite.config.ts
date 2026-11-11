@@ -16,14 +16,14 @@ import {shipped} from '../remote/ship/releases.ts';
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
 // The Remote (remote/) is the one other origin it may reach: where the
 // canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one;
-// '' is this page's own origin, which in development LENGTH3_DEV_REMOTE
+// '' is this page's own origin, which in development ROOT3_DEV_REMOTE
 // (a `node root3/remote/serve/dev.ts`) answers through the dev server.
 const REMOTE_URL = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
 const REMOTE = REMOTE_URL ? new URL(REMOTE_URL).origin : '';
-const DEV_REMOTE = process.env.LENGTH3_DEV_REMOTE;
+const DEV_REMOTE = process.env.ROOT3_DEV_REMOTE;
 // What the Worker serves (wrangler.toml): the app's files are its [assets] directory, which is where this builds
 // them (and Tauri takes them from, tauri.conf.json frontendDist); its own paths (run_worker_first) reach it before
-// them, and the development server and the preview pass the same paths to LENGTH3_DEV_REMOTE.
+// them, and the development server and the preview pass the same paths to ROOT3_DEV_REMOTE.
 const WRANGLER = readFileSync(new URL('../../wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
@@ -37,7 +37,7 @@ const WEB_POLICY = webPolicy(REMOTE);
 const HOST: 'native' | 'web' = process.env.TAURI_ENV_PLATFORM ? 'native' : 'web';
 
 const metaPolicy = (): Plugin => ({
-  name: 'length3-web-policy',
+  name: 'root3-web-policy',
   apply: 'build',
   transformIndexHtml(html) {
     if (HOST === 'native') return html;
@@ -53,18 +53,18 @@ function commit(): string {
 }
 
 /**
- * The page says which build it is (`<meta name="length3-build">`: the release and the commit; boot.js puts it in
+ * The page says which build it is (`<meta name="root3-build">`: the release and the commit; boot.js puts it in
  * what it shows when the app cannot start), so the page a site serves can be told from the tree. On the web its
  * script is marked data-cfasync="false": a CDN that defers scripts (Cloudflare's Rocket Loader) rewrites a
  * module script into one its own loader runs, which this page's policy never lets run, leaving the page blank.
  */
 const buildStamp = (): Plugin => ({
-  name: 'length3-build-stamp',
+  name: 'root3-build-stamp',
   apply: 'build',
   transformIndexHtml: {
     order: 'post',
     handler(html) {
-      const stamped = html.replace('<head>', `<head>\n    <meta name="length3-build" content="${`${process.env.VITE_LENGTH3_RELEASE} ${commit()}`.trim()}">`);
+      const stamped = html.replace('<head>', `<head>\n    <meta name="root3-build" content="${`${process.env.VITE_LENGTH3_RELEASE} ${commit()}`.trim()}">`);
       return HOST === 'native' ? stamped : stamped.replace(/<script(?=[^>]*\stype="module")/g, '<script data-cfasync="false"');
     },
   },
@@ -72,13 +72,13 @@ const buildStamp = (): Plugin => ({
 
 /**
  * The core the app runs, built for the browser (root3/core/web) when its sources changed, once per dev-server start
- * and per build; `virtual:length3-core.wasm?url` is the module's URL (a hashed asset in a build), from any
+ * and per build; `virtual:root3-core.wasm?url` is the module's URL (a hashed asset in a build), from any
  * bundle, the core's worker's included, as an alias reaches them all.
  */
 const coreWasm = (): Plugin => ({
-  name: 'length3-core-wasm',
+  name: 'root3-core-wasm',
   config: () => ({
-    resolve: {alias: [{find: /^virtual:length3-core\.wasm/, replacement: coreWasmPath()}]},
+    resolve: {alias: [{find: /^virtual:root3-core\.wasm/, replacement: coreWasmPath()}]},
     server: {fs: {allow: [dirname(coreWasmPath())]}},
   }),
   // The desktop app's core is its own (desktop), so its build needs none for the browser.
@@ -99,7 +99,7 @@ const hostOnly = (): Plugin => {
   const named = new RegExp(`/app/(${other.join('|')})\\.ts$`);
   let out = '';
   return {
-    name: 'length3-host',
+    name: 'root3-host',
     enforce: 'pre',
     configResolved(c) { out = resolve(c.root, c.build.outDir); },
     // public/ is copied whole; the web root (public/webroot, made by npm run webroot) is the web's alone.
@@ -109,7 +109,7 @@ const hostOnly = (): Plugin => {
       const r = await this.resolve(source, importer, {...options, skipSelf: true});
       if (!r || !named.test(r.id)) return r;
       const stand = r.id.replace(/\.ts$/, suffix);
-      if (!existsSync(stand)) throw new Error(`length3: ${r.id} is one host's alone and has no ${stand} for this build`);
+      if (!existsSync(stand)) throw new Error(`root3: ${r.id} is one host's alone and has no ${stand} for this build`);
       return stand;
     },
   };
@@ -121,7 +121,7 @@ const hostOnly = (): Plugin => {
  * than after it has run.
  */
 const preloadApp = (): Plugin => ({
-  name: 'length3-preload-app',
+  name: 'root3-preload-app',
   apply: 'build',
   transformIndexHtml: {
     order: 'post',
@@ -145,7 +145,7 @@ const preloadApp = (): Plugin => ({
  * taken away (scripts/boot.ts): a file of the build, and answered as it is by the development server.
  */
 const boot = (): Plugin => ({
-  name: 'length3-boot',
+  name: 'root3-boot',
   configureServer(server) {
     server.middlewares.use('/boot.js', (_, res, next) => {
       bootScript().then((code) => { res.setHeader('Content-Type', 'text/javascript'); res.end(code); }, next);
@@ -179,7 +179,7 @@ export default defineConfig({
   worker: {format: 'es'},
   // muk's runtime reaches for Node's workers only under Node: in the browser bundle that module is nothing.
   resolve: {alias: [{find: 'node:worker_threads', replacement: fileURLToPath(new URL('./shims/worker-threads.ts', import.meta.url))}]},
-  define: {__LENGTH3_HOST__: JSON.stringify(HOST)},
+  define: {__ROOT3_HOST__: JSON.stringify(HOST)},
   // Most of a build is the core compiled for the browser (coreWasm's buildStart, cargo), which Rolldown would
   // report each time as a plugin's slow callback: it is the build's work, not a plugin's overhead.
   build: {target: 'es2022', outDir: resolve(TOP, ASSETS), emptyOutDir: true, rolldownOptions: {checks: {bundlerTimings: false}}},

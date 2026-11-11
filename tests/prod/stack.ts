@@ -107,7 +107,7 @@ function localEnv(): NodeJS.ProcessEnv {
 export function appBuild(): string {
   const given = process.env.PROD_ASSETS;
   if (given && existsSync(join(given, 'index.html'))) return given;
-  const out = mkdtempSync(join(tmpdir(), 'length3-prod-app-'));
+  const out = mkdtempSync(join(tmpdir(), 'root3-prod-app-'));
   // Its own build goes when this process does.
   process.once('exit', () => rmSync(out, {recursive: true, force: true}));
   const r = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', out, '--logLevel', 'error'],

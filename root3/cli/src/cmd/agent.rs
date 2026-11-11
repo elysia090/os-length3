@@ -8,7 +8,7 @@
 use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{ago, Error, Reply, Result};
-use length3_core::{agent::activity, agent::tasks, compute::spec, fs::paths, fs::write, tr};
+use root3_core::{agent::activity, agent::tasks, compute::spec, fs::paths, fs::write, tr};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
@@ -20,7 +20,7 @@ const PAYLOAD: usize = 4 * 1024 * 1024;
 
 /// A session as a line: the harness, where (repo, and the issue as #N), what it does, how long ago.
 fn said(s: &activity::Session) -> (String, String) {
-    let at = if s.line == length3_core::repos::lines::MAIN { s.repo.clone() } else { format!("{} {}", s.repo, super::git::line_called(&s.line)) };
+    let at = if s.line == root3_core::repos::lines::MAIN { s.repo.clone() } else { format!("{} {}", s.repo, super::git::line_called(&s.line)) };
     let state = match s.state.as_str() {
         "working" => tr!("working", "作業中"),
         "waits" => tr!("waits for you", "あなたを待っています"),
@@ -32,7 +32,7 @@ fn said(s: &activity::Session) -> (String, String) {
 
 /// Where a task is, as a person calls it: the repo, and its issue as #N.
 fn task_at(k: &tasks::Task) -> String {
-    if k.issue.is_empty() { k.repo.clone() } else { format!("{} {}", k.repo, length3_core::repos::issues::number(&k.issue)) }
+    if k.issue.is_empty() { k.repo.clone() } else { format!("{} {}", k.repo, root3_core::repos::issues::number(&k.issue)) }
 }
 
 /// A task as a line: what it is for, and the deed that goes on with it.
@@ -274,7 +274,7 @@ const SAY_MOST: usize = 2000;
 /// `root3 agent run` (set off by a deed, core agent/tasks.rs kick): the repo's tasks waiting, one at a time, the most complex
 /// first, each in the repo's Prompt; another runner for the repo already at it, this one leaves at once.
 pub fn run(ctx: &Ctx, _: &Call) -> Result<Reply> {
-    let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (LENGTH3_REPO)", "どの repo ですか（LENGTH3_REPO）")))?;
+    let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (ROOT3_REPO)", "どの repo ですか（ROOT3_REPO）")))?;
     loop {
         let Some(hold) = tasks::hold(&repo)? else { return Ok(Reply::Nothing) };
         while let Some(k) = tasks::next(&repo)? {
@@ -283,8 +283,8 @@ pub fn run(ctx: &Ctx, _: &Call) -> Result<Reply> {
         }
         drop(hold);
         // One set off while this let go is left to this one: nothing waiting is ever left without a runner.
-        let shown = length3_core::repos::lines::current(&repo);
-        if !tasks::all().iter().any(|k| k.repo == repo && k.state == tasks::State::Waiting && (!k.deed.writes() || shown == length3_core::repos::lines::MAIN || shown == k.line)) {
+        let shown = root3_core::repos::lines::current(&repo);
+        if !tasks::all().iter().any(|k| k.repo == repo && k.state == tasks::State::Waiting && (!k.deed.writes() || shown == root3_core::repos::lines::MAIN || shown == k.line)) {
             return Ok(Reply::Nothing);
         }
     }
@@ -297,7 +297,7 @@ fn stopped(why: String, fix: String) -> tasks::Outcome {
 /// One task run: where (its copy), how (its command), what it is told, then its Prompt, what it prints said on its
 /// issue as an agent's work is and kept whole in its log; what it ended with read back.
 fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
-    use length3_core::{history, history::work, home};
+    use root3_core::{history, history::work, home};
     let (repo, line) = (k.repo.as_str(), k.line.as_str());
     let Ok(repos) = ctx.repos() else { return stopped(tr!("{} is not here", "{} はここにありません", repo), String::new()) };
     let harness = if k.deed == tasks::Deed::Tests { None } else {
@@ -306,12 +306,12 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     let name = harness.as_deref().map(tasks::agent_name).unwrap_or_default();
     // What writes runs on the issue's own copy, shown as the work the person would have started; what reads, on the
     // copy it is about.
-    if k.deed.writes() && length3_core::repos::lines::current(repo) != line {
-        let at = if length3_core::repos::lines::worktree(repo, line).is_dir() { work::switch(&repos, repo, line) } else { work::start(&repos, repo, &k.issue).map(|_| ()) };
+    if k.deed.writes() && root3_core::repos::lines::current(repo) != line {
+        let at = if root3_core::repos::lines::worktree(repo, line).is_dir() { work::switch(&repos, repo, line) } else { work::start(&repos, repo, &k.issue).map(|_| ()) };
         if let Err(why) = at { return stopped(why, if ctx.connected() { String::new() } else { "root3 login".into() }); }
     }
-    let copy = length3_core::repos::lines::worktree(repo, line);
-    let dir = if length3_core::repos::lines::current(repo) == line || line == length3_core::repos::lines::MAIN || !copy.is_dir() { repos.dir(repo) } else { Ok(copy) };
+    let copy = root3_core::repos::lines::worktree(repo, line);
+    let dir = if root3_core::repos::lines::current(repo) == line || line == root3_core::repos::lines::MAIN || !copy.is_dir() { repos.dir(repo) } else { Ok(copy) };
     let Ok(dir) = dir else { return stopped(tr!("{} is not here", "{} はここにありません", repo), String::new()) };
     let command = match &harness {
         None => match tasks::tests_command(&dir) { Some(c) => c, None => return stopped(String::new(), String::new()) },
@@ -325,7 +325,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     }
     // The issue's words, and for a review the change's files, weighed: the order it reads in.
     let issue = (!k.issue.is_empty()).then(|| repos.on_main().read(repo, &k.issue, 64 * 1024).ok().and_then(|c| c.text)
-        .map(|t| length3_core::repos::issues::parse(repo, k.issue.trim_start_matches("issue/"), &t))).flatten();
+        .map(|t| root3_core::repos::issues::parse(repo, k.issue.trim_start_matches("issue/"), &t))).flatten();
     let number = issue.as_ref().and_then(|i| i.n).map(|n| format!("#{n}")).unwrap_or_else(|| line.to_string());
     let detail = issue.as_ref().map(|i| i.detail.clone()).unwrap_or_default();
     let (parts, files) = if k.deed == tasks::Deed::Review {
@@ -381,7 +381,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
 /// The environment the person's dotfiles ask of the root `root` here (prompt/launch.rs environment_of; none off Linux).
 fn launch_environment(root: &str) -> String {
     #[cfg(target_os = "linux")]
-    return length3_core::prompt::launch::environment_of(root, &length3_core::home::dotfiles_in_effect());
+    return root3_core::prompt::launch::environment_of(root, &root3_core::home::dotfiles_in_effect());
     #[cfg(not(target_os = "linux"))]
     return { let _ = root; String::new() };
 }
@@ -394,11 +394,11 @@ fn supervise(k: &tasks::Task, spec: &spec::Spec, journal: &dyn Fn(activity::Kind
     let mut o = tasks::Outcome { code: -1, ..Default::default() };
     let log_path = tasks::log_path(k);
     let started = (|| -> std::io::Result<_> {
-        length3_core::fs::write::private_dir(log_path.parent().unwrap())?;
+        root3_core::fs::write::private_dir(log_path.parent().unwrap())?;
         let log = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(&log_path)?;
         let (reader, writer) = std::io::pipe()?;
         let child = std::process::Command::new(std::env::current_exe()?).args(["agent", "inside", &k.id.to_string()])
-            .env("LENGTH3_REPO", &k.repo).env("ROOT3_SPEC", serde_json::to_string(spec).unwrap_or_default())
+            .env("ROOT3_REPO", &k.repo).env("ROOT3_SPEC", serde_json::to_string(spec).unwrap_or_default())
             .current_dir(paths::data_dir()).stdin(std::process::Stdio::null()).stdout(writer.try_clone()?).stderr(writer).spawn()?;
         Ok((log, reader, child))
     })();
@@ -454,8 +454,8 @@ fn watched(pid: u32, budget: &spec::Budget, ended: &std::sync::atomic::AtomicBoo
 /// Ends with its command's code.
 #[cfg(target_os = "linux")]
 pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use length3_core::{home, prompt::launch, prompt::running, root};
-    let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (LENGTH3_REPO)", "どの repo ですか（LENGTH3_REPO）")))?;
+    use root3_core::{home, prompt::launch, prompt::running, root};
+    let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (ROOT3_REPO)", "どの repo ですか（ROOT3_REPO）")))?;
     task_id(call)?;
     let spec: spec::Spec = serde_json::from_str(&std::env::var("ROOT3_SPEC").unwrap_or_default())
         .map_err(|_| Error::Usage(tr!("root3 agent inside is root3 agent run's", "root3 agent inside は root3 agent run が使うものです")))?;
@@ -468,13 +468,13 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
         .ok_or_else(|| Error::NotFound(tr!("The root it runs on is not here (root3 root fetch)", "実行する root がここにありません（root3 root fetch）")))?;
     let root = root::system_dir(data).join(&spec.root).join("root");
     let repos = ctx.repos()?;
-    let copy = length3_core::repos::lines::worktree(&repo, &spec.line);
-    let dir = if spec.line == length3_core::repos::lines::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
+    let copy = root3_core::repos::lines::worktree(&repo, &spec.line);
+    let dir = if spec.line == root3_core::repos::lines::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
     let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: spec.argv.clone(), network: spec.network,
-        dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: [spec.env.clone(), length3_core::device::agent_key::env()].concat() };
+        dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: [spec.env.clone(), root3_core::device::agent_key::env()].concat() };
     // Recorded as any Prompt is: root3 prompt ls and Runtime see it, root3 prompt stop ends it.
     let mut recorded = running::record(data, &repo, s.network, &s.root)?;
-    length3_core::storage::make_room(data, paths::repos_dir(), super::forge::PROMPT_ROOM);
+    root3_core::storage::make_room(data, paths::repos_dir(), super::forge::PROMPT_ROOM);
     launch::set_up(&s, held.distro.is_some())?;
     recorded.ready()?;
     let code = launch::run(&s)?;

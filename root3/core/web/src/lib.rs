@@ -5,7 +5,7 @@
 //! The host gives a buffer with `root3_alloc`, writes the question into it and calls `root3_call`, which takes
 //! the buffer back and returns where the answer is (its address high, its length low); the host reads it
 //! and gives it back with `root3_free`. Its one import of its own beside WASI is the page's way of sending a request
-//! (`length3.http`, mod page), handed to the core as each call starts (device/net.rs `through_page`).
+//! (`root3.http`, mod page), handed to the core as each call starts (device/net.rs `through_page`).
 
 use std::alloc::{dealloc, Layout};
 
@@ -36,11 +36,11 @@ pub unsafe extern "C" fn root3_free(ptr: *mut u8, len: usize) {
 #[no_mangle]
 pub unsafe extern "C" fn root3_call(ptr: *mut u8, len: usize) -> u64 {
     #[cfg(target_os = "wasi")]
-    length3_core::device::net::through_page(page::send);
+    root3_core::device::net::through_page(page::send);
     let question = std::slice::from_raw_parts(ptr, len).to_vec();
     root3_free(ptr, len);
     let answer = match serde_json::from_slice::<serde_json::Value>(&question) {
-        Ok(q) => length3_core::api::answer(q["name"].as_str().unwrap_or_default(), &q["args"]),
+        Ok(q) => root3_core::api::answer(q["name"].as_str().unwrap_or_default(), &q["args"]),
         Err(e) => serde_json::json!({"error": e.to_string()}),
     };
     let bytes = answer.to_string().into_bytes().into_boxed_slice();
@@ -49,11 +49,11 @@ pub unsafe extern "C" fn root3_call(ptr: *mut u8, len: usize) -> u64 {
     ((at as u64) << 32) | n as u64
 }
 
-/// The module's one import of its own beside WASI (root3/app/core/abi.ts `length3.http`): the page sends a request for the
+/// The module's one import of its own beside WASI (root3/app/core/abi.ts `root3.http`): the page sends a request for the
 /// core (root3/core/src/device/net.rs), synchronously, and keeps the answer's body until it is copied in.
 #[cfg(target_os = "wasi")]
 mod page {
-    #[link(wasm_import_module = "length3")]
+    #[link(wasm_import_module = "root3")]
     extern "C" {
         /// Send a request (`head`: JSON {method, url, headers, timeout}); the answer's status (0: not reached) and
         /// its body's length are written back, the body (or why it was not reached) kept as the handle returned.

@@ -16,7 +16,7 @@ pub(super) fn point_current(data: &Path, sha256: &str) -> Result<(), String> {
         return Err(crate::tr!("That root was freed meanwhile; fetch it again", "その root はそのあいだに空けられました。もう一度取ってください"));
     }
     // A new link renamed over the old one: never a moment without one.
-    let link = system_dir(data).join(format!(".current.length3-{}-0", crate::pid()));
+    let link = system_dir(data).join(format!(".current.root3-{}-0", crate::pid()));
     let _ = fs::remove_file(&link);
     symlink(sha256, &link).map_err(|e| e.to_string())?;
     fs::rename(&link, current_link(data)).map_err(|e| e.to_string())

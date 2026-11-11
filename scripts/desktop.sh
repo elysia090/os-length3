@@ -1,6 +1,6 @@
 #!/bin/sh
 # The desktop app as it ships, a .deb and an AppImage, each with root3 beside the app: /usr/bin/root3 from the .deb
-# (on the PATH, beside /usr/bin/length3-os), usr/bin/root3 inside the AppImage. root3 is the command line (`root3 app`
+# (on the PATH, beside /usr/bin/root3-desktop), usr/bin/root3 inside the AppImage. root3 is the command line (`root3 app`
 # opens the window; `root3 prompt`, `root3 address`), and it is what the app itself runs for a Prompt and for SSH
 # (core/src/prompt.rs root3_path: the root3 beside the app), so an app without it opens neither.
 #
@@ -43,7 +43,7 @@ import {DEFAULT_REMOTE, desktopPolicy} from "./root3/app/host/policy.ts";
 const remote = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
 console.log(JSON.stringify({version: process.env.VERSION, build: {beforeBuildCommand: "npx vite build --config root3/app/vite.config.ts"},
   bundle: {externalBin: ["binaries/root3"], linux: {appimage: {files: {"/usr/lib/libGLESv2.so.2": process.env.GLES}},
-    deb: {files: {"/usr/share/length3-os/apparmor/length3-root3": "deb/length3-root3.apparmor"},
+    deb: {files: {"/usr/share/root3/apparmor/root3": "deb/root3.apparmor"},
       postInstallScript: "deb/postinst", postRemoveScript: "deb/postrm"}}},
   app: {security: {csp: desktopPolicy(remote ? new URL(remote).origin : "")}}}));')
 # The AppImage is bundled by linuxdeploy, itself an AppImage: without FUSE it unpacks itself.

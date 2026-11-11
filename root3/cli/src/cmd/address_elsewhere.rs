@@ -5,7 +5,7 @@
 use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{Error, Reply, Result};
-use length3_core::tr;
+use root3_core::tr;
 
 fn not_here() -> Error {
     Error::Refused(tr!("SSH into a Prompt is Linux only for now", "Prompt への SSH はいま Linux だけです"))

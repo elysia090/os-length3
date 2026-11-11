@@ -1600,7 +1600,7 @@ this computer alone, the Secret Service over D-Bus from Rust alone, so the
 static root3 reaches it as the app does), encrypted at rest with what the
 person signs in with and in no file a backup or a token-hunting program
 comes across; where there is none that answers within a minute (a server,
-SSH, a locked keyring), or `LENGTH3_KEYRING=off`, a file only the person
+SSH, a locked keyring), or `ROOT3_KEYRING=off`, a file only the person
 reads (`<data>/secrets/`, 0600). `root3 remote sign-in` says which. The
 app's page asks its Remote through the core (`remote_ask`), which sends
 it. Home's state says only which session the
@@ -1761,7 +1761,7 @@ here yet. A Remote given no plan (a Remote of one's own, development unless
 asked, a Remote for research) has no allowance at all.
 
 **Stripe's stand-in** (`root3/remote/plan/devbilling.ts`), on a Remote of one's own
-asked for the plan (`LENGTH3_PLAN=1`) and the selftest's, looks and does as
+asked for the plan (`ROOT3_PLAN=1`) and the selftest's, looks and does as
 Stripe's pages do in test mode, so the way from the Plan to paying and back
 is the one people meet; it is Stripe's look, not this language's, and says
 on each page that it is a stand-in and nothing is charged. Checkout: the
@@ -1778,7 +1778,7 @@ at the period's end and Renew plan to keep it, and, marked as not Stripe's,
 test controls (a payment fails, a payment goes through, it ends now). Each
 step sends the Remote the events Stripe would, signed, before the page goes
 on. The development sign-in provider (`root3/remote/people/devoauth.ts`) asks as a real
-one does: a name, then what length3 asks of it (your name and email), Allow
+one does: a name, then what root3 asks of it (your name and email), Allow
 or Cancel; Cancel comes back with the error a provider sends then.
 
 # Part III. Each place in turn
@@ -2833,7 +2833,7 @@ or goes).
     has (it comes back when opened), a root that is neither the current one
     nor one a Prompt runs on (the Remote has the release), a temporary this
     OS left half-written
-    (`.<file>.length3-<pid>-<n>`, a setting's `<key>.json.<pid>`, older than
+    (`.<file>.root3-<pid>-<n>`, a setting's `<key>.json.<pid>`, older than
     a minute, one link, never inside `.git`), an install that died half way,
     a release bundle or partial download not in use.
   - **空ける** on a repo with changes the Remote does not have yet: the
@@ -2867,7 +2867,7 @@ or goes).
 - **Room made by itself.** Freeing is a deed for who wants it; nobody has
   to. When room is wanted (a Prompt prepared, a root fetched, a repo
   brought here) and the host has less free than that and a reserve (a
-  twentieth of the disk, between 512 MB and 4 GB; `LENGTH3_RESERVE` says
+  twentieth of the disk, between 512 MB and 4 GB; `ROOT3_RESERVE` says
   another), what comes back goes by itself until there is enough (root3/core/src/storage/
   make_room): this OS's leftovers and old roots, caches, what is derived in
   repos, the root before the current one, then copies of repos in step with
@@ -2987,13 +2987,13 @@ or goes).
   - **Nothing of where leaves the device.** The Remote keeps only that a
     device listens, its scope's word, since when and when last heard;
     destinations are worked out and shown on the device itself.
-  - **What it says of itself** is `SSH-2.0-length3`: keys only (Ed25519,
+  - **What it says of itself** is `SSH-2.0-root3`: keys only (Ed25519,
     ECDSA), no forwarding, no sftp.
 
   | Who | この端末だけ | 同じネットワークにも |
   |---|---|---|
   | this device | the port on loopback; its card shows the destinations, the host key, the keys let in | the same, and the LAN addresses |
-  | another PC on the LAN/VPN | nothing: the port is closed | `SSH-2.0-length3` and the host key; only a listed key gets in |
+  | another PC on the LAN/VPN | nothing: the port is closed | `SSH-2.0-root3` and the host key; only a listed key gets in |
   | a sender on another segment routing to the LAN address through this device | nothing: the port is closed | the handshake, then closed at accept before the banner |
   | the carrier's other customers (100.64/10 on an ordinary interface) | nothing | nothing: no socket there; at a VPN address, closed at accept |
   | containers and VMs behind a bridge (`docker0`, `virbr0`, …) | nothing | nothing: no socket on a bridge's address |

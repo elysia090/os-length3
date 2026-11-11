@@ -5,7 +5,7 @@
 // namespace) every process inside; it is only called stopped once the host
 // shows none left, and what they held and how long it took are said.
 
-use length3_core::{fs::paths, prompt::running, root, storage};
+use root3_core::{fs::paths, prompt::running, root, storage};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -73,24 +73,24 @@ pub async fn prompt_open(app: AppHandle, repo: String) -> Result<u32, String> {
 fn open(app: AppHandle, repo: String) -> Result<u32, String> {
     let shells = tauri::Manager::state::<Shells>(&app);
     if root::current(&paths::data_dir()).is_none() {
-        return Err(length3_core::tr!("There is no root", "root がありません"));
+        return Err(root3_core::tr!("There is no root", "root がありません"));
     }
     // Said plainly when it is not here, rather than as root3's "which repo?".
-    length3_core::repos::store::Repos::open()?.dir(&repo)?;
+    root3_core::repos::store::Repos::open()?.dir(&repo)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let (mut reader, writer) = std::io::pipe().map_err(|e| e.to_string())?;
-    // One pipe for both, so what it prints keeps its order. The repo is named by LENGTH3_REPO from the data
+    // One pipe for both, so what it prints keeps its order. The repo is named by ROOT3_REPO from the data
     // directory, never as a word: root3 reads a word against its forms first, so a repo called ls or stop was
     // `root3 prompt ls` (the list) or `root3 prompt stop`, and one called --network a flag.
     let mut child = Command::new(running::root3_path(&exe))
         .arg("prompt")
-        .env("LENGTH3_REPO", &repo)
+        .env("ROOT3_REPO", &repo)
         .current_dir(paths::data_dir())
         .stdin(Stdio::piped())
         .stdout(writer.try_clone().map_err(|e| e.to_string())?)
         .stderr(writer)
         .spawn()
-        .map_err(|e| length3_core::tr!("Could not start root3: {}", "root3 を起動できませんでした：{}", e))?;
+        .map_err(|e| root3_core::tr!("Could not start root3: {}", "root3 を起動できませんでした：{}", e))?;
     let stdin = child.stdin.take().ok_or("stdin")?;
     let id = shells.next.fetch_add(1, Ordering::SeqCst) + 1;
     shells.open.lock().unwrap().insert(id, Shell { repo, child, stdin });
@@ -121,7 +121,7 @@ fn open(app: AppHandle, repo: String) -> Result<u32, String> {
 #[tauri::command]
 pub fn prompt_input(shells: State<'_, Shells>, id: u32, text: String) -> Result<(), String> {
     let mut open = shells.open.lock().unwrap();
-    let s = open.get_mut(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
+    let s = open.get_mut(&id).ok_or_else(|| root3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
     s.stdin.write_all(text.as_bytes()).and_then(|_| s.stdin.flush()).map_err(|e| e.to_string())
 }
 
@@ -129,7 +129,7 @@ pub fn prompt_input(shells: State<'_, Shells>, id: u32, text: String) -> Result<
 #[tauri::command]
 pub fn prompt_interrupt(shells: State<'_, Shells>, id: u32) -> Result<(), String> {
     let open = shells.open.lock().unwrap();
-    let s = open.get(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
+    let s = open.get(&id).ok_or_else(|| root3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
     running::signal(s.child.id(), running::Signal::Int);
     Ok(())
 }
@@ -162,7 +162,7 @@ pub async fn prompt_close(app: AppHandle, id: u32) -> Result<running::Stopped, S
 fn close(shells: &Shells, id: u32) -> Result<running::Stopped, String> {
     let supervisor = {
         let open = shells.open.lock().unwrap();
-        let s = open.get(&id).ok_or_else(|| length3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
+        let s = open.get(&id).ok_or_else(|| root3_core::tr!("This Prompt has ended", "この Prompt は終わっています"))?;
         s.child.id()
     };
     // Stopped while it is prepared too: what prepares it ends with its supervisor (launch::set_up).
@@ -214,7 +214,7 @@ pub async fn root_native() -> Native {
     static ASKED: std::sync::OnceLock<Native> = std::sync::OnceLock::new();
     ASKED.get_or_init(|| {
         if !cfg!(target_arch = "x86_64") {
-            return Native { native: false, why: Some(length3_core::tr!("The root is x86-64, and this machine is {}", "root は x86-64 で、この機械は {} です", std::env::consts::ARCH)) };
+            return Native { native: false, why: Some(root3_core::tr!("The root is x86-64, and this machine is {}", "root は x86-64 で、この機械は {} です", std::env::consts::ARCH)) };
         }
         let asked = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| Command::new(running::root3_path(&exe))
             .args(["root", "check", "--json"]).stdin(Stdio::null()).stderr(Stdio::null()).output().map_err(|e| e.to_string()));
@@ -246,7 +246,7 @@ struct Fetching {
 
 /// The Remote this device talks to (Home's `remote` setting, by its name today), or the default.
 fn remote_url() -> String {
-    length3_core::remote::connection().map_or_else(length3_core::remote::default_url, |c| c.url)
+    root3_core::remote::connection().map_or_else(root3_core::remote::default_url, |c| c.url)
 }
 
 /// What a directory of the current root holds (File's tree of "/"), read off the window's thread.
@@ -268,13 +268,13 @@ pub async fn root_use(app: AppHandle, id: String) -> Result<root::Installed, Str
     tauri::async_runtime::spawn_blocking(move || {
         let data = paths::data_dir();
         let mut last = 0u64;
-        let progress = |p: length3_core::device::download::Progress| match p {
-            length3_core::device::download::Progress::Bytes(got, of) if got - last >= 1 << 20 || got == of => {
+        let progress = |p: root3_core::device::download::Progress| match p {
+            root3_core::device::download::Progress::Bytes(got, of) if got - last >= 1 << 20 || got == of => {
                 last = got;
                 let _ = app.emit("root-fetch", Fetching { got, of, retry: None });
             }
-            length3_core::device::download::Progress::Retry(n, why) => {
-                let _ = app.emit("root-fetch", Fetching { got: last, of: 0, retry: Some(length3_core::tr!("{} (try {})", "{}（{}回目）", why, n)) });
+            root3_core::device::download::Progress::Retry(n, why) => {
+                let _ = app.emit("root-fetch", Fetching { got: last, of: 0, retry: Some(root3_core::tr!("{} (try {})", "{}（{}回目）", why, n)) });
             }
             _ => {}
         };

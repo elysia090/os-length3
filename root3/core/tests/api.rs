@@ -1,13 +1,13 @@
 //! The core's one dispatcher, as a host asks it: by name, arguments as JSON, `{ok}` or `{error}` back.
 
-use length3_core::api;
+use root3_core::api;
 use serde_json::json;
 
 #[test]
 fn a_page_asks_the_core_by_name() {
-    let home = std::env::temp_dir().join(format!("length3-api-{}", std::process::id()));
-    std::env::set_var("LENGTH3_HOME", &home);
-    std::env::set_var("LENGTH3_REMOTE", "");
+    let home = std::env::temp_dir().join(format!("root3-api-{}", std::process::id()));
+    std::env::set_var("ROOT3_HOME", &home);
+    std::env::set_var("ROOT3_REMOTE", "");
 
     let made = api::answer("repo_create", &json!({"name": "notes", "template": "empty"}));
     assert_eq!(made["ok"]["name"], "notes", "{made}");

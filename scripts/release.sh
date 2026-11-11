@@ -67,8 +67,8 @@ node scripts/pin-root.ts "$root" public/webroot
 # The web build (it checks the types and runs the tests) and the desktop app.
 WEBROOT_READY=1 sh scripts/web-release.sh
 web=os-length3-linux-$version-web.zip
-mv length3-web.zip "$out/$web"
-rm -f length3-web.zip.sha256
+mv root3-web.zip "$out/$web"
+rm -f root3-web.zip.sha256
 # The app with root3 beside it (scripts/desktop.sh): the command line, and what its Prompt and SSH run. It runs its
 # Prompt on the machine, from the root it installs: its build leaves the web root out (vite.config.ts).
 sh scripts/desktop.sh "$version"

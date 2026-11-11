@@ -40,7 +40,7 @@ jobs:
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/wasm32-wasip1/web/length3_core_web.wasm
+          path: target/wasm32-wasip1/web/root3_core_web.wasm
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -53,11 +53,11 @@ jobs:
           cache-on-failure: true
       - name: Build
         if: steps.kept.outputs.cache-hit != 'true'
-        run: cargo build --locked --profile web -p length3-core-web --target wasm32-wasip1
+        run: cargo build --locked --profile web -p root3-core-web --target wasm32-wasip1
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/wasm32-wasip1/web/length3_core_web.wasm
+          path: target/wasm32-wasip1/web/root3_core_web.wasm
           key: ${{ steps.key.outputs.key }}
 
   # The pinned root as the browser reads it, built with this tree's translator and checked against the root.
@@ -182,11 +182,11 @@ jobs:
       - name: Restore core (wasm)
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/wasm32-wasip1/web/length3_core_web.wasm
+          path: target/wasm32-wasip1/web/root3_core_web.wasm
           key: ${{ needs.core-wasm.outputs.key }}
           fail-on-cache-miss: true
       # Newer than the checkout, so scripts/core-wasm.ts (which goes by mtime) does not rebuild it.
-      - run: touch target/wasm32-wasip1/web/length3_core_web.wasm
+      - run: touch target/wasm32-wasip1/web/root3_core_web.wasm
       - run: npm ci
       - name: Test
         env:
@@ -209,10 +209,10 @@ jobs:
           cache-on-failure: true
       # The desktop crate needs GTK and is linted where it is built (desktop job).
       - name: Clippy
-        run: cargo clippy --locked --all-targets -p length3-core -p length3-core-web -p root3 -- -D warnings
+        run: cargo clippy --locked --all-targets -p root3-core -p root3-core-web -p root3 -- -D warnings
       - name: Clippy (wasm32-wasip1)
         if: ${{ !cancelled() }}
-        run: cargo clippy --locked -p length3-core -p length3-core-web --target wasm32-wasip1 -- -D warnings
+        run: cargo clippy --locked -p root3-core -p root3-core-web --target wasm32-wasip1 -- -D warnings
 
   rust:
     name: Rust
@@ -236,7 +236,7 @@ jobs:
           shared-key: rust-${{ hashFiles('Cargo.toml') }}
           cache-on-failure: true
       - name: Test core and CLI
-        run: cargo test --locked -p length3-core -p root3
+        run: cargo test --locked -p root3-core -p root3
       - name: Test CLI end to end
         if: ${{ !cancelled() }}
         run: |
@@ -281,7 +281,7 @@ jobs:
         run: |
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
           cargo build --locked --profile prompt -p root3 --no-default-features --target x86_64-unknown-linux-musl
-          out=$(LENGTH3_REPOS=/root node module/muk/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/root3 help all)
+          out=$(ROOT3_REPOS=/root node module/muk/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/root3 help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'root3 issue new'
 
@@ -358,11 +358,11 @@ jobs:
           native() { /usr/bin/root3 root check --json | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0, "utf8")).native))'; }
           [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/root3 to begin with" >&2; exit 1; }
           /usr/bin/root3 root check
-          sudo install -D -m 0644 root3/desktop/deb/length3-root3.apparmor /usr/share/length3-os/apparmor/length3-root3
+          sudo install -D -m 0644 root3/desktop/deb/root3.apparmor /usr/share/root3/apparmor/root3
           sudo sh root3/desktop/deb/postinst configure
           [ "$(native)" = true ] || { /usr/bin/root3 root check; exit 1; }
           sudo sh root3/desktop/deb/postrm remove
-          [ ! -e /etc/apparmor.d/length3-root3 ]
+          [ ! -e /etc/apparmor.d/root3 ]
           [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
   # muk beside runc: the same bundles run by both, as root (where one who is not may make no user namespace), and what
@@ -573,11 +573,11 @@ jobs:
       - name: Restore core (wasm)
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/wasm32-wasip1/web/length3_core_web.wasm
+          path: target/wasm32-wasip1/web/root3_core_web.wasm
           key: ${{ needs.core-wasm.outputs.key }}
           fail-on-cache-miss: true
       # Newer than the checkout, so scripts/core-wasm.ts (which goes by mtime) does not rebuild it.
-      - run: touch target/wasm32-wasip1/web/length3_core_web.wasm
+      - run: touch target/wasm32-wasip1/web/root3_core_web.wasm
       - name: Restore web root
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

@@ -17,7 +17,7 @@
 use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{Error, note, Reply, Result};
-use length3_core::{fs::paths, remote, ssh, tr};
+use root3_core::{fs::paths, remote, ssh, tr};
 use serde_json::json;
 
 /// This device's SSH as data: whether it listens, to whom, where, its host key, the keys let in.

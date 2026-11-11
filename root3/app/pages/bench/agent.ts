@@ -34,7 +34,7 @@ interface InFront { path: string; text: string; line: number }
 export async function told(repo: string, front: InFront | null, issue: string | null = null): Promise<string> {
   const top = await shownTree(repo, '').catch(() => []);
   const lines = [
-    `You are the Agent of length3 OS, asked from the box at the foot of the repo "${repo}".`,
+    `You are the Agent of root3 OS, asked from the box at the foot of the repo "${repo}".`,
     'You can read its files and run commands in a Prompt of your own in its top folder (sh, with make, cc, gdb and the repo\'s tests).',
     issue === null ? 'This is main: you do not write files here. Read, run, and say what should change.'
       : 'This is an issue\'s work, handed to you: write the files that must change. Run the build and the tests to see that it works before you say it is done.',

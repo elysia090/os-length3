@@ -5,7 +5,7 @@ import {h} from '../../ui/dom.ts';
 // middle, in its place. Let go, it stands there.
 
 /** What a drag of a repo carries: its name, for the band and the center of this page alone. */
-const DRAGGED = 'application/x-length3-repo';
+const DRAGGED = 'application/x-root3-repo';
 
 /** What is being dragged on the page, and the hint over the center of where it would go. */
 export class Drag {

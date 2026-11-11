@@ -7,8 +7,8 @@
 //      new temporary directory: PGlite, blobs, mail.log, nothing kept (off
 //      CI, its database a copy of an empty one made once, in tests/.pg);
 //   3. `vite preview` serves the build on another free port and passes /api
-//      and /v1 to that Remote (LENGTH3_DEV_REMOTE), as `vite` does in development;
-//   4. beside them, the same again for a Remote with the plan (LENGTH3_PLAN=1:
+//      and /v1 to that Remote (ROOT3_DEV_REMOTE), as `vite` does in development;
+//   4. beside them, the same again for a Remote with the plan (ROOT3_PLAN=1:
 //      the free allowance, the tiers, and Stripe's stand-in, devbilling.ts),
 //      started at the same time, for the specs about paying (SELFTEST_PLAN_APP).
 //      Every other spec meets a Remote with no plan, where everything is open.
@@ -185,7 +185,7 @@ async function worker(): Promise<() => Promise<void>> {
   const {remote, bridgeProcess} = await import('../prod/stack.ts');
   const pg = await cluster();
   const b = await bridgeProcess().catch((e) => { pg.destroy(); throw e; });
-  const dir = scratch('length3-selftest-worker-');
+  const dir = scratch('root3-selftest-worker-');
   const made: Awaited<ReturnType<typeof remote>>[] = [];
   const teardown = async () => {
     for (const [i, x] of made.entries()) writeFileSync(join(LOGS, i ? 'worker-plan.log' : 'worker.log'), x.log());
@@ -228,7 +228,7 @@ export default async function globalSetup(_config: FullConfig) {
   // Said where it is waited for, below, once the servers are stopped.
   built.catch(() => {});
   const empty = process.env.CI ? null : await emptyDatabase();
-  const data = scratch('length3-selftest-data-');
+  const data = scratch('root3-selftest-data-');
   const [remotePort, appPort, planRemotePort, planAppPort] = await freePorts(4);
   const app = `http://localhost:${appPort}`, planApp = `http://localhost:${planAppPort}`;
   const remoteURL = `http://localhost:${remotePort}`;
@@ -244,7 +244,7 @@ export default async function globalSetup(_config: FullConfig) {
   const pair = async (name: string, dir: string, rPort: number, aPort: number, env: NodeJS.ProcessEnv = {}) => {
     // The preview first: it waits for nothing.
     children.push(start(`preview${name}`, [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--config', join(OS, 'root3/app/vite.config.ts'), '--outDir', OUT,
-      '--host', '127.0.0.1', '--port', String(aPort), '--strictPort'], {LENGTH3_DEV_REMOTE: `http://127.0.0.1:${rPort}`}));
+      '--host', '127.0.0.1', '--port', String(aPort), '--strictPort'], {ROOT3_DEV_REMOTE: `http://127.0.0.1:${rPort}`}));
     if (empty) {
       mkdirSync(join(data, dir));
       await copyDir(empty, join(data, dir, 'pg'));
@@ -253,14 +253,14 @@ export default async function globalSetup(_config: FullConfig) {
     // The Remote's own name is localhost too, so the session it sets on sign-in is the app's. It loads its modules as
     // npm test's processes do (scripts/tests-load.ts: their types stripped once, their code compiled once, for every
     // run): a fifth less of the CPU its start took, which every run waited for.
-    children.push(start(`remote${name}`, ['--import', LOAD, 'root3/remote/serve/dev.ts', join(data, dir), String(rPort), at], {LENGTH3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
+    children.push(start(`remote${name}`, ['--import', LOAD, 'root3/remote/serve/dev.ts', join(data, dir), String(rPort), at], {ROOT3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
     // Through the preview, so both are up and the one passes to the other. (Between the servers and
     // from here, the address itself: what localhost names first, ::1 or 127.0.0.1, is the system's.)
     return ready(`http://127.0.0.1:${aPort}/v1/about`, children);
   };
   try {
     // The two at once, and the build: the Remote with the plan costs the run no time of its own.
-    await Promise.all([built, pair('', 'open', remotePort, appPort), pair('-plan', 'plan', planRemotePort, planAppPort, {LENGTH3_PLAN: '1'})]);
+    await Promise.all([built, pair('', 'open', remotePort, appPort), pair('-plan', 'plan', planRemotePort, planAppPort, {ROOT3_PLAN: '1'})]);
   } catch (e) {
     await teardown();
     throw e;

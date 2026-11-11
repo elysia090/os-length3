@@ -146,8 +146,8 @@ test('Cancel at the provider\'s consent comes back to the card, which says so by
   await card.getByRole('button', {name: 'Continue with Development'}).click();
   await app.page.getByRole('textbox', {name: 'Name'}).fill(personName(info));
   await app.page.getByRole('button', {name: 'Continue'}).click();
-  // What length3 asks of the provider, as a real one asks it; called off there.
-  await expect(app.page.getByRole('list', {name: 'What length3 asks for'})).toContainText('Know your name and email');
+  // What root3 asks of the provider, as a real one asks it; called off there.
+  await expect(app.page.getByRole('list', {name: 'What root3 asks for'})).toContainText('Know your name and email');
   await app.page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await app.settled();
   await expect(card.getByRole('alert')).toHaveText('Sign-in with Development cancelled; no data shared.');

@@ -16,8 +16,8 @@ interface Capacity {
 }
 
 /** Which host this build is for (vite.config.ts), so each build carries only its own; run from source (the tests), the page says. */
-declare const __LENGTH3_HOST__: 'native' | 'web' | undefined;
-export const isNative: boolean = typeof __LENGTH3_HOST__ === 'string' ? __LENGTH3_HOST__ === 'native' : '__TAURI_INTERNALS__' in globalThis;
+declare const __ROOT3_HOST__: 'native' | 'web' | undefined;
+export const isNative: boolean = typeof __ROOT3_HOST__ === 'string' ? __ROOT3_HOST__ === 'native' : '__TAURI_INTERNALS__' in globalThis;
 
 /** How a figure is known (root3/core/src/storage/). */
 export type Certainty = 'Verified' | 'Estimated' | 'Unknown';

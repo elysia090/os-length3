@@ -11,7 +11,7 @@ import type {Server} from '../../remote/servers.ts';
  * a server being made, come to from `server` (Escape goes back to it).
  */
 export interface At { server?: string; board?: string; making?: boolean }
-const AT = 'length3.server.at';
+const AT = 'root3.server.at';
 export function remembered(): At {
   try { return JSON.parse(localStorage.getItem(AT) ?? '{}') as At; } catch { return {}; }
 }

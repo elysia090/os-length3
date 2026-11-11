@@ -22,7 +22,7 @@ fn c_builds_whatever_the_repo_is_named() {
         if !tools {
             continue;
         }
-        let dir = crate::fs::testing::dir(&format!("length3-template-{name}"));
+        let dir = crate::fs::testing::dir(&format!("root3-template-{name}"));
         for d in &t.dirs {
             std::fs::create_dir_all(dir.join(d)).unwrap();
         }
@@ -50,7 +50,7 @@ fn what_c_builds_is_derived_and_made_again_once_freed() {
         return;
     }
     let t = find("c").unwrap();
-    let dir = crate::fs::testing::dir("length3-template-derived");
+    let dir = crate::fs::testing::dir("root3-template-derived");
     for d in &t.dirs {
         std::fs::create_dir_all(dir.join(d)).unwrap();
     }

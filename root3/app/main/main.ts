@@ -29,10 +29,10 @@ import {optical} from '../ui/optical.ts';
 import {cameraIn, comeBy, frameIn, frameOff, goneBy, GroundCamera, type Along, type PageCamera, type Rect} from '../ui/camera.ts';
 import {scrollbars} from '../ui/scrollbars.ts';
 
-const PURPOSE_KEY = 'length3.os.purpose';
-const REPO_KEY = 'length3.os.repo';
+const PURPOSE_KEY = 'root3.os.purpose';
+const REPO_KEY = 'root3.os.repo';
 /** The file last read in Forge, and its repo: where Home says the person left off. */
-const FILE_KEY = 'length3.os.file';
+const FILE_KEY = 'root3.os.file';
 
 const $ = (id: string) => document.getElementById(id)!;
 const tabs = new Map<PurposeId, HTMLButtonElement>();
@@ -661,7 +661,7 @@ if (asking.has('device')) {
       }
       cameBackFromStripe(how, tier);
       save(PURPOSE_KEY, 'remote');
-      try { localStorage.setItem('length3.part.remote', 'plan'); } catch { /* the part kept, then */ }
+      try { localStorage.setItem('root3.part.remote', 'plan'); } catch { /* the part kept, then */ }
     }
     // Opened by the app at what only the browser does (a passkey's deeds, a provider's): Remote's page, at the part
     // that does it; a repo's ask opens at its card once the repos are drawn (signed in first, if this browser is not).
@@ -671,7 +671,7 @@ if (asking.has('device')) {
       for (const k of ['account', 'repo']) u.searchParams.delete(k);
       history.replaceState(null, '', u);
       save(PURPOSE_KEY, 'remote');
-      try { localStorage.setItem('length3.part.remote', asked === 'sign-in' ? 'sign-in' : 'repos'); } catch { /* the part kept, then */ }
+      try { localStorage.setItem('root3.part.remote', asked === 'sign-in' ? 'sign-in' : 'repos'); } catch { /* the part kept, then */ }
     }
     // Which domain is this Remote's, so a name on it is shown alone (`ren`), not as a domain's.
     void learnHome();

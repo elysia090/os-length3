@@ -28,7 +28,7 @@ fn put_in_place(data: &Path, sha256: &str, name: &str, version: &str, distro: Op
     crate::fs::write::private_dir(&system).map_err(|e| e.to_string())?;
     let dir = system.join(sha256);
     if !dir.join("installed.json").exists() {
-        let aside = system.join(format!(".{sha256}.length3-{}-0", crate::pid()));
+        let aside = system.join(format!(".{sha256}.root3-{}-0", crate::pid()));
         let _ = fs::remove_dir_all(&aside);
         fs::create_dir(&aside).map_err(|e| e.to_string())?;
         let (files, bytes) = match fill(&aside) {
@@ -65,11 +65,11 @@ pub fn install(data: &Path, bundle: &Path) -> Result<Installed, String> {
 fn ready_for_a_prompt(tree: &Path) -> io::Result<()> {
     let apt = tree.join("etc/apt/apt.conf.d");
     if apt.is_dir() {
-        fs::write(apt.join("00length3"), "// A Prompt has one user: apt fetches as it, not as _apt,\n// and its log is not handed to a group (adm) the Prompt does not have.\nAPT::Sandbox::User \"root\";\nDir::Log::Terminal \"\";\n")?;
+        fs::write(apt.join("00root3"), "// A Prompt has one user: apt fetches as it, not as _apt,\n// and its log is not handed to a group (adm) the Prompt does not have.\nAPT::Sandbox::User \"root\";\nDir::Log::Terminal \"\";\n")?;
     }
     let dpkg = tree.join("etc/dpkg/dpkg.cfg.d");
     if dpkg.is_dir() {
-        fs::write(dpkg.join("length3"), "force-unsafe-io\n")?;
+        fs::write(dpkg.join("root3"), "force-unsafe-io\n")?;
     }
     Ok(())
 }

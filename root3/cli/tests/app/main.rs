@@ -38,7 +38,7 @@ fn program(home: &Home, body: &str) -> PathBuf {
 /// The app open, as root3 reaches it: a socket in the app's folder answering each word as the app does, and keeping
 /// the words. `close` closes it (its socket goes, and nothing answers after).
 fn open_app(data: &Path) -> Arc<Mutex<Vec<String>>> {
-    let dir = length3_core::device::desktop::dir(data);
+    let dir = root3_core::device::desktop::dir(data);
     std::fs::create_dir_all(&dir).unwrap();
     let socket = dir.join("socket");
     let listener = UnixListener::bind(&socket).unwrap();
@@ -116,7 +116,7 @@ fn the_app_open_is_brought_forward_and_no_second_is_started() {
     let asked = open_app(&home.dir);
     let fake = program(&home, "");
     for args in [&["app"][..], &["app", "--json"]] {
-        let ran = run(&home, args, &[("LENGTH3_APP", fake.to_str().unwrap()), ("DISPLAY", ":0")]);
+        let ran = run(&home, args, &[("ROOT3_APP", fake.to_str().unwrap()), ("DISPLAY", ":0")]);
         assert_eq!(ran.code, 0, "{ran:?}");
         if args.len() == 1 { assert!(ran.stdout.contains("open already") && ran.stdout.contains("no second"), "{ran:?}"); }
         else { assert_eq!(serde_json::from_str::<serde_json::Value>(&ran.stdout).unwrap()["started"], false, "{ran:?}"); }
@@ -129,20 +129,20 @@ fn the_app_open_is_brought_forward_and_no_second_is_started() {
 fn a_start_that_fails_or_cannot_show_a_window_is_never_said_as_open() {
     let home = Home::new("app-fails");
     let fake = program(&home, "exit 3");
-    let ran = run(&home, &["app"], &[("LENGTH3_APP", fake.to_str().unwrap()), ("DISPLAY", ":0")]);
+    let ran = run(&home, &["app"], &[("ROOT3_APP", fake.to_str().unwrap()), ("DISPLAY", ":0")]);
     assert_eq!(ran.code, 1, "{ran:?}");
     assert!(ran.stdout.is_empty() && ran.stderr.contains("could not start") && ran.stderr.contains("nothing is open"), "{ran:?}");
     assert!(home.path("started").exists());
     // No screen to show a window on: said before anything is started.
     std::fs::remove_file(home.path("started")).unwrap();
-    let ran = run(&home, &["app"], &[("LENGTH3_APP", fake.to_str().unwrap())]);
+    let ran = run(&home, &["app"], &[("ROOT3_APP", fake.to_str().unwrap())]);
     assert_eq!(ran.code, 1, "{ran:?}");
     assert!(ran.stderr.contains("no screen"), "{ran:?}");
     assert!(!home.path("started").exists());
     // Named where nothing is: not on this device, and where to get it.
-    let ran = run(&home, &["app"], &[("LENGTH3_APP", "/nowhere/length3-os"), ("DISPLAY", ":0")]);
+    let ran = run(&home, &["app"], &[("ROOT3_APP", "/nowhere/root3-desktop"), ("DISPLAY", ":0")]);
     assert_eq!(ran.code, 4, "{ran:?}");
-    assert!(ran.stderr.contains("/nowhere/length3-os") && ran.stderr.contains("/v1/desktop/"), "{ran:?}");
+    assert!(ran.stderr.contains("/nowhere/root3-desktop") && ran.stderr.contains("/v1/desktop/"), "{ran:?}");
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn a_started_app_is_said_open_once_it_answers() {
     let marker = home.path("started");
     let data = home.dir.clone();
     let answering = std::thread::spawn(move || wait_for(&marker).then(|| open_app(&data)));
-    let ran = run(&home, &["app", "--json"], &[("LENGTH3_APP", fake.to_str().unwrap()), ("DISPLAY", ":0")]);
+    let ran = run(&home, &["app", "--json"], &[("ROOT3_APP", fake.to_str().unwrap()), ("DISPLAY", ":0")]);
     let asked = answering.join().unwrap();
     let v: serde_json::Value = serde_json::from_str(&ran.stdout).unwrap_or_default();
     if let Some(pid) = v["pid"].as_i64() { unsafe { libc::kill(pid as i32, libc::SIGTERM) }; }

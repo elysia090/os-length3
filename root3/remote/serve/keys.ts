@@ -19,12 +19,12 @@ import {hkdfSync} from 'node:crypto';
 export type Purpose = 'better-auth' | 'domain-proof' | 'invite' | 'mark';
 
 /** Fixed, public: HKDF's salt only separates this derivation from any other of the same secret. */
-const SALT = 'length3-remote';
+const SALT = 'root3-remote';
 
 /** The key for `purpose`, as 64 hex digits (256 bits). Never the secret itself, for any purpose. */
 export function keyFor(secret: string, purpose: Purpose, version = 1): string {
   if (!secret) return '';
-  const k = new Uint8Array(hkdfSync('sha256', secret, SALT, `length3/${purpose}/v${version}`, 32));
+  const k = new Uint8Array(hkdfSync('sha256', secret, SALT, `root3/${purpose}/v${version}`, 32));
   return [...k].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 

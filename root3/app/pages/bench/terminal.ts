@@ -89,8 +89,11 @@ function zone(): string {
  * shell does, under /root; its shell reads as the app's; its clock is the person's; its terminal is a colour xterm's
  * (output.ts draws what one draws, vt.ts). */
 const shellEnv = (repo: string) => ['HOME=/root', 'USER=root', 'LOGNAME=root', 'SHELL=/bin/bash', 'TERM=xterm-256color', 'COLORTERM=truecolor', 'LANG=C.UTF-8',
-  `TZ=${zone()}`, 'LENGTH3_REPOS=/root', 'ROOT3_PROMPT=1', 'L3_PROMPT=1' /* the l3 of a root released before root3 (0.6.4) */, `LENGTH3_LANG=${currentLang()}`, `LENGTH3_REPO=${repo}`,
-  'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'ENV=/etc/length3/shrc'];
+  `TZ=${zone()}`, 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+  'ROOT3_REPOS=/root', 'ROOT3_PROMPT=1', `ROOT3_REPO=${repo}`, `ROOT3_LANG=${currentLang()}`,
+  // The same four by the names the root released as 0.6.4 reads them by (its l3 and its shell's settings), and where
+  // an interactive sh finds those settings: all five go when the pin is of a root made after it.
+  'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_REPO=${repo}`, `LENGTH3_LANG=${currentLang()}`, 'ENV=/etc/length3/shrc'];
 /** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell, in no repo yet, with no key. */
 const readyNext = (root3: Root3) => readyPrompt(root3, {argv: SHELL, env: shellEnv(''), cwd: '/root'});
 

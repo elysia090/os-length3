@@ -365,7 +365,7 @@ test('with no bucket, each route that would move bytes says so, the same to ever
   const sha = (await upload(s, t, bytes)).sha;
   const noFiles = {error: 'Remote cannot store files right now', files: false};
   const asks: [string, string, string | undefined][] = [['PUT', `/v1/blobs/${sha}`, t], ['GET', `/v1/blobs/${sha}`, t], ['GET', `/v1/os/${sha}`, undefined],
-    ['HEAD', `/v1/os/${sha}`, undefined], ['GET', '/v1/desktop/length3.AppImage', undefined], ['GET', `/v1/seen/x@length3.test/notes/file?path=a`, undefined]];
+    ['HEAD', `/v1/os/${sha}`, undefined], ['GET', '/v1/desktop/root3.AppImage', undefined], ['GET', `/v1/seen/x@length3.test/notes/file?path=a`, undefined]];
   for (const [m, p, token] of asks) {
     const r = await s.call(m, p, {token, ...(m === 'PUT' ? {bytes} : {})});
     assert.equal(r.status, 503, `${m} ${p}`);

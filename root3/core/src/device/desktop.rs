@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// The app's program, as the .deb installs it (/usr/bin) and the bundle names it (Cargo's package).
-pub const PROGRAM: &str = "length3-os";
+pub const PROGRAM: &str = "root3-desktop";
 
 /// How long an answer is waited for, either way.
 const ANSWER: Duration = Duration::from_secs(5);

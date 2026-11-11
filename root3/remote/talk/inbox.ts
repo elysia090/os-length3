@@ -92,7 +92,7 @@ export function inbox(d: InboxDeps, v1: Hono<Vars>, app: Hono<Vars>): Proofs {
   const host = new URL(d.baseURL || 'https://localhost').host.toLowerCase();
   /** The proof for an account on a domain: HMAC-SHA256 under the secret, 26 letters of base32. */
   const proofOf = async (userId: string, domain: string) => {
-    const mac = (await hmacHex(d.secret, `length3-domain\n${userId}\n${domain}`)).match(/../g)!.map((h) => parseInt(h, 16));
+    const mac = (await hmacHex(d.secret, `root3-domain\n${userId}\n${domain}`)).match(/../g)!.map((h) => parseInt(h, 16));
     const abc = 'abcdefghijklmnopqrstuvwxyz234567';
     let bits = 0, value = 0, out = '';
     for (const byte of mac) { value = (value << 8) | byte; bits += 8; while (bits >= 5 && out.length < 26) { out += abc[(value >>> (bits - 5)) & 31]; bits -= 5; } }

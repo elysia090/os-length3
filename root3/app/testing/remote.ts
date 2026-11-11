@@ -52,7 +52,7 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
   // The core this browser runs, the very one (root3/core/web), over files of its own; it is the device named in
   // a file both sides changed.
   const {useCore} = await import('../host/host.ts');
-  useCore(nodeCore(buildCoreWasm({quiet: true}), {LENGTH3_HOME: '/data', LENGTH3_REMOTE: URL_, LENGTH3_DEVICE: 'Chrome Linux'}));
+  useCore(nodeCore(buildCoreWasm({quiet: true}), {ROOT3_HOME: '/data', ROOT3_REMOTE: URL_, ROOT3_DEVICE: 'Chrome Linux'}));
   const {store} = await import('../repos/repos.ts');
   const draft = await import('../repos/sync.ts');
   const settings = await import('../remote/settings.ts');

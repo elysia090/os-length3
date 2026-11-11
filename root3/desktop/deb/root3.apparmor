@@ -5,8 +5,8 @@
 abi <abi/4.0>,
 include <tunables/global>
 
-profile length3-root3 /usr/bin/root3 flags=(unconfined) {
+profile root3 /usr/bin/root3 flags=(unconfined) {
   userns,
 
-  include if exists <local/length3-root3>
+  include if exists <local/root3>
 }

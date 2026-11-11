@@ -4,7 +4,7 @@
 use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{Error, Reply, Result};
-use length3_core::tr;
+use root3_core::tr;
 
 /// `root3 app`: opened from the Start menu here.
 pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {

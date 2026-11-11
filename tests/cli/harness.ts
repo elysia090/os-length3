@@ -88,8 +88,8 @@ const cookiesOf = (h: Record<string, string | string[] | undefined>) => ([h['set
 export interface Ran { code: number; out: string; err: string; json: any } // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /**
- * `env`: what the Remote is started with besides (LENGTH3_PLAN=1: the plan, and a stand-in for Stripe;
- * LENGTH3_NO_BUCKET=1: it holds no files, as a Worker without R2 is).
+ * `env`: what the Remote is started with besides (ROOT3_PLAN=1: the plan, and a stand-in for Stripe;
+ * ROOT3_NO_BUCKET=1: it holds no files, as a Worker without R2 is).
  */
 export async function remote(env: Record<string, string> = {}) {
   const dir = scratch('root3-selftest-');
@@ -169,9 +169,9 @@ export async function remote(env: Record<string, string> = {}) {
   function device() {
     const home = join(dir, `device-${++devices}`);
     mkdirSync(home);
-    const env = {PATH: process.env.PATH ?? '', HOME: home, LENGTH3_HOME: join(home, 'length3'), LENGTH3_LANG: 'en', LENGTH3_REMOTE: url, NO_COLOR: '1',
+    const env = {PATH: process.env.PATH ?? '', HOME: home, ROOT3_HOME: join(home, 'root3'), ROOT3_LANG: 'en', ROOT3_REMOTE: url, NO_COLOR: '1',
       // What it keeps it keeps in files of its home, never in the keyring of whoever runs it.
-      LENGTH3_KEYRING: 'off'};
+      ROOT3_KEYRING: 'off'};
     const parse = (out: string) => { try { return JSON.parse(out); } catch { return null; } };
     /** Run root3 with these words (and standard input), to its end. */
     const root3 = (args: string[], input = ''): Ran => {
@@ -206,7 +206,7 @@ export async function remote(env: Record<string, string> = {}) {
 
 /**
  * The production-like Remote for one test file, on `port` at 127.0.0.1: what `env` asks of dev.ts, asked
- * of the Worker. LENGTH3_PLAN=1 is the plan as on Workers with billing through the stand-in for Stripe;
+ * of the Worker. ROOT3_PLAN=1 is the plan as on Workers with billing through the stand-in for Stripe;
  * without it, every account is paid (dev.ts has no plan then; a Worker outside research always has one).
  */
 async function worker(env: Record<string, string>, dir: string, port: number) {
@@ -214,8 +214,8 @@ async function worker(env: Record<string, string>, dir: string, port: number) {
   const {remote: started, bridgeProcess, appBuild} = await import('../prod/stack.ts');
   const pg = await cluster();
   const b = await bridgeProcess();
-  const plan = env.LENGTH3_PLAN === '1';
-  const r = await started(pg, {dir: join(dir, 'worker'), assets: appBuild(), bridge: b.port, port, host: '127.0.0.1', noBucket: env.LENGTH3_NO_BUCKET === '1',
-    paid: !plan, plan: plan ? {freeRepos: env.LENGTH3_FREE_REPOS, freeMb: env.LENGTH3_FREE_MB, billing: true} : undefined});
+  const plan = env.ROOT3_PLAN === '1';
+  const r = await started(pg, {dir: join(dir, 'worker'), assets: appBuild(), bridge: b.port, port, host: '127.0.0.1', noBucket: env.ROOT3_NO_BUCKET === '1',
+    paid: !plan, plan: plan ? {freeRepos: env.ROOT3_FREE_REPOS, freeMb: env.ROOT3_FREE_MB, billing: true} : undefined});
   return {remote: r, close: async () => { await r.stop(); await b.stop(); pg.destroy(); }};
 }

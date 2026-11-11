@@ -28,12 +28,12 @@ pub mod sync;
 
 use crate::words::args::Call;
 use crate::say::out::{Error, Reply, Result};
-use length3_core::{fs::paths, home as core_home, remote as core_remote, repos::store::Repos, tr};
+use root3_core::{fs::paths, home as core_home, remote as core_remote, repos::store::Repos, tr};
 use serde_json::json;
 
 /// Where root3 runs: in which repo (and where in it), and whether inside the app's Prompt.
 pub struct Ctx {
-    pub here: Option<length3_core::repos::lines::Here>,
+    pub here: Option<root3_core::repos::lines::Here>,
     /// Inside the app's Prompt: only the open repo is here (under /root), written back and sent by the app.
     pub prompt: bool,
     /// What it reads: this device (None), or words alone, never the device (a form read, a line completed, a card
@@ -46,7 +46,7 @@ struct Words { known: Vec<&'static str>, online: bool }
 impl Ctx {
     pub fn new() -> Ctx {
         Ctx {
-            here: std::env::current_dir().ok().and_then(|d| length3_core::repos::lines::here(&d)),
+            here: std::env::current_dir().ok().and_then(|d| root3_core::repos::lines::here(&d)),
             prompt: std::env::var_os("ROOT3_PROMPT").is_some(),
             words: None,
         }
@@ -55,7 +55,7 @@ impl Ctx {
     /// Words alone, in `here`, knowing the repos `known`, on no Remote: what a test reads root3 with.
     #[cfg(test)]
     pub fn test(here: Option<&str>, known: Vec<&'static str>) -> Ctx {
-        Ctx { here: here.map(|r| length3_core::repos::lines::Here { repo: r.into(), line: length3_core::repos::lines::MAIN.into(), folder: String::new() }), prompt: false,
+        Ctx { here: here.map(|r| root3_core::repos::lines::Here { repo: r.into(), line: root3_core::repos::lines::MAIN.into(), folder: String::new() }), prompt: false,
             words: Some(Words { known, online: false }) }
     }
 
@@ -73,7 +73,7 @@ impl Ctx {
     pub fn has_repo(&self, name: &str) -> bool {
         match &self.words {
             Some(w) => w.known.contains(&name),
-            None => length3_core::text::names::valid_name(name) && Repos::open().is_ok_and(|r| r.dir(name).is_ok()),
+            None => root3_core::text::names::valid_name(name) && Repos::open().is_ok_and(|r| r.dir(name).is_ok()),
         }
     }
 
@@ -121,7 +121,7 @@ pub fn next(_: &Ctx, _: &Call) -> Result<Reply> {
 /// root3's own version (root3/VERSION), and the root it runs: ricebox's, which has a version of its own.
 pub fn version(_: &Ctx, _: &Call) -> Result<Reply> {
     let v = include_str!("../../../VERSION").trim();
-    let root = length3_core::root::current(paths::data_dir()).map(|(_, i)| i);
+    let root = root3_core::root::current(paths::data_dir()).map(|(_, i)| i);
     let mut text = format!("root3 {v}");
     if let Some(i) = &root { text += &format!("\nroot {} {} ({})", i.name, i.version, crate::say::out::short(&i.sha256)); }
     Ok(Reply::data(text, json!({"version": v, "root": root})))

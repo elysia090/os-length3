@@ -6,7 +6,7 @@ import {remote, type Ran} from './harness.ts';
 // free here, so it is reached at once) and dev.ts's stand-in for Stripe. What root3 says of the plan, a
 // repo past the allowance kept on the device and waiting, and once a tier is paid for, sent.
 
-const r = await remote({LENGTH3_PLAN: '1', LENGTH3_FREE_REPOS: '1'});
+const r = await remote({ROOT3_PLAN: '1', ROOT3_FREE_REPOS: '1'});
 const sora = await r.browser('Sora Plan');
 const laptop = r.device();
 assert.equal((await laptop.login(sora)).code, 0);

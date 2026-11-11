@@ -14,7 +14,7 @@ export interface SealedKey { v: 1; credential: string; salt: string; iv: string;
 
 const enc = new TextEncoder(), dec = new TextDecoder();
 /** What the derived key is for, and what is sealed with it besides the key (so neither is taken for another). */
-const INFO = enc.encode('length3 agent key'), WITH = enc.encode('length3 agent key v1');
+const INFO = enc.encode('root3 agent key'), WITH = enc.encode('root3 agent key v1');
 
 const b64 = (b: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64 = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));

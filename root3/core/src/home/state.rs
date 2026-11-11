@@ -11,7 +11,7 @@ pub fn set_lang(lang: &str) -> crate::Result<()> {
     set("lang", &serde_json::to_string(lang).map_err(|e| e.to_string())?)
 }
 
-/// The language Home keeps (what the app and root3 speak unless $LENGTH3_LANG says otherwise).
+/// The language Home keeps (what the app and root3 speak unless $ROOT3_LANG says otherwise).
 pub fn lang() -> String {
     get("lang").ok().flatten().and_then(|t| serde_json::from_str::<String>(&t).ok())
         .filter(|l| LANGS.contains(&l.as_str())).unwrap_or_else(|| "en".into())

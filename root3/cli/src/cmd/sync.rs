@@ -12,8 +12,8 @@ use crate::cmd::Ctx;
 use crate::say::out::note;
 use crate::words::spec::{Arg, Sync};
 use crate::words::target;
-use length3_core::remote::{self, Failure};
-use length3_core::{home, repos::store::Repos, tr};
+use root3_core::remote::{self, Failure};
+use root3_core::{home, repos::store::Repos, tr};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub fn before(ctx: &Ctx, call: &Call) {

@@ -38,7 +38,7 @@ export class Tabs {
     };
     // Each tab holds a lock named after it while it lives: one that ended without saying so (it crashed,
     // or was killed) is known gone by its lock, which the browser lets go with it.
-    void locks?.request(`length3:tab:${this.me}`, () => new Promise(() => {}))?.catch(() => {});
+    void locks?.request(`root3:tab:${this.me}`, () => new Promise(() => {}))?.catch(() => {});
     this.post({kind: 'hello', tab: this.me});
   }
   /** Tell every other tab of this browser. */
@@ -57,7 +57,7 @@ export class Tabs {
   async prune(): Promise<void> {
     const q = await this.locks?.query?.().catch(() => null);
     if (!q?.held) return;
-    const alive = new Set(q.held.map((h) => h.name ?? '').filter((n) => n.startsWith('length3:tab:')).map((n) => n.slice('length3:tab:'.length)));
+    const alive = new Set(q.held.map((h) => h.name ?? '').filter((n) => n.startsWith('root3:tab:')).map((n) => n.slice('root3:tab:'.length)));
     for (const id of [...this.others]) if (!alive.has(id)) this.others.delete(id);
   }
   /**
@@ -65,12 +65,12 @@ export class Tabs {
    * do it at once (Web Locks); a browser without them runs it as it comes.
    */
   exclusive<T>(name: string, f: () => Promise<T>): Promise<T> {
-    return this.locks ? this.locks.request(`length3:${name}`, f) as Promise<T> : f();
+    return this.locks ? this.locks.request(`root3:${name}`, f) as Promise<T> : f();
   }
 }
 
 // Only in a page: a worker, or the tests' Node, has no tabs.
-const channel = typeof document !== 'undefined' && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('length3') as unknown as Channel : null;
+const channel = typeof document !== 'undefined' && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('root3') as unknown as Channel : null;
 const tabs = new Tabs(channel, (globalThis.navigator as {locks?: Locks} | undefined)?.locks);
 export const post = (m: Message) => tabs.post(m);
 export const hear = (fn: (m: Message) => void) => tabs.hear(fn);

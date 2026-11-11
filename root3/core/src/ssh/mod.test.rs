@@ -206,7 +206,7 @@ fn the_kernel_is_asked_the_way_to_an_address() {
 
 #[test]
 fn the_scope_is_kept_on_this_device_and_this_device_only_until_one_is_chosen() {
-    let data = crate::fs::testing::dir("length3-ssh-scope");
+    let data = crate::fs::testing::dir("root3-ssh-scope");
     let _ = std::fs::remove_dir_all(&data);
     assert_eq!(scope(&data), Scope::Device);
     set_scope(&data, Scope::Network).unwrap();
@@ -238,7 +238,7 @@ fn an_address_refused_too_often_is_held_off_for_a_while() {
 
 #[test]
 fn the_listener_is_known_while_its_process_runs_and_stopped_with_it() {
-    let data = crate::fs::testing::dir("length3-ssh");
+    let data = crate::fs::testing::dir("root3-ssh");
     let _ = std::fs::remove_dir_all(&data);
     assert_eq!(listening(&data), None);
     let mut kept = record(&data, 22000, Scope::Device, ips(&["127.0.0.1", "::1"]), Vec::new(), "SHA256:x".into()).unwrap();

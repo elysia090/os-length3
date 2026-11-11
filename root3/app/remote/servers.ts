@@ -144,7 +144,7 @@ export const bringBackBoard = (id: string) => call<Board>(`/v1/boards/${id}/back
  * from it at once, the first time in a launch too, as it asks again (they are anyone's to read, nothing of one's own).
  */
 let opened: {at: number; url: string; list: Promise<OpenBoard[]>} | null = null;
-const OPEN_KEPT = 'length3.open-boards';
+const OPEN_KEPT = 'root3.open-boards';
 export const openBoards = (): Promise<OpenBoard[]> => {
   const url = connection()?.url ?? REMOTE_URL;
   if (!opened || opened.url !== url || Date.now() - opened.at > SHARED_FOR) {
@@ -335,8 +335,8 @@ export interface Guest { id: string; name: string; by: string; until: number; ma
 /** A board this browser writes in as a guest: its token, the name written as, the board's and its server's, and when it last wrote there. */
 export interface GuestHere { token: string; as: string; name: string; server: string; wrote?: number }
 
-const GUEST = 'length3.guest.';
-const INVITED = 'length3.invited';
+const GUEST = 'root3.guest.';
+const INVITED = 'root3.invited';
 /** This browser's guest token for a board, if it has one (a convenience: it may be forgotten). */
 export function guestOf(id: string): GuestHere | null {
   try { const v = localStorage.getItem(GUEST + id); return v ? JSON.parse(v) as GuestHere : null; } catch { return null; }

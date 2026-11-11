@@ -41,7 +41,7 @@ test('a tab knows another of this browser is open until it says it goes, or its 
   const c = new Tabs(channel(), locks);
   await settle();
   assert.equal(a.othersOpen(), true);
-  held.delete(`length3:tab:${c.me}`);
+  held.delete(`root3:tab:${c.me}`);
   await a.prune();
   assert.equal(a.othersOpen(), false);
   // Back from the back-forward cache: the others are asked again.

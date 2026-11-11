@@ -134,15 +134,15 @@ fn the_other_devices_version_goes_beside_it() {
 
 #[test]
 fn a_link_planted_where_a_file_is_written_is_not_written_through() {
-    let d = crate::fs::testing::dir("length3-plant");
+    let d = crate::fs::testing::dir("root3-plant");
     let _ = fs::remove_dir_all(&d);
     fs::create_dir_all(d.join("repo")).unwrap();
     let outside = d.join("outside.txt");
     fs::write(&outside, "the person's own file").unwrap();
     let pid = std::process::id();
     // Where the writer used to put its temporary, and where it puts it now.
-    std::os::unix::fs::symlink(&outside, d.join(format!("repo/.length3-{pid}-a.txt"))).unwrap();
-    for n in 0..8 { std::os::unix::fs::symlink(&outside, d.join(format!("repo/.a.txt.length3-{pid}-{n}"))).unwrap(); }
+    std::os::unix::fs::symlink(&outside, d.join(format!("repo/.root3-{pid}-a.txt"))).unwrap();
+    for n in 0..8 { std::os::unix::fs::symlink(&outside, d.join(format!("repo/.a.txt.root3-{pid}-{n}"))).unwrap(); }
     write_file(&d.join("repo/a.txt"), b"from the Remote").unwrap();
     assert_eq!(fs::read_to_string(&outside).unwrap(), "the person's own file");
     assert_eq!(fs::read_to_string(d.join("repo/a.txt")).unwrap(), "from the Remote");
@@ -209,13 +209,13 @@ fn a_device_is_approved_on_the_remote_or_the_app_it_names_and_nowhere_else() {
 
 #[test]
 fn the_tree_leaves_out_git_and_links_and_says_so() {
-    let d = crate::fs::testing::dir("length3-tree");
+    let d = crate::fs::testing::dir("root3-tree");
     let _ = fs::remove_dir_all(&d);
     fs::create_dir_all(d.join(".git")).unwrap();
     fs::create_dir_all(d.join("empty")).unwrap();
     fs::create_dir_all(d.join("src")).unwrap();
     fs::write(d.join("src/a.bin"), [0u8, 159, 146, 150]).unwrap();
-    fs::write(d.join(".length3-1-x"), "half written").unwrap();
+    fs::write(d.join(".root3-1-x"), "half written").unwrap();
     std::os::unix::fs::symlink("/etc/passwd", d.join("link")).unwrap();
     let l = local_tree(&d);
     assert_eq!(l.tree.keys().cloned().collect::<Vec<_>>(), ["empty", "src/a.bin"]);

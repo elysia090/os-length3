@@ -1,6 +1,6 @@
 // A stand-in OAuth provider on the service itself, for development and the
 // end-to-end checks, in two steps as a real provider's are: its page asks
-// only for a name (who you are at the provider), then what length3 asks of
+// only for a name (who you are at the provider), then what root3 asks of
 // it (your name and email), Allow or Cancel. Allow signs that person in;
 // Cancel goes back to the app with the error a real provider sends then
 // (access_denied), which the app says on its sign-in card. Mounted only when
@@ -50,7 +50,7 @@ export function devOAuth(): Hono {
   app.get('/authorize', (c) => {
     const q = new URL(c.req.url).searchParams;
     return c.html(page('Sign in · Development provider', `<form action="consent" method="get">
-<h1>Sign in</h1><p class="muted small">to continue to length3</p>
+<h1>Sign in</h1><p class="muted small">to continue to root3</p>
 <label for="name">Your name</label><input type="text" id="name" name="name" value="${esc(q.get('name') ?? 'Dev Person')}" aria-label="Name" autocomplete="off" spellcheck="false">
 ${hidden(q, ['redirect_uri', 'state'])}<div class="foot"><button class="go">Continue</button></div></form>`), 200, policy);
   });
@@ -59,12 +59,12 @@ ${hidden(q, ['redirect_uri', 'state'])}<div class="foot"><button class="go">Cont
     const q = new URL(c.req.url).searchParams;
     const name = nameOf(q), {email} = who(name);
     const back = new URLSearchParams({redirect_uri: q.get('redirect_uri') ?? '', state: q.get('state') ?? '', name});
-    return c.html(page('length3 wants to access your account', `<div class="pair" aria-hidden="true"><span class="app">root3</span><span class="dots">• • •</span><span class="mark">D</span></div>
-<h1>length3 wants to access your Development account</h1>
+    return c.html(page('root3 wants to access your account', `<div class="pair" aria-hidden="true"><span class="app">root3</span><span class="dots">• • •</span><span class="mark">D</span></div>
+<h1>root3 wants to access your Development account</h1>
 <div class="as"><span>${esc(name)}<br><span class="muted small">${esc(email)}</span></span><a class="small" href="authorize?${esc(back.toString())}">Not you?</a></div>
-<p>This will let length3:</p>
-<ul aria-label="What length3 asks for"><li><span class="tick" aria-hidden="true">✓</span><span>Know your name and email</span></li></ul>
-<p class="muted small">length3 is given nothing else, and cannot post or change anything here. You can take its access back at any time.</p>
+<p>This will let root3:</p>
+<ul aria-label="What root3 asks for"><li><span class="tick" aria-hidden="true">✓</span><span>Know your name and email</span></li></ul>
+<p class="muted small">root3 is given nothing else, and cannot post or change anything here. You can take its access back at any time.</p>
 <div class="foot"><form action="deny" method="get">${hidden(q, ['redirect_uri', 'state'])}<button type="submit">Cancel</button></form>
 <form action="approve" method="get">${hidden(q, ['redirect_uri', 'state'])}<input type="hidden" name="name" value="${esc(name)}"><button class="go" type="submit">Allow</button></form></div>`), 200, policy);
   });

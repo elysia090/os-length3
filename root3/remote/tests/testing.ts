@@ -108,8 +108,8 @@ const short = (h: ReturnType<typeof createHash>) => h.digest('hex').slice(0, 16)
 
 let initialized: Promise<DataDir> | null = null;
 /** A Postgres as initdb leaves it: three seconds each time PGlite runs initdb. */
-const initdb = () => (initialized ??= keptAs(`length3-pglite-${short(createHash('sha256').update(PGLITE))}-initdb.data`,
-  /^length3-pglite-[0-9a-f]{16}-initdb\.data$/, () => closedAfter(undefined, async () => {})));
+const initdb = () => (initialized ??= keptAs(`root3-pglite-${short(createHash('sha256').update(PGLITE))}-initdb.data`,
+  /^root3-pglite-[0-9a-f]{16}-initdb\.data$/, () => closedAfter(undefined, async () => {})));
 
 let template: Promise<DataDir> | null = null;
 /**
@@ -120,7 +120,7 @@ let template: Promise<DataDir> | null = null;
 const migrated = () => (template ??= (async () => {
   const hash = createHash('sha256').update(PGLITE);
   for (const f of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()) hash.update(f).update(readFileSync(join(MIGRATIONS, f)));
-  return keptAs(`length3-pglite-${short(hash)}.data`, /^length3-pglite-[0-9a-f]{16}\.data$/,
+  return keptAs(`root3-pglite-${short(hash)}.data`, /^root3-pglite-[0-9a-f]{16}\.data$/,
     async () => closedAfter(await initdb(), (pg) => migrate(drizzle(pg, {schema}), {migrationsFolder: MIGRATIONS})));
 })());
 /**

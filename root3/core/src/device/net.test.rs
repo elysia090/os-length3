@@ -35,7 +35,7 @@ fn where_a_request_went_is_its_host_and_the_port_it_says() {
 }
 
 mod live {
-    /// Run by hand (`cargo test -p length3-core -- --ignored live`) behind a proxy whose certificate only the host trusts.
+    /// Run by hand (`cargo test -p root3-core -- --ignored live`) behind a proxy whose certificate only the host trusts.
     #[test]
     #[ignore]
     fn reaches_out_through_the_hosts_proxy_and_trust() {

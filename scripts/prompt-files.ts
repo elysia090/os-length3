@@ -15,7 +15,7 @@
 //   node scripts/prompt-files.ts
 //
 // The repository is public: each file is taken from the release's own
-// download link, which anyone may read (LENGTH3_RELEASES: where releases are
+// download link, which anyone may read (ROOT3_RELEASES: where releases are
 // downloaded from, for a test; GITHUB_REPOSITORY names the repository when it
 // is not this one).
 
@@ -29,7 +29,7 @@ import {tarMembers, type About, type Index} from './webroot-tree.ts';
 
 const here = new URL('..', import.meta.url).pathname;
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
-const releases = process.env.LENGTH3_RELEASES || `https://github.com/${repo}/releases/download`;
+const releases = process.env.ROOT3_RELEASES || `https://github.com/${repo}/releases/download`;
 // The pin this tree has comes first: without one, nothing is fetched or taken.
 const pin = pinnedRoots(readFileSync(join(here, 'root3/core/src/root/pins.rs'), 'utf8'))[0];
 if (!pin) throw new Error('root3/core/src/root/pins.rs pins no root3: release one, and merge the change it proposes');
@@ -40,7 +40,7 @@ const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 /** One of the release's files, from its download link. Never waited on for good (a download that stalls holds the
  * build until it is killed): ten minutes, its body included. */
 const file = async (name: string) => {
-  const r = await fetch(`${releases}/${tag}/${name}`, {headers: {'user-agent': 'length3-build'}, signal: AbortSignal.timeout(10 * 60_000)});
+  const r = await fetch(`${releases}/${tag}/${name}`, {headers: {'user-agent': 'root3-build'}, signal: AbortSignal.timeout(10 * 60_000)});
   if (!r.ok) throw new Error(`${name} of ${tag}: ${r.status}`);
   return Buffer.from(await r.arrayBuffer());
 };

@@ -378,7 +378,7 @@ fn system_leftovers(data: &Path, out: &mut Vec<Leftover>) {
     for e in fs::read_dir(&dir).into_iter().flatten().flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         let Ok(meta) = e.path().symlink_metadata() else { continue };
-        // `.<sha>.length3-<pid>-0`: an install's unpacking, whose installer is gone.
+        // `.<sha>.root3-<pid>-0`: an install's unpacking, whose installer is gone.
         if meta.is_dir() && name.starts_with('.') {
             if let Some(pid) = temporary_writer(&name, false) {
                 if age(&meta) >= AGE && pid != crate::pid() && !running(pid) {

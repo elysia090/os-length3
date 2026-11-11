@@ -3,7 +3,7 @@
 use super::*;
 
 fn scratch(tag: &str) -> Repos {
-    let root = crate::fs::testing::dir(&format!("length3-repos-{tag}"));
+    let root = crate::fs::testing::dir(&format!("root3-repos-{tag}"));
     let _ = fs::remove_dir_all(&root);
     Repos::new(root).unwrap()
 }

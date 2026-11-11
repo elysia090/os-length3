@@ -4,7 +4,7 @@
 //
 //   node root3/remote/serve/dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…] [--no-bucket]
 //
-// --no-bucket (or LENGTH3_NO_BUCKET=1): a Remote that holds no files, as a
+// --no-bucket (or ROOT3_NO_BUCKET=1): a Remote that holds no files, as a
 // Worker without its R2 binding is; every route that would move bytes says so.
 import {existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
@@ -23,7 +23,7 @@ import * as schema from '../db/schema.ts';
 import {sweep} from '../repos/sweep.ts';
 
 const args = process.argv.slice(2);
-const noBucket = args.includes('--no-bucket') || process.env.LENGTH3_NO_BUCKET === '1';
+const noBucket = args.includes('--no-bucket') || process.env.ROOT3_NO_BUCKET === '1';
 const [dir, port = '8790', appOrigin = 'http://localhost:4173', ...others] = args.filter((a) => a !== '--no-bucket');
 if (!dir) { console.error('usage: dev.ts DIR [PORT] [APP_ORIGIN] [OTHER_ORIGIN…] [--no-bucket]'); process.exit(2); }
 mkdirSync(noBucket ? dir : join(dir, 'blobs'), {recursive: true});
@@ -49,17 +49,17 @@ const swept = () => sweep(db, bucket).then(async (gone) => { console.log(`sweep 
 setInterval(() => void swept(), 86_400_000).unref();
 const secretFile = join(dir, 'secret');
 if (!existsSync(secretFile)) writeFileSync(secretFile, crypto.randomUUID() + crypto.randomUUID(), {mode: 0o600});
-// LENGTH3_DEV_BASE names it otherwise (http://localhost:PORT, where passkeys work: not on an IP address).
-const baseURL = process.env.LENGTH3_DEV_BASE ?? `http://127.0.0.1:${port}`;
+// ROOT3_DEV_BASE names it otherwise (http://localhost:PORT, where passkeys work: not on an IP address).
+const baseURL = process.env.ROOT3_DEV_BASE ?? `http://127.0.0.1:${port}`;
 // Sign-in here is the stand-in provider (devoauth.ts): a name, and you are in.
 const secret = readFileSync(secretFile, 'utf8');
-// LENGTH3_ENTER_AS and LENGTH3_ENTER_KEY make it a Remote for research, as on Workers (enter.ts): no
+// ROOT3_ENTER_AS and ROOT3_ENTER_KEY make it a Remote for research, as on Workers (enter.ts): no
 // provider then, the link …/#enter=KEY the only way in.
-const enter = process.env.LENGTH3_ENTER_AS ? {as: process.env.LENGTH3_ENTER_AS, key: process.env.LENGTH3_ENTER_KEY ?? ''} : undefined;
+const enter = process.env.ROOT3_ENTER_AS ? {as: process.env.ROOT3_ENTER_AS, key: process.env.ROOT3_ENTER_KEY ?? ''} : undefined;
 const auth = createAuth({db, secret, baseURL, appOrigin, origins: others, dev: !enter, only: enter && enterEmail(enter.as), domain: 'length3.test'});
-// LENGTH3_PLAN=1 gives it the plan the Remote on Workers has (LENGTH3_FREE_REPOS, LENGTH3_FREE_MB to say it
+// ROOT3_PLAN=1 gives it the plan the Remote on Workers has (ROOT3_FREE_REPOS, ROOT3_FREE_MB to say it
 // otherwise), bought from a stand-in for Stripe (devbilling.ts); without it, no plan: everything is open.
-const plan = process.env.LENGTH3_PLAN === '1' ? planConfig({FREE_REPOS: process.env.LENGTH3_FREE_REPOS, FREE_MB: process.env.LENGTH3_FREE_MB}) : undefined;
+const plan = process.env.ROOT3_PLAN === '1' ? planConfig({FREE_REPOS: process.env.ROOT3_FREE_REPOS, FREE_MB: process.env.ROOT3_FREE_MB}) : undefined;
 const hook = `whsec_dev_${secret.slice(0, 24)}`;
 // What the stand-in's Stripe holds (its customers, their cards' last digits, subscriptions, invoices) is kept beside the database.
 const stripeFile = join(dir, 'stripe.json');

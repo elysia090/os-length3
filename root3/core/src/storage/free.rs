@@ -67,7 +67,7 @@ pub(super) fn room_order(items: &[Item], previous: &[String], touched: &std::col
 }
 
 /// Room wanted on this device: `want` bytes more (a root, a repo brought here, a Prompt prepared) and a reserve
-/// besides (a twentieth of the disk, between 512 MB and 4 GB; `LENGTH3_RESERVE` says another, in bytes). While the host has that, nothing happens. Short of
+/// besides (a twentieth of the disk, between 512 MB and 4 GB; `ROOT3_RESERVE` says another, in bytes). While the host has that, nothing happens. Short of
 /// it, what is made again or kept elsewhere goes by itself until there is enough, in this order: this OS's own
 /// leftovers and old roots, the caches, what is derived in repos (made again by the tools that made it), the root
 /// before the current one, then copies of repos in step with the Remote and untouched for a week, the oldest first
@@ -76,7 +76,7 @@ pub(super) fn room_order(items: &[Item], previous: &[String], touched: &std::col
 pub fn make_room(data: &Path, repos_dir: &Path, want: u64) -> Option<Freed> {
     let (total, free_now, certainty) = host(data);
     if certainty == Certainty::Unknown || total == 0 { return None; }
-    let reserve = std::env::var("LENGTH3_RESERVE").ok().and_then(|v| v.parse().ok()).unwrap_or((total / 20).clamp(512 << 20, 4 << 30));
+    let reserve = std::env::var("ROOT3_RESERVE").ok().and_then(|v| v.parse().ok()).unwrap_or((total / 20).clamp(512 << 20, 4 << 30));
     let need = (want + reserve).checked_sub(free_now).filter(|n| *n > 0)?;
     let s = space(data, repos_dir, &[], true);
     let previous: Vec<String> = system(data).into_iter().filter(|(r, _)| r.held == Held::Previous).map(|(r, _)| format!("root:{}", r.sha256)).collect();

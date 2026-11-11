@@ -141,7 +141,7 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
 }
 
 /** Where an earlier build kept copies of root3; nothing is kept there now. */
-const STORE = 'length3-userland';
+const STORE = 'root3-userland';
 
 /** Give back every copy an earlier build kept in Cache Storage except those named in `live`. */
 export async function forgetExcept(live: Set<string>) {

@@ -32,7 +32,7 @@ fn tar(members: &[(&str, u8, &[u8], &str)]) -> Vec<u8> {
 }
 
 fn fresh(tag: &str) -> PathBuf {
-    let d = crate::fs::testing::dir(&format!("length3-root-{tag}"));
+    let d = crate::fs::testing::dir(&format!("root3-root-{tag}"));
     let _ = fs::remove_dir_all(&d);
     fs::create_dir_all(&d).unwrap();
     d
@@ -108,7 +108,7 @@ fn a_distribution_root_goes_in_from_its_tar_gz_and_back_out_by_its_digest() {
     let (tree, about) = current(&data).unwrap();
     assert_eq!(about.sha256, ubuntu.sha256);
     // Ready for a Prompt's one user, and reached through its own /bin link.
-    assert!(fs::read_to_string(tree.join("etc/apt/apt.conf.d/00length3")).unwrap().contains("APT::Sandbox::User \"root\""));
+    assert!(fs::read_to_string(tree.join("etc/apt/apt.conf.d/00root3")).unwrap().contains("APT::Sandbox::User \"root\""));
     assert!(tree.join("bin/sh").exists());
     // Another made current, then this one again without fetching: it is held.
     fs::remove_file(system_dir(&data).join("current")).unwrap();

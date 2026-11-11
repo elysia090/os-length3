@@ -7,14 +7,14 @@ use crate::words::args::Call;
 use crate::say::out::{bytes, Error, files, note, Reply, Result};
 use crate::words::spec::{Fact, On};
 use crate::words::target;
-use length3_core::repos::store::{is_issues, shown, ISSUES};
-use length3_core::tr;
+use root3_core::repos::store::{is_issues, shown, ISSUES};
+use root3_core::tr;
 use serde_json::json;
 
 /// What root3 reads or writes of a file at most.
 const LIMIT: u64 = 256 * 1024;
 
-/// A repo's issues are not files to root3 file (length3_core::repos::store::is_issues): they are read and written as issues, with root3 issue.
+/// A repo's issues are not files to root3 file (root3_core::repos::store::is_issues): they are read and written as issues, with root3 issue.
 fn not_issues(repo: &str, rel: &str) -> Result<()> {
     if !is_issues(rel) { return Ok(()); }
     Err(Error::Refused(tr!("The issues of {0} are kept by the OS: read one with root3 issue {0}#N, write one with root3 issue new {0} \"Fix：title\"",
@@ -101,6 +101,6 @@ pub fn rm(ctx: &Ctx, call: &Call) -> Result<Reply> {
 }
 
 /// The files in the folder `rel` of `repo` and in each folder under it (a link counts as one).
-fn count(r: &length3_core::repos::store::Repos, repo: &str, rel: &str) -> usize {
+fn count(r: &root3_core::repos::store::Repos, repo: &str, rel: &str) -> usize {
     r.tree(repo, rel).unwrap_or_default().iter().map(|e| if e.kind == "dir" { count(r, repo, &format!("{rel}/{}", e.name)) } else { 1 }).sum()
 }

@@ -4,7 +4,7 @@ use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{Error, now_ms, Reply, Result};
 use crate::words::spec::{Fact, On};
-use length3_core::{home, remote, remote::inbox, text::i18n, text::title, tr};
+use root3_core::{home, remote, remote::inbox, text::i18n, text::title, tr};
 use serde_json::json;
 
 pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
@@ -135,7 +135,7 @@ pub fn lang_show(_: &Ctx, _: &Call) -> Result<Reply> {
     let kept = home::lang();
     let spoken = if i18n::ja() { "ja" } else { "en" };
     let mut text = kept.clone();
-    if spoken != kept { text += &tr!(" (LENGTH3_LANG speaks {} now)", "（いまは LENGTH3_LANG で {}）", spoken); }
+    if spoken != kept { text += &tr!(" (ROOT3_LANG speaks {} now)", "（いまは ROOT3_LANG で {}）", spoken); }
     Ok(Reply::data(text, json!({"lang": kept, "spoken": spoken})))
 }
 

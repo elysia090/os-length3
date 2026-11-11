@@ -74,7 +74,7 @@ test('a page the Remote names is left for only when it is a web page: https, or 
   remote.leaveFor('https://github.com/login/oauth/authorize?x=1');
   remote.leaveFor('http://localhost:8787/back');
   assert.deepEqual(went, ['https://github.com/login/oauth/authorize?x=1', 'http://localhost:8787/back']);
-  for (const url of ['javascript:alert(1)', 'data:text/html,hi', 'file:///etc/passwd', 'http://evil.example/', 'length3://open']) {
+  for (const url of ['javascript:alert(1)', 'data:text/html,hi', 'file:///etc/passwd', 'http://evil.example/', 'root3://open']) {
     assert.throws(() => remote.leaveFor(url), /Remote returned an invalid URL/, url);
   }
   assert.equal(went.length, 2);

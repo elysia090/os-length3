@@ -69,7 +69,7 @@ interface Figures { route: string; status: number; wall: number; wallP90: number
   roundTrips: number; fromDb: number; toDb: number; setup: number; bytes: number; gzip: number }
 
 async function main() {
-  const dir = mkdtempSync(join(tmpdir(), 'length3-measure-'));
+  const dir = mkdtempSync(join(tmpdir(), 'root3-measure-'));
   const pg = await cluster();
   const b = await bridgeProcess(DELAY);
   const cleanup: (() => Promise<void> | void)[] = [() => b.stop(), () => pg.destroy(), () => rmSync(dir, {recursive: true, force: true})];

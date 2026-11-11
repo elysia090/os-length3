@@ -39,7 +39,7 @@ export const REMOTE_URL: string = (() => {
 })();
 
 // The core signs in to the same Remote as the page.
-setEnvironment({LENGTH3_REMOTE: REMOTE_URL});
+setEnvironment({ROOT3_REMOTE: REMOTE_URL});
 
 /**
  * The session this device is in on a Remote: `session`, which of the account's it is (its token unsigned, which opens
@@ -301,7 +301,7 @@ export function signInFailed(code: string | null) {
     : t('Provider authentication failed. Please try again.');
 }
 /** The provider a sign-in went to, kept for this tab until it comes back. */
-const SIGNING_WITH = 'length3.signing-with';
+const SIGNING_WITH = 'root3.signing-with';
 
 /**
  * Why the last sign-in did not take, said on the sign-in card however often it is drawn (the page is drawn again
@@ -317,7 +317,7 @@ const tryingAgain = () => { signInTrouble = ''; };
 /** Whether this browser can make and use passkeys at all (WebAuthn); without it, providers are the way in. */
 export const passkeysHere = (): boolean => typeof window !== 'undefined' && typeof (window as {PublicKeyCredential?: unknown}).PublicKeyCredential !== 'undefined';
 
-const WAY = 'length3.way-in';
+const WAY = 'root3.way-in';
 /** How this browser last came in: with a passkey (made here, or used here), or a provider; null, the first time. */
 export function wayIn(): 'passkey' | 'provider' | null {
   try { const w = localStorage.getItem(WAY); return w === 'passkey' || w === 'provider' ? w : null; } catch { return null; }
@@ -327,7 +327,7 @@ function cameIn(way: 'passkey' | 'provider') {
   try { if (way === 'passkey' || localStorage.getItem(WAY) !== 'passkey') localStorage.setItem(WAY, way); } catch { /* the first time's card, then */ }
 }
 
-const JUST = 'length3.just-signed-in';
+const JUST = 'root3.just-signed-in';
 /** Back from a provider, signed in: Remote's page offers a passkey for next time, once, in this tab. */
 export function justSignedIn() {
   cameIn('provider');
@@ -417,7 +417,7 @@ export const deedsHere = (): boolean => !isNative;
 /** The browser opened on the Remote's own app at `ask` (`repo`'s card for off and discard): the app's way to a passkey's deeds. */
 export const askBrowser = (ask: BrowserAsk, repo?: string) => native<void>('app_open', {ask, ...(repo ? {repo} : {})});
 
-const ASKED = 'length3.asked';
+const ASKED = 'root3.asked';
 /** Opened by the app at an ask (…/?account=off&repo=NAME): held for this tab until Remote's page does it, a sign-in on the way included. */
 export function holdAsk(ask: string | null, repo: string | null): BrowserAsk | null {
   if (ask !== 'sign-in' && ask !== 'off' && ask !== 'discard') return null;

@@ -3,7 +3,7 @@
 //! reader nor a crash ever sees half of it: the bytes go into a new file beside it, made afresh (O_EXCL: never
 //! opened through a link someone planted at its name), are flushed to the disk, and the new file is renamed over
 //! the old in one step; then the directory is flushed, so the rename itself outlives a crash. The new file's name
-//! is this OS's temporary (`.<name>.length3-<pid>-<n>`), which a walk skips and storage reclaims when it is left.
+//! is this OS's temporary (`.<name>.root3-<pid>-<n>`), which a walk skips and storage reclaims when it is left.
 
 use std::fs;
 use std::io::{self, Write};
@@ -46,7 +46,7 @@ fn beside(path: &Path, how: How) -> io::Result<(PathBuf, fs::File)> {
     let mut last = None;
     for _ in 0..64 {
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        let tmp = path.with_file_name(format!(".{name}.length3-{}-{n}", crate::pid()));
+        let tmp = path.with_file_name(format!(".{name}.root3-{}-{n}", crate::pid()));
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
         with_mode(&mut options, how.mode);
@@ -127,7 +127,7 @@ fn sync_dir(path: &Path) {
 #[cfg(not(unix))]
 fn sync_dir(_: &Path) {}
 
-/// The pid in a name this OS gives its temporary files (`.<name>.length3-<pid>-<n>`), if it is one. A setting's
+/// The pid in a name this OS gives its temporary files (`.<name>.root3-<pid>-<n>`), if it is one. A setting's
 /// temporary (`<key>.json.<pid>`) is only one in the settings directory: in a repo, a name like that is a person's
 /// own file. Read back from the name's end, so a name that is neither costs a byte or two, not a search.
 pub(crate) fn temporary_writer(name: &str, in_settings: bool) -> Option<u32> {
@@ -136,7 +136,7 @@ pub(crate) fn temporary_writer(name: &str, in_settings: bool) -> Option<u32> {
     if name.starts_with('.') {
         let (rest, n) = digits(name);
         if let Some((mark, pid)) = rest.strip_suffix('-').map(digits) {
-            if !n.is_empty() && mark.len() > ".length3-".len() && mark.ends_with(".length3-") { return pid.parse().ok(); }
+            if !n.is_empty() && mark.len() > ".root3-".len() && mark.ends_with(".root3-") { return pid.parse().ok(); }
         }
     }
     let (stem, pid) = name.rsplit_once('.')?;
@@ -145,7 +145,7 @@ pub(crate) fn temporary_writer(name: &str, in_settings: bool) -> Option<u32> {
 
 /// Whether a name in a repo is one this OS gives a file while it writes it.
 pub fn is_temporary(name: &str) -> bool {
-    name.starts_with(".length3-") || temporary_writer(name, false).is_some()
+    name.starts_with(".root3-") || temporary_writer(name, false).is_some()
 }
 
 /// Make the OS's own directory private to the person (0700), and every folder made on the way to it: made so, never

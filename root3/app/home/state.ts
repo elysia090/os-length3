@@ -16,9 +16,9 @@ import {errorText} from '../host/errors.ts';
 export type Key = 'profile' | 'todo' | 'band' | 'remote' | 'sync' | 'lang' | 'dotfiles' | 'network' | 'trusted';
 const KEYS: readonly Key[] = ['profile', 'todo', 'band', 'remote', 'sync', 'lang', 'dotfiles', 'network', 'trusted'];
 /** Where a browser (and the app's webview) kept each before they were the core's files. */
-const STORAGE: Record<Key, string> = {profile: 'length3.os.profile', todo: 'length3.os.todo', band: 'length3.os.band',
-  remote: 'length3.os.remote', sync: 'length3.os.sync', lang: 'length3.os.lang.setting', dotfiles: 'length3.os.dotfiles', network: 'length3.os.network',
-  trusted: 'length3.os.trusted'};
+const STORAGE: Record<Key, string> = {profile: 'root3.os.profile', todo: 'root3.os.todo', band: 'root3.os.band',
+  remote: 'root3.os.remote', sync: 'root3.os.sync', lang: 'root3.os.lang.setting', dotfiles: 'root3.os.dotfiles', network: 'root3.os.network',
+  trusted: 'root3.os.trusted'};
 
 const cache = new Map<Key, string | null>();
 

@@ -3,28 +3,28 @@
 // them is what `root3` does on the command line, through the same core.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use length3_core::api;
+use root3_core::api;
 // The data directory, for what only a Unix has here: one app at a time (device/desktop.rs), and SSH's card.
 #[cfg(unix)]
-use length3_core::fs::paths;
+use root3_core::fs::paths;
 
 #[cfg(target_os = "linux")]
 mod shells;
 /// Elsewhere a Prompt on the root is not there yet; the commands say so.
 #[cfg(not(target_os = "linux"))]
 mod shells {
-    fn not_here() -> String { length3_core::tr!("A Prompt on the root is Linux only for now", "root の Prompt はいま Linux だけです") }
+    fn not_here() -> String { root3_core::tr!("A Prompt on the root is Linux only for now", "root の Prompt はいま Linux だけです") }
     #[derive(Default)]
     pub struct Shells;
     #[tauri::command] pub fn prompt_open(_repo: String) -> Result<u32, String> { Err(not_here()) }
     #[tauri::command] pub fn prompt_input(_id: u32, _text: String) -> Result<(), String> { Err(not_here()) }
     #[tauri::command] pub fn prompt_interrupt(_id: u32) -> Result<(), String> { Err(not_here()) }
-    #[tauri::command] pub fn prompt_held(_id: u32) -> Result<Option<length3_core::prompt::running::Held>, String> { Ok(None) }
-    #[tauri::command] pub fn prompt_close(_id: u32) -> Result<length3_core::prompt::running::Stopped, String> { Err(not_here()) }
+    #[tauri::command] pub fn prompt_held(_id: u32) -> Result<Option<root3_core::prompt::running::Held>, String> { Ok(None) }
+    #[tauri::command] pub fn prompt_close(_id: u32) -> Result<root3_core::prompt::running::Stopped, String> { Err(not_here()) }
     #[tauri::command] pub fn root_status() -> Option<()> { None }
     #[derive(serde::Serialize)]
     pub struct Native { native: bool, why: String }
-    #[tauri::command] pub async fn root_native() -> Native { Native { native: false, why: length3_core::tr!("A Prompt runs on the root on Linux only; here it runs translated, as in a browser", "root の上で Prompt が動くのは Linux だけです。ここではブラウザと同じく翻訳して動きます") } }
+    #[tauri::command] pub async fn root_native() -> Native { Native { native: false, why: root3_core::tr!("A Prompt runs on the root on Linux only; here it runs translated, as in a browser", "root の上で Prompt が動くのは Linux だけです。ここではブラウザと同じく翻訳して動きます") } }
     #[tauri::command] pub async fn root_list(_path: String) -> Result<Vec<()>, String> { Err(not_here()) }
     #[tauri::command] pub async fn root_fetch() -> Result<(), String> { Err(not_here()) }
     #[tauri::command] pub async fn root_use(_id: String) -> Result<(), String> { Err(not_here()) }
@@ -77,7 +77,7 @@ fn signing_page() -> &'static std::sync::Mutex<Option<String>> {
 fn remote_login_reopen(app: tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let page = signing_page().lock().ok().and_then(|p| p.clone())
-        .ok_or_else(|| length3_core::tr!("No sign-in is waiting", "待っているサインインはありません"))?;
+        .ok_or_else(|| root3_core::tr!("No sign-in is waiting", "待っているサインインはありません"))?;
     app.opener().open_url(page, None::<&str>).map_err(|e| e.to_string())
 }
 
@@ -121,7 +121,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
 /// reached, its host key and how many keys are let in. Worked out here; none of it goes to the Remote.
 #[cfg(unix)]
 fn ssh_now() -> serde_json::Value {
-    serde_json::to_value(length3_core::ssh::here(&paths::data_dir())).unwrap_or_default()
+    serde_json::to_value(root3_core::ssh::here(&paths::data_dir())).unwrap_or_default()
 }
 
 #[cfg(not(unix))]
@@ -144,9 +144,9 @@ async fn ssh_set(on: bool, scope: Option<String>) -> Result<serde_json::Value, S
         let mut args = vec!["address", "ssh", if on { "on" } else { "off" }];
         if on { if let Some(s) = scope.as_deref().filter(|s| matches!(*s, "device" | "network")) { args.push(s); } }
         args.push("--json");
-        let out = std::process::Command::new(length3_core::prompt::running::root3_path(&exe)).args(&args)
+        let out = std::process::Command::new(root3_core::prompt::running::root3_path(&exe)).args(&args)
             .stdin(std::process::Stdio::null()).output()
-            .map_err(|e| length3_core::tr!("Could not start root3: {}", "root3 を起動できませんでした：{}", e))?;
+            .map_err(|e| root3_core::tr!("Could not start root3: {}", "root3 を起動できませんでした：{}", e))?;
         if !out.status.success() {
             let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
             return Err(v["error"]["message"].as_str().map(String::from).unwrap_or_else(|| String::from_utf8_lossy(&out.stderr).trim().to_string()));
@@ -177,12 +177,12 @@ fn main() {
     // One app on a device: one started while another is open brings that one forward and ends. A data
     // directory that cannot hold the lock still opens the app, only root3 app cannot find it.
     #[cfg(unix)]
-    let held = match length3_core::device::desktop::hold(&paths::data_dir()) {
+    let held = match root3_core::device::desktop::hold(&paths::data_dir()) {
         Ok(Some(h)) => Some(h),
         Ok(None) => {
             // The one open may be a moment from answering (it has just taken the lock).
             for _ in 0..50 {
-                if length3_core::device::desktop::ask(&paths::data_dir(), "show").is_some() { break; }
+                if root3_core::device::desktop::ask(&paths::data_dir(), "show").is_some() { break; }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
             return;

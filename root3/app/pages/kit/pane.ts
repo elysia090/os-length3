@@ -14,7 +14,7 @@ import {kindWords} from './todo-list.ts';
 // on one page, it is so on every page. Narrow, it is laid over the center when it is brought out, and goes with
 // Escape or a press outside it.
 
-const PANE_KEY = 'length3.os.pane';
+const PANE_KEY = 'root3.os.pane';
 /** Whether the right pane is out when the window is wide, as last left on this device: one for every page that has it. */
 let paneOpen = (() => { try { return localStorage.getItem(PANE_KEY) !== 'closed'; } catch { return true; } })();
 const paneHearers = new Set<() => void>();

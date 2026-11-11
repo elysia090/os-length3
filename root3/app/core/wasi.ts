@@ -488,7 +488,7 @@ export class WASI {
   constructor(options: WasiOptions) {
     this.fs = options.fs;
     this.env = options.env ?? {};
-    this.args = options.args ?? ['length3-core'];
+    this.args = options.args ?? ['root3-core'];
     this.out = options.out ?? ((line, fd) => (fd === 2 ? console.error : console.log)(line));
     for (const fd of [0, 1, 2]) this.fds.set(fd, {pos: 0, append: false});
     this.fds.set(3, {pos: 0, append: false, preopen: '/'});

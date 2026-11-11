@@ -49,14 +49,14 @@ async function asset(s: Source, p: Pinned): Promise<Response> {
   const f = s.fetch ?? fetch;
   if (p.url) {
     // Public, and never given the token: it is not GitHub's API.
-    const r = await f(p.url, {headers: {'user-agent': 'length3-deploy'}, signal: AbortSignal.timeout(10 * 60_000)});
+    const r = await f(p.url, {headers: {'user-agent': 'root3-deploy'}, signal: AbortSignal.timeout(10 * 60_000)});
     if (r.ok) return r;
     await r.body?.cancel();
     throw new Error(`${p.url}: ${r.status}`);
   }
   // Never waited on for good (a download that stalls holds the deploy until the build is killed): ten minutes, its body included.
   const ask = (path: string, accept: string) => f(`${s.api}/repos/${s.repo}${path}`, {
-    headers: {accept, 'x-github-api-version': '2022-11-28', 'user-agent': 'length3-deploy', ...(s.token ? {authorization: `Bearer ${s.token}`} : {})},
+    headers: {accept, 'x-github-api-version': '2022-11-28', 'user-agent': 'root3-deploy', ...(s.token ? {authorization: `Bearer ${s.token}`} : {})},
     signal: AbortSignal.timeout(10 * 60_000),
   });
   const must = async (r: Response, what: string) => {
@@ -96,7 +96,7 @@ export async function mirror(pins: Pinned[], store: Store, source: Source, log: 
   /** Asked before a file is taken and put: throws when the budget has no room for it (deploy.ts). */
   allow: (p: Pinned) => Promise<void> = async () => {}): Promise<{kept: string[]; put: string[]}> {
   const kept: string[] = [], put: string[] = [], failed: string[] = [];
-  const work = mkdtempSync(join(tmpdir(), 'length3-mirror-'));
+  const work = mkdtempSync(join(tmpdir(), 'root3-mirror-'));
   try {
     for (const p of pins) {
       try {

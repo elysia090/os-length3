@@ -7,5 +7,5 @@ export default defineConfig({
   dialect: 'postgresql',
   schema: './root3/remote/db/schema.ts',
   out: './root3/remote/migrations',
-  dbCredentials: {url: process.env.DATABASE_URL ?? 'postgres://localhost/length3'},
+  dbCredentials: {url: process.env.DATABASE_URL ?? 'postgres://localhost/root3'},
 });

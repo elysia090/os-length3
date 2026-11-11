@@ -1,5 +1,5 @@
 //! Where core's tests make their files: a folder of this test process's own
-//! under the system's temporary directory (`length3-test-run-<pid>`), one
+//! under the system's temporary directory (`root3-test-run-<pid>`), one
 //! entry in it per test. A run leaves nothing for long: each one first takes
 //! away the folders of runs whose process is gone (one that passed, failed,
 //! or was killed), so what a failed test made is there to look at until the
@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-const RUN: &str = "length3-test-run-";
+const RUN: &str = "root3-test-run-";
 
 /// `name`, under this run's folder (not made: the test makes what it needs, as before), and anything an earlier
 /// test of this run left there gone.

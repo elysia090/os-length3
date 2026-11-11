@@ -7,7 +7,7 @@ use crate::words::args::Call;
 use crate::say::out::{self, bytes, Error, Reply, Result, things};
 use crate::words::spec::{Fact, On};
 use crate::words::target;
-use length3_core::{device::download::Progress, fs::paths, home, remote, root, storage, tr};
+use root3_core::{device::download::Progress, fs::paths, home, remote, root, storage, tr};
 use serde_json::json;
 
 pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
@@ -24,7 +24,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     // What runs used of time and space in the last day, by repo (core compute/spec.rs ledger): the most CPU first.
-    let used = length3_core::compute::spec::by_repo(&length3_core::compute::spec::runs(), crate::say::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
+    let used = root3_core::compute::spec::by_repo(&root3_core::compute::spec::runs(), crate::say::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
     if !used.is_empty() {
         t.push(tr!("Compute, the last day", "計算資源（この1日）"));
         let secs = |ms: u64| if ms < 60_000 { format!("{:.1} s", ms as f64 / 1000.0) } else { format!("{} min", ms / 60_000) };
@@ -107,7 +107,7 @@ pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
 /// kept_from_namespaces). Where it does not, the app runs its Prompts translated, as a browser does, and says why.
 pub fn root_check(_: &Ctx, _: &Call) -> Result<Reply> {
     #[cfg(target_os = "linux")]
-    let why = length3_core::prompt::launch::kept_from_namespaces();
+    let why = root3_core::prompt::launch::kept_from_namespaces();
     #[cfg(not(target_os = "linux"))]
     let why = Some(tr!("A Prompt runs on the root on Linux only; here it runs translated, as in a browser", "root の上で Prompt が動くのは Linux だけです。ここではブラウザと同じく翻訳して動きます"));
     let data = json!({"native": why.is_none(), "why": why});
@@ -201,7 +201,7 @@ pub fn network_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let on = call.word(0) == Some("on");
     let repo = target::repo(ctx, call, 1)?;
     let changed = home::set_network(&repo, on)?;
-    let running = length3_core::prompt::running::all(paths::data_dir()).iter().filter(|r| r.repo == repo).count();
+    let running = root3_core::prompt::running::all(paths::data_dir()).iter().filter(|r| r.repo == repo).count();
     let stopped = if !on && running > 0 { super::forge::stop_prompts(&repo) } else { Vec::new() };
     let mut text = match (on, changed) {
         // "The Prompts of notes", not "notes's Prompts": a repo's name is a name, often a plural one.
@@ -265,7 +265,7 @@ pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {
 /// SSH into the Prompts, said and as data: the listener, when it runs (root3 address lists where; root3 address ssh off stops it).
 #[cfg(unix)]
 fn ssh_here() -> (String, serde_json::Value) {
-    match length3_core::ssh::listening(paths::data_dir()) {
+    match root3_core::ssh::listening(paths::data_dir()) {
         Some(l) => (tr!("SSH  on · {} · port {} (root3 address; root3 address ssh off stops it)", "SSH  オン · {} · ポート {}（root3 address。止めるなら root3 address ssh off）", l.scope.said(), l.port),
             json!({"port": l.port, "scope": l.scope, "destinations": l.destinations(), "fingerprint": l.fingerprint})),
         None => (tr!("SSH  off (root3 address ssh on)", "SSH  オフ（root3 address ssh on）"), serde_json::Value::Null),
@@ -278,7 +278,7 @@ fn ssh_here() -> (String, serde_json::Value) {
 
 #[cfg(target_os = "linux")]
 pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
-    let h = length3_core::compute::vm::host(paths::data_dir());
+    let h = root3_core::compute::vm::host(paths::data_dir());
     let yes = |b: bool| if b { "✓" } else { "○" };
     let mut t = vec![
         format!("{} KVM", yes(h.kvm)),
@@ -295,7 +295,7 @@ pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
 /// `root3 host fetch`: what this machine lacks to run VMs (Firecracker, its jailer, the kernel), fetched by digest.
 #[cfg(target_os = "linux")]
 pub fn host_fetch(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    length3_core::compute::vm::fetch(paths::data_dir(), progress())?;
+    root3_core::compute::vm::fetch(paths::data_dir(), progress())?;
     host(ctx, call)
 }
 

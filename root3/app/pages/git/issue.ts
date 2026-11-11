@@ -52,7 +52,7 @@ const summaries = new Map<string, string>();
  * The same, kept in this tab as it is written (sessionStorage, at once), so a reload or a crash before the field
  * is left (its save) loses none of it; those come back as the page is drawn again, and are saved then.
  */
-const HALF = 'length3.git.summaries';
+const HALF = 'root3.git.summaries';
 const kept = (): Record<string, string> => { try { return JSON.parse(sessionStorage.getItem(HALF) ?? '{}') as Record<string, string>; } catch { return {}; } };
 const keep = (key: string, value: string | null) => {
   try {

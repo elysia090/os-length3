@@ -202,7 +202,7 @@ test('a link is stat-ed as itself or as what it names, and read back', () => {
 });
 
 test('the preopen, the environment, the clocks and the output are as a module expects', () => {
-  const h = host(new MemoryFS(), {LENGTH3_HOME: '/data', LANG: 'ja'});
+  const h = host(new MemoryFS(), {ROOT3_HOME: '/data', LANG: 'ja'});
   const p = h.out();
   assert.equal(h.w.fd_prestat_get(3, p), E.SUCCESS);
   assert.equal(h.u32(p + 4), 1);
@@ -211,7 +211,7 @@ test('the preopen, the environment, the clocks and the output are as a module ex
   const size = h.out();
   h.w.environ_sizes_get(count, size);
   assert.equal(h.u32(count), 2);
-  assert.equal(h.u32(size), 'LENGTH3_HOME=/data\0LANG=ja\0'.length);
+  assert.equal(h.u32(size), 'ROOT3_HOME=/data\0LANG=ja\0'.length);
   h.w.clock_time_get(0, 0n, p);
   assert.ok(Math.abs(Number(h.u64(p) / 1_000_000n) - Date.now()) < 5000);
   assert.equal(h.w.clock_time_get(9, 0n, p), E.INVAL);
@@ -316,7 +316,7 @@ const wasm = (() => {
 
 test('the core runs over these files as the app runs it', {skip: wasm ? false : 'cargo is not installed, so the core (root3/core/web) cannot be built'}, async () => {
   const fs = new MemoryFS();
-  const wasi = new WASI({fs, env: {LENGTH3_HOME: '/data', LENGTH3_REMOTE: ''}, out: () => {}});
+  const wasi = new WASI({fs, env: {ROOT3_HOME: '/data', ROOT3_REMOTE: ''}, out: () => {}});
   const sent: string[] = [];
   const core = await Core.start(new WebAssembly.Module(readFileSync(wasm!)), wasi, (head) => {
     sent.push(head.url);
@@ -344,14 +344,14 @@ test('the core runs over these files as the app runs it', {skip: wasm ? false : 
   assert.ok(kept.includes('/data/repos/notes/a.md') && kept.includes('/data/home/profile.json'), kept.join(', '));
 
   // Another instance over the same files (a reload, or a tab) finds them as they were.
-  const again = await Core.start(new WebAssembly.Module(readFileSync(wasm!)), new WASI({fs, env: {LENGTH3_HOME: '/data'}}), () => ({status: 0, body: new Uint8Array()}));
+  const again = await Core.start(new WebAssembly.Module(readFileSync(wasm!)), new WASI({fs, env: {ROOT3_HOME: '/data'}}), () => ({status: 0, body: new Uint8Array()}));
   assert.deepEqual(again.call('repo_read', {repo: 'notes', path: 'a.md'}), {ok: {size: 5, text: 'hello', truncated: false}});
   assert.deepEqual(sent, []);
 });
 
 test('the core reaches the network through the page it runs in', {skip: wasm ? false : 'cargo is not installed, so the core (root3/core/web) cannot be built'}, async () => {
   const heads: string[] = [];
-  const core = await Core.start(new WebAssembly.Module(readFileSync(wasm!)), new WASI({fs: new MemoryFS(), env: {LENGTH3_HOME: '/data'}, out: () => {}}), (head) => {
+  const core = await Core.start(new WebAssembly.Module(readFileSync(wasm!)), new WASI({fs: new MemoryFS(), env: {ROOT3_HOME: '/data'}, out: () => {}}), (head) => {
     heads.push(`${head.method} ${head.url}`);
     return {status: 0, body: encoder.encode('offline')};
   });

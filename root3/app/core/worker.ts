@@ -6,7 +6,7 @@
 // or {batch: [{id, name, args}…]}: what the page asked in one go, made one after another under one turn of the
 // lock (one look at what is kept), and answered in one message.
 // Worker → page: {id, ok} or {id, error, status?, detail?} (root3/core/src/api/mod.rs answer), in the order asked; for a
-// batch, {batch: [answer…]} in its order. A change kept is said on BroadcastChannel('length3-core') as
+// batch, {batch: [answer…]} in its order. A change kept is said on BroadcastChannel('root3-core') as
 // {changed: true, from: tab, paths}: each file's path.
 //
 // Started with {init: {…, reader: true}}, it is the tab's reader: the same core over the same files as they are kept,
@@ -14,7 +14,7 @@
 // over the network, the worker held the whole time, and a file opened meanwhile waited for it: core/client.ts). It
 // looks at what is kept before each turn and reads it again when anything was written since; it never writes.
 
-import coreWasm from 'virtual:length3-core.wasm?url';
+import coreWasm from 'virtual:root3-core.wasm?url';
 import {Core, type Answer, type Send} from './abi.ts';
 import {MemoryFS, WASI, type Changes, type Entry} from './wasi.ts';
 import {ASKED, DATA, GENERATION, META, NAME, NODES, READ, TOO_BIG, VERSION, stand} from './kept.ts';
@@ -66,7 +66,7 @@ const send: Send = (head, body) => {
     if (head.timeout) x.timeout = head.timeout + Math.ceil(body.length / SLOW) + (/\/v1\/blobs\/[0-9a-f]{64}$/.test(head.url) && head.method === 'GET' ? Math.ceil(BLOB / SLOW) : 0);
     for (const [k, v] of head.headers) x.setRequestHeader(k, v);
     // The Remote's session is the cookie the browser keeps for it (no script reads it): sent to the Remote alone.
-    x.withCredentials = sameOrigin(head.url, env.LENGTH3_REMOTE || self.location.origin);
+    x.withCredentials = sameOrigin(head.url, env.ROOT3_REMOTE || self.location.origin);
     x.send(body.length ? (body as Uint8Array<ArrayBuffer>) : null);
   } catch (e) {
     // A synchronous request says only that it failed (refused, no name, a policy, a cut), or that it timed out.
@@ -116,7 +116,7 @@ function open(): Promise<IDBDatabase | null> {
       }
     };
     // A page of an older build in another tab keeps it open: this one waits for it (it lets go as it is closed).
-    r.onblocked = () => console.warn('length3: another tab of an older Length³ OS holds what is kept; close it to go on');
+    r.onblocked = () => console.warn('root3: another tab of an older Length³ OS holds what is kept; close it to go on');
     r.onsuccess = () => {
       // A newer page changes how it is kept: this lets go, so that one can, and opens it again when next asked.
       r.result.onversionchange = () => { r.result.close(); database = undefined; seen = -1; };
@@ -125,7 +125,7 @@ function open(): Promise<IDBDatabase | null> {
     r.onerror = () => reject(r.error);
   }).catch((e) => {
     // A browser that keeps nothing (a private window may refuse): the files last as long as this worker.
-    console.warn('length3: IndexedDB is not available; nothing is kept past this tab', e);
+    console.warn('root3: IndexedDB is not available; nothing is kept past this tab', e);
     return null;
   });
   return database;
@@ -217,7 +217,7 @@ const readSingly = new Map<string, number>();
 
 /** The repo `path` is in (its directory, with the slash), if it is in one. */
 function repoOf(path: string): string | null {
-  const root = `${env.LENGTH3_REPOS || `${env.LENGTH3_HOME ?? ''}/repos`}/`;
+  const root = `${env.ROOT3_REPOS || `${env.ROOT3_HOME ?? ''}/repos`}/`;
   if (!path.startsWith(root)) return null;
   const end = path.indexOf('/', root.length);
   return end < 0 ? null : path.slice(0, end + 1);
@@ -264,7 +264,7 @@ function ask(question: {path: string} | {under: string}): Uint8Array | null {
   for (;;) {
     const left = until - performance.now();
     if (left <= 0 || Atomics.wait(ctl!, 0, waiting, left) === 'timed-out') {
-      console.warn('length3: what is kept did not come in time; taken as unreadable:', 'path' in question ? question.path : `${question.under}…`);
+      console.warn('root3: what is kept did not come in time; taken as unreadable:', 'path' in question ? question.path : `${question.under}…`);
       return null;
     }
     const now = Atomics.load(ctl!, 0);
@@ -297,7 +297,7 @@ async function readInRepos(db: IDBDatabase | null, list: {name: string; args: un
     if (typeof a?.repo === 'string') repos.add(a.repo);
     if (Array.isArray(a?.repos)) for (const r of a.repos) if (typeof r === 'string') repos.add(r);
   }
-  const root = env.LENGTH3_REPOS || `${env.LENGTH3_HOME ?? ''}/repos`;
+  const root = env.ROOT3_REPOS || `${env.ROOT3_HOME ?? ''}/repos`;
   for (const repo of repos) {
     const under = `${root}/${repo}/`;
     if (!fs.unreadUnder(under).length) continue;

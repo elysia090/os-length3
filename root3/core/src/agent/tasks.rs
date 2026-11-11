@@ -468,9 +468,9 @@ pub fn kick(repo: &str) {
         use std::process::{Command, Stdio};
         let Ok(exe) = std::env::current_exe() else { return };
         let root3 = if exe.file_name().is_some_and(|n| n == "root3") { exe } else { crate::prompt::running::root3_path(&exe) };
-        // The repo named by LENGTH3_REPO from the data directory, never as a word (a repo called --network is no flag).
+        // The repo named by ROOT3_REPO from the data directory, never as a word (a repo called --network is no flag).
         let mut c = Command::new(root3);
-        c.args(["agent", "run"]).env("LENGTH3_REPO", repo).current_dir(crate::fs::paths::data_dir())
+        c.args(["agent", "run"]).env("ROOT3_REPO", repo).current_dir(crate::fs::paths::data_dir())
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
             // Its own group: a terminal's Ctrl-C to the root3 that set it off does not reach it.
             .process_group(0);
