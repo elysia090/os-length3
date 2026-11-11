@@ -8,15 +8,35 @@ use crate::frame::*;
 use crate::wasm::*;
 use crate::x86::*;
 
-/// The x87 runtime's number (x87::NAMES) of what `m` names, if it does one: by mnemonic, found once for all of them
-/// (not by name, formatted and searched for, at each instruction that comes this way).
+/// The mnemonic of each of the coprocessor's operations, in the order of x87::NAMES (all but the last, which is
+/// no instruction's; the test checks each against its name).
+const X87: [Mnemonic; 71] = {
+    use Mnemonic::*;
+    [
+        Fld, Fild, Fst, Fstp, Fist, Fistp, Fisttp,
+        Fld1, Fldz, Fldpi, Fldl2e, Fldln2, Fldlg2, Fldl2t,
+        Fadd, Faddp, Fmul, Fmulp, Fsub, Fsubp, Fsubr, Fsubrp,
+        Fdiv, Fdivp, Fdivr, Fdivrp,
+        Fiadd, Fimul, Fisub, Fisubr, Fidiv, Fidivr,
+        Fchs, Fabs, Fsqrt, Frndint, Fxch,
+        Fucomi, Fcomi, Fucomip, Fcomip,
+        Fucom, Fcom, Fucomp, Fcomp, Fucompp, Fcompp, Ftst,
+        Fnstsw, Fnstcw, Fldcw, Fninit, Fnclex, Wait, Fnop,
+        Ffree, Ffreep, Fincstp, Fdecstp,
+        Fprem, Fprem1, Fscale, F2xm1, Fyl2x, Fyl2xp1, Fpatan,
+        Fsin, Fcos, Fptan, Fxam, Fxtract,
+    ]
+};
+
+/// The x87 runtime's number (x87::NAMES) of what `m` names, if it does one: by mnemonic, one look in a table made
+/// of the list above the first time it is asked.
 fn x87_index(m: Mnemonic) -> Option<usize> {
     static INDEX: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
-    let index = INDEX.get_or_init(|| Mnemonic::values().map(|m| {
-        let name = format!("{m:?}").to_ascii_lowercase();
-        let name = if name == "wait" { "fwait".to_string() } else { name };
-        crate::x87::NAMES.iter().position(|&n| n == name).map_or(u8::MAX, |k| k as u8)
-    }).collect());
+    let index = INDEX.get_or_init(|| {
+        let mut index = vec![u8::MAX; Mnemonic::values().len()];
+        for (k, m) in X87.iter().enumerate() { index[*m as usize] = k as u8; }
+        index
+    });
     let k = index[m as usize];
     (k != u8::MAX).then_some(k as usize)
 }
@@ -101,5 +121,18 @@ impl Fx<'_> {
             _ => self.e(DROP),
         }
         Some(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The list of the coprocessor's mnemonics is its names, in their order: every one but `high`.
+    #[test]
+    fn the_x87_list_is_the_coprocessors_names() {
+        let names: Vec<String> = X87.iter().map(|m| match format!("{m:?}").to_ascii_lowercase() { n if n == "wait" => "fwait".to_string(), n => n }).collect();
+        assert_eq!(names, crate::x87::NAMES[..crate::x87::NAMES.len() - 1]);
+        assert_eq!(crate::x87::NAMES.last(), Some(&"high"));
     }
 }

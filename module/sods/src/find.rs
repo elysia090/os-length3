@@ -1,13 +1,15 @@
 //! Finding the code: from the entry, the symbols, the pointers the relocations name and the calls each walk makes,
 //! each function walked in its range (to the next start or its symbol's size), its switches' tables read, and its
-//! blocks laid out and cut into runs (layout.rs). Each instruction is decoded once here, kept as 16 bytes by its offset (no map is
-//! hashed); a walk is made again only where a new start lies in what it reached.
+//! blocks laid out and cut into runs (layout.rs). Each instruction is decoded once, whatever is walked again: what a
+//! walk needs of it is kept as 16 bits by its address (no map is hashed), for as long as the code is looked for.
 
 use crate::elf::Elf;
 use crate::layout::{joined, runs, Layout};
 use crate::program::*;
 use crate::x86::*;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicU16, Ordering::Relaxed};
+use std::sync::OnceLock;
 
 /// Where a walk of the program starts and how far it goes: from `starts`, the symbols in code (with `symbols`) and
 /// `targets` (sorted pointers, each a start of its own when `pointed_start`); each function in its range (to the next
@@ -99,6 +101,7 @@ fn find(elf: &Elf, walk: Find) -> Program {
     let after = |set: &BTreeSet<u64>, a: u64| set.range(a + 1..).next().copied().unwrap_or(u64::MAX);
     let before = |set: &BTreeSet<u64>, a: u64| set.range(..a).next_back().copied();
     let mut done: BTreeMap<u64, Vec<Block>> = BTreeMap::new();
+    let seen = Seen::new(elf);
     loop {
         let sorted: Vec<u64> = starts.iter().copied().collect();
         let end = |s: u64| {
@@ -114,7 +117,7 @@ fn find(elf: &Elf, walk: Find) -> Program {
             (s, e, &pointers[p..q], &sorted[i..j])
         }).collect();
         let (mut found, mut switches) = (Vec::new(), Vec::new());
-        for (s, blocks, calls) in walk_all(elf, &jobs, collect.then_some(&mut references)) {
+        for (s, blocks, calls) in walk_all(elf, &seen, &jobs, collect.then_some(&mut references)) {
             if guess && follow.tables { switches.extend(switch_targets(elf, &blocks, s, end(s))); }
             // Not following calls, code it goes on to all the same: what it jumps or runs into past its range.
             found.extend(if follow.calls { calls } else { continuations(&blocks) });
@@ -188,11 +191,11 @@ fn find(elf: &Elf, walk: Find) -> Program {
 type Job<'a> = (u64, u64, &'a [u64], &'a [u64]);
 
 /// Each job walked: natively on every core, in wasm (one thread) in turn; in the order given.
-fn walk_all(elf: &Elf, jobs: &[Job], references: Option<&mut Vec<u64>>) -> Vec<(u64, Vec<Block>, Vec<u64>)> {
+fn walk_all(elf: &Elf, seen: &Seen, jobs: &[Job], references: Option<&mut Vec<u64>>) -> Vec<(u64, Vec<Block>, Vec<u64>)> {
     let collect = references.is_some();
     let go = |part: &[Job], r: &mut Vec<u64>| -> Vec<(u64, Vec<Block>, Vec<u64>)> {
         let mut scratch = Scratch::default();
-        part.iter().map(|&(s, e, extra, inner)| { let (b, c) = walk(elf, (s, e), extra, inner, collect.then_some(&mut *r), &mut scratch); (s, b, c) }).collect()
+        part.iter().map(|&(s, e, extra, inner)| { let (b, c) = walk(elf, seen, (s, e), extra, inner, collect.then_some(&mut *r), &mut scratch); (s, b, c) }).collect()
     };
     let mut own = Vec::new();
     let r = references.unwrap_or(&mut own);
@@ -208,129 +211,188 @@ fn walk_all(elf: &Elf, jobs: &[Job], references: Option<&mut Vec<u64>>) -> Vec<(
     out
 }
 
-/// What a walk keeps of an instruction it decoded, in 16 bytes.
-#[derive(Clone, Copy)]
-struct Step { target: u64, len: u8, flow: u8, reads: u8, writes: u8, bits: u8 }
+/// What finding keeps of every instruction it has decoded, for as long as it looks: 16 bits each, by its address (a
+/// page of them made when code on it is first decoded). A function is walked again when a start found later lies in
+/// what it reached, and its walks, as any other's that come the same way, read here what the first decoded; the
+/// walks of a round, on every core, share it (two that decode the same place write the same).
+struct Seen { base: u64, pages: Vec<OnceLock<Box<[AtomicU16; PAGE]>>> }
 
-use go::{BRANCH, CALL, INDIRECT_CALL, INDIRECT_JUMP, JUMP, NEXT};
-// A step's bits besides Kind's (TRAPS, SYSCALL).
-const TARGET: u8 = 1;
+const PAGE: usize = 4096;
+// An entry: its length (4 bits), its flow (3), where its target is (2: it has none; its last byte; its last four;
+// or asked of the decoder again), its class (6: x86.rs), and whether it is a system call. Nothing: not decoded yet.
+// INVALID: no instruction there.
+const INVALID: u16 = 1 << 15;
+const SYSTEM: u16 = 1 << 15;
+const REL8: u16 = 1;
+const REL32: u16 = 2;
+const ASKED: u16 = 3;
 
-impl Step {
-    fn of(i: &Instruction) -> Step {
-        let k = kind(i);
-        let target = matches!(i.op0_kind(), OpKind::NearBranch64 | OpKind::NearBranch32 | OpKind::NearBranch16);
-        let bits = k.bits & (TRAPS | SYSCALL) | if target { TARGET } else { 0 };
-        Step { target: if target { i.near_branch_target() } else { 0 }, len: i.len() as u8, flow: k.flow, reads: k.reads, writes: k.writes, bits }
+impl Seen {
+    fn new(elf: &Elf) -> Seen {
+        let code = || elf.segments.iter().filter(|s| s.executable);
+        let base = code().map(|s| s.vaddr).min().unwrap_or(0) & !(PAGE as u64 - 1);
+        let end = code().map(|s| s.vaddr + s.data.len() as u64).max().unwrap_or(0);
+        Seen { base, pages: (0..end.saturating_sub(base).div_ceil(PAGE as u64)).map(|_| OnceLock::new()).collect() }
+    }
+    /// (The page in 64 bits: an address before `base` wraps far past the last, and a 32-bit usize would cut it to
+    /// one it is not on.)
+    #[inline]
+    fn page(&self, a: u64) -> Option<(&OnceLock<Box<[AtomicU16; PAGE]>>, usize)> {
+        let o = a.wrapping_sub(self.base);
+        let p = o / PAGE as u64;
+        (p < self.pages.len() as u64).then(|| (&self.pages[p as usize], (o % PAGE as u64) as usize))
+    }
+    #[inline]
+    fn get(&self, a: u64) -> u16 {
+        match self.page(a) { Some((p, k)) => p.get().map_or(0, |p| p[k].load(Relaxed)), None => 0 }
+    }
+    /// `e` kept for the instruction at `a`; false where it is nowhere code can be.
+    fn set(&self, a: u64, e: u16) -> bool {
+        let Some((p, k)) = self.page(a) else { return false };
+        let page = p.get_or_init(|| {
+            let fresh: Box<[AtomicU16]> = (0..PAGE).map(|_| AtomicU16::new(0)).collect();
+            fresh.try_into().unwrap_or_else(|_| unreachable!("a page is PAGE entries"))
+        });
+        page[k].store(e, Relaxed);
+        true
     }
 }
 
-/// What a walk keeps while it walks, by each byte's offset from its start: for each byte 1 + the index of the step
-/// that starts there (0: none), with LEADER where a block starts. Code past its range goes in `outside` (a few places
-/// at most). One is kept from walk to walk, cleared, not freed.
-#[derive(Default)]
-struct Scratch { base: u64, span: usize, high: usize, at: Vec<u32>, outside: Vec<(u64, u32)>, steps: Vec<Step>, leads: Vec<u64> }
+/// The entry of `i`, whose bytes are at the start of `bytes`.
+fn entry(kinds: &Kinds, i: &Instruction, bytes: &[u8]) -> u16 {
+    let (k, class) = kinds.kind_class(i);
+    let len = i.len();
+    let mut e = len as u16 | (k.flow as u16) << 4 | (class as u16) << 9 | if k.bits & SYSCALL != 0 { SYSTEM } else { 0 };
+    if matches!(i.op0_kind(), OpKind::NearBranch64 | OpKind::NearBranch32 | OpKind::NearBranch16) {
+        // Where it goes is where it ends plus its last byte, or its last four: kept as which, and read there again.
+        let (to, next) = (i.near_branch_target(), i.next_ip());
+        let at = |n: usize| bytes.get(len.wrapping_sub(n)..len).filter(|_| len > n);
+        let short = at(1).is_some_and(|b| next.wrapping_add(b[0] as i8 as u64) == to);
+        let long = at(4).is_some_and(|b| next.wrapping_add(i32::from_le_bytes([b[0], b[1], b[2], b[3]]) as u64) == to);
+        e |= (if short { REL8 } else if long { REL32 } else { ASKED }) << 7;
+    }
+    e
+}
 
-const LEADER: u32 = 1 << 31;
+/// What a walk keeps while it walks, by each byte's offset from its start: whether an instruction that starts there
+/// was WALKED, and whether a block starts there (LEADER). Code past its range goes in `outside` (a few places at
+/// most). One is kept from walk to walk, cleared, not freed.
+#[derive(Default)]
+struct Scratch { base: u64, span: usize, high: usize, mark: Vec<u8>, outside: Vec<(u64, u8)>, leads: Vec<u64>, work: Vec<u64> }
+
+const WALKED: u8 = 1;
+const LEADER: u8 = 2;
 
 impl Scratch {
     #[inline]
-    fn offset(&self, a: u64) -> Option<usize> { let o = a.wrapping_sub(self.base); (o < self.span as u64).then_some(o as usize) }
-    #[inline]
-    fn entry(&mut self, a: u64) -> &mut u32 {
+    fn at(&mut self, a: u64) -> &mut u8 {
         let o = a.wrapping_sub(self.base);
-        if o < self.at.len() as u64 { self.high = self.high.max(o as usize + 1); return &mut self.at[o as usize]; }
-        self.entry_past(a)
+        if o < self.mark.len() as u64 { self.high = self.high.max(o as usize + 1); return &mut self.mark[o as usize]; }
+        self.past(a)
     }
-    /// An entry past what `at` holds yet: grown to it, or one of the few outside the walk's range.
+    /// A mark past what `mark` holds yet: grown to it, or one of the few outside the walk's range.
     #[cold]
-    fn entry_past(&mut self, a: u64) -> &mut u32 {
-        if let Some(o) = self.offset(a) {
-            if o >= self.at.len() { self.at.resize((o + 1).next_multiple_of(4096).min(self.span), 0); }
+    fn past(&mut self, a: u64) -> &mut u8 {
+        let o = a.wrapping_sub(self.base);
+        if o < self.span as u64 {
+            let o = o as usize;
+            self.mark.resize((o + 1).next_multiple_of(4096).min(self.span), 0);
             self.high = self.high.max(o + 1);
-            return &mut self.at[o];
+            return &mut self.mark[o];
         }
         let k = self.outside.iter().position(|&(x, _)| x == a).unwrap_or_else(|| { self.outside.push((a, 0)); self.outside.len() - 1 });
         &mut self.outside[k].1
     }
     #[inline]
-    fn get(&self, a: u64) -> u32 {
-        match self.offset(a) {
-            Some(o) => self.at.get(o).copied().unwrap_or(0),
-            None => self.outside.iter().find(|&&(x, _)| x == a).map_or(0, |&(_, v)| v),
-        }
+    fn get(&self, a: u64) -> u8 {
+        let o = a.wrapping_sub(self.base);
+        if o < self.span as u64 { self.mark.get(o as usize).copied().unwrap_or(0) } else { self.outside.iter().find(|&&(x, _)| x == a).map_or(0, |&(_, m)| m) }
     }
     fn lead(&mut self, a: u64) {
-        let e = self.entry(a);
-        if *e & LEADER == 0 { *e |= LEADER; self.leads.push(a); }
-    }
-    fn decoded(&self, a: u64) -> bool { self.get(a) & !LEADER != 0 }
-    fn record(&mut self, a: u64, s: Step) {
-        self.steps.push(s);
-        let n = self.steps.len() as u32;
-        let e = self.entry(a);
-        *e = (*e & LEADER) | n;
+        let m = self.at(a);
+        if *m & LEADER == 0 { *m |= LEADER; self.leads.push(a); }
     }
 }
+
+use go::{BRANCH, CALL, INDIRECT_CALL, INDIRECT_JUMP, JUMP, NEXT};
 
 /// The blocks of the function at `start` within its range (and `extra` places in it pointers name, but not the
 /// `inner` starts of others), and the code it calls or goes on to outside: each block from a leader along next_ip
 /// (not address order, so a wrong table guess decoding bytes inside an instruction leaves the real blocks as they are).
-fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut references: Option<&mut Vec<u64>>, s: &mut Scratch) -> (Vec<Block>, Vec<u64>) {
+fn walk(elf: &Elf, seen: &Seen, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut references: Option<&mut Vec<u64>>, s: &mut Scratch) -> (Vec<Block>, Vec<u64>) {
+    let kinds = kinds();
     let inside = |a: u64| a >= start && a < end && (a == start || inner.is_empty() || inner.binary_search(&a).is_err());
-    // One decoder over the code from the start to its segment's end, moved only where a walk jumps; code elsewhere
+    // One decoder over the code from the start to its segment's end, moved only where a walk decodes; code elsewhere
     // (a call's continuation past the segment) decoded on its own.
     let code = elf.code_at(start).unwrap_or_default();
+    let bytes_at = |a: u64| match a.checked_sub(start).filter(|&o| o < code.len() as u64) { Some(o) => &code[o as usize..], None => elf.code_at(a).unwrap_or_default() };
+    // Where the instruction at `at` (its entry `e`) goes: 0 where it names no place.
+    let target = |at: u64, e: u16| -> u64 {
+        let len = (e & 15) as usize;
+        let (next, b) = (at + len as u64, bytes_at(at));
+        match (e >> 7 & 3, b.get(..len)) {
+            (REL8, Some(b)) => next.wrapping_add(b[len - 1] as i8 as u64),
+            (REL32, Some(b)) if len >= 4 => next.wrapping_add(i32::from_le_bytes([b[len - 4], b[len - 3], b[len - 2], b[len - 1]]) as u64),
+            (ASKED, _) => decode(elf, at).map_or(0, |i| i.near_branch_target()),
+            _ => 0,
+        }
+    };
     let mut decoder = Decoder::with_ip(64, code, start, DecoderOptions::NONE);
     let mut i = Instruction::default();
     (s.base, s.span) = (start, (end.min(start + code.len() as u64) - start) as usize);
-    // (What a walk before held past this one's range is zero, and no entry of this one.)
-    s.at.truncate(s.span);
-    s.steps.clear();
+    // (What a walk before held past this one's range is zero, and no mark of this one.)
+    s.mark.truncate(s.span);
     s.outside.clear();
     s.leads.clear();
-    let mut work: VecDeque<u64> = VecDeque::new();
-    let mut first: Vec<u64> = std::iter::once(start).chain(extra.iter().copied().filter(|&a| inside(a))).collect();
-    first.sort_unstable();
-    first.dedup();
-    for a in first { s.lead(a); work.push_back(a); }
+    s.work.clear();
+    s.lead(start);
+    s.work.push(start);
+    for &a in extra { if inside(a) { s.lead(a); s.work.push(a); } }
     let mut calls = Vec::new();
-    let go = |a: u64, s: &mut Scratch, work: &mut VecDeque<u64>, calls: &mut Vec<u64>| if inside(a) { s.lead(a); work.push_back(a); } else { calls.push(a); };
-    while let Some(mut at) = work.pop_front() {
+    let go = |a: u64, s: &mut Scratch, calls: &mut Vec<u64>| if inside(a) { s.lead(a); s.work.push(a); } else { calls.push(a); };
+    while let Some(mut at) = s.work.pop() {
         loop {
-            // Joining code decoded from another path starts a block.
-            if s.decoded(at) { s.lead(at); break; }
-            match at.checked_sub(start).filter(|&o| o < code.len() as u64) {
-                Some(o) => {
-                    if decoder.ip() != at { let _ = decoder.set_position(o as usize); decoder.set_ip(at); }
-                    decoder.decode_out(&mut i);
+            // Joining code walked from another path starts a block.
+            let m = s.at(at);
+            let was = *m;
+            *m = was | WALKED;
+            if was & WALKED != 0 { s.lead(at); break; }
+            let mut e = seen.get(at);
+            if e == 0 {
+                match at.checked_sub(start).filter(|&o| o < code.len() as u64) {
+                    Some(o) => {
+                        if decoder.ip() != at { let _ = decoder.set_position(o as usize); decoder.set_ip(at); }
+                        decoder.decode_out(&mut i);
+                    }
+                    None => i = decode(elf, at).unwrap_or_default(),
                 }
-                None => match decode(elf, at) { Some(d) => i = d, None => break },
-            }
-            if i.is_invalid() { break; }
-            let step = Step::of(&i);
-            s.record(at, step);
-            let next = at + step.len as u64;
-            if step.bits & SYSCALL != 0 { s.lead(at); s.lead(next); }
-            if let Some(r) = references.as_deref_mut() {
-                if i.is_ip_rel_memory_operand() { r.push(i.ip_rel_memory_address()); }
-                // Where code is not position-independent, an address in its code given as a number is one too.
-                if elf.fixed {
-                    for k in 0..i.op_count() {
-                        if matches!(i.op_kind(k), OpKind::Immediate32 | OpKind::Immediate32to64 | OpKind::Immediate64) && elf.is_code(i.immediate(k)) { r.push(i.immediate(k)); }
+                e = if i.is_invalid() { INVALID } else { entry(kinds, &i, bytes_at(at)) };
+                if !seen.set(at, e) { e = INVALID; }
+                if e != INVALID {
+                    if let Some(r) = references.as_deref_mut() {
+                        if i.is_ip_rel_memory_operand() { r.push(i.ip_rel_memory_address()); }
+                        // Where code is not position-independent, an address in its code given as a number is one too.
+                        if elf.fixed {
+                            for k in 0..i.op_count() {
+                                if matches!(i.op_kind(k), OpKind::Immediate32 | OpKind::Immediate32to64 | OpKind::Immediate64) && elf.is_code(i.immediate(k)) { r.push(i.immediate(k)); }
+                            }
+                        }
                     }
                 }
             }
-            match step.flow {
+            if e == INVALID { *s.at(at) &= !WALKED; break; }
+            let next = at + (e & 15) as u64;
+            if e & SYSTEM != 0 { s.lead(at); s.lead(next); }
+            match (e >> 4 & 7) as u8 {
                 NEXT if inside(next) => { at = next; continue; }
                 NEXT => calls.push(next),
                 CALL | INDIRECT_CALL => {
-                    if step.bits & TARGET != 0 { calls.push(step.target); }
+                    if e >> 7 & 3 != 0 { calls.push(target(at, e)); }
                     s.lead(next);
-                    work.push_back(next);
+                    s.work.push(next);
                 }
-                BRANCH => { go(step.target, s, &mut work, &mut calls); go(next, s, &mut work, &mut calls); }
-                JUMP if step.bits & TARGET != 0 => go(step.target, s, &mut work, &mut calls),
+                BRANCH => { go(target(at, e), s, &mut calls); go(next, s, &mut calls); }
+                JUMP if e >> 7 & 3 != 0 => go(target(at, e), s, &mut calls),
                 _ => {}
             }
             break;
@@ -338,43 +400,42 @@ fn walk(elf: &Elf, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut r
     }
     let mut order = std::mem::take(&mut s.leads);
     order.sort_unstable();
-    order.retain(|&a| s.decoded(a));
+    order.retain(|&a| s.get(a) & WALKED != 0);
     let mut blocks = Vec::with_capacity(order.len());
     for &b in &order {
         let (mut at, mut reads, mut writes, mut traps, mut count) = (b, 0u8, 0u8, false, 0u32);
-        // Each instruction's entry looked up once: its step, and where it is the next one, whether it was decoded and leads.
-        let mut e = s.get(b);
-        let (exit, last) = loop {
-            let step = s.steps[(e & !LEADER) as usize - 1];
-            reads |= step.reads & !writes;
-            writes |= step.writes;
-            traps |= step.bits & TRAPS != 0;
+        let (exit, last, system) = loop {
+            let e = seen.get(at);
+            let [r, w, bits] = of_class((e >> 9 & 63) as u8);
+            reads |= r & !writes;
+            writes |= w;
+            traps |= bits & TRAPS != 0;
             count += 1;
-            let next = at + step.len as u64;
-            let t = step.target;
-            let exit = match step.flow {
-                CALL if step.bits & TARGET != 0 => Exit::Call { target: t, ret: next },
+            let len = (e & 15) as u8;
+            let next = at + len as u64;
+            let exit = match (e >> 4 & 7) as u8 {
+                CALL if e >> 7 & 3 != 0 => Exit::Call { target: target(at, e), ret: next },
                 CALL | INDIRECT_CALL => Exit::IndirectCall { ret: next },
-                BRANCH => Exit::Branch { taken: t, fall: next },
-                JUMP => if inside(t) { Exit::Jump(t) } else { Exit::TailJump(t) },
+                BRANCH => Exit::Branch { taken: target(at, e), fall: next },
+                JUMP => { let t = target(at, e); if inside(t) { Exit::Jump(t) } else { Exit::TailJump(t) } }
                 INDIRECT_JUMP => Exit::IndirectJump,
                 go::RETURN => Exit::Return,
                 // Running into the next function is a tail call to it.
                 NEXT => {
-                    e = s.get(next);
-                    if e & !LEADER == 0 { if inside(next) { Exit::Trap } else { Exit::TailJump(next) } }
-                    else if e & LEADER != 0 { Exit::Fall(next) }
+                    let m = s.get(next);
+                    if m & WALKED == 0 { if inside(next) { Exit::Trap } else { Exit::TailJump(next) } }
+                    else if m & LEADER != 0 { Exit::Fall(next) }
                     else { at = next; continue; }
                 }
                 _ => Exit::Trap,
             };
-            break (exit, step);
+            break (exit, len, e & SYSTEM != 0);
         };
-        let len = (at + last.len as u64 - b) as u32;
-        blocks.push(Block { start: b, len, count, reads, writes, last: last.len, resumes: last.bits & SYSCALL != 0, traps, exit });
+        let len = (at + last as u64 - b) as u32;
+        blocks.push(Block { start: b, len, count, reads, writes, last, resumes: system, traps, exit });
     }
     s.leads = order;
-    s.at[..s.high].fill(0);
+    s.mark[..s.high].fill(0);
     s.high = 0;
     (blocks, calls)
 }

@@ -6,6 +6,7 @@ use crate::elf::Elf;
 pub use iced_x86::{ConditionCode, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register, RflagsBits};
 pub(crate) use iced_x86::{Decoder, DecoderOptions};
 use iced_x86::FlowControl;
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 /// The instruction at `address`, if its bytes are one.
 pub(crate) fn decode(elf: &Elf, address: u64) -> Option<Instruction> {
@@ -50,7 +51,7 @@ pub const ALL_FLAGS: u32 = RflagsBits::OF | RflagsBits::SF | RflagsBits::ZF | Rf
 pub fn flags_read(i: &Instruction) -> u32 { kind(i).reads as u32 }
 pub fn flags_written(i: &Instruction) -> u32 { kind(i).writes as u32 }
 /// Whether `i` goes on to the next instruction as translation sees it (a system call returns in place; int3 traps).
-pub(crate) fn runs_on(i: &Instruction) -> bool { kinds()[i.code() as usize].flow == go::NEXT }
+pub(crate) fn runs_on(i: &Instruction) -> bool { kinds().word(i) & 7 == go::NEXT as u32 }
 
 /// An instruction's flow as translation sees it.
 pub(crate) mod go {
@@ -71,16 +72,62 @@ pub(crate) const SYSCALL: u8 = 4;
 const OPERANDS: u8 = 8;
 
 /// What an instruction's code alone says of it: its flow, the flags (as ALL_FLAGS) it reads and writes, and Kind's
-/// bits. Worked out once for every code, so an instruction is one look-up, not one walk of iced's tables per question.
+/// bits. Worked out once for a code, so an instruction is one look-up, not one walk of iced's tables per question.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct Kind { pub flow: u8, pub reads: u8, pub writes: u8, pub bits: u8 }
 
+/// Every way an instruction reads and writes the flags kept (read, written): what iced says of each of its codes,
+/// and of each as its operands change it (the test asks them all). An instruction's way is its place here.
+const WAYS: [(u8, u8); 22] = [
+    (0x00, 0x00), (0x00, 0x04), (0x00, 0x10), (0x00, 0x11), (0x00, 0x27), (0x00, 0x33), (0x00, 0x36), (0x00, 0x37),
+    (0x01, 0x00), (0x01, 0x01), (0x02, 0x00), (0x03, 0x00), (0x04, 0x00), (0x07, 0x00), (0x10, 0x00), (0x10, 0x10),
+    (0x10, 0x11), (0x10, 0x37), (0x14, 0x00), (0x20, 0x00), (0x36, 0x00), (0x37, 0x00),
+];
+fn way(reads: u8, writes: u8) -> u8 { WAYS.iter().position(|&w| w == (reads, writes)).expect("every way with the flags is listed") as u8 }
+
+/// An instruction's class: its way with the flags, and whether it goes out to the kernel; six bits (find.rs keeps
+/// one for each instruction it has decoded).
+pub(crate) const CLASS_TRAPS: u8 = 32;
+/// What class `c` says: the flags read, those written, and TRAPS or nothing.
+#[inline(always)]
+pub(crate) fn of_class(c: u8) -> [u8; 3] { let (r, w) = WAYS[(c & 31) as usize % WAYS.len()]; [r, w, if c & CLASS_TRAPS != 0 { TRAPS } else { 0 }] }
+
+/// Every code's Kind, each worked out the first time an instruction of that code is met: a program has a few hundred
+/// of iced's thousands, and working one out asks iced seven times. A code's word is its flow, its way with the
+/// flags, its reads, its writes and its bits; nothing while it is not worked out.
+pub(crate) struct Kinds { of: Vec<AtomicU32> }
+const KNOWN: u32 = 1 << 31;
+
+impl Kinds {
+    #[inline(always)]
+    fn word(&self, i: &Instruction) -> u32 {
+        let w = self.of[i.code() as usize].load(Relaxed);
+        if w != 0 { w } else { self.learn(i.code()) }
+    }
+    #[cold]
+    #[inline(never)]
+    fn learn(&self, code: iced_x86::Code) -> u32 {
+        let k = kind_of(code);
+        let w = KNOWN | k.flow as u32 | (way(k.reads, k.writes) as u32) << 3 | (k.reads as u32) << 8 | (k.writes as u32) << 16 | (k.bits as u32) << 24;
+        self.of[code as usize].store(w, Relaxed);
+        w
+    }
+    /// `i`'s Kind, and its class.
+    #[inline(always)]
+    pub(crate) fn kind_class(&self, i: &Instruction) -> (Kind, u8) {
+        let w = self.word(i);
+        let k = Kind { flow: (w & 7) as u8, reads: (w >> 8) as u8, writes: (w >> 16) as u8, bits: (w >> 24 & 0x7f) as u8 };
+        let traps = if k.bits & TRAPS != 0 { CLASS_TRAPS } else { 0 };
+        if k.bits & OPERANDS == 0 { (k, (w >> 3 & 31) as u8 | traps) } else { let k = by_operands(i, k); (k, way(k.reads, k.writes) | traps) }
+    }
+    /// `i`'s Kind.
+    #[inline(always)]
+    pub(crate) fn kind(&self, i: &Instruction) -> Kind { self.kind_class(i).0 }
+}
+
 /// `i`'s Kind.
 #[inline(always)]
-pub(crate) fn kind(i: &Instruction) -> Kind {
-    let k = kinds()[i.code() as usize];
-    if k.bits & OPERANDS == 0 { k } else { by_operands(i, k) }
-}
+pub(crate) fn kind(i: &Instruction) -> Kind { kinds().kind(i) }
 #[cold]
 #[inline(never)]
 fn by_operands(i: &Instruction, k: Kind) -> Kind { Kind { reads: read_by(i), writes: written_by(i), ..k } }
@@ -88,9 +135,26 @@ fn read_by(i: &Instruction) -> u8 { if i.mnemonic() == Mnemonic::Syscall { 0 } e
 fn written_by(i: &Instruction) -> u8 { if i.mnemonic() == Mnemonic::Syscall { 0 } else { (i.rflags_modified() & ALL_FLAGS) as u8 } }
 
 #[inline(always)]
-fn kinds() -> &'static [Kind] {
-    static KINDS: std::sync::OnceLock<Vec<Kind>> = std::sync::OnceLock::new();
-    KINDS.get_or_init(|| iced_x86::Code::values().map(kind_of).collect())
+pub(crate) fn kinds() -> &'static Kinds {
+    static KINDS: std::sync::OnceLock<Kinds> = std::sync::OnceLock::new();
+    KINDS.get_or_init(|| Kinds { of: iced_x86::Code::values().map(|_| AtomicU32::new(0)).collect() })
+}
+
+/// What iced says of the flags an instruction of `code` reads and writes: as it is, then with each immediate and
+/// each pair of registers that may change it.
+fn said(code: iced_x86::Code) -> [(u8, u8); 7] {
+    let mut i = Instruction::default();
+    i.set_code(code);
+    let flags = |i: &Instruction| (read_by(i), written_by(i));
+    let with = |imm: u8| { let mut j = i; j.set_immediate8(imm); flags(&j) };
+    let mut j = i;
+    j.set_op0_kind(OpKind::Register);
+    j.set_op1_kind(OpKind::Register);
+    j.set_op0_register(Register::RAX);
+    j.set_op1_register(Register::RAX);
+    let same = flags(&j);
+    j.set_op1_register(Register::RCX);
+    [flags(&i), with(1), with(2), with(9), with(17), same, flags(&j)]
 }
 
 /// The Kind of every instruction of `code`: what iced says of one, and whether what it says of the flags changes
@@ -110,18 +174,8 @@ fn kind_of(code: iced_x86::Code) -> Kind {
         FlowControl::Return => go::RETURN,
         _ => go::STOP,
     };
-    let flags = |i: &Instruction| (read_by(i), written_by(i));
-    let base = flags(&i);
-    let mut operands = false;
-    for imm in [1, 2, 9, 17] { let mut j = i; j.set_immediate8(imm); operands |= flags(&j) != base; }
-    let mut j = i;
-    j.set_op0_kind(OpKind::Register);
-    j.set_op1_kind(OpKind::Register);
-    j.set_op0_register(Register::RAX);
-    j.set_op1_register(Register::RAX);
-    operands |= flags(&j) != base;
-    j.set_op1_register(Register::RCX);
-    operands |= flags(&j) != base;
+    let said = said(code);
+    let (base, operands) = (said[0], said.iter().any(|&f| f != said[0]));
     let traps = matches!(m, Mnemonic::Syscall | Mnemonic::Sysenter | Mnemonic::Int | Mnemonic::Int1 | Mnemonic::Int3 | Mnemonic::Into);
     let bits = if traps { TRAPS } else { 0 } | if m == Mnemonic::Syscall { SYSCALL } else { 0 } | if operands { OPERANDS } else { 0 };
     Kind { flow, reads: base.0, writes: base.1, bits }
@@ -177,4 +231,17 @@ pub(crate) fn bit(r: Register) -> Option<u32> {
     }
     let full = r.full_register() as u32;
     (Register::RAX as u32..=Register::R15 as u32).contains(&full).then(|| full - Register::RAX as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every way iced says an instruction reads and writes the flags kept has its place in WAYS, and nothing else has.
+    #[test]
+    fn every_way_with_the_flags_is_listed() {
+        let mut met = [false; WAYS.len()];
+        for code in iced_x86::Code::values() { for (r, w) in said(code) { met[way(r, w) as usize] = true; } }
+        assert!(met.iter().all(|&m| m), "a way no instruction has: {met:?}");
+    }
 }
