@@ -95,7 +95,8 @@ own for the same work.
 | | `echo \| cat`, 200 times in a shell | 3.9 ms each | | |
 | | a root mounted (11,560 files) | 35 to 50 ms | none: an index used where it is | |
 | | its tree, written to its bound and not yet what it walks: a path of a whole root | 875 instructions, 74 ns | 430 instructions | 2× |
-| sods | a program first translated (git, 680,000 instructions) | 1.40 G instructions | 0.37 G | 3.8× |
+| sods | a program first translated (git, 680,000 instructions) | 1.29 G instructions (was 1.40 G) | 0.37 G | 3.5× |
+| | a small program translated (hello, 3,900 instructions) | 12.4 M (was 20.5 M) | 2.1 M | 5.9× |
 | | the code it makes: a call / an indirect call | 3.4 / 6.8 ns | 0.4 / 1.5 ns (native) | 8.5× / 4.5× |
 | | fib(20) / setjmp+longjmp | 86.8 µs / 21.5 ns | 15.5 µs / 2.6 ns | 5.6× / 8.3× |
 | | `cc hello.c` in a box, 2.83 s | 0.79 s translating, 0.48 s compiling 811 modules | | |
@@ -114,9 +115,11 @@ Names first, from the inside out, since a wrong name is paid at every reading; t
    arguments as BigInts. To be: its state laid out in one shared memory, each call answered on the thread that makes
    it. First cut: the tree (`src/tree.h`, written, and what Linux says of every name of a whole root; the calls do
    not walk it yet), then descriptors and pipes, then processes.
-3. **sods.** The foreign decoder is run twice an instruction (0.32 G of the 1.40 G) and the lowering is keyed on its
-   types (`operand.rs`, `flags.rs`, `integer.rs`, `sse.rs`, `fpu.rs`: 2,070 lines). First cut: its own decoder, one pass, a table per opcode; then the calls it makes
-   (a call is 8.5× native).
+3. **sods.** Its files are each one thing now (`module/sods/README.md`), and a walk scans an instruction off its
+   own tables, once, however often its function is walked. The foreign decoder is still run once an instruction,
+   for the lowering, which is keyed on its types (`operand.rs`, `flags.rs`, `integer.rs`, `sse.rs`, `fpu.rs`: 2,070
+   lines) and reads every operand through it. Next cut: an instruction of its own, decoded by tables as the scan
+   is, its operands what the lowering asks; then the calls it makes (a call is 8.5× native).
 4. **muk on Linux takes the box from root3's core.** The seccomp filter and the terminal in `muk run`; then a
    Prompt is the bundle root3 writes, and the Firecracker driver goes.
 5. **A release per thing**: `muk`, `sods`, ricebox 0.6.4, root3 0.0.1. Until ricebox is released from this tree, the
