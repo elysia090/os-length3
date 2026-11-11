@@ -1,6 +1,11 @@
-# sods — instructions
+# sods — instructions, and where they run
 
-Static x86-64 Linux programs made WebAssembly ahead of the run. The browser
+What takes the dull boundaries away: a program is built once (x86-64, for Linux) and sods makes it run where there
+is no such machine and no such kernel under it (a browser, with what a browser allows; a host of another system; no
+system at all), as fast as the machine it lands on runs anything. Code under it is the same code everywhere. Rust;
+where the bound is not reached in plain Rust, C on `../lib` beside it.
+
+Today it is one way across one of those boundaries: static x86-64 Linux programs made WebAssembly ahead of the run. The browser
 used to run Linux by emulating a whole PC (guest kernel, MMU, interrupts, a
 runtime x86→wasm JIT); sods removes the machine instead, and the kernel that
 runs what it makes is ricebox's (`../ricebox`).

@@ -25,9 +25,23 @@ One seam is still to be cut, for density: `muk run` stays for its box's whole li
 run is waited for. A keeper of many boxes waits for them itself (as their parent's parent, a subreaper), and then
 needs muk only until the box's program is started.
 
-## Where it is today
+## What is here
 
-Not here yet. On Linux it is in root3's core, beside the box that is muk's to replace
+```
+prompt run [-b BUNDLE] [ID]   the bundle's box, run by muk, at the terminal this is run at
+sh test/prompt.sh             at a terminal (script's): typed, shown, sized, ended, refused, hung up
+```
+
+`src/prompt.c` (one file of C on `../lib`, 18 KB, no C library, nothing of a product in it): it listens at a socket
+of this run's own, has muk run the bundle with `--console-socket`, takes the terminal's other end, and is that end
+for the one at this terminal: what is typed here is typed there as it is typed, what is shown there is shown here,
+the size here is its size as it changes. It ends as the box ends; told to end, it tells the box; this terminal gone,
+the box is ended. The size the box's terminal starts with is config.json's (`consoleSize`), since the box may start
+before its other end is taken.
+
+Not here yet: what is kept (a box left and come back to, its name, the list of them; the bundle written so that what
+a Prompt writes has its owner's lifetime). On Linux that is still in root3's core, beside the box that is muk's to
+replace
 (`root3/core/src/prompt`: `running.rs`, the Prompts that are running and what each holds; `writes.rs`, what a Prompt
 writes and how long each part lives; in `launch.rs`, the terminal's group, TERM, and the first process that ends
 everything left). In a page it is `root3/app/prompt` (the box's calls answered by muk's runtime; what is kept from

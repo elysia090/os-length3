@@ -17,7 +17,7 @@ word of a service, is in ricebox, muk, sods or lib.
 | | On a release as | What it is | Stands on |
 | --- | --- | --- | --- |
 | **muk** | `muk` | the machine: an OCI-compatible VMM. A box run from an image's layers, named by their digest: on Linux by its namespaces, in a browser by answering its system calls itself. No KVM, no Firecracker | lib, sods |
-| **sods** | `sods` | instructions: x86-64 made wasm ahead of the run, so a program built for Linux runs in a browser | — |
+| **sods** | `sods` | instructions, and where they run: a program built once (x86-64, for Linux) made to run where there is no such machine and no such kernel, at the speed of the machine it lands on. It is what takes the dull boundaries away (bare metal, one host's system against another's, what a browser allows), so that code under it is the same code everywhere. Today: x86-64 made wasm ahead of the run | — |
 | **ricebox** | `ricebox`, the root, and the same as layers any static host serves | the neutral distribution, as BusyBox is one and as thin: each package from its pinned source by its recipe, and the command line [#80](https://github.com/elysia090/os-length3/issues/80) lists. No window, ordinary POSIX. It knows no service: someone else puts it under theirs | muk, sods, lib |
 | **root3** | the app (web, desktop), `root3` | the product, as Alpine stands on BusyBox: ricebox run by muk, the faces and the modules a product has. What a service wants is shipto's, and nowhere else | ricebox, muk, sods |
 
@@ -25,7 +25,8 @@ word of a service, is in ricebox, muk, sods or lib.
 
 ```
 muk        module/muk        the machine: src/ (C: a box on Linux; the tree), runtime/ (a box in a browser), test/
-             module/prompt   a box someone works in: its terminal, and what of it is kept (over muk; not yet here)
+             module/prompt   a box someone works in, thin over muk and with nothing of a product in it: src/ (C: the
+                             terminal's other end), test/; what of a box is kept is still to come
 sods       module/sods       the translator (Rust), and what loads it in a page
 ricebox    module/ricebox    the distribution, 0.6.4 (RELEASE): pins/, packages/, etc/, usr/, make/
              module/you      its command line's own programs, each one file of C: z, rg, fd, fzf
