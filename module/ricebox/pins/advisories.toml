@@ -25,10 +25,6 @@ id = "RUSTSEC-2021-0139"
 ignoreUntil = 2027-02-01
 reason = "ansi_term is unmaintained (delta); no vulnerability is known in it"
 [[IgnoredVulns]]
-id = "RUSTSEC-2026-0173"
-ignoreUntil = 2027-02-01
-reason = "proc-macro-error2 is unmaintained (fd): a procedural macro, run by the compiler and not part of the program"
-[[IgnoredVulns]]
 id = "RUSTSEC-2024-0384"
 ignoreUntil = 2027-02-01
 reason = "instant is unmaintained (hyperfine); no vulnerability is known in it"
@@ -62,3 +58,10 @@ reason = "rkyv before 0.8: validating an archive; it is rust_decimal's (hyperfin
 id = "GO-2026-5932"
 ignoreUntil = 2027-02-01
 reason = "golang.org/x/crypto/openpgp, unmaintained with no fix; neither age nor git-lfs imports it"
+
+# Go's own (the standard library the root's Go programs are built with, the builder's Alpine's): fixed in a Go that
+# Alpine does not have yet, and not reached. It goes when the builder's Go is that one (the scanner then calls it unused).
+[[IgnoredVulns]]
+id = "GO-2026-6859"
+ignoreUntil = 2026-12-15
+reason = "net/http before Go 1.26.11: an HTTP/1 server whose handler reads the body through MaxBytesReader while it writes the header; the root's one HTTP server is lazygit --profile (pprof, on localhost), whose handlers read no body so"

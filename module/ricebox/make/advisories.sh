@@ -7,7 +7,7 @@
 # finds it), not the version its go.mod asks for at least: that Go is asked of OSV itself, by its version (osv-scanner
 # matches the standard library by go.mod's version, whatever it is told the toolchain is). An advisory that is known
 # and does not reach the root, or has nothing to raise to yet, is named in module/ricebox/pins/advisories.toml with why, and until
-# when.
+# when: one of Go's own as any other.
 #
 #   sh module/ricebox/make/advisories.sh [OSV-SCANNER]
 #
@@ -48,14 +48,37 @@ for recipe in "$here"/packages/*/recipe.sh; do
 done
 [ "$#" -gt 0 ] || { echo "advisories: no Rust or Go program is pinned in $here/pins/sources.env" >&2; exit 1; }
 
-# The Go every Go program is built with: its standard library's advisories, as OSV has them for that version.
+# The Go every Go program is built with: its standard library's advisories, as OSV has them for that version. One that
+# advisories.toml sets aside (until its day) is said with its reason, as the scanner says its own, and taken out of
+# the list the scanner is handed, which would call it unused.
 go=$(cd "$here/make" && python3 -c 'import next; print(next.alpine("go", "community"))')
-stdlib=$(curl -fsS --retry 4 -X POST https://api.osv.dev/v1/query \
-  -d "{\"package\": {\"name\": \"stdlib\", \"ecosystem\": \"Go\"}, \"version\": \"$go\"}" |
-  python3 -c 'import json, sys; print(" ".join(v["id"] for v in json.load(sys.stdin).get("vulns", [])))')
+config="$work/advisories.toml"
+curl -fsS --retry 4 -o "$work/stdlib.json" -X POST https://api.osv.dev/v1/query \
+  -d "{\"package\": {\"name\": \"stdlib\", \"ecosystem\": \"Go\"}, \"version\": \"$go\"}"
+stdlib=$(python3 - "$work/stdlib.json" "$here/pins/advisories.toml" "$config" "$go" <<'EOF'
+import datetime, json, re, sys, tomllib
+answer, path, out, go = sys.argv[1:]
+found = [v['id'] for v in json.load(open(answer)).get('vulns', [])]
+text = open(path).read()
+day = lambda d: d.date() if isinstance(d, datetime.datetime) else d
+aside = {e['id']: e.get('reason', '') for e in tomllib.loads(text).get('IgnoredVulns', [])
+         if e['id'] in found and day(e.get('ignoreUntil', datetime.date.max)) > datetime.date.today()}
+# An entry's lines: its header, then its keys.
+lines, drop = text.splitlines(keepends=True), set()
+for k, line in enumerate(lines):
+    if line.strip() != '[[IgnoredVulns]]': continue
+    end = k + 1
+    while end < len(lines) and re.match(r'\s*\w+\s*=', lines[end]): end += 1
+    named = re.search(r'^\s*id\s*=\s*"([^"]*)"', ''.join(lines[k:end]), re.M)
+    if named and named.group(1) in aside: drop.update(range(k, end))
+open(out, 'w').write(''.join(l for k, l in enumerate(lines) if k not in drop))
+for i, reason in aside.items(): print(f'{i} (Go {go}) has been filtered out because: {reason}', file=sys.stderr)
+print(' '.join(i for i in found if i not in aside))
+EOF
+)
 failed=0
 if [ -n "$stdlib" ]; then echo "advisories: Go $go, which the Go programs are built with: $stdlib" >&2; failed=1; fi
 
 echo "advisories: $(($# / 2)) lockfiles of the root's Rust and Go programs; Go $go" >&2
-"$scanner" scan source --config "$here/pins/advisories.toml" ${OSV_FORMAT:+--format "$OSV_FORMAT"} "$@" || failed=1
+"$scanner" scan source --config "$config" ${OSV_FORMAT:+--format "$OSV_FORMAT"} "$@" || failed=1
 exit "$failed"
