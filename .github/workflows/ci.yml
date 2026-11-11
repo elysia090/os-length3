@@ -365,6 +365,21 @@ jobs:
           [ ! -e /etc/apparmor.d/length3-root3 ]
           [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
+  # muk beside runc: the same bundles run by both, as root (where one who is not may make no user namespace), and what
+  # each box says of itself the same (module/muk/test/muk.sh).
+  muk:
+    name: muk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The bundles, beside runc
+        run: |
+          runc --version || echo "no runc here: the boxes are run, and not compared"
+          sudo sh module/muk/test/muk.sh
+
   # The root as a release builds it (root/make/build.sh, root/make/assemble.sh), then used inside as a Prompt uses it and
   # under xlat. Runs only when what the root is made of changed.
   root:
