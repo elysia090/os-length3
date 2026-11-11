@@ -3,7 +3,8 @@
 // and one; nothing where no name goes). muk.c has what this prints (TABLE_MUL, TABLE_AT); that every name of a
 // table is found is muk.sh's to check, so a name added without this run again fails there.
 //
-//   node module/muk/src/slots.ts TABLE...      e.g. CAPS OPTIONS
+//   node module/muk/src/slots.ts TABLE[+SKIP]...      e.g. CAPS OPTIONS FLOOR_PROC+6 (its names told apart by
+//                                                     what follows their first six bytes)
 import {readFileSync} from 'node:fs';
 
 const source = readFileSync(new URL('muk.c', import.meta.url), 'utf8');
@@ -16,10 +17,12 @@ const head = (name: string) => {
   return bytes.readBigUInt64LE();
 };
 
-for (const table of process.argv.slice(2)) {
+for (const asked of process.argv.slice(2)) {
+  const [table, skipped] = asked.split('+');
+  const skip = Number(skipped ?? 0);
   const body = new RegExp(`static const char ${table}\\[\\]\\[\\d+\\] = \\{(.*?)\\};`, 's').exec(source);
   if (!body) throw new Error(`muk.c has no table ${table}`);
-  const heads = [...body[1].matchAll(/"([^"]*)"/g)].map((m) => head(m[1]));
+  const heads = [...body[1].matchAll(/"([^"]*)"/g)].map((m) => head(m[1].slice(skip)));
   if (new Set(heads).size !== heads.length) throw new Error(`${table}: two names begin with the same eight bytes`);
   // The same every run: a generator that starts from the table's name.
   let state = head(table) | 1n;

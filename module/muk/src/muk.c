@@ -19,8 +19,8 @@
  * no privilege by what it runs (no_new_privs); it has the capabilities config.json names and no others (none, where
  * it names none); a device is what muk made in a /dev that is the box's own, never a file of its root (which is
  * mounted nodev) and never one the box makes (CAP_MKNOD is a user namespace's alone); and, where it is not in a user
- * namespace, what of /proc and /sys tells of the host or changes it is hidden or read-only (FLOOR_MASKED,
- * FLOOR_READONLY); and there is what no box asks the kernel at all (FILTER: the kernel itself, another process's
+ * namespace, what of /proc and /sys tells of the host or changes it is hidden or read-only (FLOOR_PROC,
+ * FLOOR_SYS); and there is what no box asks the kernel at all (FILTER: the kernel itself, another process's
  * memory, the mounts, a namespace inside its own, and the parts of the kernel where escapes are found).
  *
  * config.json is read once, where it is: a string is used in its place in the text, a NUL put over its closing
@@ -106,7 +106,8 @@ typedef u8 bytes16 __attribute__((vector_size(16)));
 typedef char chars16 __attribute__((vector_size(16)));
 static inline u8 peek(void) {
   u8 b = *j;
-  if (b > ' ' || !b) return b;
+  if (__builtin_expect(b > ' ', 1)) return b;
+  if (!b) return 0;
   b = *++j; /* (one space, as after a colon: one more test) */
   if (b > ' ' || !b) return b;
   for (;;) {
@@ -140,7 +141,8 @@ static inline u32 stops(const u8 *p) {
 /* A string, where it is: a NUL over its closing quote; one with escapes is made shorter in its place first. Its
  * length is left in `sl`. */
 static u32 sl;
-static char *string(void) {
+static char *escaped(u8 *s);
+__attribute__((always_inline)) static inline char *string(void) {
   take('"');
   u8 *s = j;
   /* Its end: the first quote, backslash or control byte (a NUL ends the text, and sixteen bytes past it are there
@@ -148,11 +150,13 @@ static char *string(void) {
   u32 stop;
   while (!(stop = stops(j))) j += 16;
   j += __builtin_ctz(stop);
-  if (*j == '"') {
-    sl = (u32)(j - s);
-    *j++ = 0;
-    return (char *)s;
-  }
+  if (__builtin_expect(*j != '"', 0)) return escaped(s);
+  sl = (u32)(j - s);
+  *j++ = 0;
+  return (char *)s;
+}
+/* (one with an escape in it, or that does not end: from where the first of them is) */
+__attribute__((noinline, cold)) static char *escaped(u8 *s) {
   u8 *d = j;
   for (;;) {
     u32 c = *j++;
@@ -225,9 +229,12 @@ static u64 kw;
 static u32 kl;
 static inline u64 head(const char *s, u64 n) { return n >= 8 ? ld64((const u8 *)s) : ld64((const u8 *)s) & ((1ull << 8 * n) - 1); }
 __attribute__((always_inline)) static inline int key_is(const char *name, u64 n) {
-  u64 w = 0;
+  u64 w = 0, w2 = 0;
   __builtin_memcpy(&w, name, n < 8 ? n : 8);
-  return kw == w && (n < 8 || (kl == n && (n == 8 || same(key + 8, name + 8))));
+  if (n <= 8) return kw == w && (n < 8 || kl == 8);
+  /* (a longer name: its second word too, which is all of it for one of up to sixteen letters) */
+  __builtin_memcpy(&w2, name + 8, n - 8 < 8 ? n - 8 : 8);
+  return kw == w && kl == n && head(key + 8, n - 8) == w2 && (n <= 16 || same(key + 16, name + 16));
 }
 #define IS(name) key_is(name, sizeof(name) - 1)
 static char *member(int *first) {
@@ -275,7 +282,7 @@ static struct {
   u32 uid, gid, groups[PATHS];
   u32 nargs, nenv, nmasked, nreadonly, nmounts, njoined, nlimits, nuids, ngids, ngroups;
   u16 rows, columns; /* its terminal's size, as it starts */
-  u8 read_only, dev, user, terminal; /* user: in a user namespace, made or joined */
+  u8 read_only, dev, user, terminal, sys; /* user: in a user namespace, made or joined; sys: a /sys is mounted */
 } c;
 
 static void words(char **into, u32 *n, u32 most) {
@@ -292,7 +299,7 @@ static void words(char **into, u32 *n, u32 most) {
 static int which(const char *rows, u32 width, u32 count, const char *name, u32 len) {
   u64 h = head(name, len);
   for (u32 i = 0; i < count; i++, rows += width)
-    if (ld64((const u8 *)rows) == h && (len < 8 || same(rows + 8, name + 8))) return (int)i;
+    if (ld64((const u8 *)rows) == h && (len < 8 || eq((const u8 *)rows + 8, (const u8 *)name + 8, len - 7))) return (int)i;
   return -1;
 }
 #define WHICH(table, name, len) which(table[0], sizeof table[0], sizeof table / sizeof table[0], name, len)
@@ -303,7 +310,8 @@ static int slot(const char *rows, u32 width, const u8 *at, u64 mul, const char *
   u32 row = at[h * mul >> 57];
   if (!row) return -1;
   rows += (row - 1) * width;
-  return ld64((const u8 *)rows) == h && (len < 8 || same(rows + 8, name + 8)) ? (int)row - 1 : -1;
+  /* (the rest of it, its NUL too: a row has zeros after its name, and the text room past the name's end) */
+  return ld64((const u8 *)rows) == h && (len < 8 || eq((const u8 *)rows + 8, (const u8 *)name + 8, len - 7)) ? (int)row - 1 : -1;
 }
 #define SLOT(table, name, len) slot(table[0], sizeof table[0], table##_AT, table##_MUL, name, len)
 static const char CAPS[][24] = {
@@ -493,22 +501,43 @@ static void linux_(void) {
 }
 
 /* The floor's paths (as every runtime's defaults have them), each put in a list that does not have it. */
-static const char FLOOR_MASKED[][24] = {"/proc/acpi", "/proc/asound", "/proc/kcore", "/proc/keys", "/proc/latency_stats",
-                                        "/proc/timer_list", "/proc/timer_stats", "/proc/sched_debug", "/proc/scsi"};
-static const char FLOOR_MASKED_SYS[][24] = {"/sys/firmware"};
-static const char FLOOR_READONLY[][24] = {"/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"};
-/* (each of them eight bytes or more: one word says a path is not it, and a path shorter than that never is) */
-static void floor_(const char *rows, u32 count, char **into, u32 *n) {
-  for (u32 r = 0; r < count; r++, rows += 24) {
-    u64 h = ld64((const u8 *)rows);
-    int there = 0;
-    for (u32 i = 0; i < *n; i++) there |= ld64((const u8 *)into[i]) == h && same(into[i] + 8, rows + 8);
-    if (there) continue;
+static const char FLOOR_PROC[][24] = { /* (hidden, the first nine; read-only, the last five) */
+  "/proc/acpi", "/proc/asound", "/proc/kcore", "/proc/keys", "/proc/latency_stats", "/proc/timer_list", "/proc/timer_stats",
+  "/proc/sched_debug", "/proc/scsi", "/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"};
+enum { FLOOR_HIDDEN = 9, FLOOR_ALL = sizeof FLOOR_PROC / sizeof FLOOR_PROC[0] };
+#define FLOOR_PROC_MUL 0x9c24c18297b4231full /* (14 names; slots.ts, 1 tries) */
+static const u8 FLOOR_PROC_AT[128] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 12, 0, 0, 9, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 14, 0, 5, 0, 7, 0, 0, 0};
+static const char FLOOR_SYS[] = "/sys/firmware";
+/* Each of the floor's paths that neither list has, put in its own: found by one look at each path the lists have
+ * (what follows /proc/ in it, as a word: slots.ts), not by each of the floor's against each of theirs. */
+static void floor_(void) {
+  u32 seen = 0, firmware = 0;
+  for (int list = 0; list < 2; list++) {
+    char **paths = list ? c.readonly : c.masked;
+    for (u32 i = 0, n = list ? c.nreadonly : c.nmasked; i < n; i++) {
+      const u8 *p = (const u8 *)paths[i];
+      u64 first = ld64(p);
+      if ((first & 0xffffffffffffull) != 0x2f636f72702full /* "/proc/" */) {
+        firmware |= first == 0x7269662f7379732full /* "/sys/fir" */ && same((const char *)p + 8, FLOOR_SYS + 8);
+        continue;
+      }
+      u64 w = ld64(p + 6), z = zeros(w), h = z ? w & ((z & -z) - 1) : w;
+      u32 row = FLOOR_PROC_AT[h * FLOOR_PROC_MUL >> 57];
+      if (row && ld64((const u8 *)FLOOR_PROC[row - 1] + 6) == h && (z || same((const char *)p + 14, FLOOR_PROC[row - 1] + 14))) seen |= 1u << (row - 1);
+    }
+  }
+  for (u32 row = 0; row < FLOOR_ALL; row++) {
+    if (seen >> row & 1) continue;
+    char **into = row < FLOOR_HIDDEN ? c.masked : c.readonly;
+    u32 *n = row < FLOOR_HIDDEN ? &c.nmasked : &c.nreadonly;
     if (*n == PATHS) bad("a list is longer than is read");
-    into[(*n)++] = (char *)rows;
+    into[(*n)++] = (char *)FLOOR_PROC[row];
+  }
+  if (!firmware && c.sys) {
+    if (c.nmasked == PATHS) bad("a list is longer than is read");
+    c.masked[c.nmasked++] = (char *)FLOOR_SYS;
   }
 }
-#define FLOOR(table, into, n) floor_(table[0], sizeof table / sizeof table[0], into, n)
 /* The /dev a box has where config.json mounts none: a tmpfs of its own (as config.json would say it). Not inlined:
  * four addresses stored side by side are stored as one constant, which a program with nothing to relocate has not. */
 __attribute__((noinline)) static void own_dev(struct mount *m) {
@@ -593,8 +622,14 @@ static void config(void) {
   }
   /* What of /proc and /sys tells of the host or changes it: hidden, or read-only, to one who is root there. */
   if (!c.user) {
-    if (has_proc) FLOOR(FLOOR_MASKED, c.masked, &c.nmasked), FLOOR(FLOOR_READONLY, c.readonly, &c.nreadonly);
-    if (has_sys) FLOOR(FLOOR_MASKED_SYS, c.masked, &c.nmasked);
+    c.sys = (u8)has_sys;
+    if (has_proc) floor_();
+    else if (has_sys) {
+      int there = 0;
+      for (u32 i = 0; i < c.nmasked; i++) there |= same(c.masked[i], FLOOR_SYS);
+      if (!there && c.nmasked == PATHS) bad("a list is longer than is read");
+      if (!there) c.masked[c.nmasked++] = (char *)FLOOR_SYS;
+    }
   }
 }
 

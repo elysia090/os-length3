@@ -78,9 +78,9 @@ guest):
 | | by hand | muk | runc 1.5.2 |
 | --- | --- | --- | --- |
 | system calls, the whole run | 117 | 123 | 5,761 |
-| instructions in muk itself | 12,000 | 31,700 | (a Go runtime) |
+| instructions in muk itself | 12,000 | 28,800 | (a Go runtime) |
 | time, start to end | 1.9 ms | 2.0 ms | 24 ms |
-| the program, its bytes | | 40 KB | 9.7 MB |
+| the program, its bytes | | 45 KB | 9.7 MB |
 | muk's memory while its box runs | | 68 KB, 36 KB of it its own | |
 
 By hand, the calls: the bundle read 5 (chdir, open, read, a read that says it was all, close); signals held, the
@@ -97,10 +97,12 @@ into six namespaces and two programs started, which nothing in muk can lower.
 
 Instructions: reading config.json is all but 1,400 of them. It was 60,000 (23 a byte): a name looked for in its
 list one name after another, a key compared letter by letter with each key it might be, what is between words
-passed a byte at a time. Now a key is one comparison of words, a capability or an option one look in a table
-made ahead (`src/slots.ts`), a string's end and a run of spaces found sixteen bytes at a time: 30,400 (12 a byte),
-the same text written with no spaces 26,100, written wide 30,900. By hand it is 12,000: what is left over is a
-call and its return for each of 150 strings and 100 members, which a reader written as one pass would not make.
+passed a byte at a time. Now a key is one comparison of words (two for a long one), a capability, an option or one
+of the floor's paths one look in a table made ahead (`src/slots.ts`), a string's end and a run of spaces found
+sixteen bytes at a time, a string with no escape read where it is asked for: 27,400 (11 a byte), the same text
+written with no spaces 22,500. By hand it is 12,000: what is left over is what each of 150 strings and 100 members
+still costs around its bytes (a word looked for before it, its length kept, its key made a word), which a reader
+written as one pass over the text would not pay.
 
 ## In a browser
 
