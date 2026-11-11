@@ -14,12 +14,12 @@
 // only while no other thread of the process runs.
 
 import {ANSWER_MS, CH, OP, OUTBOX_BYTES, Outbox, PARK, PARK_MS, PARK_WATCH_MS, READS_REGS, REPLY, REGS, rouse, sleep, watch, type Attached, type Forget, type Run} from './channel.ts';
+import {isNode, nodeThreads, said} from '../../sods/runtime/host.ts';
 import {namesIn, x87Of, type X87} from '../../sods/runtime/x87.ts';
 import {answerTime, clocks, type Clocks} from './clock.ts';
 import {INTERRUPT, KEEP_INSTANCES, Preempted, SHARES, SLICE_LOOPS, TRAP_YIELD, div128, fault, nextSlice, translatorsLimit, trapOrPreempt, type Translation} from './process.ts';
 
-const isNode = typeof process !== 'undefined' && !!process.versions?.node;
-const parent = isNode ? (await import('node:worker_threads')).parentPort : null;
+const parent = (await nodeThreads())?.parentPort ?? null;
 /** Where this Worker hears from the kernel and says what went wrong. */
 const port: {postMessage(m: unknown): void} = parent ?? self;
 const listen = (fn: (e: {data: Run | Forget}) => void): void => {
@@ -404,7 +404,7 @@ class Thread {
         }
         const sig = fault(e);
         if (!sig) throw e;
-        if (isNode && process.env.MUK_FAULTS) console.error(`[${this.tid}] fault: ${e instanceof Error ? e.stack : e}`);
+        if (isNode && said('MUK_FAULTS')) console.error(`[${this.tid}] fault: ${e instanceof Error ? e.stack : e}`);
         // A fault ends the process, as the kernel decides; what the translator cannot run yet is said.
         this.put(translatorsLimit(e) ? `sods: ${e.message}\n` : '');
         this.i64[CH.ARG0] = BigInt(sig);

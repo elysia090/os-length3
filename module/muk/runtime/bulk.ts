@@ -8,6 +8,8 @@
 //
 // What is small (a struct a call fills) stays a TypedArray's: a call into wasm costs more than a few bytes do.
 
+import {isShared as shared} from '../../sods/runtime/host.ts';
+
 /** (memory "m" "m" (imported; shared or not)) (func fill (i32 i32 i32)) (func copy (i32 i32 i32)), exported as such. */
 const module = (shared: boolean): WebAssembly.Module => new WebAssembly.Module(new Uint8Array([
   0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
@@ -31,7 +33,7 @@ interface Helper { fill(at: number, value: number, length: number): void; copy(t
 
 const modules: {true?: WebAssembly.Module; false?: WebAssembly.Module} = {};
 const helpers = new WeakMap<WebAssembly.Memory, Helper>();
-const isShared = (memory: WebAssembly.Memory): boolean => typeof SharedArrayBuffer === 'function' && memory.buffer instanceof SharedArrayBuffer;
+const isShared = (memory: WebAssembly.Memory): boolean => shared(memory.buffer);
 
 function helper(memory: WebAssembly.Memory): Helper {
   let h = helpers.get(memory);

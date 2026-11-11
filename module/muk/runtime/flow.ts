@@ -3,6 +3,8 @@
 // throws through the wasm frames to say the thread waits, ended, exec'd or was sent elsewhere; every capability; and
 // random bytes drawn ahead.
 
+import {isShared} from '../../sods/runtime/host.ts';
+
 /** Every capability Linux has (to CAP_CHECKPOINT_RESTORE, 40): root's in its own user namespace. */
 export const CAPS = (1n << 41n) - 1n;
 
@@ -36,7 +38,7 @@ export function utf8(b: Uint8Array | ArrayBuffer): string {
     while (k < b.length && b[k] < 0x80) k++;
     if (k === b.length) return String.fromCharCode.apply(null, b as unknown as number[]);
   }
-  return decoder.decode(b instanceof Uint8Array && typeof SharedArrayBuffer !== 'undefined' && b.buffer instanceof SharedArrayBuffer ? b.slice() : b);
+  return decoder.decode(b instanceof Uint8Array && isShared(b.buffer) ? b.slice() : b);
 }
 
 /** Random bytes drawn ahead (a draw costs tens of microseconds however few it gives: an exec's AT_RANDOM took one). */

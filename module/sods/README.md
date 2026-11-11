@@ -35,6 +35,17 @@ runs what it makes is ricebox's (`../ricebox`).
   wrapper, the x87's, a translation shared between Workers (`share.ts`),
   programs translated ahead while a Prompt waits (`ahead.ts`), and the form a
   translation is kept in between runs (`kept.ts`; muk keeps the copies).
+- **`runtime/host.ts` is the host, asked in one place.** The same code runs in
+  a browser's page, in one of its Workers and in node, and what differs
+  between them is answered there and nowhere else: whether this is node, what
+  was said to it from outside, its own modules where it has them, its
+  threads, how many processors it has, whether memory is shared between
+  threads, whether they may run apart on it (in a browser, only a page set
+  apart from other origins'), whether this thread may wait. muk's runtime
+  and the translator's wrapper asked each of these for themselves, in eight
+  files, each its own way; they ask here now, and a host that is neither
+  (another system's, none at all) is one file's to take on. What it does not
+  hold yet is below.
 
 ```
 cargo build --release
@@ -46,6 +57,17 @@ Inputs must be static executables linked with `--emit-relocs`; post-linked
 release binaries have their relocations removed and are not accepted yet.
 Checked natively against the same programs by ricebox's tests
 (`sh ../muk/test/programs/run.sh`).
+
+## The boundaries, and which are taken on
+
+| The boundary | Who takes it on | Where it stands |
+| --- | --- | --- |
+| no x86-64 under the program | `src/`: the program made WebAssembly ahead of the run | done for static Linux programs; the lowering still reads its operands through a decoder that is not sods' |
+| no Linux under it | muk's `runtime/`, answering its calls | done in a browser and in node, in TypeScript and far from its bound |
+| which host this is (a page, a Worker, node) | `runtime/host.ts` | asked in one place: node or not, its threads, shared memory, running apart, waiting, processors, what was said from outside |
+| a host's clock, its random bytes, where bytes are kept, how they are fetched | still muk's `runtime/` (`clock.ts`, `flow.ts`, `keeper.ts`, `pack.ts`), each asking the host itself | next into `host.ts`, one at a time, each with its test |
+| a host of another system (macOS, Windows), natively | nothing yet | the same wasm under an engine there, `host.ts` answering for it; not begun |
+| no system at all | nothing yet | not begun |
 
 ## Its counts
 

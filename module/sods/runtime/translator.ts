@@ -5,6 +5,8 @@
 // parsed) goes back to the host only with the instance: `renew` makes a
 // fresh one from the same compiled module.
 
+import {said} from './host.ts';
+
 /** The translator's own exports. */
 interface Exports {
   memory: WebAssembly.Memory;
@@ -45,10 +47,10 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
   const instance = (m: WebAssembly.Module): Exports => new WebAssembly.Instance(m, {}).exports as unknown as Exports;
   let x = instance(module);
   // SODS_BUDGET=N (node): how much code reached later one module may hold, for measuring (0: all it reaches).
-  const budget = globalThis.process?.env?.SODS_BUDGET;
+  const budget = said('SODS_BUDGET');
   if (budget) x.sods_budget(Number(budget));
   // SODS_RUN=N (node): functions cut into runs of N blocks (layout.rs RUN), so the cut is tested on small programs.
-  const run = globalThis.process?.env?.SODS_RUN;
+  const run = said('SODS_RUN');
   if (run) x.sods_run(Number(run));
   // What a fresh instance holds: that much never goes back.
   let base = x.memory.buffer.byteLength;

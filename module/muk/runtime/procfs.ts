@@ -12,6 +12,7 @@ import {CAPS} from './flow.ts';
 import type {Description} from './fd.ts';
 import type {Entry} from './fs.ts';
 import type {Kern, Proc} from './parts.ts';
+import {processors} from '../../sods/runtime/host.ts';
 
 const enc = new TextEncoder();
 const HZ = 100;
@@ -95,7 +96,7 @@ export function mountProc(kernel: Kern): void {
   const vfs = kernel.vfs;
   const booted = performance.now();
   const bootEpoch = Math.floor(Date.now() / 1000);
-  const cpus = Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcurrency ?? 1));
+  const cpus = processors();
   const ticks = (ms: number): number => Math.floor(ms * HZ / 1000);
   const uptime = () => (performance.now() - booted) / 1000;
   /** Every processor's time since it began that no thread had (ms). */

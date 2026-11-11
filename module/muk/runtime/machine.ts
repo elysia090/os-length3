@@ -10,14 +10,14 @@
 // A process of its own still has at most 4 GiB of memory (a 32-bit WebAssembly memory): that is the address space a
 // program is given, not the machine's memory, and mmap past it fails as on a machine out of address space.
 
+import {builtin} from '../../sods/runtime/host.ts';
+
 const GiB = 2 ** 30;
 /** What is said when the host cannot say: a small machine's. */
 export const MEMORY_FLOOR = 4 * GiB;
 /** How often a browser's storage estimate is asked again (it is asynchronous, and costs a little). */
 const STORAGE_EVERY_MS = 5000;
 
-/** The host's own `os` and `fs` modules, where there are (node), without importing them where there are not. */
-const builtin = <T>(name: string): T | null => (globalThis.process?.getBuiltinModule?.(name) as T | undefined) ?? null;
 
 /** Bytes where the files are kept: all, and what is not used yet. */
 export interface Storage { total: number; free: number }

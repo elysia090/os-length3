@@ -16,25 +16,24 @@
 import {CH, OP, Outbox, PARK, REPLY, rouse, sleep, watch, type Forget, type Run, type Said} from './channel.ts';
 import {CALL_SAMPLE, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
+import {canRunApart, mayWait, nodeThreads} from '../../sods/runtime/host.ts';
 import type {Saved} from '../../sods/runtime/x87.ts';
 import type {Call, Mem, Range} from './parts.ts';
 import {deliverable, take} from './signal.ts';
 
-const isNode = typeof process !== 'undefined' && !!process.versions?.node;
-const NodeWorker = isNode ? (await import('node:worker_threads')).Worker : null;
+const NodeWorker = (await nodeThreads())?.Worker ?? null;
 const enc = new TextEncoder();
 
 /** How long the kernel waits for a running thread's next call blocking (then it waits on the event loop), and serves at most before the host gets a turn. */
 const BLOCK_MS = 4, YIELD_MS = 8;
 /** How long after a thread is handed to its Worker its first call is watched for (a Worker hears and starts it in ~0.1-0.3 ms). */
 const STARTING_MS = 1;
-/** Atomics.wait is allowed here (a Worker, or node's main thread; not a page's). */
-const BLOCKING = isNode || 'WorkerGlobalScope' in globalThis;
+/** Atomics.wait is allowed here (a Worker, or node's main thread; not a page's: sods' host.ts). */
+const BLOCKING = mayWait;
 const macrotask = (): Promise<void> => new Promise((go) => (typeof setImmediate === 'function' ? setImmediate(go) : setTimeout(go, 0)));
 
-/** Whether this host can run threads apart: shared memory, and waiting on it from here without blocking. */
-export const canRunApart = (): boolean => typeof SharedArrayBuffer === 'function' && typeof Atomics.waitAsync === 'function'
-  && (isNode || globalThis.crossOriginIsolated === true);
+/** Whether this host can run threads apart: shared memory, and waiting on it from here without blocking (sods' host.ts). */
+export {canRunApart};
 
 /** What a Worker of the kernel's keeps (cpu.ts kept): the memory and image of each instance, and the modules it had then. */
 interface Held { memoryId: number; imageId: number; extras: number }

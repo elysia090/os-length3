@@ -37,6 +37,7 @@ import type {Taken} from '../../sods/runtime/kept.ts';
 import type {Machine} from './machine.ts';
 import type {Translate} from '../../sods/runtime/translator.ts';
 import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
+import {said} from '../../sods/runtime/host.ts';
 
 /** The translator a kernel is given: a program's bytes in, a module out, and what else it can do where it can. */
 export type Translator = ((elf: Uint8Array) => Uint8Array) & {[K in keyof Translate]?: Translate[K]};
@@ -1898,11 +1899,11 @@ const CONSOLIDATE = 16;
 /** Memories let go of that are kept for the next process, and the largest kept (Kernel.letGo). */
 const SPARE_MEMORIES = 4, SPARE_MEMORY_BYTES = 256 << 20;
 /** MUK_SYSCALLS=1 lists every system call on stderr (node only). */
-export const TRACE_SYSCALLS = typeof process !== 'undefined' && !!process.env?.MUK_SYSCALLS;
+export const TRACE_SYSCALLS = !!said('MUK_SYSCALLS');
 /** MUK_FAULTS=1 says what each fault that ends a process was (node only). */
-const TRACE_FAULTS = typeof process !== 'undefined' && !!process.env?.MUK_FAULTS;
+const TRACE_FAULTS = !!said('MUK_FAULTS');
 /** SODS_BLOCKS=1 lists every block entered (node only; run.ts then translates with --trace). */
-const TRACE_BLOCKS = typeof process !== 'undefined' && !!process.env?.SODS_BLOCKS;
+const TRACE_BLOCKS = !!said('SODS_BLOCKS');
 /** Which argument of a call names a path (0: the first, 1: the second, after a directory). */
 const PATH_ARG: Record<number, number> = {2: 0, 4: 0, 6: 0, 21: 0, 59: 0, 80: 0, 83: 0, 84: 0, 87: 0, 89: 0, 257: 1, 262: 1, 263: 1, 269: 1, 439: 1};
 
