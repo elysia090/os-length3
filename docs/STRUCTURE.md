@@ -4,38 +4,49 @@ What the repository is to be, how far it is from that today, and the order it is
 
 ## The rule
 
-A folder under the root is a thing one would be glad to find on a release by itself: downloaded alone it is whole,
-it is useful, and it says what it stands on. What is on no release by itself is inside the unit that ships it, or is
-one of the few folders that make and check the rest (`scripts/`, `tests/`, `docs/`).
+The repository is split by what a person would be glad to find on a release. There are four such things, and read
+from the top the code is those four: **root3**, **ricebox**, **muk**, **sods**. Each is whole when downloaded
+alone, is useful alone, and says what it stands on. The smaller modules are not a fifth kind of thing: each is a
+part of the one that ships it, or is what several of them stand on.
 
-Units are thin, and beside one another: none holds another. Each takes only from what is under it, so a unit is cut
-out with the units under it and nothing else. Three of them name the whole:
+Each is thin, and they are beside one another: none holds another. Each takes only from what is under it, so one is
+cut out with what is under it and nothing else.
 
-- **muk**, the thinnest: an OCI-compatible VMM. Layers at rest by their digest, and a bundle run from them. No KVM,
-  no Firecracker; C on `lib` alone.
-- **ricebox**, the neutral distribution, as BusyBox is one and as thin: the smallest UNIX a browser runs and the
-  command line [#80](https://github.com/elysia090/os-length3/issues/80) lists, over muk. No window, ordinary POSIX,
-  served from any web host as it is. It knows no service: someone else puts it under theirs.
-- **root3**, the product, as Alpine stands on BusyBox: ricebox, the root's packages, the app and the command, and
-  the modules over them. What a service wants is shipto's, and nowhere else.
+| | On a release as | What it is | Stands on |
+| --- | --- | --- | --- |
+| **muk** | `muk`, one static program | the thinnest: an OCI-compatible VMM. Layers at rest by their digest, and a bundle run from them. No KVM, no Firecracker; C with no C library | lib |
+| **sods** | `xlat`, `xlat.wasm` | x86-64 made wasm ahead of the run, so a program built for Linux runs in a browser | — |
+| **ricebox** | `ricebox`, a folder any static host serves | the neutral distribution, as BusyBox is one and as thin: the smallest UNIX a browser runs and the command line [#80](https://github.com/elysia090/os-length3/issues/80) lists. No window, ordinary POSIX. It knows no service: someone else puts it under theirs | muk, sods, lib |
+| **root3** | the app (web, desktop), `root3`, the root | the product, as Alpine stands on BusyBox: ricebox, the root's packages, the faces and the modules a product has. What a service wants is shipto's, and nowhere else | ricebox, muk, sods |
 
-## The units
+## Read from the top
 
-| Folder | On a release as | What it is | What is not its | Takes from |
-| --- | --- | --- | --- | --- |
-| `module/lib` | (in each program of C; no file of its own) | what the units of C stand on: system calls, words, output | a C library | — |
-| `module/muk` | `muk`, one static program | the OCI-compatible VMM | a kernel in a browser; a service's rules; what root3 puts in a box (a repo, dotfiles) | lib |
-| `module/sods` | `xlat`, `xlat.wasm` | x86-64 made wasm ahead of the run | reading a layer (unzstd, SHA-256: muk's) | — |
-| `module/ricebox` | `ricebox`, a folder any static host serves | the smallest UNIX a browser runs, and #80's command line | the app's pages; the Remote; the root's packages | lib, muk, sods |
-| `module/you` | `you`, `rg` | z, rg, fd, fzf | — | lib |
-| `module/otter` | `otter` | help, and what each thing is; the hooks | the work itself | lib (its hooks: ricebox, muk, sods) |
-| `root/` | the root, `…-x86_64-<digest>.tar.zst`, and the same as layers | OS Length3 Linux: each package from its pinned source | ricebox's (ricebox runs it; root3 makes it) | — |
-| `src/app`, `src/desktop` | the web app (`…-web.zip`), the desktop app (`.deb`, AppImage) | the faces: pages and window | judgement of their own | any |
-| `src/cli` | `root3` | the command | judgement of its own | any |
-| `src/core` | (in the app and the command) | what both say of a repo, its history, Home | a box run (muk's); a service (shipto's) | ricebox, muk |
-| `module/shipto` (today `src/remote`) | the Remote, a Worker to deploy | what a service wants: who one is, what one may use, deliveries, its deploy | anything a box needs to run | ricebox, muk |
+What one meets going down from the root, and why it is there:
 
-funk (links out of a box) and m8 (where boxes run) have no folder yet; they get one when they have something to ship.
+```
+muk        module/muk                 one file of C and its test beside runc
+sods       module/sods                the translator (Rust), and what loads it in a page
+ricebox    module/ricebox             its kernel; what serves it in a page; what makes the folder a host serves
+             its command line's own programs, each one file of C:
+             module/you               z, rg, fd, fzf
+             module/otter             help, and what each thing is
+root3      src/app, src/desktop       the faces: pages and window
+           src/cli                    the command
+           src/core                   what both say of a repo, its history, Home
+           root/                      the root's packages: each from its pinned source by its recipe
+             its modules, each one responsibility:
+             shipto (src/remote)      what a service wants: who one is, what one may use, deliveries, its deploy
+             funk                     links out of a box and between boxes
+             m8                       where and how many boxes run (when they run on more than one machine)
+under all  module/lib                 what the C stands on: system calls, words, output. On no release: it is in
+                                      each program made of it
+beside     scripts/, tests/, docs/    what makes and checks the rest
+```
+
+What is not each one's: muk has no kernel for a browser, no rule of a service, nothing root3 puts in a box (a repo,
+dotfiles). sods does not read a layer (unzstd, SHA-256: muk's). ricebox has no page of the app, no Remote, no
+package of the root (it runs the root; root3 makes it). root3's faces hold no judgement of their own; its core runs
+no box (muk's) and is no service (shipto's).
 
 ## Today, against that
 
@@ -68,6 +79,7 @@ own for the same work.
 | | fork+exec+wait / posix_spawn | 372 / 567 µs | 174 / 141 µs | 2.1× / 4.0× |
 | | `echo \| cat`, 200 times in a shell | 3.9 ms each | | |
 | | a root mounted (11,560 files) | 35 to 50 ms | none: an index used where it is | |
+| | its tree, written to its bound and not yet what it walks: a path of a whole root | 875 instructions, 74 ns | 430 instructions | 2× |
 | sods | a program first translated (git, 680,000 instructions) | 1.40 G instructions | 0.37 G | 3.8× |
 | | the code it makes: a call / an indirect call | 3.4 / 6.8 ns | 0.4 / 1.5 ns (native) | 8.5× / 4.5× |
 | | fib(20) / setjmp+longjmp | 86.8 µs / 21.5 ns | 15.5 µs / 2.6 ns | 5.6× / 8.3× |
@@ -82,7 +94,8 @@ own for the same work.
    channel: a call from another Worker is a round trip (1.9 µs), each makes an array and an object and carries its
    arguments as BigInts. To be: its state laid out in one shared memory, each call answered on the thread that makes
    it. First cut: the tree (names to nodes, a root's index used where it is, no mount), then descriptors and pipes,
-   then processes.
+   then processes. The tree is written (`module/ricebox/src/tree.h`) and says what Linux says of every name of a
+   whole root, spelled every way; the kernel does not walk it yet.
 2. **sods.** The foreign decoder is run twice an instruction (0.32 G of the 1.40 G) and the lowering is keyed on its
    types (`ops.rs`, 2,070 lines). First cut: its own decoder, one pass, a table per opcode; then the calls it makes
    (a call is 8.5× native).

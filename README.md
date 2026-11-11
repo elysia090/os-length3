@@ -70,19 +70,23 @@ its own files (`etc/`, `usr/`), and what makes it (`make/`: `build.sh`, each pac
 
 ## Units
 
-Three things, each thinner than the one over it, none holding another: each is a folder of its own under
-[`module/`](module/), beside the others, and stands on what is under it.
+The repository is split by what a person would be glad to find on a release: four things, each thin, beside one
+another, none holding another, each standing on what is under it. Read from the top, the code is those four.
 
 - **muk**, the thinnest: an OCI-compatible VMM. An image's layers at rest, named by their digest, and a bundle run
   from them (created, started, signalled, deleted, as the OCI runtime says). No KVM and no Firecracker under it: it
   is C on `lib` alone, with no C library, written as `you` is.
+- **sods**: x86-64 made wasm ahead of the run, so a program built for Linux runs in a browser.
 - **ricebox**, the neutral distribution, as BusyBox is one, and as thin: the smallest UNIX a browser runs and the
   command line [#80](https://github.com/elysia090/os-length3/issues/80) lists, ordinary POSIX with no window, over
-  muk; served from any web host as it is. It knows no service, so anyone can cut it out, with the units under it,
-  and put it under a service of their own.
-- **root3**, the product, as Alpine stands on BusyBox: ricebox, the root's packages, and the modules over it. What
-  a service wants (who one is, what one may use, the Remote and its sync, its gateway's rules, its deploy) is
-  shipto's, and nowhere else.
+  muk and sods; served from any web host as it is. It knows no service, so anyone can cut it out, with what is
+  under it, and put it under a service of their own.
+- **root3**, the product, as Alpine stands on BusyBox: ricebox, the root's packages, the app and the command, and
+  the modules a product has. What a service wants (who one is, what one may use, the Remote and its sync, its
+  gateway's rules, its deploy) is shipto's, and nowhere else.
+
+The smaller modules are each a part of the one that ships it (you and otter, ricebox's command line's own programs;
+shipto, funk and m8, root3's), or what several stand on (lib).
 
 [`docs/STRUCTURE.md`](docs/STRUCTURE.md) is the whole of it: what each unit is and is not, what it is to be, how far
 each is from its bound today, and the order they are taken apart in, the furthest first.

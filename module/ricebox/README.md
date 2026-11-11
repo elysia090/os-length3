@@ -32,4 +32,5 @@ node runtime/run.ts PROGRAM [args...]            # host ELF as /bin/PROGRAM
 node runtime/run.ts --root DIR /bin/sh -c '...'  # a host tree as /
 sh tests/programs/run.sh                          # native vs translated, and the unit tests
 node tests/floors/floors.ts                       # each floor beside Linux
+sh tests/tree/tree.sh [DIR]                       # the tree (src/tree.h) beside Linux, every name of a directory
 ```

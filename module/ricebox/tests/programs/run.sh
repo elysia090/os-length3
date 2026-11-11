@@ -84,6 +84,8 @@ if command -v go >/dev/null; then
     if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.xlat"; then echo "ok   $name"; else echo "FAIL $name (exit $native vs $translated)"; status=1; fi
   done
 fi
+# The tree (src/tree.h), every name of a directory asked of it and of Linux.
+if sh "$root/tests/tree/tree.sh" > /dev/null 2>&1; then echo "ok   tree"; else echo "FAIL tree"; status=1; fi
 # The kernel's tests.
 for t in "$root"/tests/runtime/*.test.ts; do
   if node --test "$t" >/dev/null 2>&1; then echo "ok   $(basename "$t")"; else echo "FAIL $(basename "$t")"; status=1; fi

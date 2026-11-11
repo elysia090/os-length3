@@ -39,7 +39,7 @@ export const UNITS: Unit[] = [
     holds: ['module/sods/src', 'module/sods/runtime'],
     takes: []},
   {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the command line #80 lists; no window, ordinary POSIX, and no service known to it',
-    holds: ['module/ricebox/runtime'],
+    holds: ['module/ricebox/runtime', 'module/ricebox/src'],
     takes: ['lib', 'muk', 'sods']},
   {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
