@@ -137,8 +137,9 @@ impl Buckets {
 
 impl Entries {
     pub(crate) fn of(mut marks: Vec<(u64, (u32, u32))>) -> Entries {
-        // The first marked of an address is the one of the lowest function (a function marks an address one way).
-        marks.sort_unstable_by_key(|&(a, (f, _))| (a as u128) << 32 | f as u128);
+        // The first marked of an address is the one of the lowest function (a function marks an address one way). (A
+        // sort that goes along the runs already in order: find hands them over nearly so.)
+        marks.sort_by_key(|&(a, (f, _))| (a, f));
         marks.dedup_by_key(|&mut (a, _)| a);
         marks.shrink_to_fit();
         let buckets = Buckets::of(marks.iter().map(|&(a, _)| a));

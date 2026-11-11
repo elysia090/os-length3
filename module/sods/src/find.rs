@@ -120,10 +120,11 @@ fn find(elf: &Elf, walk: Find) -> Program {
             found.extend(if follow.calls { calls } else { continuations(&blocks) });
             done.insert(s, blocks);
         }
-        // Each place once (a function is called from many), then only those not known yet.
+        // Only those not known yet, then each place once (a function is called from many): the few that are new are
+        // what is sorted.
+        found.retain(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t));
         found.sort_unstable();
         found.dedup();
-        found.retain(|t| elf.is_code(*t) && !known.contains(t) && !starts.contains(t));
         if collect { references.sort_unstable(); references.dedup(); }
         if follow.taken { found.extend(references.iter().copied().filter(|&a| elf.is_code(a) && !starts.contains(&a))); }
         let mut tables = if !follow.tables { Vec::new() } else if guess { switches } else { relative_table_targets(elf, &references) };
@@ -152,7 +153,7 @@ fn find(elf: &Elf, walk: Find) -> Program {
     let mut scratch = Layout::default();
     for (start, blocks) in done {
         let name = names.get(&start).cloned().unwrap_or_else(|| format!("fn_{start:x}"));
-        let first = functions.len();
+        let (first, from) = (functions.len(), marks.len());
         for f in runs(start, name, blocks, &mut scratch) {
             let k = functions.len() as u32;
             let found = |a: u64| f.block_index(a).map(|b| (a, (k, b as u32)));
@@ -176,6 +177,9 @@ fn find(elf: &Elf, walk: Find) -> Program {
             functions.push(f);
         }
         joined(&functions[first..], first, &mut marks);
+        // (Each function's marks in order as they are made: functions come in the order of their addresses, so all of
+        // them are then nearly in order, which Entries::of's sort takes in one pass.)
+        marks[from..].sort_unstable();
     }
     Program { entry: elf.entry, functions, entries: Entries::of(marks) }
 }
