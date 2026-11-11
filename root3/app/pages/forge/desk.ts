@@ -277,11 +277,6 @@ export class Desk {
       if (this.#cam === 'standard' && v.s === 1 && Math.hypot(el.scrollLeft + v.x, el.scrollTop + v.y) > 1) this.#look(true);
     });
     this.element.addEventListener('wheel', (e) => this.#wheel(e), {passive: false});
-    // Stepped back, a box pressed twice is come back to.
-    this.element.addEventListener('dblclick', (e) => {
-      const key = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key;
-      if (this.#cam !== 'standard' && key) { this.take(key, false, false); this.#setCam('standard'); this.#boxes.get(key)?.laid.focus(); }
-    });
     // Held up by Ctrl (the finger on a box) or Ctrl and an arrow (anywhere), the box is put down once Ctrl is let go,
     // or the keyboard leaves the desk.
     this.element.addEventListener('keyup', (e) => { if (e.key === 'Control') this.#lifted(false); });
@@ -396,9 +391,18 @@ export class Desk {
     const el = h('div', {class: 'desk-box', 'data-key': key}, label, laid.element, close);
     // Pressed (what was pressed in it done first: a line run, a link), it is in hand; the camera moves after the
     // press, never under it.
-    el.addEventListener('click', () => {
-      // Stepped back, a press only takes it in hand (twice, it is come back to).
-      if (this.#cam !== 'standard') { if (this.#held !== key) this.take(key, false); return; }
+    el.addEventListener('click', (e) => {
+      // One press and it is come to, however far back the camera stood and however little of it showed at the desk's
+      // edge: in hand, at the standard, the keyboard in it. (Before: stepped back, a press only took it in hand, and
+      // it took a second to come to it.) Its name pressed is its name written, the keyboard there: the box is in
+      // hand, and the camera stays.
+      if (this.#cam !== 'standard') {
+        if ((e.target as Element).closest('.desk-label')) { if (this.#held !== key) this.take(key, false); return; }
+        this.take(key, false, false);
+        this.#setCam('standard');
+        this.#boxes.get(key)?.laid.focus();
+        return;
+      }
       if (this.#held !== key || !el.contains(document.activeElement)) this.take(key, !el.contains(document.activeElement));
     });
     const by = beside === undefined ? undefined : this.#boxes.get(beside);

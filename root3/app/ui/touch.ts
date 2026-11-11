@@ -3,7 +3,7 @@
 // it never fights a thing's own transform, and a press that becomes a drag is let go at once. Asked for less motion,
 // nothing gives.
 
-import {paced} from './glide.ts';
+import {paced, still} from './glide.ts';
 
 const WHOLE = '.pill, .card.repo, .card.new, .issue-card, .board-card';
 const ONE = 'button, [role="button"], [role="radio"], [role="tab"], .chip';
@@ -55,7 +55,7 @@ export function letGo(within: Element) {
 }
 
 export function touch() {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (still()) return;
   document.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     const el = pressable(e.target);
