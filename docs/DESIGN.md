@@ -1,7 +1,8 @@
 # Design language
 
 Plain and direct. Not luxurious, not "high tech", not boring: what you see
-is what is there, and every control looks like what it does.
+is what is there, and every control looks like what it does. It is
+confident, and bold where it speaks, and it speaks seldom.
 
 This document goes from what every page shares to what is one page's own:
 
@@ -15,45 +16,228 @@ This document goes from what every page shares to what is one page's own:
 - **Part III, each place in turn**: the rail (§7), then each page (§8),
   written only as what that page adds to Part I.
 
+**Written to be made again.** §1 is written so that someone who has never
+seen the OS could make its look again and arrive at the same one. Each rule
+says what it is for; the rules that were tried against their neighbours say
+what the neighbour lost (§1, *Tried*). A rule with no reason is a habit, and
+a habit is the first thing to go when a page is made in a hurry. The values
+themselves are data: the tokens (§2).
+
 # Part I. Common to every page
 
 ## 1. Language
 
-One rule per thing, applied everywhere, with no exceptions made by eye.
-Every value in `styles.css` comes from a token (§2).
+### Where it comes from
 
-- **Shapes.** A place you go to (rail item, card, tree row) is a rounded
-  square. An action you press or a choice you make (button, repo
-  chip, +) is round. A field
-  you type into is slightly rounded and filled `raised`.
-- **States.** Hover is a `raised` fill. The current or chosen thing is an
-  `ink` fill with `ground` text: the rail item (File while its tree is
-  out), the repo chip, the open repo in the tree, the primary button. A large place
-  (a card, an issue row) is too big to fill with ink: it is current by an
-  `ink` edge over `raised`, as a lit repo card is. Where one is inside
-  the current thing (the file Forge is reading, under the open repo in
-  File) is quieter than the thing it is in: a short straight `ink` line at
-  its row's left and its name 600, kept while the pointer is elsewhere and
-  apart from hover. Focus is a 2 px `ink` ring. Nothing else marks state
-  (no underline, no bold-only). Pressed, a thing's fill goes a step darker
-  at once (40 ms; an `ink` one, a step lighter) and, let go, eases back
-  (260 ms) as it gives under the finger; hover comes in quick (90 ms) and
-  goes slow. Only the fill and the edge ease: words and icons turn at once,
-  never half way between ink and ground.
-- **Selection** is the current-thing state too: `ink` with `ground` text,
-  for selected text. What the search found is not selected but marked: the
-  `marker`'s stroke over its words, as a highlighter would (the line landed
-  on from it is selected in the marker too, for that moment).
-- **Sheets and the ground.** Two surfaces only. A sheet (`paper`) is what
-  is worked on; everything else stands on the ground. Lighter is nearer:
-  nothing lighter than the ground is ever put under something darker. The
-  sheet in hand, or with the keyboard, has its edge in `ink`.
-- **Lines.** 1 px. `rule` around places; `edge` around things you press or
-  type into. A dashed `rule` means one thing: room for something that is not
-  here yet. Headings never get a rule. Two lines are the exception, and the
-  same as each other: the rail's and the right pane's, 2 px in `ink` from the
-  top line to the foot. They frame the work, so the center reads at once as
-  the thing between them; put away, the pane takes its line with it.
+Three sources, spent in this order, and in falling amounts.
+
+1. **Apple's Human Interface Guidelines, for the manners.** Clarity: words
+   read at every size, and a shape means one thing. Deference: the work is
+   the page; what frames it steps back, and nothing decorates. Depth: what
+   is nearer is lighter, and a move says where a thing went. A control does
+   what a person who has used any computer expects it to.
+2. **Swiss typography with a punk's nerve, and Russian constructivism, for
+   the voice.** From the Swiss: a grid that is felt and not seen, one
+   grotesque face, everything flush left, type as the only ornament, sizes
+   far apart rather than many. From punk: one thing far too big, on purpose
+   and only once (the person's name at Home, Inter Display Black, set
+   tight). From the constructivists: a page built of few heavy members that
+   say what they hold up (one 2 px line of ink that frames the work, a fill
+   of ink for the thing chosen, a sheet of paper with a hard shadow, as cut
+   card has), and nothing soft: no gradient, no blur, no glow.
+3. **The plain prop of science fiction, for the last touch.** The dotted
+   ground of a desk, the line of keys at its foot, the names a machine
+   would stencil on its parts (set in the code face), a pointer drawn as
+   the OS's own. It is the quality the best small games have: things that
+   look made for this machine, and that say something true (a key that
+   works, a size, a file's name). Never decoration, never a second voice,
+   and never more than a screen can carry without being looked at: when in
+   doubt it is left out.
+
+The first two explain most of any screen. The third is why it is this OS
+and not a poster, and it is the one that is easiest to overdo.
+
+### Attention: what is in mind, and what is a step away
+
+The unit this is designed in is not the window. It is what a person has in
+mind.
+
+- **One motive at a time.** What one is here to do is a place, and the
+  places are the rail: few, always there, each one press away.
+- **A place's parts stand side by side, and one is shown.** A page whose
+  parts are unrelated names them in a row and shows the one chosen
+  (Runtime: this device, environments, dotfiles, the Agent). The others
+  cost nothing: they are not drawn. On a desk the boxes are the same, one
+  in full and the next a step sideways.
+- **What must be kept in mind without being looked at is kept to one
+  thing: where one is.** The rail says it, and its line. Everything else
+  can be put out of sight by what the hand already does: a page's head
+  scrolls away with the page, the right pane is put away and takes its
+  line with it, the parts not chosen are not there.
+- **One master.** On every screen one thing is what the screen is for (the
+  sheet in hand, the chosen part's box). It is told by material (paper on
+  the ground), then by weight, then by place; everything else serves it
+  and is quieter than it.
+- **Changing one's mind is cheap, and coming back is exact.** Another
+  place is one press; back is one press, to the same repo, the same part,
+  where it was read to, what was half written (*What one was doing stays
+  where it belongs*, below).
+
+A page is judged by three questions, in this order. Who is the master here?
+(One answer, at a glance.) What must I keep in mind that I am not looking
+at? (Nothing but where I am.) How far is another motive, and the way back to
+exactly this? (One press, and one.) Runtime is the page that answers all
+three best, and is the measure the others are held to.
+
+### Two kinds of place
+
+- **A desk** (Home, Forge, New repo; File laid over them) is where things
+  are made. Its ground is dotted, a dot every 24 px, so a sheet has
+  something to lie on and to be moved across. What is worked on is a sheet
+  of paper with a hard shadow (8 px down and right, in ink; 16 while it is
+  lifted). Names are the machine's (a file's path, a section) and set in
+  the code face. The band is on the top line, the right pane at the right,
+  the keys that work here in one line at the foot.
+- **A counter** (Runtime, Remote, Server, Inbox) is where what is so is
+  read and set. Its ground is plain. It starts with its head, then its
+  parts, then boxes drawn in line on the ground, rows in them. Paper is
+  only for the one thing in hand (signing in, an issue being written).
+
+A place is one or the other. A counter given a dotted ground, or a desk
+given a page head, reads as a third kind of place, and there is none. Git
+stands between the two on purpose, and is the only one that does: it reads
+what a desk made, so on a counter's plain ground it keeps a desk's top line
+(the repos, as chips) and its pane.
+
+### Material: ground, paper, ink
+
+- **The ground is a tone, not white** (`#DCD9D4`, a paper's warm grey), so
+  that one lighter surface can mean something. On white a box is a
+  wireframe and a sheet cannot be told from the page.
+- **Paper is what is worked on, and only that**: a file, the TODO, the
+  issue in hand, what a search found. Never a card that leads somewhere, a
+  pane, a page. Lighter is nearer: nothing lighter than the ground is put
+  under something darker.
+- **Ink is the one emphasis.** Words, icons, the thing chosen, the action
+  that matters, the frame. There is no accent colour: what would be red in
+  a poster is ink here, and red is kept to mean what it means (below).
+- Two surfaces and one ink, then: a third tone (`raised`) only fills a
+  field and answers the pointer.
+
+### Lines, and the frame
+
+Lines are 1 px: `rule` around places, `edge` around what is pressed or
+written in (it must be seen: 3.7:1), dashed `rule` for room that something
+will take. Headings have no rule: a box's own edge is the only line, so
+lines never double.
+
+Two lines are heavier, and the same as each other: the rail's and the right
+pane's, 2 px of ink from the top line to the foot. They frame the work: the
+center reads at once as the thing between them. One step heavier than every
+other line is exactly enough to say so (*Tried*).
+
+### Shape is meaning
+
+A place one goes to is a rounded square (12). An action pressed or a choice
+made is round. A field written in is slightly rounded (8) and filled
+`raised`. The three are far enough apart to be told at a glance and are
+never anything between; what a thing is can be read off its corners before
+its words.
+
+### State
+
+- **Chosen is a fill of ink with the ground's colour for its words**: the
+  part shown, the repo's chip, the primary button, selected text. One such
+  fill a level: the eye finds where it is in one look.
+- **Where one is, on the rail, is paper ringed in ink**: the material of
+  work, at the place one works. Not a fill of ink: the rail is always
+  there, and the heaviest mark on a screen belongs to the page.
+- A large place (a card, an issue's row) is too big to fill: it is current
+  by an edge of ink over `raised`. Inside the current thing, where one is
+  is quieter than the thing: a short line of ink at the row's left, its
+  name 600.
+- Hover is a fill of `raised`. Focus is a 2 px ring of ink. Nothing else
+  marks state: no underline, no weight alone.
+- Pressed, a fill goes a step darker at once (40 ms) and eases back as it
+  is let go (260 ms); hover comes quick (90 ms) and goes slow. Only fills
+  and edges ease: words and icons turn at once, never half way between ink
+  and ground.
+- What a search found is not chosen but marked: the marker's stroke over
+  its words, as a highlighter's.
+
+### Type
+
+One face, the system's sans, in five sizes far apart: 28, 24, 20, 15, 13.
+A page's name is 24/700, 1.6 times the body: enough to lead, not to
+announce. Bigness is spent once in the whole OS, on the person's name at
+Home (44, Inter Display Black, −3.5%), and a thing being named for the
+first time borrows that face (a new repo's name, what a search is for). The
+code face is for what is written in code and for what the machine names
+(paths, a file's name on a desk, the keys); a fact beside a name (a size,
+when) is in the body's face with even figures.
+
+### Room
+
+Six steps, each plainly more than the last: 4, 8, 12, 16, 24, 40. Inside a
+thing 8 and 12; between things 24; between kinds of thing 40. Everything,
+the rail included, sits a little inward from the window's edges (3% of the
+width at the sides, 24 to 64 px), against the instinct to run to them; less
+room above (8 to 16) than below (24 to 56), so the weight of the whole sits
+a little high. Every page starts on one top line, and the rail one place
+below it, so Home is not first off the mark.
+
+### Colour is state
+
+No colour is there to be liked. Each means one thing wherever it is seen:
+green is done and on, wine red is off and removed, yellow is marked, navy
+is the Agent's line, and each has the words and the tint drawn from it
+(§2). Because ink does the emphasis, these are free to be believed.
+
+### Motion
+
+Every move says where something went, never only that it changed, and every
+one lands the same way: fast off the mark, the last pixels slow. The moves
+are few, each means one thing wherever it is seen, and all are played at one
+pace so that they keep with one another (played at twice it, they were
+watched rather than seen, and the hand waited). Sideways the camera goes
+slower, as a long pan does. What is put away goes in a fraction of its
+coming: what is no longer wanted is not watched going. What answers the hand
+at once (a press, the caret) is not paced at all. Each move is written out
+under *The rules in full*.
+
+### The last touch
+
+A prop is allowed where three things hold: it says something true (a key
+that works here, a size, a name); it is where the hand or the eye already
+is when it is wanted (the keys at the foot of a desk, a name over its
+sheet); and the screen is no harder to read with it than without. The
+dotted ground, the hard shadow, the stencilled names, the line of keys and
+the OS's own pointers are all of them there are. A new one replaces one of
+these or is not added.
+
+### Tried
+
+Each of these was drawn on Runtime's first part, with nothing else changed,
+beside the value the OS has. What the neighbour lost is the rule's reason.
+
+| The rule | Its neighbours | What they lost |
+| --- | --- | --- |
+| The frame is 2 px of ink | 1 px; 4 px; none | At 1 px it is one more box's edge, and nothing frames. At 4 px it is the first thing seen on every page, and it is always there. With none the rail floats and the page has no spine. |
+| The part shown is a pill of ink | underlined; paper ringed; a square block | Underlined, the row is links and the one chosen takes a second look. Paper ringed is the rail's own mark: two levels said the same way. A square block is a button: a thing to press, not where one is. |
+| Corners 8, 12 and round | 0 and 2; 14 and 20 | Sharp, boxes are a table's cells and the place one is at is a tick-box. Rounder, a place nears a circle and is taken for an action. |
+| A box's line is `edge` | `rule`; ink | In `rule` (2.0:1) the box fades from under its rows. In ink it is as heavy as the frame, and nothing is the frame. |
+| A page's name is 24/700 | 20; 34; 56 black | At 20 the parts' pill outweighs the name, and the page is read from its second line. At 34 and above the name of the place outweighs what is in it, on a page gone to for what is in it. |
+| Where one is: paper ringed | a fill of ink; a bar on the line; the others greyed | Filled, the rail holds the heaviest mark on the screen. A bar is found only by looking for it. Greyed, eight places look as if they could not be gone to. |
+| The ground `#DCD9D4` | lighter (`#E8E5E0`); darker (`#CFCCC6`); white | Paper lifts off the ground by 1.33:1. Lighter it is 1.18, and the place one is at no longer reads as a sheet. Darker, quiet words fall to 4.4:1, under what small words need. White: see *Material*. |
+| The body is 15 | 14; 16 | At 14 the quiet line under a name falls to 12 and is read with effort. At 16 lines that fitted wrap, and a screen holds a row fewer. |
+| Room 4 to 40 | a fifth less; a fifth more | Tighter, a box's words crowd its line and it reads as a table. Looser, what was on one screen needs scrolling to. |
+| No accent | the part in red; the frame in red | Red means off here: a chosen part in red is an alarm that never clears, and a red frame gives the loudest colour to the one thing that is always there. |
+
+### The rules in full
+
+What follows is the language to the letter: what a rule above comes to in
+each case it has met.
+
 - **Words over symbols.** What a thing is reads off the screen as it is
   written: a TODO kind shows as "Fix：", a link in `/bin` shows as the
   command's name only, with no arrows. The kind's colon is seen as the
@@ -70,15 +254,6 @@ Every value in `styles.css` comes from a token (§2).
   alone. A fact beside a name (Used 4 min ago, This device, a size) is in
   the body's face with even figures, not the code face: only what is
   written in code is mono.
-- **Room outside.** Everything, the rail and its icons included, sits a
-  little inward from the window's edges: about 3% of the width at the
-  sides (24–64 px), against the instinct to run to the edges. There is
-  less room above (1.5% of the height, 8–16 px) than below (5%, 24–56 px),
-  so the weight of the whole sits a little high.
-- **One top line.** Every page starts on the same top line: a page's
-  header, Home's profile, Forge's band and search box. The rail starts one
-  place below it, so Home is not first off the mark, and + stands a clear
-  step (40 px) under the places, a little below the middle.
 - **Motion, with a reason.** Every move says where something went, never
   only that it changed, and every one lands the same way (fast off the
   mark, the last pixels slow: `--land`). Each length named in this document
@@ -408,6 +583,7 @@ Every page:
   one chosen kept in view, and fade at their end while there is more to
   slide to, so one cut there reads as more; slid to the end, nothing fades.
   Forge's band gives its repo pill the width before the search.
+
 
 ## 2. Tokens
 
