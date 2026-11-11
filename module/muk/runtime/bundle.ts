@@ -9,6 +9,8 @@
 // a box may be (`--ids`). Where the machine is muk's own (a browser, node) there is no host's user to be, and each is
 // the box's own: every one of them, the default here.
 
+import {utf8} from './flow.ts';
+
 /** What refuses a bundle, in the words `muk run` says it in (without its name before them). */
 export class Refused extends Error {}
 
@@ -69,13 +71,13 @@ export interface Asks {
   user: boolean; dev: boolean; host: boolean;
 }
 
-const utf8 = new TextDecoder(), bytes = new TextEncoder();
+const bytes = new TextEncoder();
 /** Refused, as muk.c's fail says it: what, then about what (its bytes, as config.json has them), so many bytes of them and no more. */
 const refuse = (what: string, about: Uint8Array | string = ''): never => {
   const w = bytes.encode(what), a = typeof about === 'string' ? bytes.encode(about) : about, all = new Uint8Array(w.length + a.length);
   all.set(w);
   all.set(a, w.length);
-  throw new Refused(utf8.decode(all.subarray(0, 593)));
+  throw new Refused(utf8(all.subarray(0, 593)));
 };
 const bad = (why: string): never => refuse('config.json: ', why);
 
@@ -106,7 +108,7 @@ export function asks(text: Uint8Array, ids: {first: bigint; last: bigint} = {fir
     take('"');
     const from = j;
     while (at(j) !== 34 && at(j) !== 92 && at(j) >= 32) j++;
-    if (at(j) === 34) return utf8.decode(raw = text.subarray(from, j++));
+    if (at(j) === 34) return utf8(raw = text.subarray(from, j++));
     // (one with an escape in it, or that does not end: from where the first of them is)
     const out = Array.from(text.subarray(from, j));
     for (;;) {
@@ -134,7 +136,7 @@ export function asks(text: Uint8Array, ids: {first: bigint; last: bigint} = {fir
       }
       out.push(c);
     }
-    return utf8.decode(raw = new Uint8Array(out));
+    return utf8(raw = new Uint8Array(out));
   };
   /** What it asks that is not done: said, and the box not run without it. `key`: the member's, as it was read (or words). */
   let keyRaw = raw;
