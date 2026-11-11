@@ -147,12 +147,12 @@ test('the empty line at the foot of the TODO is room for an item: its mark dashe
     return pen.measureText(el.placeholder).width <= el.clientWidth;
   })).toBe(true);
   await app.page.setViewportSize({width: 1400, height: 900});
-  // From Edit profile, Tab goes into the line to write in, not to a mark with nothing to mark.
-  await app.main.getByRole('button', {name: 'Edit profile'}).focus();
+  // From the profile's last count, Tab goes into the line to write in, not to a mark with nothing to mark.
+  await app.main.locator('.counts .count-go').last().focus();
   await app.page.keyboard.press('Tab');
   await expect(app.home.title(item)).toBeFocused();
   // Pressed, its dashed mark gives the caret Go to line; written in, it is an item, its mark whole.
-  await app.main.getByRole('button', {name: 'Edit profile'}).focus();
+  await app.main.locator('.counts .count-go').last().focus();
   await app.home.mark(item).click({force: true});
   await expect(app.home.title(item)).toBeFocused();
   await app.home.title(item).pressSequentially('Buy pegs');
@@ -231,14 +231,37 @@ test("Home's repos are a column of their names beside the TODO at a laptop's wid
 
 test('the name written on Home is the account\'s, so what is started, committed and reviewed from here says it', async ({signedIn: app}) => {
   await app.rail.go('home');
-  await app.main.getByRole('button', {name: 'Edit profile'}).click();
   const name = app.page.locator('#profile-name');
-  // None written yet, the name shown is the one signed in with, and the field opens on it to be changed.
-  await expect(name).toHaveValue(app.person);
+  // None written yet, the name shown is the one signed in with: it is written over where it stands, with no sheet
+  // round it and nothing to press to begin or to end.
+  await expect(name).toHaveText(app.person);
+  await name.click();
+  await expect(name).toBeFocused();
+  await expect(app.main.getByRole('button', {name: /Edit profile|Save|Cancel/})).toHaveCount(0);
   await name.fill('Ada Byron');
   await name.press('Enter');
-  await expect(app.main.getByRole('button', {name: 'Edit profile'})).toBeVisible();
+  await expect(name).not.toBeFocused();
   await expect(app.main.getByRole('heading', {name: 'Ada Byron', level: 1})).toBeVisible();
+  // Escape leaves it as it was.
+  await name.click();
+  await name.fill('Someone else');
+  await name.press('Escape');
+  await expect(app.main.getByRole('heading', {name: 'Ada Byron', level: 1})).toBeVisible();
+  // The line about the person is written under it the same way. With none yet, the way to write one stands after
+  // the name while the name has the keyboard, and nothing under the profile moves as the name is pressed.
+  const bio = app.main.getByRole('textbox', {name: 'Bio', exact: true});
+  await expect(bio).toBeHidden();
+  const todoAt = async () => (await app.home.todo.boundingBox())!.y;
+  const before = await todoAt();
+  await name.click();
+  expect(await todoAt()).toBe(before);
+  await app.main.getByRole('button', {name: 'Short bio', exact: true}).click();
+  await expect(bio).toBeFocused();
+  await bio.fill('Counts in fours.');
+  await bio.press('Enter');
+  await expect(bio).toHaveText('Counts in fours.');
+  await app.open();
+  await expect(app.main.getByRole('textbox', {name: 'Bio', exact: true})).toHaveText('Counts in fours.');
   // The Remote knows the person by it now.
   await app.rail.go('remote');
   await expect(app.main.getByText('Signed in as Ada Byron')).toBeVisible();
@@ -247,23 +270,25 @@ test('the name written on Home is the account\'s, so what is started, committed 
 test('the handle on Home is the username: the one given at sign-in, and changed there it is changed for everyone', async ({signedIn: app}) => {
   await app.rail.go('home');
   await expect(app.main.locator('.identity .handle')).toHaveText(`@${app.handle}`);
-  await app.main.getByRole('button', {name: 'Edit profile'}).click();
   const handle = app.main.getByRole('textbox', {name: 'Handle'});
-  await expect(handle).toHaveValue(app.handle);
+  await expect(handle).toHaveText(app.handle);
   const next = `${app.handle.slice(0, 26)}-home`;
+  await handle.click();
   await handle.fill(`@${next}`);
   await handle.press('Enter');
-  await expect(app.main.getByRole('button', {name: 'Edit profile'})).toBeVisible();
   await expect(app.main.locator('.identity .handle')).toHaveText(`@${next}`);
   // The Remote finds them by it now: Inbox's stub says it.
   await app.inbox.named(next);
   // One no username can be is said at the handle, and nothing is saved.
   await app.rail.go('home');
-  await app.main.getByRole('button', {name: 'Edit profile'}).click();
+  await handle.click();
   await handle.fill('-no');
   await handle.press('Enter');
   await expect(app.main.getByRole('alert')).toHaveText('Handle must be 2–31 lowercase letters, digits, or . - _');
   await expect(handle).toBeFocused();
+  // Left as it is, the line says the username that is kept, not the one that could not be.
+  await app.home.todo.click();
+  await expect(app.main.locator('.identity .handle')).toHaveText(`@${next}`);
 });
 
 test.describe("on 'hello', made from C's files and worked in last", () => {

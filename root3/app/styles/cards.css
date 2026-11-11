@@ -56,7 +56,7 @@
 .env-note { grid-column: 1; overflow-wrap: anywhere; }
 .env-row > :last-child:not(.env-note):not(.env-name) { grid-column: 2; grid-row: 1 / span 2; }
 /* A narrow Home: Cancel and Save on a row of their own under the name written, rather than squeezing it. */
-@media (max-width: 640px) { .profile { grid-template-columns: minmax(0, 1fr); gap: var(--s4); } .edit-acts { margin-top: 0; } }
+@media (max-width: 640px) { .profile { grid-template-columns: minmax(0, 1fr); gap: var(--s4); } }
 
 /* Git: issues read from each repo's issue/ */
 /* Git's repos are its band, on the top line where Forge's pills are: one row that slides sideways, never more rows,

@@ -91,8 +91,6 @@
 .home-desk { display: grid; grid-template-columns: minmax(0, 520px) minmax(240px, 1fr); gap: var(--s6) clamp(var(--s5), 6cqi, 80px); align-items: start; }
 @container (width < 600px) { .home-desk { grid-template-columns: minmax(0, 1fr); } }
 .home-own { display: grid; gap: var(--home-step); align-content: start; min-width: 0; }
-/* (The profile's own edge, unseen until it is written in, takes no room of the row's.) */
-.home-own > .profile:not(.editing) { margin-block: -1px; }
 .home-desk .section, .home-places > .section { margin-top: 0; }
 .home-places { display: grid; gap: var(--s5); align-content: start; min-width: 0; }
 /* Each heading the mono label a desk's box has over it: a row tall, its letters' feet where the name's are. */
@@ -105,16 +103,8 @@
   font: var(--t-meta)/1 var(--mono); color: var(--sub); }
 .home-main .todo-items { padding-bottom: calc(var(--h-row) + var(--s2)); }
 /* Where the column is too narrow for the name and all of that line's end, the counts go (their lists are beside the
-   name, or under it) and Edit profile alone ends the line: the first row stays one row, the box where it was. */
-@container (width < 800px) {
-  .home-own .counts > :not(.profile-edit) { display: none; }
-  .home-own .counts > .profile-edit::before { display: none; }
-}
-/* Written in, the profile is a sheet from the row's own top (nothing is over it to grow into: the band), its name
-   on the line it was read on; it is longer downward, and what is under it goes down with it, never under it. */
-.home-own > .profile.editing { margin: -1px 0 var(--s3) calc(-1 * var(--s5) - 1px); padding: 0 var(--s4) var(--s4) var(--s5); }
-.home-main .edit .name-in { height: var(--home-row); margin-bottom: var(--s1); padding: 0; }
-.home-main .edit-acts { margin-top: calc((var(--home-row) - var(--h-control)) / 2); }
+   name, or under it): the first row stays one row, the box where it was. */
+@container (width < 800px) { .home-own .counts { display: none; } }
 .home-own > .section > h2 > #todo-title { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The TODO a box on the desk: paper, an ink edge, its shadow; a sheet with room to write on, four of the rail's places
    tall at the least (its foot level with the fifth's), longer as what is written in it is. */

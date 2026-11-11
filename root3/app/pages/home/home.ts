@@ -21,16 +21,13 @@ import {mark, paneMark, type MarkName} from '../../ui/icons.ts';
 import {fitSize} from '../../ui/optical.ts';
 import {onPlugins, pluginsOpen} from '../../host/plugins.ts';
 import {errorText} from '../../host/errors.ts';
-import {LAND, after, nudge, paced, paneIn, paneOut, still} from '../../ui/glide.ts';
-
-let editing = false;
+import {after, nudge, paneIn, paneOut, still} from '../../ui/glide.ts';
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
 
-/** Open Home with the profile form out. */
+/** Open Home with the caret in the name, to write it. */
 export function startEditing(ctx: Context) {
-  editing = true;
   void ctx.go('home').then(() => document.getElementById('profile-name')?.focus());
 }
 
@@ -273,131 +270,146 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
  * one longer than its line breaks instead, balanced over its lines.
  */
 function fitName(header: HTMLElement) {
-  // Home's column, not the profile's own box: written in, the profile is a sheet a little wider.
   const name = header.querySelector<HTMLElement>('.identity > h1'), room = header.parentElement?.clientWidth ?? 0;
   if (!name) return;
   const fits = fitSize(name, name.textContent ?? '', room, -.04, () => fitName(header));
   if (fits) name.classList.toggle('long', fits < parseFloat(getComputedStyle(name).fontSize));
 }
 
-function identity(counts: HTMLElement, fitted: () => void): HTMLElement {
-  const profile = currentProfile();
-  const name = h('h1', {}), handle = h('p', {class: 'handle'});
-  /** The name to be called by over the handle; the handle alone where there is no name. */
-  const paint = (called: string, user: string) => {
-    name.textContent = called || (user ? `@${user}` : t('No name'));
-    name.classList.toggle('unset', !called && !user);
-    handle.textContent = called && user ? `@${user}` : '';
-    handle.hidden = !handle.textContent;
-    fitted();
+/**
+ * A line written where it is read: pressed, the caret is in it, with nothing drawn round it. Enter keeps what is
+ * written (`kept`, told only when it changed), Escape leaves it as it was; the keyboard gone elsewhere keeps it too.
+ * At most `most` characters; `lines`: Enter with Shift is a new line in it.
+ */
+function written(el: HTMLElement, o: {most: number; lines?: boolean; begun?: () => void; kept: (text: string, was: string) => void}) {
+  el.contentEditable = 'plaintext-only';
+  if (el.contentEditable !== 'plaintext-only') el.contentEditable = 'true';
+  el.spellcheck = false;
+  let was = '';
+  el.addEventListener('focus', () => { o.begun?.(); was = el.textContent ?? ''; });
+  el.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter' && !(o.lines && e.shiftKey)) { e.preventDefault(); el.blur(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); el.textContent = was; el.blur(); }
+  });
+  // Only its words are taken in: what is pasted comes as text.
+  el.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    getSelection()?.getRangeAt(0).deleteContents();
+    getSelection()?.getRangeAt(0).insertNode(document.createTextNode(o.lines ? text : text.replace(/\s+/g, ' ')));
+    getSelection()?.collapseToEnd();
+    el.dispatchEvent(new Event('input', {bubbles: true}));
+  });
+  el.addEventListener('input', () => {
+    const text = el.textContent ?? '';
+    if ([...text].length <= o.most) return;
+    el.textContent = [...text].slice(0, o.most).join('');
+    getSelection()?.selectAllChildren(el);
+    getSelection()?.collapseToEnd();
+  });
+  el.addEventListener('blur', () => {
+    const now = (el.textContent ?? '').trim();
+    // (A line left with nothing in it holds nothing, not a line feed a browser leaves there: its placeholder shows.)
+    if (!now) el.textContent = '';
+    if (now !== was.trim()) o.kept(now, was);
+  });
+}
+
+/**
+ * The profile at Home's top, written where it is read. The name is the line it is written on, where it stands and as
+ * large: pressed, the caret is in it; there is no sheet, no Cancel and no Save. Signed in, the handle after it is
+ * written the same way (it is the username: changed here it is changed on the Remote first, and one that cannot be
+ * is said under it, nothing kept). The line about the person is under the name while it says something. Where there
+ * is none, the way to write one stands after the name, on its line, only while the name has the keyboard: pressed,
+ * the line opens under the name to be written, and left empty it closes. Nothing under the profile moves as the name
+ * is pressed or left (a press on what is under it would miss as it moved). At the line's right end, the counts.
+ */
+function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
+  const name = h('h1', {id: 'profile-name', 'data-placeholder': t('Your name')});
+  const handleIn = h('span', {id: 'profile-handle', class: 'handle-in', role: 'textbox', 'aria-label': t('Handle'), 'data-placeholder': t('handle')});
+  const handle = h('p', {class: 'handle'}, '@', handleIn);
+  const bio = h('p', {id: 'profile-bio', class: 'bio', role: 'textbox', 'aria-label': t('Bio'), 'data-placeholder': t('Short bio')});
+  const bioAsk = h('button', {type: 'button', class: 'bio-ask'}, t('Short bio'));
+  const said = h('p', {class: 'error', role: 'alert'});
+  // Each count is the way to what it counts (as a profile's counts are): pressed, there it is.
+  const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toSection(servers0(), 'servers-title'));
+  const identity = h('div', {class: 'identity'}, name, handle, bio, owner ? bioAsk : null, counts, said);
+  const header = h('section', {class: 'profile'}, identity);
+  /** The name the person signed in with and their username there, once known ('' signed out, or not yet). */
+  let account = {name: '', user: ''};
+  /** What stands in for a name where none is written: the handle. Pressed, the line is empty to write a name on. */
+  let standsIn = false;
+  const writing = () => identity.contains(document.activeElement);
+  const paint = () => {
+    const p = currentProfile(), called = p.name || account.name, user = account.user || p.handle;
+    standsIn = !called && !!user;
+    name.textContent = called || (user ? `@${user}` : '');
+    handleIn.textContent = user;
+    handle.hidden = !user || standsIn;
+    bio.textContent = p.bio;
+    said.textContent = '';
+    fitName(header);
   };
-  paint(profile.name, profile.handle);
+  paint();
   // Signed in, one person, one name: none written here yet, it is the one signed in with (the Remote's); and the
   // handle is their username there, the one name others find them by, kept on the profile too as it changes.
-  void Promise.all([profile.name || myName().catch(() => ''), inbox.myUsername().catch(() => '')]).then(([called, user]) => {
-    if (!called && !user) return;
-    paint(called, user || profile.handle);
+  void Promise.all([myName().catch(() => ''), inbox.myUsername().catch(() => '')]).then(([called, user]) => {
+    account = {name: called, user};
+    if (!writing()) paint();
     // Onto the profile as it is now, not as it was drawn (it may have come in from the Remote meanwhile, and was
     // written over), signed in still, and not while it is being taken off this device (it came back then, after Remove
     // from device).
     const now = currentProfile();
     if (user && user !== now.handle && connection() && !homeIsHeld()) void setState('profile', JSON.stringify({...now, handle: user})).catch(() => {});
   });
-  return h('div', {class: 'identity'},
-    name,
-    handle,
-    profile.bio ? h('p', {class: 'bio'}, profile.bio) : null,
-    counts,
-  );
-}
-
-/**
- * The profile at Home's top: the name, as large as Home is wide (the face is the rail's, at its foot), and under it
- * the counts and Edit profile on one quiet line. It is edited where it is read: the name becomes the line it is
- * written on, where it stands and as large; the handle and the line about the person come in under it; Edit profile
- * gives way to Cancel and Save. The top grows and shrinks to what it holds rather than jumping, one move at a time:
- * what is under it goes with it, never up and then down.
- */
-function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
-  const header = h('section', {class: 'profile'});
-  /** The room it takes in the page: its box and the margins round it (written in, the sheet grows out past its place). */
-  const room = () => {
-    const cs = getComputedStyle(header);
-    return {height: header.getBoundingClientRect().height, margins: parseFloat(cs.marginTop) + parseFloat(cs.marginBottom)};
-  };
-  /**
-   * Folding, what was there only to be written in (each line's rule, the line about the person, Cancel and Save)
-   * stays a moment where it stood, fading as the sheet folds over it, the name and the handle drawn again under their
-   * rules; and where the handle stood in its field, for the handle read to come up from there. Never all of it gone in
-   * the frame Enter was pressed.
-   */
-  const leave = (): {ghosts: HTMLElement[]; handleAt: number | null} => {
-    const at = header.getBoundingClientRect(), cs = getComputedStyle(header);
-    const x0 = at.left + (parseFloat(cs.borderLeftWidth) || 0), y0 = at.top + (parseFloat(cs.borderTopWidth) || 0);
-    const ghosts = [...header.querySelectorAll<HTMLElement>(':scope > .edit, :scope > .edit-acts')].map((el) => {
-      const r = el.getBoundingClientRect(), copy = el.cloneNode(true) as HTMLElement;
-      for (const e of [copy, ...copy.querySelectorAll('[id]')]) e.removeAttribute('id');
-      copy.inert = true;
-      copy.setAttribute('aria-hidden', 'true');
-      for (const e of copy.querySelectorAll<HTMLElement>('.name-in, .handle-field, .handle-in')) e.style.color = 'transparent';
-      Object.assign(copy.style, {position: 'absolute', left: `${r.left - x0}px`, top: `${r.top - y0}px`, width: `${r.width}px`, margin: '0', pointerEvents: 'none'});
-      return copy;
-    });
-    return {ghosts, handleAt: header.querySelector('.handle-in')?.getBoundingClientRect().top ?? null};
-  };
-  /** Drawn as it is now; from another state (`beat`), its height goes from what it was. */
-  const draw = (beat: 'open' | 'saved' | 'cancel' | null) => {
-    const was = room(), from = was.height + was.margins;
-    const left = (beat === 'saved' || beat === 'cancel') && !still() && header.isConnected ? leave() : null;
-    const form = editing ? editForm(done) : null;
-    const edit = owner && !editing ? h('button', {class: 'count-go profile-edit', type: 'button'}, t('Edit profile')) as HTMLButtonElement : null;
-    edit?.addEventListener('click', () => { editing = true; draw('open'); header.querySelector<HTMLInputElement>('#profile-name')?.focus(); });
-    // Each count is the way to what it counts (as a profile's counts are): pressed, there it is; Edit profile last.
-    const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toSection(servers0(), 'servers-title'), edit);
-    header.replaceChildren(form?.element ?? identity(counts, () => fitName(header)), ...(form ? [form.acts] : []));
-    // Folding, it stays a sheet while it folds, and its ground and edge go after (styles: their transition): gone in
-    // the frame Enter was pressed, the whole sheet was one cut. Its margins take back what its padding gave, so
-    // nothing moves as it stops being one.
-    const folding = (beat === 'saved' || beat === 'cancel') && !still() && header.isConnected;
-    header.classList.toggle('editing', editing || folding);
-    if (!beat || still() || !header.isConnected) return;
-    // The room it takes goes from what it was to what it is in one move: the sheet's margins (it grows out past its
-    // place as it opens) come and go at once, so its height starts where that leaves the page as it was, and nothing
-    // under it moves but with it (it went up and then down, with the margins and the height each on their own).
-    const now = room(), to = now.height, start = from - now.margins;
-    let settled: Promise<unknown> = Promise.resolve();
-    if (Math.abs(to - start) > 1) {
-      header.style.overflow = 'clip';
-      const grow = header.animate([{height: `${start}px`}, {height: `${to}px`}], {duration: paced(320), easing: LAND});
-      settled = grow.finished.catch(() => {});
-      void settled.then(() => { header.style.overflow = ''; });
-    }
-    if (folding) {
-      void settled.then(() => { if (!editing) header.classList.remove('editing'); });
-      for (const g of left?.ghosts ?? []) {
-        header.append(g);
-        g.animate([{opacity: 1}, {opacity: 0}], {duration: paced(160), easing: 'ease-out', fill: 'forwards'}).finished.then(() => g.remove(), () => g.remove());
+  if (owner) {
+    const keep = async (next: Partial<Profile>, at: HTMLElement) => {
+      said.textContent = '';
+      const result = normalize({...currentProfile(), ...next});
+      // Said under it, the keyboard back in the line; left again as it is, the line says what is kept, not what was not.
+      const refused = (why: string) => {
+        said.textContent = why;
+        at.focus();
+        nudge(at);
+        at.addEventListener('blur', () => { queueMicrotask(() => { if (said.textContent === why) paint(); }); }, {once: true});
+      };
+      if (result.error) { refused(t('Handle must be 2–31 lowercase letters, digits, or . - _')); return; }
+      // Their username changed on the Remote first: taken, or changed too often, it is said under it. Left empty, it
+      // is as it was (a username is changed, never taken away).
+      if (next.handle !== undefined && connection()) {
+        if (!result.profile.handle) result.profile.handle = account.user;
+        else if (result.profile.handle !== account.user) {
+          try { result.profile.handle = account.user = await inbox.changeUsername(result.profile.handle); } catch (e) { refused(errorText(e)); return; }
+        }
       }
-      const handle = header.querySelector<HTMLElement>('.identity > .handle:not([hidden])');
-      const dy = left?.handleAt != null && handle ? left.handleAt - handle.getBoundingClientRect().top : 0;
-      if (handle && Math.abs(dy) > .5) handle.animate([{translate: `0 ${dy}px`}, {translate: '0 0'}], {duration: paced(320), easing: LAND});
-      // What stepped aside while it was written comes back as it folds: the counts and Edit profile with them.
-      header.querySelector<HTMLElement>('.counts')?.animate([{opacity: 0}, {opacity: 1}], {duration: paced(240), delay: paced(120), easing: LAND, fill: 'backwards'});
-    }
-    // One move at a time: the sheet grows or folds, and only what that move is about comes with it.
-    if (beat === 'open') {
-      // What was not there comes in under the name, a line after another, into the room the sheet makes.
-      [...header.querySelectorAll<HTMLElement>('.handle-field, .bio-field, .edit-acts')].forEach((el, i) =>
-        el.animate([{opacity: 0, translate: '0 -6px'}, {opacity: 1, translate: '0 0'}], {duration: paced(240), delay: paced(60 + i * 50), easing: LAND, fill: 'backwards'}));
-    }
-  };
-  const done = (saved: boolean) => {
-    editing = false;
-    draw(saved ? 'saved' : 'cancel');
-    header.querySelector<HTMLElement>('.profile-edit')?.focus({preventScroll: true});
-  };
-  // Opened from the person's menu, it is drawn open: Home's arrival is the beat.
-  draw(null);
+      try { await setState('profile', JSON.stringify(result.profile)); } catch (e) { said.textContent = t('Failed to save: {message}', {message: errorText(e)}); return; }
+      // Signed in, the name is the account's too: what is started, committed and reviewed from here says it.
+      if (next.name !== undefined && result.profile.name) {
+        account.name = result.profile.name;
+        try { await rename(result.profile.name); } catch (e) { said.textContent = t('Saved locally; Remote name unchanged ({message})', {message: errorText(e)}); return; }
+      }
+      if (!writing()) paint();
+    };
+    written(name, {most: LIMITS.name, begun: () => { if (standsIn) { name.textContent = ''; standsIn = false; } },
+      kept: (text) => { if (text) void keep({name: text}, name); else paint(); }});
+    name.addEventListener('input', () => fitName(header));
+    name.addEventListener('blur', () => { if (!name.textContent) paint(); });
+    if (connection()) written(handleIn, {most: LIMITS.handle + 1, kept: (text) => void keep({handle: text}, handleIn)});
+    written(bio, {most: LIMITS.bio, lines: true, kept: (text) => void keep({bio: text}, bio)});
+    // The line about the person opened to be written; left with nothing on it, it closes. Left by a press, it closes
+    // once the press is over: what is under the profile does not move from under the pointer on its way down.
+    let pressing = false;
+    addEventListener('pointerdown', () => { pressing = true; }, true);
+    for (const up of ['pointerup', 'pointercancel'] as const) addEventListener(up, () => { pressing = false; }, true);
+    // (Pressed, the keyboard stays in the name until the line is open: the way to it is there only while it is.)
+    bioAsk.addEventListener('mousedown', (e) => e.preventDefault());
+    bioAsk.addEventListener('click', () => { identity.classList.add('bio-open'); bio.focus(); });
+    bio.addEventListener('blur', () => {
+      const close = () => { if (document.activeElement !== bio) identity.classList.remove('bio-open'); };
+      if (pressing) addEventListener('click', () => setTimeout(close), {once: true, capture: true}); else close();
+    });
+  }
   // As wide as Home's column, the name as large as that lets it be: fitted again as the column narrows or widens
   // (not as the name's size makes the profile taller).
   let wide = 0;
@@ -410,71 +422,8 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
   const stop = onState((key, outside) => {
     if (key !== 'profile' || !outside) return;
     if (!header.isConnected) { stop(); return; }
-    if (!editing) draw(null);
+    if (!writing()) paint();
   });
   return header;
-}
-
-/**
- * The profile as it is written, on a sheet of its own: the name on its own line as large as it reads, @ and the
- * handle under it, the line about the person under that, each a line written on with room between them (an ink
- * line under the one with the keyboard); the counts, which are not written, step aside. Cancel and Save stand where
- * Edit profile stood. Enter on the name or the handle saves, Escape leaves it as it was.
- * The handle is offered signed in only: it is their username, how others find them, and changed here it is changed
- * on the Remote first (taken, it says so at the handle, and nothing is saved).
- */
-function editForm(done: (saved: boolean) => void): {element: HTMLElement; acts: HTMLElement} {
-  const profile = currentProfile();
-  const name = h('input', {id: 'profile-name', class: 'name-in', maxlength: String(LIMITS.name), autocomplete: 'name',
-    placeholder: t('Your name'), 'aria-label': t('Name')}) as HTMLInputElement;
-  const handle = h('input', {id: 'profile-handle', class: 'handle-in', maxlength: String(LIMITS.handle), autocapitalize: 'off', spellcheck: 'false',
-    placeholder: t('handle'), 'aria-label': t('Handle')}) as HTMLInputElement;
-  const bio = h('textarea', {id: 'profile-bio', class: 'bio-in', maxlength: String(LIMITS.bio), rows: '1',
-    placeholder: t('Short bio'), 'aria-label': t('Bio')}) as HTMLTextAreaElement;
-  name.value = profile.name; handle.value = profile.handle; bio.value = profile.bio;
-  const signedIn = !!connection();
-  const was = signedIn ? inbox.myUsername().catch(() => profile.handle) : Promise.resolve(profile.handle);
-  void was.then((u) => { if (u && handle.value === profile.handle && handle.isConnected) handle.value = u; });
-  // None written yet, the name shown is the one signed in with (identity): it is what is there to change, not an
-  // empty line beside it. Nothing typed is written over.
-  if (!profile.name) void myName().then((n) => { if (n && !name.value && name.isConnected) name.value = n; }, () => {});
-  // The line about the person is as tall as what is written in it.
-  const fit = () => { bio.style.height = 'auto'; bio.style.height = `${bio.scrollHeight}px`; };
-  bio.addEventListener('input', fit);
-  requestAnimationFrame(fit);
-  const error = h('p', {class: 'error', role: 'alert'});
-  const form = h('form', {id: 'profile-form', class: 'edit identity'},
-    name, signedIn ? h('span', {class: 'handle-field'}, '@', handle) : null, h('span', {class: 'bio-field'}, bio), error) as HTMLFormElement;
-  const cancel = h('button', {class: 'button', type: 'button', 'data-cancel': ''}, t('Cancel'));
-  const save = h('button', {class: 'button primary', type: 'submit', form: 'profile-form'}, t('Save'));
-  const acts = h('div', {class: 'edit-acts'}, cancel, save);
-  for (const f of [name, handle]) f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); form.requestSubmit(); } });
-  form.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); done(false); } });
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const result = normalize({name: name.value, handle: handle.value, bio: bio.value});
-    const atHandle = (said: string) => { error.textContent = said; handle.focus(); nudge(handle); };
-    if (result.error) { atHandle(t('Handle must be 2–31 lowercase letters, digits, or . - _')); return; }
-    // Their username changed on the Remote first: taken, or changed too often, it is said at the handle. Left empty,
-    // it is as it was (a username is changed, never taken away).
-    if (signedIn && !result.profile.handle) result.profile.handle = await was;
-    if (signedIn && result.profile.handle && result.profile.handle !== await was) {
-      try { result.profile.handle = await inbox.changeUsername(result.profile.handle); } catch (e) { atHandle(errorText(e)); return; }
-    }
-    try { await setState('profile', JSON.stringify(result.profile)); } catch (e) {
-      error.textContent = t('Failed to save: {message}', {message: errorText(e)});
-      return;
-    }
-    // Signed in, the name is the account's too: what is started, committed and reviewed from here says it.
-    if (result.profile.name) {
-      try { await rename(result.profile.name); } catch (e) {
-        error.textContent = t('Saved locally; Remote name unchanged ({message})', {message: errorText(e)});
-        return;
-      }
-    }
-    done(true);
-  });
-  cancel.addEventListener('click', () => done(false));
-  return {element: form, acts};
 }
 

@@ -48,10 +48,16 @@ test('a profile with a word longer than a phone is wide breaks in the word, neve
   await app.page.setViewportSize({width: 390, height: 844});
   const long = 'Supercalifragilisticexpialidocious'.repeat(4);
   await app.rail.go('home');
-  await app.main.getByRole('button', {name: 'Edit profile'}).click();
-  await app.main.getByRole('textbox', {name: 'Name', exact: true}).fill(`Bartholomew ${long}`);
-  await app.main.getByRole('textbox', {name: 'Bio', exact: true}).fill(`${long} and more`);
-  await app.main.getByRole('button', {name: 'Save'}).click();
+  const name = app.page.locator('#profile-name');
+  await name.click();
+  await name.fill(`Bartholomew ${long}`);
+  await name.press('Enter');
+  // (The line about them is there to be written while the profile has the keyboard.)
+  const bio = app.main.getByRole('textbox', {name: 'Bio', exact: true});
+  await name.click();
+  await app.main.getByRole('button', {name: 'Short bio', exact: true}).click();
+  await bio.fill(`${long} and more`);
+  await bio.press('Enter');
   await expect(app.main.getByRole('heading', {name: /^Bartholomew/})).toBeVisible();
   expect(await sideways(app.page)).toBeLessThanOrEqual(0);
 });

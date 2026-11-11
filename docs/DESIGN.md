@@ -257,9 +257,17 @@ each case it has met.
   alone. A fact beside a name (Used 4 min ago, This device, a size) is in
   the body's face with even figures, not the code face: only what is
   written in code is mono.
-- **Motion, with a reason.** Every move says where something went, never
-  only that it changed, and every one lands the same way (fast off the
-  mark, the last pixels slow: `--land`). Each length named in this document
+- **Motion, with a reason.** Today one thing moves: the rail's ink, going
+  from the place left to the place come to. Every other move is left out
+  (`ui/glide.ts` still, `motion.css`): each thing is where it ends, at once,
+  and a place of the rail's pressed draws its page whole, at its own size,
+  with no camera stepping back and going along. They were taken off
+  together so that what the screen says without them is seen; a move comes
+  back only where, without it, one cannot tell where a thing went or came
+  from. What follows in this document about a move says how it goes when
+  it is let back, not that it goes now. Every move says where something
+  went, never only that it changed, and every one lands the same way (fast
+  off the mark, the last pixels slow: `--land`). Each length named in this document
   is the move's own, and the OS plays them all at one pace (`--pace`, 1:
   the standard lengths; played at twice them, the moves were watched rather
   than seen, and a hand waited on each), so they keep with one another.
@@ -2033,17 +2041,15 @@ the rail lines up with it. The first row is what each thing is called: the
 person's name at the top left, small (28 px: its capitals as tall as an icon
 of the rail's beside it, on a line a place tall; one longer than its line
 breaks instead), the handle after it; and at that line's right end, over the
-box's right edge, quiet in mono, the counts of repos and servers, then Edit
-profile: two ends of one line, the room between them empty, never a row of
-small words packed after the name (a dot stands between each two, in the room
-between them: each one's fill and ring are round its own words; where the
-column is too narrow for the name and all of them, the counts go and Edit
-profile alone ends the line, so the first row stays one row; a line about
-the person, where
-there is one, under them). No face in the column: the rail's own icon is the
+box's right edge, quiet in mono, the counts of repos and servers: two ends
+of one line, the room between them empty, never a row of small words packed
+after the name, and nothing between the counts but room (where the column
+is too narrow for the name and both, the counts go, so the first row stays
+one row; a line about the person, where there is one, under them). No face in the column: the rail's own icon is the
 face. No name written yet, it is the one signed in with, as Remote and the Me
 menu say it: one person, one name, never "No name yet" beside "Signed in as
-Sora"; none at all, "No name" stands there in the ground's rule colour. From
+Sora"; none at all, the line says what goes there ("Your name") in the
+ground's rule colour: a place to write it, not a name. From
 the second row down, what each holds: under the name the **TODO**, a box as
 Forge's are (paper, an ink edge, its shadow), with no word over it (under the
 person's name it needs none; it is heard, and what is left of it and Clear
@@ -2103,24 +2109,20 @@ on the screen, as they go along the rail; → on File brings its tree out
 with the keyboard on its first row, as a menu's ↓ does; and what scrolls inside the page
 keeps its own turning: past its end, the page behind it does not go on.
 
-The profile is edited where it is read, not in a form put in its place:
-written in, the top is a sheet of its own as the TODO is when written in
-(`paper`, an `ink` edge, from the row's own top: nothing is over it to grow
-into, so it is longer downward, and what is under it goes down with it,
-never under it; nothing on it moves). The name becomes the line it is written on, where it stands
-and as large, holding the name shown (none written yet, the one signed in
-with, to be changed, never an empty line beside it); @ and the handle, and
-the line about the person, come in under
-it a line after another, with room between them; each is written on, not
-boxed (a rule under it, ink under the one with the keyboard), and the
-counts and Edit profile, which are not written, step aside; Cancel and Save
-stand at the name's right, on its line. The
-top grows and shrinks to what it holds (320 ms), one move at a time: the
-sheet's edge and what is under it go together, never up and then down (its
-margins and its height are one move), the lines that were not there coming
-into the room it makes. Opened from the person's menu, it is drawn
-open as Home comes in: the arrival is its beat. Enter on the name or the handle
-saves; Escape leaves it as it was. The rail's face is the new one at once.
+The profile is written where it is read. There is no form, no sheet round
+it, no Edit profile, no Cancel and no Save: the name is the line it is
+written on, where it stands and as large. Pressed, the caret is in it, and
+nothing is drawn round it (the caret says where the keyboard is); it holds
+the name shown (none written yet, the one signed in with, to be changed;
+none at all, an empty line that says what goes there). The handle after it
+and the line about the person under it are written the same way. Where
+there is no line about the person, the way to write one stands after the
+name, on its line, in the ground's rule colour, only while the name has
+the keyboard; pressed, the line opens under the name. Nothing under the
+profile moves as the name is pressed or left: a press on what is under it
+never misses because it moved. Opened from the person's menu, Home comes
+with the caret in the name. Enter keeps what is written, and so does the
+keyboard gone elsewhere; Escape leaves it as it was. The rail's face is the new one at once.
 The handle is offered signed in only: it is the username (§5, Names), how
 others find them, so changed here it is changed on the Remote first, and
 what the Remote says no to (taken, held for its owner, changed twice this
