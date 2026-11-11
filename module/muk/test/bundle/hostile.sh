@@ -263,9 +263,10 @@ refuses lent-network "a box's only in a user namespace: CAP_NET_ADMIN" $every --
 # ---- The host's kernel. One that can be the host's root (in no user namespace; or in one that maps a user of its
 # own onto the host's root) has what of /proc and /sys tells of the host hidden and what changes it read-only,
 # asking for neither; reads its /sys and its cgroups and writes neither; and has the host's own /proc, lent it,
-# to read and not to write.
+# to read and not to write. (Taken with what is mounted in it: the kernel gives one in a user namespace no copy of
+# a mount without what is mounted on it.)
 tries='"opens:/proc/sys/kernel/core_pattern", "opens:/proc/sysrq-trigger", "opens:/proc/sys/kernel/modprobe", "opens:/sys/kernel/uevent_helper", "opens:/sys/fs/cgroup/cgroup.procs", "opens:/host/sys/kernel/core_pattern", "opens:/host/sysrq-trigger", "see:/proc/kcore", "see:/proc/interrupts", "see:/proc/keys"'
-wide='{"destination": "/sys", "type": "sysfs", "source": "sysfs", "options": ["rw"]}, {"destination": "/sys/fs/cgroup", "type": "cgroup", "source": "cgroup", "options": ["rw", "nsdelegate"]}, {"destination": "/host", "type": "bind", "source": "/proc", "options": ["bind", "rw"]}'
+wide='{"destination": "/sys", "type": "sysfs", "source": "sysfs", "options": ["rw"]}, {"destination": "/sys/fs/cgroup", "type": "cgroup", "source": "cgroup", "options": ["rw", "nsdelegate"]}, {"destination": "/host", "type": "bind", "source": "/proc", "options": ["rbind", "rw"]}'
 host rooted "$tries" "$wide" '' '"capabilities": {"bounding": ['"$all"'], "effective": ['"$all"'], "permitted": ['"$all"']}'
 box mapped "$tries" "$wide"; sed -i 's/"hostID": 100000, "size": 65536/"hostID": 0, "size": 65536/g' "$t/mapped/config.json"; chown -R 0:0 "$t/mapped/rootfs"
 for name in rooted mapped; do
@@ -323,7 +324,12 @@ done
 n=$((n + 1)); [ "$(wc -l < "$grouped/box/cgroup.procs")" = 1 ] || no "grouped: the box is not in the cgroup lent it: $(cat "$grouped/box/cgroup.procs")"
 n=$((n + 1)); ! grep -qx "$m" "$grouped/box/cgroup.procs" || no "grouped: muk itself is in the box's cgroup"
 kill -TERM "$m"; wait "$m" || :
-n=$((n + 1)); [ ! -s "$grouped/box/cgroup.procs" ] || no "grouped: something of the box outlived it: $(cat "$grouped/box/cgroup.procs")"
+# (its end with muk's is the kernel's to carry out: a moment after muk's own)
+n=$((n + 1)); i=0
+while [ -n "$(cat "$grouped/box/cgroup.procs")" ]; do
+  i=$((i + 1)); [ "$i" -lt 500 ] || no "grouped: something of the box outlived it: $(cat "$grouped/box/cgroup.procs")"
+  sleep 0.01
+done
 refuses grouped '--cgroup: ' $ids --cgroup "$t/no-such-cgroup"
 refuses grouped '--cgroup: the box is not made in it' $ids --cgroup "$t/empty"
 # (where the tree counts processes: a box that starts all it can has as many as its cgroup may, and the next is refused it)
