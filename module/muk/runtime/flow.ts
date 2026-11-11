@@ -3,7 +3,7 @@
 // throws through the wasm frames to say the thread waits, ended, exec'd or was sent elsewhere; every capability; and
 // random bytes drawn ahead.
 
-import {isShared} from '../../sods/runtime/host.ts';
+import {isShared, random} from '../../sods/runtime/host.ts';
 
 /** Every capability Linux has (to CAP_CHECKPOINT_RESTORE, 40): root's in its own user namespace. */
 export const CAPS = (1n << 41n) - 1n;
@@ -45,7 +45,16 @@ export function utf8(b: Uint8Array | ArrayBuffer): string {
 const pool = {bytes: new Uint8Array(0), at: 0};
 /** `n` random bytes (at most 65536), each given once. */
 export function randomBytes(n: number): Uint8Array {
-  if (pool.at + n > pool.bytes.length) { pool.bytes = crypto.getRandomValues(new Uint8Array(Math.max(4096, n))); pool.at = 0; }
+  if (pool.at + n > pool.bytes.length) { pool.bytes = random(Math.max(4096, n)); pool.at = 0; }
   pool.at += n;
   return pool.bytes.subarray(pool.at - n, pool.at);
+}
+
+/** A random UUID (version 4), as /proc/sys/kernel/random says them: made of 16 random bytes. */
+export function uuid(): string {
+  const b = randomBytes(16).slice();
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

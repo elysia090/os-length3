@@ -1,7 +1,7 @@
 // An in-memory POSIX tree: directories, regular files, symlinks and
 // character devices. Files may be lazy: their bytes arrive from a loader
 // (a host directory, an archive, browser storage) on first read.
-import {epoch} from '../../sods/runtime/host.ts';
+import {epoch, random} from '../../sods/runtime/host.ts';
 
 export const S_IFMT = 0o170000, S_IFDIR = 0o040000, S_IFREG = 0o100000, S_IFLNK = 0o120000, S_IFCHR = 0o020000,
   S_IFIFO = 0o010000, S_IFSOCK = 0o140000;
@@ -339,7 +339,7 @@ export class Vfs {
     const dev = this.mkdirp('/dev');
     dev.entries.set('null', new Device(0x103, () => new Uint8Array(0), (b) => b.length));
     dev.entries.set('zero', new Device(0x105, (n) => new Uint8Array(n), (b) => b.length));
-    dev.entries.set('urandom', new Device(0x109, (n) => crypto.getRandomValues(new Uint8Array(Math.min(n, 65536))), (b) => b.length));
+    dev.entries.set('urandom', new Device(0x109, (n) => random(Math.min(n, 65536)), (b) => b.length));
     dev.entries.set('random', dev.entries.get('urandom')!);
     // The controlling terminal: the console, where it is one (sys-file.ts opens it as such).
     dev.entries.set('tty', new Device(0x500, () => new Uint8Array(0), (b) => b.length));

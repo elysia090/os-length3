@@ -8,7 +8,7 @@
 import {Dir, File, Link, S_IFREG} from './fs.ts';
 import {cpuOf} from './clock.ts';
 import {procNet} from './net-view.ts';
-import {CAPS} from './flow.ts';
+import {CAPS, uuid} from './flow.ts';
 import type {Description} from './fd.ts';
 import type {Entry} from './fs.ts';
 import type {Kern, Proc} from './parts.ts';
@@ -196,12 +196,12 @@ export function mountProc(kernel: Kern): void {
     ['kernel', new Listing(() => new Map<string, Entry>([
       ['ostype', new Made(() => 'Linux\n')], ['osrelease', new Made(() => '6.1.0\n')], ['version', new Made(() => '#1 muk\n')],
       ['hostname', new Made(() => `${kernel.hostname ?? 'length3'}\n`)], ['pid_max', new Made(() => '4194304\n')], ['threads-max', new Made(() => '63432\n')],
-      ['random', new Listing(() => new Map<string, Entry>([['uuid', new Made(() => crypto.randomUUID() + '\n')], ['boot_id', new Made(() => bootId + '\n')]]))],
+      ['random', new Listing(() => new Map<string, Entry>([['uuid', new Made(() => uuid() + '\n')], ['boot_id', new Made(() => bootId + '\n')]]))],
     ]))],
     ['vm', new Listing(() => new Map<string, Entry>([['overcommit_memory', new Made(() => '0\n')], ['max_map_count', new Made(() => '65530\n')]]))],
     ['fs', new Listing(() => new Map<string, Entry>([['file-max', new Made(() => '9223372036854775807\n')], ['nr_open', new Made(() => '1048576\n')]]))],
   ]);
-  const bootId = crypto.randomUUID();
+  const bootId = uuid();
   const machine = new Map<string, Entry>([
     ['uptime', new Made(() => { const u = uptime(); return `${u.toFixed(2)} ${(idle() / 1000).toFixed(2)}\n`; })],
     ['loadavg', new Made(() => { const r = Math.max(1, kernel.runq.length); const l = Math.min(r, cpus).toFixed(2); return `${l} ${l} ${l} ${r}/${live().length} ${kernel.nextPid - 1}\n`; })],

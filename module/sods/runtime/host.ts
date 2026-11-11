@@ -1,7 +1,7 @@
 // The host, asked in one place. What sods makes runs as the same code in a browser's page, in one of its Workers
 // and in node; what differs between them is answered here and nowhere else: whether this is node, what was said to
 // it from outside, its own modules where it has them, its threads, how many processors it has, whether memory is
-// shared between threads, whether they may run apart on it and whether this one may wait, and its clocks. A browser's constraints
+// shared between threads, whether they may run apart on it and whether this one may wait, its clocks and its random bytes. A browser's constraints
 // and a host system's differences are sods' to take on: what runs over this asks, and never looks for itself.
 
 /** node (or what stands in for it), not a browser. */
@@ -41,3 +41,9 @@ export const processors = (): number => Math.max(1, Math.min(64, globalThis.navi
 export const steady = (): number => performance.now();
 export const began: number = performance.timeOrigin;
 export const epoch = (): number => Date.now();
+
+/**
+ * `n` bytes no one could have guessed, from the host's own source of them: at most 65536 at one asking (a browser
+ * gives no more at once, so no host is asked for more).
+ */
+export const random = (n: number): Uint8Array<ArrayBuffer> => crypto.getRandomValues(new Uint8Array(n));

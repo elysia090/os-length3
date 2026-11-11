@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {readdirSync, readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {began, builtin, canRunApart, epoch, isNode, isShared, mayWait, nodeThreads, processors, said, steady} from '../../../sods/runtime/host.ts';
+import {began, builtin, canRunApart, epoch, isNode, isShared, mayWait, nodeThreads, processors, random, said, steady} from '../../../sods/runtime/host.ts';
+import {randomBytes, uuid} from '../../runtime/flow.ts';
 
 // The host as sods answers for it (sods/runtime/host.ts), here where the host is node: what the runtime asks in place
 // of looking for itself.
@@ -40,11 +41,26 @@ test('the clocks: the steady one counts milliseconds and never goes back, and wi
   assert.ok(Math.abs(began + steady() - epoch()) < 60_000);
 });
 
-// What has been taken on is asked of host.ts and nowhere else: muk's runtime never looks at the host's own clocks.
-test('muk\'s runtime asks the time of host.ts: none of it reads the host\'s own clocks', () => {
+test('random bytes: as many as asked for, up to the most a browser gives at once, and not the same twice', () => {
+  assert.equal(random(0).length, 0);
+  assert.equal(random(65536).length, 65536);
+  const a = random(32), b = random(32);
+  assert.equal(a.length, 32);
+  assert.notDeepEqual(a, b);
+  assert.ok(a.some((x) => x !== 0));
+  // What muk makes of them: bytes each given once out of what was drawn ahead, and the UUIDs /proc says.
+  assert.notDeepEqual(randomBytes(16).slice(), randomBytes(16).slice());
+  const id = uuid();
+  assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.notEqual(uuid(), id);
+});
+
+// What has been taken on is asked of host.ts and nowhere else: muk's runtime never looks at the host's own clocks,
+// nor at its source of random bytes.
+test('muk\'s runtime asks the time and random bytes of host.ts: none of it reads the host\'s own', () => {
   const dir = new URL('../../runtime/', import.meta.url);
   for (const name of readdirSync(dir).filter((n) => n.endsWith('.ts') && !n.endsWith('.test.ts'))) {
-    const found = /\bperformance\b|\bDate\.now\b|\bnew Date\b/.exec(readFileSync(new URL(name, dir), 'utf8'));
+    const found = /\bperformance\b|\bDate\.now\b|\bnew Date\b|\bcrypto\.(?:getRandomValues|randomUUID)\b|\bMath\.random\b/.exec(readFileSync(new URL(name, dir), 'utf8'));
     assert.equal(found?.[0], undefined, `${name}: ${found?.[0]}`);
   }
 });

@@ -41,8 +41,8 @@ runs what it makes is ricebox's (`../ricebox`).
   was said to it from outside, its own modules where it has them, its
   threads, how many processors it has, whether memory is shared between
   threads, whether they may run apart on it (in a browser, only a page set
-  apart from other origins'), whether this thread may wait, and its clocks
-  (`steady`, `began`, `epoch`). muk's runtime
+  apart from other origins'), whether this thread may wait, its clocks
+  (`steady`, `began`, `epoch`) and its random bytes (`random`). muk's runtime
   and the translator's wrapper asked each of these for themselves, in eight
   files, each its own way; they ask here now, and a host that is neither
   (another system's, none at all) is one file's to take on. What it does not
@@ -67,7 +67,8 @@ Checked natively against the same programs by ricebox's tests
 | no Linux under it | muk's `runtime/`, answering its calls | done in a browser and in node, in TypeScript and far from its bound |
 | which host this is (a page, a Worker, node) | `runtime/host.ts` | asked in one place: node or not, its threads, shared memory, running apart, waiting, processors, what was said from outside |
 | a host's clocks | `runtime/host.ts` (`steady`, `began`, `epoch`) | asked in one place: muk's runtime reads none of the host's own (a test reads its sources for them); the floors the same within their noise |
-| a host's random bytes, where bytes are kept, how they are fetched | still muk's `runtime/` (`flow.ts` and `fs.ts`, `keeper.ts`, `pack.ts`), each asking the host itself | next into `host.ts`, one at a time, each with its test |
+| a host's random bytes | `runtime/host.ts` (`random`) | asked in one place: `getrandom` and `AT_RANDOM`, `/dev/urandom`, the UUIDs `/proc` says (made of them by muk) all draw there; the same test reads muk's sources for the host's own |
+| where bytes are kept, how they are fetched | still muk's `runtime/` (`keeper.ts`, `pack.ts`), each asking the host itself | next into `host.ts`, one at a time, each with its test |
 | a host of another system (macOS, Windows), natively | nothing yet | the same wasm under an engine there, `host.ts` answering for it; not begun |
 | no system at all | nothing yet | not begun |
 
