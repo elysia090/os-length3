@@ -69,8 +69,11 @@ inside out, so that nothing of a product is left further in than the product.
   (`root3/app/prompt`, 2,051 lines, with the app's words, its host and the Remote's address in it).
 - **muk on Linux is still root3's core's.** A box is run by `root3/core/src/prompt` (1,344 lines of Rust over
   rustix), with Home's dotfiles and the repo written into it; `root3/core/src/compute` (616 lines) drives
-  Firecracker, which muk rules out. `muk run` exists and does not yet make the seccomp filter or the terminal a
-  Prompt needs.
+  Firecracker, which muk rules out. `muk run` has the floor every box has (its own namespaces, no privilege
+  gained, no capability unnamed, devices and /proc's ways to the host closed, the filter root3's launcher gave a
+  Prompt) and is checked beside runc; it does not yet make a terminal, a filter of config.json's own, a cgroup,
+  or a box that outlives it (`create`, `start`, `kill`, `delete`), which is what stands between it and the
+  Prompt.
 - **sods holds what is muk's**: unzstd and SHA-256 in `wasm.rs`, with their two crates.
 - **shipto is in five places**: `root3/remote` (8,403 lines), `root3/core/src/remote` (2,479), and three of the
   command's files (1,095).

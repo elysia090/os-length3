@@ -131,4 +131,5 @@ sh test/tree/tree.sh [DIR]                       # the tree (src/tree.h) beside 
 ```
 
 A Prompt on Linux is still run by root3's core (`root3/core/src/prompt`: namespaces, the root under an overlay, a
-seccomp filter, an init), which becomes the bundle root3 writes once `muk run` makes the filter and the terminal.
+seccomp filter, an init), which becomes the bundle root3 writes once `muk run` makes the terminal (the filter is
+the floor's now).
