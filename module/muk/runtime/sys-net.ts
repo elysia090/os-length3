@@ -52,6 +52,10 @@ declare module './parts.ts' {
     netlinkPorts?: Map<number, Endpoint>;
     inetPorts?: Record<number, Map<number, Set<Endpoint>>>;
     inetNext?: number;
+    /** A socket's descriptor was passed over a socket (SCM_RIGHTS): only then can sockets hold one another (collect). */
+    socketsPassed?: boolean;
+    /** collect is looking: what it lets go does not start it again. */
+    collecting?: boolean;
   }
 }
 
@@ -195,6 +199,9 @@ class Endpoint {
   /** Moves whenever its readiness may have (epoll's edge). */
   get changes(): number { return this.rx.changes + this.events + (this.peer ? this.peer.rx.changes : 0); }
 
+  /** One of its descriptors was let go and others are left: perhaps only ones in flight that no one can receive (collect). */
+  released(): void { if (this.kernel.socketsPassed) collect(this.kernel); }
+
   /** Its last descriptor closed: its peer sees the end, what it held in flight is let go, its name and port are free. */
   close(): void {
     if (this.closed) return;
@@ -220,6 +227,43 @@ class Endpoint {
     if (this.netlink && portid !== undefined && this.kernel.netlinkPorts?.get(portid) === this) this.kernel.netlinkPorts.delete(portid);
     this.kernel.sockets?.delete(this);
   }
+}
+
+/** The descriptors in flight to `e`: those that came with a stream's bytes, and with its messages. */
+const flying = (e: Endpoint): Description[] =>
+  [...e.rights.flatMap((r) => r.descs), ...(e.rx instanceof Messages ? e.rx.list.flatMap((m) => m.rights) : [])];
+
+/**
+ * Sockets held only by descriptors in flight that no one can receive any more are let go, as Linux's unix_gc lets
+ * them go. A socket's descriptor passed over a socket is held by the queue it lies in; passed to itself, or round a
+ * ring of sockets, each queue holds the next and none counts down to its close once the last descriptor a process
+ * has is closed. So: the sockets every reference to which lies in a queue are looked at; those in the queue of a
+ * socket someone still holds can be received, and are kept, with what lies in their queues in turn; what is left no
+ * one can reach, and what lies in its queues is let go, which closes it.
+ */
+function collect(kernel: Kern): void {
+  if (kernel.collecting) return;
+  const count = new Map<Description, number>();
+  for (const e of kernel.sockets ?? []) for (const d of flying(e)) if (d.kind === 'socket' && d.sock) count.set(d, (count.get(d) ?? 0) + 1);
+  // Held by queues alone.
+  const lost = new Set<Description>();
+  for (const [d, n] of count) if (d.refs === n) lost.add(d);
+  if (!lost.size) return;
+  // Every other socket is someone's (a process's descriptor, a listener's connection not yet accepted): what lies in
+  // its queue can still be received. A connection waiting on a listener is the listener's to give.
+  const ends = (d: Description): Endpoint[] => [d.sock as Endpoint, ...(d.sock as Endpoint).backlog];
+  const perhaps = new Set<Endpoint>([...lost].flatMap(ends));
+  const kept = [...kernel.sockets ?? []].filter((e) => !perhaps.has(e));
+  for (let e = kept.pop(); e; e = kept.pop()) for (const d of flying(e)) if (lost.delete(d)) kept.push(...ends(d));
+  if (!lost.size) return;
+  const freed: Description[] = [];
+  for (const d of lost) for (const e of ends(d)) {
+    freed.push(...flying(e));
+    e.rights = [];
+    if (e.rx instanceof Messages) for (const m of e.rx.list) m.rights = [];
+  }
+  kernel.collecting = true;
+  try { for (const d of freed) d.release(); } finally { kernel.collecting = false; }
 }
 
 /** Two ends of a connection, each reading what the other writes. */
@@ -632,7 +676,7 @@ function transmit(p: Proc, d: Description & {sock: Endpoint}, data: Uint8Array, 
   if (rights.length && !(s.family === AF.UNIX)) fail(E.INVAL);
   if (s.netlink) return netlinkSend(p, s, data, to);
   if (s.type === SOCK.RAW) { pendingError(s); return icmp(s, data, to ?? s.remote); }
-  const own = () => rights.map((r) => r.retain());
+  const own = () => rights.map((r) => { if (r.kind === 'socket') p.kernel.socketsPassed = true; return r.retain(); });
   if (s.type === SOCK.DGRAM) {
     if (s.inet) {
       pendingError(s);

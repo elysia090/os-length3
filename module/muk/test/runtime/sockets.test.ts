@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 // The runtime loads its call tables through process.ts, as the worker does.
 import {Kernel, Process} from '../../runtime/process.ts';
+import type {Kern} from '../../runtime/parts.ts';
 
 // The local sockets' edges, each as a guest's own calls on a kernel and a page of memory (no program translated):
 // what is sent with descriptors (SCM_RIGHTS) and what becomes of them when a call takes nothing, fails, or is asked
@@ -40,6 +41,8 @@ function header(p: Process, right: number, length = 1, base = 512): number {
   return 128;
 }
 const sock = (p: Process, fd: number) => p.fds.get(fd)!.sock!;
+/** How many sockets the kernel has still. */
+const sockets = (p: Process): number => (p.kernel as Kern).sockets?.size ?? 0;
 
 test('#94: a stream send that takes no byte passes no descriptor: asked again while full, or empty, nothing is kept', () => {
   const p = guest(), [a, b] = pair(p);
@@ -101,5 +104,53 @@ test('#95: recvmsg told to write outside the guest\'s memory says EFAULT and tak
   // Everything closed, nothing of it is left: no reference kept by a queue, no socket in the kernel.
   for (const fd of [got, passed, a, b]) assert.equal(call(p, CLOSE, fd), 0n);
   assert.equal(d.refs, 0);
-  assert.equal(p.kernel.sockets.size, 0);
+  assert.equal(sockets(p), 0);
+});
+
+const DUP = 32;
+
+test('#96: a socket passed over itself, or round a ring of sockets, is let go once no descriptor of it is left', () => {
+  // Over itself: b's own descriptor in b's queue.
+  const p = guest(), [a, b] = pair(p, SOCK_DGRAM_LOCAL);
+  assert.equal(call(p, SENDMSG, a, header(p, b), 0), 1n);
+  assert.equal(call(p, CLOSE, a), 0n);
+  assert.equal(call(p, CLOSE, b), 0n);
+  assert.equal(sockets(p), 0);
+
+  // A ring of two pairs: c2 lies in d2's queue and d2 in c2's; streams as well as datagrams.
+  for (const type of [SOCK_DGRAM_LOCAL, SOCK_STREAM]) {
+    const q = guest(), [c1, c2] = pair(q, type), [d1, d2] = pair(q, type);
+    assert.equal(call(q, SENDMSG, d1, header(q, c2), 0), 1n);
+    assert.equal(call(q, SENDMSG, c1, header(q, d2), 0), 1n);
+    for (const fd of [c1, d1, c2]) assert.equal(call(q, CLOSE, fd), 0n);
+    // One descriptor left (d2): through it c2 can still be received, so nothing is let go.
+    assert.equal(sockets(q), 2, `type ${type}`);
+    assert.equal(call(q, CLOSE, d2), 0n);
+    assert.equal(sockets(q), 0, `type ${type}`);
+  }
+});
+
+test('#96: a socket in flight that someone can still receive is kept: another descriptor of it, or of the socket it waits in', () => {
+  // b lies in its own queue, and a second descriptor of b is left: b is b's still, and what waits in it is received.
+  const p = guest(), [a, b] = pair(p, SOCK_DGRAM_LOCAL);
+  assert.equal(call(p, SENDMSG, a, header(p, b), 0), 1n);
+  const again = Number(call(p, DUP, b));
+  assert.equal(call(p, CLOSE, b), 0n);
+  assert.equal(sockets(p), 2);
+  const at = header(p, 0);
+  assert.equal(call(p, RECVMSG, again, at, 0), 1n);
+  const got = p.view.getInt32(at + 96 + 16, true);
+  assert.equal(p.fds.get(got), p.fds.get(again));
+  for (const fd of [got, again, a]) assert.equal(call(p, CLOSE, fd), 0n);
+  assert.equal(sockets(p), 0);
+
+  // A socket no process holds, waiting in the queue of one a process does hold: kept until that one goes.
+  const q = guest(), [c1, c2] = pair(q, SOCK_DGRAM_LOCAL), [d1, d2] = pair(q, SOCK_DGRAM_LOCAL);
+  assert.equal(call(q, SENDMSG, d1, header(q, c2), 0), 1n);
+  assert.equal(call(q, SENDMSG, c1, header(q, c1), 0), 1n);
+  for (const fd of [c1, c2, d1]) assert.equal(call(q, CLOSE, fd), 0n);
+  // c1 lies in c2's queue, c2 in d2's, and d2 is held: all three are kept.
+  assert.equal(sockets(q), 3);
+  assert.equal(call(q, CLOSE, d2), 0n);
+  assert.equal(sockets(q), 0);
 });
