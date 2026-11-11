@@ -157,6 +157,27 @@ written with no spaces 22,500. By hand it is 12,000: what is left over is what e
 still costs around its bytes (a word looked for before it, its length kept, its key made a word), which a reader
 written as one pass over the text would not pay.
 
+## At density
+
+`sh test/bundle/dense.sh [N]`: N boxes of one bundle at once (the mounts and hidden paths `runc spec` writes, a
+root not written to, each box in namespaces of its own, a network namespace among them), started together, left
+waiting, ended together. 1,000 of them, on the same machine (4 processors, 16 GB):
+
+| 1,000 boxes at once | muk, the host's root | muk, users of its own | runc 1.5.2 |
+| --- | --- | --- | --- |
+| until the last has started | 0.69 s | 0.70 s | 8.8 s |
+| a box, of the machine's memory | 388 KB | 407 KB | 1,056 KB |
+| of that, its processes' own | 59 KB | 59 KB | 6 KB |
+| of that, the kernel's for it | 329 KB | 348 KB | 1,050 KB |
+| until the last is gone | 1.2 s | 1.7 s | 1.3 s |
+
+1,450 boxes a second on four processors, 0.4 MB each: what the kernel takes for a box's namespaces (its network
+namespace most of all) and mounts is four fifths of it, and is the floor of a box made this way. Its processes'
+own is muk's 53 KB and the waiting program's 6: runc is started detached here, so nothing of it stays with a
+box, and what it leaves in the kernel beside the same namespaces is the cgroups it makes for each (muk makes
+none: a box's cgroup is the lender's, `--cgroup`). The muk that stays with each box is the seam still to be cut
+([`../prompt`](../prompt/README.md)): a box's end is waited for by one keeper for all, not by one muk each.
+
 ## In a browser
 
 There the machine is muk's too: `runtime/` answers a box's system calls itself (TypeScript, for now, and far from
