@@ -45,6 +45,8 @@ export interface CallState {
   deadline?: number;
   /** What it moved already (its value, should a handler interrupt it). */
   done?: number;
+  /** A stream send's descriptors went with its first byte (sys-net.ts transmit): not passed again as it goes on. */
+  passed?: boolean;
   /** Whether a timeout was asked (a call so timed is not restarted after a handler). */
   timed?: boolean;
   /** Let go of what it waits on (it was interrupted, or its thread ended). */

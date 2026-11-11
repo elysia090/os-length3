@@ -668,9 +668,15 @@ function transmit(p: Proc, d: Description & {sock: Endpoint}, data: Uint8Array, 
     return data.length;
   }
   // A stream: what fits, then the rest once there is room (all of it unless it does not wait).
-  if (!done && rights.length) peer.rights.push({at: peer.arrived, descs: own()});
   if (!(peer.rx instanceof Pipe)) return fail(ERR.PROTOTYPE);
   const wrote = done + peer.rx.write(data.subarray(done));
+  // Its descriptors go with the first byte it takes, where that byte lies, and once: a send that took none (the
+  // peer full, nothing to send) passes none, however often it is asked again, and one that waited and goes on
+  // has passed them already (kept in the call's own state, not read off how much went).
+  if (rights.length && wrote > done && !state.passed) {
+    peer.rights.push({at: peer.arrived, descs: own()});
+    state.passed = true;
+  }
   peer.arrived += wrote - done;
   if (s.inet && wrote > done) { const t = traffic(p.kernel); t.bytes += wrote - done; t.packets++; }
   if (wrote === data.length) return wrote;
@@ -779,21 +785,52 @@ function sendmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   return transmit(p, d, data, N(flags), destination(p, d.sock, BigInt(nameAt), BigInt(nameLen)), rights);
 }
 
+/** `length` bytes at `at` are the guest's own memory, or EFAULT: asked before anything is taken that would be lost with it. */
+function within(p: Proc, at: number, length: number): void {
+  if (!(at >= 0 && length >= 0 && at + length <= p.bytes.length)) fail(E.FAULT);
+}
+
 function recvmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   const d = socketOf(p, fd), at = N(msg), v = p.view, f = N(flags);
-  const iov = vectors(p, Number(v.getBigUint64(at + 16, true)), Number(v.getBigUint64(at + 24, true)));
+  // Where it is to be put is looked at before anything is taken: a message taken off its queue and then not
+  // written out (a place outside the guest's memory) would be gone, and the descriptors that came with it kept by
+  // no one. The header, the places for its bytes, for who sent it and for its control data: each the guest's, or EFAULT.
+  within(p, at, 56);
+  const iovAt = Number(v.getBigUint64(at + 16, true)), iovCount = Number(v.getBigUint64(at + 24, true));
+  if (iovCount < 0 || iovCount > 1024) fail(E.INVAL);
+  within(p, iovAt, iovCount * 16);
+  const iov = vectors(p, iovAt, iovCount);
+  for (const [b, l] of iov) within(p, b, l);
+  const nameAt = Number(v.getBigUint64(at, true)), nameRoom = nameAt ? v.getUint32(at + 8, true) : 0;
+  within(p, nameAt, nameRoom);
+  const control = Number(v.getBigUint64(at + 32, true)), room = control ? Number(v.getBigUint64(at + 40, true)) : 0;
+  within(p, control, room);
   const total = iov.reduce((n, [, l]) => n + l, 0), buf = new Uint8Array(total);
   const r = receive(p, d, buf, 0, total, f & ~MSG.WAITALL);
+  // What came is this call's to hand on or to let go, whatever happens from here: the descriptors still held for
+  // the message, and those made this process's already.
+  let held = r.rights;
+  const made: number[] = [];
+  try {
+    return received(p, d, r, at, f, iov, buf, nameAt, nameRoom, control, room, made, () => { held = []; });
+  } catch (e) {
+    for (const x of held) x.release();
+    for (const n of made) p.fds.close(n);
+    throw e;
+  }
+}
+
+/** recvmsg's second half: what `receive` took (`r`) written out to the guest (`made`: the descriptors installed; `handed`: called once the message's own hold on them is let go). */
+function received(p: Proc, d: Description & {sock: Endpoint}, r: Received, at: number, f: number, iov: [number, number][], buf: Uint8Array,
+  nameAt: number, nameRoom: number, control: number, room: number, made: number[], handed: () => void): number {
+  const v = p.view;
   let off = 0;
   for (const [b, l] of iov) { if (off >= r.n) break; const k = Math.min(l, r.n - off); p.bytes.set(buf.subarray(off, off + k), b); off += k; }
-  const nameAt = Number(v.getBigUint64(at, true));
   if (nameAt) {
-    const have = v.getUint32(at + 8, true);
-    if (r.from) p.bytes.set(r.from.subarray(0, Math.min(have, r.from.length)), nameAt);
+    if (r.from) p.bytes.set(r.from.subarray(0, Math.min(nameRoom, r.from.length)), nameAt);
     v.setUint32(at + 8, r.from?.length ?? 0, true);
   }
   // Control data: the descriptors that came (each now one of this process's), and the sender's credentials if asked.
-  const control = Number(v.getBigUint64(at + 32, true)), room = Number(v.getBigUint64(at + 40, true));
   let used = 0, outFlags = r.size > r.n && !d.sock.stream ? MSG.TRUNC : 0;
   const put = (type: number, words: (at: number) => void, size: number, level = SOL_SOCKET): boolean => {
     const len = 16 + size, space = (len + 7) & ~7;
@@ -806,9 +843,10 @@ function recvmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
     return true;
   };
   if (r.rights.length) {
-    const fds = r.rights.map((x) => p.fds.install(x, {cloexec: !!(f & MSG.CMSG_CLOEXEC)}));
+    for (const x of r.rights) made.push(p.fds.install(x, {cloexec: !!(f & MSG.CMSG_CLOEXEC)}));
     for (const x of r.rights) x.release();
-    if (!put(SCM.RIGHTS, (w) => fds.forEach((n, k) => v.setInt32(w + 4 * k, n, true)), 4 * fds.length)) for (const n of fds) p.fds.close(n);
+    handed();
+    if (!put(SCM.RIGHTS, (w) => made.forEach((n, k) => v.setInt32(w + 4 * k, n, true)), 4 * made.length)) { for (const n of made) p.fds.close(n); made.length = 0; }
   }
   const creds = r.creds;
   if (d.sock.options.passcred && creds) {
