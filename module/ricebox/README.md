@@ -1,9 +1,9 @@
 # ricebox — the neutral distribution
 
-As BusyBox is one: no window, a command line that is ordinary POSIX (what #80 lists), served from any web host as
-it is. It knows no service and nothing of root3's, so it can be cut out whole: muk (`../muk`), sods (`../sods`),
-its tools (`../you`, `../otter`) on `../lib`, the root's packages (`../../root`), and what is here, the smallest
-UNIX a browser runs. `runtime/` is that user-mode kernel (TypeScript, for now): processes, a POSIX tree, file
+As BusyBox is one, and as thin: the smallest UNIX a browser runs and the command line #80 lists, ordinary POSIX
+with no window, served from any web host as it is. It knows no service and nothing of root3's, so it can be cut
+out with what is under it (`../muk`, `../sods`, `../lib`, each a folder of its own beside this one). `runtime/` is
+its user-mode kernel (TypeScript, for now, and far from thin: docs/STRUCTURE.md): processes, a POSIX tree, file
 descriptors and pipes, fork/exec/wait, threads, signals.
 
 - Processes run at once, as on Linux: fork returns in the parent at once; a

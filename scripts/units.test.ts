@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {OWED, RICEBOX, UNITS, check, unitOf} from './units.ts';
+import {OWED, UNDER_RICEBOX, UNITS, check, unitOf} from './units.ts';
 
 test('every file of code is one unit\'s, or a test, a script or something made (scripts/units.ts)', () => {
   assert.deepEqual(check().homeless, []);
@@ -27,9 +27,11 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   assert.equal(unitOf('src/core/src/prompt/launch.rs')?.name, 'muk');
 });
 
-test('ricebox can be cut out whole: none of its units takes from a unit that is not of it, by the table or by an import', () => {
-  for (const u of UNITS) if (RICEBOX.includes(u.name)) assert.deepEqual(u.takes.filter((t) => !RICEBOX.includes(t)), [], u.name);
-  assert.deepEqual(check().crossings.filter(([from, to]) => RICEBOX.includes(from) && !RICEBOX.includes(to)), []);
-  // muk is the thinnest: it stands on lib alone.
+test('ricebox can be cut out with the units under it: none of them takes from a unit over them, by the table or by an import', () => {
+  for (const u of UNITS) if (UNDER_RICEBOX.includes(u.name)) assert.deepEqual(u.takes.filter((t) => !UNDER_RICEBOX.includes(t)), [], u.name);
+  assert.deepEqual(check().crossings.filter(([from, to]) => UNDER_RICEBOX.includes(from) && !UNDER_RICEBOX.includes(to)), []);
+  // muk is the thinnest: it stands on lib alone. No unit's folder is inside another's.
   assert.deepEqual(UNITS.find((u) => u.name === 'muk')?.takes, ['lib']);
+  const folders = UNITS.flatMap((u) => u.holds.filter((h) => h.startsWith('module/')).map((h) => [u.name, h.split('/').slice(0, 2).join('/')]));
+  for (const [a, fa] of folders) for (const [b, fb] of folders) assert.ok(a === b || fa !== fb, `${a} and ${b} share ${fa}`);
 });

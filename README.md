@@ -54,7 +54,7 @@ devices. Building from source, `root3` is `cargo install --path src/cli`.
 | [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`ricebox/`](module/ricebox/) the neutral distribution's own (the smallest UNIX a browser runs: the kernel the root runs on in a browser's Prompt), [`muk/`](module/muk/) its thinnest part, the OCI-compatible VMM (today a pack's bytes read by digest when first touched); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
 | [`root/`](root/) | the root the Prompts run: its pins, a recipe per package and what makes it (below) | `make/build.sh` |
 | [`scripts/`](scripts/), [`tests/`](tests/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
-| [`docs/`](docs/) | what the OS is and how it ships ([`README.md`](docs/README.md)), its design language ([`DESIGN.md`](docs/DESIGN.md)), what it promises about security ([`SECURITY.md`](docs/SECURITY.md)) | |
+| [`docs/`](docs/) | what the OS is and how it ships ([`README.md`](docs/README.md)), what the repository is to be and the order it is taken apart in ([`STRUCTURE.md`](docs/STRUCTURE.md)), its design language ([`DESIGN.md`](docs/DESIGN.md)), what it promises about security ([`SECURITY.md`](docs/SECURITY.md)) | |
 
 A folder holds files, or folders and at most its own README and manifests, never both. At the top are root3's own
 manifests alone: `package.json`, `Cargo.toml` (one workspace: the core, the app's window and root3), `tsconfig.json`
@@ -70,64 +70,36 @@ its own files (`etc/`, `usr/`), and what makes it (`make/`: `build.sh`, each pac
 
 ## Units
 
-Three things, one inside the next:
+Three things, each thinner than the one over it, none holding another: each is a folder of its own under
+[`module/`](module/), beside the others, and stands on what is under it.
 
 - **muk**, the thinnest: an OCI-compatible VMM. An image's layers at rest, named by their digest, and a bundle run
   from them (created, started, signalled, deleted, as the OCI runtime says). No KVM and no Firecracker under it: it
   is C on `lib` alone, with no C library, written as `you` is.
-- **ricebox**, the neutral distribution, as BusyBox is one: muk, what makes a browser its machine (sods and the
-  kernel), its own tools (you, otter) and the root's packages. No window; a command line that is ordinary POSIX,
-  what [#80](https://github.com/elysia090/os-length3/issues/80) lists, on the Web as on Linux; served from any web
-  host as it is. It knows no service, so anyone can cut it out whole and put it under a service of their own:
-  nothing of it takes from what is not of it.
-- **root3**, the product, as Alpine stands on BusyBox: ricebox, and the modules over it. What a service wants (who
-  one is, what one may use, the Remote and its sync, its gateway's rules, its deploy) is shipto's, and nowhere else.
+- **ricebox**, the neutral distribution, as BusyBox is one, and as thin: the smallest UNIX a browser runs and the
+  command line [#80](https://github.com/elysia090/os-length3/issues/80) lists, ordinary POSIX with no window, over
+  muk; served from any web host as it is. It knows no service, so anyone can cut it out, with the units under it,
+  and put it under a service of their own.
+- **root3**, the product, as Alpine stands on BusyBox: ricebox, the root's packages, and the modules over it. What
+  a service wants (who one is, what one may use, the Remote and its sync, its gateway's rules, its deploy) is
+  shipto's, and nowhere else.
 
-[`scripts/units.ts`](scripts/units.ts) is the table: each unit's files and the units it may take from, checked by
-`npm test`, with ricebox's cut (an import a unit still makes and may not is listed there as owed, with the step below
-that ends it).
+[`docs/STRUCTURE.md`](docs/STRUCTURE.md) is the whole of it: what each unit is and is not, what it is to be, how far
+each is from its bound today, and the order they are taken apart in, the furthest first.
+[`scripts/units.ts`](scripts/units.ts) is the table `npm test` checks: each unit's files and the units it may take
+from; ricebox and the units under it take from nothing over them, and muk stands on lib alone.
 
-| Unit | Of | Its responsibility | Takes from |
-| --- | --- | --- | --- |
-| lib | ricebox | what the units of C stand on: system calls, words, output; no C library | — |
-| muk | ricebox | the OCI-compatible VMM: layers by digest, each byte fetched when first touched, and a bundle run from them | lib |
-| sods | ricebox | instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS | — |
-| ricebox | ricebox | the distribution itself: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the root's packages | lib, muk, sods |
-| you | ricebox | the tools a person reaches for: z, rg, fd, fzf | lib |
-| otter | ricebox | to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said | lib, ricebox, muk, sods |
-| funk | root3 | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | ricebox |
-| shipto | root3 | what a service wants: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, its own deploy | ricebox, muk, funk |
-| m8 | root3 | where and how many boxes run: a state wanted, one loop that makes it so (made when boxes run on more than one machine) | ricebox, muk, shipto |
-
-Where each is to be, so that ricebox is one folder to cut:
-
-```
-module/ricebox/   lib/  muk/  sods/  kernel/  you/  otter/    its units
-                  root/                                       the packages: pins, recipes, settings
-                  web/                                        the distribution as a web host serves it: its index,
-                                                              its packs, a Prompt's Worker
-module/shipto/    the Remote, its client, its words           what a service wants
-src/              app/  cli/  desktop/  core/                 root3's faces and the core under them
-```
-
-How a part is made, the same for each: what it is for in a sentence, and what is not its; its bytes at rest and on
-their way laid out first, since the layout decides the bound; the bound counted by hand for one unit of its work
-(an instruction translated, a call answered, a line searched, a bundle started) in instructions, cache lines and
-system calls; written in C on `lib` until callgrind and the disassembly show that sequence; checked against what it
-stands in for over everything there is (Linux, runc, ripgrep, the one before it), byte for byte; written again in
-Rust only where it must be (what runs as wasm beside sods); and the one before it deleted in the change that puts
-it in its place, nothing kept beside. Its bound stays a test.
-
-The order, the part furthest from its bound first:
-1 muk in C: a bundle run on Linux by namespaces, beside runc on the same bundle; what root3 hands a Prompt becomes
-the bundle it writes (`src/core/src/prompt`), and the Firecracker driver goes (`src/core/src/compute`);
-2 ricebox's kernel out of TypeScript: its state laid out in one shared memory and each call answered on the thread
-that makes it (a call is 24× Linux's across Workers today, a write 31×);
-3 what serves ricebox on the Web out of the app (`src/app/prompt`, `scripts/webroot*.ts`) into ricebox, with no
-word of the app's or the Remote's in it;
-4 sods to its bound (a first translation is 3.8× it);
-5 shipto gathered from `src/remote`, the core's `remote` and root3's words, into its folder;
-6 the folders above.
+| Unit | Its responsibility | Takes from |
+| --- | --- | --- |
+| lib | what the units of C stand on: system calls, words, output; no C library | — |
+| muk | the OCI-compatible VMM: layers by digest, each byte fetched when first touched, and a bundle run from them | lib |
+| sods | instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS | — |
+| ricebox | the neutral distribution: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the command line #80 lists | lib, muk, sods |
+| you | the tools a person reaches for: z, rg, fd, fzf | lib |
+| otter | to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said | lib, ricebox, muk, sods |
+| funk | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | ricebox |
+| shipto | what a service wants: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, its own deploy | ricebox, muk, funk |
+| m8 | where and how many boxes run: a state wanted, one loop that makes it so (made when boxes run on more than one machine) | ricebox, muk, shipto |
 
 ## Develop
 

@@ -1,11 +1,11 @@
 // The units os-length3 is made of, each one responsibility: the files it holds and the units it may take from. Three
-// things, one inside the next. muk is the thinnest: an OCI-compatible VMM, in C on lib alone. ricebox is the neutral
-// distribution, as BusyBox is one: muk, what makes a browser its machine (sods, its kernel), its own tools (you,
-// otter) and the root's packages; no window, a command line that is ordinary POSIX, served from any web host as it is.
-// It knows no service, so it can be cut out whole and put under another's: nothing of it takes from what is not of it
-// (RICEBOX, checked). root3 is the product, as Alpine stands on BusyBox: ricebox and the modules over it, of which
-// shipto alone holds what a service wants. A face (the app's pages and window, root3's words) holds no judgement of
-// its own and takes from any unit.
+// things, each thinner than the one over it, none holding another (docs/STRUCTURE.md). muk is the thinnest: an
+// OCI-compatible VMM, in C on lib alone. ricebox is the neutral distribution, as BusyBox is one and as thin: the
+// smallest UNIX a browser runs and the command line #80 lists, over muk; no window, ordinary POSIX, served from any
+// web host as it is. It knows no service, so it can be cut out with the units under it and put under another's: none
+// of them takes from one over them (UNDER_RICEBOX, checked). root3 is the product, as Alpine stands on BusyBox:
+// ricebox, the root's packages and the modules over it, of which shipto alone holds what a service wants. A face (the
+// app's pages and window, root3's words) holds no judgement of its own and takes from any unit.
 //
 //   node scripts/units.ts        what each file is, and every import from one unit to another the table does not allow
 //
@@ -38,8 +38,8 @@ export const UNITS: Unit[] = [
   {name: 'sods', says: 'instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS',
     holds: ['module/sods/src', 'module/sods/runtime'],
     takes: []},
-  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the root\'s packages, what #80 lists; no window, ordinary POSIX, and no service known to it',
-    holds: ['module/ricebox/runtime', 'root'],
+  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the command line #80 lists; no window, ordinary POSIX, and no service known to it',
+    holds: ['module/ricebox/runtime'],
     takes: ['lib', 'muk', 'sods']},
   {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
@@ -60,11 +60,11 @@ export const UNITS: Unit[] = [
     holds: ['src/cli'], takes: ['*']},
 ];
 
-/** The units ricebox is made of: what is cut out with it. None takes from a unit that is not one of them. */
-export const RICEBOX = ['lib', 'muk', 'sods', 'ricebox', 'you', 'otter'];
+/** ricebox and the units under it: what is cut out with it. None takes from a unit over them. */
+export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'ricebox'];
 
-/** What is no unit's: the tests, the scripts that build and check, what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'tests', 'module/ricebox/runtime/run.ts', 'module/ricebox/tests', 'module/sods/examples', 'module/otter/test', 'module/muk/test',
+/** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
+export const NOT_UNITS = ['scripts', 'tests', 'root', 'module/ricebox/runtime/run.ts', 'module/ricebox/tests', 'module/sods/examples', 'module/otter/test', 'module/muk/test',
   'src/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/ricebox/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
