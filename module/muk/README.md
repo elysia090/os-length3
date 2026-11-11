@@ -7,9 +7,18 @@ as `../you` is: what it does counted by hand first, then written until the count
 is no kernel to ask, so muk answers a box's system calls itself (`runtime/`), over the code sods makes.
 
 ```
-muk run [-b BUNDLE] [ID]      the bundle's process, started and waited for; muk ends as it ends
+muk run [-b BUNDLE] [--console-socket PATH] [ID]
+                              the bundle's process, started and waited for; muk ends as it ends
 sh test/bundle/muk.sh         the same bundles under muk and under runc: what each box says of itself, the same
 ```
+
+**Where muk ends.** A run is a box's whole life here: muk names no box, keeps none beyond its run, lists none, and
+writes nothing about one. A terminal is a device of the box, so muk makes it where only it can (in the box's own
+/dev/pts, when config.json asks: `process.terminal`, with its `consoleSize`), makes it the box's (its three
+descriptors, its session's terminal, /dev/console), and gives its other end away whole: one descriptor sent to the
+one listening at `--console-socket`, and closed. With no one to take it there is no terminal. What is typed and
+shown there, its size as it changes, who is at it, a box left and come back to, a box that outlives what started
+it: those are the Prompt's ([`../prompt`](../prompt/README.md)), which takes muk and which muk knows nothing of.
 
 `src/muk.c` is all of it. config.json is read once, where it is (a string is used in its place in the text, a NUL
 over its closing quote; nothing is copied, nothing allocated). One clone makes the box in its namespaces. In it the
@@ -45,20 +54,20 @@ What every box has, whatever config.json says. It may ask for more, never for le
   CLONE_NEW), bpf, perf_event_open, userfaultfd, the kernel's keys, typing into the terminal of the one who ran
   it, are refused as the kernel refuses one who may not; clone3 and io_uring, and every call of another ABI, as a
   kernel without them. 54 calls, made a tree: one that is none of them is found to be none in six comparisons.
-- **What is asked and not done is refused**, by name: a seccomp filter of config.json's own, a terminal, hooks that are there, cgroup
+- **What is asked and not done is refused**, by name: a seccomp filter of config.json's own, hooks that are there, cgroup
   limits and `cgroupsPath`, `sysctl`, `rootfsPropagation`, an AppArmor profile or SELinux label, `oomScoreAdj`,
   a mount given other owners, a mount namespace joined. A number is what it says or it is refused (a uid of
-  4294967296 is not 0). Not yet at all: `create`, `start`, `state`, `kill`, `delete` apart from `run`.
+  4294967296 is not 0).
 
 Where it reads config.json as runc does: null is a member not there, a member given twice is the second, a mount
 on a link lands on what the link leads to (in the box), where it runs is made when nothing is there. Where it does
 not: a mount's destination through a link that leads nowhere is refused (runc makes what it leads to).
 
-`test/bundle/muk.sh` is the check: 131 as root, 73 as another user. The same bundles under runc where it runs
+`test/bundle/muk.sh` is the check: 140 as root, 81 as another user. The same bundles under runc where it runs
 them (what each box says of itself the same, line for line, the floor said to runc in its config.json); what is
 refused; every cut of a config.json and bytes changed in it (never a signal, never a wait); 24 runs at once on
 one root; muk killed; a signal passed on; its three descriptors closed; every name of its tables; every call the
-filter names, asked from inside a box.
+filter names, asked from inside a box; a terminal, its other end taken at a socket, beside runc's.
 
 ## Its counts
 
@@ -131,5 +140,5 @@ sh test/tree/tree.sh [DIR]                       # the tree (src/tree.h) beside 
 ```
 
 A Prompt on Linux is still run by root3's core (`root3/core/src/prompt`: namespaces, the root under an overlay, a
-seccomp filter, an init), which becomes the bundle root3 writes once `muk run` makes the terminal (the filter is
-the floor's now).
+seccomp filter, an init); the box becomes the bundle prompt writes for `muk run`, and what is left of it there
+(the terminal's group, what is kept) is prompt's.

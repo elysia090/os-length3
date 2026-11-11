@@ -13,6 +13,7 @@ t=$(mktemp -d)
 trap '[ -n "${KEEP:-}" ] || rm -rf "$t"' EXIT; [ -z "${KEEP:-}" ] || echo "# kept: $t"
 if [ "$#" -ge 1 ]; then muk=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); else sh "$here/../../../lib/build.sh" "$here/../../src/muk.c" "$t/muk"; muk=$t/muk; fi
 sh "$here/../../../lib/build.sh" "$here/probe.c" "$t/probe"
+sh "$here/../../../lib/build.sh" "$here/console.c" "$t/taker"
 n=0
 no() { printf 'not ok %d: %s\n' "$n" "$*" >&2; exit 1; }
 
@@ -287,15 +288,65 @@ has asked 'asks 56:268435456 1'
 has asked 'asks 1073741863 38'
 has asked 'asks 39 0'
 
+# A terminal, and where muk ends: made in the box and the box's own (it is its three descriptors, it opens by its
+# names, it has the size asked for); its other end is sent to the one who listens at the socket, which here writes
+# down what the terminal shows. muk keeps nothing of it: with no one to take it there is no terminal.
+shown() { # shown NAME OUT COMMAND...: COMMAND run in NAME's bundle, a taker listening at $t/console.sock; what the box's terminal showed is in OUT
+  name=$1 out=$2; shift 2
+  rm -f "$t/console.sock"
+  "$t/taker" "$t/console.sock" > "$out.raw" 2> "$out.err" &
+  taker=$!
+  i=0
+  until [ -S "$t/console.sock" ]; do
+    i=$((i + 1)); [ "$i" -lt 500 ] || no "$name: no one listens for its terminal: $(cat "$out.err")"
+    sleep 0.01
+  done
+  st=0; (cd "$t/$name" && "$@") > /dev/null 2> "$out.said" < /dev/null || st=$?
+  [ "$st" = 0 ] || { kill "$taker" 2> /dev/null; no "$name: $1 ended $st: $(cat "$out.said")"; }
+  wait "$taker" || no "$name: its terminal's other end was not taken: $(cat "$out.err")"
+  tr -d '\r' < "$out.raw" > "$out"
+}
+bundle console <<JSON
+{"ociVersion": "1.0.2",
+ "process": {"terminal": true, "consoleSize": {"height": 31, "width": 97}, "args": ["/probe", "see:/dev/tty", "see:/dev/console", "see:/proc/self/fd/0"],
+  "cwd": "/", "capabilities": {}, "noNewPrivileges": true},
+ "root": {"path": "rootfs"},
+ "mounts": [$dev, {"destination": "/proc", "type": "proc", "source": "proc"},
+  {"destination": "/dev/pts", "type": "devpts", "source": "devpts", "options": ["nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620"]}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+  "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
+JSON
+n=$((n + 1))
+shown console "$t/console.muk" "$muk" run -b . --console-socket "$t/console.sock" c
+has console 'fds 0 1 2'
+has console 'size 31 97'
+has console 'see /dev/tty 20666'
+has console 'see /dev/console 20620'
+has console 'see /proc/self/fd/0 120700 -> /dev/pts/0'
+if [ "$(id -u)" = 0 ] && command -v runc > /dev/null; then
+  n=$((n + 1))
+  # (runc gives a terminal's other end away only where it does not stay itself: started and left, -d)
+  shown console.for-runc "$t/console.runc" runc --root "$t/state" run -d -b . --console-socket "$t/console.sock" "runc$n"
+  runc --root "$t/state" delete -f "runc$n" 2> /dev/null || :
+  sed 's|^\(mount / [a-z,]*\)nodev,|\1|; /^Seccomp:/d' "$t/console.muk" | sort > "$t/console.a"; sed '/^Seccomp:/d' "$t/console.runc" | sort > "$t/console.b"
+  cmp -s "$t/console.a" "$t/console.b" || { diff "$t/console.a" "$t/console.b" | head -20 >&2; no "console: muk (<) and runc (>) differ"; }
+fi
+n=$((n + 1))
+st=0; (cd "$t/console" && "$muk" run -b . --console-socket "$t/no-one-there" c) > "$t/console.out" 2> "$t/console.err" || st=$?
+[ "$st" = 1 ] && [ ! -s "$t/console.out" ] && grep -q 'no one is listening' "$t/console.err" || no "console: no one listening: muk ended $st: $(cat "$t/console.err")"
+n=$((n + 1))
+st=0; (cd "$t/user" && "$muk" run -b . --console-socket "$t/console.sock" c) > "$t/console.out" 2> "$t/console.err" || st=$?
+[ "$st" = 1 ] && [ ! -s "$t/console.out" ] && grep -q 'asks for no terminal' "$t/console.err" || no "console: a socket and no terminal asked for: muk ended $st: $(cat "$t/console.err")"
+
 # What it does not run: a filter it cannot make yet is not left out; a terminal; hooks; no program; what is not JSON.
 bundle filter <<'JSON'
 {"process": {"args": ["/probe"]}, "linux": {"namespaces": [{"type": "mount"}], "seccomp": {"defaultAction": "SCMP_ACT_ALLOW"}}}
 JSON
 refuses filter 'linux.seccomp'
 bundle terminal <<'JSON'
-{"process": {"terminal": true, "args": ["/probe"]}, "linux": {"namespaces": [{"type": "mount"}]}}
+{"process": {"terminal": true, "args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
-refuses terminal 'process.terminal'
+refuses terminal 'process.terminal: its other end goes to the one who asks for it'
 bundle hooks <<'JSON'
 {"process": {"args": ["/probe"]}, "hooks": {"prestart": [{"path": "/bin/true"}]}, "linux": {"namespaces": [{"type": "mount"}]}}
 JSON

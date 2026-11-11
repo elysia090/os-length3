@@ -5,7 +5,14 @@
  * no C library; what it does is counted in the README beside it, and checked beside runc on the same bundles
  * (test/muk.sh).
  *
- *   muk run [-b BUNDLE] [ID]      the bundle's process, started and waited for; muk ends as it ends
+ *   muk run [-b BUNDLE] [--console-socket PATH] [ID]
+ *                                 the bundle's process, started and waited for; muk ends as it ends
+ *
+ * Where muk ends and the Prompt begins (../../prompt). A run is a box's whole life here: muk names no box, keeps
+ * none beyond its run, lists none. A terminal is a device of the box, so muk makes it where only it can (in the
+ * box's own /dev/pts, config.json asking: process.terminal) and makes it the box's; its other end it gives away,
+ * whole, to the one who asked (one descriptor sent over --console-socket) and keeps nothing of: what is typed and
+ * shown there, its size as it changes, who is at it and whether anyone is, are the Prompt's.
  *
  * The floor: what every box has, whatever config.json says (it may ask for more, never for less). Its mount, pid,
  * ipc and uts namespaces are its own or another box's, never the host's, and it has a cgroup namespace; it gains
@@ -28,7 +35,8 @@
 #include "../../lib/io.h"
 
 enum {
-  SYS_rt_sigprocmask = 14, SYS_getpid = 39, SYS_execve = 59, SYS_wait4 = 61, SYS_kill = 62, SYS_chdir = 80,
+  SYS_rt_sigprocmask = 14, SYS_ioctl = 16, SYS_getpid = 39, SYS_socket = 41, SYS_connect = 42, SYS_sendmsg = 46, SYS_fchown = 93,
+  SYS_setsid = 112, SYS_execve = 59, SYS_wait4 = 61, SYS_kill = 62, SYS_chdir = 80,
   SYS_symlink = 88, SYS_umask = 95, SYS_geteuid = 107, SYS_setgroups = 116, SYS_setresuid = 117,
   SYS_setresgid = 119, SYS_capset = 126, SYS_rt_sigtimedwait = 128, SYS_mknod = 133, SYS_statfs = 137,
   SYS_pivot_root = 155, SYS_prctl = 157, SYS_mount = 165, SYS_umount2 = 166, SYS_sethostname = 170,
@@ -254,6 +262,7 @@ struct mount { char *to, *type, *from, *data; u64 flags, clear, spread; int tree
 struct line { u64 in, out, n; };
 static struct {
   char *root, *cwd, *hostname, *domainname;
+  const char *console; /* --console-socket: where the one who takes the terminal's other end listens */
   char *args[WORDS], *env[WORDS];
   char *masked[PATHS], *readonly[PATHS];
   struct mount mounts[MOUNTS];
@@ -265,7 +274,8 @@ static struct {
   i64 umask;
   u32 uid, gid, groups[PATHS];
   u32 nargs, nenv, nmasked, nreadonly, nmounts, njoined, nlimits, nuids, ngids, ngroups;
-  u8 read_only, dev, user; /* user: in a user namespace, made or joined */
+  u16 rows, columns; /* its terminal's size, as it starts */
+  u8 read_only, dev, user, terminal; /* user: in a user namespace, made or joined */
 } c;
 
 static void words(char **into, u32 *n, u32 most) {
@@ -324,9 +334,14 @@ static void process(void) {
     else if (IS("env")) words(c.env, &c.nenv, WORDS - 1);
     else if (IS("cwd")) c.cwd = string();
     else if (IS("noNewPrivileges")) boolean(); /* (the floor: it gains none, said or not) */
-    else if (IS("terminal")) {
-      if (boolean()) bad("process.terminal: a terminal is not made yet");
-    } else if (IS("consoleSize")) skip(); /* (a terminal's, and none is made) */
+    else if (IS("terminal")) c.terminal = (u8)boolean();
+    else if (IS("consoleSize")) {
+      OBJECT(k2) {
+        if (IS("height")) c.rows = (u16)natural(65535);
+        else if (IS("width")) c.columns = (u16)natural(65535);
+        else undone("process.consoleSize.", k2);
+      }
+    }
     else if (IS("user")) {
       OBJECT(k2) {
         if (IS("uid")) c.uid = (u32)natural(ID);
@@ -707,6 +722,48 @@ static void devices(const int *host) {
   }
 }
 
+/* ---- The box's terminal: made in the box's own /dev/pts, its name as a program looks for it (/dev/console), the
+ * box's process the one it belongs to; its other end sent, with the terminal's name, over the socket the one who
+ * asked is listening at, and closed here. Nothing of it is kept: this is where muk ends. */
+static i64 console = -1; /* the socket, connected while the host's paths were the host's */
+static void connect_console(const char *path) {
+  struct { u16 family; char path[108]; } at = {1 /* AF_UNIX */, {0}};
+  u64 n = slen(path);
+  if (n >= sizeof at.path) fail("--console-socket: its path is longer than a socket's may be: ", path);
+  __builtin_memcpy(at.path, path, n);
+  console = ok(sys3(SYS_socket, 1, 1 /* SOCK_STREAM */ | O_CLOEXEC, 0), "--console-socket: ", path);
+  ok(sys3(SYS_connect, console, (i64)&at, (i64)(2 + n + 1)), "--console-socket: no one is listening at ", path);
+}
+static void terminal(void) {
+  i64 master = ok(sys3(SYS_open, (i64)"/dev/pts/ptmx", O_RDWR | O_NOCTTY | O_CLOEXEC, 0), "process.terminal: ", "the box has no /dev/pts to make one in");
+  int unlocked = 0;
+  u32 number = 0;
+  ok(sys3(SYS_ioctl, master, 0x40045431 /* TIOCSPTLCK */, (i64)&unlocked), "process.terminal: ", "it is not unlocked");
+  ok(sys3(SYS_ioctl, master, 0x80045430 /* TIOCGPTN */, (i64)&number), "process.terminal: ", "it has no number");
+  i64 it = ok(sys3(SYS_ioctl, master, 0x5441 /* TIOCGPTPEER */, O_RDWR | O_NOCTTY), "process.terminal: ", "it is not opened");
+  if (c.rows | c.columns) {
+    u16 size[4] = {c.rows, c.columns, 0, 0};
+    sys3(SYS_ioctl, it, 0x5414 /* TIOCSWINSZ */, (i64)size);
+  }
+  u8 name[32] = "/dev/pts/", *end = dec(name + 9, number);
+  *end = 0;
+  i64 r = sys3(SYS_mknod, (i64)"/dev/console", 0100600, 0);
+  if (r < 0 && r != -EEXIST) die("process.terminal: ", "/dev/console", r);
+  ok(sys6(SYS_mount, (i64)name, (i64)"/dev/console", 0, MS_BIND, 0, 0), "process.terminal: ", "/dev/console");
+  /* Its other end, and its name with it (as every runtime sends them): one message. */
+  struct { u64 len; int level, type, fd; } rights = {20, 1 /* SOL_SOCKET */, 1 /* SCM_RIGHTS */, (int)master};
+  struct { void *base; u64 len; } said = {name, (u64)(end - name)};
+  struct { void *name; u32 name_len; void *said; u64 saids; void *control; u64 control_len; int flags; } message = {0, 0, &said, 1, &rights, 24, 0};
+  ok(sys3(SYS_sendmsg, console, (i64)&message, 0), "--console-socket: ", "the terminal's other end is not taken");
+  sys1(SYS_close, console), sys1(SYS_close, master);
+  /* The box's process is its own session's first, the terminal that session's, and its three descriptors. */
+  sys1(SYS_setsid, 0);
+  for (i64 fd = 0; fd < 3; fd++) ok(sys2(SYS_dup2, it, fd), "process.terminal: ", "it is not the box's to read and write");
+  ok(sys3(SYS_ioctl, 0, 0x540e /* TIOCSCTTY */, 0), "process.terminal: ", "it is not made the box's own");
+  if (it > 2) sys1(SYS_close, it);
+  if (c.uid) ok(sys3(SYS_fchown, 0, c.uid, -1), "process.terminal: ", "it is not given to the one the box runs as");
+}
+
 /* A mount there already made read-only (or with more flags), keeping what its mount may not lose (in a user
  * namespace, the flags the host's mount had). */
 static void remount(const char *path, u64 flags) {
@@ -851,6 +908,7 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
     if (!m->from) bad("a bind has no source");
     m->tree = (int)ok(sys3(SYS_open_tree, AT_FDCWD, (i64)m->from, 1 /* OPEN_TREE_CLONE */ | O_CLOEXEC | (m->flags & MS_REC ? 0x8000 : 0)), "mount: its source: ", m->from);
   }
+  if (c.terminal) connect_console(c.console);
   /* (and the host's devices, for one who may not make them) */
   if (c.dev && user) {
     const char *path = NODES;
@@ -866,6 +924,7 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
 
   for (u32 i = 0; i < c.nmounts; i++) mount_(&c.mounts[i]);
   if (c.dev) devices(user ? host : 0);
+  if (c.terminal) terminal();
   /* Where it runs: made, as root and before the root is read-only, if nothing is there; entered now, and again as
    * the one it runs as where root itself may not (a user namespace's root, of a directory that is no one's it knows). */
   r = sys1(SYS_chdir, (i64)c.cwd);
@@ -980,13 +1039,14 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
 
 static int main_(int argc, char **argv, char **envp) {
   (void)envp;
-  static const char usage[] = "muk run [-b BUNDLE] [ID]";
+  static const char usage[] = "muk run [-b BUNDLE] [--console-socket PATH] [ID]";
   const char *bundle = 0;
   int i = 2;
   if (argc < 2 || !same(argv[1], "run")) fail("usage: ", usage);
-  if (i < argc && (same(argv[i], "-b") || same(argv[i], "--bundle"))) {
-    if (i + 1 == argc) fail("usage: ", usage);
-    bundle = argv[i + 1], i += 2;
+  for (; i + 1 < argc && argv[i][0] == '-'; i += 2) {
+    if (same(argv[i], "-b") || same(argv[i], "--bundle")) bundle = argv[i + 1];
+    else if (same(argv[i], "--console-socket")) c.console = argv[i + 1];
+    else fail("usage: ", usage);
   }
   /* (what is left is the box's name, one word and no option: nothing given is passed over unread) */
   if (i < argc && (argv[i][0] == '-' || i + 1 < argc)) fail("usage: ", usage);
@@ -1010,6 +1070,9 @@ static int main_(int argc, char **argv, char **envp) {
   sys1(SYS_close, fd);
   text[n] = 0, j = text, jend = text + n;
   config();
+  /* A terminal's other end is someone's or there is no terminal: muk keeps none. */
+  if (c.terminal && !c.console) bad("process.terminal: its other end goes to the one who asks for it, and no one has (--console-socket)");
+  if (!c.terminal && c.console) fail("--console-socket: ", "config.json asks for no terminal (process.terminal)");
 
   /* The namespaces it joins (the user's first: it says what one may do in the others). What is in them already
    * can see the box's process from the moment it is made, while it is still this program and holds the host's

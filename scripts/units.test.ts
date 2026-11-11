@@ -11,6 +11,20 @@ test('a unit takes only from the units the table lets it, besides what is owed w
   assert.deepEqual(check().crossings.map((c) => c.join(' ')).filter((c) => !owed.has(c)), []);
 });
 
+test('muk and prompt: a terminal and what is kept are prompt\'s, and muk takes nothing of it', () => {
+  const unit = (name: string) => UNITS.find((u) => u.name === name)!;
+  assert.equal(unitOf('root3/core/src/prompt/running.rs')?.name, 'prompt');
+  assert.equal(unitOf('root3/core/src/prompt/writes.rs')?.name, 'prompt');
+  assert.equal(unitOf('root3/app/prompt/userland.ts')?.name, 'prompt');
+  assert.equal(unitOf('module/prompt/README.md')?.name, 'prompt');
+  // (the box itself and its filter are muk's, to be replaced by muk run)
+  assert.equal(unitOf('root3/core/src/prompt/seccomp.rs')?.name, 'muk');
+  assert.ok(unit('prompt').takes.includes('muk'));
+  assert.ok(!unit('muk').takes.includes('prompt'));
+  // (nothing under ricebox takes it: it is cut out without a Prompt)
+  for (const name of UNDER_RICEBOX) assert.ok(!unit(name).takes.includes('prompt'), name);
+});
+
 test('what is owed is still made: one no longer made is struck from OWED', () => {
   const made = new Set(check().crossings.map((c) => c.join(' ')));
   assert.deepEqual(OWED.map((o) => o.join(' ')).filter((o) => !made.has(o)), []);

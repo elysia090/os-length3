@@ -25,6 +25,7 @@ word of a service, is in ricebox, muk, sods or lib.
 
 ```
 muk        module/muk        the machine: src/ (C: a box on Linux; the tree), runtime/ (a box in a browser), test/
+             module/prompt   a box someone works in: its terminal, and what of it is kept (over muk; not yet here)
 sods       module/sods       the translator (Rust), and what loads it in a page
 ricebox    module/ricebox    the distribution, 0.6.4 (RELEASE): pins/, packages/, etc/, usr/, make/
              module/you      its command line's own programs, each one file of C: z, rg, fd, fzf
@@ -36,7 +37,8 @@ beside     scripts/ tests/ docs/    what makes and checks the rest
 ```
 
 What is not each one's: muk holds no package and no rule of a service, and nothing root3 puts in a box (a repo,
-dotfiles). sods does not read a layer (unzstd, SHA-256: muk's). ricebox runs nothing: it is what is run. root3's
+dotfiles); it keeps no box beyond a run and no end of a terminal, which are prompt's (module/prompt/README.md: a
+run and one descriptor are all that cross). sods does not read a layer (unzstd, SHA-256: muk's). ricebox runs nothing: it is what is run. root3's
 faces hold no judgement of their own; its core runs no box (muk's) and is no service (shipto's).
 
 ## Names and models one too many
@@ -71,9 +73,9 @@ inside out, so that nothing of a product is left further in than the product.
   rustix), with Home's dotfiles and the repo written into it; `root3/core/src/compute` (616 lines) drives
   Firecracker, which muk rules out. `muk run` has the floor every box has (its own namespaces, no privilege
   gained, no capability unnamed, devices and /proc's ways to the host closed, the filter root3's launcher gave a
-  Prompt) and is checked beside runc; it does not yet make a terminal, a filter of config.json's own, a cgroup,
-  or a box that outlives it (`create`, `start`, `kill`, `delete`), which is what stands between it and the
-  Prompt.
+  Prompt) and is checked beside runc; it makes the box's terminal and gives its other end away. It does not yet make a filter
+  of config.json's own or a cgroup. A box kept beyond a run, and everything a terminal is to the one at it, are
+  not muk's to make: they are prompt's, which today is the rest of `root3/core/src/prompt` and `root3/app/prompt`.
 - **sods holds what is muk's**: unzstd and SHA-256 in `wasm.rs`, with their two crates.
 - **shipto is in five places**: `root3/remote` (8,403 lines), `root3/core/src/remote` (2,479), and three of the
   command's files (1,095).

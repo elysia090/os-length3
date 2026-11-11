@@ -12,7 +12,7 @@
 #define UNIT "probe"
 #include "../../../lib/io.h"
 
-enum { SYS_rt_sigprocmask = 14, SYS_rt_sigtimedwait = 128, SYS_getpid = 39, SYS_uname = 63, SYS_fcntl = 72, SYS_readlink = 89, SYS_getuid = 102, SYS_getgid = 104, SYS_getgroups = 115, SYS_prlimit64 = 302 };
+enum { SYS_rt_sigprocmask = 14, SYS_ioctl = 16, SYS_rt_sigtimedwait = 128, SYS_getpid = 39, SYS_uname = 63, SYS_fcntl = 72, SYS_readlink = 89, SYS_getuid = 102, SYS_getgid = 104, SYS_getgroups = 115, SYS_prlimit64 = 302 };
 
 static void say(const char *s) { put(s, slen(s)); }
 static void number(u64 v, u32 base) {
@@ -97,6 +97,9 @@ static int main_(int argc, char **argv, char **envp) {
   for (i64 fd = 0; fd < 64; fd++)
     if (sys2(SYS_fcntl, fd, 1 /* F_GETFD */) >= 0) say(" "), number((u64)fd, 10);
   say("\n");
+  /* (and, where what it reads from is a terminal, the size that terminal has) */
+  u16 size[4];
+  if (sys3(SYS_ioctl, 0, 0x5413 /* TIOCGWINSZ */, (i64)size) >= 0) say("size "), number(size[0], 10), say(" "), number(size[1], 10), say("\n");
   say("uid "), number((u64)sys1(SYS_getuid, 0), 10), say(" gid "), number((u64)sys1(SYS_getgid, 0), 10);
   say(" groups "), number((u64)sys2(SYS_getgroups, 0, 0), 10), say(" pid "), number((u64)sys1(SYS_getpid, 0), 10), say("\n");
   u8 *names = grab(6 * 65);

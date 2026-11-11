@@ -34,8 +34,11 @@ export interface Unit {
 export const UNITS: Unit[] = [
   {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
   {name: 'muk', says: 'the machine: an OCI-compatible VMM. A box run from an image\'s layers, named by their digest and each byte fetched when first touched: on Linux by its namespaces, in a browser by answering its system calls itself over the code sods makes; no KVM and no Firecracker under it',
-    holds: ['module/muk', 'root3/core/src/prompt', 'root3/core/src/compute'],
+    holds: ['module/muk', 'root3/core/src/prompt/launch.rs', 'root3/core/src/prompt/seccomp.rs', 'root3/core/src/compute'],
     takes: ['lib', 'sods']},
+  {name: 'prompt', says: "a box someone works in: its terminal (the other end of the one muk makes in the box) and what of it is kept from one run to the next (a box still there with no one at it; what it writes, each part with its owner's lifetime). Nothing of the machine: it has of a box what muk gives it, a run and one descriptor",
+    holds: ['module/prompt', 'root3/core/src/prompt', 'root3/app/prompt'],
+    takes: ['lib', 'muk', 'sods', 'ricebox']},
   {name: 'sods', says: 'instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS',
     holds: ['module/sods/src', 'module/sods/runtime'],
     takes: []},
@@ -74,7 +77,15 @@ const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\
  * Imports a unit makes that the table does not allow, each with the step of the work that takes it away (README.md,
  * Units: 2 sods out, 3 ricebox, 4 otter's hooks, 6 muk, 7 shipto, 8 funk). [from, to, file].
  */
-export const OWED: [string, string, string][] = [];
+export const OWED: [string, string, string][] = [
+  // A Prompt in a page reaches into the app for what it should be told: the app's words, whether it is the window's
+  // or a browser's, its repos, the Remote's address. Gone when the app hands them to it as it starts one (prompt's
+  // move into module/prompt).
+  ['prompt', 'app', 'root3/app/prompt/ssh.ts'],
+  ['prompt', 'app', 'root3/app/prompt/system.ts'],
+  ['prompt', 'app', 'root3/app/prompt/userland.ts'],
+  ['prompt', 'app', 'root3/app/prompt/webroot-fetch.ts'],
+];
 
 /** The unit of a file (a path from the root): the unit holding the longest path that holds it, or null. */
 export function unitOf(rel: string): Unit | null {

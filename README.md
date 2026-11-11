@@ -85,7 +85,7 @@ another, none holding another, each standing on what is under it. Read from the 
   gateway's rules, its deploy) is shipto's, and nowhere else.
 
 The smaller modules are each a part of the one that ships it (you and otter, ricebox's command line's own programs;
-shipto, funk and m8, root3's), or what several stand on (lib).
+prompt, shipto, funk and m8, root3's), or what several stand on (lib).
 
 [`docs/STRUCTURE.md`](docs/STRUCTURE.md) is the whole of it: what each unit is and is not, what it is to be, how far
 each is from its bound today, and the order they are taken apart in, the furthest first.
@@ -96,6 +96,7 @@ from; ricebox and the units under it take from nothing over them, and no unit's 
 | --- | --- | --- |
 | lib | what the units of C stand on: system calls, words, output; no C library | — |
 | muk | the machine, an OCI-compatible VMM: a box run from layers by digest, on Linux by its namespaces, in a browser by answering its system calls itself | lib, sods |
+| prompt | a box someone works in: its terminal (the other end of the one muk makes in the box) and what of it is kept from one run to the next; nothing of the machine | lib, muk, sods, ricebox |
 | sods | instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS | — |
 | ricebox | the neutral distribution: the root, each package from its pinned source by its recipe, and the command line #80 lists | lib, muk, sods |
 | you | the tools a person reaches for: z, rg, fd, fzf | lib |
