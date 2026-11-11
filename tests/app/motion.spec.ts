@@ -1,0 +1,562 @@
+import {expect, test} from './fixtures.ts';
+import type {App} from './app.ts';
+
+// The moves (DESIGN.md §1, Motion): every other spec asks for less motion (paths.ts), so a step there waits on what
+// the OS does rather than on a move settling. Here the moves are asked for, and each is seen to go where it says
+// and to end there: the page panned along the rail, a page staged, the right pane brought out past its edge and
+// settling, its switch's mark filled, and the caret the OS draws following what is written.
+
+test.use({reducedMotion: 'no-preference'});
+
+/** A frame longer than this (some three at 60 Hz) is the page stopped (a long frame drawn in software, the machine busy
+ * with other work), not a move going slowly: what a move takes is measured without it. */
+const STALL_MS = 50;
+
+/**
+ * Every move with an end has ended (the caret's blink, which has none, goes on): waited for as each says it ends, and
+ * looked at again a frame later for those its end set going, not polled at intervals that outlast it.
+ */
+const still = (app: App) => app.page.evaluate(async () => {
+  const moving = () => document.getAnimations().filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity);
+  const until = performance.now() + 10_000;
+  // A frame first: what the last key or press set going in its next frame is going by then.
+  for (;;) {
+    await new Promise(requestAnimationFrame);
+    const now = moving();
+    if (!now.length) return;
+    if (performance.now() > until) throw new Error(`still moving after 10 s: ${now.map((a) => (a as CSSAnimation).animationName ?? a.id).join(', ')}`);
+    await Promise.all(now.map((a) => a.finished.catch(() => {})));
+  }
+});
+
+test('going along the rail pans to the next page, which stands whole once it lands, its cards each in place', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.make('notes');
+  await app.rail.go('home');
+  await still(app);
+  const cards = app.main.locator('.home-repos .card');
+  await expect(cards).toHaveCount(3);
+  // Staged, each came in from below and ended where it stands, wholly there.
+  for (const o of await cards.evaluateAll((els) => els.map((e) => [getComputedStyle(e).opacity, getComputedStyle(e).translate]))) expect(o).toEqual(['1', 'none']);
+  await app.rail.go('git');
+  await expect(app.main.getByRole('heading', {name: 'Git', level: 1})).toBeVisible();
+  await still(app);
+  // Landed: one page, the one gone to, and nothing of the last left over it.
+  await expect(app.main.locator('.home-repos')).toHaveCount(0);
+  expect(await app.page.evaluate(() => document.documentElement.matches(':active-view-transition'))).toBe(false);
+  // And the page is no layer of its own after (named, the search's shade would lie over the search with it).
+  expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).viewTransitionName)).toBe('none');
+});
+
+test('going along the rail, each page steps back with its own camera (the desk over the whole desk, Home from its left), the dots with it; the frame never moves', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.make('notes');
+  await app.rail.go('forge');
+  await still(app);
+  // Frame by frame, from Forge to Home: where the band and the pane stand, how far back Forge's desk stands, its dots'
+  // pitch, and where Home's words begin as its camera brings them in.
+  const seen = app.page.evaluate(() => new Promise<{frame: string[]; whole: boolean; pitch: number[]; left: number[]; k: number[]}>((done) => {
+    const frame = new Set<string>(), pitch: number[] = [], left: number[] = [], k: number[] = [], t0 = performance.now();
+    let whole = false;
+    const tick = () => {
+      for (const el of document.querySelectorAll('#page :is(.work.desk-bench > .bar, .work.desk-bench > .side, .home-band, .home-pane)')) {
+        const r = el.getBoundingClientRect();
+        if (r.width) frame.add(`${el.className.split(' ')[0]} ${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`);
+      }
+      // (Each repo has its desk; the one in sight is the repo's in Forge.)
+      const desk = [...document.querySelectorAll<HTMLElement>('#page .desk')].find((d) => d.getClientRects().length);
+      if (desk) {
+        whole ||= desk.classList.contains('whole');
+        pitch.push(parseFloat(getComputedStyle(desk).backgroundSize));
+      }
+      const main = document.querySelector<HTMLElement>('#page .home-main');
+      const m = main ? new DOMMatrix(getComputedStyle(main).transform) : null;
+      if (main && m && m.a < .99 && !document.documentElement.matches(':active-view-transition')) { k.push(m.a); left.push(main.getBoundingClientRect().left); }
+      if (performance.now() - t0 < 2200) requestAnimationFrame(tick); else done({frame: [...frame], whole, pitch, left, k});
+    };
+    requestAnimationFrame(tick);
+  }));
+  await app.rail.button('home').click();
+  const {frame, whole, pitch, left, k} = await seen;
+  // Forge's desk stepped back as Escape takes it, its dots closing with it.
+  expect(whole).toBe(true);
+  expect(Math.min(...pitch)).toBeLessThan(18);
+  // Home came down from half its size, its words beginning where they begin at rest, at its left.
+  expect(Math.min(...k)).toBeLessThan(.6);
+  const rest = await app.main.locator('.home-main').evaluate((el) => el.getBoundingClientRect().left);
+  for (const x of left) expect(Math.abs(x - rest)).toBeLessThan(1.5);
+  // The band and the pane of each page stood where they stand, every frame: one place each.
+  const kinds = new Set(frame.map((f) => f.split(' ')[0]));
+  expect(frame.length).toBe(kinds.size);
+  // Landed: nothing of the camera left on Home, its dots at their pitch.
+  await still(app);
+  expect(await app.main.locator('.home-main').evaluate((el) => getComputedStyle(el).transform)).toBe('none');
+  expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).backgroundSize)).toBe('24px 24px');
+});
+
+test('leaving a frameless page releases its camera before the shared page is reused, including repeated and redirected pans', async ({app}) => {
+  // Runtime's ground is #page itself; Home's ground is below its frame. A transform left on the shared
+  // parent made Home half-size even after its own camera had landed, and compounded on further trips.
+  const whole = async () => {
+    await still(app);
+    expect(await app.main.evaluate((el) => getComputedStyle(el).transform)).toBe('none');
+    expect(await app.main.evaluate((el) => Math.abs(el.getBoundingClientRect().width - (el as HTMLElement).offsetWidth))).toBeLessThan(1);
+  };
+  for (const place of ['home', 'runtime', 'home', 'runtime', 'remote', 'home'] as const) {
+    await app.rail.go(place);
+    await whole();
+  }
+  await app.rail.go('runtime');
+  await whole();
+  // A newer request before leaving Runtime replaces the first destination, without keeping its camera.
+  await app.page.evaluate(() => { document.getElementById('purpose-home')!.click(); document.getElementById('purpose-git')!.click(); });
+  await expect(app.rail.button('git')).toHaveAttribute('aria-current', 'page');
+  await whole();
+  await app.rail.go('home');
+  await whole();
+});
+
+test('pressed again before the pan has moved, the rail goes straight to the place pressed last; pressed back, it stays', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('home');
+  await still(app);
+  // Which pages are drawn on the way, and how many inks the rail has at once.
+  const watch = () => app.page.evaluate(() => {
+    const w = window as unknown as {drawn: string[]; inks: number};
+    w.drawn = [];
+    w.inks = 0;
+    new MutationObserver(() => { const at = document.getElementById('page')!.getAttribute('aria-labelledby')!; if (w.drawn.at(-1) !== at) w.drawn.push(at); })
+      .observe(document.getElementById('page')!, {attributes: true, attributeFilter: ['aria-labelledby']});
+    const tick = () => { w.inks = Math.max(w.inks, document.querySelectorAll('#rail-tabs .glide-ink').length); requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  });
+  const seen = () => app.page.evaluate(() => { const w = window as unknown as {drawn: string[]; inks: number}; return {drawn: w.drawn, inks: w.inks}; });
+  // Git, then Remote in the same moment: Remote is the page come to, from Home, and Git is never drawn on the way.
+  await watch();
+  await app.page.evaluate(() => { document.getElementById('purpose-git')!.click(); document.getElementById('purpose-remote')!.click(); });
+  await expect(app.rail.button('remote')).toHaveAttribute('aria-current', 'page');
+  await still(app);
+  expect((await seen()).drawn).toEqual(['purpose-remote']);
+  expect((await seen()).inks).toBeLessThanOrEqual(1);
+  await expect(app.main.getByRole('heading', {name: 'Remote', level: 1})).toBeVisible();
+  // Home, then Remote again at once: back where it began, it stays; no page comes, none goes.
+  await watch();
+  await app.page.evaluate(() => { document.getElementById('purpose-home')!.click(); document.getElementById('purpose-remote')!.click(); });
+  await still(app);
+  await expect(app.rail.button('remote')).toHaveAttribute('aria-current', 'page');
+  expect((await seen()).drawn.filter((d) => d !== 'purpose-remote')).toEqual([]);
+});
+
+test('File\'s tree out and away: the rail\'s ink goes from the page\'s place to File and back, never an icon ink on ink', async ({app}) => {
+  await app.rail.go('home');
+  await still(app);
+  // Every place on the rail, frame by frame: none drawn in ink on a fill of ink, as an icon would be gone.
+  const watch = () => app.page.evaluate(() => new Promise<string[]>((done) => {
+    const t0 = performance.now(), bad: string[] = [];
+    let inks = 0;
+    const tick = () => {
+      for (const b of document.querySelectorAll<HTMLElement>('#rail-tabs > .rail-item')) {
+        const cs = getComputedStyle(b), bg = cs.backgroundColor, fg = cs.color;
+        // Ink on a fill dark enough to hide it (the fill a third of the way to ink, or more).
+        const dark = (c: string) => { const m = c.match(/[\d.]+/g)!.map(Number); return (m[3] ?? 1) > .35 && m[0] + m[1] + m[2] < 300; };
+        if (dark(bg) && dark(fg)) bad.push(`${b.id} ${bg} ${fg} @${Math.round(performance.now() - t0)}`);
+      }
+      inks = Math.max(inks, document.querySelectorAll('#rail-tabs .glide-ink').length);
+      if (performance.now() - t0 < 1200) requestAnimationFrame(tick); else done([...bad, `inks ${inks}`]);
+    };
+    requestAnimationFrame(tick);
+  }));
+  const out = watch();
+  await app.rail.button('file').click();
+  await expect(app.file.tree).toBeVisible();
+  expect(await out).toEqual(['inks 1']);
+  const back = watch();
+  await app.page.keyboard.press('Escape');
+  await expect(app.file.tree).toBeHidden();
+  expect(await back).toEqual(['inks 1']);
+  // Out, File is the one inked place; away, the page's own again.
+  await still(app);
+  expect(await app.rail.button('home').evaluate((b) => getComputedStyle(b).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+});
+
+test('the rail pressed again as its ink goes: one ink, going on from where it is', async ({app}) => {
+  await app.rail.go('home');
+  await still(app);
+  // The ink, frame by frame: how many there are, and where the one there is stands.
+  const trip = app.page.evaluate(() => new Promise<{most: number; tops: number[]; landedFill: string[]}>((done) => {
+    const t0 = performance.now(), tops: number[] = [], landedFill: string[] = [];
+    let most = 0;
+    const tick = () => {
+      const inks = document.querySelectorAll<HTMLElement>('#rail-tabs .glide-ink');
+      most = Math.max(most, inks.length);
+      const remote = document.getElementById('purpose-remote')!;
+      if (inks.length) {
+        tops.push(inks[0].getBoundingClientRect().top);
+        // The place it lands on waits with no fill of its own while the ink comes (no second box under it).
+        if (remote.hasAttribute('aria-current')) landedFill.push(getComputedStyle(remote).backgroundColor);
+      }
+      if (performance.now() - t0 < 1600) requestAnimationFrame(tick); else done({most, tops, landedFill});
+    };
+    requestAnimationFrame(tick);
+  }));
+  await app.rail.button('git').click();
+  await app.page.waitForFunction(() => {
+    const ink = document.querySelector('#rail-tabs .glide-ink'), git = document.getElementById('purpose-git')!;
+    return ink && ink.getBoundingClientRect().top > git.getBoundingClientRect().top - 60;
+  });
+  await app.rail.button('remote').click();
+  const {most, tops, landedFill} = await trip;
+  expect(most).toBe(1);
+  // Down all the way, never back up toward where it began.
+  for (let i = 1; i < tops.length; i++) expect(tops[i]).toBeGreaterThanOrEqual(tops[i - 1] - 1);
+  expect(landedFill.every((c) => c === 'rgba(0, 0, 0, 0)')).toBe(true);
+});
+
+test('the right pane brought out lands a touch past its edge and settles, its mark filled; put away, it goes at once and quickly', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.openInForge();
+  const side = app.main.getByRole('complementary', {name: 'Plugins and Prompt'});
+  const fill = app.forge.paneSwitch.locator('.mark-fill');
+  const filled = () => fill.evaluate((e) => new DOMMatrix(getComputedStyle(e).transform).a);
+  await still(app);
+  const open = (await side.boundingBox())!.width;
+  expect(await filled()).toBeCloseTo(1, 2);
+
+  // Put away, it is set going in the press itself (its move begun before the press is done with: the next frame drawn
+  // has it moving, however late a busy page draws it) and is gone in a fraction of its coming (--leave): sampled frame
+  // by frame. (When that next frame comes is the page's drawing, not the pane's: a page drawn in software, as here, can
+  // take a long frame there now and then, and a machine shared with other work can stop it for a while. What a frame
+  // took past STALL_MS is the page stopped, not the pane slow, and is not counted: `stalled`.)
+  const going = app.page.evaluate((STALL_MS) => new Promise<{first: number; gone: number; stalled: number}>((done) => {
+    const el = document.querySelector('.work.bench:not([hidden]) > .side')!, work = el.parentElement!;
+    let first = -1, t0 = 0, last = 0, stalled = 0;
+    new MutationObserver((_, o) => { if (work.classList.contains('pane-closed')) { first = performance.now() - t0; o.disconnect(); } }).observe(work, {attributes: true, attributeFilter: ['class']});
+    const tick = () => {
+      const now = performance.now(), w = el.getBoundingClientRect().width, at = now - t0;
+      stalled += Math.max(0, now - last - STALL_MS);
+      last = now;
+      if (w < 1 || at > 2000 + stalled) done({first, gone: at, stalled}); else requestAnimationFrame(tick);
+    };
+    // Timed from the press itself, not from the test's asking for it.
+    addEventListener('click', () => { t0 = last = performance.now(); requestAnimationFrame(tick); }, {once: true, capture: true});
+  }), STALL_MS);
+  // Pressed as a hand does, without the test's own look at what is under the pointer first: that look runs in the page
+  // after the press, in the frames being measured (a 60 ms task of its own on a page this size).
+  const at = (await app.forge.paneSwitch.boundingBox())!;
+  await app.page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+  const {first, gone, stalled} = await going;
+  expect(first).toBeGreaterThanOrEqual(0);
+  expect(first).toBeLessThan(16);
+  expect(gone - stalled).toBeLessThan(400);
+  await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'false');
+  await still(app);
+  await expect(side).toBeHidden();
+  expect(await filled()).toBeCloseTo(0, 2);
+
+  // Brought out: its width, frame by frame, goes past where it stops and comes back to it (for as long as the move
+  // lasts at the OS's pace, and for as long again as the page stood stopped meanwhile).
+  const widths = app.page.evaluate((STALL_MS) => new Promise<number[]>((done) => {
+    const el = document.querySelector('.work.bench:not([hidden]) > .side')!, seen: number[] = [], t0 = performance.now();
+    const pace = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pace')) || 1;
+    let last = t0, stalled = 0;
+    const tick = () => {
+      const now = performance.now();
+      stalled += Math.max(0, now - last - STALL_MS);
+      last = now;
+      seen.push(el.getBoundingClientRect().width);
+      if (now - t0 < 700 * pace + stalled) requestAnimationFrame(tick); else done(seen);
+    };
+    requestAnimationFrame(tick);
+  }), STALL_MS);
+  await app.forge.paneSwitch.click();
+  const seen = await widths;
+  await still(app);
+  await expect(side).toBeVisible();
+  expect(Math.max(...seen)).toBeGreaterThan(open + 4);
+  expect(Math.abs(seen.at(-1)! - open)).toBeLessThan(1);
+  expect(await filled()).toBeCloseTo(1, 2);
+});
+
+test('Home\'s right pane put away and brought back: its switch stays under the hand, what it holds goes with its edge, the band\'s search stays where it is', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('home');
+  await still(app);
+  const toggle = app.main.getByRole('button', {name: 'Right pane'});
+  const search = app.main.getByRole('searchbox', {name: /^Search/});
+  const at = (await toggle.boundingBox())!;
+  const where = (await search.boundingBox())!;
+  // Frame by frame as it goes: whether Lately is to be seen.
+  const going = (ms: number) => app.page.evaluate((ms) => new Promise<string[]>((done) => {
+    const side = document.querySelector<HTMLElement>('.home-side')!;
+    const seen: string[] = [], t0 = performance.now();
+    const tick = () => {
+      seen.push(side.getClientRects().length > 0 && getComputedStyle(side).visibility === 'visible' ? 'visible' : 'hidden');
+      if (performance.now() - t0 < ms) requestAnimationFrame(tick); else done(seen);
+    };
+    requestAnimationFrame(tick);
+  }), ms);
+  const away = going(300);
+  await toggle.click();
+  const put = await away;
+  // Lately is still there for the start of the move, going with the pane's edge.
+  expect(put.slice(0, 3).every((f) => f === 'visible')).toBe(true);
+  await still(app);
+  // The switch where it stood, and the search on the band where it was: neither is the pane's to take away.
+  expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
+  expect(Math.abs((await toggle.boundingBox())!.y - at.y)).toBeLessThan(1);
+  await expect(search).toBeVisible();
+  expect(Math.abs((await search.boundingBox())!.x - where.x)).toBeLessThan(1);
+  await toggle.click();
+  await still(app);
+  await expect(app.main.getByRole('complementary', {name: 'Recent activity'})).toBeVisible();
+  expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
+});
+
+test('a TODO started between two: the lines under it make way from where they stood, not there at once', async ({app}) => {
+  await app.rail.go('home');
+  const items = app.home.items;
+  await app.home.title(items.first()).fill('Fix: one');
+  await app.home.title(items.first()).press('Enter');
+  await app.home.detail(items.first()).press('Enter');
+  await app.home.title(items.nth(1)).fill('Feat: two');
+  await app.home.title(items.first()).press('Enter');
+  // A detail that is kept: its line and the day under it stay as the next is started, so what moves the lines
+  // under it is the new line alone (an empty detail goes with its day as the new line comes, and nothing moves).
+  await app.home.detail(items.first()).pressSequentially('kept');
+  await app.home.detail(items.first()).press('Enter');
+  await still(app);
+  const two = app.home.title(items.nth(1));
+  const stood = (await two.boundingBox())!.y;
+  // The frame after the list is drawn again with the new line in it: where "Feat: two" is seen.
+  const first = app.page.evaluate(() => new Promise<number>((done) => {
+    const list = document.querySelector('.todo-items')!;
+    const drawn = new MutationObserver(() => {
+      drawn.disconnect();
+      requestAnimationFrame(() => {
+        const field = [...list.querySelectorAll<HTMLInputElement>('input')].find((f) => f.value === 'two')!;
+        done(field.getBoundingClientRect().top);
+      });
+    });
+    drawn.observe(list, {childList: true});
+  }));
+  await app.home.detail(items.first()).press('Enter');
+  const seen = await first;
+  await expect(app.home.title(items.nth(1))).toBeFocused();
+  await still(app);
+  const now = (await app.home.title(items.nth(2)).boundingBox())!.y;
+  expect(now).toBeGreaterThan(stood + 4);
+  // Set off from where it stood (a frame's way at most), not drawn where it ends.
+  expect(Math.abs(seen - stood)).toBeLessThan((now - stood) / 2);
+});
+
+test('a menu put away and opened again on its way out comes back from where it had got to, not at once', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('home');
+  await still(app);
+  const gear = app.main.getByRole('button', {name: 'Actions for hello'}).first();
+  const menu = app.main.getByRole('menu', {name: 'Actions for hello'});
+  await gear.click();
+  await expect(menu).toBeVisible();
+  await still(app);
+  // Put away, and pressed again while it fades: once it is partway out (looked at each frame, not after a set time, which
+  // a busy machine can overshoot to where it is gone).
+  const back = await gear.evaluate((g) => new Promise<number[]>((done) => {
+    const list = document.getElementById(g.getAttribute('aria-controls') ?? '') ?? g.closest('.card')!.querySelector<HTMLElement>('.repo-gear-pop')!;
+    (g as HTMLElement).click();
+    const again = () => {
+      const o = +getComputedStyle(list).opacity;
+      if (o > .85) { requestAnimationFrame(again); return; }
+      (g as HTMLElement).click();
+      const seen: number[] = [];
+      const tick = () => { seen.push(+getComputedStyle(list).opacity); if (seen.length < 40 && seen.at(-1)! < 1) requestAnimationFrame(tick); else done(seen); };
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(again);
+  }));
+  // Neither gone nor whole at once: it fades back from where it was.
+  expect(back[0]).toBeGreaterThan(.1);
+  expect(back[0]).toBeLessThan(.99);
+  await expect(menu).toBeVisible();
+  await still(app);
+  expect(await menu.evaluate((e) => +getComputedStyle(e).opacity)).toBe(1);
+  await expect(menu.getByRole('menuitem', {name: 'Rename'})).toBeEnabled();
+});
+
+test('the caret is drawn by the OS: it follows what is written along the line, and Enter takes it to the next', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.openInForge();
+  const editor = app.forge.editor('README.md');
+  await editor.focus();
+  await app.page.keyboard.press('Control+End');
+  const caret = app.page.locator('.os-caret');
+  const at = async () => { await still(app); return caret.evaluate((e) => new DOMMatrix(getComputedStyle(e).transform)).then((m) => ({x: m.e, y: m.f})); };
+  await expect(caret).toHaveClass(/\bon\b/);
+  // The browser's own is not drawn over it.
+  expect(await editor.evaluate((e) => getComputedStyle(e).caretColor)).toBe('rgba(0, 0, 0, 0)');
+  const a = await at();
+  await app.page.keyboard.type('more');
+  const b = await at();
+  expect(b.x).toBeGreaterThan(a.x + 10);
+  expect(Math.abs(b.y - a.y)).toBeLessThan(1);
+  // A letter written puts it after the letter in the frame the letter is drawn in: it never glides there, over the
+  // letter just written, a letter behind at every key.
+  // (Written and looked at in one go in the page: a key sent from here comes back after the glide would be over.)
+  const drawn = await caret.evaluate(async (e) => {
+    document.execCommand('insertText', false, 's');
+    await new Promise((go) => requestAnimationFrame(go));
+    return new DOMMatrix(getComputedStyle(e).transform).e;
+  });
+  expect(Math.abs(drawn - (await at()).x)).toBeLessThan(0.5);
+  expect(drawn).toBeGreaterThan(b.x + 4);
+  await app.page.keyboard.press('Enter');
+  const c = await at();
+  expect(c.y).toBeGreaterThan(b.y + 8);
+  expect(c.x).toBeLessThan(b.x);
+});
+
+test('a field that moves once the caret is in it (a page still coming in) carries the caret with it', async ({app}) => {
+  await app.rail.go('home');
+  const field = app.home.title(app.home.items.first());
+  await field.focus();
+  const caret = app.page.locator('.os-caret');
+  await expect(caret).toHaveClass(/\bon\b/);
+  // Moved after the caret was put in it, with nothing typed or pressed: the caret goes with it.
+  await field.evaluate((e) => { e.closest<HTMLElement>('[role=listitem]')!.style.translate = '40px 24px'; });
+  await expect.poll(async () => {
+    const [m, r] = await Promise.all([caret.evaluate((e) => new DOMMatrix(getComputedStyle(e).transform)), field.boundingBox()]);
+    return Math.abs(m.e - r!.x) < 2 && m.f > r!.y && m.f < r!.y + r!.height;
+  }).toBe(true);
+});
+
+test('a box emptied by the page, not by a key (a message sent), has its caret back at its start', async ({app}) => {
+  await app.rail.go('home');
+  // A box of lines as a page's own, emptied a moment after Ctrl+Enter as a sent message's is (after the Remote answers).
+  await app.page.evaluate(() => {
+    const box = Object.assign(document.createElement('textarea'), {className: 'line-in', rows: 1});
+    box.setAttribute('aria-label', 'Say');
+    box.style.cssText = 'position: fixed; left: 300px; top: 300px; width: 400px; z-index: 20';
+    box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); setTimeout(() => { box.value = ''; }, 150); } });
+    document.body.append(box);
+  });
+  const box = app.page.getByRole('textbox', {name: 'Say'});
+  await box.focus();
+  const caret = app.page.locator('.os-caret');
+  const x = () => caret.evaluate((e) => new DOMMatrix(getComputedStyle(e).transform).e);
+  await expect(caret).toHaveClass(/\bon\b/);
+  const start = await x();
+  await app.page.keyboard.type('Seeds on Saturday');
+  await expect.poll(x).toBeGreaterThan(start + 40);
+  await app.page.keyboard.press('Control+Enter');
+  await expect(box).toHaveValue('');
+  await expect.poll(async () => Math.abs(await x() - start)).toBeLessThan(2);
+});
+
+test('switching repos on the band, the ink goes all the way from one pill to the other, not cut by the band drawn again', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.make('notes');
+  await still(app);
+  const pill = (name: string) => app.forge.band.locator(`.pill[data-repo="${name}"]`);
+  const to = (await pill('hello').boundingBox())!;
+  // The ink, frame by frame, from the press until it has landed.
+  const trip = app.page.evaluate(() => new Promise<{alive: number; left: number}>((done) => {
+    const t0 = performance.now();
+    let alive = 0, left = NaN;
+    const tick = () => {
+      const ink = document.querySelector<HTMLElement>('.repo-strip .glide-ink');
+      if (ink) { alive = performance.now() - t0; left = ink.getBoundingClientRect().left; }
+      if (performance.now() - t0 < 600) requestAnimationFrame(tick); else done({alive, left});
+    };
+    requestAnimationFrame(tick);
+  }));
+  await pill('hello').getByRole('button', {name: 'hello', exact: true}).click();
+  const {alive, left} = await trip;
+  expect(alive).toBeGreaterThan(150);
+  expect(Math.abs(left - to.x)).toBeLessThan(4);
+});
+
+test('a page coming in never shows a part and then takes it away to bring it in', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.newRepo.make('notes');
+  await app.rail.go('remote');
+  await still(app);
+  // Each of the band's pills, each file and each card, by what it is (drawn again, it is a new element of the same
+  // thing): once seen at all, never gone back to nothing while the page arrives (Home's cards are drawn again once
+  // the Remote has said what it holds, Forge's band once its repos are read).
+  const flashes = () => app.page.evaluate(() => new Promise<string[]>((done) => {
+    const t0 = performance.now(), most = new Map<string, number>(), back: string[] = [];
+    const tick = () => {
+      for (const el of document.querySelectorAll<HTMLElement>('.repo-strip .pill, .col:not([hidden]) section.file, .home-repos .card')) {
+        // What it is and which: a card and a pill of the same repo are two things.
+        const key = `${el.className.split(' ')[0]} ${el.dataset.repo ?? el.dataset.path ?? (el.textContent ?? '').trim().slice(0, 16)}`;
+        // Only what is on the screen: a page kept out of sight (Forge's, while Home is shown) is not seen.
+        if (!el.checkVisibility()) continue;
+        let o = 1;
+        for (let p: HTMLElement | null = el; p; p = p.parentElement) o *= +getComputedStyle(p).opacity;
+        const had = most.get(key) ?? 0;
+        if (had > .9 && o < .4) back.push(`${key} ${had.toFixed(2)}→${o.toFixed(2)} @${Math.round(performance.now() - t0)}ms`);
+        most.set(key, Math.max(had, o));
+      }
+      if (performance.now() - t0 < 1200) requestAnimationFrame(tick); else done(back);
+    };
+    requestAnimationFrame(tick);
+  }));
+  const home = flashes();
+  await app.rail.go('home');
+  expect(await home).toEqual([]);
+  const forge = flashes();
+  await app.rail.go('forge');
+  expect(await forge).toEqual([]);
+});
+
+test('Edit profile opened and put away, what is under it goes one way only, with the sheet, never up and then down', async ({signedIn: app}) => {
+  await app.rail.go('home');
+  await still(app);
+  // Where the TODO's heading stands, frame by frame from the press until the sheet has settled.
+  const track = (press: string) => app.page.evaluate((press) => new Promise<number[]>((done) => {
+    const todo = [...document.querySelectorAll('h2')].find((e) => e.textContent?.startsWith('TODO'))!;
+    const ys: number[] = [], t0 = performance.now();
+    const tick = () => { ys.push(todo.getBoundingClientRect().top); if (performance.now() - t0 < 1400) requestAnimationFrame(tick); else done(ys); };
+    [...document.querySelectorAll<HTMLButtonElement>('.profile button')].find((b) => b.textContent === press)!.click();
+    requestAnimationFrame(tick);
+  }), press);
+  const opened = await track('Edit profile');
+  // The sheet as tall as the profile it stands for (name, handle, a line about them) moves what is under it a pixel
+  // or none; whatever it moves, it moves one way.
+  expect(Math.min(...opened)).toBeGreaterThan(opened[0] - 1);
+  expect(opened.at(-1)!).toBeGreaterThanOrEqual(opened[0] - 1);
+  await still(app);
+  const shut = await track('Cancel');
+  expect(Math.max(...shut)).toBeLessThan(shut[0] + 1);
+  expect(Math.abs(shut.at(-1)! - opened[0])).toBeLessThan(1);
+});
+
+test('a message joining a run: the one before narrows to its words from its side, and the note over the field stays as it goes', async ({signedIn: ada, another}) => {
+  const bo = await another('Bo');
+  await bo.inbox.named();
+  await ada.inbox.named();
+  await ada.inbox.writeTo(bo.handle, 'Are you coming on Saturday?');
+  await expect(ada.main.getByText('Sent as request: recipient will see it once accepted.')).toBeVisible();
+  await still(ada);
+  // Its width, and the note's height, each frame from the press until both have settled.
+  const watch = ada.page.evaluate(() => new Promise<{wide: number[]; tall: number[]}>((done) => {
+    const first = document.querySelector<HTMLElement>('.inbox-messages > .bubble')!;
+    const note = [...document.querySelectorAll<HTMLElement>('main [role=alert]')].find((e) => (e.textContent ?? '').startsWith('Sent as request'))!;
+    const wide: number[] = [], tall: number[] = [], t0 = performance.now();
+    const tick = () => {
+      wide.push(first.getBoundingClientRect().width);
+      tall.push(note.isConnected ? note.getBoundingClientRect().height : 0);
+      if (performance.now() - t0 < 1500) requestAnimationFrame(tick); else done({wide, tall});
+    };
+    requestAnimationFrame(tick);
+  }));
+  await ada.inbox.message.fill('With the tent?');
+  await ada.inbox.message.press('Control+Enter');
+  const {wide, tall} = await watch;
+  const from = wide[0], to = wide.at(-1)!;
+  // It narrowed (its time went to the one after it)…
+  expect(to).toBeLessThan(from - 8);
+  // …over frames, not in one: some frame stood well between where it was and where it ended.
+  expect(wide.some((w) => w < from - 2 && w > to + 2)).toBe(true);
+  // The note never left its line on the way.
+  expect(Math.min(...tall)).toBeGreaterThan(0);
+});

@@ -1,0 +1,340 @@
+//! The translator as a wasm module, so a browser can translate the
+//! programs it runs. The host copies an ELF into memory from
+//! `sods_alloc`, calls `sods_translate`, then reads the module (or the
+//! error text) from `sods_output_ptr`/`sods_output_len`. Code a program
+//! reaches later comes from `sods_open` once, then `sods_translate_more`,
+//! until `sods_close`. The ELF given to either is the translator's from
+//! then on (it is parsed where it lies, not copied): the host does not free
+//! it.
+
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
+
+/// The translator's allocator: the system's, with its memory grown by a quarter again at a time rather than by as
+/// little as each allocation needs. An engine may collect its whole heap as a wasm memory grows; a big program's
+/// translation grew it hundreds of times (a compiler's, 516 collections), and in a kernel's heap those took longer
+/// than the translation's own work. (By a half: 8 for its 12, with two fifths more held; by an eighth: 16, for a
+/// twentieth less.)
+struct Roomy;
+
+#[global_allocator]
+static ALLOCATOR: Roomy = Roomy;
+
+/// The memory's size now, in 64 KiB pages.
+fn pages() -> usize {
+    core::arch::wasm32::memory_size::<0>()
+}
+
+/// Once the memory has grown past `before` pages: room for a quarter as much again, made now and given back (the
+/// allocator keeps what is freed at its top, and hands it out without growing the memory).
+fn room(before: usize) {
+    if let Ok(layout) = Layout::from_size_align(before * 65536 / 4, 16) {
+        // SAFETY: the layout's size is not zero (a memory that grew held pages), and what is allocated is freed at once.
+        unsafe {
+            let p = System.alloc(layout);
+            if !p.is_null() { System.dealloc(p, layout); }
+        }
+    }
+}
+
+// SAFETY: each call is the system allocator's own, with the same arguments.
+unsafe impl GlobalAlloc for Roomy {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let before = pages();
+        let p = System.alloc(layout);
+        if pages() != before { room(before); }
+        p
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let before = pages();
+        let p = System.alloc_zeroed(layout);
+        if pages() != before { room(before); }
+        p
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+        let before = pages();
+        let p = System.realloc(ptr, layout, size);
+        if pages() != before { room(before); }
+        p
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        System.dealloc(ptr, layout)
+    }
+}
+
+thread_local! {
+    static OUTPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    /// The ELFs sods_translate_more reads, by handle (sods_open), each with
+    /// the function starts translated so far; the oldest go first.
+    static OPEN: RefCell<Vec<(u32, crate::elf::Elf, BTreeSet<u64>)>> = const { RefCell::new(Vec::new()) };
+    static NEXT: Cell<u32> = const { Cell::new(1) };
+    /// How many instructions one module of code reached later may hold, past its seeds' own (sods_budget).
+    static BUDGET: Cell<usize> = const { Cell::new(crate::find::BUDGET) };
+    /// The x87's registers of each thread whose translated code calls sods_fpu, by handle (an instance of this module
+    /// of its own holds them: runtime/x87.ts). The first is no thread's: an instance whose handle was never set uses
+    /// it, and never another thread's.
+    static FPUS: RefCell<Vec<crate::x87::Fpu>> = const { RefCell::new(Vec::new()) };
+    /// Handles given back, for the next thread.
+    static FREE_FPUS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+}
+
+/// u64s as little-endian bytes from sods_alloc, which promises no alignment.
+unsafe fn words(p: *const u8, n: usize) -> Vec<u64> {
+    std::slice::from_raw_parts(p, n * 8).chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect()
+}
+
+#[no_mangle]
+pub extern "C" fn sods_alloc(len: usize) -> *mut u8 {
+    let mut v = Vec::<u8>::with_capacity(len);
+    let p = v.as_mut_ptr();
+    std::mem::forget(v);
+    p
+}
+
+/// # Safety
+/// `ptr` and `len` must come from one `sods_alloc` call.
+#[no_mangle]
+pub unsafe extern "C" fn sods_free(ptr: *mut u8, len: usize) {
+    drop(Vec::from_raw_parts(ptr, 0, len));
+}
+
+/// Translate the ELF at `ptr` (taken: the host does not free it). Returns
+/// 0 with the wasm module as output, or 1 with an error message as output.
+///
+/// # Safety
+/// `ptr` and `len` must come from one `sods_alloc` call, all written.
+#[no_mangle]
+pub unsafe extern "C" fn sods_translate(ptr: *mut u8, len: usize) -> i32 {
+    let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
+        Ok(elf) => {
+            let program = crate::find::discover(&elf);
+            (0, crate::image::translate(&elf, &program, crate::image::Options::default()).wasm)
+        }
+        Err(e) => (1, e.to_string().into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
+/// As `sods_translate`, all of the program (find::discover_whole), as the hot programs are translated in the
+/// release: what a page translates ahead of a program's first run (runtime/ahead.ts), so the run reaches nothing later.
+///
+/// # Safety
+/// As `sods_translate`.
+#[no_mangle]
+pub unsafe extern "C" fn sods_translate_whole(ptr: *mut u8, len: usize) -> i32 {
+    let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
+        Ok(elf) => {
+            let program = crate::find::discover_whole(&elf);
+            (0, crate::image::translate(&elf, &program, crate::image::Options::default()).wasm)
+        }
+        Err(e) => (1, e.to_string().into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
+/// As `sods_translate`, and from the function starts at `seeds` (`n_seeds` u64s, left to the host) too: a program
+/// with its code reached later, in one module (find::discover_seeded).
+///
+/// # Safety
+/// As `sods_translate`, and `seeds` must point to `n_seeds` u64s.
+#[no_mangle]
+pub unsafe extern "C" fn sods_translate_seeded(ptr: *mut u8, len: usize, seeds: *const u8, n_seeds: usize) -> i32 {
+    let seeds = words(seeds, n_seeds);
+    let (status, out) = match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
+        Ok(elf) => {
+            let program = crate::find::discover_seeded(&elf, &seeds);
+            (0, crate::image::translate(&elf, &program, crate::image::Options::default()).wasm)
+        }
+        Err(e) => (1, e.to_string().into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
+/// Keep the ELF at `ptr` for `sods_translate_more`, with the function
+/// starts already translated (`known`, u64s): a program reaches its code a
+/// function at a time, and each time the same file is read, so it is parsed
+/// once, and what each module adds is remembered here. Returns its handle,
+/// or 0 with an error as output. A few stay open (a compiler's driver, cc1
+/// and the assembler take turns); opening more lets the oldest go.
+///
+/// # Safety
+/// `ptr` and `len` must come from one `sods_alloc` call, all written (it is
+/// taken), and `known` must point to `n_known` u64s.
+#[no_mangle]
+pub unsafe extern "C" fn sods_open(ptr: *mut u8, len: usize, known: *const u8, n_known: usize) -> u32 {
+    const KEPT: usize = 6;
+    match crate::elf::Elf::parse_owned(Vec::from_raw_parts(ptr, len, len)) {
+        Ok(elf) => {
+            let handle = NEXT.with(|n| { let h = n.get(); n.set(h + 1); h });
+            let known = words(known, n_known).into_iter().collect();
+            OPEN.with(|o| {
+                let mut o = o.borrow_mut();
+                if o.len() >= KEPT { o.remove(0); }
+                o.push((handle, elf, known));
+            });
+            handle
+        }
+        Err(e) => { OUTPUT.with(|o| *o.borrow_mut() = e.to_string().into_bytes()); 0 }
+    }
+}
+
+/// Code reached later in the ELF opened as `handle`: the functions reached
+/// from the `seeds` (u64s) past those translated already, as a module
+/// filling table slots from `base`. Returns 0 with the module as output, or
+/// 1 with an error message.
+///
+/// # Safety
+/// `seeds` must point to `n_seeds` u64s.
+#[no_mangle]
+pub unsafe extern "C" fn sods_translate_more(handle: u32, seeds: *const u8, n_seeds: usize, base: u32) -> i32 {
+    let seeds = words(seeds, n_seeds);
+    let (status, out) = OPEN.with(|o| match o.borrow_mut().iter_mut().find(|(h, _, _)| *h == handle) {
+        Some((_, elf, known)) => {
+            let program = crate::find::discover_within(elf, &seeds, known, BUDGET.with(|b| b.get()));
+            known.extend(program.functions.iter().map(|f| f.start));
+            (0, crate::image::translate_more(elf, &program, base, crate::image::Options::default()).wasm)
+        }
+        None => (1, b"that ELF is not open".to_vec()),
+    });
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
+/// Decode the zstd frames at `ptr` (left to the host to free), `size`
+/// bytes once decoded: a root file from a pack, which a system call needs at
+/// once and the host's own decoders give only later. Returns 0 with the
+/// bytes as output, or 1 with an error message.
+///
+/// # Safety
+/// `ptr` must point to `len` initialized bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sods_unzstd(ptr: *const u8, len: usize, size: usize) -> i32 {
+    use std::io::Read;
+    let mut src = std::slice::from_raw_parts(ptr, len);
+    let mut out = Vec::with_capacity(size);
+    let done = ruzstd::decoding::StreamingDecoder::new(&mut src).map_err(|e| e.to_string())
+        .and_then(|mut d| d.read_to_end(&mut out).map_err(|e| e.to_string()));
+    let (status, out) = match done {
+        Ok(_) if out.len() == size => (0, out),
+        Ok(_) => (1, format!("decoded {} bytes, not {size}", out.len()).into_bytes()),
+        Err(e) => (1, e.into_bytes()),
+    };
+    OUTPUT.with(|o| *o.borrow_mut() = out);
+    status
+}
+
+/// The SHA-256 of the bytes at `ptr` (left to the host to free): a root
+/// file as its pack stores it, checked against the pack's table
+/// (runtime/table.ts) before it is decoded, where the host's own digests
+/// come only later. Returns 0 with the 32 bytes of the digest as output.
+///
+/// # Safety
+/// `ptr` must point to `len` initialized bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sods_sha256(ptr: *const u8, len: usize) -> i32 {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(std::slice::from_raw_parts(ptr, len));
+    OUTPUT.with(|o| *o.borrow_mut() = digest.to_vec());
+    0
+}
+
+/// Set how much code reached later one module may hold (discover_within;
+/// 0: all it reaches); for measuring against find::BUDGET.
+#[no_mangle]
+pub extern "C" fn sods_budget(instructions: u32) {
+    BUDGET.with(|b| b.set(if instructions == 0 { usize::MAX } else { instructions as usize }));
+}
+
+/// Cut functions into runs of `blocks` blocks (layout::RUN) from now on: for testing the cut on small programs.
+#[no_mangle]
+pub extern "C" fn sods_run(blocks: u32) {
+    crate::layout::set_run(blocks as usize);
+}
+
+/// Let go of the ELF opened as `handle`, and of what was remembered with it.
+#[no_mangle]
+pub extern "C" fn sods_close(handle: u32) {
+    OPEN.with(|o| o.borrow_mut().retain(|(h, _, _)| *h != handle));
+}
+
+#[no_mangle]
+pub extern "C" fn sods_output_ptr() -> *const u8 {
+    OUTPUT.with(|o| o.borrow().as_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn sods_output_len() -> usize {
+    OUTPUT.with(|o| o.borrow().len())
+}
+
+/// One x87 instruction of the thread whose registers are `fpu` (crate::x87::Fpu::call): what translated code imports
+/// as `fpu`, wasm to wasm.
+#[no_mangle]
+pub extern "C" fn sods_fpu(fpu: u32, op: i32, size: i32, a: i32, b: i32, lo: i64, hi: i32) -> i64 {
+    FPUS.with(|f| f.borrow_mut().get_mut(fpu as usize).map_or(0, |s| s.call(op, size, a, b, lo as u64, hi as u32) as i64))
+}
+
+/// A handle to `fpu`'s registers: where a thread's start.
+fn keep(fpu: crate::x87::Fpu) -> u32 {
+    FPUS.with(|f| {
+        let mut f = f.borrow_mut();
+        if f.is_empty() { f.push(crate::x87::Fpu::default()); }
+        match FREE_FPUS.with(|free| free.borrow_mut().pop()) {
+            Some(h) => { f[h as usize] = fpu; h }
+            None => { f.push(fpu); (f.len() - 1) as u32 }
+        }
+    })
+}
+
+/// A thread's x87 registers: as they start (`from` 0), or a copy of those of `from` (a new thread or process).
+#[no_mangle]
+pub extern "C" fn sods_x87_new(from: u32) -> u32 {
+    let fpu = if from == 0 { None } else { FPUS.with(|f| f.borrow().get(from as usize).copied()) };
+    keep(fpu.unwrap_or_default())
+}
+
+/// The registers of `fpu` as they start again (an exec).
+#[no_mangle]
+pub extern "C" fn sods_x87_reset(fpu: u32) {
+    FPUS.with(|f| if let Some(s) = f.borrow_mut().get_mut(fpu as usize) { *s = crate::x87::Fpu::default(); });
+}
+
+/// Let go of `fpu` (its thread ended).
+#[no_mangle]
+pub extern "C" fn sods_x87_free(fpu: u32) {
+    let held = FPUS.with(|f| (fpu as usize) < f.borrow().len());
+    if fpu != 0 && held { FREE_FPUS.with(|free| free.borrow_mut().push(fpu)); }
+}
+
+/// The registers of `fpu` as bytes (crate::x87::SAVED of them) for output: for a thread started in another Worker.
+#[no_mangle]
+pub extern "C" fn sods_x87_save(fpu: u32) -> i32 {
+    let saved = FPUS.with(|f| f.borrow().get(fpu as usize).map(|s| s.save()));
+    OUTPUT.with(|o| *o.borrow_mut() = saved.map_or_else(Vec::new, |s| s.to_vec()));
+    saved.is_none() as i32
+}
+
+/// A thread's registers from bytes `sods_x87_save` gave, put at `ptr` (freed here); 0 if they are not such bytes.
+///
+/// # Safety
+/// `ptr` and `len` must come from one `sods_alloc` call, all written.
+#[no_mangle]
+pub unsafe extern "C" fn sods_x87_load(ptr: *mut u8, len: usize) -> u32 {
+    let bytes = Vec::from_raw_parts(ptr, len, len);
+    crate::x87::Fpu::restore(&bytes).map_or(0, keep)
+}
+
+/// The x87 operations by the index translated code calls them by, as text for output (comma-separated): a host
+/// checks a translation's (its sods.fpu section) is the same before it runs it.
+#[no_mangle]
+pub extern "C" fn sods_x87_names() -> i32 {
+    OUTPUT.with(|o| *o.borrow_mut() = crate::x87::NAMES.join(",").into_bytes());
+    0
+}

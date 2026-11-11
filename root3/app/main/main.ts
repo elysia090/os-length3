@@ -1,0 +1,719 @@
+import {h} from '../ui/dom.ts';
+import {setWindowTitle} from '../host/tauri.ts';
+import {icon} from '../ui/icons.ts';
+import {placeholder} from '../pages/kit/common.ts';
+import type {Context, Writing} from '../pages/kit/context.ts';
+import {currentProfile, home, startEditing} from '../pages/home/home.ts';
+import {Me} from '../pages/me/me.ts';
+import {ServerSwitcher} from '../pages/server/switcher.ts';
+import {FileTree} from '../pages/file/tree.ts';
+import {onRenamed} from '../repos/repos.ts';
+import {begin} from '../remote/lifecycle.ts';
+import {writeLeftBack} from '../pages/bench/repo-copy.ts';
+import {forgetExcept} from '../prompt/webroot-fetch.ts';
+import {keepFocus} from '../ui/focus.ts';
+import {onPlugins, pluginsOpen, setPluginsOpen} from '../host/plugins.ts';
+import {learnHome} from '../remote/inbox.ts';
+import {begin as lookForNews, look, marks, news, onNews} from '../remote/news.ts';
+import {about, claim, connection, enterWith, holdAsk, justSignedIn, mayAsk, onConnection, onReach, remoteAway, signInFailed} from '../remote/connection.ts';
+import {cameBackFromStripe, isPaidTier} from '../remote/plan.ts';
+import {every} from '../host/runs.ts';
+import {heldInvite, holdInvite, inviteIn, openBoards} from '../remote/servers.ts';
+import {getState, loadState, onState} from '../home/state.ts';
+import {inEffect} from '../home/dotfiles.ts';
+import {NAME as LOOK, wear} from '../ui/look.ts';
+import {onLang, t, useLang} from '../i18n/i18n.ts';
+import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
+import {LAND, glide, morph, paced, paneOut, stage, still, where, type Carry} from '../ui/glide.ts';
+import {letGo, touch} from '../ui/touch.ts';
+import {caret} from '../ui/caret.ts';
+import {optical} from '../ui/optical.ts';
+import {cameraIn, comeBy, frameIn, frameOff, goneBy, GroundCamera, type Along, type PageCamera, type Rect} from '../ui/camera.ts';
+import {scrollbars} from '../ui/scrollbars.ts';
+
+const PURPOSE_KEY = 'root3.os.purpose';
+const REPO_KEY = 'root3.os.repo';
+/** The file last read in Forge, and its repo: where Home says the person left off. */
+const FILE_KEY = 'root3.os.file';
+
+const $ = (id: string) => document.getElementById(id)!;
+const tabs = new Map<PurposeId, HTMLButtonElement>();
+let current: PurposeId = 'home';
+/** Whether a page has been drawn yet: before the first, the page holds only what says the scripts did not run. */
+let opened = false;
+/** Who is in (the Remote and the account), as the page was last drawn for them. */
+const whoIsIn = () => { const c = connection(); return c ? `${c.url}\n${c.user ?? ''}` : null; };
+let wasIn: string | null = null;
+/** The plug's state in the rail, said again whenever the page or the plugin area changes. */
+let plugState = () => {};
+
+function load(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function save(key: string, value: string) {
+  try { localStorage.setItem(key, value); } catch { /* convenience only */ }
+}
+
+/** A place's page, drawn for the shell. */
+type Drawn = (ctx: Context) => Node[];
+/** Forge's module once brought: what the shell asks of Forge besides its page (what it keeps, what it shows next). */
+let forgeOf: typeof import('../pages/forge/forge.ts') | null = null;
+/**
+ * Each place's page but Home's, brought when it is first drawn (all of them once Home stands, in the time the page
+ * has to spare): the code of the places not shown is no part of what the page must fetch and run before it draws.
+ */
+const BRING: Partial<Record<PurposeId, () => Promise<Drawn>>> = {
+  'forge': () => import('../pages/forge/forge.ts').then((m) => { forgeOf = m; return m.forge; }),
+  'git': () => import('../pages/git/git.ts').then((m) => m.git),
+  'new-repo': () => import('../pages/new-repo/new-repo.ts').then((m) => m.newRepo),
+  'runtime': () => import('../pages/runtime/runtime.ts').then((m) => m.runtime),
+  'remote': () => import('../pages/remote/remote.ts').then((m) => m.remote),
+  'inbox': () => import('../pages/inbox/inbox.ts').then((m) => m.inboxPage),
+  'server': () => import('../pages/server/page.ts').then((m) => (c: Context) => m.serverPage(c, () => { if (current === 'server') render(); })),
+};
+const pages: Partial<Record<PurposeId, Drawn>> = {home};
+const bringing = new Map<PurposeId, Promise<void>>();
+/** The place's page being brought, or null once it is here (or the place has none of its own). */
+function brought(id: PurposeId): Promise<void> | null {
+  const bring = BRING[id];
+  if (pages[id] || !bring) return null;
+  let p = bringing.get(id);
+  if (!p) {
+    p = bring().then((drawn) => { pages[id] = drawn; });
+    // Not brought (the line went): asked again the next time.
+    p.catch(() => bringing.delete(id));
+    bringing.set(id, p);
+  }
+  return p;
+}
+
+let openRepo = load(REPO_KEY);
+/** The file Forge's center is reading. */
+let readingPath: string | null = null;
+/**
+ * `name` opened in Forge (see Context.openRepo), `keyboard` where the keyboard was when it was asked: read then, not
+ * once Forge's code has come, so a keyboard put elsewhere meanwhile is not taken back (forge.ts revealNext).
+ */
+function openRepoFrom(keyboard: Element | null, name: string, path: string, write: Writing, grownFrom: Element | undefined, line: number, carried: Carry | undefined) {
+  const bringing = brought('forge');
+  if (bringing) { void bringing.then(() => openRepoFrom(keyboard, name, path, write, grownFrom, line, carried)); return; }
+  const f = forgeOf!;
+  if (current === 'forge' && f.showInForge(name, path, write, line)) return;
+  ctx.remember(name);
+  f.revealNext(path, write, line, keyboard);
+  // Pressed on its card or its row (or made from a form, which says so), the repo grows from there into its box in Forge.
+  const from = grownFrom?.isConnected ? grownFrom.getBoundingClientRect()
+    : pressedOn?.isConnected && performance.now() - pressedAt < 1500 ? pressedOn.getBoundingClientRect() : null;
+  pressedOn = null;
+  select('forge', !!from && morph(from, () => document.querySelector<HTMLElement>(`.col[data-repo="${CSS.escape(name)}"]:not([hidden]) .file`),
+    340, '', 40, grownFrom?.isConnected ? carried : undefined));
+}
+
+const ctx: Context = {
+  // Server, like File, is laid over the page rather than being one.
+  go: (id) => select(id),
+  openRepo(name, path = '', write = false, grownFrom, line = 0, carried) { openRepoFrom(document.activeElement, name, path, write, grownFrom, line, carried); },
+  remember(name) { openRepo = name; save(REPO_KEY, name); fileTree.mark(name); },
+  reading(path) { readingPath = path; if (current === 'forge') fileTree.markFile(openRepo, path); },
+  leftAt(repo, path, at) { save(FILE_KEY, JSON.stringify({repo, path, at})); },
+  get repo() { return openRepo; },
+  get leftOff() {
+    try {
+      const was = JSON.parse(load(FILE_KEY) ?? 'null') as {repo?: unknown; path?: unknown; at?: unknown} | null;
+      return was && typeof was.repo === 'string' && typeof was.path === 'string' ? {repo: was.repo, path: was.path, at: typeof was.at === 'number' ? was.at : null} : null;
+    } catch { return null; }
+  },
+  rerender: () => render(),
+};
+
+// A repo renamed: the repo worked on and where one left off follow it (each page's own holds follow it there).
+onRenamed((from, to) => {
+  if (openRepo === from) ctx.remember(to);
+  const was = ctx.leftOff;
+  if (was?.repo === from) save(FILE_KEY, JSON.stringify({...was, repo: to}));
+});
+
+// File lays the tree of "/" over the page; it never replaces the page. A
+// file chosen there is the one to work on: the tree goes and the caret is in it.
+const fileTree = new FileTree({
+  choose: (repo, path, file) => { if (file) fileTree.close(); ctx.openRepo(repo, path, file); },
+  current: () => (current === 'forge' ? openRepo : null),
+  currentFile: () => (current === 'forge' ? readingPath : null),
+});
+document.body.append(fileTree.element);
+// A control drawn again or held while its deed runs gives the keyboard back, never to the body (focus.ts).
+keepFocus();
+touch();
+caret();
+optical();
+scrollbars();
+// The look as the person at this device has changed it (their .everyday, of the dotfiles taken here: ui/look.ts): worn
+// once what Home keeps is read, and again whenever the dotfiles move. With none, the page is as its sheets have it.
+const worn = () => { wear(inEffect()[LOOK]); };
+onState((key) => { if (key === 'dotfiles' || key === 'trusted') worn(); });
+// Server glanced at: a rest on its icon brings one's servers out beside the rail, to jump to; a press goes to its page.
+const serverSwitch = new ServerSwitcher(ctx);
+
+/** How long the pointer rests on another place on the rail before what a rest on File or Server brought out goes. */
+const PASSED = 200;
+let passing = 0;
+
+function railButton(id: PurposeId): HTMLButtonElement {
+  const p = purpose(id), button = document.createElement('button');
+  button.type = 'button';
+  button.id = `purpose-${id}`;
+  button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
+  button.setAttribute('aria-label', t(p.label));
+  button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
+  // The pointer resting on another place on the rail: File's tree that a rest only brought out (not pressed), or the
+  // servers beside Server, go, so reading the rail's names never leaves one over the page. Only a
+  // rest: the hand crossing the icons on its way from File into the tree must not put the tree away under it.
+  button.addEventListener('pointerenter', () => {
+    clearTimeout(passing);
+    passing = window.setTimeout(() => { if (id !== 'file') fileTree.passedBy(); if (id !== 'server') serverSwitch.passedBy(); }, PASSED);
+  });
+  button.addEventListener('pointerleave', () => clearTimeout(passing));
+  if (id === 'file') {
+    fileTree.attach(button);
+  } else if (id === 'server') {
+    serverSwitch.attach(button);
+    // Signed out, what its page shows first is asked as the pointer comes onto it, a moment before the press: the
+    // page drawn takes that answer (servers.ts), not waiting on one of its own.
+    button.addEventListener('pointerenter', () => { if (!connection()) void openBoards().catch(() => {}); });
+  } else if (id === 'plugin') {
+    // The plug opens the plugin area at the top of the center, and closes it; elsewhere it opens it in Forge.
+    // It says the area is out only where the area is (Forge's, Git's center): on another page it is kept for
+    // coming back, not out. Escape on the plug puts it away, as Escape does File's tree.
+    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && (current === 'forge' || current === 'git' || current === 'home')));
+    plugState();
+    onPlugins(() => plugState());
+    button.addEventListener('click', () => {
+      // Home, Forge and Git have the right pane the area is at the top of; elsewhere it opens in Forge.
+      const work = current === 'forge' || current === 'git' || current === 'home';
+      if (!work) select('forge');
+      setPluginsOpen(!work || !pluginsOpen());
+    });
+    button.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && button.getAttribute('aria-expanded') === 'true') { event.preventDefault(); setPluginsOpen(false); }
+    });
+  } else {
+    // A place in the rail is a link to a page, the one shown marked current; File and Server open over it. Pressed
+    // with a mouse it goes as the button goes down, as a browser's tab does: on the click, the page stood still for
+    // the press's length (some 80 ms and more) before the pan set off. A touch keeps the click (it may be a scroll).
+    let downed = false;
+    button.addEventListener('pointerdown', (event) => {
+      if (event.pointerType !== 'mouse' || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      downed = true;
+      void select(id);
+    });
+    button.addEventListener('click', () => { if (downed) { downed = false; return; } void select(id); });
+  }
+  button.addEventListener('keydown', (event) => {
+    const next = stepPurpose(id, event.key);
+    if (next === null) return;
+    event.preventDefault();
+    // Arrows move along the rail; passing File or Server only focuses it. The keyboard stays on the
+    // rail, after whatever the page just drawn asks for (New repo's name), until Enter or Tab goes in.
+    if (next !== 'file' && next !== 'plugin') select(next);
+    tabs.get(next)?.focus();
+    queueMicrotask(() => tabs.get(next)?.focus());
+  });
+  tabs.set(id, button);
+  return button;
+}
+
+/** What a repo was last opened from (its card, its row in File), to grow from. */
+let pressedOn: HTMLElement | null = null;
+let pressedAt = 0;
+document.addEventListener('pointerdown', (event) => {
+  const el = (event.target as HTMLElement | null)?.closest<HTMLElement>('.card.repo, .tree-row');
+  if (el) { pressedOn = el; pressedAt = performance.now(); }
+}, true);
+
+type Pass = {updateCallbackDone: Promise<void>; ready: Promise<void>; finished: Promise<void>; skipTransition(): void};
+type Panning = Document & {startViewTransition?(update: () => void): Pass};
+
+/**
+ * The switch going now (select): the page it left (`left`) and the place asked for last (`to`); where it is (`phase`):
+ * the page left's own camera stepping back (`out`), the camera going along at that height (`along`), the page come to's
+ * own camera coming down (`in`); the camera at work (`camera`), the view transition going along (`pass`), the moves of
+ * the page come to (`parts`) and of the page left's pictures (`old`), and how to tell that it has settled.
+ */
+type Pan = {left: PurposeId; to: PurposeId; phase: 'out' | 'along' | 'in'; camera: PageCamera; pass: Pass | null;
+  parts: Animation[]; old: Animation[]; settled: Promise<void>; settle: () => void};
+
+/**
+ * The camera along the rail (ui/camera.ts), each move a camera's own: the page left's camera steps back (Forge's desk
+ * camera over the whole desk, as Escape takes it, no further where it stands so far back already; another page's to
+ * half its size about where its words begin); the camera goes along to the page come to at that height; the page come
+ * to's camera comes down to where it stood. ms each, before the OS's pace. Before: the page's words and boxes made
+ * smaller about the middle of the ground as one picture, Forge's whole-desk camera ignored (a desk stood back already
+ * made smaller still), Home not stood back as it is read but drawn to the middle, the dots standing still under it
+ * all, and what lay out of sight cut where the window had cut it.
+ */
+const CAMERA = {out: 280, along: 440, in: 360};
+/** How far through stepping back its picture is taken (going along sets off once it is). */
+const TAKEN = .78;
+let panning: Pan | null = null;
+
+/** Which way along the rail `to` is from `from`: 1 down, -1 up, 0 the same place. */
+const way = (from: PurposeId, to: PurposeId) => { const order = RAIL.map((p) => p.id); return Math.sign(order.indexOf(to) - order.indexOf(from)); };
+
+/** A page's frame: its band, its pane, the pane's switch (Home's and New repo's; Forge's, Git's and the other benches'). */
+const FRAME = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle)';
+/** The parts of the frame that bound the ground: the band over it, the pane at its right. */
+const BAND = ':is(.home-band, .work > .bar)', PANE = ':is(.home-pane, .work > .side)';
+
+const shown = (el: Element) => el.getClientRects().length > 0;
+/** `page`'s frame as it stands (what of it is in sight). */
+const frameOf = (page: HTMLElement) => [...page.querySelectorAll<HTMLElement>(FRAME)].filter(shown);
+
+/** What lies on `page`'s ground: every part of it in sight that holds none of its frame, and is in none. */
+function onGround(el: Element): HTMLElement[] {
+  if (!shown(el) || el.matches(FRAME)) return [];
+  if (!el.querySelector(FRAME)) return [el as HTMLElement];
+  return [...el.children].flatMap(onGround);
+}
+
+/**
+ * Where `page` (standing at `r`) shows its ground: under its band, left of its pane, down to the window's foot or to
+ * the foot of what stands over it there (Home's plain strip, fixed, of its own).
+ */
+function groundOf(page: HTMLElement, r: DOMRect): Rect {
+  const after = getComputedStyle(page, '::after'), strip = after.position === 'fixed' ? parseFloat(after.height) || 0 : 0;
+  const frame = frameOf(page), edge = (sel: string, side: 'bottom' | 'left') => frame.filter((el) => el.matches(sel)).map((el) => el.getBoundingClientRect()[side]);
+  return {left: r.left, top: Math.max(0, r.top, ...edge(BAND, 'bottom')), right: Math.min(r.right, ...edge(PANE, 'left')), bottom: Math.min(r.bottom, innerHeight - strip)};
+}
+
+/** `page`'s camera: its own (Forge's desk), else a ground camera over what lies on its ground, its dots with it (Home's,
+ * on the page itself). */
+function cameraOf(page: HTMLElement): PageCamera {
+  return cameraIn(page) ?? new GroundCamera(onGround(page), getComputedStyle(page).backgroundImage.includes('gradient') ? page : null,
+    groundOf(page, page.getBoundingClientRect()));
+}
+
+/** A switch given up for something else that carries the eye: what it moved back where it was, at once. */
+function letBe(p: Pan) {
+  panning = null;
+  for (const a of [...p.parts, ...p.old]) a.cancel();
+  p.pass?.skipTransition();
+  document.documentElement.classList.remove('panning', 'arriving');
+  p.camera.near(0);
+  p.settle();
+}
+
+/**
+ * The camera going along from the page here to the one asked for last (`q.to`), `dir` the way along the rail: the page
+ * here (stood back by its camera) taken as pictures (what lies on its ground, and each part of its frame apart), the
+ * page come to drawn beside it, stood back by its own camera at once, and the two going by together; its frame coming
+ * in under the one left as the camera passes between them. Done once it has come.
+ */
+function along(q: Pan, dir: number): Promise<void> {
+  const root = document.documentElement, page = $('page'), begin = (document as Panning).startViewTransition!;
+  q.phase = 'along';
+  root.classList.remove('arriving');
+  root.classList.add('panning');
+  const was = page.getBoundingClientRect(), from = groundOf(page, was), frame = frameOf(page);
+  // Its frame taken as pictures of their own, standing where they are (styles: frame-*), named only until they are.
+  frame.forEach((el, i) => el.style.setProperty('view-transition-name', `frame-${i}`));
+  const unname = () => { for (const el of frame) el.style.removeProperty('view-transition-name'); };
+  let a: Along | null = null;
+  const pass = q.pass = begin.call(document, () => {
+    unname();
+    if (panning !== q) return;
+    // The old picture is taken: release its camera before reusing #page. A frameless page's ground is
+    // #page itself, so its held half-size transform would otherwise also shrink the next page's frame.
+    if (q.camera instanceof GroundCamera) q.camera.near(0);
+    draw(q.to, false, true);
+    root.classList.add('arriving');
+    const come = q.camera = cameraOf(page);
+    come.afar();
+    const ground = groundOf(page, page.getBoundingClientRect());
+    a = {by: dir > 0 ? from.bottom - ground.top : from.top - ground.bottom, ms: paced(CAMERA.along)};
+    // Its frame comes in as the camera passes the one left; with none left to come in under, as it sets off.
+    q.parts = [...comeBy(a, come, onGround(page)), ...frameIn(a, frameOf(page), !frame.length)];
+    for (const x of q.parts) x.pause();
+  });
+  return new Promise<void>((done) => {
+    void pass.ready.then(() => {
+      if (!a || panning !== q) return;
+      q.old = [goneBy(a, root, '::view-transition-old(page)', was, from), ...frameOff(a, root, frame.map((_, i) => `::view-transition-old(frame-${i})`))];
+      for (const x of q.parts) x.play();
+    }, () => {});
+    const end = () => {
+      unname();
+      for (const x of [...q.old, ...q.parts]) x.cancel();
+      q.old = q.parts = [];
+      q.pass = null;
+      root.classList.remove('arriving');
+      done();
+    };
+    pass.finished.then(end, end);
+  });
+}
+
+/** A switch from the page here: out, along (on to the place asked for last, however often that changes on the way), in. */
+async function go(q: Pan) {
+  const root = document.documentElement, out = paced(CAMERA.out);
+  // Along sets off as stepping back slows into its place: the picture of the page here takes the browser a few frames,
+  // in which nothing moves, and taken there they fall where it hardly moves any more (a stand between the two, else).
+  await Promise.race([q.camera.away(out), new Promise((r) => setTimeout(r, out * TAKEN))]);
+  for (let dir = way(current, q.to); panning === q && dir; dir = way(current, q.to)) await along(q, dir);
+  if (panning !== q) return;
+  q.phase = 'in';
+  root.classList.remove('panning');
+  q.camera.near(paced(CAMERA.in));
+  q.settle();
+  setTimeout(() => { if (panning === q) panning = null; }, paced(CAMERA.in));
+}
+
+/** The latest place asked for: a place whose page was still being brought gives way to one asked after it. */
+let asked = 0;
+
+/**
+ * Going along the rail, the camera goes with it (ui/camera.ts, CAMERA): the page here steps back with its own camera,
+ * the camera goes along to the page come to, whose own camera comes down; the rail and the frame standing where they
+ * are. Where the browser cannot, or less motion is asked for, the page is drawn in place. Settles once the page is
+ * come to. `quiet`: something else carries the eye (a repo growing into its box), so the page does not come from its
+ * side.
+ *
+ * Pressed again on the way (the rail, or its keys held down): the camera goes on to the place pressed last, stepping
+ * back no further and coming down only there; pressed back to where it began before it has gone along, it comes down
+ * where it is. Pressed as it comes down, it steps back again from where it is.
+ */
+function select(id: PurposeId, quiet = false): Promise<void> {
+  const bringing = brought(id), mine = ++asked;
+  if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet); });
+  const p = panning, page = $('page');
+  const begin = (document as Panning).startViewTransition;
+  const moving = !!begin && !quiet && !!page.childElementCount && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Something else carries the eye now (a repo growing into its box from what was pressed): the switch gives way at once.
+  if (p && !moving) letBe(p);
+  if (p && moving && p.phase !== 'in') { p.to = id; return p.settled; }
+  const dir = way(current, id);
+  if (!moving || !dir) {
+    if (p && moving) return p.settled;
+    draw(id, quiet, false);
+    // Come to without the rail's camera, a camera it stood back as the rail left it comes down at once.
+    cameraIn($('page'))?.near(0);
+    return Promise.resolve();
+  }
+  letGo(page);
+  let settle = () => {};
+  const settled = new Promise<void>((r) => { settle = r; });
+  const q: Pan = {left: current, to: id, phase: 'out', camera: cameraOf(page), pass: null, parts: [], old: [], settled, settle};
+  panning = q;
+  void go(q);
+  return settled;
+}
+
+/** How far down each page was read, as it was left (pages that scroll the window: Home, Runtime, Remote, Inbox). */
+const readTo = new Map<PurposeId, number>();
+
+/**
+ * Come back to, a page is where it was read to. Still coming in (its lists drawn once they are read), it is put there
+ * once it is that long, unless the hand scrolls first; one that went to a place asked for keeps that place.
+ */
+function readAgain(id: PurposeId) {
+  const at = readTo.get(id) ?? 0, doc = document.scrollingElement;
+  if (!at || !doc || doc.scrollTop) return;
+  doc.scrollTop = at;
+  if (doc.scrollTop >= at - 1) return;
+  const grows = new ResizeObserver(() => { if (current !== id) stop(); else { doc.scrollTop = at; if (doc.scrollTop >= at - 1) stop(); } });
+  const stop = () => { grows.disconnect(); clearTimeout(late); for (const e of ['wheel', 'touchmove', 'keydown', 'pointerdown']) removeEventListener(e, stop, true); };
+  const late = window.setTimeout(stop, 1500);
+  for (const e of ['wheel', 'touchmove', 'keydown', 'pointerdown']) addEventListener(e, stop, {capture: true, passive: true});
+  grows.observe($('page'));
+}
+
+function draw(id: PurposeId, quiet: boolean, panned: boolean) {
+  const from = current;
+  // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
+  const doc = document.scrollingElement;
+  if (opened && from !== id && doc) { readTo.set(from, doc.scrollTop); doc.scrollTop = 0; }
+  // The first page the OS opens on: nothing drawn before it.
+  const first = !opened;
+  opened = true;
+  // Who is in, as the first page is drawn for them (onConnection draws it again only for another).
+  if (first) wasIn = whoIsIn();
+  // Where the ink is: the page's own place, or the one whose tree, servers or area is out over it.
+  const inkWas = where(inked(expanded()));
+  current = id;
+  serverSwitch.close();
+  for (const [tabId, tab] of tabs) {
+    const selected = tabId === id;
+    if (tabId !== 'file' && tabId !== 'plugin') { if (selected) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); }
+    tab.tabIndex = selected ? 0 : -1;
+  }
+  $('page').setAttribute('aria-labelledby', `purpose-${id}`);
+  named();
+  render();
+  if (from !== id) readAgain(id);
+  plugState();
+  if (id !== 'new-repo') save(PURPOSE_KEY, id);
+  // The first page comes in as any page come to does, its parts a beat apart, rising from below as the OS opens.
+  if (first && !quiet) { pageOpening(); stage($('page'), 1); return; }
+  if (from !== id) {
+    // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
+    glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)');
+    const order = RAIL.map((p) => p.id);
+    // Panned, the page comes as one, carried by the camera: its parts staged on top of that would leave it standing
+    // half empty as it lands. Not panned, its parts come in a beat apart, heading first, from that side (glide.ts stage).
+    if (!quiet && !panned) {
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) $('page').animate([{opacity: 0}, {opacity: 1}], {duration: paced(160), easing: 'ease-out'});
+      stage($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)));
+    }
+  }
+}
+
+/**
+ * The OS opening, once, from its first frame: the frame's line is drawn down the rail's edge from the top (styles.css
+ * .opening) as the rail's places come in one after another down it, each from the window's edge, the person last at
+ * its foot; the first page comes up after them (pageOpening).
+ */
+function railOpening() {
+  const root = document.documentElement, rail = $('rail-tabs').parentElement!;
+  if (still()) { root.classList.remove('opening'); return; }
+  const drawn = (e: AnimationEvent) => { if (e.pseudoElement === '::after') { root.classList.remove('opening'); rail.removeEventListener('animationend', drawn); } };
+  rail.addEventListener('animationend', drawn);
+  [...$('rail-tabs').children, ...$('rail-me').children].forEach((el, i) => el.animate([{opacity: 0, translate: '-14px 0'}, {opacity: 1, translate: '0 0'}],
+    {duration: paced(380), delay: paced(60 + i * 34), easing: LAND, fill: 'backwards'}));
+}
+
+/** The first page, as the OS opens: its parts a beat apart (stage), its right pane's words from the right as when it
+ * is brought out, nothing of it there before its turn. */
+function pageOpening() {
+  if (still()) return;
+  const page = $('page');
+  page.animate([{opacity: 0}, {opacity: 1}], {duration: paced(280), delay: paced(120), easing: 'ease-out', fill: 'backwards'});
+  const side = page.querySelector<HTMLElement>('.home-side, .side'), toggle = page.querySelector<HTMLElement>('.pane-toggle');
+  if (side?.getClientRects().length && toggle) paneOut(side, toggle);
+}
+
+/** The page's name where the host lists it (a tab, history, the window list): the place, then the OS. */
+const named = () => {
+  document.title = `${t(purpose(current).label)} · Length³ OS`;
+  // The app's window is named the same in the host's window list (a browser's tab already is); not renamed, it keeps the OS's name.
+  void setWindowTitle(document.title).catch(() => {});
+};
+
+/** Asked to draw while its page is still being brought: drawn once it is here. */
+let toDraw = false;
+
+function render() {
+  const bringing = brought(current);
+  if (bringing) {
+    if (!toDraw) void bringing.then(() => { toDraw = false; render(); });
+    toDraw = true;
+    return;
+  }
+  const page = $('page');
+  page.classList.toggle('page-work', current === 'forge' || current === 'git' || current === 'server');
+  page.dataset.place = current;
+  page.classList.toggle('page-inbox', current === 'inbox');
+  fileTree.mark(current === 'forge' ? openRepo : null);
+  fileTree.markFile(current === 'forge' ? openRepo : null, current === 'forge' ? readingPath : null);
+  const drawn = pages[current];
+  const nodes = drawn ? drawn(ctx) : placeholder(current);
+  // Forge, once made, stays in the document, hidden while another page shows: a text box taken out
+  // of the document loses its Undo, so what was written there can still be taken back on return.
+  const kept = forgeOf?.keptForge() ?? null;
+  for (const n of [...page.childNodes]) if (n !== kept) n.remove();
+  if (kept && kept.parentNode !== page) page.prepend(kept);
+  page.append(...nodes.filter((n) => n !== kept));
+  if (kept) kept.hidden = current !== 'forge';
+  me.paint();
+}
+
+const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
+$('rail-me').append(me.element);
+
+$('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
+// Where the window is short the places scroll in a box of their own (rail.css), whose edge would cut a place's name
+// off: there the name stands in the window, beside the place under the pointer or the keyboard, which says where.
+const tagAt = (e: Event) => {
+  const b = e.target instanceof Element ? e.target.closest<HTMLElement>('.rail-item') : null;
+  if (!b) return;
+  const r = b.getBoundingClientRect();
+  b.style.setProperty('--tag-x', `${r.right}px`);
+  b.style.setProperty('--tag-y', `${r.top + r.height / 2}px`);
+};
+$('rail-tabs').addEventListener('pointerover', tagAt);
+$('rail-tabs').addEventListener('focusin', tagAt);
+/** The rail's places out over the page now (File's tree, Server's servers beside the rail, the plug's area). */
+const expanded = () => new Set<HTMLElement>([...tabs.values()].filter((b) => b.getAttribute('aria-expanded') === 'true'));
+/** The one place the rail's ink is on: the one out over the page, else the page's own; none while two are out (each
+ * is inked). */
+function inked(out: Set<HTMLElement>): HTMLElement | null {
+  if (out.size > 1) return null;
+  const [one] = out;
+  return one ?? [...tabs.values()].find((b) => b.getAttribute('aria-current')) ?? null;
+}
+// File's tree, Server's servers or the plug's area out or away: the ink goes from where it was to where it is, as it
+// does between pages, rather than one fading out as the other fills (the page's icon, its fill fading, would be ink
+// on ink a moment).
+new MutationObserver((records) => {
+  const now = expanded(), before = new Set(now), seen = new Set<Node>();
+  for (const r of records) {
+    if (seen.has(r.target)) continue;
+    seen.add(r.target);
+    if (r.oldValue === 'true') before.add(r.target as HTMLElement); else before.delete(r.target as HTMLElement);
+  }
+  const from = inked(before), to = inked(now);
+  if (from && to && from !== to) glide(from.getBoundingClientRect(), to, $('rail-tabs'), 'var(--r-place)');
+}).observe($('rail-tabs'), {subtree: true, attributes: true, attributeFilter: ['aria-expanded'], attributeOldValue: true});
+railOpening();
+// The rail's name, in the language the OS starts in (index.html has the English).
+document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
+// The Remote not answering is said in one place, on the Remote's own: a red dot, and its name says why.
+// Something come in and not seen yet is said the same way on Inbox and Server: a dot in the colour
+// of the place (ink, or ground on ink when it is current), gone once it is seen.
+const railName = (id: PurposeId): string => {
+  if (id === 'remote' && remoteAway()) return t('Cannot connect to Remote');
+  if (id === 'inbox' && marks(news()).inbox) return t('Unread messages in Inbox');
+  if (id === 'server' && marks(news()).server) return t('New posts in server');
+  return t(purpose(id).label);
+};
+const mark = (id: PurposeId) => {
+  const b = tabs.get(id);
+  if (!b) return;
+  b.classList.toggle('away', id === 'remote' && remoteAway());
+  b.classList.toggle('news', (id === 'inbox' && marks(news()).inbox) || (id === 'server' && marks(news()).server));
+  const label = railName(id);
+  b.setAttribute('aria-label', label);
+  const tag = b.querySelector('.rail-tag');
+  if (tag) tag.textContent = label;
+};
+const reach = () => mark('remote');
+onNews(() => { mark('inbox'); mark('server'); });
+let askAgain: {stop(): void} | null = null;
+onReach(() => {
+  reach();
+  // Signed in, sync's own looking finds the Remote again; signed out, nothing asks, so this does: in view, less often
+  // each time it is still away (remote.ts mayAsk), and slower while nobody is at it.
+  askAgain?.stop();
+  askAgain = remoteAway() && !connection() ? every(15_000, () => (mayAsk() ? about() : undefined), {paced: true}) : null;
+});
+// Signed in or out, here or from another device: the page is drawn again for who is here now (Remote's draws itself).
+// Not before the first page is: back from a provider, the session is taken up before Remote is chosen, and Home
+// would show a moment first. A passkey that confirms a deed signs the same account in again: nothing is drawn again
+// for it, so the deed's ask (a repo's gear asking for the code) stays where it is.
+onConnection(() => {
+  void look();
+  const now = whoIsIn(), same = now !== null && now === wasIn && !!connection()?.user;
+  wasIn = now;
+  if (current === 'remote') me.paint(); else if (opened && !same) render();
+});
+// Changing the language redraws the page and the rail's names in place.
+onLang(() => {
+  for (const id of tabs.keys()) mark(id);
+  document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
+  named();
+  // The language taken up as the OS starts comes before its first page, which is drawn in it once chosen.
+  if (opened) render();
+});
+// Home's state is read before the first page, and again when the window
+// comes back, so what root3 changed meanwhile is what the page shows.
+// Then what the Remote has is taken in; the page shows as it comes.
+// A device's code (?device&user_code=…, from root3 or the app) opens only the page that approves it.
+const asking = new URLSearchParams(location.search);
+// A link for research (…/#enter=KEY): the key is taken out of the address before anything else runs,
+// so it is not left in the history, a bookmark or a screenshot, and is sent once (remote.ts enterWith).
+const entering = /(?:^#|&)enter=([^&]+)/.exec(location.hash)?.[1];
+// An invitation to write in a board as a guest (…/#guest=BOARD.INVITE), handed on by one of its people:
+// taken out of the address the same way, held for this tab until it is used, and its board shown.
+const invitation = inviteIn(location.hash);
+if (invitation) holdInvite(invitation.board, invitation.code);
+if (entering || invitation) history.replaceState(null, '', location.pathname + location.search);
+if (asking.has('device')) {
+  void loadState().finally(async () => {
+    await useLang(getState('lang'));
+    const {devicePage} = await import('../pages/remote/device-page.ts');
+    document.body.replaceChildren(devicePage(asking.get('user_code') ?? ''));
+  });
+} else {
+  void loadState().finally(async () => {
+    await useLang(getState('lang'));
+    worn();
+    if (entering) await enterWith(decodeURIComponent(entering));
+    // Back from a provider: take up the session it made, then go on where the person began (the page they signed
+    // in from is the one kept; Remote's page offers a passkey next, and a tier chosen signed out goes on to Checkout).
+    if (asking.has('signed-in')) {
+      if (await claim()) justSignedIn();
+      const u = new URL(location.href);
+      u.searchParams.delete('signed-in');
+      history.replaceState(null, '', u);
+    }
+    // Back from a provider without a session (cancelled there, refused, or run out): the card they began on says why.
+    if (asking.has('sign-in-failed')) {
+      signInFailed(asking.get('error'));
+      const u = new URL(location.href);
+      for (const k of ['sign-in-failed', 'error', 'error_description']) u.searchParams.delete(k);
+      history.replaceState(null, '', u);
+      // Said on a sign-in card: Inbox's or Remote's, whichever it began on; Remote's if neither is kept.
+      if (load(PURPOSE_KEY) !== 'inbox') save(PURPOSE_KEY, 'remote');
+    }
+    // Back from Stripe: Remote's Plan says how it went (paid, and to what; cancelled with nothing charged; what
+    // changed in the portal). In a browser not signed in here (the app sent it to pay), a page that says so, and
+    // to go back to the app.
+    const how = asking.get('plan');
+    if (how === 'paid' || how === 'cancelled' || how === 'managed') {
+      const tier = asking.get('tier');
+      const u = new URL(location.href);
+      for (const k of ['plan', 'tier']) u.searchParams.delete(k);
+      history.replaceState(null, '', u);
+      if (!connection()) {
+        const {checkoutBackPage} = await import('../pages/remote/stripe.ts');
+        await new Promise<void>((goOn) => document.body.replaceChildren(checkoutBackPage(how, isPaidTier(tier) ? tier : null, goOn)));
+        location.reload();
+        return;
+      }
+      cameBackFromStripe(how, tier);
+      save(PURPOSE_KEY, 'remote');
+      try { localStorage.setItem('root3.part.remote', 'plan'); } catch { /* the part kept, then */ }
+    }
+    // Opened by the app at what only the browser does (a passkey's deeds, a provider's): Remote's page, at the part
+    // that does it; a repo's ask opens at its card once the repos are drawn (signed in first, if this browser is not).
+    const asked = holdAsk(asking.get('account'), asking.get('repo'));
+    if (asked) {
+      const u = new URL(location.href);
+      for (const k of ['account', 'repo']) u.searchParams.delete(k);
+      history.replaceState(null, '', u);
+      save(PURPOSE_KEY, 'remote');
+      try { localStorage.setItem('root3.part.remote', asked === 'sign-in' ? 'sign-in' : 'repos'); } catch { /* the part kept, then */ }
+    }
+    // Which domain is this Remote's, so a name on it is shown alone (`ren`), not as a domain's.
+    void learnHome();
+    select(restorePurpose(load(PURPOSE_KEY)));
+    if (heldInvite()) void select('server');
+    // Busy until what the Remote has is taken in and the page drawn from it (the first look). Signed out, that look
+    // reads the repos' names alone, and what shows where a repo stands follows it (onSync): the page drawn as the OS
+    // opened is the page, not drawn whole a second time.
+    // What an earlier build kept of root3 goes; root3 now keeps its own copies, by digest, and lets them go itself (userland.ts).
+    void forgetExcept(new Set());
+    // What the shell of a page reloaded mid-write left to write back, written before the repos are read (repo-copy.ts).
+    void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => { if (connection()) render(); }).finally(() => {
+      $('page').removeAttribute('aria-busy');
+      // The other places' pages, brought while the person reads the first: a place pressed later is drawn at once.
+      const rest = () => { for (const id of Object.keys(BRING) as PurposeId[]) void brought(id)?.catch(() => {}); };
+      if ('requestIdleCallback' in window) requestIdleCallback(rest, {timeout: 3000}); else setTimeout(rest, 1000);
+    });
+    // What came in meanwhile, for the rail's marks: now, and every little while.
+    lookForNews();
+  });
+}
+window.addEventListener('focus', () => {
+  // Not before the first page is drawn (the window comes back focused from a provider before it is chosen).
+  void loadState().then(() => { void useLang(getState('lang')); if (!opened) return; if (current === 'home') render(); else me.paint(); });
+});
+// An invitation's link opened in a tab already showing the app (pasted into its address) changes only
+// the fragment: it is taken the same way, and Server's page opens afresh at its board.
+window.addEventListener('hashchange', () => {
+  const came = inviteIn(location.hash);
+  if (!came) return;
+  holdInvite(came.board, came.code);
+  history.replaceState(null, '', location.pathname + location.search);
+  serverSwitch.close();
+  if (current === 'server') render(); else void select('server');
+});

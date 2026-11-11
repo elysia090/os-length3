@@ -1,0 +1,12 @@
+# root3 makes the user namespaces its Prompts run in (root3/core/src/prompt/launch.rs), which AppArmor keeps from unprivileged
+# programs on Ubuntu 23.10 and later unless a profile lets them. This one lets /usr/bin/root3 make them and changes
+# nothing else: root3 is not confined by it. Put in place by the .deb's postinst only where the kernel has that
+# restriction (deb/postinst).
+abi <abi/4.0>,
+include <tunables/global>
+
+profile root3 /usr/bin/root3 flags=(unconfined) {
+  userns,
+
+  include if exists <local/root3>
+}

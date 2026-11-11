@@ -1,0 +1,266 @@
+$ root3 repo new notes
+[exit 0]
+--- stdout
+Made notes (standard · 1 file)
+--- stderr
+
+$ root3 issue new notes Fix：restart loses the draft
+[exit 0]
+--- stdout
+Wrote notes#1 Fix：restart loses the draft
+--- stderr
+
+$ root3 todo add Fix：the rail's names
+[exit 0]
+--- stdout
+Added to TODO: Fix：the rail's names (1 open)
+--- stderr
+
+$ root3 todo add Docs：readme
+[exit 0]
+--- stdout
+Added to TODO: Docs：readme (2 open)
+--- stderr
+
+$ root3 todo done 2
+[exit 0]
+--- stdout
+Done: Docs：readme
+--- stderr
+
+$ root3 
+[exit 0]
+--- stdout
+Length³ OS  $HOME
+  Remote not signed in (root3 login)
+  repo   1
+  Issue  1
+  TODO   1 open of 2
+`root3 help` shows how to use it
+--- stderr
+
+$ root3 --json
+[exit 0]
+--- stdout
+{
+  "home": "$HOME",
+  "issues": 1,
+  "prompt": false,
+  "remote": null,
+  "repos": 1,
+  "todo": {
+    "all": 2,
+    "open": 1
+  }
+}
+--- stderr
+
+$ root3 todo
+[exit 0]
+--- stdout
+  1 ○ Fix：the rail's names
+  2 ✓ Docs：readme
+--- stderr
+
+$ root3 profile
+[exit 0]
+--- stdout
+No name yet (root3 profile name "Your name")
+--- stderr
+
+$ root3 band
+[exit 0]
+--- stdout
+notes
+--- stderr
+
+$ root3 file
+[exit 0]
+--- stdout
+notes  2 files · 38 B
+--- stderr
+
+$ root3 file notes
+[exit 0]
+--- stdout
+docs/
+README.md  8 B
+--- stderr
+
+$ root3 file notes/issue/001.md
+[exit 1]
+--- stdout
+--- stderr
+root3: The issues of notes are kept by the OS: read one with root3 issue notes#N, write one with root3 issue new notes "Fix：title"
+
+$ root3 file /
+[exit 4]
+--- stdout
+--- stderr
+root3: / is not in your repos: root3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
+
+$ root3 file /root
+[exit 0]
+--- stdout
+notes  2 files · 38 B
+--- stderr
+
+$ root3 file /bin
+[exit 4]
+--- stdout
+--- stderr
+root3: /bin is not in your repos: root3 reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
+
+$ root3 file /root/vocab
+[exit 4]
+--- stdout
+--- stderr
+root3: There is no repo vocab here (root3 repo lists them)
+
+$ root3 file notes/README.md
+[exit 0]
+--- stdout
+# notes
+--- stderr
+
+$ root3 file rm notes/docs
+[exit 0]
+--- stdout
+Deleted the folder notes/docs (0 files)
+--- stderr
+
+$ root3 help commit
+[exit 0]
+--- stdout
+root3 commit — commit the work
+
+  root3 commit [REPO] [-m note]               on an issue, named after it
+  root3 commit [REPO] "Fix：title" [-m note]  with its subject, Kind：subject (on an issue, the words are its note)
+--- stderr
+
+$ root3 git
+[exit 0]
+--- stdout
+#1 Fix：restart loses the draft
+    notes · not started
+    next: root3 login
+--- stderr
+
+$ root3 git --json
+[exit 0]
+--- stdout
+{
+  "closed": [],
+  "issues": [
+    {
+      "approvedBy": [],
+      "commits": null,
+      "detail": "",
+      "file": "001.md",
+      "kind": "Fix",
+      "n": 1,
+      "next": [
+        "root3 login"
+      ],
+      "repo": "notes",
+      "startedBy": null,
+      "state": "notStarted",
+      "title": "restart loses the draft",
+      "uncommitted": null,
+      "unpushed": null,
+      "version": null
+    }
+  ],
+  "known": true,
+  "merged": []
+}
+--- stderr
+
+$ root3 issue notes#1
+[exit 0]
+--- stdout
+#1 Fix：restart loses the draft
+    notes · not started
+
+Next
+    Sign in  root3 login
+    Close    root3 issue close notes#1
+--- stderr
+
+$ root3 issue close notes#1
+[exit 0]
+--- stdout
+Closed notes#1; it will not be done (back with: root3 issue reopen notes#1)
+--- stderr
+
+$ root3 git
+[exit 0]
+--- stdout
+No open issues
+
+1 issue closed in notes: notes#1 (root3 issue reopen REPO#N)
+--- stderr
+
+$ root3 issue reopen notes#1
+[exit 0]
+--- stdout
+Reopened notes#1
+--- stderr
+
+$ root3 help git
+[exit 0]
+--- stdout
+root3 git — the issues not merged, and what comes next
+
+  root3 git [REPO]  each issue, with what comes next
+--- stderr
+
+$ root3 comit
+[exit 2]
+--- stdout
+--- stderr
+root3: Not a command: root3 comit
+Did you mean: root3 commit
+
+$ root3 todo add
+[exit 2]
+--- stdout
+--- stderr
+root3: Not how root3 todo add is written
+
+  root3 todo
+  root3 todo add "Fix：title" [-m detail]
+  root3 todo edit N "Fix：title" [-m detail]
+  root3 todo done N
+  root3 todo rm N
+
+$ root3 inbox
+[exit 3]
+--- stdout
+--- stderr
+root3: root3 inbox needs the Remote, and this device is not signed in to one (root3 login)
+
+$ root3 start notes#1
+[exit 3]
+--- stdout
+--- stderr
+root3: root3 start needs the Remote, and this device is not signed in to one (root3 login)
+
+$ root3 remote
+[exit 0]
+--- stdout
+Remote  not signed in
+  root3 login, approved in the browser, signs this device in; then the Remote keeps your repos, and each change goes there by itself.
+--- stderr
+
+$ root3 server --json
+[exit 3]
+--- stdout
+{
+  "error": {
+    "kind": "offline",
+    "message": "root3 server needs the Remote, and this device is not signed in to one (root3 login)"
+  }
+}
+--- stderr
+

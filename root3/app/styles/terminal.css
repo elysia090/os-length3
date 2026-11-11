@@ -1,0 +1,51 @@
+/* What a Prompt runs and prints: its lines, its head, how it ended, a line as it was run. */
+
+/* Terminal output; input comes from the prompt box */
+.term { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; gap: var(--s2); margin-top: var(--s2); }
+/* Each part keeps its row when another is empty and hidden. */
+.term > p { grid-row: 1; }
+.term-out { grid-row: 2; }
+/* What the running line is doing, under its output; empty while it is quick. */
+.term-activity { grid-row: 3; display: flex; align-items: center; gap: var(--s2); min-height: 0; }
+.term-activity:empty { display: none; }
+/* Ended: its power switch where the prompt stood, and how it ended after it, the last thing under its output
+   (terminal.ts sayEnded); what happened wraps in its own room, so the line is no taller. */
+.term-end { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font: var(--t-meta)/20px var(--sans); white-space: normal; }
+.term-end > span { min-width: 0; overflow-wrap: anywhere; color: var(--sub); }
+.screen .term-end > span { color: color-mix(in srgb, var(--add-tint) 62%, transparent); }
+/* The switch the size of the line's letters, off quiet as SSH's (ended is a rest, not a fault). */
+.term-end > .power { --knob: 10px; --inset: 2px; --travel: 14px; --grow: 3px; width: 30px; height: 16px; }
+/* Its ring as fine as the switch is small (the keys go to it once the prompt line goes, terminal.ts sayEnded). */
+.term-end > .power:focus-visible { outline-width: 1px; outline-offset: 2px; }
+/* Ended, its output stays to be read, dimmed as a screen switched off (it flares and dims to this as it ends); how it
+   ended, and its switch, are not. */
+.term.ended > .term-out > :not(.term-end) { opacity: .72; }
+.small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
+.term-out { position: relative; margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A block of lines off the screen is not laid out or painted: as tall as it was last drawn, or as its rows (output.ts). */
+.term-out > .term-lines { content-visibility: auto; contain-intrinsic-block-size: auto 1lh; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* The terminal's sixteen colours, as programs name them, in the page's own: deep and a little muted, read on paper
+   ("white" a grey, so it is seen). The rest of xterm's 256, and colours given as red, green and blue, as they are. */
+:root {
+  --ansi-0: var(--ink); --ansi-1: var(--del); --ansi-2: var(--add); --ansi-3: #86650f; --ansi-4: var(--agent); --ansi-5: #763a74;
+  --ansi-6: #1b6670; --ansi-7: #85827d; --ansi-8: var(--rule); --ansi-9: #ad3d57; --ansi-10: var(--done); --ansi-11: #a17a10;
+  --ansi-12: #2d5a96; --ansi-13: #964a93; --ansi-14: #217d88; --ansi-15: var(--ink);
+}
+/* The line under way, drawn again as it changes (output.ts). */
+.term-live { white-space: pre-wrap; }
+/* A whole-screen program's screen (vt-view.ts): its rows as the terminal has them, never wrapped, the cursor a block. */
+.vt-screen { display: block; white-space: pre; }
+.vt-row { display: block; height: 1.6em; overflow: hidden; }
+.vt-cursor { background: var(--ink); color: var(--paper); }
+/* While a program reads each key as it comes, the box's line is not shown: the keys go to it, and its screen has the
+   cursor. The line keeps the keyboard, in the window's corner, so what is typed never has the page scrolled to it. */
+form.prompt[data-raw] { position: fixed; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.term.raw > .term-activity { display: none; }
+/* What is typed kept out of sight (a password asked for, ECHO put out): a dot for each letter, as a password field. */
+form.prompt[data-hushed] .prompt-in { -webkit-text-security: disc; }
+@supports not (-webkit-text-security: disc) { form.prompt[data-hushed] .prompt-in { color: transparent; } }

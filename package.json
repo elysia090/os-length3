@@ -1,0 +1,47 @@
+{
+  "name": "root3",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Native work OS shell for Length\u00b3 OS: purpose rail, target column, central flow and right pane.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config root3/app/vite.config.ts",
+    "build": "tsc --noEmit && vite build --config root3/app/vite.config.ts",
+    "build:cloudflare": ". scripts/rust.sh && node scripts/prompt-files.ts && VITE_LENGTH3_REMOTE= npm run build",
+    "check": "tsc --noEmit && npm test",
+    "test": "node scripts/tests.ts",
+    "selftest:cli": "tsc -p tests/cli && node --test \"tests/cli/*.test.ts\"",
+    "selftest": "playwright test -c tests/app",
+    "selftest:prod": "node tests/prod/run.ts",
+    "verify:remote": "node root3/remote/db/verify.ts",
+    "deploy:cloudflare": "node root3/remote/ship/deploy.ts",
+    "tauri": "tauri",
+    "webroot": "sh scripts/webroot.sh",
+    "webroot:parity": "node scripts/webroot-parity.ts",
+    "web-release": "sh scripts/web-release.sh"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
+    "@playwright/test": "1.64.1",
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "^26.6.6",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "7.0.2",
+    "vite": "8.3.6",
+    "wrangler": "4.158.0"
+  },
+  "dependencies": {
+    "@better-auth/passkey": "^1.7.18",
+    "@neondatabase/serverless": "^1.2.0",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@tauri-apps/api": "^2.12.4",
+    "better-auth": "^1.7.18",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.17"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.4"
+    }
+  }
+}

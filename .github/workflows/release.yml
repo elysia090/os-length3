@@ -1,35 +1,18 @@
 name: Release
 
-# A version publishes OS Length3 Linux X.Y.Z: asked for by a pushed tag
-# os-length3-linux-vX.Y.Z, by a push that writes X.Y.Z into
-# os/RELEASE (the tag is then made at that commit), or by hand. It
-# publishes the root
-# (every package made from this tree's pins by its recipe, os/root/build.sh,
-# with this tree's l3, os/root/assemble.sh), the web build (the app with
-# l3 for the browser: the same root as the browser reads it, os/scripts/l3.mjs
-# and web-release.sh) and the desktop app (the
-# same UI, its Prompt running that root on the machine: a .deb and an
-# AppImage), with their digests. Then it proposes the pins to main as one
-# pull request (Pin vX.Y.Z: the root in os/core/src/root.rs, the desktop app
-# in os/shared/desktop-releases.json); merged, they are what the tree ships:
-# devices trust the root by its digest, the web takes that l3, and the
-# Remote's deploy (os/service/deploy.ts) takes the pinned files from the
-# release and puts them on the Remote, which serves them to anyone. No
-# Cloudflare credentials are kept here.
+# Publishes OS Length3 Linux X.Y.Z: the root (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), the web root, the web build and
+# the desktop app (.deb, AppImage), with digests and build provenance; then proposes the pins to main as one pull
+# request (Pin vX.Y.Z: root3/core/src/root/pins.rs, root3/shared/desktop-releases.json). Asked for by a tag
+# os-length3-linux-vX.Y.Z, by a push to main that changes module/ricebox/RELEASE, or by hand.
 #
-# Only main's commits are released (audit R1): a push to main, a tag on a
-# commit main has, or a run by hand from main; anything else stops at
-# Version. One version at a time (audit R2). The token can write the
-# repository's contents (the release, the pins' branch), open the pins'
-# pull request and attest what it made (each file's provenance, signed as
-# this run) in this job alone; every action is pinned to a full commit
-# (the tag is beside it).
+# Only main's commits are released (audit R1), one version at a time (audit R2). Only this job's token writes.
+# No Cloudflare credentials are kept here.
 on:
   push:
     tags: ['os-length3-linux-v*']
     branches: ['main']
-    # Changing how releases are made tries again too (a published version is left).
-    paths: ['os/RELEASE', '.github/workflows/release.yml']
+    # A change to this workflow tries again (a published version is left as it is).
+    paths: ['module/ricebox/RELEASE', '.github/workflows/release.yml']
   workflow_dispatch:
     inputs:
       version:
@@ -60,24 +43,23 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: os/package-lock.json
-      - name: Toolchains
+          cache-dependency-path: package-lock.json
+      - name: Install toolchains
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools pkg-config zstd zip libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf libgles2 bubblewrap xvfb imagemagick
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown wasm32-wasip1
-          # The AppImage's smoke test starts it in a bubblewrap sandbox, which needs a user namespace; this image's
-          # AppArmor keeps them from unprivileged processes unless told otherwise (as the rust job of desktop.yml).
+          # The AppImage's smoke test runs it under bwrap, which needs user namespaces (restricted by AppArmor here).
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
-          # What is built is what the lockfiles say (npm ci in web-release.sh; cargo here and --locked in the scripts).
-          cargo fetch --locked --manifest-path os/Cargo.toml
-          cargo fetch --locked --manifest-path xlat/Cargo.toml
+          # Built as the lockfiles say (npm ci in web-release.sh; --locked in the scripts).
+          cargo fetch --locked --manifest-path Cargo.toml
+          cargo fetch --locked --manifest-path module/sods/Cargo.toml
       - name: Version
         env:
           INPUT_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # main's commits only: a branch's run stops here, and so does a tag on a commit main has not.
+          # main's commits only: a branch, or a tag on a commit main lacks, stops here.
           case "$GITHUB_REF" in
             refs/heads/main) ;;
             refs/tags/*)
@@ -87,44 +69,37 @@ jobs:
           esac
           case "$GITHUB_REF" in
             refs/tags/*) v=${GITHUB_REF_NAME#os-length3-linux-v} ;;
-            *) v=${INPUT_VERSION:-$(tr -d ' \n' < os/RELEASE)} ;;
+            *) v=${INPUT_VERSION:-$(tr -d ' \n' < module/ricebox/RELEASE)} ;;
           esac
           echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "not a version: $v" >&2; exit 1; }
           echo "VERSION=$v" >> "$GITHUB_ENV"
           echo "TAG=os-length3-linux-v$v" >> "$GITHUB_ENV"
           # A version already published is left as it is.
           if gh release view "os-length3-linux-v$v" >/dev/null 2>&1; then echo "SKIP=1" >> "$GITHUB_ENV"; echo "os-length3-linux-v$v is published already"; fi
-      # The root's packages, made and kept as the root job makes and keeps them (the root-packages action).
-      - if: env.SKIP != '1'
-        uses: ./.github/actions/root-packages
-      # What the release holds and its notes, made as by hand (os/scripts/release.sh), then published.
-      - name: Root, l3 for the browser, web build and desktop app
+      - name: Build root packages
         if: env.SKIP != '1'
-        working-directory: os
+        uses: ./.github/actions/root-packages
+      - name: Build release files
+        if: env.SKIP != '1'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          ROOT_PACKAGES: ${{ github.workspace }}/os/target/root-packages
+          ROOT_PACKAGES: ${{ github.workspace }}/target/root-packages
         run: sh scripts/release.sh "$GITHUB_WORKSPACE/out"
-      # Every file the release holds, attested as made by this run of this workflow at this commit (SLSA build
-      # provenance, signed through Sigstore): `gh attestation verify FILE -R OWNER/REPO` says so of a file anyone
-      # downloaded, beside the digest a device already checks it by.
-      - name: Provenance
+      # SLSA build provenance for every file, signed through Sigstore: `gh attestation verify FILE -R OWNER/REPO`.
+      - name: Attest provenance
         if: env.SKIP != '1'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: out/*
       - name: Publish
         if: env.SKIP != '1'
-        working-directory: os
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/publish-release.mjs "$GITHUB_WORKSPACE/out"
-      # The pins the release wrote (release.sh: pin-root.mjs, pin-desktop.mjs), proposed to main as one
-      # change; merged, the releases they no longer name are deleted (releases-prune.yml). A
-      # pull request opened with this token runs no workflow; the pins are checked where they are read (the web
-      # build, the deploy). Where the repository does not let Actions open pull requests, the branch is pushed and
-      # its link said.
-      - name: Pins, proposed to main
+        run: node scripts/publish-release.ts "$GITHUB_WORKSPACE/out"
+      # Merged, releases the pins no longer name are deleted (prune-releases.yml). A pull request opened with this
+      # token runs no workflow: the pins are checked where they are read (the web build, the deploy). Where Actions
+      # may not open pull requests, the branch is pushed and its link printed.
+      - name: Propose pins to main
         if: env.SKIP != '1'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -133,8 +108,8 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$branch"
-          git add os/core/src/root.rs os/shared/desktop-releases.json
-          git commit -m "Pin $TAG: its root (os/core/src/root.rs RELEASES) and its desktop app (os/shared/desktop-releases.json)"
+          git add root3/core/src/root/pins.rs root3/shared/desktop-releases.json
+          git commit -m "Pin $TAG: its root (root3/core/src/root/pins.rs RELEASES) and its desktop app (root3/shared/desktop-releases.json)"
           git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "$branch"
           gh pr create --base main --head "$branch" --title "Pin $TAG" \
             --body "What $TAG pinned as it was made (its notes say the same): merged, the tree ships it." \

@@ -1,0 +1,15 @@
+column has no switch of its own in 2.42.4's configure (it is built only by default, which
+--disable-all-programs turns off): --enable-column, which autoconf takes as enable_column=yes, builds it.
+--- a/configure
++++ b/configure
+@@ -42397,7 +42397,9 @@
+ 
+ 
+ 
+-  if test "x$ul_default_estate" != x; then
++  if test "x$enable_column" = xyes; then
++  build_column=yes
++elif test "x$ul_default_estate" != x; then
+   enable_column=$ul_default_estate
+   build_column=yes
+   if test "x$ul_default_estate" = xno; then

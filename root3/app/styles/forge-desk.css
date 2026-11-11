@@ -1,0 +1,227 @@
+/* Forge's desk (pages/forge/desk.ts): what is open lies on a plane on dots, each box as wide as 80 columns of code,
+   inked round with a hard shadow, its name outside its top-left corner (its folder quiet before it), its close a dot
+   under its foot a little in from its right corner (not in the corner, under the shadow's turn). The camera moves the plane, never a box; the box in hand is the one worked in. Its code a
+   step larger than elsewhere (14 px): a box is read at its own size at the base, and a quarter nearer close. */
+.desk { --t-code: 14px; position: absolute; inset: 0; overflow: hidden; outline: none;
+  background-image: var(--dots);
+  background-size: 24px 24px; background-position: 12px 12px; background-attachment: local; }
+.desk-plane { position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform-origin: 0 0; }
+.desk-box { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 2px solid var(--ink); border-radius: var(--r-place);
+  background: var(--paper); box-shadow: 8px 8px 0 0 var(--ink);
+  transition: translate 640ms cubic-bezier(.45, 0, .2, 1), box-shadow 120ms var(--land), margin 120ms var(--land), opacity 180ms ease-out; }
+/* Coming out from under the box above it (a file made under the one in hand): pulled out quick, landing, before the
+   camera follows (desk.ts lay). */
+.desk-box.coming { transition-duration: 280ms, 120ms, 120ms, 180ms; transition-timing-function: var(--land), var(--land), var(--land), ease-out; }
+/* A box carried past, the others answer it (desk.ts): out of its way at once, quick and a little jostled; into where it
+   was, once it is gone. */
+.desk-box.gives { transition-duration: 420ms, 120ms, 120ms, 180ms; transition-delay: 50ms, 0s, 0s, 0s;
+  transition-timing-function: cubic-bezier(.25, 1.25, .5, 1), var(--land), var(--land), ease-out; }
+.desk-box.fills { transition-duration: 520ms, 120ms, 120ms, 180ms; transition-delay: 200ms, 0s, 0s, 0s; }
+/* Lifted to be carried (Ctrl): up off the desk and over the others it passes, its shadow long, its name on the ground
+   over it. */
+.desk-box.lifted { z-index: 2; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); }
+.desk-box.lifted > .desk-label { background: var(--ground); margin-left: -6px; padding-left: 6px; }
+/* Born beside another (desk.ts lay: the Agent's terminal beside the person's): set down in the room the columns after
+   it made, as a box carried in is set down. They get out of its way at once, quick, as for a box carried in (.gives);
+   once they have gone from its place (some 200 ms), it comes into sight held over it, its shadow long, and is put
+   down onto the desk as the camera comes to it: never under another, nor over its words. */
+.desk-box.landing { z-index: 1; animation: set-down 420ms linear 200ms both; }
+@keyframes set-down {
+  from { opacity: 0; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); animation-timing-function: ease-out; }
+  30% { opacity: 1; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
+  to { opacity: 1; margin: 0; box-shadow: 8px 8px 0 0 var(--ink); }
+}
+@media (prefers-reduced-motion: reduce) { .desk-box.landing { animation: none; } }
+/* Stood back (a step, or the whole desk): a press takes a box in hand, twice comes back to it. Over the whole desk, with
+   the pointer rather than the finger, the box in hand is told by its own edge, heavier: one box, one edge (before: a
+   ring a little way out round its edge, the box drawn twice, one inside the other). Stood back by the rail going by
+   (desk.ts away), no box is pointed out. */
+.desk:is(.pulled, .whole) .desk-box { cursor: var(--cursor-hand); }
+.desk.whole:not(.railed) .desk-plane:not(:has(> .desk-hand.on)) > .desk-box.held { box-shadow: 0 0 0 2px var(--ink), 8px 8px 0 0 var(--ink); }
+.desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
+  font: 600 15px/1 var(--mono); color: var(--ink); padding: 4px 8px 7px 0; transform-origin: 0 100%; scale: var(--inv, 1); }
+.desk-dir { font-weight: 400; color: var(--sub); }
+.desk-close { position: absolute; right: 32px; top: calc(100% + 16px); width: 9px; height: 9px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--ink); cursor: var(--cursor-hand); transform-origin: 100% 0; scale: var(--inv, 1);
+  transition: background var(--motion), scale 140ms var(--land), opacity 220ms ease-out 420ms; }
+.desk.carrying .desk-close { opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; }
+.desk-close::before { content: ''; position: absolute; inset: -10px; }
+.desk-close:hover { background: var(--del); scale: calc(var(--inv, 1) * 1.6); }
+.desk-file { position: relative; }
+.desk :is(.gutter, .code) { font-size: var(--t-code); }
+.desk-file > .sheet { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); padding: var(--s4); }
+.desk-file-head { position: absolute; right: var(--s3); top: var(--s2); margin: 0; font: inherit; }
+/* On the desk nothing in a box says it is not yet saved: it saves itself (on a pause, on leaving it), so a dot for it
+   is a state to watch that needs no watching. What does need saying (it failed, it changed elsewhere) is said. */
+.desk-file-head .unsaved-dot { display: none; }
+/* The line chosen washed under its text, across the whole sheet (desk-file.ts). */
+.desk-mark { position: absolute; left: 0; right: 0; background: var(--marker-soft); pointer-events: none; }
+/* Where the Agent's eye is as it reads (desk-file.ts gaze): a line lit faintly across the sheet, an ink bar at its
+   left edge, gliding from line to line. */
+.desk-gaze { position: absolute; left: 0; right: 0; pointer-events: none; background: color-mix(in srgb, var(--ink) 6%, transparent);
+  box-shadow: inset 3px 0 0 var(--ink); transition: top calc(90ms * var(--pace)) var(--land); }
+/* Resting on a line (the Agent thinking over it), the eye breathes: slow, faint, so it is seen at work, not stopped. */
+.desk-gaze.resting { animation: gaze-rest calc(1400ms * var(--pace)) ease-in-out infinite alternate; }
+@keyframes gaze-rest { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .desk-gaze.resting { animation: none; } }
+/* Where the Agent's hand is as it writes in a file (desk-file.ts hand): its caret, the stroke of ink the OS draws the
+   person's with, after what it just typed; solid while it writes, blinking once it rests. */
+.desk-caret { position: absolute; left: 0; top: 0; width: 1.5px; border-radius: 1px; background: var(--ink); pointer-events: none; }
+.desk-caret.resting { animation: caret-blink 1.06s steps(1) infinite; }
+.desk-file > .sheet > .gutter { position: relative; }
+/* Where the repo's desk is: the whole center. */
+.desk-room { position: relative; height: 100%; min-height: 0; overflow: clip; }
+/* The band's files tool out (forge.ts deeds): the desk moved down by the bar's room, gliding as the bar drops, and back
+   as it goes; moved, not laid out again (its camera stands as it stood). */
+.desk-room > .desk { translate: 0 var(--push, 0px); transition: translate calc(170ms * var(--pace)) var(--land); }
+/* The band's files tool's deeds, as a bar dropped from under it (dmenu's): ink, square, a band's row high, its left edge
+   the tool's, a band's gap under it; its path quiet at its head, the deed chosen (the keyboard's, or under the pointer)
+   in the paper's colours, as a selection is, the whole height of the bar. A name asked for, or a Delete to be sure of,
+   is asked in its place on the bar, in the same letters. */
+.deeds-under.band-deeds { display: flex; align-items: stretch; flex-wrap: wrap; width: max-content; max-width: calc(100vw - 32px);
+  min-height: var(--h-row); box-sizing: border-box; padding: 0; border: 0; border-radius: 0; background: var(--ink); color: var(--paper);
+  box-shadow: none; --from: 0 -8px; animation: deeds-drop calc(170ms * var(--pace)) var(--land); }
+@keyframes deeds-drop { from { translate: 0 -12px; clip-path: inset(100% 0 0 0); } to { translate: 0 0; clip-path: inset(0); } }
+.band-deeds .pop-icon, .band-deeds .pop-rule { display: none; }
+.band-deeds .pop-head { display: flex; align-items: center; padding: 0 14px 0 12px; font: 400 12px/1 var(--mono); color: color-mix(in srgb, var(--paper) 55%, transparent); }
+.band-deeds :is(.pop-item, .button) { display: flex; align-items: center; width: auto; min-height: var(--h-row); height: auto; margin: 0; padding: 0 12px;
+  border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--paper); font: 400 13px/1 var(--mono); }
+.band-deeds :is(.pop-item, .button):focus { outline: none; }
+.band-deeds :is(.pop-item, .button):is(:focus, :hover) { background: var(--paper); color: var(--ink); }
+.band-deeds:hover :is(.pop-item, .button):focus:not(:hover) { background: none; color: var(--paper); }
+.band-deeds .pop-item.pop-gone { color: color-mix(in srgb, var(--del) 45%, var(--paper)); }
+.band-deeds .pop-item.pop-gone:is(:focus, :hover) { background: var(--del); color: var(--paper); }
+.band-deeds :is(.pop-field, .pop-ask) { display: flex; align-items: center; gap: 0; padding: 0 0 0 12px; }
+.band-deeds :is(.pop-field, .pop-ask) > div { display: flex; align-items: stretch; align-self: stretch; }
+.band-deeds .pop-field input { width: 20ch; height: 22px; margin-right: 6px; padding: 0; border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--paper) 55%, transparent); border-radius: 0; background: none; color: var(--paper);
+  caret-color: var(--paper); font: 400 13px/1 var(--mono); outline: none; }
+.band-deeds .pop-field input::selection { background: var(--paper); color: var(--ink); }
+.band-deeds .pop-ask p { margin-right: 10px; color: color-mix(in srgb, var(--paper) 75%, transparent); font: 400 13px/1 var(--mono); }
+.band-deeds .button.primary { color: var(--paper); text-decoration: underline 1px; text-underline-offset: 4px; }
+.band-deeds .pop-ask .button.primary { color: color-mix(in srgb, var(--del) 45%, var(--paper)); }
+.band-deeds .error { margin: 0 12px; color: color-mix(in srgb, var(--del) 55%, var(--paper)); font: 400 12px/1 var(--mono); }
+/* A file named in a terminal's output, under the pointer: underlined, to be pressed (forge.ts termLinks). */
+::highlight(term-file) { text-decoration: underline 1px currentColor; text-underline-offset: 3px; }
+.desk-room.term-linking .term-out { cursor: var(--cursor-hand); }
+/* The desk's keys at its foot on the right, in its corner, no line nor bar round them: each key in ink, what it does
+   after it, quieter, printed on the ground under the boxes: a box lying over them covers them, as it would words printed
+   on a desk (a strip of ground of their own over the boxes cut a corner out of the box under it). Never taking a press.
+   With the pane put away, its switch stands in the corner: they keep left of it. */
+.desk-keys { position: absolute; right: 0; bottom: 0; display: flex; align-items: center; height: 28px; padding: 0 12px;
+  pointer-events: none; font: 400 11px/1 var(--mono); color: var(--sub); white-space: nowrap; }
+.work.pane-closed .desk-keys { right: calc(var(--s5) + var(--h-row) + var(--s3)); }
+.desk-key { display: inline-flex; align-items: baseline; gap: 5px; padding: 0 8px; }
+.desk-keys kbd { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: 600 11px/1 var(--mono); color: var(--ink); }
+@media (max-width: 900px) { .desk-keys { display: none; } }
+.desk-none { display: grid; place-items: center; height: 100%; color: var(--sub); }
+/* The Prompt's box: what it printed, at most 24 lines (scrolled within), at least 8; under it the line one types at,
+   its pill saying what the line does. Its name is said over the box, as any box's is. */
+/* Its lines start where a file's code does (the sheet's step, two figures of line number, the step after them), so the
+   desk reads down one edge; its prompts are the shell's, green and heavier, as a terminal colours them; the line one
+   types at follows what was printed with nothing between, the box at least 8 lines tall with the room under them. */
+.desk-term { display: grid; align-content: start; gap: 0; padding: var(--s4) var(--s4) var(--s4) calc(2 * var(--s4) + 1.2 * var(--t-code));
+  min-height: calc(8 * 1.6 * var(--t-code) + 2 * var(--s4)); }
+.desk-term .term { margin: 0; gap: 0; }
+.desk-term .term > p:empty, .desk-term .term-activity:empty { display: none; }
+.desk-term .term-out > .ps { color: var(--add); font-weight: 600; }
+.desk-term .term-box { display: block; padding: 0; min-height: 0; }
+.desk-term .term-head { display: none; }
+.desk-term .term-out { margin: 0; font: var(--t-code)/1.6 var(--mono); max-height: calc(24 * 1.6em); overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+/* The terminal's own scroll (ui/scroll-thumb.ts), in its box: an ink bar at the box's right edge, as long as what is
+   shown is of the whole, there while it is scrolled or pointed at, a moment more; held, it is thicker. What lies past
+   the top or the foot fades out at that edge, so it is seen to be there. */
+.desk-term .term { position: relative; }
+.scroll-thumb { display: none; }
+.desk-term .scroll-thumb { display: block; position: absolute; top: 0; right: calc(-1 * var(--s4) + 6px); width: 3px; border-radius: 0;
+  background: var(--ink); opacity: 0; pointer-events: none; cursor: var(--cursor-hand);
+  transition: opacity calc(160ms * var(--pace)) ease-out, width calc(120ms * var(--pace)) var(--land), right calc(120ms * var(--pace)) var(--land); }
+.desk-term .scroll-thumb.shown { opacity: 1; pointer-events: auto; }
+.desk-term .scroll-thumb:is(:hover, .held) { width: 6px; right: calc(-1 * var(--s4) + 4px); }
+.desk-term .term.more-above > .term-out { mask-image: linear-gradient(transparent, #000 1.6em); }
+.desk-term .term.more-below > .term-out { mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); }
+.desk-term .term.more-above.more-below > .term-out { mask-image: linear-gradient(transparent, #000 1.6em, #000 calc(100% - 1.6em), transparent); }
+@media (prefers-reduced-motion: reduce) { .desk-term .scroll-thumb { transition: none; } }
+.desk-term > .dock { position: static; max-width: none; margin: 0; }
+/* Ended, the end line is the terminal's last, on its line grid in its letters; no prompt line waits under it (its
+   switch starts it again). */
+.desk-term .term-end { margin-top: 0; font: var(--t-code)/1.6 var(--mono); }
+.desk-term:has(.term.ended) > .dock { display: none; }
+.desk-term > .dock::after { display: none; }
+.desk-after { margin-left: 1ch; }
+/* The line one types at is the Prompt's own last line: no field round it, the pill its prompt (garden $), what is
+   written after it in the Prompt's letters; the prompt line the shell waits at is not said again above it. */
+.desk-term .term-out > .ps.waits:last-child { display: none; }
+.desk-term > .dock .prompt { background: none; border: 0; box-shadow: none; padding: 0; gap: 0; align-items: baseline; min-height: 0; }
+.desk-term > .dock .prompt-chip[data-mode='run'] { height: auto; min-height: 0; padding: 0; margin: 0 1ch 0 0; border-radius: 0; background: none; box-shadow: none;
+  text-shadow: none; color: var(--add); font: 600 var(--t-code)/1.6 var(--mono); }
+.desk-term > .dock .prompt-chip[data-mode='run'] > .lamp { display: none; }
+.desk-term > .dock .prompt-chip[data-mode='run'] > .prompt-ps { color: inherit; height: auto; }
+.desk-term > .dock .prompt-in { font: var(--t-code)/1.6 var(--mono); }
+/* Away from the keyboard the terminal's cursor stays where the next letter goes, a block as a terminal's is (the line
+   empty; in it, the caret is the line's own). */
+.desk-term > .dock .prompt-in:placeholder-shown:not(:focus) { background: linear-gradient(var(--ink), var(--ink)) 0 .2em / 1ch 1.2em no-repeat; }
+.desk-term > .dock :is(.prompt-caps, .prompt-run) { display: none; }
+/* The Agent's own terminal, born beside the person's (bench/agent-term.ts): what it was asked heads it, heavier; then
+   what it does, as it is played: each command typed after its prompt and what it printed, as the person's terminal
+   shows them; each file read or edited a quiet line (pressed, the file); its words in ink, its code set off by a rule.
+   Its prompt line waits at its foot; while a command is typed there, the cell after it is the caret, a terminal's. */
+.agent-term { outline: none; }
+/* (A terminal's output stands on its second row in a Prompt's box, under its head: here it is first, its prompt line after it.) */
+.agent-term > .agent-out { grid-row: auto; }
+.agent-term .agent-out { margin: 0; font: var(--t-code)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  max-height: calc(24 * 1.6 * var(--t-code)); overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.agent-asked { position: relative; font-weight: 700; margin-bottom: .4em; }
+.agent-asked::before { content: '›'; position: absolute; right: calc(100% + 1ch); color: var(--sub); font-weight: 400; }
+.agent-step { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: var(--sub); text-align: left; cursor: var(--cursor-hand); }
+.agent-step:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+/* The pointer at rest while the desk goes by under it (the camera's glide, desk.ts): what passes under it, or stops
+   there, was not pointed at and does not light up as if it were, until the pointer moves again. (Before: a row of the
+   Agent's lit and underlined as the camera carried it under a pointer left where the person last pressed.) */
+.desk.resting .agent-step:hover { color: var(--sub); text-decoration: none; }
+.desk.resting .desk-close:hover { background: var(--ink); scale: var(--inv, 1); }
+.desk.resting .desk-term .scroll-thumb:hover:not(.held) { width: 3px; right: calc(-1 * var(--s4) + 6px); }
+.desk.resting .link:hover { background: transparent; }
+.agent-run .ps, .agent-prompt .ps { color: var(--add); font-weight: 600; }
+.agent-exit { display: block; color: var(--del); font-weight: 600; }
+.agent-words { margin: .4em 0; }
+.agent-words .answer-p { margin: 0 0 .4em; white-space: pre-wrap; }
+.agent-words .answer-code { display: block; margin: 0 0 .4em; padding-left: 1ch; border-left: 2px solid var(--rule); white-space: pre; overflow-x: auto; scrollbar-width: none; }
+/* Its caret, a terminal's block: where its words will come while it thinks before it first says or does anything,
+   blinking as a caret at rest does (never a "…" standing still); after its words as they are typed, solid, gone a
+   moment after the last (agent-term.ts saying). */
+.agent-words.waiting::after, .agent-words.saying > :last-child::after { content: ''; display: inline-block; width: .6em; height: 1.25em;
+  vertical-align: -.25em; background: var(--ink); }
+.agent-words.waiting::after { animation: caret-blink 1.06s steps(1) infinite; }
+.agent-words.refused { color: var(--del); }
+.agent-prompt { font: var(--t-code)/1.6 var(--mono); white-space: pre-wrap; }
+.agent-cur { display: inline-block; width: .6em; height: 1.25em; vertical-align: -.25em; background: var(--ink); opacity: 0; }
+.agent-term.typing .agent-cur { opacity: 1; }
+/* Its hand in its terminal with nothing yet to type there (a run read, its next step not begun): its caret rests at the
+   prompt, blinking as a terminal's does, never gone while the hand is there. One caret at a time: while its words wait
+   or are typed, the caret is with them, not at the prompt. */
+.agent-term.hand:not(.typing, .running) .agent-cur { opacity: 1; animation: caret-blink 1.06s steps(1) infinite; }
+.agent-term:has(.agent-words:is(.waiting, .saying)) .agent-cur { opacity: 0; }
+/* A command running: no prompt on its line until it ends, the caret alone there, as a terminal has it. */
+.agent-term.running .agent-prompt .ps { display: none; }
+.agent-term.running .agent-cur { opacity: 1; }
+/* Born from under another box (a file made under the one in hand): its name comes once it is out. */
+.desk-box.born > .desk-label { opacity: 0; }
+.desk-box > .desk-label { transition: opacity 180ms ease-out; }
+/* The finger (desk.ts): the pointer's own pointing hand at 40 px, its fingertip on the top edge of the box in hand
+   26 px in from its right corner, the size it is on the face however near the camera; closed on the box (its fingers
+   over the edge) while the box is held up. While it is out, the pointer is hidden. */
+.desk-hand { position: absolute; left: 0; top: 0; z-index: 3; width: 40px; height: 40px; pointer-events: none; visibility: hidden;
+  background: var(--hand-open) no-repeat 0 0 / 40px 40px; transform-origin: 0 0;
+  transform: scale(var(--inv, 1)) translate(calc(-26px - 14.81px), calc(2px - 4.44px)); }
+.desk-hand.on { visibility: visible; }
+.desk-hand.shut { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M10 8C11.1 8 12 8.9 12 10L12 12.5C12 13.6 11.1 14.5 10 14.5C8.9 14.5 8 13.6 8 12.5L8 10C8 8.9 8.9 8 10 8Z'/%3E%3Cpath d='M13.5 8C14.33 8 15 8.67 15 9.5L15 13.5C15 14.33 14.33 15 13.5 15C12.67 15 12 14.33 12 13.5L12 9.5C12 8.67 12.67 8 13.5 8Z'/%3E%3Cpath d='M16.45 9L16.55 9C17.35 9 18 9.65 18 10.45L18 14.05C18 14.85 17.35 15.5 16.55 15.5L16.45 15.5C15.65 15.5 15 14.85 15 14.05L15 10.45C15 9.65 15.65 9 16.45 9Z'/%3E%3Cpath d='M19 11C19.55 11 20 11.45 20 12L20 15C20 15.55 19.55 16 19 16C18.45 16 18 15.55 18 15L18 12C18 11.45 18.45 11 19 11Z'/%3E%3Cpath d='M10.6 11.5L16.4 11.5C18.39 11.5 20 13.11 20 15.1L20 18.4C20 20.39 18.39 22 16.4 22L10.6 22C8.61 22 7 20.39 7 18.4L7 15.1C7 13.11 8.61 11.5 10.6 11.5Z'/%3E%3Cpath d='M7.4 12.6L9.6 14.2C10.3 14.7 10.4 15.7 9.9 16.4C9.4 17.1 8.4 17.2 7.7 16.7L5.5 15.1C4.8 14.6 4.7 13.6 5.2 12.9C5.7 12.2 6.7 12.1 7.4 12.6Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%232c2a27' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url%28%23s%29'%3E%3Cg fill='%23f9f8f5' stroke='%23f9f8f5' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%232c2a27'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cpath d='M10 10.2V12.6M13.5 10V12.9M16.5 11V13.6' fill='none' stroke='%23f9f8f5' stroke-width='1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  transform: scale(var(--inv, 1)) translate(calc(-26px - 20px), calc(2px - 14.07px)); }
+/* The terminal on the desk is a terminal: what runs is cut with Ctrl+C, as at any terminal, so its line says what a run
+   does without buttons of its own. */
+.desk-term .term-activity .button { display: none; }
+/* A name written over where it is (a new file's, a rename): the name itself, a line under it, its stem chosen in the
+   marker's soft yellow; what it cannot be said beside it. */
+.desk-name[contenteditable] { outline: none; box-shadow: 0 1.5px 0 var(--ink); caret-color: var(--ink); cursor: text; user-select: text; }
+.desk-name::selection { background: var(--marker-soft); color: var(--ink); }
+.desk-label > .path-error { margin-left: 8px; font-weight: 400; }

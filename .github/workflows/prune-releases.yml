@@ -1,0 +1,42 @@
+name: Prune releases
+
+# Deletes the releases main no longer pins (root3/core/src/root/pins.rs RELEASES, root3/shared/desktop-releases.json);
+# their tags stay. Runs when the pins on main change, or by hand; never during a release (one concurrency group).
+on:
+  push:
+    branches: ['main']
+    paths: ['root3/core/src/root/pins.rs', 'root3/shared/desktop-releases.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Delete unpinned releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          keep=$({
+            grep -o 'tag: "os-length3-linux-v[^"]*"' root3/core/src/root/pins.rs | cut -d'"' -f2
+            node -e 'for (const v of Object.keys(require("./root3/shared/desktop-releases.json"))) console.log(`os-length3-linux-v${v}`)'
+          } | sort -u)
+          # Pins that cannot be read keep everything.
+          [ -n "$keep" ] || { echo "main pins no release: nothing is deleted" >&2; exit 1; }
+          echo "Pinned, kept:"; echo "$keep"
+          for tag in $keep; do gh release view "$tag" >/dev/null || { echo "$tag is pinned and not published: nothing is deleted" >&2; exit 1; }; done
+          gh release list --limit 200 --json tagName --jq '.[].tagName' | while read -r tag; do
+            if ! echo "$keep" | grep -qx "$tag"; then echo "Deleting $tag (its tag stays)"; gh release delete "$tag" --yes; fi
+          done
