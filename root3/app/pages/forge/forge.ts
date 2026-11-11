@@ -123,10 +123,6 @@ class Forge {
     this.ctx = ctx;
     const strip = h('nav', {class: 'repo-strip', 'aria-label': 'repo'});
     this.center = h('div', {class: 'desk-room'});
-    // The desk's keys, at its foot on the right, quiet, as a bar's are: what the hands can do from anywhere on it.
-    this.center.append(h('div', {class: 'desk-keys', 'aria-hidden': 'true'},
-      ...([['tab', t('next')], ['↵', t('in')], ['esc', t('back')], ['⇧N', t('new')], ['ctrl ←→', t('carry')], ['/', t('search')]] as const)
-        .map(([key, does]) => h('span', {class: 'desk-key'}, h('kbd', {}, key), does))));
     this.work = bench({strip, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
@@ -418,9 +414,9 @@ class Forge {
     // A file laid for the first time goes in the column beside the Prompt's, under the last there.
     const beside = !made && (d.desk.held === 'term' || !d.desk.held);
     const f = d.files.get(path) ?? this.layFile(repo, d, path, beside ? 1 : undefined, {slide: !unseen});
-    // Made, it is not gone into yet: the camera steps back to show where it came (with what is round it) while it is
-    // named; Enter goes in.
-    if (made) { d.desk.take(path, false, !unseen); d.desk.stepBack(); return; }
+    // Made, it is not gone into yet: in hand, its name to be written, at the size it is read at (the camera does not
+    // step back for it: stepped back, its words were some 10 px tall); Enter goes in.
+    if (made) { d.desk.take(path, false, !unseen); return; }
     d.desk.take(path, keyboard, !unseen);
     if (keyboard) f.at(line);
   }

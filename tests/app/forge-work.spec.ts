@@ -543,7 +543,7 @@ test('held up with the finger on it, the camera steps back to two boxes side by 
   await app.page.keyboard.down('Control');
   await expect(box('README.md')).toHaveClass(/lifted/);
   await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeLessThan(pulled - 4);
-  await expect(box('term').locator('.desk-close')).toHaveCSS('opacity', '0');
+  await expect(box('README.md').locator('.desk-close')).toHaveCSS('opacity', '0');
   const term = await settled('term');
   // Carried into the gap beside: it goes, the desk and the camera stand (the terminal where it was on the face).
   await app.page.keyboard.press('ArrowLeft');
@@ -557,7 +557,8 @@ test('held up with the finger on it, the camera steps back to two boxes side by 
   await expect(box('README.md')).not.toHaveClass(/lifted/);
   await expect(desk).toHaveClass(/pulled/);
   await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeCloseTo(pulled, 0);
-  await expect(box('term').locator('.desk-close')).toHaveCSS('opacity', '1');
+  // (The close is the box in hand's: back once it is put down.)
+  await expect(box('README.md').locator('.desk-close')).toHaveCSS('opacity', '1');
   // Ctrl and - with the finger on: the camera a place back as the person asks, and it stays there once Ctrl is let go.
   await app.page.keyboard.press('Control+Minus');
   await expect(desk).toHaveClass(/whole/);

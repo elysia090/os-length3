@@ -49,7 +49,7 @@ Three sources, spent in this order, and in falling amounts.
    of ink for the thing chosen, a sheet of paper with a hard shadow, as cut
    card has), and nothing soft: no gradient, no blur, no glow.
 3. **The plain prop of science fiction, for the last touch.** The dotted
-   ground of a desk, the line of keys at its foot, the names a machine
+   ground of a desk, the names a machine
    would stencil on its parts (set in the code face), a pointer drawn as
    the OS's own. It is the quality the best small games have: things that
    look made for this machine, and that say something true (a key that
@@ -97,10 +97,11 @@ three best, and is the measure the others are held to.
 - **A desk** (Home, Forge, New repo; File laid over them) is where things
   are made. Its ground is dotted, a dot every 24 px, so a sheet has
   something to lie on and to be moved across. What is worked on is a sheet
-  of paper with a hard shadow (8 px down and right, in ink; 16 while it is
-  lifted). Names are the machine's (a file's path, a section) and set in
-  the code face. The band is on the top line, the right pane at the right,
-  the keys that work here in one line at the foot.
+  of paper, and the one in hand has a hard shadow (8 px down and right, in
+  ink): one on a desk, never one under every sheet, where it said nothing
+  and the sheet worked on looked as the rest did. Names are the machine's
+  (a file's path, a section) and set in the code face. The band is on the
+  top line, the right pane at the right.
 - **A counter** (Runtime, Remote, Server, Inbox) is where what is so is
   read and set. Its ground is plain. It starts with its head, then its
   parts, then boxes drawn in line on the ground, rows in them. Paper is
@@ -212,10 +213,12 @@ under *The rules in full*.
 
 A prop is allowed where three things hold: it says something true (a key
 that works here, a size, a name); it is where the hand or the eye already
-is when it is wanted (the keys at the foot of a desk, a name over its
-sheet); and the screen is no harder to read with it than without. The
-dotted ground, the hard shadow, the stencilled names, the line of keys and
-the OS's own pointers are all of them there are. A new one replaces one of
+is when it is wanted (a name over its sheet); and the screen is no harder
+to read with it than without. The dotted ground, the hard shadow under the
+sheet in hand, the stencilled names and the OS's own pointers are all of
+them there are. (A line of keys stood at the desk's foot, saying what the
+hands could do: a screen that needs its keys spelled out along its foot is
+not yet plain, and the line read as a game's. It is gone.) A new one replaces one of
 these or is not added.
 
 ### Tried
@@ -2184,10 +2187,12 @@ pointer, a chevron at the row's end says it goes there.
 
 The center is the repo's desk. What is open lies on a plane on dots, each box
 as wide as 80 columns of its code (14 px, a step larger than elsewhere: a box
-is read at its own size), inked round with a hard shadow, its name
-outside its top-left corner (its folder quiet before it) and its close a dot
-under its foot, a little in from its right corner (under the shadow's straight
-foot, never in the corner where it turns). The Prompt is the first box: what it printed, and
+is read at its own size), inked round, the one in hand with a hard shadow,
+its name outside its top-left corner (its folder quiet before it) and its
+close outside its top-right, on the name's line: a mark that says what it
+does (×), as large as a press needs (28 px), there for the box in hand and
+the one under the pointer (before: a 9 px dot under the box's foot, read as
+an ornament and too small to press). The Prompt is the first box: what it printed, and
 under it the line one types at, its pill the prompt (`garden $`) and what the
 line does (Run, Issue, TODO, Agent; Alt and a number, or pressed). Under Run,
 Enter runs the line as a terminal's does, Shift+Enter is a new line, and the
@@ -2300,11 +2305,7 @@ it and the camera gliding with them, never a cut. A file
 gone goes from the desk; moved, its box is the file where it went. A file named
 in a terminal's output (what ls says, the compiler's count.c:7:24:, grep's
 line) is underlined under the pointer and, pressed, its box opens at that line,
-as a terminal's hints open what they point at. In the desk's bottom corner on
-the right stand its keys, with no line nor bar round them (tab next, ↵ in,
-esc back, ⇧N new, ctrl ←→ carry, / search), each in ink, what it does quieter,
-printed on the ground under the boxes: a box lying over them covers them, as it
-would words printed on a desk, never a strip of ground cut out of the box. Each
+as a terminal's hints open what they point at. Each
 repo keeps its own desk, as it was left, from one visit to the next; a desk
 never worked at begins with the Prompt and the README beside it.
 

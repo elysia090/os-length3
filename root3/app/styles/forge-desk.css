@@ -1,13 +1,15 @@
 /* Forge's desk (pages/forge/desk.ts): what is open lies on a plane on dots, each box as wide as 80 columns of code,
-   inked round with a hard shadow, its name outside its top-left corner (its folder quiet before it), its close a dot
-   under its foot a little in from its right corner (not in the corner, under the shadow's turn). The camera moves the plane, never a box; the box in hand is the one worked in. Its code a
-   step larger than elsewhere (14 px): a box is read at its own size at the base, and a quarter nearer close. */
+   inked round, its name outside its top-left corner (its folder quiet before it) and its close outside its top-right,
+   on the name's line: where a thing is closed on every system, a mark that says what it does, as large as a press
+   needs (before: a 9 px dot under its foot, read as an ornament). The hard shadow is under the box in hand alone:
+   under every box it said nothing, and the one worked in looked as the rest did. The camera moves the plane, never a
+   box. Its code a step larger than elsewhere (14 px). */
 .desk { --t-code: 14px; position: absolute; inset: 0; overflow: hidden; outline: none;
   background-image: var(--dots);
   background-size: 24px 24px; background-position: 12px 12px; background-attachment: local; }
 .desk-plane { position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform-origin: 0 0; }
 .desk-box { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 2px solid var(--ink); border-radius: var(--r-place);
-  background: var(--paper); box-shadow: 8px 8px 0 0 var(--ink);
+  background: var(--paper);
   transition: translate 640ms cubic-bezier(.45, 0, .2, 1), box-shadow 120ms var(--land), margin 120ms var(--land), opacity 180ms ease-out; }
 /* Coming out from under the box above it (a file made under the one in hand): pulled out quick, landing, before the
    camera follows (desk.ts lay). */
@@ -19,6 +21,7 @@
 .desk-box.fills { transition-duration: 520ms, 120ms, 120ms, 180ms; transition-delay: 200ms, 0s, 0s, 0s; }
 /* Lifted to be carried (Ctrl): up off the desk and over the others it passes, its shadow long, its name on the ground
    over it. */
+.desk-box.held { box-shadow: 8px 8px 0 0 var(--ink); }
 .desk-box.lifted { z-index: 2; margin: -8px 0 0 -8px; box-shadow: 16px 16px 0 0 var(--ink); }
 .desk-box.lifted > .desk-label { background: var(--ground); margin-left: -6px; padding-left: 6px; }
 /* Born beside another (desk.ts lay: the Agent's terminal beside the person's): set down in the room the columns after
@@ -41,12 +44,14 @@
 .desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
   font: 600 15px/1 var(--mono); color: var(--ink); padding: 4px 8px 7px 0; transform-origin: 0 100%; scale: var(--inv, 1); }
 .desk-dir { font-weight: 400; color: var(--sub); }
-.desk-close { position: absolute; right: 32px; top: calc(100% + 16px); width: 9px; height: 9px; padding: 0; border: 0; border-radius: 50%;
-  background: var(--ink); cursor: var(--cursor-hand); transform-origin: 100% 0; scale: var(--inv, 1);
-  transition: background var(--motion), scale 140ms var(--land), opacity 220ms ease-out 420ms; }
-.desk.carrying .desk-close { opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; }
-.desk-close::before { content: ''; position: absolute; inset: -10px; }
-.desk-close:hover { background: var(--del); scale: calc(var(--inv, 1) * 1.6); }
+.desk-close { position: absolute; right: -2px; bottom: 100%; display: grid; place-items: center; width: 28px; height: 28px; margin-bottom: 1px; padding: 0; border: 0;
+  border-radius: var(--r-field); background: transparent; color: var(--sub); cursor: var(--cursor-hand); transform-origin: 100% 100%; scale: var(--inv, 1); }
+.desk-close > .icon { width: 16px; height: 16px; }
+/* There for the box in hand, and for the one under the pointer; where there is no pointer, for the one in hand. */
+.desk-box:not(.held, :hover) > .desk-close:not(:focus-visible) { opacity: 0; }
+.desk.carrying .desk-close { opacity: 0; pointer-events: none; }
+.desk-close:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.desk-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .desk-file { position: relative; }
 .desk :is(.gutter, .code) { font-size: var(--t-code); }
 .desk-file > .sheet { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s4); padding: var(--s4); }
@@ -104,16 +109,6 @@
 /* A file named in a terminal's output, under the pointer: underlined, to be pressed (forge.ts termLinks). */
 ::highlight(term-file) { text-decoration: underline 1px currentColor; text-underline-offset: 3px; }
 .desk-room.term-linking .term-out { cursor: var(--cursor-hand); }
-/* The desk's keys at its foot on the right, in its corner, no line nor bar round them: each key in ink, what it does
-   after it, quieter, printed on the ground under the boxes: a box lying over them covers them, as it would words printed
-   on a desk (a strip of ground of their own over the boxes cut a corner out of the box under it). Never taking a press.
-   With the pane put away, its switch stands in the corner: they keep left of it. */
-.desk-keys { position: absolute; right: 0; bottom: 0; display: flex; align-items: center; height: 28px; padding: 0 12px;
-  pointer-events: none; font: 400 11px/1 var(--mono); color: var(--sub); white-space: nowrap; }
-.work.pane-closed .desk-keys { right: calc(var(--s5) + var(--h-row) + var(--s3)); }
-.desk-key { display: inline-flex; align-items: baseline; gap: 5px; padding: 0 8px; }
-.desk-keys kbd { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font: 600 11px/1 var(--mono); color: var(--ink); }
-@media (max-width: 900px) { .desk-keys { display: none; } }
 .desk-none { display: grid; place-items: center; height: 100%; color: var(--sub); }
 /* The Prompt's box: what it printed, at most 24 lines (scrolled within), at least 8; under it the line one types at,
    its pill saying what the line does. Its name is said over the box, as any box's is. */

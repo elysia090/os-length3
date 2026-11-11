@@ -3,6 +3,7 @@ import {still} from '../../ui/glide.ts';
 import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
 import {fieldCarried} from '../../ui/caret.ts';
 import {t} from '../../i18n/i18n.ts';
+import {mark} from '../../ui/icons.ts';
 import {arc, bornOn, carried, FOOT_ROOM, kept, liftedOn, lineKept, next, PAD, pulledOn, slots, STANDARD, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
 
 // A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
@@ -386,7 +387,7 @@ export class Desk {
       ...(laid.after ? [h('span', {class: 'desk-dir desk-after'}, laid.after)] : []));
     const rename = laid.rename;
     if (rename) name.addEventListener('click', () => { if (!getSelection()?.toString()) rename(name); });
-    const close = h('button', {type: 'button', class: 'desk-close', 'aria-label': t('Close {name}', {name: laid.name})});
+    const close = h('button', {type: 'button', class: 'desk-close', 'aria-label': t('Close {name}', {name: laid.name})}, mark('close'));
     close.addEventListener('click', (e) => { e.stopPropagation(); this.#shut(key); });
     const el = h('div', {class: 'desk-box', 'data-key': key}, label, laid.element, close);
     // Pressed (what was pressed in it done first: a line run, a link), it is in hand; the camera moves after the
@@ -512,12 +513,6 @@ export class Desk {
     if (!b) return;
     b.label.querySelector('.desk-dir')!.textContent = dir;
     b.label.querySelector('.desk-name')!.textContent = name;
-  }
-
-  /** The camera a step back from the standard (where it stands back already, it stays): a file just made is laid
-   * where it is seen with what is round it, and Enter (the finger on it, or its name written) goes in to it. */
-  stepBack() {
-    if (this.#cam === 'standard') this.#setCam('pulled');
   }
 
   /** `key` in hand, the camera going to it as near as it stands (gliding there, unless `glide` is false; over the whole
