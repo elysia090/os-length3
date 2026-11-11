@@ -1,6 +1,6 @@
 [package]
 name = "length3-core-web"
-version = "0.1.0"
+version = "0.0.1"
 description = "The core as a browser runs it: root3/core/src/api/ behind three exports (root3/app/core/worker.ts)"
 edition = "2021"
 publish = false

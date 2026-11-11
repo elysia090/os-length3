@@ -1,6 +1,6 @@
 [package]
 name = "root3"
-version = "0.1.0"
+version = "0.0.1"
 description = "Length³ OS on the command line: the same repos, files, issues and TODO as the app"
 edition = "2021"
 publish = false

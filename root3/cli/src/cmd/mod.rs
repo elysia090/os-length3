@@ -118,8 +118,9 @@ pub fn next(_: &Ctx, _: &Call) -> Result<Reply> {
     Err(Error::Refused(tr!("root3 next chooses with the keys, at a terminal", "root3 next は端末でキーを使って選びます")))
 }
 
+/// root3's own version (root3/VERSION), and the root it runs: ricebox's, which has a version of its own.
 pub fn version(_: &Ctx, _: &Call) -> Result<Reply> {
-    let v = include_str!("../../../../module/ricebox/RELEASE").trim();
+    let v = include_str!("../../../VERSION").trim();
     let root = length3_core::root::current(paths::data_dir()).map(|(_, i)| i);
     let mut text = format!("root3 {v}");
     if let Some(i) = &root { text += &format!("\nroot {} {} ({})", i.name, i.version, crate::say::out::short(&i.sha256)); }

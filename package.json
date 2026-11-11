@@ -1,6 +1,6 @@
 {
   "name": "length3-os-desktop",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Native work OS shell for Length\u00b3 OS: purpose rail, target column, central flow and right pane.",
   "type": "module",

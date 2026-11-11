@@ -1,6 +1,6 @@
 [package]
 name = "length3-core"
-version = "0.1.0"
+version = "0.0.1"
 description = "What Length³ OS means by a repo, a file, an issue and a TODO; shared by the app and root3"
 edition = "2021"
 publish = false
