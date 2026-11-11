@@ -1,7 +1,8 @@
 //! sods: a static x86-64 Linux program made a WebAssembly module. One direction, each file one thing:
 //!
 //! - `elf`: the program at rest.
-//! - `x86`: an instruction as sods reads it.
+//! - `x86`: an instruction as sods reads it; `scan`: what a walk needs of one, from its bytes (`scan_table`: its
+//!   tables, made ahead).
 //! - `program`: what is found of a program; `find`: finding it; `layout`: the order its blocks are lowered in.
 //! - `facts`: what the whole program decides before any function is made.
 //! - `abi`: what translated code and what runs it agree on; `wasm`: WebAssembly as bytes.
@@ -12,6 +13,8 @@
 
 pub mod elf;
 pub mod x86;
+pub mod scan;
+mod scan_table;
 pub mod program;
 pub mod layout;
 pub mod find;

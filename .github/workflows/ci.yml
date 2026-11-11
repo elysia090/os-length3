@@ -275,6 +275,10 @@ jobs:
         if: matrix.part == 'native'
         working-directory: module/muk
         run: sh test/programs/run.sh
+      # The translator's own tests: among them every opcode scanned as the decoder decodes it.
+      - name: Test sods
+        if: matrix.part == 'native'
+        run: cargo test --locked --release --manifest-path module/sods/Cargo.toml
       # run.ts takes the wasm build of the translator when it is current.
       - name: Run root3 under muk
         if: matrix.part == 'prompt'

@@ -6,6 +6,7 @@
 use crate::elf::Elf;
 use crate::layout::{joined, runs, Layout};
 use crate::program::*;
+use crate::scan::{scan, ASKED, INVALID, REL32, REL8, SYSTEM};
 use crate::x86::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicU16, Ordering::Relaxed};
@@ -213,20 +214,12 @@ fn walk_all(elf: &Elf, seen: &Seen, jobs: &[Job], references: Option<&mut Vec<u6
 
 /// What finding keeps of every instruction it has decoded, for as long as it looks: 16 bits each, by its address (a
 /// page of them made when code on it is first decoded). A function is walked again when a start found later lies in
-/// what it reached, and its walks, as any other's that come the same way, read here what the first decoded; the
-/// walks of a round, on every core, share it (two that decode the same place write the same).
+/// what it reached, and its walks, as any other's that come the same way, read here what the first scanned (scan.rs:
+/// an entry is what a scan gives); the walks of a round, on every core, share it (two that scan the same place write
+/// the same).
 struct Seen { base: u64, pages: Vec<OnceLock<Box<[AtomicU16; PAGE]>>> }
 
 const PAGE: usize = 4096;
-// An entry: its length (4 bits), its flow (3), where its target is (2: it has none; its last byte; its last four;
-// or asked of the decoder again), its class (6: x86.rs), and whether it is a system call. Nothing: not decoded yet.
-// INVALID: no instruction there.
-const INVALID: u16 = 1 << 15;
-const SYSTEM: u16 = 1 << 15;
-const REL8: u16 = 1;
-const REL32: u16 = 2;
-const ASKED: u16 = 3;
-
 impl Seen {
     fn new(elf: &Elf) -> Seen {
         let code = || elf.segments.iter().filter(|s| s.executable);
@@ -256,22 +249,6 @@ impl Seen {
         page[k].store(e, Relaxed);
         true
     }
-}
-
-/// The entry of `i`, whose bytes are at the start of `bytes`.
-fn entry(kinds: &Kinds, i: &Instruction, bytes: &[u8]) -> u16 {
-    let (k, class) = kinds.kind_class(i);
-    let len = i.len();
-    let mut e = len as u16 | (k.flow as u16) << 4 | (class as u16) << 9 | if k.bits & SYSCALL != 0 { SYSTEM } else { 0 };
-    if matches!(i.op0_kind(), OpKind::NearBranch64 | OpKind::NearBranch32 | OpKind::NearBranch16) {
-        // Where it goes is where it ends plus its last byte, or its last four: kept as which, and read there again.
-        let (to, next) = (i.near_branch_target(), i.next_ip());
-        let at = |n: usize| bytes.get(len.wrapping_sub(n)..len).filter(|_| len > n);
-        let short = at(1).is_some_and(|b| next.wrapping_add(b[0] as i8 as u64) == to);
-        let long = at(4).is_some_and(|b| next.wrapping_add(i32::from_le_bytes([b[0], b[1], b[2], b[3]]) as u64) == to);
-        e |= (if short { REL8 } else if long { REL32 } else { ASKED }) << 7;
-    }
-    e
 }
 
 /// What a walk keeps while it walks, by each byte's offset from its start: whether an instruction that starts there
@@ -320,10 +297,9 @@ use go::{BRANCH, CALL, INDIRECT_CALL, INDIRECT_JUMP, JUMP, NEXT};
 /// `inner` starts of others), and the code it calls or goes on to outside: each block from a leader along next_ip
 /// (not address order, so a wrong table guess decoding bytes inside an instruction leaves the real blocks as they are).
 fn walk(elf: &Elf, seen: &Seen, (start, end): (u64, u64), extra: &[u64], inner: &[u64], mut references: Option<&mut Vec<u64>>, s: &mut Scratch) -> (Vec<Block>, Vec<u64>) {
-    let kinds = kinds();
     let inside = |a: u64| a >= start && a < end && (a == start || inner.is_empty() || inner.binary_search(&a).is_err());
-    // One decoder over the code from the start to its segment's end, moved only where a walk decodes; code elsewhere
-    // (a call's continuation past the segment) decoded on its own.
+    // The code from the start to its segment's end; code elsewhere (a call's continuation past the segment) found
+    // on its own.
     let code = elf.code_at(start).unwrap_or_default();
     let bytes_at = |a: u64| match a.checked_sub(start).filter(|&o| o < code.len() as u64) { Some(o) => &code[o as usize..], None => elf.code_at(a).unwrap_or_default() };
     // Where the instruction at `at` (its entry `e`) goes: 0 where it names no place.
@@ -337,8 +313,6 @@ fn walk(elf: &Elf, seen: &Seen, (start, end): (u64, u64), extra: &[u64], inner: 
             _ => 0,
         }
     };
-    let mut decoder = Decoder::with_ip(64, code, start, DecoderOptions::NONE);
-    let mut i = Instruction::default();
     (s.base, s.span) = (start, (end.min(start + code.len() as u64) - start) as usize);
     // (What a walk before held past this one's range is zero, and no mark of this one.)
     s.mark.truncate(s.span);
@@ -359,24 +333,14 @@ fn walk(elf: &Elf, seen: &Seen, (start, end): (u64, u64), extra: &[u64], inner: 
             if was & WALKED != 0 { s.lead(at); break; }
             let mut e = seen.get(at);
             if e == 0 {
-                match at.checked_sub(start).filter(|&o| o < code.len() as u64) {
-                    Some(o) => {
-                        if decoder.ip() != at { let _ = decoder.set_position(o as usize); decoder.set_ip(at); }
-                        decoder.decode_out(&mut i);
-                    }
-                    None => i = decode(elf, at).unwrap_or_default(),
-                }
-                e = if i.is_invalid() { INVALID } else { entry(kinds, &i, bytes_at(at)) };
+                let found = scan(bytes_at(at), at);
+                e = found.entry;
                 if !seen.set(at, e) { e = INVALID; }
                 if e != INVALID {
                     if let Some(r) = references.as_deref_mut() {
-                        if i.is_ip_rel_memory_operand() { r.push(i.ip_rel_memory_address()); }
+                        r.extend(found.rip(bytes_at(at), at));
                         // Where code is not position-independent, an address in its code given as a number is one too.
-                        if elf.fixed {
-                            for k in 0..i.op_count() {
-                                if matches!(i.op_kind(k), OpKind::Immediate32 | OpKind::Immediate32to64 | OpKind::Immediate64) && elf.is_code(i.immediate(k)) { r.push(i.immediate(k)); }
-                            }
-                        }
+                        if elf.fixed { r.extend(found.imm(bytes_at(at)).filter(|&a| elf.is_code(a))); }
                     }
                 }
             }
