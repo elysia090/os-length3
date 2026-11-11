@@ -1,13 +1,14 @@
-# muk — the OCI-compatible VMM
+# muk — the machine
 
-The thinnest part of ricebox: an image's layers at rest, named by their digest, each byte fetched when it is first
-touched, and a bundle run from them, as the OCI runtime says. No KVM and no Firecracker under it: the host's kernel
-is the machine, and a box is its namespaces. C on `../lib` alone, with no C library, written as `../you` is: what it
-does counted by hand first, then written until the counts are those.
+An OCI-compatible VMM: an image's layers at rest, named by their digest, each byte fetched when it is first
+touched, and a box run from them, as the OCI runtime says. No KVM and no Firecracker under it. On Linux the host's
+kernel is the machine and a box is its namespaces (`src/muk.c`: C on `../lib` alone, with no C library, written
+as `../you` is: what it does counted by hand first, then written until the counts are those). In a browser there
+is no kernel to ask, so muk answers a box's system calls itself (`runtime/`), over the code sods makes.
 
 ```
 muk run [-b BUNDLE] [ID]      the bundle's process, started and waited for; muk ends as it ends
-sh test/muk.sh                the same bundles under muk and under runc: what each box says of itself, the same
+sh test/bundle/muk.sh         the same bundles under muk and under runc: what each box says of itself, the same
 ```
 
 `src/muk.c` is all of it. config.json is read once, where it is (a string is used in its place in the text, a NUL
@@ -53,13 +54,42 @@ Instructions: reading config.json is nearly all of it (46,000 of the 50,000). A 
 at a time; what is left over the 20,000 is finding a name in its list one name after another (15 capabilities among
 41, 30 options among 34), which a table made ahead would do in a tenth.
 
-## What it holds besides, for now
+## In a browser
 
-What reads a pack: a file's bytes by a Range of its pack, used only once they are what the pack's table says
-(`runtime/pack.ts`, `runtime/table.ts`), and the copies a Prompt keeps between runs, sealed by their digest
-(`runtime/keeper.ts`; what a translation's copy holds is sods' `kept.ts`). They become its layers by digest. A
-Prompt on Linux is still run by root3's core (`root3/core/src/prompt`: namespaces, the root under an overlay, a
-seccomp filter, an init), which becomes the bundle root3 writes once muk makes the filter and the terminal.
+There the machine is muk's too: `runtime/` answers a box's system calls itself (TypeScript, for now, and far from
+its bound: docs/STRUCTURE.md), over the code sods makes of the box's programs.
 
-What puts a pack's tree in a kernel's, and keeps a repo there in step with the outside, is the kernel's
-(`../ricebox/kernel/runtime/mount.ts`, `mirror.ts`); their tests run with ricebox's.
+- Processes run at once, as on Linux: fork returns in the parent at once; a
+  call that must wait (input not typed yet, a child still running, a full
+  pipe) leaves its thread waiting, and muk makes it again when
+  something changed.
+- Threads (clone with CLONE_VM) share their process's memory, with futexes,
+  robust lists and a tid cleared at exit.
+- Signals reach handlers through an rt_sigframe that rt_sigreturn reads back
+  (masks, SA_SIGINFO, SA_RESTART, sigaltstack).
+- Pipes hold 64 KiB in pages as Linux's do, and a full one makes its writer
+  wait.
+- Threads run here one at a time (each until it waits, or for a time slice
+  taken at its calls), or each in its own Worker with memory shared, when the
+  host allows SharedArrayBuffer (`runtime/remote.ts`). There a write to the
+  console, as a read of the clock, is done in the thread's own Worker (into an
+  outbox muk takes from, `runtime/channel.ts`), not asked of muk
+  a line at a time.
+
+The code it runs is sods' (`../sods`). What it reads at rest are a root's layers: a file's bytes by a Range of its
+pack, used only once they are what the pack's table says (`runtime/pack.ts`, `runtime/table.ts`), put in its tree
+(`runtime/mount.ts`; a repo kept in step with the outside, `runtime/mirror.ts`), and the copies kept between runs,
+sealed by their digest (`runtime/keeper.ts`; what a translation's copy holds is sods' `kept.ts`). The tree is to be
+`src/tree.h`: a root's index as bytes, used where it is, which says what Linux says of every name of a whole root
+(`test/tree`); the calls do not walk it yet.
+
+```
+node runtime/run.ts PROGRAM [args...]            # host ELF as /bin/PROGRAM
+node runtime/run.ts --root DIR /bin/sh -c '...'  # a host tree as /
+sh test/programs/run.sh                          # native vs translated, and the unit tests
+node test/floors/floors.ts                       # each floor beside Linux
+sh test/tree/tree.sh [DIR]                       # the tree (src/tree.h) beside Linux, every name of a directory
+```
+
+A Prompt on Linux is still run by root3's core (`root3/core/src/prompt`: namespaces, the root under an overlay, a
+seccomp filter, an init), which becomes the bundle root3 writes once `muk run` makes the filter and the terminal.

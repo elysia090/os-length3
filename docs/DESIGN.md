@@ -1620,12 +1620,12 @@ What leaves this system is kept to what is said here:
   descriptors passed between processes) and TCP, UDP and ICMP to this
   machine's own addresses (127.0.0.0/8, ::1; a server and its client, as
   `openssl s_server` and curl are; ping) are channels inside its kernel
-  (module/ricebox/kernel/runtime/sys-net.ts), and what it is told of its network (netlink as
+  (module/muk/runtime/sys-net.ts), and what it is told of its network (netlink as
   `ip` and `ss` read it, the interface ioctls, /proc/net) is that machine's:
-  lo alone (module/ricebox/kernel/runtime/net-view.ts). Every other address is no one's to
+  lo alone (module/muk/runtime/net-view.ts). Every other address is no one's to
   bind (EADDRNOTAVAIL) and unreachable (ENETUNREACH), and every other family
   is refused as a host without it refuses it (EAFNOSUPPORT).
-  module/ricebox/kernel/tests/runtime/boundary.test.ts holds the line, and module/ricebox/kernel/tests/programs/inet.c and
+  module/muk/test/runtime/boundary.test.ts holds the line, and module/muk/test/programs/inet.c and
   icmp.c compare with native. The page itself
   may reach its own origin, the Remote and, for the box's Agent, the APIs of
   the models' makers whose keys it knows (agent/makers.ts), nothing else: the

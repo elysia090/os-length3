@@ -16,7 +16,7 @@
 //                         digest; everything it names is.
 //   index-<sha256>.json   every path of the root ({codec: 'zstd', packs, dirs,
 //                         links, files: [{path, mode, size, pack, at, len, raw?}]},
-//                         as ricebox/kernel/runtime/mount.ts mounts it), the translator and
+//                         as muk/runtime/mount.ts mounts it), the translator and
 //                         the translations made ahead of time ({path, sha256 of the
 //                         program, elf, wasm}, each a blob: {path, sha256, size,
 //                         bytes}); its digest is what a
@@ -39,7 +39,7 @@
 // Names are sorted and nothing depends on time, so the same root and
 // translator give the same files, byte for byte. Unreferenced files of an root3
 // before in OUT go. `--stage DIR` also puts BusyBox, its translation and
-// xlat.wasm in DIR, for ricebox/kernel/tests (target/userland).
+// xlat.wasm in DIR, for muk/test (target/userland).
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';

@@ -23,15 +23,16 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   for (const u of UNITS) for (const t of u.takes) assert.ok(t === '*' || names.includes(t), `${u.name} takes ${t}`);
   // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (root3/core).
   assert.equal(unitOf('module/sods/runtime/translator.ts')?.name, 'sods');
-  assert.equal(unitOf('module/ricebox/kernel/runtime/process.ts')?.name, 'ricebox');
+  assert.equal(unitOf('module/muk/runtime/process.ts')?.name, 'muk');
+  assert.equal(unitOf('module/ricebox/make/db.ts')?.name, 'ricebox');
   assert.equal(unitOf('root3/core/src/prompt/launch.rs')?.name, 'muk');
 });
 
 test('ricebox can be cut out with the units under it: none of them takes from a unit over them, by the table or by an import', () => {
   for (const u of UNITS) if (UNDER_RICEBOX.includes(u.name)) assert.deepEqual(u.takes.filter((t) => !UNDER_RICEBOX.includes(t)), [], u.name);
   assert.deepEqual(check().crossings.filter(([from, to]) => UNDER_RICEBOX.includes(from) && !UNDER_RICEBOX.includes(to)), []);
-  // muk is the thinnest: it stands on lib alone. No unit's folder is inside another's.
-  assert.deepEqual(UNITS.find((u) => u.name === 'muk')?.takes, ['lib']);
+  // muk is the machine: it stands on lib, and on the code sods makes. No unit's folder is inside another's.
+  assert.deepEqual(UNITS.find((u) => u.name === 'muk')?.takes, ['lib', 'sods']);
   const folders = UNITS.flatMap((u) => u.holds.filter((h) => h.startsWith('module/')).map((h) => [u.name, h.split('/').slice(0, 2).join('/')]));
   for (const [a, fa] of folders) for (const [b, fb] of folders) assert.ok(a === b || fa !== fb, `${a} and ${b} share ${fa}`);
 });

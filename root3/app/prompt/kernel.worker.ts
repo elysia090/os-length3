@@ -82,17 +82,17 @@
 // {type: 'reached', origin, from, more} as code is reached later; and what
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
-import {Vfs, type File} from '../../../module/ricebox/kernel/runtime/fs.ts';
-import {Mirror} from '../../../module/ricebox/kernel/runtime/mirror.ts';
-import {mountPack, provide, type Given, type Packed} from '../../../module/ricebox/kernel/runtime/mount.ts';
+import {Vfs, type File} from '../../../module/muk/runtime/fs.ts';
+import {Mirror} from '../../../module/muk/runtime/mirror.ts';
+import {mountPack, provide, type Given, type Packed} from '../../../module/muk/runtime/mount.ts';
 import {syncRange} from '../../../module/muk/runtime/pack.ts';
-import {Kernel, type Image, type Pumped} from '../../../module/ricebox/kernel/runtime/process.ts';
-import {RemoteKernel, canRunApart, warmThreads} from '../../../module/ricebox/kernel/runtime/remote.ts';
+import {Kernel, type Image, type Pumped} from '../../../module/muk/runtime/process.ts';
+import {RemoteKernel, canRunApart, warmThreads} from '../../../module/muk/runtime/remote.ts';
 import {keeper, type Kept, type Reading} from '../../../module/muk/runtime/keeper.ts';
 import {taken, type Taken} from '../../../module/sods/runtime/kept.ts';
 import {loadTranslator, type Translate} from '../../../module/sods/runtime/translator.ts';
-import {said, type Said} from '../../../module/ricebox/kernel/runtime/waiting.ts';
-import type {Console} from '../../../module/ricebox/kernel/runtime/parts.ts';
+import {said, type Said} from '../../../module/muk/runtime/waiting.ts';
+import type {Console} from '../../../module/muk/runtime/parts.ts';
 import type {Segment} from '../../../module/sods/runtime/share.ts';
 
 /** A module of code a run reached later: its first table slot and bytes (Image.adopt). */

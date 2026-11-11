@@ -10,8 +10,8 @@ repository pins by its recipe, static, hardened and checked by use.
 | --- | --- |
 | root3 | the releases below: the root, the web root, the web app and the desktop app, with `root3` in each |
 | [`module/sods`](module/sods/) | the x86-64 → WebAssembly translator (`xlat`, and as wasm with its runtime) |
-| [`module/ricebox`](module/ricebox/) | the neutral distribution, as BusyBox is one: the smallest UNIX a browser runs, the kernel a browser's Prompt runs the root on |
-| [`module/muk`](module/muk/) | the thinnest part of it: an OCI-compatible VMM (today the root's packs read when first touched and copies kept by digest) |
+| [`module/muk`](module/muk/) | the machine, an OCI-compatible VMM: a box run from an image's layers, on Linux by its namespaces, in a browser by answering its system calls itself |
+| [`module/ricebox`](module/ricebox/) | the neutral distribution, as BusyBox is one: the root, each package from its pinned source by its recipe |
 | [`module/you`](module/you/), [`module/otter`](module/otter/), [`module/lib`](module/lib/) | units of C with no C library: z, rg, fd and fzf; help and what each thing is; what they stand on |
 
 ```
@@ -19,13 +19,13 @@ repository pins by its recipe, static, hardened and checked by use.
                          \                     |                    /
                           one Rust core: repos, history, the Remote's sync, Home
                          /                     |                    \
-   the Prompt:   the root on the host's    the root on ricebox's     the root on the host's
-                 kernel (namespaces)       kernel, made wasm by      kernel (namespaces)
+   the Prompt:   ricebox on the host's     ricebox on muk, its       ricebox on the host's
+                 kernel (namespaces)       programs made wasm by     kernel (namespaces)
                                            sods, in a Worker
                                                |
-                       OS Length3 Linux: BusyBox, gcc, make, git, root3 … (one pinned root)
+                       ricebox: BusyBox, gcc, make, git, root3 … (one pinned root)
                                                |
-                 root/: each package from its pinned source by its recipe, on one pinned Alpine
+                 module/ricebox: each package from its pinned source by its recipe, on one pinned Alpine
 ```
 
 ## Get it
@@ -51,7 +51,7 @@ devices. Building from source, `root3` is `cargo install --path root3/cli`.
 | Directory | What is there | Start at |
 | --- | --- | --- |
 | [`root3/`](root3/) | **Length³ OS**, the product: the app ([`app/`](root3/app/), TypeScript, no framework; [`desktop/`](root3/desktop/), Tauri for the window), [`cli/`](root3/cli/), the `root3` command, the core both use ([`core/`](root3/core/), also built for `wasm32-wasip1` for the browser), and the Remote ([`remote/`](root3/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design language in [`docs/DESIGN.md`](docs/DESIGN.md) |
-| [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`ricebox/`](module/ricebox/) the neutral distribution's own (the smallest UNIX a browser runs: the kernel the root runs on in a browser's Prompt), [`muk/`](module/muk/) its thinnest part, the OCI-compatible VMM (today a pack's bytes read by digest when first touched); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
+| [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`muk/`](module/muk/) the machine (an OCI-compatible VMM: a box run from layers by digest, on Linux by its namespaces, in a browser by answering its system calls itself), [`ricebox/`](module/ricebox/) the neutral distribution (the root: its pins, a recipe per package and what makes it); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
 | [`scripts/`](scripts/), [`tests/`](tests/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
 | [`docs/`](docs/) | what the OS is and how it ships ([`README.md`](docs/README.md)), what the repository is to be and the order it is taken apart in ([`STRUCTURE.md`](docs/STRUCTURE.md)), its design language ([`DESIGN.md`](docs/DESIGN.md)), what it promises about security ([`SECURITY.md`](docs/SECURITY.md)) | |
 
@@ -62,7 +62,7 @@ tools read there (`.node-version`, `.gitignore`, `.gitattributes`, `.cargo/`). T
 and its build are in [`root3/app/`](root3/app/) (`index.html`, `vite.config.ts`); what it ships beside its build is
 [`public/`](public/).
 
-ricebox is [`module/ricebox/`](module/ricebox/): its kernel (`kernel/`), and the root: its version (`RELEASE`, the
+ricebox is [`module/ricebox/`](module/ricebox/), the root: its version (`RELEASE`, the
 release it is made as next), what it is made from (`pins/`: `sources.env`, and `advisories.toml`), a folder per
 package with its recipe and its patches (`packages/NAME/recipe.sh`), its own files (`etc/`, `usr/`), and what makes
 it (`make/`: `build.sh`, each package on Alpine 3.24 at one digest; `assemble.sh`, the root and its package
@@ -73,16 +73,15 @@ database; `next.py`, every source's newest release).
 The repository is split by what a person would be glad to find on a release: four things, each thin, beside one
 another, none holding another, each standing on what is under it. Read from the top, the code is those four.
 
-- **muk**, the thinnest: an OCI-compatible VMM. An image's layers at rest, named by their digest, and a bundle run
-  from them (created, started, signalled, deleted, as the OCI runtime says). No KVM and no Firecracker under it: it
-  is C on `lib` alone, with no C library, written as `you` is.
+- **muk**, the machine: an OCI-compatible VMM. A box run from an image's layers, named by their digest: on Linux
+  by its namespaces, in a browser by answering its system calls itself. No KVM and no Firecracker under it.
 - **sods**: x86-64 made wasm ahead of the run, so a program built for Linux runs in a browser.
-- **ricebox**, the neutral distribution, as BusyBox is one, and as thin: the smallest UNIX a browser runs and the
-  command line [#80](https://github.com/elysia090/os-length3/issues/80) lists, ordinary POSIX with no window, over
-  muk and sods; served from any web host as it is. It knows no service, so anyone can cut it out, with what is
-  under it, and put it under a service of their own.
-- **root3**, the product, as Alpine stands on BusyBox: ricebox, the root's packages, the app and the command, and
-  the modules a product has. What a service wants (who one is, what one may use, the Remote and its sync, its
+- **ricebox**, the neutral distribution, as BusyBox is one, and as thin: the root, each package from its pinned
+  source by its recipe, and the command line [#80](https://github.com/elysia090/os-length3/issues/80) lists,
+  ordinary POSIX with no window; its layers served from any web host as they are. It knows no service, so anyone
+  can cut it out, with what is under it, and put it under a service of their own.
+- **root3**, the product, as Alpine stands on BusyBox: ricebox run by muk, the app and the command, and the
+  modules a product has. What a service wants (who one is, what one may use, the Remote and its sync, its
   gateway's rules, its deploy) is shipto's, and nowhere else.
 
 The smaller modules are each a part of the one that ships it (you and otter, ricebox's command line's own programs;
@@ -91,14 +90,14 @@ shipto, funk and m8, root3's), or what several stand on (lib).
 [`docs/STRUCTURE.md`](docs/STRUCTURE.md) is the whole of it: what each unit is and is not, what it is to be, how far
 each is from its bound today, and the order they are taken apart in, the furthest first.
 [`scripts/units.ts`](scripts/units.ts) is the table `npm test` checks: each unit's files and the units it may take
-from; ricebox and the units under it take from nothing over them, and muk stands on lib alone.
+from; ricebox and the units under it take from nothing over them, and no unit's folder is inside another's.
 
 | Unit | Its responsibility | Takes from |
 | --- | --- | --- |
 | lib | what the units of C stand on: system calls, words, output; no C library | — |
-| muk | the OCI-compatible VMM: layers by digest, each byte fetched when first touched, and a bundle run from them | lib |
+| muk | the machine, an OCI-compatible VMM: a box run from layers by digest, on Linux by its namespaces, in a browser by answering its system calls itself | lib, sods |
 | sods | instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS | — |
-| ricebox | the neutral distribution: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the command line #80 lists | lib, muk, sods |
+| ricebox | the neutral distribution: the root, each package from its pinned source by its recipe, and the command line #80 lists | lib, muk, sods |
 | you | the tools a person reaches for: z, rg, fd, fzf | lib |
 | otter | to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said | lib, ricebox, muk, sods |
 | funk | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | ricebox |

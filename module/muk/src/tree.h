@@ -24,7 +24,7 @@
  * tree that is not what its maker wrote is still walked without reading outside it, and every walk ends.
  */
 #pragma once
-#include "../../../lib/word.h"
+#include "../../lib/word.h"
 
 struct tree_head { u8 magic[8]; u32 nodes, slots, names, unused[3]; };
 struct tree_node { u32 mode, size, at, name, parent; u16 name_len, nlink; u32 same, mtime; };

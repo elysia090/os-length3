@@ -81,7 +81,7 @@ export interface Root3 {
   url: string;
 }
 
-/** A module of code a hot program reached later in a Prompt, as its kernel made it (ricebox/kernel/runtime/process.ts Image.adopt). */
+/** A module of code a hot program reached later in a Prompt, as its kernel made it (muk/runtime/process.ts Image.adopt). */
 export interface More { module: WebAssembly.Module; bytes: Uint8Array; base: number }
 
 /** Where loading is, for whoever is waiting on it. */
@@ -403,7 +403,7 @@ export function keepMore(path: string, from: number, list: More[]) {
 // A program of the root that is not one of the hot ones is translated when a Prompt first runs it: gcc building a
 // file translates the driver, cc1 (39 MB), the assembler and the linker, eight seconds in all, and the next Prompt,
 // in this page or after it, translated them all again. What a Prompt translates of the root is kept, by where its
-// file is in the root (its pack, named by its digest, and its place there: ricebox/kernel/runtime/mount.ts origin), with the
+// file is in the root (its pack, named by its digest, and its place there: muk/runtime/mount.ts origin), with the
 // code it reached later, and the next Prompt's kernel reads it from here when the program is first run
 // (muk/runtime/keeper.ts), not even reading the program itself unless it reaches code it never reached before.
 
@@ -449,7 +449,7 @@ async function sealed(body: Uint8Array): Promise<Uint8Array> {
 type Reached = {list: {bytes: Uint8Array; base: number}[]; saved: number; timer: number; url: string; ready: Promise<void>};
 const reached = new Map<string, Reached>();
 
-/** Where a file of the root is in its pack, as a translation of it is kept by (ricebox/kernel/runtime/mount.ts origin). */
+/** Where a file of the root is in its pack, as a translation of it is kept by (muk/runtime/mount.ts origin). */
 export const originOf = (index: Index, f: Index['files'][number]) => `${index.packs[f.pack].name.replace(/\.pack$/, '')}_${f.at}_${f.len}`;
 
 /** Whether a translation of the file at `origin`, by this translator, is kept here. */

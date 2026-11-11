@@ -273,15 +273,15 @@ jobs:
           cache-on-failure: true
       - name: Test against native
         if: matrix.part == 'native'
-        working-directory: module/ricebox/kernel
-        run: sh tests/programs/run.sh
+        working-directory: module/muk
+        run: sh test/programs/run.sh
       # run.ts takes the wasm build of the translator when it is current.
       - name: Run root3 under xlat
         if: matrix.part == 'prompt'
         run: |
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
           cargo build --locked --profile prompt -p root3 --no-default-features --target x86_64-unknown-linux-musl
-          out=$(LENGTH3_REPOS=/root node module/ricebox/kernel/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/root3 help all)
+          out=$(LENGTH3_REPOS=/root node module/muk/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/root3 help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'root3 issue new'
 
@@ -366,7 +366,7 @@ jobs:
           [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
   # muk beside runc: the same bundles run by both, as root (where one who is not may make no user namespace), and what
-  # each box says of itself the same (module/muk/test/muk.sh).
+  # each box says of itself the same (module/muk/test/bundle/muk.sh).
   muk:
     name: muk
     runs-on: ubuntu-24.04
@@ -378,7 +378,7 @@ jobs:
       - name: The bundles, beside runc
         run: |
           runc --version || echo "no runc here: the boxes are run, and not compared"
-          sudo sh module/muk/test/muk.sh
+          sudo sh module/muk/test/bundle/muk.sh
 
   # The root as a release builds it (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), then used inside as a Prompt uses it and
   # under xlat. Runs only when what the root is made of changed.
@@ -475,11 +475,11 @@ jobs:
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
           # The same programs under xlat.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
-          node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
-          node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
-          node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
-          printf 'lib/x.c\nweb/src/main.ts\n' | node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
+          node module/muk/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          node module/muk/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          node module/muk/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
+          node module/muk/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
+          printf 'lib/x.c\nweb/src/main.ts\n' | node module/muk/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
           sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

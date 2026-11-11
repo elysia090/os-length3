@@ -4,7 +4,7 @@
  * C library, so a bundle's root is this one file.
  */
 #define UNIT "probe"
-#include "../../lib/io.h"
+#include "../../../lib/io.h"
 
 enum { SYS_readlink = 89, SYS_getuid = 102, SYS_getgid = 104, SYS_getpid = 39, SYS_uname = 63, SYS_prlimit64 = 302, SYS_getgroups = 115 };
 

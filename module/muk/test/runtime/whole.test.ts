@@ -4,7 +4,7 @@ import {existsSync, mkdirSync, readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {Vfs} from '../../runtime/fs.ts';
 import {Kernel, PROFILE} from '../../runtime/process.ts';
-import {loadTranslator} from '../../../../sods/runtime/translator.ts';
+import {loadTranslator} from '../../../sods/runtime/translator.ts';
 
 // A program translated whole ahead of time (xlat --whole) runs without translating anything more, though it keeps no
 // symbols and no relocations (as a distribution ships it, BusyBox among them): the cases its switches jump to through

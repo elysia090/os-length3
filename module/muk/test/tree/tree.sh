@@ -8,7 +8,7 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
-sh "$here/../../../../lib/build.sh" "$here/tree.c" "$t/tree"
+sh "$here/../../../lib/build.sh" "$here/tree.c" "$t/tree"
 d=$t/d
 mkdir -p "$d/a/b/c" "$d/a/empty" "$d/usr/bin" "$d/with space/é"
 echo one > "$d/a/file"; echo two > "$d/a/b/c/deep"; : > "$d/usr/bin/sh"

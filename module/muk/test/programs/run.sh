@@ -5,7 +5,7 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 # The translator is sods' (its crate beside this unit); the kernel that runs what it makes is this one's.
-sods=$(cd "$root/../../sods" && pwd)
+sods=$(cd "$root/../sods" && pwd)
 out="$here/out"
 mkdir -p "$out"
 cargo build -q --locked --release --manifest-path "$sods/Cargo.toml"
@@ -85,9 +85,9 @@ if command -v go >/dev/null; then
   done
 fi
 # The tree (src/tree.h), every name of a directory asked of it and of Linux.
-if sh "$root/tests/tree/tree.sh" > /dev/null 2>&1; then echo "ok   tree"; else echo "FAIL tree"; status=1; fi
+if sh "$root/test/tree/tree.sh" > /dev/null 2>&1; then echo "ok   tree"; else echo "FAIL tree"; status=1; fi
 # The kernel's tests.
-for t in "$root"/tests/runtime/*.test.ts; do
+for t in "$root"/test/runtime/*.test.ts; do
   if node --test "$t" >/dev/null 2>&1; then echo "ok   $(basename "$t")"; else echo "FAIL $(basename "$t")"; status=1; fi
 done
 exit $status

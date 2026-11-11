@@ -7,7 +7,7 @@
 // own) or as it is (`raw`), whichever is smaller.
 
 import {Dir, File, Link, type Vfs} from './fs.ts';
-import {checkedRange, type Sha256} from '../../../muk/runtime/table.ts';
+import {checkedRange, type Sha256} from './table.ts';
 
 /** The root's index, as far as mounting it reads it (what serves it holds all of it). */
 export interface Packed {

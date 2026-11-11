@@ -10,7 +10,7 @@
  */
 #define UNIT "tree"
 #define ARENA (256 << 20)
-#include "../../../../lib/io.h"
+#include "../../../lib/io.h"
 #include "../../src/tree.h"
 
 enum { SYS_readlinkat = 267, SYS_openat2 = 437, O_DIRECTORY = 0200000, O_NOFOLLOW = 0400000, O_PATH = 010000000 };

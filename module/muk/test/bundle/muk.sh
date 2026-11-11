@@ -11,8 +11,8 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 t=$(mktemp -d)
 trap '[ -n "${KEEP:-}" ] || rm -rf "$t"' EXIT; [ -z "${KEEP:-}" ] || echo "# kept: $t"
-if [ "$#" -ge 1 ]; then muk=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); else sh "$here/../../lib/build.sh" "$here/../src/muk.c" "$t/muk"; muk=$t/muk; fi
-sh "$here/../../lib/build.sh" "$here/probe.c" "$t/probe"
+if [ "$#" -ge 1 ]; then muk=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); else sh "$here/../../../lib/build.sh" "$here/../../src/muk.c" "$t/muk"; muk=$t/muk; fi
+sh "$here/../../../lib/build.sh" "$here/probe.c" "$t/probe"
 n=0
 no() { printf 'not ok %d: %s\n' "$n" "$*" >&2; exit 1; }
 

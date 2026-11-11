@@ -1,8 +1,9 @@
 // The units os-length3 is made of, each one responsibility: the files it holds and the units it may take from. Three
-// things, each thinner than the one over it, none holding another (docs/STRUCTURE.md). muk is the thinnest: an
-// OCI-compatible VMM, in C on lib alone. ricebox is the neutral distribution, as BusyBox is one and as thin: the
-// smallest UNIX a browser runs and the command line #80 lists, over muk; no window, ordinary POSIX, served from any
-// web host as it is. It knows no service, so it can be cut out with the units under it and put under another's: none
+// things, each thinner than the one over it, none holding another (docs/STRUCTURE.md). muk is the machine: an
+// OCI-compatible VMM, a box run from layers by its namespaces on Linux and by answering its calls itself in a browser.
+// ricebox is the neutral distribution, as BusyBox is one and as thin: the root and the command line #80 lists; no
+// window, ordinary POSIX, served from any web host as it is. It knows no service, so it can be cut out with the units
+// under it and put under another's: none
 // of them takes from one over them (UNDER_RICEBOX, checked). root3 is the product, as Alpine stands on BusyBox:
 // ricebox, the root's packages and the modules over it, of which shipto alone holds what a service wants. A face (the
 // app's pages and window, root3's words) holds no judgement of its own and takes from any unit.
@@ -32,14 +33,14 @@ export interface Unit {
 
 export const UNITS: Unit[] = [
   {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
-  {name: 'muk', says: 'the thinnest: an OCI-compatible VMM. An image\'s layers at rest, named by their digest, each byte fetched when first touched, and a bundle run from them (created, started, signalled, deleted); no KVM and no Firecracker under it, C on lib as you is',
+  {name: 'muk', says: 'the machine: an OCI-compatible VMM. A box run from an image\'s layers, named by their digest and each byte fetched when first touched: on Linux by its namespaces, in a browser by answering its system calls itself over the code sods makes; no KVM and no Firecracker under it',
     holds: ['module/muk', 'root3/core/src/prompt', 'root3/core/src/compute'],
-    takes: ['lib']},
+    takes: ['lib', 'sods']},
   {name: 'sods', says: 'instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS',
     holds: ['module/sods/src', 'module/sods/runtime'],
     takes: []},
-  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the command line #80 lists; no window, ordinary POSIX, and no service known to it',
-    holds: ['module/ricebox/kernel/runtime', 'module/ricebox/kernel/src'],
+  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, and the command line #80 lists; no window, ordinary POSIX, and no service known to it',
+    holds: ['module/ricebox'],
     takes: ['lib', 'muk', 'sods']},
   {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
@@ -64,8 +65,8 @@ export const UNITS: Unit[] = [
 export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'ricebox'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'tests', 'module/ricebox/make', 'module/ricebox/kernel/runtime/run.ts', 'module/ricebox/kernel/tests', 'module/sods/examples', 'module/otter/test', 'module/muk/test',
-  'root3/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/ricebox/kernel/target', 'research_notes', 'reports',
+export const NOT_UNITS = ['scripts', 'tests', 'module/muk/runtime/run.ts', 'module/muk/test', 'module/sods/examples', 'module/otter/test',
+  'root3/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/muk/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 
