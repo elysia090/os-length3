@@ -37,6 +37,36 @@ test('a TODO is written as Kind: title, Enter for its detail, and done strikes i
   await expect(app.home.todo).toContainText('0 of 1 remaining');
 });
 
+test('Home keeps a TODO creation day with its detail, leaving the title line to the task', async ({app}) => {
+  await app.rail.go('home');
+  const item = app.home.items.first(), title = app.home.title(item), detail = app.home.detail(item);
+  await title.pressSequentially('Review: Compare the Home layout');
+  await expect(item.locator('.todo-head .todo-meta')).toHaveCount(0);
+  const created = item.locator('.todo-created');
+  await expect(created).toHaveText(/^Created /);
+  await expect(created).toBeHidden();
+  await title.press('Enter');
+  await expect(detail).toBeFocused();
+  await expect(created).toBeVisible();
+  await detail.press('Backspace');
+  await expect(title).toBeFocused();
+  await expect(created).toBeHidden();
+  await expect(title).toHaveValue('Compare the Home layout');
+  await title.press('Enter');
+  await detail.fill('Keep the task first');
+  await app.main.getByRole('heading', {level: 1}).click();
+  await expect(created).toBeVisible();
+  // Date is display metadata, never written into the task or its detail, including after restoring Home.
+  await app.rail.go('runtime');
+  await app.rail.go('home');
+  await expect(app.home.detail(app.home.items.first())).toHaveValue('Keep the task first');
+  await expect(app.home.items.first().locator('.todo-created')).toBeVisible();
+  await expect(app.home.items.last().locator('.todo-created')).toBeEmpty();
+  await app.me.language('English', '日本語');
+  await expect(app.home.items.first().locator('.todo-created')).toHaveText(/に作成$/);
+  await expect(app.home.items.first().locator('.todo-head .todo-meta')).toHaveCount(0);
+});
+
 test('a TODO item begun and left empty goes as the keyboard leaves it', async ({app}) => {
   await app.rail.go('home');
   const item = app.home.items.first();

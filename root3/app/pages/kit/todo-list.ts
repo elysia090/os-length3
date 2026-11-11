@@ -92,6 +92,8 @@ interface TodoList {
 }
 
 interface TodoOptions {
+  /** An editable list's creation dates beside its detail, leaving the first line to the task. Read-only lists keep them inline. */
+  datePlacement?: 'inline' | 'detail';
   /** Shown, not written: no field takes text, no mark is pressed. */
   readOnly?: boolean;
   /** How many are left of how many, each time it changes. */
@@ -114,6 +116,7 @@ function sayLeft(el: HTMLElement, open: number, all: number) {
 /** A TODO list kept by `keep` (given what is worth keeping, each time it changes). */
 export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promise<void>, o: TodoOptions = {}): TodoList {
   let items = [...start];
+  const dateInDetail = o.datePlacement === 'detail' && !o.readOnly;
   const list = h('div', {class: 'todo-items', role: 'list'});
   const rows = new Map<string, Row>();
 
@@ -183,11 +186,11 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
     r.button.disabled = !todo.filled(td);
     r.away.hidden = !todo.filled(td);
     r.away.setAttribute('aria-label', t('Delete {item}', {item: named(td.kind, td.title) || t('this item')}));
-    // Its day comes in at the line's end as the line becomes an item (filled), stamped there, not simply there.
+    // Only an item has a creation day. Home keeps it with the detail, not beside the task as if it were due then.
     const day = todo.filled(td) ? date(td.created) : '';
     const dated = !r.meta.textContent && !!day && r.item.isConnected;
-    r.meta.textContent = day;
-    if (dated) arrive(r.meta, 1, 'x', 6, 260);
+    r.meta.textContent = day && dateInDetail ? t('Created {when}', {when: day}) : day;
+    if (dated && !dateInDetail) arrive(r.meta, 1, 'x', 6, 260);
   };
 
   /** Where each line stands now, to have it go from there to where it stands once drawn again (the lines under a
@@ -245,13 +248,13 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
       autocomplete: 'off', spellcheck: 'false'}) as HTMLInputElement;
     const detail = h('textarea', {class: 'todo-detail', rows: '1', maxlength: String(todo.DETAIL_LIMIT), 'aria-label': t('Detail'),
       placeholder: t('Detail'), spellcheck: 'false'}) as HTMLTextAreaElement;
-    const meta = h('span', {class: 'todo-meta'});
+    const meta = h('span', {class: `todo-meta${dateInDetail ? ' todo-created' : ''}`});
     const strikeEl = h('span', {class: 'todo-strike', 'aria-hidden': 'true'});
     const away = h('button', {class: 'todo-away', type: 'button'}, glyph('close')) as HTMLButtonElement;
     title.value = td.title;
     detail.value = td.detail;
-    const head = h('div', {class: 'todo-head'}, button, kind, title, meta, away, strikeEl);
-    const item = h('div', {class: 'todo-item', role: 'listitem'}, head, detail);
+    const head = h('div', {class: 'todo-head'}, button, kind, title, dateInDetail ? null : meta, away, strikeEl);
+    const item = h('div', {class: 'todo-item', role: 'listitem'}, head, detail, dateInDetail ? meta : null);
     const row: Row = {item, title, detail, kind, button, meta, strike: strikeEl, away};
     rows.set(td.id, row);
     // Pressed on its line beside the words (or on the dashed mark of a line not yet an item), the caret goes to it.
@@ -421,7 +424,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   const keys = (caps: string[], word: string) => h('span', {class: 'key-hint'}, ...caps.map((c) => h('kbd', {}, c)), h('span', {}, word));
   const hint = o.readOnly ? null : h('p', {class: 'todo-hint', 'aria-hidden': 'true'},
     keys(['Enter'], t('Details')), keys(['Enter'], t('Empty line starts next item')), keys([mod, 'Enter'], t('Done')));
-  const element = h('div', {class: 'todo-box'}, list, hint);
+  const element = h('div', {class: `todo-box${dateInDetail ? ' todo-dates-detail' : ''}`}, list, hint);
   // Pressed on its paper below the items, the line at its foot takes the caret, as a page written on does: the
   // empty sheet is where the next is written, not a thing to aim at.
   if (!o.readOnly) element.addEventListener('pointerdown', (event) => {
@@ -476,7 +479,7 @@ export function todoBox(): HTMLElement {
   const status = h('p', {class: 'error', role: 'alert'});
   const remaining = h('small', {});
   const box = todoList(load(), (kept) => setState('todo', JSON.stringify(kept)),
-    {counted: (open, all) => sayLeft(remaining, open, all), failed: (why) => { status.textContent = why; }});
+    {datePlacement: 'detail', counted: (open, all) => sayLeft(remaining, open, all), failed: (why) => { status.textContent = why; }});
   // Named TODO alone: what is left and Clear done stand on its line, at its right.
   const section = h('section', {class: 'section', 'aria-labelledby': 'todo-title'},
     h('h2', {}, h('span', {id: 'todo-title'}, 'TODO'), h('span', {class: 'todo-left'}, remaining, box.clear)), box.element, status);

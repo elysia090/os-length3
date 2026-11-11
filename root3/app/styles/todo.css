@@ -62,6 +62,11 @@ span.todo-title { min-height: 0; }
 }
 .todo-title:focus, .todo-detail:focus { outline: none; }
 .todo-meta { color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
+/* Home's first line belongs to the task. Its creation day is part of the detail, not a deadline to scan beside it. */
+.todo-dates-detail .todo-head { grid-template-columns: var(--h-control) auto minmax(0, 1fr) auto; }
+.todo-dates-detail .todo-head > .todo-away { grid-column: 4; }
+.todo-dates-detail .todo-created { display: block; margin: var(--s1) 0 0 calc(var(--h-control) + var(--s1)); }
+.todo-dates-detail .todo-detail[hidden] + .todo-created, .todo-dates-detail .todo-created:empty { display: none; }
 /* Done: only the first line is struck through and quiet, in `sub`, which still reads (an opacity would not). The line
    is drawn across its words as it is done, from the kind's start, and goes back the way it came if it is taken back
    (todo-list.ts measures it to the words); read, not written, it is the words' own. */
