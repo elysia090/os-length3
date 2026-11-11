@@ -154,3 +154,29 @@ test('#96: a socket in flight that someone can still receive is kept: another de
   assert.equal(call(q, CLOSE, d2), 0n);
   assert.equal(sockets(q), 0);
 });
+
+const EMFILE = -24n, RECVFROM = 45, FCNTL = 72, F_GETFD = 1, F_GETFL = 3, SOCK_CLOEXEC = 0x80000, O_NONBLOCK = 0x800;
+
+test('#97: socketpair refused for want of descriptors, or of a place to tell them, leaves nothing: no descriptor, no socket', () => {
+  for (const [limit, sv, said] of [[1, 64, EMFILE], [0, 64, EMFILE], [1024, 65536, EFAULT], [1024, 65532, EFAULT]] as const) {
+    const p = guest();
+    p.fds.limit = limit;
+    assert.equal(call(p, SOCKETPAIR, AF_UNIX, SOCK_STREAM, 0, sv), said, `limit ${limit}, sv ${sv}`);
+    assert.equal(p.fds.slots.size, 0, `limit ${limit}, sv ${sv}`);
+    assert.equal(sockets(p), 0, `limit ${limit}, sv ${sv}`);
+  }
+  // With room for exactly two it is made, each end as asked and each the other's.
+  const p = guest();
+  p.fds.limit = 2;
+  assert.equal(call(p, SOCKETPAIR, AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, 64), 0n);
+  const a = p.view.getInt32(64, true), b = p.view.getInt32(68, true);
+  assert.deepEqual([a, b], [0, 1]);
+  for (const fd of [a, b]) {
+    assert.equal(call(p, FCNTL, fd, F_GETFD), 1n);
+    assert.equal(call(p, FCNTL, fd, F_GETFL) & BigInt(O_NONBLOCK), BigInt(O_NONBLOCK));
+  }
+  p.bytes.set([7], 1024);
+  assert.equal(call(p, SENDTO, a, 1024, 1, 0), 1n);
+  assert.equal(call(p, RECVFROM, b, 2048, 1, 0), 1n);
+  assert.equal(p.bytes[2048], 7);
+});

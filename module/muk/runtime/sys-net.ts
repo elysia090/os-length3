@@ -965,6 +965,11 @@ export const NET_CALLS: Calls = {
     if (family === AF.INET || family === AF.INET6 || family === AF.NETLINK) { kindOf(family, N(type), N(protocol)); fail(E.OPNOTSUPP); }
     if (family !== AF.UNIX) fail(E.AFNOSUPPORT);
     const t = kindOf(family, N(type), N(protocol));
+    // Where the pair is told, and room for both its descriptors, are looked at before anything is made: one refused
+    // here (EFAULT, EMFILE) leaves no socket in the kernel and no descriptor behind, not one end of two.
+    within(this, N(sv), 8);
+    const first = this.fds.lowest();
+    if (first < 0 || this.fds.lowest(first + 1) < 0) fail(E.MFILE);
     const a = new Endpoint(this.kernel, family, t, this), b = new Endpoint(this.kernel, family, t, this);
     link(a, b);
     const fa = install(this, a, N(type)), fb = install(this, b, N(type));
