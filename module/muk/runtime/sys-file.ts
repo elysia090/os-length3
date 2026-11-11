@@ -9,7 +9,7 @@
 import {Description, PIPE_BUF, Pipe, flock, unflock, type Interest} from './fd.ts';
 import * as net from './sys-net.ts';
 import {Made, procDescriptor} from './procfs.ts';
-import {Dir, Device, E, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK, type Entry} from './fs.ts';
+import {Dir, Device, E, ending, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK, type Entry} from './fs.ts';
 import {Wait} from './flow.ts';
 import type {Calls, Kern, Proc, Termios} from './parts.ts';
 import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.ts';
@@ -440,13 +440,21 @@ function iov(p: Proc, address: bigint, count: bigint, each: (base: number, lengt
 }
 
 function remove(p: Proc, dirfd: bigint, address: bigint, directory: boolean): number {
-  const r = p.kernel.vfs.resolve(path(p, address), base(p, dirfd), false);
+  // What is taken away is a name in a folder: "." and ".." name none (as Linux: rmdir of "." EINVAL, of ".."
+  // ENOTEMPTY, unlink of either EISDIR), and a slash after the name says a folder, without following a link there.
+  const whole = path(p, address), end = ending(whole);
+  // (The way to it is walked first: through a file, or a name not there, is said before what "." cannot be.)
+  if (end.dot) { p.kernel.vfs.lookup(whole, base(p, dirfd), false); fail(directory ? (end.dot === 1 ? E.INVAL : E.NOTEMPTY) : E.ISDIR); }
+  const r = p.kernel.vfs.resolve(end.bare, base(p, dirfd), false);
   const node = r.node ?? fail(E.NOENT);
+  if (node === p.kernel.vfs.root) fail(directory ? E.BUSY : E.ISDIR);
   if (directory) {
     if (!(node instanceof Dir)) return fail(E.NOTDIR);
     if (node.entries.size) fail(E.NOTEMPTY);
   } else if (node.isDir) {
     fail(E.ISDIR);
+  } else if (end.slash) {
+    fail(E.NOTDIR);
   }
   r.parent.entries.delete(r.name);
   unlinked(r.parent, node);
@@ -487,10 +495,17 @@ function rename(p: Proc, olddir: bigint, oldaddr: bigint, newdir: bigint, newadd
   if (f & ~(RENAME.NOREPLACE | RENAME.EXCHANGE | RENAME.WHITEOUT)) fail(E.INVAL);
   if (f & RENAME.EXCHANGE && f & (RENAME.NOREPLACE | RENAME.WHITEOUT)) fail(E.INVAL);
   if (f & RENAME.WHITEOUT) fail(E.INVAL);
-  const from = vfs.resolve(path(p, oldaddr), base(p, olddir), false);
+  // A name in a folder moved to a name in a folder: "." and ".." name none (EBUSY, as Linux), and a slash after
+  // either name says a folder (ENOTDIR for a file moved, or moved to such a name), a link there not followed.
+  const oldPath = path(p, oldaddr), newPath = path(p, newaddr), old = ending(oldPath), next = ending(newPath);
+  if (old.dot) { vfs.lookup(oldPath, base(p, olddir), false); fail(E.BUSY); }
+  if (next.dot) { vfs.lookup(newPath, base(p, newdir), false); fail(E.BUSY); }
+  const from = vfs.resolve(old.bare, base(p, olddir), false);
   const node = from.node ?? fail(E.NOENT);
-  const to = vfs.resolve(path(p, newaddr), base(p, newdir), false);
+  const to = vfs.resolve(next.bare, base(p, newdir), false);
   const there = to.node;
+  if ((old.slash || next.slash) && !node.isDir) fail(E.NOTDIR);
+  if (node === vfs.root || there === vfs.root) fail(E.BUSY);
   // A directory is never put into itself or under itself, nor swapped with one it holds: it would hold itself and
   // be reached from nowhere.
   if (node instanceof Dir && within(node, to.parent)) fail(E.INVAL);
