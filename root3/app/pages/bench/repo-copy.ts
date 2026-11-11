@@ -1,5 +1,6 @@
 import {t} from '../../i18n/i18n.ts';
 import {base64, inPieces, onChange, store, unbase64, walkRepo} from '../../repos/repos.ts';
+import type {Change} from '../../repos/repos.ts';
 
 // The repo in a browser's Prompt is the repo (terminal.ts): copied in for the shell as it starts, what the shell
 // changes under /root/<repo> written back through the store, and what is saved elsewhere (Forge, Git, root3 on the host…
@@ -110,11 +111,32 @@ export class WriteBack {
 /** A file or directory saved in the shell's copy (`what`: its bytes, 'dir', or null for gone). */
 interface Put { type: 'put'; path: string; what: Uint8Array | 'dir' | null }
 
-/** What is saved elsewhere in `repo` (not by `by`, the shell) comes into its copy through `put`; returns how to stop. */
-export function mirror(repo: string, by: string, put: (message: Put) => void): () => void {
-  return onChange((c) => {
+/** Where the mirror hears a repo's changes and reads a file's bytes: the store's, or a test's own. */
+export interface Source {
+  onChange: (listen: (c: Change) => void) => () => void;
+  bytes: (repo: string, path: string) => Promise<Uint8Array>;
+}
+
+/**
+ * What is saved elsewhere in `repo` (not by `by`, the shell) comes into its copy through `put`, in the order it was
+ * saved; returns how to stop. A file told with its text is put as that text. One told unread (not text, or longer
+ * than is read whole) is read again as bytes and put as it is; where it cannot be read, the copy keeps what it has:
+ * a file whose words were not handed on is never put empty.
+ */
+export function mirror(repo: string, by: string, put: (message: Put) => void, source: Source = {onChange, bytes: (r, p) => store.bytes(r, p)}): () => void {
+  let stopped = false, last: Promise<void> = Promise.resolve();
+  // One after another: a file being read again does not let what was saved after it reach the copy before it.
+  const next = (what: () => Promise<Put['what'] | undefined> | Put['what'], path: string) => {
+    last = last.then(async () => {
+      const w = await what();
+      if (!stopped && w !== undefined) put({type: 'put', path, what: w});
+    }).catch(() => {});
+  };
+  const off = source.onChange((c) => {
     if (c.repo !== repo || c.by === by || c.what === 'repo') return;
-    const what = c.what === 'file' ? new TextEncoder().encode(c.text ?? '') : c.what === 'dir' ? 'dir' : null;
-    put({type: 'put', path: c.path, what});
+    if (c.what === 'file') { const text = c.text; next(() => new TextEncoder().encode(text), c.path); return; }
+    if (c.what === 'unread') { next(() => source.bytes(repo, c.path).catch(() => undefined), c.path); return; }
+    next(() => (c.what === 'dir' ? 'dir' : null), c.path);
   });
+  return () => { stopped = true; off(); };
 }

@@ -54,22 +54,69 @@ test('a file that is not text comes here as its bytes, and stays on the Remote a
   assert.equal(now.draft['logo.png'], await sha256(png));
 });
 
+/** A change as a line: what, where, a move's other end, a file's text. */
+const said = (c: import('../repos/repos.ts').Change): string => `${c.what} ${c.path}`
+  + (c.what === 'removed' && c.to !== undefined ? ` -> ${c.to}` : '')
+  + ((c.what === 'file' || c.what === 'unread' || c.what === 'dir') && c.from !== undefined ? ` <- ${c.from}` : '')
+  + (c.what === 'file' ? ` ${JSON.stringify(c.text)}` : '');
+
 test('a file or folder renamed here reaches the Remote as any change: gone at its old name, there at its new', async () => {
   const {onChange} = await import('../repos/repos.ts');
   const told: string[] = [];
-  const stop = onChange((c) => told.push(`${c.what} ${c.path}${c.text !== undefined ? ` ${JSON.stringify(c.text)}` : ''}`));
+  const stop = onChange((c) => told.push(said(c)));
   await store.move('notes', 'docs/plan.md', 'docs/later.md');
   await store.move('notes', 'docs', 'notes');
   stop();
-  // Told as the old gone and the new made, so a copy kept elsewhere (the shell's) follows it.
-  assert.deepEqual(told.slice(0, 2), ['removed docs/plan.md', 'file docs/later.md "plan\\n"']);
-  assert.deepEqual(told.slice(2, 4), ['removed docs', 'dir notes']);
-  assert.ok(told.includes('file notes/later.md "plan\\n"'));
+  // Told as the old gone and the new made, so a copy kept elsewhere (the shell's) follows it; and as one move, each
+  // end naming the other, so what holds a file by its path (its box in Forge) follows it without guessing.
+  assert.deepEqual(told.slice(0, 2), ['removed docs/plan.md -> docs/later.md', 'file docs/later.md <- docs/plan.md "plan\\n"']);
+  // A folder moved: the folder, then each thing in it from where it was in the old one.
+  assert.deepEqual(told.slice(2, 4), ['removed docs -> notes', 'dir notes <- docs']);
+  assert.ok(told.includes('file notes/later.md <- docs/later.md "plan\\n"'));
   const sent = await draft.sync('notes');
   assert.ok(sent.sent >= 2);
   const now = await (await fetch(`${URL_}/v1/repos/notes`, {headers: {Authorization: `Bearer ${token}`}})).json() as {draft: Record<string, string>};
   assert.equal(now.draft['notes/later.md'], await sha256(enc.encode('plan\n')));
   assert.ok(!Object.keys(now.draft).some((p) => p.startsWith('docs/')));
+});
+
+test('a file removed and another made after it are two changes, never told as a move; moves one after another each say their own ends', async () => {
+  const {onChange} = await import('../repos/repos.ts');
+  await store.add('notes', '', 'a.md', 'a\n');
+  const told: string[] = [];
+  const stop = onChange((c) => told.push(said(c)));
+  await store.remove('notes', 'a.md');
+  await store.add('notes', '', 'b.md', 'b\n');
+  await store.move('notes', 'b.md', 'c.md');
+  await store.move('notes', 'c.md', 'd.md');
+  stop();
+  assert.deepEqual(told, [
+    'removed a.md', 'file b.md "b\\n"',
+    'removed b.md -> c.md', 'file c.md <- b.md "b\\n"',
+    'removed c.md -> d.md', 'file d.md <- c.md "b\\n"',
+  ]);
+  await store.remove('notes', 'd.md');
+});
+
+test('a file whose words are not handed on is told unread, never as an empty file; an empty file is told empty', async () => {
+  const {onChange} = await import('../repos/repos.ts');
+  const told: string[] = [];
+  const stop = onChange((c) => told.push(said(c)));
+  // Not text; text longer than is read whole; and a file that is empty.
+  await store.put('notes', 'mark.png', new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0xff, 0xfe]));
+  await store.put('notes', 'long.txt', enc.encode('line\n'.repeat(60_000)));
+  await store.put('notes', 'empty.txt', new Uint8Array());
+  // Moved, each still says what it is, and where it came from.
+  await store.move('notes', 'mark.png', 'art/mark.png');
+  // Taken in from outside the store (the core's sync, another tab): the same words.
+  await store.changedPaths('notes', ['long.txt', 'empty.txt', 'art', 'gone.txt']);
+  stop();
+  assert.deepEqual(told, [
+    'unread mark.png', 'unread long.txt', 'file empty.txt ""',
+    'removed mark.png -> art/mark.png', 'unread art/mark.png <- mark.png',
+    'unread long.txt', 'file empty.txt ""', 'dir art', 'removed gone.txt',
+  ]);
+  for (const path of ['art', 'long.txt', 'empty.txt']) await store.remove('notes', path);
 });
 
 test('a file moved into folders not there yet reaches the Remote at its new path, the folders made on its way', async () => {

@@ -157,27 +157,27 @@ class Forge {
       const at = e.target as HTMLElement;
       if (desk && at instanceof HTMLElement && at !== desk.element && at.contains(desk.element)) desk.scrolled(at);
     }, true);
-    // A file gone (put back, removed from File, a folder of it removed): its box goes from the desk; moved (gone, and
-    // a file made a moment after), its box is the file where it went, where the box lay.
+    // A file gone (put back, removed from File, a folder of it removed): its box goes from the desk. Moved (its path,
+    // or a folder over it, gone `to` another: one move, said so by the store), its box is the file where it went,
+    // where the box lay. Nothing is guessed from a removal and a file made near it in time: those are two things.
     let going: {repo: string; path: string; timer: number} | null = null;
+    const gone = () => { if (!going) return; clearTimeout(going.timer); this.shut(going.repo, going.path); going = null; };
     this.offChange = onChange((c) => {
       const d = this.desks.get(c.repo);
       if (!d) return;
       if (c.what === 'removed') {
-        const gone = [...d.files.keys()].filter((path) => path === c.path || path.startsWith(`${c.path}/`));
-        if (gone.length === 1 && gone[0] === c.path) {
-          if (going) { clearTimeout(going.timer); this.shut(going.repo, going.path); }
-          going = {repo: c.repo, path: c.path, timer: window.setTimeout(() => { if (going) this.shut(going.repo, going.path); going = null; }, 600)};
-        } else for (const path of gone) this.shut(c.repo, path);
-      } else if (c.what === 'file' && going && going.repo === c.repo && going.path === c.path) {
-        // Written again where it was (a file replaced whole, as the Agent writes one): it never went; its box stays.
+        const under = [...d.files.keys()].filter((path) => path === c.path || path.startsWith(`${c.path}/`));
+        if (c.to !== undefined) { for (const path of under) this.moved(c.repo, path, c.to + path.slice(c.path.length)); return; }
+        // Its own path alone gone: its box waits a moment for the same path written again (a file replaced whole by
+        // being removed and made, as a program in the Prompt may save it), then goes. Never taken to another path.
+        if (under.length === 1 && under[0] === c.path) {
+          gone();
+          going = {repo: c.repo, path: c.path, timer: window.setTimeout(gone, 600)};
+        } else for (const path of under) this.shut(c.repo, path);
+      } else if ((c.what === 'file' || c.what === 'unread') && going && going.repo === c.repo && going.path === c.path) {
+        // Written again where it was: it never went; its box stays.
         clearTimeout(going.timer);
         going = null;
-      } else if (c.what === 'file' && going && going.repo === c.repo && !d.files.has(c.path)) {
-        clearTimeout(going.timer);
-        const from = going.path;
-        going = null;
-        this.moved(c.repo, from, c.path);
       }
     });
     // Shift+N makes a new file, as a new post is begun on X: where nothing is being written (the finger on a box, the
