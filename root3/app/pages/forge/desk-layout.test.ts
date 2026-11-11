@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ABOVE_SEEN, arc, bornOn, carried, EYE, FOOT, FOOT_ROOM, GAP, kept, KEPT, liftedOn, lineKept, next, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, TURNED, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
+import {ABOVE_SEEN, arc, bornOn, EYE, FOOT, FOOT_ROOM, GAP, KEPT, lineKept, next, PAD, PULLED, pulledOn, slots, standardOn, tabbed, TOP, TURNED, VGAP, WHOLE_MOST, WIDTH, wholeOf} from './desk-layout.ts';
 
 // The desk's places and its camera (desk-layout.ts), as numbers.
 
@@ -80,51 +80,19 @@ test('Tab goes down each column, then to the next, round again; Shift+Tab back',
   assert.equal(tabbed([['term']], 'term'), 'term');
 });
 
-test('an arrow takes the finger along a column or to the next; Ctrl and an arrow carry a box', () => {
+test('an arrow takes the finger along a column or to the next', () => {
   assert.equal(next(cols, 'a.c', 'down'), 'b.c');
   assert.equal(next(cols, 'b.c', 'right'), 'README.md');
   assert.equal(next(cols, 'term', 'left'), null);
-  assert.deepEqual(carried(cols, 'b.c', 'up'), [['term'], ['b.c', 'a.c'], ['README.md']]);
-  // A column of its own goes into the next column, at the same place; the column it leaves, emptied, goes.
-  assert.deepEqual(carried(cols, 'README.md', 'left'), [['term'], ['README.md', 'a.c', 'b.c']]);
-  // Out of a column with others, first into the gap beside it: between two side by side, a column of its own.
-  const between = carried(cols, 'b.c', 'right');
-  assert.deepEqual(between, [['term'], ['a.c'], ['b.c'], ['README.md']]);
-  assert.deepEqual(carried(cols, 'a.c', 'left'), [['term'], ['a.c'], ['b.c'], ['README.md']]);
-  // Then on into the next column, at the same place in it (a column of its own: its top). (The desk puts one carried
-  // straight back where it was in the column it left: desk.ts carry.)
-  assert.deepEqual(carried(between, 'b.c', 'right'), [['term'], ['a.c'], ['b.c', 'README.md']]);
-  assert.deepEqual(carried(between, 'b.c', 'left'), [['term'], ['b.c', 'a.c'], ['README.md']]);
-  // Out of the last column with others: a column past it; a column of its own at the edge stays.
-  assert.deepEqual(carried([['term', 'x']], 'x', 'right'), [['term'], ['x']]);
-  assert.deepEqual(carried([['term'], ['x']], 'x', 'right'), [['term'], ['x']]);
 });
 
-test('held up, the camera steps back about the box as far as shows two boxes side by side, the box where it was on the face', () => {
-  const slot = {x: 900, y: 500}, h = 70, w = 956, hgt = 780;
-  const at = pulledOn(slot, h, w, hgt);
-  const v = liftedOn(at, slot, h, w, hgt);
-  assert.ok(v.s < at.s);
-  assert.ok((2 * WIDTH + GAP) * v.s <= w - 2 * KEPT + 1e-9);
-  // The box's middle where it was on the face.
-  const mid = (u: typeof v) => ({x: u.x + (slot.x + WIDTH / 2) * u.s, y: u.y + (slot.y + h / 2) * u.s});
-  assert.deepEqual(mid(v), mid(at));
-  // Never nearer than it stood (over the whole desk, it stays there); where two fit already, no step back.
-  const far = {s: .3, x: 10, y: 20};
-  assert.equal(liftedOn(far, slot, h, w, hgt).s, .3);
-  assert.equal(liftedOn({s: 1, x: 0, y: 0}, {x: 100, y: 100}, h, 2400, hgt).s, 1);
-});
-
-test('carried out of sight, the camera goes only as far as keeps the box in; in sight, it stays', () => {
-  const v = {s: .5, x: 0, y: 0}, slot = {x: 100, y: 100};
-  assert.equal(kept(v, slot, 70, 956, 780), v);
-  const right = kept(v, {x: 1800, y: 100}, 70, 956, 780);
-  assert.deepEqual(right, {s: .5, x: 956 - KEPT - (1800 + WIDTH) * .5, y: 0});
-  const left = kept(v, {x: -400, y: 100}, 70, 956, 780);
-  assert.equal(left.x + -400 * .5, KEPT);
-  // Too tall for the face: its top kept a third of the way down, at most.
-  const deep = kept(v, {x: 100, y: 1400}, 4000, 956, 780);
-  assert.equal(deep.y + 1400 * .5, 780 / 3);
+test('a box narrower than 80 columns (the desk half the face, a box beside it) stands in the middle as a full one does, its columns as far apart as it is wide', () => {
+  const bw = 430, w = 478, hgt = 700;
+  const at = slots([['a.c'], ['b.c']], () => 100, bw);
+  assert.equal(at.get('b.c')!.x - at.get('a.c')!.x, bw + GAP);
+  const v = standardOn(at.get('a.c')!, 100, w, hgt, 1, bw);
+  assert.equal(v.x + at.get('a.c')!.x, (w - bw) / 2);
+  assert.equal(v.y + at.get('a.c')!.y, EYE);
 });
 
 test('going to another column the camera steps back on the way, about a step back at its middle, and lands exactly', () => {

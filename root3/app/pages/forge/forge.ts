@@ -6,7 +6,6 @@ import {onSync} from '../../remote/lifecycle.ts';
 import {onChange, onRenamed, store} from '../../repos/repos.ts';
 import type {Context} from '../kit/context.ts';
 import {bench, type Bench} from '../bench/bench.ts';
-import {sessionIfAny} from '../bench/sessions.ts';
 import {openNext as openConversation} from '../kit/next.ts';
 import type {Writing} from '../kit/context.ts';
 import {startIssue} from '../git/issue-form.ts';
@@ -15,20 +14,18 @@ import {Band, bandRenamed} from './pills.ts';
 import {Drag} from './drag.ts';
 import {takeFiles} from './files-in.ts';
 import {Desk} from './desk.ts';
+import {GRID} from './desk-layout.ts';
 import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
 import {asPath, isFile, wordAt} from './term-links.ts';
 import {deedsUnder, fileDeeds, renaming, split, untitled} from '../kit/file-deeds.ts';
 
-/** A terminal exited or stopped is seen ended (what it said, its switch going over to off) this long before its box
- * goes. */
-const TERM_GOES_MS = 900;
-
 /**
  * Forge, the place you work. The repos out to work on run as pills in a band on the top line; ⊕ brings the rest out
- * and each pill comes off with its ×. The large center is the repo's desk (desk.ts): its Prompt a box of its own, the
- * line one types at under what it printed, its pill saying what that line does (Run, Issue, TODO, Agent); each file
- * opened a box beside it, written in where it lies. One box is in hand and the camera works close to it; Escape steps
- * back to the whole desk. Each repo on the band keeps its own desk, as it was left, while the app runs.
+ * and each pill comes off with its ×. The large center is the repo's desk (desk.ts): each file opened a box on it,
+ * written in where it lies, one of them in hand, the camera close to it (Escape steps back to the whole desk); one
+ * box may be put beside the desk, a second screen. The Prompt stands at the desk's foot (bench.ts): the line one
+ * types at, and over it, while it is up, what it printed. Each repo on the band keeps its own desk, as it was left,
+ * while the app runs.
  *
  * Forge is made once and stays as it was while another page is shown, so coming back is coming back to the same
  * repo, the same box in hand, what was searched and what was half written.
@@ -84,8 +81,8 @@ export function forge(ctx: Context): Node[] {
   return [made.element];
 }
 
-/** What a repo's desk is kept as, while the app is away: its columns' keys and the one in hand. */
-interface Kept { cols: string[][]; held: string | null }
+/** What a repo's desk is kept as, while the app is away: its columns' keys, the one in hand, the one beside it. */
+interface Kept { cols: string[][]; held: string | null; beside?: string | null }
 const KEPT = 'forge.desk.';
 
 function keptDesk(repo: string): Kept | null {
@@ -93,7 +90,7 @@ function keptDesk(repo: string): Kept | null {
 }
 
 function kept(repo: string, desk: Desk) {
-  try { localStorage.setItem(KEPT + repo, JSON.stringify({cols: desk.columns, held: desk.held})); } catch { /* kept for this run only */ }
+  try { localStorage.setItem(KEPT + repo, JSON.stringify({cols: desk.columns, held: desk.held, beside: desk.beside})); } catch { /* kept for this run only */ }
 }
 
 /** A repo's desk, and the files lying on it. */
@@ -117,6 +114,8 @@ class Forge {
   private offKeys: () => void;
   /** The file last told as the one Forge works on. */
   private told: string | null = null;
+  /** How much of the center's foot the Prompt covers (bench.ts), told to each desk. */
+  private foot = 0;
   private ctx: Context;
 
   constructor(ctx: Context) {
@@ -126,10 +125,15 @@ class Forge {
     this.work = bench({strip, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
-      toTerm: () => { if (this.now.repo) this.termTo(this.now.repo); },
+      foot: (covered) => {
+        this.foot = covered;
+        this.center.style.setProperty('--foot', `${covered}px`);
+        for (const d of this.desks.values()) d.desk.foot = covered;
+      },
       besideTerm: (repo, element) => {
+        // The Agent's own terminal is a box of the desk, a column of its own beside the one in hand.
         const {desk} = this.deskOf(repo);
-        if (!desk.has('agent')) desk.lay('agent', {element, name: 'agent', dir: '', after: `/root/${repo}`, focus: () => element.focus({preventScroll: true})}, undefined, 'term');
+        if (!desk.has('agent')) desk.lay('agent', {element, name: 'agent', dir: '', after: `/root/${repo}`, stays: true, focus: () => element.focus({preventScroll: true})}, undefined, desk.held ?? undefined);
       },
       went: (repo, to) => {
         if (to !== 'todo' && 'file' in to) { ctx.openRepo(repo, to.file); return; }
@@ -143,6 +147,7 @@ class Forge {
     this.band = new Band(strip, this.now, drag, {show: (name) => this.show(name), beside: (name) => this.show(name),
       takeOff: (name) => this.takeOff(name), act: (at) => this.deeds(at)}, this.work.tools);
     this.termLinks();
+    new ResizeObserver(() => this.split()).observe(this.center);
     // Files from the desktop let go over a box: into its folder (none written over), the first opened.
     takeFiles(this.center, drag, (repo, path) => this.show(repo, path));
     // What the Remote holds is learnt a moment after: ⊕ counts it once it is.
@@ -202,8 +207,10 @@ class Forge {
   private termLinks() {
     let at: {repo: string; path: string; line: number} | null = null;
     let frame = 0, last = {x: 0, y: 0};
-    const out = (t: EventTarget | null) => (t as Element | null)?.closest?.('.desk-box .term-out') ?? null;
-    const clear = () => { at = null; CSS.highlights?.delete('term-file'); this.center.classList.remove('term-linking'); };
+    const out = (t: EventTarget | null) => (t as Element | null)?.closest?.(':is(.desk-box, .desk-term) .term-out') ?? null;
+    // (The Prompt stands at the center's foot, beside the desks' room: heard on what holds both.)
+    const room = this.center.parentElement ?? this.center;
+    const clear = () => { at = null; CSS.highlights?.delete('term-file'); room.classList.remove('term-linking'); };
     const look = () => {
       frame = 0;
       const repo = this.now.repo, el = out(document.elementFromPoint(last.x, last.y));
@@ -216,16 +223,16 @@ class Forge {
         if (!yes || again?.text !== w.text) { if (!yes) clear(); return; }
         at = {repo, ...named};
         CSS.highlights?.set('term-file', new Highlight(again.range));
-        this.center.classList.add('term-linking');
+        room.classList.add('term-linking');
       });
     };
-    this.center.addEventListener('pointermove', (e) => {
+    room.addEventListener('pointermove', (e) => {
       last = {x: e.clientX, y: e.clientY};
       if (!out(e.target)) { if (at) clear(); return; }
       frame ||= requestAnimationFrame(look);
     }, {passive: true});
-    this.center.addEventListener('pointerleave', clear);
-    this.center.addEventListener('click', (e) => {
+    room.addEventListener('pointerleave', clear);
+    room.addEventListener('click', (e) => {
       if (!at || !out(e.target) || getSelection()?.toString()) return;
       const {repo, path, line} = at;
       clear();
@@ -250,7 +257,7 @@ class Forge {
     if (!repo || this.deedsOut) return;
     const path = this.fileHeld(repo);
     const done = () => this.deedsOut?.();
-    // (A file made with a terminal in hand is made as Shift+N makes it there: at the repo's top, with no ending.)
+    // (A file made with no file in hand is made as Shift+N makes it there: at the repo's top, with no ending.)
     const pop = fileDeeds({repo, path, name: path ? split(path)[1] : repo, dir: !path, like: '', head: `/root/${repo}${path ? `/${path}` : ''}`,
       made: (made, file) => { done(); if (file) this.made(repo, made); },
       move: async (to) => {
@@ -306,17 +313,27 @@ class Forge {
     return f;
   }
 
-  /** `repo`'s desk, made the first time: its Prompt the first box. */
+  /** The center as the desk shown has it: one screen, or two (a box put beside the desk: the desk the left half, the
+   * box the right), the halves meeting on the dots' grid so the ground is one ground. */
+  private split() {
+    const d = this.now.repo ? this.desks.get(this.now.repo) : undefined;
+    this.center.classList.toggle('split', !!d?.desk.beside);
+    this.center.style.setProperty('--split', `${Math.round(this.center.clientWidth / 2 / GRID) * GRID}px`);
+    for (const o of this.desks.values()) o.desk.side.hidden = o !== d || !o.desk.beside;
+  }
+
+  /** `repo`'s desk, made the first time. */
   private deskOf(repo: string): Laid {
     let d = this.desks.get(repo);
     if (!d) {
       const files = new Map<string, DeskFile>();
       let restoring = true;
       const desk = new Desk(t('Files in {name}', {name: repo}), repo, (key) => this.shut(repo, key), () => {
+        if (this.now.repo === repo) this.split();
         if (restoring) return;
         kept(repo, desk);
         // The file in hand is the one Forge works on: File marks it (told once each time it is another).
-        if (this.now.repo === repo && desk.held && desk.held !== 'term' && desk.held !== this.told) {
+        if (this.now.repo === repo && desk.held && desk.held !== 'agent' && desk.held !== this.told) {
           this.told = desk.held;
           this.ctx.reading(desk.held);
           // Where the person left off (Home says it): the file in hand.
@@ -331,44 +348,27 @@ class Forge {
         const path = area.closest<HTMLElement>('.desk-file')?.dataset.path;
         if (path && area.selectionStart !== undefined) this.ctx.leftAt(repo, path, area.selectionStart);
       });
-      this.layTerm(repo, desk);
-      // Exited or stopped (not failed: that is read where it is), the terminal's box goes, as a terminal's window
-      // closes; the band's >_ opens one again (termTo).
-      desk.element.addEventListener('term-gone', () => {
-        setTimeout(() => { if (sessionIfAny(repo)?.ended && desk.has('term')) desk.lift('term'); }, TERM_GOES_MS);
-      });
+      desk.foot = this.foot;
       // As it was left: the boxes where they lay, the one in hand.
       const was = keptDesk(repo);
-      // (The Agent's terminal is born again when it is asked again; a desk kept has none.)
-      was?.cols.forEach((col, c) => { for (const key of col) if (key !== 'term' && key !== 'agent') this.layFile(repo, d!, key, c); });
+      // (The Agent's terminal is born again when it is asked again; a desk kept has none. One kept from when the
+      // Prompt was a box of the desk has it too: left out, its column closed up.)
+      const cols = (was?.cols ?? []).map((col) => col.filter((key) => key !== 'term' && key !== 'agent')).filter((col) => col.length);
+      cols.forEach((col, c) => { for (const key of col) this.layFile(repo, d!, key, c); });
+      if (was?.beside && desk.has(was.beside)) desk.putBeside(was.beside);
       if (was?.held && desk.has(was.held)) desk.take(was.held, false);
-      // A desk never worked at: its README beside the Prompt, to be read first.
-      if (!was) { const laid = d; void store.read(repo, 'README.md').then((c) => { if (c.text !== null && !laid.files.has('README.md')) this.layFile(repo, laid, 'README.md', 1); }).catch(() => {}); }
+      // A desk never worked at: its README, to be read first.
+      if (!was) {
+        const laid = d;
+        void store.read(repo, 'README.md').then((c) => {
+          if (c.text === null || laid.files.has('README.md')) return;
+          this.layFile(repo, laid, 'README.md', 0);
+          if (!desk.held) desk.take('README.md', false);
+        }).catch(() => {});
+      }
       restoring = false;
     }
     return d;
-  }
-
-  /** The terminal's box laid on `repo`'s `desk` (at the top of the first column: `top`, when it is laid again). */
-  private layTerm(repo: string, desk: Desk, top = false) {
-    const term = this.work.terminal!;
-    desk.lay('term', {element: h('div', {class: 'desk-term-home'}), name: 'sh', dir: '', after: `/root/${repo}`,
-      focus: () => term.querySelector<HTMLTextAreaElement>('.prompt-in')?.focus({preventScroll: true})}, 0, undefined, {top});
-  }
-
-  /**
-   * The band's >_: the terminal in hand; gone from the desk (exited, stopped, closed), it is laid again at the top of
-   * the first column, a shell started in it (an ended one started again), and taken in hand.
-   */
-  private termTo(repo: string) {
-    const {desk} = this.deskOf(repo);
-    if (!desk.has('term')) {
-      this.layTerm(repo, desk, true);
-      desk.element.querySelector('.desk-box[data-key="term"] .desk-term-home')?.replaceChildren(this.work.terminal!);
-      const s = sessionIfAny(repo);
-      if (s?.ended) s.restart();
-    }
-    desk.take('term');
   }
 
   /** `path` of `repo` laid on its desk `d` as a box (in column `col`, or under the box in hand). */
@@ -389,13 +389,6 @@ class Forge {
   private shut(repo: string, key: string) {
     const d = this.desks.get(repo);
     if (!d) return;
-    // The terminal's close: its box goes at once and its shell is stopped, as a terminal's window closed.
-    if (key === 'term') {
-      d.desk.lift('term');
-      const s = sessionIfAny(repo);
-      if (s && !s.ended) void s.stop();
-      return;
-    }
     d.files.get(key)?.drop();
     d.files.delete(key);
     d.desk.lift(key);
@@ -411,9 +404,8 @@ class Forge {
     // Chosen from the band's search while its sheet is down, the desk out of sight under it: the camera is put where
     // the box is meanwhile, unseen, and the desk comes back already there as the sheet goes up.
     const unseen = !!this.element.querySelector('.band-tools > .search-box:is(:focus-within, .reading):not(.idle, .leaving)');
-    // A file laid for the first time goes in the column beside the Prompt's, under the last there.
-    const beside = !made && (d.desk.held === 'term' || !d.desk.held);
-    const f = d.files.get(path) ?? this.layFile(repo, d, path, beside ? 1 : undefined, {slide: !unseen});
+    // A file laid for the first time goes under the box in hand.
+    const f = d.files.get(path) ?? this.layFile(repo, d, path, undefined, {slide: !unseen});
     // Made, it is not gone into yet: in hand, its name to be written, at the size it is read at (the camera does not
     // step back for it: stepped back, its words were some 10 px tall); Enter goes in.
     if (made) { d.desk.take(path, false, !unseen); return; }
@@ -421,12 +413,12 @@ class Forge {
     if (keyboard) f.at(line);
   }
 
-  /** `path` of the repo worked on, a box on its desk, laid if it was not (beside the Prompt), the hand left where it is. */
+  /** `path` of the repo worked on, a box on its desk, laid if it was not, the hand left where it is. */
   private place(path: string): boolean {
     const repo = this.now.repo;
     if (!repo || !path) return false;
     const d = this.deskOf(repo);
-    if (!d.files.has(path)) this.layFile(repo, d, path, 1);
+    if (!d.files.has(path)) this.layFile(repo, d, path);
     return true;
   }
 
@@ -451,17 +443,15 @@ class Forge {
       this.work.setRepo(name);
       // Every desk stays in the page, those not worked at hidden: a text taken out of the page loses its Undo.
       this.center.querySelector('.desk-none')?.remove();
-      if (!d.desk.element.isConnected) this.center.append(d.desk.element);
+      if (!d.desk.element.isConnected) this.center.append(d.desk.element, d.desk.side);
       for (const o of this.desks.values()) o.desk.element.hidden = o !== d;
+      this.split();
     }
-    // The Prompt's own box is the one terminal of the bench: it lies on the desk shown.
-    d.desk.element.querySelector('.desk-box[data-key="term"] .desk-term-home')?.replaceChildren(this.work.terminal!);
     this.band.paint();
     if (path) {
       this.open(path, line, write === 'name', keyboard);
       if (write === 'name') d.desk.name(path);
-    } else if (!d.desk.held) d.desk.take('term', false);
-    else d.desk.relayout();
+    } else d.desk.relayout();
   }
 
   /** A place asked for in the repo worked on: its file's box, in hand, at `line`. */
@@ -476,7 +466,7 @@ class Forge {
     band.names = r.band;
     band.save();
     const d = this.desks.get(name);
-    if (d) { for (const f of d.files.values()) f.drop(); d.desk.element.remove(); this.desks.delete(name); }
+    if (d) { for (const f of d.files.values()) f.drop(); d.desk.element.remove(); d.desk.side.remove(); this.desks.delete(name); }
     if (this.now.repo === name) this.now.repo = null;
     if (!r.active) { this.none(); return; }
     this.show(r.active);
@@ -490,7 +480,8 @@ class Forge {
     const first = h('button', {type: 'button', class: 'card new forge-first'}, icon('new-repo'), h('span', {}, t('Create your first repo')),
       h('small', {class: 'muted'}, t('A personal Git repository: compatible with Forge, Git, and Prompt.')));
     first.addEventListener('click', () => void this.ctx.go('new-repo'));
-    for (const o of this.desks.values()) o.desk.element.hidden = true;
+    for (const o of this.desks.values()) o.desk.element.hidden = o.desk.side.hidden = true;
+    this.center.classList.remove('split');
     this.center.querySelector('.desk-none')?.remove();
     this.center.append(h('div', {class: 'desk-none'}, first));
     this.band.paint();
@@ -499,6 +490,7 @@ class Forge {
   /** Come to (back) on the screen: the repo asked for, chosen elsewhere, or as it was. */
   enter() {
     this.work.settle();
+    for (const d of this.desks.values()) d.desk.home();
     void store.list().then((repos) => this.choose(repos.map((r) => r.name)));
   }
 
@@ -506,7 +498,7 @@ class Forge {
   private choose(all: string[]) {
     const {band, ctx} = this;
     band.known(all, ctx.repo);
-    for (const name of [...this.desks.keys()]) if (!all.includes(name)) { this.desks.get(name)!.desk.element.remove(); this.desks.delete(name); }
+    for (const name of [...this.desks.keys()]) if (!all.includes(name)) { const gone = this.desks.get(name)!.desk; gone.element.remove(); gone.side.remove(); this.desks.delete(name); }
     const asked = pending;
     pending = null;
     const chosen = ctx.repo !== this.known;
@@ -518,7 +510,7 @@ class Forge {
       const now = document.activeElement;
       const elsewhere = !!asked && !!now && now !== asked.from && now !== document.body && !this.element.contains(now) && !now.contains(this.element);
       this.show(ctx.repo, at.path, at.write, at.line, !elsewhere && !termAsked);
-      if (termAsked && !elsewhere) this.termTo(ctx.repo);
+      if (termAsked && !elsewhere) this.work.toPrompt();
       // Out under Forge's own files button once the page has come to rest (measured where it stands, not on the way).
       if (deedsAsked && !elsewhere) {
         const acts = this.work.tools?.querySelector<HTMLElement>('.band-acts'), root = document.documentElement;

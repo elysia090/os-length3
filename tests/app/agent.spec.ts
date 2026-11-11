@@ -45,6 +45,8 @@ test('a key given in Runtime: `agent` run in the terminal is asked of the Agent,
   await expect(app.main.locator('.agent-line')).toContainText('model-one');
 
   await app.rail.go('forge');
+  // (The file in front: the one in hand on the desk.)
+  await app.forge.editor('README.md').focus();
   const box = app.forge.promptBox;
   await box.focus();
   await box.fill('agent How is it built?');
@@ -52,21 +54,23 @@ test('a key given in Runtime: `agent` run in the terminal is asked of the Agent,
   // The line is the person's: run in their terminal, the box empty for the next at once.
   await expect(box).toHaveValue('');
   await expect(app.forge.prompt.locator('.term-out')).toContainText('agent How is it built?');
-  // The Agent's terminal, beside the person's on the desk: what it was asked, then its words.
+  // The Agent's terminal, a box of the desk: what it was asked, then its words.
   const agent = app.main.getByRole('region', {name: 'Agent', exact: true});
   await expect(agent.locator('.agent-asked')).toHaveText('How is it built?');
   await expect(agent.locator('.agent-words')).toContainText('Run it so:');
   await expect(agent.locator('.agent-words .answer-code')).toHaveText('make');
-  const term = (await app.main.locator('.desk-box[data-key="term"]').boundingBox())!;
+  // (A box of the desk, a column of its own beside the file in hand's, their tops level.)
+  const file = (await app.main.locator('.desk-box[data-key="README.md"]').boundingBox())!;
   const beside = (await app.main.locator('.desk-box[data-key="agent"]').boundingBox())!;
-  expect(beside.x).toBeGreaterThan(term.x + term.width);
-  expect(Math.abs(beside.y - term.y)).toBeLessThan(2);
+  expect(beside.x).toBeGreaterThan(file.x + file.width);
+  expect(Math.abs(beside.y - file.y)).toBeLessThan(2);
   // Told the repo and the file in front, and nothing of it in the pane but the line run.
   expect(told[0]).toContain('"hello"');
   expect(told[0]).toContain('The file in front of the person: README.md');
   await expect(app.page.locator('.work.bench:not([hidden]) .pane-answer')).toHaveCount(0);
   // The box has no Agent of its own on the desk: it is the terminal's.
-  await app.main.getByRole('button', {name: /^Input box action/}).click();
+  await box.press('Alt+ArrowDown');
+  await expect(app.main.getByRole('menuitemradio', {name: /Run in Prompt/})).toBeVisible();
   await expect(app.main.getByRole('menuitemradio', {name: /Ask Agent/})).toHaveCount(0);
   await app.page.keyboard.press('Escape');
 

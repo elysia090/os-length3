@@ -339,10 +339,10 @@ test("Home's band has Forge's tools where Forge has them, and the pane's first r
   await expect(async () => expect(await tools()).toEqual(forge)).toPass();
   await expect(app.main.getByRole('button', {name: 'Files: New, Rename, Delete'})).toBeVisible();
   await level();
-  // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (the terminal in
-  // hand there, the repo's deeds).
+  // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (its README in
+  // hand there, that file's deeds).
   await app.main.getByRole('button', {name: 'Files: New, Rename, Delete'}).click();
-  const menu = app.page.getByRole('menu', {name: 'notes', exact: true});
+  const menu = app.page.getByRole('menu', {name: 'README.md', exact: true});
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitem', {name: 'New file'})).toBeFocused();
   const under = (await app.forge.tools.getByRole('button', {name: 'Files: New, Rename, Delete'}).boundingBox())!;

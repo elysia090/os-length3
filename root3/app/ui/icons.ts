@@ -41,6 +41,8 @@ const MARKS = {
   pane: 'M4 5.5h16v13H4zM14.5 5.5v13',
   // Beside: the window cut in two, another box to its right.
   beside: 'M4 5.5h16v13H4zM12 5.5v13M15 12h2.5M16.25 10.75v2.5',
+  // Its other: the one beside put back (the second screen's half, a − in it).
+  putBack: 'M4 5.5h16v13H4zM12 5.5v13M15 12h2.5',
   // More to choose from, below.
   down: 'M7 10l5 5 5-5',
   // More along, to the right.

@@ -7,7 +7,7 @@ import {Box} from './box.ts';
 import {Pane, paneWord, pluginArea} from '../kit/pane.ts';
 import type {Writing} from '../kit/context.ts';
 import {Reference} from './reference.ts';
-import {Screen} from './screen.ts';
+import {Screen, type Rises} from './screen.ts';
 import {sessionIfAny} from './sessions.ts';
 import {sessionFor} from './terminal.ts';
 import {Rows} from './rows.ts';
@@ -29,14 +29,20 @@ export interface Bench {
   setRepo(name: string | null): void;
   /** Back on screen after another page: the Prompt is home again unless its box still has the keyboard. */
   settle(): void;
-  /** On a desk (Forge's): the Prompt's own box, its output and, at its foot, the line one types at, its pill saying
-   * what that line does (Run, Issue, TODO, Agent). Laid on the desk by the page; null on any other bench. */
+  /** On a desk (Forge's): the Prompt standing at the center's foot: what it printed and, under it, the line one types
+   * at, its pill saying what that line does (Run, TODO). Null on any other bench. */
   terminal: HTMLElement | null;
+  /** The Prompt's line taken to run, the keyboard in it (an ended Prompt started again): the band's >_, Ctrl+`. */
+  toPrompt(): void;
   /** On a desk: the band's tools on the top line (>_, the search), the page's own put among them; null elsewhere. */
   tools: HTMLElement | null;
 }
 
 let benches = 0;
+/** How long an ended Prompt stays up on a desk, its end read, before it goes back to its line. */
+const TERM_GOES_MS = 900;
+/** The ground kept between what is worked on on a desk and the Prompt standing at its foot. */
+const STAND_GAP = 24;
 
 /** Whether `el` is laid out on the page (not in a page put away, nor out of the document). */
 const onScreen = (el: HTMLElement) => el.isConnected && el.getClientRects().length > 0;
@@ -112,6 +118,41 @@ function promptBox() {
   const term = h('section', {class: 'term-box', 'aria-label': 'Prompt'}, termHead);
   const termHome = h('div', {class: 'term-home'}, term);
   return {termHead, term, termHome};
+}
+
+/**
+ * The Prompt standing at a desk's foot (`terminal`: what it printed, the box's line): up, all of it; at rest, the
+ * line alone. It goes up as the box asks (its line taken to run, a line run) and stays till it is put away; `told`
+ * hears whether it is up and how much of the center's foot it takes (a step of ground kept over it), each time
+ * either changes.
+ */
+function standOf(terminal: HTMLElement, box: Box, told: (up: boolean, covered: number) => void): Rises {
+  const stand: Rises = {
+    get up() { return terminal.classList.contains('up'); },
+    raise() { if (!this.up) { terminal.classList.add('up'); box.screenChanged('up'); } },
+    lower() { if (this.up) { terminal.classList.remove('up'); box.screenChanged('leaving'); } },
+  };
+  box.screen = stand;
+  const says = () => {
+    const room = terminal.parentElement?.getBoundingClientRect();
+    if (room?.height) told(stand.up, Math.max(0, Math.round(room.bottom - terminal.getBoundingClientRect().top) + STAND_GAP));
+  };
+  new ResizeObserver(says).observe(terminal);
+  new MutationObserver(says).observe(terminal, {attributes: true, attributeFilter: ['class']});
+  // Pressed anywhere on what it printed (not on something to press there, nor ending a selection): the keyboard in
+  // its line, as a terminal pressed takes it. (What had the keyboard as the press began is where it goes back to: the
+  // press itself takes it from there before the line has it.)
+  let from: HTMLElement | null = null;
+  terminal.addEventListener('pointerdown', () => {
+    const had = document.activeElement as HTMLElement | null;
+    from = had && had !== document.body && !terminal.contains(had) ? had : null;
+  }, true);
+  terminal.addEventListener('click', (event) => {
+    const on = event.target as Element;
+    if (box.dock.contains(on) || on.closest('button, a') || getSelection()?.toString() || box.prompt.disabled) return;
+    box.take(from);
+  });
+  return stand;
 }
 
 /** The screen the box becomes while the Prompt is up (screen.ts), at the top of its dock: `term` comes up into it
@@ -191,22 +232,22 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** A page read and pressed rather than written in (Git): its box at the foot stands back until it is asked for
    * (Ctrl+`, the pointer resting at the foot), and back again once the Prompt is done with, never over a button. */
   back?: boolean;
-  /** A desk (Forge's): no box at the center's foot and no Prompt rising over it; the Prompt is a box of its own, its
-   * output over the line one types at (`terminal`), which the page lays on the desk. */
+  /** A desk (Forge's): the box at the center's foot is the Prompt's own last line, and what the Prompt printed
+   * stands on it while it is up (`terminal`: one box, a line tall at rest), over the desk's foot. */
   desk?: boolean;
+  /** On a desk: how much of the center's foot the Prompt covers now (the desk keeps what is worked on above it). */
+  foot?(covered: number): void;
   /** On a desk: a file's box laid without taking the person's hand; the camera over these boxes (none: the one in hand). */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
-  /** On a desk: >_ on the band pressed, the terminal taken in hand. */
-  toTerm?(): void;
-  /** On a desk: the Agent's own terminal laid beside the person's in `repo`'s desk. */
+  /** On a desk: the Agent's own terminal laid as a box of `repo`'s desk. */
   besideTerm?(repo: string, element: HTMLElement): void}): Bench {
   const {termHead, term, termHome} = promptBox();
   const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
   // The pane is what was done in the repo, a big row each (rows.ts): a run pressed is read where it was run (the
   // Prompt's box, on a desk), or under the search box with all it printed (the Prompt being up only while in use).
-  const openRun = (run: Run) => { if (terminal) litRun(terminal, run); else reference.showRun(run); };
+  const openRun = (run: Run) => { if (terminal) { stand?.raise(); litRun(terminal, run); } else reference.showRun(run); };
   const none = h('div', {class: 'pane-rows'});
   // The pane's room: the reference's heads (Issue, diff, Output, Agent) over the rows.
   const room = h('div', {class: 'pane-room'}, none);
@@ -232,13 +273,30 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
     flow: (repo: string) => rowsOf(repo),
     ...(parts.place ? {place: parts.place} : {}), ...(parts.frame ? {frame: parts.frame} : {}), ...(parts.besideTerm ? {besideTerm: parts.besideTerm} : {})});
-  // On a desk the Prompt is a box of its own: its output, and the line one types at under it.
-  const terminal = parts.desk ? h('section', {class: 'desk-term'}, term, box.dock) : null;
+  // On a desk the Prompt stands at the center's foot, one box: the line one types at, and over it, while it is up,
+  // what it printed. The band's >_ says whether it is up, and puts it up or away.
+  const terminal = parts.desk ? h('section', {class: 'desk-term stand'}, term, box.dock) : null;
+  const termTool = toolButton('term', t('Terminal'), () => { if (stand?.up) box.putAway(); else toPrompt(); });
+  termTool.setAttribute('aria-pressed', 'false');
+  // (Pressed with the pointer, the keyboard stays where it is till the Prompt has it: put away, it goes back there.)
+  termTool.addEventListener('pointerdown', (event) => event.preventDefault());
+  const stand = terminal ? standOf(terminal, box, (up, covered) => { termTool.setAttribute('aria-pressed', String(up)); parts.foot?.(covered); }) : null;
   const shown = parts.desk ? null : screenOf(work, box, term, termHome);
-  if (shown) center.append(box.dock); else box.dock.prepend(box.form);
+  if (shown) center.append(box.dock); else { box.dock.prepend(box.form); center.append(terminal!); }
   // On a desk the box lies on a moving plane: what opens out of its pill (fixed to the window) lies on the page instead.
   if (!shown) for (const pop of box.dock.querySelectorAll<HTMLElement>(':scope > .box-modes')) work.append(pop);
   const screen = shown?.screen ?? null;
+  const toPrompt = () => {
+    if (!box.repo) return;
+    const s = sessionIfAny(box.repo);
+    if (s?.ended) s.restart();
+    box.summon();
+  };
+  // Exited or stopped (not failed: that is read where it is), the Prompt goes back to its line after a moment, as a
+  // terminal's window closes; its line taken again starts one.
+  terminal?.addEventListener('term-gone', () => {
+    setTimeout(() => { if (box.repo && sessionIfAny(box.repo)?.ended) stand?.lower(); }, TERM_GOES_MS);
+  });
   const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true, band: !!parts.desk});
   // A line run, pressed in the Prompt's box on a desk: read under the search box, with all it printed, as from Output.
   // Taken as the press begins, before the box takes it as a press to put the keyboard in it.
@@ -254,9 +312,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   // At rest the pane says what else the search shows, over its rows; on a desk the pane is the runs alone, and what
   // else there is to see is the search's, on the band.
   if (!parts.desk) room.prepend(reference.heads);
-  // On a desk the band's tools come first on the top line: >_ to the terminal on the desk, the file deeds (the page's
+  // On a desk the band's tools come first on the top line: >_ for the Prompt at the desk's foot, the file deeds (the page's
   // band puts its own between), the search; the pane's switch lies at the foot, level with the person at the rail's.
-  const tools = parts.desk ? h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, toolButton('term', t('Terminal'), () => parts.toTerm?.()), reference.search) : null;
+  const tools = parts.desk ? h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, termTool, reference.search) : null;
   // The band's search box says what it is by a lens at its left, as a short box must; what it finds drops as a sheet
   // under the band, over the desk, the words searched for heading it (dropSheet).
   if (tools) { reference.search.querySelector('form')?.prepend(mark('search')); dropSheet(work, center, reference.search); }
@@ -295,5 +353,5 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     reference.resume();
     if (screen && screen.state !== 'rest' && !box.dock.contains(document.activeElement)) screen.drop();
   };
-  return {element: work, reference, setRepo, settle, terminal, tools};
+  return {element: work, reference, setRepo, settle, terminal, tools, toPrompt};
 }

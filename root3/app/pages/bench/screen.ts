@@ -83,8 +83,12 @@ interface ScreenParts {
   changed(state: ScreenState): void;
 }
 
+/** What the box asks of the Prompt's screen, whichever it is: the glass over a page's center (Screen), or the one that
+ * stands on the box at the foot of a desk (bench.ts). */
+export interface Rises { readonly up: boolean; raise(): void; lower(): void }
+
 /** The Prompt up as a screen over the center and back into the box: its state, and the ways between them. */
-export class Screen {
+export class Screen implements Rises {
   #state: ScreenState = 'rest';
   /** The box at rest (its pill, in the screen), and the line's parts where they stood: where it goes back to. */
   #rest: Rest | null = null;

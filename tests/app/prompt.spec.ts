@@ -55,7 +55,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
 
   test('Ctrl+D ends what reads the terminal (cat ends) and the shell reads on; Ctrl+C at the prompt line lets the line written go', async ({app}) => {
     const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out');
-    const ps = app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps');
+    const ps = app.forge.prompt.page().locator('.desk-term.stand .prompt-ps');
     await box.fill('cat');
     await box.press('Enter');
     await expect(ps).toHaveText('');
@@ -92,12 +92,12 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).toContainText(/^seen$/m);
     await box.press('Control+l');
     await expect(out).not.toContainText('seen');
-    await expect(app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps')).toHaveText(/hello \$/);
+    await expect(app.forge.prompt.page().locator('.desk-term.stand .prompt-ps')).toHaveText(/hello \$/);
   });
 
   test('Ctrl+Z stops what runs, a job the shell holds, and fg brings it back; a pipeline\'s group is put in front whole', async ({app}) => {
     const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out');
-    const ps = app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps');
+    const ps = app.forge.prompt.page().locator('.desk-term.stand .prompt-ps');
     await box.fill('sleep 30');
     await box.press('Enter');
     await expect(ps).toHaveText('');
@@ -125,7 +125,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
 
   test('ECHO put out hides what is typed (read -s: a dot for each letter, nothing said, nothing kept); stty echo, reset and a program killed keep the line the box\'s', async ({app}) => {
     const box = app.forge.promptBox, out = app.forge.prompt.locator('.term-out'), page = app.forge.prompt.page();
-    const ps = page.locator('.desk-box[data-key="term"] .prompt-ps');
+    const ps = page.locator('.desk-term.stand .prompt-ps');
     await box.fill('read -s pw; echo "got ${#pw}"');
     await box.press('Enter');
     await expect(page.locator('form.prompt[data-hushed]')).toHaveCount(1);
@@ -152,14 +152,16 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).toContainText(/^whole$/m);
   });
 
-  test('exit closes the terminal\'s box as a terminal\'s window closes; the band\'s >_ lays it again with a new shell in it', async ({app}) => {
-    const page = app.forge.prompt.page(), termBox = page.locator('.desk-box[data-key="term"]');
+  test('exit puts the terminal away as a terminal\'s window closes, its line left at the desk\'s foot; the band\'s >_ puts it up again with a new shell in it', async ({app}) => {
+    const stand = app.forge.prompt.page().locator('.desk-term.stand');
     await app.forge.run('echo before');
+    await expect(stand).toHaveClass(/\bup\b/);
     await app.forge.promptBox.fill('exit');
     await app.forge.promptBox.press('Enter');
-    await expect(termBox).toHaveCount(0);
+    await expect(stand).not.toHaveClass(/\bup\b/);
+    await expect(app.forge.promptBox).toBeVisible();
     await app.forge.tools.getByRole('button', {name: 'Terminal', exact: true}).click();
-    await expect(termBox).toHaveCount(1);
+    await expect(stand).toHaveClass(/\bup\b/);
     await expect(app.forge.promptBox).toBeFocused();
     await app.forge.run('echo again');
     await expect(app.forge.prompt.locator('.term-out')).toContainText(/^again$/m);
@@ -167,7 +169,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   });
 
   test('on the desk, a line running has no prompt line after it, as a terminal has none till it is done; the line written is moved up at once', async ({app}) => {
-    const ps = app.forge.prompt.page().locator('.desk-box[data-key="term"] .prompt-ps');
+    const ps = app.forge.prompt.page().locator('.desk-term.stand .prompt-ps');
     await expect(ps).toHaveText(/hello \$/);
     await app.forge.promptBox.fill('sleep 1; echo done');
     await app.forge.promptBox.press('Enter');
@@ -193,7 +195,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   });
 
   test('the box\'s line is the terminal\'s: it starts with the prompt line the shell waits at, said once, green as the shell\'s', async ({app}) => {
-    const waits = app.main.locator('.desk-term .prompt-chip');
+    const waits = app.main.locator('.desk-term.stand .prompt-chip');
     await expect(waits).toHaveText('hello $');
     // The output's own last line, the same words, is not shown then.
     await expect(app.forge.prompt.locator('.term-out > .ps.waits')).toBeHidden();
@@ -209,7 +211,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
 
   test('Run chosen again after another of the box\'s deeds, a line sent runs in the Prompt\'s box: what it prints is seen', async ({app}) => {
     // Another of the box's deeds, the keyboard staying in the box; Run is chosen back from there.
-    const pill = app.main.locator('.desk-term .prompt-chip');
+    const pill = app.main.locator('.desk-term.stand .prompt-chip');
     await app.forge.promptBox.press('Alt+3');
     await expect(pill).toHaveText(/TODO/);
     await app.forge.promptBox.press('Alt+1');
@@ -232,7 +234,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.prompt.locator('.term-activity')).toContainText(/Running|Waiting/, {timeout: 30_000});
     await app.forge.promptBox.press('Control+c');
     await expect(out).toContainText('^C');
-    await expect(app.main.locator('.desk-term .prompt-chip')).toHaveText('hello $');
+    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveText('hello $');
     // A flood cut: what it had on its way and not yet shown goes with it, as a terminal flushes its output on ^C, so
     // ^C stands at the foot, where the run was cut, not buried under a megabyte of y. (yes is sent at the prompt line,
     // as a person sends it once clear has come back.)
@@ -242,7 +244,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.promptBox.press('Control+Enter');
     await expect(out).toContainText('y\ny\ny');
     await app.forge.promptBox.press('Control+c');
-    await expect(app.main.locator('.desk-term .prompt-chip')).toHaveText('hello $');
+    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveText('hello $');
     await expect.poll(async () => (await out.textContent())?.slice(-14)).toMatch(/y\n\^C\nhello \$ ?$/);
   });
 
@@ -255,7 +257,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     const said = await out.innerText();
     expect(said).toMatch(/sum=50\s+it=1\s+it=2/);
     expect(said).not.toMatch(/hello \$ hello \$|^> /m);
-    await expect(app.main.locator('.desk-term .prompt-chip')).toHaveText('hello $');
+    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveText('hello $');
   });
 
   test('↑ and ↓ walk the lines run before, and come back to what was being written', async ({app}) => {

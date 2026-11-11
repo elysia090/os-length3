@@ -427,18 +427,36 @@ test('the files tool on the band brings out the deeds for what is read now, unde
   await expect(app.file.tree).toBeHidden();
 });
 
-test('pressed anywhere in the Prompt\'s box, beside its line too, the caret goes into its line', async ({app}) => {
+test('the Prompt stands at the desk\'s foot: its line taken, what it printed stands on it and stays while a file is written in; pressed anywhere there, the caret is in its line; Escape and the band\'s >_ put it away', async ({app}) => {
   await app.rail.go('forge');
-  // A step back (Escape), the box pressed twice in its room (not on its line): the standard again.
-  await app.forge.promptBox.focus();
-  await app.page.keyboard.press('Escape');
-  const desk = app.page.locator('.desk:not([hidden])');
-  await expect(desk).toHaveClass(/pulled/);
-  const term = app.page.locator('.desk-box[data-key="term"]');
-  const box = (await term.boundingBox())!;
-  await app.page.mouse.dblclick(box.x + 8, box.y + 8);
+  const stand = app.page.locator('.desk-term.stand'), own = app.forge.editor('README.md');
+  const tool = app.forge.tools.getByRole('button', {name: 'Terminal', exact: true});
+  await own.focus();
+  await expect(stand).not.toHaveClass(/\bup\b/);
+  await expect(tool).toHaveAttribute('aria-pressed', 'false');
+  // Its line taken: up, the band's >_ on, the file in hand still in hand.
+  await app.forge.promptBox.click();
+  await expect(stand).toHaveClass(/\bup\b/);
+  await expect(tool).toHaveAttribute('aria-pressed', 'true');
+  await expect(app.page.locator('.desk-box[data-key="README.md"]')).toHaveClass(/held/);
+  // It stays up while the file is written in: what a run said is read beside the file it is about.
+  await own.focus();
+  await expect(stand).toHaveClass(/\bup\b/);
+  // Pressed in its room (not on its line): the keyboard in its line.
+  const box = (await stand.boundingBox())!;
+  await app.page.mouse.click(box.x + box.width / 2, box.y + 6);
   await expect(app.forge.promptBox).toBeFocused();
-  await expect(desk).not.toHaveClass(/pulled/);
+  // Escape: put away, the keyboard back in the file.
+  await app.page.keyboard.press('Escape');
+  await expect(stand).not.toHaveClass(/\bup\b/);
+  await expect(own).toBeFocused();
+  // The band's >_ puts it up, the keyboard in its line, and away again.
+  await tool.click();
+  await expect(stand).toHaveClass(/\bup\b/);
+  await expect(app.forge.promptBox).toBeFocused();
+  await tool.click();
+  await expect(stand).not.toHaveClass(/\bup\b/);
+  await expect(tool).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('Escape takes the desk\'s camera round its three places, never nearer than the standard; Enter goes into the box under the finger', async ({app}) => {
@@ -478,7 +496,7 @@ test('Escape takes the desk\'s camera round its three places, never nearer than 
   await expect(hand).not.toHaveClass(/\bon\b/);
 });
 
-test('Tab puts the finger on the next box from anywhere on the desk; an arrow too, and a letter goes into it; Ctrl and an arrow carry the box in hand', async ({app}) => {
+test('Tab puts the finger on the next box from anywhere on the desk; an arrow too, and a letter goes into it; a box is not carried about: Ctrl and an arrow are the text\'s', async ({app}) => {
   await app.rail.go('forge');
   const desk = app.page.locator('.desk:not([hidden])');
   const box = (key: string) => app.page.locator(`.desk-box[data-key="${key}"]`);
@@ -491,79 +509,67 @@ test('Tab puts the finger on the next box from anywhere on the desk; an arrow to
   await expect(desk.locator('.desk-hand')).toHaveClass(/\bon\b/);
   await app.page.keyboard.press('Shift+Tab');
   await expect(box('README.md')).toHaveClass(/held/);
-  await app.page.keyboard.press('ArrowLeft');
-  await expect(box('term')).toHaveClass(/held/);
-  await app.page.keyboard.press('ArrowRight');
+  await app.page.keyboard.press('ArrowDown');
+  await expect(box('src/main.c')).toHaveClass(/held/);
+  await app.page.keyboard.press('ArrowUp');
   await expect(box('README.md')).toHaveClass(/held/);
   // A letter typed goes into the box under the finger.
   await app.page.keyboard.type('Q');
   await expect(own).toBeFocused();
   await expect(own).toHaveValue(/Q/);
-  // Carried from the file, the keyboard staying in it: lifted while Ctrl is held; out of its column (src/main.c under
-  // it), first into the gap between the Prompt's column and that one, a column of its own; then into the Prompt's
-  // column, over it.
-  const text = await own.inputValue();
-  const widthAt = (await box('README.md').boundingBox())!.width;
-  await app.page.keyboard.down('Control');
-  await app.page.keyboard.press('ArrowLeft');
-  await expect(box('README.md')).toHaveClass(/lifted/);
-  // Carried, the camera a step back about it, two boxes side by side in sight; the camera's place the same.
-  await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeLessThan(widthAt);
-  await expect(desk).not.toHaveClass(/pulled|whole/);
-  await expect.poll(async () => {
-    const [r, t, m] = [(await box('README.md').boundingBox())!, (await box('term').boundingBox())!, (await box('src/main.c').boundingBox())!];
-    return r.x > t.x + 2 && r.x < m.x - 2;
-  }).toBe(true);
-  await app.page.keyboard.press('ArrowLeft');
-  await app.page.keyboard.up('Control');
+  // Ctrl and an arrow in a text are the text's own (a word along), as on every system: the box stays where it lies.
+  await own.evaluate((el: HTMLTextAreaElement) => { el.value = 'one two'; el.setSelectionRange(7, 7); });
+  const at = (await box('README.md').boundingBox())!;
+  await app.page.keyboard.press('Control+ArrowLeft');
+  expect(await own.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(4);
+  const now = (await box('README.md').boundingBox())!;
+  expect([Math.round(now.x), Math.round(now.y)]).toEqual([Math.round(at.x), Math.round(at.y)]);
   await expect(box('README.md')).not.toHaveClass(/lifted/);
-  // Put down, back at the standard on it.
-  await expect(desk).not.toHaveClass(/pulled|whole/);
-  await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeCloseTo(widthAt, 0);
-  await expect.poll(async () => {
-    const [r, t] = [(await box('README.md').boundingBox())!, (await box('term').boundingBox())!];
-    return Math.abs(r.x - t.x) < 2 && r.y < t.y;
-  }).toBe(true);
   await expect(own).toBeFocused();
-  await expect(own).toHaveValue(text);
 });
 
-test('held up with the finger on it, the camera steps back to two boxes side by side and stays still as the box is carried; put down, it comes back; a shortcut\'s Ctrl leaves the camera as the person puts it', async ({app}) => {
+test('a box put beside the desk is a second screen: the desk the left half, the box the right, both written in; another put there sends the first back; put back, it lies where it lay', async ({app}) => {
   await app.rail.go('forge');
-  const desk = app.page.locator('.desk:not([hidden])');
+  const room = app.page.locator('.desk-room'), side = app.page.locator('.desk-side');
   const box = (key: string) => app.page.locator(`.desk-box[data-key="${key}"]`);
-  await app.forge.editor('README.md').focus();
-  await app.page.keyboard.press('Escape');
-  await expect(desk).toHaveClass(/pulled/);
-  const at = async (key: string) => { const r = (await box(key).boundingBox())!; return `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)}`; };
-  const settled = async (key: string) => { let was = ''; await expect.poll(async () => { const now = await at(key); const same = now === was; was = now; return same; }, {intervals: [150]}).toBe(true); return was; };
-  // Ctrl held: the box held up, the camera a step back about it (two boxes side by side), the boxes' closes gone while
-  // it is up.
-  const pulled = (await box('README.md').boundingBox())!.width;
-  await app.page.keyboard.down('Control');
-  await expect(box('README.md')).toHaveClass(/lifted/);
-  await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeLessThan(pulled - 4);
-  await expect(box('README.md').locator('.desk-close')).toHaveCSS('opacity', '0');
-  const term = await settled('term');
-  // Carried into the gap beside: it goes, the desk and the camera stand (the terminal where it was on the face).
-  await app.page.keyboard.press('ArrowLeft');
+  const main = app.forge.editor('src/main.c'), readme = app.forge.editor('README.md');
+  const order = () => app.page.evaluate(() => [...document.querySelectorAll<HTMLElement>('section.desk:not([hidden]) .desk-box')]
+    .map((b) => ({key: b.dataset.key!, y: b.getBoundingClientRect().top})).sort((a, b) => a.y - b.y).map((b) => b.key));
+  await main.focus();
+  const before = await order();
+  // Its button, beside its close: beside the desk, the keyboard still in it.
+  await box('src/main.c').getByRole('button', {name: 'Put main.c beside', exact: true}).click();
+  await expect(room).toHaveClass(/split/);
+  await expect(side.locator('.desk-box')).toHaveAttribute('data-key', 'src/main.c');
+  await expect(main).toBeFocused();
+  // Two screens: each box in its half, neither over the other, as wide as each other, their tops level.
+  await readme.focus();
   await expect.poll(async () => {
-    const [r, t, m] = [(await box('README.md').boundingBox())!, (await box('term').boundingBox())!, (await box('src/main.c').boundingBox())!];
-    return r.x > t.x + 2 && r.x < m.x - 2;
+    const [l, r, c] = [(await box('README.md').boundingBox())!, (await box('src/main.c').boundingBox())!, (await room.boundingBox())!];
+    return l.x >= c.x && l.x + l.width < r.x && r.x + r.width <= c.x + c.width + 1 && Math.abs(l.width - r.width) < 2 && Math.abs(l.y - r.y) < 2;
   }).toBe(true);
-  expect(await settled('term')).toBe(term);
-  // Put down: back a step from the standard, on it where it now lies.
-  await app.page.keyboard.up('Control');
-  await expect(box('README.md')).not.toHaveClass(/lifted/);
-  await expect(desk).toHaveClass(/pulled/);
-  await expect.poll(async () => (await box('README.md').boundingBox())!.width).toBeCloseTo(pulled, 0);
-  // (The close is the box in hand's: back once it is put down.)
-  await expect(box('README.md').locator('.desk-close')).toHaveCSS('opacity', '1');
-  // Ctrl and - with the finger on: the camera a place back as the person asks, and it stays there once Ctrl is let go.
-  await app.page.keyboard.press('Control+Minus');
-  await expect(desk).toHaveClass(/whole/);
-  await app.page.waitForTimeout(600);
-  await expect(desk).toHaveClass(/whole/);
+  // Both are written in where they stand.
+  await app.page.keyboard.type('L');
+  await expect(readme).toHaveValue(/L/);
+  await main.click();
+  await app.page.keyboard.type('R');
+  await expect(main).toHaveValue(/R/);
+  await expect(room).toHaveClass(/split/);
+  // Another put beside (Ctrl, Alt and →, the box in hand): the first goes back where it lay.
+  await readme.focus();
+  await app.page.keyboard.press('Control+Alt+ArrowRight');
+  await expect(side.locator('.desk-box')).toHaveAttribute('data-key', 'README.md');
+  await expect(side.locator('.desk-box')).toHaveCount(1);
+  await expect(readme).toBeFocused();
+  await expect(app.page.locator('section.desk:not([hidden]) .desk-box[data-key="src/main.c"]')).toHaveCount(1);
+  // Put back (Ctrl, Alt and ← from it; its button says so too): one screen, the box where it lay, in hand, the keyboard in it.
+  await expect(box('README.md').getByRole('button', {name: 'Put README.md back', exact: true})).toBeVisible();
+  await app.page.keyboard.press('Control+Alt+ArrowLeft');
+  await expect(room).not.toHaveClass(/split/);
+  await expect(side).toBeHidden();
+  await expect(box('README.md')).toHaveClass(/held/);
+  await expect(readme).toBeFocused();
+  expect(await order()).toEqual(before);
 });
 
 test('Shift+N makes a new file beside the one in hand where nothing is being written; written in a file, it is an N', async ({app}) => {
@@ -585,19 +591,20 @@ test('Shift+N makes a new file beside the one in hand where nothing is being wri
   await expect(app.forge.editor('src/count.c')).toBeFocused();
 });
 
-test('Shift+N with the terminal in hand: untitled, with no ending, born under the terminal in its column', async ({app}) => {
+test('Shift+N from the Prompt\'s line put away, the keyboard on the desk: a new file under the one in hand, named as it is', async ({app}) => {
   await app.rail.go('forge');
-  await app.forge.promptBox.focus();
+  const readme = app.forge.editor('README.md');
+  await readme.focus();
   await app.page.keyboard.press('Escape');
   await app.page.keyboard.press('Shift+N');
   const field = app.main.getByRole('textbox', {name: 'New name', exact: true});
   await expect(field).toBeFocused();
-  await expect(field).toHaveText('untitled');
-  // All of it chosen: what is typed is its name.
+  await expect(field).toHaveText('untitled.md');
+  // Its stem chosen: what is typed is its name.
   expect(await field.evaluate(() => getSelection()!.toString())).toBe('untitled');
-  const term = app.main.locator('.desk-box[data-key="term"]'), made = app.main.locator('.desk-box[data-key="untitled"]');
+  const above = app.main.locator('.desk-box[data-key="README.md"]'), made = app.main.locator('.desk-box[data-key="untitled.md"]');
   await expect.poll(async () => {
-    const [a, b] = [await term.boundingBox(), await made.boundingBox()];
+    const [a, b] = [await above.boundingBox(), await made.boundingBox()];
     return a && b && Math.abs(a.x - b.x) < 1 && b.y > a.y + a.height ? 'under' : 'not yet';
   }).toBe('under');
 });
