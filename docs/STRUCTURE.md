@@ -71,10 +71,12 @@ inside out, so that nothing of a product is left further in than the product.
   (`root3/app/prompt`, 2,051 lines, with the app's words, its host and the Remote's address in it).
 - **muk on Linux is still root3's core's.** A box is run by `root3/core/src/prompt` (1,344 lines of Rust over
   rustix), with Home's dotfiles and the repo written into it; `root3/core/src/compute` (616 lines) drives
-  Firecracker, which muk rules out. `muk run` has the floor every box has (its own namespaces, no privilege
-  gained, no capability unnamed, devices and /proc's ways to the host closed, the filter root3's launcher gave a
-  Prompt) and is checked beside runc; it makes the box's terminal and gives its other end away. It does not yet make a filter
-  of config.json's own or a cgroup. A box kept beyond a run, and everything a terminal is to the one at it, are
+  Firecracker, which muk rules out. `muk run` has the floor every box has, held against a config.json that means
+  harm (config.json asks, the one who runs muk lends: a path, a namespace, a user, a cgroup of the host's are a
+  box's only by `--lend`, `--ids`, `--cgroup`; no capability over the host outside a user namespace; no device
+  but its own; no call the filter was not written against) and is checked beside runc and against 255 such
+  config.jsons; it makes the box's terminal and gives its other end away. It does not yet make a filter of
+  config.json's own, or set a cgroup's limits itself (they are the lender's, on the cgroup lent). A box kept beyond a run, and everything a terminal is to the one at it, are
   not muk's to make: they are prompt's, which today is the rest of `root3/core/src/prompt` and `root3/app/prompt`.
 - **sods holds what is muk's**: unzstd and SHA-256 in `web.rs`, with their two crates.
 - **shipto is in five places**: `root3/remote` (8,403 lines), `root3/core/src/remote` (2,479), and three of the

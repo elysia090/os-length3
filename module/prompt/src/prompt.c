@@ -96,11 +96,18 @@ static void sized(i64 its) {
 }
 
 static int main_(int argc, char **argv, char **envp) {
-  static const char usage[] = "prompt run [-b BUNDLE] [ID]";
+  static const char usage[] = "prompt run [-b BUNDLE] [--lend PATH]... [--ids FIRST-LAST] [--cgroup DIR] [ID]";
   const char *bundle = ".", *id = 0;
+  /* What is lent the box is muk's to hold it to: the words are handed on as they were said. */
+  char *lent[40];
+  u32 nlent = 0;
   int i = 2;
   if (argc < 2 || !same(argv[1], "run")) fail("usage: ", usage);
-  if (i + 1 < argc && (same(argv[i], "-b") || same(argv[i], "--bundle"))) bundle = argv[i + 1], i += 2;
+  for (; i + 1 < argc && argv[i][0] == '-'; i += 2) {
+    if (same(argv[i], "-b") || same(argv[i], "--bundle")) bundle = argv[i + 1];
+    else if ((same(argv[i], "--lend") || same(argv[i], "--ids") || same(argv[i], "--cgroup")) && nlent < 38) lent[nlent++] = argv[i], lent[nlent++] = argv[i + 1];
+    else fail("usage: ", usage);
+  }
   if (i < argc && (argv[i][0] == '-' || i + 1 < argc)) fail("usage: ", usage);
   if (i < argc) id = argv[i];
 
@@ -142,9 +149,11 @@ static int main_(int argc, char **argv, char **envp) {
     i64 none = sys3(SYS_open, (i64)"/dev/null", O_RDWR, 0);
     if (none >= 0) sys2(SYS_dup2, none, 0), sys2(SYS_dup2, none, 1);
     sys4(SYS_rt_sigprocmask, 2 /* SIG_SETMASK */, (i64)&before, 0, 8);
-    char *words[8];
+    char *words[48];
     words[0] = muk, words[1] = word("run"), words[2] = word("-b"), words[3] = (char *)bundle;
-    words[4] = word("--console-socket"), words[5] = at, words[6] = (char *)id, words[7] = 0;
+    words[4] = word("--console-socket"), words[5] = at;
+    for (u32 k = 0; k < nlent; k++) words[6 + k] = lent[k];
+    words[6 + nlent] = (char *)id, words[7 + nlent] = 0;
     sys3(SYS_execve, (i64)muk, (i64)words, (i64)envp);
     static const char no[] = "prompt: muk is not run: ";
     sys3(SYS_write, 2, (i64)no, sizeof no - 1), sys3(SYS_write, 2, (i64)muk, (i64)slen(muk)), sys3(SYS_write, 2, (i64)"\n", 1);

@@ -12,6 +12,8 @@ module=$(cd "$here/../.." && pwd)
 t=$(mktemp -d)
 trap '[ -n "${KEEP:-}" ] || rm -rf "$t"' EXIT; [ -z "${KEEP:-}" ] || echo "# kept: $t"
 for unit in muk/src/muk prompt/src/prompt prompt/test/talk; do sh "$module/lib/build.sh" "$module/$unit.c" "$t/$(basename "$unit")"; done
+# (run by root, the box's root is the host's root, mapped: the one user lent it, said to prompt and handed on to muk)
+lends=; [ "$(id -u)" != 0 ] || lends="--ids 0-0"
 n=0
 no() { printf 'not ok %d: %s\n' "$n" "$*" >&2; exit 1; }
 mkdir -p "$t/box/rootfs" "$t/run" && cp "$t/talk" "$t/box/rootfs/talk"
@@ -27,7 +29,7 @@ JSON
 # shows is in $t/shown, how prompt ended in $ended.
 at_terminal() {
   ended=0
-  (cd "$t/box" && XDG_RUNTIME_DIR="$t/run" timeout 60 script -qec "stty rows 31 cols 97; exec '$t/prompt' run -b ." /dev/null) > "$t/raw" 2>&1 || ended=$?
+  (cd "$t/box" && XDG_RUNTIME_DIR="$t/run" timeout 60 script -qec "stty rows 31 cols 97; exec '$t/prompt' run $lends -b ." /dev/null) > "$t/raw" 2>&1 || ended=$?
   tr -d '\r' < "$t/raw" > "$t/shown"
 }
 
@@ -54,14 +56,14 @@ at_terminal < /dev/null
 [ "$ended" = 1 ] && grep -q 'config.json asks for no terminal' "$t/shown" || no "no terminal asked for: prompt ended $ended: $(cat "$t/shown")"
 n=$((n + 1)); [ -z "$(ls -A "$t/run")" ] || no "left behind: $(ls -A "$t/run")"
 n=$((n + 1))
-ended=0; (cd "$t/box" && MUK="$t/no-such-muk" XDG_RUNTIME_DIR="$t/run" "$t/prompt" run -b . < /dev/null) > "$t/shown" 2>&1 || ended=$?
+ended=0; (cd "$t/box" && MUK="$t/no-such-muk" XDG_RUNTIME_DIR="$t/run" "$t/prompt" run $lends -b . < /dev/null) > "$t/shown" 2>&1 || ended=$?
 [ "$ended" = 127 ] && grep -q 'muk is not run' "$t/shown" && [ -z "$(ls -A "$t/run")" ] || no "no muk: prompt ended $ended: $(cat "$t/shown")"
 
 # This terminal gone, the box is: no process of it is left.
 config true
 n=$((n + 1))
 mkfifo "$t/typing" # (typed to and never ended: nothing is typed, and the box waits)
-(cd "$t/box" && XDG_RUNTIME_DIR="$t/run" exec "$t/prompt" run -b . <> "$t/typing" > "$t/shown" 2>&1) &
+(cd "$t/box" && XDG_RUNTIME_DIR="$t/run" exec "$t/prompt" run $lends -b . <> "$t/typing" > "$t/shown" 2>&1) &
 p=$!
 i=0
 until grep -q '^ready ' "$t/shown" 2> /dev/null; do

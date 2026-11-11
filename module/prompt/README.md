@@ -28,7 +28,9 @@ needs muk only until the box's program is started.
 ## What is here
 
 ```
-prompt run [-b BUNDLE] [ID]   the bundle's box, run by muk, at the terminal this is run at
+prompt run [-b BUNDLE] [--lend PATH]... [--ids FIRST-LAST] [--cgroup DIR] [ID]
+                              the bundle's box, run by muk, at the terminal this is run at; what is lent it
+                              (muk's README) handed on to muk as it was said
 sh test/prompt.sh             at a terminal (script's): typed, shown, sized, ended, refused, hung up
 ```
 

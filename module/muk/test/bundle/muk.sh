@@ -10,10 +10,13 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 t=$(mktemp -d)
-trap '[ -n "${KEEP:-}" ] || rm -rf "$t"' EXIT; [ -z "${KEEP:-}" ] || echo "# kept: $t"
+trap 'kill ${holder:-} 2> /dev/null || :; [ -n "${KEEP:-}" ] || rm -rf "$t"' EXIT; [ -z "${KEEP:-}" ] || echo "# kept: $t"
 if [ "$#" -ge 1 ]; then muk=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); else sh "$here/../../../lib/build.sh" "$here/../../src/muk.c" "$t/muk"; muk=$t/muk; fi
 sh "$here/../../../lib/build.sh" "$here/probe.c" "$t/probe"
 sh "$here/../../../lib/build.sh" "$here/console.c" "$t/taker"
+# What the one who runs muk lends (as runc is given all there is by being run): this script's own directory, and,
+# by root, every user of the host's. (What a box has with nothing lent is hostile.sh's.)
+lends="--lend $t"; [ "$(id -u)" != 0 ] || lends="$lends --ids 0-4294967294"
 n=0
 no() { printf 'not ok %d: %s\n' "$n" "$*" >&2; exit 1; }
 
@@ -27,16 +30,16 @@ bundle() { # bundle NAME: $t/NAME/config.json from stdin
 # Both run it; what the box says, sorted (mounts are listed in the order they were made, which is not what is checked).
 both() { # both NAME STATUS
   n=$((n + 1))
-  st=0; (cd "$t/$1" && "$muk" run -b . "muk$n") > "$t/$1.muk" 2> "$t/$1.muk.err" || st=$?
+  st=0; (cd "$t/$1" && "$muk" run $lends -b . "muk$n") > "$t/$1.muk" 2> "$t/$1.muk.err" || st=$?
   [ "$st" = "$2" ] || no "$1: muk ended $st, not $2: $(cat "$t/$1.muk.err")"
   [ -s "$t/$1.muk" ] || no "$1: the box said nothing"
   if command -v runc > /dev/null; then
     # (A copy of the bundle for each: what one makes in a root with no /dev mounted, the other would find there.)
     st=0; (cd "$t/$1.for-runc" && runc --root "$t/state" run -b . "runc$n") > "$t/$1.runc" 2> "$t/$1.runc.err" || st=$?
     [ "$st" = "$2" ] || no "$1: runc ended $st, not $2: $(cat "$t/$1.runc.err")"
-    # (the root mounted nodev and the filter are the floor, which runc has not: said of muk's alone, and left out of
-    # what is compared)
-    sed 's|^\(mount / [a-z,]*\)nodev,|\1|; /^Seccomp:/d' "$t/$1.muk" | sort > "$t/$1.a"; sed '/^Seccomp:/d' "$t/$1.runc" | sort > "$t/$1.b"
+    # (no file of a mount a device, a box's terminals so many, and the filter are the floor, which runc has not:
+    # said of muk's alone, and left out of what is compared)
+    sed '/^mount /s/nodev,//; /^Seccomp:/d' "$t/$1.muk" | sort > "$t/$1.a"; sed '/^mount /s/nodev,//; /^Seccomp:/d' "$t/$1.runc" | sort > "$t/$1.b"
     cmp -s "$t/$1.a" "$t/$1.b" || { diff "$t/$1.a" "$t/$1.b" | head -20 >&2; no "$1: muk (<) and runc (>) differ"; }
   fi
   grep -q '^mount / [a-z,]*nodev' "$t/$1.muk" || no "$1: the root is not mounted nodev"
@@ -44,7 +47,7 @@ both() { # both NAME STATUS
 }
 # The floor, as config.json says it: what runc is told so that the two are told the same (muk gives it unasked).
 dev='{"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]}'
-hidden='"maskedPaths": ["/proc/acpi", "/proc/asound", "/proc/kcore", "/proc/keys", "/proc/latency_stats", "/proc/timer_list", "/proc/timer_stats", "/proc/sched_debug", "/proc/scsi"], "readonlyPaths": ["/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"]'
+hidden='"maskedPaths": ["/proc/acpi", "/proc/asound", "/proc/kcore", "/proc/keys", "/proc/latency_stats", "/proc/timer_list", "/proc/timer_stats", "/proc/sched_debug", "/proc/scsi", "/proc/interrupts"], "readonlyPaths": ["/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"]'
 has() { # has NAME LINE: the box under muk said LINE
   n=$((n + 1))
   grep -qxF -- "$2" "$t/$1.muk" || no "$1: the box did not say: $2"
@@ -55,7 +58,7 @@ begins() { # begins NAME WORDS: the box under muk said a line that begins WORDS
 }
 refuses() { # refuses NAME WORDS: muk does not run it, and says WORDS
   n=$((n + 1))
-  st=0; (cd "$t/$1" && "$muk" run -b . x) > "$t/$1.out" 2> "$t/$1.err" || st=$?
+  st=0; (cd "$t/$1" && "$muk" run $lends -b . x) > "$t/$1.out" 2> "$t/$1.err" || st=$?
   [ "$st" = 1 ] || no "$1: muk ended $st, not 1"
   [ ! -s "$t/$1.out" ] || no "$1: something ran"
   grep -qF -- "$2" "$t/$1.err" || no "$1: muk said: $(cat "$t/$1.err")"
@@ -82,7 +85,7 @@ bundle plain <<'JSON'
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}],
   "resources": {"devices": [{"allow": false, "access": "rwm"}]},
   "maskedPaths": ["/proc/acpi", "/proc/asound", "/proc/kcore", "/proc/keys", "/proc/latency_stats", "/proc/timer_list", "/proc/timer_stats",
-   "/proc/sched_debug", "/proc/scsi", "/proc/no-such", "/sys/firmware"],
+   "/proc/sched_debug", "/proc/scsi", "/proc/interrupts", "/proc/no-such", "/sys/firmware", "/sys/devices/virtual/powercap"],
   "readonlyPaths": ["/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger", "/proc/no-such"]}}
 JSON
 both plain 0
@@ -116,7 +119,7 @@ bundle other <<JSON
   {"destination": "/tmp", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "nodev", "mode=1777"]},
   {"destination": "/given", "type": "bind", "source": "$t/given", "options": ["rbind", "ro", "nosuid"]},
   {"destination": "/etc/a/file", "type": "bind", "source": "$t/given/file", "options": ["bind"]}],
- "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}], $hidden}}
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}], $hidden}}
 JSON
 both other 7
 has other 'uid 1000 gid 1000 groups 2 pid 1'
@@ -125,7 +128,7 @@ has other 'arg seven'
 has other 'env HOME=/'
 has other 'CapEff:	0000000000000000'
 has other '/dev/null 20666 1:3'
-has other 'mount /given ro,nosuid,relatime '"$(awk '$5 == "/" {for (i = 7; i <= NF; i++) if ($i == "-") {print $(i + 1); exit}}' /proc/self/mountinfo)"
+has other 'mount /given ro,nosuid,nodev,relatime '"$(awk '$5 == "/" {for (i = 7; i <= NF; i++) if ($i == "-") {print $(i + 1); exit}}' /proc/self/mountinfo)"
 
 # Read as runc reads it: a member that is null is not there, one given twice is the second, a kind of hook with none
 # in it and no resources asked for are nothing; where it runs is made when nothing is there (in a root that is then
@@ -145,7 +148,7 @@ bundle read <<JSON
   {"destination": "/climbs/file", "type": "bind", "source": "$t/given/file", "options": ["bind", "ro"]},
   {"destination": "/../../../up/file", "type": "bind", "source": "$t/given/file", "options": ["bind", "ro"]}],
  "linux": {"resources": {}, "seccomp": null, "cgroupsPath": null, $hidden,
-  "namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
+  "namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
 both read 0
 has read 'fds 0 1 2'
@@ -176,7 +179,11 @@ bundle joined <<JSON
  "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "mount"}, {"type": "network", "path": "/proc/$holder/ns/net"}, {"type": "uts", "path": "/proc/$holder/ns/uts"}],
   $hidden}}
 JSON
+# (each is lent by its own path, as the kernel names a process's namespaces: one that is not lent is no box's to
+# join, which hostile.sh checks)
+lent=$lends; lends="$lends --lend /proc/$holder/ns/net --lend /proc/$holder/ns/uts"
 both joined 0
+lends=$lent
 kill "$holder" 2> /dev/null || :
 has joined "see /proc/self/ns/net 120777 -> $(readlink /proc/self/ns/net | sed 's/[0-9]*]$//')$(sed -n 's|^see /proc/self/ns/net .*\[\([0-9]*\)]$|\1|p' "$t/joined.muk")]"
 n=$((n + 1)); ! grep -qx "see /proc/self/ns/net 120777 -> $(readlink /proc/self/ns/net)" "$t/joined.muk" || no "joined: the box is in the host's network namespace"
@@ -190,10 +197,10 @@ mkdir -p "$t/floor/rootfs" && mknod "$t/floor/rootfs/disk" c 1 3 && chmod 666 "$
 bundle floor <<'JSON'
 {"process": {"args": ["/probe", "see:/disk", "see:/dev/null"], "cwd": "/", "noNewPrivileges": false},
  "root": {"path": "rootfs"}, "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}],
- "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
 n=$((n + 1))
-st=0; (cd "$t/floor" && "$muk" run -b . x) > "$t/floor.muk" 2> "$t/floor.err" || st=$?
+st=0; (cd "$t/floor" && "$muk" run $lends -b . x) > "$t/floor.muk" 2> "$t/floor.err" || st=$?
 [ "$st" = 0 ] || no "floor: muk ended $st: $(cat "$t/floor.err")"
 has floor 'NoNewPrivs:	1'
 has floor 'CapEff:	0000000000000000'
@@ -222,7 +229,8 @@ else
   echo "# not root: the bundles that want root are left out"
 fi
 
-# A user namespace, the one who runs this root in it: the devices are the host's, bound.
+# A user namespace, the one who runs this root in it: the devices are the host's, bound. (Run by root, its root is the
+# host's root, mapped: the floor's paths are hidden from it as from a box in no user namespace, so runc is told them.)
 bundle user <<JSON
 {"ociVersion": "1.0.2",
  "process": {"args": ["/probe"], "cwd": "/", "env": ["HOME=/home"], "noNewPrivileges": true, "capabilities": {}},
@@ -232,7 +240,7 @@ bundle user <<JSON
   {"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]},
   {"destination": "/dev/pts", "type": "devpts", "source": "devpts", "options": ["nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620"]}],
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
-  "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
+  "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}], $hidden}}
 JSON
 both user 0
 has user 'uid 0 gid 0 groups 0 pid 1'
@@ -252,11 +260,11 @@ bundle every <<JSON
 {"process": {"args": ["/probe"], "cwd": "/", "capabilities": {"bounding": [$caps], "effective": [$caps], "permitted": [$caps]}},
  "root": {"path": "$t/every/rootfs"},
  "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}, {"destination": "/every", "type": "tmpfs", "source": "tmpfs", "options": [$flags]}],
- "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
   "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
 JSON
 n=$((n + 1))
-st=0; (cd "$t/every" && "$muk" run -b . x) > "$t/every.muk" 2> "$t/every.err" || st=$?
+st=0; (cd "$t/every" && "$muk" run $lends -b . x) > "$t/every.muk" 2> "$t/every.err" || st=$?
 [ "$st" = 0 ] || no "every: muk ended $st: $(cat "$t/every.err")"
 has every "CapBnd:	$(printf '%016x' $(( (1 << $(($(cat /proc/sys/kernel/cap_last_cap) + 1))) - 1 )))"
 has every "CapEff:	$(printf '%016x' $(( (1 << $(($(cat /proc/sys/kernel/cap_last_cap) + 1))) - 1 )))"
@@ -271,11 +279,11 @@ bundle asked <<JSON
 {"process": {"args": ["/probe", $(echo "$named" | sed 's/^\([0-9]*\) .*/"asks:\1",/' | tr '\n' ' ')
    "asks:16:0:21522", "asks:16:0:21532", "asks:16:0:21505", "asks:56:268435456", "asks:1073741863", "asks:39"], "cwd": "/"},
  "root": {"path": "$t/asked/rootfs"}, "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}],
- "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
   "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
 JSON
 n=$((n + 1))
-st=0; (cd "$t/asked" && "$muk" run -b . x < /dev/null) > "$t/asked.muk" 2> "$t/asked.err" || st=$?
+st=0; (cd "$t/asked" && "$muk" run $lends -b . x < /dev/null) > "$t/asked.muk" 2> "$t/asked.err" || st=$?
 [ "$st" = 0 ] || no "asked: muk ended $st: $(cat "$t/asked.err")"
 has asked 'Seccomp:	2'
 echo "$named" | while read -r nr answer; do
@@ -314,10 +322,10 @@ bundle console <<JSON
  "mounts": [$dev, {"destination": "/proc", "type": "proc", "source": "proc"},
   {"destination": "/dev/pts", "type": "devpts", "source": "devpts", "options": ["nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620"]}],
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
-  "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
+  "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}], $hidden}}
 JSON
 n=$((n + 1))
-shown console "$t/console.muk" "$muk" run -b . --console-socket "$t/console.sock" c
+shown console "$t/console.muk" "$muk" run $lends -b . --console-socket "$t/console.sock" c
 has console 'fds 0 1 2'
 has console 'size 31 97'
 has console 'see /dev/tty 20666'
@@ -328,14 +336,14 @@ if [ "$(id -u)" = 0 ] && command -v runc > /dev/null; then
   # (runc gives a terminal's other end away only where it does not stay itself: started and left, -d)
   shown console.for-runc "$t/console.runc" runc --root "$t/state" run -d -b . --console-socket "$t/console.sock" "runc$n"
   runc --root "$t/state" delete -f "runc$n" 2> /dev/null || :
-  sed 's|^\(mount / [a-z,]*\)nodev,|\1|; /^Seccomp:/d' "$t/console.muk" | sort > "$t/console.a"; sed '/^Seccomp:/d' "$t/console.runc" | sort > "$t/console.b"
+  sed '/^mount /s/nodev,//; /^Seccomp:/d' "$t/console.muk" | sort > "$t/console.a"; sed '/^mount /s/nodev,//; /^Seccomp:/d' "$t/console.runc" | sort > "$t/console.b"
   cmp -s "$t/console.a" "$t/console.b" || { diff "$t/console.a" "$t/console.b" | head -20 >&2; no "console: muk (<) and runc (>) differ"; }
 fi
 n=$((n + 1))
-st=0; (cd "$t/console" && "$muk" run -b . --console-socket "$t/no-one-there" c) > "$t/console.out" 2> "$t/console.err" || st=$?
+st=0; (cd "$t/console" && "$muk" run $lends -b . --console-socket "$t/no-one-there" c) > "$t/console.out" 2> "$t/console.err" || st=$?
 [ "$st" = 1 ] && [ ! -s "$t/console.out" ] && grep -q 'no one is listening' "$t/console.err" || no "console: no one listening: muk ended $st: $(cat "$t/console.err")"
 n=$((n + 1))
-st=0; (cd "$t/user" && "$muk" run -b . --console-socket "$t/console.sock" c) > "$t/console.out" 2> "$t/console.err" || st=$?
+st=0; (cd "$t/user" && "$muk" run $lends -b . --console-socket "$t/console.sock" c) > "$t/console.out" 2> "$t/console.err" || st=$?
 [ "$st" = 1 ] && [ ! -s "$t/console.out" ] && grep -q 'asks for no terminal' "$t/console.err" || no "console: a socket and no terminal asked for: muk ended $st: $(cat "$t/console.err")"
 
 # What it does not run: a filter it cannot make yet is not left out; a terminal; hooks; no program; what is not JSON.
@@ -344,7 +352,7 @@ bundle filter <<'JSON'
 JSON
 refuses filter 'linux.seccomp'
 bundle terminal <<'JSON'
-{"process": {"terminal": true, "args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
+{"process": {"terminal": true, "args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
 refuses terminal 'process.terminal: its other end goes to the one who asks for it'
 bundle hooks <<'JSON'
@@ -376,7 +384,7 @@ bundle torn <<'JSON'
 JSON
 refuses torn 'config.json'
 bundle missing <<JSON
-{"process": {"args": ["/no-such-program"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+{"process": {"args": ["/no-such-program"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
   "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
 JSON
 refuses missing 'exec /no-such-program (errno 2)'
@@ -387,19 +395,19 @@ refuses empty 'open config.json (errno 2)'
 # with a fraction; a limit says which it is; what confines a box and is not done here is not passed over.
 refused() { # refused NAME WORDS MEMBERS: a box with MEMBERS (of the whole, after its process) is not run, and muk says WORDS
   bundle "$1" <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, $3, "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
+{"process": {"args": ["/probe"], "cwd": "/"}, $3, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
   refuses "$1" "$2"
 }
 in_process() { # in_process NAME WORDS MEMBERS: the same, MEMBERS being its process's
   bundle "$1" <<JSON
-{"process": {"args": ["/probe"], "cwd": "/", $3}, "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
+{"process": {"args": ["/probe"], "cwd": "/", $3}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
   refuses "$1" "$2"
 }
 in_linux() { # in_linux NAME WORDS MEMBERS: the same, MEMBERS being linux's
   bundle "$1" <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}], $3}}
+{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}], $3}}
 JSON
   refuses "$1" "$2"
 }
@@ -472,7 +480,7 @@ size=$(wc -c < "$t/user/config.json")
 i=0
 while [ "$i" -lt "$((size - 1))" ]; do # (all of it but the line feed at its end is all of it)
   head -c "$i" "$t/user/config.json" > "$t/torn-at/config.json"
-  st=0; (cd "$t/torn-at" && timeout 20 "$muk" run -b . x) > /dev/null 2>&1 || st=$?
+  st=0; (cd "$t/torn-at" && timeout 20 "$muk" run $lends -b . x) > /dev/null 2>&1 || st=$?
   [ "$st" = 1 ] || no "config.json cut at $i bytes: muk ended $st"
   i=$((i + 1))
 done
@@ -481,7 +489,7 @@ for with in '"' '\\' '{' '}' '[' ']' ',' ':' 'x' '9' '-' ' '; do
   i=0
   while [ "$i" -lt "$size" ]; do
     { head -c "$i" "$t/user/config.json"; printf '%s' "$with"; tail -c +"$((i + 2))" "$t/user/config.json"; } > "$t/torn-at/config.json"
-    st=0; (cd "$t/torn-at" && timeout 20 "$muk" run -b . x) > /dev/null 2>&1 || st=$?
+    st=0; (cd "$t/torn-at" && timeout 20 "$muk" run $lends -b . x) > /dev/null 2>&1 || st=$?
     [ "$st" = 0 ] || [ "$st" = 1 ] || no "config.json with $with at $i: muk ended $st"
     i=$((i + 7))
   done
@@ -492,21 +500,21 @@ mkdir -p "$t/pipe/rootfs/etc" && mkfifo "$t/pipe/rootfs/etc/passwd"
 bundle pipe <<JSON
 {"process": {"args": ["/probe"], "cwd": "/"}, "root": {"path": "$t/pipe/rootfs"},
  "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}],
- "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
   "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
 JSON
 n=$((n + 1))
-st=0; (cd "$t/pipe" && timeout 20 "$muk" run -b . x) > "$t/pipe.muk" 2> "$t/pipe.err" || st=$?
+st=0; (cd "$t/pipe" && timeout 20 "$muk" run $lends -b . x) > "$t/pipe.muk" 2> "$t/pipe.err" || st=$?
 [ "$st" = 0 ] || no "pipe: muk ended $st: $(cat "$t/pipe.err")"
 has pipe 'env HOME=/'
 
 # Started with its three closed, it does not put what it opens in their places: the box has three, and they are
 # the place nothing is read from.
 n=$((n + 1))
-st=0; (cd "$t/user" && "$muk" run -b . x 0<&- 1>&- 2>&-) || st=$?
+st=0; (cd "$t/user" && "$muk" run $lends -b . x 0<&- 1>&- 2>&-) || st=$?
 [ "$st" = 0 ] || no "closed: muk ended $st"
 n=$((n + 1))
-st=0; (cd "$t/user" && "$muk" run -b . x 0<&- 2>&-) > "$t/closed.muk" || st=$?
+st=0; (cd "$t/user" && "$muk" run $lends -b . x 0<&- 2>&-) > "$t/closed.muk" || st=$?
 [ "$st" = 0 ] && grep -qx 'fds 0 1 2' "$t/closed.muk" || no "closed: muk ended $st, the box said: $(head -1 "$t/closed.muk")"
 
 # Many at once on one root that has none of the places its mounts go: each makes what is missing, and what another
@@ -515,14 +523,14 @@ bundle crowd <<JSON
 {"process": {"args": ["/probe"], "cwd": "/a/place/of/its/own"}, "root": {"path": "$t/crowd/rootfs"},
  "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"},
   {"destination": "/a/b/c/file", "type": "bind", "source": "$t/crowd/config.json", "options": ["bind", "ro"]}],
- "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
   "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
 JSON
 n=$((n + 1))
 for round in 1 2 3 4; do
   rm -rf "$t/crowd/rootfs/a" "$t/crowd/rootfs/proc" "$t/crowd/rootfs/dev"
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
-    (cd "$t/crowd" && "$muk" run -b . x > /dev/null 2> "$t/crowd.err.$i" || echo "$i" >> "$t/crowd.failed") &
+    (cd "$t/crowd" && "$muk" run $lends -b . x > /dev/null 2> "$t/crowd.err.$i" || echo "$i" >> "$t/crowd.failed") &
   done
   wait
   [ ! -e "$t/crowd.failed" ] || no "crowd: round $round: $(for i in $(cat "$t/crowd.failed"); do cat "$t/crowd.err.$i"; done | sort | uniq -c | head -3)"
@@ -531,11 +539,11 @@ done
 # The box ends when muk does, however muk is ended; a signal sent to muk is the box's.
 bundle waits <<JSON
 {"process": {"args": ["/probe", "wait"], "cwd": "/"}, "root": {"path": "$t/waits/rootfs"},
- "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
   "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
 JSON
 started() { # started: muk is running the waits bundle; its pid is $m, its box's $kid (the probe, which has said all it says)
-  (cd "$t/waits" && exec "$muk" run -b . w) > "$t/waits.muk" 2> "$t/waits.err" &
+  (cd "$t/waits" && exec "$muk" run $lends -b . w) > "$t/waits.muk" 2> "$t/waits.err" &
   m=$!
   i=0
   until grep -q '^write in' "$t/waits.muk" 2> /dev/null; do

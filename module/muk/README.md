@@ -7,9 +7,10 @@ as `../you` is: what it does counted by hand first, then written until the count
 is no kernel to ask, so muk answers a box's system calls itself (`runtime/`), over the code sods makes.
 
 ```
-muk run [-b BUNDLE] [--console-socket PATH] [ID]
+muk run [-b BUNDLE] [--console-socket PATH] [--lend PATH]... [--ids FIRST-LAST] [--cgroup DIR] [ID]
                               the bundle's process, started and waited for; muk ends as it ends
 sh test/bundle/muk.sh         the same bundles under muk and under runc: what each box says of itself, the same
+sh test/bundle/hostile.sh     a config.json written against muk, every way it has: refused, or a box without it
 ```
 
 **Where muk ends.** A run is a box's whole life here: muk names no box, keeps none beyond its run, lists none, and
@@ -33,41 +34,92 @@ process starts only when muk says so over a pipe, and ends if muk was gone befor
 
 ## The floor
 
-What every box has, whatever config.json says. It may ask for more, never for less.
+What every box has, whatever config.json says. It may ask for more, never for less: and it is written by someone
+else, on a machine many share, who may mean harm. So **config.json asks, and the one who runs muk lends**. Nothing
+of the host's is a box's for its asking: a path, a namespace, a user, a share of the machine are each the bundle's
+own, or what was lent in words config.json has no say in (muk's own: `--lend`, `--ids`, `--cgroup`).
 
-- **Namespaces.** Its mount, pid, ipc and uts namespaces are its own or another box's, never the host's (a box in
-  the host's is refused); it has a cgroup namespace. The network is the one thing of the host's it may be given,
-  by a config.json that names no network namespace.
+- **Paths.** The box's root, and what a bind takes, is in the bundle or was lent (`--lend PATH`: that path, and
+  what is under it). It is opened once, by the kernel's rule that nothing leads out (openat2, RESOLVE_BENEATH: not
+  a link, not `..`, not a path from the root), and what was opened is what is mounted, not what its path leads to
+  by then. What was lent is opened by the one who lent it, however the box is to see the host's files.
+- **Namespaces.** Its mount, pid, ipc, uts and network namespaces are its own or one lent by its path, and the
+  first four are never the host's, lent or not (the one muk itself is in: a box in it is refused); it has a
+  cgroup namespace. The host's network is a box's only by being lent, as a path: saying nothing is not asking
+  for it.
+- **Users.** Each of the host's users and groups a box can be is one lent (`--ids FIRST-LAST`; to one who is not
+  root the kernel lends the one it is; root's muk lends none until told). In a user namespace of its own: those
+  its own are mapped onto. In none: the ones it runs as, or, where it may change who it is (SETUID, SETGID),
+  every one.
 - **Privilege.** It gains none by what it runs (no_new_privs, always). It has the capabilities config.json names
-  and no others: none, where it names none. One that joins namespaces is not traceable, nor read through /proc,
-  while it is still muk.
+  and no others; and, in no user namespace, none over the host itself: only those over its own files and
+  processes (CHOWN, DAC_OVERRIDE, DAC_READ_SEARCH, FOWNER, FSETID, KILL, SETGID, SETUID, SETPCAP, SETFCAP,
+  NET_BIND_SERVICE, IPC_OWNER, SYS_CHROOT, LEASE, AUDIT_WRITE) and, in a network namespace made for it, its own
+  network (NET_ADMIN, NET_RAW, NET_BROADCAST). The rest (SYS_ADMIN, the host's devices, clock, memory,
+  scheduler, log, modules, tracing) are a box's only in a user namespace, where they are over that namespace's
+  things. One that joins namespaces is not traceable, nor read through /proc, while it is still muk.
 - **Devices.** A device is what muk made, in a /dev that is the box's own (a tmpfs, where config.json mounts
-  none: nothing is made in the root's own files). The root is mounted nodev, so a device file an image holds is
-  not one. A box makes none: CAP_MKNOD is refused but in a user namespace. `linux.resources.devices` that denies
-  all is this; one that allows a device is refused.
-- **The host's kernel.** Where a box is not in a user namespace, what of /proc and /sys tells of the host or
-  changes it is hidden or read-only, listed by config.json or not (/proc/kcore, /proc/keys, /proc/sys,
-  /proc/sysrq-trigger and the rest every runtime's defaults name).
+  none), or one lent by its own name. Every other mount is nodev: the root, so a device file an image holds is
+  not one; a bind, so one planted in a directory that was lent is not one; a tmpfs, whatever its options say. A
+  box makes none (CAP_MKNOD is of a user namespace), and `linux.devices`, or a device allowed in
+  `linux.resources.devices`, is refused. Its terminals are 256 at most, whatever its devpts asks for: they are
+  the host's to run out of.
+- **Mounts.** What is mounted is what was lent (a bind) or one of the kinds that are a box's own, made new for it:
+  proc, sysfs, tmpfs, devpts, mqueue, its cgroups. No other kind: not a disk, not the kernel's own tables
+  (debugfs, tracefs, securityfs, bpf, binfmt_misc), not devtmpfs. A proc is mounted at /proc and a sysfs at
+  /sys, where the floor hides what they tell.
+- **The host's kernel.** A box that can be the host's root (in no user namespace; or in one whose mappings put a
+  user of its own on the host's root) has what of /proc and /sys tells of the host hidden and what changes it
+  read-only, listed by config.json or not (/proc/kcore, /proc/keys, /proc/interrupts, /proc/sys,
+  /proc/sysrq-trigger, /sys/firmware, the processor's power counters, and the rest every runtime's defaults
+  name); reads its /sys and its cgroups and writes neither; and has the host's own /proc or /sys, if lent, to
+  read only. What hides a path is there, or the box is not run.
 - **What no box asks the kernel.** A filter over every call it makes (seccomp), there from the program's first
   instruction and for every process it starts: the host's kernel itself (kexec, reboot, modules), another
   process's memory (ptrace and its kin), the mounts, a namespace inside its own (unshare, setns, clone with any
   CLONE_NEW), bpf, perf_event_open, userfaultfd, the kernel's keys, typing into the terminal of the one who ran
   it, are refused as the kernel refuses one who may not; clone3 and io_uring, and every call of another ABI, as a
-  kernel without them. 54 calls, made a tree: one that is none of them is found to be none in six comparisons.
+  kernel without them; the socket a machine talks to the one that runs it by (AF_VSOCK, which is in no
+  namespace), as a kernel without it. **And what the filter was not written against is not there to ask**: a
+  call numbered past the last it knows (Linux 6.18's) is answered as a kernel without it, so a call a newer
+  kernel adds is no box's until it has been read. 56 calls named, made a tree: one that is none of them is found
+  to be none in six comparisons.
+- **The machine's share.** A limit is at most the one muk itself runs under (the lender's: no box raises it). A
+  box made in the cgroup lent it (`--cgroup DIR`, the lender's, with the most it may use set on it: processes,
+  memory, processors) is in it from its first instruction, with everything it starts, and its cgroup namespace
+  begins there; with none lent, it is in muk's own. It is never out of the one it was made in: nothing moves it
+  (the tree is read-only to one that could write it, and it mounts no other).
 - **What is asked and not done is refused**, by name: a seccomp filter of config.json's own, hooks that are there, cgroup
   limits and `cgroupsPath`, `sysctl`, `rootfsPropagation`, an AppArmor profile or SELinux label, `oomScoreAdj`,
   a mount given other owners, a mount namespace joined. A number is what it says or it is refused (a uid of
   4294967296 is not 0).
 
+What it does not hold: a box's processes that end badly are handed, by the host's kernel, to whatever the host
+has set to take them (`kernel.core_pattern`), which is the host's to set; `sync` makes the host write out, as
+any process's does; and a kernel's own faults are a kernel's (a box asks it less, not nothing).
+
 Where it reads config.json as runc does: null is a member not there, a member given twice is the second, a mount
 on a link lands on what the link leads to (in the box), where it runs is made when nothing is there. Where it does
 not: a mount's destination through a link that leads nowhere is refused (runc makes what it leads to).
 
-`test/bundle/muk.sh` is the check: 140 as root, 81 as another user. The same bundles under runc where it runs
-them (what each box says of itself the same, line for line, the floor said to runc in its config.json); what is
-refused; every cut of a config.json and bytes changed in it (never a signal, never a wait); 24 runs at once on
-one root; muk killed; a signal passed on; its three descriptors closed; every name of its tables; every call the
-filter names, asked from inside a box; a terminal, its other end taken at a socket, beside runc's.
+`test/bundle/muk.sh` is the check beside runc: 140 as root, 81 as another user. The same bundles under runc where
+it runs them (what each box says of itself the same, line for line, the floor said to runc in its config.json,
+and what runc is given by being run, lent); what is refused; every cut of a config.json and bytes changed in it
+(never a signal, never a wait); 24 runs at once on one root; muk killed; a signal passed on; its three
+descriptors closed; every name of its tables; every call the filter names, asked from inside a box; a terminal,
+its other end taken at a socket, beside runc's.
+
+`test/bundle/hostile.sh` is the check against a config.json that means harm: 255 as root, 63 as another user,
+each with nothing lent but what the case says. The root or a bind's source anywhere on the host, through a link,
+up by `..`, beside what was lent; the host's devices by their paths, a device planted in a directory that was
+lent, one an image holds; twenty kinds of file system that are no box's; a proc or a sysfs somewhere the floor
+does not look; the host's namespaces and another's, by their paths, and the host's own lent by mistake; no
+network namespace; the host's root and every other user, in a user namespace and in none; each capability over
+the host, in each of the five sets; /proc/sys, sysrq, the kernel's helpers, its cgroups, and the host's own
+/proc lent, opened to be written by a box that is the host's root; a /dev with nothing to hide a path by; hooks,
+sysctl, devices; a limit raised; terminals without end; calls the filter never heard of; a box made in a cgroup,
+and (where the tree counts processes) one that starts all it can. Each is refused in words, or runs and says of
+itself that it has not got it.
 
 ## Its counts
 
@@ -77,17 +129,18 @@ guest):
 
 | | by hand | muk | runc 1.5.2 |
 | --- | --- | --- | --- |
-| system calls, the whole run | 117 | 123 | 5,761 |
-| instructions in muk itself | 12,000 | 28,800 | (a Go runtime) |
-| time, start to end | 1.9 ms | 2.0 ms | 24 ms |
-| the program, its bytes | | 45 KB | 9.7 MB |
+| system calls, the whole run | 121 | 127 | 5,761 |
+| instructions in muk itself | 12,000 | 31,400 | (a Go runtime) |
+| time, start to end | 1.9 ms | 2.0 ms | 23 ms |
+| the program, its bytes | | 49 KB | 9.7 MB |
 | muk's memory while its box runs | | 68 KB, 36 KB of it its own | |
 
 By hand, the calls: the bundle read 5 (chdir, open, read, a read that says it was all, close); signals held, the
 pipe, the clone 3. In the box: its end of the pipe closed, its end with muk's, muk's word, the mask 4; the root
-made its own, bound, entered, turned, the host's let go 5; the seven mounts 7 and three directories made for them
-in the new /dev 3; six devices and five names 11; where it runs 1; ten paths hidden 12 (two are directories here,
-two calls each); five read-only 9 (one is not there); the root nodev and read-only 1; the mask back, the name, a
+made its own, opened (as the kernel keeps it in the bundle), copied, put on itself, entered, turned, the host's let
+go 7; the seven mounts 7 and three directories made for them
+in the new /dev 3; six devices and five names 11; where it runs 1; twelve paths hidden 14 (the floor's two that `runc spec` does not
+name among them; two are directories here, two calls each); five read-only 9 (one is not there); the root nodev and read-only 1; the mask back, the name, a
 limit 3; the 38 capabilities it may never gain and the first past the kernel's last 39; groups and ids 3; the three
 sets 1; no new privileges 1; its end with muk's again (who it is changed) 1; descriptors closed, signals as they
 were, the filter, the program 4. Outside: muk's word, the wait, the box's end taken, muk's own 4. The six more muk makes are

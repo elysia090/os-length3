@@ -5,7 +5,7 @@
  * no C library; what it does is counted in the README beside it, and checked beside runc on the same bundles
  * (test/muk.sh).
  *
- *   muk run [-b BUNDLE] [--console-socket PATH] [ID]
+ *   muk run [-b BUNDLE] [--console-socket PATH] [--lend PATH]... [--ids FIRST-LAST] [--cgroup DIR] [ID]
  *                                 the bundle's process, started and waited for; muk ends as it ends
  *
  * Where muk ends and the Prompt begins (../../prompt). A run is a box's whole life here: muk names no box, keeps
@@ -14,21 +14,29 @@
  * whole, to the one who asked (one descriptor sent over --console-socket) and keeps nothing of: what is typed and
  * shown there, its size as it changes, who is at it and whether anyone is, are the Prompt's.
  *
- * The floor: what every box has, whatever config.json says (it may ask for more, never for less). Its mount, pid,
- * ipc and uts namespaces are its own or another box's, never the host's, and it has a cgroup namespace; it gains
- * no privilege by what it runs (no_new_privs); it has the capabilities config.json names and no others (none, where
- * it names none); a device is what muk made in a /dev that is the box's own, never a file of its root (which is
- * mounted nodev) and never one the box makes (CAP_MKNOD is a user namespace's alone); and, where it is not in a user
- * namespace, what of /proc and /sys tells of the host or changes it is hidden or read-only (FLOOR_PROC,
- * FLOOR_SYS); and there is what no box asks the kernel at all (FILTER: the kernel itself, another process's
- * memory, the mounts, a namespace inside its own, and the parts of the kernel where escapes are found).
+ * The floor: what every box has, whatever config.json says (it may ask for more, never for less): and config.json
+ * is someone else's, who may mean harm, on a machine many share. So config.json asks and the one who runs muk
+ * lends: nothing of the host's is a box's for its asking. A path of the host's (the root, what a bind takes, a
+ * namespace joined) is the bundle's own or one lent (--lend), opened once and by the kernel's rule that nothing
+ * leads out of it; its mount, pid, ipc, uts and network namespaces are its own or one lent, the first four never
+ * the host's, and it has a cgroup namespace; each of the host's users it can be is one lent (--ids); it gains no
+ * privilege by what it runs (no_new_privs); it has the capabilities config.json names and, in no user namespace,
+ * none over the host itself; a device is what muk made in a /dev that is the box's own or one lent by its own
+ * name, every other mount being nodev (the root, a bind, a tmpfs), and it makes none (CAP_MKNOD is a user
+ * namespace's alone); what is mounted is what was lent or a kind that is a box's own (proc, sysfs, tmpfs, devpts,
+ * mqueue, its cgroups); where it can be the host's root, what of /proc and /sys tells of the host or changes it
+ * is hidden or read-only (FLOOR_PROC, FLOOR_SYS), and /sys and its cgroups are read and not written; there is
+ * what no box asks the kernel at all (FILTER: the kernel itself, another process's memory, the mounts, a namespace
+ * inside its own, the parts of the kernel where escapes are found, and every call the filter was not written
+ * against); and what it may use of the machine is its cgroup's, the one lent (--cgroup) or muk's own, which it is
+ * never out of. test/bundle/hostile.sh is a config.json written against each of these.
  *
  * config.json is read once, where it is: a string is used in its place in the text, a NUL put over its closing
  * quote, so nothing is copied. The box is made by one clone into its namespaces; in it, the root is bound on itself
  * and made the root (pivot_root), the host's root taken away, and only then is anything mounted in it: a
  * destination is a path in the box's own root with nothing of the host's above it, so a link the root holds leads
  * nowhere outside it, however far up it says to go. What a bind takes from the host is opened before the root
- * changes (open_tree), where the host's paths still mean the host's.
+ * changes (openat2, then open_tree of what was opened), where the host's paths still mean the host's.
  */
 #define UNIT "muk"
 #define ARENA (4 << 20)
@@ -41,10 +49,11 @@ enum {
   SYS_setresgid = 119, SYS_capset = 126, SYS_rt_sigtimedwait = 128, SYS_mknod = 133, SYS_statfs = 137,
   SYS_pivot_root = 155, SYS_prctl = 157, SYS_mount = 165, SYS_umount2 = 166, SYS_sethostname = 170,
   SYS_setdomainname = 171, SYS_prlimit64 = 302, SYS_setns = 308, SYS_open_tree = 428, SYS_move_mount = 429,
-  SYS_seccomp = 317, SYS_close_range = 436, SYS_mount_setattr = 442,
+  SYS_seccomp = 317, SYS_close_range = 436, SYS_mount_setattr = 442, SYS_fchdir = 81, SYS_fstatfs = 138,
+  SYS_unshare = 272, SYS_clone3 = 435, SYS_openat2 = 437, SYS_fcntl = 72,
 };
-enum { EPERM = 1, EACCES = 13, ENOTDIR = 20 };
-enum { O_NOCTTY = 0400 };
+enum { EPERM = 1, EACCES = 13, ENOTDIR = 20, EAFNOSUPPORT = 97 };
+enum { O_NOCTTY = 0400, O_DIRECTORY = 0200000, O_PATH = 010000000 };
 enum {
   MS_RDONLY = 1, MS_NOSUID = 2, MS_NODEV = 4, MS_NOEXEC = 8, MS_SYNCHRONOUS = 16, MS_REMOUNT = 32, MS_DIRSYNC = 128,
   MS_NOSYMFOLLOW = 256, MS_NOATIME = 1024, MS_NODIRATIME = 2048, MS_BIND = 4096, MS_REC = 16384,
@@ -282,8 +291,44 @@ static struct {
   u32 uid, gid, groups[PATHS];
   u32 nargs, nenv, nmasked, nreadonly, nmounts, njoined, nlimits, nuids, ngids, ngroups;
   u16 rows, columns; /* its terminal's size, as it starts */
-  u8 read_only, dev, user, terminal, sys; /* user: in a user namespace, made or joined; sys: a /sys is mounted */
+  /* user: in a user namespace, made or joined; sys: a /sys is mounted; host: it can be the host's root (it is in
+   * no user namespace of its own, or its own maps one of its users onto the host's root) */
+  u8 read_only, dev, user, terminal, sys, host;
 } c;
+
+/* ---- What is lent: the words of the one who runs muk. config.json asks; nothing of the host's is a box's by its
+ * asking. A path of the host's (what a bind takes, the root, a namespace joined) is the bundle's own or one lent
+ * (--lend); a user of the host's is one lent (--ids; to one who is not root, the kernel lends that one alone);
+ * what it may use of the machine is its cgroup's (--cgroup). */
+static struct { const char *path; u32 n; int fd; } lent[16]; /* n: its length, with no slash at its end */
+static u32 nlent;
+static u64 ids_first = 1, ids_last; /* the host's users and groups a box may be: none, until said */
+static const char *cgroup;
+
+/* A path of the host's that config.json names, opened. One not from the root is the bundle's, and leads nowhere
+ * outside it, by a link or by `..` (the kernel sees to it: RESOLVE_BENEATH). One from the root is what was lent by
+ * that very name (`named`: what the box's first process opened of it while it was still the one who lent it,
+ * `inside`, which is not the caller's to close; or, to be read, opened again as the lender names it), or lies
+ * under what was lent and leads nowhere outside that. Anything else is the host's, and no box's to name. */
+static i64 taken(const char *path, u64 how, int *named) {
+  struct { u64 flags, mode, resolve; } beneath = {how | O_CLOEXEC, 0, 0x08 /* RESOLVE_BENEATH */};
+  *named = 0;
+  if (path[0] != '/') return sys4(SYS_openat2, AT_FDCWD, (i64)path, (i64)&beneath, sizeof beneath);
+  for (u32 i = 0; i < nlent; i++) {
+    u32 n = lent[i].n, k = 0;
+    while (k < n && path[k] == lent[i].path[k]) k++;
+    if (k < n || (path[n] && path[n] != '/')) continue;
+    const char *rest = path + n;
+    while (*rest == '/') rest++;
+    if (!*rest) return *named = 1, how == O_PATH ? lent[i].fd : sys3(SYS_open, (i64)lent[i].path, (i64)(how | O_CLOEXEC), 0);
+    /* (before there is a box, for a namespace under what was lent: opened for this, and closed) */
+    i64 under = lent[i].fd >= 0 ? lent[i].fd : ok(sys3(SYS_open, (i64)lent[i].path, O_PATH | O_DIRECTORY | O_CLOEXEC, 0), "--lend: ", lent[i].path);
+    i64 r = sys4(SYS_openat2, under, (i64)rest, (i64)&beneath, sizeof beneath);
+    if (under != lent[i].fd) sys1(SYS_close, under);
+    return r;
+  }
+  fail("config.json: it names what is the host's and was not lent (--lend): ", path);
+}
 
 static void words(char **into, u32 *n, u32 most) {
   *n = 0; /* (a member given twice is the second, as every reader of JSON has it) */
@@ -325,6 +370,7 @@ static const u8 CAPS_AT[128] = {0, 0, 0, 0, 0, 39, 0, 0, 0, 0, 0, 0, 0, 16, 3, 0
 static const char LIMITS[][16] = {"CPU", "FSIZE", "DATA", "STACK", "CORE", "RSS", "NPROC", "NOFILE", "MEMLOCK", "AS", "LOCKS",
                                   "SIGPENDING", "MSGQUEUE", "NICE", "RTPRIO", "RTTIME"};
 static const char KINDS[][16] = {"bounding", "effective", "permitted", "inheritable", "ambient"};
+static const char MOUNTED[][8] = {"proc", "sysfs", "tmpfs", "devpts", "mqueue", "cgroup", "cgroup2"};
 static const char SPACES[][16] = {"mount", "cgroup", "uts", "ipc", "user", "pid", "network"};
 static const u32 SPACE[] = {CLONE_NEWNS, CLONE_NEWCGROUP, CLONE_NEWUTS, CLONE_NEWIPC, CLONE_NEWUSER, CLONE_NEWPID, CLONE_NEWNET};
 
@@ -501,24 +547,25 @@ static void linux_(void) {
 }
 
 /* The floor's paths (as every runtime's defaults have them), each put in a list that does not have it. */
-static const char FLOOR_PROC[][24] = { /* (hidden, the first nine; read-only, the last five) */
+static const char FLOOR_PROC[][24] = { /* (hidden, the first ten; read-only, the last five) */
   "/proc/acpi", "/proc/asound", "/proc/kcore", "/proc/keys", "/proc/latency_stats", "/proc/timer_list", "/proc/timer_stats",
-  "/proc/sched_debug", "/proc/scsi", "/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"};
-enum { FLOOR_HIDDEN = 9, FLOOR_ALL = sizeof FLOOR_PROC / sizeof FLOOR_PROC[0] };
-#define FLOOR_PROC_MUL 0x9c24c18297b4231full /* (14 names; slots.ts, 1 tries) */
-static const u8 FLOOR_PROC_AT[128] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 12, 0, 0, 9, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 14, 0, 5, 0, 7, 0, 0, 0};
-static const char FLOOR_SYS[] = "/sys/firmware";
+  "/proc/sched_debug", "/proc/scsi", "/proc/interrupts", "/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"};
+enum { FLOOR_HIDDEN = 10, FLOOR_ALL = sizeof FLOOR_PROC / sizeof FLOOR_PROC[0] };
+#define FLOOR_PROC_MUL 0x9c24c18297b4231full /* (15 names; slots.ts, 1 tries) */
+static const u8 FLOOR_PROC_AT[128] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 10, 14, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 13, 0, 0, 9, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 15, 0, 5, 0, 7, 0, 0, 0};
+static const char FLOOR_SYS[][32] = {"/sys/firmware", "/sys/devices/virtual/powercap"};
 /* Each of the floor's paths that neither list has, put in its own: found by one look at each path the lists have
  * (what follows /proc/ in it, as a word: slots.ts), not by each of the floor's against each of theirs. */
-static void floor_(void) {
-  u32 seen = 0, firmware = 0;
+static void floor_(int proc) {
+  u32 seen = proc ? 0 : ~0u, firmware = 0;
   for (int list = 0; list < 2; list++) {
     char **paths = list ? c.readonly : c.masked;
     for (u32 i = 0, n = list ? c.nreadonly : c.nmasked; i < n; i++) {
       const u8 *p = (const u8 *)paths[i];
       u64 first = ld64(p);
       if ((first & 0xffffffffffffull) != 0x2f636f72702full /* "/proc/" */) {
-        firmware |= first == 0x7269662f7379732full /* "/sys/fir" */ && same((const char *)p + 8, FLOOR_SYS + 8);
+        if ((first & 0xffffffffffull) == 0x2f7379732full /* "/sys/" */)
+          for (u32 k = 0; k < 2; k++) firmware |= (u32)same((const char *)p, FLOOR_SYS[k]) << k;
         continue;
       }
       u64 w = ld64(p + 6), z = zeros(w), h = z ? w & ((z & -z) - 1) : w;
@@ -533,10 +580,36 @@ static void floor_(void) {
     if (*n == PATHS) bad("a list is longer than is read");
     into[(*n)++] = (char *)FLOOR_PROC[row];
   }
-  if (!firmware && c.sys) {
+  for (u32 k = 0; k < 2 && c.sys; k++) {
+    if (firmware >> k & 1) continue;
     if (c.nmasked == PATHS) bad("a list is longer than is read");
-    c.masked[c.nmasked++] = (char *)FLOOR_SYS;
+    c.masked[c.nmasked++] = (char *)FLOOR_SYS[k];
   }
+}
+
+/* A devpts's own options, with the most terminals it has: PTYS, where it asks for none or for more. (The kernel
+ * takes the last it is told.) */
+enum { PTYS = 256 };
+static char *terminals(char *data) {
+  int fits = 0;
+  u64 n = 0;
+  for (char *o = data; o && *o; n++) {
+    if (o == data || o[-1] == ',') {
+      if (o[0] == 'm' && o[1] == 'a' && o[2] == 'x' && o[3] == '=') {
+        u64 v = 0;
+        char *d = o + 4;
+        while (*d >= '0' && *d <= '9' && v <= PTYS) v = v * 10 + (u64)(*d++ - '0');
+        fits = d > o + 4 && (!*d || *d == ',') && v <= PTYS;
+      }
+    }
+    o++;
+  }
+  if (fits) return data;
+  static const char most[] = ",max=256";
+  u8 *made = grab(n + sizeof most);
+  for (u64 i = 0; i < n; i++) made[i] = (u8)data[i];
+  __builtin_memcpy(made + n, most + !n, sizeof most - !n);
+  return (char *)made;
 }
 /* The /dev a box has where config.json mounts none: a tmpfs of its own (as config.json would say it). Not inlined:
  * four addresses stored side by side are stored as one constant, which a program with nothing to relocate has not. */
@@ -574,6 +647,16 @@ static void config(void) {
         }
         if (!m->to || m->to[0] != '/') bad("a mount's destination is not a path from the root");
         if (m->type && same(m->type, "bind")) m->flags |= MS_BIND;
+        /* What is mounted in a box: what was lent (a bind), or one of the kinds that are a box's own, each made
+         * new for it. No other: not a disk, not the kernel's own tables (debugfs, tracefs, securityfs, bpf,
+         * binfmt_misc), not devtmpfs with every device of the host's. And a proc at /proc, a sysfs at /sys: where
+         * the floor hides what they tell of the host, which one mounted elsewhere would tell. */
+        if (!(m->flags & MS_BIND)) {
+          int kind = m->type ? WHICH(MOUNTED, m->type, (u32)slen(m->type)) : -1;
+          if (kind < 0) fail("config.json: mounts: no such kind is mounted in a box: ", m->type ? m->type : "(none is said)");
+          if (kind == 6) m->type = "cgroup";
+          if ((kind == 0 && !same(m->to, "/proc")) || (kind == 1 && !same(m->to, "/sys"))) bad("mounts: a proc is mounted at /proc and a sysfs at /sys, nowhere else");
+        }
         /* Under a tmpfs mounted before it, nothing is there yet to mount it on: made first, not found missing. */
         for (struct mount *o = c.mounts; o < m; o++) {
           if (!o->type || !same(o->type, "tmpfs")) continue;
@@ -601,11 +684,37 @@ static void config(void) {
   for (u32 i = 0; i < c.njoined; i++) own |= c.joined[i].flag;
   if (~own & (CLONE_NEWPID | CLONE_NEWIPC | CLONE_NEWUTS))
     bad("linux.namespaces: a box has pid, ipc and uts namespaces of its own (or another box's): the host's are never its");
+  if (!(own & CLONE_NEWNET))
+    bad("linux.namespaces: a box has a network namespace of its own, or one lent it by its path (--lend): the host's is not its for saying nothing");
   if (!(own & CLONE_NEWCGROUP)) c.spaces |= CLONE_NEWCGROUP;
   c.user = (own & CLONE_NEWUSER) != 0;
-  /* No device is the box's to make, but in a user namespace, where the ones it could make are no one's. */
-  if (!c.user && (c.caps[0] | c.caps[1] | c.caps[2] | c.caps[3] | c.caps[4]) >> 27 & 1)
-    bad("process.capabilities: CAP_MKNOD: a box makes no device, but in a user namespace");
+  u64 caps = c.caps[0] | c.caps[1] | c.caps[2] | c.caps[3] | c.caps[4];
+  /* Who it is on the host: each of the host's users and groups it can be is one lent. In a user namespace of its
+   * own, those its own are mapped onto; in none, the ones it runs as, or (where it may change who it is: SETUID,
+   * SETGID) every one. (One joined is another box's, lent by its path.) */
+  static const char not_lent[] = "it would be one of the host's users or groups that was not lent (--ids)";
+  c.host = !(c.spaces & CLONE_NEWUSER);
+  if (c.spaces & CLONE_NEWUSER) {
+    for (int gid = 0; gid < 2; gid++) {
+      const struct line *l = gid ? c.gids : c.uids;
+      for (u32 i = 0, n = gid ? c.ngids : c.nuids; i < n; i++) {
+        if (!l[i].n || l[i].out < ids_first || l[i].out + l[i].n - 1 > ids_last) bad(not_lent);
+        c.host |= !gid && !l[i].out;
+      }
+    }
+  } else if (!c.user) {
+    int is = caps >> 6 & 1 || caps >> 7 & 1 ? !ids_first && ids_last >= ID : c.uid >= ids_first && c.uid <= ids_last && c.gid >= ids_first && c.gid <= ids_last;
+    for (u32 i = 0; i < c.ngroups; i++) is &= c.groups[i] >= ids_first && c.groups[i] <= ids_last;
+    if (!is) bad(not_lent);
+  }
+  /* What it may do, outside a user namespace, is done to the host: it has there, at most, what is over its own
+   * files and processes and (in a network namespace made for it) its own network. What is over the host itself
+   * (its devices, its clock, its memory and its scheduler, its log, its modules, tracing, the administrator's
+   * everything) is a box's only in a user namespace, where it is over that namespace's things alone. */
+  if (!c.user) {
+    u64 over = caps & ~(0xb00485ffull | (c.spaces & CLONE_NEWNET ? 0x3800 : 0));
+    if (over) fail("config.json: process.capabilities: one over the host itself, a box's only in a user namespace: CAP_", CAPS[__builtin_ctzll(over)]);
+  }
   /* A /dev of its own, where config.json mounts none: before everything else, since what is mounted under it
    * comes after it. */
   int has_dev = 0, has_proc = 0, has_sys = 0;
@@ -621,15 +730,18 @@ static void config(void) {
     own_dev(&c.mounts[0]);
   }
   /* What of /proc and /sys tells of the host or changes it: hidden, or read-only, to one who is root there. */
-  if (!c.user) {
-    c.sys = (u8)has_sys;
-    if (has_proc) floor_();
-    else if (has_sys) {
-      int there = 0;
-      for (u32 i = 0; i < c.nmasked; i++) there |= same(c.masked[i], FLOOR_SYS);
-      if (!there && c.nmasked == PATHS) bad("a list is longer than is read");
-      if (!there) c.masked[c.nmasked++] = (char *)FLOOR_SYS;
-    }
+  if (c.host && (has_proc || has_sys)) c.sys = (u8)has_sys, floor_(has_proc);
+  /* No file of a mount is a device, but in the /dev that is the box's own (what muk makes there) and among its
+   * terminals; one that can be the host's root reads a /sys and its cgroups, and writes neither; and a box has so
+   * many terminals and no more (they are the host's to run out of). */
+  for (u32 i = 0; i < c.nmounts; i++) {
+    struct mount *m = &c.mounts[i];
+    if (m->flags & MS_BIND) continue; /* (a bind's, when what it takes is opened: inside) */
+    int pts = same(m->type, "devpts"), groups = same(m->type, "cgroup");
+    if (!pts && !(c.dev && same(m->to, "/dev") && same(m->type, "tmpfs"))) m->flags |= MS_NODEV;
+    if (c.host && (groups || same(m->type, "sysfs"))) m->flags |= MS_RDONLY;
+    if (groups) m->data = 0;
+    if (pts) m->data = terminals(m->data);
   }
 }
 
@@ -826,14 +938,19 @@ static void remount(const char *path, u64 flags) {
  * pasting onto it (ioctl's TIOCSTI and TIOCLINUX: the terminal is the one who ran the box's, and its shell would
  * read it). Refused as a kernel without them does (ENOSYS), so a program takes its other way: clone3 (its flags
  * are where a filter cannot read them; clone, which is read, is what libc falls back to) and io_uring. Another
- * ABI than this machine's own (i386's and x32's calls) is ENOSYS for every call. Everything else is the box's to
- * ask.
+ * ABI than this machine's own (i386's and x32's calls) is ENOSYS for every call; and a socket of the kind a machine
+ * talks to the one that runs it by (AF_VSOCK: it is in no namespace) is refused as a kernel without that kind does.
+ *
+ * And what this was not written against is not there to ask: a call numbered KNOWN or more (one a kernel newer
+ * than the last read here has added) is ENOSYS, as on the kernel this was written against, until it has been read
+ * and put among those refused or left to be asked. Every other call, each one read, is the box's to ask.
  *
  * The calls, in the order of their numbers: the filter is made from them as a tree, so a call that is none of
  * them is found to be none in six comparisons, not in fifty. */
-enum { F_EPERM = 1, F_ENOSYS = 38, F_IOCTL = 200, F_CLONE = 201 };
+enum { F_EPERM = 1, F_ENOSYS = 38, F_IOCTL = 200, F_CLONE = 201, F_SOCKET = 202 };
+enum { KNOWN = 470 }; /* the first call's number that was not there to read when this was written (Linux 6.18's last is 469) */
 static const struct { u16 nr; u8 how; } FILTER[] = {
-  {16, F_IOCTL}, {56, F_CLONE},
+  {16, F_IOCTL}, {41, F_SOCKET}, {56, F_CLONE},
   {101, F_EPERM}, /* ptrace */ {103, F_EPERM}, /* syslog */ {134, F_EPERM}, /* uselib */ {153, F_EPERM}, /* vhangup */
   {154, F_EPERM}, /* modify_ldt */ {155, F_EPERM}, /* pivot_root */ {156, F_EPERM}, /* _sysctl */
   {159, F_EPERM}, /* adjtimex */ {163, F_EPERM}, /* acct */ {164, F_EPERM}, /* settimeofday */ {165, F_EPERM}, /* mount */
@@ -849,7 +966,7 @@ static const struct { u16 nr; u8 how; } FILTER[] = {
   {427, F_ENOSYS}, /* io_uring_register */ {428, F_EPERM}, /* open_tree */ {429, F_EPERM}, /* move_mount */
   {430, F_EPERM}, /* fsopen */ {431, F_EPERM}, /* fsconfig */ {432, F_EPERM}, /* fsmount */ {433, F_EPERM}, /* fspick */
   {435, F_ENOSYS}, /* clone3 */ {438, F_EPERM}, /* pidfd_getfd */ {440, F_EPERM}, /* process_madvise */
-  {442, F_EPERM}, /* mount_setattr */ {443, F_EPERM}, /* quotactl_fd */
+  {442, F_EPERM}, /* mount_setattr */ {443, F_EPERM}, /* quotactl_fd */ {467, F_EPERM}, /* open_tree_attr */
 };
 enum { FILTERED = sizeof FILTER / sizeof FILTER[0] };
 /* The kernel's own small machine for it (classic BPF): a word loaded of what is known of a call, compared, and an
@@ -861,7 +978,7 @@ enum { NR = 0, ARCH = 4, ARG0 = 16, ARG1 = 24 }; /* (where each is in what the k
 #define ERRNO(e) (0x00050000u | (e))
 /* What one call's part of the filter is long, and the part itself: its number met, its answer; or, for the two
  * that are refused by what they are asked, the argument looked at. */
-static u32 part(u32 i) { return FILTER[i].how == F_IOCTL ? 6 : FILTER[i].how == F_CLONE ? 5 : 2; }
+static u32 part(u32 i) { return FILTER[i].how == F_IOCTL ? 6 : FILTER[i].how >= F_CLONE ? 5 : 2; }
 static u32 parts(u32 lo, u32 hi) {
   if (hi - lo <= 2) return (hi - lo == 2 ? part(lo) + part(lo + 1) : part(lo)) + 1;
   u32 mid = lo + (hi - lo) / 2;
@@ -883,6 +1000,10 @@ static struct bpf *filter(struct bpf *p, u32 lo, u32 hi) {
       *p++ = (struct bpf){JEQ, 0, 4, nr}, *p++ = (struct bpf){LOAD, 0, 0, ARG0};
       *p++ = (struct bpf){JSET, 0, 1, CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | 0x80 /* CLONE_NEWTIME */};
       *p++ = (struct bpf){RET, 0, 0, ERRNO(EPERM)}, *p++ = (struct bpf){RET, 0, 0, ALLOW};
+    } else if (how == F_SOCKET) {
+      *p++ = (struct bpf){JEQ, 0, 4, nr}, *p++ = (struct bpf){LOAD, 0, 0, ARG0};
+      *p++ = (struct bpf){JEQ, 0, 1, 40 /* AF_VSOCK */};
+      *p++ = (struct bpf){RET, 0, 0, ERRNO(EAFNOSUPPORT)}, *p++ = (struct bpf){RET, 0, 0, ALLOW};
     } else *p++ = (struct bpf){JEQ, 0, 1, nr}, *p++ = (struct bpf){RET, 0, 0, ERRNO(how)};
   }
   *p++ = (struct bpf){RET, 0, 0, ALLOW};
@@ -893,7 +1014,7 @@ static void filtered(void) {
   struct bpf made[6 + 4 * FILTERED], *p = made;
   *p++ = (struct bpf){LOAD, 0, 0, ARCH}, *p++ = (struct bpf){JEQ, 1, 0, 0xc000003e /* AUDIT_ARCH_X86_64 */};
   *p++ = (struct bpf){RET, 0, 0, ERRNO(F_ENOSYS)};
-  *p++ = (struct bpf){LOAD, 0, 0, NR}, *p++ = (struct bpf){JGE, 0, 1, 0x40000000 /* (x32's calls are numbered from here) */};
+  *p++ = (struct bpf){LOAD, 0, 0, NR}, *p++ = (struct bpf){JGE, 0, 1, KNOWN /* (x32's calls, numbered from 0x40000000, among them) */};
   *p++ = (struct bpf){RET, 0, 0, ERRNO(F_ENOSYS)};
   p = filter(p, 0, FILTERED);
   struct { u16 len; struct bpf *filter; } program = {(u16)(p - made), made};
@@ -911,11 +1032,29 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
   sys2(SYS_prctl, 1 /* PR_SET_PDEATHSIG */, SIGKILL);
   u8 go;
   if (sys3(SYS_read, told[0], (i64)&go, 1) != 1) leave(1);
+  /* What was lent, opened by the one who lent it: this process is that one still, to the host's files, and is in
+   * the box's mount namespace already (what is mounted where muk runs is not a box's to take a copy of). */
+  for (u32 i = 0; i < nlent; i++) lent[i].fd = (int)ok(sys3(SYS_open, (i64)lent[i].path, O_PATH | O_CLOEXEC, 0), "--lend: ", lent[i].path);
+  /* In a user namespace of its own it is that namespace's root, where it has one: who it was when made (the one
+   * who runs muk) is no one there, unless that one is who its root is mapped onto. Who it is changed, which
+   * clears its end with muk's: asked again, and muk seen to be there still (its end of the pipe is open). */
+  if (c.spaces & CLONE_NEWUSER && sys3(SYS_setresgid, 0, 0, 0) + sys3(SYS_setresuid, 0, 0, 0) == 0) {
+    sys2(SYS_prctl, 1 /* PR_SET_PDEATHSIG */, SIGKILL);
+    sys3(SYS_fcntl, told[0], 4 /* F_SETFL */, O_NONBLOCK);
+    if (!sys3(SYS_read, told[0], (i64)&go, 1)) leave(1);
+  }
   i64 old_umask = sys1(SYS_umask, 0);
+  /* (put in the cgroup lent it as it was made: its cgroup namespace begins there, so it is made here, in it) */
+  if (cgroup && c.spaces & CLONE_NEWCGROUP) ok(sys1(SYS_unshare, CLONE_NEWCGROUP), "the box's cgroup namespace", "");
 
   /* The root: nothing mounted here spreads out; the root bound on itself, a mount of its own to turn on. */
   ok(sys6(SYS_mount, 0, (i64)"/", 0, MS_SLAVE | MS_REC, 0, 0), "mount: ", "/ is not made the box's own");
-  ok(sys6(SYS_mount, (i64)root, (i64)root, 0, MS_BIND | MS_REC, 0, 0), "root.path: ", root);
+  /* The root is the directory that was opened, not what its path leads to by now: a copy of what is mounted there,
+   * put on it, and turned on below. */
+  int named;
+  i64 at = ok(taken(root, O_PATH, &named), "root.path: ", root); /* (what is opened here is closed as the program starts) */
+  i64 turned = ok(sys3(SYS_open_tree, at, (i64)"", 0x1000 /* AT_EMPTY_PATH */ | 1 /* OPEN_TREE_CLONE */ | 0x8000 /* AT_RECURSIVE */ | O_CLOEXEC), "root.path: ", root);
+  ok(sys6(SYS_move_mount, turned, (i64)"", at, (i64)"", 4 /* MOVE_MOUNT_F_EMPTY_PATH */ | 0x40 /* MOVE_MOUNT_T_EMPTY_PATH */, 0), "root.path: ", root);
   /* (one in a user namespace may not make devices, and is given a /proc or a /sys on terms) */
   int user = c.user, host[6];
   /* What binds take from the host, while the host's paths are the host's. */
@@ -936,12 +1075,27 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
     if (m->type && same(m->type, "cgroup")) {
       u64 fs[15];
       i64 one = !sys2(SYS_statfs, (i64)"/sys/fs/cgroup", (i64)fs) && fs[0] == 0x63677270;
-      if (one && (c.spaces & CLONE_NEWCGROUP || !(c.spaces & CLONE_NEWUSER))) m->type = "cgroup2", m->from = "cgroup";
-      else m->from = "/sys/fs/cgroup", m->flags |= MS_BIND | MS_REC;
+      if (one && (c.spaces & CLONE_NEWCGROUP || !(c.spaces & CLONE_NEWUSER))) m->type = "cgroup2"; /* (its source is a name and no more) */
+      else {
+        m->flags |= MS_BIND | MS_REC;
+        m->tree = (int)ok(sys3(SYS_open_tree, AT_FDCWD, (i64)"/sys/fs/cgroup", 1 /* OPEN_TREE_CLONE */ | O_CLOEXEC | 0x8000), "mount ", m->to);
+      }
+      continue;
     }
     if (!(m->flags & MS_BIND)) continue;
     if (!m->from) bad("a bind has no source");
-    m->tree = (int)ok(sys3(SYS_open_tree, AT_FDCWD, (i64)m->from, 1 /* OPEN_TREE_CLONE */ | O_CLOEXEC | (m->flags & MS_REC ? 0x8000 : 0)), "mount: its source: ", m->from);
+    at = ok(taken(m->from, O_PATH, &named), "mount: its source: ", m->from);
+    /* A device is a box's where the one who lent it named that very device: no other file of a bind is one. And
+     * the host's own /proc or /sys, lent to one that can be the host's root, is read and not written. */
+    __attribute__((uninitialized)) struct kstat st;
+    if (named) ok(sys4(SYS_newfstatat, at, (i64)"", (i64)&st, 0x1000), "stat ", m->from);
+    if (!named || ((st.mode & 0170000) != 0020000 && (st.mode & 0170000) != 0060000)) m->flags |= MS_NODEV, m->clear &= ~(u64)MS_NODEV;
+    if (c.host) {
+      u64 fs[15];
+      ok(sys2(SYS_fstatfs, at, (i64)fs), "statfs ", m->from);
+      if (fs[0] == 0x9fa0 /* proc */ || fs[0] == 0x62656572 /* sysfs */) m->flags |= MS_RDONLY, m->clear &= ~(u64)MS_RDONLY;
+    }
+    m->tree = (int)ok(sys3(SYS_open_tree, at, (i64)"", 0x1000 /* AT_EMPTY_PATH */ | 1 /* OPEN_TREE_CLONE */ | O_CLOEXEC | (m->flags & MS_REC ? 0x8000 : 0)), "mount: its source: ", m->from);
   }
   if (c.terminal) connect_console(c.console);
   /* (and the host's devices, for one who may not make them) */
@@ -953,7 +1107,7 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
   /* The root made the root. The host's is still there, under the same name: put on the box's, where `..` at the
    * box's root would step onto it. It is taken away before any path is looked up in the box, so that a path there
    * (a mount's destination, a link the root holds, however far up it says to go) leads nowhere but the box. */
-  ok(sys1(SYS_chdir, (i64)root), "root.path: ", root);
+  ok(sys1(SYS_fchdir, turned), "root.path: ", root);
   ok(sys2(SYS_pivot_root, (i64)".", (i64)"."), "pivot_root ", root);
   ok(sys2(SYS_umount2, (i64)".", MNT_DETACH), "umount: ", "the host's root");
 
@@ -967,6 +1121,12 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
   if (r < 0 && r != -EACCES) die("process.cwd: ", c.cwd, r);
   int later = r < 0;
 
+  /* (what a path is hidden by is there: where the /dev is not muk's making, one that is not there is said, not
+   * taken for a path with nothing to hide) */
+  if (!c.dev && c.nmasked) {
+    __attribute__((uninitialized)) struct kstat st;
+    ok(sys4(SYS_newfstatat, AT_FDCWD, (i64)"/dev/null", (i64)&st, 0), "maskedPaths: ", "the box has no /dev/null to hide them by");
+  }
   for (u32 i = 0; i < c.nmasked; i++) {
     r = sys6(SYS_mount, (i64)"/dev/null", (i64)c.masked[i], 0, MS_BIND, 0, 0);
     if (r == -ENOTDIR) r = sys6(SYS_mount, (i64)"tmpfs", (i64)c.masked[i], (i64)"tmpfs", MS_RDONLY, (i64)"size=0k", 0);
@@ -984,8 +1144,12 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
 
   if (c.hostname) ok(sys2(SYS_sethostname, (i64)c.hostname, (i64)slen(c.hostname)), "hostname: ", c.hostname);
   if (c.domainname) ok(sys2(SYS_setdomainname, (i64)c.domainname, (i64)slen(c.domainname)), "domainname: ", c.domainname);
-  for (u32 i = 0; i < c.nlimits; i++)
-    ok(sys4(SYS_prlimit64, 0, c.limits[i].what, (i64)&c.limits[i].now, 0), "rlimits: ", "one is not set");
+  /* (a limit is at most the one muk itself runs under: the lender's, which no box raises) */
+  for (u32 i = 0; i < c.nlimits; i++) {
+    u64 was[2];
+    ok(sys4(SYS_prlimit64, 0, c.limits[i].what, (i64)&c.limits[i].now, (i64)was), "rlimits: ", "one is not set");
+    if (c.limits[i].most > was[1]) fail("config.json: process.rlimits: ", "one is more than the one who runs muk has, which is the most a box has");
+  }
 
   /* Who it is and what it may do: what it may never gain first, while that may still be given up. */
   for (i64 cap = 0; cap < 64; cap++) {
@@ -1073,15 +1237,37 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
 }
 
 static int main_(int argc, char **argv, char **envp) {
-  (void)envp;
-  static const char usage[] = "muk run [-b BUNDLE] [--console-socket PATH] [ID]";
+  static const char usage[] = "muk run [-b BUNDLE] [--console-socket PATH] [--lend PATH]... [--ids FIRST-LAST] [--cgroup DIR] [ID]";
   const char *bundle = 0;
   int i = 2;
   if (argc < 2 || !same(argv[1], "run")) fail("usage: ", usage);
+  /* One who is not root is lent, by the kernel, the user it is and no other: nothing is left for muk to hold it
+   * to. (Who runs it is what the kernel said as it started it: what follows the environment.) */
+  char **aux = envp;
+  while (*aux) aux++;
+  for (u64 *a = (u64 *)(aux + 1); a[0]; a += 2)
+    if (a[0] == 12 /* AT_EUID */ && a[1]) ids_first = 0, ids_last = ~0ull;
   for (; i + 1 < argc && argv[i][0] == '-'; i += 2) {
-    if (same(argv[i], "-b") || same(argv[i], "--bundle")) bundle = argv[i + 1];
-    else if (same(argv[i], "--console-socket")) c.console = argv[i + 1];
-    else fail("usage: ", usage);
+    char *word = argv[i + 1];
+    if (same(argv[i], "-b") || same(argv[i], "--bundle")) bundle = word;
+    else if (same(argv[i], "--console-socket")) c.console = word;
+    else if (same(argv[i], "--cgroup")) cgroup = word;
+    else if (same(argv[i], "--lend")) {
+      if (nlent == 16 || word[0] != '/') fail("--lend: a path from the root, and sixteen of them at most: ", word);
+      u32 n = (u32)slen(word);
+      while (n && word[n - 1] == '/') n--;
+      lent[nlent].path = word, lent[nlent].n = n, lent[nlent++].fd = -1;
+    } else if (same(argv[i], "--ids")) {
+      u64 v[2] = {0, 0};
+      char *d = word;
+      for (int k = 0; k < 2; k++) {
+        char *from = d;
+        while (*d >= '0' && *d <= '9' && v[k] <= ID) v[k] = v[k] * 10 + (u64)(*d++ - '0');
+        if (d == from || v[k] > ID || *d != (k ? 0 : '-')) fail("--ids: the first and the last of the host's users and groups lent, as FIRST-LAST: ", word);
+        d++;
+      }
+      ids_first = v[0], ids_last = v[1];
+    } else fail("usage: ", usage);
   }
   /* (what is left is the box's name, one word and no option: nothing given is passed over unread) */
   if (i < argc && (argv[i][0] == '-' || i + 1 < argc)) fail("usage: ", usage);
@@ -1116,7 +1302,20 @@ static int main_(int argc, char **argv, char **envp) {
   for (int user = 1; user >= 0; user--)
     for (u32 k = 0; k < c.njoined; k++) {
       if ((c.joined[k].flag == CLONE_NEWUSER) != user) continue;
-      fd = ok(sys3(SYS_open, (i64)c.joined[k].path, O_RDONLY | O_CLOEXEC, 0), "open ", c.joined[k].path);
+      /* One that was lent, by its path; and, the network's apart, never the one muk itself is in: the host's. */
+      int named;
+      fd = ok(taken(c.joined[k].path, O_RDONLY, &named), "linux.namespaces: its path: ", c.joined[k].path);
+      if (c.joined[k].flag != CLONE_NEWNET) {
+        static const char NAMES[][8] = {"mnt", "cgroup", "uts", "ipc", "user", "pid"};
+        char own[24] = "/proc/self/ns/";
+        u32 kind = 0;
+        while (SPACE[kind] != c.joined[k].flag) kind++;
+        __builtin_memcpy(own + 14, NAMES[kind], 8);
+        __attribute__((uninitialized)) struct kstat its, mine;
+        ok(sys4(SYS_newfstatat, fd, (i64)"", (i64)&its, 0x1000 /* AT_EMPTY_PATH */), "stat ", c.joined[k].path);
+        ok(sys4(SYS_newfstatat, AT_FDCWD, (i64)own, (i64)&mine, 0), "stat ", own);
+        if (its.dev == mine.dev && its.ino == mine.ino) fail("config.json: linux.namespaces: the host's own is no box's to join: ", c.joined[k].path);
+      }
       ok(sys2(SYS_setns, fd, c.joined[k].flag), "setns ", c.joined[k].path);
       sys1(SYS_close, fd);
     }
@@ -1126,7 +1325,17 @@ static int main_(int argc, char **argv, char **envp) {
   sys4(SYS_rt_sigprocmask, 0 /* SIG_BLOCK */, (i64)&all, (i64)&mask, 8);
   int told[2];
   ok(sys2(SYS_pipe2, (i64)told, O_CLOEXEC), "pipe", "");
-  i64 pid = ok(sys6(SYS_clone, (i64)(c.spaces | SIGCHLD), 0, 0, 0, 0, 0), "clone: ", "the box's namespaces are not made");
+  /* Made in the cgroup lent it, where one is: what the box may use of the machine (its processes, its memory, its
+   * share of the processors) is what that cgroup may, set by the one who made it, and the box is never out of
+   * it. (Its cgroup namespace begins where it is when made: made by the box itself, once in.) */
+  i64 pid;
+  if (cgroup) {
+    i64 into = ok(sys3(SYS_open, (i64)cgroup, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0), "--cgroup: ", cgroup);
+    struct { u64 flags, pidfd, child_tid, parent_tid, exit_signal, stack, stack_size, tls, set_tid, set_tid_size, cgroup; } how = {
+      (c.spaces & ~(u64)CLONE_NEWCGROUP) | 0x200000000ull /* CLONE_INTO_CGROUP */, 0, 0, 0, SIGCHLD, 0, 0, 0, 0, 0, (u64)into};
+    pid = ok(sys2(SYS_clone3, (i64)&how, sizeof how), "--cgroup: the box is not made in it: ", cgroup);
+    if (pid) sys1(SYS_close, into);
+  } else pid = ok(sys6(SYS_clone, (i64)(c.spaces | SIGCHLD), 0, 0, 0, 0, 0), "clone: ", "the box's namespaces are not made");
   if (!pid) inside(&mask, told);
   if (c.spaces & CLONE_NEWUSER) who(pid);
   sys3(SYS_write, told[1], (i64)"", 1);
