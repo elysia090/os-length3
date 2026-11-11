@@ -23,7 +23,7 @@
 set -eu
 pkgs=$1; out=$2; version=${3:-0.0.0}
 here=$(cd "$(dirname "$0")/.." && pwd)
-os=$(cd "$here/.." && pwd)
+os=$(cd "$here/../.." && pwd)
 pkgs=$(cd "$pkgs" && pwd)
 say() { echo "root-assemble: $*" >&2; }
 [ -s "$pkgs/record" ] || { say "$pkgs has no record: run module/ricebox/make/build.sh first"; exit 1; }
@@ -66,7 +66,7 @@ while read -r n _ _ t; do cp -a "$t/." "$root/"; done < "$work/list"
 # The places every root has.
 for d in bin sbin lib; do
   [ ! -e "$root/$d" ] || { say "a package put /$d in the root itself, not under /usr"; exit 1; }
-  mkdir -p "$module/ricebox/usr/$d"; ln -s "usr/$d" "$root/$d"
+  mkdir -p "$root/usr/$d"; ln -s "usr/$d" "$root/$d"
 done
 mkdir -p "$root/dev" "$root/proc" "$root/sys" "$root/run" "$root/var/cache" "$root/var/lib" "$root/var/log"
 install -d -m 1777 "$root/tmp" "$root/var/tmp"
@@ -74,20 +74,20 @@ install -d -m 0700 "$root/root"
 ln -s ../run "$root/var/run"
 
 # Its own words: what it is, its shell, and what it is made of.
-sed "s/@VERSION@/$version/g" "$here/etc/os-release" > "$module/ricebox/etc/os-release"
-chmod 0644 "$module/ricebox/etc/os-release"
-mkdir -p "$module/ricebox/usr/share/length3"
+sed "s/@VERSION@/$version/g" "$here/etc/os-release" > "$root/etc/os-release"
+chmod 0644 "$root/etc/os-release"
+mkdir -p "$root/usr/share/length3"
 while read -r n _; do echo "$n $(cat "$pkgs/$n/version") $(cat "$pkgs/$n/source") $(cat "$pkgs/$n/key")"; done < "$pkgs/record" \
-  > "$module/ricebox/usr/share/length3/packages"
-install -m 0644 "$here/pins/sources.env" "$module/ricebox/usr/share/length3/sources.env"
-mkdir -p "$module/ricebox/etc/apk"
-printf '%s\n' "# No repository yet: what is installed is all there is (usr/lib/apk/db/installed)." > "$module/ricebox/etc/apk/repositories"
+  > "$root/usr/share/length3/packages"
+install -m 0644 "$here/pins/sources.env" "$root/usr/share/length3/sources.env"
+mkdir -p "$root/etc/apk"
+printf '%s\n' "# No repository yet: what is installed is all there is (usr/lib/apk/db/installed)." > "$root/etc/apk/repositories"
 node "$here/make/db.ts" "$root" "$work/list"
 
 {
   echo "format=length3-root-v3"
   echo "version=$version"
-  sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\) \([^ ]*\)$/package.\1=\2 \3 \4/' "$module/ricebox/usr/share/length3/packages"
+  sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\) \([^ ]*\)$/package.\1=\2 \3 \4/' "$root/usr/share/length3/packages"
   echo "root3.sha256=$(sha256sum "$root3" | cut -d' ' -f1)"
   echo "root3.source=$(git -C "$os" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$os" status --porcelain -- root3/core root3/cli root3/shared 2>/dev/null | grep -q . && echo +changed)"
   echo "assembler.sha256=$(cat "$here/make/assemble.sh" "$here/make/db.ts" "$here/etc/os-release" | sha256sum | cut -d' ' -f1)"
