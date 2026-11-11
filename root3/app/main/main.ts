@@ -322,6 +322,9 @@ function along(q: Pan, dir: number): Promise<void> {
   const pass = q.pass = begin.call(document, () => {
     unname();
     if (panning !== q) return;
+    // The old picture is taken: release its camera before reusing #page. A frameless page's ground is
+    // #page itself, so its held half-size transform would otherwise also shrink the next page's frame.
+    if (q.camera instanceof GroundCamera) q.camera.near(0);
     draw(q.to, false, true);
     root.classList.add('arriving');
     const come = q.camera = cameraOf(page);

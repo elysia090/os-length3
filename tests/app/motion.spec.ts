@@ -94,6 +94,28 @@ test('going along the rail, each page steps back with its own camera (the desk o
   expect(await app.page.evaluate(() => getComputedStyle(document.getElementById('page')!).backgroundSize)).toBe('24px 24px');
 });
 
+test('leaving a frameless page releases its camera before the shared page is reused, including repeated and redirected pans', async ({app}) => {
+  // Runtime's ground is #page itself; Home's ground is below its frame. A transform left on the shared
+  // parent made Home half-size even after its own camera had landed, and compounded on further trips.
+  const whole = async () => {
+    await still(app);
+    expect(await app.main.evaluate((el) => getComputedStyle(el).transform)).toBe('none');
+    expect(await app.main.evaluate((el) => Math.abs(el.getBoundingClientRect().width - (el as HTMLElement).offsetWidth))).toBeLessThan(1);
+  };
+  for (const place of ['home', 'runtime', 'home', 'runtime', 'remote', 'home'] as const) {
+    await app.rail.go(place);
+    await whole();
+  }
+  await app.rail.go('runtime');
+  await whole();
+  // A newer request before leaving Runtime replaces the first destination, without keeping its camera.
+  await app.page.evaluate(() => { document.getElementById('purpose-home')!.click(); document.getElementById('purpose-git')!.click(); });
+  await expect(app.rail.button('git')).toHaveAttribute('aria-current', 'page');
+  await whole();
+  await app.rail.go('home');
+  await whole();
+});
+
 test('pressed again before the pan has moved, the rail goes straight to the place pressed last; pressed back, it stays', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');
