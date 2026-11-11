@@ -2,7 +2,7 @@
 # Everything a release of OS Length3 Linux holds, made from this tree, into OUT:
 #
 #   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
-#                                                  recipe (root/make/build.sh), with this tree's root3 (root/make/assemble.sh)
+#                                                  recipe (module/ricebox/make/build.sh), with this tree's root3 (module/ricebox/make/assemble.sh)
 #   os-length3-linux-X.Y.Z-webroot.tar               the same root as the browser reads it (webroot.sh), checked
 #                                                  to be the same tree (webroot-parity.ts)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that root3 (web-release.sh)
@@ -20,8 +20,8 @@
 #
 #   sh scripts/release.sh OUT
 #
-# The version is root/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
-# ROOT_PACKAGES, what root/make/build.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
+# The version is module/ricebox/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
+# ROOT_PACKAGES, what module/ricebox/make/build.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
 # keeps them from release to release; by hand, as the top README says). Needs Rust with the targets
 # x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, the Tauri
 # build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
@@ -31,7 +31,7 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 [ $# -eq 1 ] || { echo "usage: sh scripts/release.sh OUT" >&2; exit 2; }
 mkdir -p "$1"
 out=$(cd "$1" && pwd)
-version=${VERSION:-$(tr -d ' \n' < "$here/root/RELEASE")}
+version=${VERSION:-$(tr -d ' \n' < "$here/module/ricebox/RELEASE")}
 sha=${GITHUB_SHA:-$(git -C "$here" rev-parse HEAD)}
 echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "release: not a version: $version" >&2; exit 1; }
 if [ -z "${GITHUB_SHA:-}" ] && [ -n "$(git -C "$here" status --porcelain)" ]; then
@@ -40,7 +40,7 @@ fi
 cd "$here"
 
 # The root: its packages, made from this tree's pins, with this tree's root3.
-sh root/make/assemble.sh "${ROOT_PACKAGES:?the root's packages, as root/make/build.sh made them}" "$out" "$version"
+sh module/ricebox/make/assemble.sh "${ROOT_PACKAGES:?the root's packages, as module/ricebox/make/build.sh made them}" "$out" "$version"
 root=$(ls "$out"/os-length3-linux-"$version"-x86_64-*.tar.zst)
 
 # The film of the release, from the branch that holds it (kept out of main's history), checked against its digest.
@@ -89,7 +89,7 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
 {
   echo "# OS Length3 Linux $version"
   echo
-  echo "The root, laid out for Prompts (merged /usr): each of its $(grep -c '^package\.' manifest) packages made by its recipe (\`root/packages\`) from the source this tree pins, checked against its digest, on one pinned Alpine, static and hardened, with root3, its profile and shell from \`$sha\` (\`manifest\` says each package's version, its source's digest and the key it was made under); the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (Length³ OS for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release.${film:+ \`$film\` shows it at work.}"
+  echo "The root, laid out for Prompts (merged /usr): each of its $(grep -c '^package\.' manifest) packages made by its recipe (\`module/ricebox/packages\`) from the source this tree pins, checked against its digest, on one pinned Alpine, static and hardened, with root3, its profile and shell from \`$sha\` (\`manifest\` says each package's version, its source's digest and the key it was made under); the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (Length³ OS for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release.${film:+ \`$film\` shows it at work.}"
   echo
   echo "| File | Bytes | SHA-256 |"
   echo "| --- | --- | --- |"

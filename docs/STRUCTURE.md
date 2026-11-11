@@ -26,18 +26,19 @@ What one meets going down from the root, and why it is there:
 ```
 muk        module/muk                 one file of C and its test beside runc
 sods       module/sods                the translator (Rust), and what loads it in a page
-ricebox    module/ricebox             its kernel; what serves it in a page; what makes the folder a host serves
+ricebox    module/ricebox             the distribution, 0.6.4 (RELEASE)
+             kernel/                  the smallest UNIX a browser runs, and its tests beside Linux
+             packages/ pins/ make/    the root: each package from its pinned source by its recipe, and what makes it
+             etc/ usr/                the root's own files
              its command line's own programs, each one file of C:
              module/you               z, rg, fd, fzf
              module/otter             help, and what each thing is
-root3      root3/app, root3/desktop       the faces: pages and window
-           root3/cli                    the command
-           root3/core                   what both say of a repo, its history, Home
-           root/                      the root's packages: each from its pinned source by its recipe
-             its modules, each one responsibility:
-             shipto (root3/remote)      what a service wants: who one is, what one may use, deliveries, its deploy
-             funk                     links out of a box and between boxes
-             m8                       where and how many boxes run (when they run on more than one machine)
+root3      root3/                     the product, 0.0.1
+             app/ desktop/            the faces: pages and window
+             cli/                     the command
+             core/                    what both say of a repo, its history, Home
+             remote/                  shipto: what a service wants (who one is, what one may use, deliveries, its deploy)
+             funk, m8                 links out of a box; where boxes run (when they have something to ship)
 under all  module/lib                 what the C stands on: system calls, words, output. On no release: it is in
                                       each program made of it
 beside     scripts/, tests/, docs/    what makes and checks the rest
@@ -94,7 +95,7 @@ own for the same work.
    channel: a call from another Worker is a round trip (1.9 µs), each makes an array and an object and carries its
    arguments as BigInts. To be: its state laid out in one shared memory, each call answered on the thread that makes
    it. First cut: the tree (names to nodes, a root's index used where it is, no mount), then descriptors and pipes,
-   then processes. The tree is written (`module/ricebox/src/tree.h`) and says what Linux says of every name of a
+   then processes. The tree is written (`module/ricebox/kernel/src/tree.h`) and says what Linux says of every name of a
    whole root, spelled every way; the kernel does not walk it yet.
 2. **sods.** The foreign decoder is run twice an instruction (0.32 G of the 1.40 G) and the lowering is keyed on its
    types (`ops.rs`, 2,070 lines). First cut: its own decoder, one pass, a table per opcode; then the calls it makes

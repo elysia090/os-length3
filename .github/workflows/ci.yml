@@ -4,7 +4,7 @@ name: CI
 # (on the merge it would make); a branch without one runs by hand.
 on:
   pull_request:
-    paths: ['root3/**', 'module/**', 'root/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
+    paths: ['root3/**', 'module/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 # Read-only token. Actions are pinned to full commits (tag beside); Dependabot proposes updates.
@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('root/RELEASE', 'root3/core/src/root/pins.rs', 'root3/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'root3/core/src/root/pins.rs', 'root3/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -109,7 +109,7 @@ jobs:
           key: ${{ steps.key.outputs.key }}
 
   # Every command of issue #80 run under xlat and natively in the pinned root; the table `help` reads
-  # (root/etc/length3/commands) checked against the results.
+  # (module/ricebox/etc/length3/commands) checked against the results.
   commands:
     name: Commands
     needs: webroot
@@ -273,7 +273,7 @@ jobs:
           cache-on-failure: true
       - name: Test against native
         if: matrix.part == 'native'
-        working-directory: module/ricebox
+        working-directory: module/ricebox/kernel
         run: sh tests/programs/run.sh
       # run.ts takes the wasm build of the translator when it is current.
       - name: Run root3 under xlat
@@ -281,7 +281,7 @@ jobs:
         run: |
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
           cargo build --locked --profile prompt -p root3 --no-default-features --target x86_64-unknown-linux-musl
-          out=$(LENGTH3_REPOS=/root node module/ricebox/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/root3 help all)
+          out=$(LENGTH3_REPOS=/root node module/ricebox/kernel/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/root3 help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'root3 issue new'
 
@@ -380,7 +380,7 @@ jobs:
           runc --version || echo "no runc here: the boxes are run, and not compared"
           sudo sh module/muk/test/muk.sh
 
-  # The root as a release builds it (root/make/build.sh, root/make/assemble.sh), then used inside as a Prompt uses it and
+  # The root as a release builds it (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), then used inside as a Prompt uses it and
   # under xlat. Runs only when what the root is made of changed.
   root:
     name: Root
@@ -392,7 +392,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('root/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('module/ricebox/RELEASE', 'module/ricebox/make/**', 'module/ricebox/packages/**', 'module/ricebox/pins/**', 'module/ricebox/etc/**', 'module/ricebox/usr/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -424,12 +424,12 @@ jobs:
       - name: Assemble and check
         if: steps.kept.outputs.cache-hit != 'true'
         run: |
-          sh root/make/assemble.sh target/root-packages target/root-made 0.0.0
+          sh module/ricebox/make/assemble.sh target/root-packages target/root-made 0.0.0
           mkdir -p target/root-open
           # Owned by root, as in a Prompt: apk will not audit a database another user owns.
           sudo tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
           r=$PWD/target/root-open/root
-          . root/pins/sources.env
+          . module/ricebox/pins/sources.env
           # Inside the root as a Prompt runs it: read-only, work in its /tmp.
           w=$RUNNER_TEMP/w
           mkdir -p "$w"
@@ -475,11 +475,11 @@ jobs:
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
           # The same programs under xlat.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
-          node module/ricebox/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
-          node module/ricebox/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          node module/ricebox/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
-          node module/ricebox/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
-          printf 'lib/x.c\nweb/src/main.ts\n' | node module/ricebox/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
+          node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
+          node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
+          printf 'lib/x.c\nweb/src/main.ts\n' | node module/ricebox/kernel/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
           sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -540,7 +540,7 @@ jobs:
           key: osv-scanner-2.7.0-${{ runner.os }}
       - name: Scan the root's programs
         if: ${{ !cancelled() }}
-        run: sh root/make/advisories.sh ~/go/bin/osv-scanner
+        run: sh module/ricebox/make/advisories.sh ~/go/bin/osv-scanner
 
   # The app end to end in Chromium, in four shards, each with its own Remote and its own build of the app.
   selftest:

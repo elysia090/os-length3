@@ -62,4 +62,4 @@ Prompt on Linux is still run by root3's core (`root3/core/src/prompt`: namespace
 seccomp filter, an init), which becomes the bundle root3 writes once muk makes the filter and the terminal.
 
 What puts a pack's tree in a kernel's, and keeps a repo there in step with the outside, is the kernel's
-(`../ricebox/runtime/mount.ts`, `mirror.ts`); their tests run with ricebox's.
+(`../ricebox/kernel/runtime/mount.ts`, `mirror.ts`); their tests run with ricebox's.

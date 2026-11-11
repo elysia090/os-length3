@@ -104,7 +104,7 @@ export async function* tarMembers(stream: Readable): AsyncGenerator<TarMember> {
   }
 }
 
-/** A member's place in the root: '/usr/bin/sh' for root/usr/bin/sh; null for what is beside the root (manifest) or the root itself. */
+/** A member's place in the root: '/usr/bin/sh' for module/ricebox/usr/bin/sh; null for what is beside the root (manifest) or the root itself. */
 const inRoot = (name: string) => {
   const parts = name.split('/').filter((p) => p && p !== '.');
   if (parts[0] !== 'root' || parts.length < 2) return null;

@@ -1,7 +1,7 @@
 # Unified patch context records an empty line with a single leading space.
-root/packages/**/*.patch whitespace=-blank-at-eol
+module/ricebox/packages/**/*.patch whitespace=-blank-at-eol
 # bash's and readline's own patches, kept as their makers publish them (context diffs, whitespace and all).
-root/packages/bash/bash53-* whitespace=-blank-at-eol,-trailing-space,-space-before-tab
-root/packages/readline/readline83-* whitespace=-blank-at-eol,-trailing-space,-space-before-tab
+module/ricebox/packages/bash/bash53-* whitespace=-blank-at-eol,-trailing-space,-space-before-tab
+module/ricebox/packages/readline/readline83-* whitespace=-blank-at-eol,-trailing-space,-space-before-tab
 # Debian's patch series to Info-ZIP's Zip, kept as Debian publishes it.
-root/packages/zip/*.patch whitespace=-blank-at-eol,-trailing-space,-space-before-tab
+module/ricebox/packages/zip/*.patch whitespace=-blank-at-eol,-trailing-space,-space-before-tab

@@ -5,7 +5,7 @@
 #
 # Built and shipped by Cloudflare's Workers Builds on each push to main
 # (from the repository's root; docs/README.md, Deploy): the build takes the Prompt from
-# the release root/RELEASE names and builds the app (npm run build:cloudflare),
+# the release module/ricebox/RELEASE names and builds the app (npm run build:cloudflare),
 # and root3/remote/ship/deploy.ts runs the migrations, makes the bucket, deploys the
 # Worker with the secrets it lacks (DATABASE_URL, BETTER_AUTH_SECRET,
 # ENTER_KEY), and puts in the bucket the release files this tree pins that it

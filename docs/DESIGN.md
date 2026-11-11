@@ -991,7 +991,7 @@ is a dependency: not a BusyBox, a userland or a toolchain of its own. It is
 the same thing for the desktop app and for the web.
 
 - **Name and version.** `root3 X.Y.Z` is the release `os-length3-linux-vX.Y.Z`
-  (the version in `root/RELEASE`).
+  (the version in `module/ricebox/RELEASE`).
 - **Digest.** Its identity is the sha256 of its root,
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
   `root3/core/src/root/pins.rs` RELEASES pins it, for both ways in: `sha256` and
@@ -999,12 +999,12 @@ the same thing for the desktop app and for the web.
   same root by. The release writes that entry (`scripts/pin-root.ts`) and
   it is committed; nothing else pins root3.
 - **What it holds.** Sixty-three packages, each made from the source this
-  tree pins (`root/pins/sources.env`) by its recipe
-  (`root/packages/NAME/recipe.sh`, made by `root/make/build.sh` on
+  tree pins (`module/ricebox/pins/sources.env`) by its recipe
+  (`module/ricebox/packages/NAME/recipe.sh`, made by `module/ricebox/make/build.sh` on
   Alpine 3.24 at one digest, with one libc: its musl, at the root's own
   musl's version and with the same security fixes; a package's own build
   tools are there for its build alone), and `/usr/bin/root3`, put together by
-  `root/make/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
+  `module/ricebox/make/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
   (GCC, binutils, make, musl with fortify-headers, Linux's headers; its
   `cc` makes a static PIE, hardened as the root's own programs are,
   unasked), git with delta and Git LFS, curl, wget, OpenSSL, OpenSSH's
@@ -1035,10 +1035,10 @@ the same thing for the desktop app and for the web.
   is built against it. A Rust or Go program is built from its makers'
   lockfile, with what its recipe lifts: a crate or module its makers have
   fixed an advisory in, taken to that version where the program asks for
-  it at all (`lifts=`, `root/make/lift.sh`); what those programs are made of is
-  asked of OSV with every change and every week (`root/make/advisories.sh`), and
+  it at all (`lifts=`, `module/ricebox/make/lift.sh`); what those programs are made of is
+  asked of OSV with every change and every week (`module/ricebox/make/advisories.sh`), and
   what no lift answers is written down with why and until when
-  (`root/pins/advisories.toml`). For the web it also holds the translator
+  (`module/ricebox/pins/advisories.toml`). For the web it also holds the translator
   (xlat, as WebAssembly) and the translations of the hot programs made
   ahead of time.
 - **On a device**, the app and `root3` install the root by its digest: from the
@@ -1620,12 +1620,12 @@ What leaves this system is kept to what is said here:
   descriptors passed between processes) and TCP, UDP and ICMP to this
   machine's own addresses (127.0.0.0/8, ::1; a server and its client, as
   `openssl s_server` and curl are; ping) are channels inside its kernel
-  (module/ricebox/runtime/sys-net.ts), and what it is told of its network (netlink as
+  (module/ricebox/kernel/runtime/sys-net.ts), and what it is told of its network (netlink as
   `ip` and `ss` read it, the interface ioctls, /proc/net) is that machine's:
-  lo alone (module/ricebox/runtime/net-view.ts). Every other address is no one's to
+  lo alone (module/ricebox/kernel/runtime/net-view.ts). Every other address is no one's to
   bind (EADDRNOTAVAIL) and unreachable (ENETUNREACH), and every other family
   is refused as a host without it refuses it (EAFNOSUPPORT).
-  module/ricebox/tests/runtime/boundary.test.ts holds the line, and module/ricebox/tests/programs/inet.c and
+  module/ricebox/kernel/tests/runtime/boundary.test.ts holds the line, and module/ricebox/kernel/tests/programs/inet.c and
   icmp.c compare with native. The page itself
   may reach its own origin, the Remote and, for the box's Agent, the APIs of
   the models' makers whose keys it knows (agent/makers.ts), nothing else: the
@@ -3085,7 +3085,7 @@ or goes).
   after the environments, on one row (what this device runs on, and can be
   reached by or become), its card the SSH card's size, the cards ending
   level; where the row has no room, it goes under. Few words: its title,
-  Length³, and the version `root/RELEASE` names apart from it in the mono face (a
+  Length³, and the version `module/ricebox/RELEASE` names apart from it in the mono face (a
   name and a number are two things); quietly, x86-64 Linux, which file and
   its size (what it is goes without saying). At its bottom left, Download
   (ダウンロード), the one download: a primary button a size smaller than a

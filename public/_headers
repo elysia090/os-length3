@@ -10,7 +10,7 @@
 # to src/policy.ts and OWASP ASVS 14.4; the preview serves them as here.
 # COOP and COEP make the page cross-origin isolated, so it may share memory:
 # the Prompt runs each guest thread in a Worker of its own over one
-# SharedArrayBuffer (module/ricebox/runtime/remote.ts). It loads nothing from another
+# SharedArrayBuffer (module/ricebox/kernel/runtime/remote.ts). It loads nothing from another
 # origin but by CORS (the Remote, and the models' makers the box's Agent asks
 # with the key kept on the device), so require-corp asks nothing more of it.
 /*

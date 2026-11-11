@@ -2,7 +2,7 @@
 // they are first wanted, and used only once they are checked against the pack's table (table.ts). In a Worker the
 // kernel reads inside a system call, where nothing can wait, so `syncRange` fetches synchronously (a synchronous
 // Range request); `fetchStored` is the same read where one can wait. What puts a pack's tree in a kernel's is the
-// kernel's (../../ricebox/runtime/mount.ts).
+// kernel's (../../ricebox/kernel/runtime/mount.ts).
 
 import {LINE, checkFile, checkTable, type Sha256} from './table.ts';
 

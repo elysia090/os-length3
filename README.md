@@ -2,9 +2,9 @@
 
 **root3** is the OS: everything this repository holds. Its modules ([`module/`](module/)) are each a unit of its
 own, built and shipped on its own; root3 is what is left once they are peeled off (the app, the `root3` command and
-the one Rust core under both, the Remote) together with all of them, and the Linux root its Prompts run, **OS Length3
-Linux** ([`root/`](root/)): thirty packages, each made from the source this repository pins by its recipe, static,
-hardened and checked by use.
+the one Rust core under both, the Remote: [`root3/`](root3/)) together with all of them, and the Linux root its
+Prompts run, **ricebox**'s ([`module/ricebox/`](module/ricebox/)): thirty packages, each made from the source this
+repository pins by its recipe, static, hardened and checked by use.
 
 | Ships | What it is |
 | --- | --- |
@@ -31,7 +31,7 @@ hardened and checked by use.
 ## Get it
 
 Every release is a [GitHub release](https://github.com/elysia090/os-length3/releases)
-named `os-length3-linux-vX.Y.Z`; the current one is in [`root/RELEASE`](root/RELEASE).
+named `os-length3-linux-vX.Y.Z`; the current one is in [`module/ricebox/RELEASE`](module/ricebox/RELEASE).
 A release carries:
 
 | File | What it is |
@@ -52,7 +52,6 @@ devices. Building from source, `root3` is `cargo install --path root3/cli`.
 | --- | --- | --- |
 | [`root3/`](root3/) | **Length³ OS**, the product: the app ([`app/`](root3/app/), TypeScript, no framework; [`desktop/`](root3/desktop/), Tauri for the window), [`cli/`](root3/cli/), the `root3` command, the core both use ([`core/`](root3/core/), also built for `wasm32-wasip1` for the browser), and the Remote ([`remote/`](root3/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design language in [`docs/DESIGN.md`](docs/DESIGN.md) |
 | [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`ricebox/`](module/ricebox/) the neutral distribution's own (the smallest UNIX a browser runs: the kernel the root runs on in a browser's Prompt), [`muk/`](module/muk/) its thinnest part, the OCI-compatible VMM (today a pack's bytes read by digest when first touched); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
-| [`root/`](root/) | the root the Prompts run: its pins, a recipe per package and what makes it (below) | `make/build.sh` |
 | [`scripts/`](scripts/), [`tests/`](tests/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
 | [`docs/`](docs/) | what the OS is and how it ships ([`README.md`](docs/README.md)), what the repository is to be and the order it is taken apart in ([`STRUCTURE.md`](docs/STRUCTURE.md)), its design language ([`DESIGN.md`](docs/DESIGN.md)), what it promises about security ([`SECURITY.md`](docs/SECURITY.md)) | |
 
@@ -63,10 +62,11 @@ tools read there (`.node-version`, `.gitignore`, `.gitattributes`, `.cargo/`). T
 and its build are in [`root3/app/`](root3/app/) (`index.html`, `vite.config.ts`); what it ships beside its build is
 [`public/`](public/).
 
-The root is [`root/`](root/): its version (`RELEASE`, the release it is made as next), what it is made from (`pins/`:
-`sources.env`, and `advisories.toml`), a folder per package with its recipe and its patches (`packages/NAME/recipe.sh`),
-its own files (`etc/`, `usr/`), and what makes it (`make/`: `build.sh`, each package on Alpine 3.24 at one digest;
-`assemble.sh`, the root and its package database; `next.py`, every source's newest release).
+ricebox is [`module/ricebox/`](module/ricebox/): its kernel (`kernel/`), and the root: its version (`RELEASE`, the
+release it is made as next), what it is made from (`pins/`: `sources.env`, and `advisories.toml`), a folder per
+package with its recipe and its patches (`packages/NAME/recipe.sh`), its own files (`etc/`, `usr/`), and what makes
+it (`make/`: `build.sh`, each package on Alpine 3.24 at one digest; `assemble.sh`, the root and its package
+database; `next.py`, every source's newest release).
 
 ## Units
 
@@ -122,13 +122,13 @@ only when what it is made of changed):
 
 ```sh
 docker run --rm -v "$PWD:/w" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d \
-  sh /w/root/make/build.sh /w/target/root-packages
-sh root/make/assemble.sh target/root-packages target/root-made
+  sh /w/module/ricebox/make/build.sh /w/target/root-packages
+sh module/ricebox/make/assemble.sh target/root-packages target/root-made
 ```
 
 CI (`.github/workflows/ci.yml`) runs on each pull request; what each
 job does is in [`docs/README.md`](docs/README.md) (Develop, CI). A release is
-made from main by changing [`root/RELEASE`](root/RELEASE)
+made from main by changing [`module/ricebox/RELEASE`](module/ricebox/RELEASE)
 (`.github/workflows/release.yml`), or by hand with `scripts/release.sh`.
 
 Security reports: [`SECURITY.md`](docs/SECURITY.md).

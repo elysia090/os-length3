@@ -1,10 +1,10 @@
 name: Root packages
 
-# The root's packages built from their pins by their recipes (root/make/build.sh, via the root-packages action) whenever
+# The root's packages built from their pins by their recipes (module/ricebox/make/build.sh, via the root-packages action) whenever
 # their inputs change, and cached for CI's Root job and the release.
 on:
   push:
-    paths: ['root/make/build.sh', 'root/make/lift.sh', 'root/packages/**', 'root/pins/sources.env', 'root/etc/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
+    paths: ['module/ricebox/make/build.sh', 'module/ricebox/make/lift.sh', 'module/ricebox/packages/**', 'module/ricebox/pins/sources.env', 'module/ricebox/etc/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
   workflow_dispatch:
 
 permissions:

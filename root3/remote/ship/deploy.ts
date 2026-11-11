@@ -23,7 +23,7 @@
 //           else, the first time, a new one, whose link is handed on.
 //       Then the release's files the Remote serves to anyone (mirror.ts):
 //       every root root3/core/src/root/pins.rs pins and the desktop app of the version
-//       root/RELEASE names (root3/shared/desktop-releases.json), each one the bucket
+//       module/ricebox/RELEASE names (root3/shared/desktop-releases.json), each one the bucket
 //       lacks taken from the GitHub release with GITHUB_TOKEN (read-only;
 //       GITHUB_REPOSITORY names the repository when it is not this one),
 //       checked against its pin, and put with wrangler.

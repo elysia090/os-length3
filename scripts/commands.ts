@@ -8,7 +8,7 @@
 //   x  in the root, but some line that uses it does not end as natively under xlat (what differs is said)
 //   -  not in the root (and what to reach for instead, where there is something)
 //
-// The table it writes, root/etc/length3/commands, is what `help` shows (otter): one line a command, its name,
+// The table it writes, module/ricebox/etc/length3/commands, is what `help` shows (otter): one line a command, its name,
 // its kind, its mark and what instead, by tabs. The root's builtins of the shell are a kind of their own.
 //
 //   node scripts/commands.ts WEB ROOT_DIR [--only REGEX] [--jobs N] [--seconds N] [--write | --check]
@@ -58,7 +58,7 @@ export const BUILTINS = ['alias', 'bg', 'break', 'cd', 'chdir', 'command', 'cont
   'hash', 'help', 'history', 'jobs', 'kill', 'let', 'local', 'printf', 'pwd', 'read', 'readonly', 'return', 'set', 'shift', 'source', 'test', 'times',
   'trap', 'true', 'type', 'ulimit', 'umask', 'unalias', 'unset', 'wait'];
 
-/** Programs that draw on a screen: they need a terminal, which a Prompt of output alone is not (root/etc/length3/shrc). */
+/** Programs that draw on a screen: they need a terminal, which a Prompt of output alone is not (module/ricebox/etc/length3/shrc). */
 const SCREEN = new Set(['vi', 'vim', 'nano', 'less', 'more', 'top', 'watch', 'fzf']);
 
 /** What to reach for instead of a command the root does not have. */
@@ -297,16 +297,16 @@ async function main() {
   // The builtins the shell has not: those the line that asks for them all names, natively, before its "all".
   const missing = (tried.find((t) => t.line.uses.includes('builtins'))?.native.stdout ?? '').replace(/all\s*$/, '').split(/\s+/).filter(Boolean);
   const out = table(marks(tried, (n) => programs.has(n)), missing);
-  const at = `${OS}root/etc/length3/commands`;
+  const at = `${OS}module/ricebox/etc/length3/commands`;
   if (values.check) {
     const kept = readFileSync(at, 'utf8').split('\n'), seen = out.split('\n');
     const differ = seen.filter((l) => !kept.includes(l));
-    if (!differ.length && kept.length === seen.length) { console.log(`root/etc/length3/commands: what was seen, all ${seen.length - 2} commands`); return; }
-    console.error(`root/etc/length3/commands is not what was seen (node scripts/commands.ts ${web} ${root} --write makes it so):\n${differ.map((l) => `  ${l}`).join('\n')}`);
+    if (!differ.length && kept.length === seen.length) { console.log(`module/ricebox/etc/length3/commands: what was seen, all ${seen.length - 2} commands`); return; }
+    console.error(`module/ricebox/etc/length3/commands is not what was seen (node scripts/commands.ts ${web} ${root} --write makes it so):\n${differ.map((l) => `  ${l}`).join('\n')}`);
     process.exit(1);
   }
   writeFileSync(at, out);
-  console.log(`root/etc/length3/commands: ${out.split('\n').length - 2} commands`);
+  console.log(`module/ricebox/etc/length3/commands: ${out.split('\n').length - 2} commands`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main();

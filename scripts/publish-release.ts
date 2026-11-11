@@ -4,7 +4,7 @@
 //
 //   GITHUB_TOKEN=… node scripts/publish-release.ts OUT
 //
-// The version is root/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_REPOSITORY
+// The version is module/ricebox/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_REPOSITORY
 // names the repository when it is not this one (and GITHUB_API_URL the API, as on GitHub Actions).
 import {execFileSync} from 'node:child_process';
 import {readdirSync, readFileSync, statSync} from 'node:fs';
@@ -14,7 +14,7 @@ const here = new URL('..', import.meta.url).pathname;
 const [outArg] = process.argv.slice(2);
 if (!outArg) { console.error('usage: node scripts/publish-release.ts OUT'); process.exit(2); }
 const out = resolve(outArg);
-const version = process.env.VERSION || readFileSync(join(here, 'root', 'RELEASE'), 'utf8').trim();
+const version = process.env.VERSION || readFileSync(join(here, 'module', 'ricebox', 'RELEASE'), 'utf8').trim();
 const sha = process.env.GITHUB_SHA || execFileSync('git', ['-C', here, 'rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
 const api = process.env.GITHUB_API_URL || 'https://api.github.com';

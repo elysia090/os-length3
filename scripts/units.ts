@@ -39,7 +39,7 @@ export const UNITS: Unit[] = [
     holds: ['module/sods/src', 'module/sods/runtime'],
     takes: []},
   {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the smallest UNIX a browser runs (processes, memory and its page cache, files, descriptors, the terminal, signals) and the command line #80 lists; no window, ordinary POSIX, and no service known to it',
-    holds: ['module/ricebox/runtime', 'module/ricebox/src'],
+    holds: ['module/ricebox/kernel/runtime', 'module/ricebox/kernel/src'],
     takes: ['lib', 'muk', 'sods']},
   {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
@@ -64,8 +64,8 @@ export const UNITS: Unit[] = [
 export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'ricebox'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'tests', 'root', 'module/ricebox/runtime/run.ts', 'module/ricebox/tests', 'module/sods/examples', 'module/otter/test', 'module/muk/test',
-  'root3/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/ricebox/target', 'research_notes', 'reports',
+export const NOT_UNITS = ['scripts', 'tests', 'module/ricebox/make', 'module/ricebox/kernel/runtime/run.ts', 'module/ricebox/kernel/tests', 'module/sods/examples', 'module/otter/test', 'module/muk/test',
+  'root3/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/ricebox/kernel/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 

@@ -1,6 +1,6 @@
 name: Root packages
 description: >-
-  Builds each package of the root from its pin by its recipe (root/make/build.sh) on Alpine 3.24 at one digest, into
+  Builds each package of the root from its pin by its recipe (module/ricebox/make/build.sh) on Alpine 3.24 at one digest, into
   target/root-packages, cached across runs: a package is rebuilt only when its inputs change (recipe, pins,
   patches, builder, compiler, libc, dependencies).
 runs:
@@ -9,7 +9,7 @@ runs:
     - id: key
       name: Cache key
       shell: bash
-      run: echo "key=root-packages-${{ hashFiles('root/make/build.sh', 'root/make/lift.sh', 'root/packages/**', 'root/pins/sources.env', 'root/etc/**', 'root/usr/**', 'module/you/**', 'module/otter/**', 'module/lib/**') }}" >> "$GITHUB_OUTPUT"
+      run: echo "key=root-packages-${{ hashFiles('module/ricebox/make/build.sh', 'module/ricebox/make/lift.sh', 'module/ricebox/packages/**', 'module/ricebox/pins/sources.env', 'module/ricebox/etc/**', 'module/ricebox/usr/**', 'module/you/**', 'module/otter/**', 'module/lib/**') }}" >> "$GITHUB_OUTPUT"
     # The newest earlier build: packages whose keys still hold are kept, the rest rebuilt.
     - name: Restore packages
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -25,11 +25,11 @@ runs:
         for d in target/root-packages/*/; do
           [ -d "$d" ] || continue
           n=$(basename "$d")
-          [ -f "root/packages/$n/recipe.sh" ] || { echo "$n: no recipe, not kept"; rm -rf "target/root-packages/${n:?}"; }
+          [ -f "module/ricebox/packages/$n/recipe.sh" ] || { echo "$n: no recipe, not kept"; rm -rf "target/root-packages/${n:?}"; }
         done
     - name: Build on Alpine 3.24
       shell: bash
-      run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d sh /w/root/make/build.sh /w/target/root-packages
+      run: docker run --rm -v "$GITHUB_WORKSPACE:/w" -e OWNER="$(id -u):$(id -g)" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d sh /w/module/ricebox/make/build.sh /w/target/root-packages
     # Saved even on failure or cancel: a package cut short has no key and is rebuilt next time.
     - name: Save packages
       if: ${{ always() }}

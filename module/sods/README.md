@@ -38,4 +38,4 @@ xlat --whole IN OUT.wasm      # every function, ahead of time
 Inputs must be static executables linked with `--emit-relocs`; post-linked
 release binaries have their relocations removed and are not accepted yet.
 Checked natively against the same programs by ricebox's tests
-(`sh ../ricebox/tests/programs/run.sh`).
+(`sh ../ricebox/kernel/tests/programs/run.sh`).

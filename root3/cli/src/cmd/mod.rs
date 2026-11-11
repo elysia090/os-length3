@@ -119,7 +119,7 @@ pub fn next(_: &Ctx, _: &Call) -> Result<Reply> {
 }
 
 pub fn version(_: &Ctx, _: &Call) -> Result<Reply> {
-    let v = include_str!("../../../../root/RELEASE").trim();
+    let v = include_str!("../../../../module/ricebox/RELEASE").trim();
     let root = length3_core::root::current(paths::data_dir()).map(|(_, i)| i);
     let mut text = format!("root3 {v}");
     if let Some(i) = &root { text += &format!("\nroot {} {} ({})", i.name, i.version, crate::say::out::short(&i.sha256)); }
