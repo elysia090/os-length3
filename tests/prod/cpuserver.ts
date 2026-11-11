@@ -1,4 +1,4 @@
-// The Worker's own fetch (src/remote/serve/worker.ts, as tests/prod/worker.ts
+// The Worker's own fetch (root3/remote/serve/worker.ts, as tests/prod/worker.ts
 // wraps it) in a Node process of its own, served over HTTP, each answer
 // saying the CPU time it took: workerd's clock does not move with CPU, so
 // what a request costs the Worker in CPU is measured here, on the same V8,

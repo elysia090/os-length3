@@ -89,7 +89,7 @@ node "$here/make/db.ts" "$root" "$work/list"
   echo "version=$version"
   sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\) \([^ ]*\)$/package.\1=\2 \3 \4/' "$root/usr/share/length3/packages"
   echo "root3.sha256=$(sha256sum "$root3" | cut -d' ' -f1)"
-  echo "root3.source=$(git -C "$os" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$os" status --porcelain -- src/core src/cli src/shared 2>/dev/null | grep -q . && echo +changed)"
+  echo "root3.source=$(git -C "$os" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$os" status --porcelain -- root3/core root3/cli root3/shared 2>/dev/null | grep -q . && echo +changed)"
   echo "assembler.sha256=$(cat "$here/make/assemble.sh" "$here/make/db.ts" "$here/etc/os-release" | sha256sum | cut -d' ' -f1)"
 } > "$work/tree/manifest"
 

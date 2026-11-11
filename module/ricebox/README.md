@@ -25,7 +25,7 @@ descriptors and pipes, fork/exec/wait, threads, signals.
 
 The code it runs is sods' (`../sods`); what it reads at rest is read by muk (`../muk`) and put in its tree here
 (`runtime/mount.ts`; a repo kept in step with the outside, `runtime/mirror.ts`). A Prompt's Worker
-(`src/app/prompt/kernel.worker.ts`, root3's for now) mounts the root and the repo and gives it the translations kept.
+(`root3/app/prompt/kernel.worker.ts`, root3's for now) mounts the root and the repo and gives it the translations kept.
 
 ```
 node runtime/run.ts PROGRAM [args...]            # host ELF as /bin/PROGRAM

@@ -13,8 +13,8 @@
 #   SHA256SUMS, manifest                           the digests; what the root was made from
 #
 # and OUT/../notes.md, the release's notes. Before the web build and the app are made, the root is pinned
-# in src/core/src/root/pins.rs (pin-root.ts), so what ships trusts this release's root; once the app is made, it is
-# pinned in src/shared/desktop-releases.json (pin-desktop.ts). Both changes stay in the tree, to be committed as
+# in root3/core/src/root/pins.rs (pin-root.ts), so what ships trusts this release's root; once the app is made, it is
+# pinned in root3/shared/desktop-releases.json (pin-desktop.ts). Both changes stay in the tree, to be committed as
 # one: release.yml proposes them to main. The release itself is made by publish-release.ts (or
 # .github/workflows/release.yml, which runs this script).
 #
@@ -104,13 +104,13 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "mkdir opened && tar --zstd -xf $rootfile -C opened"
   echo '```'
   echo
-  echo "root3 $version is the root (the desktop app installs it) and \`$webroot\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`src/core/src/root/pins.rs\` RELEASES pins both; the release pinned it:"
+  echo "root3 $version is the root (the desktop app installs it) and \`$webroot\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`root3/core/src/root/pins.rs\` RELEASES pins both; the release pinned it:"
   echo
   echo '```rust'
-  awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/src/core/src/root/pins.rs"
+  awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/root3/core/src/root/pins.rs"
   echo '```'
   echo
-  echo "and its desktop app in \`src/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes root3 from \`$webroot\` only at the pinned index (\`scripts/prompt-files.ts\`)."
+  echo "and its desktop app in \`root3/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes root3 from \`$webroot\` only at the pinned index (\`scripts/prompt-files.ts\`)."
   echo
   echo '```json'
   echo "\"$version\": {"

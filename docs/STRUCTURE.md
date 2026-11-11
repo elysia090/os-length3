@@ -30,12 +30,12 @@ ricebox    module/ricebox             its kernel; what serves it in a page; what
              its command line's own programs, each one file of C:
              module/you               z, rg, fd, fzf
              module/otter             help, and what each thing is
-root3      src/app, src/desktop       the faces: pages and window
-           src/cli                    the command
-           src/core                   what both say of a repo, its history, Home
+root3      root3/app, root3/desktop       the faces: pages and window
+           root3/cli                    the command
+           root3/core                   what both say of a repo, its history, Home
            root/                      the root's packages: each from its pinned source by its recipe
              its modules, each one responsibility:
-             shipto (src/remote)      what a service wants: who one is, what one may use, deliveries, its deploy
+             shipto (root3/remote)      what a service wants: who one is, what one may use, deliveries, its deploy
              funk                     links out of a box and between boxes
              m8                       where and how many boxes run (when they run on more than one machine)
 under all  module/lib                 what the C stands on: system calls, words, output. On no release: it is in
@@ -52,15 +52,15 @@ no box (muk's) and is no service (shipto's).
 
 - **A release is one lump.** 0.6.4 holds the root, the web root, the web app and the desktop app. muk, xlat,
   ricebox, you and otter are on no release by themselves; you and otter only inside the root.
-- **ricebox is not whole in its folder.** What serves it in a page is the app's (`src/app/prompt`, 2,051 lines,
+- **ricebox is not whole in its folder.** What serves it in a page is the app's (`root3/app/prompt`, 2,051 lines,
   with the app's words, its host and the Remote's address in it); what makes the folder a host serves is
   `scripts/webroot*.ts`. Its kernel is 8,698 lines of TypeScript: not thin.
-- **muk's work is still root3's core's.** A box on Linux is run by `src/core/src/prompt` (1,344 lines of Rust over
-  rustix), with Home's dotfiles and the repo written into it; `src/core/src/compute` (616 lines) drives
+- **muk's work is still root3's core's.** A box on Linux is run by `root3/core/src/prompt` (1,344 lines of Rust over
+  rustix), with Home's dotfiles and the repo written into it; `root3/core/src/compute` (616 lines) drives
   Firecracker, which muk's definition rules out. `muk run` exists (737 lines of C) and does not yet make the
   seccomp filter or the terminal a Prompt needs.
 - **sods holds what is muk's**: unzstd and SHA-256 in `wasm.rs`, with their two crates.
-- **shipto is in five places**: `src/remote` (8,403 lines), `src/core/src/remote` (2,479), and three of the
+- **shipto is in five places**: `root3/remote` (8,403 lines), `root3/core/src/remote` (2,479), and three of the
   command's files (1,095).
 - **The product's name is in neutral units**: `/etc/length3` and `root3 address` in otter, `length3` as the
   kernel's hostname.
@@ -100,7 +100,7 @@ own for the same work.
    types (`ops.rs`, 2,070 lines). First cut: its own decoder, one pass, a table per opcode; then the calls it makes
    (a call is 8.5× native).
 3. **muk takes the box from root3's core.** The seccomp filter and the terminal in `muk run`; then a Prompt is the
-   bundle root3 writes, `src/core/src/prompt` goes down to that, and the Firecracker driver goes.
+   bundle root3 writes, `root3/core/src/prompt` goes down to that, and the Firecracker driver goes.
 4. **What serves ricebox comes out of the app**, with no word of the app's or the Remote's in it, and what makes
    its folder out of `scripts/`: then `ricebox` is on a release by itself.
 5. **shipto gathered** into its folder from its five places.

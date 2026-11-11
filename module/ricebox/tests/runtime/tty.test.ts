@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {have, shell} from './busybox.ts';
 
-// The app's Prompt's console is a terminal (src/app/prompt/kernel.worker.ts): a shell reads lines on it, with job control, and a program
+// The app's Prompt's console is a terminal (root3/app/prompt/kernel.worker.ts): a shell reads lines on it, with job control, and a program
 // that asks for each key as it comes is heard by what shows the terminal (console.mode), which then sends keys so.
 
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);

@@ -1,4 +1,4 @@
-// A translation as it is kept between runs: written by the page (src/app/prompt/userland.ts) and by
+// A translation as it is kept between runs: written by the page (root3/app/prompt/userland.ts) and by
 // scripts/webroot-runnable.ts, read back by a kernel through its keeper (muk/runtime/keeper.ts), which seals each copy
 // with the SHA-256 of its body and checks it as it reads. These are the bodies.
 //

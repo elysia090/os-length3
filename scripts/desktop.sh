@@ -20,8 +20,8 @@ version=${1:-$(tr -d ' \n' < root/RELEASE)}
 cargo build -q --locked --profile prompt -p root3 --target x86_64-unknown-linux-musl
 # Tauri takes an external binary by its name and the triple the app is built for (bundle.externalBin).
 host=$(rustc -vV | sed -n 's/^host: //p')
-mkdir -p src/desktop/binaries
-install -m 0755 target/x86_64-unknown-linux-musl/prompt/root3 "src/desktop/binaries/root3-$host"
+mkdir -p root3/desktop/binaries
+install -m 0755 target/x86_64-unknown-linux-musl/prompt/root3 "root3/desktop/binaries/root3-$host"
 
 # WebKitGTK draws through libepoxy, which opens libGLESv2 itself while the app runs: no binary names it, so the
 # AppImage's bundler leaves it out, and a machine without libgles2 (Debian 13 as installed, #37) stopped before a
@@ -32,16 +32,16 @@ gles=$(ldconfig -p | sed -n 's/^[[:space:]]*libGLESv2\.so\.2 (libc6,x86-64) => /
 gles=$(readlink -f "$gles")
 
 # On Ubuntu 23.10 and later AppArmor keeps user namespaces from unprivileged programs, and root3's Prompts are made in
-# them: the .deb carries a profile that lets /usr/bin/root3 make them (src/desktop/deb), which its postinst puts in place
+# them: the .deb carries a profile that lets /usr/bin/root3 make them (root3/desktop/deb), which its postinst puts in place
 # where the kernel has that restriction. An AppImage's root3 has no fixed path for a profile to name.
-# What is said over src/desktop/tauri.conf.json: this version, root3 beside the app, libGLESv2 in the AppImage, the
+# What is said over root3/desktop/tauri.conf.json: this version, root3 beside the app, libGLESv2 in the AppImage, the
 # .deb's profile and its scripts, and the
 # webview's policy for the Remote the page is built for (VITE_LENGTH3_REMOTE, as vite.config.ts reads it), from
-# src/app/host/policy.ts.
+# root3/app/host/policy.ts.
 config=$(VERSION="$version" GLES="$gles" node --input-type=module -e '
-import {DEFAULT_REMOTE, desktopPolicy} from "./src/app/host/policy.ts";
+import {DEFAULT_REMOTE, desktopPolicy} from "./root3/app/host/policy.ts";
 const remote = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
-console.log(JSON.stringify({version: process.env.VERSION, build: {beforeBuildCommand: "npx vite build --config src/app/vite.config.ts"},
+console.log(JSON.stringify({version: process.env.VERSION, build: {beforeBuildCommand: "npx vite build --config root3/app/vite.config.ts"},
   bundle: {externalBin: ["binaries/root3"], linux: {appimage: {files: {"/usr/lib/libGLESv2.so.2": process.env.GLES}},
     deb: {files: {"/usr/share/length3-os/apparmor/length3-root3": "deb/length3-root3.apparmor"},
       postInstallScript: "deb/postinst", postRemoveScript: "deb/postrm"}}},

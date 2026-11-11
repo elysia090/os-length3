@@ -1,4 +1,4 @@
-// The Worker the production-like selftest runs on workerd: src/remote/serve/worker.ts
+// The Worker the production-like selftest runs on workerd: root3/remote/serve/worker.ts
 // itself, its fetch and its scheduled as they are, with only what this
 // machine needs in place of Cloudflare's network around it:
 //
@@ -12,11 +12,11 @@
 //   - each answer says how long the Worker took (Server-Timing: worker;dur=),
 //     as workerd's clock tells it (it moves with I/O, not with CPU alone).
 //
-// Nothing here is deployed: wrangler.toml's main is src/remote/worker.ts.
+// Nothing here is deployed: wrangler.toml's main is root3/remote/worker.ts.
 
 import {neonConfig} from '@neondatabase/serverless';
-import {devBilling} from '../../src/remote/plan/devbilling.ts';
-import worker, {type Env} from '../../src/remote/serve/worker.ts';
+import {devBilling} from '../../root3/remote/plan/devbilling.ts';
+import worker, {type Env} from '../../root3/remote/serve/worker.ts';
 
 type Local = Env & {LOCAL_WS_PROXY?: string; LOCAL_STRIPE?: string};
 interface Ctx { waitUntil(p: Promise<unknown>): void }

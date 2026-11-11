@@ -6,7 +6,7 @@ import {bootScript} from './boot.ts';
 // /boot.js (boot.ts, its types taken away) says why when the app cannot start: it must load before the app, as a
 // classic script of its own (the policy runs no inline script), and run in a browser too old for the app itself.
 const boot = await bootScript();
-const index = readFileSync(new URL('../src/app/index.html', import.meta.url), 'utf8');
+const index = readFileSync(new URL('../root3/app/index.html', import.meta.url), 'utf8');
 
 test('the page loads boot.js before the app, as a plain script', () => {
   // data-cfasync: a CDN that defers scripts (Rocket Loader) leaves it alone, so it runs where the app cannot.

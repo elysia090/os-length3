@@ -1,11 +1,11 @@
 name: Prune releases
 
-# Deletes the releases main no longer pins (src/core/src/root/pins.rs RELEASES, src/shared/desktop-releases.json);
+# Deletes the releases main no longer pins (root3/core/src/root/pins.rs RELEASES, root3/shared/desktop-releases.json);
 # their tags stay. Runs when the pins on main change, or by hand; never during a release (one concurrency group).
 on:
   push:
     branches: ['main']
-    paths: ['src/core/src/root/pins.rs', 'src/shared/desktop-releases.json']
+    paths: ['root3/core/src/root/pins.rs', 'root3/shared/desktop-releases.json']
   workflow_dispatch:
 
 permissions:
@@ -30,8 +30,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           keep=$({
-            grep -o 'tag: "os-length3-linux-v[^"]*"' src/core/src/root/pins.rs | cut -d'"' -f2
-            node -e 'for (const v of Object.keys(require("./src/shared/desktop-releases.json"))) console.log(`os-length3-linux-v${v}`)'
+            grep -o 'tag: "os-length3-linux-v[^"]*"' root3/core/src/root/pins.rs | cut -d'"' -f2
+            node -e 'for (const v of Object.keys(require("./root3/shared/desktop-releases.json"))) console.log(`os-length3-linux-v${v}`)'
           } | sort -u)
           # Pins that cannot be read keep everything.
           [ -n "$keep" ] || { echo "main pins no release: nothing is deleted" >&2; exit 1; }

@@ -1,7 +1,7 @@
 // The tree root3 is, read two ways, so the two can be held side by side:
 //
 //   nativeTree(TARBALL)  a release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst)
-//                        as root3 installs it on a device (src/core/src/root/pins.rs unpack):
+//                        as root3 installs it on a device (root3/core/src/root/pins.rs unpack):
 //                        what is under root/, directories at least 0700, files
 //                        without set-id bits, symlinks as they are, a hard link the
 //                        same bytes as its file. No other kind is part of a root.
@@ -19,7 +19,7 @@ import {join} from 'node:path';
 import {createZstdDecompress, gunzipSync, zstdDecompressSync} from 'node:zlib';
 import type {Readable} from 'node:stream';
 import {checkPacks, checkedRange} from '../module/muk/runtime/table.ts';
-import type {About, Blob, Index} from '../src/app/prompt/userland.ts';
+import type {About, Blob, Index} from '../root3/app/prompt/userland.ts';
 
 export type {About, Index};
 /** A file of the web root, as its index names it. */
@@ -36,7 +36,7 @@ export interface Entry {
   same?: string;
 }
 export interface Tree { entries: Entry[]; manifest?: string; about?: About; index?: Index }
-/** One member of a tar stream, as src/core/src/root/pins.rs reads it. */
+/** One member of a tar stream, as root3/core/src/root/pins.rs reads it. */
 export interface TarMember { name: string; kind: string; mode: number; link: string; size: number; bytes: Buffer }
 
 export const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -46,7 +46,7 @@ const byPath = (a: Entry, b: Entry) => (a.path < b.path ? -1 : a.path > b.path ?
 
 /**
  * Every member of a tar stream: {name, kind ('0' file, '5' dir, '2' symlink, '1' hard link), mode, link, size, bytes},
- * with pax path and linkpath applied, as src/core/src/root/pins.rs reads one.
+ * with pax path and linkpath applied, as root3/core/src/root/pins.rs reads one.
  */
 export async function* tarMembers(stream: Readable): AsyncGenerator<TarMember> {
   // The stream's chunks as they come, and how far into the first one is read: each member is copied out once.

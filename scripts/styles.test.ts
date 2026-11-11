@@ -51,12 +51,12 @@ test('a selector weighs what the cascade says', () => {
   assert.deepEqual(w('input[type="checkbox"]:checked::after'), [0, 2, 2]);
 });
 
-/** An app of its own: src/app/ with these files and its page. */
+/** An app of its own: root3/app/ with these files and its page. */
 function app(files: Record<string, string>, html = '<html class="opening"><body><main class="page" id="page"></main></body></html>') {
   const dir = mkdtempSync(join(tmpdir(), 'styles-test-'));
-  mkdirSync(join(dir, 'src', 'app'), {recursive: true});
-  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, 'src', 'app', name), text);
-  writeFileSync(join(dir, 'src', 'app', 'index.html'), html);
+  mkdirSync(join(dir, 'root3', 'app'), {recursive: true});
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, 'root3', 'app', name), text);
+  writeFileSync(join(dir, 'root3', 'app', 'index.html'), html);
   try { return pageWords(dir); } finally { rmSync(dir, {recursive: true, force: true}); }
 }
 

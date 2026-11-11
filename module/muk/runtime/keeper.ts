@@ -1,5 +1,5 @@
-// Copies kept from earlier runs, read where the kernel runs (src/app/prompt/kernel.worker.ts). The page keeps them
-// (src/app/prompt/userland.ts, within its share of the browser's room) in Cache Storage, each program's under the
+// Copies kept from earlier runs, read where the kernel runs (root3/app/prompt/kernel.worker.ts). The page keeps them
+// (root3/app/prompt/userland.ts, within its share of the browser's room) in Cache Storage, each program's under the
 // origin of its file in the root (pack.ts: its pack, named by its digest, and its place in it), and says at the start
 // which there are: kept = {cache, at: {[origin]: {main, more}}}, the URL of a program's translation and that of the
 // code it reached later (or null). A program run for the first time in this kernel is then read from there, not

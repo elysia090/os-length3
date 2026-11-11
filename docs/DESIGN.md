@@ -947,12 +947,12 @@ nobody else can take it and be taken for its owner:
 | a repo shown in a server | its owner, lent to the server | its Remote | taken off, or its owner leaves the server: at once |
 | a repo's public name (`face:name`) | its owner, under a face | the face (the server, or the owner's address) | taken down, or the face goes: 30 days no one else's repo answers to it |
 | a board, its talk and TODO | its server | its Remote | removed by its owner: 30 days, back at once until then, then gone; or with its server |
-| a copy on a device | the device | the digests | taken back whenever room is wanted (src/core/src/prompt/writes.rs) |
+| a copy on a device | the device | the digests | taken back whenever room is wanted (root3/core/src/prompt/writes.rs) |
 | a session, a code | the person | sign-in | a lease: days for a session, minutes for a code |
 | a guest's invitation | the one of its people who made it, lent to whoever they hand it | its Remote, and its digest | used, revoked, its maker leaves the server, or a week (at most 30 days) |
 | a guest | the board, by an invitation | its token's digest | a lease of 30 days; removed (their posts with them), or the board stops taking guests: at once |
 
-What goes, goes in one place, once a day (`src/remote/repos/sweep.ts`): nothing a
+What goes, goes in one place, once a day (`root3/remote/repos/sweep.ts`): nothing a
 person asks for purges anything on the way, and a file no tree names any
 more goes with the rest.
 
@@ -994,7 +994,7 @@ the same thing for the desktop app and for the web.
   (the version in `root/RELEASE`).
 - **Digest.** Its identity is the sha256 of its root,
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
-  `src/core/src/root/pins.rs` RELEASES pins it, for both ways in: `sha256` and
+  `root3/core/src/root/pins.rs` RELEASES pins it, for both ways in: `sha256` and
   `bytes`, the root; `web`, the sha256 of the index the browser reads the
   same root by. The release writes that entry (`scripts/pin-root.ts`) and
   it is committed; nothing else pins root3.
@@ -1132,7 +1132,7 @@ the person meets none of the machinery that keeps them:
 A task goes offered → waiting → working → ready, or asking (its reply sends
 it on), done (looked at, or its issue merged), dropped (later), stopped (it
 could not run: why, and the one fix, such as `root3 network on REPO`). Those
-are the core's words (`src/core/src/agent/tasks.rs`, `<data>/tasks/tasks.json`, never
+are the core's words (`root3/core/src/agent/tasks.rs`, `<data>/tasks/tasks.json`, never
 sent). The person sees an offer to hand over, the work going on in its
 issue's box, a question with a field to answer it, something to look at,
 or what could not go on: no stage, queue, session or hook.
@@ -1171,7 +1171,7 @@ Lately).
 
 What a person runs (a Prompt, a task handed to an agent, a repo's tests) is
 compute, and the OS treats it as one thing whatever runs it: a **Spec**
-says what a run is made of, never where (`src/core/src/compute/spec.rs`): the root
+says what a run is made of, never where (`root3/core/src/compute/spec.rs`): the root
 by its sha256, the environment by the key of what set it up (the root's
 sha256, `.packages`, `.setup`: `launch::environment_key`), the repo and
 its line, what runs and what it is told, whether it asks for the network,
@@ -1338,7 +1338,7 @@ close` closes it as its window's close button does, and nothing else: what
 it saved stays, and what root3 runs (SSH, a Prompt in a terminal) goes on.
 Opening it turns nothing on: no network listening, no SSH, no Remote. It is
 reached through a socket in its own owner-only folder of the data
-directory (`src/core/src/device/desktop.rs`).
+directory (`root3/core/src/device/desktop.rs`).
 
 ### The command line without learning it first
 
@@ -1402,7 +1402,7 @@ at a terminal is used the same way, and stays a command line:
   quiet line that `root3 next` chooses one with the keys. `root3 next` opens them: the same row walked with
   ←→ and Enter, Enter alone or Esc going on, each deed done as its command
   and those after it offered again.
-- **One table drives both.** A deed is a form of `src/cli/src/words/spec.rs` with what
+- **One table drives both.** A deed is a form of `root3/cli/src/words/spec.rs` with what
   the menu needs beside it: its word in both languages, what it is pressed
   on, the facts it is offered under, the words it gives itself, what it
   asks, its weight. Each page notes its things and their facts while it is
@@ -1426,8 +1426,8 @@ at a terminal is used the same way, and stays a command line:
   `--json`, with `TERM=dumb`, or with `ROOT3_PLAIN=1` (the one switch that keeps
   a terminal plain too, for a screen reader that prefers it or a recorded
   session), nothing is offered or asked, and what root3 writes and how it exits
-  are byte for byte what they were (`src/cli/tests/plain/main.rs` keeps the
-  transcripts; `src/cli/tests/menu/main.rs` drives the menu through a real pty).
+  are byte for byte what they were (`root3/cli/tests/plain/main.rs` keeps the
+  transcripts; `root3/cli/tests/menu/main.rs` drives the menu through a real pty).
 
 ### What root3 writes
 
@@ -1538,14 +1538,14 @@ Linux).md"), so neither is lost and the name says whose it is on every
 device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
 are named and never sent; a repo holding them is never let go. Nor does a
-file that holds a secret (src/core/src/device/secrets.rs): a model maker's API key, a
+file that holds a secret (root3/core/src/device/secrets.rs): a model maker's API key, a
 Stripe live key, a GitHub token, or this device's own sign-in. A Prompt has
 the Agent's key in its environment, so whatever runs there could write it
 into a file; read before it goes, as a push is read by GitHub's push
 protection, that file stays here unsent, said as `secret sk-ant-…a9AA`, and
 Commit says which until it is taken out. Home's
 settings (profile, TODO, dotfiles) are kept there too, by the app and root3
-alike (src/app/remote/settings.ts, src/core/src/home/: one protocol, one record of what was
+alike (root3/app/remote/settings.ts, root3/core/src/home/: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
 here, the Remote's is taken; changed on both sides, two TODO lists are
 joined item by item, and any other setting is the Remote's. The band, the
@@ -1583,7 +1583,7 @@ in the app itself, and adding a passkey, linking a provider and setting
 the code (Add, Link, Set in the browser) open the Remote's own page there
 at Sign-in; a repo's switch and Discard ask in its card as on the web, and
 Continue in the browser opens that repo's card there with its ask already
-open (`src/core/src/remote/account.rs` app_page names only that page, of the Remote's
+open (`root3/core/src/remote/account.rs` app_page names only that page, of the Remote's
 own app, the way a sign-in's page is checked). Done there, the page says
 to go back; the app reads again what changed when its window comes back.
 Every device is a session, listed on the Remote page and ended
@@ -1591,10 +1591,10 @@ from any other. What proves a session is held where no page reads it. In a
 browser it is the session's cookie (`__Host-`: Secure, HttpOnly,
 SameSite=Lax), which the browser sends and no script reads, so a script
 that should not be on the page cannot carry the session off: the Remote
-hands a page no token, ever (`src/remote/people/auth.ts`), and the browser's core
+hands a page no token, ever (`root3/remote/people/auth.ts`), and the browser's core
 sends the cookie with its own requests. A device (the app, root3) holds a
 bearer from the device flow, kept apart from everything a page reads
-(`src/core/src/device/vault.rs`, never in Home's state, which a page reads and which
+(`root3/core/src/device/vault.rs`, never in Home's state, which a page reads and which
 is synced): in the OS's own keyring (the Keychain, Credential Manager on
 this computer alone, the Secret Service over D-Bus from Rust alone, so the
 static root3 reaches it as the app does), encrypted at rest with what the
@@ -1635,12 +1635,12 @@ What leaves this system is kept to what is said here:
   machine (connection.ts leaveFor); the desktop opens only Stripe's or the
   Remote's own (account.rs). The Remote answers only the app's origins. From the host (the app
   and root3: the Remote, a release, a distribution's root) it goes one way
-  (src/core/src/device/net.rs), taking of the host only what the machine already
+  (root3/core/src/device/net.rs), taking of the host only what the machine already
   decided: its proxy (HTTPS_PROXY, minus NO_PROXY, never for the machine
   itself) and the certificates it trusts (its store or SSL_CERT_FILE,
   beside the bundled ones).
 - **The root.** In the app a Prompt is the distribution's root, run by this
-  machine's kernel without privilege (`root3 prompt`, src/core/src/prompt/launch.rs): a user
+  machine's kernel without privilege (`root3 prompt`, root3/core/src/prompt/launch.rs): a user
   namespace makes the user root inside it only; its own mount, pid, ipc,
   uts and network namespaces (no network unless granted); the root
   read-only, the repo the only writable place of the person's, fresh
@@ -1648,7 +1648,7 @@ What leaves this system is kept to what is said here:
   made for each Prompt, holding only the ptys opened in it, none of the
   host's sessions); an environment set, not inherited (no
   host home, keys, agent or variables); and a seccomp filter
-  (src/core/src/prompt/seccomp.rs) over all of it, so the kernel answers none of what a
+  (root3/core/src/prompt/seccomp.rs) over all of it, so the kernel answers none of what a
   sandboxed program has no use for and escapes are found through: ptrace,
   mounting, new namespaces, modules, kexec, bpf, perf, keys, userfaultfd,
   io_uring, typing into the terminal it was started from (TIOCSTI) (strace and gdb do not run in a Prompt; a shell, compilers,
@@ -1666,8 +1666,8 @@ What leaves this system is kept to what is said here:
   checked by digest before it is read, unpacked refusing anything that
   would land outside, go through a link or be a device. It is fetched from
   the Remote this device uses, then the publisher's Remote, which each of
-  its deploys fills with every root pinned in `src/core/src/root/pins.rs`
-  (`src/remote/bytes/mirror.ts`), and last from the GitHub release, which answers
+  its deploys fills with every root pinned in `root3/core/src/root/pins.rs`
+  (`root3/remote/bytes/mirror.ts`), and last from the GitHub release, which answers
   only while the repository is public; when none has it, the error says
   what each said.
 - **Host.** The app starts no host program for a repo: history is the
@@ -1690,12 +1690,12 @@ apart: Postgres holds everything said here, the bucket only file contents,
 and a Remote without a bucket does all the rest and says plainly that it
 cannot hold files now, so a device keeps its work until it can. Each part,
 its routes and tables, and what the app and root3 need of it that a page does
-not: `src/remote/README.md`.
+not: `root3/remote/README.md`.
 
 ### The plan: the Remote decides what an account may do
 
 Billing lives on the Remote. The Remote alone decides what an account may
-do (`src/remote/plan/plan.ts`); every client, the web app, the desktop app and root3,
+do (`root3/remote/plan/plan.ts`); every client, the web app, the desktop app and root3,
 only shows what it says (Remote → Plan, `root3 remote plan`) and asks. No
 client counts, guesses or greys out on its own.
 
@@ -1760,7 +1760,7 @@ allowance still holds, and the Remote says paid features cannot be bought
 here yet. A Remote given no plan (a Remote of one's own, development unless
 asked, a Remote for research) has no allowance at all.
 
-**Stripe's stand-in** (`src/remote/plan/devbilling.ts`), on a Remote of one's own
+**Stripe's stand-in** (`root3/remote/plan/devbilling.ts`), on a Remote of one's own
 asked for the plan (`LENGTH3_PLAN=1`) and the selftest's, looks and does as
 Stripe's pages do in test mode, so the way from the Plan to paying and back
 is the one people meet; it is Stripe's look, not this language's, and says
@@ -1777,7 +1777,7 @@ credited), the card (the same form and test cards), the invoices, cancelling
 at the period's end and Renew plan to keep it, and, marked as not Stripe's,
 test controls (a payment fails, a payment goes through, it ends now). Each
 step sends the Remote the events Stripe would, signed, before the page goes
-on. The development sign-in provider (`src/remote/people/devoauth.ts`) asks as a real
+on. The development sign-in provider (`root3/remote/people/devoauth.ts`) asks as a real
 one does: a name, then what length3 asks of it (your name and email), Allow
 or Cancel; Cancel comes back with the error a provider sends then.
 
@@ -2868,7 +2868,7 @@ or goes).
   to. When room is wanted (a Prompt prepared, a root fetched, a repo
   brought here) and the host has less free than that and a reserve (a
   twentieth of the disk, between 512 MB and 4 GB; `LENGTH3_RESERVE` says
-  another), what comes back goes by itself until there is enough (src/core/src/storage/
+  another), what comes back goes by itself until there is enough (root3/core/src/storage/
   make_room): this OS's leftovers and old roots, caches, what is derived in
   repos, the root before the current one, then copies of repos in step with
   the Remote untouched for a week, the oldest first. Never what only this
@@ -2907,7 +2907,7 @@ or goes).
   as here. In a browser there is no switch: a Prompt's programs have no
   sockets at all.
   Every Prompt on the root is an `root3 prompt` process that records
-  itself (src/core/src/prompt/running.rs) from the moment it starts being prepared
+  itself (root3/core/src/prompt/running.rs) from the moment it starts being prepared
   (`.packages`, `.setup`) until it ends, with its repo and the root it runs
   on, so `root3 prompt ls` lists the app's and a terminal's alike (one being
   prepared says 用意中, as its card here does), `root3 prompt stop REPO` stops
@@ -2934,7 +2934,7 @@ or goes).
   each is, and at its right what can be done. In the app each other one has Use at its
   right: fetched if it is not here (Ubuntu's base and Debian's official
   root, from their makers or the Remote, taken only at the digest pinned
-  in src/core/src/root/pins.rs), then the one Prompts run on, each with its own
+  in root3/core/src/root/pins.rs), then the one Prompts run on, each with its own
   environment per repo. In a browser they say In the app only: their
   programs are linked as they run, which xlat does not do. Custom is not
   yet.
@@ -3068,10 +3068,10 @@ or goes).
   model, and a key of no form of its own, refused), and the model is the
   newest the key opens that answers, read from the maker's own list when the
   key is given (Trying the key…), never written into the OS. It is kept as
-  the device's session is (`src/core/src/device/vault.rs`: the OS's keyring, else a file
+  the device's session is (`root3/core/src/device/vault.rs`: the OS's keyring, else a file
   only the person reads). In a browser, whose keeping is its profile's files,
   it is sealed by the person's passkey where there is one with PRF
-  (`src/app/account/seal.ts`: AES-256-GCM under a key HKDF derives from what the
+  (`root3/app/account/seal.ts`: AES-256-GCM under a key HKDF derives from what the
   passkey's PRF gives, after it verifies the person), opened the first time
   the Agent is asked in a session, and the key itself never reaches the
   core; where none can seal it, it is kept as given, and Runtime says which.
@@ -3094,9 +3094,9 @@ or goes).
   the left because it leaves the page for this computer, as Forge does on
   Remote's card. It gives the .deb, which Debian and Ubuntu install, or the
   AppImage when the Remote has no .deb (the release still has both). They are
-  the files `src/shared/desktop-releases.json` pins for that version, served by
+  the files `root3/shared/desktop-releases.json` pins for that version, served by
   the Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
-  puts them from the release (`src/remote/bytes/mirror.ts`). It is offered only once
+  puts them from the release (`root3/remote/bytes/mirror.ts`). It is offered only once
   the Remote says it has it; with neither there, the section is not shown,
   never a button that cannot act.
 
@@ -3831,7 +3831,7 @@ into its README.md under its title, and the box grows with them, a line to
 begin with. In the box beside it, what will be made with it (作成され
 るもの), as File will show it: the repo's own row, its name again in ink
 (dashed where nothing is named), and the one scaffold every repo starts from
-(nothing to choose: src/shared/templates.json's `standard`, as `root3 repo new`
+(nothing to choose: root3/shared/templates.json's `standard`, as `root3 repo new`
 makes it: README.md with docs/ and issue/, no language of its own; C's files
 are `root3 repo new -t c`'s), each row renamed or left out where it stands,
 New file and New folder at its foot, README.md's size at its row's end as

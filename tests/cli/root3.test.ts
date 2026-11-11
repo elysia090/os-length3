@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {remote, type Ran} from './harness.ts';
 
-// root3 end to end, against a Remote of its own (src/remote/serve/dev.ts on a free
+// root3 end to end, against a Remote of its own (root3/remote/serve/dev.ts on a free
 // port, its data in a directory made for it): real commands, their words,
 // their exit codes, and what the Remote holds after. Each test has repos
 // and people of its own; the devices signed in here are shared, and none
@@ -255,7 +255,7 @@ test('root3 name answers with the username alone, given at sign-in; root3 name s
   assert.match(ok(d.root3(['name', 'ls'])).out, /^soraself\nYour code: \d{6} /);
   // As every list is asked for (ls); list, as it was, still answers.
   assert.match(ok(d.root3(['name', 'list'])).out, /^soraself\n/);
-  // SSH is this device's (src/remote/repos/ssh.ts): off at first, and a script is told, never asked.
+  // SSH is this device's (root3/remote/repos/ssh.ts): off at first, and a script is told, never asked.
   refused(d.root3(['address']), 5, /SSH is off on this device/);
 });
 

@@ -21,10 +21,10 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   assert.equal(new Set(names).size, names.length);
   assert.equal(new Set(paths).size, paths.length);
   for (const u of UNITS) for (const t of u.takes) assert.ok(t === '*' || names.includes(t), `${u.name} takes ${t}`);
-  // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (src/core).
+  // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (root3/core).
   assert.equal(unitOf('module/sods/runtime/translator.ts')?.name, 'sods');
   assert.equal(unitOf('module/ricebox/runtime/process.ts')?.name, 'ricebox');
-  assert.equal(unitOf('src/core/src/prompt/launch.rs')?.name, 'muk');
+  assert.equal(unitOf('root3/core/src/prompt/launch.rs')?.name, 'muk');
 });
 
 test('ricebox can be cut out with the units under it: none of them takes from a unit over them, by the table or by an import', () => {

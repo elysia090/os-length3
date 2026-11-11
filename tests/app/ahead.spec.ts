@@ -1,11 +1,11 @@
 import {existsSync} from 'node:fs';
 import {basename, join} from 'node:path';
-import {aheadFor} from '../../src/app/prompt/ahead.ts';
-import type {Index} from '../../src/app/prompt/userland.ts';
+import {aheadFor} from '../../root3/app/prompt/ahead.ts';
+import type {Index} from '../../root3/app/prompt/userland.ts';
 import {expect, test} from './fixtures.ts';
 import {OS} from './paths.ts';
 
-// What a Prompt is likely to run next, translated by the browser while it waits for a line (src/app/prompt/ahead.ts): the
+// What a Prompt is likely to run next, translated by the browser while it waits for a line (root3/app/prompt/ahead.ts): the
 // light programs of the root, what its shell runs itself as one moves first, then what anyone reaches for. Kept before
 // they are asked for, they are not translated when they run. What building C runs is not among them, in a repo made
 // from C's files ('hello') too: gcc's compiler proper (cc1, 40 MB of code) is the release's to translate. @slow, as the

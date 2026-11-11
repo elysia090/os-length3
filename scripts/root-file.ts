@@ -1,4 +1,4 @@
-// A release root this tree pins (src/core/src/root/pins.rs RELEASES): VERSION's, or the
+// A release root this tree pins (root3/core/src/root/pins.rs RELEASES): VERSION's, or the
 // newest pinned, as a file: from DIR when it is there already, else from the
 // GitHub release that published it, and kept only at the pinned digest and size.
 // Prints its path. For building the web root (scripts/webroot.sh) and checking
@@ -12,14 +12,14 @@
 import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {pinnedRoots} from '../src/remote/ship/releases.ts';
+import {pinnedRoots} from '../root3/remote/ship/releases.ts';
 
 const here = new URL('..', import.meta.url).pathname;
 const [dir, asked] = process.argv.slice(2);
 if (!dir) { console.error('usage: root-file.ts DIR [VERSION]'); process.exit(2); }
-const roots = pinnedRoots(readFileSync(join(here, 'src/core/src/root/pins.rs'), 'utf8'));
+const roots = pinnedRoots(readFileSync(join(here, 'root3/core/src/root/pins.rs'), 'utf8'));
 const pin = asked ? roots.find((r) => r.version === asked) : roots[0];
-if (!pin) throw new Error(`src/core/src/root/pins.rs pins no root for ${asked}`);
+if (!pin) throw new Error(`root3/core/src/root/pins.rs pins no root for ${asked}`);
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const at = join(dir, pin.file);
 const ok = (b: Buffer) => b.length === pin.bytes && sha(b) === pin.sha256;

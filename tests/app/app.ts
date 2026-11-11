@@ -10,7 +10,7 @@
 // assertions).
 
 import {expect, type Locator, type Page} from '@playwright/test';
-import TEMPLATES from '../../src/shared/templates.json' with {type: 'json'};
+import TEMPLATES from '../../root3/shared/templates.json' with {type: 'json'};
 
 /** The rail's places, as the rail names them (in English). */
 export const PLACES = {
@@ -103,7 +103,7 @@ export class App {
   /**
    * Answer an ask with `yes`: a deed that comes under the pointer holds still a moment (so a double
    * click cannot answer it), so it is pressed until the ask (`ask`) is gone. Pressed again soon: the
-   * moment is half a second (SETTLE, src/app/pages/kit/common.ts), and a press it takes disables the deed
+   * moment is half a second (SETTLE, root3/app/pages/kit/common.ts), and a press it takes disables the deed
    * until it is done, so a press while it is being done waits for it rather than doing it twice.
    */
   async answer(yes: Locator, ask: Locator) {
@@ -813,7 +813,7 @@ class Server extends Part {
 }
 
 /**
- * Stripe, as the Remote with the plan has it (src/remote/plan/devbilling.ts, its stand-in in test mode): Checkout's card
+ * Stripe, as the Remote with the plan has it (root3/remote/plan/devbilling.ts, its stand-in in test mode): Checkout's card
  * form, the 3-D Secure step, and the customer portal, found as a person finds them there.
  */
 class Stripe extends Part {

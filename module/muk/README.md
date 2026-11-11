@@ -58,7 +58,7 @@ at a time; what is left over the 20,000 is finding a name in its list one name a
 What reads a pack: a file's bytes by a Range of its pack, used only once they are what the pack's table says
 (`runtime/pack.ts`, `runtime/table.ts`), and the copies a Prompt keeps between runs, sealed by their digest
 (`runtime/keeper.ts`; what a translation's copy holds is sods' `kept.ts`). They become its layers by digest. A
-Prompt on Linux is still run by root3's core (`src/core/src/prompt`: namespaces, the root under an overlay, a
+Prompt on Linux is still run by root3's core (`root3/core/src/prompt`: namespaces, the root under an overlay, a
 seccomp filter, an init), which becomes the bundle root3 writes once muk makes the filter and the terminal.
 
 What puts a pack's tree in a kernel's, and keeps a repo there in step with the outside, is the kernel's

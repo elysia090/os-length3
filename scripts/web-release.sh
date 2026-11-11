@@ -7,7 +7,7 @@
 #
 #   sh scripts/web-release.sh [ROOT.tar.zst]
 #
-# ROOT is the release root (by default the newest src/core/src/root/pins.rs pins,
+# ROOT is the release root (by default the newest root3/core/src/root/pins.rs pins,
 # fetched by scripts/root-file.ts); with WEBROOT_READY=1, a public/webroot
 # made already from it is kept. Needs node 22, cargo with the
 # wasm32-unknown-unknown target, and zip.
@@ -25,7 +25,7 @@ npm ci
 npm run check
 # The web app talks to the origin it is served from (one Worker: wrangler.toml).
 # The check has just run tsc, so only the bundle is made (npm run build would run tsc again).
-VITE_LENGTH3_REMOTE="${VITE_LENGTH3_REMOTE-}" npx vite build --config src/app/vite.config.ts
+VITE_LENGTH3_REMOTE="${VITE_LENGTH3_REMOTE-}" npx vite build --config root3/app/vite.config.ts
 rm -f length3-web.zip
 (cd dist && zip -qr ../length3-web.zip .)
 sha256sum length3-web.zip | tee length3-web.zip.sha256

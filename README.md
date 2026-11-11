@@ -44,13 +44,13 @@ A release carries:
 
 [os.length3.com](https://os.length3.com) is the web app and its Remote,
 where a signed-in person's repos, TODO and settings are kept between
-devices. Building from source, `root3` is `cargo install --path src/cli`.
+devices. Building from source, `root3` is `cargo install --path root3/cli`.
 
 ## Layout
 
 | Directory | What is there | Start at |
 | --- | --- | --- |
-| [`src/`](src/) | **Length³ OS**: the app ([`app/`](src/app/), TypeScript, no framework; [`desktop/`](src/desktop/), Tauri for the window), [`cli/`](src/cli/), the `root3` command, the core both use ([`core/`](src/core/), also built for `wasm32-wasip1` for the browser), and the Remote ([`remote/`](src/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design language in [`docs/DESIGN.md`](docs/DESIGN.md) |
+| [`root3/`](root3/) | **Length³ OS**, the product: the app ([`app/`](root3/app/), TypeScript, no framework; [`desktop/`](root3/desktop/), Tauri for the window), [`cli/`](root3/cli/), the `root3` command, the core both use ([`core/`](root3/core/), also built for `wasm32-wasip1` for the browser), and the Remote ([`remote/`](root3/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design language in [`docs/DESIGN.md`](docs/DESIGN.md) |
 | [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions (static x86-64 Linux programs made WebAssembly ahead of the run), [`ricebox/`](module/ricebox/) the neutral distribution's own (the smallest UNIX a browser runs: the kernel the root runs on in a browser's Prompt), [`muk/`](module/muk/) its thinnest part, the OCI-compatible VMM (today a pack's bytes read by digest when first touched); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
 | [`root/`](root/) | the root the Prompts run: its pins, a recipe per package and what makes it (below) | `make/build.sh` |
 | [`scripts/`](scripts/), [`tests/`](tests/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
@@ -60,7 +60,7 @@ A folder holds files, or folders and at most its own README and manifests, never
 manifests alone: `package.json`, `Cargo.toml` (one workspace: the core, the app's window and root3), `tsconfig.json`
 and `wrangler.toml` (the Remote's Worker, where Workers Builds looks for it), with their lockfiles and the dotfiles
 tools read there (`.node-version`, `.gitignore`, `.gitattributes`, `.cargo/`). The web app's page
-and its build are in [`src/app/`](src/app/) (`index.html`, `vite.config.ts`); what it ships beside its build is
+and its build are in [`root3/app/`](root3/app/) (`index.html`, `vite.config.ts`); what it ships beside its build is
 [`public/`](public/).
 
 The root is [`root/`](root/): its version (`RELEASE`, the release it is made as next), what it is made from (`pins/`:

@@ -1,4 +1,4 @@
-// The core as the browser runs it (src/core/web), built with cargo when its sources are newer than the
+// The core as the browser runs it (root3/core/web), built with cargo when its sources are newer than the
 // module: by the Vite plugin (vite.config.ts) at each dev-server start and build, and by wasi.test.ts.
 
 import {spawnSync} from 'node:child_process';
@@ -12,7 +12,7 @@ const TARGET = 'wasm32-wasip1';
 const PROFILE = 'web';
 const BUILD = ['build', '--profile', PROFILE, '-p', 'length3-core-web', '--target', TARGET];
 // templates.json is compiled in (core/src/templates.rs include_str!).
-const SOURCES = ['src/core/src', 'src/core/web/src', 'src/core/Cargo.toml', 'src/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'src/shared/templates.json'].map((p) => join(OS, p));
+const SOURCES = ['root3/core/src', 'root3/core/web/src', 'root3/core/Cargo.toml', 'root3/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'root3/shared/templates.json'].map((p) => join(OS, p));
 
 /** Where cargo puts the module (CARGO_TARGET_DIR is honoured, as cargo honours it). */
 export function coreWasmPath(): string {
@@ -36,7 +36,7 @@ export function hasCargo(): boolean {
 export function buildCoreWasm(options: {quiet?: boolean} = {}): string {
   const wasm = coreWasmPath();
   if (existsSync(wasm) && statSync(wasm).mtimeMs > Math.max(...SOURCES.map(newest))) return wasm;
-  if (!hasCargo()) throw new Error('length3: the core (src/core/web) needs Rust to build: install it from https://rustup.rs');
+  if (!hasCargo()) throw new Error('length3: the core (root3/core/web) needs Rust to build: install it from https://rustup.rs');
   const targets = spawnSync('rustup', ['target', 'list', '--installed'], {encoding: 'utf8'});
   // Without rustup the toolchain is the system's; cargo says itself whether it has the target.
   if (!targets.error && !targets.stdout.split('\n').includes(TARGET)) {

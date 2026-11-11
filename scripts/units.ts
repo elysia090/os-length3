@@ -33,7 +33,7 @@ export interface Unit {
 export const UNITS: Unit[] = [
   {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
   {name: 'muk', says: 'the thinnest: an OCI-compatible VMM. An image\'s layers at rest, named by their digest, each byte fetched when first touched, and a bundle run from them (created, started, signalled, deleted); no KVM and no Firecracker under it, C on lib as you is',
-    holds: ['module/muk', 'src/core/src/prompt', 'src/core/src/compute'],
+    holds: ['module/muk', 'root3/core/src/prompt', 'root3/core/src/compute'],
     takes: ['lib']},
   {name: 'sods', says: 'instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS',
     holds: ['module/sods/src', 'module/sods/runtime'],
@@ -43,21 +43,21 @@ export const UNITS: Unit[] = [
     takes: ['lib', 'muk', 'sods']},
   {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
-    holds: ['module/otter', 'src/core/src/storage'],
+    holds: ['module/otter', 'root3/core/src/storage'],
     takes: ['lib', 'ricebox', 'muk', 'sods']},
   {name: 'funk', says: 'what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH)',
-    holds: ['src/core/src/ssh', 'src/cli/src/cmd/ssh.rs', 'src/cli/src/cmd/address.rs'],
+    holds: ['root3/core/src/ssh', 'root3/cli/src/cmd/ssh.rs', 'root3/cli/src/cmd/address.rs'],
     takes: ['ricebox']},
   {name: 'shipto', says: 'what a service wants, all of it and nowhere else: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
-    holds: ['src/remote', 'src/core/src/remote', 'src/cli/src/cmd/sync.rs', 'src/cli/src/cmd/git.rs', 'src/cli/src/cmd/remote.rs',
-      'src/shared/desktop-releases.json'],
+    holds: ['root3/remote', 'root3/core/src/remote', 'root3/cli/src/cmd/sync.rs', 'root3/cli/src/cmd/git.rs', 'root3/cli/src/cmd/remote.rs',
+      'root3/shared/desktop-releases.json'],
     takes: ['ricebox', 'muk', 'funk']},
   {name: 'm8', says: 'where and how many boxes run: a state wanted, and one loop that makes it so (none yet: it is made when boxes run on more than one machine)',
     holds: [], takes: ['ricebox', 'muk', 'shipto']},
   {name: 'app', says: 'a face: the pages, the window and what the core says to them; no judgement of its own',
-    holds: ['src/app', 'src/desktop', 'src/core', 'src/shared'], takes: ['*']},
+    holds: ['root3/app', 'root3/desktop', 'root3/core', 'root3/shared'], takes: ['*']},
   {name: 'root3', says: "a face: root3's words, read against its one table, and what it prints; no judgement of its own",
-    holds: ['src/cli'], takes: ['*']},
+    holds: ['root3/cli'], takes: ['*']},
 ];
 
 /** ricebox and the units under it: what is cut out with it. None takes from a unit over them. */
@@ -65,7 +65,7 @@ export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'ricebox'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
 export const NOT_UNITS = ['scripts', 'tests', 'root', 'module/ricebox/runtime/run.ts', 'module/ricebox/tests', 'module/sods/examples', 'module/otter/test', 'module/muk/test',
-  'src/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/ricebox/target', 'research_notes', 'reports',
+  'root3/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/ricebox/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 

@@ -4,7 +4,7 @@ name: CI
 # (on the merge it would make); a branch without one runs by hand.
 on:
   pull_request:
-    paths: ['src/**', 'module/**', 'root/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
+    paths: ['root3/**', 'module/**', 'root/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 # Read-only token. Actions are pinned to full commits (tag beside); Dependabot proposes updates.
@@ -36,7 +36,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=core-wasm-${{ hashFiles('src/core/src/**', 'src/core/web/src/**', 'src/core/Cargo.toml', 'src/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'src/shared/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=core-wasm-${{ hashFiles('root3/core/src/**', 'root3/core/web/src/**', 'root3/core/Cargo.toml', 'root3/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'root3/shared/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('root/RELEASE', 'src/core/src/root/pins.rs', 'src/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('root/RELEASE', 'root3/core/src/root/pins.rs', 'root3/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -327,16 +327,16 @@ jobs:
           # root3 is built for the app's minimum macOS (bundle.macOS.minimumSystemVersion, 10.13 by default), so what
           # both build (ring's C) is built once.
           if [ "$RUNNER_OS" = macOS ]; then
-            export MACOSX_DEPLOYMENT_TARGET=$(node -p "require('./src/desktop/tauri.conf.json').bundle?.macOS?.minimumSystemVersion ?? '10.13'")
+            export MACOSX_DEPLOYMENT_TARGET=$(node -p "require('./root3/desktop/tauri.conf.json').bundle?.macOS?.minimumSystemVersion ?? '10.13'")
           fi
           cargo build --locked --release -p root3
           ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
-          mkdir -p src/desktop/binaries
-          cp "target/release/root3$ext" "src/desktop/binaries/root3-$TARGET$ext"
+          mkdir -p root3/desktop/binaries
+          cp "target/release/root3$ext" "root3/desktop/binaries/root3-$TARGET$ext"
           "target/release/root3$ext" root check
-          npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build --config src/app/vite.config.ts"}, "bundle": {"externalBin": ["binaries/root3"]}}'
+          npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build --config root3/app/vite.config.ts"}, "bundle": {"externalBin": ["binaries/root3"]}}'
 
-  # The .deb's AppArmor profile (src/desktop/deb) on stock Ubuntu 24.04: /usr/bin/root3 can make user namespaces
+  # The .deb's AppArmor profile (root3/desktop/deb) on stock Ubuntu 24.04: /usr/bin/root3 can make user namespaces
   # after postinst installs it, and cannot after postrm removes it.
   apparmor:
     name: AppArmor
@@ -358,10 +358,10 @@ jobs:
           native() { /usr/bin/root3 root check --json | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0, "utf8")).native))'; }
           [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/root3 to begin with" >&2; exit 1; }
           /usr/bin/root3 root check
-          sudo install -D -m 0644 src/desktop/deb/length3-root3.apparmor /usr/share/length3-os/apparmor/length3-root3
-          sudo sh src/desktop/deb/postinst configure
+          sudo install -D -m 0644 root3/desktop/deb/length3-root3.apparmor /usr/share/length3-os/apparmor/length3-root3
+          sudo sh root3/desktop/deb/postinst configure
           [ "$(native)" = true ] || { /usr/bin/root3 root check; exit 1; }
-          sudo sh src/desktop/deb/postrm remove
+          sudo sh root3/desktop/deb/postrm remove
           [ ! -e /etc/apparmor.d/length3-root3 ]
           [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 

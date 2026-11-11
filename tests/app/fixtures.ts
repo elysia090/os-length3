@@ -24,7 +24,7 @@
 //               as on coming back to it, rather than making it again each time
 //   root3Ahead     (an option, false) true: the translation of root3 made ahead of
 //               time, which a Prompt fetches and compiles for the Prompts after
-//               it 3 s after its prompt line is up (src/app/prompt/userland.ts warmRoot3), is
+//               it 3 s after its prompt line is up (root3/app/prompt/userland.ts warmRoot3), is
 //               served. Otherwise the browser refuses it, as a line that broke,
 //               and the app goes without it: 20 MB unpacked, checked and
 //               compiled, half of what a test that opens Forge spends on its
@@ -42,7 +42,7 @@ import {test as base, expect, type Browser, type BrowserContextOptions, type Pag
 import {App} from './app.ts';
 export {handleOf} from './app.ts';
 import {BROWSER, OUT} from './paths.ts';
-import {FIRST} from '../../src/app/prompt/first.ts';
+import {FIRST} from '../../root3/app/prompt/first.ts';
 
 /** What a browser keeps (its localStorage, and IndexedDB, where the repos are), as Playwright reads and restores it. */
 type Kept = Exclude<BrowserContextOptions['storageState'], string | undefined>;
@@ -72,7 +72,7 @@ export function addressOf(info: TestInfo, who = 'Ada'): string {
 
 /**
  * The files of what a Prompt is given ahead of time for the Prompts after it (each translation in the build's root3 but
- * those a Prompt starts with: src/app/prompt/first.ts), as the browser's blocked URLs say them; none in a build without root3.
+ * those a Prompt starts with: root3/app/prompt/first.ts), as the browser's blocked URLs say them; none in a build without root3.
  */
 const AHEAD: string[] = (() => {
   const about = join(OUT, 'webroot', 'webroot.json');

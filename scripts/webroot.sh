@@ -2,7 +2,7 @@
 # Make the web root (public/webroot) from a release root: the translator
 # built from this tree (as wasm, and natively to translate the hot programs
 # ahead of time), then scripts/webroot.ts. The root is the one
-# src/core/src/root/pins.rs pins newest, fetched by
+# root3/core/src/root/pins.rs pins newest, fetched by
 # scripts/root-file.ts when it is not given.
 #
 #   sh scripts/webroot.sh [ROOT.tar.zst [OUT]]

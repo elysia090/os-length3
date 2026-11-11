@@ -5,7 +5,7 @@
 //
 //   node scripts/layers.ts          the imports against the order, each with the file that makes it; fails if any
 //
-// Tests (*.test.ts, src/app/testing/) are left out: a test may take from any layer it puts together.
+// Tests (*.test.ts, root3/app/testing/) are left out: a test may take from any layer it puts together.
 import {readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -14,10 +14,10 @@ const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Each tree, its modules from the bottom up. A module not named is wrong in its tree until it is. */
 export const TREES: {root: string; order: string[]; skip?: string[]}[] = [
-  {root: 'src/app', order: ['i18n', 'agent', 'core', 'ui', 'host', 'repos', 'home', 'remote', 'prompt', 'account', 'pages', 'main', '.'],
+  {root: 'root3/app', order: ['i18n', 'agent', 'core', 'ui', 'host', 'repos', 'home', 'remote', 'prompt', 'account', 'pages', 'main', '.'],
     skip: ['styles', 'shims', 'testing']},
   // The pages: what they share (kit), the bench Forge and Git work at (with its search), then each page.
-  {root: 'src/app/pages', order: ['kit', 'bench', 'git', 'forge', 'file', 'remote', 'runtime', 'server', 'inbox', 'home', 'new-repo',
+  {root: 'root3/app/pages', order: ['kit', 'bench', 'git', 'forge', 'file', 'remote', 'runtime', 'server', 'inbox', 'home', 'new-repo',
     'me']},
 ];
 
@@ -68,7 +68,7 @@ export function violations(): [string, string, string, string, string][] {
  * too, what a file stands on is under it.
  */
 /** Where no file may reach back to itself: the app, the Remote, these scripts, and xlat's runtime the Prompt runs. */
-export const ACYCLIC = ['src/app', 'src/remote', 'scripts', 'module/sods/runtime', 'module/ricebox/runtime', 'module/muk/runtime'];
+export const ACYCLIC = ['root3/app', 'root3/remote', 'scripts', 'module/sods/runtime', 'module/ricebox/runtime', 'module/muk/runtime'];
 
 export function cycles(): string[][] {
   const all = ACYCLIC.flatMap((root) => files(join(OS, root)));
@@ -110,7 +110,7 @@ function loops(takes: Map<string, Set<string>>): string[][] {
 // and the layers before it, never after (the tr! macro is the text layer's). Within a layer, no unit reaches back to
 // itself through its siblings. Tests (NAME.test.rs, beside what each tests) are left out.
 
-const CORE = join(OS, 'src/core/src');
+const CORE = join(OS, 'root3/core/src');
 
 /** The core's layers, from the bottom up, as lib.rs declares them. */
 export const coreLayers = (): string[] => [...readFileSync(join(CORE, 'lib.rs'), 'utf8').matchAll(/^pub mod ([a-z_]+);/gm)].map((m) => m[1] ?? '');

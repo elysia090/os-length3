@@ -3,7 +3,7 @@
 // (scripts/webroot.ts). It is made where Rust is, by the release
 // (.github/workflows/release.yml), and is the OS that version is; a build
 // that only has Node (Cloudflare's Workers Builds) takes it from it, and
-// takes only the root3 this tree pins: src/core/src/root/pins.rs
+// takes only the root3 this tree pins: root3/core/src/root/pins.rs
 // RELEASES, whose entry is the whole of root3's pin (the root, by sha256, and
 // `web`, the sha256 of the index the browser reads it by). The release's
 // SHA256SUMS must say the same of the file it is in; webroot.json must name that
@@ -23,7 +23,7 @@ import {createHash} from 'node:crypto';
 import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
-import {pinnedRoots} from '../src/remote/ship/releases.ts';
+import {pinnedRoots} from '../root3/remote/ship/releases.ts';
 import {checkPacks} from '../module/muk/runtime/table.ts';
 import {tarMembers, type About, type Index} from './webroot-tree.ts';
 
@@ -31,10 +31,10 @@ const here = new URL('..', import.meta.url).pathname;
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
 const releases = process.env.LENGTH3_RELEASES || `https://github.com/${repo}/releases/download`;
 // The pin this tree has comes first: without one, nothing is fetched or taken.
-const pin = pinnedRoots(readFileSync(join(here, 'src/core/src/root/pins.rs'), 'utf8'))[0];
-if (!pin) throw new Error('src/core/src/root/pins.rs pins no root3: release one, and merge the change it proposes');
+const pin = pinnedRoots(readFileSync(join(here, 'root3/core/src/root/pins.rs'), 'utf8'))[0];
+if (!pin) throw new Error('root3/core/src/root/pins.rs pins no root3: release one, and merge the change it proposes');
 const {version, tag} = pin;
-if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`src/core/src/root/pins.rs pins root3 ${version}'s root but no index for the web (web: "${pin.web}"): a release since webroot.ts pins both`);
+if (!/^[0-9a-f]{64}$/.test(pin.web)) throw new Error(`root3/core/src/root/pins.rs pins root3 ${version}'s root but no index for the web (web: "${pin.web}"): a release since webroot.ts pins both`);
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 /** One of the release's files, from its download link. Never waited on for good (a download that stalls holds the

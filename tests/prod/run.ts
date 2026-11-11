@@ -15,8 +15,8 @@ import {randomBytes} from 'node:crypto';
 import {existsSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {API_POLICY} from '../../src/remote/serve/request.ts';
-import {webPolicy} from '../../src/app/host/policy.ts';
+import {API_POLICY} from '../../root3/remote/serve/request.ts';
+import {webPolicy} from '../../root3/app/host/policy.ts';
 import {cluster} from './postgres.ts';
 import {appBuild, bridgeProcess, OS, remote} from './stack.ts';
 
@@ -57,7 +57,7 @@ const APP_HEADERS: [string, RegExp][] = [['content-security-policy', exactly(`${
   ['cross-origin-embedder-policy', /^require-corp$/],
   ['cross-origin-resource-policy', /^same-origin$/], ['x-content-type-options', /^nosniff$/],
   ['permissions-policy', /camera=\(\).*publickey-credentials-get=\(self\)/]];
-/** What the Worker's middleware (src/remote/serve/request.ts unkept) puts on every answer of the Remote's own. */
+/** What the Worker's middleware (root3/remote/serve/request.ts unkept) puts on every answer of the Remote's own. */
 const REMOTE_HEADERS: [string, RegExp][] = [['content-security-policy', exactly(API_POLICY)], ['x-frame-options', /^DENY$/],
   ['strict-transport-security', /^max-age=31536000; includeSubDomains$/], ['referrer-policy', /^no-referrer$/],
   ['cross-origin-resource-policy', /^same-origin$/], ['x-content-type-options', /^nosniff$/]];
@@ -120,7 +120,7 @@ function root3(bin: string, home: string, url: string, args: string[]) {
 
 /**
  * The bearer of the session a Set-Cookie sets: the session cookie's own value (the token signed, the bearer's form too).
- * A page is handed no bearer (src/remote/people/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
+ * A page is handed no bearer (root3/remote/people/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
  */
 const bearerIn = (setCookies: string[]): string | null => {
   for (const c of setCookies) {
@@ -197,7 +197,7 @@ let failed = 0;
 const assets = mkdtempSync(join(tmpdir(), 'length3-prod-assets-'));
 try {
   say('building the app for its own origin, as build:cloudflare does');
-  const built = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--config', join(OS, 'src', 'app', 'vite.config.ts'), '--outDir', assets, '--logLevel', 'error'],
+  const built = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--config', join(OS, 'root3', 'app', 'vite.config.ts'), '--outDir', assets, '--logLevel', 'error'],
     {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
   if (built.status !== 0) throw new Error('the app did not build');
   assert.ok(existsSync(join(assets, '_headers')), 'the build carries public/_headers');
