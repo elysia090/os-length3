@@ -1,10 +1,8 @@
 import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
 
-// The moves (DESIGN.md §1, Motion). Every move but one is left out (ui/glide.ts still, motion.css): the rail's ink
-// going from the place left to the place come to. Here that one is seen to go where it says and to end there, the
-// rest are seen not to be there (a page come to by the rail is whole at once, at its own size), and the caret the OS
-// draws follows what is written.
+// Purposeful feedback is enabled by default. Navigation is immediate and interruptible;
+// motion preserves direction without zooming text or holding input on a snapshot.
 
 test.use({reducedMotion: 'no-preference'});
 
@@ -288,15 +286,12 @@ test('a page coming in never shows a part and then takes it away to bring it in'
   expect(await forge).toEqual([]);
 });
 
-test('nothing moves but the rail\'s ink: a place pressed, its page is there at once at its own size, and only the ink is on its way', async ({app}) => {
+test('navigation is immediately interactive while its content arrives, without scaling the desk', async ({app}) => {
   await app.newRepo.make('hello', {template: 'C'});
   await app.rail.go('home');
   await still(app);
-  // Pressed, in the same frame: Forge is the page, nothing of Home left, nothing scaled or carried, no picture of a page
-  // going by; what is on its way is the rail's ink and nothing else.
-  const at = await app.page.evaluate(async () => {
+  const at = await app.page.evaluate(() => {
     document.getElementById('purpose-forge')!.click();
-    await new Promise(requestAnimationFrame);
     const moving = document.getAnimations().filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
       .map((a) => ((a.effect as KeyframeEffect).target as Element | null)?.className ?? '');
     return {moving, forge: !!document.querySelector('#page .desk:not([hidden])'), home: !!document.querySelector('#page .home-layout'),
@@ -305,13 +300,45 @@ test('nothing moves but the rail\'s ink: a place pressed, its page is there at o
   expect(at.forge).toBe(true);
   expect(at.home).toBe(false);
   expect(at.panning).toBe(false);
-  expect(at.moving.filter((c) => c !== 'glide-ink')).toEqual([]);
   expect(at.moving).toContain('glide-ink');
-  // The desk is not stood back by the rail: no camera went with the press, its plane at its own size.
+  expect(at.moving.some((c) => c !== 'glide-ink')).toBe(true);
   expect(await app.page.evaluate(() => getComputedStyle(document.querySelector('#page .desk:not([hidden]) .desk-plane')!).transform)).toBe('none');
+  // Redirect before arrival ends: the last page is the only one left, with no root transform.
+  await app.page.evaluate(() => { document.getElementById('purpose-runtime')!.click(); document.getElementById('purpose-home')!.click(); });
   await still(app);
-  // And back: Home whole at once, as large as it is read (nothing of it scaled or carried).
+  await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
+  expect(await app.main.evaluate((el) => getComputedStyle(el).transform)).toBe('none');
+});
+
+test('reduced motion settles an in-flight navigation and restores motion when switched back', async ({app}) => {
+  await app.rail.go('home');
+  await still(app);
+  await app.page.evaluate(() => document.getElementById('purpose-runtime')!.click());
+  await app.page.emulateMedia({reducedMotion: 'reduce'});
+  await still(app);
+  expect(await app.page.locator('.glide-ink').count()).toBe(0);
   await app.page.evaluate(() => document.getElementById('purpose-home')!.click());
-  await expect(app.main.getByRole('heading', {name: 'Servers', exact: true})).toBeVisible();
-  expect(await app.page.evaluate(() => { const cs = getComputedStyle(document.querySelector('#page .home-layout')!); return `${cs.scale} ${cs.transform} ${cs.translate}`; })).toBe('none none none');
+  expect(await app.page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').length)).toBe(0);
+  await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
+  await app.page.emulateMedia({reducedMotion: 'no-preference'});
+  expect(await app.page.evaluate(() => {
+    document.getElementById('purpose-runtime')!.click();
+    return document.querySelectorAll('.glide-ink').length;
+  })).toBe(1);
+  await still(app);
+});
+
+test('press feedback releases on pointer cancellation and respects a live reduced-motion change', async ({app}) => {
+  await app.rail.go('home');
+  await still(app);
+  const toggle = app.main.getByRole('button', {name: 'Right pane'});
+  await toggle.dispatchEvent('pointerdown', {button: 0});
+  await expect.poll(() => toggle.evaluate((el) => Number(getComputedStyle(el).scale))).toBeLessThan(1);
+  await toggle.dispatchEvent('pointercancel');
+  await still(app);
+  expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
+  await app.page.emulateMedia({reducedMotion: 'reduce'});
+  await toggle.dispatchEvent('pointerdown', {button: 0});
+  expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
+  await toggle.dispatchEvent('pointerup', {button: 0});
 });

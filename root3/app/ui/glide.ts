@@ -30,20 +30,25 @@ export const paced = (ms: number) => ms * pace();
 /** `then`, once a move of `ms` (at the OS's pace) is over: timed on the moves' own clock, so it keeps with the move
  * it waits for however they are played. Cancelled, it never comes. */
 export const after = (ms: number, then: () => void): Animation => {
-  const a = document.documentElement.animate([], {duration: paced(ms)});
+  const a = document.documentElement.animate([], {duration: reduced() ? 0 : paced(ms)});
   a.finished.then(then, () => {});
   return a;
 };
 
 /** Less motion asked for (the system's own setting): nothing moves, the rail's ink included. */
 export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-/**
- * Whether a move is left out, each thing being where it ends at once. Every move is, but the one kept (`glide` with
- * `kept`: the rail's ink going from the place left to the place come to). The rest were taken off together, so that
- * what the screen says without them is seen; each comes back only where it is found wanted (styles: motion.css holds
- * the same for what the styles move).
- */
-export const still = () => true;
+/** Motion is a user preference, never a global experiment switch. */
+export const still = reduced;
+
+/** Changing the OS preference settles work already on screen, including pending dismissal callbacks. */
+if (typeof matchMedia !== 'undefined') matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (event) => {
+  if (!event.matches) return;
+  for (const animation of document.getAnimations()) {
+    const timing = animation.effect?.getComputedTiming();
+    if (timing && Number.isFinite(timing.endTime)) animation.finish();
+    else animation.cancel();
+  }
+});
 
 /** Where `el` is now, to glide from once it is no longer the one chosen. */
 export const where = (el: Element | null | undefined): DOMRect | null => el?.getBoundingClientRect() ?? null;
@@ -55,12 +60,12 @@ export const where = (el: Element | null | undefined): DOMRect | null => el?.get
  * (`.under-ink`: the one it leaves, those it passes, the one it lands on), in ink otherwise (`to` waits un-inked,
  * `.arriving`), so none is ever ink on ink, an icon gone as the slug goes by.
  */
-export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLElement, round: string, ms = 220, kept = false) {
+export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLElement, round: string, ms = 220) {
   // One still on its way in this layer (another place pressed before it landed) gives way: the ink goes on from where
   // it is now, never back from the place it was going to, nor as a second ink beside the first.
   const going = gliding.get(layer);
   if (going) { from = going.at() ?? from; going.end(); }
-  if (!from || !to || (kept ? reduced() : still())) return;
+  if (!from || !to || still()) return;
   const at = to.getBoundingClientRect();
   if (!at.width || (Math.abs(from.left - at.left) < 1 && Math.abs(from.top - at.top) < 1)) return;
   const box = layer.getBoundingClientRect();
@@ -118,121 +123,43 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
 /** The glide on its way in each layer (the rail's places, a band's pills). */
 const gliding = new WeakMap<HTMLElement, {at(): DOMRect | null; end(): void}>();
 
-type Transitioning = Document & {startViewTransition?(update: () => void): {ready: Promise<void>; finished: Promise<void>}};
-
-/**
- * A change of what `el` shows, as a camera pans along a row (the band's repos, left to right): what it showed goes
- * off the other way, gathering speed a short way, as what comes rises in from `dir`'s side (-1 left, 1 right) and
- * slows into place, the two never both half seen in one place and the place never empty. Only `el` is taken as a
- * picture; the window around it goes on as it is (the band's ink, the pane). Where the browser cannot, or less
- * motion is asked for, the change is made in place.
- */
+/** Change repository immediately; a short directional arrival preserves its position along the band.
+ * No snapshot holds input or queues a second navigation behind the first. */
 export function panAcross(el: HTMLElement, dir: number, update: () => void) {
-  const begin = (document as Transitioning).startViewTransition;
-  if (still() || !begin || !dir || !el.isConnected) { update(); return; }
-  const root = document.documentElement, ms = paced(400);
-  el.style.setProperty('view-transition-name', 'across');
-  root.classList.add('panning-across');
-  // Only what it showed is taken as a picture. What it shows now comes in itself, so a press lands on it as it comes:
-  // a picture of it would take no press until it had landed. It stands off at its side from the first frame.
-  let mine: Animation | null = null;
-  const pass = begin.call(document, () => {
-    update();
-    if (across !== pass) return;
-    el.style.removeProperty('view-transition-name');
-    mine = el.animate([{transform: `translateX(${dir * 100}%)`}, {transform: 'none'}], {duration: ms, easing: LAND});
-    mine.pause();
-  });
-  across = pass;
-  // The picture lies over what comes, so it is cut where what comes has reached as it steps back: the two set off in
-  // one frame and keep step, never over each other.
-  void pass.ready.then(() => {
-    root.animate([
-      {transform: 'none', opacity: 1, clipPath: 'inset(0)'},
-      {transform: `translateX(${-dir * 22}%)`, opacity: 0, clipPath: dir > 0 ? 'inset(0 78% 0 0)' : 'inset(0 0 0 78%)'},
-    ], {duration: ms, easing: LAND, fill: 'forwards', pseudoElement: '::view-transition-old(across)'});
-    mine?.play();
-  }, () => {});
-  // Given way to a pan begun since (another pill pressed on the way), what it brought stands where it lands; the
-  // picture's name and the mark are the new pan's own.
-  const done = () => {
-    mine?.finish();
-    if (across !== pass) return;
-    across = null;
-    el.style.removeProperty('view-transition-name');
-    root.classList.remove('panning-across');
-  };
-  pass.finished.then(done, done);
+  update();
+  if (dir && el.isConnected) arrive(el, dir, 'x', 16, 200);
 }
-/** The band's pan going now (panAcross). */
-let across: object | null = null;
+
+/** Only one arrival owns an element, even when a newer selection interrupts it. */
+const arrivals = new WeakMap<HTMLElement, Animation>();
 
 /**
  * `el` comes in from `dir` (-1, 0 or 1) along `axis`: `by` pixels and a fade. `into`: how far in it already is, for
  * a thing drawn again while it came in, which goes on from there rather than starting over or stopping.
  */
 export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, ms = 240, into = 0) {
+  arrivals.get(el)?.cancel();
+  arrivals.delete(el);
   ms = paced(ms);
   if (still() || into >= ms) return;
   const d = (dir || 1) * by;
-  el.animate([{transform: axis === 'x' ? `translateX(${d}px)` : `translateY(${d}px)`, opacity: 0}, {transform: 'none', opacity: 1}],
+  const animation = el.animate([{transform: axis === 'x' ? `translateX(${d}px)` : `translateY(${d}px)`, opacity: 0}, {transform: 'none', opacity: 1}],
     {duration: ms, delay: -into, easing: LAND});
+  arrivals.set(el, animation);
+  const done = () => { if (arrivals.get(el) === animation) arrivals.delete(el); };
+  animation.finished.then(done, done);
 }
 
-/**
- * The right pane brought out: as its edge lands, what it holds comes in after it, a part at a time from the side it
- * came from (its search box on the top line first, when it was put away with the pane), and its switch's mark gives
- * a small beat. Put away, it only goes (the wipe is the styles' own; paneIn). Brought back before it had gone (`words`
- * false), what it holds is still there and stays (what was on its way in goes on in); only the search, if it had gone
- * already, comes back.
- */
-export function paneOut(side: HTMLElement, toggle: HTMLElement, search?: HTMLElement | null, words = true) {
-  if (still()) return;
-  const was = comingIn.get(side);
-  for (const a of was?.words ?? []) if (words) a.cancel(); else a.play();
-  was?.search?.cancel();
-  if (search && !words && parseFloat(getComputedStyle(search).opacity) > .5) search = null;
-  // Its words, each where it stands (a head, a line), in reading order: not the boxes they are in, and not words
-  // inside words already moving (they would come twice as far).
-  const worded = (el: Element) => [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim());
-  // An icon beside words (a row's badge) comes with them, not ahead of them on the edge.
-  const drawn = (el: Element) => el instanceof SVGSVGElement || el.matches('img, .lately-badge');
-  // A line at a time (eight, at most): what stands on one line (a badge and its name) comes together.
-  const parts: HTMLElement[] = search ? [search] : [], turns: number[] = search ? [0] : [];
-  let line = parts.length - 1, top = NaN;
-  for (const el of words ? side.querySelectorAll<HTMLElement>('*') : []) {
-    if (!(worded(el) || drawn(el)) || parts.some((p) => p.contains(el))) continue;
-    const r = el.getBoundingClientRect();
-    if (!r.height) continue;
-    if (!(Math.abs(r.top - top) < 8)) { line++; top = r.top; }
-    if (line > 7) break;
-    parts.push(el);
-    turns.push(line);
-  }
-  const moves = parts.map((el, i) => el.animate([{opacity: 0, translate: '24px 0'}, {opacity: 1, translate: '0 0'}],
-    {duration: paced(340), delay: paced(140 + turns[i] * 50), easing: LAND, fill: 'backwards'}));
-  const searchMove = search ? moves.shift()! : null;
-  comingIn.set(side, {words: words ? moves : was?.words ?? [], search: searchMove, searchBox: search ?? was?.searchBox ?? null});
-  const m = toggle.querySelector('.mark');
-  if (m) m.animate([{scale: 1}, {scale: 1.18, offset: .45}, {scale: 1}], {duration: paced(320), delay: paced(200), easing: 'ease-out'});
+/** The pane's contents arrive together, immediately readable. Its search and switch remain fixed;
+ * the CSS edge transition supplies the opening/closing continuity, with no delayed word cascade. */
+export function paneOut(side: HTMLElement, _toggle: HTMLElement, _search?: HTMLElement | null, _words = true) {
+  arrive(side, 1, 'x', 8, 180);
 }
 
-/** What paneOut set coming in, by the pane's side: its words' moves, and its search box and the move bringing it. */
-const comingIn = new WeakMap<HTMLElement, {words: Animation[]; search: Animation | null; searchBox: HTMLElement | null}>();
-
-/**
- * The right pane put away while what it holds was still coming in: what had not come in goes out with it as it is,
- * never coming on in as the pane goes; its search, still coming, goes from where it is, as a search put away goes.
- */
+/** Closing interrupts arrival instead of leaving hidden, paused words behind. */
 export function paneIn(side: HTMLElement) {
-  const was = comingIn.get(side);
-  if (!was || still()) return;
-  for (const a of was.words) if (a.playState === 'running') a.pause();
-  const box = was.searchBox;
-  if (!box || was.search?.playState !== 'running') return;
-  const cs = getComputedStyle(box), from: Keyframe = {opacity: cs.opacity, translate: cs.translate === 'none' ? '0 0' : cs.translate};
-  was.search.cancel();
-  was.search = box.animate([from, {opacity: 0, translate: '8px 0'}], {duration: paced(150), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+  arrivals.get(side)?.cancel();
+  arrivals.delete(side);
 }
 
 /**
@@ -320,15 +247,15 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
   /** Gone where it stands: no box came for it, or the camera went on to another page meanwhile (the sheet is over
    * the window, not in the page: it would hang there as the pages go by under it). */
   const fade = (ms2 = 160) => {
+    if (still()) { done(); return; }
     words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(ms2), fill: 'forwards'});
     box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(ms2), fill: 'forwards'}).finished.then(done, done);
   };
-  const away = () => document.documentElement.classList.contains('panning');
   let tries = 0;
   const go = () => {
+    if (still()) { done(); return; }
     let to = find();
     const at = to?.getBoundingClientRect();
-    if (away()) { fade(100); return; }
     if (!to || !at?.width) {
       if (++tries < patience) requestAnimationFrame(go); else fade();
       return;
@@ -354,7 +281,7 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
     const mix = (a: number, b: number, p: number) => a + (b - a) * p;
     const step = () => {
       // Its box gone from the page (another page come to) before it landed: it fades where it is, not to nowhere.
-      if (!to!.isConnected || away()) { if (timer.playState === 'running') { gone = true; timer.cancel(); shown(); fade(100); } return; }
+      if (!to!.isConnected || !to!.getClientRects().length) { if (timer.playState === 'running') { gone = true; timer.cancel(); shown(); fade(100); } return; }
       const p = timer.effect?.getComputedTiming().progress ?? 1, now = to!.getBoundingClientRect();
       Object.assign(box.style, {left: `${mix(from.left, now.left, p)}px`, top: `${mix(from.top, now.top, p)}px`,
         width: `${mix(from.width, now.width, p)}px`, height: `${mix(from.height, now.height, p)}px`});
@@ -370,6 +297,7 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
       step();
       // Landed: the box is there under it, and the sheet gives way to it.
       shown();
+      if (still()) { done(); return; }
       to!.animate([{opacity: 0}, {opacity: 1}], {duration: paced(140), easing: 'ease-out'});
       words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'});
       box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'}).finished.then(done, done);
@@ -467,109 +395,24 @@ export function pop(el: Element, by = .16, ms = 380) {
   el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: 'ease-out'});
 }
 
-/** A figure counted up from nothing to what it says ("7.9 MB", "3"), its unit kept, landing as the camera does. */
-function countUp(el: HTMLElement, ms = 560) {
-  const text = el.textContent ?? '';
-  const m = /^(\d+(?:\.\d+)?)(.*)$/s.exec(text);
-  if (still() || !m) return;
-  ms = paced(ms);
-  const to = parseFloat(m[1]), places = m[1].split('.')[1]?.length ?? 0, rest = m[2];
-  if (!to) return;
-  // Timed by the frames' own clock from the first frame it is drawn in (not the page's clock, which a frame's time
-  // can be behind: it would count from below nothing).
-  let t0 = -1;
-  const step = (now: number) => {
-    // Written over meanwhile (the figure read again): what it says now is left as it is.
-    if (!el.isConnected || !(el.textContent ?? '').endsWith(rest)) return;
-    if (t0 < 0) t0 = now;
-    const k = Math.min(1, Math.max(0, (now - t0) / ms));
-    const eased = 1 - Math.pow(1 - k, 3);
-    el.textContent = k < 1 ? `${(to * eased).toFixed(places)}${rest}` : text;
-    if (k < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
+const staged = new WeakMap<HTMLElement, HTMLElement[]>();
+/** Release a shared root before it is reused by another page. */
+export function stopStage(root: HTMLElement) {
+  for (const part of staged.get(root) ?? []) { arrivals.get(part)?.cancel(); arrivals.delete(part); }
+  staged.delete(root);
 }
 
-/** A page's parts, each a beat of its arrival: a heading, a card, a box, a pill, a file. */
-const BEATS = ['.page-head', '.identity', 'section > h2', '.todo-box', '.card', '.part-bar', '.meter', '.legend > span', '.space-box',
-  '.sign-in-card', '.stub-holder', '.inbox-box', '.new-repo > .nr-box', '.new-repo > .tree-still', '.git-filter .chip', '.issue-stage', '.issue-new',
-  '.repo-strip .pill', '.repo-strip .band-add', '.col:not([hidden]) .file', '.repo-grid > .muted', '.home-servers > .muted'].join(', ');
-
-/** The arrival under way: a page come to before the last had landed ends it, so the two never stage the same parts. */
-let arriving: (() => void) | null = null;
-
-/**
- * A page come to is staged rather than shown at once: its parts come in one after another in reading order (the
- * heading first, then down and along, a card at a time), each from the side the page comes from, so the eye is led
- * through it and the arrival lasts long enough to be followed; its figures count up, its bars fill. What is drawn a
- * moment later (read from the store, drawn again) is where its turn in that order is by then, from before it is
- * first painted: its turn to come, it comes; under way, it goes on from there (a part drawn again as it came in
- * goes on as it was); over, it simply stands, never shown and then taken away to come in again. A part in a row that
- * clips it (Git's repos, the band) comes in where it stands, fading, not up out of the row's edge; one put out of
- * sight before it was in is where its turn is once it is back.
- */
+/** A page arrives as one readable surface. Data never counts up from invented values, and asynchronous
+ * cards are never hidden again for a stagger. The rail, band and pane stay fixed as landmarks. */
 export function stage(root: HTMLElement, dir: number) {
-  if (still()) return;
-  arriving?.();
-  const t0 = clock(), seen = new WeakSet<Element>(), moving = new Map<Element, Animation>();
-  /** Whether each box clips what is in it, asked once an arrival (its style is read, not its size). */
-  const clipping = new Map<Element, boolean>();
-  const clips = (p: Element) => {
-    let c = clipping.get(p);
-    if (c === undefined) { const o = getComputedStyle(p); c = o.overflowX !== 'visible' || o.overflowY !== 'visible'; clipping.set(p, c); }
-    return c;
+  stopStage(root);
+  const frame = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle)';
+  const parts = (el: HTMLElement): HTMLElement[] => {
+    if (!el.getClientRects().length || el.matches(frame)) return [];
+    if (!el.querySelector(frame)) return [el];
+    return [...el.children].flatMap((child) => parts(child as HTMLElement));
   };
-  /** In a row that clips it to about its own height: rising, it would come up out of a cut. */
-  const tight = (el: HTMLElement, r: DOMRect) => {
-    for (let p = el.parentElement; p && p !== root; p = p.parentElement) if (clips(p) && p.clientHeight < r.height + 32) return true;
-    return false;
-  };
-  const run = () => {
-    // Put out of sight (or drawn again) before it was in: once back, it is where its turn is by then.
-    for (const [el, a] of moving) {
-      if (a.playState === 'finished') moving.delete(el);
-      else if (!el.isConnected || !el.getClientRects().length) { a.cancel(); moving.delete(el); seen.delete(el); }
-    }
-    const tall = innerHeight;
-    const beats = [...root.querySelectorAll<HTMLElement>(BEATS)].filter((el) => {
-      const r = el.getBoundingClientRect();
-      return r.width > 0 && r.top < tall && r.bottom > 0 && !el.parentElement?.closest(BEATS);
-    }).map((el) => ({el, r: el.getBoundingClientRect()}))
-      .sort((a, b) => (Math.abs(a.r.top - b.r.top) > 12 ? a.r.top - b.r.top : a.r.left - b.r.left));
-    const late = clock() - t0;
-    beats.forEach(({el, r}, i) => {
-      if (seen.has(el)) return;
-      seen.add(el);
-      // Its turn, as the arrival's clock has it now: still to come, under way (gone on from there), or over.
-      const turn = paced(Math.min(i, 14) * 45) - late;
-      if (turn <= -paced(360)) return;
-      const from = tight(el, r) ? '0 0' : `0 ${(dir || 1) * 16}px`;
-      moving.set(el, el.animate([{opacity: 0, translate: from}, {opacity: 1, translate: '0 0'}],
-        {duration: paced(360), delay: turn, easing: LAND, fill: 'backwards'}));
-    });
-    for (const b of root.querySelectorAll<HTMLElement>('.counts b, .legend b')) { if (!seen.has(b)) { seen.add(b); countUp(b); } }
-    for (const bar of root.querySelectorAll<HTMLElement>('.meter > span')) {
-      if (seen.has(bar) || !bar.style.width) continue;
-      seen.add(bar);
-      bar.animate([{width: '0%'}, {width: bar.style.width}], {duration: paced(700), delay: paced(120), easing: LAND, fill: 'backwards'});
-    }
-  };
-  run();
-  // What is put in or shown while it arrives is heard as it is, before it is painted, for as long as the arrival
-  // lasts: once a frame, however many times the page changed in it (each change read alone measured the whole page
-  // again, the first page's parts arriving in a dozen pieces), just before the frame is drawn. Figures counting up
-  // change only their words, and are not heard.
-  let soon = 0;
-  const again = () => { if (!soon) soon = requestAnimationFrame(() => { soon = 0; run(); }); };
-  requestAnimationFrame(() => requestAnimationFrame(again));
-  const heard = new MutationObserver((ms) => {
-    if (ms.some((m) => m.type === 'attributes' || [...m.addedNodes].some((n) => n.nodeType === Node.ELEMENT_NODE))) again();
-  });
-  heard.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class']});
-  // Ended by the next page come to: what it still had coming stands where it is, for the next to stage.
-  const end = () => { heard.disconnect(); cancelAnimationFrame(soon); for (const a of moving.values()) a.cancel(); moving.clear(); if (arriving === end) arriving = null; };
-  arriving = end;
-  // It lasts as long as its parts' turns do, on their clock.
-  const over = () => { heard.disconnect(); if (arriving === end) arriving = null; };
-  root.animate([], {duration: paced(900)}).finished.then(over, over);
+  const surfaces = parts(root);
+  staged.set(root, surfaces);
+  for (const part of surfaces) arrive(part, dir, 'y', 12, 200);
 }
