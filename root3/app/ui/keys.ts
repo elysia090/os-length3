@@ -66,12 +66,22 @@ function play(buffer: AudioBuffer, at: number, gain: number, rate: number, brigh
   src.start(at);
 }
 
+/** A resume may complete on a later task, or stay pending when the browser will not allow sound. Wait briefly
+ * for it without saving a stroke to play long after the control was activated. */
+function waking(resume: Promise<void>): Promise<boolean> {
+  return new Promise((resolve) => {
+    const late = setTimeout(() => resolve(false), 250);
+    void resume.then(() => { clearTimeout(late); resolve(true); }, () => { clearTimeout(late); resolve(false); });
+  });
+}
+
 /** A key struck now: pressed, and let go 50–110 ms after. Said on the window too ('root3-key', the key): a film made of
  * the page hears each stroke as the person does, and lays its sound under the picture at its time. */
 export function strike(key: Key): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('root3-key', {detail: key}));
   if (typeof document !== 'undefined' && document.hidden) return;
   // Make and resume the context during the activation, before fetching or decoding yields its user gesture.
+  let ready = Promise.resolve(true);
   try {
     if (!ctx) {
       if (typeof AudioContext === 'undefined') return;
@@ -80,11 +90,11 @@ export function strike(key: Key): void {
       out.gain.value = MASTER;
       out.connect(ctx.destination);
     }
-    if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+    if (ctx.state === 'suspended') ready = waking(ctx.resume());
   } catch { return; } // Sound unavailable must never prevent the control's action.
-  void load().then((s) => {
+  void Promise.all([load(), ready]).then(([s, awake]) => {
     // Do not queue stale strokes in a suspended context, or play a fetch that finished after the page hid.
-    if (!s || !ctx || ctx.state !== 'running' || (typeof document !== 'undefined' && document.hidden)) return;
+    if (!awake || !s || !ctx || ctx.state !== 'running' || (typeof document !== 'undefined' && document.hidden)) return;
     const [press, release] = s[key];
     const gain = LOUD[key] * (1 + near(0.13, 0.3));
     const rate = 1 + near(0.022, 0.05);
