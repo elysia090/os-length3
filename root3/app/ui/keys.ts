@@ -1,9 +1,9 @@
-// The keys heard as the Agent's typing is played on screen (pages/bench/play.ts): each key pressed and, a beat after,
+// The keys heard on a control's activation and as the Agent's typing is played on screen (pages/bench/play.ts): each key pressed and, a beat after,
 // let go, from kbsim's recordings (MIT, Thomas Lai: public/sounds/keys/LICENSE.md): NovelKeys Cream's Space for a key,
 // Cream's Backspace for Enter, Alpaca's Space for Space. No two strokes alike: each a little higher or lower, softer
 // or harder, duller or brighter, as a hand's are. Quiet beside what the person does, and silent while the page is
-// out of sight. The sounds are fetched the first time a key is struck, and the context made then (a page may only
-// sound once the person has done something in it, which asking the Agent is).
+// out of sight. The sounds are fetched on the first activation or Agent stroke; the context is made and resumed
+// before that fetch. A failed fetch can be tried again, and unavailable audio never blocks an action.
 
 export type Key = 'key' | 'enter' | 'space';
 
@@ -19,16 +19,16 @@ let samples: Promise<Record<Key, [AudioBuffer, AudioBuffer]> | null> | null = nu
 /** The six recordings, decoded; null where the page cannot sound. */
 function load(): Promise<Record<Key, [AudioBuffer, AudioBuffer]> | null> {
   return samples ??= (async () => {
-    if (typeof AudioContext === 'undefined') return null;
-    ctx = new AudioContext();
-    out = ctx.createGain();
-    out.gain.value = MASTER;
-    out.connect(ctx.destination);
-    const one = async (name: string) => edged(await ctx!.decodeAudioData(await (await fetch(`/sounds/keys/${name}.mp3`)).arrayBuffer()));
+    if (!ctx) return null;
+    const one = async (name: string) => {
+      const response = await fetch(`/sounds/keys/${name}.mp3`);
+      if (!response.ok) throw new Error(`key sound: ${response.status}`);
+      return edged(await ctx!.decodeAudioData(await response.arrayBuffer()));
+    };
     const kinds: Key[] = ['key', 'enter', 'space'];
     const got = await Promise.all(kinds.map((k) => Promise.all([one(`${k}-press`), one(`${k}-release`)])));
     return Object.fromEntries(kinds.map((k, i) => [k, got[i]])) as Record<Key, [AudioBuffer, AudioBuffer]>;
-  })().catch(() => null);
+  })().catch(() => { samples = null; return null; });
 }
 
 /** How long a recording's ends are faded (s): kbsim's are cut off still sounding, and a sound stopped there clicks,
@@ -71,9 +71,20 @@ function play(buffer: AudioBuffer, at: number, gain: number, rate: number, brigh
 export function strike(key: Key): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('root3-key', {detail: key}));
   if (typeof document !== 'undefined' && document.hidden) return;
-  void load().then((s) => {
-    if (!s || !ctx) return;
+  // Make and resume the context during the activation, before fetching or decoding yields its user gesture.
+  try {
+    if (!ctx) {
+      if (typeof AudioContext === 'undefined') return;
+      ctx = new AudioContext();
+      out = ctx.createGain();
+      out.gain.value = MASTER;
+      out.connect(ctx.destination);
+    }
     if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+  } catch { return; } // Sound unavailable must never prevent the control's action.
+  void load().then((s) => {
+    // Do not queue stale strokes in a suspended context, or play a fetch that finished after the page hid.
+    if (!s || !ctx || ctx.state !== 'running' || (typeof document !== 'undefined' && document.hidden)) return;
     const [press, release] = s[key];
     const gain = LOUD[key] * (1 + near(0.13, 0.3));
     const rate = 1 + near(0.022, 0.05);
@@ -81,5 +92,5 @@ export function strike(key: Key): void {
     const now = ctx.currentTime;
     play(press, now, gain, rate, bright);
     play(release, now + 0.05 + 0.06 * Math.random(), gain * (0.55 + 0.25 * Math.random()), rate, bright);
-  });
+  }).catch(() => {}); // Device/context failure is silent, like unavailable audio at the activation itself.
 }

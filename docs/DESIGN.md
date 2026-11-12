@@ -2822,7 +2822,11 @@ What goes by under a pointer at rest as the camera moves was not pointed at:
 nothing under it lights up (a row underlined, a close dot reddened) until the
 pointer moves again. Each key is heard (kbsim's
 Cream Space for a key, its Backspace for Enter, Alpaca's Space for Space),
-each recording faded in and out at its very ends (kbsim's are cut off still
+the same Enter pair confirming a basic button's completed activation, once
+whether pressed by pointer or keyboard. Moving, focusing, dragging, disabled
+controls and typing in the person's fields stay silent. These small confirmations
+do not depend on the motion preference; failure to play never stops the action.
+Each recording is faded in and out at its very ends (kbsim's are cut off still
 sounding: stopped there, each clicked, a crackle under the typing). The
 hand is quick and steady, about twice a person's first pace, quicker still
 over a long piece, with no slips, so what it writes is seen written and the
