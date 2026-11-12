@@ -34,8 +34,9 @@ import {work as workOf} from '../../repos/history.ts';
 // first line and ↓ on the last walk the repo's earlier lines, a run pressed in Output is put back in the box, and →
 // at the end completes the path before the caret from the repo's tree (several matches said in one quiet line under the box).
 //
-// While one reads (the center turned by the wheel, a touch or the keys) and the box is empty and not written in, it
-// steps back and lets what is under it be pressed; the keyboard reaching it, a press on the Prompt, or the pointer
+// Where the box floats over the page (Git; not a desk, whose line stands under it): while one reads (the center turned
+// by the wheel, a touch or the keys) and the box is empty and not written in, it steps back and lets what is under it
+// be pressed; the keyboard reaching it, a press on the Prompt, or the pointer
 // resting at the center's foot brings it back where it was. A page read rather than written in (Git) has it stepped
 // back from the start.
 
@@ -769,14 +770,13 @@ export class Box {
   }
 
   /**
-   * A key in the box while it runs: → at the end completes a path (as a shell's suggestion is taken; Tab is the desk's,
-   * the next box), ↑ and ↓ walk earlier lines, Ctrl-C interrupts, Ctrl+Enter runs.
+   * A key in the box while it runs: → at the end completes a path (as a shell's suggestion is taken), ↑ and ↓ walk
+   * earlier lines, Ctrl-C interrupts, Ctrl+Enter runs.
    */
   #runKey(event: KeyboardEvent) {
     const {prompt} = this, repo = this.#repo, caret = prompt.selectionStart === prompt.selectionEnd;
     if (event.key === 'ArrowRight' && plain(event) && caret && prompt.selectionStart === prompt.value.length) { if (this.#tab()) event.preventDefault(); return; }
-    // At a desk's foot the line is a terminal's: Tab completes there and never leaves the line (it stands outside the
-    // desk, where Tab is the boxes').
+    // At a desk's foot the line is a terminal's: Tab completes there and never leaves the line.
     if (this.#p.desk && event.key === 'Tab' && plain(event)) { event.preventDefault(); this.#tab(); return; }
     // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
     if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain(event) && caret) { this.#walkTo(event, event.key); return; }
@@ -961,7 +961,9 @@ export class Box {
   // ---- Stepping back while one reads.
 
   #rest(on: boolean) {
-    if (on && (this.#up || this.prompt.value || this.note.textContent || document.activeElement === this.prompt)) return;
+    // On a desk the line stands on ground of its own under the desk and covers nothing: it has nothing to step back
+    // from, and stepped back it left an empty frame there that no press brought back (issue #172).
+    if (on && (this.#p.desk || this.#up || this.prompt.value || this.note.textContent || document.activeElement === this.prompt)) return;
     this.dock.classList.toggle('resting', on);
   }
 

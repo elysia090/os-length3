@@ -80,7 +80,7 @@ test('Tab goes down each column, then to the next, round again; Shift+Tab back',
   assert.equal(tabbed([['term']], 'term'), 'term');
 });
 
-test('an arrow takes the finger along a column or to the next', () => {
+test('an arrow goes along a column or to the next', () => {
   assert.equal(next(cols, 'a.c', 'down'), 'b.c');
   assert.equal(next(cols, 'b.c', 'right'), 'README.md');
   assert.equal(next(cols, 'term', 'left'), null);

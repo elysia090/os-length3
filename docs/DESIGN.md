@@ -2294,30 +2294,34 @@ shown on a terminal's whole screen in place of the last lines, the cursor a
 block, and given back, what its main screen holds is lines again (a
 whole-screen program's own screen, vi's, goes as it came).
 
-The keys are a game's, the hands finding them without looking. Tab, wherever
-the keyboard is on the desk (in a file, at the Prompt's line), puts the finger
-on the next box (down a column, then the next column's top, round again;
-Shift+Tab back): the keyboard comes out onto the desk, the finger (the
-pointer's own pointing hand, larger, turned to point left) stands just after
-the box's name, pointing at it, as a hand beside a menu's line says which
-(before: on the box's top edge by its right corner, where its close now is:
-it pointed at the close), and the camera goes to the box as near as it stands. With the finger on, an arrow puts it on the box that way (a
-nudge where there is none), and Enter, or a letter typed, goes into the box
-under it at the standard, the hand gone. Shift+N, as a new post is begun on X, makes a new file beside the
-one in hand where nothing is being written (the finger on a box; written in a
-file, it is an N): it is laid under the box in hand, in its column, as a new
-post goes under the one before it, named with that file's ending (none with
-no file in hand: untitled), at the size it is read at (the camera does not
-step back for it); the finger gone as the keyboard goes into
-its name, and its name is written over at once in its
-head, the name itself (its folder quiet before it), a line under it, the stem
-chosen in the soft yellow and the ending kept, so typing writes the stem.
-Enter keeps what is written and the keyboard goes on into the box, at its end;
-Escape keeps the name it had and goes on in too. The files tool's New file,
-and File's, make it the same way. The finger comes out of the
-pointer where that was over the desk and glides from box to box, and while it is
-out the pointer is hidden; the pointer moved, the finger is gone and the pointer
-back. Writing in a box puts both out of the way until the pointer moves.
+A box is gone to by pressing it, and a box in sight pressed stays where it
+stands: the caret goes where it was pressed, the box is in hand, and nothing
+moves (before: any box pressed went to the top of the face, the line pressed
+gone from under the pointer). Only a box gone to from out of sight (a line
+found, a file opened from the tree) is put at the standard's place. From the
+keyboard: Escape leaves a text, the keyboard on the desk, and nothing moves;
+there an arrow takes the next box that way in hand (Tab the next in order,
+Shift+Tab back), one in sight where it stands, one cut by the desk's foot up
+by the least that shows it whole; Enter, or a letter typed, goes into the box
+in hand. Nothing is drawn for the keyboard on the desk but the box in hand's
+own shadow (before: a pointing hand beside its name, the pointer's own, as a
+game's menu has one, with the pointer hidden while it was out; it said
+nothing the shadow did not, and Tab was taken from the text for it). In a
+file Tab is the text's, as in any editor: the file's own indent written at
+the caret, a selection's lines moved in, Shift+Tab out. Looking along the
+desk with the wheel takes no box in hand while one is written in: the shadow
+stays where the keyboard is. Shift+N, as a new post is begun on X, makes a
+new file beside the one in hand where nothing is being written (the keyboard
+on the desk; written in a file, it is an N): it is laid under the box in
+hand, in its column, as a new post goes under the one before it, named with
+that file's ending (none with no file in hand: untitled), at the size it is
+read at (the camera does not step back for it), and its name is written over
+at once in its head, the name itself (its folder quiet before it), a line
+under it, the stem chosen in the soft yellow and the ending kept, so typing
+writes the stem. Enter keeps what is written and the keyboard goes on into
+the box, at its end; Escape keeps the name it had and goes on in too. The
+files tool's New file, and File's, make it the same way. Writing in a box
+puts the pointer out of the way until it moves.
 
 The camera has three places, as a game's cameras do, and Escape goes round
 them: its standard, every box at its own size, the box in hand in the middle
@@ -2337,15 +2341,16 @@ goes first and then zooms. Going along at one place to what is out
 of sight from there (the next column, a box far down), it steps back on the
 way as far as the way is long and comes down onto it, as a head turns across
 a room (the Agent's camera, below, goes so too); what is in sight is gone to
-with a plain pan. Escape takes the keyboard out onto the
-desk, the finger on the box in hand; from a field that keeps Escape for itself
-(a search, a rename), that comes first. Ctrl and - step back, Ctrl and + come a
+with a plain pan. Escape out of a text only takes the keyboard out onto
+the desk (one key, one thing: before, it stepped the camera back at the same
+time, the whole desk a quarter smaller for a key pressed to leave a line);
+on the desk, it goes round the camera's places; from a field that keeps
+Escape for itself (a search, a rename), that comes first. Ctrl and - step back, Ctrl and + come a
 place nearer, Ctrl and 0 to the standard, a pinch either way a place. At the
 standard the camera moves as a scroll does, so the keyboard going into a box,
 or something brought into view, takes the camera there and that box into hand,
-and the wheel moves it along the desk. Stood back, a press takes a box in hand,
-twice comes in to it; over the whole desk, with the pointer rather than the
-finger, the box in hand is told by its own edge drawn heavier: one box, one
+and the wheel moves it along the desk. Stood back, a press on a box comes to it;
+over the whole desk the box in hand is told by its own edge drawn heavier: one box, one
 edge, never a ring a little way out round it (the box drawn twice, one inside
 the other); stood back by the rail going by, no box is pointed out. Writing in the box in hand while the camera
 stands back brings it to the standard. A box taken off by the dot of its close
@@ -2869,7 +2874,7 @@ the walk. → at the end of the line completes the path before the caret from
 the repo's files, as a shell's suggestion is taken (`src/ma` to `src/main.rs `,
 a directory with its `/`); several matches are written to what they share and
 listed in one quiet line under the box (monospace, as paths are), gone at the
-next key. Tab is the desk's: the finger to the next box.
+next key. At a desk's foot Tab completes too, as at a terminal.
 On Git, a page read and pressed rather than written in, it stands back
 from the start and again once the Prompt is done with (Escape), never over
 an issue's buttons; Ctrl+` or the pointer resting at the foot brings it.

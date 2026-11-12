@@ -153,7 +153,7 @@ export function tabbed(cols: readonly (readonly string[])[], from: string, back 
   return all[(i + (back ? all.length - 1 : 1)) % all.length];
 }
 
-/** The box `from` hands over to going `way` (an arrow, the finger on it): along its column, or the next column's nearest. */
+/** The box `from` hands over to going `way` (an arrow, the keyboard on the desk): along its column, or the next column's nearest. */
 export function next(cols: readonly (readonly string[])[], from: string, way: 'up' | 'down' | 'left' | 'right'): string | null {
   const c = cols.findIndex((col) => col.includes(from));
   if (c < 0) return null;

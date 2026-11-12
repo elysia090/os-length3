@@ -174,9 +174,9 @@ class Forge {
         going = null;
       }
     });
-    // Shift+N makes a new file, as a new post is begun on X: where nothing is being written (the finger on a box, the
-    // band, the pane), Forge on screen and nothing over it holding the page. Taken before the desk hears it (a letter
-    // there goes into the box under the finger).
+    // Shift+N makes a new file, as a new post is begun on X: where nothing is being written (the keyboard on the desk,
+    // the band, the pane), Forge on screen and nothing over it holding the page. Taken before the desk hears it (a
+    // letter there goes into the box in hand).
     const keys = (e: KeyboardEvent) => {
       if (e.key !== 'N' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || e.repeat) return;
       if (!this.element.isConnected || this.element.closest('[hidden]') || document.getElementById('page')?.hasAttribute('inert')) return;

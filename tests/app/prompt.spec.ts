@@ -38,8 +38,7 @@ test('→ at the end, and Tab, complete a path in the repo, and say the choices 
   await box.press('d');
   await expect(app.forge.promptSays('Makefile')).toHaveCount(0);
 
-  // Tab completes too, as at a terminal, and never leaves the line (it stands at the desk's foot, outside the desk,
-  // where Tab is the boxes').
+  // Tab completes too, as at a terminal, and never leaves the line.
   await box.fill('cat sr');
   await box.press('Tab');
   await expect(box).toHaveValue('cat src/');

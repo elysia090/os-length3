@@ -29,12 +29,11 @@
   to { opacity: 1; margin: 0; box-shadow: 8px 8px 0 0 var(--ink); }
 }
 @media (prefers-reduced-motion: reduce) { .desk-box.landing { animation: none; } }
-/* Stood back (a step, or the whole desk): a press takes a box in hand, twice comes back to it. Over the whole desk, with
-   the pointer rather than the finger, the box in hand is told by its own edge, heavier: one box, one edge (before: a
-   ring a little way out round its edge, the box drawn twice, one inside the other). Stood back by the rail going by
-   (desk.ts away), no box is pointed out. */
+/* Stood back (a step, or the whole desk): a press on a box comes to it. Over the whole desk the box in hand is told
+   by its own edge, heavier: one box, one edge (before: a ring a little way out round its edge, the box drawn twice,
+   one inside the other). Stood back by the rail going by (desk.ts away), no box is pointed out. */
 .desk:is(.pulled, .whole) .desk-box { cursor: var(--cursor-hand); }
-.desk.whole:not(.railed) .desk-plane:not(:has(> .desk-hand.on)) > .desk-box.held { box-shadow: 0 0 0 2px var(--ink), 8px 8px 0 0 var(--ink); }
+.desk.whole:not(.railed) .desk-plane > .desk-box.held { box-shadow: 0 0 0 2px var(--ink), 8px 8px 0 0 var(--ink); }
 .desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
   font: 600 15px/1 var(--mono); color: var(--ink); padding: 4px 8px 7px 0; transform-origin: 0 100%; scale: var(--inv, 1); }
 .desk-dir { font-weight: 400; color: var(--sub); }
@@ -292,13 +291,6 @@
 /* Born from under another box (a file made under the one in hand): its name comes once it is out. */
 .desk-box.born > .desk-label { opacity: 0; }
 .desk-box > .desk-label { transition: opacity 180ms ease-out; }
-/* The finger (desk.ts): the pointer's own pointing hand at 40 px, turned to point left, its fingertip just after the
-   name of the box in hand, on the name's line: it says which, as a hand beside a menu's line does. The size it is on
-   the face however near the camera. While it is out, the pointer is hidden. */
-.desk-hand { position: absolute; left: 0; top: 0; z-index: 3; width: 40px; height: 40px; pointer-events: none; visibility: hidden;
-  background: var(--hand-open) no-repeat 0 0 / 40px 40px; transform-origin: 14.81px 4.44px;
-  transform: translate(-14.81px, -4.44px) scale(var(--inv, 1)) rotate(-90deg); }
-.desk-hand.on { visibility: visible; }
 /* The terminal at the desk's foot is a terminal: what runs is cut with Ctrl+C, as at any terminal, so its line says
    what a run does without buttons of its own. */
 .desk-term .term-activity .button { display: none; }
