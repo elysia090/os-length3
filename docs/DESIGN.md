@@ -2203,7 +2203,9 @@ in the middle as the box in hand is: one box, inked round as a file's, on
 plain ground as the band over the desk is. The dots are the desk's: where they
 end the desk ends, and nothing of it passes under the Prompt (the first cut
 stood it over the desk, and a box's name left showing over its corner read as
-its own). At rest it is a line: at its start what it will do, the shell's
+its own). The desk's foot is not a cut: its last step fades into that ground,
+dots and boxes alike, so a box that goes on down is seen to go on, not sliced
+through a line of its words. At rest it is a line: at its start what it will do, the shell's
 prompt in the shell's green (`garden $`), a lamp in its margin lit while the
 shell runs, and after it a block where the next letter goes, a terminal's
 cursor away from the keyboard, which is all that says the line is written in
