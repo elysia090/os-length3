@@ -286,3 +286,96 @@ test('#102: an open with no descriptor left is EMFILE whatever it names, and mak
   assert.ok(emptied >= 0);
   assert.equal(text(p, '/t/a'), '');
 });
+
+const OPENAT = 257, MKDIRAT = 258, FSTATAT = 262, RENAMEAT = 264, READLINK = 89, GETCWD = 79, CHDIR = 80, FCHDIR = 81, MKDIR = 83;
+
+test('#100: a directory held open is that directory, however it or what is above it is renamed since; removed, nothing is in it', () => {
+  const p = guest(), v = p.kernel.vfs;
+  // (The one process there is, so that /proc's "self" is it.)
+  p.pid = p.pgid = p.sid = 1;
+  p.kernel.procs.set(1, p);
+  v.writeFile('/a/file', enc.encode('original'));
+  v.writeFile('/a/sub/deep', enc.encode('deep'));
+  const open = (path: string, flags = 0) => call(p, OPEN, at(p, 1024, path), flags, 0o644);
+  const openat = (dirfd: number, path: string, flags = 0) => call(p, OPENAT, dirfd, at(p, 1024, path), flags, 0o644);
+  /** What the file `path` from `dirfd` holds, or the errno its open fails with. */
+  const readAt = (dirfd: number, path: string): string | bigint => {
+    const fd = openat(dirfd, path);
+    if (fd < 0n) return fd;
+    const n = Number(call(p, PREAD, fd, 4096, 64, 0));
+    call(p, CLOSE, fd);
+    return dec.decode(p.bytes.subarray(4096, 4096 + n));
+  };
+  const linked = (name: string): string | bigint => {
+    const n = call(p, READLINK, at(p, 1024, name), 8192, 256);
+    return n < 0n ? n : dec.decode(p.bytes.subarray(8192, 8192 + Number(n)));
+  };
+  const cwd = (): string | bigint => {
+    const n = call(p, GETCWD, 8192, 256);
+    return n < 0n ? n : dec.decode(p.bytes.subarray(8192, 8192 + Number(n) - 1));
+  };
+  const there = (path: string) => typeof v.find(path, '/') !== 'number';
+  const d = Number(open('/a', O_DIRECTORY)), s = Number(open('/a/sub', O_DIRECTORY));
+  assert.ok(d >= 0 && s >= 0);
+  // What Linux does with each was asked of Linux (tmpfs).
+  // Renamed: the same directory under its new name; one held under it too, and ".." from that one.
+  assert.equal(rename(p, '/a', '/b'), 0n);
+  assert.equal(readAt(d, 'file'), 'original');
+  assert.equal(linked(`/proc/self/fd/${d}`), '/b');
+  assert.equal(readAt(s, 'deep'), 'deep');
+  assert.equal(readAt(s, '../file'), 'original');
+  assert.equal(linked(`/proc/self/fd/${s}`), '/b/sub');
+  // Its old name made again is another directory: what is held is still the first, for every call that takes it.
+  v.writeFile('/a/file', enc.encode('replacement'));
+  assert.equal(readAt(d, 'file'), 'original');
+  assert.equal(call(p, MKDIRAT, d, at(p, 1024, 'new'), 0o755), 0n);
+  assert.deepEqual([there('/b/new'), there('/a/new')], [true, false]);
+  assert.equal(call(p, FSTATAT, d, at(p, 1024, 'file'), 8192, 0), 0n);
+  assert.equal(p.view.getBigInt64(8192 + 48, true), 8n);
+  assert.equal(call(p, RENAMEAT, d, at(p, 1024, 'sub'), d, at(p, 2048, 'sub2')), 0n);
+  assert.deepEqual([there('/b/sub2'), there('/a/sub2')], [true, false]);
+  assert.equal(linked(`/proc/self/fd/${s}`), '/b/sub2');
+  assert.equal(call(p, UNLINKAT, d, at(p, 1024, 'file'), 0), 0n);
+  assert.deepEqual([there('/b/file'), text(p, '/a/file')], [false, 'replacement']);
+  // A path from the root does not look at the directory given.
+  assert.equal(readAt(d, '/a/file'), 'replacement');
+  // Gone to (fchdir), it is where the process works, and stays so renamed again.
+  assert.equal(call(p, FCHDIR, d), 0n);
+  assert.equal(cwd(), '/b');
+  assert.equal(linked('/proc/self/cwd'), '/b');
+  assert.equal(rename(p, '/b', '/c'), 0n);
+  assert.equal(cwd(), '/c');
+  assert.equal(readAt(AT_FDCWD, 'sub2/deep'), 'deep');
+  // Removed while held and worked in: nothing is in it and nothing is made in it, though its old name is made again;
+  // it is still itself ("."), and ".." is where it lay.
+  assert.equal(call(p, MKDIR, at(p, 1024, '/gone'), 0o755), 0n);
+  const g = Number(open('/gone', O_DIRECTORY));
+  assert.equal(call(p, CHDIR, at(p, 1024, '/gone')), 0n);
+  assert.equal(call(p, RMDIR, at(p, 1024, '/gone')), 0n);
+  v.writeFile('/gone/x', enc.encode('new'));
+  for (const from of [g, AT_FDCWD]) {
+    assert.equal(openat(from, 'x'), ENOENT, `${from}`);
+    assert.equal(openat(from, 'x', O_CREAT | O_WRONLY), ENOENT, `${from}`);
+    assert.equal(call(p, MKDIRAT, from, at(p, 1024, 'm'), 0o755), ENOENT, `${from}`);
+    assert.equal(call(p, FSTATAT, from, at(p, 1024, '.'), 8192, 0), 0n, `${from}`);
+    const self = Number(openat(from, '.', O_DIRECTORY)), up = Number(openat(from, '..', O_DIRECTORY));
+    assert.ok(self >= 0 && up >= 0, `${from}`);
+    assert.equal(linked(`/proc/self/fd/${self}`), '/gone (deleted)', `${from}`);
+    assert.equal(linked(`/proc/self/fd/${up}`), '/', `${from}`);
+    call(p, CLOSE, self);
+    call(p, CLOSE, up);
+  }
+  assert.equal(text(p, '/gone/x'), 'new');
+  assert.equal(there('/gone/m'), false);
+  assert.equal(linked(`/proc/self/fd/${g}`), '/gone (deleted)');
+  assert.equal(cwd(), ENOENT);
+  assert.equal(linked('/proc/self/cwd'), '/gone (deleted)');
+  // Written over by a rename (an empty directory gives way to the one moved onto it): it is removed, as above.
+  v.mkdirp('/dst');
+  v.writeFile('/src/in', enc.encode('in src'));
+  const h = Number(open('/dst', O_DIRECTORY));
+  assert.equal(rename(p, '/src', '/dst'), 0n);
+  assert.equal(readAt(h, 'in'), ENOENT);
+  assert.equal(linked(`/proc/self/fd/${h}`), '/dst (deleted)');
+  assert.equal(text(p, '/dst/in'), 'in src');
+});

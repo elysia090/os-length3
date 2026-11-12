@@ -26,7 +26,7 @@ import {machine} from './machine.ts';
 import {mountProc} from './procfs.ts';
 import {Description, FdTable} from './fd.ts';
 import type {Mapping} from './fs.ts';
-import {E, File, FsError, Vfs, loadedFiles} from './fs.ts';
+import {Dir, E, File, FsError, Vfs, loadedFiles} from './fs.ts';
 import {FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
@@ -1254,7 +1254,12 @@ export class Process implements Proc {
   declare pgid: number;
   declare sid: number;
   declare fds: FdTable;
-  declare cwd: string;
+  /**
+   * Where it works: the directory itself, so that one renamed since (or under one renamed) is still where it works and
+   * one removed is nowhere; or the path of one the tree keeps no place for (/proc's, made as they are looked at). What a
+   * path not from the root is looked up from.
+   */
+  declare here: Dir | string;
   declare umask: number;
   declare nice: number;
   declare limits: [bigint, bigint][];
@@ -1303,7 +1308,7 @@ export class Process implements Proc {
     this.pgid = parent?.pgid ?? 0;
     this.sid = parent?.sid ?? 0;
     this.fds = parent ? parent.fds.fork() : new FdTable();
-    this.cwd = parent?.cwd ?? '/';
+    this.here = parent?.here ?? kernel.vfs.root;
     this.umask = parent?.umask ?? 0o022;
     // How nice it is (-20 to 19), as getpriority says and a child takes: no scheduling here weighs it.
     this.nice = parent?.nice ?? 0;
@@ -1333,6 +1338,17 @@ export class Process implements Proc {
   }
 
   /** Make one system call as this process's thread (or as a thread of it that has none yet), as the dispatcher does. */
+  /** Where it works, as a path: where that directory lies now (null: it lies nowhere, removed since). */
+  get cwd(): string | null {
+    const h = this.here;
+    return typeof h === 'string' ? h : this.kernel.vfs.where(h) ?? null;
+  }
+  /** It works at `path` (a directory there): held as the directory itself where the tree keeps its place. */
+  set cwd(path: string) {
+    const v = this.kernel.vfs, node = v.find(path, '/');
+    this.here = node instanceof Dir && v.where(node) !== undefined ? node : path;
+  }
+
   syscall(nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next = 0n): bigint {
     const t = [...this.tasks][0] ?? {proc: this, tid: this.pid};
     const v = this.kernel.attempt(t, {nr: Number(nr), args: [a, b, c, d, e, f], next, state: {}});
@@ -1463,7 +1479,7 @@ export class Process implements Proc {
    * other thread with it, and the calling thread starts at the entry.
    */
   execve(path: string, argv: string[], env: string[]): void {
-    const node = this.kernel.vfs.lookup(path, this.cwd);
+    const node = this.kernel.vfs.lookup(path, this.here);
     if (!(node instanceof File)) throw new FsError(node.isDir ? E.ACCES : E.NOEXEC);
     if (!(node.mode & 0o111)) throw new FsError(E.ACCES);
     // A program translated already (this version of it), or whose translation is kept, is an ELF, and is not read to
@@ -1509,7 +1525,7 @@ export class Process implements Proc {
     this.env = env;
     this.comm = null;
     this.caps = {effective: CAPS, permitted: CAPS, inheritable: this.caps.inheritable};
-    this.exe = this.kernel.vfs.realpath(path, this.cwd);
+    this.exe = this.kernel.vfs.realpath(path, this.here);
     this.fds.exec();
     // Handled signals go back to their default; ignored ones stay ignored.
     for (const [sig, h] of this.actions) if (h.handler > 1n) this.actions.delete(sig);

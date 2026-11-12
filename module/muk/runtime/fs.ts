@@ -18,13 +18,39 @@ export const loadedFiles = () => LOADED;
  * that compares what it saw before (mirror.ts) knows nothing changed while the count is the same and no file is mapped
  * (what is written through a mapping reaches its file only when it settles).
  */
-export const counted = {changes: 0, mapped: 0};
+export const counted = {changes: 0, mapped: 0, placed: 0};
 
-/** A directory's entries, each change counted. */
+/**
+ * A directory's entries, each change counted. A directory put in knows where it lies (the directory it is in and its
+ * name there), and one taken out, or written over, that it lies nowhere: so what holds a directory open can find where
+ * it is now, however it or what is above it was renamed since (Vfs.where). Each such change is counted (`placed`).
+ */
 class Entries extends Map<string, Entry> {
-  override set(name: string, e: Entry): this { counted.changes++; return super.set(name, e); }
-  override delete(name: string): boolean { const had = super.delete(name); if (had) counted.changes++; return had; }
-  override clear(): void { if (this.size) counted.changes++; super.clear(); }
+  declare readonly owner: Dir;
+  constructor(owner: Dir) { super(); this.owner = owner; }
+  override set(name: string, e: Entry): this {
+    counted.changes++;
+    const was = super.get(name);
+    if (was !== e) {
+      if (was instanceof Dir) this.#out(was, name);
+      if (e instanceof Dir) { e.parent = this.owner; e.name = name; e.lies = true; counted.placed++; }
+    }
+    return super.set(name, e);
+  }
+  override delete(name: string): boolean {
+    const was = super.get(name), had = super.delete(name);
+    if (had) { counted.changes++; if (was instanceof Dir) this.#out(was, name); }
+    return had;
+  }
+  override clear(): void {
+    if (this.size) counted.changes++;
+    for (const [name, e] of this) if (e instanceof Dir) this.#out(e, name);
+    super.clear();
+  }
+  /** `dir` is no longer here as `name`: it lies nowhere, unless it was put elsewhere first (a rename puts before it takes out). */
+  #out(dir: Dir, name: string): void {
+    if (dir.parent === this.owner && dir.name === name) { dir.lies = false; counted.placed++; }
+  }
 }
 
 export class Node {
@@ -261,7 +287,18 @@ function same(x: Uint8Array, y: Uint8Array): boolean {
 }
 
 export class Dir extends Node {
-  readonly #entries = new Entries();
+  readonly #entries = new Entries(this);
+  /**
+   * Where it lies, as the directory it is in keeps it (Entries): that directory, its name there, and whether it still
+   * lies there (false once taken out or written over: where it lay is kept, for ".." and for what /proc says of it).
+   * `lies` undefined: no directory keeps it (the root, and one made as it is looked at: /proc's).
+   */
+  declare parent?: Dir;
+  declare name?: string;
+  declare lies?: boolean;
+  /** Where it was last found to lie (Vfs.where), and the count of placings that was found at. */
+  declare at?: string | null;
+  declare seen?: number;
   constructor(mode = 0o755) {
     super(S_IFDIR | mode);
     this.nlink = 2;
@@ -378,10 +415,38 @@ export class Vfs {
   }
 
   /**
-   * Resolve `path` from `cwd`. Returns {node, parent, name}; node is null
-   * when only the last component is missing (useful for creation).
+   * Where `dir` lies now, by what it is (not by a path it was once reached by): its names from the root. Null once it
+   * lies nowhere (removed, written over, or under one that was); undefined where the tree keeps no place for it (one
+   * made as it is looked at: /proc's). Found again only after a directory was put somewhere or taken out.
    */
-  resolve(path: string, cwd = '/', follow = true): Resolved {
+  where(dir: Dir): string | null | undefined {
+    if (dir.seen === counted.placed) return dir.at;
+    let at: string | null | undefined;
+    if (dir === this.root) at = '/';
+    else if (dir.lies === undefined) at = undefined;
+    else if (!dir.lies) at = null;
+    else {
+      const up = this.where(dir.parent!);
+      at = up == null ? up : up === '/' ? `/${dir.name}` : `${up}/${dir.name}`;
+    }
+    dir.seen = counted.placed;
+    dir.at = at;
+    return at;
+  }
+
+  /** What a directory is called where its place is shown (/proc's links): where it lies, or where it lay, "(deleted)". */
+  shown(dir: Dir): string | undefined {
+    const at = this.where(dir);
+    if (at !== null) return at;
+    const up = dir.parent ? this.shown(dir.parent) : undefined;
+    return up === undefined ? undefined : `${up.replace(/ \(deleted\)$/, '')}${up === '/' ? '' : '/'}${dir.name} (deleted)`;
+  }
+
+  /**
+   * Resolve `path` from `cwd` (a path, or the directory itself: where it lies now is where the walk starts). Returns
+   * {node, parent, name}; node is null when only the last component is missing (useful for creation).
+   */
+  resolve(path: string, cwd: string | Dir = '/', follow = true): Resolved {
     const r = this.walk(path, cwd, follow);
     return typeof r === 'number' ? fail(r) : r;
   }
@@ -390,12 +455,12 @@ export class Vfs {
    * The node at `path`, or the errno its lookup fails with, given back, not thrown: a name that is not there is most of
    * what a shell's PATH search and a compiler's include path ask, and the throw cost more than the lookup.
    */
-  find(path: string, cwd: string, follow = true): Entry | number {
+  find(path: string, cwd: string | Dir, follow = true): Entry | number {
     const r = this.walk(path, cwd, follow);
     return typeof r === 'number' ? r : r.node ?? E.NOENT;
   }
 
-  lookup(path: string, cwd: string, follow = true): Entry {
+  lookup(path: string, cwd: string | Dir, follow = true): Entry {
     const r = this.find(path, cwd, follow);
     return typeof r === 'number' ? fail(r) : r;
   }
@@ -405,10 +470,19 @@ export class Vfs {
    * found (links followed, "." and ".." gone; to its parent, where only its last name is missing): its canonical path,
    * which an open keeps, with no second walk (realpath).
    */
-  walk(path: string, cwd = '/', follow = true, depth = 0, names: string[] | null = null): Resolved | number {
+  walk(path: string, from: string | Dir = '/', follow = true, depth = 0, names: string[] | null = null): Resolved | number {
     if (depth > 40) return E.LOOP;
     if (path === '') return E.NOENT;
     if (names) names.length = 0;
+    let cwd: string;
+    if (typeof from === 'string') cwd = from;
+    else {
+      const at = this.where(from);
+      if (at == null) {
+        if (path.charCodeAt(0) !== SLASH) return at === null ? this.#fromGone(path, from, follow, depth, names) : E.NOENT;
+        cwd = '/';
+      } else cwd = at;
+    }
     // Its components read in place, one after another (not split into an array, filtered and joined again: a stat or
     // an open of a short path spent most of its time there). Empty components and "." are none.
     const full = path.charCodeAt(0) === SLASH ? path : cwd + '/' + path, n = full.length;
@@ -449,8 +523,27 @@ export class Vfs {
     return {node, parent: (stack[stack.length - 2] as Dir | undefined) ?? this.root, name};
   }
 
+  /**
+   * A path asked from a directory that lies nowhere (removed while it was held open, or worked in): it is still itself
+   * ("."), ".." is where it lay, and no name is in it or can be made in it (ENOENT), as Linux has it.
+   */
+  #fromGone(path: string, dir: Dir, follow: boolean, depth: number, names: string[] | null): Resolved | number {
+    for (let i = 0; i < path.length;) {
+      if (path.charCodeAt(i) === SLASH) { i++; continue; }
+      let end = path.indexOf('/', i);
+      if (end < 0) end = path.length;
+      const part = path.slice(i, end);
+      i = end;
+      if (part === '.') continue;
+      if (part === '..' && dir.parent) return this.walk(path.slice(end) || '.', dir.parent, follow, depth + 1, names);
+      return E.NOENT;
+    }
+    return {node: dir, parent: dir.parent ?? dir, name: '.'};
+  }
+
   /** Canonical absolute path of an existing directory. */
-  realpath(path: string, cwd: string): string {
+  realpath(path: string, from: string | Dir): string {
+    const cwd = typeof from === 'string' ? from : path.startsWith('/') ? '/' : this.where(from) ?? fail(E.NOENT);
     // One walk down the tree, each component looked up in the directory reached (not the whole path again from the
     // root for each: an open of a file five deep looked up fifteen names), a link's target walked where it is.
     const parts: string[] = [], nodes: Entry[] = [this.root];
@@ -501,18 +594,18 @@ export class Vfs {
   }
 
   /** The file at `path` (as readFile fails where something else is). */
-  file(path: string, cwd = '/'): File {
+  file(path: string, cwd: string | Dir = '/'): File {
     const node = this.lookup(path, cwd);
     return node instanceof File ? node : fail(node.isDir ? E.ISDIR : E.INVAL);
   }
 
   /** The directory at `path`. */
-  dir(path: string, cwd = '/'): Dir {
+  dir(path: string, cwd: string | Dir = '/'): Dir {
     const node = this.lookup(path, cwd);
     return node instanceof Dir ? node : fail(E.NOTDIR);
   }
 
-  readFile(path: string, cwd = '/'): Uint8Array {
+  readFile(path: string, cwd: string | Dir = '/'): Uint8Array {
     return this.file(path, cwd).bytes();
   }
 

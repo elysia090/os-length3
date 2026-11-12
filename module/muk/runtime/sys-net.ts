@@ -390,7 +390,7 @@ function writeName(p: Proc, address: bigint, lengthAt: bigint, bytes: Uint8Array
 /** The local socket bound to `name`, or the error connecting to it gives. */
 function namedBy(p: Proc, name: Given): Endpoint {
   if (name.abstract !== undefined) return p.kernel.abstractSockets?.get(name.abstract) ?? fail(ERR.CONNREFUSED);
-  const node = p.kernel.vfs.lookup(name.path ?? '', p.cwd);
+  const node = p.kernel.vfs.lookup(name.path ?? '', p.here);
   return (node instanceof SocketName && node.endpoint) || fail(ERR.CONNREFUSED);
 }
 
@@ -1003,7 +1003,7 @@ export const NET_CALLS: Calls = {
       all.set(a.abstract, s);
       s.abstract = a.abstract;
     } else {
-      const r = this.kernel.vfs.resolve(a.path ?? '', this.cwd, false);
+      const r = this.kernel.vfs.resolve(a.path ?? '', this.here, false);
       if (r.node) fail(ERR.ADDRINUSE);
       const node = new SocketName(0o777 & ~this.umask);
       node.endpoint = s;

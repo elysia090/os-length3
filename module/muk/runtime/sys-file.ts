@@ -52,14 +52,27 @@ const pipeOf = (d: Description): Pipe => d.pipe ?? fail(E.BADF);
 const counterOf = (d: Description) => d.event ?? fail(E.BADF);
 const interestOf = (d: Description) => d.interest ?? fail(E.INVAL);
 
-/** The directory a *at() path is relative to. */
-function base(p: Proc, dirfd: bigint): string {
+/**
+ * What a directory held open is looked up from: the directory itself, so that it is the one held however it or what is
+ * above it was renamed since, and nothing is in it once it is removed (before: the path it was opened by, which a
+ * rename left naming nothing, or another directory made there since); the path it was opened by where the tree keeps
+ * no place for it (/proc's, made as they are looked at).
+ */
+function held(p: Proc, d: Description): Dir | string {
+  return d.node instanceof Dir && p.kernel.vfs.where(d.node) !== undefined ? d.node : d.path;
+}
+
+/** The directory a *at() path is relative to: where the process works, or the directory `dirfd` holds open. */
+function base(p: Proc, dirfd: bigint): Dir | string {
   const fd = N(dirfd);
-  if (fd === AT_FDCWD) return p.cwd;
+  if (fd === AT_FDCWD) return p.here;
   const d = p.fds.get(fd) ?? fail(E.BADF);
   if (d.kind !== 'dir') fail(E.NOTDIR);
-  return d.path;
+  return held(p, d);
 }
+
+/** The directory the process works in, itself (removed since, it is still what "." is). */
+const working = (p: Proc): Entry => (typeof p.here === 'string' ? p.kernel.vfs.lookup(p.here, '/') : p.here);
 
 function path(p: Proc, address: bigint): string {
   return p.cstring(N(address)) || fail(E.NOENT);
@@ -105,7 +118,7 @@ const DT: Record<number, number> = {[S_IFDIR]: 4, [S_IFLNK]: 10, [S_IFCHR]: 2, [
 /** The file a time-setting call names: by its path from `dirfd`, or the descriptor itself (a NULL or empty path). */
 function timed(p: Proc, dirfd: bigint, name: bigint, follow: boolean): Entry {
   if (!N(name) || !p.bytes[N(name)]) {
-    if (N(dirfd) === AT_FDCWD) return p.kernel.vfs.lookup(p.cwd, '/');
+    if (N(dirfd) === AT_FDCWD) return working(p);
     return descriptor(p, dirfd).node ?? fail(E.BADF);
   }
   return p.kernel.vfs.lookup(path(p, name), base(p, dirfd), follow);
@@ -590,7 +603,7 @@ function access(p: Proc, dirfd: bigint, address: bigint, mode: bigint, flags = 0
   if (m & ~7) fail(E.INVAL);
   if (f & ~(AT.SYMLINK_NOFOLLOW | AT_EACCESS | AT.EMPTY_PATH)) fail(E.INVAL);
   const node = f & AT.EMPTY_PATH && !p.bytes[N(address)]
-    ? (N(dirfd) === AT_FDCWD ? p.kernel.vfs.lookup(p.cwd, '/') : descriptor(p, dirfd).node ?? fail(E.BADF))
+    ? (N(dirfd) === AT_FDCWD ? working(p) : descriptor(p, dirfd).node ?? fail(E.BADF))
     : p.kernel.vfs.find(path(p, address), base(p, dirfd), !(f & AT.SYMLINK_NOFOLLOW));
   if (typeof node === 'number') return -node;
   if (m & 1 && !node.isDir && !(node.mode & 0o111)) fail(E.ACCES);
@@ -607,7 +620,7 @@ const AT_EACCESS = 0x200;
 const XATTR = {CREATE: 1, REPLACE: 2, NAME_MOST: 255, VALUE_MOST: 65536};
 /** What attributes are kept on: a node, or NONE. */
 interface Attributed { xattrs?: Map<string, Uint8Array> | null; readonly isLink: boolean; readonly takesNone?: boolean }
-const xnode = (p: Proc, name: bigint, follow: boolean): Entry => p.kernel.vfs.lookup(path(p, name), p.cwd, follow);
+const xnode = (p: Proc, name: bigint, follow: boolean): Entry => p.kernel.vfs.lookup(path(p, name), p.here, follow);
 /** What a descriptor with no node has (a pipe's, a socket's): no attributes, and room for none. */
 const NONE: Attributed = {xattrs: null, isLink: false, takesNone: true};
 const xnodeOf = (p: Proc, fd: bigint): Attributed => descriptor(p, fd).node ?? NONE;
@@ -1038,7 +1051,7 @@ export const FILE_CALLS: Calls = {
   3(fd) { if (!this.fds.close(N(fd))) fail(E.BADF); return 0; },
   4(name, st) { return statOf(this, st, statNode(this, path(this, name), BigInt(AT_FDCWD), true)); },
   5(fd, st) { return writeStat(this, st, describe(this, descriptor(this, fd))); },
-  6(name, st) { return statOf(this, st, this.kernel.vfs.find(path(this, name), this.cwd, false)); },
+  6(name, st) { return statOf(this, st, this.kernel.vfs.find(path(this, name), this.here, false)); },
   7(fds, count, timeout) { return poll(this, fds, count, Number(BigInt.asIntN(32, timeout))); },
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
   8(fd, offset, whence) {
@@ -1180,7 +1193,7 @@ export const FILE_CALLS: Calls = {
   76(name, length) {
     const n = N(length);
     if (n < 0) fail(E.INVAL);
-    const node = this.kernel.vfs.lookup(path(this, name), this.cwd);
+    const node = this.kernel.vfs.lookup(path(this, name), this.here);
     if (node.isDir) fail(E.ISDIR);
     if (!(node instanceof File)) return fail(E.INVAL);
     node.truncate(n);
@@ -1195,18 +1208,20 @@ export const FILE_CALLS: Calls = {
     return 0;
   },
   79(buf, size) {
-    const bytes = enc.encode(this.cwd + '\0');
+    // (Removed since it was gone to, it lies nowhere: ENOENT, as Linux says.)
+    const bytes = enc.encode((this.cwd ?? fail(E.NOENT)) + '\0');
     if (bytes.length > N(size)) fail(E.RANGE);
     this.bytes.set(bytes, N(buf));
     return bytes.length;
   },
   80(name) {
     const target = path(this, name);
-    if (!this.kernel.vfs.lookup(target, this.cwd).isDir) fail(E.NOTDIR);
-    this.cwd = this.kernel.vfs.realpath(target, this.cwd);
+    const v = this.kernel.vfs, node = v.lookup(target, this.here);
+    if (!(node instanceof Dir)) return fail(E.NOTDIR);
+    this.here = v.where(node) !== undefined ? node : v.realpath(target, this.here);
     return 0;
   },
-  81(fd) { const d = descriptor(this, fd); if (d.kind !== 'dir') fail(E.NOTDIR); this.cwd = d.path; return 0; },
+  81(fd) { const d = descriptor(this, fd); if (d.kind !== 'dir') fail(E.NOTDIR); this.here = held(this, d); return 0; },
   82(a, b) { return rename(this, BigInt(AT_FDCWD), a, BigInt(AT_FDCWD), b); },
   83(name, mode) { return makeDir(this, BigInt(AT_FDCWD), name, mode); },
   84(name) { return remove(this, BigInt(AT_FDCWD), name, true); },
@@ -1215,23 +1230,23 @@ export const FILE_CALLS: Calls = {
   87(name) { return remove(this, BigInt(AT_FDCWD), name, false); },
   88(target, name) { return FILE_CALLS[266].call(this, target, BigInt(AT_FDCWD), name); },
   89(name, buf, size) { return readlink(this, BigInt(AT_FDCWD), name, buf, size); },
-  90(name, mode) { const n = this.kernel.vfs.lookup(path(this, name), this.cwd); n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
+  90(name, mode) { const n = this.kernel.vfs.lookup(path(this, name), this.here); n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
   91(fd, mode) { const n = descriptor(this, fd).node; if (n) n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
-  92(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.cwd), uid, gid); },
+  92(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.here), uid, gid); },
   93(fd, uid, gid) { return chown(this, descriptor(this, fd).node, uid, gid); }, // fchown
-  94(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.cwd, false), uid, gid); }, // lchown
+  94(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.here, false), uid, gid); }, // lchown
   95(mask) { const old = this.umask; this.umask = N(mask) & 0o777; return old; },
   // utime, utimes, futimesat, utimensat: the times of a file that is there (ENOENT for one that is not, which
   // is how touch knows to make it).
   133(name, mode, _dev) { return makeNode(this, BigInt(AT_FDCWD), name, mode); },
   259(dirfd, name, mode, _dev) { return makeNode(this, dirfd, name, mode); },
   132(name, buf) {
-    const n = this.kernel.vfs.lookup(path(this, name), this.cwd);
+    const n = this.kernel.vfs.lookup(path(this, name), this.here);
     if (!N(buf)) return setTimes(n, 'now', 'now');
     const t = (off: number): [number, number] => [Number(this.view.getBigInt64(N(buf) + off, true)), 0];
     return setTimes(n, t(0), t(8));
   },
-  235(name, tv) { const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(this.kernel.vfs.lookup(path(this, name), this.cwd), a, m); },
+  235(name, tv) { const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(this.kernel.vfs.lookup(path(this, name), this.here), a, m); },
   261(dirfd, name, tv) { const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(timed(this, dirfd, name, true), a, m); },
   280(dirfd, name, ts, flags) {
     const [a, m] = timespecs(this, ts) as [Time, Time];
@@ -1239,8 +1254,8 @@ export const FILE_CALLS: Calls = {
   },
   137(name, buf) { // statfs: the filesystem the path is on (it must be there)
     const at = path(this, name);
-    this.kernel.vfs.lookup(at, this.cwd);
-    return writeStatfs(this, N(buf), at.startsWith('/') ? at : `${this.cwd}/${at}`);
+    this.kernel.vfs.lookup(at, this.here);
+    return writeStatfs(this, N(buf), at.startsWith('/') ? at : `${this.cwd ?? ''}/${at}`);
   },
   138(fd, buf) { return writeStatfs(this, N(buf), descriptor(this, fd).path ?? '/'); }, // fstatfs
   217(fd, buf, count) { return getdents(this, fd, buf, count); },
@@ -1248,7 +1263,7 @@ export const FILE_CALLS: Calls = {
   258(dirfd, name, mode) { return makeDir(this, dirfd, name, mode); },
   260(dirfd, name, uid, gid, flags) { // fchownat
     const f = N(flags), named = N(name) && this.cstring(N(name));
-    if (!named && f & AT.EMPTY_PATH) return chown(this, N(dirfd) === AT_FDCWD ? this.kernel.vfs.lookup(this.cwd, '/') : descriptor(this, dirfd).node, uid, gid);
+    if (!named && f & AT.EMPTY_PATH) return chown(this, N(dirfd) === AT_FDCWD ? working(this) : descriptor(this, dirfd).node, uid, gid);
     return chown(this, this.kernel.vfs.lookup(path(this, name), base(this, dirfd), !(f & AT.SYMLINK_NOFOLLOW)), uid, gid);
   },
   262(dirfd, name, st, flags) {

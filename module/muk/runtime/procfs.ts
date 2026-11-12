@@ -78,10 +78,14 @@ function signalMasks(p: Proc): {ign: bigint; cgt: bigint} {
   return {ign, cgt};
 }
 
-/** What one of a process's descriptors points at, as /proc/PID/fd/N says it. */
-function pointsAt(d: Description): string {
+/**
+ * What one of a process's descriptors points at, as /proc/PID/fd/N says it. A directory: where it lies now (renamed
+ * since it was opened, its new place; removed, where it lay, "(deleted)"), not the path it was opened by.
+ */
+function pointsAt(kernel: Kern, d: Description): string {
   switch (d.kind) {
-    case 'file': case 'dir': case 'device': return d.path || '/';
+    case 'dir': return (d.node instanceof Dir ? kernel.vfs.shown(d.node) : undefined) ?? (d.path || '/');
+    case 'file': case 'device': return d.path || '/';
     case 'pipe-r': case 'pipe-w': return `pipe:[${d.pipe?.id ?? 0}]`;
     case 'console': return '/dev/pts/0';
     case 'eventfd': return 'anon_inode:[eventfd]';
@@ -138,7 +142,7 @@ export function mountProc(kernel: Kern): void {
     if (p.mapEnd > p.mapBase) out.push(line(p.mapBase, p.mapEnd, 'rw-p', ''));
     return out.join('\n') + '\n';
   };
-  const fdDir = (p: Proc): Listing => new Listing(() => new Map([...p.fds.slots].map(([fd, s]) => [String(fd), new Pointer(() => pointsAt(s.description))])), 0o500);
+  const fdDir = (p: Proc): Listing => new Listing(() => new Map([...p.fds.slots].map(([fd, s]) => [String(fd), new Pointer(() => pointsAt(kernel, s.description))])), 0o500);
 
   // Each process's directory, kept while it is there (its inode stays the same between looks).
   const dirs = new Map<number, {proc: Proc; dir: Listing}>();
@@ -157,7 +161,7 @@ export function mountProc(kernel: Kern): void {
       // Its user namespace's: the one id it maps, 0, the person's own outside (core/src/launch.rs).
       ['uid_map', new Made(() => idMap)], ['gid_map', new Made(() => idMap)], ['setgroups', new Made(() => 'deny\n')],
       ['mounts', new Made(() => mounts())],
-      ['cwd', new Pointer(() => p.cwd)],
+      ['cwd', new Pointer(() => (typeof p.here === 'string' ? p.here : kernel.vfs.shown(p.here) ?? '/'))],
       ['exe', new Pointer(() => p.exe)],
       ['root', new Pointer(() => '/')],
     ]);
