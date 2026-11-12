@@ -377,3 +377,36 @@ test('Home come back to is where it was read to, and the page between starts at 
   await app.rail.go('home');
   await expect.poll(read).toBe(60);
 });
+
+test('Home reads whole repository names with distinct short and long typography and room for settings', async ({app}) => {
+  const names = ['notes', 'independent-review', 'independent-review-with-a-distinct-ending', 'abcdefghijklmnopqrstuvwxyz0123456789'];
+  for (const name of names) await app.newRepo.make(name);
+  await app.rail.go('home');
+  for (const width of [1180, 500, 390]) {
+    await app.page.setViewportSize({width, height: 844});
+    for (const name of names) {
+      const card = app.main.locator('.home-repos > .repo').filter({has: app.page.locator('.card-title', {hasText: new RegExp(`^${name}$`)})});
+      const title = card.locator('.card-title');
+      await expect(title).toHaveCSS('font-size', name.length > 16 ? '28px' : '40px');
+      await expect(title).toHaveText(name);
+      await expect.poll(() => title.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      await card.scrollIntoViewIfNeeded();
+      await card.hover();
+      const gear = card.locator('.repo-gear-button');
+      const [body, settings, column] = await Promise.all([card.locator('.card-open'), gear, app.main.locator('.home-repos')].map(el => el.boundingBox()));
+      expect(settings!.x).toBeGreaterThanOrEqual(body!.x + body!.width - 1);
+      expect(settings!.x + settings!.width).toBeLessThanOrEqual(column!.x + column!.width + 1);
+    }
+    await app.page.screenshot({path: `tests/app/.results/home-readable-names-${width}.png`, fullPage: true});
+    const actions = app.main.getByRole('button', {name: 'Actions for independent-review', exact: true});
+    await actions.press('Enter');
+    await expect(actions).toHaveAttribute('aria-expanded', 'true');
+    await app.page.keyboard.press('Escape');
+    await expect(actions).toBeFocused();
+    await expect(actions).toHaveAttribute('aria-expanded', 'false');
+    const named = app.main.getByRole('group', {name: 'independent-review', exact: true});
+    await named.locator('.card-open').press('Enter');
+    await expect(app.newRepo.madeIn('independent-review')).toBeVisible();
+    await app.rail.go('home');
+  }
+});

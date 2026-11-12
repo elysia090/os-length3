@@ -37,7 +37,7 @@ async function whyKept(name: string): Promise<string | null> {
  * the Remote, Rename, Free from this device, Delete: repo-gear.ts). `again` draws the list once something changed.
  */
 function gearCard(ctx: Context, name: string, lines: Node[], away: boolean, again: () => Promise<void>): HTMLElement {
-  const body = h('button', {type: 'button', class: 'card-open'}, h('span', {class: 'card-title'}, name), ...lines);
+  const body = h('button', {type: 'button', class: 'card-open'}, h('span', {class: `card-title${Array.from(name).length > 16 ? ' long-name' : ''}`}, name), ...lines);
   const sync = () => body.querySelector('.card-sync') as HTMLElement;
   body.addEventListener('click', async () => {
     if (!away) { ctx.openRepo(name); return; }
