@@ -223,17 +223,17 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       }, () => {});
       return;
     }
-    if (ch.what !== 'file' || ch.path !== path) return;
-    if (ch.by === AGENT && holdBack(repo, path, ch.text ?? '')) return;
-    // Saved whole past what Forge edits (asked for in its box), or changed without its text handed on (only part of
-    // it can be read): read again, in part to read only where it is so.
-    if (ch.text === undefined || ((ch.text.length > EDIT_LIMIT / 4) && new TextEncoder().encode(ch.text).length > EDIT_LIMIT)) {
+    if ((ch.what !== 'file' && ch.what !== 'unread') || ch.path !== path) return;
+    if (ch.what === 'file' && ch.by === AGENT && holdBack(repo, path, ch.text)) return;
+    // Changed with its words not handed on (not text, or only part of it can be read), or saved whole past what
+    // Forge edits (asked for in its box): read again, in part to read only where it is so.
+    if (ch.what === 'unread' || ((ch.text.length > EDIT_LIMIT / 4) && new TextEncoder().encode(ch.text).length > EDIT_LIMIT)) {
       editor = null;
       sheet.replaceChildren(gutter, h('pre', {class: 'code'}, '…'));
       void load();
       return;
     }
-    editor.take(ch.text ?? '');
+    editor.take(ch.text);
   });
 
   function toEnd() {

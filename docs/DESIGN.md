@@ -49,7 +49,7 @@ Three sources, spent in this order, and in falling amounts.
    of ink for the thing chosen, a sheet of paper with a hard shadow, as cut
    card has), and nothing soft: no gradient, no blur, no glow.
 3. **The plain prop of science fiction, for the last touch.** The dotted
-   ground of a desk, the line of keys at its foot, the names a machine
+   ground of a desk, the names a machine
    would stencil on its parts (set in the code face), a pointer drawn as
    the OS's own. It is the quality the best small games have: things that
    look made for this machine, and that say something true (a key that
@@ -97,10 +97,11 @@ three best, and is the measure the others are held to.
 - **A desk** (Home, Forge, New repo; File laid over them) is where things
   are made. Its ground is dotted, a dot every 24 px, so a sheet has
   something to lie on and to be moved across. What is worked on is a sheet
-  of paper with a hard shadow (8 px down and right, in ink; 16 while it is
-  lifted). Names are the machine's (a file's path, a section) and set in
-  the code face. The band is on the top line, the right pane at the right,
-  the keys that work here in one line at the foot.
+  of paper, and the one in hand has a hard shadow (8 px down and right, in
+  ink): one on a desk, never one under every sheet, where it said nothing
+  and the sheet worked on looked as the rest did. Names are the machine's
+  (a file's path, a section) and set in the code face. The band is on the
+  top line, the right pane at the right.
 - **A counter** (Runtime, Remote, Server, Inbox) is where what is so is
   read and set. Its ground is plain. It starts with its head, then its
   parts, then boxes drawn in line on the ground, rows in them. Paper is
@@ -189,6 +190,26 @@ room above (8 to 16) than below (24 to 56), so the weight of the whole sits
 a little high. Every page starts on one top line, and the rail one place
 below it, so Home is not first off the mark.
 
+**One skeleton under every page**, so that going from place to place nothing
+jumps. Sideways there are two edges, counted from the rail's line: what is on
+the top line (the band's tools, Git's and Server's chips) starts a step in
+(24), and a page's own things a place further (72), at one x on every page.
+It does not move with the window's width, and a column is never centred in
+what room there is (the window's 5% moved Home as the window was sized, and
+centring moved it as the pane was put away). Down, there are rows as the
+rail's are, a place tall and a step between: the top line's row holds the
+band, or a counter's name, on one middle; a page's first line (the person's
+name, a box's label, a page's parts, one's address in Inbox, a board's head)
+stands in the first row, level with the rail's first place; and its first box
+starts on the second, level with the rail's second place (behind Server's
+gear the name is the first row, its parts the second, and what a part holds
+starts on the third). A page with nothing for the first row (a sign-in card)
+leaves it clear, so the card and, once signed in, the part's first box start
+on one line. A window too short for the rail's steps closes the rail up, and
+a phone's rail is closer set; the pages keep their rows, one page as
+another, and on a narrow window (760 and less) a page's own things start
+where the top line's do.
+
 ### Colour is state
 
 No colour is there to be liked. Each means one thing wherever it is seen:
@@ -212,10 +233,12 @@ under *The rules in full*.
 
 A prop is allowed where three things hold: it says something true (a key
 that works here, a size, a name); it is where the hand or the eye already
-is when it is wanted (the keys at the foot of a desk, a name over its
-sheet); and the screen is no harder to read with it than without. The
-dotted ground, the hard shadow, the stencilled names, the line of keys and
-the OS's own pointers are all of them there are. A new one replaces one of
+is when it is wanted (a name over its sheet); and the screen is no harder
+to read with it than without. The dotted ground, the hard shadow under the
+sheet in hand, the stencilled names and the OS's own pointers are all of
+them there are. (A line of keys stood at the desk's foot, saying what the
+hands could do: a screen that needs its keys spelled out along its foot is
+not yet plain, and the line read as a game's. It is gone.) A new one replaces one of
 these or is not added.
 
 ### Tried
@@ -257,9 +280,17 @@ each case it has met.
   alone. A fact beside a name (Used 4 min ago, This device, a size) is in
   the body's face with even figures, not the code face: only what is
   written in code is mono.
-- **Motion, with a reason.** Every move says where something went, never
-  only that it changed, and every one lands the same way (fast off the
-  mark, the last pixels slow: `--land`). Each length named in this document
+- **Motion, with a reason.** Today one thing moves: the rail's ink, going
+  from the place left to the place come to. Every other move is left out
+  (`ui/glide.ts` still, `motion.css`): each thing is where it ends, at once,
+  and a place of the rail's pressed draws its page whole, at its own size,
+  with no camera stepping back and going along. They were taken off
+  together so that what the screen says without them is seen; a move comes
+  back only where, without it, one cannot tell where a thing went or came
+  from. What follows in this document about a move says how it goes when
+  it is let back, not that it goes now. Every move says where something
+  went, never only that it changed, and every one lands the same way (fast
+  off the mark, the last pixels slow: `--land`). Each length named in this document
   is the move's own, and the OS plays them all at one pace (`--pace`, 1:
   the standard lengths; played at twice them, the moves were watched rather
   than seen, and a hand waited on each), so they keep with one another.
@@ -285,19 +316,15 @@ each case it has met.
     it is: one ink, never two, never back to where it set off.
   - *The camera goes along the rail* as a game switches from one person to
     another, and each page steps back with its own camera, the page still
-    itself. Pressed, the page left steps back at once: Forge's desk with
-    the desk's own camera over the whole desk, as its Escape takes it (the
-    boxes in the middle, their names still read, and no further where it
-    stands that far back already: never a desk made smaller again); every
-    other page (Home, Git, the rest) to half its size about where its words
-    begin, at their left and their top, as it is read: Home stays at its
-    left, as the desk stays in the middle. What lay out of sight comes into
-    it (a box off the face, Home's lines past the window's foot): nothing is
-    cut at an edge no one can see. At that height the camera goes along the
+    itself. Pressed, the page left steps back at once: every page but
+    Forge (Home, Git, the rest) to half its size about where its words
+    begin, at their left and their top, as it is read; Forge's desk has one
+    size and does not step back. What lay out of sight comes into it
+    (Home's lines past the window's foot): nothing is cut at an edge no one
+    can see. At that height the camera goes along the
     one ground to the page come to, lying beside the one left the way the
     rail goes (above going up, below going down), already stood back by its
-    own camera, and comes down into it with that camera (Forge's to where
-    the desk's camera stood when the rail left it), landing softly: back
+    own camera, and comes down into it with that camera, landing softly: back
     280 ms, along 440, near 360, along setting off before the step back has
     landed so it never stands still between them. The dots lie on the
     ground as everything on it does: stood back they are smaller with their
@@ -649,10 +676,13 @@ what is its own.
   in a space (a prompt line) have the room after them less by that letter.
 
 - **The page head.** Icon, title (24/700) and one short role line in
-  `sub`, on the top line, and one line at every width: the role is cut
+  `sub`, on the top line, its middle the band's (the line Forge's tools and
+  Git's chips are on), and one line at every width: the role is cut
   short where it runs out of room, and a phone has the name alone, so what
-  stands under the head (a sign-in card, a page's parts) starts at the same
-  place on every page. Home's head is the profile. An overlay (File's
+  stands under the head (a page's parts, a sign-in card) starts at the same
+  place on every page. On Remote, signed in, the role's place says who this
+  device is there and whether the Remote answers (a line of their own under
+  the parts pushed every part's first box a row down). Home's head is the profile. An overlay (File's
   tree, Server's servers) has no page head: it is laid over the page whose
   head is there; Server's page, as Forge's, has its band on the top line.
   A step within a page that stands in the page's place (Server's gear, a
@@ -824,7 +854,7 @@ what is its own.
 - **The Remote away.** When this device's Remote does not answer (not
   reached, not in time, a gateway's 502, 503 or 504, or a page or words
   that are not its reply), it is said in one place: a small `off` dot on Remote's icon in the rail, whose
-  name then reads Remote に届きません, and one line under Remote's parts
+  name then reads Remote に届きません, and on Remote's head, after its name
   (what changes here is sent once it answers). Everything else goes on as
   it was: work is kept here and sent when the Remote answers; what only
   the Remote can do (its switches, a repo only there) waits, quiet.
@@ -2033,17 +2063,15 @@ the rail lines up with it. The first row is what each thing is called: the
 person's name at the top left, small (28 px: its capitals as tall as an icon
 of the rail's beside it, on a line a place tall; one longer than its line
 breaks instead), the handle after it; and at that line's right end, over the
-box's right edge, quiet in mono, the counts of repos and servers, then Edit
-profile: two ends of one line, the room between them empty, never a row of
-small words packed after the name (a dot stands between each two, in the room
-between them: each one's fill and ring are round its own words; where the
-column is too narrow for the name and all of them, the counts go and Edit
-profile alone ends the line, so the first row stays one row; a line about
-the person, where
-there is one, under them). No face in the column: the rail's own icon is the
+box's right edge, quiet in mono, the counts of repos and servers: two ends
+of one line, the room between them empty, never a row of small words packed
+after the name, and nothing between the counts but room (where the column
+is too narrow for the name and both, the counts go, so the first row stays
+one row; a line about the person, where there is one, under them). No face in the column: the rail's own icon is the
 face. No name written yet, it is the one signed in with, as Remote and the Me
 menu say it: one person, one name, never "No name yet" beside "Signed in as
-Sora"; none at all, "No name" stands there in the ground's rule colour. From
+Sora"; none at all, the line says what goes there ("Your name") in the
+ground's rule colour: a place to write it, not a name. From
 the second row down, what each holds: under the name the **TODO**, a box as
 Forge's are (paper, an ink edge, its shadow), with no word over it (under the
 person's name it needs none; it is heard, and what is left of it and Clear
@@ -2103,24 +2131,20 @@ on the screen, as they go along the rail; → on File brings its tree out
 with the keyboard on its first row, as a menu's ↓ does; and what scrolls inside the page
 keeps its own turning: past its end, the page behind it does not go on.
 
-The profile is edited where it is read, not in a form put in its place:
-written in, the top is a sheet of its own as the TODO is when written in
-(`paper`, an `ink` edge, from the row's own top: nothing is over it to grow
-into, so it is longer downward, and what is under it goes down with it,
-never under it; nothing on it moves). The name becomes the line it is written on, where it stands
-and as large, holding the name shown (none written yet, the one signed in
-with, to be changed, never an empty line beside it); @ and the handle, and
-the line about the person, come in under
-it a line after another, with room between them; each is written on, not
-boxed (a rule under it, ink under the one with the keyboard), and the
-counts and Edit profile, which are not written, step aside; Cancel and Save
-stand at the name's right, on its line. The
-top grows and shrinks to what it holds (320 ms), one move at a time: the
-sheet's edge and what is under it go together, never up and then down (its
-margins and its height are one move), the lines that were not there coming
-into the room it makes. Opened from the person's menu, it is drawn
-open as Home comes in: the arrival is its beat. Enter on the name or the handle
-saves; Escape leaves it as it was. The rail's face is the new one at once.
+The profile is written where it is read. There is no form, no sheet round
+it, no Edit profile, no Cancel and no Save: the name is the line it is
+written on, where it stands and as large. Pressed, the caret is in it, and
+nothing is drawn round it (the caret says where the keyboard is); it holds
+the name shown (none written yet, the one signed in with, to be changed;
+none at all, an empty line that says what goes there). The handle after it
+and the line about the person under it are written the same way. Where
+there is no line about the person, the way to write one stands after the
+name, on its line, in the ground's rule colour, only while the name has
+the keyboard; pressed, the line opens under the name. Nothing under the
+profile moves as the name is pressed or left: a press on what is under it
+never misses because it moved. Opened from the person's menu, Home comes
+with the caret in the name. Enter keeps what is written, and so does the
+keyboard gone elsewhere; Escape leaves it as it was. The rail's face is the new one at once.
 The handle is offered signed in only: it is the username (§5, Names), how
 others find them, so changed here it is changed on the Remote first, and
 what the Remote says no to (taken, held for its owner, changed twice this
@@ -2182,17 +2206,84 @@ pointer, a chevron at the row's end says it goes there.
 
 The center is the repo's desk. What is open lies on a plane on dots, each box
 as wide as 80 columns of its code (14 px, a step larger than elsewhere: a box
-is read at its own size), inked round with a hard shadow, its name
-outside its top-left corner (its folder quiet before it) and its close a dot
-under its foot, a little in from its right corner (under the shadow's straight
-foot, never in the corner where it turns). The Prompt is the first box: what it printed, and
-under it the line one types at, its pill the prompt (`garden $`) and what the
-line does (Run, Issue, TODO, Agent; Alt and a number, or pressed). Under Run,
-Enter runs the line as a terminal's does, Shift+Enter is a new line, and the
-empty line says nothing after its prompt: the caret waiting there is all a
-terminal says. Each
-file opened is a box of its own beside it, written in where it lies (there
-is no Edit to choose: the file is typed into). One box is in hand.
+is read at its own size), inked round, the one in hand with a hard shadow,
+its name outside its top-left corner (its folder quiet before it) and its
+close outside its top-right, on the name's line: a mark that says what it
+does (×), as large as a press needs (28 px), there for the box in hand and
+the one under the pointer (before: a 9 px dot under the box's foot, read as
+an ornament and too small to press). Each
+file opened is a box of its own, under the one opened before it, written in
+where it lies (there is no Edit to choose: the file is typed into). One box is
+in hand, and a press on it puts the caret where it was pressed, whichever box
+had the keyboard before.
+
+The Prompt stands at the center's foot, under the desk, as wide as a box and
+in the middle as the box in hand is: one box, inked round as a file's, on
+plain ground as the band over the desk is. The dots are the desk's: where they
+end the desk ends, and nothing of it passes under the Prompt (the first cut
+stood it over the desk, and a box's name left showing over its corner read as
+its own). The desk's foot is not a cut: its last step fades into that ground,
+dots and boxes alike, so a box that goes on down is seen to go on, not sliced
+through a line of its words. Its letters are the OS's body size (15 px, a
+line 24, a step of the grid: the box 52 high, each of its lines on whole
+pixels), a step over a file's code: it is where one writes to the machine, and
+a terminal's 80 columns still fit its width (before: 14 px, a line 22.4, the
+box 50.4, its words small in a frame as heavy as a file's). At rest it is a
+line: at its start what it will do, the shell's prompt (`garden $`), and after
+it a block where the next letter goes, a terminal's cursor away from the
+keyboard, which is all that says the line is written in (no sentence in grey
+saying what the prompt before it had said). Nothing stands on the line but
+text: whether a shell is there, the prompt's own colour says, quiet before it
+starts and once it has ended, the shell's green while it lives. (Before: a
+lamp in the line's margin, 5 px from the frame, lit and glowing while the
+shell ran: read as dirt on the frame, and a glow nothing else on the page has.
+Taken off, the prompt's colour says the same.) Taken to run
+(pressed, Ctrl+`, the band's `>_`), it is a terminal: what was printed stands
+on that same line, which has not moved, and the file in hand stays in hand
+above it. It stays up while a file is written in, so what a run said is read
+beside the file it is about, and is put away by Escape in its line (the
+keyboard back where it came from, a press on the terminal on the way there
+not forgotten), its ×, or the band's `>_`, which is inked while it is up. The
+× is what was printed's: at the right of its first line, on that line's
+middle, as far in from the frame as the words are at the left, on paper; with
+nothing printed there is nothing to put away, and no × (before: in the corner
+of the line itself, 5 px over its middle, and there once the line had been
+pressed, whether or not anything had been printed). It has no name over it: what it is, its
+lines say. What it printed takes at most 24 lines and never more than about
+half the window, so the file worked on keeps the other half; a program that
+takes the whole screen has its 24 rows, not scrolled, nothing faded at its
+top. While a line runs there is no prompt, as at a terminal, and what is typed
+goes to what runs. Its start, pressed, is a
+switch between the two things the line does all day: run, and note for later
+(TODO, its circle and its word); the rest (an issue) come out of it at Alt+↓,
+each said as the line will say it, and Alt and a number chooses at once. Under
+Run, Enter runs the line and Tab completes it, as at a terminal (Tab never
+leaves the line: it stands outside the desk, where Tab is the boxes'), and
+nothing stands beside it to press. A note or an issue takes more than a line:
+Enter is a new line there, and what sends it is Ctrl+Enter or a word at the
+line's end (Add, Create), in the line's own letters, underlined as a thing to
+press, there once something is written. The hard shadow is where the keyboard
+is: under the Prompt while it is written in, under no box of the desk then.
+With no repo there is no line. (Before: the Prompt was a box of the desk, the
+first, and a line run from a file took the camera off the file to it.)
+
+One box may be put beside the desk, a second screen: the desk is then the left
+half of the center and that box the right, each as wide as its half (never
+smaller letters: the boxes are narrower), their tops level, the halves meeting
+on the dots' grid so the ground is one ground; the Prompt stands under both.
+The box beside stays where it is while the desk is gone through, scrolled in
+itself when it is taller than its room, its name, its close and its way back
+always there. It is put there by the mark beside a box's close (a sheet in
+two, a + in its right half) or Ctrl, Alt and →, an editor's keys for it, the
+keyboard going with it; put back (the same mark, a − in it; Ctrl, Alt and ←)
+it lies where it lay, in hand. Another put beside sends the first back, and a
+desk kept (the app closed, the page loaded again) is kept with its box beside
+it. A center too narrow for two boxes read side by side (a small window) is
+one screen: no box offers the move, and one beside goes back. That
+is all the moving a box has: it is not carried about the desk (before: Ctrl
+and an arrow carried the box in hand a slot at a time anywhere, columns made
+and unmade on the way, and Ctrl and an arrow in a text are a word along on
+every system).
 
 The Prompt is a real terminal, 80 columns by 24 rows, a colour xterm's
 (`TERM=xterm-256color`), drawn by a terminal of our own (vt.ts): what programs
@@ -2212,102 +2303,69 @@ shown on a terminal's whole screen in place of the last lines, the cursor a
 block, and given back, what its main screen holds is lines again (a
 whole-screen program's own screen, vi's, goes as it came).
 
-The keys are a game's, the hands finding them without looking. Tab, wherever
-the keyboard is on the desk (in a file, at the Prompt's line), puts the finger
-on the next box (down a column, then the next column's top, round again;
-Shift+Tab back): the keyboard comes out onto the desk, the finger (the
-pointer's own pointing hand, larger) touches the box's top edge a little in
-from its right corner, and the camera goes to the box as near as it stands. With the finger on, an arrow puts it on the box that way (a
-nudge where there is none), and Enter, or a letter typed, goes into the box
-under it at the standard, the hand gone. Ctrl and an arrow carry the box in
-hand a slot, wherever the keyboard is (writing in it, it stays there; with the
-finger on a box, Ctrl alone takes it up): lifted while Ctrl is held, its shadow
-long and the hand closed on it (its fingers over the edge), the boxes' closes
-gone while it is up (the desk is being laid out, not cleared; they come back
-once it is down and the camera with it). The others answer it, so it is seen to
-cut in, not the desk to be laid again: those in its way get out of it at once,
-quick and a little jostled; one coming into where it was waits for it to be
-gone. Held up, the camera takes a step back about it, the box staying where
-it is on the face, as far as shows two boxes side by side (the box and the one
-it is put beside, both still read; never the whole desk, where what is being
-done is lost in what is far off; with the finger on it, once Ctrl has been held
-a moment, so a shortcut's Ctrl moves nothing), and stays still while it goes:
-the box crosses the desk, never with the camera after it (after it, a little
-behind, the box was neither still nor moving). Only where the box would go out
-of sight does the camera go, as far as keeps it in, with it, in its own way and
-time; carried at once, the step back is taken as it slides, one move. Ctrl let
-go, it is put down with a small give, and the camera comes back to where it
-stood, on the box where it now lies. Sideways the slots alternate, as a sheet is put between two others:
-out of a column with others it goes first into the gap beside it, a column of
-its own between two side by side, then on into the next column; at the desk's
-edge it stays and the desk nudges. The other arrow takes each step back
-exactly, to where it stood in its column too. Shift+N, as a new post is begun on X, makes a new file beside the
-one in hand where nothing is being written (the finger on a box; written in a
-file, it is an N): it is laid under the box in hand, in its column, as a new
-post goes under the one before it, named with that file's ending (none beside a
-terminal: untitled), comes out from under the box above it, pulled out quick
-as a drawer is, the camera going after it a beat behind (never carrying it off
-still hidden under the other) and a step back, as a search makes the desk step
-back: it is not gone into yet, and is seen where it came, with what it was made
-under over it and the boxes round it; the finger gone as the keyboard goes into
-its name, and its name is written over at once in its
-head, the name itself (its folder quiet before it), a line under it, the stem
-chosen in the soft yellow and the ending kept, so typing writes the stem.
-Enter keeps what is written and the keyboard goes on into the box, at its end,
-the camera coming in to the standard as Enter with the finger on a box does
-(only Enter comes in: a file made never brings the camera nearer of itself);
-Escape keeps the name it had and goes on in too. The files tool's New file,
-and File's, make it the same way. The finger comes out of the
-pointer where that was over the desk and glides from box to box, and while it is
-out the pointer is hidden; the pointer moved, the finger is gone and the pointer
-back. Writing in a box puts both out of the way until the pointer moves.
+A box is gone to by pressing it, and a box in sight pressed stays where it
+stands: the caret goes where it was pressed, the box is in hand, and nothing
+moves (before: any box pressed went to the top of the face, the line pressed
+gone from under the pointer). Only a box gone to from out of sight (a line
+found, a file opened from the tree) is put at the standard's place. From the
+keyboard: Escape leaves a text, the keyboard on the desk, and nothing moves;
+there an arrow takes the next box that way in hand (Tab the next in order,
+Shift+Tab back), one in sight where it stands, one cut by the desk's foot up
+by the least that shows it whole; Enter, or a letter typed, goes into the box
+in hand. Nothing is drawn for the keyboard on the desk but the box in hand's
+own shadow (before: a pointing hand beside its name, the pointer's own, as a
+game's menu has one, with the pointer hidden while it was out; it said
+nothing the shadow did not, and Tab was taken from the text for it). In a
+file Tab is the text's, as in any editor: the file's own indent written at
+the caret, a selection's lines moved in, Shift+Tab out. Looking along the
+desk with the wheel takes no box in hand while one is written in: the shadow
+stays where the keyboard is. Shift+N, as a new post is begun on X, makes a
+new file beside the one in hand where nothing is being written (the keyboard
+on the desk; written in a file, it is an N): it is laid under the box in
+hand, in its column, as a new post goes under the one before it, named with
+that file's ending (none with no file in hand: untitled), at the size it is
+read at, and its name is written over
+at once in its head, the name itself (its folder quiet before it), a line
+under it, the stem chosen in the soft yellow and the ending kept, so typing
+writes the stem. Enter keeps what is written and the keyboard goes on into
+the box, at its end; Escape keeps the name it had and goes on in too. The
+files tool's New file, and File's, make it the same way. Writing in a box
+puts the pointer out of the way until it moves.
 
-The camera has three places, as a game's cameras do, and Escape goes round
-them: its standard, every box at its own size, the box in hand in the middle
+The desk has one size: every box at its own, the box gone to in the middle
 across, its top level with the rail between Home and File (high enough that
 the box above it in its column, its shadow and the dot of its close are wholly
-out of sight, never a strip nor a dot cut by the edge), the balance the
-work is done at, never nearer than that; a step back (three quarters: about the
-step again from there to two boxes side by side, so each step back is alike),
-the box in hand still read in the middle across, its column's top at the eye
-as the standard's box is (never low in the face with the room above it
-empty), what is above it in its column in sight over it and the boxes beside
-it round it (one too low for that comes up till its foot is in sight); and
-the whole desk, at most half its size, in the middle across, its top at the
-eye too. Stepping back it zooms first and then goes (about what is in the
-face's middle when the box in hand is out of sight, the camera over the
-Agent's work: never a slide off to where that box lies); coming nearer it
-goes first and then zooms. Going along at one place to what is out
-of sight from there (the next column, a box far down), it steps back on the
-way as far as the way is long and comes down onto it, as a head turns across
-a room (the Agent's camera, below, goes so too); what is in sight is gone to
-with a plain pan. Escape takes the keyboard out onto the
-desk, the finger on the box in hand; from a field that keeps Escape for itself
-(a search, a rename), that comes first. Ctrl and - step back, Ctrl and + come a
-place nearer, Ctrl and 0 to the standard, a pinch either way a place. At the
-standard the camera moves as a scroll does, so the keyboard going into a box,
-or something brought into view, takes the camera there and that box into hand,
-and the wheel moves it along the desk. Stood back, a press takes a box in hand,
-twice comes in to it; over the whole desk, with the pointer rather than the
-finger, the box in hand is told by its own edge drawn heavier: one box, one
-edge, never a ring a little way out round it (the box drawn twice, one inside
-the other); stood back by the rail going by, no box is pointed out. Writing in the box in hand while the camera
-stands back brings it to the standard. A box taken off by the dot of its close
+out of sight, never a strip nor a dot cut by the edge). Nothing steps back
+from it. It is turned from its first box to its last and no further:
+turned to its top, the first file stands at the top of the face, where a box
+gone to stands; turned to its end, the last one does; a desk whose files are
+all in sight from there does not turn at all. (Before: half a face of bare
+ground lay over the first box, room to stand any box in the face's middle, a
+place no box is put at, so a desk turned to its top showed its files
+beginning half way down the face; and a whole face of ground lay under the
+last, and beside it.) (Before: three cameras, as a game's, Escape going round them: this
+one, the desk at three quarters, the whole desk at half. A key pressed to
+leave a line made the page smaller; what a smaller desk showed, where each
+box lies, the band's pills and the pane already say, at a size that is read;
+and Ctrl and -, + and 0 and a pinch, the window's own on every system, were
+taken for it. Taken off, no deed got worse.) Escape out of a text only takes
+the keyboard out onto the desk (one key, one thing); on the desk it changes
+nothing; from a field that keeps Escape for itself (a search, a rename), that
+comes first. The camera moves as a scroll does, so the keyboard going into a
+box, or something brought into view, takes the camera there and that box into
+hand, and the wheel moves it along the desk. A box taken off by the dot of its close
 (or its file gone) goes in a beat where it lies, the others closing up after
 it and the camera gliding with them, never a cut. A file
 gone goes from the desk; moved, its box is the file where it went. A file named
 in a terminal's output (what ls says, the compiler's count.c:7:24:, grep's
 line) is underlined under the pointer and, pressed, its box opens at that line,
-as a terminal's hints open what they point at. In the desk's bottom corner on
-the right stand its keys, with no line nor bar round them (tab next, ↵ in,
-esc back, ⇧N new, ctrl ←→ carry, / search), each in ink, what it does quieter,
-printed on the ground under the boxes: a box lying over them covers them, as it
-would words printed on a desk, never a strip of ground cut out of the box. Each
+as a terminal's hints open what they point at. Each
 repo keeps its own desk, as it was left, from one visit to the next; a desk
-never worked at begins with the Prompt and the README beside it.
+never worked at begins with its README, in hand, and the Prompt's line at its foot.
 
 Where you work. The top line starts with its tools, square as a field: >_,
-which takes the terminal on the desk in hand; the files tool, a page with +;
+which puts the Prompt up at the desk's foot with the keyboard in its line, and
+away again (inked while it is up); the files tool, a page with +;
 and the search, 220 px with its lens, saying only Search (/ goes to it from
 anywhere nothing is written in; on a phone it folds to its lens and opens to
 be written in). The repos out to work on run as pills after them, the pills,
@@ -2619,7 +2677,7 @@ its own, its bar the paper's rule, its words in the letters people write in
 (`Fix：…`) and its pill's head under them (`#4`, `TODO`). Every row says two
 lines at most, the second fading out partway along: the pane is a
 notification, not a second workplace. A run pressed is read where it ran,
-lit in the Prompt's box on Forge's desk, under the search box with all it
+lit in the Prompt at the foot of Forge's desk (put up for it), under the search box with all it
 printed on Git. Sent, its first line goes on a
 slip of paper out of the box, on to the right as a sheet slid off, then up
 and on into that row, coming down to its size; the slip gives up its paper
@@ -2636,8 +2694,9 @@ listed in the pane as any line run; the terminal is theirs again at once
 (refused, the key not taken or nobody reached, the line says why as a command
 does, `agent: ...`; the line stays where it was typed until it is shown run,
 the field emptied in the same frame, never a moment with neither). The Agent's
-own terminal is born beside the person's: a box of its own, `agent
-/root/garden`, in a column of its own just right of the person's. The columns
+own terminal is born on the desk: a box of its own, `agent
+/root/garden`, in a column of its own just right of the box in hand's (it
+stays on the desk: it is not put beside it). The columns
 after it get out of its way at once, quick, as for a box carried in; it is set
 down in the room they made as a box carried is set down (held over its place,
 its shadow long, then down onto the desk), while the camera turns to it as it
@@ -2656,8 +2715,7 @@ prompt, the green of the person's, key by key with a terminal's block caret,
 then what it printed, and how it ended where it ended otherwise than well. Its
 prompt line waits at its foot (its own lines, once more than its height,
 glide up under its top as a terminal's do, never a jump a line at a time).
-The camera works at the standard, where its words are read, and goes to the
-work going on now: the Agent's terminal as it is born (the person's a sliver
+The camera goes to the work going on now: the Agent's terminal as it is born (the person's a sliver
 at its left), then the file it begins to write in, whole in the middle, its
 terminal a sliver at the side, then back to its terminal as it runs
 something. The box written in is come to as a person comes to a page they
@@ -2667,7 +2725,7 @@ empty, nor written in while the camera stands over it and another at once.
 (Before: the boxes at work framed together where they fitted, centred down
 the face, the file begun in where it lay under the terminal.) Going to what is out of sight (the next column, a box far down),
 it steps back on the way as a head turns across a room, as far as the way is
-long (about a step back to the next column, further to one beyond), and comes
+long (to about three quarters going to the next column, further to one beyond), and comes
 down onto it: never a whip across the desk at the boxes' own size, half boxes
 going by. What is in sight already is gone to with a plain pan. The line the
 Agent's hand is on as it writes, or its eye as it reads, is always in sight:
@@ -2815,7 +2873,7 @@ the walk. → at the end of the line completes the path before the caret from
 the repo's files, as a shell's suggestion is taken (`src/ma` to `src/main.rs `,
 a directory with its `/`); several matches are written to what they share and
 listed in one quiet line under the box (monospace, as paths are), gone at the
-next key. Tab is the desk's: the finger to the next box.
+next key. At a desk's foot Tab completes too, as at a terminal.
 On Git, a page read and pressed rather than written in, it stands back
 from the start and again once the Prompt is done with (Escape), never over
 an issue's buttons; Ctrl+` or the pointer resting at the foot brings it.

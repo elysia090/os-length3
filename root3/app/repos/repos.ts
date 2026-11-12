@@ -146,22 +146,36 @@ export function templateFiles(name: string, template: Template): Map<string, str
   return files;
 }
 
-/** A change made through the store: a file's new text, a new directory, or a removal (a move is told as the old path removed, then what is at the new one). */
-export interface Change {
+/**
+ * A change made through the store, said as what is there now. Each kind carries what it knows and no more, so that
+ * "its words are not here" is never taken for "it is empty", and a move is one move, not a guess from two changes.
+ */
+export type Change = {
   repo: string;
-  path: string;
-  what: 'file' | 'dir' | 'removed' | 'repo';
-  text?: string;
   /** Who made it, so a listener can leave its own changes alone. */
   by?: string;
-}
+} & (
+  /** A file as it is now, its text with it. `from`: it came here by a move from there. */
+  | {what: 'file'; path: string; text: string; from?: string}
+  /**
+   * A file that changed whose words are not here (not text, or longer than is read whole): nothing is said of what
+   * is in it. Who keeps its bytes reads them again; who shows its text reads it again, in part. `from` as a file's.
+   */
+  | {what: 'unread'; path: string; from?: string}
+  /** A folder made. `from`: it came here by a move from there (what is in it is told after it, each with its own). */
+  | {what: 'dir'; path: string; from?: string}
+  /** Gone, with all that was in it. `to`: gone to there, by one move: what holds it by its path follows it there. */
+  | {what: 'removed'; path: string; to?: string}
+  /** The repo as a whole: made, renamed, gone, or changed outside the store with nothing known of what changed. */
+  | {what: 'repo'; path: ''}
+);
 
 /**
  * Every write goes through here, and each one that succeeds is announced, so
  * the shell's copy, Forge, Git and File all see one repo. `by` names the
  * writer (a shell writing back its own changes passes its id).
  */
-class Observed implements RepoStore {
+export class Observed implements RepoStore {
   readonly changes = new EventTarget();
   private inner: RepoStore;
   constructor(inner: RepoStore) { this.inner = inner; }
@@ -200,15 +214,17 @@ class Observed implements RepoStore {
     this.tell({repo, path, what: 'removed', by});
   }
   /**
-   * A rename or a move is the old path gone and the new one made: those who keep a copy (the shell's) take it as any
-   * removal and new files, and the Remote gets it as any other change.
+   * A rename or a move is the old path gone to the new one, and what is there now: said as one move (the old path
+   * removed `to` the new, then each thing there `from` where it was), so what holds a file by its path follows it,
+   * those who keep a copy (the shell's) take it as a removal and new files, and the Remote as any other change.
    */
   async move(repo: string, path: string, to: string, by?: string) {
     await this.inner.move(repo, path, to);
     to = to.replace(/^\/+|\/+$/g, '');
-    if (to === path.replace(/\/+$/, '')) return;
-    this.tell({repo, path, what: 'removed', by});
-    await this.made(repo, to, by);
+    path = path.replace(/\/+$/, '');
+    if (to === path) return;
+    this.tell({repo, path, what: 'removed', to, by});
+    await this.made(repo, to, by, path);
   }
   /**
    * The repo renamed: what holds it by its name hears it first (onRenamed: the band, where one left off, what was
@@ -224,18 +240,22 @@ class Observed implements RepoStore {
     await this.inner.deleteRepo(repo, open);
     this.tell({repo, path: '', what: 'repo', by});
   }
-  /** Tell what is at `path` as made: a file with its text, or a folder and everything in it. */
-  private async made(repo: string, path: string, by?: string) {
+  /** A file read as a change says it: its text where it is text read whole, else that it changed, unread. */
+  private file(repo: string, path: string, c: {text: string | null; truncated?: boolean}, from: string | undefined, by: string | undefined): Change {
+    return c.text !== null && !c.truncated ? {repo, path, what: 'file', text: c.text, from, by} : {repo, path, what: 'unread', from, by};
+  }
+  /** Tell what is at `path` as made (`from`: moved here from there): a file, or a folder and everything in it. */
+  private async made(repo: string, path: string, by?: string, from?: string) {
     const inside = await this.inner.tree(repo, path).catch(() => null);
     if (inside) {
-      this.tell({repo, path, what: 'dir', by});
-      for (const e of inside) await this.made(repo, `${path}/${e.name}`, by);
+      this.tell({repo, path, what: 'dir', from, by});
+      for (const e of inside) await this.made(repo, `${path}/${e.name}`, by, from === undefined ? undefined : `${from}/${e.name}`);
       return;
     }
     const c = await this.inner.read(repo, path).catch(() => null);
-    // Not text, or only part of it: nothing to hand on but that the repo changed.
-    if (!c || c.text === null || c.truncated) { this.tell({repo, path: '', what: 'repo', by}); return; }
-    this.tell({repo, path, what: 'file', text: c.text, by});
+    // Gone again before it was read: nothing known of it but that the repo changed.
+    if (!c) { this.tell({repo, path: '', what: 'repo', by}); return; }
+    this.tell(this.file(repo, path, c, from, by));
   }
   /** Something outside the store changed `repo` (a Prompt on the root writes it directly, or another tab's core). */
   changedOutside(repo: string, by?: string) { this.tell({repo, path: '', what: 'repo', by}); }
@@ -243,7 +263,7 @@ class Observed implements RepoStore {
   async changedPaths(repo: string, paths: string[], by?: string) {
     for (const path of paths) {
       const c = await this.inner.read(repo, path).catch(() => null);
-      if (c) { this.tell({repo, path, what: 'file', text: c.text !== null && !c.truncated ? c.text : undefined, by}); continue; }
+      if (c) { this.tell(this.file(repo, path, c, undefined, by)); continue; }
       // Not a file: a folder (made), or gone.
       const dir = await this.inner.tree(repo, path).then(() => true, () => false);
       this.tell({repo, path, what: dir ? 'dir' : 'removed', by});

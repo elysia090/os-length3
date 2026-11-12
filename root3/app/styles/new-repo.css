@@ -26,10 +26,10 @@
 .new-repo.alone > .nr-files-label { display: none; }
 .nr-box > .tree.tree-still { margin: 0 var(--s5) var(--s3) calc(var(--nr-in) - 10px); padding: var(--s3) 0 0; border: 0; border-top: 1.5px solid var(--rule);
   border-radius: 0; background: transparent; box-shadow: none; }
-.nr-box { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: calc(4 * var(--home-row) + 3 * var(--home-step)); background: var(--paper); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 8px 8px 0 0 var(--ink); }
+.nr-box { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: calc(4 * var(--row) + 3 * var(--row-step)); background: var(--paper); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 8px 8px 0 0 var(--ink); }
 /* Its place over it, as a desk box's label: the path in ink, what it is quiet after it, why the name cannot be in the
    off colour after that (an off dot before it, as everywhere a written thing is refused). */
-.nr-label { display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 0 var(--s2); min-height: var(--home-row); margin-bottom: var(--home-step);
+.nr-label { display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 0 var(--s2); min-height: var(--row); margin-bottom: var(--row-step);
   padding: 0 8px 0 0; font: 600 15px/1.3 var(--mono); color: var(--ink); translate: 0 calc((var(--home-name) - 15px) * .36); }
 .nr-kind { font-weight: 400; color: var(--sub); }
 .nr-kind::before { content: '·'; content: '·' / ''; margin-right: var(--s2); }

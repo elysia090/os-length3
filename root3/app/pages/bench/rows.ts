@@ -1,6 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {cutWhenLonger} from '../../ui/cut.ts';
+import {still} from '../../ui/glide.ts';
 import type {Run} from './sessions.ts';
 
 // The right pane of Forge and Git: what was done in the repo, a big row each, newest last, one for both pages. A line run, its bar in
@@ -57,7 +58,7 @@ export class Rows {
 
   #add(row: HTMLElement) {
     this.element.append(row);
-    if (row.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+    if (row.animate && !still())
       row.animate([{opacity: 0, translate: '0 -4px'}, {opacity: 1, translate: '0 0'}], {duration: 360, easing: 'cubic-bezier(.2, .8, .2, 1)'});
     this.element.scrollTo({top: this.element.scrollHeight});
   }

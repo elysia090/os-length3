@@ -1,5 +1,6 @@
 import {t} from '../../i18n/i18n.ts';
 import {base64, inPieces, onChange, store, unbase64, walkRepo} from '../../repos/repos.ts';
+import type {Change} from '../../repos/repos.ts';
 
 // The repo in a browser's Prompt is the repo (terminal.ts): copied in for the shell as it starts, what the shell
 // changes under /root/<repo> written back through the store, and what is saved elsewhere (Forge, Git, root3 on the host…
@@ -14,6 +15,10 @@ const LIMIT_BYTES = 32 << 20;
  * of files is a few trips to the core, not one a file.
  */
 export async function snapshot(repo: string) {
+  // What a page loaded again left to be written back is the repo's before the repo is copied: a shell started while
+  // it was still being written had a copy without the rest of it (a batch of six files written, the page loaded again
+  // at once, the Prompt started: the store had all six, the new shell four; about once in sixteen on a busy machine).
+  await writeLeftBack();
   const dirs: string[] = [`/root/${repo}`];
   const wanted: {path: string; size: number}[] = [];
   let total = 0, complete = true;
@@ -60,18 +65,38 @@ function keep(repo: string, by: string, b: Batch): string | null {
 }
 const unkeep = (key: string | null) => { if (key) try { sessionStorage.removeItem(key); } catch { /* gone with the tab */ } };
 
-/** What a page reloaded before the store had all of its shell's changes left kept: written now, in the order it came. */
-export async function writeLeftBack(): Promise<void> {
+/**
+ * What a page reloaded before the store had all of its shell's changes left kept: written now, in the order it came,
+ * once (asked again, it is the same writing, to be waited for: the app's start asks, and so does each copy of a
+ * repo taken for a shell). A batch is let go only once the store has all of it: what the store refuses is tried again
+ * a few times, a moment apart; still refused, the batch stays kept for the next start, and what came after it waits
+ * behind it, so nothing later is written under something earlier.
+ */
+export function writeLeftBack(): Promise<void> { return leftBack ??= writeLeft(); }
+let leftBack: Promise<void> | null = null;
+async function writeLeft(): Promise<void> {
   let keys: string[];
   try { keys = Object.keys(sessionStorage).filter((k) => k.startsWith(KEPT)).sort(); } catch { return; }
   for (const key of keys) {
-    try {
-      const kept = JSON.parse(sessionStorage.getItem(key) ?? 'null') as Kept | null;
-      if (kept) await writeBatch(kept.repo, kept.by, {...kept, files: kept.files.map((f) => ({path: f.path, bytes: unbase64(f.b64)}))}, []);
-    } catch { /* a batch not kept whole is not written */ }
-    unkeep(key);
+    let kept: Kept | null;
+    try { kept = JSON.parse(sessionStorage.getItem(key) ?? 'null') as Kept | null; } catch { kept = null; }
+    // (One not kept whole is not written.)
+    if (!kept) { unkeep(key); continue; }
+    let left: Batch = {dirs: kept.dirs, files: kept.files.map((f) => ({path: f.path, bytes: unbase64(f.b64)})), removed: kept.removed};
+    for (let tries = 0; ; tries++) {
+      const skipped: string[] = [];
+      await writeBatch(kept.repo, kept.by, left, skipped);
+      if (!skipped.length) { unkeep(key); break; }
+      // Only what was refused is tried again (what was written is the store's already).
+      const again = new Set(skipped);
+      left = {dirs: left.dirs.filter((d) => again.has(`${d}/`)), files: left.files.filter((f) => again.has(f.path)), removed: left.removed.filter((r) => again.has(r))};
+      if (tries >= LEFT_TRIES) return;
+      await new Promise((r) => setTimeout(r, LEFT_WAIT_MS * (tries + 1)));
+    }
   }
 }
+/** How often a batch left kept is tried again at a start, and how long between (longer each time). */
+const LEFT_TRIES = 5, LEFT_WAIT_MS = 60;
 
 /** The shell's changes written back to the repo `repo` as `by`, in order; `skipped` hears what could not be. */
 export class WriteBack {
@@ -110,11 +135,32 @@ export class WriteBack {
 /** A file or directory saved in the shell's copy (`what`: its bytes, 'dir', or null for gone). */
 interface Put { type: 'put'; path: string; what: Uint8Array | 'dir' | null }
 
-/** What is saved elsewhere in `repo` (not by `by`, the shell) comes into its copy through `put`; returns how to stop. */
-export function mirror(repo: string, by: string, put: (message: Put) => void): () => void {
-  return onChange((c) => {
+/** Where the mirror hears a repo's changes and reads a file's bytes: the store's, or a test's own. */
+export interface Source {
+  onChange: (listen: (c: Change) => void) => () => void;
+  bytes: (repo: string, path: string) => Promise<Uint8Array>;
+}
+
+/**
+ * What is saved elsewhere in `repo` (not by `by`, the shell) comes into its copy through `put`, in the order it was
+ * saved; returns how to stop. A file told with its text is put as that text. One told unread (not text, or longer
+ * than is read whole) is read again as bytes and put as it is; where it cannot be read, the copy keeps what it has:
+ * a file whose words were not handed on is never put empty.
+ */
+export function mirror(repo: string, by: string, put: (message: Put) => void, source: Source = {onChange, bytes: (r, p) => store.bytes(r, p)}): () => void {
+  let stopped = false, last: Promise<void> = Promise.resolve();
+  // One after another: a file being read again does not let what was saved after it reach the copy before it.
+  const next = (what: () => Promise<Put['what'] | undefined> | Put['what'], path: string) => {
+    last = last.then(async () => {
+      const w = await what();
+      if (!stopped && w !== undefined) put({type: 'put', path, what: w});
+    }).catch(() => {});
+  };
+  const off = source.onChange((c) => {
     if (c.repo !== repo || c.by === by || c.what === 'repo') return;
-    const what = c.what === 'file' ? new TextEncoder().encode(c.text ?? '') : c.what === 'dir' ? 'dir' : null;
-    put({type: 'put', path: c.path, what});
+    if (c.what === 'file') { const text = c.text; next(() => new TextEncoder().encode(text), c.path); return; }
+    if (c.what === 'unread') { next(() => source.bytes(repo, c.path).catch(() => undefined), c.path); return; }
+    next(() => (c.what === 'dir' ? 'dir' : null), c.path);
   });
+  return () => { stopped = true; off(); };
 }

@@ -387,7 +387,7 @@ function select(id: PurposeId, quiet = false): Promise<void> {
   if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet); });
   const p = panning, page = $('page');
   const begin = (document as Panning).startViewTransition;
-  const moving = !!begin && !quiet && !!page.childElementCount && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const moving = !!begin && !quiet && !!page.childElementCount && !still();
   // Something else carries the eye now (a repo growing into its box from what was pressed): the switch gives way at once.
   if (p && !moving) letBe(p);
   if (p && moving && p.phase !== 'in') { p.to = id; return p.settled; }
@@ -456,12 +456,12 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   if (first && !quiet) { pageOpening(); stage($('page'), 1); return; }
   if (from !== id) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
-    glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)');
+    glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)', 220, true);
     const order = RAIL.map((p) => p.id);
     // Panned, the page comes as one, carried by the camera: its parts staged on top of that would leave it standing
     // half empty as it lands. Not panned, its parts come in a beat apart, heading first, from that side (glide.ts stage).
     if (!quiet && !panned) {
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) $('page').animate([{opacity: 0}, {opacity: 1}], {duration: paced(160), easing: 'ease-out'});
+      if (!still()) $('page').animate([{opacity: 0}, {opacity: 1}], {duration: paced(160), easing: 'ease-out'});
       stage($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)));
     }
   }
@@ -561,7 +561,7 @@ new MutationObserver((records) => {
     if (r.oldValue === 'true') before.add(r.target as HTMLElement); else before.delete(r.target as HTMLElement);
   }
   const from = inked(before), to = inked(now);
-  if (from && to && from !== to) glide(from.getBoundingClientRect(), to, $('rail-tabs'), 'var(--r-place)');
+  if (from && to && from !== to) glide(from.getBoundingClientRect(), to, $('rail-tabs'), 'var(--r-place)', 220, true);
 }).observe($('rail-tabs'), {subtree: true, attributes: true, attributeFilter: ['aria-expanded'], attributeOldValue: true});
 railOpening();
 // The rail's name, in the language the OS starts in (index.html has the English).

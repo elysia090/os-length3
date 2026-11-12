@@ -108,7 +108,7 @@ test.describe('the Prompt is Linux', {tag: '@slow'}, () => {
     // the journal written back at the next start.
     await says(app, 'echo kept > keep.txt; mkdir -p d/e && echo deep > d/e/f; for i in 1 2 3 4 5 6; do echo "n$i" > "m$i.txt"; done; echo written',
       'written');
-    await expect(app.page.locator('.desk-box[data-key="term"] .prompt-ps')).toHaveText(/hello \$/);
+    await expect(app.page.locator('.desk-term.stand .prompt-ps')).toHaveText(/hello \$/);
     await app.page.reload();
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');

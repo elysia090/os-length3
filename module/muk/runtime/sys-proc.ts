@@ -9,7 +9,7 @@ import {E, File, FsError} from './fs.ts';
 import {Exec, Exit, Wait, randomBytes, utf8} from './flow.ts';
 import type {Calls, Cpu, Proc} from './parts.ts';
 import {CLD, SIG, send, writeInfo} from './signal.ts';
-import {steady} from '../../sods/runtime/host.ts';
+import {processors, steady} from '../../sods/runtime/host.ts';
 
 const N = (x: bigint): number => Number(BigInt.asIntN(64, x));
 const fail = (errno: number): never => { throw new FsError(errno); };
@@ -243,7 +243,7 @@ const readTimeval = (p: Proc, at: number): number => Number(p.view.getBigInt64(a
 const writeTimeval = (p: Proc, at: number, ms: number): void => { p.view.setBigInt64(at, BigInt(Math.floor(ms / 1e3)), true); p.view.setBigInt64(at + 8, BigInt(Math.round((ms % 1e3) * 1e3)), true); };
 
 /** CPUs a program is told it has: as many as the host gives this kernel's workers (one, where threads take turns here). */
-const cpus = () => Math.max(1, Math.min(64, globalThis.navigator?.hardwareConcurrency ?? 1));
+const cpus = processors;
 
 /**
  * `target`'s limit of `resource`: the old one written to `old`, a new one taken from `next` (each a struct rlimit, or

@@ -1,4 +1,5 @@
 import {h} from '../../ui/dom.ts';
+import {still} from '../../ui/glide.ts';
 import {waitsAt} from './prompt-line.ts';
 import {css, LineState, Screen, runs as runsOf, sgrOf, type Row, type Run} from './vt.ts';
 import {ScreenView, styled} from './vt-view.ts';
@@ -350,7 +351,7 @@ export class Output {
    */
   #draw() {
     this.#painting = 0;
-    const moving = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const moving = !still();
     const view = this.#screen?.view;
     const foot = view?.element ?? this.#live;
     let added = false;

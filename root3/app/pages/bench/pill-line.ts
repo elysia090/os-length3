@@ -55,7 +55,9 @@ export class PillLine {
     if (repo && line) this.#lastLine.set(repo, line);
     this.#p.chip.dataset.state = !s ? 'none' : s.ended ? 'ended' : s.running ? 'on' : 'starting';
     // On a desk, the terminal's own line: none while a line runs, as a terminal's prompt is not there till it is done.
-    this.#waitsAt(!repo ? '' : this.#p.up() ? line : this.#p.desk() && promptHolds(repo) === 'busy' ? '' : this.#lastLine.get(repo) ?? `${repo} $`, s);
+    // (There the line is the terminal's own whether what was printed stands over it or not: its prompt is said before
+    // its shell is up too, so the line always says what it is.)
+    this.#waitsAt(!repo ? '' : this.#p.up() && !this.#p.desk() ? line : this.#p.desk() && promptHolds(repo) === 'busy' ? '' : this.#lastLine.get(repo) ?? `${repo} $`, s);
   }
 
   /** `now` the prompt line in the pill: at once, or (up, after a run) once what the run printed has come in. */

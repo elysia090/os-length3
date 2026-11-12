@@ -51,7 +51,7 @@
 .center { grid-column: 1; position: relative; min-height: 0; border-right: var(--line-frame) solid var(--ink); overflow: clip; }
 /* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
 .work.no-side > .center { border-right-color: transparent; }
-/* A desk's top line (Forge's): the band's tools first (>_ to the terminal on the desk, the file deeds, the search), then
+/* A desk's top line (Forge's): the band's tools first (>_ for the Prompt at the desk's foot, the file deeds, the search), then
    the pills; the right pane's switch lies at the foot instead, level with the person at the rail's (bench.ts). One
    corner on the band, a field's: the tools, the pills and their inner parts and rings, ⊕ (a round ring left inside a
    square pill is a second shape). */
@@ -64,6 +64,8 @@
   border-radius: var(--r-field); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: background var(--motion);
 }
 .band-tool:hover { background: var(--raised); }
+/* On (the Prompt up, its >_): inked, as the repo worked on is on this band. */
+.band-tool[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
 .band-tool .mark { width: 18px; height: 18px; }
 .band-tools > .search-box { flex: none; width: 220px; }
 .band-tools form.search > .mark { position: absolute; left: 10px; top: calc((var(--h-row) - 16px) / 2); width: 16px; height: 16px; color: var(--ink); pointer-events: none; z-index: 1; }

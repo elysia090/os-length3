@@ -1,7 +1,7 @@
 /* Inbox: the conversations, their messages, someone who wrote first, and writing to someone. */
 /* Inbox on the page's three columns (inbox.ts): the stub, the field to write to someone new and the conversations in
    the first, one width and the field the stub's height and shape; the conversation open as a sheet over the other
-   two, from the stub's top to the page's foot. None yet, there is no sheet. */
+   two, from the field's top (the second row) to the page's foot. None yet, there is no sheet. */
 /* The page is the window's height and no more (nothing of it scrolls): its head, and under it the three columns to
    the page's foot, where the rail's line ends; never under 440 px, a short window scrolling to the rest. */
 .page:has(> div > .inbox-page) { display: flex; flex-direction: column; height: var(--inner-h); padding-bottom: 0; }
@@ -10,13 +10,15 @@
    the page's class, not by what it holds: a :has() before `> *` is asked again of the whole page at every change in it
    (a line in a Prompt's output cost a 40 ms restyle of Forge), a class only when it changes. */
 .page.page-inbox > * { width: 100%; }
-.inbox-page { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1fr); column-gap: var(--s5);
-  row-gap: var(--s3); margin-top: var(--s5); flex: 1; min-height: 440px; }
-.inbox-page > .stub-holder { grid-area: 1 / 1 / 2 / 2; margin: 0; }
+/* On the rail's rows, as every page: one's address the first row's, and from the second the field to write to someone
+   new and the conversations, and the conversation open beside them. */
+.inbox-page { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(var(--row), auto) minmax(0, 1fr); column-gap: var(--s5);
+  row-gap: var(--row-step); flex: 1; min-height: 440px; }
+.inbox-page > .stub-holder { grid-area: 1 / 1 / 2 / 2; align-self: center; margin: 0; }
 .inbox-page .stub, .inbox-page .stub-panel { width: 100%; }
 .inbox-box { display: contents; }
 .inbox-page .inbox-list { grid-area: 2 / 1 / 3 / 2; }
-.inbox-page .inbox-thread { grid-area: 1 / 2 / 3 / 4; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); overflow: hidden; }
+.inbox-page .inbox-thread { grid-area: 2 / 2 / 3 / 4; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); overflow: hidden; }
 .inbox-box.none > .inbox-thread { display: none; }
 /* The rows' words start where the field's and the stub's do, a border and a step in. */
 .inbox-page .inbox-row, .inbox-page .inbox-head, .inbox-none { padding-inline: calc(var(--s3) + 1px); }
