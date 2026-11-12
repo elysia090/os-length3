@@ -59,6 +59,15 @@ export function letGo(within: Element) {
 }
 
 export function touch() {
+  // A held press ends below full size with forwards fill. Finishing it preserves that size;
+  // the owner must cancel it when motion is reduced, without waiting for pointerup or adding a spring.
+  matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (event) => {
+    if (!event.matches) return;
+    held?.press.cancel();
+    held = null;
+    spring?.a.cancel();
+    spring = null;
+  });
   document.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     const el = pressable(e.target);

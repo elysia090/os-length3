@@ -342,3 +342,25 @@ test('press feedback releases on pointer cancellation and respects a live reduce
   expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
   await toggle.dispatchEvent('pointerup', {button: 0});
 });
+
+
+test('reducing motion during a held press restores its size before pointerup and does not replay on release', async ({app}) => {
+  await app.rail.go('home');
+  await still(app);
+  const toggle = app.main.getByRole('button', {name: 'Right pane'});
+  const scale = () => toggle.evaluate((el) => getComputedStyle(el).scale);
+  await toggle.dispatchEvent('pointerdown', {button: 0});
+  await expect.poll(async () => Number(await scale())).toBeLessThan(1);
+  // Do not release first: a finished forwards-filled press used to stay shrunk here.
+  await app.page.emulateMedia({reducedMotion: 'reduce'});
+  await expect.poll(scale).toBe('none');
+  await app.page.emulateMedia({reducedMotion: 'no-preference'});
+  await toggle.dispatchEvent('pointerup', {button: 0});
+  expect(await scale()).toBe('none');
+  // A subsequent real press still works after the preference is restored.
+  await toggle.dispatchEvent('pointerdown', {button: 0});
+  await expect.poll(async () => Number(await scale())).toBeLessThan(1);
+  await toggle.dispatchEvent('pointercancel');
+  await still(app);
+  expect(await scale()).toBe('none');
+});
