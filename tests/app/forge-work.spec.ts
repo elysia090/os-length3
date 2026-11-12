@@ -836,3 +836,35 @@ test('the keys an editor knows: Ctrl+K and Ctrl+P go to the search, Ctrl+` to th
   await expect(app.forge.paneSwitch).toHaveAttribute('aria-expanded', 'true');
 });
 
+
+test('Apple Option arrows pass through the editor and desk without rewriting text or cancelling native movement', async ({app}) => {
+  const editor = app.forge.editor('README.md');
+  await editor.fill('one two');
+  await editor.focus();
+  const observed = await editor.evaluate((area: HTMLTextAreaElement) => {
+    const original = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {value: 'MacIntel', configurable: true});
+    let inputs = 0;
+    const changed = () => inputs++;
+    area.addEventListener('input', changed);
+    try {
+      return ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].flatMap((key) => [false, true].map((shiftKey) => {
+        area.setSelectionRange(4, 4);
+        const e = new KeyboardEvent('keydown', {key, altKey: true, shiftKey, bubbles: true, cancelable: true});
+        area.dispatchEvent(e);
+        return {key, shiftKey, prevented: e.defaultPrevented, value: area.value, inputs};
+      }));
+    } finally {
+      area.removeEventListener('input', changed);
+      if (original) Object.defineProperty(navigator, 'platform', original);
+      else delete (navigator as unknown as {platform?: string}).platform;
+    }
+  });
+  for (const result of observed) {
+    expect(result.prevented, `${result.key}, shift=${result.shiftKey}`).toBe(false);
+    expect(result.value).toBe('one two');
+    expect(result.inputs).toBe(0);
+  }
+  // Synthetic events verify the app's handlers, not the OS's word movement. A macOS run still checks native
+  // Option/Shift+Option selection and Undo with real key events.
+});

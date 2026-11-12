@@ -1,3 +1,4 @@
+import {nativeOptionArrow} from '../../ui/text-keys.ts';
 import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
 import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
@@ -769,7 +770,7 @@ export class Desk {
   }
 
   #key(e: KeyboardEvent) {
-    if (e.isComposing || theirs(e)) return;
+    if (e.isComposing || theirs(e) || nativeOptionArrow(e)) return;
     const way = WAYS[e.key];
     const bare = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
     // The keyboard on the desk itself, a box in hand: not in any text.
