@@ -63,3 +63,46 @@ for (const width of [390, 500, 760]) {
     await app.page.screenshot({path: `tests/app/.results/prompt-failure-${width}.png`});
   });
 }
+
+// The real shell's output and exit lifecycle, alongside the deterministic failed-start coverage above.
+// CI supplies the pinned web root and runs @slow; an explicitly requested run must not silently skip it.
+test.describe('narrow Prompt with a running shell', {tag: '@slow'}, () => {
+  test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
+  for (const width of [390, 500, 760]) {
+    test(`output, Close and exit leave pane state intact at ${width}px`, async ({app}) => {
+      test.setTimeout(300_000);
+      await app.newRepo.make('running-prompt');
+      await app.newRepo.openInForge();
+      await app.page.setViewportSize({width, height: 740});
+      await app.forge.startPrompt('running-prompt');
+      const stand = app.page.locator('.desk-term.stand');
+      const toggle = app.forge.paneSwitch;
+      const output = stand.locator('.term-out');
+      const close = stand.getByRole('button', {name: 'Close Prompt'});
+      const tool = app.forge.tools.getByRole('button', {name: 'Terminal', exact: true});
+      await app.forge.run('printf "first-line\\nsecond-line\\n"');
+      await expect(output).toContainText(/^second-line$/m);
+      for (let i = 0; i < 2; i++) {
+        const before = await toggle.getAttribute('aria-expanded');
+        const at = (await close.boundingBox())!;
+        await app.page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+        await expect(stand).not.toHaveClass(/\bup\b/);
+        await expect(toggle).toHaveAttribute('aria-expanded', before!);
+        await tool.click();
+        await expect(output).toContainText(/^second-line$/m);
+        await toggle.click();
+        await expect(output).toContainText(/^second-line$/m);
+      }
+      await app.page.screenshot({path: `tests/app/.results/prompt-output-${width}.png`});
+      const beforeExit = await toggle.getAttribute('aria-expanded');
+      await app.forge.run('exit');
+      await expect(stand).not.toHaveClass(/\bup\b/);
+      await expect(toggle).toHaveAttribute('aria-expanded', beforeExit!);
+      await expect(app.forge.promptBox).toBeVisible();
+      await tool.click();
+      await app.forge.run('echo restarted');
+      await expect(output).toContainText(/^restarted$/m);
+      await expect(toggle).toHaveAttribute('aria-expanded', beforeExit!);
+    });
+  }
+});
