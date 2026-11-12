@@ -316,19 +316,15 @@ each case it has met.
     it is: one ink, never two, never back to where it set off.
   - *The camera goes along the rail* as a game switches from one person to
     another, and each page steps back with its own camera, the page still
-    itself. Pressed, the page left steps back at once: Forge's desk with
-    the desk's own camera over the whole desk, as its Escape takes it (the
-    boxes in the middle, their names still read, and no further where it
-    stands that far back already: never a desk made smaller again); every
-    other page (Home, Git, the rest) to half its size about where its words
-    begin, at their left and their top, as it is read: Home stays at its
-    left, as the desk stays in the middle. What lay out of sight comes into
-    it (a box off the face, Home's lines past the window's foot): nothing is
-    cut at an edge no one can see. At that height the camera goes along the
+    itself. Pressed, the page left steps back at once: every page but
+    Forge (Home, Git, the rest) to half its size about where its words
+    begin, at their left and their top, as it is read; Forge's desk has one
+    size and does not step back. What lay out of sight comes into it
+    (Home's lines past the window's foot): nothing is cut at an edge no one
+    can see. At that height the camera goes along the
     one ground to the page come to, lying beside the one left the way the
     rail goes (above going up, below going down), already stood back by its
-    own camera, and comes down into it with that camera (Forge's to where
-    the desk's camera stood when the rail left it), landing softly: back
+    own camera, and comes down into it with that camera, landing softly: back
     280 ms, along 440, near 360, along setting off before the step back has
     landed so it never stands still between them. The dots lie on the
     ground as everything on it does: stood back they are smaller with their
@@ -2315,7 +2311,7 @@ new file beside the one in hand where nothing is being written (the keyboard
 on the desk; written in a file, it is an N): it is laid under the box in
 hand, in its column, as a new post goes under the one before it, named with
 that file's ending (none with no file in hand: untitled), at the size it is
-read at (the camera does not step back for it), and its name is written over
+read at, and its name is written over
 at once in its head, the name itself (its folder quiet before it), a line
 under it, the stem chosen in the soft yellow and the ending kept, so typing
 writes the stem. Enter keeps what is written and the keyboard goes on into
@@ -2323,37 +2319,21 @@ the box, at its end; Escape keeps the name it had and goes on in too. The
 files tool's New file, and File's, make it the same way. Writing in a box
 puts the pointer out of the way until it moves.
 
-The camera has three places, as a game's cameras do, and Escape goes round
-them: its standard, every box at its own size, the box in hand in the middle
+The desk has one size: every box at its own, the box gone to in the middle
 across, its top level with the rail between Home and File (high enough that
 the box above it in its column, its shadow and the dot of its close are wholly
-out of sight, never a strip nor a dot cut by the edge), the balance the
-work is done at, never nearer than that; a step back (three quarters),
-the box in hand still read in the middle across, its column's top at the eye
-as the standard's box is (never low in the face with the room above it
-empty), what is above it in its column in sight over it and the boxes beside
-it round it (one too low for that comes up till its foot is in sight); and
-the whole desk, at most half its size, in the middle across, its top at the
-eye too. Stepping back it zooms first and then goes (about what is in the
-face's middle when the box in hand is out of sight, the camera over the
-Agent's work: never a slide off to where that box lies); coming nearer it
-goes first and then zooms. Going along at one place to what is out
-of sight from there (the next column, a box far down), it steps back on the
-way as far as the way is long and comes down onto it, as a head turns across
-a room (the Agent's camera, below, goes so too); what is in sight is gone to
-with a plain pan. Escape out of a text only takes the keyboard out onto
-the desk (one key, one thing: before, it stepped the camera back at the same
-time, the whole desk a quarter smaller for a key pressed to leave a line);
-on the desk, it goes round the camera's places; from a field that keeps
-Escape for itself (a search, a rename), that comes first. Ctrl and - step back, Ctrl and + come a
-place nearer, Ctrl and 0 to the standard, a pinch either way a place. At the
-standard the camera moves as a scroll does, so the keyboard going into a box,
-or something brought into view, takes the camera there and that box into hand,
-and the wheel moves it along the desk. Stood back, a press on a box comes to it;
-over the whole desk the box in hand is told by its own edge drawn heavier: one box, one
-edge, never a ring a little way out round it (the box drawn twice, one inside
-the other); stood back by the rail going by, no box is pointed out. Writing in the box in hand while the camera
-stands back brings it to the standard. A box taken off by the dot of its close
+out of sight, never a strip nor a dot cut by the edge). Nothing steps back
+from it. (Before: three cameras, as a game's, Escape going round them: this
+one, the desk at three quarters, the whole desk at half. A key pressed to
+leave a line made the page smaller; what a smaller desk showed, where each
+box lies, the band's pills and the pane already say, at a size that is read;
+and Ctrl and -, + and 0 and a pinch, the window's own on every system, were
+taken for it. Taken off, no deed got worse.) Escape out of a text only takes
+the keyboard out onto the desk (one key, one thing); on the desk it changes
+nothing; from a field that keeps Escape for itself (a search, a rename), that
+comes first. The camera moves as a scroll does, so the keyboard going into a
+box, or something brought into view, takes the camera there and that box into
+hand, and the wheel moves it along the desk. A box taken off by the dot of its close
 (or its file gone) goes in a beat where it lies, the others closing up after
 it and the camera gliding with them, never a cut. A file
 gone goes from the desk; moved, its box is the file where it went. A file named
@@ -2715,8 +2695,7 @@ prompt, the green of the person's, key by key with a terminal's block caret,
 then what it printed, and how it ended where it ended otherwise than well. Its
 prompt line waits at its foot (its own lines, once more than its height,
 glide up under its top as a terminal's do, never a jump a line at a time).
-The camera works at the standard, where its words are read, and goes to the
-work going on now: the Agent's terminal as it is born (the person's a sliver
+The camera goes to the work going on now: the Agent's terminal as it is born (the person's a sliver
 at its left), then the file it begins to write in, whole in the middle, its
 terminal a sliver at the side, then back to its terminal as it runs
 something. The box written in is come to as a person comes to a page they
@@ -2726,7 +2705,7 @@ empty, nor written in while the camera stands over it and another at once.
 (Before: the boxes at work framed together where they fitted, centred down
 the face, the file begun in where it lay under the terminal.) Going to what is out of sight (the next column, a box far down),
 it steps back on the way as a head turns across a room, as far as the way is
-long (about a step back to the next column, further to one beyond), and comes
+long (to about three quarters going to the next column, further to one beyond), and comes
 down onto it: never a whip across the desk at the boxes' own size, half boxes
 going by. What is in sight already is gone to with a plain pan. The line the
 Agent's hand is on as it writes, or its eye as it reads, is always in sight:

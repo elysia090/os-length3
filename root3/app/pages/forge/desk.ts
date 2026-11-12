@@ -4,7 +4,7 @@ import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
 import {fieldCarried} from '../../ui/caret.ts';
 import {t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
-import {arc, bornOn, EYE, FOOT, FOOT_ROOM, GRID, lineKept, next, PAD, pulledOn, slots, STANDARD, standardOn, tabbed, WIDTH, wholeOf, type Slot, type View} from './desk-layout.ts';
+import {arc, bornOn, EYE, FOOT, FOOT_ROOM, GRID, lineKept, next, PAD, slots, STANDARD, standardOn, tabbed, WIDTH, type Slot, type View} from './desk-layout.ts';
 
 // A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
 // columns of code, its name outside its top-left corner, on dots: files opened, each under the one opened before it.
@@ -15,12 +15,11 @@ import {arc, bornOn, EYE, FOOT, FOOT_ROOM, GRID, lineKept, next, PAD, pulledOn, 
 // A box is gone to by pressing it. From the keyboard: Escape leaves a text, the keyboard on the desk; there an arrow
 // (or Tab) takes the next box that way in hand, and Enter (or a letter typed) goes into it. Nothing is drawn for that
 // but the box in hand's own shadow (before: a pointing hand beside its name, a game's cursor, with Tab taken from the
-// text for it). On the desk, Escape goes round the camera's three places:
-// the standard (every box at its own size, the box in hand in the middle: the balance the work is done at, never
-// nearer), a step back (the boxes beside it in sight), the whole desk; stepping back it zooms first and then goes,
-// coming nearer it goes first. Ctrl and - step back, Ctrl and 0 come to the standard, a pinch either way. Ctrl, Alt
-// and → put the box in hand beside (an editor's keys for it), Ctrl, Alt and ← put the one beside back. Where each box
-// lies, and where the camera looks, are numbers kept apart (desk-layout.ts).
+// text for it). The desk has one size, every box at its own: nothing steps back from it (before: Escape went round
+// three cameras, the desk at three quarters and then half its size, so a key pressed to leave a line made the page
+// smaller). Ctrl and -, + and 0, and a pinch, are the window's own. Ctrl, Alt and → put the box in hand beside (an
+// editor's keys for it), Ctrl, Alt and ← put the one beside back. Where each box lies, and where the camera looks, are
+// numbers kept apart (desk-layout.ts).
 
 /** What lies on the desk: its element, and the name said over it (its folder quiet before it, and after it, quiet,
  * what more it is: the Prompt's folder). */
@@ -41,10 +40,6 @@ const gliding = (el: HTMLElement) => el.getAnimations().some((a) => a instanceof
 /** Whether views `a` and `b` of a face `w` by `hgt` differ by no more than a box growing a few lines moves the camera. */
 const near = (a: View, b: View, w: number, hgt: number) =>
   Math.abs(a.s - b.s) < .02 && Math.abs(a.x - b.x) < w / 6 && Math.abs(a.y - b.y) < hgt / 6;
-
-/** Where the camera stands: at its standard, a step back, over the whole desk (Escape goes round them in this order). */
-type Camera = 'standard' | 'pulled' | 'whole';
-const CAMERAS: readonly Camera[] = ['standard', 'pulled', 'whole'];
 
 /** Whether a key is a program's: one in a terminal reading each key as it comes (vi, less) has every key, as at a
  * terminal (its line says so, data-raw). */
@@ -70,12 +65,6 @@ const DOT = 24;
 
 /** Minimum jerk: from rest to rest, nothing sudden at either end. */
 const pan = (x: number) => x * x * x * (10 - 15 * x + 6 * x * x);
-/** Landing: quick away, slowing into its place. */
-const land = (x: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
-/** How the camera goes: along (pan); coming back to the box (in: going first, then zooming); stepping back (out:
- * zooming first, then going). */
-type Way2 = 'pan' | 'in' | 'out';
-interface Point { x: number; y: number }
 /** The ground between a half of the face and the box that fills it, two screens side by side: a step each side. */
 const HALF_PAD = GRID;
 /** The narrowest a box is read at beside another: narrower than two of them (and their ground), the face is one screen. */
@@ -136,14 +125,11 @@ export class Desk {
   readonly side = h('div', {class: 'desk-side', hidden: ''});
   /** The box put beside, and where it lay on the desk (its column, its place in it): put back, it lies there. */
   #beside: {box: Box; col: number; at: number} | null = null;
-  #cam: Camera = 'standard';
   #view: View = {s: 1, x: 0, y: 0};
   /** The camera's glide under way (its next frame; none at rest), and where it is going: laid again on its way (a box
    * grown), it goes on to where it is now to go rather than starting again. */
   #moving = 0;
   #glide: {to: View} | null = null;
-  /** When a pinch last moved the camera a place: one place for one pinch. */
-  #pinched = 0;
   /** The camera on its way (its scroll is its own then, not someone's going somewhere). */
   #gliding = false;
   /** When a box last began to come out from under the one above it: the camera lets it come out before it follows. */
@@ -153,9 +139,6 @@ export class Desk {
   /** The box come out from under another, and that one, while it is the one in hand: the camera keeps the other's foot in
    * sight over it (bornOn), until another is taken or the camera moves on. */
   #bornUnder: {key: string; above: string} | null = null;
-  /** The box whose name is being written over (a file just made): the keyboard going on into it after (Enter, Escape)
-   * is the way in, and brings the camera to the standard, as Enter does with the keyboard on the desk. */
-  #naming: string | null = null;
   /** Where the pointer last was on the face. */
   #pointerAt: {x: number; y: number} | null = null;
   /** A key pressed while boxes slid: what it scrolled into view is not where the camera is to stay. */
@@ -186,8 +169,9 @@ export class Desk {
     this.#changed = changed;
     this.#plane = h('div', {class: 'desk-plane'});
     this.element = h('section', {class: 'desk', tabindex: '-1', 'aria-label': label, 'data-repo': repo}, this.#plane);
-    // Its camera is the rail's too, as Forge is left and come to (main.ts select): it stands back inside the desk.
-    ownCamera(this.element, {away: (ms) => this.away(ms), afar: () => this.afar(), near: (ms) => this.near(ms), far: 1, dots: null});
+    // The rail going by (main.ts select) asks a page's own camera to stand back: the desk has one size, and does not
+    // (before: over the whole desk, at half its size, and back down as the page was come to).
+    ownCamera(this.element, {away: () => Promise.resolve(), afar: () => {}, near: () => {}, far: 1, dots: null});
     this.element.addEventListener('keydown', (e) => this.#key(e));
     // Beside the desk, Ctrl, Alt and ← put the box back (the keyboard going with it).
     this.side.addEventListener('keydown', (e) => {
@@ -200,22 +184,14 @@ export class Desk {
     this.element.addEventListener('focusin', (e) => {
       const key = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key;
       if (key && key !== this.#held && key !== this.#pressing) this.take(key, false, true, 'near');
-      // Named, the keyboard gone on into the box (not into its name): in, at the standard.
-      if (this.#naming && !(e.target as Element).closest('.desk-label')) {
-        const named = this.#naming;
-        this.#naming = null;
-        if (key === named && this.#cam !== 'standard') this.#setCam('standard');
-      }
     });
-    // Written in, the box in hand is come back to: at the standard when the camera stood back from it, and from over the
-    // Agent's work (their terminal written in).
+    // Written in, the box in hand is come back to from over the Agent's work (their terminal written in).
     const writtenIn = (at: EventTarget | null) => {
-      // (Its name written, it is not yet gone into: the camera stays where it stands.)
+      // (Its name written, it is not yet gone into: the camera stays where it is.)
       if ((at as Element | null)?.closest?.('.desk-label')) return;
       const key = (at as Element | null)?.closest?.<HTMLElement>('.desk-box')?.dataset.key;
       if (!key || key !== this.#held) return;
-      if (this.#cam !== 'standard') { this.#framed = null; this.#setCam('standard'); }
-      else if (this.#framed) { this.#framed = null; this.#topAt = null; this.#look(true); }
+      if (this.#framed) { this.#framed = null; this.#topAt = null; this.#look(true); }
     };
     this.element.addEventListener('keydown', (e) => {
       if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace')) return;
@@ -240,7 +216,7 @@ export class Desk {
       if (e.propertyName !== 'translate' || !this.#strayed || this.#sliding()) return;
       this.#strayed = false;
       const el = this.element, v = this.#view;
-      if (this.#cam === 'standard' && v.s === 1 && Math.hypot(el.scrollLeft + v.x, el.scrollTop + v.y) > 1) this.#look(true);
+      if (v.s === 1 && Math.hypot(el.scrollLeft + v.x, el.scrollTop + v.y) > 1) this.#look(true);
     });
     this.element.addEventListener('wheel', (e) => this.#wheel(e), {passive: false});
     // The pointer moved (not something moved under it: the camera's glide moves the page under a pointer at rest), it is
@@ -256,65 +232,6 @@ export class Desk {
     const writing = () => veil.hide(this.#pointerAt);
     this.element.addEventListener('keydown', (e) => { if (e.target !== this.element && letter(e)) writing(); });
     this.element.addEventListener('beforeinput', (e) => { if (e.target !== this.element) writing(); });
-  }
-
-  /** The camera to `c` (gliding there, unless `glide` is false): stepping back it zooms and then goes, coming nearer it
-   * goes and then zooms. */
-  #setCam(c: Camera, glide = true, ms?: number) {
-    if (c === this.#cam) { this.#arrived(); return; }
-    const back = CAMERAS.indexOf(c) > CAMERAS.indexOf(this.#cam);
-    this.#cam = c;
-    this.#topAt = null;
-    // (Come to the standard, a box just made stands at the eye as any other.)
-    if (c === 'standard') this.#bornUnder = null;
-    this.element.classList.toggle('pulled', c === 'pulled');
-    this.element.classList.toggle('whole', c === 'whole');
-    this.#look(glide, back ? 'out' : 'in', ms);
-  }
-
-  /** What waits for the camera to be where it was sent (away): told once it is, or once it is sent elsewhere. */
-  #landed: (() => void) | null = null;
-  #arrived() { const l = this.#landed; this.#landed = null; l?.(); }
-
-  /** The camera the rail left the desk at, to come down to again as it comes back (null: not left). */
-  #left: Camera | null = null;
-
-  /**
-   * The rail going elsewhere (main.ts select): the camera steps back over the whole desk as Escape takes it (back first,
-   * then along), `ms` long, unless it stands as far back already; done once it is there. Where it stood is kept (near).
-   */
-  away(ms: number): Promise<void> {
-    this.#left ??= this.#cam;
-    // Stood back by the rail, not by the person looking over the desk: no box is pointed out in it (styles: .railed).
-    this.element.classList.add('railed');
-    this.#arrived();
-    if (this.#cam === 'whole' || still()) return Promise.resolve();
-    return new Promise((done) => { this.#landed = done; this.#setCam('whole', true, ms); });
-  }
-
-  /** Come to along the rail: over the whole desk at once, as it is seen from afar (where it stood is kept: near). */
-  afar() {
-    this.#left ??= this.#cam;
-    this.element.classList.add('railed');
-    this.#setCam('whole', false);
-  }
-
-  /** Come down from afar to where the camera stood as the rail left it, `ms` long (along first, then near). */
-  near(ms: number) {
-    const c = this.#left;
-    this.element.classList.remove('railed');
-    if (c === null) return;
-    this.#left = null;
-    this.#setCam(c, !still(), ms);
-  }
-
-  /** Come to anew (its page left and come back to): at the standard, on the box in hand, where its words are read.
-   * (Before: left a step back, it was come back to a step back, its words some 10 px tall, with nothing to say why.) */
-  home() { if (this.#cam !== 'standard') this.#setCam('standard', false); }
-
-  /** The camera a place back (`by` 1) or nearer (-1), no further than the whole desk nor nearer than the standard. */
-  #step(by: 1 | -1) {
-    this.#setCam(CAMERAS[Math.max(0, Math.min(CAMERAS.length - 1, CAMERAS.indexOf(this.#cam) + by))]);
   }
 
   /** `scroller`, a box round the desk, scrolled to bring something on it into view: undone, the desk's own camera
@@ -429,20 +346,9 @@ export class Desk {
     const el = h('div', {class: 'desk-box', 'data-key': key}, label, laid.element, ...(aside ? [aside] : []), close);
     // Pressed (what was pressed in it done first: a line run, a link), it is in hand; the camera moves after the
     // press, never under it.
-    el.addEventListener('click', (e) => {
+    el.addEventListener('click', () => {
       // Beside the desk it stands where it is: pressed, the keyboard is in it.
       if (this.#beside?.box.key === key) { if (!el.contains(document.activeElement)) laid.focus(); return; }
-      // One press and it is come to, however far back the camera stood and however little of it showed at the desk's
-      // edge: in hand, at the standard, the keyboard in it. (Before: stepped back, a press only took it in hand, and
-      // it took a second to come to it.) Its name pressed is its name written, the keyboard there: the box is in
-      // hand, and the camera stays.
-      if (this.#cam !== 'standard') {
-        if ((e.target as Element).closest('.desk-label')) { if (this.#held !== key) this.take(key, false); return; }
-        this.take(key, false, false);
-        this.#setCam('standard');
-        this.#boxes.get(key)?.laid.focus();
-        return;
-      }
       if (this.#held !== key || !el.contains(document.activeElement)) this.take(key, !el.contains(document.activeElement), true, 'where');
     });
     const by = beside === undefined ? undefined : this.#boxes.get(beside);
@@ -476,8 +382,7 @@ export class Desk {
         this.#held = key;
         el.classList.add('held');
       }
-      // (A file renamed as it is named: still the one being named, and come out from under the same box.)
-      if (this.#naming === was.key) this.#naming = key;
+      // (A file renamed as it comes out from under another: still come out from under the same box.)
       if (this.#bornUnder?.key === was.key) this.#bornUnder = {...this.#bornUnder, key};
       this.lift(was.key, true);
       return;
@@ -515,7 +420,6 @@ export class Desk {
   /** The name over `key` written over in its place (a new file's, as it comes). */
   name(key: string) {
     const b = this.#boxes.get(key) ?? (this.#beside?.box.key === key ? this.#beside.box : undefined);
-    if (b) this.#naming = key;
     // Its name is shown at once, being written, even while the box is still on its way out.
     b?.el.classList.remove('born');
     const name = b?.label.querySelector<HTMLElement>('.desk-name');
@@ -559,10 +463,9 @@ export class Desk {
     b.label.querySelector('.desk-name')!.textContent = name;
   }
 
-  /** `key` in hand, the camera going to it as near as it stands (gliding there, unless `glide` is false; over the whole
-   * desk, staying); with the keyboard (`focus`), at the standard. `stay`: taken where it is seen, it stays there
-   * (staysAt): 'where', pressed; 'near', the keyboard gone to it. Gone to from elsewhere (a file opened, a line found),
-   * it is put at the standard's place. */
+  /** `key` in hand, the camera going to it (gliding there, unless `glide` is false), with the keyboard (`focus`).
+   * `stay`: taken where it is seen, it stays there (staysAt): 'where', pressed; 'near', the keyboard gone to it. Gone
+   * to from elsewhere (a file opened, a line found), it is put at its standard place: its top at the eye. */
   take(key: string, focus = true, glide = true, stay: 'where' | 'near' | null = null) {
     // Beside the desk it stands where it is: the keyboard goes into it, the desk's own box in hand stays.
     if (this.#beside?.box.key === key) { if (focus) this.#beside.box.laid.focus(); return; }
@@ -574,22 +477,21 @@ export class Desk {
     this.#held = key;
     this.#framed = null;
     this.#topAt = at;
-    if (focus && this.#cam !== 'standard') this.#setCam('standard', glide);
-    else this.#look(glide);
+    this.#look(glide);
     if (focus) b.laid.focus();
     this.#changed();
   }
 
   /**
-   * Where the top of `b`, taken in hand, stays on the face at the standard, or null for the standard's own place.
+   * Where the top of `b`, taken in hand, stays on the face, or null for its standard place (its top at the eye).
    * Pressed ('where'), it stays exactly where it stands: what was pressed is under the pointer, and a line pressed
    * that then leaves the pointer is a line lost (before: any box pressed went to the top of the face, 456 px from
    * the hand; issue #174). The keyboard gone to it ('near'): where it stands while all of it is in sight; cut by the
-   * face's foot, up by the least that brings it whole into sight; taller than the face, or its top out of sight, the
-   * standard's place. Stood back, or the camera on its way, there is no place to keep.
+   * face's foot, up by the least that brings it whole into sight; taller than the face, or its top out of sight, its
+   * standard place. The camera on its way, there is no place to keep.
    */
   #staysAt(b: Box, stay: 'where' | 'near'): number | null {
-    if (this.#cam !== 'standard' || this.#glide) return null;
+    if (this.#glide) return null;
     const face = this.element.getBoundingClientRect(), r = b.el.getBoundingClientRect();
     if (!face.height || !r.height) return null;
     const top = r.top - face.top, foot = face.height - GRID - FOOT;
@@ -599,21 +501,17 @@ export class Desk {
   }
 
   /**
-   * The camera over `keys` at once (each box at work), at the standard: over all of them when they fit, else on the one
-   * last at work; none, back on the box in hand. Stood back, the camera stays where the person put it.
+   * The camera over `keys` (each a box at work): on the one last at work; none, back on the box in hand.
    */
   frame(keys: string[]) {
     this.#framed = keys.length ? keys : null;
-    // Work begun is watched as a person goes to work: in to the standard, where its words are read, however far the
-    // camera stood back (a box carried, a file just made, the whole desk looked over); it does not start out there.
-    if (keys.length && this.#cam !== 'standard') this.#setCam('standard');
-    else if (this.#cam === 'standard') this.#look(true);
+    this.#look(true);
   }
 
   /**
-   * Where the camera stands over the framed boxes (`keys` in the order they started), at the standard: on the one at
-   * work now, the last, as a person looks at what they write in: at its own size, in the middle across, its top at
-   * the eye (never left in the middle of the face with the room over it empty, nor stood back over all of them); the
+   * Where the camera stands over the framed boxes (`keys` in the order they started): on the one at work now, the
+   * last, as a person looks at what they write in: in the middle across, its top at the eye (never left in the
+   * middle of the face with the room over it empty); the
    * others at its sides as they lie, saying where they are. A box taller than the face goes on down from its top as
    * its line at work goes down it, a page turned as that line comes near the face's foot (lineKept), never under it.
    * Null when none lies here.
@@ -645,22 +543,15 @@ export class Desk {
     const s = this.#view.s || 1, r = (e.target as Element).getBoundingClientRect(), b = box.getBoundingClientRect();
     const top = (r.top - b.top) / s + e.detail.top;
     this.#work = {key, top, bottom: top + e.detail.height};
-    if (!this.#framed?.includes(key) || this.#cam !== 'standard' || this.#glide || still()) return;
+    if (!this.#framed?.includes(key) || this.#glide || still()) return;
     const to = this.#target(), v = this.#view;
     if (to && (Math.abs(to.x - v.x) > .5 || Math.abs(to.y - v.y) > .5)) this.#go(to, true);
   }
 
-  /** A wheel over the desk: with Ctrl (a pinch), the camera a place back or nearer; without it, the camera along the
-   * desk at the standard (a box's own scroll first: a Prompt's output scrolled within it). */
+  /** A wheel over the desk: the camera along the desk (a box's own scroll first: a Prompt's output scrolled within
+   * it). With Ctrl (a pinch) it is the window's own: the desk has one size. */
   #wheel(e: WheelEvent) {
-    if (e.ctrlKey) {
-      e.preventDefault();
-      if (Math.abs(e.deltaY) < 4 || performance.now() - this.#pinched < 400) return;
-      this.#pinched = performance.now();
-      this.#step(e.deltaY > 0 ? 1 : -1);
-      return;
-    }
-    if (this.#cam !== 'standard' || this.#moving || scrollsItself(e.target as Element, this.element, e.deltaX, e.deltaY)) return;
+    if (e.ctrlKey || this.#moving || scrollsItself(e.target as Element, this.element, e.deltaX, e.deltaY)) return;
     e.preventDefault();
     this.#framed = null;
     this.element.scrollBy(e.deltaX, e.deltaY);
@@ -730,21 +621,14 @@ export class Desk {
     this.#changed();
   }
 
-  /** Where the camera should look now: over the whole desk; a step back, on the box in hand; at the standard, over the
-   * boxes at work or on the box in hand. None while the desk is not laid out. */
+  /** Where the camera should look now: over the boxes at work, or on the box in hand. None while the desk is not laid
+   * out. */
   #target(): View | null {
     const w = this.element.clientWidth, hgt = this.element.clientHeight;
     if (!w || !hgt) return null;
     const bw = this.#bw;
-    if (this.#cam === 'whole') return wholeOf([...this.#boxes.values()].map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt, bw);
     const b = this.#held ? this.#boxes.get(this.#held) : this.#boxes.values().next().value;
     const under = b && this.#bornUnder?.key === b.key ? this.#boxes.get(this.#bornUnder.above) : undefined;
-    // (Stood back, a box just made is in the middle with what it came from above it in sight: no more is needed.)
-    if (this.#cam === 'pulled') {
-      if (!b) return null;
-      const first = this.#cols.find((c) => c.includes(b.key))?.[0], top = (first ? this.#boxes.get(first)?.slot.y : undefined) ?? b.slot.y;
-      return pulledOn(b.slot, b.el.offsetHeight, w, hgt, top, bw);
-    }
     // Framed over boxes at work (the Agent's, played), it stays so as they grow, until it is let go or one is taken.
     const framed = this.#framed ? this.#frameView(this.#framed) : null;
     if (framed) return framed;
@@ -756,21 +640,18 @@ export class Desk {
     return to;
   }
 
-  /** The camera to where it should look now (`moving`: gliding there, the way `how`). */
-  #look(moving: boolean, how: Way2 = 'pan', ms?: number) {
+  /** The camera to where it should look now (`moving`: gliding there). */
+  #look(moving: boolean) {
     const to = this.#target();
-    if (to) this.#go(to, moving && !still(), how, ms);
-    else this.#arrived();
+    if (to) this.#go(to, moving && !still());
   }
 
   /**
-   * The camera to `to`, gliding there (the way `how`) or at once. At the standard (at its own size) the camera is the
-   * desk's own scroll, so what brings something into view (the keyboard going into a box, a find) moves it as a scroll
-   * does; stepped back (or on its way) the plane is moved and scaled instead. Its way is told by where the box in hand
-   * stands on the face and how near: going along, both at once; coming back, it goes before it zooms; stepping back, it
-   * zooms before it goes.
+   * The camera to `to`, gliding there or at once. At rest the camera is the desk's own scroll, so what brings something
+   * into view (the keyboard going into a box, a find) moves it as a scroll does; on its way the plane is moved (and, on
+   * a long way, scaled: arc) instead.
    */
-  #go(to: View, moving: boolean, how: Way2 = 'pan', ms: number | undefined = undefined) {
+  #go(to: View, moving: boolean) {
     // On its way there already: it goes on as it goes, never set off again (asked again as what it frames is laid out).
     const g = this.#glide?.to;
     if (moving && g && Math.abs(g.x - to.x) < .5 && Math.abs(g.y - to.y) < .5 && Math.abs(g.s - to.s) < 1e-3) return;
@@ -782,12 +663,11 @@ export class Desk {
     const from = el.scrollLeft || el.scrollTop ? {s: 1, x: -el.scrollLeft, y: -el.scrollTop} : {...this.#view};
     // Going along to what is out of sight (another column, a box far down), the camera steps back on the way and comes
     // down onto it, as a head turns across a room: never a whip across the desk at the boxes' own size.
-    const long = how === 'pan' && moving ? arc(from, to, el.clientWidth, this.element.clientHeight, ms ?? 560) : null;
-    ms ??= long ? long.ms : how === 'pan' ? 560 : 520;
+    const long = moving ? arc(from, to, el.clientWidth, this.element.clientHeight, 560) : null;
+    const ms = long ? long.ms : 560;
     const set = (v: View, done: boolean) => {
       this.#view = v;
       el.style.setProperty('--inv', String(1 / v.s));
-      if (done) this.#arrived();
       if (done && v.s === 1) {
         this.#plane.style.transform = '';
         // The dots are the desk's own again, going with its scroll (styles: .desk, local).
@@ -811,16 +691,6 @@ export class Desk {
     // What goes by under a pointer at rest was not pointed at: nothing under it lights up (forge-desk.css .resting)
     // until the pointer moves again.
     el.classList.add('resting');
-    // The box in hand's middle, on the desk: where it is on the face, and how near, are what move.
-    // (The box in hand out of sight, the camera over other work, the Agent's: what is in the face's middle, so stepping
-    // back is about what is seen, never a slide off to where the box in hand lies.)
-    const b = this.#held ? this.#boxes.get(this.#held) : undefined;
-    const middle = {x: (el.clientWidth / 2 - from.x) / from.s, y: (el.clientHeight / 2 - from.y) / from.s};
-    const inHand = b ? {x: b.slot.x + this.#bw / 2, y: b.slot.y + b.el.offsetHeight / 2} : null;
-    const seen = (p: Point) => { const x = from.x + p.x * from.s, y = from.y + p.y * from.s; return x >= 0 && x <= el.clientWidth && y >= 0 && y <= el.clientHeight; };
-    const m0 = inHand && seen(inHand) ? inHand : middle;
-    const mid = (_p: number) => m0;
-    const pf = {x: mid(0).x * from.s + from.x, y: mid(0).y * from.s + from.y};
     const glide = this.#glide = {to};
     // A box coming out from under another: it is out before the camera goes after it.
     const lag = performance.now() - this.#comingAt < 60 ? 90 : 0, t0 = performance.now() + lag;
@@ -840,11 +710,9 @@ export class Desk {
         else { this.#moving = 0; this.#glide = null; }
         return;
       }
-      const [p, q] = how === 'in' ? [land(k / .45), land((k - .45) / .55)] : how === 'out' ? [land((k - .55) / .45), land(k / .55)] : [pan(k), pan(k)];
-      const end = glide.to, m1 = mid(1), pt = {x: m1.x * end.s + end.x, y: m1.y * end.s + end.y};
-      const s = from.s * Math.pow(end.s / from.s, q), m = mid(p);
-      const at = {x: pf.x + (pt.x - pf.x) * p, y: pf.y + (pt.y - pf.y) * p};
-      set(k >= 1 ? end : {s, x: at.x - m.x * s, y: at.y - m.y * s}, k >= 1);
+      // A short way: along, from rest to rest (set off from a long way's step back, to its own size as it goes).
+      const p = pan(k), end = glide.to;
+      set(k >= 1 ? end : {s: from.s * Math.pow(end.s / from.s, p), x: from.x + (end.x - from.x) * p, y: from.y + (end.y - from.y) * p}, k >= 1);
       veil.follow(this.#pointerAt);
       if (k < 1) this.#moving = requestAnimationFrame(step);
       else { this.#moving = 0; this.#glide = null; }
@@ -852,10 +720,10 @@ export class Desk {
     this.#moving = requestAnimationFrame(step);
   }
 
-  /** Scrolled at the standard (the camera moved as a scroll moves it): the box most in view is the one in hand, unless
+  /** Scrolled (the camera moved as a scroll moves it): the box most in view is the one in hand, unless
    * one is written in: looking along the desk does not take the shadow off the box the keyboard is in. */
   #scrolledStandard() {
-    if (this.#gliding || this.#cam !== 'standard' || performance.now() - this.#ownScroll < 120) return;
+    if (this.#gliding || performance.now() - this.#ownScroll < 120) return;
     if (this.#strayed) return;
     const at = document.activeElement;
     if (at && at !== this.element && this.element.contains(at)) return;
@@ -885,23 +753,16 @@ export class Desk {
   #key(e: KeyboardEvent) {
     if (e.isComposing || theirs(e)) return;
     const way = WAYS[e.key];
-    const zoom = (e.ctrlKey || e.metaKey) && !e.altKey;
     const bare = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
     // The keyboard on the desk itself, a box in hand: not in any text.
     const onDesk = e.target === this.element && this.#held !== null;
-    if (zoom && e.key === '-') { e.preventDefault(); this.#step(1); }
-    // Never nearer than the standard: Ctrl and + comes a place nearer, Ctrl and 0 to the standard.
-    else if (zoom && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.#step(-1); }
-    else if (zoom && e.key === '0') { e.preventDefault(); this.#setCam('standard'); }
-    else if (e.key === 'Escape' && !e.defaultPrevented) {
-      // Escape from a box's text is the text's first (a search, a rename). One that reaches the desk does one thing:
-      // out of a text, the keyboard comes out onto the desk and nothing moves; on the desk already, the camera goes
-      // round its places. (Before: both at once, the whole desk a quarter smaller for a key pressed to leave a line;
-      // issue #173.)
+    if (e.key === 'Escape' && !e.defaultPrevented) {
+      // Escape from a box's text is the text's first (a search, a rename). One that reaches the desk takes the
+      // keyboard out of the text onto the desk, and nothing moves. (Before: it also stepped the camera back, the whole
+      // desk a quarter smaller for a key pressed to leave a line, and again to half; issue #173. Ctrl and -, + and 0
+      // are the window's own now, as a pinch is.)
       e.preventDefault();
-      const out = e.target !== this.element;
       this.element.focus({preventScroll: true});
-      if (!out) this.#setCam(CAMERAS[(CAMERAS.indexOf(this.#cam) + 1) % CAMERAS.length]);
     } else if ((way === 'left' || way === 'right') && e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey) {
       // Ctrl, Alt and →: the box in hand beside the desk, a second screen; Ctrl, Alt and ←: the one beside put back.
       e.preventDefault();
@@ -924,11 +785,9 @@ export class Desk {
     } else if (onDesk && letter(e)) this.#enter();
   }
 
-  /** Into the box in hand, at the standard: the keyboard in it (a letter typed goes on in). */
+  /** Into the box in hand: the keyboard in it (a letter typed goes on in). */
   #enter() {
     if (!this.#held) return;
-    // At the standard the camera is on it already: it stays where it stands, only the keyboard goes in.
-    if (this.#cam === 'standard') this.#boxes.get(this.#held)?.laid.focus();
-    else this.take(this.#held);
+    this.#boxes.get(this.#held)?.laid.focus();
   }
 }

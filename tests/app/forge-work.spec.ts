@@ -520,47 +520,36 @@ test('a box in sight pressed stays where it stands, the caret where it was press
   await expect(main).toBeFocused();
 });
 
-test('Escape out of a text only takes the keyboard out onto the desk; on the desk it takes the camera round its three places, never nearer than the standard; Enter goes into the box in hand', async ({app}) => {
+test('Escape out of a text only takes the keyboard out onto the desk; the desk has one size, and no key steps back from it; Enter goes into the box in hand', async ({app}) => {
   await app.rail.go('forge');
   const desk = app.page.locator('.desk:not([hidden])');
   const own = app.forge.editor('README.md');
   await own.focus();
   const readme = app.page.locator('.desk-box[data-key="README.md"]');
-  const width = async () => (await readme.boundingBox())!.width;
-  const standard = await width();
-  // Never nearer than the standard.
-  await app.page.keyboard.press('Control+Equal');
-  await expect.poll(width).toBeCloseTo(standard, 0);
+  const at = (await readme.boundingBox())!;
+  // Ctrl and -, + and 0 are the window's own: the desk takes none of them (before: a step back, and back).
+  for (const key of ['Control+Minus', 'Control+Equal', 'Control+Digit0']) {
+    await app.page.keyboard.press(key);
+    expect((await readme.boundingBox())!).toEqual(at);
+  }
   await expect(own).toBeFocused();
   // Out of the text: the keyboard on the desk, and that is all. The desk is as large as it was, the box where it was,
   // and nothing is drawn for it (before: a pointing hand beside the box's name).
-  const at = (await readme.boundingBox())!;
   await app.page.keyboard.press('Escape');
   await expect(desk).toBeFocused();
-  await expect(desk).not.toHaveClass(/pulled|whole/);
   expect((await readme.boundingBox())!).toEqual(at);
   await expect(desk.locator('.desk-hand')).toHaveCount(0);
-  // On the desk, a step back: the box in hand still read, the keyboard on the desk.
-  await app.page.keyboard.press('Escape');
-  await expect(desk).toHaveClass(/pulled/);
-  await expect.poll(async () => (await width()) / standard).toBeCloseTo(.75, 1);
-  await expect(desk).toBeFocused();
-  // The whole desk, at most half its size.
-  await app.page.keyboard.press('Escape');
-  await expect(desk).toHaveClass(/whole/);
-  await expect.poll(async () => (await width()) / standard).toBeLessThanOrEqual(.5);
-  // Round again to the standard.
-  await app.page.keyboard.press('Escape');
-  await expect(desk).not.toHaveClass(/pulled|whole/);
-  await expect.poll(width).toBeCloseTo(standard, 0);
-  await expect(desk).toBeFocused();
-  // Stood back, Enter comes to the standard and goes into the box.
-  await app.page.keyboard.press('Escape');
-  await expect(desk).toHaveClass(/pulled/);
+  // On the desk, Escape again changes nothing (before: the desk three quarters its size, then half, then round).
+  for (let i = 0; i < 3; i++) {
+    await app.page.keyboard.press('Escape');
+    await expect(desk).toBeFocused();
+    expect((await readme.boundingBox())!).toEqual(at);
+  }
+  expect(await desk.locator('.desk-plane').evaluate((el) => getComputedStyle(el).transform)).toBe('none');
+  // Enter goes into the box in hand, where it stands.
   await app.page.keyboard.press('Enter');
-  await expect(desk).not.toHaveClass(/pulled/);
-  await expect.poll(width).toBeCloseTo(standard, 0);
   await expect(own).toBeFocused();
+  expect((await readme.boundingBox())!).toEqual(at);
 });
 
 test('Tab in a file is the text\'s, the indent written; out of the text an arrow or Tab takes the next box in hand and a letter goes into it; a box is not carried about: Ctrl and an arrow are the text\'s', async ({app}) => {

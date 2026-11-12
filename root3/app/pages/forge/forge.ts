@@ -482,7 +482,6 @@ class Forge {
   /** Come to (back) on the screen: the repo asked for, chosen elsewhere, or as it was. */
   enter() {
     this.work.settle();
-    for (const d of this.desks.values()) d.desk.home();
     void store.list().then((repos) => this.choose(repos.map((r) => r.name)));
   }
 

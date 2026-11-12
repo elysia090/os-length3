@@ -1,8 +1,8 @@
 // Where each box of the desk lies (desk.ts), and where the camera looks: kept apart from the page so it is measured
 // and tested as numbers. The desk is a plane on a 24 px grid; its boxes stand in columns, each box as wide as 80
 // columns of code, one under another in its column with three grid steps between them, the columns two steps apart.
-// The camera has three places, as a game's cameras do: its standard, every box at its own size, the box in hand in the
-// middle (a balance found good: never nearer than that); a step back, the boxes beside it in sight; and the whole desk.
+// The desk has one size, every box at its own, the box in hand in the middle across with its top at the eye (before:
+// three cameras, a step back and the whole desk beside this one).
 
 /** The grid the desk is laid on. */
 export const GRID = 24;
@@ -15,13 +15,9 @@ export const VGAP = 3 * GRID;
 export const PAD = 36;
 /** Room above a column's first box for its name. */
 export const TOP = 48;
-/** The standard: every box at its own size. A step back, the box in hand still read and those beside it in sight: three
- * quarters, about the step again from there to two boxes side by side (liftedOn), so each step back is alike. The whole
- * desk, at most half of it. */
+/** The standard: every box at its own size. */
 export const STANDARD = 1;
-export const PULLED = 0.75;
-export const WHOLE_MOST = 0.5;
-/** How far in from the face's edges a box carried (or stood back from) is kept. */
+/** How far under the face's top the line at work is kept (lineKept). */
 export const KEPT = 2 * GRID;
 
 function up(v: number): number { return GRID * Math.ceil(v / GRID); }
@@ -77,30 +73,6 @@ export function standardOn(slot: Slot, _h: number, w: number, _hgt: number, s = 
 }
 
 /**
- * A step back, on the box at `slot` (`h` high) whose column's first box stands at `top`: smaller, in the middle across,
- * the column's top at the eye as the standard's box is (never low in the face with the room above it empty), what is
- * above it in its column in sight over it and the boxes beside it round it; one too low for that up till its foot is
- * KEPT over the face's, never its top past the eye.
- */
-export function pulledOn(slot: Slot, h: number, w: number, hgt: number, top = slot.y, bw = WIDTH): View {
-  const v = standardOn(slot, h, w, hgt, PULLED, bw);
-  let y = EYE - top * PULLED;
-  const foot = y + (slot.y + h) * PULLED;
-  if (foot > hgt - KEPT) y = Math.max(y - (foot - (hgt - KEPT)), EYE - slot.y * PULLED);
-  return {...v, y};
-}
-
-/** Stepped back: the whole desk (each box's slot and height, its name over it, its shadow) in the face, at most
- * WHOLE_MOST, in the middle across and its top at the eye, as the boxes stand at the standard and a step back. */
-export function wholeOf(boxes: {slot: Slot; h: number}[], w: number, hgt: number, bw = WIDTH): View {
-  let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-  for (const {slot, h} of boxes) { l = Math.min(l, slot.x); t = Math.min(t, slot.y - 24); r = Math.max(r, slot.x + bw + 8); b = Math.max(b, slot.y + h + 8); }
-  if (!isFinite(l)) return {s: WHOLE_MOST, x: 0, y: 0};
-  const s = Math.min(WHOLE_MOST, (w - 96) / (r - l), (hgt - 96) / (b - t));
-  return {s, x: (w - (r - l) * s) / 2 - l * s, y: EYE - (t + 24) * s};
-}
-
-/**
  * The camera's way from `a` to `b` over a face `w` by `hgt` when it is long: as a head turns to something across the
  * room, it steps back on the way as far as the way is long and comes down onto what it goes to (van Wijk and Nuij's
  * smooth zoom and pan: back about to where what it left and what it goes to are both nearly in sight at the middle of
@@ -125,8 +97,8 @@ export function arc(a: View, b: View, w: number, hgt: number, ms: number): {at(t
 }
 /** How far apart (a part of the face's shorter side) where the camera is and where it goes are before it arcs. */
 const ARC_FROM = .5;
-/** How far back an arc goes for its length (van Wijk and Nuij's ρ, as d3's zoom): about a step back (PULLED) to the
- * next column, as Ctrl's step back over two boxes side by side. */
+/** How far back an arc goes for its length (van Wijk and Nuij's ρ, as d3's zoom): to about three quarters going to
+ * the next column, where both are in sight. */
 const ARC_RHO = Math.SQRT2;
 /** An arc's length (in its own measure) that takes a plain pan's time; longer ones take longer, at most ARC_MOST. */
 const ARC_S = .8;

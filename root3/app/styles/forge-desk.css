@@ -29,11 +29,6 @@
   to { opacity: 1; margin: 0; box-shadow: 8px 8px 0 0 var(--ink); }
 }
 @media (prefers-reduced-motion: reduce) { .desk-box.landing { animation: none; } }
-/* Stood back (a step, or the whole desk): a press on a box comes to it. Over the whole desk the box in hand is told
-   by its own edge, heavier: one box, one edge (before: a ring a little way out round its edge, the box drawn twice,
-   one inside the other). Stood back by the rail going by (desk.ts away), no box is pointed out. */
-.desk:is(.pulled, .whole) .desk-box { cursor: var(--cursor-hand); }
-.desk.whole:not(.railed) .desk-plane > .desk-box.held { box-shadow: 0 0 0 2px var(--ink), 8px 8px 0 0 var(--ink); }
 .desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
   font: 600 15px/1 var(--mono); color: var(--ink); padding: 4px 8px 7px 0; transform-origin: 0 100%; scale: var(--inv, 1); }
 .desk-dir { font-weight: 400; color: var(--sub); }

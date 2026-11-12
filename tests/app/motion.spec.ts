@@ -307,8 +307,8 @@ test('nothing moves but the rail\'s ink: a place pressed, its page is there at o
   expect(at.panning).toBe(false);
   expect(at.moving.filter((c) => c !== 'glide-ink')).toEqual([]);
   expect(at.moving).toContain('glide-ink');
-  // The desk is not stood back over the whole of it by the rail: no camera went with the press.
-  expect(await app.page.evaluate(() => document.querySelector('#page .desk:not([hidden])')!.matches('.whole, .railed'))).toBe(false);
+  // The desk is not stood back by the rail: no camera went with the press, its plane at its own size.
+  expect(await app.page.evaluate(() => getComputedStyle(document.querySelector('#page .desk:not([hidden]) .desk-plane')!).transform)).toBe('none');
   await still(app);
   // And back: Home whole at once, as large as it is read (nothing of it scaled or carried).
   await app.page.evaluate(() => document.getElementById('purpose-home')!.click());

@@ -1,15 +1,13 @@
 // The camera going along the rail (main.ts select), in three moves, each a camera's own:
 //
-//   out    the page left steps back with its own camera, the page still itself: Forge's desk camera over the whole desk,
-//          as Escape takes it (and no further where it stands so far back already), the boxes in the middle; another
-//          page's (below, a ground camera) to half its size about where its words begin, at its top and its left, as it
-//          is read. What lay out of sight comes into it (a box off the face, Home's lines past the window's foot):
-//          nothing is cut at an edge no one can see.
+//   out    the page left steps back with its own camera, the page still itself: a ground camera (below) to half its
+//          size about where its words begin, at its top and its left, as it is read; Forge's desk has one size and
+//          does not step back (its own camera says so: forge/desk.ts). What lay out of sight comes into it (Home's
+//          lines past the window's foot): nothing is cut at an edge no one can see.
 //   along  at that height the camera goes along the one ground to the page come to, lying beside the page left the way
 //          the rail goes (above going up, below going down), already stood back by its own camera: the page left (a
 //          picture of it) and the page come to (itself) go by together, and their dots with them.
-//   in     the page come to's own camera comes down to where it stood (Forge's, to where the desk's camera was when the
-//          rail left it).
+//   in     the page come to's own camera comes down to where it stood.
 //
 // The rail, the band and the pane are the frame: they never move. What differs on them gives way in place as the camera
 // goes along, the frame come to coming in under the one left before that one goes, so what the two share never dims.
@@ -56,7 +54,7 @@ export function workAt(el: HTMLElement, at: WorkAt | null) {
   el.dispatchEvent(new CustomEvent(WORK_AT, {bubbles: true, detail: at}));
 }
 
-/** How far back the camera stands, as the desk's whole-desk camera at its furthest (desk-layout.ts WHOLE_MOST). */
+/** How far back the camera stands: half its size. */
 export const FAR = .5;
 /** Stepping back: quick off at the press, slowing as it gets there (the desk camera's land); coming down, the same. */
 const LAND = 'cubic-bezier(.2, .8, .3, 1)';
