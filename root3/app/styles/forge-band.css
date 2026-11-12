@@ -103,7 +103,7 @@
   transform-origin: top; animation: drop-in calc(220ms * var(--pace)) var(--land);
 }
 /* Only what was found scrolls (past the sheet's room), under the words searched for, which stay at its head. */
-.band-tools .search-results > .search-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; overflow-anchor: none; }
+.band-tools .search-results > .search-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; overflow-anchor: none; container: search-sheet / inline-size; }
 .band-tools .search-results > .search-pills { flex: none; }
 /* Down from behind the band, whole, as a drawer is opened: what is lowest comes first. */
 @keyframes drop-in { from { transform: translateY(calc(-100% - var(--s3))); clip-path: inset(100% -12px -12px -12px); }
@@ -169,3 +169,22 @@
 .band-tools .search-results mark { animation: none; }
 /* What Enter takes from the box is not lit in the sheet: its rows are lit only under the pointer, as the mock's. */
 .band-tools .search-box:has(.search-in:focus) .found-secs .choice.first:not(:hover) { background: none; }
+
+/* The paper keeps the desk's edges, even when the search field grows on a phone. The pane's narrow dropdown
+   has a different anchor (search.css); it must never pull this sheet behind the rail. */
+@media (max-width: 760px) {
+  .band-tools .search-results { padding: 14px 16px 24px; }
+  .band-tools .search-results:not([data-q=''])::before { font-size: 40px; }
+}
+/* Respond to the paper's room, not the whole window: a visible pane can leave a narrow sheet on a wide screen.
+   Keep the large section names and the rows of ink; give their words the width instead of squeezing them to zero. */
+@container search-sheet (max-width: 1000px) {
+  .found-secs { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 20px 28px; }
+  .found-sec { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
+@container search-sheet (max-width: 480px) {
+  .found-sec-rows:has(> .sheet-hit) { grid-template-columns: minmax(0, 1fr) 3ch; column-gap: 10px; }
+  .found-sec .sheet-hit { padding-block: 8px; }
+  .found-sec .sheet-file { overflow: hidden; text-overflow: ellipsis; }
+  .found-sec .sheet-text { grid-column: 1 / -1; white-space: pre-wrap; overflow-wrap: anywhere; }
+}
