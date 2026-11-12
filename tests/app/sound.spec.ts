@@ -10,6 +10,7 @@ test('buttons confirm once with Enter sound, including keyboard activation; move
     // Nested content is common in icon buttons. Use native controls so Enter and Space are real activations.
     const box = document.createElement('div');
     box.id = 'sound-test';
+    box.style.cssText = 'position:fixed;top:10px;left:10px;z-index:2147483647;background:white';
     box.innerHTML = '<button id="sound-enabled"><span>Sound test</span></button><button disabled id="sound-disabled">Disabled</button><button aria-disabled="true" id="sound-aria-disabled">Unavailable</button><input aria-label="Sound field">';
     document.body.append(box);
   });
