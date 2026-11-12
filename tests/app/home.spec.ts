@@ -349,6 +349,20 @@ test("Home's band has Forge's tools where Forge has them, and the pane's first r
   expect((await menu.boundingBox())!.y).toBeGreaterThan(under.y + under.height - 1);
 });
 
+test('what was written on Home and was not yet the core\'s when the page went is kept at the next start', async ({app}) => {
+  // Written, and the page loaded again before the core had it: the page kept it meanwhile, where it writes at once.
+  await app.page.evaluate(() => localStorage.setItem('root3.os.unkept.profile', JSON.stringify({name: 'Grace Hopper', handle: '', bio: 'Kept at once.'})));
+  await app.open();
+  await app.rail.go('home');
+  await expect(app.page.locator('#profile-name')).toHaveText('Grace Hopper');
+  await expect(app.main.getByRole('textbox', {name: 'Bio', exact: true})).toHaveText('Kept at once.');
+  // It is the core's now, and the page holds nothing: still so at a start with nothing held.
+  await expect.poll(() => app.page.evaluate(() => localStorage.getItem('root3.os.unkept.profile'))).toBeNull();
+  await app.open();
+  await app.rail.go('home');
+  await expect(app.page.locator('#profile-name')).toHaveText('Grace Hopper');
+});
+
 test('Home come back to is where it was read to, and the page between starts at its top', async ({app}) => {
   await app.page.setViewportSize({width: 1280, height: 300});
   await app.rail.go('home');
