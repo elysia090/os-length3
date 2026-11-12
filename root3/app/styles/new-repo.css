@@ -9,8 +9,9 @@
 /* On the rail's rows, as Home is (home.css): its place said on the first, level with the rail's first place, on the
    line Home's name stands on; its box from the second, where Home's TODO is and as tall at the least, so the box does
    not move between the two pages. */
-.new-repo-main { padding-top: 0; }
-.new-repo { display: grid; grid-template-columns: minmax(0, 520px) minmax(280px, 1fr); grid-template-areas: "label files-label" "box files";
+/* Under the band's keys, its first row where a page's first row is (a page's name on the band's line, then its rows). */
+.new-repo-main { container-type: inline-size; --home-name: 28px; max-width: 1080px; margin-top: calc(var(--band) + var(--h-row) + var(--s3) - var(--keys)); padding: 0 0 var(--s6); }
+.new-repo { display: grid; grid-template-columns: minmax(0, 520px) minmax(280px, 340px); grid-template-areas: "label files-label" "box files";
   column-gap: clamp(var(--s5), 6cqi, 80px); align-items: start; }
 .new-repo > .nr-label:not(.nr-files-label) { grid-area: label; }
 .new-repo > .nr-box { grid-area: box; }

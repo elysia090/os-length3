@@ -335,14 +335,13 @@ test('the plug opens a plain plugin area at the top of the center, and closes it
   await expect(app.rail.button('plugin')).toHaveAttribute('aria-expanded', 'true');
   await app.rail.button('plugin').click();
   await expect(area).toBeHidden();
-  // Home has the same right pane: the plug opens the area there, and the pane with it (issue #45).
+  // Home has the area too, over what waits at its foot: the plug opens it there, Home staying (issue #45).
   await app.rail.go('home');
-  await app.page.getByRole('button', {name: 'Right pane'}).click();
-  await expect(app.page.getByRole('button', {name: 'Right pane'})).toHaveAttribute('aria-expanded', 'false');
   await app.rail.button('plugin').click();
   await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
-  await expect(app.page.getByRole('button', {name: 'Right pane'})).toHaveAttribute('aria-expanded', 'true');
   await expect(area).not.toHaveAttribute('hidden');
+  await app.rail.button('plugin').click();
+  await expect(area).toBeHidden();
   // Elsewhere it opens Forge with it out.
   await app.rail.go('runtime');
   await app.rail.button('plugin').click();

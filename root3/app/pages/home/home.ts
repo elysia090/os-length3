@@ -16,12 +16,11 @@ import {todoBox} from '../kit/todo-list.ts';
 import {remember} from '../server/parts.ts';
 import {Reference} from '../bench/reference.ts';
 import type {Context} from '../kit/context.ts';
-import {latelyRow, onRightPane, pluginArea, rightPaneOpen, setRightPane, waiting, wordLine} from '../kit/pane.ts';
-import {mark, paneMark, type MarkName} from '../../ui/icons.ts';
-import {fitSize} from '../../ui/optical.ts';
-import {onPlugins, pluginsOpen} from '../../host/plugins.ts';
+import {latelyRow, pluginArea, waiting, wordLine} from '../kit/pane.ts';
+import {mark, type MarkName} from '../../ui/icons.ts';
+import {fitSize, inkEdge} from '../../ui/optical.ts';
 import {errorText} from '../../host/errors.ts';
-import {after, nudge, paneIn, paneOut, still} from '../../ui/glide.ts';
+import {nudge, still} from '../../ui/glide.ts';
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
@@ -43,27 +42,32 @@ export function home(ctx: Context): Node[] {
   const grid = list.element;
   // A column of names (home.css), Home's own: New repo's list and other grids stay cards.
   grid.classList.add('home-repos');
-  const header = profileHeader(count, owner);
+  const header = profileHeader(count, owner, ctx);
   // A setting that could not be read is said here, where the person looks first; it is not written over meanwhile.
   const unread = [...unreadable()].map(([k, why]) => h('p', {class: 'error', role: 'alert'}, t('Could not read {what} ({why})', {what: settingName(k), why})));
-  const places = h('div', {class: 'home-places'},
-    h('section', {class: 'section', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid),
-    h('section', {class: 'section', 'aria-labelledby': 'servers-title'}, h('h2', {id: 'servers-title'}, t('Servers')), ownServers(ctx)));
-  // Two columns from the page's top: the person's own (the name, then what is theirs to do) and, beside it from the
-  // name's height, where their work is (home.css .home-desk).
-  const main = h('div', {class: 'home-main'}, h('div', {class: 'home-desk'}, h('div', {class: 'home-own'}, header, ...unread, todoBox()), places));
+  // Against the right edge, the repos by name; at its foot what waits (the plug's area and an agent's cards over it
+  // while there are any). The servers are a count that goes to Server, where they are.
+  const repos = h('section', {class: 'section home-repos-sec', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid);
+  const waits = h('div', {class: 'home-waits'}, pluginArea(), agentCards((repo, issue) => { void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
+  const beside = h('div', {class: 'home-beside'}, repos, waits);
+  const main = h('div', {class: 'home-main'}, h('div', {class: 'home-own'}, header, ...unread, todoBox()), beside);
+  // The names' ink stands on the right edge (not their boxes), and the person's name is as large as the room the
+  // repos leave it: measured as the repos are drawn, and as what waits is.
+  const edges = () => {
+    for (const el of beside.querySelectorAll<HTMLElement>('.home-repos .card-title, .lately-list > .pane-row:first-child > .pane-line')) inkEdge(el, 'right');
+    fitName(header);
+  };
+  new MutationObserver(edges).observe(beside, {childList: true, subtree: true, characterData: true});
+  new ResizeObserver(edges).observe(repos);
   return [onTheGround(main, ctx, listed)];
 }
 
 /**
- * Home (and New repo) laid as Forge is: a band along its top, held there while Home scrolls under it, with the search Forge has; the
- * right pane Forge and Git have, in the same place, its switch at its foot where Forge's is (one setting for all
- * three); at the pane's top the plugin area (plain until the rail's plug opens it, here as there). Put away, Home
- * takes the width.
+ * Home (and New repo) on the desk: the band's keys at its top (the terminal of the repo last worked in, its file
+ * deeds, the search Forge has), and under them what the page lays on the ground. There is no pane: what waits is a
+ * slip at the foot of Home itself.
  */
 export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<RepoSummary[] | null>): HTMLElement {
-  const side = h('aside', {class: 'home-side', id: 'home-side', 'aria-label': t('Recent activity')}, pluginArea(), agentCards((repo, issue) => { void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
-  const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': 'home-side'}, paneMark()) as HTMLButtonElement;
   // The search Forge has, on the band as Forge's is: in the repo last worked in (named in it, there being no repos on
   // the band to say which), what is found dropped as a sheet over Home and opened in Forge, at its line.
   let repo = ctx.repo;
@@ -84,12 +88,11 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
   };
   const band = h('div', {class: 'home-band'}, h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')},
     tool('term', t('Terminal'), inForge('termNext')), tool('new-file', t('Files: New, Rename, Delete'), inForge('deedsNext')), reference.search));
-  const pane = h('div', {class: 'home-pane'}, side, toggle);
+  const layout = h('div', {class: 'home-layout'}, band, main);
   // None worked in yet (or it is gone): the one changed last (the first of the cards' list, read once for both), so the
   // box is never there to be pressed for nothing.
-  void listed.then((all) => { if (all && pane.isConnected && !(repo && all.some((r) => r.name === repo))) aim(all[0]?.name ?? null); });
-  const layout = h('div', {class: 'home-layout'}, band, main, pane);
-  // What the search finds drops as Forge's does, across the column under the band (forge-band.css): measured, it knows
+  void listed.then((all) => { if (all && layout.isConnected && !(repo && all.some((r) => r.name === repo))) aim(all[0]?.name ?? null); });
+  // What the search finds drops as Forge's does, across the page under the band (forge-band.css): measured, it knows
   // how wide and tall that is and where the box stands in it.
   new ResizeObserver(() => {
     const at = band.getBoundingClientRect();
@@ -97,55 +100,14 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
     layout.style.setProperty('--center-h', `${window.innerHeight - at.bottom}px`);
     layout.style.setProperty('--search-x', `${reference.search.getBoundingClientRect().left - at.left}px`);
   }).observe(band);
-  // The keys Forge and Git know, here too: Ctrl+K or Ctrl+P (or Ctrl+Shift+F) to the search; Ctrl+B to put the pane
-  // away or bring it back (⌘ on a Mac).
+  // The keys Forge and Git know, here too: Ctrl+K or Ctrl+P (or Ctrl+Shift+F) to the search (⌘ on a Mac).
   const keys = (event: KeyboardEvent) => {
     if (!layout.isConnected) { document.removeEventListener('keydown', keys); return; }
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing || document.getElementById('page')?.hasAttribute('inert')) return;
     const k = event.key.toLowerCase();
     if ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey)) { event.preventDefault(); reference.findNow(); }
-    else if (k === 'b' && !event.shiftKey) { event.preventDefault(); setRightPane(!rightPaneOpen()); }
   };
   document.addEventListener('keydown', keys);
-  let was = rightPaneOpen();
-  // While it is put away or brought out, its side stays as wide as it is out (styles.css .pane-moving): it goes with
-  // its edge and is cut at the window's, as Forge's does, never squeezed as the pane narrows or widens.
-  let moving: Animation | null = null;
-  const held = () => {
-    const w = side.offsetWidth;
-    if (!rightPaneOpen() || layout.classList.contains('pane-moving') || !w) return;
-    if (pane.style.getPropertyValue('--side-held') !== `${w}px`) pane.style.setProperty('--side-held', `${w}px`);
-  };
-  new ResizeObserver(held).observe(side);
-  const paint = () => {
-    const open = rightPaneOpen();
-    // Brought back before it had gone: what it holds is still there, and stays.
-    const there = layout.isConnected && getComputedStyle(side).visibility === 'visible';
-    if (open !== was && layout.isConnected && !still()) {
-      // Never out yet at this width: as wide as it will be out, measured before it sets off.
-      if (open && !pane.style.getPropertyValue('--side-held')) {
-        layout.style.transition = 'none';
-        layout.classList.remove('pane-closed');
-        held();
-        layout.classList.add('pane-closed');
-        void layout.offsetWidth;
-        layout.style.transition = '';
-      }
-      layout.classList.add('pane-moving');
-      moving?.cancel();
-      moving = after(460, () => { layout.classList.remove('pane-moving'); held(); });
-    }
-    layout.classList.toggle('pane-closed', !open);
-    toggle.setAttribute('aria-expanded', String(open));
-    if (open && !was && layout.isConnected) paneOut(side, toggle, null, !there);
-    if (!open && was) paneIn(side);
-    was = open;
-  };
-  toggle.addEventListener('click', () => setRightPane(!rightPaneOpen()));
-  const off = onRightPane(() => { if (!layout.isConnected) { off(); return; } paint(); });
-  // The plug opens the plugin area here, and the pane with it.
-  const offPlug = onPlugins(() => { if (!layout.isConnected) { offPlug(); return; } if (pluginsOpen()) setRightPane(true); });
-  paint();
   return layout;
 }
 
@@ -171,7 +133,13 @@ function lately(ctx: Context): HTMLElement {
       const end = text === null || left.at === null ? -1 : text.indexOf('\n', left.at);
       const quote = text === null ? '' : text.slice(0, end < 0 ? text.length : end).split('\n').reverse().find((l) => /[\p{L}\p{N}]/u.test(l))?.trim() ?? '';
       const goOn = () => ctx.openRepo(left.repo, left.path, left.at === null ? 'end' : {at: left.at});
-      rows.push(latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {quote, place: left.repo, go: goOn}));
+      // A line that only says the names (a README's title is often its repo's) says nothing of where one was: then
+      // nothing is said under the file but its repo, once (the words are heard only).
+      const names = [left.repo, shownName(left.path), left.path.split('/').pop() ?? ''].map((n) => n.toLowerCase());
+      const telling = !!quote && !names.includes(quote.replace(/^[\s#/*>;-]+|[\s*/;]+$/g, '').toLowerCase());
+      rows.push(telling
+        ? latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {quote, place: left.repo, go: goOn})
+        : latelyRow(shownName(left.path), t('{repo} · Continue where you left off', {repo: left.repo}), {heard: true, place: left.repo, go: goOn}));
     }
     // The servers and the conversations asked at once: neither waits on the other (one round to the Remote, not two).
     const [all, threads] = connection()
@@ -212,40 +180,6 @@ function lately(ctx: Context): HTMLElement {
   return box;
 }
 
-/**
- * The servers the person is in (Server holds them), and how many in the counts; after them, the boards this browser
- * writes in as a guest, each a way back to it (a guest come back, signed in or not, has nothing else leading there).
- */
-function ownServers(ctx: Context): HTMLElement {
-  const box = h('div', {class: 'home-servers'});
-  const guesting = servers.guestBoards().map(({id, here}) => {
-    const said = t('#{board} ({server}) · Guest', {board: here.name, server: here.server});
-    const b = h('button', {type: 'button', class: 'chip guest-chip', title: said, 'aria-label': said},
-      `#${here.name}`, h('span', {class: 'muted small'}, `${here.server} · ${t('Guest')}`));
-    b.addEventListener('click', () => { remember({board: id}); ctx.go('server'); });
-    return {id, b};
-  });
-  const fill = (list: servers.Server[]) => {
-    const ours = new Set(list.flatMap((s) => s.boards.map((x) => x.id)));
-    const each = list.map((s) => {
-      const b = h('button', {type: 'button', class: 'chip'}, s.name);
-      b.addEventListener('click', () => { remember({server: s.id}); ctx.go('server'); });
-      return b;
-    });
-    // A board of a server one is in is that server's chip's, not a guest's.
-    const guests = guesting.filter((g) => !ours.has(g.id)).map((g) => g.b);
-    box.replaceChildren(...(each.length || guests.length ? [...each, ...guests] : [h('p', {class: 'muted'}, t('Not a member of any server'))]));
-  };
-  fill([]);
-  if (!connection()) return box;
-  void servers.servers().then((list) => {
-    const n = document.getElementById('server-count');
-    if (n) counting(n, list.length, 'server', 'servers');
-    fill(list);
-  }, (e) => box.replaceChildren(h('p', {class: 'error'}, errorText(e))));
-  return box;
-}
-
 /** A count that goes to its section (`title` its heading's id): scrolled to, its heading lit as it lands. */
 function toSection(count: HTMLElement, title: string): HTMLElement {
   const b = h('button', {type: 'button', class: 'count-go'}, count);
@@ -258,22 +192,45 @@ function toSection(count: HTMLElement, title: string): HTMLElement {
   return b;
 }
 
-const servers0 = () => { const el = h('span', {id: 'server-count'}); counting(el, 0, 'server', 'servers'); return el; };
+/** The servers' count goes to Server, where they are. */
+function toServer(count: HTMLElement, ctx: Context): HTMLElement {
+  const b = h('button', {type: 'button', class: 'count-go'}, count);
+  b.addEventListener('click', () => void ctx.go('server'));
+  return b;
+}
+
+const servers0 = () => {
+  const el = h('span', {id: 'server-count'});
+  counting(el, 0, 'server', 'servers');
+  if (connection()) void servers.servers().then((list) => counting(el, list.length, 'server', 'servers'), () => {});
+  return el;
+};
 
 /** A count and its word: one repo, 2 repos (Japanese tells them apart by the number alone). */
 function counting(el: HTMLElement, n: number, one: string, many: string) {
   el.replaceChildren(h('b', {}, String(n)), ' ', tn(one, many, n));
 }
 
+/** The grid's cell (styles: --u), and how tall the display face's capitals are, of its size. */
+const U = 24, CAP = .727;
+
 /**
- * The name on its one line, at the size a name is said at (styles: --t-name, about a place of the rail's beside it);
- * one longer than its line breaks instead, balanced over its lines.
+ * The name on its line: its capitals whole cells tall, seven where there is room, fewer as the name is longer or the
+ * window narrower (the repos' names keep their column), never under two; longer than that, it breaks over lines. Its
+ * ink, not its box, stands on the left edge.
  */
 function fitName(header: HTMLElement) {
-  const name = header.querySelector<HTMLElement>('.identity > h1'), room = header.parentElement?.clientWidth ?? 0;
-  if (!name) return;
-  const fits = fitSize(name, name.textContent ?? '', room, -.04, () => fitName(header));
-  if (fits) name.classList.toggle('long', fits < parseFloat(getComputedStyle(name).fontSize));
+  const name = header.querySelector<HTMLElement>('.identity > h1'), layout = header.closest<HTMLElement>('.home-layout');
+  if (!name || !layout) return;
+  const repos = layout.querySelector<HTMLElement>('.home-repos-sec');
+  const beside = repos && getComputedStyle(repos).position === 'absolute' ? repos.offsetWidth + 2 * U : 0;
+  // (With no name written, what stands in its place is measured: the placeholder.)
+  const fits = fitSize(name, name.textContent || name.dataset.placeholder || '', layout.clientWidth - beside, -.055, () => fitName(header));
+  if (!fits) return;
+  const cells = Math.floor((fits * CAP) / U);
+  name.style.setProperty('--name-cap', String(Math.max(2, Math.min(7, cells))));
+  name.classList.toggle('long', cells < 2);
+  inkEdge(name, 'left');
 }
 
 /**
@@ -325,7 +282,7 @@ function written(el: HTMLElement, o: {most: number; lines?: boolean; begun?: () 
  * the line opens under the name to be written, and left empty it closes. Nothing under the profile moves as the name
  * is pressed or left (a press on what is under it would miss as it moved). At the line's right end, the counts.
  */
-function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
+function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLElement {
   const name = h('h1', {id: 'profile-name', 'data-placeholder': t('Your name')});
   const handleIn = h('span', {id: 'profile-handle', class: 'handle-in', role: 'textbox', 'aria-label': t('Handle'), 'data-placeholder': t('handle')});
   const handle = h('p', {class: 'handle'}, '@', handleIn);
@@ -333,7 +290,7 @@ function profileHeader(count: HTMLElement, owner: boolean): HTMLElement {
   const bioAsk = h('button', {type: 'button', class: 'bio-ask'}, t('Short bio'));
   const said = h('p', {class: 'error', role: 'alert'});
   // Each count is the way to what it counts (as a profile's counts are): pressed, there it is.
-  const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toSection(servers0(), 'servers-title'));
+  const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toServer(servers0(), ctx));
   const identity = h('div', {class: 'identity'}, name, handle, bio, owner ? bioAsk : null, counts, said);
   const header = h('section', {class: 'profile'}, identity);
   /** The name the person signed in with and their username there, once known ('' signed out, or not yet). */

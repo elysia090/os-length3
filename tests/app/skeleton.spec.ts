@@ -2,21 +2,23 @@ import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
 
-// The skeleton every page is set on (styles/tokens.css): its own things start at one x, a counter's name is on the
-// line the band's tools are on, its first line stands in the row Home's name does (the rail's first place), and its
-// first box starts where Home's TODO does (the rail's second). Measured against Home at each width, so a page that
-// goes its own way is told from one that moved with the rest.
+// The skeleton the counters are set on (styles/tokens.css): their own things start at one x, the x Home's do; a
+// counter's name is on the line the band's keys stand on (Home's); its first line stands in one row and its first box
+// starts on one line. Home is set on the desk's own grid (home.css), so the rows are read off Runtime, the page the
+// others are set like, at each width: a page that goes its own way is told from one that moved with the rest.
 
 const SIZES = [{width: 1440, height: 900}, {width: 1180, height: 900}, {width: 1024, height: 768}, {width: 390, height: 844}];
 /** Where the one of `l` on screen is (a page left stays in the document, hidden). */
 const at = async (l: Locator) => (await l.locator('visible=true').first().boundingBox())!;
 const mid = (b: {y: number; height: number}) => b.y + b.height / 2;
 
-/** Home's own lines at this width: where its things start, its band's middle, its name's row, its box's top. */
+/** The lines at this width: where Home's things start and its band's keys' middle; Runtime's first row and box. */
 async function lines(app: App) {
   await app.rail.go('home');
-  const name = await at(app.main.locator('.identity > h1')), todo = await at(app.main.locator('.todo-box'));
-  return {left: name.x, band: mid(await at(app.main.locator('.band-tools > .band-tool'))), row: mid(name), rowTop: name.y, box: todo.y};
+  const left = (await at(app.main.locator('.home-own'))).x, band = mid(await at(app.main.locator('.band-tools > .band-tool')));
+  await app.rail.go('runtime');
+  const bar = await at(app.main.locator('.part-bar')), panel = await at(app.main.locator('.part-panel:not([hidden])'));
+  return {left, band, row: mid(bar), rowTop: bar.y, box: panel.y};
 }
 
 type Lines = Awaited<ReturnType<typeof lines>>;

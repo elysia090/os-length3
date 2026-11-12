@@ -5,32 +5,28 @@
 /* A phone (560 px and less): the rail's places a size smaller and closer, and the window's gutter narrower, so a page
    has a fifth more of the width; the rail stays the rail (File's tree and Server's layer come out of it as anywhere). */
 @media (max-width: 560px) {
-  :root { --outer: var(--s2); --h-place: 40px; --rail-line-gap: 10px; --band-left: var(--s4); }
-  .rail-tabs { gap: 2px; }
+  :root { --outer: var(--s2); --h-place: 40px; --band-left: var(--s4); --body-left: var(--s4); }
 }
 /* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays
    where it is, in the window, as tall as the window, never going with the page (issue #44). Its places close up;
    the person's icon stays at its foot, and what still does not fit scrolls inside the rail, not the page. */
 @media (max-height: 820px) {
-  .rail { --rail-top: var(--top-line); }
-  .rail-tabs { gap: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+  .rail-tabs { overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
   .rail-tabs::-webkit-scrollbar { display: none; }
   /* A place's name out of that box, in the window beside the place (main.ts says where). */
   .rail-tabs .rail-tag { position: fixed; left: calc(var(--tag-x, 0px) + var(--s3)); top: var(--tag-y, 0px); }
-  .rail-new { margin-top: var(--s3); }
-  .rail-me { padding: var(--s2) 0 var(--s3); }
+  .rail-new { margin-top: 0; }
 }
 
 /* The person's own icon at the foot of the rail, and what it brings out. Its middle is the prompt box's (the box
    floats s5 over the foot, --prompt-h tall): one line along the foot of the window, rail to center. */
-.rail-me { display: grid; place-items: center; padding: var(--s3) 0 calc(var(--s5) + (var(--prompt-h) - 44px) / 2); }
+.rail-me { display: grid; }
 .me-wrap { position: relative; }
 .me {
-  display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--edge);
-  background: transparent; cursor: var(--cursor-hand); font: 600 var(--t-meta) var(--sans);
+  display: grid; place-items: center; width: var(--rail-place); height: var(--rail-place); border: 0; border-radius: var(--r-place);
+  background: transparent; cursor: var(--cursor-hand); font: 900 var(--u)/1 var(--display);
 }
-/* The person fills most of the circle; initials stay type-sized. */
-.me .icon { width: 30px; height: 30px; }
+.me .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
 .pop { display: grid; padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card); }
 /* A menu out of a row, a card or a gear comes out of it as it shows: grown from the corner it opens at, a few pixels
@@ -49,8 +45,8 @@
 .me-pop {
   position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6;
   /* As wide as it needs, but never past the window's own gutter (a 320 px phone has 194 px beside the rail). */
-  min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail)));
-  max-width: calc(100vw - 2 * var(--outer) - var(--rail));
+  min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail-place) - var(--s3)));
+  max-width: calc(100vw - 2 * var(--outer) - var(--rail-place) - var(--s3));
   visibility: hidden; opacity: 0; translate: 0 6px; scale: .92; transform-origin: left bottom;
   transition: opacity var(--motion), translate var(--move) var(--land), scale calc(280ms * var(--pace)) var(--pop-in), visibility 0s var(--motion);
 }
@@ -80,14 +76,23 @@
 .pop-item.pop-gone:not(:disabled), .pop-item.pop-gone:not(:disabled) > .pop-icon { color: var(--off); }
 .pop-item.pop-gone:hover:not(:disabled) { background: color-mix(in srgb, var(--off) 9%, transparent); }
 .pop-rule { height: 1px; margin: var(--s1) var(--s2); background: var(--rule); }
+/* A place of the rail: three cells square at a window's full height, closing up (never under what a finger can press)
+   where the window is shorter; its icon half as large again as the app's others, drawn as heavy as a letter. */
+.rail { --rail-icon: 36px; }
 .rail-item {
-  position: relative; display: grid; place-items: center;
-  width: var(--h-place); height: var(--h-place); border: 0; border-radius: var(--r-place);
+  position: relative; display: grid; place-items: center; flex: 0 1 var(--rail-place); min-height: 32px;
+  width: var(--rail-place); border: 0; border-radius: var(--r-place);
   background: transparent; color: var(--ink); cursor: var(--cursor-hand);
 }
-/* + starts something rather than opening a place, so it has the action
-   shape: round, outlined like every button, right under the places. */
-.rail-new { margin-top: var(--s6); width: 44px; height: 44px; border-radius: var(--r-round); border: 1px solid var(--edge); } /* the person's circle's size */
+.rail-item > .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
+.rail-new { margin-top: var(--u); }
+/* (A window too short for the rail: + closes up to the places, as they do to one another.) */
+@media (max-height: 820px) { .rail-new { margin-top: 0; } .rail-tabs { padding-bottom: var(--s2); } }
+@media (max-width: 760px) {
+  :root { --rail: calc(2 * var(--u) + var(--s3)); --outer: var(--s3); --rail-place: calc(2 * var(--u)); --keys: calc(2 * var(--u)); }
+  .rail { --rail-icon: 28px; }
+  .me { font-size: 16px; }
+}
 .rail-tag {
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
   padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;
@@ -100,14 +105,13 @@
 @media (hover: hover) { .rail-item:hover .rail-tag { opacity: 1; translate: 0 0; } }
 /* While File's tree is out, File is the one filled icon; the page's own
    icon steps back until the tree goes. */
-.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-current='page'] { background: transparent; color: var(--ink); box-shadow: none; }
-.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-current='page']:hover { background: var(--raised); }
+.rail-tabs:has(.rail-item[aria-expanded='true']) .rail-item[aria-current='page']:not(:hover, :focus-visible) { background: transparent; color: var(--ink); }
 /* While File's tree is out, the tree itself says what it is. */
 .rail-item[aria-expanded='true'] .rail-tag { opacity: 0; }
 /* The Remote not answering: a dot on its place, the one place it is said. */
 .rail-item.away::after, .rail-item.news::after {
-  content: ''; position: absolute; top: var(--s2); right: var(--s2);
-  width: 7px; height: 7px; border-radius: var(--r-round); background: var(--off);
+  content: ''; position: absolute; top: 18%; right: 18%;
+  width: 8px; height: 8px; border-radius: 2px; background: var(--off);
 }
 /* Something came in, not seen yet (Inbox, Server; Server's chips and boards): the same dot in the
    colour of what it is on, ink, or ground on what is current; no colour of its own. */

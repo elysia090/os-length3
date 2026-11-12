@@ -160,29 +160,6 @@ test('the rail pressed again as its ink goes: one ink, going on from where it is
   expect(landedFill.every((c) => c === 'rgba(0, 0, 0, 0)')).toBe(true);
 });
 
-test('Home\'s right pane put away and brought back: its switch stays under the hand, the band\'s search stays where it is', async ({app}) => {
-  await app.newRepo.make('hello');
-  await app.rail.go('home');
-  await still(app);
-  const toggle = app.main.getByRole('button', {name: 'Right pane'});
-  const search = app.main.getByRole('searchbox', {name: /^Search/});
-  const at = (await toggle.boundingBox())!;
-  const where = (await search.boundingBox())!;
-  await toggle.click();
-  // Put away, it is gone at once: nothing of it is left on its way.
-  await expect(app.main.getByRole('complementary', {name: 'Recent activity'})).toBeHidden();
-  await still(app);
-  // The switch where it stood, and the search on the band where it was: neither is the pane's to take away.
-  expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
-  expect(Math.abs((await toggle.boundingBox())!.y - at.y)).toBeLessThan(1);
-  await expect(search).toBeVisible();
-  expect(Math.abs((await search.boundingBox())!.x - where.x)).toBeLessThan(1);
-  await toggle.click();
-  await still(app);
-  await expect(app.main.getByRole('complementary', {name: 'Recent activity'})).toBeVisible();
-  expect(Math.abs((await toggle.boundingBox())!.x - at.x)).toBeLessThan(1);
-});
-
 test('the caret is drawn by the OS: it follows what is written along the line, and Enter takes it to the next', async ({app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();
@@ -331,7 +308,7 @@ test('reduced motion settles an in-flight navigation and restores motion when sw
 test('press feedback releases on pointer cancellation and respects a live reduced-motion change', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.main.getByRole('button', {name: 'Right pane'});
+  const toggle = app.main.getByRole('button', {name: 'Files: New, Rename, Delete'});
   await toggle.dispatchEvent('pointerdown', {button: 0});
   await expect.poll(() => toggle.evaluate((el) => Number(getComputedStyle(el).scale))).toBeLessThan(1);
   await toggle.dispatchEvent('pointercancel');
@@ -347,7 +324,7 @@ test('press feedback releases on pointer cancellation and respects a live reduce
 test('reducing motion during a held press restores its size before pointerup and does not replay on release', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.main.getByRole('button', {name: 'Right pane'});
+  const toggle = app.main.getByRole('button', {name: 'Files: New, Rename, Delete'});
   const scale = () => toggle.evaluate((el) => getComputedStyle(el).scale);
   await toggle.dispatchEvent('pointerdown', {button: 0});
   await expect.poll(async () => Number(await scale())).toBeLessThan(1);

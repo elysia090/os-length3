@@ -77,9 +77,6 @@ test("what will be made stands beside the name's box at a laptop's width, as Hom
     expect(Math.abs(f.y - b.y)).toBeLessThan(1);
     expect(f.width).toBeLessThan(b.width * .7);
   }).toPass();
-  // The box where Home's TODO is, on the rail's rows: its top level with the rail's second place.
-  const second = (await app.page.locator('.rail-item').nth(1).boundingBox())!;
-  expect(Math.abs((await at(box)).y - second.y)).toBeLessThan(2);
   // A short name as large as the box gives it.
   const size = () => app.newRepo.name.evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
   expect(await size()).toBe(64);

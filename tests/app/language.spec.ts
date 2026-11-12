@@ -5,18 +5,18 @@ import {expect, test} from './fixtures.ts';
 
 test('choosing 日本語 shows the page in Japanese, and it stays chosen', async ({app}) => {
   await app.rail.go('home');
-  await expect(app.main.getByRole('heading', {name: 'Servers', exact: true})).toBeVisible();
+  await expect(app.main.getByRole('heading', {name: 'Recent activity', exact: true})).toBeVisible();
 
   await app.me.language('English', '日本語');
 
-  await expect(app.main.getByRole('heading', {name: 'サーバー', exact: true})).toBeVisible();
+  await expect(app.main.getByRole('heading', {name: '最近のアクティビティ', exact: true})).toBeVisible();
   // What goes on the name's line, where none is written yet, is said in it too.
   await expect(app.page.locator('#profile-name')).toHaveAttribute('data-placeholder', 'あなたの名前');
   await expect(app.page.getByRole('button', {name: '自分', exact: true})).toBeVisible();
   await expect(app.page.locator('html')).toHaveAttribute('lang', 'ja');
 
   await app.open();
-  await expect(app.main.getByRole('heading', {name: 'サーバー', exact: true})).toBeVisible();
+  await expect(app.main.getByRole('heading', {name: '最近のアクティビティ', exact: true})).toBeVisible();
 });
 
 test('in Japanese, the Remote, File and Inbox say each thing with the one word the catalog gives it', async ({signedIn: app}) => {

@@ -8,7 +8,7 @@
    it is going to waits un-inked, its words in ink, until it lands. */
 .glide-ink { position: absolute; z-index: -1; background: var(--ink); pointer-events: none; }
 /* On the rail the place is paper ringed in ink: so is what goes from one to the next, and what it passes stays ink. */
-#rail-tabs > .glide-ink { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--ink); }
+#rail-tabs > .glide-ink { background: var(--slot); }
 #rail-tabs .under-ink, #rail-tabs .under-ink:hover { color: var(--ink) !important; }
 /* A repo opened from its card or its row, on its way to its box in Forge (glide.ts morph). */
 /* The sheet a thing opened becomes on its way to its box: the box's own paper and line, so it reads as that box. */

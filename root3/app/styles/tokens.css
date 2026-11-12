@@ -11,16 +11,29 @@
   /* The desk's ground and Home's: a dot every 24 px. As the camera stands back the pitch closes with what lies on the
      ground (desk.ts, ui/camera.ts), each dot kept whole, a pixel and a bit across: drawn smaller with it, a dot falls
      between the pixels and is not drawn at all. */
-  --dots: radial-gradient(circle, color-mix(in srgb, var(--rule) 55%, transparent) 1.1px, transparent 1.4px);
-  --ink: #2c2a27;
+  --dots: radial-gradient(circle, #96938e 1.5px, transparent 1.9px);
+  --ink: #171614;
   --rule: #9c9995;
-  --sub: #5a5855;
+  --sub: #55524e;
   --edge: #6f6d68;
   --raised: #e6e3de;
   /* The one surface tone besides the ground: a sheet, which is only ever what is worked on (a file, the TODO, the
      issue or board in hand, Inbox's box, what the search found; Runtime's box, read rather than worked in, stays on the ground). Everything else (the rail, the band,
      heads, the pane, figures, cards that lead somewhere) stands on the ground itself; a sheet's edge is the line. */
-  --paper: #f9f8f5;
+  --paper: #fbfaf7;
+  /* What is pressed into the desk rather than laid on it (a key of the band, the search's slot, the place of the
+     rail one is at): a tone under the ground, soft at the corner. Paper is cut square. */
+  --slot: #cbc7c0;
+  /* Words that only say how many or where: quieter than --sub, never for what is read to be acted on. */
+  --quiet: #8f8c87;
+  /* The TODO's note, the one coloured sheet Home has. */
+  --note: #f2cf52;
+  /* On the note, what is not yet written (the line to write the next in). */
+  --note-quiet: #8a7a3c;
+  /* The terminal's light: its key's mark on the band, its words on the screen. */
+  --green: #9be0bf;
+  /* The grid everything on the desk is set on: its dots stand a cell apart, one in the middle of each. */
+  --u: 24px;
   /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. Each a small family, deep
      and a little muted, so it sits in the greys rather than floating over them as a bright one does, yet holds as an
      accent: the mark itself, the words in it (a step darker, to read small), and the ground of a line (a tint, not
@@ -28,7 +41,7 @@
   --done: #0e7c5e;
   /* The Prompt up as a screen, its one place, made of these: its glass the ink a step deeper; its words the green's
      tint (add-tint) lit in the green (done), and the prompt lines the shell waited at the green itself, lifted for the dark. */
-  --screen: color-mix(in srgb, var(--ink) 66%, #000);
+  --screen: #141311;
   --screen-ps: color-mix(in srgb, var(--done) 45%, var(--add-tint));
   --add: #13684f;
   --add-tint: #d6eadf;
@@ -88,28 +101,32 @@
   --line-frame: 2px;
   /* Everything, rail included, sits a little inward from the window's edges,
      against the instinct to run to them. */
-  --outer: clamp(var(--s5), 3vw, 64px);
+  --outer: var(--u);
   /* Less room above than below, so the weight of everything sits a little high. */
-  --outer-top: clamp(var(--s2), 1.5vh, var(--s4));
-  --outer-bottom: clamp(var(--s5), 5vh, 56px);
+  --outer-top: var(--u);
+  --outer-bottom: var(--u);
   --inner-h: calc(100vh - var(--outer-top) - var(--outer-bottom));
   /* The top line pages start on. */
-  --top-line: var(--s3);
-  /* Forge's band: a 32px row centred where a 48px place on the top line would be. */
-  --band: calc(var(--top-line) + (var(--h-place) - var(--h-row)) / 2);
+  --top-line: 0px;
+  /* The band's line: a 32px row centred on the band's keys (three cells tall at the window's top), so a page's name
+     and Forge's tools stand on the line Home's keys do. */
+  --keys: calc(3 * var(--u));
+  --band: calc(var(--top-line) + (var(--keys) - var(--h-row)) / 2);
   /* The rail starts one place below the top line, so Home is not first off the mark. */
-  --rail-top: calc(var(--top-line) + var(--h-place) + var(--s1));
+  --rail-top: 0px;
   /* Rail: 12px from the window's side to the icons, 18px from the icons to its line. */
   --rail-line-gap: 18px;
-  --rail: calc(var(--s3) + var(--h-place) + var(--rail-line-gap));
+  --rail: calc(6 * var(--u));
+  /* A place of the rail, and the person's key at its foot: three cells square. */
+  --rail-place: calc(3 * var(--u));
   /* The skeleton every page is set on. Sideways, two edges from the rail's line: what is on the top line (the band's
      tools, Git's and Server's chips) a step in, and a page's own things a place further in, one x on every page
      whatever the window's width. Down, rows as the rail's are, a place tall and a step between, the first a step
      (s3) under the top line's row: a page's first line (its name, its parts, a heading) stands in the first, level
      with the rail's first place, and its first box starts on the second. (A window too short for the rail's steps
      closes the rail up, and a phone's rail is closer set, rail.css; the pages keep these rows, one page as another.) */
-  --band-left: var(--s5);
-  --body-left: calc(var(--band-left) + var(--h-place));
+  --band-left: var(--u);
+  --body-left: var(--u);
   --row: var(--h-place); --row-step: var(--s1);
   /* The OS's own pointers, drawn as the window is: ink, a paper edge round it with its joins round, and under it a
      soft small shadow, the one a pointer has as it stands over the window rather than in it. Each is a 27 px SVG

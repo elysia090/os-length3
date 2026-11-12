@@ -180,7 +180,13 @@ test('a Japanese kind is taken as a Latin one is, once the input method has give
 
 test("a TODO's detail starts on its first line's column, with a kind and without", async ({app}) => {
   await app.rail.go('home');
-  const left = async (l: Locator) => (await l.boundingBox())!.x;
+  // Measured on the note, which lies turned on the desk: where each starts across the note itself.
+  const left = (l: Locator) => l.evaluate((el: HTMLElement) => {
+    const note = el.closest('.section')!;
+    let x = 0;
+    for (let e: HTMLElement | null = el; e && e !== note; e = e.offsetParent as HTMLElement | null) x += e.offsetLeft;
+    return x;
+  });
   const kinded = app.home.items.first();
   await app.home.title(kinded).fill('Fix: The tent leaks');
   await app.home.title(kinded).press('Enter');
@@ -196,36 +202,50 @@ test("a TODO's detail starts on its first line's column, with a kind and without
   expect(Math.abs(await left(app.home.detail(plain)) - await left(app.home.title(plain)))).toBeLessThan(1);
 });
 
-test("Home's repos are a column of their names beside the TODO at a laptop's width, and under it on a phone", async ({app}) => {
+test("Home is set on the desk's grid: the name, the repos against the right edge, the TODO from the vanishing point; on a phone, one column", async ({app}) => {
   for (const name of ['notes', 'trip', 'site']) await app.newRepo.make(name);
   await app.rail.go('home');
-  // The three, then New repo, one under another.
+  await app.page.setViewportSize({width: 1440, height: 900});
   const repos = app.main.getByRole('region', {name: 'Repos'});
-  const cards = repos.getByRole('group').or(repos.getByRole('button', {name: 'New repo'}));
-  await expect(cards).toHaveCount(4);
+  const names = repos.getByRole('group');
+  await expect(names).toHaveCount(3);
   const at = async (l: Locator) => (await l.boundingBox())!;
-  // (As tall as the rail's places stand a step apart: in a shorter window they close up.)
-  await app.page.setViewportSize({width: 1180, height: 900});
+  /** Where `l` lies with its turn taken off (the note and the slip lie turned). */
+  const square = (l: Locator) => l.evaluate((el: HTMLElement) => {
+    const was = el.style.rotate;
+    el.style.rotate = 'none';
+    const r = el.getBoundingClientRect();
+    el.style.rotate = was;
+    return {x: r.x, y: r.y, right: r.right, bottom: r.bottom};
+  });
+  const U = 24, W = 1440, H = 900, V = {x: Math.round(W * .53 / U) * U, y: Math.round(H * .5 / U) * U};
   await expect(async () => {
-    const boxes = await Promise.all((await cards.all()).map(at));
-    expect(boxes.every((b, i) => i === 0 || b.y >= boxes[i - 1].y + boxes[i - 1].height - 1)).toBe(true);
-    // Beside the TODO: to its right, their first name on the line the TODO box's top is on.
-    const todo = await at(app.main.locator('.todo-box'));
-    expect(boxes[0].x).toBeGreaterThan(todo.x + todo.width);
-    expect(Math.abs(boxes[0].y - todo.y)).toBeLessThan(4);
-    // Home is set on the rail's rows: the name's line level with the rail's first place, the box's top with its
-    // second, its foot (nothing written in it) with the fifth's.
-    const places = await Promise.all((await app.page.locator('.rail-item').all()).slice(0, 5).map(at));
-    const name = await at(app.main.locator('.identity > h1'));
-    expect(Math.abs(name.y - places[0].y)).toBeLessThan(2);
-    expect(Math.abs(name.height - places[0].height)).toBeLessThan(2);
-    expect(Math.abs(todo.y - places[1].y)).toBeLessThan(2);
-    expect(Math.abs(todo.y + todo.height - (places[4].y + places[4].height))).toBeLessThan(2);
+    // The repos: a name every three cells, their right edges on one line, two cells in from the window's.
+    const boxes = await Promise.all((await names.all()).map((n) => at(n.locator('.card-open'))));
+    for (const [i, b] of boxes.entries()) {
+      expect(Math.abs(b.x + b.width - (W - 2 * U)), `name ${i}: its right edge`).toBeLessThan(3);
+      if (i) expect(Math.abs(b.y + b.height - (boxes[i - 1].y + boxes[i - 1].height) - 3 * U), `name ${i}: three cells under the last`).toBeLessThan(1);
+    }
+    // The third name's feet on the line the person's name stands on, twelve cells under the band's top.
+    const profile = await at(app.main.locator('.profile'));
+    expect(Math.abs(profile.y + profile.height - (U + 12 * U))).toBeLessThan(1);
+    expect(Math.abs(boxes[2].y + boxes[2].height - (profile.y + profile.height))).toBeLessThan(1);
+    // The TODO: its upper right corner on the vanishing point (the window's middle, a little right, on the grid).
+    const note = await square(app.home.todo);
+    expect(Math.abs(note.right - V.x)).toBeLessThan(1);
+    expect(Math.abs(note.y - V.y)).toBeLessThan(1);
+    // Its foot comes down to the window's, a quarter of a cell above its edge at the right.
+    expect(Math.abs(note.bottom - (H - U / 4))).toBeLessThan(1);
+    // What waits: a slip at the right foot, its lower right corner a cell in from the window's.
+    const slip = await square(app.main.getByRole('region', {name: 'Recent activity'}));
+    expect(Math.abs(slip.right - (W - U))).toBeLessThan(1);
+    expect(Math.abs(slip.bottom - (H - U))).toBeLessThan(1);
   }).toPass();
+  // On a phone: the repos under the TODO.
   await app.page.setViewportSize({width: 390, height: 844});
   await expect(async () => {
     const todo = await at(app.home.todo);
-    expect((await at(cards.first())).y).toBeGreaterThan(todo.y + todo.height);
+    expect((await at(names.first())).y).toBeGreaterThan(todo.y + todo.height);
   }).toPass();
 });
 
@@ -312,33 +332,22 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
   });
 });
 
-test("Home's band has Forge's tools where Forge has them, and the pane's first row is level with the rail's first icon", async ({app}) => {
+test("Home's band: the terminal's key, the files' and the search, from the page's left edge, level with the rail's first place; the files' key is Forge's", async ({app}) => {
   await app.newRepo.make('notes');
-  const tools = () => app.page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.band-tools > *')].filter((e) => e.getClientRects().length)
-    .slice(0, 3).map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width)]; }));
-  // The pane's first line and the rail's first icon start on one line (the bar beside the line starts with it), once
-  // the first row is drawn and come to rest.
-  const level = () => expect(async () => {
-    const [line, bar] = await app.page.evaluate(() => {
-      const row = [...document.querySelectorAll<HTMLElement>('.pane-row')].find((e) => e.getClientRects().length);
-      const icon = document.querySelector('.rail svg')!.getBoundingClientRect().top;
-      if (!row) return [NaN, NaN];
-      return [row.querySelector('.pane-line')!.getBoundingClientRect().top - icon, row.querySelector('.pane-bar')!.getBoundingClientRect().top - icon];
-    });
-    expect(Math.abs(line)).toBeLessThan(1);
-    expect(bar).toBeGreaterThan(2);
-    expect(bar).toBeLessThan(7);
-  }).toPass();
-  await app.rail.go('forge');
-  await app.forge.startPrompt('notes');
-  await app.forge.run('true');
-  await expect(app.forge.pane.locator('.pane-row.run')).toHaveCount(1);
-  await level();
-  const forge = await tools();
   await app.rail.go('home');
-  await expect(async () => expect(await tools()).toEqual(forge)).toPass();
-  await expect(app.main.getByRole('button', {name: 'Files: New, Rename, Delete'})).toBeVisible();
-  await level();
+  const tools = app.main.getByRole('group', {name: 'Tools'});
+  const term = await tools.getByRole('button', {name: 'Terminal'}).boundingBox(), files = await tools.getByRole('button', {name: 'Files: New, Rename, Delete'}).boundingBox();
+  const search = await tools.getByRole('searchbox').boundingBox(), first = await app.rail.button('home').boundingBox();
+  const left = await app.main.locator('.home-own').boundingBox();
+  // Keys as tall as the rail's places, on its first place's row; the terminal's the page's first thing, the others
+  // a cell apart.
+  for (const key of [term!, files!, search!]) {
+    expect(Math.abs(key.y - first!.y)).toBeLessThan(1);
+    expect(Math.abs(key.height - first!.height)).toBeLessThan(1);
+  }
+  expect(Math.abs(term!.x - left!.x)).toBeLessThan(1);
+  expect(Math.abs(files!.x - (term!.x + term!.width + 24))).toBeLessThan(1);
+  expect(Math.abs(search!.x - (files!.x + files!.width + 24))).toBeLessThan(1);
   // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (its README in
   // hand there, that file's deeds).
   await app.main.getByRole('button', {name: 'Files: New, Rename, Delete'}).click();

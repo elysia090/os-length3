@@ -78,7 +78,7 @@
 .band-tools .search-pills { position: static; }
 /* The pane's switch at the foot: its middle the person's (rail.css: s5 and half the prompt's height over the foot). */
 .work.bench.desk-bench > .pane-toggle {
-  position: absolute; right: var(--s5); bottom: calc(var(--s5) + var(--prompt-h) / 2 - var(--h-row) / 2); z-index: 6;
+  position: absolute; right: var(--s5); bottom: calc(var(--rail-place) / 2 - var(--h-row) / 2); z-index: 6;
   width: var(--h-row); height: var(--h-row); border-color: var(--ink); border-radius: var(--r-field);
 }
 /* With no heads over them, a desk's runs start level with the rail: from the band's foot, these 2 px and the row's own

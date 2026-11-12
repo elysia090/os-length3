@@ -9,48 +9,41 @@
 
 /* Home: profile. The name at Home's top, small (home.css --home-name: its capitals an icon of the rail's tall),
    written where it is read (home.ts profileHeader): no sheet comes round it, no Cancel and no Save. */
-.profile { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); align-items: start; }
-/* One line at Home's top, a place of the rail's tall and level with its first: the name at its left (the handle after
-   it), and at its right end, on the name's own line, the counts, quiet: two ends of one line, the room between them
-   empty (a line about the person, where there is one, under them). A name, handle or bio with a word longer than the
-   line breaks in the word, never pushing the page sideways. */
-.identity { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); }
+/* The profile, written where it is read: a block twelve cells tall from the band's top, whose foot is the line the
+   name's capitals stand on (the line the third repo's do). Under it, quiet, the counts; then the handle and the line
+   about the person while there are any. */
+.profile { position: absolute; left: 0; top: 0; width: 100%; height: calc(12 * var(--u)); pointer-events: none; }
+.identity > * { pointer-events: auto; }
 .identity :is(h1, .handle, .bio) { overflow-wrap: anywhere; }
-/* The name: black and tight, its capitals as tall as an icon of the rail's beside it, on a line as tall as a place
-   there (DESIGN.md § Home), so what is the person's to do stands high under it; its left edge set back by its first
-   letter's own side bearing, so its ink stands on the TODO's edge under it. */
-.identity h1 { margin-left: -.015em; font: 900 var(--home-name, var(--t-name))/var(--h-place) var(--display); letter-spacing: -.04em; white-space: nowrap; }
-/* Longer than its line (home.ts fitName): it breaks, balanced over its lines. */
-.identity h1.long { white-space: normal; text-wrap: balance; line-height: 1.1; padding-block: var(--s2); }
-.identity > .handle { font: var(--t-meta)/1.6 var(--mono); }
-.handle { color: var(--sub); }
-.bio { order: 2; flex-basis: 100%; margin: 0 0 var(--s2); max-width: 60ch; white-space: pre-wrap; }
-/* Each line is written where it stands: pressed, the caret is in it, and nothing is drawn round it (no box, no rule,
-   no ring: the caret says where the keyboard is). A line with nothing in it says what goes there, in the ground's
-   own rule: a place for it, not words of the person's. The name's room is as wide as a short name at the least, so
-   an empty one is as easy to press. */
+/* Its capitals --name-cap cells tall (home.ts fits them); its ink on the left edge (--ink-left). In a line as tall as
+   its size the face sets its capitals' feet .1245 of the size above the line's foot. */
+.identity h1 { --size: calc(var(--name-cap, 7) * var(--u) / .727); position: absolute; left: 0; bottom: calc(-.1245 * var(--size)); max-width: none; margin: 0 0 0 var(--ink-left, 0px);
+  font: 900 var(--size)/1 var(--display); letter-spacing: -.055em; white-space: nowrap; }
+/* A name longer than its line even two cells tall: it breaks over lines, balanced, and what is under it follows it down
+   (the profile then is as tall as it is, over the note). */
+.identity h1.long { max-width: 100%; white-space: normal; text-wrap: balance; }
+.profile:has(h1.long) { position: static; height: auto; padding: var(--u) 0 0; }
+.identity:has(> h1.long) { display: grid; gap: var(--s2); }
+.identity:has(> h1.long) > * { position: static !important; margin: 0; }
+.home-own:has(h1.long) { padding-top: 0; }
+.home-own:has(h1.long) > .section { margin-top: calc(2 * var(--u)); }
+.identity > :is(.counts, .handle, .bio, .bio-ask, .error) { position: absolute; left: 0; margin: 0; font: 400 20px/var(--u) var(--mono); color: var(--ink); }
+.identity > .counts { top: calc(14 * var(--u) - 19px); display: flex; flex-wrap: wrap; gap: 0 3ch; max-width: 100%; white-space: nowrap; }
+.identity > .handle { top: calc(15 * var(--u) - 19px); }
+.identity > :is(.bio, .bio-ask) { top: calc(16 * var(--u) - 19px); max-width: min(60ch, 100%); max-height: calc(2 * var(--u)); overflow: hidden; white-space: pre-wrap; font-family: var(--sans); color: var(--sub); }
+.identity > .error { top: calc(18 * var(--u) - 19px); color: var(--off); }
 .identity [contenteditable] { outline: none; cursor: text; caret-color: var(--ink); }
 .identity [contenteditable]:empty::before { content: attr(data-placeholder); color: var(--rule); }
-.identity h1[contenteditable] { min-width: 6ch; padding-right: var(--s2); }
+.identity h1[contenteditable] { min-width: 3ch; }
 .identity .handle-in { display: inline-block; min-width: 2ch; }
-/* The line about the person: there while it says something, or opened to be written (home.ts). Where there is none,
-   the way to write one stands after the name, on its line, in the ground's own rule, only while the name has the
-   keyboard: nothing under the profile moves as the name is pressed (the TODO stays level with the rail's second
-   place: home.css). */
 .identity:not(.bio-open) > .bio:empty { display: none; }
-.bio-ask { display: none; padding: 0; border: 0; background: none; color: var(--rule); font: var(--t-body)/1.6 var(--sans); cursor: var(--cursor-hand); }
-.identity:has(> h1:focus):not(.bio-open) > .bio:empty ~ .bio-ask, .identity:not(.bio-open) > .bio:empty ~ .bio-ask:focus { display: block; }
+.bio-ask { display: none; padding: 0; border: 0; background: none; cursor: var(--cursor-hand); }
+.identity:has(> h1:focus):not(.bio-open) > .bio:empty ~ .bio-ask, .identity:not(.bio-open) > .bio:empty ~ .bio-ask:focus { display: block; color: var(--quiet); }
 .bio-ask:hover { color: var(--sub); }
 .bio-ask:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 2px; }
-.identity > .error { order: 3; flex-basis: 100%; margin: 0; }
 .identity > .error:empty { display: none; }
-/* At the line's right end, quiet in the mono face, as a desk's labels are: each count its figure in ink and its word,
-   a step of room between them. */
-.counts { order: 1; margin-left: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s4); color: var(--sub); font: var(--t-meta)/1.6 var(--mono); }
-.counts b { color: var(--ink); font-weight: 700; }
-/* Each count is the way to its section (home.ts toSection): under the pointer a raised fill round it, as a row's. */
+.counts b { color: inherit; font-weight: 400; }
 .count-go { margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field);
-  background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); transition: background-color calc(200ms * var(--pace)) ease-out; }
-.count-go:hover { background: var(--raised); transition-duration: calc(60ms * var(--pace)); }
-/* Its section's heading lit as it is come to. */
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
+.count-go:is(:hover, :focus-visible) { text-decoration: underline 3px; text-underline-offset: 4px; }
 .section > h2.landed { animation: landed 1200ms ease-out; border-radius: var(--r-field); }

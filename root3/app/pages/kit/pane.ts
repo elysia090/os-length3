@@ -155,18 +155,19 @@ export function personBadge(who: string): HTMLElement {
  * file, who wrote, a board), under it what was said or the line it was left at (two lines at most, the second fading
  * out), and where it is, quiet. Pressed, it goes to where the thing is done (a conversation, a board, the line).
  */
-export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; place?: string; go(): void}): HTMLButtonElement {
+export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boolean; quote?: string; heard?: boolean; place?: string; go(): void}): HTMLButtonElement {
   const words = typeof line === 'string' ? [line] : line;
-  // A quoted line says where it was left better than words would: the words are heard only.
-  const said = o.quote ? h('span', {class: 'pane-said quote'}, o.quote) : h('span', {class: 'pane-said'}, ...words);
+  // A quoted line says where it was left better than words would; where what it is and where say it all (`heard`),
+  // nothing is said under them. Either way the words are heard only.
+  const said = o.quote ? h('span', {class: 'pane-said quote'}, o.quote) : o.heard ? null : h('span', {class: 'pane-said'}, ...words);
   const b = h('button', {type: 'button', class: 'pane-row news', 'data-state': o.fresh ? 'fresh' : 'seen'},
     h('span', {class: 'pane-bar', 'aria-hidden': 'true'}), h('span', {class: 'pane-line'}, what), said,
     o.place ? h('span', {class: 'pane-at'}, o.place) : null,
-    o.quote ? h('span', {class: 'sr-only'}, ...words) : null) as HTMLButtonElement;
+    o.quote || o.heard ? h('span', {class: 'sr-only'}, ...words) : null) as HTMLButtonElement;
   b.addEventListener('click', () => o.go());
   // Cut at two lines, the second fading out, when what it says is longer.
   cutWhenLonger(b.querySelector<HTMLElement>('.pane-line')!);
-  cutWhenLonger(said);
+  if (said) cutWhenLonger(said);
   return b;
 }
 
