@@ -3,6 +3,7 @@ import {test} from 'node:test';
 // The runtime loads its call tables through process.ts, as the worker does.
 import {Kernel, Process} from '../../runtime/process.ts';
 import {answerTime, clocks} from '../../runtime/clock.ts';
+import {RemoteKernel} from '../../runtime/remote.ts';
 
 // What a call says to an address that is not the process's memory: EFAULT, as Linux's copy to or from a bad address
 // is, never the host's RangeError and never a span quietly cut short. Each as a guest's own call on a kernel and a
@@ -228,4 +229,24 @@ test('#199: fcntl F_GETLK says nothing is in the way (F_UNLCK), and the record l
   const [r, w] = pipe(p);
   assert.deepEqual([lock(F_SETLK, WR, {on: r})[0], lock(F_SETLK, RD, {on: r})[0], lock(F_SETLK, RD, {on: w})[0], lock(F_SETLK, WR, {on: w})[0]], [EBADF, 0n, EBADF, 0n]);
   assert.equal(lock(F_GETLK, WR, {on: r})[0], 0n);
+});
+
+test('#114: the same of a memory shared with threads that run apart, under the kernel that serves them', () => {
+  // (The calls of a thread in a Worker are answered by these handlers, on its shared memory. No Worker is started
+  // here: what is checked is the handlers and the views over a shared buffer, not the channel a Worker asks through.)
+  const kernel = new RemoteKernel({spares: 0, console: {write() {}, read: () => new Uint8Array(0)}});
+  const p = new Process(kernel, null);
+  p.memory = Object.assign(new WebAssembly.Memory({initial: 1, maximum: 1, shared: true}), {users: 1, written: [], keeps: false, imageOf: null});
+  p.pid = p.pgid = p.sid = 1;
+  kernel.procs.set(1, p);
+  kernel.vfs.writeFile('/f', enc.encode('0123456789'.repeat(10)));
+  assert.ok(p.memory!.buffer instanceof SharedArrayBuffer);
+  const fd = open(p), [r, w] = pipe(p);
+  assert.deepEqual([call(p, STAT, put(p, 4096, '/f'), END), call(p, FSTAT, fd, END - 8), call(p, STAT, END, 8192)], [EFAULT, EFAULT, EFAULT]);
+  p.bytes.set(enc.encode('/f'), END - 2);
+  assert.equal(call(p, OPEN, END - 2, 0), EFAULT);
+  assert.deepEqual([call(p, READ, fd, END, 10), call(p, READ, fd, END - 10, 90), text(p, END - 10, 10), call(p, WRITE, fd, END, 10)], [EFAULT, 10n, '0123456789', EFAULT]);
+  assert.deepEqual([call(p, WRITE, w, 2048, 30), call(p, READ, r, END - 10, 30), call(p, READ, r, 2048, 30)], [30n, EFAULT, 30n]);
+  assert.deepEqual([call(p, GETRANDOM, END - 4, 8, 0), call(p, PIPE, END - 4), call(p, FSTAT, fd, 8192)], [4n, EFAULT, 0n]);
+  kernel.close();
 });
