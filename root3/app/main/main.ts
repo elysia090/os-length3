@@ -1,3 +1,4 @@
+import {activateOnPress} from '../ui/press.ts';
 import {h} from '../ui/dom.ts';
 import {setWindowTitle} from '../host/tauri.ts';
 import {icon} from '../ui/icons.ts';
@@ -201,13 +202,7 @@ function railButton(id: PurposeId): HTMLButtonElement {
     // A place in the rail is a link to a page, the one shown marked current; File and Server open over it. Pressed
     // with a mouse it goes as the button goes down, as a browser's tab does: on the click, the page stood still for
     // the press's length (some 80 ms and more) before the pan set off. A touch keeps the click (it may be a scroll).
-    let downed = false;
-    button.addEventListener('pointerdown', (event) => {
-      if (event.pointerType !== 'mouse' || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-      downed = true;
-      void select(id);
-    });
-    button.addEventListener('click', () => { if (downed) { downed = false; return; } void select(id); });
+    activateOnPress(button, () => { void select(id); });
   }
   button.addEventListener('keydown', (event) => {
     const next = stepPurpose(id, event.key);
