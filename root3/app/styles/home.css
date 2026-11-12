@@ -119,7 +119,7 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 .home-waits { position: absolute; right: calc(-1 * var(--u)); bottom: var(--u); display: grid; justify-items: end; gap: calc(2 * var(--u)); }
 /* Eight cells tall (taller as what it says is longer: it grows up from the margin's line). What it is and what it
    says from its top; where, on its last line, at its foot. */
-.home-waits > .lately { display: flex; flex-direction: column; box-sizing: border-box; width: calc(18 * var(--u)); min-height: calc(8 * var(--u)); padding: 29px var(--u) 7px;
+.home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(18 * var(--u)); min-height: calc(8 * var(--u)); padding: 29px var(--u) 7px;
   background: var(--paper); border-radius: 3px; rotate: 1.5deg; transform-origin: 100% 100%; box-shadow: 24.6px 23.4px 0 var(--ink); text-align: right; }
 .home-waits > .lately > h2 { margin: 0; font: 700 20px/var(--u) var(--mono); color: var(--ink); letter-spacing: 0; text-transform: lowercase; }
 .home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
