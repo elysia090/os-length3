@@ -264,15 +264,19 @@ function priorityOf(p: Proc, which: number, who: number): Proc[] {
 function rlimit(p: Proc, target: Proc, resource: bigint, next: bigint, old: bigint): number {
   const r = N(resource);
   if (r < 0 || r >= target.limits.length) fail(E.INVAL);
-  const v = p.view;
-  if (N(old)) { v.setBigUint64(N(old), target.limits[r][0], true); v.setBigUint64(N(old) + 8, target.limits[r][1], true); }
+  const v = p.view, was = target.limits[r];
+  // What is asked is read, looked at and set before the limits as they were are written where they are wanted, as
+  // Linux does: the two may be one place (prlimit64(pid, r, &l, &l)) or lie over each other. (Before: the old limits
+  // were written first, read back as the new ones and "set": the call said 0 and nothing changed.) Refused, nothing
+  // is set and nothing written.
   if (N(next)) {
     const soft = v.getBigUint64(N(next), true), hard = v.getBigUint64(N(next) + 8, true);
     if (soft > hard) fail(E.INVAL);
-    if (hard > target.limits[r][1]) fail(E.PERM);
+    if (hard > was[1]) fail(E.PERM);
     target.limits[r] = [soft, hard];
     if (r === 7) target.fds.limit = Number(soft);
   }
+  if (N(old)) { v.setBigUint64(N(old), was[0], true); v.setBigUint64(N(old) + 8, was[1], true); }
   return 0;
 }
 

@@ -674,10 +674,15 @@ function makeNode(p: Proc, dirfd: bigint, address: bigint, mode: bigint): number
 }
 
 function pipe(p: Proc, address: bigint, flags: bigint): number {
+  // Both its descriptors are found before the pipe is made: with fewer than two left it is EMFILE and nothing is left
+  // behind, as Linux has it. (Before: -1 was written for each end there was no descriptor for and the call said 0;
+  // with one left, the reading end was made and kept.)
+  const r = p.fds.lowest(), w = r < 0 ? -1 : p.fds.lowest(r + 1);
+  if (w < 0) fail(E.MFILE);
   const pipe = new Pipe();
   const cloexec = !!(N(flags) & O.CLOEXEC), nonblock = N(flags) & O.NONBLOCK;
-  const r = p.fds.install(new Description('pipe-r', {pipe, flags: nonblock}), {cloexec});
-  const w = p.fds.install(new Description('pipe-w', {pipe, flags: O.WRONLY | nonblock}), {cloexec});
+  p.fds.install(new Description('pipe-r', {pipe, flags: nonblock}), {fd: r, cloexec});
+  p.fds.install(new Description('pipe-w', {pipe, flags: O.WRONLY | nonblock}), {fd: w, cloexec});
   p.view.setInt32(N(address), r, true);
   p.view.setInt32(N(address) + 4, w, true);
   return 0;
@@ -1072,7 +1077,8 @@ export const FILE_CALLS: Calls = {
   296(fd, vec, count, off) { return writev(this, descriptor(this, fd), vec, count, N(off)); }, // pwritev
   21(name, mode) { return access(this, BigInt(AT_FDCWD), name, mode); },
   22(fds) { return pipe(this, fds, 0n); },
-  32(fd) { const d = descriptor(this, fd); return this.fds.install(d); },
+  // dup: the lowest descriptor free; none left, EMFILE (before: -1, which a call's value reads as EPERM).
+  32(fd) { const d = descriptor(this, fd), to = this.fds.install(d); return to < 0 ? fail(E.MFILE) : to; },
   33(oldfd, newfd) { if (N(oldfd) === N(newfd)) { descriptor(this, oldfd); return N(newfd); } return dup(this, oldfd, N(newfd), false); },
   72(fd, cmd, arg) {
     const d = descriptor(this, fd), c = N(cmd);

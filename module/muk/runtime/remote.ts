@@ -19,6 +19,7 @@ import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import {began, canRunApart, mayWait, nodeThreads, steady} from '../../sods/runtime/host.ts';
 import type {Saved} from '../../sods/runtime/x87.ts';
 import type {Call, Mem, Range} from './parts.ts';
+import type {FdTable} from './fd.ts';
 import {deliverable, take} from './signal.ts';
 
 const NodeWorker = (await nodeThreads())?.Worker ?? null;
@@ -539,6 +540,14 @@ class RemoteTask extends Task {
   /** What its Worker keeps after this run, as it keeps it (cpu.ts kept): this instance first, the few before it. */
   kept(w: Hand, memoryId: number, imageId: number): void {
     w.kept = [{memoryId, imageId, extras: this.image.extras.length}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_INSTANCES);
+  }
+
+  /** Its console bits are read from its process's own table from here on, not from the one it shared. */
+  override tableLeft(was: FdTable): void {
+    if (!this.consoles) return;
+    was.readers.delete(this.consoles);
+    this.proc.fds.readers.add(this.consoles);
+    this.proc.fds.show(this.consoles);
   }
 
   /** Its process's console bits kept where its Worker reads them, in its channel (fd.ts readers). */

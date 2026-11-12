@@ -1030,7 +1030,9 @@ export class Kernel implements Kern {
     p.unmapShared();
     if (p.memory) this.letGo(p.memory, written);
     p.memory = null;
-    p.fds.closeAll();
+    // Its table of descriptors is let go of: closed, unless another process holds it too (clone's CLONE_FILES).
+    // (Before: closed outright, under a parent that shared it.)
+    p.fds.letGo();
     this.releaseVfork(p);
     this.dirty = true;
     if (p.pid === 1 || p.pid === this.initPid) {
@@ -1043,10 +1045,25 @@ export class Kernel implements Kern {
       this.stopped?.();
       return;
     }
-    const init = this.procs.get(1);
+    // Its children go to the nearest process above it that asked for orphans and is alive (prctl
+    // PR_SET_CHILD_SUBREAPER), else to init, as Linux hands them on (find_new_reaper): the one that asked waits for
+    // them. (Before: always to pid 1, whoever had asked.)
+    const reaper = this.reaperOf(p);
     for (const c of p.children) {
-      c.ppid = 1;
-      if (init?.state === 'live') init.children.add(c); else if (c.state === 'zombie') this.procs.delete(c.pid);
+      c.ppid = reaper?.pid ?? 1;
+      if (reaper) {
+        reaper.children.add(c);
+        // One already ended, whose parent never waited for it: its new parent is told, as its parent was (Linux's
+        // reparent_leader), or it goes at once where that one keeps no zombies.
+        if (c.state === 'zombie') {
+          const a = actionOf(reaper, SIG.CHLD);
+          if (a.handler === 1n || a.flags & SA.NOCLDWAIT) { reaper.children.delete(c); this.procs.delete(c.pid); }
+          else {
+            const how = (c.exitStatus ?? 0) & 0x7f;
+            send(this, reaper, SIG.CHLD, {signo: SIG.CHLD, code: how ? CLD.KILLED : CLD.EXITED, pid: c.pid, uid: 0, status: how ? how : (c.exitStatus ?? 0) >> 8});
+          }
+        }
+      } else if (c.state === 'zombie') this.procs.delete(c.pid);
       // Its parent gone: the signal it asked for then (prctl PR_SET_PDEATHSIG).
       if (c.state === 'live' && c.deathSignal) send(this, c, c.deathSignal, {code: SI.USER, pid: p.pid, uid: 0});
     }
@@ -1059,6 +1076,22 @@ export class Kernel implements Kern {
     // A parent that ignores SIGCHLD (or says SA_NOCLDWAIT) leaves no zombie (POSIX).
     if (a.handler === 1n || a.flags & SA.NOCLDWAIT) { parent.children.delete(p); this.procs.delete(p.pid); }
     if (p.exitSignal) send(this, parent, p.exitSignal, info);
+  }
+
+  /** The pid namespace's init: pid 1, or the one a backend names (initPid). */
+  initOf(): Process | undefined {
+    return this.procs.get(1) ?? (this.initPid === undefined ? undefined : this.procs.get(this.initPid));
+  }
+
+  /** Who `p`'s children go to when it ends: the nearest live process above it that asked for orphans, else init; none alive, no one. */
+  reaperOf(p: Process): Process | null {
+    const seen = new Set<Process>([p]);
+    for (let up = this.procs.get(p.ppid); up && !seen.has(up); up = this.procs.get(up.ppid)) {
+      if (up.state === 'live' && up.subreaper) return up;
+      seen.add(up);
+    }
+    const init = this.initOf();
+    return init && init !== p && init.state === 'live' ? init : null;
   }
 
   /** A child made with CLONE_VFORK exec'd or ended: its parent goes on. */
@@ -1301,13 +1334,16 @@ export class Process implements Proc {
   declare bytesBuffer: ArrayBufferLike | undefined;
   declare bytesOf: Uint8Array;
   declare viewOf: DataView;
-  constructor(kernel: Kernel, parent: Process | null) {
+  constructor(kernel: Kernel, parent: Process | null, files = false) {
     this.kernel = kernel;
     this.pid = 0;
     this.ppid = parent?.pid ?? 0;
     this.pgid = parent?.pgid ?? 0;
     this.sid = parent?.sid ?? 0;
-    this.fds = parent ? parent.fds.fork() : new FdTable();
+    // Its descriptors: the parent's own table where it is to be shared (clone's CLONE_FILES), else a copy of it. Which
+    // is known before either is taken (before: a copy always, thrown away for the shared one with every description
+    // in it still held).
+    this.fds = parent ? (files ? parent.fds.share() : parent.fds.fork()) : new FdTable();
     this.here = parent?.here ?? kernel.vfs.root;
     this.umask = parent?.umask ?? 0o022;
     // How nice it is (-20 to 19), as getpriority says and a child takes: no scheduling here weighs it.
@@ -1526,6 +1562,11 @@ export class Process implements Proc {
     this.comm = null;
     this.caps = {effective: CAPS, permitted: CAPS, inheritable: this.caps.inheritable};
     this.exe = this.kernel.vfs.realpath(path, this.here);
+    // It execs with a table of descriptors of its own: one shared till now (clone's CLONE_FILES) is left to the others,
+    // so what exec closes here is closed for it alone. (Before: closed in the shared table, under its parent.)
+    const shared = this.fds;
+    this.fds = shared.own();
+    if (this.fds !== shared) for (const x of this.tasks) x.tableLeft(shared);
     this.fds.exec();
     // Handled signals go back to their default; ignored ones stay ignored.
     for (const [sig, h] of this.actions) if (h.handler > 1n) this.actions.delete(sig);
@@ -1628,10 +1669,9 @@ export class Process implements Proc {
   forkProcess(resume: bigint, {stack = 0n, vm = false, files = false, exitSignal = SIG.CHLD, tls = null, clearTid = 0, parent = false}: {stack?: bigint; vm?: boolean; files?: boolean; exitSignal?: number; tls?: bigint | null; clearTid?: number; parent?: boolean} = {}): Process {
     const k = this.kernel, t = this.task;
     this.syncShared(true); // the child's copy of a shared mapping starts as what its file has
-    const child = new Process(k, this);
+    const child = new Process(k, this, files);
     const up = parent ? k.procs.get(this.ppid) ?? this : this;
     child.ppid = up.pid;
-    if (files) child.fds = this.fds;
     const ct = k.newTask(child);
     child.pid = ct.tid;
     child.exitSignal = exitSignal;
@@ -1732,6 +1772,8 @@ export class Task implements Thread {
   /** The backend's: it stopped (SIGSTOP), it goes on (SIGCONT). */
   declare stop?: () => void;
   declare cont?: () => void;
+  /** Its process took a table of descriptors of its own in place of `was` (exec, from one shared): the backend's, where it follows the table (remote.ts). */
+  tableLeft(_was: FdTable): void {}
   constructor(proc: Process, tid: number) {
     this.slice = SLICE_LOOPS; // loops and calls in its next time slice (nextSlice)
     this.proc = proc;
