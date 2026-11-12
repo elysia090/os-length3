@@ -26,7 +26,7 @@ import {machine} from './machine.ts';
 import {mountProc} from './procfs.ts';
 import {Description, FdTable} from './fd.ts';
 import type {Mapping} from './fs.ts';
-import {Dir, E, File, FsError, Vfs, loadedFiles} from './fs.ts';
+import {Dir, E, File, FsError, Vfs} from './fs.ts';
 import {FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
@@ -482,6 +482,8 @@ export class Kernel implements Kern {
   remember(node: File, entry: Kept): void {
     entry.image.file = entry;
     this.images.set(node, entry);
+    // With a translation it is one of those keeping its tree's files (sources), until it ends (ended).
+    this.vfs.loaded.keepers.add(this);
   }
 
   /** A translation as it is run here: {wasm, segments} (share.ts; shared memory when threads run apart). */
@@ -581,14 +583,13 @@ export class Kernel implements Kern {
   held(): Held {
     const using = new Set<Program>(this.live().map((p) => p.image));
     let translations = 0, spareTranslations = 0;
-    const keep = new Set<File>();
-    for (const [node, e] of this.images) {
+    for (const e of this.images.values()) {
       translations += e.image.size;
-      if (e.kept || using.has(e.image)) keep.add(node);
-      else spareTranslations += e.image.size;
+      if (!e.kept && !using.has(e.image)) spareTranslations += e.image.size;
     }
+    const keep = this.keptFiles();
     let files = 0, spareFiles = 0;
-    for (const f of loadedFiles()) {
+    for (const f of this.vfs.loaded.files) {
       files += f._data.length;
       if (!keep.has(f)) spareFiles += f._data.length;
     }
@@ -626,11 +627,28 @@ export class Kernel implements Kern {
     if (over > 0 && before.spareTranslator > 0 && this.translate?.renew?.()) over -= before.spareTranslator;
     // A translation that went leaves its program's file spare too: with no budget, every such file goes.
     if (over > 0 || budget === 0) {
-      const keep = new Set([...this.images].filter(([, e]) => e.kept || using.has(e.image)).map(([node]) => node));
-      for (const f of [...loadedFiles()]) if ((over > 0 || budget === 0) && !keep.has(f)) over -= f.release();
+      const keep = this.keptFiles();
+      for (const f of [...this.vfs.loaded.files]) if ((over > 0 || budget === 0) && !keep.has(f)) over -= f.release();
     }
     return {before, after: this.held()};
   }
+
+  /** The files whose translations it keeps or runs: their bytes are not spare, to it or to another kernel on its tree. */
+  sources(): Set<File> {
+    const using = new Set<Program>(this.live().map((p) => p.image));
+    return new Set([...this.images].filter(([, e]) => e.kept || using.has(e.image)).map(([node]) => node));
+  }
+  /**
+   * The files of its tree that are not spare: its own sources, and those of every other kernel running on the same
+   * tree (a tree is shared by a rehearsal and the run after it: what one still reads the other does not let go).
+   */
+  keptFiles(): Set<File> {
+    const keep = this.sources();
+    for (const k of this.vfs.loaded.keepers) if (k !== this) for (const f of k.sources()) keep.add(f);
+    return keep;
+  }
+  /** Its run is over: it keeps nothing of its tree from going any longer (and the tree does not keep it). */
+  ended(): void { this.vfs.loaded.keepers.delete(this); }
 
   /** A new thread of `proc` (the backend's kind). */
   newTask(proc: Process): Task { return new Task(proc, this.nextPid++); }
@@ -1042,6 +1060,7 @@ export class Kernel implements Kern {
       this.procs.clear();
       this.runq.length = 0;
       this.blocked.clear();
+      this.ended();
       this.stopped?.();
       return;
     }
@@ -1193,6 +1212,7 @@ export class Kernel implements Kern {
   halt(): void {
     const init = [...this.procs.values()].find((p) => p.pid === 1 || p.pid === this.initPid);
     if (init) this.exitProcess(init, SIG.KILL);
+    this.ended();
   }
 
   /** Start and run to the end; for hosts whose input is all known up front (a sleep is waited out here). Its wait status

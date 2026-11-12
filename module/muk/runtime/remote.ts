@@ -50,6 +50,8 @@ interface Hand {
   x87?: boolean;
   /** The channel it ran its last thread on, where it waits a little for the next once that is gone (channel.ts PARK). */
   channel?: SharedArrayBuffer;
+  /** The host said it failed (its error event): it runs no thread again, and is ended once. */
+  failed?: boolean;
 }
 /** What a RemoteKernel is made with besides a Kernel's: Workers kept spare, who hears it idle, and whether its Workers go on. */
 export interface Apart extends Made { spares?: number; onIdle?: ((r: Pumped) => void) | null; passOn?: boolean }
@@ -144,7 +146,7 @@ export class RemoteKernel extends Kernel {
 
   /** A Worker whose thread ended in a call: free for the next thread (up to a few). */
   keep(w: Hand): void {
-    if (this.spares.length < 8) this.spares.push(w); else w.end();
+    if (!w.failed && this.spares.length < 8) this.spares.push(w); else w.end();
   }
 
   /**
@@ -216,7 +218,20 @@ export class RemoteKernel extends Kernel {
         k.kick();
       }
     });
-    w.onError((e) => { w.kernel?.say(2, enc.encode(`muk: ${e?.message ?? e}\n`)); });
+    // The host's own word that the Worker failed (it could not start, or threw where cpu.ts does not catch): no
+    // message follows it, so its thread is ended here as one whose Worker said 'error' is, and the kernel woken.
+    // The Worker runs nothing again: it is taken out of those kept spare and ended, once however often it is said.
+    w.onError((e) => {
+      if (w.failed) return;
+      w.failed = true;
+      const k = w.kernel;
+      k?.say(2, enc.encode(`muk: ${e?.message ?? e}\n`));
+      for (const kept of k ? [k.spares, warmed] : [warmed]) { const at = kept.indexOf(w); if (at >= 0) kept.splice(at, 1); }
+      const t = k ? [...k.tasks.values()].find((x) => x.worker === w) : undefined;
+      // Its thread's end ends it (RemoteTask.end: a failed one is never kept); with no thread, it is ended here.
+      if (k && t) k.exitProcess(t.proc, 11); else w.end();
+      k?.kick();
+    });
     return w;
   }
 
@@ -631,7 +646,7 @@ class RemoteTask extends Task {
     // A Worker waiting in a call (it ended itself, or was ended while it waited) is told to leave and is kept for the
     // next thread; one running guest code is ended where it is.
     const state = Atomics.load(this.i32, CH.STATE);
-    if (w && (state === 1 || state === 3) && !this.kernel.closing) {
+    if (w && !w.failed && (state === 1 || state === 3) && !this.kernel.closing) {
       this.reply(REPLY.AWAY);
       this.kernel.keep(w);
       // Its channel, for another thread once its Worker has left it (CH.LEFT).

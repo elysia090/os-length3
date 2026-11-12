@@ -8,10 +8,13 @@ export const S_IFMT = 0o170000, S_IFDIR = 0o040000, S_IFREG = 0o100000, S_IFLNK 
 
 let inodes = 1;
 
-/** Files whose bytes came from their loader and can go back to it (unchanged since). */
-const LOADED = new Set<File>();
-/** Each such file still holding its bytes. */
-export const loadedFiles = () => LOADED;
+/**
+ * What a tree holds of its files' bytes that came from their loaders and can go back to them (unchanged since):
+ * `files`, each still holding its bytes; and `keepers`, who keep some of those from going (a kernel with translations,
+ * until it ends: the files they read). A tree's own (Vfs.loaded): one tree's files are not another's to count or to
+ * let go, and a kernel on the same tree is asked before one of them goes.
+ */
+export interface Loaded { readonly files: Set<File>; readonly keepers: Set<{sources(): Iterable<File>}> }
 
 /**
  * Every change to what a directory holds or to a file's bytes, counted, and how many files are mapped shared now. One
@@ -34,6 +37,8 @@ class Entries extends Map<string, Entry> {
     if (was !== e) {
       if (was instanceof Dir) this.#out(was, name);
       if (e instanceof Dir) { e.parent = this.owner; e.name = name; e.lies = true; counted.placed++; }
+      // A file knows a folder it was put in: by it, the tree that holds its bytes once they are read (File.loaded).
+      else if (e instanceof File) e.home = this.owner;
     }
     return super.set(name, e);
   }
@@ -101,6 +106,9 @@ export class File extends Node {
   declare shared: boolean;
   declare version: number;
   declare maps: Set<Mapping> | null;
+  /** The folder it was last put in (Entries), and the files its tree holds read (Loaded.files) while it is one of them. */
+  declare home: Dir | null;
+  declare pool: Set<File> | null;
   /** Where its bytes are in the root's packs (pack.ts), while it is the root's own: what a kept translation is for. */
   declare origin?: string;
   constructor(data: Uint8Array = new Uint8Array(0), mode = 0o644, load: (() => Uint8Array) | null = null) {
@@ -115,7 +123,22 @@ export class File extends Node {
     // MAP_SHARED mappings of it (map below): while one lasts, its memory is the file's bytes there (Linux's page
     // cache), so a read takes what was written through it and a write shows in it.
     this.maps = null;
+    this.home = null;
+    this.pool = null;
   }
+  /**
+   * Its bytes came from its loader, which can give them again: the tree it lies in holds them, found from the folder
+   * it was last put in up to the tree's root (one in no tree is held by none: it is not counted, and not let go).
+   */
+  #loaded(): void {
+    if (!this.reload) return;
+    let dir = this.home ?? undefined;
+    while (dir && !dir.loaded) dir = dir.parent;
+    this.pool = dir?.loaded?.files ?? null;
+    this.pool?.add(this);
+  }
+  /** Its bytes are its own now, or gone back to its loader: its tree holds them no longer. */
+  #unheld(): void { this.pool?.delete(this); this.pool = null; }
   get data(): Uint8Array {
     if (this.load) {
       // Its bytes not to be had (its pack gave other bytes than its table names, or nothing): the call that wanted
@@ -123,7 +146,7 @@ export class File extends Node {
       try { this._data = this.load(); } catch (e) { console.warn(e instanceof Error ? e.message : String(e)); throw new FsError(E.IO); }
       this.size = this._data.length;
       this.load = null;
-      if (this.reload) LOADED.add(this);
+      this.#loaded();
     }
     return this._data;
   }
@@ -148,12 +171,12 @@ export class File extends Node {
     this._data = bytes;
     this.size = bytes.length;
     this.load = null;
-    if (this.reload) LOADED.add(this);
+    this.#loaded();
   }
   /** About to change the bytes: from here on they are this file's own. */
   own(): void {
     if (this.shared) { this._data = this.data.slice(0, this.size); this.shared = false; }
-    LOADED.delete(this);
+    this.#unheld();
     this.reload = null;
   }
   /** Let go of bytes its loader can give again (unchanged since); returns how many. */
@@ -163,7 +186,7 @@ export class File extends Node {
     this._data = new Uint8Array(0);
     this.shared = false;
     this.load = this.reload;
-    LOADED.delete(this);
+    this.#unheld();
     return n;
   }
   write(at: number, bytes: Uint8Array): void {
@@ -299,6 +322,8 @@ export class Dir extends Node {
   /** Where it was last found to lie (Vfs.where), and the count of placings that was found at. */
   declare at?: string | null;
   declare seen?: number;
+  /** A tree's root alone: what the tree holds of its files' bytes (Vfs.loaded). */
+  declare loaded?: Loaded;
   constructor(mode = 0o755) {
     super(S_IFDIR | mode);
     this.nlink = 2;
@@ -397,8 +422,11 @@ function onlyDots(path: string, at: number): boolean {
 export class Vfs {
   declare readonly root: Dir;
   declare readonly terminal: Device;
+  /** What it holds of its files' bytes that their loaders can give again, and who keeps some of them (Loaded). */
+  declare readonly loaded: Loaded;
   constructor() {
     this.root = new Dir();
+    this.loaded = this.root.loaded = {files: new Set(), keepers: new Set()};
     const dev = this.mkdirp('/dev');
     dev.entries.set('null', new Device(0x103, () => new Uint8Array(0), (b) => b.length));
     dev.entries.set('zero', new Device(0x105, (n) => new Uint8Array(n), (b) => b.length));
