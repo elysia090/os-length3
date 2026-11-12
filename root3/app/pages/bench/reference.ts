@@ -57,7 +57,17 @@ export class Reference {
   readonly search: HTMLElement;
   private query: HTMLInputElement;
   /** The box gets the keyboard, what is written in it selected (Ctrl+K, Ctrl+P: writing replaces it). */
-  findNow() { this.query.focus(); this.query.select(); }
+  findNow() { if (!this.searchable) return; this.query.focus(); this.query.select(); }
+  private readonly searchable: boolean;
+  /** Without a search field (Issues), readers take focus themselves instead of an invisible input. */
+  private focusReader(options?: FocusOptions) {
+    if (this.searchable) { this.query.focus(options); return; }
+    const from = document.activeElement as HTMLElement | null;
+    if (!from || !this.search.contains(from)) this.before = from;
+    // Focus the anchor first so :focus-within reveals the reader before it takes the keyboard.
+    this.search.focus({preventScroll: true});
+    this.under.focus(options);
+  }
   /** Where no band says which repo it is (Home's), the box names it: "Search garden". */
   named(repo: string | null) { this.say(repo ? t('Search {repo}', {repo}) : this.repo ? t('Search this repo') : t('No repo to search')); }
   /** Under the box: the switch, and under it the large box with what was searched and read in a line. */
@@ -119,8 +129,9 @@ export class Reference {
   /** Begin a new issue in the repo shown, from the Issue pill with none open (the page says where it is written). */
   writeIssue: ((repo: string) => void) | null = null;
 
-  constructor(events: ReferenceEvents, o: {keeps?: boolean; band?: boolean} = {}) {
+  constructor(events: ReferenceEvents, o: {keeps?: boolean; band?: boolean; searchable?: boolean} = {}) {
     this.events = events;
+    this.searchable = o.searchable !== false;
     this.keeps = !!o.keeps;
     this.band = !!o.band;
     const n = ++made;
@@ -177,7 +188,14 @@ export class Reference {
     this.query.setAttribute('aria-keyshortcuts', /Mac|iPhone|iPad/.test(navigator.platform) ? 'Meta+K' : 'Control+K');
     const form = h('form', {class: 'search', role: 'search'}, this.query);
     form.addEventListener('submit', (event) => event.preventDefault());
-    this.search = h('div', {class: 'search-box'}, form, this.under);
+    this.search = h('div', {class: 'search-box'}, ...(this.searchable ? [form] : []), this.under);
+    if (!this.searchable) {
+      this.search.tabIndex = -1;
+      this.under.tabIndex = -1;
+      this.under.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !event.defaultPrevented) this.escape(event);
+      });
+    }
     this.goesUp();
     this.follow();
     if (this.band) {
@@ -257,13 +275,13 @@ export class Reference {
 
   /** ↑ ↓ along what can be chosen under the box, up into the box from the first; Escape back up to the box. */
   private alongList(event: KeyboardEvent) {
-    if (event.key === 'Escape') { event.preventDefault(); if (this.reading) { this.close(); void this.draw(); } this.query.focus(); return; }
+    if (event.key === 'Escape') { event.preventDefault(); if (this.reading) { this.close(); void this.draw(); } this.focusReader(); return; }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
     const all = this.choices();
     const at = all.indexOf(document.activeElement as HTMLElement);
     if (at < 0) return;
     event.preventDefault();
-    if (event.key === 'ArrowUp' && at === 0) this.query.focus();
+    if (event.key === 'ArrowUp' && at === 0) this.focusReader();
     else all[Math.min(at + (event.key === 'ArrowDown' ? 1 : -1), all.length - 1)]?.focus();
   }
 
@@ -406,7 +424,7 @@ export class Reference {
     this.paintPills();
     const to = this.pillButtons.get(kind);
     if (to?.parentElement) glide(was, to, to.parentElement, 'var(--r-round)');
-    this.query.focus({preventScroll: true});
+    this.focusReader({preventScroll: true});
   }
 
   private paintPills() {
@@ -427,7 +445,7 @@ export class Reference {
     this.close();
     this.paintPills();
     void this.draw();
-    this.query.focus({preventScroll: true});
+    this.focusReader({preventScroll: true});
   }
 
   /** How many files are changed since the last commit, said beside diff in the pane (none: nothing). */
@@ -689,7 +707,7 @@ export class Reference {
   showRun(r: Run) {
     if (!this.repo) return;
     this.readRun(r);
-    this.query.focus({preventScroll: true});
+    this.focusReader({preventScroll: true});
   }
 
   /** One run: its line (pressed, back in the prompt box), how long it took, all it said. */
