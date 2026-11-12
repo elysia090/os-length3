@@ -15,6 +15,10 @@ const LIMIT_BYTES = 32 << 20;
  * of files is a few trips to the core, not one a file.
  */
 export async function snapshot(repo: string) {
+  // What a page loaded again left to be written back is the repo's before the repo is copied: a shell started while
+  // it was still being written had a copy without the rest of it (a batch of six files written, the page loaded again
+  // at once, the Prompt started: the store had all six, the new shell four; about once in sixteen on a busy machine).
+  await writeLeftBack();
   const dirs: string[] = [`/root/${repo}`];
   const wanted: {path: string; size: number}[] = [];
   let total = 0, complete = true;
@@ -61,18 +65,38 @@ function keep(repo: string, by: string, b: Batch): string | null {
 }
 const unkeep = (key: string | null) => { if (key) try { sessionStorage.removeItem(key); } catch { /* gone with the tab */ } };
 
-/** What a page reloaded before the store had all of its shell's changes left kept: written now, in the order it came. */
-export async function writeLeftBack(): Promise<void> {
+/**
+ * What a page reloaded before the store had all of its shell's changes left kept: written now, in the order it came,
+ * once (asked again, it is the same writing, to be waited for: the app's start asks, and so does each copy of a
+ * repo taken for a shell). A batch is let go only once the store has all of it: what the store refuses is tried again
+ * a few times, a moment apart; still refused, the batch stays kept for the next start, and what came after it waits
+ * behind it, so nothing later is written under something earlier.
+ */
+export function writeLeftBack(): Promise<void> { return leftBack ??= writeLeft(); }
+let leftBack: Promise<void> | null = null;
+async function writeLeft(): Promise<void> {
   let keys: string[];
   try { keys = Object.keys(sessionStorage).filter((k) => k.startsWith(KEPT)).sort(); } catch { return; }
   for (const key of keys) {
-    try {
-      const kept = JSON.parse(sessionStorage.getItem(key) ?? 'null') as Kept | null;
-      if (kept) await writeBatch(kept.repo, kept.by, {...kept, files: kept.files.map((f) => ({path: f.path, bytes: unbase64(f.b64)}))}, []);
-    } catch { /* a batch not kept whole is not written */ }
-    unkeep(key);
+    let kept: Kept | null;
+    try { kept = JSON.parse(sessionStorage.getItem(key) ?? 'null') as Kept | null; } catch { kept = null; }
+    // (One not kept whole is not written.)
+    if (!kept) { unkeep(key); continue; }
+    let left: Batch = {dirs: kept.dirs, files: kept.files.map((f) => ({path: f.path, bytes: unbase64(f.b64)})), removed: kept.removed};
+    for (let tries = 0; ; tries++) {
+      const skipped: string[] = [];
+      await writeBatch(kept.repo, kept.by, left, skipped);
+      if (!skipped.length) { unkeep(key); break; }
+      // Only what was refused is tried again (what was written is the store's already).
+      const again = new Set(skipped);
+      left = {dirs: left.dirs.filter((d) => again.has(`${d}/`)), files: left.files.filter((f) => again.has(f.path)), removed: left.removed.filter((r) => again.has(r))};
+      if (tries >= LEFT_TRIES) return;
+      await new Promise((r) => setTimeout(r, LEFT_WAIT_MS * (tries + 1)));
+    }
   }
 }
+/** How often a batch left kept is tried again at a start, and how long between (longer each time). */
+const LEFT_TRIES = 5, LEFT_WAIT_MS = 60;
 
 /** The shell's changes written back to the repo `repo` as `by`, in order; `skipped` hears what could not be. */
 export class WriteBack {
