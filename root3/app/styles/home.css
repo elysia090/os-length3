@@ -6,14 +6,13 @@
 /* Its pane's line and its switch stand exactly where Forge's do, so going from Home to Forge (or back) nothing of the
    pane moves: the page keeps Forge's margin at the right (s5), and the pane is Forge's W (a quarter of the page,
    never under 280 px), less that margin, worked out from the page's own margins. */
-@media (min-width: 761px) { .page:has(> .home-layout) { padding-right: var(--s5); } }
 /* The room under Home's foot is the column's, not the page's: the pane is held in view only within the page's
    content, so the page's own foot would push it up off the top line as Home is scrolled to its end. */
 .page:has(> .home-layout) { padding-bottom: 0; }
 .home-layout > .home-main { padding-bottom: var(--s6); }
 .page > .home-layout {
   max-width: none; display: grid; column-gap: var(--s5); align-items: start; grid-template-rows: auto minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr) calc(max(280px, (100% + clamp(var(--s5), 5vw, 72px) + var(--s5)) / 4) - var(--s5));
+  grid-template-columns: minmax(0, 1fr) calc(max(280px, (100% + var(--body-left) + var(--s5)) / 4) - var(--s5));
 }
 .home-layout.pane-closed { grid-template-columns: minmax(0, 1fr) calc(var(--h-row) + var(--line-frame)); } /* the switch and the line it no longer draws: the switch stays where it stood */
 /* It opens and closes as Forge's does: a wipe, landing a touch past and settling as it comes out. */
@@ -26,19 +25,18 @@
    where Forge's are, to the pixel, so going between the two the frame is one (main.ts CAMERA). */
 .home-band {
   grid-column: 1; grid-row: 1; position: sticky; top: 0; z-index: 7; display: flex; align-items: center;
-  margin: calc(-1 * var(--top-line)) calc(-1 * clamp(var(--s5), 5vw, 72px)) 0 calc(-1 * clamp(var(--s5), 5vw, 72px));
-  padding: var(--band) var(--s5) var(--s3); background: var(--ground);
+  margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 calc(-1 * var(--body-left));
+  padding: var(--band) var(--s5) var(--s3) var(--band-left); background: var(--ground);
 }
 /* Out to the page's own edges, whatever its margins are at this width (page.css, remote.css): never past them. */
-@media (min-width: 761px) { .home-band { margin-right: calc(-1 * var(--s5)); } }
-@media (max-width: 560px) { .home-band { margin-inline: calc(-1 * var(--s4)) 0; padding-left: var(--s4); padding-right: var(--s2); } }
+@media (max-width: 560px) { .home-band { margin-right: 0; padding-right: var(--s2); } }
 .home-band > .band-tools { display: flex; align-items: center; gap: var(--s2); }
 /* While the band's sheet is down, Home steps back out of sight under it as Forge's desk does, and comes back as it
    goes up (reference.ts paintDown). */
 .home-layout > .home-main { transition: opacity calc(160ms * var(--pace)) ease-out; }
 .home-layout.sheet-down > .home-main { opacity: 0; transition-duration: calc(120ms * var(--pace)); }
 /* Its first line (the name) a step under the band. */
-.home-main { grid-column: 1; grid-row: 2; min-width: 0; width: 100%; max-width: 1080px; margin: 0 auto; padding-top: var(--s4); }
+.home-main { grid-column: 1; grid-row: 2; min-width: 0; width: 100%; max-width: 1080px; padding-top: var(--s4); }
 .home-pane {
   grid-column: 2; grid-row: 1 / span 2;
   position: sticky; top: var(--outer-top); height: var(--inner-h); min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr);
@@ -87,16 +85,14 @@
    what each holds: the TODO's box, its top level with the rail's second place and four places tall at the least, and
    the repos' names from that same line. On a narrow column one under the other. (In a window too short for the rail's
    steps the rail closes up, rail.css; Home keeps its own rows.) */
-.home-main { --home-name: 28px; --home-row: var(--h-place); --home-step: var(--s1); padding-top: 0; }
+.home-main { --home-name: 28px; padding-top: 0; }
 .home-desk { display: grid; grid-template-columns: minmax(0, 520px) minmax(240px, 1fr); gap: var(--s6) clamp(var(--s5), 6cqi, 80px); align-items: start; }
 @container (width < 600px) { .home-desk { grid-template-columns: minmax(0, 1fr); } }
-.home-own { display: grid; gap: var(--home-step); align-content: start; min-width: 0; }
-/* (The profile's own edge, unseen until it is written in, takes no room of the row's.) */
-.home-own > .profile:not(.editing) { margin-block: -1px; }
+.home-own { display: grid; gap: var(--row-step); align-content: start; min-width: 0; }
 .home-desk .section, .home-places > .section { margin-top: 0; }
 .home-places { display: grid; gap: var(--s5); align-content: start; min-width: 0; }
 /* Each heading the mono label a desk's box has over it: a row tall, its letters' feet where the name's are. */
-.home-places .section > h2 { height: var(--home-row); margin: 0 0 var(--home-step); font: 600 15px/var(--home-row) var(--mono); color: var(--ink);
+.home-places .section > h2 { height: var(--row); margin: 0 0 var(--row-step); font: 600 15px/var(--row) var(--mono); color: var(--ink);
   translate: 0 calc((var(--home-name) - 15px) * .36); }
 /* The TODO needs no word over it under the person's name (it is heard): what is left of it, and Clear completed, are
    said at the sheet's own foot, at its right, a row kept for them under the last item. */
@@ -105,20 +101,12 @@
   font: var(--t-meta)/1 var(--mono); color: var(--sub); }
 .home-main .todo-items { padding-bottom: calc(var(--h-row) + var(--s2)); }
 /* Where the column is too narrow for the name and all of that line's end, the counts go (their lists are beside the
-   name, or under it) and Edit profile alone ends the line: the first row stays one row, the box where it was. */
-@container (width < 800px) {
-  .home-own .counts > :not(.profile-edit) { display: none; }
-  .home-own .counts > .profile-edit::before { display: none; }
-}
-/* Written in, the profile is a sheet from the row's own top (nothing is over it to grow into: the band), its name
-   on the line it was read on; it is longer downward, and what is under it goes down with it, never under it. */
-.home-own > .profile.editing { margin: -1px 0 var(--s3) calc(-1 * var(--s5) - 1px); padding: 0 var(--s4) var(--s4) var(--s5); }
-.home-main .edit .name-in { height: var(--home-row); margin-bottom: var(--s1); padding: 0; }
-.home-main .edit-acts { margin-top: calc((var(--home-row) - var(--h-control)) / 2); }
+   name, or under it): the first row stays one row, the box where it was. */
+@container (width < 800px) { .home-own .counts { display: none; } }
 .home-own > .section > h2 > #todo-title { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The TODO a box on the desk: paper, an ink edge, its shadow; a sheet with room to write on, four of the rail's places
    tall at the least (its foot level with the fifth's), longer as what is written in it is. */
-.home-main .todo-box { min-height: calc(4 * var(--home-row) + 3 * var(--home-step)); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 6px 6px 0 0 var(--ink); }
+.home-main .todo-box { min-height: calc(4 * var(--row) + 3 * var(--row-step)); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 6px 6px 0 0 var(--ink); }
 .home-main .todo-box:hover { border-color: var(--ink); }
 /* Its keys said under it on the ground while it is written in, not in a room kept for them inside it. */
 .home-main .todo-box { position: relative; }

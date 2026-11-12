@@ -68,7 +68,7 @@ Checked natively against the same programs by ricebox's tests
 | which host this is (a page, a Worker, node) | `runtime/host.ts` | asked in one place: node or not, its threads, shared memory, running apart, waiting, processors, what was said from outside |
 | a host's clocks | `runtime/host.ts` (`steady`, `began`, `epoch`) | asked in one place: muk's runtime reads none of the host's own (a test reads its sources for them); the floors the same within their noise |
 | a host's random bytes | `runtime/host.ts` (`random`) | asked in one place: `getrandom` and `AT_RANDOM`, `/dev/urandom`, the UUIDs `/proc` says (made of them by muk) all draw there; the same test reads muk's sources for the host's own |
-| where bytes are kept, how they are fetched | still muk's `runtime/` (`keeper.ts`, `pack.ts`), each asking the host itself | next into `host.ts`, one at a time, each with its test |
+| where bytes are kept, how they are fetched, their digest | `runtime/host.ts` (`kept`, `range`, `rangeNow`, `sha256`) | asked in one place: a browser's Cache Storage, its Range requests (waited for, or had inside a call in a Worker) and its SHA-256; a host with no store keeps nothing and says so; the same test reads muk's sources for `caches`, `fetch`, `XMLHttpRequest`, `crypto.subtle` and `navigator` |
 | a host of another system (macOS, Windows), natively | nothing yet | the same wasm under an engine there, `host.ts` answering for it; not begun |
 | no system at all | nothing yet | not begun |
 

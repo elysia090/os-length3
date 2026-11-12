@@ -76,7 +76,8 @@ test('signing out says what stays in this browser, and Remove from device takes 
   await expect(ask).toContainText('Data is saved on Remote and restores upon sign-in.');
   await app.answer(ask.getByRole('button', {name: 'Remove from device', exact: true}), ask);
   // Signed out, none of it is here: Home is as a newcomer finds it, nothing of the Remote's named on it either.
-  await expect(app.main.getByRole('heading', {name: 'No name', level: 1})).toBeVisible();
+  await expect(app.page.locator('#profile-name')).toBeVisible();
+  await expect(app.page.locator('#profile-name')).toHaveText('');
   await expect(app.main.getByRole('region', {name: 'Repos'}).getByRole('group')).toHaveCount(0);
   await expect(app.home.items).toHaveCount(1);
   await expect(app.home.title(app.home.items.first())).toHaveValue('');

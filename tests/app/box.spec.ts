@@ -15,10 +15,16 @@ test('the box\'s pill chooses what the box does: an issue written there is the r
   const box = app.forge.promptBox, said = app.main.locator('.box-said');
   const pill = app.main.getByRole('button', {name: /^Input box action/});
   await expect(pill).toHaveAccessibleName('Input box action: Run');
-  // Pressed, it brings out the three; Issue chosen, the pill is the repo's next issue and the keyboard is in the box.
-  // (On the desk the Prompt's box is gone to first, as a person goes to it: the box beside the file in hand.)
+  // Pressed, it is the other of the two things the line does all day: TODO, the keyboard in the line; again, Run.
   await box.focus();
   await pill.click();
+  await expect(pill).toHaveAccessibleName('Input box action: Add');
+  await expect(box).toBeFocused();
+  await pill.click();
+  await expect(pill).toHaveAccessibleName('Input box action: Run');
+  await expect(box).toBeFocused();
+  // The rest come out of it at Alt+↓: Issue chosen, the pill is the repo's next issue and the keyboard is in the box.
+  await box.press('Alt+ArrowDown');
   await app.main.getByRole('menuitemradio', {name: /Create issue/}).click();
   await expect(pill).toHaveAccessibleName('Input box action: Create');
   await expect(pill).toHaveText('hello #1', {useInnerText: true});

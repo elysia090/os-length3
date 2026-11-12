@@ -1,8 +1,11 @@
 /* The rail: its places, their names and dots, and the person at its foot with their menu. */
+/* A narrow window (760 px and less: the pane folded away) has no room to set a page a place in from the top line's
+   things: its own things start where they do. */
+@media (max-width: 760px) { :root { --body-left: var(--band-left); } }
 /* A phone (560 px and less): the rail's places a size smaller and closer, and the window's gutter narrower, so a page
    has a fifth more of the width; the rail stays the rail (File's tree and Server's layer come out of it as anywhere). */
 @media (max-width: 560px) {
-  :root { --outer: var(--s2); --h-place: 40px; --rail-line-gap: 10px; }
+  :root { --outer: var(--s2); --h-place: 40px; --rail-line-gap: 10px; --band-left: var(--s4); }
   .rail-tabs { gap: 2px; }
 }
 /* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays

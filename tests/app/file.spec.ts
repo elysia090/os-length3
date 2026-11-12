@@ -180,6 +180,36 @@ test('a file is moved by a path written as its new name, or by its row carried o
   await expect(app.forge.editor('docs/packing.md')).toHaveValue('- tent\n');
 });
 
+test('a box in Forge follows its file through moves one after another and through its folder moved, where it lay; removed, it goes', async ({app}) => {
+  await app.newRepo.make('trip');
+  await app.file.named('trip', '', 'New file', 'a.md');
+  await app.forge.editFile('a.md', 'a\n');
+  await app.file.named('trip', '', 'New file', 'other.md');
+  // Where its box lies among the desk's boxes: it stays there, whatever the file is called.
+  const boxes = () => app.main.locator('.desk-label .desk-name').allTextContents();
+  const at = (await boxes()).indexOf('a.md');
+  expect(at).toBeGreaterThanOrEqual(0);
+
+  // Moved, and moved again at once: one box, the file where it went (the store says each move as one move).
+  await app.file.named('trip', 'a.md', 'Rename', 'b.md');
+  await app.file.named('trip', 'b.md', 'Rename', 'notes/c.md');
+  await expect(app.forge.editor('notes/c.md')).toHaveValue('a\n');
+  await expect(app.forge.editor('a.md')).toHaveCount(0);
+  await expect(app.forge.editor('b.md')).toHaveCount(0);
+  expect((await boxes()).indexOf('c.md')).toBe(at);
+
+  // The folder it is in moved: its box is the file in the folder as it is called now.
+  await app.file.named('trip', 'notes', 'Rename', 'kept');
+  await expect(app.forge.editor('kept/c.md')).toHaveValue('a\n');
+  await expect(app.forge.editor('notes/c.md')).toHaveCount(0);
+  expect((await boxes()).indexOf('c.md')).toBe(at);
+
+  // Removed, its box goes; the file beside it, made before and untouched, is not taken for it.
+  await app.file.remove('trip', 'kept/c.md');
+  await expect(app.forge.editor('kept/c.md')).toHaveCount(0);
+  await expect(app.forge.editor('other.md')).toBeVisible();
+});
+
 test('File pressed keeps out the tree its hover brought out, however late the press; pressed again it goes', async ({app}) => {
   const file = app.rail.button('file');
   await file.hover();

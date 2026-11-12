@@ -321,6 +321,18 @@ export interface Resolved { node: Entry | null; parent: Dir; name: string }
 
 const SLASH = 47, DOT = 46;
 /** Whether `path` from `at` on holds no component but empty ones and "." (the one before `at` is its last). */
+/**
+ * How a path ends: `slash`, with a slash after its last name (what it names must be a folder); `dot`, with "." (1)
+ * or ".." (2) as that name, which names no entry to take away or to move; `bare`, the path without the slashes at
+ * its end. A call that changes a folder's entries (unlink, rmdir, rename) asks, since the walk goes through both.
+ */
+export function ending(path: string): {slash: boolean; dot: 0 | 1 | 2; bare: string} {
+  let n = path.length;
+  while (n > 1 && path.charCodeAt(n - 1) === SLASH) n--;
+  const bare = path.slice(0, n), last = bare.slice(bare.lastIndexOf('/') + 1);
+  return {slash: n < path.length, dot: last === '.' ? 1 : last === '..' ? 2 : 0, bare};
+}
+
 function onlyDots(path: string, at: number): boolean {
   for (let i = at; i < path.length; i++) {
     const c = path.charCodeAt(i);
@@ -397,19 +409,25 @@ export class Vfs {
       if (end - start === 1 && full.charCodeAt(start) === DOT) continue;
       const part = full.slice(start, end), dir = stack[stack.length - 1];
       name = part;
-      if (part === '..') { if (stack.length > 1) { stack.pop(); names?.pop(); } continue; }
+      // (".." is asked of a folder as any name is: through a file it is ENOTDIR, not the folder the file lies in.)
       if (!(dir instanceof Dir)) return E.NOTDIR;
+      if (part === '..') { if (stack.length > 1) { stack.pop(); names?.pop(); } continue; }
       const node = dir.entries.get(part);
       const last = onlyDots(full, end);
+      // Its last name with more of the path after it (a slash, "." or ".."): the path goes through what it names,
+      // which must then be a folder (ENOTDIR for a file, as Linux says to "file/" and "file/."), and a link there
+      // is followed whoever asks.
+      const through = last && end < n;
       if (!node) {
         if (last) return {node: null, parent: dir, name: part};
         return E.NOENT;
       }
-      if (node instanceof Link && (!last || follow)) {
+      if (node instanceof Link && (!last || follow || through)) {
         // The link's target from the directory it is in (what came before it), then what comes after it.
         const target = node.target.startsWith('/') ? node.target : full.slice(0, start) + '/' + node.target;
-        return this.walk(last ? target : target + full.slice(end), '/', follow, depth + 1, names);
+        return this.walk(last && !through ? target : target + full.slice(end), '/', follow, depth + 1, names);
       }
+      if (through && !(node instanceof Dir)) return E.NOTDIR;
       stack.push(node);
       names?.push(part);
     }

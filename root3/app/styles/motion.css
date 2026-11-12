@@ -1,5 +1,11 @@
 /* The OS's moves: the ink going to the thing chosen, a thing opened becoming its box, the camera panning along the
    rail and the band, the caret gliding to where words are written, a thing just done landing in its place. */
+/* All of them left out but one (ui/glide.ts still): the rail's ink going from the place left to the place come to.
+   Nothing else is moved by a transition or an animation; each thing is where it ends, at once. Taken off together so
+   that what the screen says without them is seen: a move comes back only where it is found wanted, and is then let
+   through here by name. */
+:not(#rail-tabs, #rail-tabs *), :not(#rail-tabs, #rail-tabs *)::before, :not(#rail-tabs, #rail-tabs *)::after { transition: none !important; animation: none !important; }
+#rail-tabs .rail-tag { transition: none !important; }
 /* The ink of the thing chosen, on its way from the one it was on (glide.ts): under the words and icons; the one
    it is going to waits un-inked, its words in ink, until it lands. */
 .glide-ink { position: absolute; z-index: -1; background: var(--ink); pointer-events: none; }

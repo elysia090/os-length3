@@ -9,7 +9,7 @@
 import {Description, PIPE_BUF, Pipe, flock, unflock, type Interest} from './fd.ts';
 import * as net from './sys-net.ts';
 import {Made, procDescriptor} from './procfs.ts';
-import {Dir, Device, E, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK, type Entry} from './fs.ts';
+import {Dir, Device, E, ending, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK, type Entry} from './fs.ts';
 import {Wait} from './flow.ts';
 import type {Calls, Kern, Proc, Termios} from './parts.ts';
 import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.ts';
@@ -440,13 +440,21 @@ function iov(p: Proc, address: bigint, count: bigint, each: (base: number, lengt
 }
 
 function remove(p: Proc, dirfd: bigint, address: bigint, directory: boolean): number {
-  const r = p.kernel.vfs.resolve(path(p, address), base(p, dirfd), false);
+  // What is taken away is a name in a folder: "." and ".." name none (as Linux: rmdir of "." EINVAL, of ".."
+  // ENOTEMPTY, unlink of either EISDIR), and a slash after the name says a folder, without following a link there.
+  const whole = path(p, address), end = ending(whole);
+  // (The way to it is walked first: through a file, or a name not there, is said before what "." cannot be.)
+  if (end.dot) { p.kernel.vfs.lookup(whole, base(p, dirfd), false); fail(directory ? (end.dot === 1 ? E.INVAL : E.NOTEMPTY) : E.ISDIR); }
+  const r = p.kernel.vfs.resolve(end.bare, base(p, dirfd), false);
   const node = r.node ?? fail(E.NOENT);
+  if (node === p.kernel.vfs.root) fail(directory ? E.BUSY : E.ISDIR);
   if (directory) {
     if (!(node instanceof Dir)) return fail(E.NOTDIR);
     if (node.entries.size) fail(E.NOTEMPTY);
   } else if (node.isDir) {
     fail(E.ISDIR);
+  } else if (end.slash) {
+    fail(E.NOTDIR);
   }
   r.parent.entries.delete(r.name);
   unlinked(r.parent, node);
@@ -467,16 +475,64 @@ function makeDir(p: Proc, dirfd: bigint, address: bigint, mode: bigint): number 
   return 0;
 }
 
-function rename(p: Proc, olddir: bigint, oldaddr: bigint, newdir: bigint, newaddr: bigint): number {
-  const vfs = p.kernel.vfs;
-  const from = vfs.resolve(path(p, oldaddr), base(p, olddir), false);
+/** renameat2's flags: do not replace what is there; swap the two; (leave a whiteout: an overlay's, not made here). */
+const RENAME = {NOREPLACE: 1, EXCHANGE: 2, WHITEOUT: 4};
+
+/** Whether `dir` is `under` or lies anywhere beneath it. */
+function within(under: Dir, dir: Dir): boolean {
+  if (under === dir) return true;
+  for (const e of under.entries.values()) if (e instanceof Dir && within(e, dir)) return true;
+  return false;
+}
+
+/**
+ * rename, renameat and renameat2. Everything that refuses it is looked at before anything is changed, as Linux
+ * looks: a rename refused leaves both names, their links and what is open of them as they were. Then one change:
+ * the name moved over what was there (gone), or with EXCHANGE the two swapped.
+ */
+function rename(p: Proc, olddir: bigint, oldaddr: bigint, newdir: bigint, newaddr: bigint, flags = 0n): number {
+  const vfs = p.kernel.vfs, f = N(flags);
+  if (f & ~(RENAME.NOREPLACE | RENAME.EXCHANGE | RENAME.WHITEOUT)) fail(E.INVAL);
+  if (f & RENAME.EXCHANGE && f & (RENAME.NOREPLACE | RENAME.WHITEOUT)) fail(E.INVAL);
+  if (f & RENAME.WHITEOUT) fail(E.INVAL);
+  // A name in a folder moved to a name in a folder: "." and ".." name none (EBUSY, as Linux), and a slash after
+  // either name says a folder (ENOTDIR for a file moved, or moved to such a name), a link there not followed.
+  const oldPath = path(p, oldaddr), newPath = path(p, newaddr), old = ending(oldPath), next = ending(newPath);
+  if (old.dot) { vfs.lookup(oldPath, base(p, olddir), false); fail(E.BUSY); }
+  if (next.dot) { vfs.lookup(newPath, base(p, newdir), false); fail(E.BUSY); }
+  const from = vfs.resolve(old.bare, base(p, olddir), false);
   const node = from.node ?? fail(E.NOENT);
-  const to = vfs.resolve(path(p, newaddr), base(p, newdir), false);
-  if (to.node instanceof Dir && !node.isDir) fail(E.ISDIR);
-  if (to.node instanceof Dir && to.node.entries.size) fail(E.NOTEMPTY);
-  if (to.node === node) return 0; /* the same file by two names: nothing changes */
+  const to = vfs.resolve(next.bare, base(p, newdir), false);
+  const there = to.node;
+  if ((old.slash || next.slash) && !node.isDir) fail(E.NOTDIR);
+  if (node === vfs.root || there === vfs.root) fail(E.BUSY);
+  // A directory is never put into itself or under itself, nor swapped with one it holds: it would hold itself and
+  // be reached from nowhere.
+  if (node instanceof Dir && within(node, to.parent)) fail(E.INVAL);
+  if (f & RENAME.EXCHANGE) {
+    if (!there) return fail(E.NOENT);
+    if (there instanceof Dir && within(there, from.parent)) fail(E.INVAL);
+    if (there === node) return 0;
+    from.parent.entries.set(from.name, there);
+    to.parent.entries.set(to.name, node);
+    // A directory's .. is a link to where it lies: each parent counts the directories it holds.
+    if (from.parent !== to.parent && node.isDir !== there.isDir) {
+      const [gains, loses] = node.isDir ? [to.parent, from.parent] : [from.parent, to.parent];
+      gains.nlink++;
+      loses.nlink--;
+    }
+    return 0;
+  }
+  if (there && f & RENAME.NOREPLACE) fail(E.EXIST);
+  if (there === node) return 0; /* the same file by two names: nothing changes */
+  if (there) {
+    if (node.isDir && !(there instanceof Dir)) fail(E.NOTDIR);
+    if (!node.isDir && there instanceof Dir) fail(E.ISDIR);
+    // (A directory that holds the one moved is not empty: ENOTEMPTY, as Linux says of rename("a/b", "a").)
+    if (there instanceof Dir && there.entries.size) fail(E.NOTEMPTY);
+  }
   from.parent.entries.delete(from.name);
-  if (to.node) unlinked(to.parent, to.node);
+  if (there) unlinked(to.parent, there);
   to.parent.entries.set(to.name, node);
   if (node.isDir && from.parent !== to.parent) { from.parent.nlink--; to.parent.nlink++; }
   return 0;
@@ -1206,7 +1262,7 @@ export const FILE_CALLS: Calls = {
   269(dirfd, name, mode) { return access(this, dirfd, name, mode); },
   292(oldfd, newfd, flags) { if (N(oldfd) === N(newfd)) fail(E.INVAL); return dup(this, oldfd, N(newfd), (N(flags) & O.CLOEXEC) !== 0); },
   293(fds, flags) { return pipe(this, fds, flags); },
-  316(od, oa, nd, na) { return rename(this, od, oa, nd, na); },
+  316(od, oa, nd, na, flags) { return rename(this, od, oa, nd, na, flags); },
   332() { return fail(E.NOSYS); },
   439(dirfd, name, mode, flags) { return access(this, dirfd, name, mode, flags); },
 };

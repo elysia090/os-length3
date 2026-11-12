@@ -7,7 +7,7 @@ import {complete, pathWord, Recall} from '../../prompt/recall.ts';
 import {kindOf} from '../../repos/text.ts';
 import {onChange, onRenamed, shownTree, store, type Entry} from '../../repos/repos.ts';
 import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
-import type {Screen, ScreenState} from './screen.ts';
+import type {Rises, ScreenState} from './screen.ts';
 import {agentSessionFor, Session, sessionFor, terminalFor} from './terminal.ts';
 import {type AgentTerm, agentTermFor} from './agent-term.ts';
 import {sessionIfAny} from './sessions.ts';
@@ -34,8 +34,9 @@ import {work as workOf} from '../../repos/history.ts';
 // first line and ↓ on the last walk the repo's earlier lines, a run pressed in Output is put back in the box, and →
 // at the end completes the path before the caret from the repo's tree (several matches said in one quiet line under the box).
 //
-// While one reads (the center turned by the wheel, a touch or the keys) and the box is empty and not written in, it
-// steps back and lets what is under it be pressed; the keyboard reaching it, a press on the Prompt, or the pointer
+// Where the box floats over the page (Git; not a desk, whose line stands under it): while one reads (the center turned
+// by the wheel, a touch or the keys) and the box is empty and not written in, it steps back and lets what is under it
+// be pressed; the keyboard reaching it, a press on the Prompt, or the pointer
 // resting at the center's foot brings it back where it was. A page read rather than written in (Git) has it stepped
 // back from the start.
 
@@ -81,7 +82,7 @@ interface BoxParts {
   /** On a desk: a file's box laid without taking the person's hand (false: it cannot be); the camera over boxes. */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
-  /** On a desk: the Agent's own terminal (`element`) laid beside the person's in `repo`'s desk, if it is not there. */
+  /** On a desk: the Agent's own terminal (`element`) laid as a box of `repo`'s desk, if it is not there. */
   besideTerm?(repo: string, element: HTMLElement): void;
   /** The box is the Prompt's own last line, on a desk (Forge's): under Run, Enter runs what is written, as a
    * terminal's does (Shift+Enter a new line). */
@@ -105,7 +106,7 @@ export class Box {
   /** The line's parts that stay where they are while the Prompt's glass comes under them: the pill's lamp first. */
   readonly line: HTMLElement[];
 
-  #screen: Screen | null = null;
+  #screen: Rises | null = null;
   #repo: string | null = null;
   #mode: Mode = boxMode();
   /** What completing last said under the box, which goes as soon as anything else is done there. */
@@ -186,7 +187,7 @@ export class Box {
   get repo(): string | null { return this.#repo; }
 
   /** The screen the box becomes while the Prompt is up (made with the box's own parts, so given after). */
-  set screen(s: Screen) { this.#screen = s; }
+  set screen(s: Rises) { this.#screen = s; }
   get #up(): boolean { return this.#screen?.up ?? false; }
 
   /** As the screen goes up, starts down, or is the box's line again: what the line says, and how tall it is. */
@@ -221,6 +222,16 @@ export class Box {
     if (!this.#repo || this.prompt.disabled) return;
     this.#put(text);
     this.prompt.focus();
+  }
+
+  /** The Prompt put away, the keyboard given back to what had it (as Escape in the box). */
+  putAway() { this.#letGo(); }
+
+  /** The keyboard into the box, come from `from` (what had it before a press took it from there on its way here):
+   * given back there when the box lets go. */
+  take(from: HTMLElement | null) {
+    this.prompt.focus();
+    if (from) this.#before = from;
   }
 
   /** Ctrl+`: the box runs, and has the keyboard; false when it can do nothing (no repo). */
@@ -266,6 +277,9 @@ export class Box {
       if (m === 'edit' && document.activeElement === this.prompt) this.#edit.show(); else this.#edit.hide();
     };
     if (seen && this.#p.work.isConnected && !this.#up) turn(this.chip, this.runIt, change); else change();
+    // On a desk, run chosen with the keyboard in the line (its start pressed, Alt+1): the line is the terminal's again,
+    // what it printed standing on it, as when the line is taken.
+    if (this.#p.desk && m === 'run' && document.activeElement === this.prompt) this.#screen?.raise();
     if (!byItself) setBoxMode(m);
   }
 
@@ -720,8 +734,6 @@ export class Box {
 
   /** Escape: the Prompt put back and the box let go; editing, what is in the box goes first (and then the box). */
   #escape(event: KeyboardEvent) {
-    // On a desk the line is the Prompt's box's own: Escape is the desk's (back to the base, then the text let go of).
-    if (this.#p.desk) return;
     // Editing, Escape gives the keyboard back to the file, where the box was in it.
     if (this.#mode === 'edit' && !event.isComposing) {
       event.preventDefault();
@@ -758,12 +770,14 @@ export class Box {
   }
 
   /**
-   * A key in the box while it runs: → at the end completes a path (as a shell's suggestion is taken; Tab is the desk's,
-   * the next box), ↑ and ↓ walk earlier lines, Ctrl-C interrupts, Ctrl+Enter runs.
+   * A key in the box while it runs: → at the end completes a path (as a shell's suggestion is taken), ↑ and ↓ walk
+   * earlier lines, Ctrl-C interrupts, Ctrl+Enter runs.
    */
   #runKey(event: KeyboardEvent) {
     const {prompt} = this, repo = this.#repo, caret = prompt.selectionStart === prompt.selectionEnd;
     if (event.key === 'ArrowRight' && plain(event) && caret && prompt.selectionStart === prompt.value.length) { if (this.#tab()) event.preventDefault(); return; }
+    // At a desk's foot the line is a terminal's: Tab completes there and never leaves the line.
+    if (this.#p.desk && event.key === 'Tab' && plain(event)) { event.preventDefault(); this.#tab(); return; }
     // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
     if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain(event) && caret) { this.#walkTo(event, event.key); return; }
     // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal; at the prompt line, the line
@@ -901,11 +915,18 @@ export class Box {
     runIt.addEventListener('pointerdown', (event) => { if (document.activeElement === prompt) event.preventDefault(); });
     form.addEventListener('submit', (event) => { event.preventDefault(); this.#send(); prompt.focus(); });
     // The pill pressed at rest brings out what the box can do; up as the screen's prompt line, it is the line's start.
-    chip.addEventListener('click', () => { if (!this.#up && !prompt.disabled) this.#menu.open(); });
+    // On a desk it is a switch between the two things the line does all day, run and note for later (TODO): one press
+    // and it is the other, the keyboard in the line; the rest still come out of it at Alt+↓.
+    chip.addEventListener('click', () => {
+      if (prompt.disabled) return;
+      if (!this.#p.desk) { if (!this.#up) this.#menu.open(); return; }
+      this.choose(this.#mode === 'run' ? 'todo' : 'run');
+      prompt.focus();
+    });
     // Pressed anywhere in the box, not on its line alone (its padding, beside Run): the caret goes in.
     form.addEventListener('pointerdown', (event) => {
       const on = event.target as Node;
-      if (chip.contains(on) && !this.#up) return;
+      if (chip.contains(on) && (!this.#up || this.#p.desk)) return;
       if ((on !== form && !chip.contains(on) && !caps.contains(on)) || prompt.disabled) return;
       event.preventDefault();
       prompt.focus();
@@ -915,10 +936,12 @@ export class Box {
   /** The Prompt it brings up: left, switched on again, put back by its ×, pressed. */
   #wireTerm() {
     const {prompt, dock} = this, {term} = this.#p;
-    // Leaving the box and the Prompt sends the Prompt home; losing the window's focus does not.
+    // Leaving the box and the Prompt sends the Prompt home; losing the window's focus does not. On a desk it stays up
+    // till it is put away (Escape, its ×, the band's >_): what a run said is read while the file it is about is
+    // written in.
     dock.addEventListener('focusout', (event) => {
       const to = event.relatedTarget as Node | null;
-      if (to && !dock.contains(to)) this.#screen?.lower();
+      if (to && !dock.contains(to) && !this.#p.desk) this.#screen?.lower();
     });
     // Switched on again from the screen, the keyboard is back in the box (the switch it was on is gone with the old one).
     term.addEventListener('click', (event) => {
@@ -938,7 +961,9 @@ export class Box {
   // ---- Stepping back while one reads.
 
   #rest(on: boolean) {
-    if (on && (this.#up || this.prompt.value || this.note.textContent || document.activeElement === this.prompt)) return;
+    // On a desk the line stands on ground of its own under the desk and covers nothing: it has nothing to step back
+    // from, and stepped back it left an empty frame there that no press brought back (issue #172).
+    if (on && (this.#p.desk || this.#up || this.prompt.value || this.note.textContent || document.activeElement === this.prompt)) return;
     this.dock.classList.toggle('resting', on);
   }
 

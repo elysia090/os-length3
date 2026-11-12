@@ -188,7 +188,11 @@ export class Description {
   }
   retain(): this { this.refs++; return this; }
   release(): void {
-    if (--this.refs > 0) return;
+    if (--this.refs > 0) {
+      // A local socket still held, perhaps only by descriptors in flight that no one can receive any more (sys-net.ts).
+      if (this.kind === 'socket') this.sock?.released();
+      return;
+    }
     this.closed = true;
     unflock(this);
     if (this.pipe && (this.kind === 'pipe-r' || this.kind === 'pipe-rw')) { this.pipe.readers--; this.pipe.changes++; }

@@ -36,12 +36,13 @@ export async function readAll(repo: string): Promise<Files> {
 
 /** The files read for a search, as a change saved since leaves them: the file's new text, or read again. */
 export function patched(files: Promise<Files>, c: Change): Promise<Files> | null {
-  if (c.what !== 'file' || c.text == null) return null;
+  if (c.what !== 'file') return null;
+  const {path, text} = c;
   return files.then((list) => {
-    const at = list.findIndex((f) => f.path === c.path);
-    if (at < 0) return [...list, {path: c.path, text: c.text!}];
+    const at = list.findIndex((f) => f.path === path);
+    if (at < 0) return [...list, {path, text}];
     const next = list.slice();
-    next[at] = {path: c.path, text: c.text!};
+    next[at] = {path, text};
     return next;
   });
 }

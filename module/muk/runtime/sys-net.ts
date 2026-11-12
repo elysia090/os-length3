@@ -52,6 +52,10 @@ declare module './parts.ts' {
     netlinkPorts?: Map<number, Endpoint>;
     inetPorts?: Record<number, Map<number, Set<Endpoint>>>;
     inetNext?: number;
+    /** A socket's descriptor was passed over a socket (SCM_RIGHTS): only then can sockets hold one another (collect). */
+    socketsPassed?: boolean;
+    /** collect is looking: what it lets go does not start it again. */
+    collecting?: boolean;
   }
 }
 
@@ -195,6 +199,9 @@ class Endpoint {
   /** Moves whenever its readiness may have (epoll's edge). */
   get changes(): number { return this.rx.changes + this.events + (this.peer ? this.peer.rx.changes : 0); }
 
+  /** One of its descriptors was let go and others are left: perhaps only ones in flight that no one can receive (collect). */
+  released(): void { if (this.kernel.socketsPassed) collect(this.kernel); }
+
   /** Its last descriptor closed: its peer sees the end, what it held in flight is let go, its name and port are free. */
   close(): void {
     if (this.closed) return;
@@ -220,6 +227,43 @@ class Endpoint {
     if (this.netlink && portid !== undefined && this.kernel.netlinkPorts?.get(portid) === this) this.kernel.netlinkPorts.delete(portid);
     this.kernel.sockets?.delete(this);
   }
+}
+
+/** The descriptors in flight to `e`: those that came with a stream's bytes, and with its messages. */
+const flying = (e: Endpoint): Description[] =>
+  [...e.rights.flatMap((r) => r.descs), ...(e.rx instanceof Messages ? e.rx.list.flatMap((m) => m.rights) : [])];
+
+/**
+ * Sockets held only by descriptors in flight that no one can receive any more are let go, as Linux's unix_gc lets
+ * them go. A socket's descriptor passed over a socket is held by the queue it lies in; passed to itself, or round a
+ * ring of sockets, each queue holds the next and none counts down to its close once the last descriptor a process
+ * has is closed. So: the sockets every reference to which lies in a queue are looked at; those in the queue of a
+ * socket someone still holds can be received, and are kept, with what lies in their queues in turn; what is left no
+ * one can reach, and what lies in its queues is let go, which closes it.
+ */
+function collect(kernel: Kern): void {
+  if (kernel.collecting) return;
+  const count = new Map<Description, number>();
+  for (const e of kernel.sockets ?? []) for (const d of flying(e)) if (d.kind === 'socket' && d.sock) count.set(d, (count.get(d) ?? 0) + 1);
+  // Held by queues alone.
+  const lost = new Set<Description>();
+  for (const [d, n] of count) if (d.refs === n) lost.add(d);
+  if (!lost.size) return;
+  // Every other socket is someone's (a process's descriptor, a listener's connection not yet accepted): what lies in
+  // its queue can still be received. A connection waiting on a listener is the listener's to give.
+  const ends = (d: Description): Endpoint[] => [d.sock as Endpoint, ...(d.sock as Endpoint).backlog];
+  const perhaps = new Set<Endpoint>([...lost].flatMap(ends));
+  const kept = [...kernel.sockets ?? []].filter((e) => !perhaps.has(e));
+  for (let e = kept.pop(); e; e = kept.pop()) for (const d of flying(e)) if (lost.delete(d)) kept.push(...ends(d));
+  if (!lost.size) return;
+  const freed: Description[] = [];
+  for (const d of lost) for (const e of ends(d)) {
+    freed.push(...flying(e));
+    e.rights = [];
+    if (e.rx instanceof Messages) for (const m of e.rx.list) m.rights = [];
+  }
+  kernel.collecting = true;
+  try { for (const d of freed) d.release(); } finally { kernel.collecting = false; }
 }
 
 /** Two ends of a connection, each reading what the other writes. */
@@ -632,7 +676,7 @@ function transmit(p: Proc, d: Description & {sock: Endpoint}, data: Uint8Array, 
   if (rights.length && !(s.family === AF.UNIX)) fail(E.INVAL);
   if (s.netlink) return netlinkSend(p, s, data, to);
   if (s.type === SOCK.RAW) { pendingError(s); return icmp(s, data, to ?? s.remote); }
-  const own = () => rights.map((r) => r.retain());
+  const own = () => rights.map((r) => { if (r.kind === 'socket') p.kernel.socketsPassed = true; return r.retain(); });
   if (s.type === SOCK.DGRAM) {
     if (s.inet) {
       pendingError(s);
@@ -668,9 +712,15 @@ function transmit(p: Proc, d: Description & {sock: Endpoint}, data: Uint8Array, 
     return data.length;
   }
   // A stream: what fits, then the rest once there is room (all of it unless it does not wait).
-  if (!done && rights.length) peer.rights.push({at: peer.arrived, descs: own()});
   if (!(peer.rx instanceof Pipe)) return fail(ERR.PROTOTYPE);
   const wrote = done + peer.rx.write(data.subarray(done));
+  // Its descriptors go with the first byte it takes, where that byte lies, and once: a send that took none (the
+  // peer full, nothing to send) passes none, however often it is asked again, and one that waited and goes on
+  // has passed them already (kept in the call's own state, not read off how much went).
+  if (rights.length && wrote > done && !state.passed) {
+    peer.rights.push({at: peer.arrived, descs: own()});
+    state.passed = true;
+  }
   peer.arrived += wrote - done;
   if (s.inet && wrote > done) { const t = traffic(p.kernel); t.bytes += wrote - done; t.packets++; }
   if (wrote === data.length) return wrote;
@@ -779,21 +829,52 @@ function sendmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   return transmit(p, d, data, N(flags), destination(p, d.sock, BigInt(nameAt), BigInt(nameLen)), rights);
 }
 
+/** `length` bytes at `at` are the guest's own memory, or EFAULT: asked before anything is taken that would be lost with it. */
+function within(p: Proc, at: number, length: number): void {
+  if (!(at >= 0 && length >= 0 && at + length <= p.bytes.length)) fail(E.FAULT);
+}
+
 function recvmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   const d = socketOf(p, fd), at = N(msg), v = p.view, f = N(flags);
-  const iov = vectors(p, Number(v.getBigUint64(at + 16, true)), Number(v.getBigUint64(at + 24, true)));
+  // Where it is to be put is looked at before anything is taken: a message taken off its queue and then not
+  // written out (a place outside the guest's memory) would be gone, and the descriptors that came with it kept by
+  // no one. The header, the places for its bytes, for who sent it and for its control data: each the guest's, or EFAULT.
+  within(p, at, 56);
+  const iovAt = Number(v.getBigUint64(at + 16, true)), iovCount = Number(v.getBigUint64(at + 24, true));
+  if (iovCount < 0 || iovCount > 1024) fail(E.INVAL);
+  within(p, iovAt, iovCount * 16);
+  const iov = vectors(p, iovAt, iovCount);
+  for (const [b, l] of iov) within(p, b, l);
+  const nameAt = Number(v.getBigUint64(at, true)), nameRoom = nameAt ? v.getUint32(at + 8, true) : 0;
+  within(p, nameAt, nameRoom);
+  const control = Number(v.getBigUint64(at + 32, true)), room = control ? Number(v.getBigUint64(at + 40, true)) : 0;
+  within(p, control, room);
   const total = iov.reduce((n, [, l]) => n + l, 0), buf = new Uint8Array(total);
   const r = receive(p, d, buf, 0, total, f & ~MSG.WAITALL);
+  // What came is this call's to hand on or to let go, whatever happens from here: the descriptors still held for
+  // the message, and those made this process's already.
+  let held = r.rights;
+  const made: number[] = [];
+  try {
+    return received(p, d, r, at, f, iov, buf, nameAt, nameRoom, control, room, made, () => { held = []; });
+  } catch (e) {
+    for (const x of held) x.release();
+    for (const n of made) p.fds.close(n);
+    throw e;
+  }
+}
+
+/** recvmsg's second half: what `receive` took (`r`) written out to the guest (`made`: the descriptors installed; `handed`: called once the message's own hold on them is let go). */
+function received(p: Proc, d: Description & {sock: Endpoint}, r: Received, at: number, f: number, iov: [number, number][], buf: Uint8Array,
+  nameAt: number, nameRoom: number, control: number, room: number, made: number[], handed: () => void): number {
+  const v = p.view;
   let off = 0;
   for (const [b, l] of iov) { if (off >= r.n) break; const k = Math.min(l, r.n - off); p.bytes.set(buf.subarray(off, off + k), b); off += k; }
-  const nameAt = Number(v.getBigUint64(at, true));
   if (nameAt) {
-    const have = v.getUint32(at + 8, true);
-    if (r.from) p.bytes.set(r.from.subarray(0, Math.min(have, r.from.length)), nameAt);
+    if (r.from) p.bytes.set(r.from.subarray(0, Math.min(nameRoom, r.from.length)), nameAt);
     v.setUint32(at + 8, r.from?.length ?? 0, true);
   }
   // Control data: the descriptors that came (each now one of this process's), and the sender's credentials if asked.
-  const control = Number(v.getBigUint64(at + 32, true)), room = Number(v.getBigUint64(at + 40, true));
   let used = 0, outFlags = r.size > r.n && !d.sock.stream ? MSG.TRUNC : 0;
   const put = (type: number, words: (at: number) => void, size: number, level = SOL_SOCKET): boolean => {
     const len = 16 + size, space = (len + 7) & ~7;
@@ -806,9 +887,10 @@ function recvmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
     return true;
   };
   if (r.rights.length) {
-    const fds = r.rights.map((x) => p.fds.install(x, {cloexec: !!(f & MSG.CMSG_CLOEXEC)}));
+    for (const x of r.rights) made.push(p.fds.install(x, {cloexec: !!(f & MSG.CMSG_CLOEXEC)}));
     for (const x of r.rights) x.release();
-    if (!put(SCM.RIGHTS, (w) => fds.forEach((n, k) => v.setInt32(w + 4 * k, n, true)), 4 * fds.length)) for (const n of fds) p.fds.close(n);
+    handed();
+    if (!put(SCM.RIGHTS, (w) => made.forEach((n, k) => v.setInt32(w + 4 * k, n, true)), 4 * made.length)) { for (const n of made) p.fds.close(n); made.length = 0; }
   }
   const creds = r.creds;
   if (d.sock.options.passcred && creds) {
@@ -883,6 +965,11 @@ export const NET_CALLS: Calls = {
     if (family === AF.INET || family === AF.INET6 || family === AF.NETLINK) { kindOf(family, N(type), N(protocol)); fail(E.OPNOTSUPP); }
     if (family !== AF.UNIX) fail(E.AFNOSUPPORT);
     const t = kindOf(family, N(type), N(protocol));
+    // Where the pair is told, and room for both its descriptors, are looked at before anything is made: one refused
+    // here (EFAULT, EMFILE) leaves no socket in the kernel and no descriptor behind, not one end of two.
+    within(this, N(sv), 8);
+    const first = this.fds.lowest();
+    if (first < 0 || this.fds.lowest(first + 1) < 0) fail(E.MFILE);
     const a = new Endpoint(this.kernel, family, t, this), b = new Endpoint(this.kernel, family, t, this);
     link(a, b);
     const fa = install(this, a, N(type)), fb = install(this, b, N(type));

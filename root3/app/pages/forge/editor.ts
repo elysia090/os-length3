@@ -94,6 +94,16 @@ function indent(area: HTMLTextAreaElement, out = false) {
   reshape(area, from, to, done.join('\n'), moved(a), moved(b));
 }
 
+/**
+ * Tab in a file, as in any editor: with a selection its lines move in (Shift+Tab: out), as Ctrl+] moves them; with the
+ * caret alone, the file's own indent is written where the caret is (Shift+Tab: the caret's line moved out).
+ */
+function tab(area: HTMLTextAreaElement, out: boolean) {
+  const at = area.selectionStart;
+  if (out || at !== area.selectionEnd) indent(area, out);
+  else typeOver(area, at, at, indentOf(area.value));
+}
+
 /** Alt+↑ or Alt+↓ in a file: the lines the caret or the selection touches moved over the line above or below. */
 function moveLines(area: HTMLTextAreaElement, up: boolean) {
   const {value, selectionStart: a, selectionEnd: b} = area;
@@ -451,8 +461,9 @@ export class Editor {
   };
 
   /**
-   * Ctrl+S saves; Ctrl+] and Ctrl+[ move the lines in and out (Tab is the desk's: the next box); Alt and an arrow move
-   * what is written (the lines up and down, the letters sideways); Enter keeps the indent; Escape leaves the text.
+   * Ctrl+S saves; Tab and Shift+Tab, or Ctrl+] and Ctrl+[, move the lines in and out (Tab with the caret alone writes
+   * the indent there); Alt and an arrow move what is written (the lines up and down, the letters sideways); Enter keeps
+   * the indent; Escape leaves the text, so Tab never holds the keyboard in it.
    */
   private key(event: KeyboardEvent) {
     if (event.isComposing) return;
@@ -464,6 +475,7 @@ export class Editor {
       indent(this.area, event.code === 'BracketLeft');
       return;
     }
+    if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); tab(this.area, event.shiftKey); return; }
     if (alt && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) { event.preventDefault(); moveLines(this.area, event.key === 'ArrowUp'); return; }
     if (alt && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) { event.preventDefault(); moveLetters(this.area, event.key === 'ArrowLeft'); return; }
     if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { event.preventDefault(); newLine(this.area); return; }

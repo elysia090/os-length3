@@ -102,6 +102,15 @@
   /* Rail: 12px from the window's side to the icons, 18px from the icons to its line. */
   --rail-line-gap: 18px;
   --rail: calc(var(--s3) + var(--h-place) + var(--rail-line-gap));
+  /* The skeleton every page is set on. Sideways, two edges from the rail's line: what is on the top line (the band's
+     tools, Git's and Server's chips) a step in, and a page's own things a place further in, one x on every page
+     whatever the window's width. Down, rows as the rail's are, a place tall and a step between, the first a step
+     (s3) under the top line's row: a page's first line (its name, its parts, a heading) stands in the first, level
+     with the rail's first place, and its first box starts on the second. (A window too short for the rail's steps
+     closes the rail up, and a phone's rail is closer set, rail.css; the pages keep these rows, one page as another.) */
+  --band-left: var(--s5);
+  --body-left: calc(var(--band-left) + var(--h-place));
+  --row: var(--h-place); --row-step: var(--s1);
   /* The OS's own pointers, drawn as the window is: ink, a paper edge round it with its joins round, and under it a
      soft small shadow, the one a pointer has as it stands over the window rather than in it. Each is a 27 px SVG
      (under 32, which no browser turns away), its hotspot (the arrow's tip, the finger's, the I-beam's middle), and

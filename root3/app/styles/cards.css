@@ -56,7 +56,7 @@
 .env-note { grid-column: 1; overflow-wrap: anywhere; }
 .env-row > :last-child:not(.env-note):not(.env-name) { grid-column: 2; grid-row: 1 / span 2; }
 /* A narrow Home: Cancel and Save on a row of their own under the name written, rather than squeezing it. */
-@media (max-width: 640px) { .profile { grid-template-columns: minmax(0, 1fr); gap: var(--s4); } .edit-acts { margin-top: 0; } }
+@media (max-width: 640px) { .profile { grid-template-columns: minmax(0, 1fr); gap: var(--s4); } }
 
 /* Git: issues read from each repo's issue/ */
 /* Git's repos are its band, on the top line where Forge's pills are: one row that slides sideways, never more rows,
@@ -73,7 +73,7 @@
    (the Prompt), the room is its again. So is the room kept clear under what is scrolled to: the caret in the
    Review's comment, a box's height above the foot with no box there, stepped the page up as the first letter was
    typed. */
-.flow.git-flow { padding-top: calc(var(--s3) + var(--s2)); padding-bottom: var(--s6); }
+.flow.git-flow { padding-top: 0; padding-left: var(--body-left); padding-bottom: var(--s6); }
 .work.bench .flow.git-flow { scroll-padding-bottom: var(--s3); }
 .work.bench.prompting .flow.git-flow { padding-bottom: 160px; scroll-padding-bottom: calc(var(--s5) + 80px); }
 .issue-kind { font-weight: 700; }
@@ -87,6 +87,10 @@
    issues (not the issues' room before it): the room goes with it as it folds away or unfolds, never left to jump the
    last of the way once it has gone, nor at once as it comes. */
 .git-flow > .section:first-child, .git-flow > .main-part + .section { margin-top: 0; }
+/* The first part shown is set on the rail's rows as every page is: its heading the first row's, a place tall, and its
+   first box from the second (main's over its cards; with nothing waiting on main, the issues' over theirs). */
+.git-flow > .main-part:not([hidden]) > h2 { height: var(--row); margin-bottom: var(--row-step); line-height: var(--row); }
+.git-flow > .main-part[hidden] + .section > .issues-head { min-height: var(--row); margin-bottom: var(--row-step); }
 .git-flow > .main-part { margin-bottom: var(--s6); }
 /* The issues' heading line: the heading as every section's, Write an issue at its right on the same line, not
    making it any taller; with none to show it stands aside (the dashed card is the way then). */

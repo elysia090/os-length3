@@ -35,8 +35,15 @@ export const after = (ms: number, then: () => void): Animation => {
   return a;
 };
 
-/** Whether motion is turned off (reduced motion): each thing is where it ends, at once. */
-export const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** Less motion asked for (the system's own setting): nothing moves, the rail's ink included. */
+export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/**
+ * Whether a move is left out, each thing being where it ends at once. Every move is, but the one kept (`glide` with
+ * `kept`: the rail's ink going from the place left to the place come to). The rest were taken off together, so that
+ * what the screen says without them is seen; each comes back only where it is found wanted (styles: motion.css holds
+ * the same for what the styles move).
+ */
+export const still = () => true;
 
 /** Where `el` is now, to glide from once it is no longer the one chosen. */
 export const where = (el: Element | null | undefined): DOMRect | null => el?.getBoundingClientRect() ?? null;
@@ -48,12 +55,12 @@ export const where = (el: Element | null | undefined): DOMRect | null => el?.get
  * (`.under-ink`: the one it leaves, those it passes, the one it lands on), in ink otherwise (`to` waits un-inked,
  * `.arriving`), so none is ever ink on ink, an icon gone as the slug goes by.
  */
-export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLElement, round: string, ms = 220) {
+export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLElement, round: string, ms = 220, kept = false) {
   // One still on its way in this layer (another place pressed before it landed) gives way: the ink goes on from where
   // it is now, never back from the place it was going to, nor as a second ink beside the first.
   const going = gliding.get(layer);
   if (going) { from = going.at() ?? from; going.end(); }
-  if (!from || !to || still()) return;
+  if (!from || !to || (kept ? reduced() : still())) return;
   const at = to.getBoundingClientRect();
   if (!at.width || (Math.abs(from.left - at.left) < 1 && Math.abs(from.top - at.top) < 1)) return;
   const box = layer.getBoundingClientRect();

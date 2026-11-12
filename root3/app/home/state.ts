@@ -22,6 +22,26 @@ const STORAGE: Record<Key, string> = {profile: 'root3.os.profile', todo: 'root3.
 
 const cache = new Map<Key, string | null>();
 
+// What a person writes on Home (the profile, the TODO, the band) is said kept the moment it is written, and the core
+// keeps it a moment later: a page closed or loaded again between the two lost it (written, Enter, reload: gone). So
+// each is also written at once where a page can write at once, its own storage, until the core has it, and given
+// to the core at the next start before anything is read. Only these three: nothing of a sign-in, of what a device
+// runs or of what it may reach is ever kept by a page.
+const HELD: readonly Key[] = ['profile', 'todo', 'band'];
+const UNKEPT = 'root3.os.unkept.';
+function held(key: Key): string | null {
+  if (!HELD.includes(key)) return null;
+  try { return localStorage.getItem(UNKEPT + key); } catch { return null; }
+}
+function hold(key: Key, json: string) {
+  if (!HELD.includes(key)) return;
+  try { localStorage.setItem(UNKEPT + key, json); } catch { /* a page with no storage keeps what the core keeps */ }
+}
+/** `json` is the core's now: let go, unless it was set again meanwhile (that one is still on its way). */
+function release(key: Key, json: string) {
+  try { if (localStorage.getItem(UNKEPT + key) === json) localStorage.removeItem(UNKEPT + key); } catch { /* nothing was held */ }
+}
+
 /** What the browser kept for `key`; storage it refuses (a private window) kept nothing. */
 function local(key: Key): string | null {
   try { return localStorage.getItem(STORAGE[key]); } catch { return null; }
@@ -41,6 +61,9 @@ export const settingName = (key: Key): string => ({profile: t('Profile'), todo: 
 export async function loadState(keys: readonly Key[] = KEYS): Promise<void> {
   for (const key of keys) {
     let value: string | null;
+    // What was written here and not yet the core's when the page went: kept first, so it is what is read.
+    const waiting = held(key);
+    if (waiting !== null) { try { await core('state_set', {key, json: waiting}); release(key, waiting); } catch { /* still held: tried again at the next read */ } }
     try { value = await core<string | null>('state_get', {key}); } catch (e) {
       unread.set(key, errorText(e));
       continue;
@@ -87,6 +110,8 @@ export async function setState(key: Key, json: string): Promise<void> {
   const why = unread.get(key);
   if (why !== undefined) throw new Error(t('Could not read {what}; not overwritten ({why})', {what: settingName(key), why}));
   cache.set(key, json);
+  hold(key, json);
   for (const fn of [...listeners]) fn(key, false);
   await core('state_set', {key, json});
+  release(key, json);
 }
