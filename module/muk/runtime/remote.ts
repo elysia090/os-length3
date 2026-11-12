@@ -79,8 +79,20 @@ const keeps = (w: Hand, memoryId: number | undefined, imageId: number | null): b
  * Start `n` Workers for threads now, before the kernel is made (its program and translator still on their way):
  * a Worker takes a while to load and run its script, and the first threads would otherwise wait for theirs.
  */
-export function warmThreads(n = 2): void {
-  while (warmed.length < n) warmed.push(newWorker());
+export function warmThreads(n = 2, make: () => Hand = newWorker): void {
+  while (warmed.length < n) {
+    const w = make();
+    // One the host says failed before a kernel has it (it could not start) is not handed to one: taken out and ended.
+    // (Once a kernel has it, the kernel hears of it: adoptWorker.)
+    w.onError(() => {
+      if (w.kernel || w.failed) return;
+      w.failed = true;
+      const at = warmed.indexOf(w);
+      if (at >= 0) warmed.splice(at, 1);
+      w.end();
+    });
+    warmed.push(w);
+  }
 }
 
 function newWorker(): Hand {

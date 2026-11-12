@@ -27,6 +27,7 @@ import {mountProc} from './procfs.ts';
 import {Description, FdTable} from './fd.ts';
 import type {Mapping} from './fs.ts';
 import {Dir, E, File, FsError, Vfs} from './fs.ts';
+import {GuestBytes, GuestView} from './guest.ts';
 import {FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
@@ -1414,18 +1415,23 @@ export class Process implements Proc {
 
   // ---- memory ----
 
-  /** Its memory as bytes: the one view, made again only when the memory grew (another buffer). */
+  /**
+   * Its memory as bytes: the one view, made again only when the memory grew (another buffer). What a call reaches
+   * for outside it is the call's EFAULT (guest.ts).
+   */
   get bytes(): Uint8Array {
     const b = this.memory?.buffer ?? EMPTY;
-    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); this.viewOf = new DataView(b); }
+    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new GuestBytes(b); this.viewOf = new GuestView(b); }
     return this.bytesOf;
   }
   /** Its memory as a DataView: the one, as `bytes` (a call reads and writes through it, and made anew it cost each). */
   get view(): DataView { void this.bytes; return this.viewOf; }
 
+  /** The string at `address`, as far as its NUL: one that begins outside the memory, or runs off its end with none, is EFAULT. */
   cstring(address: number): string {
-    const b = this.bytes, end = b.indexOf(0, address);
-    return utf8(b.subarray(address, end < 0 ? b.length : end));
+    const b = this.bytes, end = address >= 0 && address < b.length ? b.indexOf(0, address) : -1;
+    if (end < 0) throw new FsError(E.FAULT);
+    return utf8(b.subarray(address, end));
   }
 
   /** NULL-terminated array of string pointers. */

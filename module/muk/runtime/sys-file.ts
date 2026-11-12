@@ -84,9 +84,12 @@ function put64(v: DataView, at: number, n: number): void {
   v.setInt32(at + 4, Math.floor(n / 4294967296), true);
 }
 
+/** A struct stat as it is made: put together here, then put in the guest's memory at once (in it whole, or EFAULT). */
+const STAT = new Uint8Array(144), STAT_WORDS = new DataView(STAT.buffer);
+
 function writeStat(p: Proc, address: bigint, node: Statted): number {
-  const v = p.view, at = N(address);
-  p.bytes.fill(0, at, at + 144);
+  const v = STAT_WORDS, at = 0;
+  STAT.fill(0);
   const size = node.isFile || node.isLink ? node.size ?? 0 : node.isDir ? 4096 : 0;
   put64(v, at, node.dev ?? 1);
   put64(v, at + 8, node.ino);
@@ -108,6 +111,7 @@ function writeStat(p: Proc, address: bigint, node: Statted): number {
   times(72, node.atime ?? node.mtime, node.atimeNs);
   times(88, node.mtime, node.mtimeNs);
   times(104, node.ctime ?? node.mtime, undefined);
+  p.bytes.set(STAT, N(address));
   return 0;
 }
 
@@ -320,7 +324,42 @@ function readTo(p: Proc, d: Description, into: Uint8Array, at: number, length: n
   return fail(E.BADF);
 }
 
-const readInto = (p: Proc, d: Description, address: number, length: number, offset: number | null = null): number => readTo(p, d, p.bytes, address, length, offset);
+/** The `length` bytes at `address` are the guest's own memory, all of them, or EFAULT (none asked for asks nothing of the address). */
+function whole(p: Proc, address: number, length: number): void {
+  if (length > 0 && !(address >= 0 && address + length <= p.bytes.length)) fail(E.FAULT);
+}
+
+const piped = (d: Description): boolean => d.kind === 'pipe-r' || d.kind === 'pipe-rw';
+/** Where a process's addresses end (Linux's TASK_SIZE on x86-64): a span past it is no span at all (access_ok). */
+const TASK_SIZE = 0x7ffffffff000;
+
+/**
+ * How much of the `length` bytes at `address` a read (`taking`) or a write of `d` may use, as Linux has it. All of
+ * it, where it is the guest's memory. Of a span that runs off the memory's end, a file or a device reads or writes
+ * the part inside (the call says how much: a short count); a pipe read takes what it holds if that much is inside;
+ * anything else uses none of it (EFAULT before a byte is taken from a pipe, a socket or the console, which would be
+ * lost, or put into one). A span that begins outside the memory is EFAULT; an empty one asks nothing of its address.
+ */
+function reach(p: Proc, d: Description, address: number, length: number, taking = false): number {
+  if (length === 0) return 0;
+  if (length < 0 || address + length > TASK_SIZE) fail(E.FAULT);
+  const end = p.bytes.length;
+  if (address >= 0 && address + length <= end) return length;
+  if (taking && piped(d)) {
+    // (Empty, it gives nothing and touches nothing: its end, or a wait, is said whatever the address.)
+    const have = pipeOf(d).size;
+    if (!have || (address >= 0 && address + Math.min(length, have) <= end)) return length;
+  }
+  if ((d.kind !== 'file' && d.kind !== 'device') || !(address >= 0 && address < end)) fail(E.FAULT);
+  return end - address;
+}
+
+function readInto(p: Proc, d: Description, address: number, length: number, offset: number | null = null): number {
+  const into = p.bytes;
+  // (All of it the guest's memory, as nearly always: nothing more is asked.)
+  if (!(length > 0 && address >= 0 && address + length <= into.length)) length = reach(p, d, address, length, true);
+  return readTo(p, d, into, address, length, offset);
+}
 
 /**
  * Write `data` to `d`. A pipe takes what fits; a writer finding it full
@@ -399,21 +438,59 @@ function writeStatfs(p: Proc, buf: number, at: string): number {
   return 0;
 }
 
-const writeFrom = (p: Proc, d: Description, address: number, length: number, offset: number | null = null): number => writeData(p, d, p.bytes.subarray(address, address + length), offset);
+/**
+ * fcntl's record locks: F_GETLK 5, F_SETLK 6, F_SETLKW 7, and the open file description's own (F_OFD_GETLK 36,
+ * F_OFD_SETLK 37, F_OFD_SETLKW 38). None is kept here: every lock asked for is granted, and none is ever found in
+ * the way. What is asked is read as Linux reads it all the same (a struct flock outside the memory EFAULT; a type or
+ * a whence it does not know EINVAL; a lock to write on a descriptor not open to write EBADF), and F_GETLK answers:
+ * nothing is in the way (F_UNLCK, the rest as it was). (Before: 0 with nothing read or written, so a F_GETLK came
+ * back with the type it asked about, which says a lock is in the way.)
+ */
+function recordLock(p: Proc, d: Description, cmd: number, at: number): number {
+  whole(p, at, 32);
+  const v = p.view, type = v.getInt16(at, true), whence = v.getInt16(at + 2, true), ofd = cmd >= 36, asks = cmd === 5 || cmd === 36;
+  if (ofd && v.getInt32(at + 24, true)) fail(E.INVAL);
+  if (whence < 0 || whence > 2) fail(E.INVAL);
+  const RD = 0, WR = 1, UN = 2;
+  if (asks) {
+    if (type !== RD && type !== WR && !(ofd && type === UN)) fail(E.INVAL);
+    v.setInt16(at, UN, true);
+    return 0;
+  }
+  if (type !== RD && type !== WR && type !== UN) fail(E.INVAL);
+  if ((type === RD && (d.flags & 3) === O.WRONLY) || (type === WR && (d.flags & 3) === 0)) fail(E.BADF);
+  return 0;
+}
+
+const NOTHING = new Uint8Array(0);
+function writeFrom(p: Proc, d: Description, address: number, length: number, offset: number | null = null): number {
+  const from = p.bytes;
+  if (!(length > 0 && address >= 0 && address + length <= from.length)) length = reach(p, d, address, length);
+  return writeData(p, d, length > 0 ? from.subarray(address, address + length) : NOTHING, offset);
+}
 function descriptor(p: Proc, fd: bigint): Description {
   return p.fds.get(N(fd)) ?? fail(E.BADF);
 }
 
-/** The (base, length) pairs of an iovec array. */
+/**
+ * The (base, length) pairs of an iovec array. As Linux takes one in: a length that is negative as a signed word is
+ * EINVAL, and together they are at most MAX_RW_COUNT (what is past it is not asked for).
+ */
 function vectors(p: Proc, address: bigint, count: bigint): [number, number][] {
   if (N(count) < 0 || N(count) > 1024) fail(E.INVAL);
   const out: [number, number][] = [];
+  let left = MAX_RW_COUNT;
   for (let k = 0; k < N(count); k++) {
-    const at = N(address) + k * 16;
-    out.push([Number(p.view.getBigUint64(at, true)), Number(p.view.getBigUint64(at + 8, true))]);
+    const at = N(address) + k * 16, length = p.view.getBigInt64(at + 8, true);
+    if (length < 0n) fail(E.INVAL);
+    const n = Math.min(Number(length), left);
+    left -= n;
+    out.push([Number(p.view.getBigUint64(at, true)), n]);
   }
   return out;
 }
+/** The most one read or write moves (Linux's MAX_RW_COUNT: INT_MAX rounded down to a page). */
+const MAX_RW_COUNT = 0x7ffff000;
 
 /** readv: one read for all of it (so a pipe or the console waits once), scattered. */
 function readv(p: Proc, d: Description, address: bigint, count: bigint, offset: number | null = null): number {
@@ -422,8 +499,13 @@ function readv(p: Proc, d: Description, address: bigint, count: bigint, offset: 
     let at = offset;
     return iov(p, address, count, (b, l) => { const n = readInto(p, d, b, l, at); if (at !== null) at += n; return n; });
   }
-  const buf = new Uint8Array(total);
-  const n = readTo(p, d, buf, 0, total);
+  // What it will be put in is the guest's memory before anything is taken: what a pipe or a socket gave up and could
+  // not be put there would be lost. Every part; of a pipe's read, as far as what the pipe holds reaches (Linux's).
+  let need = piped(d) ? Math.min(total, pipeOf(d).size) : total;
+  for (const [b, l] of parts) { if (need <= 0) break; const k = Math.min(l, need); whole(p, b, k); need -= k; }
+  // (No more is taken at once than such a one holds.)
+  const most = Math.min(total, 1 << 20), buf = new Uint8Array(most);
+  const n = readTo(p, d, buf, 0, most);
   let at = 0;
   for (const [b, l] of parts) { if (at >= n) break; const k = Math.min(l, n - at); p.bytes.set(buf.subarray(at, at + k), b); at += k; }
   return n;
@@ -432,17 +514,30 @@ function readv(p: Proc, d: Description, address: bigint, count: bigint, offset: 
 /** writev: what the vectors hold, as one write (a pipe takes it whole or waits, as Linux does). */
 function writev(p: Proc, d: Description, address: bigint, count: bigint, offset: number | null = null): number {
   const parts = vectors(p, address, count), total = parts.reduce((n, [, l]) => n + l, 0);
+  // What each part reaches is gathered before anything is written: a part outside the memory is EFAULT with nothing
+  // written, but for a file, which takes what came before it and as much of it as is inside (a short count), as
+  // Linux's does.
+  for (const [b, l] of parts) if (d.kind !== 'file' && d.kind !== 'device') whole(p, b, l);
   const buf = new Uint8Array(total);
   let at = 0;
-  for (const [b, l] of parts) { buf.set(p.bytes.subarray(b, b + l), at); at += l; }
-  return writeData(p, d, buf, offset);
+  for (const [b, l] of parts) {
+    if (!l) continue;
+    let n: number;
+    try { n = reach(p, d, b, l); } catch (e) { if (at && e instanceof FsError && e.errno === E.FAULT) break; throw e; }
+    buf.set(p.bytes.subarray(b, b + n), at);
+    at += n;
+    if (n < l) break;
+  }
+  return writeData(p, d, at < total ? buf.subarray(0, at) : buf, offset);
 }
 function iov(p: Proc, address: bigint, count: bigint, each: (base: number, length: number) => number): number {
   let total = 0;
   for (let k = 0; k < N(count); k++) {
     const at = N(address) + k * 16;
     const base = Number(p.view.getBigUint64(at, true)), length = Number(p.view.getBigUint64(at + 8, true));
-    const n = each(base, length);
+    // A part outside the memory after some went: what went is the call's (a short count); with none gone, EFAULT.
+    let n: number;
+    try { n = each(base, length); } catch (e) { if (total && e instanceof FsError && e.errno === E.FAULT) break; throw e; }
     total += n;
     if (n < length) break;
   }
@@ -569,8 +664,9 @@ function getdents(p: Proc, fd: bigint, buf: bigint, count: bigint): number {
   let i = 0;
   const after = d.after;
   if (after !== undefined) for (let hi = names.length; i < hi;) { const m = (i + hi) >> 1; if (names[m] <= after) i = m + 1; else hi = m; }
-  let at = N(buf);
-  const end = at + N(count);
+  // The room it gave, as far as it is the guest's memory: entries are put while they fit there.
+  const start = N(buf), asked = start + N(count), end = Math.min(asked, p.bytes.length);
+  let at = start;
   for (;;) {
     const dot = d.offset < 2;
     if (!dot && i >= names.length) break;
@@ -579,7 +675,11 @@ function getdents(p: Proc, fd: bigint, buf: bigint, count: bigint): number {
     if (!node) break;
     const bytes = enc.encode(name);
     const reclen = (19 + bytes.length + 1 + 7) & ~7;
-    if (at + reclen > end) break;
+    if (at + reclen > end) {
+      // Not one put: the room it gave is too small for the next (EINVAL), or was enough and is not its memory (EFAULT).
+      if (at === start) fail(at + reclen > asked ? E.INVAL : E.FAULT);
+      break;
+    }
     const v = p.view;
     v.setBigUint64(at, BigInt(node.ino), true);
     v.setBigInt64(at + 8, BigInt(d.offset + 1), true);
@@ -591,7 +691,7 @@ function getdents(p: Proc, fd: bigint, buf: bigint, count: bigint): number {
     d.offset++;
     if (!dot) d.after = names[i++];
   }
-  return at - N(buf);
+  return at - start;
 }
 
 /** access, faccessat, faccessat2: whether the node is there (F_OK) and may be read, written, run (R_OK 4, W_OK 2,
@@ -679,6 +779,8 @@ function pipe(p: Proc, address: bigint, flags: bigint): number {
   // with one left, the reading end was made and kept.)
   const r = p.fds.lowest(), w = r < 0 ? -1 : p.fds.lowest(r + 1);
   if (w < 0) fail(E.MFILE);
+  // And where they are to be told is the guest's memory, or EFAULT with nothing made.
+  whole(p, N(address), 8);
   const pipe = new Pipe();
   const cloexec = !!(N(flags) & O.CLOEXEC), nonblock = N(flags) & O.NONBLOCK;
   p.fds.install(new Description('pipe-r', {pipe, flags: nonblock}), {fd: r, cloexec});
@@ -1100,7 +1202,8 @@ export const FILE_CALLS: Calls = {
       if (n === -2) fail(E.BUSY);
       return n;
     }
-    return 0; // the rest succeed trivially, record locks (F_SETLK and its kin) among them: each is granted
+    if (c === 5 || c === 6 || c === 7 || c === 36 || c === 37 || c === 38) return recordLock(this, d, c, N(arg));
+    return 0; // the rest succeed trivially
   },
 
   // flock: LOCK_SH 1 or LOCK_EX 2, or LOCK_UN 8; with LOCK_NB 4 it says EWOULDBLOCK rather than wait. Waiting, it is

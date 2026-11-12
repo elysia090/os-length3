@@ -821,7 +821,15 @@ export const pending = (d: Description): number => {
 function vectors(p: Proc, address: number, count: number): [number, number][] {
   if (count < 0 || count > 1024) fail(E.INVAL);
   const out: [number, number][] = [];
-  for (let k = 0; k < count; k++) out.push([Number(p.view.getBigUint64(address + k * 16, true)), Number(p.view.getBigUint64(address + k * 16 + 8, true))]);
+  // (As Linux takes an iovec in: a negative length is EINVAL, and together they are at most MAX_RW_COUNT.)
+  let left = 0x7ffff000;
+  for (let k = 0; k < count; k++) {
+    const length = p.view.getBigInt64(address + k * 16 + 8, true);
+    if (length < 0n) fail(E.INVAL);
+    const n = Math.min(Number(length), left);
+    left -= n;
+    out.push([Number(p.view.getBigUint64(address + k * 16, true)), n]);
+  }
   return out;
 }
 
@@ -854,6 +862,8 @@ function sendmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   const d = socketOf(p, fd), at = N(msg), v = p.view;
   const nameAt = Number(v.getBigUint64(at, true)), nameLen = v.getUint32(at + 8, true);
   const iov = vectors(p, Number(v.getBigUint64(at + 16, true)), Number(v.getBigUint64(at + 24, true)));
+  // (What is to be sent is the guest's memory, before room is made for it.)
+  for (const [b, l] of iov) within(p, b, l);
   const control = Number(v.getBigUint64(at + 32, true)), controlLen = Number(v.getBigUint64(at + 40, true));
   const rights = control && controlLen ? controls(p, control, controlLen) : [];
   const total = iov.reduce((n, [, l]) => n + l, 0), data = new Uint8Array(total);
@@ -882,7 +892,8 @@ function recvmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   within(p, nameAt, nameRoom);
   const control = Number(v.getBigUint64(at + 32, true)), room = control ? Number(v.getBigUint64(at + 40, true)) : 0;
   within(p, control, room);
-  const total = iov.reduce((n, [, l]) => n + l, 0), buf = new Uint8Array(total);
+  // (Room is made for no more than a socket holds at once: what is asked for may be all the guest's memory.)
+  const total = Math.min(iov.reduce((n, [, l]) => n + l, 0), 1 << 20), buf = new Uint8Array(total);
   const r = receive(p, d, buf, 0, total, f & ~MSG.WAITALL);
   // What came is this call's to hand on or to let go, whatever happens from here: the descriptors still held for
   // the message (one looked at keeps its own), and those made this process's already.
@@ -1107,6 +1118,8 @@ export const NET_CALLS: Calls = {
   },
   45(fd, buf, len, flags, address, lengthAt) { // recvfrom
     const d = socketOf(this, fd), f = N(flags);
+    // (Where it is to be put is the guest's memory before anything is taken, as recvmsg's.)
+    if (N(len) > 0) within(this, N(buf), N(len));
     const r = receive(this, d, this.bytes, N(buf), N(len), f);
     if (!r.peeked) for (const x of r.rights) x.release();
     writeName(this, address, lengthAt, r.from);

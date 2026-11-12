@@ -136,7 +136,11 @@ function execve(p: Proc, nameAddress: bigint, argvAddress: bigint, envAddress: b
 /** clone(2), fork(2) and vfork(2): a thread of this process, or a new process. */
 function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number, tls: bigint): number {
   const t = p.task, s = p.call!.state;
-  const writeTid = (memory: WebAssembly.Memory, at: number, tid: number): void => { if (at) new DataView(memory.buffer).setInt32(at, tid, true); };
+  // (A place for the new thread's id that is not the memory is not written, and the clone goes on: Linux's put_user
+  // there is not looked at either.)
+  const writeTid = (memory: WebAssembly.Memory, at: number, tid: number): void => {
+    if (at > 0 && at + 4 <= memory.buffer.byteLength) new DataView(memory.buffer).setInt32(at, tid, true);
+  };
   if (flags & CLONE.THREAD) {
     if (!(flags & CLONE.VM) || !(flags & CLONE.SIGHAND)) fail(E.INVAL);
     const nt = p.newThread(t.resumeAt, stack, flags & CLONE.SETTLS ? tls : null);
@@ -590,10 +594,15 @@ export const PROC_CALLS: Calls = {
     if (target.state !== 'live') fail(E.SRCH);
     return rlimit(this, target, resource, next, old);
   },
-  318(buf, len) {
-    const n = Math.min(N(len), 65536);
+  318(buf, len) { // getrandom
+    // As much as is asked for and is the guest's memory: of a span that runs off its end, the part inside (Linux's
+    // short count); one that begins outside it is EFAULT.
+    const at = N(buf), asked = N(len) < 0 ? 65536 : Math.min(N(len), 65536);
+    if (!asked) return 0;
+    if (!(at >= 0 && at < this.bytes.length)) fail(E.FAULT);
+    const n = Math.min(asked, this.bytes.length - at);
     // (Copied in: a browser draws none into a shared memory's view.)
-    this.bytes.set(randomBytes(n), N(buf));
+    this.bytes.set(randomBytes(n), at);
     return n;
   },
   170(name, len) { this.kernel.hostname = names(this, name, len); return 0; }, // sethostname: the machine's (its own UTS)

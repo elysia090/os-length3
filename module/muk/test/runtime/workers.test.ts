@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {RemoteKernel} from '../../runtime/remote.ts';
+import {RemoteKernel, warmThreads} from '../../runtime/remote.ts';
 import {Process} from '../../runtime/process.ts';
 import {CH} from '../../runtime/channel.ts';
 
@@ -10,14 +10,16 @@ import {CH} from '../../runtime/channel.ts';
 
 /** A Worker's place: what the kernel would post to and hear from, the test firing its events. */
 function hand() {
-  let message: (m: never) => void = () => {}, error: (e: {message?: string}) => void = () => {};
+  let message: (m: never) => void = () => {};
+  const heard: ((e: {message?: string}) => void)[] = [];
+  const error = (e: {message?: string}) => { for (const fn of heard) fn(e); };
   const w = {
     ended: 0,
     failed: false,
     post(_m: unknown) {},
     end() { w.ended++; },
     on(fn: (m: never) => void) { message = fn; },
-    onError(fn: (e: {message?: string}) => void) { error = fn; },
+    onError(fn: (e: {message?: string}) => void) { heard.push(fn); },
     /** The host's error event (the Worker could not start, or threw outside what cpu.ts catches). */
     fail() { error({message: 'injected host Worker failure'}); },
     /** cpu.ts's own word that its thread failed. */
@@ -121,4 +123,19 @@ test('#118: a child whose Worker fails ends alone: its parent is told and may wa
   assert.equal(await settled(serving, 30), 'pending');
   k.halt();
   assert.equal(await serving, 9);
+});
+
+test('#118: a Worker started ahead that fails before a kernel has it is not handed to one; one that fails after is the kernel\'s to end', async () => {
+  const early = hand(), late = hand(), made = [early, late];
+  warmThreads(2, () => made.shift() as unknown as Adopted);
+  early.fail();
+  early.fail();
+  assert.equal(early.ended, 1);
+  // The kernel made next takes those started ahead: the sound one alone.
+  const k = new RemoteKernel({spares: 0, console: {write() {}, read() { return null; }}});
+  assert.deepEqual([k.spares.includes(early as unknown as Adopted), k.spares.includes(late as unknown as Adopted)], [false, true]);
+  // The kernel's now: failing, it is taken out of its spares and ended once (by the kernel, not twice by both who hear).
+  late.fail();
+  assert.deepEqual([k.spares.length, late.ended], [0, 1]);
+  k.close();
 });
