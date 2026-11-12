@@ -40,8 +40,10 @@ export class Pane {
   readonly #work: HTMLElement;
   readonly #side: HTMLElement;
   readonly #toggle: HTMLButtonElement;
+  readonly #fixed: boolean;
 
-  constructor(work: HTMLElement, side: HTMLElement, toggle: HTMLButtonElement) {
+  constructor(work: HTMLElement, side: HTMLElement, toggle: HTMLButtonElement, options: {fixed?: boolean} = {}) {
+    this.#fixed = !!options.fixed;
     this.#work = work;
     this.#side = side;
     this.#toggle = toggle;
@@ -57,7 +59,8 @@ export class Pane {
       if (event.key !== 'Escape' || !this.#over || event.defaultPrevented) return;
       event.preventDefault();
       this.set(false);
-      toggle.focus();
+      if (toggle.isConnected) toggle.focus();
+      else work.querySelector<HTMLElement>('.flow')?.focus();
     });
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
@@ -68,10 +71,10 @@ export class Pane {
 
   get narrow(): boolean { return this.#narrow.matches; }
   /** Whether the pane is out: laid over the center when narrow, beside it when wide. */
-  get shown(): boolean { return this.narrow ? this.#over : paneOpen; }
+  get shown(): boolean { return this.narrow ? this.#over : this.#fixed || paneOpen; }
 
   set(on: boolean) {
-    if (on === this.shown) return;
+    if (on === this.shown || this.#fixed && !this.narrow) return;
     if (this.narrow) { this.#over = on; this.paint(); } else setRightPane(on);
   }
 
@@ -80,12 +83,12 @@ export class Pane {
     // Brought back before it had gone (the switch pressed again on the way): what it holds is still there, and stays.
     const there = !this.narrow && work.isConnected && getComputedStyle(side).visibility === 'visible';
     // Put away or brought back, what stands beside it moves on its curve while it moves (styles.css .pane-moving).
-    if (work.classList.contains('pane-closed') === paneOpen) {
+    if (work.classList.contains('pane-closed') === (this.#fixed || paneOpen)) {
       work.classList.add('pane-moving');
       this.#moving?.cancel();
       this.#moving = after(460, () => work.classList.remove('pane-moving'));
     }
-    work.classList.toggle('pane-closed', !paneOpen);
+    work.classList.toggle('pane-closed', !this.#fixed && !paneOpen);
     work.classList.toggle('pane-out', this.#over);
     toggle.setAttribute('aria-expanded', String(this.shown));
     // Brought out (here, or on another page while this one is shown): what it holds comes in after its edge.
