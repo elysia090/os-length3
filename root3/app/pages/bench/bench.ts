@@ -41,8 +41,6 @@ export interface Bench {
 let benches = 0;
 /** How long an ended Prompt stays up on a desk, its end read, before it goes back to its line. */
 const TERM_GOES_MS = 900;
-/** The ground kept between what is worked on on a desk and the Prompt standing at its foot. */
-const STAND_GAP = 24;
 
 /** Whether `el` is laid out on the page (not in a page put away, nor out of the document). */
 const onScreen = (el: HTMLElement) => el.isConnected && el.getClientRects().length > 0;
@@ -122,23 +120,17 @@ function promptBox() {
 
 /**
  * The Prompt standing at a desk's foot (`terminal`: what it printed, the box's line): up, all of it; at rest, the
- * line alone. It goes up as the box asks (its line taken to run, a line run) and stays till it is put away; `told`
- * hears whether it is up and how much of the center's foot it takes (a step of ground kept over it), each time
- * either changes.
+ * line alone. It stands in the center's own flow under the desk, on plain ground as the band over the desk is: the
+ * desk ends above it, so nothing of the desk passes under it. It goes up as the box asks (its line taken to run, a
+ * line run) and stays till it is put away; `told` hears whether it is up, each time that changes.
  */
-function standOf(terminal: HTMLElement, box: Box, told: (up: boolean, covered: number) => void): Rises {
+function standOf(terminal: HTMLElement, box: Box, told: (up: boolean) => void): Rises {
   const stand: Rises = {
     get up() { return terminal.classList.contains('up'); },
-    raise() { if (!this.up) { terminal.classList.add('up'); box.screenChanged('up'); } },
-    lower() { if (this.up) { terminal.classList.remove('up'); box.screenChanged('leaving'); } },
+    raise() { if (!this.up) { terminal.classList.add('up'); box.screenChanged('up'); told(true); } },
+    lower() { if (this.up) { terminal.classList.remove('up'); box.screenChanged('leaving'); told(false); } },
   };
   box.screen = stand;
-  const says = () => {
-    const room = terminal.parentElement?.getBoundingClientRect();
-    if (room?.height) told(stand.up, Math.max(0, Math.round(room.bottom - terminal.getBoundingClientRect().top) + STAND_GAP));
-  };
-  new ResizeObserver(says).observe(terminal);
-  new MutationObserver(says).observe(terminal, {attributes: true, attributeFilter: ['class']});
   // Pressed anywhere on what it printed (not on something to press there, nor ending a selection): the keyboard in
   // its line, as a terminal pressed takes it. (What had the keyboard as the press began is where it goes back to: the
   // press itself takes it from there before the line has it.)
@@ -235,8 +227,6 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** A desk (Forge's): the box at the center's foot is the Prompt's own last line, and what the Prompt printed
    * stands on it while it is up (`terminal`: one box, a line tall at rest), over the desk's foot. */
   desk?: boolean;
-  /** On a desk: how much of the center's foot the Prompt covers now (the desk keeps what is worked on above it). */
-  foot?(covered: number): void;
   /** On a desk: a file's box laid without taking the person's hand; the camera over these boxes (none: the one in hand). */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
@@ -280,7 +270,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   termTool.setAttribute('aria-pressed', 'false');
   // (Pressed with the pointer, the keyboard stays where it is till the Prompt has it: put away, it goes back there.)
   termTool.addEventListener('pointerdown', (event) => event.preventDefault());
-  const stand = terminal ? standOf(terminal, box, (up, covered) => { termTool.setAttribute('aria-pressed', String(up)); parts.foot?.(covered); }) : null;
+  const stand = terminal ? standOf(terminal, box, (up) => termTool.setAttribute('aria-pressed', String(up))) : null;
   const shown = parts.desk ? null : screenOf(work, box, term, termHome);
   if (shown) center.append(box.dock); else { box.dock.prepend(box.form); center.append(terminal!); }
   // On a desk the box lies on a moving plane: what opens out of its pill (fixed to the window) lies on the page instead.

@@ -2198,31 +2198,40 @@ where it lies (there is no Edit to choose: the file is typed into). One box is
 in hand, and a press on it puts the caret where it was pressed, whichever box
 had the keyboard before.
 
-The Prompt stands at the desk's foot, over the desk, as wide as a box and in
-the middle as the box in hand is: one box, inked round as a file's. At rest it
-is a line: at its start what it will do, the shell's prompt in the shell's
-green (`garden $`), a lamp in its margin lit while the shell runs, and after
-it a block where the next letter goes, a terminal's cursor away from the
-keyboard, which is all that says the line is written in (no sentence in grey
-saying what the prompt before it had said). Taken to run (pressed, Ctrl+`, the
-band's `>_`), it is a terminal: what was printed stands on that same line,
-which has not moved, and the file in hand stays in hand above it. It stays up
-while a file is written in, so what a run said is read beside the file it is
-about, and is put away by Escape in its line (the keyboard back where it came
-from), its × (in its top right corner, on paper), or the band's `>_`, which
-is inked while it is up. It has no name over it: what it is, its lines say,
-and over a desk that passes under it a name on the ground would lie on a
-file's words; a step of ground is kept round it, so a box passing under it
-ends before its edge. What is worked on is kept above it: the desk's camera
-works in the face over it, never under it. Its start, pressed, is a switch
-between the two things the line does all day: run, and note for later (TODO,
-its circle and its word); the rest (an issue) come out of it at Alt+↓, and Alt
-and a number chooses at once. Under Run, Enter runs the line as a terminal's
-does, Shift+Enter is a new line; what sends it with the pointer is a small
-word at the line's end, there once something is written. The hard shadow is
-where the keyboard is: under the Prompt while it is written in, under no box
-of the desk then. (Before: the Prompt was a box of the desk, the first, and a
-line run from a file took the camera off the file to it.)
+The Prompt stands at the center's foot, under the desk, as wide as a box and
+in the middle as the box in hand is: one box, inked round as a file's, on
+plain ground as the band over the desk is. The dots are the desk's: where they
+end the desk ends, and nothing of it passes under the Prompt (the first cut
+stood it over the desk, and a box's name left showing over its corner read as
+its own). At rest it is a line: at its start what it will do, the shell's
+prompt in the shell's green (`garden $`), a lamp in its margin lit while the
+shell runs, and after it a block where the next letter goes, a terminal's
+cursor away from the keyboard, which is all that says the line is written in
+(no sentence in grey saying what the prompt before it had said). Taken to run
+(pressed, Ctrl+`, the band's `>_`), it is a terminal: what was printed stands
+on that same line, which has not moved, and the file in hand stays in hand
+above it. It stays up while a file is written in, so what a run said is read
+beside the file it is about, and is put away by Escape in its line (the
+keyboard back where it came from, a press on the terminal on the way there
+not forgotten), its × (in its top right corner, on paper), or the band's
+`>_`, which is inked while it is up. It has no name over it: what it is, its
+lines say. What it printed takes at most 24 lines and never more than about
+half the window, so the file worked on keeps the other half; a program that
+takes the whole screen has its 24 rows, not scrolled, nothing faded at its
+top. While a line runs there is no prompt, as at a terminal, and what is typed
+goes to what runs; the lamp stays in the margin. Its start, pressed, is a
+switch between the two things the line does all day: run, and note for later
+(TODO, its circle and its word); the rest (an issue) come out of it at Alt+↓,
+each said as the line will say it, and Alt and a number chooses at once. Under
+Run, Enter runs the line and Tab completes it, as at a terminal (Tab never
+leaves the line: it stands outside the desk, where Tab is the boxes'), and
+nothing stands beside it to press. A note or an issue takes more than a line:
+Enter is a new line there, and what sends it is Ctrl+Enter or a word at the
+line's end (Add, Create), in the line's own letters, underlined as a thing to
+press, there once something is written. The hard shadow is where the keyboard
+is: under the Prompt while it is written in, under no box of the desk then.
+With no repo there is no line. (Before: the Prompt was a box of the desk, the
+first, and a line run from a file took the camera off the file to it.)
 
 One box may be put beside the desk, a second screen: the desk is then the left
 half of the center and that box the right, each as wide as its half (never
@@ -2233,7 +2242,10 @@ itself when it is taller than its room, its name, its close and its way back
 always there. It is put there by the mark beside a box's close (a sheet in
 two, a + in its right half) or Ctrl, Alt and →, an editor's keys for it, the
 keyboard going with it; put back (the same mark, a − in it; Ctrl, Alt and ←)
-it lies where it lay, in hand. Another put beside sends the first back. That
+it lies where it lay, in hand. Another put beside sends the first back, and a
+desk kept (the app closed, the page loaded again) is kept with its box beside
+it. A center too narrow for two boxes read side by side (a small window) is
+one screen: no box offers the move, and one beside goes back. That
 is all the moving a box has: it is not carried about the desk (before: Ctrl
 and an arrow carried the box in hand a slot at a time anywhere, columns made
 and unmade on the way, and Ctrl and an arrow in a text are a word along on
@@ -2261,8 +2273,10 @@ The keys are a game's, the hands finding them without looking. Tab, wherever
 the keyboard is on the desk (in a file, at the Prompt's line), puts the finger
 on the next box (down a column, then the next column's top, round again;
 Shift+Tab back): the keyboard comes out onto the desk, the finger (the
-pointer's own pointing hand, larger) touches the box's top edge a little in
-from its right corner, and the camera goes to the box as near as it stands. With the finger on, an arrow puts it on the box that way (a
+pointer's own pointing hand, larger, turned to point left) stands just after
+the box's name, pointing at it, as a hand beside a menu's line says which
+(before: on the box's top edge by its right corner, where its close now is:
+it pointed at the close), and the camera goes to the box as near as it stands. With the finger on, an arrow puts it on the box that way (a
 nudge where there is none), and Enter, or a letter typed, goes into the box
 under it at the standard, the hand gone. Shift+N, as a new post is begun on X, makes a new file beside the
 one in hand where nothing is being written (the finger on a box; written in a

@@ -276,6 +276,9 @@ export class Box {
       if (m === 'edit' && document.activeElement === this.prompt) this.#edit.show(); else this.#edit.hide();
     };
     if (seen && this.#p.work.isConnected && !this.#up) turn(this.chip, this.runIt, change); else change();
+    // On a desk, run chosen with the keyboard in the line (its start pressed, Alt+1): the line is the terminal's again,
+    // what it printed standing on it, as when the line is taken.
+    if (this.#p.desk && m === 'run' && document.activeElement === this.prompt) this.#screen?.raise();
     if (!byItself) setBoxMode(m);
   }
 
@@ -772,6 +775,9 @@ export class Box {
   #runKey(event: KeyboardEvent) {
     const {prompt} = this, repo = this.#repo, caret = prompt.selectionStart === prompt.selectionEnd;
     if (event.key === 'ArrowRight' && plain(event) && caret && prompt.selectionStart === prompt.value.length) { if (this.#tab()) event.preventDefault(); return; }
+    // At a desk's foot the line is a terminal's: Tab completes there and never leaves the line (it stands outside the
+    // desk, where Tab is the boxes').
+    if (this.#p.desk && event.key === 'Tab' && plain(event)) { event.preventDefault(); this.#tab(); return; }
     // ↑ on the first line and ↓ on the last walk earlier lines; elsewhere they move the caret.
     if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && plain(event) && caret) { this.#walkTo(event, event.key); return; }
     // Ctrl-C with nothing selected (so not a copy) interrupts what runs, as in a terminal; at the prompt line, the line
@@ -916,7 +922,6 @@ export class Box {
       if (!this.#p.desk) { if (!this.#up) this.#menu.open(); return; }
       this.choose(this.#mode === 'run' ? 'todo' : 'run');
       prompt.focus();
-      if (this.#mode === 'run') this.#screen?.raise();
     });
     // Pressed anywhere in the box, not on its line alone (its padding, beside Run): the caret goes in.
     form.addEventListener('pointerdown', (event) => {

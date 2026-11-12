@@ -59,10 +59,11 @@
 /* The second screen (desk.ts side): a box put beside the desk. The desk is the left half of its room then and this the
    right, the halves meeting on the dots' grid; the box stands where the one in hand stands across from it, as wide as
    its half, its name and its close always there (it is the only one here), scrolled in itself when it is taller than
-   its room, what stands at the room's foot (the Prompt) over its ground as over the desk's. */
+   its room. A face too narrow for two boxes read side by side (desk.ts) offers none. */
+.desk.single .desk-aside { display: none; }
 .desk-room.split > .desk { right: auto; width: var(--split); }
 .desk-side { --t-code: 14px; position: absolute; top: 0; right: 0; bottom: 0; left: var(--split); box-sizing: border-box;
-  padding: 46px 0 calc(var(--foot, 0px) + 48px) 24px; scroll-padding-bottom: calc(var(--foot, 0px) + 24px);
+  padding: 46px 0 48px 24px; scroll-padding-bottom: 24px;
   overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain;
   background-image: var(--dots); background-size: 24px 24px; background-position: 12px 12px; background-attachment: local; }
 .desk-side > .desk-box { position: relative; }
@@ -160,28 +161,30 @@
 .desk-term .term-end { margin-top: 0; font: var(--t-code)/1.6 var(--mono); }
 /* The prompt line the shell waits at is not said again above the line one types at. */
 .desk-term .term-out > .ps.waits:last-child { display: none; }
-/* The Prompt on a desk (bench.ts standOf) stands at the center's foot, over the desk, as wide as a box and in the
-   middle as the box in hand is: one box, inked round as a file's. At rest it is a line: what it will do at its start
-   (hello $ in the shell's green; TODO), then what is written. Taken to run, it is a terminal: what was printed stands
-   on that same line, which has not moved. It has no name over it (what it is, its lines say; over a desk that passes
-   under it, a name on the ground would lie on a file's words). The hard shadow is where the keyboard is: here
-   while it is written in, under no box of the desk then. */
-.work.bench.desk-bench > .center { position: relative; }
-.desk-term.stand { --t-code: 14px; position: absolute; z-index: 3; left: 50%; bottom: var(--s5); translate: -50% 0; box-sizing: border-box;
-  width: min(768px, 100% - 2 * var(--s5)); min-height: 0; padding: 0; border: 2px solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
-/* A step of ground round it, so a box of the desk passing under it ends before its edge (never two inked edges
-   side by side, nor a file's words running into it). */
-.desk-term.stand { box-shadow: 0 0 0 8px var(--ground); }
-.desk-term.stand:focus-within { box-shadow: 8px 8px 0 0 var(--ink), 0 0 0 8px var(--ground); }
+/* The Prompt on a desk (bench.ts standOf) stands at the center's foot, under the desk, as wide as a box and in the
+   middle as the box in hand is: one box, inked round as a file's, on plain ground as the band over the desk is (the
+   dots are the desk's: where they end, the desk ends, and nothing of it passes under the Prompt. Before: it stood
+   over the desk, and a box's name left showing over its corner read as its own). At rest it is a line: what it will
+   do at its start (hello $ in the shell's green; TODO), then what is written. Taken to run, it is a terminal: what
+   was printed stands on that same line, which has not moved. The hard shadow is where the keyboard is: here while it
+   is written in, under no box of the desk then. */
+.work.bench.desk-bench > .center > .desk-room { flex: 1 1 0; height: auto; }
+.desk-term.stand { --t-code: 14px; position: relative; flex: none; align-self: center; box-sizing: border-box; width: min(768px, 100% - 2 * var(--s5));
+  min-height: 0; margin: var(--s5) 0; padding: 0; border: 2px solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
+.desk-term.stand:focus-within { box-shadow: 8px 8px 0 0 var(--ink); }
 .desk-bench:has(.desk-term.stand:focus-within) .desk-box.held { box-shadow: none; }
 .desk-term.stand:not(.up) > .term-box { display: none; }
 /* With no repo there is nothing to run in and nothing to note against: no line stands there (before: an empty box). */
 .desk-term.stand:has(.prompt-in:disabled) { display: none; }
 .stand > .term-box { padding: var(--s3) var(--s4) 0; }
-/* What it printed: at most 24 lines, and never so many that the file worked on is hidden (a program that takes the
-   whole screen has its 24). */
-.stand .term-out { max-height: min(calc(24 * 1.6em), calc(100vh - 420px)); }
+/* What it printed: at most 24 lines, and never more than about half the window, so the file worked on keeps the
+   other half. A program that takes the whole screen has its 24 rows: its screen is not scrolled, so nothing fades at
+   its top and no bar says how far down it is. */
+.stand .term-out { max-height: min(calc(24 * 1.6em), calc(50vh - 120px)); }
 .stand:has(.term.raw) .term-out { max-height: min(calc(24 * 1.6em), calc(100vh - 230px)); }
+.stand .term.raw > .term-out { mask-image: none; }
+.stand .term.raw .scroll-thumb { display: none; }
+.stand.up:has(.term.raw) > .term-box { padding-bottom: var(--s3); }
 .stand .scroll-thumb { right: calc(-1 * var(--s4) + 4px); }
 .stand .scroll-thumb:is(:hover, .held) { right: calc(-1 * var(--s4) + 2px); }
 /* Its close, in its top-right corner, on paper (what was printed passes under it): Escape and the band's >_ put it
@@ -196,8 +199,8 @@
    it in the Prompt's letters. A lamp in its margin is lit while the shell runs: the one thing on it that is not text. */
 .stand > .dock { position: static; max-width: none; margin: 0; }
 .stand > .dock::before, .stand > .dock::after { display: none; }
-.stand > .dock .prompt { align-items: baseline; gap: 0; min-height: 0; padding: var(--s3) var(--s4); border: 0; border-radius: 0; background: none; box-shadow: none; }
-.stand > .dock .prompt-chip { align-self: baseline; height: auto; min-height: 0; margin: 0 1ch 0 0; padding: 0; border-radius: 0; background: none; box-shadow: none;
+.stand > .dock .prompt { position: relative; align-items: baseline; gap: 0; min-height: 0; padding: var(--s3) var(--s4); border: 0; border-radius: 0; background: none; box-shadow: none; }
+.stand > .dock .prompt-chip { position: static; align-self: baseline; height: auto; min-height: 0; margin: 0 1ch 0 0; padding: 0; border-radius: 0; background: none; box-shadow: none;
   text-shadow: none; color: var(--ink); font: 600 var(--t-code)/1.6 var(--mono); cursor: var(--cursor-hand); }
 .stand > .dock .prompt-chip[data-mode='run'] { color: var(--add); }
 .stand > .dock .prompt-chip:hover { text-decoration: underline 1.5px; text-underline-offset: 4px; }
@@ -206,8 +209,10 @@
 .stand > .dock .prompt-chip > .prompt-ps { color: inherit; height: auto; }
 /* While a line runs there is no prompt, as at a terminal; its lamp stays in the margin. */
 .stand > .dock .prompt-chip[data-mode='run']:has(> .prompt-ps:empty) { display: inline-flex; margin-right: 0; }
-.stand > .dock .prompt-chip > .lamp { left: calc(-1 * var(--s4) + 3px); top: calc(.8em - 3px); }
-.stand > .dock .prompt-chip .prompt-mode { gap: var(--s2); font: inherit; color: inherit; }
+/* (The lamp is the line's, not its prompt's: it stays in the margin, on the line's middle, while the prompt is away.) */
+.stand > .dock .prompt-chip > .lamp { left: 5px; top: calc(var(--s3) + .8em - 3px); }
+.stand.up > .dock .prompt-chip > .lamp { top: calc(.8em - 3px); }
+.stand > .dock .prompt-chip .prompt-mode { font: inherit; color: inherit; }
 .stand > .dock .prompt-chip .prompt-mode-repo { opacity: 1; color: var(--sub); font-weight: 400; }
 .stand > .dock .prompt-in { font: var(--t-code)/1.6 var(--mono); }
 /* Away from the keyboard and empty, the line's cursor stays where the next letter goes, a block as a terminal's is:
@@ -216,11 +221,24 @@
 .stand > .dock .prompt-in::placeholder { color: transparent; }
 .stand > .dock .prompt-in:placeholder-shown:not(:focus, :disabled) { background: linear-gradient(var(--ink), var(--ink)) 0 .2em / 1ch 1.2em no-repeat; }
 .stand.up > .dock .prompt { padding-top: 0; }
-/* What sends it is Enter (Ctrl+Enter, writing more than a line); pressed with the pointer, a small word at the line's
-   end, there once something is written. No keys spelled out. */
+/* What runs a line is Enter, as at a terminal: no button beside it. A note or an issue takes more than a line, so
+   Enter is a new line there and what sends it is Ctrl+Enter or, with the pointer, a word at the line's end, in the
+   line's own letters, underlined as a thing to press, there once something is written. No keys spelled out. */
 .stand > .dock .prompt-caps { display: none; }
-.stand > .dock .prompt-run { align-self: center; margin: -4px 0 -4px var(--s2); }
+.stand > .dock .prompt[data-mode='run'] .prompt-run { display: none; }
+.stand > .dock .prompt-run { align-self: baseline; height: auto; min-height: 0; margin: 0 0 0 var(--s3); padding: 0; border: 0; border-radius: 0; background: none;
+  color: var(--ink); font: 600 var(--t-code)/1.6 var(--mono); text-decoration: underline 1.5px; text-underline-offset: 4px; }
+.stand > .dock .prompt-run:hover:not(:disabled) { background: none; text-decoration-thickness: 2.5px; }
+.stand > .dock .prompt-run:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .stand > .dock .prompt:has(.prompt-in:placeholder-shown) .prompt-run { visibility: hidden; }
+/* What comes out of its start at Alt+↓ says each as the line will say it: the same letters, no pill round them. */
+.desk-bench .box-mode > .box-mode-pill { height: auto; padding: 0; border-radius: 0; background: none; box-shadow: none; text-shadow: none; color: var(--ink);
+  font: 600 var(--t-code)/1.6 var(--mono); }
+.desk-bench .box-mode > .box-mode-pill[data-mode='run'] { color: var(--add); }
+.desk-bench .box-mode > .box-mode-pill > .lamp { display: none; }
+.desk-bench .box-mode > .box-mode-pill :is(.prompt-ps, .prompt-mode, .prompt-mode > b) { font: inherit; color: inherit; height: auto; }
+.desk-bench .box-mode > .box-mode-pill .prompt-mode-repo { opacity: 1; color: var(--sub); font-weight: 400; }
+
 /* Ended, the end line is the terminal's last, on its line grid in its letters; no prompt line waits under it (its
    switch starts it again). */
 .stand.up:has(.term.ended) > .dock { display: none; }
@@ -271,12 +289,12 @@
 /* Born from under another box (a file made under the one in hand): its name comes once it is out. */
 .desk-box.born > .desk-label { opacity: 0; }
 .desk-box > .desk-label { transition: opacity 180ms ease-out; }
-/* The finger (desk.ts): the pointer's own pointing hand at 40 px, its fingertip on the top edge of the box in hand
-   26 px in from its right corner, the size it is on the face however near the camera. While it is out, the pointer
-   is hidden. */
+/* The finger (desk.ts): the pointer's own pointing hand at 40 px, turned to point left, its fingertip just after the
+   name of the box in hand, on the name's line: it says which, as a hand beside a menu's line does. The size it is on
+   the face however near the camera. While it is out, the pointer is hidden. */
 .desk-hand { position: absolute; left: 0; top: 0; z-index: 3; width: 40px; height: 40px; pointer-events: none; visibility: hidden;
-  background: var(--hand-open) no-repeat 0 0 / 40px 40px; transform-origin: 0 0;
-  transform: scale(var(--inv, 1)) translate(calc(-26px - 14.81px), calc(2px - 4.44px)); }
+  background: var(--hand-open) no-repeat 0 0 / 40px 40px; transform-origin: 14.81px 4.44px;
+  transform: translate(-14.81px, -4.44px) scale(var(--inv, 1)) rotate(-90deg); }
 .desk-hand.on { visibility: visible; }
 /* The terminal at the desk's foot is a terminal: what runs is cut with Ctrl+C, as at any terminal, so its line says
    what a run does without buttons of its own. */

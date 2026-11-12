@@ -77,6 +77,8 @@ type Way2 = 'pan' | 'in' | 'out';
 interface Point { x: number; y: number }
 /** The ground between a half of the face and the box that fills it, two screens side by side: a step each side. */
 const HALF_PAD = GRID;
+/** The narrowest a box is read at beside another: narrower than two of them (and their ground), the face is one screen. */
+const HALF_LEAST = 336;
 
 /** A box on the desk; `placed` once it has stood somewhere (before, it has no place to move from). */
 interface Box { key: string; laid: Laid; el: HTMLElement; label: HTMLElement; slot: Slot; placed?: boolean }
@@ -154,8 +156,9 @@ export class Desk {
    * is the way in, and brings the camera to the standard, as Enter does with the finger on a box. */
   #naming: string | null = null;
   /**
-   * The finger, the pointer's own pointing hand: its fingertip on the top edge of the box in hand, a little in from its
-   * right corner, while the keyboard moves between boxes (Tab, an arrow, Escape); the pointer hidden all the while. It glides from box to box, and comes out of the pointer where that was;
+   * The finger, the pointer's own pointing hand: after the name of the box in hand, pointing at it, while the keyboard
+   * moves between boxes (Tab, an arrow, Escape); the pointer hidden all the while. (Before: its fingertip on the box's
+   * top edge by its right corner, where the box's close now is: it pointed at the close.) It glides from box to box, and comes out of the pointer where that was;
    * the pointer moved, it is gone and the pointer back. Written in, both are gone until the pointer moves.
    */
   readonly #hand = h('div', {class: 'desk-hand', 'aria-hidden': 'true'});
@@ -346,18 +349,6 @@ export class Desk {
     if (best && best.key !== this.#held) this.take(best.key, false, false);
   }
 
-  /** How much of the desk's foot something stands over (the Prompt, bench.ts): the face the camera works in ends
-   * above it, so what is worked on is never under it. */
-  #foot = 0;
-  set foot(covered: number) {
-    const foot = Math.max(0, Math.round(covered));
-    if (foot === this.#foot) return;
-    this.#foot = foot;
-    this.#relay();
-  }
-  /** The face's height: the desk's, less what stands over its foot. */
-  get #hgt(): number { return Math.max(0, this.element.clientHeight - this.#foot); }
-
   /** The key of the box in hand. */
   get held(): string | null { return this.#held; }
   /** Whether `key` lies on the desk. */
@@ -379,7 +370,9 @@ export class Desk {
    */
   putBeside(key = this.#held) {
     const b = key ? this.#boxes.get(key) : undefined;
-    if (!b || b.laid.stays) return;
+    // (A desk not yet on screen has no size to ask: put beside as it was kept, and put back once it is laid out if
+    // there is no room.)
+    if (!b || b.laid.stays || (this.element.clientWidth > 0 && !this.#roomForTwo())) return;
     const had = b.el.contains(document.activeElement);
     if (this.#beside) this.#back(false);
     const col = this.#cols.findIndex((c) => c.includes(b.key)), at = this.#cols[col].indexOf(b.key);
@@ -398,6 +391,13 @@ export class Desk {
     if (this.#held === b.key) { this.#held = null; this.#topAt = null; if (after) this.take(after, false); }
     if (had) b.laid.focus();
     this.#relay();
+  }
+
+  /** Whether the face (the whole of it: the desk's and, a box beside it, that box's half) has room for two boxes read
+   * side by side. */
+  #roomForTwo(): boolean {
+    const w = this.element.clientWidth + (this.#beside ? this.side.clientWidth : 0);
+    return w >= 2 * (HALF_LEAST + 2 * HALF_PAD);
   }
 
   /** The box beside the desk put back where it lay, in hand (the keyboard in it, if it had it). */
@@ -627,7 +627,7 @@ export class Desk {
   #frameView(keys: string[]): View | null {
     const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
     if (!boxes.length) return null;
-    const w = this.element.clientWidth, hgt = this.#hgt, v = this.#view;
+    const w = this.element.clientWidth, hgt = this.element.clientHeight, v = this.#view;
     const last = boxes[boxes.length - 1], h = last.el.offsetHeight;
     const to = standardOn(last.slot, h, w, hgt);
     // The line the Agent's hand or eye is on in it, where one has it (what else at its sides tells, it does not follow).
@@ -686,13 +686,18 @@ export class Desk {
     if (!this.element.clientWidth || !this.element.clientHeight) return;
     const heights = (key: string) => this.#boxes.get(key)?.el.offsetHeight ?? 0;
     // A box as wide as 80 columns of code, or as the face has room for (half the room, a box beside the desk).
+    // (The face grown too narrow for two screens, a window made small: the one beside goes back; no box says it can
+    // be put beside.)
+    const two = this.#roomForTwo();
+    this.element.classList.toggle('single', !two);
+    if (this.#beside && !two) { queueMicrotask(() => this.putBack()); return; }
     const bw = this.#bw = Math.max(240, Math.min(WIDTH, this.element.clientWidth - 2 * HALF_PAD));
     for (const b of this.#boxes.values()) b.el.style.width = `${bw}px`;
     if (this.#beside) this.#beside.box.el.style.width = `${bw}px`;
     const at = slots(this.#cols, heights, bw);
     // Room round the boxes for the camera to stand any one of them in the middle, across and down (it scrolls over the
     // plane, and a scroll goes no further back than the plane's top left).
-    const w = this.element.clientWidth, hgt = this.#hgt, ox = Math.max(0, w / 2 - bw / 2 - PAD), oy = Math.round(hgt / 2);
+    const w = this.element.clientWidth, hgt = this.element.clientHeight, ox = Math.max(0, w / 2 - bw / 2 - PAD), oy = Math.round(hgt / 2);
     let right = 0, bottom = 0;
     for (const [key, p] of at) {
       const b = this.#boxes.get(key)!;
@@ -735,7 +740,7 @@ export class Desk {
   /** Where the camera should look now: over the whole desk; a step back, on the box in hand; at the standard, over the
    * boxes at work or on the box in hand. None while the desk is not laid out. */
   #target(): View | null {
-    const w = this.element.clientWidth, hgt = this.#hgt;
+    const w = this.element.clientWidth, hgt = this.element.clientHeight;
     if (!w || !hgt) return null;
     const bw = this.#bw;
     if (this.#cam === 'whole') return wholeOf([...this.#boxes.values()].map((b) => ({slot: b.slot, h: b.el.offsetHeight})), w, hgt, bw);
@@ -784,7 +789,7 @@ export class Desk {
     const from = el.scrollLeft || el.scrollTop ? {s: 1, x: -el.scrollLeft, y: -el.scrollTop} : {...this.#view};
     // Going along to what is out of sight (another column, a box far down), the camera steps back on the way and comes
     // down onto it, as a head turns across a room: never a whip across the desk at the boxes' own size.
-    const long = how === 'pan' && moving ? arc(from, to, el.clientWidth, this.#hgt, ms ?? 560) : null;
+    const long = how === 'pan' && moving ? arc(from, to, el.clientWidth, this.element.clientHeight, ms ?? 560) : null;
     ms ??= long ? long.ms : how === 'pan' ? 560 : 520;
     const set = (v: View, done: boolean) => {
       this.#view = v;
@@ -957,7 +962,9 @@ export class Desk {
       if (!b || !this.#hand.classList.contains('on')) return;
       // The box where it is drawn now: on its way to its place, or held up off it.
       const cs = getComputedStyle(b.el), [tx = 0, ty = 0] = cs.translate.split(' ').map(parseFloat);
-      const to = {x: tx + (parseFloat(cs.marginLeft) || 0) + this.#bw, y: ty + (parseFloat(cs.marginTop) || 0)};
+      // After the box's name, on its line, pointing at it (the name's own size on the face, however near the camera).
+      const inv = 1 / (this.#view.s || 1);
+      const to = {x: tx + (parseFloat(cs.marginLeft) || 0) + (b.label.offsetWidth + 6) * inv, y: ty + (parseFloat(cs.marginTop) || 0) - 14 * inv};
       let at = to;
       const g = this.#handGlide;
       if (g && !still()) {

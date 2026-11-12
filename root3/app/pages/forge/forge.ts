@@ -114,8 +114,6 @@ class Forge {
   private offKeys: () => void;
   /** The file last told as the one Forge works on. */
   private told: string | null = null;
-  /** How much of the center's foot the Prompt covers (bench.ts), told to each desk. */
-  private foot = 0;
   private ctx: Context;
 
   constructor(ctx: Context) {
@@ -125,11 +123,6 @@ class Forge {
     this.work = bench({strip, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
-      foot: (covered) => {
-        this.foot = covered;
-        this.center.style.setProperty('--foot', `${covered}px`);
-        for (const d of this.desks.values()) d.desk.foot = covered;
-      },
       besideTerm: (repo, element) => {
         // The Agent's own terminal is a box of the desk, a column of its own beside the one in hand.
         const {desk} = this.deskOf(repo);
@@ -348,7 +341,6 @@ class Forge {
         const path = area.closest<HTMLElement>('.desk-file')?.dataset.path;
         if (path && area.selectionStart !== undefined) this.ctx.leftAt(repo, path, area.selectionStart);
       });
-      desk.foot = this.foot;
       // As it was left: the boxes where they lay, the one in hand.
       const was = keptDesk(repo);
       // (The Agent's terminal is born again when it is asked again; a desk kept has none. One kept from when the

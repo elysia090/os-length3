@@ -21,7 +21,7 @@ test.beforeEach(async ({app}) => {
   await app.newRepo.openInForge();
 });
 
-test('→ at the end completes a path in the repo, and says the choices when there are several', async ({app}) => {
+test('→ at the end, and Tab, complete a path in the repo, and say the choices when there are several', async ({app}) => {
   const box = app.forge.promptBox;
   await box.fill('cat sr');
   await box.press('ArrowRight');
@@ -38,10 +38,15 @@ test('→ at the end completes a path in the repo, and says the choices when the
   await box.press('d');
   await expect(app.forge.promptSays('Makefile')).toHaveCount(0);
 
-  // Tab is the desk's: the finger to the next box, the keyboard out of the line.
+  // Tab completes too, as at a terminal, and never leaves the line (it stands at the desk's foot, outside the desk,
+  // where Tab is the boxes').
+  await box.fill('cat sr');
+  await box.press('Tab');
+  await expect(box).toHaveValue('cat src/');
+  await expect(box).toBeFocused();
   await box.fill('');
   await box.press('Tab');
-  await expect(box).not.toBeFocused();
+  await expect(box).toBeFocused();
 });
 
 test.describe('the Prompt running', {tag: '@slow'}, () => {

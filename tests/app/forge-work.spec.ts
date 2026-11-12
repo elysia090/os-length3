@@ -434,11 +434,31 @@ test('the Prompt stands at the desk\'s foot: its line taken, what it printed sta
   await own.focus();
   await expect(stand).not.toHaveClass(/\bup\b/);
   await expect(tool).toHaveAttribute('aria-pressed', 'false');
+  // It stands under the desk, on plain ground: the desk (its dots, its boxes) ends above it, at rest and up.
+  const apart = async () => {
+    const [d, t] = [(await app.page.locator('.desk:not([hidden])').boundingBox())!, (await stand.boundingBox())!];
+    return d.y + d.height <= t.y;
+  };
+  expect(await apart()).toBe(true);
   // Its line taken: up, the band's >_ on, the file in hand still in hand.
   await app.forge.promptBox.click();
   await expect(stand).toHaveClass(/\bup\b/);
   await expect(tool).toHaveAttribute('aria-pressed', 'true');
   await expect(app.page.locator('.desk-box[data-key="README.md"]')).toHaveClass(/held/);
+  expect(await apart()).toBe(true);
+  // A line is run with Enter, as at a terminal: nothing to press beside it. A note takes more than a line, so what
+  // sends it stands at the line's end once something is written.
+  const send = stand.locator('.prompt-run');
+  await app.forge.promptBox.fill('true');
+  await expect(send).toBeHidden();
+  await app.forge.promptBox.fill('');
+  await app.forge.promptBox.press('Alt+3');
+  await expect(send).toBeHidden();
+  await app.forge.promptBox.fill('Fix: a note');
+  await expect(send).toBeVisible();
+  await expect(send).toHaveText('Add');
+  await app.forge.promptBox.fill('');
+  await app.forge.promptBox.press('Alt+1');
   // It stays up while the file is written in: what a run said is read beside the file it is about.
   await own.focus();
   await expect(stand).toHaveClass(/\bup\b/);
@@ -570,6 +590,26 @@ test('a box put beside the desk is a second screen: the desk the left half, the 
   await expect(box('README.md')).toHaveClass(/held/);
   await expect(readme).toBeFocused();
   expect(await order()).toEqual(before);
+  // Kept as it was left: beside the desk again after a reload.
+  await app.page.keyboard.press('Control+Alt+ArrowRight');
+  await expect(side.locator('.desk-box')).toHaveAttribute('data-key', 'README.md');
+  await app.page.reload();
+  await expect(side.locator('.desk-box')).toHaveAttribute('data-key', 'README.md');
+  await expect(room).toHaveClass(/split/);
+  // A window too narrow for two boxes read side by side: one screen, the box back where it lay, and no box offers it.
+  await app.page.setViewportSize({width: 900, height: 800});
+  await expect(room).not.toHaveClass(/split/);
+  await expect(side).toBeHidden();
+  expect(await order()).toEqual(before);
+  await expect(app.page.locator('.desk-aside').first()).toBeHidden();
+  await app.page.setViewportSize({width: 1280, height: 800});
+  // Its close, beside the desk: the file's box gone, the desk the whole face again.
+  await box('README.md').click({position: {x: 100, y: 30}});
+  await box('README.md').getByRole('button', {name: 'Put README.md beside', exact: true}).click();
+  await expect(room).toHaveClass(/split/);
+  await side.getByRole('button', {name: 'Close README.md', exact: true}).click();
+  await expect(room).not.toHaveClass(/split/);
+  await expect(box('README.md')).toHaveCount(0);
 });
 
 test('Shift+N makes a new file beside the one in hand where nothing is being written; written in a file, it is an N', async ({app}) => {
