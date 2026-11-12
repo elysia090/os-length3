@@ -1,7 +1,8 @@
 /* A page in parts: the row of its parts, each part's panel and the parts within it. */
 /* A page in parts (common.ts parts()): the headings are the switch, the
    chosen one an ink fill like anything chosen; only its part is shown. */
-.part-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s5); }
+/* The row is the page's first, a place tall, level with the rail's first place; the part's panel starts on the second. */
+.part-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); min-height: var(--row); }
 /* Never wider than the page: on a phone the parts slide inside it (as wide as their words, they reached past the
    window's edge, cut off there, and the one chosen could not be brought into view). */
 .part-bar > .parts { min-width: 0; max-width: 100%; }
@@ -9,8 +10,14 @@
 /* While the ink goes to it, its edge is not yet the ink's (glide.ts): a part has none, a chip or a pill its own. */
 .part.arriving { border-color: transparent !important; }
 .chip.arriving, .pill.arriving { border-color: var(--edge) !important; }
-/* Who this device is on the Remote, and whether the Remote answers: two things on one line, said apart. */
-.standing { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); margin: var(--s4) 0 0; }
+/* Who this device is on the Remote, and whether the Remote answers: two things said apart, on the head's line after
+   the page's name, where its role stood signed out (a line of their own under the parts pushed every part's first
+   box down a row). Where there is not room for both, who goes and whether it answers stays, cut short at the end. */
+.standing { display: flex; gap: var(--s4); min-width: 0; margin: 0; white-space: nowrap; }
+.standing-who { flex: none; }
+.standing-reach { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.page-head:has(> .standing) > p:not(.standing) { display: none; }
+@media (max-width: 760px) { .standing-who { display: none; } }
 .standing-reach.away { color: var(--off); }
 /* Just back from a provider: a passkey for next time, in a card of its own above the parts. */
 .passkey-next { margin-bottom: var(--s5); padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); max-width: 760px; }
@@ -25,7 +32,9 @@
 .part:hover { background: var(--raised); color: var(--ink); }
 .part[aria-selected='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .part[aria-selected='true'] small { color: inherit; opacity: .8; }
-.part-panel { margin-top: var(--s5); }
+.part-panel { margin-top: var(--row-step); }
+/* What a part holds starts on that line, a section or not. */
+.part-panel > .section:first-child, .part-panel > div > .section:first-child { margin-top: 0; }
 
 .sub-part + .sub-part { margin-top: var(--s5); }
 .sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }

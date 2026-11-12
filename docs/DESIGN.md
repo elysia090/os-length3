@@ -190,6 +190,26 @@ room above (8 to 16) than below (24 to 56), so the weight of the whole sits
 a little high. Every page starts on one top line, and the rail one place
 below it, so Home is not first off the mark.
 
+**One skeleton under every page**, so that going from place to place nothing
+jumps. Sideways there are two edges, counted from the rail's line: what is on
+the top line (the band's tools, Git's and Server's chips) starts a step in
+(24), and a page's own things a place further (72), at one x on every page.
+It does not move with the window's width, and a column is never centred in
+what room there is (the window's 5% moved Home as the window was sized, and
+centring moved it as the pane was put away). Down, there are rows as the
+rail's are, a place tall and a step between: the top line's row holds the
+band, or a counter's name, on one middle; a page's first line (the person's
+name, a box's label, a page's parts, one's address in Inbox, a board's head)
+stands in the first row, level with the rail's first place; and its first box
+starts on the second, level with the rail's second place (behind Server's
+gear the name is the first row, its parts the second, and what a part holds
+starts on the third). A page with nothing for the first row (a sign-in card)
+leaves it clear, so the card and, once signed in, the part's first box start
+on one line. A window too short for the rail's steps closes the rail up, and
+a phone's rail is closer set; the pages keep their rows, one page as
+another, and on a narrow window (760 and less) a page's own things start
+where the top line's do.
+
 ### Colour is state
 
 No colour is there to be liked. Each means one thing wherever it is seen:
@@ -660,10 +680,13 @@ what is its own.
   in a space (a prompt line) have the room after them less by that letter.
 
 - **The page head.** Icon, title (24/700) and one short role line in
-  `sub`, on the top line, and one line at every width: the role is cut
+  `sub`, on the top line, its middle the band's (the line Forge's tools and
+  Git's chips are on), and one line at every width: the role is cut
   short where it runs out of room, and a phone has the name alone, so what
-  stands under the head (a sign-in card, a page's parts) starts at the same
-  place on every page. Home's head is the profile. An overlay (File's
+  stands under the head (a page's parts, a sign-in card) starts at the same
+  place on every page. On Remote, signed in, the role's place says who this
+  device is there and whether the Remote answers (a line of their own under
+  the parts pushed every part's first box a row down). Home's head is the profile. An overlay (File's
   tree, Server's servers) has no page head: it is laid over the page whose
   head is there; Server's page, as Forge's, has its band on the top line.
   A step within a page that stands in the page's place (Server's gear, a
@@ -835,7 +858,7 @@ what is its own.
 - **The Remote away.** When this device's Remote does not answer (not
   reached, not in time, a gateway's 502, 503 or 504, or a page or words
   that are not its reply), it is said in one place: a small `off` dot on Remote's icon in the rail, whose
-  name then reads Remote に届きません, and one line under Remote's parts
+  name then reads Remote に届きません, and on Remote's head, after its name
   (what changes here is sent once it answers). Everything else goes on as
   it was: work is kept here and sent when the Remote answers; what only
   the Remote can do (its switches, a repo only there) waits, quiet.

@@ -24,7 +24,7 @@ import {planSection} from './plan.ts';
 function standing(): HTMLElement {
   const who = h('span', {class: 'standing-who'});
   const reach = h('span', {class: 'standing-reach'});
-  const line = h('p', {class: 'standing muted small', role: 'status'}, who, reach);
+  const line = h('p', {class: 'standing', role: 'status'}, who, reach);
   // A Remote on the page's own origin (the web app's) is named by it: its URL is ''.
   const host = (() => { try { return new URL(account.connection()?.url || location.origin).host; } catch { return location.host; } })();
   void account.me().then((u) => { who.textContent = u?.name ? t('Signed in as {name}', {name: u.name}) : t('Signed in'); }, () => { who.textContent = t('Signed in'); });
@@ -39,6 +39,7 @@ function standing(): HTMLElement {
 }
 
 export function remote(ctx: Context): Node[] {
+  const head = pageHead('remote');
   const holder = h('div', {});
   let shown: string | null = null;
   const paint = () => {
@@ -46,18 +47,21 @@ export function remote(ctx: Context): Node[] {
     const now = c ? 'in' : '';
     if (now === shown) return;
     shown = now;
+    // Signed in, the head says who this device is there and whether the Remote answers, where its role stood.
+    head.querySelector('.standing')?.remove();
+    if (c) head.append(standing());
     if (!c) holder.replaceChildren(signInPlace(t('Sign in'), ...signInLead(t('Signing in syncs repos across your devices and allows sharing with selected users.')), signInBox(() => paint())));
     else signedIn(ctx, holder, () => { shown = null; paint(); });
   };
   paint();
   const stop = account.onConnection(() => { if (!holder.isConnected) { stop(); return; } paint(); });
-  return [pageHead('remote'), holder];
+  return [head, holder];
 }
 
 type Part = 'repos' | 'sign-in' | 'devices' | 'plan';
 
 /**
- * Signed in, in `holder`: the part bar, who this device is and whether the Remote answers, then the part chosen.
+ * Signed in, in `holder`: the part bar, then the part chosen.
  * `again` draws it all anew (a passkey added from the offer under the repos, shown under Sign-in at once).
  */
 function signedIn(ctx: Context, holder: HTMLElement, again: () => void) {
@@ -81,7 +85,6 @@ function signedIn(ctx: Context, holder: HTMLElement, again: () => void) {
   if (next) offer.classList.add('held');
   holder.replaceChildren(
     h('div', {class: 'part-bar'}, page.switch),
-    standing(),
     page.panel('repos'), page.panel('sign-in'), page.panel('devices'), page.panel('plan'));
   // The passkey offer belongs to the repos it lets be turned off: under them, never under another part; the one
   // just after a provider's sign-in, at their top.

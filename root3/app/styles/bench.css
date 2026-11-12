@@ -7,7 +7,7 @@
   .work { grid-template-columns: minmax(0, 1fr); position: relative; }
   /* Server's side holds only what its gear holds too (people, repos): it folds, the gear stays. */
   .work > .side.server-side { display: none; }
-  .work > .center.server-center { padding-left: var(--s2); padding-right: var(--s2); }
+  .work > .center.server-center { padding-right: var(--s2); }
   .center, .repo-strip { border-right: 0; }
   /* The files 16 px from the rail's line, as every page on a phone (§1); the prompt box a step left of them (F1). */
   .dock { left: var(--s2); right: var(--s2); bottom: var(--s3); }

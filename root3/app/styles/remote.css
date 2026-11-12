@@ -4,9 +4,11 @@
 /* Signing in (the Remote page signed out, a device's code): one place in the
    middle, an ink edge over raised, its weight a little high as the issue
    card's; the ways in one under another, as wide as the place. */
-.sign-in-place { display: grid; justify-items: start; margin-top: var(--s5); }
+/* Its card is the page's first box: on the second row, the first left clear over it (where the parts come once
+   signed in, so the card and the part's first box start on one line). */
+.sign-in-place { display: grid; justify-items: start; padding-top: calc(var(--row) + var(--row-step)); }
 /* A device's own page has nothing else: there the card stands in the middle, its weight a little high. */
-.device-page.sign-in-place { justify-items: center; align-content: center; margin-top: 0; min-height: calc(100dvh - 2 * var(--top-line) - var(--s6) * 3); padding-bottom: 5vh; box-sizing: border-box; }
+.device-page.sign-in-place { justify-items: center; align-content: center; padding-top: 0; min-height: calc(100dvh - 2 * var(--top-line) - var(--s6) * 3); padding-bottom: 5vh; box-sizing: border-box; }
 .sign-in-card {
   width: min(440px, 100%); box-sizing: border-box; display: grid; gap: var(--s4);
   padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--paper);
@@ -20,7 +22,7 @@
 .device-page { grid-column: 1 / -1; width: 100%; min-height: 100dvh; padding: 0 var(--s4) 5vh; }
 @media (max-width: 560px) {
   /* A phone: the window's own gutter is the page's right edge, so the two do not stack up. */
-  .page { padding-left: var(--s4); padding-right: 0; }
+  .page { padding-right: 0; }
   .sign-in-card { padding: var(--s4); gap: var(--s3); }
 }
 /* A way in that takes two lines takes them evenly, not one word left over. */

@@ -6,10 +6,12 @@
    pinned at the top of its box, its talk under it. On the right, who is in
    it and the repos they show. Behind the gear, and a repo shown, take the
    boards' place: a step away from them. */
-.server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: var(--band) var(--s5) 120px; }
-/* The band's row, and under it the board's top where Forge's first box's is (its top line's foot, a step down). Under
-   the row, while one is named, what the Remote said no to (server/band.ts). */
-.server-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s1) var(--s2); margin-bottom: var(--s5); }
+/* On the skeleton every page has (tokens.css): its chips on the top line a step from the rail's line, and its boards,
+   what is behind its gear and the box at its foot a place further in, where every page's own things start. */
+.server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: var(--band) var(--s5) 120px var(--body-left); }
+/* The band's row, and under it the board's top on the rail's first row: its head is that row, and what it holds
+   starts on the second. Under the band's row, while one is named, what the Remote said no to (server/band.ts). */
+.server-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s1) var(--s2); margin: 0 0 var(--s3) calc(var(--band-left) - var(--body-left)); }
 /* Server's page: the view the whole page's, its edges the bench's. */
 .page.page-work[data-place='server'] > .work { position: relative; height: 100%; }
 /* Server glanced at (switcher.ts): one's servers beside the rail, level with its icon, as File's tree comes out of
@@ -45,7 +47,7 @@
 .server-chips.more-before { mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent); }
 .server-chips.more-before.more-after { mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); }
 .server-said { flex-basis: 100%; padding-left: calc(var(--h-row) + var(--s2)); }
-.server-said:empty { display: none; }
+.server-said:empty, .server-said:has(> .server-ask:empty) { display: none; }
 /* A server being named: its chip is the field, where it will stand once made, dashed until it has a name, and says
    one name; Make beside it. Wider than the row (a phone's width, its address written), Make goes under it. */
 .server-making { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
@@ -114,18 +116,17 @@
 .slides { --peek: 48px; --gap: var(--s3); --lead: 0; min-height: 0; }
 /* Signed out, with nothing open to read: Server's head and the card signing in where a page has them (page.css):
    the center's padding is a step narrower than a page's at the left and a step deeper at the top, given back here. */
-.server-signed-out { margin: calc(var(--top-line) - var(--band)) 0 0 calc(clamp(var(--s5), 5vw, 72px) - var(--s5)); }
-@media (max-width: 760px) { .server-signed-out { margin-left: calc(clamp(var(--s5), 5vw, 72px) - var(--s2)); } }
-@media (max-width: 560px) { .server-signed-out { margin-left: calc(var(--s4) - var(--s2)); margin-right: calc(-1 * var(--s2)); } }
+.server-signed-out { margin: calc(var(--top-line) - var(--band)) 0 0; }
+@media (max-width: 560px) { .server-signed-out { margin-right: calc(-1 * var(--s2)); } }
 .slides.single { --peek: 0px; }
 /* Server's boards and the box at the foot share the center's peek and lead (server/row.ts sets it there): the box is
    as wide as the board on screen and stands under it, its edges the board's, sliding with it board to board. */
 .server-center { --peek: 48px; --lead: 0; }
 .server-center:has(> .slides.single) { --peek: 0px; }
 .server-center > .slides { --peek: inherit; --lead: inherit; }
-.server-center > .dock { max-width: none; margin: 0; left: calc(var(--s5) + var(--lead) * var(--peek)); right: calc(var(--s5) + (2 - var(--lead)) * var(--peek));
+.server-center > .dock { max-width: none; margin: 0; left: calc(var(--body-left) + var(--lead) * var(--peek)); right: calc(var(--s5) + (2 - var(--lead)) * var(--peek));
   transition: left var(--slide), right var(--slide), opacity var(--motion), visibility var(--motion); }
-@media (max-width: 760px) { .server-center { --peek: var(--s5); } .server-center > .dock { left: calc(var(--s2) + var(--lead) * var(--peek)); right: calc(var(--s2) + (2 - var(--lead)) * var(--peek)); } }
+@media (max-width: 760px) { .server-center { --peek: var(--s5); } .server-center > .dock { right: calc(var(--s2) + (2 - var(--lead)) * var(--peek)); } }
 @media (prefers-reduced-motion: reduce) { .server-center > .dock { transition: none; } }
 /* A phone's width: the box is narrow, so Post comes with the words (server/dock.ts), the empty box saying whom it
    writes to whole (To the people of Books, not To the people of). */
@@ -153,7 +154,7 @@
 .slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) .board-card { border-color: var(--ink); background: var(--raised); color: var(--ink); }
 /* Its name as near its top as a file's head is to a file's (a step, s2), so it sits by the line the pane's head (People)
    is on rather than a step under it: its larger letters keep it 5 px below that line, where they still clear its edge. */
-.board-head { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s2) var(--s5); }
+.board-head { display: flex; align-items: baseline; gap: var(--s2); box-sizing: border-box; min-height: calc(var(--row) + var(--row-step) - 1px); padding: var(--s2) var(--s5) 0; }
 .board-head h2 { min-width: 0; font-size: var(--t-card); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board-head .grow { flex: 1; }
 .board-head > .mono, .board-head > .small { flex-shrink: 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -256,7 +257,8 @@
    boxes. */
 .server-sheet { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); align-content: start; min-height: 0; }
 .server-sheet[hidden] { display: none; }
-.sheet-head { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+/* Its name the first row's, its parts the second's, and what the part chosen holds from the third. */
+.sheet-head { display: flex; align-items: center; gap: var(--s3); min-width: 0; min-height: var(--row); }
 .sheet-title { display: flex; align-items: baseline; gap: var(--s1) var(--s3); min-width: 0; }
 .sheet-title h2 { min-width: 0; font-size: var(--t-title); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet-title p { flex-shrink: 4; min-width: 0; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -267,8 +269,8 @@
 .server-sheet:has(> .sheet-foot) { grid-template-rows: auto minmax(0, 1fr) auto; }
 .sheet-foot { display: flex; align-items: center; gap: var(--s2); padding-top: var(--s4); }
 .sheet-foot > .grow { flex: 1; }
-.sheet-body > .parts { margin-top: var(--s4); }
-.sheet-body .part-panel { margin-top: var(--s4); }
+.sheet-body > .parts { min-height: var(--row); margin-top: var(--row-step); align-items: center; }
+.sheet-body .part-panel { margin-top: var(--row-step); }
 .sheet-sub { margin-top: var(--s1); }
 /* A setting in a small card: its word, and the switch at the right. */
 .card-row { display: flex; align-items: center; gap: var(--s3); min-height: var(--h-control); }
@@ -309,6 +311,8 @@
   .parts { scroll-padding-inline: var(--s5) calc(var(--s6) + var(--s2)); }
   .parts .part { flex: none; }
   .parts.more > .parts-on { display: grid; }
+  /* Behind the gear that room is the row's step: the parts stay in the second row, what they hold on the third. */
+  .sheet-body > .parts { margin-top: calc(var(--row-step) - var(--s1)); }
   .sheet-title > p { display: none; }
 }
 .seen-body { min-height: 0; margin-top: var(--s4); display: grid; grid-template-columns: minmax(10em, 1fr) minmax(0, 3fr); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
