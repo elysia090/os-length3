@@ -184,3 +184,105 @@ test('#99: a path that ends with a slash, "." or ".." takes away nothing Linux w
   assert.equal(rename(p, '/t/d/', '/t/moved/'), 0n);
   assert.equal(text(p, '/t/moved/e/keep'), 'contents');
 });
+
+const TRUNCATE = 76, FTRUNCATE = 77, CLOSE = 3, MKNOD = 133, FALLOCATE = 285;
+const EBADF = -9n, EFBIG = -27n, EMFILE = -24n, ELOOP = -40n;
+const O_WRONLY = 1, O_RDWR = 2, O_CREAT = 0x40, O_EXCL = 0x80, O_TRUNC = 0x200, O_DIRECTORY = 0x10000, O_NOFOLLOW = 0x20000;
+
+test('#103: truncate and ftruncate refuse what Linux refuses, in its order, and what is refused changes nothing', () => {
+  const p = laid(), v = p.kernel.vfs;
+  assert.equal(call(p, SYMLINK, at(p, 1024, 'a'), at(p, 2048, '/t/to-a')), 0n);
+  assert.equal(call(p, MKNOD, at(p, 1024, '/tmp/fifo'), 0o010644, 0), 0n);
+  const ro = Number(call(p, OPEN, at(p, 1024, '/t/a'), 0)), wo = Number(call(p, OPEN, at(p, 1024, '/t/a'), O_WRONLY)), rw = Number(call(p, OPEN, at(p, 1024, '/t/a'), O_RDWR));
+  const dir = Number(call(p, OPEN, at(p, 1024, '/t/d'), O_DIRECTORY));
+  const nul = Number(call(p, OPEN, at(p, 1024, '/dev/null'), O_WRONLY));
+  assert.ok(ro >= 0 && wo >= 0 && rw >= 0 && dir >= 0 && nul >= 0);
+  const file = v.lookup('/t/a', '/') as unknown as {size: number; version: number};
+  const before = tree(p), mirror = new Mirror(v, '/t'), version = file.version;
+  const truncate = (path: string, length: number | bigint) => call(p, TRUNCATE, at(p, 1024, path), length);
+  const ftruncate = (fd: number, length: number | bigint) => call(p, FTRUNCATE, fd, length);
+  // What Linux says to each (asked of it, on tmpfs): a negative length is EINVAL before the name or the descriptor is
+  // looked at; a folder is EISDIR by its name and EINVAL by its descriptor; a descriptor not open for writing is EINVAL.
+  const refused: [string, bigint, () => bigint][] = [
+    ['truncate to -1', EINVAL, () => truncate('/t/a', -1)],
+    ['truncate of a name not there to -1', EINVAL, () => truncate('/t/none', -1)],
+    ['truncate of a folder to -1', EINVAL, () => truncate('/t/d', -1)],
+    ['truncate of a name not there', ENOENT, () => truncate('/t/none', 0)],
+    ['truncate of a folder', EISDIR, () => truncate('/t/d', 0)],
+    ['truncate of a named pipe', EINVAL, () => truncate('/tmp/fifo', 0)],
+    ['truncate of a device', EINVAL, () => truncate('/dev/null', 0)],
+    ['truncate past what a file holds here', EFBIG, () => truncate('/t/a', 2 ** 31)],
+    ['truncate to the largest length there is', EFBIG, () => truncate('/t/a', 2n ** 63n - 1n)],
+    ['ftruncate of one open for reading to -1', EINVAL, () => ftruncate(ro, -1)],
+    ['ftruncate of one open for reading to 0', EINVAL, () => ftruncate(ro, 0)],
+    ['ftruncate of one open for writing to -1', EINVAL, () => ftruncate(wo, -1)],
+    ['ftruncate of no descriptor to -1', EINVAL, () => ftruncate(99, -1)],
+    ['ftruncate of no descriptor', EBADF, () => ftruncate(99, 0)],
+    ['ftruncate of a folder', EINVAL, () => ftruncate(dir, 0)],
+    ['ftruncate of a device', EINVAL, () => ftruncate(nul, 0)],
+    ['ftruncate past what a file holds here', EFBIG, () => ftruncate(wo, 2 ** 31)],
+    ['fallocate past what a file holds here', EFBIG, () => call(p, FALLOCATE, wo, 0, 0, 2 ** 31)],
+  ];
+  for (const [what, said, ask] of refused) {
+    assert.equal(ask(), said, what);
+    assert.deepEqual(tree(p), before, what);
+    assert.equal(file.size, 6, what);
+    assert.equal(file.version, version, what);
+    assert.equal(mirror.changes(), null, what);
+  }
+  // What it takes: cut, grown with zeros, through a link, by a descriptor open for writing or for both.
+  assert.equal(truncate('/t/a', 3), 0n);
+  assert.equal(text(p, '/t/a'), 'sou');
+  assert.equal(truncate('/t/to-a', 5), 0n);
+  assert.equal(text(p, '/t/a'), 'sou\0\0');
+  assert.equal(ftruncate(wo, 2), 0n);
+  assert.equal(text(p, '/t/a'), 'so');
+  assert.equal(ftruncate(rw, 4), 0n);
+  assert.equal(text(p, '/t/a'), 'so\0\0');
+  assert.equal(truncate('/t/a', 0), 0n);
+  assert.equal(file.size, 0);
+  for (const fd of [ro, wo, rw, dir, nul]) assert.equal(call(p, CLOSE, fd), 0n);
+});
+
+test('#102: an open with no descriptor left is EMFILE whatever it names, and makes and empties nothing', () => {
+  const p = laid(), v = p.kernel.vfs;
+  assert.equal(call(p, SYMLINK, at(p, 1024, 'a'), at(p, 2048, '/t/to-a')), 0n);
+  const held = Number(call(p, OPEN, at(p, 1024, '/t/a'), O_WRONLY));
+  assert.ok(held >= 0);
+  const before = tree(p), mirror = new Mirror(v, '/t'), file = v.lookup('/t/a', '/') as unknown as {version: number}, version = file.version;
+  const slots = () => [...(p.fds as unknown as {slots: Map<number, unknown>}).slots.keys()].join(' ');
+  const open = (path: string, flags: number) => call(p, OPEN, at(p, 1024, path), flags, 0o644);
+  // No descriptor at or past the limit (RLIMIT_NOFILE's soft limit): none left.
+  const limit = p.fds.limit, had = slots();
+  p.fds.limit = 0;
+  // What Linux says to each with RLIMIT_NOFILE 0 (asked of it): EMFILE, before the name is looked at.
+  const asked: [string, () => bigint][] = [
+    ['a file to be emptied', () => open('/t/a', O_WRONLY | O_TRUNC)],
+    ['a file to be made', () => open('/t/new', O_WRONLY | O_CREAT)],
+    ['a file there, to be made and no other', () => open('/t/a', O_WRONLY | O_CREAT | O_EXCL)],
+    ['a name not there', () => open('/t/none', 0)],
+    ['a file as a folder', () => open('/t/a', O_DIRECTORY)],
+    ['a link not to be followed', () => open('/t/to-a', O_NOFOLLOW)],
+    ['a descriptor by its /proc name, to be emptied', () => open(`/proc/self/fd/${held}`, O_WRONLY | O_TRUNC)],
+  ];
+  for (const [what, ask] of asked) {
+    assert.equal(ask(), EMFILE, what);
+    assert.deepEqual(tree(p), before, what);
+    assert.equal(file.version, version, what);
+    assert.equal(mirror.changes(), null, what);
+    assert.equal(slots(), had, what);
+  }
+  // With room again each is what it is.
+  p.fds.limit = limit;
+  assert.equal(open('/t/none', 0), ENOENT);
+  assert.equal(open('/t/a', O_WRONLY | O_CREAT | O_EXCL), EEXIST);
+  assert.equal(open('/t/a', O_DIRECTORY), ENOTDIR);
+  assert.equal(open('/t/to-a', O_NOFOLLOW), ELOOP);
+  assert.deepEqual(tree(p), before);
+  const made = Number(open('/t/new', O_WRONLY | O_CREAT));
+  assert.ok(made >= 0);
+  assert.equal(text(p, '/t/new'), '');
+  const emptied = Number(open('/t/a', O_WRONLY | O_TRUNC));
+  assert.ok(emptied >= 0);
+  assert.equal(text(p, '/t/a'), '');
+});

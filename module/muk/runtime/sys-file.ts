@@ -173,14 +173,18 @@ const statOf = (p: Proc, st: bigint, found: Statted | number): number => (typeof
 
 function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bigint): number {
   const f = N(flags), name = path(p, address);
+  // The descriptor it will be is found before anything is looked at or changed, as Linux takes one before it walks the
+  // path: with none left the open is EMFILE whatever it names, and nothing is made or emptied for it. (Before: found
+  // last, after the file had been made or emptied.)
+  const fd = p.fds.lowest();
+  if (fd < 0) fail(E.MFILE);
+  const install = (d: Description): number => p.fds.install(d, {fd, cloexec: !!(f & O.CLOEXEC)});
   // A descriptor opened by its /proc name opens what it has open: the same pipe or terminal, a file afresh.
   const named = name.startsWith('/') ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
   if (named) {
     const d = named.kind === 'file' || named.kind === 'dir' ? new Description(named.kind, {node: named.node, flags: f, path: named.path}) : named;
     if (d !== named && named.node instanceof File && (f & 3) && (f & O.TRUNC)) named.node.truncate(0);
-    const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
-    if (fd < 0) fail(E.MFILE);
-    return fd;
+    return install(d);
   }
   const names: string[] = [];
   const r = p.kernel.vfs.walk(name, base(p, dirfd), !(f & O.NOFOLLOW), 0, names);
@@ -198,9 +202,7 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
   // The controlling terminal (/dev/tty), and the terminal the console is (/dev/pts/0): the console, where it is one.
   if (node instanceof Device && (node.rdev === 0x500 || node === p.kernel.vfs.terminal)) {
     if (!p.kernel.console.interactive) fail(E.NXIO);
-    const fd = p.fds.install(new Description('console', {flags: f & (3 | O.NONBLOCK), path: 'tty'}), {cloexec: !!(f & O.CLOEXEC)});
-    if (fd < 0) fail(E.MFILE);
-    return fd;
+    return install(new Description('console', {flags: f & (3 | O.NONBLOCK), path: 'tty'}));
   }
   const writing = (f & 3) !== 0;
   if (node.isDir && writing) fail(E.ISDIR);
@@ -230,19 +232,14 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
     node.pending.delete(me);
     pipe.changes++;
     p.kernel.dirty = true;
-    const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
-    if (fd < 0) fail(E.MFILE);
-    return fd;
+    return install(d);
   }
   // /proc's files are read as they are when opened.
   if (node instanceof Made) node = node.snapshot();
   const kind = node.isDir ? 'dir' : node instanceof Device ? 'device' : 'file';
   // Its canonical path (/proc/self/fd's link to it): the names the walk went down by, and its own where it was made.
   const full = `/${(r.node ? names : [...names, r.name]).join('/')}`;
-  const d = new Description(kind, {node, flags: f, path: full});
-  const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
-  if (fd < 0) fail(E.MFILE);
-  return fd;
+  return install(new Description(kind, {node, flags: f, path: full}));
 }
 
 /**
@@ -1176,8 +1173,27 @@ export const FILE_CALLS: Calls = {
   // preadv2 and pwritev2: preadv and pwritev, an offset of -1 the descriptor's own (RWF_ flags change nothing here).
   327(fd, vec, count, pos) { const at = N(pos); return readv(this, descriptor(this, fd), vec, count, at === -1 ? null : at); },
   328(fd, vec, count, pos) { const at = N(pos); return writev(this, descriptor(this, fd), vec, count, at === -1 ? null : at); },
-  76(name, length) { const node = this.kernel.vfs.lookup(path(this, name), this.cwd); if (!(node instanceof File)) return fail(E.INVAL); node.truncate(N(length)); return 0; },
-  77(fd, length) { const d = descriptor(this, fd); if (d.kind !== 'file') fail(E.INVAL); fileOf(d).truncate(N(length)); return 0; },
+  // truncate and ftruncate, each refusal in Linux's order (do_sys_truncate, do_sys_ftruncate): a negative length is
+  // EINVAL before the name or the descriptor is looked at; then what the name or the descriptor is (a folder by its
+  // name EISDIR; anything else not a file, and a descriptor not open for writing, EINVAL); then the length a file
+  // holds here (EFBIG). Refused, the file is as it was. (Before: any length was taken, by any descriptor.)
+  76(name, length) {
+    const n = N(length);
+    if (n < 0) fail(E.INVAL);
+    const node = this.kernel.vfs.lookup(path(this, name), this.cwd);
+    if (node.isDir) fail(E.ISDIR);
+    if (!(node instanceof File)) return fail(E.INVAL);
+    node.truncate(n);
+    return 0;
+  },
+  77(fd, length) {
+    const n = N(length);
+    if (n < 0) fail(E.INVAL);
+    const d = descriptor(this, fd);
+    if (d.kind !== 'file' || !(d.flags & 3)) fail(E.INVAL);
+    fileOf(d).truncate(n);
+    return 0;
+  },
   79(buf, size) {
     const bytes = enc.encode(this.cwd + '\0');
     if (bytes.length > N(size)) fail(E.RANGE);

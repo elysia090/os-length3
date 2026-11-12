@@ -61,6 +61,12 @@ export class Node {
  */
 export interface Mapping { proc: {readonly bytes: Uint8Array}; start: number; length: number; off: number; seen?: Uint8Array }
 
+/**
+ * The most a file holds here: its bytes are one array, with no holes kept, and 2 GiB less a byte is what every engine
+ * this runs on gives one array. A length past it is EFBIG (Linux's tmpfs keeps the holes, and takes any length).
+ */
+export const FILE_MOST = 2 ** 31 - 1;
+
 export class File extends Node {
   declare _data: Uint8Array;
   declare size: number;
@@ -150,13 +156,21 @@ export class File extends Node {
     counted.changes++;
     if (this.maps) this.#show(at, need);
   }
+  /**
+   * Its length made `length`: cut there, or grown to it with zeros. A whole number from 0 to FILE_MOST: one that is not
+   * is refused here whoever asks (EINVAL, EFBIG), and one there is no room for is ENOSPC; refused, nothing of the file
+   * is changed. (Before: any number became its size, a negative one too.)
+   */
   truncate(length: number): void {
+    if (!Number.isInteger(length) || length < 0) fail(E.INVAL);
+    if (length > FILE_MOST) fail(E.FBIG);
     if (this.maps) this.settle();
     const was = this.size;
     this.own();
     const data = this.data;
     if (length > data.length) {
-      const grown = new Uint8Array(length);
+      let grown: Uint8Array;
+      try { grown = new Uint8Array(length); } catch { return fail(E.NOSPC); }
       grown.set(data.subarray(0, this.size));
       this._data = grown;
     } else {
@@ -298,7 +312,7 @@ export class Device extends Node {
 export type Entry = File | Dir | Link | Fifo | SocketName | Device;
 
 export const E = {PERM: 1, NOENT: 2, IO: 5, BADF: 9, CHILD: 10, AGAIN: 11, NOMEM: 12, ACCES: 13, FAULT: 14, EXIST: 17,
-  XDEV: 18, NOTDIR: 20, ISDIR: 21, INVAL: 22, MFILE: 24, NOTTY: 25, NOSPC: 28, SPIPE: 29, RANGE: 34, NOSYS: 38,
+  XDEV: 18, NOTDIR: 20, ISDIR: 21, INVAL: 22, MFILE: 24, NOTTY: 25, FBIG: 27, NOSPC: 28, SPIPE: 29, RANGE: 34, NOSYS: 38,
   NOTEMPTY: 39, LOOP: 40, NAMETOOLONG: 36, PIPE: 32, NOEXEC: 8, SRCH: 3, INTR: 4, AFNOSUPPORT: 97, NXIO: 6, TIMEDOUT: 110,
   OPNOTSUPP: 95, BUSY: 16, NODEV: 19, NODATA: 61, TOOBIG: 7};
 
