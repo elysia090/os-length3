@@ -61,7 +61,8 @@ for (const width of [500, 1400, 1900]) {
     const words = (await row.locator('.sheet-text').boundingBox())!;
     const mark = (await row.locator('.sheet-text mark').boundingBox())!;
     expect(words.width).toBeGreaterThan(100);
-    expect(mark.x).toBeGreaterThanOrEqual(words.x);
+    // The highlighter deliberately bleeds 1px past its text (diff.css mark margin).
+    expect(mark.x).toBeGreaterThanOrEqual(words.x - 1);
     expect(mark.x + mark.width).toBeLessThanOrEqual(words.x + words.width + 1);
     expect(mark.y + mark.height).toBeLessThanOrEqual(words.y + words.height + 1);
     await row.click();
