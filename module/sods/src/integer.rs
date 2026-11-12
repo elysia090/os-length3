@@ -417,6 +417,17 @@ impl Fx<'_> {
         self.set(l_t(1));
         if signed { self.get(l_t(2)); self.sign_extend(size); self.set(l_t(2)); }
         self.get(l_t(1)); self.get(l_t(2)); self.e(if signed { I64_DIV_S } else { I64_DIV_U }); self.set(l_t(3));
+        // A quotient that does not fit where it goes is the processor's divide error (#DE), raised before a register
+        // is changed: the division here is 64 bits wide, and has no such limit of its own. (A divisor of zero, and
+        // the least 64-bit integer by -1, are the engine's own traps, which the kernel takes for the same.)
+        if signed {
+            self.get(l_t(3)); self.get(l_t(3)); self.sign_extend(size); self.e(I64_NE);
+        } else {
+            self.get(l_t(3)); self.c64(bits); self.e(I64_SHR_U); self.e(I64_EQZ); self.e(I32_EQZ);
+        }
+        self.if_();
+        self.c64(i.ip() as i64); self.c32(TRAP_DIVIDE); self.call(F_TRAP); self.e(UNREACHABLE);
+        self.end();
         self.get(l_t(1)); self.get(l_t(2)); self.e(if signed { I64_REM_S } else { I64_REM_U }); self.set(l_t(4));
         match size {
             1 => {

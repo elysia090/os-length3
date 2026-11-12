@@ -36,7 +36,7 @@ import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
 import type {Taken} from '../../sods/runtime/kept.ts';
 import type {Machine} from './machine.ts';
-import type {Translate} from '../../sods/runtime/translator.ts';
+import {NotAProgram, type Translate} from '../../sods/runtime/translator.ts';
 import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
 import {said, steady} from '../../sods/runtime/host.ts';
 
@@ -125,7 +125,14 @@ class GuestTrap extends Error {
  */
 export function fault(e: unknown): number | null {
   if (e instanceof GuestTrap) return ({1: 11, 2: 4, 3: 4, 4: 8, 7: 4, 8: 5, 9: 11} as Record<number, number>)[e.code] ?? 4;
-  if (e instanceof WebAssembly.RuntimeError && /out of bounds|unreachable/i.test(e.message)) return 11;
+  if (!(e instanceof WebAssembly.RuntimeError)) return null;
+  // A division translated as the engine's own (the divisor's width the dividend's: sods' integer.rs), which the
+  // processor would have refused: by zero, or a quotient too large (the least integer by -1). The engine traps, and
+  // says which in its own words (V8: "divide by zero", "remainder by zero", "divide result unrepresentable";
+  // SpiderMonkey: "integer divide by zero", "integer overflow"; JavaScriptCore: "Division by zero", "Integer
+  // overflow"). SIGFPE, as the wider division's own check gives it (div128: a GuestTrap of code 4).
+  if (/divi(de|sion) by zero|remainder by zero|unrepresentable|integer overflow/i.test(e.message)) return 8;
+  if (/out of bounds|unreachable/i.test(e.message)) return 11;
   return null;
 }
 
@@ -420,7 +427,12 @@ export class Kernel implements Kern {
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
     if (!this.translate) throw new FsError(E.NOEXEC);
     let t = steady();
-    const {wasm, segments} = this.prepare(this.translate(bytes));
+    // What the translator says is no program it takes (an ELF cut short, of another machine, not an executable) is
+    // the file's fault and the exec's failure, as a file with no ELF header's is: ENOEXEC. What else it throws is
+    // its own fault, and stays the host's error.
+    let translated: Uint8Array;
+    try { translated = this.translate(bytes); } catch (e) { if (e instanceof NotAProgram) throw new FsError(E.NOEXEC); throw e; }
+    const {wasm, segments} = this.prepare(translated);
     PROFILE.translate += steady() - t; t = steady();
     // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
