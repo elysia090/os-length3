@@ -1,11 +1,9 @@
 /* The OS's moves: the ink going to the thing chosen, a thing opened becoming its box, the camera panning along the
    rail and the band, the caret gliding to where words are written, a thing just done landing in its place. */
-/* All of them left out but one (ui/glide.ts still): the rail's ink going from the place left to the place come to.
-   Nothing else is moved by a transition or an animation; each thing is where it ends, at once. Taken off together so
-   that what the screen says without them is seen: a move comes back only where it is found wanted, and is then let
-   through here by name. */
-:not(#rail-tabs, #rail-tabs *), :not(#rail-tabs, #rail-tabs *)::before, :not(#rail-tabs, #rail-tabs *)::after { transition: none !important; animation: none !important; }
-#rail-tabs .rail-tag { transition: none !important; }
+/* Feedback and continuity are on by default. Reduced motion keeps every state change immediate. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
 /* The ink of the thing chosen, on its way from the one it was on (glide.ts): under the words and icons; the one
    it is going to waits un-inked, its words in ink, until it lands. */
 .glide-ink { position: absolute; z-index: -1; background: var(--ink); pointer-events: none; }
@@ -17,38 +15,6 @@
 .morph-box { position: fixed; z-index: 9; pointer-events: none; border: var(--line-work) solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
 /* The words a morph carries: a copy of them as they were drawn, going with the box onto the words they become. */
 .morph-words { position: fixed; z-index: 10; margin: 0; white-space: nowrap; overflow: visible; transform-origin: 0 0; pointer-events: none; }
-/* Along the rail the camera goes with it (main.ts select, ui/camera.ts): the page here steps back with its own camera,
-   the camera goes along to the page come to, whose own camera comes down; the rail, the band and the pane stand where
-   they are. Going along, only the page left is taken as pictures (what lies on its ground, and each part of its frame
-   apart): the rest of the window is not taken at all and goes on being drawn as it is, its own moves (the rail's ink)
-   going on. The page is named only while it goes along: named, it is a layer of its own, and the search's shade would
-   lie over the search with it. */
-:root { view-transition-name: none; }
-/* A press while it goes along goes through the picture to the page coming under it. */
-::view-transition { pointer-events: none; }
-.panning #page { view-transition-name: page; }
-/* The page come to is not taken: it comes itself (main.ts select), so a press lands on it as it comes. */
-.panning.arriving #page { view-transition-name: none; }
-::view-transition-group(page), ::view-transition-old(page) { animation: none; }
-/* The frame left, pictures of their own that stand where they are and only give way, under them, to the frame come to:
-   never moved, never morphed into it. */
-::view-transition-group(frame-0), ::view-transition-group(frame-1), ::view-transition-group(frame-2), ::view-transition-group(frame-3),
-::view-transition-old(frame-0), ::view-transition-old(frame-1), ::view-transition-old(frame-2), ::view-transition-old(frame-3) { animation: none; }
-/* Going along, what comes by passes under the frame, never over it: the band and the pane over the ground, the window's
-   margins over and under the page (each the paper it is anyway). */
-.panning #page :is(.work > .bar, .work > .side) { position: relative; z-index: 5; background-color: var(--ground); }
-.panning::before, .panning body::after { content: ''; position: fixed; left: 0; right: 0; z-index: 6; background: var(--ground); pointer-events: none; }
-.panning::before { top: 0; height: var(--outer-top); }
-.panning body::after { bottom: 0; height: var(--outer-bottom); }
-/* Along the band (glide.ts panAcross): only the center is taken; the repo come to comes in whole from its pill's side,
-   over the one left, which steps back a little the other way and fades under it. Never a strip travelling a whole
-   width with two half pages and the ground between them, never two pages' words over each other. */
-.panning-across #page { view-transition-name: none; }
-/* It moves inside the center's frame, as the files scroll in it: cut at the center's edges, never over the lines. */
-::view-transition-group(across) { animation: none; overflow: clip; }
-/* Only the repo left is a picture; the one come to comes in itself (glide.ts panAcross), the picture cut where it has
-   reached. */
-::view-transition-old(across) { animation: none; }
 /* The OS's caret (caret.ts), a 1.5 px stroke of ink gliding from where it was to where it is; the browser's own is
    hidden in the field it stands for. Solid while it moves, blinking once it rests. */
 .os-caret-field { caret-color: transparent; }

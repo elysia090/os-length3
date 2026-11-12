@@ -138,7 +138,7 @@
 /* What was found, a section a kind (found.ts sections), two to a row: its name and how many at its left, what was
    found at its right, a row a thing; a file's name over its lines, each line its number and its words. */
 .found-secs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 36px; }
-.found-sec { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 16px; margin-top: 5px; align-items: start; min-width: 0; }
+.found-sec { container: search-section / inline-size; display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 16px; margin-top: 5px; align-items: start; min-width: 0; }
 .found-sec-head { margin: 0; font: 900 20px/1.1 var(--display); color: var(--ink); }
 .found-sec-head > i { margin-left: 6px; font: 500 12px/1 var(--mono); font-style: normal; color: var(--sub); }
 .found-sec-rows { display: grid; min-width: 0; }
@@ -156,14 +156,14 @@
 /* The files found, a row a thing (found.ts fileRows), read across as the mock's: a file's name, the line's number and
    its words, in the sheet's own letters (not the code's); a name found is a row of its own. The columns line up down
    the section (subgrid). */
-.found-sec-rows:has(> .sheet-hit) { grid-template-columns: max-content 3ch minmax(0, 1fr); column-gap: 12px; }
+.found-sec-rows:has(> .sheet-hit) { grid-template-columns: minmax(0, 1fr) minmax(3ch, max-content) minmax(0, 3fr); column-gap: 12px; }
 .found-sec .sheet-hit { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: baseline; min-width: 0;
   padding: 3px 6px; margin: 0 -6px; border: 0; border-radius: var(--r-field); background: none; text-align: left;
   font: 400 16px/1.5 var(--sans); color: var(--ink); cursor: var(--cursor-hand); }
 .found-sec .sheet-hit:hover { background: var(--raised); }
-.found-sec .sheet-file { grid-column: 1; font-weight: 700; white-space: nowrap; }
+.found-sec .sheet-file { grid-column: 1; min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .found-sec .sheet-line { grid-column: 2; text-align: right; font-variant-numeric: tabular-nums; }
-.found-sec .sheet-text { grid-column: 3; min-width: 0; white-space: pre; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+.found-sec .sheet-text { grid-column: 3; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
 /* In the sheet what was searched for is marked as it comes, not stroked in again at each key (it is drawn again at
    each, and a mark gone and back a frame later is a flicker). */
 .band-tools .search-results mark { animation: none; }
@@ -182,9 +182,12 @@
   .found-secs { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 20px 28px; }
   .found-sec { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }
-@container search-sheet (max-width: 480px) {
-  .found-sec-rows:has(> .sheet-hit) { grid-template-columns: minmax(0, 1fr) 3ch; column-gap: 10px; }
+@container search-section (max-width: 600px) {
+  .found-sec-rows:has(> .sheet-hit) { grid-template-columns: minmax(0, 1fr) minmax(3ch, max-content); column-gap: 10px; }
   .found-sec .sheet-hit { padding-block: 8px; }
   .found-sec .sheet-file { overflow: hidden; text-overflow: ellipsis; }
   .found-sec .sheet-text { grid-column: 1 / -1; white-space: pre-wrap; overflow-wrap: anywhere; }
 }
+
+/* One kind never gives half the paper to an empty column. Each section measures its own room when several share it. */
+.found-sec:only-child { grid-column: 1 / -1; }

@@ -280,20 +280,19 @@ each case it has met.
   alone. A fact beside a name (Used 4 min ago, This device, a size) is in
   the body's face with even figures, not the code face: only what is
   written in code is mono.
-- **Motion, with a reason.** Today one thing moves: the rail's ink, going
-  from the place left to the place come to. Every other move is left out
-  (`ui/glide.ts` still, `motion.css`): each thing is where it ends, at once,
-  and a place of the rail's pressed draws its page whole, at its own size,
-  with no camera stepping back and going along. They were taken off
-  together so that what the screen says without them is seen; a move comes
-  back only where, without it, one cannot tell where a thing went or came
-  from. What follows in this document about a move says how it goes when
-  it is let back, not that it goes now. Every move says where something
-  went, never only that it changed, and every one lands the same way (fast
-  off the mark, the last pixels slow: `--land`). Each length named in this document
-  is the move's own, and the OS plays them all at one pace (`--pace`, 1:
-  the standard lengths; played at twice them, the moves were watched rather
-  than seen, and a hand waited on each), so they keep with one another.
+- **Motion, with a reason.** Interaction feedback and spatial continuity are
+  enabled by default; `prefers-reduced-motion` makes state changes immediate.
+  Navigation changes the live destination immediately, with a 200 ms, 12 px
+  directional arrival on the content surface. The rail's selection glides;
+  the surrounding frame stays fixed. A newer selection cancels the previous
+  arrival, including a shared page root. No zoom-out camera, snapshots,
+  delayed card staging or count-up numbers are used for page navigation.
+  Repository switching uses the same immediate update and a 16 px horizontal
+  arrival.
+  The system preference also settles motion already underway, preserving
+  dismissal completion; switching back enables subsequent feedback.
+  Each move says where something went and lands fast off the mark, slowing
+  over the last pixels (`--land`). Durations use the shared `--pace`.
   Sideways the camera goes slower,
   as a long pan does (`--slide`, 450 ms of its own: the band's repos, the
   row of boxes, the issues, the boards, the pane). A hover's light and a
@@ -314,73 +313,15 @@ each case it has met.
     its own until it has landed (never a second box showing past the ink's
     edge), and another pressed before it lands takes the ink on from where
     it is: one ink, never two, never back to where it set off.
-  - *The camera goes along the rail* as a game switches from one person to
-    another, and each page steps back with its own camera, the page still
-    itself. Pressed, the page left steps back at once: every page but
-    Forge (Home, Git, the rest) to half its size about where its words
-    begin, at their left and their top, as it is read; Forge's desk has one
-    size and does not step back. What lay out of sight comes into it
-    (Home's lines past the window's foot): nothing is cut at an edge no one
-    can see. At that height the camera goes along the
-    one ground to the page come to, lying beside the one left the way the
-    rail goes (above going up, below going down), already stood back by its
-    own camera, and comes down into it with that camera, landing softly: back
-    280 ms, along 440, near 360, along setting off before the step back has
-    landed so it never stands still between them. The dots lie on the
-    ground as everything on it does: stood back they are smaller with their
-    pitch, going along they go by, coming down they grow back to their
-    own. Only what lies on the ground moves. The rail, the band and the
-    pane are the frame and do not move at all: what differs on them
-    (Forge's pills, the pane's rows) gives way in place as the camera passes
-    between the two pages, the frame come to coming in under the one left
-    before that one goes, so what the two share (the band's tools, the
-    pane's edge) never dims. What lies on the ground is seen only where the
-    ground is: under the band, left of the pane, over the window's foot.
-    Nothing is heard. (Before: the whole ground pulled back about its middle
-    whatever the page, so Forge's desk, already a camera of its own, was
-    made smaller again, Home went off its left, and the dots stood still
-    under it all as a pattern on the glass; before that the whole screen,
-    frame and all, made a card on a darker ground with a sound made up for
-    it; before that a short slide with a cross-fade, no journey at all;
-    before that a heave up the rail, a lift and not a turn of the head.) Only the
-    page left is taken as pictures (what lies on its ground, and each part
-    of its frame apart); the page come to comes itself, and the rest of the
-    window goes on being drawn as it is, so a press made while it goes (the
-    rail pressed again, the pane's button as the page comes) lands on what
-    is under the hand, never lost on a picture still on its way. The
-    keyboard given to a page as it is drawn (Server's line to post in, New
-    repo's name) scrolls nothing to reach it. The rail pressed again on the
-    way (a double press, its keys held) goes on from where the camera is to
-    the place pressed last, the page it was going to drawn as that place;
-    pressed back to where it began, the camera goes back the way it came
-    (before it has moved, it simply stays). Along the
-    band: the repos stand side by side in the band's order, and another repo
-    come to comes in whole from its pill's side over the one left, which
-    steps back a little the other way and fades under it (400 ms): never a
-    strip travelling a whole width with two half pages and the ground
-    between them, never two pages' words over each other (the picture of
-    the one left is cut where the one coming has reached, which takes a
-    press as it comes). Come to from another page (a
-    repo made, opened from File or Home), Forge arrives with it in its box:
-    the camera is already on its way to Forge, and does not pan sideways as
-    well (the box beside passing through on the way).
-  - *The OS opens.* From its first frame: the frame's line is drawn down the
-    rail's edge from the top (620 ms) as the rail's places come in one after
-    another down it from the window's edge, 34 ms apart, the person last at
-    its foot; then the first page comes up, its parts a beat apart, rising
-    from below, its right pane's words from the right as when it is brought
-    out. Nothing is drawn before its turn (not Home for a moment while the
-    place it opens on is still being chosen, as when a provider sends the
-    person back to Remote), and nothing is drawn whole and then again.
-  - *What comes in, comes from its side, a beat at a time.* Down the rail
-    the next page comes up from below, up the rail from above; along the
-    band the next repo comes from the right, back along it from the left.
-    Where the window cannot pan, a page come to is staged instead: its parts (the
-    heading, each section's head, each card, box, pill and file) come in one
-    after another in reading order, 45 ms apart (16 px and a fade, 360 ms
-    each), so the eye is led through it heading first and the arrival lasts
-    long enough to be followed; what is read a moment later takes its turn
-    where it stands. Its figures count up from nothing, its bars fill.
+  - *Navigation stays in the hand.* The selected destination is live at once.
+    Its content arrives from the rail's direction, 12 px over 200 ms, with
+    no scaling of text. Band selections arrive horizontally, 16 px over
+    200 ms. The rail, band and pane are stable landmarks. A newer request
+    cancels the old arrival instead of waiting for a camera or snapshot.
+  - *The OS opens ready.* The frame is immediately available and the first
+    content surface arrives as one. Cards and data arriving asynchronously
+    remain visible, never hidden again to replay a staged entrance. Figures
+    show the actual value throughout; they do not count up from zero.
   - *The caret is a thing that moves.* The OS draws it (a 1.5 px stroke of
     `ink`): it glides from where it was to where it is (a line gone down, a
     press elsewhere, 70 ms), and Enter sweeps it to the next line's start; a
@@ -469,36 +410,26 @@ each case it has met.
     rail's side as they fade in, and go back the same way; Server's sheet changed (the gear, Done) comes in; the
     person's menu rises into place; the plugin area comes down into the
     pane's head and, put away, the Prompt rises into its place.
-  - *A move is never cut.* What is drawn again just as it was is left as
-    it is, so a move under way goes on (the band's ink between two pills
-    when one deed draws the band twice). What is drawn while a page arrives
-    is where its turn in the arrival is by then, from before it is first
-    seen: still to come, it comes; under way, it goes on from there (a part
-    drawn again as it came in goes on as it was); over, it simply stands,
-    never shown and then taken away to come in. A page come to before the
-    last has landed ends the last's arrival, so two never stage one part. A part in a row that clips it (Git's repos, the band)
-    fades in where it stands rather than rising out of the row's edge. A
-    press on the page being left is let go before the camera pans, so the
-    page leaves at rest, not sunk. What a deed brings unfolds after it:
-    the steps Start brings, a TODO's detail line and the empty line made as
-    the last is written, the first post in an empty board as any post
-    comes. The light on a file landed on goes when it has faded, not a
-    frame before. motion.spec.ts holds the band and the arrival to it.
+  - *An interrupted move yields.* A newer navigation releases the old
+    surface before reusing the page. A new selection retargets its ink from
+    its current position. A dismissed menu can reverse in place, restoring
+    interaction immediately. Reduced motion settles active animations and
+    their completion callbacks instead of leaving a hidden or inert layer.
   - *Room is given and taken.* A box opened beside the others grows from
     nothing as they make room (never passing through no width at all, so
     no frame stands empty), and closing gives its room back; the right
     pane opens and closes as a wipe, what it holds cut at the moving edge,
     never squeezed (280 ms). Brought out (Forge, Git, Home alike) its edge
-    lands a touch past where it stops and settles back (420 ms), its words
-    come in after it from the right a line at a time, and its switch's
-    mark fills from the right as it does, with a beat once it is out; put
+    lands a touch past where it stops and settles back (420 ms), its contents
+    arrive together from 8 px to the right over 180 ms, and its switch's
+    mark fills from the right as it does; put
     away, the fill drains back and it goes the way it came, gathering speed
     to the right (260 ms), its line going with it and gone as it gets to the
     window's edge, never left standing there. What it holds is as wide on
     the way as it is out, on Home as in Forge, never squeezed; its search on
     the top line goes as a thing put away does (a few pixels toward the
     pane's side, fading, quicker than the pane, never gone at the press) and
-    comes back first of its words, a badge with its line; the switch stays
+    comes back with the pane; the switch stays
     where it stood. Brought back before it had gone, what it holds stays;
     put away before what it holds had come in, that goes with it as it is.
   - *What opens comes out of what opened it.* What the search finds comes
