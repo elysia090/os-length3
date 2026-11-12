@@ -4,7 +4,7 @@ import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
 import {fieldCarried} from '../../ui/caret.ts';
 import {t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
-import {arc, bornOn, EYE, FOOT, FOOT_ROOM, GRID, lineKept, next, PAD, slots, STANDARD, standardOn, tabbed, WIDTH, type Slot, type View} from './desk-layout.ts';
+import {arc, bornOn, EYE, FOOT, FOOT_ROOM, GRID, lineKept, next, PAD, slots, STANDARD, standardOn, tabbed, TOP, VGAP, WIDTH, type Slot, type View} from './desk-layout.ts';
 
 // A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
 // columns of code, its name outside its top-left corner, on dots: files opened, each under the one opened before it.
@@ -148,6 +148,8 @@ export class Desk {
   /** Where the box in hand's top stands on the face, as it was when it was taken in hand: it stays there as the box
    * grows or shrinks under the work (none: to be found again). */
   #topAt: number | null = null;
+  /** How far the desk turns, across and down: from its first box at its standard place to its last (#relay). */
+  #most = {x: 0, y: 0};
   /** Each box's size heard: grown or shrunk (a line written, a notice in its head), the desk is laid again, what is
    * under it pushed as it grows, in the frame it grew in (heard after that frame is laid out, before it is drawn: a
    * frame later, the grown box is drawn over the one under it). */
@@ -580,10 +582,13 @@ export class Desk {
     for (const b of this.#boxes.values()) b.el.style.width = `${bw}px`;
     if (this.#beside) this.#beside.box.el.style.width = `${bw}px`;
     const at = slots(this.#cols, heights, bw);
-    // Room round the boxes for the camera to stand any one of them in the middle, across and down (it scrolls over the
-    // plane, and a scroll goes no further back than the plane's top left).
-    const w = this.element.clientWidth, hgt = this.element.clientHeight, ox = Math.max(0, w / 2 - bw / 2 - PAD), oy = Math.round(hgt / 2);
-    let right = 0, bottom = 0;
+    // The plane begins where the first box stands at its standard place (in the middle across, its top at the eye) with
+    // the desk turned to its start, and ends where the last one stands there: the desk is turned from its first box to
+    // its last, with no bare ground before the one or after the other to turn to. (Before: half a face of ground over
+    // the first box, to stand any box in the face's middle, a place no box is put at: a desk turned to its top showed
+    // its files beginning half way down the face; and a whole face of it under the last, and beside it.)
+    const w = this.element.clientWidth, hgt = this.element.clientHeight, ox = Math.max(0, w / 2 - bw / 2 - PAD), oy = EYE - TOP;
+    let right = 0, bottom = 0, lastX = 0, lastY = 0;
     for (const [key, p] of at) {
       const b = this.#boxes.get(key)!;
       p.x += ox;
@@ -591,6 +596,8 @@ export class Desk {
       b.slot = p;
       right = Math.max(right, p.x + bw);
       bottom = Math.max(bottom, p.y + heights(key));
+      lastX = Math.max(lastX, p.x);
+      lastY = Math.max(lastY, p.y);
       // A box born beside another, the ones after it get out of its way at once (styles: .desk-box.gives).
       b.el.classList.toggle('gives', this.#makingWay);
       // A box laid with no way in of its own stands in its place at once.
@@ -603,8 +610,11 @@ export class Desk {
       if (pushed) for (const a of b.el.getAnimations()) if (a instanceof CSSTransition && a.transitionProperty === 'translate') a.finish();
     }
     this.#makingWay = false;
-    this.#plane.style.width = `${right + w}px`;
-    this.#plane.style.height = `${bottom + hgt}px`;
+    // (A box taller than the face is read to its foot, a step of ground under it.)
+    const planeW = Math.max(right + PAD, lastX + (w + bw) / 2), planeH = Math.max(bottom + VGAP, lastY - EYE + hgt);
+    this.#plane.style.width = `${planeW}px`;
+    this.#plane.style.height = `${planeH}px`;
+    this.#most = {x: Math.max(0, planeW - w), y: Math.max(0, planeH - hgt)};
     {
       const to = this.#target();
       // (On its way, it goes on to where it now stays: a little further, as a box grew, in the same glide; somewhere else
@@ -631,13 +641,21 @@ export class Desk {
     const under = b && this.#bornUnder?.key === b.key ? this.#boxes.get(this.#bornUnder.above) : undefined;
     // Framed over boxes at work (the Agent's, played), it stays so as they grow, until it is let go or one is taken.
     const framed = this.#framed ? this.#frameView(this.#framed) : null;
-    if (framed) return framed;
+    if (framed) return this.#within(framed);
     if (!b) return null;
     const to = under ? bornOn(b.slot, b.el.offsetHeight, w, hgt, under.el.offsetHeight, STANDARD, bw) : standardOn(b.slot, b.el.offsetHeight, w, hgt, STANDARD, bw);
-    // Its top where it stood when it was taken in hand, whatever it has grown to since.
-    if (this.#topAt === null) this.#topAt = to.y + b.slot.y * to.s;
-    else to.y = this.#topAt - b.slot.y * to.s;
-    return to;
+    // Its top where it stood when it was taken in hand, whatever it has grown to since; as near that as the desk turns
+    // (what was above it gone, it cannot stay half way down a face with nothing over it), and that is where it now is.
+    if (this.#topAt !== null) to.y = this.#topAt - b.slot.y * to.s;
+    const at = this.#within(to);
+    this.#topAt = at.y + b.slot.y * at.s;
+    return at;
+  }
+
+  /** `v` as near as the desk turns: never past its first box's place, nor past its last's. */
+  #within(v: View): View {
+    if (v.s !== STANDARD) return v;
+    return {s: v.s, x: -Math.min(Math.max(-v.x, 0), this.#most.x), y: -Math.min(Math.max(-v.y, 0), this.#most.y)};
   }
 
   /** The camera to where it should look now (`moving`: gliding there). */

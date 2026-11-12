@@ -2224,23 +2224,36 @@ end the desk ends, and nothing of it passes under the Prompt (the first cut
 stood it over the desk, and a box's name left showing over its corner read as
 its own). The desk's foot is not a cut: its last step fades into that ground,
 dots and boxes alike, so a box that goes on down is seen to go on, not sliced
-through a line of its words. At rest it is a line: at its start what it will do, the shell's
-prompt in the shell's green (`garden $`), a lamp in its margin lit while the
-shell runs, and after it a block where the next letter goes, a terminal's
-cursor away from the keyboard, which is all that says the line is written in
-(no sentence in grey saying what the prompt before it had said). Taken to run
+through a line of its words. Its letters are the OS's body size (15 px, a
+line 24, a step of the grid: the box 52 high, each of its lines on whole
+pixels), a step over a file's code: it is where one writes to the machine, and
+a terminal's 80 columns still fit its width (before: 14 px, a line 22.4, the
+box 50.4, its words small in a frame as heavy as a file's). At rest it is a
+line: at its start what it will do, the shell's prompt (`garden $`), and after
+it a block where the next letter goes, a terminal's cursor away from the
+keyboard, which is all that says the line is written in (no sentence in grey
+saying what the prompt before it had said). Nothing stands on the line but
+text: whether a shell is there, the prompt's own colour says, quiet before it
+starts and once it has ended, the shell's green while it lives. (Before: a
+lamp in the line's margin, 5 px from the frame, lit and glowing while the
+shell ran: read as dirt on the frame, and a glow nothing else on the page has.
+Taken off, the prompt's colour says the same.) Taken to run
 (pressed, Ctrl+`, the band's `>_`), it is a terminal: what was printed stands
 on that same line, which has not moved, and the file in hand stays in hand
 above it. It stays up while a file is written in, so what a run said is read
 beside the file it is about, and is put away by Escape in its line (the
 keyboard back where it came from, a press on the terminal on the way there
-not forgotten), its × (in its top right corner, on paper), or the band's
-`>_`, which is inked while it is up. It has no name over it: what it is, its
+not forgotten), its ×, or the band's `>_`, which is inked while it is up. The
+× is what was printed's: at the right of its first line, on that line's
+middle, as far in from the frame as the words are at the left, on paper; with
+nothing printed there is nothing to put away, and no × (before: in the corner
+of the line itself, 5 px over its middle, and there once the line had been
+pressed, whether or not anything had been printed). It has no name over it: what it is, its
 lines say. What it printed takes at most 24 lines and never more than about
 half the window, so the file worked on keeps the other half; a program that
 takes the whole screen has its 24 rows, not scrolled, nothing faded at its
 top. While a line runs there is no prompt, as at a terminal, and what is typed
-goes to what runs; the lamp stays in the margin. Its start, pressed, is a
+goes to what runs. Its start, pressed, is a
 switch between the two things the line does all day: run, and note for later
 (TODO, its circle and its word); the rest (an issue) come out of it at Alt+↓,
 each said as the line will say it, and Alt and a number chooses at once. Under
@@ -2323,7 +2336,14 @@ The desk has one size: every box at its own, the box gone to in the middle
 across, its top level with the rail between Home and File (high enough that
 the box above it in its column, its shadow and the dot of its close are wholly
 out of sight, never a strip nor a dot cut by the edge). Nothing steps back
-from it. (Before: three cameras, as a game's, Escape going round them: this
+from it. It is turned from its first box to its last and no further:
+turned to its top, the first file stands at the top of the face, where a box
+gone to stands; turned to its end, the last one does; a desk whose files are
+all in sight from there does not turn at all. (Before: half a face of bare
+ground lay over the first box, room to stand any box in the face's middle, a
+place no box is put at, so a desk turned to its top showed its files
+beginning half way down the face; and a whole face of ground lay under the
+last, and beside it.) (Before: three cameras, as a game's, Escape going round them: this
 one, the desk at three quarters, the whole desk at half. A key pressed to
 leave a line made the page smaller; what a smaller desk showed, where each
 box lies, the band's pills and the pane already say, at a size that is read;

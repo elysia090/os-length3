@@ -1,4 +1,5 @@
 import {expect, test} from './fixtures.ts';
+import {EYE} from '../../root3/app/pages/forge/desk-layout.ts';
 
 // Working in Forge without losing anything (issue #20): Tab or Ctrl+] moves lines in
 // and Undo takes it back, a press on a line's number is that line, Undo
@@ -479,6 +480,49 @@ test('the Prompt stands at the desk\'s foot: its line taken, what it printed sta
   await expect(tool).toHaveAttribute('aria-pressed', 'false');
 });
 
+test('the Prompt\'s line is text alone, in the OS\'s body size on whole lines: no lamp, its prompt quiet until a shell is there; its × comes with what was printed, on that line\'s middle; 80 columns fit', async ({app}) => {
+  await app.rail.go('forge');
+  const stand = app.page.locator('.desk-term.stand'), chip = stand.locator('.prompt-chip'), shut = stand.locator('.term-shut');
+  // 15 px on lines of 24: the box 52 high, its line a whole step of the grid (before: 14 px, a line 22.4, 50.4).
+  const size = () => stand.evaluate((el) => {
+    const line = el.querySelector('.prompt-in')!;
+    return {box: el.getBoundingClientRect().height, line: line.getBoundingClientRect().height, font: getComputedStyle(line).fontSize};
+  });
+  expect(await size()).toEqual({box: 52, line: 24, font: '15px'});
+  // No lamp, nothing lit: the prompt's own colour says whether a shell is there, quiet until one is.
+  await expect(stand.locator('.prompt-chip > .lamp')).toBeHidden();
+  const colour = () => chip.evaluate((el) => getComputedStyle(el).color);
+  await expect(chip).not.toHaveAttribute('data-state', 'on');
+  const quiet = await colour();
+  // Its line taken with nothing printed: the same box, and no × (there is nothing to put away).
+  await app.forge.promptBox.click();
+  await expect(stand).toHaveClass(/\bup\b/);
+  await expect(shut).toBeHidden();
+  expect(await size()).toEqual({box: 52, line: 24, font: '15px'});
+  // A line run: a shell is there, the prompt in its green; what it printed is 80 columns wide on one line.
+  await app.forge.run('printf "%080d\\n" 7');
+  const printed = stand.locator('.term-out .term-lines').first();
+  await expect(printed).toHaveText(`${'0'.repeat(79)}7`);
+  await expect(chip).toHaveAttribute('data-state', 'on');
+  expect(await colour()).not.toBe(quiet);
+  expect((await printed.boundingBox())!.height).toBe(24);
+  // Its ×: with what was printed, on the first line's middle, as far in from the frame as the words are.
+  await expect(shut).toBeVisible();
+  const at = await stand.evaluate((el) => {
+    const r = (q: string) => el.querySelector(q)!.getBoundingClientRect();
+    const [x, mark, out] = [r('.term-shut'), r('.term-shut > *'), r('.term-out')];
+    return {middle: x.top + x.height / 2 - out.top, right: out.right - mark.right, left: out.left - el.getBoundingClientRect().left};
+  });
+  expect(at.middle).toBeCloseTo(12, 0);
+  expect(Math.abs(at.right)).toBeLessThanOrEqual(1);
+  expect(at.left).toBe(18);
+  // Put away, nothing of it stays on the line.
+  await shut.click();
+  await expect(stand).not.toHaveClass(/\bup\b/);
+  await expect(shut).toBeHidden();
+  expect(await size()).toEqual({box: 52, line: 24, font: '15px'});
+});
+
 test('the Prompt\'s line stays at the desk\'s foot while the desk is read: turned by the wheel or gone through by the keys, it is still there to press', async ({app}) => {
   await app.rail.go('forge');
   const dock = app.main.locator('.desk-term.stand .dock'), line = app.main.locator('.desk-term.stand .prompt-in');
@@ -518,6 +562,30 @@ test('a box in sight pressed stays where it stands, the caret where it was press
   await expect.poll(async () => (await where('src/main.c'))[1]).toBe(before[1][1] - 96);
   await expect(box('src/main.c')).toHaveClass(/held/);
   await expect(main).toBeFocused();
+});
+
+test('the desk turns from its first file to its last: turned to its top the first file is at the top of the face, never half way down it; turned to its end the last one stands there, never bare ground', async ({app}) => {
+  await app.rail.go('forge');
+  const desk = app.page.locator('.desk:not([hidden])');
+  await expect(desk.locator('.desk-plane > .desk-box')).not.toHaveCount(0);
+  const at = () => desk.evaluate((d) => {
+    const face = d.getBoundingClientRect();
+    const tops = [...d.querySelectorAll<HTMLElement>('.desk-plane > .desk-box')].map((b) => Math.round(b.getBoundingClientRect().top - face.top));
+    return {first: Math.min(...tops), last: Math.max(...tops), turned: [d.scrollLeft, d.scrollTop], room: [d.scrollWidth - d.clientWidth, d.scrollHeight - d.clientHeight]};
+  });
+  const face = (await desk.boundingBox())!;
+  await app.page.mouse.move(face.x + face.width - 30, face.y + face.height / 2);
+  // Turned up as far as it goes: the first file at the eye, at the top (before: half a face of bare ground over it,
+  // the files beginning half way down).
+  await app.page.mouse.wheel(0, -20000);
+  await expect.poll(async () => (await at()).first).toBe(EYE);
+  expect((await at()).turned).toEqual([0, 0]);
+  // Turned down as far as it goes: the last file at the eye, or, the files all in sight from the top, not turned at
+  // all (before: a face of bare ground under the last).
+  await app.page.mouse.wheel(0, 20000);
+  await expect.poll(async () => { const a = await at(); return a.room[1] === 0 ? a.first : a.last; }).toBe(EYE);
+  // One column: nothing beside it to turn to.
+  expect((await at()).room[0]).toBe(0);
 });
 
 test('Escape out of a text only takes the keyboard out onto the desk; the desk has one size, and no key steps back from it; Enter goes into the box in hand', async ({app}) => {
