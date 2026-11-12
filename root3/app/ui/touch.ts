@@ -4,6 +4,7 @@
 // nothing gives.
 
 import {paced, still} from './glide.ts';
+import {strike} from './keys.ts';
 
 const WHOLE = '.pill, .card.repo, .card.new, .issue-card, .board-card';
 const ONE = 'button, [role="button"], [role="radio"], [role="tab"], .chip';
@@ -59,6 +60,14 @@ export function letGo(within: Element) {
 }
 
 export function touch() {
+  // A completed activation only: pointer and native Enter/Space each yield one click. A drag, focus, hover,
+  // or programmatic navigation is silent. Motion preference does not mute this small confirmation.
+  document.addEventListener('click', (e) => {
+    if (!e.isTrusted || !(e.target instanceof Element)) return;
+    const button = e.target.closest(ONE);
+    if (!button || button.closest(':disabled, [aria-disabled="true"], [inert]') || e.target.closest('input, textarea, select, [contenteditable]')) return;
+    strike('enter');
+  }, true);
   // A held press ends below full size with forwards fill. Finishing it preserves that size;
   // the owner must cancel it when motion is reduced, without waiting for pointerup or adding a spring.
   matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (event) => {
