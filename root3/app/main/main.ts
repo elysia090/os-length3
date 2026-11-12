@@ -25,11 +25,10 @@ import {inEffect} from '../home/dotfiles.ts';
 import {NAME as LOOK, wear} from '../ui/look.ts';
 import {onLang, t, useLang} from '../i18n/i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
-import {LAND, glide, morph, paced, paneOut, stage, still, where, type Carry} from '../ui/glide.ts';
+import {glide, morph, stage, stopStage, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
 import {caret} from '../ui/caret.ts';
 import {optical} from '../ui/optical.ts';
-import {cameraIn, comeBy, frameIn, frameOff, goneBy, GroundCamera, type Along, type PageCamera, type Rect} from '../ui/camera.ts';
 import {scrollbars} from '../ui/scrollbars.ts';
 
 const PURPOSE_KEY = 'root3.os.purpose';
@@ -226,181 +225,15 @@ document.addEventListener('pointerdown', (event) => {
   if (el) { pressedOn = el; pressedAt = performance.now(); }
 }, true);
 
-type Pass = {updateCallbackDone: Promise<void>; ready: Promise<void>; finished: Promise<void>; skipTransition(): void};
-type Panning = Document & {startViewTransition?(update: () => void): Pass};
-
-/**
- * The switch going now (select): the page it left (`left`) and the place asked for last (`to`); where it is (`phase`):
- * the page left's own camera stepping back (`out`), the camera going along at that height (`along`), the page come to's
- * own camera coming down (`in`); the camera at work (`camera`), the view transition going along (`pass`), the moves of
- * the page come to (`parts`) and of the page left's pictures (`old`), and how to tell that it has settled.
- */
-type Pan = {left: PurposeId; to: PurposeId; phase: 'out' | 'along' | 'in'; camera: PageCamera; pass: Pass | null;
-  parts: Animation[]; old: Animation[]; settled: Promise<void>; settle: () => void};
-
-/**
- * The camera along the rail (ui/camera.ts), each move a camera's own: the page left's camera steps back (Forge's desk
- * camera over the whole desk, as Escape takes it, no further where it stands so far back already; another page's to
- * half its size about where its words begin); the camera goes along to the page come to at that height; the page come
- * to's camera comes down to where it stood. ms each, before the OS's pace. Before: the page's words and boxes made
- * smaller about the middle of the ground as one picture, Forge's whole-desk camera ignored (a desk stood back already
- * made smaller still), Home not stood back as it is read but drawn to the middle, the dots standing still under it
- * all, and what lay out of sight cut where the window had cut it.
- */
-const CAMERA = {out: 280, along: 440, in: 360};
-/** How far through stepping back its picture is taken (going along sets off once it is). */
-const TAKEN = .78;
-let panning: Pan | null = null;
-
-/** Which way along the rail `to` is from `from`: 1 down, -1 up, 0 the same place. */
-const way = (from: PurposeId, to: PurposeId) => { const order = RAIL.map((p) => p.id); return Math.sign(order.indexOf(to) - order.indexOf(from)); };
-
-/** A page's frame: its band, its pane, the pane's switch (Home's and New repo's; Forge's, Git's and the other benches'). */
-const FRAME = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle)';
-/** The parts of the frame that bound the ground: the band over it, the pane at its right. */
-const BAND = ':is(.home-band, .work > .bar)', PANE = ':is(.home-pane, .work > .side)';
-
-const shown = (el: Element) => el.getClientRects().length > 0;
-/** `page`'s frame as it stands (what of it is in sight). */
-const frameOf = (page: HTMLElement) => [...page.querySelectorAll<HTMLElement>(FRAME)].filter(shown);
-
-/** What lies on `page`'s ground: every part of it in sight that holds none of its frame, and is in none. */
-function onGround(el: Element): HTMLElement[] {
-  if (!shown(el) || el.matches(FRAME)) return [];
-  if (!el.querySelector(FRAME)) return [el as HTMLElement];
-  return [...el.children].flatMap(onGround);
-}
-
-/**
- * Where `page` (standing at `r`) shows its ground: under its band, left of its pane, down to the window's foot or to
- * the foot of what stands over it there (Home's plain strip, fixed, of its own).
- */
-function groundOf(page: HTMLElement, r: DOMRect): Rect {
-  const after = getComputedStyle(page, '::after'), strip = after.position === 'fixed' ? parseFloat(after.height) || 0 : 0;
-  const frame = frameOf(page), edge = (sel: string, side: 'bottom' | 'left') => frame.filter((el) => el.matches(sel)).map((el) => el.getBoundingClientRect()[side]);
-  return {left: r.left, top: Math.max(0, r.top, ...edge(BAND, 'bottom')), right: Math.min(r.right, ...edge(PANE, 'left')), bottom: Math.min(r.bottom, innerHeight - strip)};
-}
-
-/** `page`'s camera: its own (Forge's desk), else a ground camera over what lies on its ground, its dots with it (Home's,
- * on the page itself). */
-function cameraOf(page: HTMLElement): PageCamera {
-  return cameraIn(page) ?? new GroundCamera(onGround(page), getComputedStyle(page).backgroundImage.includes('gradient') ? page : null,
-    groundOf(page, page.getBoundingClientRect()));
-}
-
-/** A switch given up for something else that carries the eye: what it moved back where it was, at once. */
-function letBe(p: Pan) {
-  panning = null;
-  for (const a of [...p.parts, ...p.old]) a.cancel();
-  p.pass?.skipTransition();
-  document.documentElement.classList.remove('panning', 'arriving');
-  p.camera.near(0);
-  p.settle();
-}
-
-/**
- * The camera going along from the page here to the one asked for last (`q.to`), `dir` the way along the rail: the page
- * here (stood back by its camera) taken as pictures (what lies on its ground, and each part of its frame apart), the
- * page come to drawn beside it, stood back by its own camera at once, and the two going by together; its frame coming
- * in under the one left as the camera passes between them. Done once it has come.
- */
-function along(q: Pan, dir: number): Promise<void> {
-  const root = document.documentElement, page = $('page'), begin = (document as Panning).startViewTransition!;
-  q.phase = 'along';
-  root.classList.remove('arriving');
-  root.classList.add('panning');
-  const was = page.getBoundingClientRect(), from = groundOf(page, was), frame = frameOf(page);
-  // Its frame taken as pictures of their own, standing where they are (styles: frame-*), named only until they are.
-  frame.forEach((el, i) => el.style.setProperty('view-transition-name', `frame-${i}`));
-  const unname = () => { for (const el of frame) el.style.removeProperty('view-transition-name'); };
-  let a: Along | null = null;
-  const pass = q.pass = begin.call(document, () => {
-    unname();
-    if (panning !== q) return;
-    // The old picture is taken: release its camera before reusing #page. A frameless page's ground is
-    // #page itself, so its held half-size transform would otherwise also shrink the next page's frame.
-    if (q.camera instanceof GroundCamera) q.camera.near(0);
-    draw(q.to, false, true);
-    root.classList.add('arriving');
-    const come = q.camera = cameraOf(page);
-    come.afar();
-    const ground = groundOf(page, page.getBoundingClientRect());
-    a = {by: dir > 0 ? from.bottom - ground.top : from.top - ground.bottom, ms: paced(CAMERA.along)};
-    // Its frame comes in as the camera passes the one left; with none left to come in under, as it sets off.
-    q.parts = [...comeBy(a, come, onGround(page)), ...frameIn(a, frameOf(page), !frame.length)];
-    for (const x of q.parts) x.pause();
-  });
-  return new Promise<void>((done) => {
-    void pass.ready.then(() => {
-      if (!a || panning !== q) return;
-      q.old = [goneBy(a, root, '::view-transition-old(page)', was, from), ...frameOff(a, root, frame.map((_, i) => `::view-transition-old(frame-${i})`))];
-      for (const x of q.parts) x.play();
-    }, () => {});
-    const end = () => {
-      unname();
-      for (const x of [...q.old, ...q.parts]) x.cancel();
-      q.old = q.parts = [];
-      q.pass = null;
-      root.classList.remove('arriving');
-      done();
-    };
-    pass.finished.then(end, end);
-  });
-}
-
-/** A switch from the page here: out, along (on to the place asked for last, however often that changes on the way), in. */
-async function go(q: Pan) {
-  const root = document.documentElement, out = paced(CAMERA.out);
-  // Along sets off as stepping back slows into its place: the picture of the page here takes the browser a few frames,
-  // in which nothing moves, and taken there they fall where it hardly moves any more (a stand between the two, else).
-  await Promise.race([q.camera.away(out), new Promise((r) => setTimeout(r, out * TAKEN))]);
-  for (let dir = way(current, q.to); panning === q && dir; dir = way(current, q.to)) await along(q, dir);
-  if (panning !== q) return;
-  q.phase = 'in';
-  root.classList.remove('panning');
-  q.camera.near(paced(CAMERA.in));
-  q.settle();
-  setTimeout(() => { if (panning === q) panning = null; }, paced(CAMERA.in));
-}
-
-/** The latest place asked for: a place whose page was still being brought gives way to one asked after it. */
+/** Newer navigation supersedes unresolved loading; animation never delays the destination or input. */
 let asked = 0;
-
-/**
- * Going along the rail, the camera goes with it (ui/camera.ts, CAMERA): the page here steps back with its own camera,
- * the camera goes along to the page come to, whose own camera comes down; the rail and the frame standing where they
- * are. Where the browser cannot, or less motion is asked for, the page is drawn in place. Settles once the page is
- * come to. `quiet`: something else carries the eye (a repo growing into its box), so the page does not come from its
- * side.
- *
- * Pressed again on the way (the rail, or its keys held down): the camera goes on to the place pressed last, stepping
- * back no further and coming down only there; pressed back to where it began before it has gone along, it comes down
- * where it is. Pressed as it comes down, it steps back again from where it is.
- */
 function select(id: PurposeId, quiet = false): Promise<void> {
   const bringing = brought(id), mine = ++asked;
   if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet); });
-  const p = panning, page = $('page');
-  const begin = (document as Panning).startViewTransition;
-  const moving = !!begin && !quiet && !!page.childElementCount && !still();
-  // Something else carries the eye now (a repo growing into its box from what was pressed): the switch gives way at once.
-  if (p && !moving) letBe(p);
-  if (p && moving && p.phase !== 'in') { p.to = id; return p.settled; }
-  const dir = way(current, id);
-  if (!moving || !dir) {
-    if (p && moving) return p.settled;
-    draw(id, quiet, false);
-    // Come to without the rail's camera, a camera it stood back as the rail left it comes down at once.
-    cameraIn($('page'))?.near(0);
-    return Promise.resolve();
-  }
-  letGo(page);
-  let settle = () => {};
-  const settled = new Promise<void>((r) => { settle = r; });
-  const q: Pan = {left: current, to: id, phase: 'out', camera: cameraOf(page), pass: null, parts: [], old: [], settled, settle};
-  panning = q;
-  void go(q);
-  return settled;
+  letGo($('page'));
+  stopStage($('page'));
+  draw(id, quiet);
+  return Promise.resolve();
 }
 
 /** How far down each page was read, as it was left (pages that scroll the window: Home, Runtime, Remote, Inbox). */
@@ -422,7 +255,7 @@ function readAgain(id: PurposeId) {
   grows.observe($('page'));
 }
 
-function draw(id: PurposeId, quiet: boolean, panned: boolean) {
+function draw(id: PurposeId, quiet: boolean) {
   const from = current;
   // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
   const doc = document.scrollingElement;
@@ -447,44 +280,18 @@ function draw(id: PurposeId, quiet: boolean, panned: boolean) {
   if (from !== id) readAgain(id);
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
-  // The first page comes in as any page come to does, its parts a beat apart, rising from below as the OS opens.
-  if (first && !quiet) { pageOpening(); stage($('page'), 1); return; }
+  // The first content surface arrives without delaying the frame or staggering its data.
+  if (first && !quiet) { stage($('page'), 1); return; }
   if (from !== id) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
-    glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)', 220, true);
+    glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)', 220);
     const order = RAIL.map((p) => p.id);
-    // Panned, the page comes as one, carried by the camera: its parts staged on top of that would leave it standing
-    // half empty as it lands. Not panned, its parts come in a beat apart, heading first, from that side (glide.ts stage).
-    if (!quiet && !panned) {
-      if (!still()) $('page').animate([{opacity: 0}, {opacity: 1}], {duration: paced(160), easing: 'ease-out'});
-      stage($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)));
-    }
+    if (!quiet) stage($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)));
   }
 }
 
-/**
- * The OS opening, once, from its first frame: the frame's line is drawn down the rail's edge from the top (styles.css
- * .opening) as the rail's places come in one after another down it, each from the window's edge, the person last at
- * its foot; the first page comes up after them (pageOpening).
- */
-function railOpening() {
-  const root = document.documentElement, rail = $('rail-tabs').parentElement!;
-  if (still()) { root.classList.remove('opening'); return; }
-  const drawn = (e: AnimationEvent) => { if (e.pseudoElement === '::after') { root.classList.remove('opening'); rail.removeEventListener('animationend', drawn); } };
-  rail.addEventListener('animationend', drawn);
-  [...$('rail-tabs').children, ...$('rail-me').children].forEach((el, i) => el.animate([{opacity: 0, translate: '-14px 0'}, {opacity: 1, translate: '0 0'}],
-    {duration: paced(380), delay: paced(60 + i * 34), easing: LAND, fill: 'backwards'}));
-}
-
-/** The first page, as the OS opens: its parts a beat apart (stage), its right pane's words from the right as when it
- * is brought out, nothing of it there before its turn. */
-function pageOpening() {
-  if (still()) return;
-  const page = $('page');
-  page.animate([{opacity: 0}, {opacity: 1}], {duration: paced(280), delay: paced(120), easing: 'ease-out', fill: 'backwards'});
-  const side = page.querySelector<HTMLElement>('.home-side, .side'), toggle = page.querySelector<HTMLElement>('.pane-toggle');
-  if (side?.getClientRects().length && toggle) paneOut(side, toggle);
-}
+/** The frame is immediately available at startup; only the content surface arrives. */
+function railOpening() { document.documentElement.classList.remove('opening'); }
 
 /** The page's name where the host lists it (a tab, history, the window list): the place, then the OS. */
 const named = () => {
@@ -556,7 +363,7 @@ new MutationObserver((records) => {
     if (r.oldValue === 'true') before.add(r.target as HTMLElement); else before.delete(r.target as HTMLElement);
   }
   const from = inked(before), to = inked(now);
-  if (from && to && from !== to) glide(from.getBoundingClientRect(), to, $('rail-tabs'), 'var(--r-place)', 220, true);
+  if (from && to && from !== to) glide(from.getBoundingClientRect(), to, $('rail-tabs'), 'var(--r-place)', 220);
 }).observe($('rail-tabs'), {subtree: true, attributes: true, attributeFilter: ['aria-expanded'], attributeOldValue: true});
 railOpening();
 // The rail's name, in the language the OS starts in (index.html has the English).

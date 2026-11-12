@@ -7,7 +7,7 @@ import {paced, still} from './glide.ts';
 
 const WHOLE = '.pill, .card.repo, .card.new, .issue-card, .board-card';
 const ONE = 'button, [role="button"], [role="radio"], [role="tab"], .chip';
-const AWAY = 'input, textarea, select, [contenteditable], .power, .stage-hit, .slide-stage, .tree-row';
+const AWAY = '#rail-tabs, input, textarea, select, [contenteditable], .power, .stage-hit, .slide-stage, .tree-row';
 
 let held: {el: HTMLElement; s: number; press: Animation} | null = null;
 /** The spring of the last press let go, while it goes. */
@@ -29,6 +29,9 @@ function give(el: HTMLElement): number {
 }
 
 function down(el: HTMLElement) {
+  if (still()) return;
+  spring?.a.cancel();
+  spring = null;
   const s = give(el);
   held?.press.cancel();
   held = {el, s, press: el.animate([{scale: s}], {duration: 70, easing: 'ease-out', fill: 'forwards'})};
@@ -39,6 +42,7 @@ function up() {
   const {el, s, press} = held;
   held = null;
   press.cancel();
+  if (still()) return;
   // Past where it was by a third of the give, then home: the spring.
   const a = el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: paced(300), easing: 'cubic-bezier(.2, .9, .25, 1)'});
   spring = {el, a};
@@ -55,7 +59,15 @@ export function letGo(within: Element) {
 }
 
 export function touch() {
-  if (still()) return;
+  // A held press ends below full size with forwards fill. Finishing it preserves that size;
+  // the owner must cancel it when motion is reduced, without waiting for pointerup or adding a spring.
+  matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (event) => {
+    if (!event.matches) return;
+    held?.press.cancel();
+    held = null;
+    spring?.a.cancel();
+    spring = null;
+  });
   document.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     const el = pressable(e.target);
