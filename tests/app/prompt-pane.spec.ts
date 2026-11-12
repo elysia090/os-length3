@@ -22,6 +22,10 @@ for (const width of [390, 500, 760, 1180]) {
       await expect(toggle).toHaveAttribute('aria-expanded', before === 'true' ? 'false' : 'true');
       await expect(app.forge.promptBox).toHaveValue('Keep this unfinished note');
       await apart();
+      if (width <= 760 && before === 'false') {
+        await expect(app.page.locator('.desk-bench > .side')).toHaveCSS('display', 'grid');
+        expect(await app.page.locator('.desk-bench > .side').evaluate(el => getComputedStyle(el, '::before').display)).toBe('none');
+      }
     }
     await toggle.focus();
     const before = await toggle.getAttribute('aria-expanded');

@@ -88,6 +88,9 @@
   .work.bench.desk-bench > .bar > .band-tools { min-width: 0; }
   .desk-bench .band-tools > .search-box { flex-shrink: 1; min-width: var(--h-row); }
   .work.bench.desk-bench > .pane-toggle { top: var(--band); bottom: auto; }
+  /* The overlay has its own frame below the band. Its desktop divider must not
+     extend upward through the search field and repo controls. */
+  .work.bench.desk-bench.pane-out > .side::before { display: none; }
 }
 /* While the phone's search is being written, the repo strip gives its slot to that field.
    Hide the whole strip, not a clipped sliver of its selected chip; leaving search restores it. */
