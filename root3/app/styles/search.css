@@ -127,7 +127,7 @@
   /* Laid over, it is the plugin area: what was done is the search's here (Output), the Prompt the center's. */
   .work.bench.pane-out > .side > .pane-room { display: none; }
   .work.bench.pane-out > .side { grid-template-columns: minmax(0, 1fr); }
-  .work.bench .search-results { left: auto; right: 0; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
+  .work.bench:not(.desk-bench) .search-results { left: auto; right: 0; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
   /* No room on the top line here: Issue, diff and Output at the top of what opens. */
   .search-pills { position: relative; }
 }

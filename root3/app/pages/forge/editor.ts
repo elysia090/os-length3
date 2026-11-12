@@ -1,3 +1,4 @@
+import {nativeOptionArrow} from '../../ui/text-keys.ts';
 import {differs, Held} from '../../repos/conflict.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
@@ -466,7 +467,7 @@ export class Editor {
    * the indent; Escape leaves the text, so Tab never holds the keyboard in it.
    */
   private key(event: KeyboardEvent) {
-    if (event.isComposing) return;
+    if (event.isComposing || nativeOptionArrow(event)) return;
     const ctrl = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
     const alt = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
     if (ctrl && event.key === 's') { event.preventDefault(); void this.save(); return; }
