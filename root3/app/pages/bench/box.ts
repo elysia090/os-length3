@@ -949,7 +949,12 @@ export class Box {
     });
     // Its ×, pressed, keeps the keyboard in the box until the Prompt is down, then gives it back, as Escape does.
     const shut = this.#p.termHead.querySelector<HTMLElement>('.term-shut');
-    shut?.addEventListener('pointerdown', (event) => event.preventDefault());
+    shut?.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      // Closing the Prompt is not a press on the desk behind the narrow pane. Keep this
+      // explicit action from also dismissing that pane through its document listener.
+      event.stopPropagation();
+    });
     shut?.addEventListener('click', () => this.#letGo());
     term.addEventListener('pointerdown', (event) => {
       if (this.#up || (event.target as HTMLElement).closest('button')) return;

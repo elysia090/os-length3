@@ -94,6 +94,11 @@ test.describe('narrow Prompt with a running shell', {tag: '@slow'}, () => {
         await expect(output).toContainText(/^second-line$/m);
       }
       await app.page.screenshot({path: `tests/app/.results/prompt-output-${width}.png`});
+      // Ordinary presses outside the overlaid pane still dismiss it; only the explicit
+      // Close Prompt action is isolated from that behavior.
+      if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+      await app.forge.editor('README.md').click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
       const beforeExit = await toggle.getAttribute('aria-expanded');
       await app.forge.run('exit');
       await expect(stand).not.toHaveClass(/\bup\b/);
