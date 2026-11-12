@@ -79,9 +79,9 @@ function intoBox(box: Box) {
  * The keys an editor's hands already know, wherever this bench is on screen (Ctrl, or ⌘ on a Mac, held with them):
  * K or P (or Shift+F) to the search (`onBand`: it lies on the band, not the pane), ` to the prompt box, G to the box editing the file in front, B to put the right pane away or bring it back.
  */
-function editorKey(event: KeyboardEvent, box: Box, pane: Pane, reference: Reference, onBand: boolean) {
+function editorKey(event: KeyboardEvent, box: Box, pane: Pane, reference: Reference, onBand: boolean, searchable: boolean) {
   const k = event.key.toLowerCase();
-  if ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey)) {
+  if (searchable && ((k === 'k' || k === 'p') && !event.shiftKey || (k === 'f' && event.shiftKey))) {
     event.preventDefault();
     // The search on the band is there with the pane away; the pane's is brought out with it.
     if (onBand || pane.shown || pane.narrow) reference.findNow(); else { pane.set(true); requestAnimationFrame(() => reference.findNow()); }
@@ -224,6 +224,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** A page read and pressed rather than written in (Git): its box at the foot stands back until it is asked for
    * (Ctrl+`, the pointer resting at the foot), and back again once the Prompt is done with, never over a button. */
   back?: boolean;
+  /** Issues keeps its repo band plain; its reference readers still open from the pane. */
+  plainBand?: boolean;
   /** A desk (Forge's): the box at the center's foot is the Prompt's own last line, and what the Prompt printed
    * stands on it while it is up (`terminal`: one box, a line tall at rest), over the desk's foot. */
   desk?: boolean;
@@ -258,7 +260,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   };
   const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), room, agentCards((repo, issue) => parts.went(repo, {issue: issue.replace(/^issue\//, '')})), ...(parts.word ? [paneWord(parts.word)] : []));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
-  const work = h('div', {class: `${parts.strip ? 'work bench' : 'work bench no-strip'}${parts.desk ? ' desk-bench' : ''}`});
+  const work = h('div', {class: `${parts.strip ? 'work bench' : 'work bench no-strip'}${parts.desk ? ' desk-bench' : ''}${parts.plainBand ? ' plain-band' : ''}`});
 
   const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
     flow: (repo: string) => rowsOf(repo),
@@ -287,7 +289,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   terminal?.addEventListener('term-gone', () => {
     setTimeout(() => { if (box.repo && sessionIfAny(box.repo)?.ended) stand?.lower(); }, TERM_GOES_MS);
   });
-  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true, band: !!parts.desk});
+  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true, band: !!parts.desk, searchable: !parts.plainBand});
   // A line run, pressed in the Prompt's box on a desk: read under the search box, with all it printed, as from Output.
   // Taken as the press begins, before the box takes it as a press to put the keyboard in it.
   terminal?.addEventListener('pointerdown', (event) => {
@@ -309,9 +311,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   // under the band, over the desk, the words searched for heading it (dropSheet).
   if (tools) { reference.search.querySelector('form')?.prepend(mark('search')); dropSheet(work, center, reference.search); }
   const bar = tools ? h('div', {class: 'bar'}, tools, parts.strip ?? h('span', {class: 'bar-room'}))
-    : h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, toggle);
+    : h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, ...(parts.plainBand ? [] : [toggle]));
   work.append(bar, center, side, ...(tools ? [toggle] : []));
-  const pane = new Pane(work, side, toggle);
+  const pane = new Pane(work, side, toggle, {fixed: !!parts.plainBand});
   if (shown) measured(work, side, shown.element, box, reference);
   requestAnimationFrame(() => { work.dataset.shown = '1'; });
 
@@ -323,7 +325,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     // On a desk, / on nothing to write in goes to the search on the band, as a page's / does.
     if (tools && event.key === '/' && letter(event) && !writing()) { event.preventDefault(); reference.findNow(); }
     else if (letter(event)) intoBox(box);
-    else if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.isComposing) editorKey(event, box, pane, reference, !!tools);
+    else if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.isComposing) editorKey(event, box, pane, reference, !!tools, !parts.plainBand);
   });
 
   // Come on screen (its page come to, the pan to it begun), the pane takes its rows back from the page left.

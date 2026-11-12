@@ -130,7 +130,7 @@ class GitPage {
   private readonly chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
   private readonly write = h('button', {class: 'button small-button issues-write', type: 'button'}, t('Create issue')) as HTMLButtonElement;
   private readonly count = h('small', {});
-  /** Where the issues would be when there are none: the dashed card that writes the first, or what is so. */
+  /** Where the issues would be when there are none: the empty place that writes the first, or what is so. */
   private readonly empty = h('div', {}, h('p', {class: 'muted small'}, t('Loading…')));
   private readonly form: IssueForm;
   private readonly row: IssueRow;
@@ -199,12 +199,12 @@ class GitPage {
       this.sections.main,
       h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
         // Write an issue on the heading's line at its right: one place, however tall the box in full is (not between
-        // it and its Review); with none to show, the dashed card where the first would be is the way instead.
+        // it and its Review); with none to show, the empty place where the first would be is the way instead.
         h('div', {class: 'issues-head none'}, h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', this.count)), this.write),
         this.form.element, this.empty, this.row.column),
       ...this.sections.under);
     // Its repos are its band, on the top line as Forge's pills are, so the page starts where the rail's places do.
-    return bench({strip: h('div', {class: 'git-band'}, this.chips), main, reveal: (path) => { if (this.at) this.ctx.openRepo(this.at, path); }, word: (a) => { openConversation(a); void this.ctx.go('inbox'); }, back: true,
+    return bench({strip: h('div', {class: 'git-band'}, this.chips), main, reveal: (path) => { if (this.at) this.ctx.openRepo(this.at, path); }, word: (a) => { openConversation(a); void this.ctx.go('inbox'); }, back: true, plainBand: true,
       went: (repo, to) => {
         if (to === 'todo') { void this.ctx.go('home'); return; }
         if ('file' in to) { this.ctx.openRepo(repo, to.file); return; }
@@ -499,7 +499,7 @@ class GitPage {
   }
 
   /**
-   * None to show: where the first would be, the dashed card that writes it (pressed, it becomes the issue being
+   * None to show: where the first would be, the empty place that writes it (pressed, it becomes the issue being
    * written), with what is so said quietly under its word. No repo: said once, as wide as its words.
    */
   private drawNone(issues: Issue[]) {

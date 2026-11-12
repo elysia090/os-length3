@@ -1,5 +1,5 @@
 
-/* No repo at all: the dashed card that makes the first is the whole of it, not a card in a dashed box. */
+/* No repo at all: a plain invitation to make the first, with room to press around its words. */
 .forge-first { width: 100%; min-height: 180px; gap: var(--s1); text-align: center; }
 .forge-first > small { max-width: 36ch; font-size: var(--t-meta); }
 /* Alone, a box is the row's whole width by its basis, not by growing from none: split, its basis goes from that width

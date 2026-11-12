@@ -93,14 +93,13 @@
 .git-flow > .main-part[hidden] + .section > .issues-head { min-height: var(--row); margin-bottom: var(--row-step); }
 .git-flow > .main-part { margin-bottom: var(--s6); }
 /* The issues' heading line: the heading as every section's, Write an issue at its right on the same line, not
-   making it any taller; with none to show it stands aside (the dashed card is the way then). */
+   making it any taller; with none to show it stands aside (the empty place is the way then). */
 .issues-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
 .issues-head > h2 { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .issues-head > h2 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 .issues-head > .issues-write { margin-block: calc((var(--t-body) * 1.5 - var(--h-row)) / 2); white-space: nowrap; }
 .issues-head.none > .issues-write { display: none; }
-/* No issue yet: the dashed box as wide as the others; gone while one is being written (the form is where it goes). */
-/* No issue to show: the dashed card where the first would be, as tall as an issue's card, its word and what is so. */
+/* No issue to show: a plain invitation where the first would be, as tall as an issue's card, its word and what is so. */
 .issue-new { width: 100%; min-height: 180px; gap: var(--s1); }
 .issue-new > small { font-size: var(--t-meta); }
 .issue-new:disabled { cursor: var(--cursor-arrow); opacity: .6; }
@@ -133,3 +132,11 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
   .rows > .row-item > .row-name { flex-basis: 100%; }
   .rows > .row-item > .button:last-child { margin-left: auto; }
 }
+
+/* Empty Issues and Forge are invitations, not outlined placeholders. Their generous hit areas and focus rings remain. */
+.card.new:is(.issue-new, .forge-first) { border-color: transparent; border-style: solid; }
+.card.new:is(.issue-new, .forge-first) > span { color: var(--ink); font-weight: 600; }
+
+/* Issues has no search field or pane-close control on its band. Keep the reader anchored above the pane,
+   without reserving an extra control column or squeezing the repo names. */
+.work.bench.plain-band > .bar { grid-template-columns: minmax(0, 1fr) var(--search-w); min-height: calc(var(--band) + var(--h-row) + var(--s3)); }
