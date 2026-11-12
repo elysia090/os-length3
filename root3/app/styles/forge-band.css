@@ -81,6 +81,20 @@
   position: absolute; right: var(--s5); bottom: calc(var(--s5) + var(--prompt-h) / 2 - var(--h-row) / 2); z-index: 6;
   width: var(--h-row); height: var(--h-row); border-color: var(--ink); border-radius: var(--r-field);
 }
+/* On narrow desks the center reaches under the pane switch's old foot position. Give the
+   switch its own band slot rather than covering the Prompt's input or close button. */
+@media (max-width: 760px) {
+  .work.bench.desk-bench > .bar { padding-right: calc(var(--s5) + var(--h-row) + var(--s3)); grid-template-columns: minmax(0, auto) minmax(0, 1fr); }
+  .work.bench.desk-bench > .bar > .band-tools { min-width: 0; }
+  .desk-bench .band-tools > .search-box { flex-shrink: 1; min-width: var(--h-row); }
+  .work.bench.desk-bench > .pane-toggle { top: var(--band); bottom: auto; }
+}
+/* While the phone's search is being written, the repo strip gives its slot to that field.
+   Hide the whole strip, not a clipped sliver of its selected chip; leaving search restores it. */
+@media (max-width: 560px) {
+  .work.bench.desk-bench > .bar:has(.search-box:focus-within) { grid-template-columns: minmax(0, 1fr); }
+  .work.bench.desk-bench > .bar:has(.search-box:focus-within) > .repo-strip { display: none; }
+}
 /* With no heads over them, a desk's runs start level with the rail: from the band's foot, these 2 px and the row's own
    10 put its first line's box where the rail's first icon's is (12 px into its 48 px button), so the line's capitals,
    the bar beside them (pane-rows.css) and the icon's ink all start on one line. Home's pane the same (home.css). */
