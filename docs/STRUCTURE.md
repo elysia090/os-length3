@@ -164,9 +164,12 @@ Names first, from the inside out, since a wrong name is paid at every reading; t
    is, its operands what the lowering asks; then the calls it makes (a call is 8.5× native).
 4. **muk on Linux takes the box from why's core.** The seccomp filter and the terminal in `muk run`; then a
    Prompt is the bundle why writes, and the Firecracker driver goes.
-5. **A release per thing**: `muk`, `sods`, ricebox, why 0.0.1. A release of ricebox (its first under its own
-   name, 0.0.1, or the next of the line it is on) holds the root and its layers, and stands on `muk` and `sods`
-   beside it at the boundaries they publish: nothing of why is in it or needed by it. What is left before it: the
+5. **A release per thing**: `muk`, `sods`, ricebox, why 0.0.1. A release of ricebox under its own name (0.0.1)
+   holds the root and its layers, and stands on `muk` and `sods` beside it at the boundaries they publish: nothing
+   of why is in it or needed by it. It is used as it is taken, so it owes nothing: every input, machine and host
+   verified or excluded with its reason, a box made by muk and a terminal held by prompt wherever it runs, sods
+   answering the Linux they ask for. `node module/sods/runtime/targets.ts --owed` counts what is owed, and
+   `scripts/release.sh` makes no release of that line while the count is not nothing. What is left besides: the
    scripts that write the layers move into `module/ricebox/make`, and `/etc/length3` and the release's names lose
    the old name. Until ricebox is released from this tree, the root a web build takes is the one pinned (0.6.4),
    whose translator is the one before these names.

@@ -16,6 +16,8 @@
 // instruction sets are the goal.
 //
 //   node module/sods/runtime/targets.ts      the table, as README.md has it (a test holds the two the same)
+//
+// And below it, what stands between today and one implementation of each thing on every host.
 
 /** An instruction set: a program's (its input), or a machine's (where it runs). */
 export type Isa = 'x86-64' | 'arm64' | 'riscv64';
@@ -53,6 +55,61 @@ export function targets(): {input: Isa; runs: Isa; where: Where; state: State}[]
   return ISAS.flatMap((input) => ISAS.flatMap((runs) => WHERES.map((where) => ({input, runs, where, state: target(input, runs, where)}))));
 }
 
+// ---- One implementation each.
+//
+// muk is the C that makes a box and prompt the Rust at a terminal's other end, on every host: where there is no
+// Linux under them, the Linux they ask for is answered here, and nothing is written a second time for a host. What
+// stands between today and that is below, each with what it needs: the calls muk makes that this Linux does not
+// answer yet (CALLS_OWED: a test reads muk's sources and this kernel's tables, so a call answered is struck here
+// and a call muk comes to make is added), and where a box or a terminal is still made by something else (BRANCHES).
+
+/** A call muk makes that sods' Linux has no answer for (`absent`), or answers by refusing (`refused`: what with, and when). */
+export interface CallOwed { nr: number; name: string; how: 'absent' | 'refused'; needs: string }
+export const CALLS_OWED: readonly CallOwed[] = [
+  {nr: 56, name: 'clone', how: 'refused', needs: 'a process made in namespaces of its own (CLONE_NEWNS, NEWPID, NEWUSER, NEWUTS, NEWIPC, NEWNET, NEWCGROUP): EPERM today'},
+  {nr: 116, name: 'setgroups', how: 'refused', needs: 'groups set by one whose user namespace lets it (its gid_map written, setgroups not denied): EPERM always today'},
+  {nr: 155, name: 'pivot_root', how: 'refused', needs: 'a root of its own for a mount namespace: paths are walked from one root today'},
+  {nr: 165, name: 'mount', how: 'refused', needs: 'proc, sysfs, tmpfs, devpts, mqueue and cgroup2 mounted, a bind, a remount with its flags, how a mount spreads'},
+  {nr: 166, name: 'umount2', how: 'refused', needs: 'a mount taken away (MNT_DETACH: the old root, after pivot_root)'},
+  {nr: 272, name: 'unshare', how: 'absent', needs: 'a cgroup namespace begun where the process is'},
+  {nr: 308, name: 'setns', how: 'refused', needs: 'a namespace joined by its descriptor (/proc/PID/ns/*): EPERM today'},
+  {nr: 428, name: 'open_tree', how: 'absent', needs: 'what is mounted at a path, or a copy of it, as a descriptor'},
+  {nr: 429, name: 'move_mount', how: 'absent', needs: 'such a descriptor put on a path'},
+  {nr: 435, name: 'clone3', how: 'refused', needs: 'a process made in a cgroup that was lent (CLONE_INTO_CGROUP): ENOSYS today'},
+  {nr: 437, name: 'openat2', how: 'absent', needs: 'a path opened that leads nowhere out of where it starts (RESOLVE_BENEATH)'},
+  {nr: 442, name: 'mount_setattr', how: 'absent', needs: "a mount's flags and how it spreads, set on its descriptor"},
+];
+
+/** Where a box or a terminal is made by something that is not muk or prompt: what does it today, and what ends that. */
+export interface Branch { what: string; by: string; needs: string }
+export const BRANCHES: readonly Branch[] = [
+  {what: 'a box where there is no Linux (a page, a Worker, node)', by: 'the caller starts its program directly on this Linux (linux.ts linux(): why/app/host/prompt/kernel.worker.ts, scripts/webroot-runnable.ts)',
+    needs: 'the calls owed above answered, and a terminal made in a /dev/pts of the box (ptmx, its pair, TIOCGPTPEER); then `muk run` of a bundle here, checked by muk\'s own corpus (module/muk/test/muk.sh, hostile.sh) with muk on this Linux'},
+  {what: 'a box on the desktop (Linux)', by: "why's core makes it itself (why/core/src/prompt/launch.rs, seccomp.rs; why/core/src/compute)",
+    needs: 'the launcher runs `muk run` on a bundle it writes, and its own making of a box goes'},
+  {what: 'a terminal where there is no Linux', by: "the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt)",
+    needs: 'signalfd answered here, and the terminal muk gives away taken by `prompt attach` on this Linux, checked by module/prompt/test/prompt.sh there'},
+  {what: 'a terminal on the desktop (Linux)', by: "why's core's session (why/core/src/prompt)", needs: 'the session hands the descriptor muk sends to `prompt attach`'},
+];
+
+/** Everything owed before nothing is: each row that is not verified or excluded, each call, each branch. */
+export function owed(): string[] {
+  return [
+    ...targets().filter(({state}) => state.is === 'unverified' || state.is === 'unimplemented')
+      .map(({input, runs, where, state}) => `${input} on ${runs}, ${where}: ${said(state)}`),
+    ...CALLS_OWED.map((c) => `muk asks ${c.name} (${c.nr}), ${c.how} here: ${c.needs}`),
+    ...BRANCHES.map((b) => `${b.what} is made by ${b.by}: ${b.needs}`),
+  ];
+}
+
+/** The calls and the branches as README.md has them. */
+export function owedTable(): string {
+  return ['| Call muk makes | Here | What it needs |', '| --- | --- | --- |',
+    ...CALLS_OWED.map((c) => `| ${c.name} (${c.nr}) | ${c.how} | ${c.needs} |`), '',
+    '| What is made | By, today | What ends that |', '| --- | --- | --- |',
+    ...BRANCHES.map((b) => `| ${b.what} | ${b.by} | ${b.needs} |`)].join('\n');
+}
+
 const said = (s: State): string => s.is === 'verified' ? `verified: \`${s.by}\`` : s.is === 'unimplemented' ? `unimplemented: ${s.needs}` : `${s.is}: ${s.why}`;
 
 /** The table as README.md has it: a row for each input and machine, the hosts that share a state said together. */
@@ -66,4 +123,14 @@ export function table(): string {
   return lines.join('\n');
 }
 
-if (typeof process !== 'undefined' && process.argv[1]?.endsWith('/targets.ts')) console.log(table());
+// node targets.ts          the table of what runs where
+// node targets.ts --one    the calls owed and the branches
+// node targets.ts --owed   everything owed, a line each; it ends 1 while anything is (what a release that may owe
+//                          nothing is held to: scripts/release.sh, for ricebox's own line)
+if (typeof process !== 'undefined' && process.argv[1]?.endsWith('/targets.ts')) {
+  if (process.argv.includes('--owed')) {
+    const list = owed();
+    for (const line of list) console.log(line);
+    if (list.length) { console.error(`sods: ${list.length} owed: nothing is released on these terms until none is`); process.exit(1); }
+  } else console.log(process.argv.includes('--one') ? owedTable() : table());
+}

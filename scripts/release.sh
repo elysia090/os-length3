@@ -38,6 +38,10 @@ if [ -z "${GITHUB_SHA:-}" ] && [ -n "$(git -C "$here" status --porcelain)" ]; th
   echo "release: the tree has changes; a release is made from a commit as it is" >&2; exit 1
 fi
 cd "$here"
+# ricebox's own line (0.0.1 on; 0.6.x is the line before the name) is released owing nothing: every input, machine
+# and host verified or excluded with its reason, every call muk makes answered where there is no Linux, and a box and
+# a terminal made by muk and prompt alone (module/sods/runtime/targets.ts). While anything is owed it is not made.
+case "$version" in 0.[0-5].*) node module/sods/runtime/targets.ts --owed ;; esac
 
 # The root: its packages, made from this tree's pins, with this tree's why.
 sh module/ricebox/make/assemble.sh "${ROOT_PACKAGES:?the root's packages, as module/ricebox/make/build.sh made them}" "$out" "$version"

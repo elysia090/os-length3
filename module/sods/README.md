@@ -71,6 +71,42 @@ not the goal made smaller: all nine pairs of instruction sets are the goal.
 | riscv64 | riscv64 | macos | excluded: macOS runs on no RISC-V machine |
 | riscv64 | riscv64 | windows | excluded: Windows is released for no RISC-V machine |
 
+## One implementation each
+
+muk is the C that makes a box, and prompt the Rust at a terminal's other end, on every host: where there is no
+Linux under them, the Linux they ask for is answered here, and nothing is written a second time for a host. That is
+what sods is for, and it is not so yet. What stands in the way is counted, not described: the calls muk makes that
+this Linux does not answer (read off muk's own sources and this kernel's tables by `test/runtime/asks.test.ts`, so
+a call answered is struck and a call muk comes to make is added), and where a box or a terminal is still made by
+something else. `node module/sods/runtime/targets.ts --owed` lists every line owed, these and every row above that
+is not verified or excluded, and ends 1 while there is one: a release of ricebox under its own name is held to it
+(`scripts/release.sh`), and is not made while anything is owed.
+
+| Call muk makes | Here | What it needs |
+| --- | --- | --- |
+| clone (56) | refused | a process made in namespaces of its own (CLONE_NEWNS, NEWPID, NEWUSER, NEWUTS, NEWIPC, NEWNET, NEWCGROUP): EPERM today |
+| setgroups (116) | refused | groups set by one whose user namespace lets it (its gid_map written, setgroups not denied): EPERM always today |
+| pivot_root (155) | refused | a root of its own for a mount namespace: paths are walked from one root today |
+| mount (165) | refused | proc, sysfs, tmpfs, devpts, mqueue and cgroup2 mounted, a bind, a remount with its flags, how a mount spreads |
+| umount2 (166) | refused | a mount taken away (MNT_DETACH: the old root, after pivot_root) |
+| unshare (272) | absent | a cgroup namespace begun where the process is |
+| setns (308) | refused | a namespace joined by its descriptor (/proc/PID/ns/*): EPERM today |
+| open_tree (428) | absent | what is mounted at a path, or a copy of it, as a descriptor |
+| move_mount (429) | absent | such a descriptor put on a path |
+| clone3 (435) | refused | a process made in a cgroup that was lent (CLONE_INTO_CGROUP): ENOSYS today |
+| openat2 (437) | absent | a path opened that leads nowhere out of where it starts (RESOLVE_BENEATH) |
+| mount_setattr (442) | absent | a mount's flags and how it spreads, set on its descriptor |
+
+| What is made | By, today | What ends that |
+| --- | --- | --- |
+| a box where there is no Linux (a page, a Worker, node) | the caller starts its program directly on this Linux (linux.ts linux(): why/app/host/prompt/kernel.worker.ts, scripts/webroot-runnable.ts) | the calls owed above answered, and a terminal made in a /dev/pts of the box (ptmx, its pair, TIOCGPTPEER); then `muk run` of a bundle here, checked by muk's own corpus (module/muk/test/muk.sh, hostile.sh) with muk on this Linux |
+| a box on the desktop (Linux) | why's core makes it itself (why/core/src/prompt/launch.rs, seccomp.rs; why/core/src/compute) | the launcher runs `muk run` on a bundle it writes, and its own making of a box goes |
+| a terminal where there is no Linux | the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt) | signalfd answered here, and the terminal muk gives away taken by `prompt attach` on this Linux, checked by module/prompt/test/prompt.sh there |
+| a terminal on the desktop (Linux) | why's core's session (why/core/src/prompt) | the session hands the descriptor muk sends to `prompt attach` |
+
+What muk asks and is answered as Linux answers it is checked beside Linux: the filter muk puts over every box, by
+muk's own check of it and by `test/programs/seccomp.c`, the same natively and here.
+
 ## Its folders
 
 ```
@@ -126,7 +162,7 @@ layers, named by the translator's digest.
 | The boundary | Who takes it on | Where it stands |
 | --- | --- | --- |
 | no x86-64 under the program | `src/`: the program made WebAssembly ahead of the run | done for static Linux programs; the lowering still reads its operands through a decoder that is not sods' |
-| no Linux under it | `runtime/linux/`, answering its calls | done in a browser and in node, in TypeScript and far from its bound; the calls a box's maker asks (namespaces, mounts, a filter: what muk in C needs to run here) are refused in words, and are next |
+| no Linux under it | `runtime/linux/`, answering its calls | done in a browser and in node, in TypeScript and far from its bound, for what a program asks; of what a box's maker asks, the filter is answered and the namespaces and mounts are owed (above) |
 | which host this is (a page, a Worker, node) | `runtime/host.ts` | asked in one place: node or not, its threads, shared memory, running apart, waiting, processors, what was said from outside |
 | a host's clocks | `runtime/host.ts` (`steady`, `began`, `epoch`) | asked in one place: the Linux here reads none of the host's own (a test reads its sources for them) |
 | a host's random bytes | `runtime/host.ts` (`random`) | asked in one place: `getrandom` and `AT_RANDOM`, `/dev/urandom`, the UUIDs `/proc` says all draw there |

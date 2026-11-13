@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {ISAS, WHERES, table, target, targets} from '../../runtime/targets.ts';
+import {ISAS, WHERES, owedTable, table, target, targets} from '../../runtime/targets.ts';
 
 const root = new URL('../../../../', import.meta.url);
 
@@ -36,6 +36,8 @@ test('what cannot be is told apart from what is not made, and from what is not c
   assert.equal(target('arm64', 'riscv64', 'macos').is, 'excluded'); // (excluded before it is called not made)
 });
 
-test("README.md's table is this one", () => {
-  assert.ok(readFileSync(new URL('module/sods/README.md', root), 'utf8').includes(table()), 'node module/sods/runtime/targets.ts prints the table README.md is to have');
+test("README.md's tables are these", () => {
+  const readme = readFileSync(new URL('module/sods/README.md', root), 'utf8');
+  assert.ok(readme.includes(table()), 'node module/sods/runtime/targets.ts prints the table README.md is to have');
+  assert.ok(readme.includes(owedTable()), 'node module/sods/runtime/targets.ts --one prints the tables README.md is to have');
 });
