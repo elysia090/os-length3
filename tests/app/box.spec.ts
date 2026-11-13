@@ -76,21 +76,10 @@ test('what the box writes is said in the terminal it was written in, a line each
   const out = app.forge.prompt.locator('.term-out');
   await expect(out).toContainText(/#1 Fix：The table wraps on a phone\s+TODO Water the mint/);
   await expect(app.main.locator('.prompt-chip')).toHaveAttribute('data-state', 'starting');
-  // In Git's pane, a row each among what was run, in the same order.
+  // Each is where it belongs: the issue in Git (all desk, as Forge is: no pane lists it), the TODO on Home.
   await app.rail.go('git');
-  const flow = app.git.pane;
-  const issue = flow.getByRole('button', {name: '#1 Fix：The table wraps on a phone'});
-  const todo = flow.getByRole('button', {name: 'TODO Water the mint'});
-  await expect(issue).toBeVisible();
-  await expect(todo).toBeVisible();
-  await expect.poll(() => flow.locator('.pane-row').evaluateAll((rows) => rows.slice(-2).map((r) => r.getAttribute('aria-label'))), {timeout: 60_000}).toEqual(
-    ['#1 Fix：The table wraps on a phone', 'TODO Water the mint']);
-
-  // Pressed, each goes to where it is: the TODO on Home, the issue in Git.
-  await todo.click();
-  await expect(app.home.todo).toContainText('1 of 1 remaining');
-  await app.rail.go('git');
-  await issue.click();
   await expect(app.git.issue('#1 Fix：The table wraps on a phone')).toBeVisible();
+  await app.rail.go('home');
+  await expect(app.home.todo).toContainText('1 of 1 remaining');
 });
 

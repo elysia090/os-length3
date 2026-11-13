@@ -203,6 +203,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   back?: boolean;
   /** Issues keeps its repo band plain; its reference readers still open from the pane. */
   plainBand?: boolean;
+  /** No pane beside the page (Git: all desk, as Forge is): the band has the tools a desk's has (>_ and the search,
+   * what it finds dropping as sheets under the band), and the Prompt stays at the foot, come up when asked for. */
+  paneless?: boolean;
   /** A desk (Forge's): the box at the center's foot is the Prompt's own last line, and what the Prompt printed
    * stands on it while it is up (`terminal`: one box, a line tall at rest), over the desk's foot. */
   desk?: boolean;
@@ -229,16 +232,16 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (r) r.open = openRun;
     const next = r?.element ?? none;
     // (A desk has no pane: its rows are left to the page that shows them.)
-    if (parts.desk || next.parentElement === room) return;
+    if (parts.desk || parts.paneless || next.parentElement === room) return;
     // Never taken from the pane on screen by a page out of sight (one drawing itself late, after it was left).
     if (r && onScreen(r.element) && !onScreen(work)) return;
     room.querySelector(':scope > .pane-rows')?.remove();
     room.append(next);
     r?.shown();
   };
-  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), room, agentCards((repo, issue) => parts.went(repo, {issue: issue.replace(/^issue\//, '')})), ...(parts.word ? [paneWord(parts.word)] : []));
+  const side = h('aside', {class: 'side', id: sideId, 'aria-label': t('Plugins and Prompt')}, pluginArea(), room, agentCards((repo, issue) => parts.went(repo, {issue: issue.replace(/^issue\//, '')})), ...(parts.word && !parts.paneless ? [paneWord(parts.word)] : []));
   const toggle = h('button', {type: 'button', class: 'pane-toggle', 'aria-label': t('Right pane'), 'aria-controls': sideId}, paneMark()) as HTMLButtonElement;
-  const work = h('div', {class: `${parts.strip ? 'work bench' : 'work bench no-strip'}${parts.desk ? ' desk-bench' : ''}${parts.plainBand ? ' plain-band' : ''}`});
+  const work = h('div', {class: `${parts.strip ? 'work bench' : 'work bench no-strip'}${parts.desk ? ' desk-bench' : ''}${parts.paneless ? ' band-bench' : ''}${parts.plainBand ? ' plain-band' : ''}`});
 
   const box = new Box({work, main: parts.main, center, term, termHead, back: !!parts.back, went: parts.went, reveal: (path, line) => parts.reveal(path, line), desk: !!parts.desk,
     // What the box did that is not the shell's (a TODO, an issue): a row of the repo's flow (Git's pane shows it), and
@@ -274,7 +277,7 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (s?.ended) s.restart();
     box.summon();
   };
-  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true, band: !!parts.desk, searchable: !parts.plainBand});
+  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true, band: !!parts.desk || !!parts.paneless, searchable: !parts.plainBand});
   // A line run, pressed in the Prompt's box on a desk: read under the search box, with all it printed, as from Output.
   // Taken as the press begins, before the box takes it as a press to put the keyboard in it.
   terminal?.addEventListener('pointerdown', (event) => {
@@ -288,16 +291,17 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   box.onFollow = () => reference.runsAgain();
   // At rest the pane says what else the search shows, over its rows; on a desk the pane is the runs alone, and what
   // else there is to see is the search's, on the band.
-  if (!parts.desk) room.prepend(reference.heads);
+  if (!parts.desk && !parts.paneless) room.prepend(reference.heads);
   // On a desk the band's tools are the top line's: >_ for the terminal, the file deeds (the page puts its own
   // between), the search; after them, the page's own (Forge: the name of what is in hand, against the right edge).
-  const tools = parts.desk ? h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, termTool, reference.search) : null;
+  const tools = parts.desk || parts.paneless ? h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, termTool, reference.search) : null;
   // The band's search box says what it is by a lens at its left, as a short box must; what it finds drops as a sheet
   // under the band, over the desk, the words searched for heading it (dropSheet).
   if (tools) { reference.search.querySelector('form')?.prepend(mark('search')); dropSheet(work, center, reference.search); }
   const bar = tools ? h('div', {class: 'bar'}, tools, parts.strip ?? h('span', {class: 'bar-room'}))
     : h('div', {class: 'bar'}, parts.strip ?? h('span', {class: 'bar-room'}), reference.search, ...(parts.plainBand ? [] : [toggle]));
-  work.append(bar, center, ...(tools ? [] : [side]));
+  // (With no pane, word from someone comes up at the page's foot, a sheet of its own.)
+  work.append(bar, center, ...(tools ? [] : [side]), ...(parts.paneless && parts.word ? [paneWord(parts.word)] : []));
   const pane = tools ? null : new Pane(work, side, toggle, {fixed: !!parts.plainBand});
   if (shown) measured(work, side, shown.element, box, reference);
   requestAnimationFrame(() => { work.dataset.shown = '1'; });

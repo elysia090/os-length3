@@ -84,7 +84,7 @@
   --corner: calc(var(--outer) + var(--rail) - 2 * var(--u));
   left: calc(var(--corner) - var(--s2)); top: var(--tree-top, calc(5 * var(--u)));
   width: min(calc(13 * var(--u)), calc(100vw - var(--corner) - var(--outer) - var(--u))); max-height: none; overflow: visible;
-  padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); box-shadow: var(--u) var(--u) 0 0 var(--ink);
+  padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink);
   clip-path: inset(-40px 100% -32px -2px);
 }
 .file-tree.open { left: var(--corner); clip-path: inset(-40px -32px -32px -2px); }
@@ -123,7 +123,7 @@
 .file-tree .tree-more[aria-expanded='true'] { background: none; color: var(--ink); }
 .file-tree .tree-more .mark { width: 20px; height: 20px; stroke-width: 2; rotate: -90deg; }
 .file-tree > .tree-pop { display: block; width: max-content; min-width: calc(9 * var(--u)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--outer) - var(--u))); padding: calc(var(--u) / 2) 0;
-  border: 0; border-radius: var(--r-sheet); background: var(--paper); box-shadow: var(--u) var(--u) 0 0 var(--ink); }
+  border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink); }
 .file-tree > .tree-pop > .pop-head { position: absolute; left: 0; bottom: calc(100% + 7px); margin: 0; padding: 0; white-space: nowrap;
   font: 700 20px/var(--u) var(--mono); color: var(--ink); }
 .file-tree > .tree-pop :is(.pop-icon, .pop-rule) { display: none; }

@@ -43,9 +43,11 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   // no button), there is no Push (a push is to a server or another's Remote), the Submitted switch is on, and the
   // change waits for review, said by the Review under the box (not by a version beside the steps).
   await expect(app.git.step('Commit')).toBeHidden();
-  await expect(app.main.locator('.issue-steps .step-done')).toHaveCount(1);
-  await expect(app.main.locator('.issue-steps')).not.toContainText('Push');
-  await expect(app.main.locator('.issue-steps')).not.toContainText('v1');
+  // (The steps are the lines of main's sheet at the desk's edge: Start, Commit and Submit done, Merge the one next.)
+  await expect(app.main.locator('.git-switch .switch-line.done')).toHaveCount(3);
+  await expect(app.main.locator('.git-switch .switch-line.next')).toHaveText('Merge');
+  await expect(app.main.locator('.git-switch')).not.toContainText('Push');
+  await expect(app.main.locator('.git-switch')).not.toContainText('v1');
   const submitted = app.main.getByRole('switch', {name: 'Submitted'});
   await expect(submitted).toHaveAttribute('aria-checked', 'true');
   await expect(app.git.review).toBeVisible();
@@ -244,7 +246,8 @@ test('a started issue\'s deeds go down the box\'s right edge, where Start was pr
     await expect.poll(async () => {
       const b = await app.git.step(deed).boundingBox();
       return b ? Math.abs(b.x + b.width - (start.x + start.width)) : Infinity;
-    }).toBeLessThan(2);
+    // (The sheet lies four degrees askew: a line down it stands under three pixels off the one above.)
+    }).toBeLessThan(4);
   }
 });
 
@@ -279,7 +282,7 @@ test('a reviewer asks for changes with a line marked, and the change waits for t
   await app.git.review.getByRole('textbox', {name: 'Comment'}).fill('Louder, in capitals.');
   await app.git.step('Request changes').click();
 
-  await expect(app.git.review.getByText('Changes requested')).toBeVisible();
+  await expect(app.git.review.locator('.review-chat').getByText('Changes requested')).toBeVisible();
   await expect(app.git.review.getByText('Louder, in capitals.')).toBeVisible();
   await expect(app.main.getByText('Not approved yet')).toBeVisible();
   await expect(app.git.step('Merge')).toBeDisabled();
@@ -406,7 +409,9 @@ test('the detail of a new issue has the room the repos inside the box had', asyn
 
 test('an empty Issue view in Forge writes the first issue for its repo, and Not now goes back there', async ({app}) => {
   await app.newRepo.make('notes');
+  await app.newRepo.make('scratch');
   // Git was last left on another repo: that is kept for Git, and is not where this one goes.
+  // (The row of repos is on Git's band once there is more than one to choose from.)
   await app.rail.go('git');
   await app.git.repos.getByRole('radio', {name: 'notes', exact: true}).click();
   await app.newRepo.make('tide');
@@ -454,7 +459,11 @@ test('on a phone the issue in full takes the row, nothing in it wider than it, a
   await expect.poll(() => head.evaluate((e, deeds) => {
     const card = e.closest('.issue-card')!, edge = card.getBoundingClientRect().right;
     return deeds.every((d) => [...card.querySelectorAll('button')].some((b) => b.textContent === d && b.getBoundingClientRect().right <= edge + .5));
-  }, ['Close', 'Start'])).toBe(true);
+  }, ['Close'])).toBe(true);
+  // (Its steps are main's sheet's lines, over the row on a phone, none wider than the window.)
+  const start = (await app.git.step('Start').boundingBox())!;
+  expect(start.x).toBeGreaterThanOrEqual(0);
+  expect(start.x + start.width).toBeLessThanOrEqual(390);
   // A finger swiped to the left goes to the next issue, as its edge does.
   await app.git.issues.evaluate((section) => {
     const stage = section.querySelector('[aria-roledescription="carousel"]')!;

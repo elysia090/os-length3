@@ -28,7 +28,7 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 .home-own > .section {
   position: relative; box-sizing: border-box; width: calc(var(--vx) - var(--left)); margin: 0;
   min-height: calc(100vh - var(--vy) - var(--u) / 4); padding: calc(1.5 * var(--u)) 0 var(--u);
-  background: var(--note); border-radius: var(--r-sheet); rotate: -2deg; transform-origin: 100% 0; box-shadow: -24.8px 23.1px 0 var(--ink);
+  background: var(--note); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; rotate: -2deg; transform-origin: 100% 0; box-shadow: -24.8px 23.1px 0 var(--ink);
 }
 .home-own > .section > h2 { position: absolute; top: var(--s3); right: var(--u); z-index: 1; margin: 0; display: block; font: 700 20px/24px var(--mono); }
 .home-own > .section > h2 > #todo-title, .home-own .todo-left > small { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -104,7 +104,7 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 /* Eight cells tall (taller as what it says is longer: it grows up from the margin's line). What it is and what it
    says from its top; where, on its last line, at its foot. */
 .home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(18 * var(--u)); min-height: calc(8 * var(--u)); padding: 29px var(--u) 7px;
-  background: var(--paper); border-radius: var(--r-sheet); rotate: 1.5deg; transform-origin: 100% 100%; box-shadow: 24.6px 23.4px 0 var(--ink); text-align: right; }
+  background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; rotate: 1.5deg; transform-origin: 100% 100%; box-shadow: 24.6px 23.4px 0 var(--ink); text-align: right; }
 .home-waits > .lately > h2 { margin: 0; font: 700 20px/var(--u) var(--mono); color: var(--ink); letter-spacing: 0; text-transform: lowercase; }
 .home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
 .home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; text-align: right; }
@@ -122,7 +122,7 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 .home-waits .pane-row + .pane-row > .pane-line { font: 700 20px/var(--u) var(--mono); letter-spacing: 0; }
 .home-waits .pane-row + .pane-row > .pane-at, .home-waits .pane-row:nth-child(n + 5) { display: none; }
 .home-waits .lately-none { margin: 0; font: 400 20px/var(--u) var(--mono); color: var(--quiet); }
-.home-waits > .plugins { width: calc(18 * var(--u)); min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); }
+.home-waits > .plugins { width: calc(18 * var(--u)); min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; }
 .home-waits > .agent-cards { width: calc(18 * var(--u)); }
 /* ---- A window too narrow for the two side by side: one column, the repos and what waits under the note, which lies
    square and ends where its lines do. ---- */

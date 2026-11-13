@@ -31,6 +31,12 @@ async function onRows(l: Lines, what: string, first: Locator | null, box: Locato
     if (first) expect(Math.abs(mid(await at(first)) - l.row), `${what}: its first line's middle`).toBeLessThan(1);
   }).toPass({timeout: 4000});
 }
+/** Git is all desk, as Forge is (its sheets lie where the desk has them): its band's keys are on the band's line. */
+async function deskOnBand(app: App, l: Lines, what: string) {
+  await expect(async () => {
+    expect(Math.abs(mid(await at(app.main.locator('.band-bench .band-tools > .band-tool'))) - l.band), `${what}: its band's keys' middle`).toBeLessThan(1);
+  }).toPass({timeout: 4000});
+}
 /** A counter's name is on the band's line, starting where the page's things do. */
 async function headOnBand(app: App, l: Lines, what: string) {
   const head = await at(app.main.locator('.page-head > h1')), icon = await at(app.main.locator('.page-head > .icon'));
@@ -49,7 +55,7 @@ test('signed out, every page starts at one left edge, its first line in one row 
     await onRows(l, what('New repo'), null, app.main.locator('.nr-box'));
     // Git, signed out: the issues' heading over the place for the first.
     await app.rail.go('git');
-    await onRows(l, what('Git'), app.main.locator('.issues-head'), app.main.locator('.issue-new'));
+    await deskOnBand(app, l, what('Git'));
     await app.rail.go('runtime');
     await headOnBand(app, l, what('Runtime'));
     await onRows(l, what('Runtime'), app.main.locator('.part-bar'), app.main.locator('.part-panel:not([hidden])'));
@@ -77,7 +83,7 @@ test('signed in, Remote, Inbox and Server stand on the same lines, and behind Se
     const l = await lines(app), what = (page: string) => `${page} at ${size.width}×${size.height}`;
     // Git: main's name over what it has not committed.
     await app.rail.go('git');
-    await onRows(l, what('Git'), app.main.locator('#main-title'), app.main.locator('.main-card'));
+    await deskOnBand(app, l, what('Git'));
     await app.rail.go('remote');
     await headOnBand(app, l, what('Remote'));
     for (const part of ['Repos', 'Sign-in', 'Devices'] as const) {

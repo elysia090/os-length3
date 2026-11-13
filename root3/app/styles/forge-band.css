@@ -18,10 +18,10 @@
    in the rail is. On a desk, against the right edge on the same row, the name of what is in hand, its capitals a
    cell tall. (Before: keys three cells tall, the terminal's five wide in ink, the others slots; before that small
    outlined tools, a pill for each repo out and ⊕.) */
-:is(.home-band, .work.bench.desk-bench > .bar) { --key-gap: 6px; position: relative; z-index: 7; height: var(--keys); margin-left: calc(-1 * var(--body-left) - 2 * var(--u)); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) { --key-gap: 6px; position: relative; z-index: 7; height: var(--keys); margin-left: calc(-1 * var(--body-left) - 2 * var(--u)); }
 .work.desk-bench { position: relative; }
 .work.bench.desk-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: calc(-2 * var(--u)); }
-:is(.home-band, .work.bench.desk-bench > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: var(--key-gap); width: min(calc(14 * var(--u)), 100%); height: var(--key); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: var(--key-gap); width: min(calc(14 * var(--u)), 100%); height: var(--key); }
 .band-tool {
   flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--ink);
   border-radius: var(--r-field); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: background var(--motion);
@@ -32,17 +32,17 @@
 .band-tools form.search > .mark { position: absolute; left: 10px; top: calc((var(--h-row) - 16px) / 2); width: 16px; height: 16px; color: var(--ink); pointer-events: none; z-index: 1; }
 .band-tools .search-in { padding-left: 34px; border-color: var(--ink); background: transparent; font-size: var(--t-body); }
 .band-tools .search-in::placeholder { color: var(--sub); }
-:is(.home-band, .work.bench.desk-bench > .bar) .band-tool { width: var(--key); height: auto; border: 0; border-radius: var(--r-key); background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
-:is(.home-band, .work.bench.desk-bench > .bar) .band-tool .mark { width: 26px; height: 26px; stroke-width: 2; }
-:is(.home-band, .work.bench.desk-bench > .bar) .band-tool:is(:hover, :focus-visible):not(:disabled) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
-:is(.home-band, .work.bench.desk-bench > .bar) .band-tool:disabled { color: var(--quiet); box-shadow: inset 0 0 0 1.5px var(--quiet); cursor: var(--cursor-arrow); }
-:is(.home-band, .work.bench.desk-bench > .bar) .band-tools > .search-box { flex: 1 1 0; width: auto; min-width: 0; }
-:is(.home-band, .work.bench.desk-bench > .bar) form.search { height: 100%; }
-:is(.home-band, .work.bench.desk-bench > .bar) form.search > .mark { left: 14px; top: calc(50% - 11px); width: 22px; height: 22px; stroke-width: 2; }
-:is(.home-band, .work.bench.desk-bench > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 44px; border: 0; border-radius: var(--r-key); background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--ink); font: 400 18px/1 var(--sans); }
-:is(.home-band, .work.bench.desk-bench > .bar) .search-in::placeholder { color: var(--sub); }
-:is(.home-band, .work.bench.desk-bench > .bar) .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { width: var(--key); height: auto; border: 0; border-radius: var(--r-key); background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool .mark { width: 26px; height: 26px; stroke-width: 2; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:is(:hover, :focus-visible):not(:disabled) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:disabled { color: var(--quiet); box-shadow: inset 0 0 0 1px var(--quiet); cursor: var(--cursor-arrow); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tools > .search-box { flex: 1 1 0; width: auto; min-width: 0; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search { height: 100%; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search > .mark { left: 14px; top: calc(50% - 11px); width: 22px; height: 22px; stroke-width: 2; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 44px; border: 0; border-radius: var(--r-key); background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink); font: 400 18px/1 var(--sans); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in::placeholder { color: var(--sub); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
 /* The name of what is in hand: against the right edge by its ink (ui/optical.ts inkEdge), a cell in from the page's
    edge as Home's repos are, its capitals a cell tall and in the middle of the keys' row; smaller where the band has
    no room for it at its size (--fit, forge.ts), and gone where there is none at all. Said by the piece itself, so
@@ -54,8 +54,8 @@
 /* A narrow window: the rail is close set and there is nothing beside it to start from, so the keys start where the
    page does, and take its width. */
 @media (max-width: 760px) {
-  :is(.home-band, .work.bench.desk-bench > .bar) { margin-left: 0; }
-  :is(.home-band, .work.bench.desk-bench > .bar) > .band-tools { flex: 1 1 0; width: auto; min-width: 0; }
+  :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) { margin-left: 0; }
+  :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: 1 1 0; width: auto; min-width: 0; }
 }
 /* What the band's search finds lies on the desk as sheets of its own, a kind a sheet, in a row from the desk's edge
    on the line every sheet's top is on: the same motif again (a name over paper with its shadow; what was run is a
@@ -95,7 +95,7 @@
    scrolled inside it). They come down a little onto the desk, one after another. */
 .found-secs { display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(3 * var(--u)); }
 .found-sec { position: relative; flex: 0 1 auto; min-width: calc(9 * var(--u)); max-width: min(calc(31 * var(--u)), 100%); margin: 0; padding: calc(var(--u) / 2) 0;
-  background: var(--paper); border-radius: var(--r-sheet); box-shadow: var(--u) var(--u) 0 0 var(--ink);
+  background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink);
   animation: sheet-down calc(240ms * var(--pace)) var(--land) both; animation-delay: calc(var(--at, 0) * 70ms); }
 .found-sec:nth-child(2) { --at: 1; } .found-sec:nth-child(3) { --at: 2; } .found-sec:nth-child(n + 4) { --at: 3; }
 @keyframes sheet-down { from { opacity: 0; translate: 0 calc(-1.5 * var(--u)); } }

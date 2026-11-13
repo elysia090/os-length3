@@ -555,10 +555,6 @@ class Git extends Part {
 
   /** The one row of repos above the issues: which are shown, and, while one is written, where it goes. */
   get repos() { return this.main.getByRole('radiogroup', {name: 'repo'}); }
-  /** The right pane's rows: what was done in the repo, a line run each (and what the box did that is not the shell's). */
-  get pane() { return this.main.getByRole('log', {name: 'Prompt', exact: true}); }
-  /** A line run, as the pane tells it. */
-  paneRun(line: string) { return this.pane.getByRole('button', {name: new RegExp(`^${escape(line)}\\b`)}); }
   /** A new issue's first line, which says the repo it goes in (its description). */
   get firstLine() { return this.main.getByRole('textbox', {name: 'First line: Type: Title'}); }
 

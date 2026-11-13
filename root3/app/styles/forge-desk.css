@@ -22,7 +22,7 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
 @media (max-width: 760px) { .desk { left: 0; } }
 .desk-box { --line: calc(var(--u) * var(--k, 1)); --t-code: calc(14px * var(--k, 1));
   position: absolute; left: 0; top: 0; box-sizing: border-box; padding: calc(var(--line) / 2) 0; border-radius: var(--r-sheet);
-  background: var(--paper); color: var(--ink);
+  background: var(--paper); color: var(--ink); outline: 1px solid var(--ink); outline-offset: -1px;
   transition: translate 640ms cubic-bezier(.45, 0, .2, 1), width 220ms var(--land), rotate 220ms var(--land), box-shadow 120ms var(--land), margin 120ms var(--land), opacity 180ms ease-out; }
 /* A piece laid beside another, the ones after it get out of its way at once, quick and a little jostled (desk.ts). */
 .desk-box.gives { transition-duration: 420ms, 220ms, 220ms, 120ms, 120ms, 180ms; transition-delay: 50ms, 0s, 0s, 0s, 0s, 0s;

@@ -2,7 +2,8 @@ import {h} from '../../ui/dom.ts';
 import {after, arrive, LAND, paced, pop, putAway, still, unfold} from '../../ui/glide.ts';
 import * as gitops from '../../repos/history.ts';
 import {t} from '../../i18n/i18n.ts';
-import {issuePath, number, readIssues, type Issue} from '../../repos/issues.ts';
+import {issueName, issuePath, number, readIssues, type Issue} from '../../repos/issues.ts';
+import {inkEdge} from '../../ui/optical.ts';
 import {bring, remoteOnly} from '../../remote/lifecycle.ts';
 import {connection} from '../../remote/connection.ts';
 import {onChange, onRenamed, rekey, store} from '../../repos/repos.ts';
@@ -11,7 +12,7 @@ import {openNext as openConversation} from '../kit/next.ts';
 import {icon} from '../../ui/icons.ts';
 import type {Context} from '../kit/context.ts';
 import {foldAway, opened, Sections} from './done.ts';
-import {backToMain, crossfade, issueBox, issueHead, knowIssues, mergeRow, resize, reviewBox, type IssueEvents, type RepoState} from './issue.ts';
+import {backToMain, crossfade, issueBox, issueHead, issueSteps, knowIssues, mergeRow, resize, reviewBox, type IssueEvents, type RepoState} from './issue.ts';
 import {IssueRow} from './issue-row.ts';
 import {paintChips} from './repo-chips.ts';
 import {laidOut} from '../../repos/git-state.ts';
@@ -128,7 +129,13 @@ class GitPage {
   readonly element: HTMLElement;
   private readonly ctx: Context;
   private readonly chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
-  private readonly write = h('button', {class: 'button small-button issues-write', type: 'button'}, t('Create issue')) as HTMLButtonElement;
+  private readonly write = h('button', {class: 'issues-write', type: 'button'}, t('Create issue')) as HTMLButtonElement;
+  /** main's sheet, at the desk's edge: the steps of the issue in full, a line a step (issueSteps). */
+  private readonly steps = h('div', {class: 'git-switch', role: 'group', 'aria-label': t('Steps')});
+  /** At the desk's edge: main's sheet and, under it, the way to write an issue. Not there while there is no issue. */
+  private readonly side = h('div', {class: 'git-side none'}, this.steps, this.write);
+  /** The issue in full, said large against the band's right end (its repo and its number), as Forge says what is in hand. */
+  private readonly held = h('div', {class: 'band-held', 'aria-hidden': 'true'});
   private readonly count = h('small', {});
   /** Where the issues would be when there are none: the empty place that writes the first, or what is so. */
   private readonly empty = h('div', {}, h('p', {class: 'muted small'}, t('Loading…')));
@@ -194,17 +201,19 @@ class GitPage {
 
   /** The page on the work bench: main's over the issues, the sections under them, its repos on its band. */
   private bench(): Bench {
-    const main = h('section', {class: 'flow git-flow', tabindex: '0', 'aria-label': 'Git'},
+    const main = h('section', {class: 'flow git-flow git-desk', tabindex: '0', 'aria-label': 'Git'},
+      // At the desk's edge, beside the row: main's sheet (the steps) and Create issue under it.
+      this.side,
       // What main has not committed comes first, over the issues: what is in hand before what is planned.
       this.sections.main,
       h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
         // Write an issue on the heading's line at its right: one place, however tall the box in full is (not between
         // it and its Review); with none to show, the empty place where the first would be is the way instead.
-        h('div', {class: 'issues-head none'}, h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', this.count)), this.write),
+        h('div', {class: 'issues-head'}, h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', this.count))),
         this.form.element, this.empty, this.row.column),
       ...this.sections.under);
     // Its repos are its band, on the top line as Forge's pills are, so the page starts where the rail's places do.
-    return bench({strip: h('div', {class: 'git-band'}, this.chips), main, reveal: (path) => { if (this.at) this.ctx.openRepo(this.at, path); }, word: (a) => { openConversation(a); void this.ctx.go('inbox'); }, back: true, plainBand: true,
+    return bench({strip: h('div', {class: 'git-band'}, this.chips, this.held), main, reveal: (path) => { if (this.at) this.ctx.openRepo(this.at, path); }, word: (a) => { openConversation(a); void this.ctx.go('inbox'); }, back: true, paneless: true,
       went: (repo, to) => {
         if (to === 'todo') { void this.ctx.go('home'); return; }
         if ('file' in to) { this.ctx.openRepo(repo, to.file); return; }
@@ -262,7 +271,10 @@ class GitPage {
   private paintChips() {
     paintChips(this.chips, [ALL, ...this.repos], filter, (r, e) => this.choose(r, e));
     // No repo yet: All of nothing is no choice; the row stands aside until there is a repo to choose.
+    // One repo is no choice either (its name is on the band's right end, with the issue in full): its chips stand
+    // aside, but for while an issue is written, when they say where it goes (styles: .chips.lone).
     this.chips.hidden = !this.repos.length;
+    this.chips.classList.toggle('lone', this.repos.length < 2);
   }
 
   /** A chip pressed: its repo's issues shown, and it the repo looked at and written in. */
@@ -274,6 +286,17 @@ class GitPage {
     this.paintChips();
     if (r) { this.look(r, true); this.form.retarget(r); if (e.detail && !this.form.element.hidden) this.form.writeOn(); }
     void this.paint().then(() => { if (other) arrive(this.row.stage.hidden ? this.empty : this.row.stage, 1, 'y', 10, 260); });
+  }
+
+  /** `said`, large against the band's right end by its ink; smaller where the band has no room for it at its size. */
+  private tellHeld(said: string) {
+    const el = this.held;
+    if (el.textContent === said) return;
+    el.textContent = said;
+    el.style.removeProperty('--fit');
+    const room = el.clientWidth, wide = el.scrollWidth;
+    if (room > 0 && wide > room) el.style.setProperty('--fit', String(Math.max(.5, room / wide)));
+    inkEdge(el, 'right');
   }
 
   // ---- the row of issues ----
@@ -292,11 +315,17 @@ class GitPage {
   private slot(x: Issue, now: boolean): HTMLElement[] {
     if (!now) return [h('div', {class: 'issue-card'}, issueHead(x, true))];
     const st = this.states.get(x.repo);
+    // The issue in full: its steps are main's sheet's lines, and it is the one the band names.
+    this.steps.replaceChildren(issueSteps(x, st, this.events, this.again));
+    this.tellHeld(`${x.repo} ${issueName(x)}`);
     // Under the current box, out of it: Back to main at its left, for the issue the repo shows.
     const leave = backToMain(x, st, this.events, this.again);
-    return [h('div', {class: 'issue-card'}, issueBox(x, st, this.events, this.again)),
-      leave ? h('div', {class: 'issue-under'}, leave) : null,
-      reviewBox(x, st, this.again), mergeRow(x, st, this.events, this.again)].filter((n): n is HTMLElement => !!n);
+    // Under the sheet, read down a dotted line from its foot: the change's Review (its history at the line, what it
+    // changes and what is said of it at the right), and where the line ends, what is done to the issue from here.
+    const review = reviewBox(x, st, this.again), merge = mergeRow(x, st, this.again);
+    const after = review || leave || merge
+      ? h('div', {class: 'issue-after'}, h('div', {class: 'issue-run'}, review), leave || merge ? h('div', {class: 'issue-end'}, leave, merge) : null) : null;
+    return [h('div', {class: 'issue-card'}, issueBox(x, st, this.events, this.again)), after].filter((n): n is HTMLElement => !!n);
   }
 
   /**
@@ -504,6 +533,8 @@ class GitPage {
    */
   private drawNone(issues: Issue[]) {
     this.row.none();
+    this.steps.replaceChildren();
+    this.tellHeld(filter || this.at || '');
     this.sections.main.classList.add('single');
     // The dashed card is the way to write the first: the heading's Write stands aside meanwhile (one way, not two).
     this.write.parentElement?.classList.add('none');

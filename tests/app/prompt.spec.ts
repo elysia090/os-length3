@@ -138,10 +138,6 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).toContainText(/^got 7$/m);
     await expect(out).not.toContainText('hunter2');
     await expect(page.locator('form.prompt[data-hushed]')).toHaveCount(0);
-    // (Nor is it kept among the lines run: Git's pane, which lists them, has none of it.)
-    await app.rail.go('git');
-    await expect(app.git.pane).not.toContainText('hunter2');
-    await app.rail.go('forge');
     // Put back as a terminal's own are (stty echo, reset): the line stays the box's, no screen of its own.
     await app.forge.run('stty echo; reset; tty');
     await expect(out).toContainText(/^\/dev\/pts\/0$/m);
@@ -319,31 +315,17 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
   });
 
-  test('Git\'s pane tells the line run in Forge\'s terminal, not what it printed; pressed there, it is read under the search with what it printed', async ({app}) => {
-    await app.forge.run('echo folded-away');
-    const out = app.forge.prompt.locator('.term-out');
-    await expect(out.getByText('folded-away', {exact: true})).toBeVisible();
-    // In the pane (Git's: Forge is all desk): that it ran (its bar green, it ended well), not what it printed.
-    await app.rail.go('git');
-    await expect(app.git.paneRun('echo folded-away')).toHaveAttribute('data-state', 'done');
-    await expect(app.git.pane.getByText('folded-away', {exact: true})).toHaveCount(0);
-    // Pressed: read under the search, with all it printed.
-    await app.git.paneRun('echo folded-away').click();
-    await expect(app.forge.results.getByText('folded-away', {exact: true})).toBeVisible();
-  });
-
-  test('lines run follow one another in the terminal, as a terminal\'s; Git\'s pane lists each, newest last, a failure in red', async ({app}) => {
+  test('lines run follow one another in the terminal, as a terminal\'s, and are still there come back from Git', async ({app}) => {
     await app.forge.run('echo first-run');
     await app.forge.run('false');
     const out = app.forge.prompt.locator('.term-out');
     // The box keeps what ran before it, as a terminal does.
     await expect(out.getByText('first-run', {exact: true})).toBeVisible();
+    // (Git is all desk too: no pane there lists what was run.)
     await app.rail.go('git');
-    const rows = app.git.pane.locator('.pane-row.run');
-    await expect(rows).toHaveCount(2);
-    await expect(rows.last()).toHaveAttribute('data-state', 'failed');
-    await expect(rows.last()).toContainText('exit 1');
-    await expect(rows.first()).toHaveAttribute('data-state', 'done');
+    await expect(app.main.locator('.band-bench > .side')).toHaveCount(0);
+    await app.rail.go('forge');
+    await expect(out.getByText('first-run', {exact: true})).toBeVisible();
   });
 
   test('what the Prompt showed is still there after Git and back, and after Home and back', async ({app}) => {

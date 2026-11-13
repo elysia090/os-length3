@@ -1,0 +1,217 @@
+/* Git, all desk as Forge is (no pane beside it). Its band has a desk's keys (>_ and the search), then its repos, and
+   against the right edge the issue in full, said large (its repo and its number).
+
+   At the desk's edge, main's sheet: a sheet of ink lying askew as Forge's terminal does, its shadow the line's green,
+   eight cells wide and as tall as its four lines. It holds the switch and nothing else: the steps of the issue in
+   full (Start, Commit, Submit, Merge), a line a step, set against the sheet's right margin in the terminal's green;
+   the one to take next is on a band of that green cut across the sheet from edge to edge, its word in ink and heavy.
+   Under the sheet, on the desk itself with no box about it, askew with it and against its right edge: Create issue.
+
+   Beside it, the row of issues: the one in full is the page's one sheet (paper, its name over its corner, its shadow
+   a cell of ink). Its head: the title in the display face at the left, the number against the right margin, their
+   tops on one line. Under the head the work leads: a size larger than a sheet's at rest (16.5 on a cell and a half),
+   from the sheet's fourteenth cell to its right edge, what was added in heavy ink on the line's green, what was taken
+   away in ink on the diff's pale rose, a line about them out of focus. Its words are much smaller, the work's margin
+   note, set against the work's left edge. At the foot's left, as large as the title, how much the work is.
+   (Before: a column of bordered cards under a row of repo pills, the steps as buttons down the card's right edge,
+   and a pane of what was run beside the page.) */
+/* (The desk's dotted ground, and nothing of the page cut at the rail's edge: its keys and main's sheet start left of it.) */
+body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots); background-size: var(--u) var(--u); }
+.page.page-work[data-place='git'] { overflow: visible; }
+.work.band-bench { position: relative; grid-template-columns: minmax(0, 1fr); }
+.work.bench.band-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: calc(-2 * var(--u)); }
+.work.bench.band-bench > .center { overflow: visible; }
+.git-band { flex: 1 1 0; min-width: 0; align-items: flex-start; gap: var(--u); }
+.git-band > .chips { flex: 0 1 auto; height: var(--key); align-items: center; margin: 0; padding: 0; }
+.git-band > .chips.lone { display: none; }
+.work.band-bench:has(.issue-form:not([hidden], .issue-edit)) .git-band > .chips.lone { display: flex; }
+
+.git-flow.git-desk { position: relative; margin-left: calc(-2 * var(--u)); padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(3 * var(--u)) calc(11 * var(--u)); }
+.git-desk > .git-side { position: absolute; left: 0; top: calc(2 * var(--u)); width: calc(8 * var(--u)); transform-origin: 0 0; rotate: -4deg; }
+.git-desk > .git-side.none { display: none; }
+.git-switch { padding: calc(1.5 * var(--u)) 0; border-radius: var(--r-sheet); background: var(--ink); box-shadow: var(--u) var(--u) 0 0 var(--green); }
+.git-switch:empty { display: none; }
+.switch-lines { display: grid; }
+.switch-line { position: relative; display: flex; justify-content: flex-end; align-items: center; height: 42px; padding: 0 calc(1.5 * var(--u)); }
+.switch-line.next::before { content: ''; position: absolute; inset: 4px 0; background: var(--green); }
+.git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: auto; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  font: 400 28px/42px var(--mono); color: var(--green); white-space: nowrap; }
+.git-switch .switch-line > button { cursor: var(--cursor-hand); }
+.git-switch .switch-line > button:disabled { cursor: var(--cursor-arrow); opacity: 1; }
+.git-switch .switch-line.next > :is(button, span) { font-weight: 700; color: var(--ink); }
+.git-switch .switch-line > button:focus-visible { outline: 2px solid var(--paper); outline-offset: 4px; }
+.git-switch .switch-line.next > button:focus-visible { outline-color: var(--ink); }
+.switch-lines > .error { margin: var(--u) calc(1.5 * var(--u)) 0; font: 400 13px/20px var(--sans); color: var(--paper); text-align: right; }
+.switch-lines > .error:empty { display: none; }
+.git-side > .issues-write { display: block; margin: calc(1.5 * var(--u)) 0 0 auto; padding: 0; border: 0; background: none; font: 700 20px/var(--u) var(--mono); color: var(--ink);
+  white-space: nowrap; cursor: var(--cursor-hand); }
+.git-side > .issues-write:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.git-side > .issues-write:disabled { color: var(--quiet); cursor: var(--cursor-arrow); }
+
+/* The row: the heading that names it is heard, not shown (the sheets say what they are). */
+.git-desk .issues-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.git-desk > .section, .git-desk > .main-part + .section { margin-top: 0; }
+.git-desk .issue-column { --row-peek: calc(3 * var(--u)); --gap: calc(2 * var(--u)); }
+.git-desk .issue-stage::before, .git-desk .issue-stage::after { display: none; }
+/* (A sheet's shadow lies a cell past it: the row is not cut before that.) */
+.git-desk .issue-stage { margin-right: calc(-1 * var(--u)); padding-right: var(--u); }
+.git-desk .issue-card { position: relative; padding: var(--u); border: 0; border-radius: var(--r-sheet); background: var(--paper); }
+.git-desk .issue-slot[aria-current='true'] .issue-card { padding: calc(1.5 * var(--u)); background: var(--paper); box-shadow: var(--u) var(--u) 0 0 var(--ink); }
+/* A sheet's edge: one pixel of ink round it, over what it holds (the work's bands run to it). */
+.git-desk .issue-card::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--ink); pointer-events: none; }
+.git-desk .issue-slot > :not(.issue-card) { margin-top: calc(2 * var(--u)); }
+/* Its name over its corner: its number and kind, and how it stands. */
+.issue-name { position: absolute; left: calc(-1.5 * var(--u)); bottom: calc(100% + 1.5 * var(--u) + 7px); margin: 0; font: 700 20px/var(--u) var(--mono); white-space: nowrap; color: var(--ink); }
+.issue-name > i { font-style: normal; color: var(--quiet); }
+.git-desk .issue-box { position: relative; display: grid; grid-template-columns: calc(11.5 * var(--u)) minmax(0, 1fr); gap: 0 var(--u); align-items: start; }
+.git-desk .issue-box.no-work { grid-template-columns: minmax(0, 1fr); }
+.git-desk .issue-box.no-work > :is(.issue-summary-wrap, .agent-line, .issue-foot) { max-width: calc(24 * var(--u)); }
+.git-desk .issue-box > :is(.issue-words, .issue-form, .error) { grid-column: 1 / -1; }
+.git-desk .issue-words { display: block; margin-bottom: calc(1.5 * var(--u)); }
+/* The title, its capitals a cell and a half tall on lines of two and a half, their first top on the sheet's margin;
+   the number, heard in the heading, drawn large against the right margin from that same top to the second line's foot. */
+.git-desk .issue-big-head:not(.peek) { display: block; min-height: calc(4 * var(--u)); padding-right: calc(8 * var(--u)); }
+.git-desk .issue-big-head:not(.peek) h2 { margin: -12px 0 0; font: 900 calc(1.5 * var(--u) / .7344)/calc(2.5 * var(--u)) var(--display); letter-spacing: -.035em; color: var(--ink); }
+.git-desk .issue-big-head:not(.peek) .issue-no { position: absolute; right: 0; top: -17px; font: 900 calc(4 * var(--u) / .7344)/1 var(--display); letter-spacing: -.05em; color: var(--ink); }
+.git-desk .issue-big-head:not(.peek) .issue-kind { font-size: 0; }
+.git-desk .issue-big-head.peek .issue-no { font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+/* Its words: the work's margin note. */
+.git-desk .issue-summary-wrap { grid-column: 1; margin: 0; }
+.git-desk .issue-summary { width: 100%; min-height: 20px; margin: 0; padding: 0; border: 0 solid transparent; border-radius: 0; background: none; font: 400 13px/20px var(--sans); color: var(--sub); text-align: right; }
+.git-desk .issue-box.no-work .issue-summary { text-align: left; }
+.git-desk .issue-summary:focus { background: none; color: var(--ink); outline: none; }
+.git-desk .issue-box > .agent-line { grid-column: 1; margin-top: var(--u); justify-items: end; }
+.git-desk .issue-foot { grid-column: 1; margin-top: var(--u); justify-content: flex-end; font-size: 13px; }
+.git-desk .issue-box.no-work .issue-foot { justify-content: flex-start; }
+.git-desk .issue-box.no-work .issue-foot > .issue-about { justify-content: flex-start; }
+.git-desk .issue-foot > .issue-about { flex: 0 1 auto; justify-content: flex-end; }
+/* What is done to the sheet itself (Close, Back to main, Reject): words, not boxes. */
+.git-desk :is(.issue-foot, .issue-leave, .merge-row) .button { min-width: 0; min-height: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  font: 700 16.5px/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+.git-desk :is(.issue-foot, .issue-leave, .merge-row) .button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.git-desk .issue-foot .button { font-size: 13px; }
+/* Its work. */
+.git-desk .issue-work { grid-column: 2; grid-row: 2 / span 4; margin-right: calc(-1.5 * var(--u)); min-width: 0; }
+.git-desk .issue-work.none { margin-right: 0; padding-left: 12px; }
+.work-file + .work-file { margin-top: calc(1.5 * var(--u)); }
+.work-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--u); height: calc(2 * var(--u)); padding: 0 calc(1.5 * var(--u)) 0 12px; }
+.work-name { min-width: 0; padding: 0; border: 0; background: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 20px/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+.work-name:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.work-count { flex: none; display: flex; gap: 1ch; font: 400 20px/var(--u) var(--mono); }
+.work-count > .diff-add, .work-sum > .diff-add { color: var(--add); }
+.work-count > .diff-del, .work-sum > .diff-del { color: var(--del); }
+.work-line { display: flex; min-height: calc(1.5 * var(--u)); padding: 0 calc(.5 * var(--u)) 0 12px; font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.work-line > .work-sign { flex: none; width: 2ch; }
+.work-line > .work-text { min-width: 0; }
+.work-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
+.work-line.del { background: color-mix(in srgb, var(--del) 14%, var(--paper)); }
+.work-line.far { height: calc(1.5 * var(--u)); overflow: hidden; white-space: pre; color: var(--sub); filter: blur(.8px); }
+/* How much the work is, where the sheet turns: at its foot's left, as large as the title. */
+.work-sum { position: absolute; left: 0; bottom: 0; display: flex; gap: .25em; margin: 0; font: 900 calc(1.5 * var(--u) / .7344)/.7344 var(--display); letter-spacing: -.035em; }
+.git-desk .issue-box:has(.work-sum) { padding-bottom: calc(3 * var(--u)); }
+.git-desk .issue-box:has(.work-sum) > .issue-work { margin-bottom: calc(-3 * var(--u)); }
+/* No issue yet: nothing to switch and no sheet; the one thing to do, in the page's own middle. */
+.git-desk .card.new.issue-new { position: absolute; left: calc(50vw - var(--outer) - var(--rail) + 2 * var(--u)); top: calc(50vh - var(--outer-top) - var(--keys)); translate: -50% -50%;
+  width: auto; min-height: 0; padding: var(--u); gap: var(--u); background: none; }
+.git-desk .card.new.issue-new > span { font: 700 28px/36px var(--sans); }
+.git-desk .card.new.issue-new > small { font: 400 16.5px/var(--u) var(--sans); }
+.git-desk .card.new.issue-new > svg { width: 36px; height: 36px; }
+@media (max-width: 1100px) {
+  .git-flow.git-desk { margin-left: 0; padding-left: 0; }
+  .git-desk > .git-side { position: static; rotate: none; margin-bottom: calc(3 * var(--u)); }
+  .git-desk .issue-box { grid-template-columns: minmax(0, 1fr); }
+  .git-desk .issue-work { grid-column: 1; grid-row: auto; margin-top: var(--u); }
+  .git-desk .issue-summary { text-align: left; }
+  .git-desk .issue-big-head:not(.peek) { padding-right: 0; }
+  .git-desk .issue-big-head:not(.peek) .issue-no { position: static; font-size: inherit; }
+  .git-desk .card.new.issue-new { position: static; translate: none; }
+}
+/* Under the sheet, read down as the page is scrolled: a dotted line goes on from the foot of the sheet's left margin
+   (the title's and the total's edge), its dots squares half a cell wide, a cell apart. At the line, the change's
+   history: each time it was handed in, said large in the display face by when, what it says small under it, set
+   against the sheets a cell away; the one pressed is in ink, the others quiet. At the right, in the work's own
+   column, what the change is (not a history): each file a sheet of its own, its name over its corner, a pixel of
+   ink round it, every line with its number, what a reviewer marked in the marker's yellow; then the Review's own
+   sheet (the page's second with a shadow): what was said, room to say more with no box drawn about it, and its keys
+   as words against its right margin, Approve alone on ink. Where the line ends: Back to main, and Reject. */
+.git-desk .issue-slot > .issue-after { margin-top: var(--u); }
+.git-desk .issue-run { position: relative; min-height: calc(2 * var(--u)); padding: calc(3 * var(--u) - 31px) 0 0 calc(14 * var(--u)); }
+.git-desk .issue-run::before { content: ''; position: absolute; left: calc(1.5 * var(--u)); top: 0; bottom: 0; width: calc(var(--u) / 2);
+  background: repeating-linear-gradient(to bottom, var(--ink) 0 calc(var(--u) / 2), transparent calc(var(--u) / 2) var(--u)); }
+.git-desk .issue-run:empty { padding: 0; }
+.git-desk .review-box { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.issue-history { position: absolute; left: calc(3 * var(--u)); top: calc(3 * var(--u)); width: calc(10 * var(--u)); display: grid; gap: var(--u); margin: 0; padding: 0; list-style: none; }
+.history-at { display: block; width: 100%; margin: 0; padding: 0; border: 0; background: none; color: var(--quiet); text-align: right; cursor: var(--cursor-hand); }
+.history-at[aria-pressed='true'] { color: var(--ink); }
+.history-at:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.history-at > time { display: block; margin-top: -8px; font: 900 calc(2 * var(--u) / .7344)/1 var(--display); letter-spacing: -.05em; white-space: nowrap; }
+.history-at > span { display: block; margin-top: 3px; font: 400 13px/20px var(--sans); color: var(--sub); overflow-wrap: anywhere; }
+.history-at:not([aria-pressed='true']) > span { color: var(--quiet); }
+.git-desk .review-diff { display: grid; gap: calc(3 * var(--u) - 31px); margin: 0; padding: 0; border: 0; background: none; max-height: none; overflow: visible; }
+.git-desk .review-diff > .diff-file { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+.git-desk .review-diff > .diff-file > summary { display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); min-height: var(--u); margin: 0 0 7px; padding: 0; border: 0; background: none;
+  font: 700 20px/var(--u) var(--mono); color: var(--ink); list-style: none; cursor: var(--cursor-hand); }
+.git-desk .review-diff > .diff-file > summary::-webkit-details-marker { display: none; }
+.git-desk .review-diff > .diff-file > summary::before, .git-desk .review-diff > .diff-file > summary::after { display: none; }
+.git-desk .review-diff > .diff-file > summary .diff-name { font: inherit; color: inherit; }
+.git-desk .review-diff > .diff-file > summary .diff-bar { display: none; }
+.git-desk .review-diff > .diff-file > summary :is(.diff-add, .diff-del, .diff-count) { font: 400 20px/var(--u) var(--mono); background: none; }
+.git-desk .review-diff > .diff-file > .diff { margin: 0; padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; overflow: hidden; }
+.git-desk .review-diff .diff-line { min-height: var(--u); font: 400 14px/var(--u) var(--mono); color: var(--ink); background: none; }
+.git-desk .review-diff .diff-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
+.git-desk .review-diff .diff-line.del { background: color-mix(in srgb, var(--del) 14%, var(--paper)); }
+.git-desk .review-diff .diff-line:is(.marked, .marking) { background: var(--note); }
+.git-desk .review-diff .diff-no { font: 400 11px/var(--u) var(--mono); color: var(--quiet); }
+.git-desk .review-sheet { position: relative; margin-top: calc(3 * var(--u) + 31px); padding: calc(1.5 * var(--u)); border-radius: var(--r-sheet); background: var(--paper); box-shadow: var(--u) var(--u) 0 0 var(--ink); }
+.git-desk .review-sheet::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--ink); pointer-events: none; }
+.git-desk .review-sheet > .stage-head { position: absolute; left: 0; right: 0; bottom: calc(100% + 7px); display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); margin: 0; padding: 0; border: 0; }
+.git-desk .review-sheet > .stage-head > h3 { margin: 0; font: 700 20px/var(--u) var(--mono); letter-spacing: 0; text-transform: none; color: var(--ink); }
+.git-desk .review-sheet > .stage-head > .muted { margin: 0; font: 400 20px/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
+.git-desk .review-chat { display: grid; gap: var(--u); margin: 0 0 var(--u); padding: 0; border: 0; background: none; max-height: none; }
+.git-desk .review-chat[hidden] { display: none; }
+.git-desk .review-chat .bubble { display: block; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.git-desk .review-chat .bubble > .muted { display: block; font: 400 13px/20px var(--sans); color: var(--sub); }
+.git-desk .review-chat .bubble > .step-done { display: block; font: 700 13px/20px var(--mono); color: var(--del); }
+.git-desk .review-chat .bubble-text { margin: 0; font: 400 16.5px/var(--u) var(--sans); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.git-desk .review-in { display: block; width: 100%; min-height: calc(4 * var(--u)); margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; resize: none;
+  font: 400 16.5px/var(--u) var(--sans); color: var(--ink); }
+.git-desk .review-in:is(:focus, :focus-visible) { outline: none; }
+.git-desk .review-in[hidden], .git-desk .review-verdict[hidden] { display: none; }
+.git-desk .review-verdict { display: flex; align-items: center; justify-content: flex-end; gap: calc(1.5 * var(--u)); margin: var(--u) 0 0; padding: 0; border: 0; }
+.git-desk .review-verdict > .grow { display: none; }
+.git-desk .review-verdict > :is(.button, .approve-mark, .step-done) { order: 0; min-width: 0; min-height: 0; height: calc(2 * var(--u)); margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  font: 700 16.5px/calc(2 * var(--u)) var(--mono); color: var(--ink); white-space: nowrap; }
+.git-desk .review-verdict > .button:last-child { order: -1; }
+.git-desk .review-verdict > :is(.approve-mark, .step-done) { order: 1; display: inline-grid; place-items: center; padding: 0 var(--u); border-radius: var(--r-key); background: var(--ink); color: var(--green); }
+.git-desk .review-verdict > .approve-mark { cursor: var(--cursor-hand); }
+.git-desk .review-verdict :is(.ring, .done-mark) { display: none; }
+.git-desk .review-verdict > :is(.button, .approve-mark):focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.git-desk .review-sheet > .error:empty { display: none; }
+.git-desk .issue-end { display: grid; justify-items: start; gap: calc(var(--u) / 2); margin: calc(2 * var(--u)) 0 0 calc(1.5 * var(--u)); }
+.git-desk .issue-end :is(.issue-leave, .merge-row) { display: block; margin: 0; padding: 0; border: 0; background: none; }
+.git-desk .issue-end :is(.issue-leave, .merge-row) .button { font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.git-desk .issue-end .merge-row .button { color: var(--del); }
+@media (max-width: 1100px) {
+  .git-desk .issue-run { padding-left: calc(3 * var(--u)); }
+  .issue-history { position: static; width: auto; margin: 31px 0 calc(2 * var(--u)); }
+  .history-at { text-align: left; }
+}
+/* Word from someone, come while one is here: a sheet at the page's foot, against its right edge. */
+.work.band-bench > .pane-word { position: fixed; left: auto; right: calc(2 * var(--u)); bottom: calc(2 * var(--u)); z-index: 6; width: min(calc(14 * var(--u)), calc(100vw - 4 * var(--u))); }
+.work.band-bench > .pane-word > .pane-row { border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
+/* A narrow window: the keys start where the page does (the rail is close set), main's sheet lies straight over the
+   row, and the sheet in full takes the row: a neighbour shows a cell, the title a size a phone's line holds. */
+@media (max-width: 760px) {
+  .work.bench.band-bench > .bar { margin-left: 0; }
+  /* (Nothing starts left of the page here, and the Prompt at the foot, wider than a phone, is cut at the page's edge.) */
+  .page.page-work[data-place='git'], .work.bench.band-bench > .center { overflow-x: clip; }
+  .git-flow.git-desk { padding: var(--u) var(--u) calc(3 * var(--u)) 0; }
+  .git-desk > .git-side { width: auto; max-width: calc(8 * var(--u)); margin-right: var(--u); }
+  .git-desk .issue-column { --row-peek: var(--u); --gap: calc(var(--u) / 2); }
+  .git-desk .issue-slot[aria-current='true'] .issue-card { padding: var(--u); box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
+  .git-desk .issue-words { margin-bottom: var(--u); }
+  .git-desk .issue-big-head:not(.peek) { min-height: 0; }
+  .git-desk .issue-big-head:not(.peek) h2 { margin: 0; font: 900 28px/36px var(--display); overflow-wrap: anywhere; }
+  .git-desk .issue-work { margin-right: calc(-1 * var(--u)); }
+  .git-desk .work-line { font-size: 13px; line-height: var(--u); }
+}

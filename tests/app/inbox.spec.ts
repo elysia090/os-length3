@@ -39,7 +39,7 @@ test('what one person writes to another arrives in their Inbox, and the rail say
   await expect(ada.inbox.thread(bo.handle).getByText('Yes, with the tent.', {exact: true})).toBeVisible();
 });
 
-test('word that comes while one works in Git comes into the pane\'s foot, and pressed opens its conversation in Inbox', async ({signedIn: ada, another}) => {
+test('word that comes while one works in Git comes up at the page\'s foot, and pressed opens its conversation in Inbox', async ({signedIn: ada, another}) => {
   const bo = await another('Bo');
   await bo.inbox.named();
   await ada.inbox.named();
