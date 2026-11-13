@@ -28,7 +28,7 @@ impl Key {
         h.update(b"sods-translation-v1\0");
         // Preparation and the execution ABI affect whether the same wasm can be reused.
         h.update(digest(include_bytes!("abi.rs")));
-        h.update(digest(include_bytes!("../runtime/share.ts")));
+        h.update(digest(include_bytes!("../runtime/translation/share.ts")));
         h.update(elf); h.update(translator);
         h.update([profile.shared as u8, profile.trace as u8]);
         h.update(profile.run_blocks.to_le_bytes());

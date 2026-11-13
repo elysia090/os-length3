@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'why/core/src/root/pins.rs', 'why/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'why/core/src/root/pins.rs', 'why/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/ricebox/layers/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -275,21 +275,25 @@ jobs:
         if: matrix.part == 'native'
         working-directory: module/sods
         run: sh test/programs/run.sh
-      # The translator's own tests: among them every opcode scanned as the decoder decodes it.
+      # The translator's own tests: among them every opcode scanned as the decoder decodes it; a translation's
+      # identity, and the cache that keeps translations under it.
       - name: Test sods
         if: matrix.part == 'native'
         run: cargo test --locked --release --manifest-path module/sods/Cargo.toml
-      # run.ts takes the wasm build of the translator when it is current.
-      - name: Rust translation cache
+      # What stands beside sods and is checked with what it builds: ricebox's layers mounted in sods' tree (the
+      # translator's wasm decodes and digests them), and muk's C parser beside its model over every config.json.
+      - name: Layers, and muk's parser beside its model
         if: matrix.part == 'native'
-        run: cargo test --locked --manifest-path module/cowboy/cache/Cargo.toml
+        run: |
+          node --test module/ricebox/layers/test/*.test.ts module/muk/test/*.test.ts
+          sh module/muk/test/same.sh
 
       - name: Run why under muk
         if: matrix.part == 'prompt'
         run: |
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
           cargo build --locked --profile prompt -p why --no-default-features --target x86_64-unknown-linux-musl
-          out=$(WHY_REPOS=/root node module/sods/runtime/linux/run.ts target/x86_64-unknown-linux-musl/prompt/why help all)
+          out=$(WHY_REPOS=/root node module/sods/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/why help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'why issue new'
 
@@ -374,8 +378,8 @@ jobs:
           [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
   # muk beside runc: the same bundles run by both, as root (where one who is not may make no user namespace), and what
-  # each box says of itself the same (module/muk/test/bundle/muk.sh); then a config.json written against muk, every
-  # way it has of asking for what is the host's (module/muk/test/bundle/hostile.sh).
+  # each box says of itself the same (module/muk/test/muk.sh); then a config.json written against muk, every
+  # way it has of asking for what is the host's (module/muk/test/hostile.sh).
   muk:
     name: muk
     runs-on: ubuntu-24.04
@@ -387,9 +391,9 @@ jobs:
       - name: The bundles, beside runc
         run: |
           runc --version || echo "no runc here: the boxes are run, and not compared"
-          sudo sh module/muk/test/bundle/muk.sh
+          sudo sh module/muk/test/muk.sh
       - name: A config.json written against it
-        run: sudo sh module/muk/test/bundle/hostile.sh
+        run: sudo sh module/muk/test/hostile.sh
       - name: Profiler ownership tests
         run: python3 module/muk/tool/profile.test.py
       - name: prompt, at a terminal
@@ -490,11 +494,11 @@ jobs:
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
           # The same programs under muk.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
-          node module/sods/runtime/linux/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
-          node module/sods/runtime/linux/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          node module/sods/runtime/linux/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
-          node module/sods/runtime/linux/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
-          printf 'lib/x.c\nweb/src/main.ts\n' | node module/sods/runtime/linux/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
+          node module/sods/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          node module/sods/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          node module/sods/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
+          node module/sods/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
+          printf 'lib/x.c\nweb/src/main.ts\n' | node module/sods/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
           sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

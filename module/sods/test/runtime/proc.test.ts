@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {Pipe} from '../../runtime/linux/fd.ts';
-import {prepare} from '../../runtime/share.ts';
+import {prepare} from '../../runtime/translation/share.ts';
 import {have, shell} from './busybox.ts';
 
 // Processes run at once, pipes hold their writers, signals reach their

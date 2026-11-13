@@ -215,7 +215,7 @@ async function attempt(line: Line, web: string, root: string, seconds: number): 
   const native = await run('bwrap', [...sandbox(root), '/bin/sh', '-c', line.line], seconds);
   // The same environment as natively: what a person's Prompt has.
   const asked: Asked = {web, path: '/bin/sh', args: ['-c', line.line], translator: `${OS}module/sods/target/wasm32-unknown-unknown/release/sods.wasm`, fresh: false, kept: null, env: ENV};
-  const child = await run(process.execPath, [`${OS}scripts/webroot-runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, MUK_INLINE: '1'});
+  const child = await run(process.execPath, [`${OS}scripts/webroot-runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, SODS_INLINE: '1'});
   let said: {status: number | null; stdout: string; stderr: string; error: string | null} | null = null;
   try { said = JSON.parse(child.stdout); } catch { /* it ended without saying: killed, or the kernel threw */ }
   // A wait status: an exit's code, or 128 and the signal, as a shell says it.

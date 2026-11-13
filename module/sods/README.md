@@ -1,80 +1,138 @@
 # sods — instructions, and where they run
 
-What takes the dull boundaries away: a program is built once (x86-64, for Linux) and sods makes it run where there
-is no such machine and no such kernel under it (a browser, with what a browser allows; a host of another system; no
-system at all), as fast as the machine it lands on runs anything. Code under it is the same code everywhere. Rust;
-where the bound is not reached in plain Rust, C on `../lib` beside it.
+What takes the dull boundaries away: a program is built once, for one machine and one kernel, and sods makes it
+run where there is no such machine, no such kernel, or no system at all, as fast as the machine it lands on runs
+anything. Hosts (Linux, macOS, Windows), the Web (a page, a Worker), bare metal and the instruction sets
+(x86-64, ARM64, RISC-V) differ; sods is where they differ, so that muk, prompt, ricebox and a product hold no
+decision made by where a program runs ([#191](https://github.com/elysia090/os-length3/issues/191)).
 
-Today it is one way across one of those boundaries: static x86-64 Linux programs made WebAssembly ahead of the run. The browser
-used to run Linux by emulating a whole PC (guest kernel, MMU, interrupts, a
-runtime x86→wasm JIT); sods removes the machine instead, and `runtime/linux/` answers its Linux ABI and supervises translated guest processes. ricebox (`../ricebox`) supplies the programs and filesystem, not that ABI.
+Today it is one way across those boundaries: a static x86-64 Linux program made WebAssembly ahead of its run, and
+the Linux that program asks for answered beside it, in a browser's page, its Workers and node. The browser used to
+run Linux by emulating a whole PC (guest kernel, MMU, interrupts, a runtime x86→wasm JIT); sods removes the machine
+instead. Rust; where the bound is not reached in plain Rust, C on `../lib` beside it.
 
-- `src/` (Rust) translates a static x86-64 ELF ahead of time into one wasm
-  module. Guest addresses are wasm addresses, registers are locals, flags
-  are deferred so `cmp`+`jcc` is one comparison, `rep movs` is
-  `memory.copy` (an element at a time only where it copies onto what it has
-  still to read, as x86 does), the direction flag is the thread's own as it
-  runs. Code is found from symbols, call targets and the
-  relocations kept by `--emit-relocs` (including position-relative jump
-  tables); anything reached another way goes through an address dispatcher.
-  In one direction, each file one thing: `elf.rs` the program at rest; `x86.rs` an instruction as sods reads it
-  (the decoder is taken in there and nowhere else) and `scan.rs` what a walk needs of one, read off tables made
-  ahead (`scan_table.rs`, by `examples/scan_table.rs`); `find.rs` finds the code into a `program.rs`, its blocks in
-  the order `layout.rs` gives them; `facts.rs` decides what the whole program shares (the flags each entry
-  reads, what a call may touch); `frame.rs` is a function as it is made (its locals, its bytes, its labels) and
-  `sync.rs` which registers it moves to their globals; `operand.rs`, `flags.rs`, `integer.rs`, `sse.rs` and
-  `fpu.rs` are what each instruction means on it; `lower.rs` its control flow; `image.rs` the module around
-  the code. `abi.rs` is what the code and what runs it agree on; `wasm.rs` WebAssembly as bytes.
-- The translator also builds as wasm (`--target wasm32-unknown-unknown
-  --lib`; `src/web.rs` is what it exports there, wrapped by `runtime/translator.ts`) and gives byte-identical
-  output, so a browser translates the programs it runs.
-- The exact 80-bit x87 is Rust too (`src/x87.rs`), in the translator's wasm:
-  an instance of that module of its own holds each thread's registers, and
-  translated code calls it wasm to wasm, its memory operands loaded and
-  stored by the translated code itself (`runtime/x87.ts`).
-- `runtime/` holds what of it runs beside the program: the translator's
-  wrapper, the x87's, a translation shared between Workers (`share.ts`),
-  programs translated ahead while a Prompt waits (`ahead.ts`), and the form a
-  translation is kept in between runs (`kept.ts`; muk keeps the copies).
-- **`runtime/host.ts` is the host, asked in one place.** The same code runs in
-  a browser's page, in one of its Workers and in node, and what differs
-  between them is answered there and nowhere else: whether this is node, what
-  was said to it from outside, its own modules where it has them, its
-  threads, how many processors it has, whether memory is shared between
-  threads, whether they may run apart on it (in a browser, only a page set
-  apart from other origins'), whether this thread may wait, its clocks
-  (`steady`, `began`, `epoch`) and its random bytes (`random`). muk's runtime
-  and the translator's wrapper asked each of these for themselves, in eight
-  files, each its own way; they ask here now, and a host that is neither
-  (another system's, none at all) is one file's to take on. What it does not
-  hold yet is below.
+## What is sods', and what is not
+
+| Its own | Not its own |
+| --- | --- |
+| a program made a module: the translator, its form, its ABI (`src/`) | what a box is, and making one: muk (`../muk`, an OCI bundle run) |
+| what makes a translation the same translation, and translations kept under it (`src/identity.rs`, `src/cache.rs`, `runtime/translation/kept.ts`) | which programs are translated ahead and shipped: ricebox (`../ricebox`), which puts them in its layers |
+| the Linux a translated program asks for (`runtime/linux/`) | an image, its layers and their form: ricebox (`../ricebox/layers`); sods lends a tree to mount them in |
+| every difference between hosts (`runtime/host.ts`), and the table of what runs where (`runtime/targets.ts`) | a terminal's other end: prompt (`../prompt`); words, addresses, policy: a product |
+
+## How others take it
+
+Three files, and the table. Nothing outside `module/sods` imports anything else of it (`scripts/units.ts` checks
+every import in the repository, tests and scripts too), so what sods is made of changes without anyone else's code
+changing.
+
+| File | What it gives |
+| --- | --- |
+| `runtime/translate.ts` | the translator loaded (`loadTranslator`: a program's bytes in, a module's out; `NotAProgram` is the file's fault), a program translated ahead of its run (`aheadOf`), a translation as a Linux here runs it (`prepare`), the form it is kept in (`packMain`, `packMore`, `taken`) and the name it is kept under (`madeBy`) |
+| `runtime/linux.ts` | a Linux here (`linux(options)`: its threads apart or in turn, by the host), its tree and the port an image is mounted through (`Vfs`, `mountTarget`, `provide`), translations kept from earlier runs (`keeper`), what a program changed (`Mirror`), a kernel's pause said (`said`) |
+| `runtime/host.ts` | the host, asked in one place: which it is, its threads and shared memory, clocks, random bytes, memory and room, a digest, what it keeps, how it fetches |
+| `runtime/targets.ts` | what runs where, and how far each is |
+
+Besides those: `sods` the program (`cargo build --release`: `sods [--whole] IN.elf OUT.wasm`), the same translator
+as a module (`--target wasm32-unknown-unknown --lib`, byte-identical output), and `node runtime/run.ts PROGRAM`,
+which runs a program on node as a page runs it.
+
+## What runs where
+
+`runtime/targets.ts` is the table (`node module/sods/runtime/targets.ts` prints it; a test holds this copy to it).
+A state is one of four, never read as another: **verified** (a check of this repository runs it there),
+**unverified** (what is made should run there; no check does), **unimplemented** (owed: what it needs is named),
+**excluded** (cannot be on that platform: the reason is named, and it is not owed). The order things are made in is
+not the goal made smaller: all nine pairs of instruction sets are the goal.
+
+| Input | Runs on | Where | State |
+| --- | --- | --- | --- |
+| x86-64 | x86-64 | linux | verified: `module/sods/test/programs/run.sh` |
+| x86-64 | x86-64 | macos | unverified: the same WebAssembly under node there (host.ts asks node, not the system); no check runs on macos |
+| x86-64 | x86-64 | windows | unverified: the same WebAssembly under node there (host.ts asks node, not the system); no check runs on windows |
+| x86-64 | x86-64 | browser, worker | verified: `tests/app/linux.spec.ts` |
+| x86-64 | x86-64 | bare | unimplemented: a host with no system under it: host.ts answers for a page, a Worker and node |
+| x86-64 | arm64 | linux, macos, windows | unverified: the same WebAssembly under node there; no check runs on arm64 |
+| x86-64 | arm64 | browser, worker | unverified: the same WebAssembly under a browser there; no check runs on arm64 |
+| x86-64 | arm64 | bare | unimplemented: a host with no system under it: host.ts answers for a page, a Worker and node |
+| x86-64 | riscv64 | linux | unverified: the same WebAssembly under node there; no check runs on riscv64 |
+| x86-64 | riscv64 | macos | excluded: macOS runs on no RISC-V machine |
+| x86-64 | riscv64 | windows | excluded: Windows is released for no RISC-V machine |
+| x86-64 | riscv64 | browser, worker | unverified: the same WebAssembly under a browser there; no check runs on riscv64 |
+| x86-64 | riscv64 | bare | unimplemented: a host with no system under it: host.ts answers for a page, a Worker and node |
+| arm64 | x86-64 | linux, macos, windows, browser, worker, bare | unimplemented: a translator for arm64 programs: src/ reads x86-64 (elf.rs refuses another machine's) |
+| arm64 | arm64 | linux, macos, windows, browser, worker, bare | unimplemented: a translator for arm64 programs: src/ reads x86-64 (elf.rs refuses another machine's) |
+| arm64 | riscv64 | linux, browser, worker, bare | unimplemented: a translator for arm64 programs: src/ reads x86-64 (elf.rs refuses another machine's) |
+| arm64 | riscv64 | macos | excluded: macOS runs on no RISC-V machine |
+| arm64 | riscv64 | windows | excluded: Windows is released for no RISC-V machine |
+| riscv64 | x86-64 | linux, macos, windows, browser, worker, bare | unimplemented: a translator for riscv64 programs: src/ reads x86-64 (elf.rs refuses another machine's) |
+| riscv64 | arm64 | linux, macos, windows, browser, worker, bare | unimplemented: a translator for riscv64 programs: src/ reads x86-64 (elf.rs refuses another machine's) |
+| riscv64 | riscv64 | linux, browser, worker, bare | unimplemented: a translator for riscv64 programs: src/ reads x86-64 (elf.rs refuses another machine's) |
+| riscv64 | riscv64 | macos | excluded: macOS runs on no RISC-V machine |
+| riscv64 | riscv64 | windows | excluded: Windows is released for no RISC-V machine |
+
+## Its folders
 
 ```
-cargo build --release
-sods --trace IN OUT.wasm      # record block entries
-sods --whole IN OUT.wasm      # every function, ahead of time
+src/                  the translator (Rust), one direction, each file one thing (src/lib.rs lists them):
+                      elf → x86, scan → find, program, layout → facts → frame, sync → operand, flags, integer,
+                      sse, fpu → lower → image; abi (what the code and what runs it agree on); wasm; x87 (the
+                      exact 80-bit coprocessor, in the translator's wasm); web (its exports as a module);
+                      identity (a translation's key) and cache (translations kept under it, on a host with files)
+runtime/              what runs beside a translated program
+  translate.ts        entry: translation
+  linux.ts            entry: a Linux here
+  host.ts             entry: the host
+  targets.ts          entry: what runs where
+  run.ts              node runtime/run.ts [--root DIR] [--cwd DIR] [--tty] PROGRAM [args...]
+  translation/        the translator's wrapper, the x87's, a translation shared between Workers (share.ts),
+                      translated ahead (ahead.ts), kept between runs (kept.ts)
+  linux/              the Linux ABI: files, processes, threads apart (remote.ts) or in turn, signals, sockets,
+                      /proc, a terminal, what is kept read back (keeper.ts)
+lib/tree.h            C on ../lib: every name of a root as Linux says it (written to its bound; the calls do not
+                      walk it yet)
+test/                 programs/ (each built static, run natively and translated: the same output and status),
+                      runtime/ (the kernel's, node:test), floors/, tree/, cache.rs
+examples/             what measures and dumps the translator
 ```
 
-Inputs must be static executables linked with `--emit-relocs`; post-linked
-release binaries have their relocations removed and are not accepted yet.
-Checked natively against the same programs by ricebox's tests
-(`sh test/programs/run.sh`).
+Code is found from symbols, call targets and the relocations kept by `--emit-relocs` (position-relative jump
+tables included); anything reached another way goes through an address dispatcher. Guest addresses are wasm
+addresses, registers are locals, flags are deferred so `cmp`+`jcc` is one comparison, `rep movs` is `memory.copy`
+(an element at a time only where it copies onto what it has still to read, as x86 does), the direction flag is the
+thread's own. Inputs must be static executables linked with `--emit-relocs`; post-linked release binaries have
+their relocations removed and are not accepted yet.
 
-`runtime/web/` owns product-neutral root preparation and fetch. Product words, addresses and Worker assembly are supplied by `why/app`. muk's pack reader uses structural ports and imports no sods implementation. The Rust translation cache at `../cowboy/cache` depends only on sods' identity library, with translator dependencies disabled.
+```
+sh test/programs/run.sh                          every test program, native beside translated
+cargo test --locked --release                    the translator's own, the identity's and the cache's
+SODS_INLINE=1 node runtime/run.ts PROGRAM        its threads in turn on one thread, not each in a Worker
+SODS_SYSCALLS=1, SODS_FAULTS=1, SODS_TIMING=1    every call listed; each fault said; where the time went
+```
 
-The agreed next compatibility target is the Linux host API needed to run the same C muk on the Web. The current guest ABI still rejects namespace and mount operations and has no host seccomp implementation; this stage does not claim that integration is complete.
+## A translation kept
+
+A translation is good for exactly what made it: the program's bytes, the translator's, the ABI between the code
+and what runs it, and every option that changes the output. `src/identity.rs` makes one key of those
+(`identity::Key`), and nothing is ever invalidated in place: what changes, changes the key. `src/cache.rs` keeps
+translations under that key on a host with files (a directory private to one user, an entry published whole or not
+at all, built once across threads and processes). In a browser the same rule is `madeBy` (`runtime/translate.ts`):
+a copy is kept under the translator that made it and whether its memory is shared, and one kept under another name
+is never read. Which programs are translated ahead and shipped is not sods' to say: ricebox puts them in its
+layers, named by the translator's digest.
 
 ## The boundaries, and which are taken on
 
 | The boundary | Who takes it on | Where it stands |
 | --- | --- | --- |
 | no x86-64 under the program | `src/`: the program made WebAssembly ahead of the run | done for static Linux programs; the lowering still reads its operands through a decoder that is not sods' |
-| no Linux under it | `runtime/linux/`, answering its calls | done in a browser and in node, in TypeScript and far from its bound |
+| no Linux under it | `runtime/linux/`, answering its calls | done in a browser and in node, in TypeScript and far from its bound; the calls a box's maker asks (namespaces, mounts, a filter: what muk in C needs to run here) are refused in words, and are next |
 | which host this is (a page, a Worker, node) | `runtime/host.ts` | asked in one place: node or not, its threads, shared memory, running apart, waiting, processors, what was said from outside |
-| a host's clocks | `runtime/host.ts` (`steady`, `began`, `epoch`) | asked in one place: muk's runtime reads none of the host's own (a test reads its sources for them); the floors the same within their noise |
-| a host's random bytes | `runtime/host.ts` (`random`) | asked in one place: `getrandom` and `AT_RANDOM`, `/dev/urandom`, the UUIDs `/proc` says (made of them by muk) all draw there; the same test reads muk's sources for the host's own |
-| where bytes are kept, how they are fetched, their digest | `runtime/host.ts` (`kept`, `range`, `rangeNow`, `sha256`) | asked in one place: a browser's Cache Storage, its Range requests (waited for, or had inside a call in a Worker) and its SHA-256; a host with no store keeps nothing and says so; the same test reads muk's sources for `caches`, `fetch`, `XMLHttpRequest`, `crypto.subtle` and `navigator` |
-| a host of another system (macOS, Windows), natively | nothing yet | the same wasm under an engine there, `host.ts` answering for it; not begun |
+| a host's clocks | `runtime/host.ts` (`steady`, `began`, `epoch`) | asked in one place: the Linux here reads none of the host's own (a test reads its sources for them) |
+| a host's random bytes | `runtime/host.ts` (`random`) | asked in one place: `getrandom` and `AT_RANDOM`, `/dev/urandom`, the UUIDs `/proc` says all draw there |
+| where bytes are kept, how they are fetched, their digest | `runtime/host.ts` (`kept`, `range`, `rangeNow`, `sha256`) | asked in one place: a browser's Cache Storage, its Range requests (waited for, or had inside a call in a Worker) and its SHA-256; a host with no store keeps nothing and says so |
+| a program for another machine (ARM64, RISC-V) | nothing yet | `src/` reads x86-64 alone; the table above says so for each pair |
+| a host of another system (macOS, Windows), natively | nothing yet | the same wasm under an engine there, `host.ts` answering for it; not checked, and without an engine not begun |
 | no system at all | nothing yet | not begun |
 
 ## Its counts

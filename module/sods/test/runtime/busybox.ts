@@ -7,7 +7,7 @@ import {existsSync, readFileSync} from 'node:fs';
 import {Vfs} from '../../runtime/linux/fs.ts';
 import {Kernel} from '../../runtime/linux/process.ts';
 import type {Termios} from '../../runtime/linux/parts.ts';
-import {loadTranslator} from '../../runtime/translator.ts';
+import {loadTranslator} from '../../runtime/translation/translator.ts';
 
 const stage = new URL('../../../../target/userland/', import.meta.url);
 export const have = ['busybox', 'busybox.wasm', 'sods.wasm'].every((f) => existsSync(new URL(f, stage)));

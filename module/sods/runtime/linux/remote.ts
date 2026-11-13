@@ -17,7 +17,7 @@ import {CH, OP, Outbox, PARK, REPLY, rouse, sleep, watch, type Forget, type Run,
 import {CALL_SAMPLE, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSCALLS, Task, goesOn, trace, type Image, type Made, type Process, type Pumped} from './process.ts';
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import {began, canRunApart, mayWait, nodeThreads, steady} from '../host.ts';
-import type {Saved} from '../x87.ts';
+import type {Saved} from '../translation/x87.ts';
 import type {Call, Mem, Range} from './parts.ts';
 import type {FdTable} from './fd.ts';
 import {deliverable, take} from './signal.ts';
@@ -383,7 +383,7 @@ export class RemoteKernel extends Kernel {
         if (this.status !== null) break;
         const now = steady();
         // Served without a break for a while: the host gets its turn (input, Ctrl-C) before more.
-        // What the console gathered goes on its way when due (module/prompt/runtime/kernel.worker.ts), and before a wait that may be long, whole.
+        // What the console gathered goes on its way when due (whoever made the console), and before a wait that may be long, whole.
         this.console.flush?.(false);
         if (now - yielded > YIELD_MS) { await macrotask(); yielded = steady(); continue; }
         if (Atomics.load(this.door, 0) !== seen) continue;

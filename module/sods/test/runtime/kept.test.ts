@@ -3,8 +3,8 @@ import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {File, Vfs} from '../../runtime/linux/fs.ts';
 import {Kernel, PROFILE, type Image, type Keeper} from '../../runtime/linux/process.ts';
-import type {Taken} from '../../runtime/kept.ts';
-import {loadTranslator} from '../../runtime/translator.ts';
+import type {Taken} from '../../runtime/translation/kept.ts';
+import {loadTranslator} from '../../runtime/translation/translator.ts';
 import {have} from './busybox.ts';
 
 // What one run translated, kept for the next: the code a program reached later (Image.adopt), and a whole program's
@@ -104,7 +104,7 @@ test('kept: a root program translated once is taken from the keeper by the next 
 });
 
 test('kept: a root program translated ahead (ahead.ts, as the page does while a person reads) is run from that, never translated or read', {skip: !have}, async () => {
-  const {translatedAhead} = await import('../../runtime/ahead.ts');
+  const {translatedAhead} = await import('../../runtime/translation/ahead.ts');
   const elf = readFileSync(new URL('busybox', stage));
   // As its pack holds it, zstd's frame or as it is: here as it is.
   const {wasm, segments} = await translatedAhead(readFileSync(new URL('sods.wasm', stage)), new Uint8Array(elf), {raw: true, size: elf.length, shared: false});

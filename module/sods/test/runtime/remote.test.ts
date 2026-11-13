@@ -4,8 +4,8 @@ import {test} from 'node:test';
 import {Vfs} from '../../runtime/linux/fs.ts';
 import {RemoteKernel} from '../../runtime/linux/remote.ts';
 import {Outbox} from '../../runtime/linux/channel.ts';
-import {prepare} from '../../runtime/share.ts';
-import {loadTranslator} from '../../runtime/translator.ts';
+import {prepare} from '../../runtime/translation/share.ts';
+import {loadTranslator} from '../../runtime/translation/translator.ts';
 import {have} from './busybox.ts';
 
 // Each thread in a Worker of its own, memory shared: what a cross-origin

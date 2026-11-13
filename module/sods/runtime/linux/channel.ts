@@ -3,7 +3,7 @@
 // turn it is and what is asked; 64-bit words carry the call, its value and
 // the registers; the data area carries text and module bytes.
 
-import type {Saved} from '../x87.ts';
+import type {Saved} from '../translation/x87.ts';
 import type {Range} from './parts.ts';
 import {REG} from './process.ts';
 import {steady} from '../host.ts';

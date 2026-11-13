@@ -4,7 +4,7 @@ import {existsSync, mkdirSync, readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {Vfs} from '../../runtime/linux/fs.ts';
 import {Kernel, PROFILE} from '../../runtime/linux/process.ts';
-import {loadTranslator} from '../../runtime/translator.ts';
+import {loadTranslator} from '../../runtime/translation/translator.ts';
 
 // A program translated whole ahead of time (sods --whole) runs without translating anything more, though it keeps no
 // symbols and no relocations (as a distribution ships it, BusyBox among them): the cases its switches jump to through

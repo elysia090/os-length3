@@ -21,7 +21,7 @@
 
 import {CAPS, Exec, Exit, Redirect, Wait, randomBytes, utf8} from './flow.ts';
 import {zero} from './bulk.ts';
-import {namesIn, x87Of, type X87} from '../x87.ts';
+import {namesIn, x87Of, type X87} from '../translation/x87.ts';
 import {machine} from './machine.ts';
 import {mountProc} from './procfs.ts';
 import {Description, FdTable} from './fd.ts';
@@ -31,10 +31,10 @@ import {GuestBytes, GuestView} from './guest.ts';
 import {FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
-import {lay, prepare, type Segment} from '../share.ts';
+import {lay, prepare, type Segment} from '../translation/share.ts';
 import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
-import type {Taken} from '../kept.ts';
+import type {Taken} from '../translation/kept.ts';
 import type {Machine} from './machine.ts';
 import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
 import {said, steady} from '../host.ts';
@@ -297,7 +297,7 @@ function readLater(node: File, image: Image): () => Uint8Array {
   };
 }
 
-/** What a kernel asks of the translations kept from earlier runs (muk/runtime/keeper.ts gives one). */
+/** What a kernel asks of the translations kept from earlier runs (keeper.ts gives one). */
 export interface Keeper { has(origin: string): boolean; take(origin: string): Taken | null | undefined }
 
 /** What a kernel is made with: its filesystem, its translator, its console, translations kept (Keeper), the machine. */
@@ -359,7 +359,7 @@ export class Kernel implements Kern {
     // The x87 its threads run (x87.ts), made when the first is.
     this.x87Module = x87 ?? translate?.module ?? null;
     // A program due to be translated again as one module (consolidate): at once as it is run again, or, where the
-    // host has idle time to give (a Prompt waiting for its next line: module/prompt/runtime/kernel.worker.ts), only then (consolidateDue), so no
+    // host has idle time to give (a Prompt waiting for its next line), only then (consolidateDue), so no
     // run waits on it. Each due one: its node -> its entry.
     this.consolidateIdle = consolidateIdle;
     this.due = new Map();
@@ -2011,16 +2011,16 @@ export const kept = (image: Image, exact: boolean): Range[] => {
 export const goesOn = (image: Image, from: Task | null): boolean => !!from || !!image.segments;
 
 
-/** Where the time went (run.ts prints it with MUK_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
+/** Where the time went (run.ts prints it with SODS_TIMING=1): translating, compiling wasm, how much, and what a pack root fetched. */
 export const PROFILE = {images: 0, modules: 0, bytes: 0, translate: 0, compile: 0, fetches: 0, fetched: 0, kept: 0, consolidated: 0, memoriesReused: 0, imagesKept: 0, instancesKept: 0, zeroed: 0, renewed: 0, offered: 0};
 /** Modules of code reached later past which a program run again is translated again as one (Kernel.consolidate). */
 const CONSOLIDATE = 16;
 /** Memories let go of that are kept for the next process, and the largest kept (Kernel.letGo). */
 const SPARE_MEMORIES = 4, SPARE_MEMORY_BYTES = 256 << 20;
-/** MUK_SYSCALLS=1 lists every system call on stderr (node only). */
-export const TRACE_SYSCALLS = !!said('MUK_SYSCALLS');
-/** MUK_FAULTS=1 says what each fault that ends a process was (node only). */
-const TRACE_FAULTS = !!said('MUK_FAULTS');
+/** SODS_SYSCALLS=1 lists every system call on stderr (node only). */
+export const TRACE_SYSCALLS = !!said('SODS_SYSCALLS');
+/** SODS_FAULTS=1 says what each fault that ends a process was (node only). */
+const TRACE_FAULTS = !!said('SODS_FAULTS');
 /** SODS_BLOCKS=1 lists every block entered (node only; run.ts then translates with --trace). */
 const TRACE_BLOCKS = !!said('SODS_BLOCKS');
 /** Which argument of a call names a path (0: the first, 1: the second, after a directory). */

@@ -3,7 +3,7 @@ import {existsSync, readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {Vfs} from '../../runtime/linux/fs.ts';
 import {Kernel, PROFILE} from '../../runtime/linux/process.ts';
-import {loadTranslator} from '../../runtime/translator.ts';
+import {loadTranslator} from '../../runtime/translation/translator.ts';
 
 // tests/programs/reexec.c as run.sh builds it (stripped: its first translation cannot see what it calls through pointers),
 // here with the counts that say what happened to it: the code it reached later gathered into one module once it ran

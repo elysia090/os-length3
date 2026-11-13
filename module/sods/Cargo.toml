@@ -8,21 +8,13 @@ publish = false
 # A unit of its own, with its own lock: not a member of the workspace above it (the OS's, at the top).
 [workspace]
 
-[features]
-default = ["translator"]
-translator = ["dep:iced-x86", "dep:wasm-encoder", "dep:ruzstd"]
-
-[[bin]]
-name = "sods"
-path = "src/main.rs"
-required-features = ["translator"]
-
 [dependencies]
-iced-x86 = { optional = true, version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "gas"] }
-wasm-encoder = { version = "0.263", optional = true }
+iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "gas"] }
+wasm-encoder = "0.263"
 # Decodes the browser root's packs (zstd), where a system call must have the bytes at once.
-ruzstd = { optional = true, version = "0.9", default-features = false, features = ["std"] }
-# Checks what is read from those packs against their tables (runtime/table.ts), as at once.
+ruzstd = { version = "0.9", default-features = false, features = ["std"] }
+# Checks what is read from those packs against their tables (ricebox's layers/table.ts), as at once; and a
+# translation's identity (src/identity.rs).
 sha2 = { version = "0.11", default-features = false }
 
 [dev-dependencies]
@@ -37,34 +29,7 @@ codegen-units = 1
 [lib]
 crate-type = ["rlib", "cdylib"]
 
-[[example]]
-name = "ops"
-required-features = ["translator"]
-
-[[example]]
-name = "dump"
-required-features = ["translator"]
-
-[[example]]
-name = "eager"
-required-features = ["translator"]
-
-[[example]]
-name = "replay"
-required-features = ["translator"]
-
-[[example]]
-name = "scan_table"
-required-features = ["translator"]
-
-[[example]]
-name = "seeded"
-required-features = ["translator"]
-
-[[example]]
-name = "phases"
-required-features = ["translator"]
-
-[[example]]
-name = "func"
-required-features = ["translator"]
+# The cache's checks beside the unit's others (test/), not in a folder of cargo's own naming.
+[[test]]
+name = "cache"
+path = "test/cache.rs"

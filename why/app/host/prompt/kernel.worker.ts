@@ -1,5 +1,5 @@
-// A Prompt's kernel in a Worker: the box (ricebox) with the root mounted around it and the repo kept in step (muk),
-// running what the translator makes and what was kept of it (sods). The page (userland.ts promptWorker) posts
+// A Prompt's kernel in a Worker: the root (ricebox, its layers mounted) and the Linux that runs it (sods: the tree,
+// the kernel, what the translator makes and what was kept of it), the repo kept in step. The page (userland.ts promptWorker) posts
 //   {type: 'start', translator, files: [{path, bytes, mode}], dirs: [path],
 //    links: [{path, target}], argv, env, cwd}
 // (`translator` and a file's optional `module`, its translation made ahead
@@ -82,19 +82,12 @@
 // {type: 'reached', origin, from, more} as code is reached later; and what
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
-import {rangeNow} from '../../../../module/sods/runtime/host.ts';
-import {Vfs, mountTarget, provide, type File} from '../../../../module/sods/runtime/linux/fs.ts';
-import {Mirror} from '../../../../module/sods/runtime/linux/mirror.ts';
-import {mountPack, type Given, type Packed} from '../../../../module/muk/runtime/mount.ts';
-import {syncRange} from '../../../../module/muk/runtime/pack.ts';
-import {Kernel, type Image, type Pumped} from '../../../../module/sods/runtime/linux/process.ts';
-import {RemoteKernel, canRunApart, warmThreads} from '../../../../module/sods/runtime/linux/remote.ts';
-import {keeper, type Kept, type Reading} from '../../../../module/sods/runtime/linux/keeper.ts';
-import {taken, type Taken} from '../../../../module/sods/runtime/kept.ts';
-import {loadTranslator, type Translate} from '../../../../module/sods/runtime/translator.ts';
-import {said, type Said} from '../../../../module/sods/runtime/linux/waiting.ts';
-import type {Console} from '../../../../module/sods/runtime/linux/parts.ts';
-import type {Segment} from '../../../../module/sods/runtime/share.ts';
+import {canRunApart, rangeNow} from '../../../../module/sods/runtime/host.ts';
+import {Mirror, RemoteKernel, Vfs, keeper, linux, mountTarget, provide, said, warmThreads,
+  type Console, type File, type Image, type Kept, type Kernel, type Pumped, type Reading, type Said} from '../../../../module/sods/runtime/linux.ts';
+import {loadTranslator, type Segment, type Translate} from '../../../../module/sods/runtime/translate.ts';
+import {mountPack, type Given, type Packed} from '../../../../module/ricebox/layers/mount.ts';
+import {syncRange} from '../../../../module/ricebox/layers/pack.ts';
 
 /** A module of code a run reached later: its first table slot and bytes (Image.adopt). */
 interface Reached { module: WebAssembly.Module; bytes: Uint8Array; base: number }
@@ -143,7 +136,7 @@ let ended = false;
 /** The programs given with their translation: the image of each, and how much of its code reached later is said. */
 const kept: {path: string; image: Image; told: number}[] = [];
 /** Translations kept from earlier Prompts (keeper.ts), when the page has any. */
-let keep: Reading<Taken> | null = null;
+let keep: Reading | null = null;
 /** What is kept, by origin, as 'start' said it: a program translated ahead later ({type: 'kept', at}) is put here. */
 let keptAt: Kept['at'] | null = null;
 
@@ -176,12 +169,10 @@ const REHEARSAL_MS = 2000;
 /** `argv` run to its end over what is readied, in a kernel made for it alone (see 'ready'). */
 async function rehearse({translate, vfs, files}: Readied, {argv, env, cwd}: Rehearsal): Promise<void> {
   const quiet: Console = {interactive: false, write() {}, read: () => new Uint8Array(0), ready: () => true, pending: () => 0};
-  const runsApart = canRunApart() && files.every((f) => !f.module || f.shared);
-  const k = runsApart ? new RemoteKernel({vfs, translate, console: quiet, passOn: true}) : new Kernel({vfs, translate, console: quiet});
-  for (const f of files) if (f.module) k.prebuilt(vfs.file(f.path), f.module, f.segments ?? null);
+  const k = linux({vfs, translate, console: quiet, passOn: true, translated: files});
   const timer = setTimeout(() => k.halt(), REHEARSAL_MS);
   try {
-    if (runsApart) { await k.spawn(argv[0], argv, env, cwd); return; }
+    if (k instanceof RemoteKernel) { await k.spawn(argv[0], argv, env, cwd); return; }
     // In turn here, a turn at a time, the host's own work (messages) between.
     k.start(argv[0], argv, env, cwd);
     while (k.status === null) { k.pump(); await new Promise((go) => setTimeout(go, 0)); }
@@ -283,6 +274,11 @@ function pump(): void {
 /** The node of `f`, a program given with its translation, runs that translation from its next run on. */
 function runs(k: Kernel, node: File, f: Program, module: WebAssembly.Module): void {
   k.prebuilt(node, module, f.segments ?? null);
+  follow(k, node, f);
+}
+
+/** `f`, given with its translation and run from it (`node`), is followed: what it reaches later is said from where its `more` ends. */
+function follow(k: Kernel, node: File, f: Program): void {
   const image = k.images.get(node)!.image;
   kept.push({path: f.path, image, told: f.more?.length ? image.adopt(f.more) : 0});
 }
@@ -392,9 +388,6 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
     vfs.mkdirp(data.cwd);
     const files = [...early, ...later];
-    // Each thread in a Worker of its own, all at once, where memory can be shared and every ready translation was made
-    // for shared memory; otherwise they take turns here.
-    apart = canRunApart() && files.every((f) => !f.module || f.shared);
     const console: Console = {
       // Shown as a terminal's screen (the app's Prompt), it is a terminal: its output a terminal's, this many columns
       // wide, and what reads keys from it reads them as from one, a line at a time unless it asks for each key as it
@@ -415,11 +408,13 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       pending: () => pending.reduce((n, b) => n + b.length, 0),
     };
     // Translations kept from earlier Prompts: read when their program is first run, the kernel looking again once they are.
-    keep = data.kept ? keeper(data.kept, taken, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
+    keep = data.kept ? keeper(data.kept, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
     keptAt = data.kept?.at ?? null;
-    const k = kernel = apart ? new RemoteKernel({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r), consolidateIdle: true})
-      : new Kernel({vfs, translate, console, keeper: keep, consolidateIdle: true});
-    for (const f of files) if (f.module) runs(k, vfs.file(f.path), f, f.module);
+    // Each thread in a Worker of its own, all at once, where memory can be shared and every ready translation was made
+    // for shared memory; otherwise they take turns here (sods' linux.ts decides, by the host it is on).
+    const k = kernel = linux({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r), consolidateIdle: true, translated: files});
+    apart = k instanceof RemoteKernel;
+    for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);
     if (data.mirror) mirror = new Mirror(vfs, data.mirror);
     k.start(data.argv[0] ?? '', data.argv, data.env, data.cwd);
     self.postMessage({type: 'threads', apart});

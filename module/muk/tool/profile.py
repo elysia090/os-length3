@@ -1,4 +1,4 @@
-"""Native muk measurements. Safety/isolation are checked by test/bundle, separately from these timings."""
+"""Native muk measurements. Safety/isolation are checked by test/, separately from these timings."""
 import argparse
 import hashlib
 import json
@@ -193,7 +193,7 @@ def parser_trials(work):
         target = work / ("read-serial" if serial else "read-atomic")
         env = dict(os.environ)
         env["CFLAGS"] = env.get("CFLAGS", "") + " -UARENA_SERIAL" + (" -DARENA_SERIAL=1" if serial else "")
-        subprocess.run(["sh", str(MODULE.parent / "lib/build.sh"), str(MODULE / "test/bundle/read.c"), str(target)], env=env, check=True)
+        subprocess.run(["sh", str(MODULE.parent / "lib/build.sh"), str(MODULE / "test/read.c"), str(target)], env=env, check=True)
         binaries.append(target)
     emit("parser_environment", input_sha256=sha(path), variants={b.name: sha(b) for b in binaries})
     for sample in range(9):

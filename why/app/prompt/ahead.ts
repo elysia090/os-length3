@@ -1,6 +1,6 @@
 // The programs a person is likely to run next, translated before they run them, by this browser, while a Prompt waits
 // for its next line. A program of the root is translated when a Prompt first runs it: rg a second, lazygit three.
-// Translated here ahead, in a worker of its own (sods/runtime/ahead.ts), and kept as a Prompt keeps what it translates
+// Translated here ahead, in a worker of its own (sods' translate.ts aheadOf), and kept as a Prompt keeps what it translates
 // (userland.ts keepTranslation), the run that wants it reads it instead. Nothing more is downloaded than that run
 // would have downloaded, nothing is asked of a server, and it holds offline: the release is not made bigger by
 // translations made for every program, which every browser would have to fetch whether it ran them or not.
@@ -8,7 +8,7 @@
 // building C runs (gcc, cc1's 40 MB of code, the assembler, the linker) translated here took a browser's time and
 // memory at every Prompt on a repo with C, built in or not, and held Prompts starting after it for minutes.
 
-import {entriesOf} from '../../../module/muk/runtime/table.ts';
+import {entriesOf} from '../../../module/ricebox/layers/table.ts';
 import {keepTranslation, originOf, threadsApart, translationKept, type Index, type Webroot} from './userland.ts';
 
 /**

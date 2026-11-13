@@ -27,7 +27,7 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import type {Kernel} from '../module/sods/runtime/linux/process.ts';
+import type {Kernel} from '../module/sods/runtime/linux.ts';
 import {openWeb, type Index} from './webroot-tree.ts';
 
 /** What one program run under muk says: its wait status, its output, and how long it took. */
@@ -43,13 +43,13 @@ const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 
 
 
 /**
- * Translations kept in `dir` as a browser keeps them (sods/runtime/kept.ts: 'L3T1' and 'L3M1', each sealed with
+ * Translations kept in `dir` as a browser keeps them (sods' translate.ts: 'L3T1' and 'L3M1', each sealed with
  * its SHA-256), for a kernel's keeper: {kept, save(kernel)}, save writing what the kernel translated since.
  */
 async function keptIn(dir: string) {
   const {mkdirSync, readdirSync, renameSync, rmSync} = await import('node:fs');
   const {createHash} = await import('node:crypto');
-  const {packMain, packMore} = await import('../module/sods/runtime/kept.ts');
+  const {packMain, packMore} = await import('../module/sods/runtime/translate.ts');
   mkdirSync(dir, {recursive: true});
   const url = (name: string) => new URL(name, `file://${dir}/`).href;
   // keeper.ts reads through the Cache Storage API (its match alone): here, the files.
@@ -83,15 +83,9 @@ async function keptIn(dir: string) {
 
 /** One program under muk, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
 async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV}: Asked) {
-  const {Vfs, mountTarget, provide} = await import('../module/sods/runtime/linux/fs.ts');
-  const {mountPack} = await import('../module/muk/runtime/mount.ts');
-  const {Kernel} = await import('../module/sods/runtime/linux/process.ts');
-  // As a cross-origin isolated page runs it: each thread in a Worker of its own (MUK_INLINE=1: all in turn here).
-  const {RemoteKernel, canRunApart} = await import('../module/sods/runtime/linux/remote.ts');
-  const apart = canRunApart() && !process.env.MUK_INLINE;
-  const {loadTranslator} = await import('../module/sods/runtime/translator.ts');
-  const {keeper} = await import('../module/sods/runtime/linux/keeper.ts');
-  const {taken} = await import('../module/sods/runtime/kept.ts');
+  const {RemoteKernel, Vfs, keeper, linux, mountTarget, provide} = await import('../module/sods/runtime/linux.ts');
+  const {loadTranslator} = await import('../module/sods/runtime/translate.ts');
+  const {mountPack} = await import('../module/ricebox/layers/mount.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
   // --fresh: this checkout's translator, translating everything as it runs (what the next why will be).
@@ -113,7 +107,7 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   const dec = new TextDecoder();
   let kernel: Kernel | null = null;
   // The keeper wakes a kernel whose threads run apart; one that takes turns here looks again on its own (below).
-  const kept = store ? keeper(store.kept, taken, () => { if (kernel instanceof RemoteKernel) kernel.kick(); }) : null;
+  const kept = store ? keeper(store.kept, () => { if (kernel instanceof RemoteKernel) kernel.kick(); }) : null;
   const options = {vfs, translate, keeper: kept, console: {
     interactive: false,
     // A program that writes on and on is cut at a megabyte: what it said first is what is compared.
@@ -124,7 +118,8 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
     read: () => new Uint8Array(0),
     ready: () => true,
   }};
-  const k = kernel = apart ? new RemoteKernel(options) : new Kernel(options);
+  // As a cross-origin isolated page runs it: each thread in a Worker of its own (SODS_INLINE=1: all in turn here).
+  const k = kernel = linux(options);
   // As the kernel runs them (its memory shared, where threads run apart).
   for (const r of ready) { const {wasm, segments} = k.prepare(r.wasm); k.prebuilt(vfs.file(r.path), new WebAssembly.Module(wasm), segments); }
   const argv = [path.split('/').pop() ?? path, ...args];
@@ -413,7 +408,7 @@ async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, 
       if (verdict !== 'runs') {
         // The system calls muk has no answer for, by number, from a trace of a run again (a trace costs, so the run
         // timed has none).
-        const trace = (await under({MUK_SYSCALLS: '1'})).stderr;
+        const trace = (await under({SODS_SYSCALLS: '1'})).stderr;
         const missing = [...trace.matchAll(/syscall (\d+) \(none\)/g)].map((m) => Number(m[1]));
         const enosys = [...trace.matchAll(/\] syscall (\d+)[^\n]*\n\[\d+\]   = -38\n/g)].map((m) => Number(m[1]));
         const calls = [...new Set([...missing, ...enosys])].sort((a, b) => a - b);

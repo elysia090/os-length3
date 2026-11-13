@@ -1,11 +1,11 @@
 // why supplies the distribution, first programs, storage namespace, words and startup assembly.
-import {createRoot} from '../../../module/sods/runtime/web/root.ts';
+import {createRoot} from '../../../module/ricebox/layers/root.ts';
 import {FIRST} from './first.ts';
 import {errorText} from '../host/errors.ts';
 import {isNative} from '../host/host.ts';
 import {REMOTE_URL} from '../remote/connection.ts';
 import {t} from '../i18n/i18n.ts';
-export type {Segment, Blob, About, Index, Webroot, More, Stage} from '../../../module/sods/runtime/web/root.ts';
+export type {Segment, Blob, About, Index, Webroot, More, Stage} from '../../../module/ricebox/layers/root.ts';
 
 const root = createRoot({
   base: isNative ? `${REMOTE_URL}/webroot/` : '/webroot/',
@@ -18,7 +18,7 @@ export const {threadsApart, watchLoad, about, keptWebroot, keepMore, keptNow, or
 // The caller assembles startup. These workers bridge today's Linux-compatibility backend; prompt starts nothing.
 export const promptWorker = (): Worker => new Worker(new URL('../host/prompt/kernel.worker.ts', import.meta.url), {type: 'module'});
 let spare: {worker: Worker; given: Set<string>} | null = null;
-export function readyPrompt(webroot: import('../../../module/sods/runtime/web/root.ts').Webroot, rehearse: {argv: string[]; env: string[]; cwd: string}) {
+export function readyPrompt(webroot: import('../../../module/ricebox/layers/root.ts').Webroot, rehearse: {argv: string[]; env: string[]; cwd: string}) {
   if (spare) return;
   const worker = promptWorker(), files = filesNow(webroot);
   worker.postMessage({type: 'warm'});

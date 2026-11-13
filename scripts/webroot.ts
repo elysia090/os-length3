@@ -16,7 +16,7 @@
 //                         digest; everything it names is.
 //   index-<sha256>.json   every path of the root ({codec: 'zstd', packs, dirs,
 //                         links, files: [{path, mode, size, pack, at, len, raw?}]},
-//                         as muk/runtime/mount.ts mounts it), the translator and
+//                         as module/ricebox/layers/mount.ts mounts it), the translator and
 //                         the translations made ahead of time ({path, sha256 of the
 //                         program, elf, wasm}, each a blob: {path, sha256, size,
 //                         bytes}); its digest is what a
@@ -26,7 +26,7 @@
 //                         its table (the SHA-256 of each file it stores), then its
 //                         files' bytes, each a zstd frame (level 19; as it is when
 //                         that is no smaller); named by its table's digest, so a
-//                         file read alone from it is checked (muk/runtime/table.ts),
+//                         file read alone from it is checked (module/ricebox/layers/table.ts),
 //                         and a release that changes a few packages leaves every
 //                         other pack's name, and what a browser has of it
 //   blobs/<sha256>.bin    the translator (sods.wasm) and each translation made
@@ -48,7 +48,7 @@ import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
-import {packOf} from '../module/muk/runtime/table.ts';
+import {packOf} from '../module/ricebox/layers/table.ts';
 import {readTarball, sha256, type Index} from './webroot-tree.ts';
 
 const here = fileURLToPath(new URL('..', import.meta.url));

@@ -1,15 +1,36 @@
 # muk — the machine
 
-A small x86-64 Linux container runner in C, with no C library or dynamic runtime dependencies. It constructs an OCI bundle's box, applies isolation and starts and supervises its program. `src/muk.c` applies Linux operations; private `bundle.h` validates the configuration and mandatory safety floor; `filter.h` builds the syscall filter. `../lib` supplies compile-time headers only.
+A small x86-64 Linux container runner in C, with no C library or dynamic runtime dependencies: one program, made of
+`../lib`'s headers and nothing else. It makes an OCI bundle's box, isolates it, starts its program and waits for
+it. That is all of it: it reads no image, keeps no box, holds no terminal's other end, and has no code for any
+host but Linux.
 
-`runtime/` reads content-addressed image packs through caller-supplied byte and mount ports. Linux API compatibility and translated execution belong to `../sods/runtime/linux`, including the work necessary to run this same C runner on the Web. That host-level integration is still in progress; the current Web adapter starts guest programs directly. This is a `run` bundle profile, not the complete OCI lifecycle CLI.
+```
+src/muk.c        the Linux operations, in the order they are safe in
+src/bundle.h     config.json read where it lies, and the floor every box has whatever it asks
+src/filter.h     the filter over every call a box makes
+src/linux-abi.h  the numbers of the x86-64 Linux ABI it uses
+make/slots.ts    the tables bundle.h finds names by, made again when a name is added
+test/            beside runc, against a hostile config.json, and beside a model of the parser
+tool/            measurement (profile.sh), apart from the checks
+```
 
 ```
 muk run [-b BUNDLE] [--console-socket PATH] [--lend PATH]... [--ids FIRST-LAST] [--cgroup DIR] [ID]
-                              the bundle's process, started and waited for; muk ends as it ends
-sh test/bundle/muk.sh         the same bundles under muk and under runc: what each box says of itself, the same
-sh test/bundle/hostile.sh     a config.json written against muk, every way it has: refused, or a box without it
+                       the bundle's process, started and waited for; muk ends as it ends
+sh test/muk.sh         the same bundles under muk and under runc: what each box says of itself, the same
+sh test/hostile.sh     a config.json written against muk, every way it has: refused, or a box without it
+sh test/same.sh        the C parser and a model of it (test/asks.ts), asked the same 8,748 config.jsons
 ```
+
+**What it is compatible with, and how that is held.** One contract: the OCI runtime bundle (`config.json` and a
+root), read as runc reads it and run as runc runs it, the `run` profile of it (not the whole lifecycle CLI).
+`test/muk.sh` runs the same bundles under both and compares what each box says of itself, line for line. Where muk
+is stricter than runc it refuses in words rather than differing quietly (the floor, below). It has no second
+contract: an image's layers are the distribution's to read ([`../ricebox/layers`](../ricebox/layers)), and where
+there is no Linux under it (a browser, another system) the Linux it asks for is sods'
+([`../sods`](../sods/README.md)), so this same C is what runs there. That last step is not made yet: sods' Linux
+answers what a program asks, and refuses in words what a box's maker asks (namespaces, mounts, a filter).
 
 **Where muk ends.** A run is a box's whole life here: muk names no box, keeps none beyond its run, lists none, and
 writes nothing about one. A terminal is a device of the box, so muk makes it where only it can (in the box's own
@@ -100,14 +121,14 @@ Where it reads config.json as runc does: null is a member not there, a member gi
 on a link lands on what the link leads to (in the box), where it runs is made when nothing is there. Where it does
 not: a mount's destination through a link that leads nowhere is refused (runc makes what it leads to).
 
-`test/bundle/muk.sh` is the check beside runc: 140 as root, 81 as another user. The same bundles under runc where
+`test/muk.sh` is the check beside runc: 153 as root, 91 as another user. The same bundles under runc where
 it runs them (what each box says of itself the same, line for line, the floor said to runc in its config.json,
 and what runc is given by being run, lent); what is refused; every cut of a config.json and bytes changed in it
 (never a signal, never a wait); 24 runs at once on one root; muk killed; a signal passed on; its three
 descriptors closed; every name of its tables; every call the filter names, asked from inside a box; a terminal,
 its other end taken at a socket, beside runc's.
 
-`test/bundle/hostile.sh` is the check against a config.json that means harm: 255 as root, 63 as another user,
+`test/hostile.sh` is the check against a config.json that means harm: 255 as root, 63 as another user,
 each with nothing lent but what the case says. The root or a bind's source anywhere on the host, through a link,
 up by `..`, beside what was lent; the host's devices by their paths, a device planted in a directory that was
 lent, one an image holds; twenty kinds of file system that are no box's; a proc or a sysfs somewhere the floor
@@ -121,7 +142,10 @@ itself that it has not got it.
 
 ## Validation and measurement
 
-`sh test/bundle/muk.sh` compares native bundle behavior with runc when available; `hostile.sh` checks isolation refusals. `same.sh` compares the C configuration parser with a test-only model, including truncated and malformed input. The TypeScript model is not a second production parser.
+`sh test/muk.sh` compares native bundle behavior with runc when available; `hostile.sh` checks isolation refusals.
+`same.sh` compares the C configuration parser with a test-only model (`test/asks.ts`), including truncated and
+malformed input; `node --test test/*.test.ts` asks the model alone. The TypeScript model is not a second
+production parser.
 
 ```
 sh tool/profile.sh --lifecycle --memory --trials 9 --boxes 8
@@ -129,8 +153,8 @@ sh tool/profile.sh --parser
 sh tool/profile.sh ./candidate --baseline ./baseline --lifecycle
 ```
 
-The profiler emits raw JSON lines with source and artifact hashes, affinity and toolchain information. Startup is first observed guest output, shutdown is stdin EOF to supervisor and known guest exit. PSS separates supervisor and guest processes. An optional pre-existing exclusive cgroup supplies kernel memory; global memory fluctuations are not attributed to boxes. Counts are bounded and cleanup signals only owned process groups and pidfds. Timing is separate from security validation.
-
-## Web compatibility
-
-`sods/runtime/linux` owns the Linux ABI, process scheduling, signals, files and translated execution. Its guest-only refusals remain explicit while host operations needed by this same C muk are implemented. muk's image reader (`runtime/pack.ts`, `table.ts`, `mount.ts`) uses caller-supplied transport and mount ports; it imports no sods implementation. Product assembly lives in `why/app/host/prompt`.
+The profiler emits raw JSON lines with source and artifact hashes, affinity and toolchain information. Startup is
+first observed guest output, shutdown is stdin EOF to supervisor and known guest exit. PSS separates supervisor and
+guest processes. An optional pre-existing exclusive cgroup supplies kernel memory; global memory fluctuations are
+not attributed to boxes. Counts are bounded and cleanup signals only owned process groups and pidfds. Timing is
+separate from security validation.

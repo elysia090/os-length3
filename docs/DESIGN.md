@@ -1317,7 +1317,7 @@ the same thing for the desktop app and for the web.
   for the translator and the hot programs (BusyBox, why and git) with their
   translations. Everything but `webroot.json` is named by its digest; a pack by
   the digest of its table, the SHA-256 of each file it stores, at its head
-  (`module/muk/runtime/table.ts`), so a file read alone from it is checked as
+  (`module/ricebox/layers/table.ts`), so a file read alone from it is checked as
   the whole pack would be, and one that is not what its table says is not
   used (its read fails with EIO, and says why). A Prompt fetches the index,
   the translator and BusyBox with its translation; every other file comes

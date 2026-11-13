@@ -4,11 +4,35 @@ What the repository is to be, how far it is from that today, and the order it is
 
 ## Current responsibility boundary
 
-muk constructs, isolates, starts and supervises boxes; sods owns translation, Linux API compatibility and host differences; prompt attaches to a supplied terminal. The caller assembles them and decides box lifetime. The Web Linux layer is necessary compatibility work, not a second muk. Image pack reads and mounts cross caller-supplied structural ports; the module dependency checks allow no muk↔sods implementation exceptions.
+Three units, each one thing, and what each publishes is all another may take (`scripts/units.ts` checks every
+import in the repository, tests and scripts too).
 
-`module/lib` is shared compile-time C support. `module/sods/lib` is private support for its translated runtime. `module/cowboy/cache` is a Rust cache with sods as its only crate dependency. Alternative platform backends are exclusive choices; a translator, its ABI adapter and private helpers are complementary parts of one backend.
+| | It is | It publishes | It takes |
+| --- | --- | --- | --- |
+| **muk** | an OCI bundle's box made, isolated, started and waited for: one C program, for Linux and nothing else | `muk run`; nothing is imported from it | lib |
+| **prompt** | a terminal attached to a descriptor it is given: one Rust program that starts no process | `prompt attach FD`; nothing is imported from it | nothing |
+| **sods** | a program run where its machine, its kernel or its system is absent: translation and what a translation is kept by, the Linux a program asks for, every difference between hosts | `sods`, its translator as a module, and four files: `runtime/translate.ts`, `runtime/linux.ts`, `runtime/host.ts`, `runtime/targets.ts` | lib |
 
-This branch establishes those boundaries. Running the C muk through the Web host ABI, replacing the existing native product launcher, and connecting the Rust cache to Web storage remain subsequent integration steps. The older roadmap below describes historical targets and is not a completion claim.
+muk is thin because it has one contract, the OCI runtime bundle read as runc reads it (`module/muk/test/muk.sh`
+compares the two), and no second one: it reads no image and has no code for a host that is not Linux. What differs
+by where a program runs is sods', all of it and nowhere else
+([#191](https://github.com/elysia090/os-length3/issues/191)): `module/sods/runtime/targets.ts` is the table of every
+input instruction set, machine and host, each verified, unverified, unimplemented or excluded with its reason. So
+where there is no Linux, the same C muk is to run over the Linux sods answers; that step is not made yet (sods
+refuses in words what a box's maker asks: namespaces, mounts, a filter), and until it is, a browser starts a box's
+programs directly on sods' Linux.
+
+An image's layers are the distribution's: their form, what writes them and what reads them are ricebox's
+(`module/ricebox/layers`), mounted into a tree sods lends through a port neither side names the other by. What makes
+a translation reusable (the program, the translator, the ABI, the options) is one key in sods
+(`src/identity.rs`), and translations are kept under it by sods (`src/cache.rs`; in a browser, `madeBy`); which
+programs are translated ahead and shipped is ricebox's, in its layers. The caller (a product) assembles: it starts
+muk, hands prompt the terminal, and decides how long a box lives.
+
+`module/lib` is shared compile-time C support. `module/sods/lib` is private support for sods' runtime. Alternative
+platform backends are exclusive choices; a translator, its ABI adapter and private helpers are complementary parts
+of one backend. Replacing the existing native product launcher with `muk run` and `prompt attach` remains a
+subsequent step. The older roadmap below describes historical targets and is not a completion claim.
 
 ## The rule
 
@@ -24,23 +48,23 @@ word of a service, is in ricebox, muk, sods or lib.
 
 | | On a release as | What it is | Stands on |
 | --- | --- | --- | --- |
-| **muk** | `muk` | the machine: an OCI-compatible VMM. A box run from an image's layers, named by their digest: on Linux by its namespaces, in a browser by answering its system calls itself. No KVM, no Firecracker | lib |
-| **sods** | `sods` | instructions, and where they run: a program built once (x86-64, for Linux) made to run where there is no such machine and no such kernel, at the speed of the machine it lands on. It is what takes the dull boundaries away (bare metal, one host's system against another's, what a browser allows), so that code under it is the same code everywhere. Today: x86-64 made wasm ahead of the run | — |
-| **ricebox** | `ricebox`, the root, and the same as layers any static host serves | the neutral distribution, as BusyBox is one and as thin: each package from its pinned source by its recipe, and the command line [#80](https://github.com/elysia090/os-length3/issues/80) lists. No window, ordinary POSIX. It knows no service: someone else puts it under theirs | muk, sods, lib |
+| **muk** | `muk` | the machine: an OCI-compatible VMM. An OCI bundle's box made, isolated, started and waited for, by Linux's namespaces; where there is no Linux, the same program over the Linux sods answers. No image, no KVM, no Firecracker | lib |
+| **sods** | `sods` | instructions, and where they run: a program built once (x86-64, for Linux) made to run where there is no such machine and no such kernel, at the speed of the machine it lands on. It is what takes the dull boundaries away (bare metal, one host's system against another's, what a browser allows, one instruction set against another), so that code over it is the same code everywhere. Today: x86-64 made wasm ahead of the run, and the Linux it asks for answered in a page, a Worker and node | lib |
+| **ricebox** | `ricebox`, the root, and the same as layers any static host serves | the neutral distribution, as BusyBox is one and as thin: each package from its pinned source by its recipe, the command line [#80](https://github.com/elysia090/os-length3/issues/80) lists, and its layers (their form, what writes and what reads them). No window, ordinary POSIX. It knows no service: someone else puts it under theirs | muk, sods, lib |
 | **why** | the app (web, desktop), `why` | the product, as Alpine stands on BusyBox: ricebox run by muk, the faces and the modules a product has. What a service wants is shipto's, and nowhere else | ricebox, muk, sods |
 
-muk and sods do not depend on each other's implementation. Their caller supplies translation; the executable
-format and execution ABI are what they agree on. Today the browser still crosses that boundary for host access,
-x87 and kept translations. Those imports are recorded as debt in `scripts/units.ts`, not allowed architecture.
+muk and sods do not depend on each other's implementation: what they agree on is Linux itself (the executable
+format, the system calls), and no file of one imports a file of the other. ricebox takes sods through sods' four
+files and muk as a program; nothing under ricebox takes from anything over it.
 
 ## Read from the top
 
 ```
-muk        module/muk        the machine: src/ (C: a box on Linux; the tree), runtime/ (a box in a browser), test/
-             module/prompt   a box someone works in, thin over muk and with nothing of a product in it: src/ (C: the
-                             terminal's other end), test/; what of a box is kept is still to come
-sods       module/sods       the translator (Rust), and what loads it in a page
-ricebox    module/ricebox    the distribution, 0.6.4 (RELEASE): pins/, packages/, etc/, usr/, make/
+muk        module/muk        the machine: src/ (C: a box on Linux), make/, test/, tool/
+             module/prompt   a terminal attached, with nothing of a product in it: src/ (Rust), test/
+sods       module/sods       src/ (Rust: the translator, a translation's identity, the cache), runtime/ (its four
+                             files; translation/, linux/), lib/ (C, private), test/
+ricebox    module/ricebox    the distribution, 0.6.4 (RELEASE): pins/, packages/, etc/, usr/, make/, layers/
              module/you      its command line's own programs, each one file of C: z, rg, fd, fzf
              module/otter    help, and what each thing is
              module/everyday the look and feel, changed by the one who uses it: what a face is drawn through
@@ -52,8 +76,9 @@ beside     scripts/ tests/ docs/    what makes and checks the rest
 ```
 
 What is not each one's: muk holds no package and no rule of a service, and nothing why puts in a box (a repo,
-dotfiles); it keeps no box beyond a run and no end of a terminal, which are prompt's (module/prompt/README.md: a
-run and one descriptor are all that cross). sods does not read a layer (unzstd, SHA-256: muk's). ricebox runs nothing: it is what is run. why's
+dotfiles); it reads no image, keeps no box beyond a run and holds no end of a terminal (prompt's:
+module/prompt/README.md, one descriptor is all that crosses). sods reads no layer and knows no image's form: it
+lends a tree, a digest and a decoder to whoever does (ricebox). ricebox runs nothing: it is what is run. why's
 faces hold no judgement of their own; its core runs no box (muk's) and is no service (shipto's).
 
 ## Names and models one too many
@@ -63,13 +88,13 @@ inside out, so that nothing of a product is left further in than the product.
 
 | The model | Where | What it is | It becomes |
 | --- | --- | --- | --- |
-| the kernel | was `module/ricebox/kernel` | the machine in a browser | muk's `runtime/` and `src/tree.h`: done |
+| the kernel | was `module/ricebox/kernel`, then muk's `runtime/` | the Linux a program asks for where there is none | sods' `runtime/linux/` and `lib/tree.h`: done |
 | the root | was `root/` | the distribution | ricebox, its folder: done |
 | src, the OS | was `src/` | the product | `why/`: done |
 | xlat | was sods' crate, its program and its wasm, `XLAT_*`, the jobs' names; 338 mentions | sods, and where it meant what runs a box, muk | `sods`, `SODS_*`; `MUK_*`: done |
 | length3, Length³ OS, os-length3, OS Length3 Linux, l3 | the crates (`length3-core`, `length3-os`), `LENGTH3_*`, `/etc/length3` and the hostname in ricebox, the releases' names; 1,111 mentions | why where it is the product; ricebox where it is the root; nothing where it is muk's | `why-*`, `WHY_*`; `/etc/ricebox`; `ricebox-0.6.4-…`, `why-0.0.1-…` |
 | the core | `why/core`, 15,687 lines, fourteen parts that take from each other in rings | what why says of a repo, its history, Home, a device; with a box run (muk's) and the Remote's client (shipto's) in it | a folder of why to each part; `prompt` the bundle why writes for muk; `compute` gone |
-| the web root | `scripts/webroot*.ts`, `public/webroot`, `…-l3-web.tar`; 260 mentions | ricebox as layers | ricebox's layers, made by ricebox, read by muk |
+| the web root | `scripts/webroot*.ts`, `public/webroot`, `…-l3-web.tar`; 260 mentions | ricebox as layers | ricebox's layers: read by `module/ricebox/layers` (done), made by it (the scripts still to come) |
 | the Remote, remote, shipto | `why/remote`, the core's `remote`, the command's `remote`, `sync`, `git` | what a service wants | `why/shipto`, one folder |
 | scripts | `scripts/`, 4,798 lines of every unit's making and checking | each unit's own | in the unit it makes; what checks the whole stays |
 | tests | `tests/` | why's, driven as a person drives it | `why/test` |
@@ -81,8 +106,8 @@ inside out, so that nothing of a product is left further in than the product.
 - **A release is one lump**, named for neither thing it holds: 0.6.4 holds the root, the root as layers, the web
   app and the desktop app as `os-length3-linux-0.6.4-…`. It is to be two: ricebox 0.6.4 (the root, its layers) and
   why 0.0.1 (the app, the command), with `muk` and `sods` beside them.
-- **muk in a browser is 8,900 lines of TypeScript**: not thin. And what serves it in a page is the app's
-  (`why/app/prompt`, 2,051 lines, with the app's words, its host and the Remote's address in it).
+- **The Linux a browser answers is 9,500 lines of TypeScript** (`module/sods/runtime/linux`): not thin, and far
+  from its bound. It is sods' now, and nothing of muk's; the same C muk does not run over it yet.
 - **muk on Linux is still why's core's.** A box is run by `why/core/src/prompt` (1,344 lines of Rust over
   rustix), with Home's dotfiles and the repo written into it; `why/core/src/compute` (616 lines) drives
   Firecracker, which muk rules out. `muk run` has the floor every box has, held against a config.json that means
@@ -92,7 +117,8 @@ inside out, so that nothing of a product is left further in than the product.
   config.jsons; it makes the box's terminal and gives its other end away. It does not yet make a filter of
   config.json's own, or set a cgroup's limits itself (they are the lender's, on the cgroup lent). A box kept beyond a run, and everything a terminal is to the one at it, are
   not muk's to make: they are prompt's, which today is the rest of `why/core/src/prompt` and `why/app/prompt`.
-- **sods holds what is muk's**: unzstd and SHA-256 in `web.rs`, with their two crates.
+- **What makes ricebox's layers is not in ricebox**: `scripts/webroot*.ts` write the packs `module/ricebox/layers`
+  reads.
 - **shipto is in five places**: `why/remote` (8,403 lines), `why/core/src/remote` (2,479), and three of the
   command's files (1,095).
 
@@ -103,7 +129,7 @@ own for the same work.
 
 | Unit | Its work | Today | Bound | Over |
 | --- | --- | --- | --- | --- |
-| muk, in a browser | a call, across Workers (getppid) | 1.90 µs | 0.08 µs (Linux) | 24× |
+| sods' Linux, in a browser | a call, across Workers (getppid) | 1.90 µs | 0.08 µs (Linux) | 24× |
 | | write 4 KiB / pread 4 KiB | 2.49 / 2.35 µs | 0.08 / 0.17 µs | 31× / 14× |
 | | open+close / stat | 5.74 / 3.03 µs | 0.47 / 0.25 µs | 12× / 12× |
 | | the same in turn (one thread) | 0.23 to 1.53 µs | | 2.5× to 6× |
@@ -126,10 +152,10 @@ Names first, from the inside out, since a wrong name is paid at every reading; t
 
 1. **The names**, as the table above: length3 in ricebox, then everywhere; the core's parts as why's
    folders; the web root; shipto; each unit's scripts and tests in it.
-2. **muk in a browser.** The largest, the least thin, and paid on every call. It is one thread's objects behind a
+2. **sods' Linux, in a browser.** The largest, the least thin, and paid on every call. It is one thread's objects behind a
    channel: a call from another Worker is a round trip (1.9 µs), each makes an array and an object and carries its
    arguments as BigInts. To be: its state laid out in one shared memory, each call answered on the thread that makes
-   it. First cut: the tree (`src/tree.h`, written, and what Linux says of every name of a whole root; the calls do
+   it. First cut: the tree (`lib/tree.h`, written, and what Linux says of every name of a whole root; the calls do
    not walk it yet), then descriptors and pipes, then processes.
 3. **sods.** Its files are each one thing now (`module/sods/README.md`), and a walk scans an instruction off its
    own tables, once, however often its function is walked. The foreign decoder is still run once an instruction,
@@ -138,8 +164,12 @@ Names first, from the inside out, since a wrong name is paid at every reading; t
    is, its operands what the lowering asks; then the calls it makes (a call is 8.5× native).
 4. **muk on Linux takes the box from why's core.** The seccomp filter and the terminal in `muk run`; then a
    Prompt is the bundle why writes, and the Firecracker driver goes.
-5. **A release per thing**: `muk`, `sods`, ricebox 0.6.4, why 0.0.1. Until ricebox is released from this tree, the
-   root a web build takes is the one pinned (0.6.4), whose translator is the one before these names.
+5. **A release per thing**: `muk`, `sods`, ricebox, why 0.0.1. A release of ricebox (its first under its own
+   name, 0.0.1, or the next of the line it is on) holds the root and its layers, and stands on `muk` and `sods`
+   beside it at the boundaries they publish: nothing of why is in it or needed by it. What is left before it: the
+   scripts that write the layers move into `module/ricebox/make`, and `/etc/length3` and the release's names lose
+   the old name. Until ricebox is released from this tree, the root a web build takes is the one pinned (0.6.4),
+   whose translator is the one before these names.
 
 ## How a part is made
 

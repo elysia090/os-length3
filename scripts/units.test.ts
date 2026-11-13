@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {OWED, UNDER_RICEBOX, UNITS, check, unitOf} from './units.ts';
+import {OWED, UNDER_RICEBOX, UNITS, check, reaches, unitOf} from './units.ts';
 
 test('every file of code is one unit\'s, or a test, a script or something made (scripts/units.ts)', () => {
   assert.deepEqual(check().homeless, []);
@@ -19,7 +19,7 @@ test('muk and prompt: a terminal and what is kept are prompt\'s, and muk takes n
   assert.equal(unitOf('module/prompt/README.md')?.name, 'prompt');
   // (the box itself and its filter are muk's, to be replaced by muk run)
   assert.equal(unitOf('why/core/src/prompt/seccomp.rs')?.name, 'muk');
-  assert.deepEqual(unit('prompt').takes, ['lib']);
+  assert.deepEqual(unit('prompt').takes, []);
   assert.ok(!unit('muk').takes.includes('prompt'));
   // (nothing under ricebox takes it: it is cut out without a Prompt)
   for (const name of UNDER_RICEBOX) assert.ok(!unit(name).takes.includes('prompt'), name);
@@ -40,13 +40,24 @@ test('muk and sods have no implementation dependencies or waived crossings', () 
     (from === 'muk' && to === 'sods') || (from === 'sods' && to === 'muk')), []);
 });
 
+test('muk, prompt and sods are taken from through their entries alone: muk and prompt are programs, sods is three files and its table', () => {
+  const unit = (name: string) => UNITS.find((u) => u.name === name)!;
+  assert.deepEqual(reaches(), []);
+  assert.deepEqual(unit('muk').entries, []);
+  assert.deepEqual(unit('prompt').entries, []);
+  assert.deepEqual(unit('sods').entries, ['translate', 'linux', 'host', 'targets'].map((name) => `module/sods/runtime/${name}.ts`));
+  // (what reads an image's layers is the distribution's, not the machine's: muk holds no TypeScript that runs)
+  assert.equal(unitOf('module/ricebox/layers/mount.ts')?.name, 'ricebox');
+  assert.equal(unitOf('module/sods/src/cache.rs')?.name, 'sods');
+});
+
 test('the table is one: each name once, each path held by one unit, each unit taken from is in it', () => {
   const names = UNITS.map((u) => u.name), paths = UNITS.flatMap((u) => u.holds);
   assert.equal(new Set(names).size, names.length);
   assert.equal(new Set(paths).size, paths.length);
   for (const u of UNITS) for (const t of u.takes) assert.ok(t === '*' || names.includes(t), `${u.name} takes ${t}`);
   // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (why/core).
-  assert.equal(unitOf('module/sods/runtime/translator.ts')?.name, 'sods');
+  assert.equal(unitOf('module/sods/runtime/translation/translator.ts')?.name, 'sods');
   assert.equal(unitOf('module/sods/runtime/linux/process.ts')?.name, 'sods');
   assert.equal(unitOf('module/ricebox/make/db.ts')?.name, 'ricebox');
   assert.equal(unitOf('why/core/src/prompt/launch.rs')?.name, 'muk');

@@ -4,7 +4,6 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
-# The translator is sods' (its crate beside this unit); the kernel that runs what it makes is this one's.
 sods=$root
 out="$here/out"
 mkdir -p "$out"
@@ -31,7 +30,7 @@ for c in "$here"/*.c; do
   else
     "$out/$name" a b > "$out/$name.native"; native=$?
   fi
-  node "$root/runtime/linux/run.ts" "$out/$name" a b > "$out/$name.box"; translated=$?
+  node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.box"; translated=$?
   set -e
   if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.box"; then
     echo "ok   $name"
@@ -44,7 +43,7 @@ done
 # (strings and flagged: the direction flag and the flags a count of 0 leaves are the thread's across a run's edge too.)
 for name in calls switches signals threads jobs strings flagged; do
   set +e
-  SODS_RUN=3 node "$root/runtime/linux/run.ts" "$out/$name" a b > "$out/$name.cut"; cut=$?
+  SODS_RUN=3 node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.cut"; cut=$?
   "$out/$name" a b > "$out/$name.native"; native=$?
   set -e
   if [ "$native" = "$cut" ] && cmp -s "$out/$name.native" "$out/$name.cut"; then
@@ -61,7 +60,7 @@ if rustup target list --installed 2>/dev/null | grep -q x86_64-unknown-linux-mus
       -C relocation-model=static -C link-arg=-no-pie -C link-arg=-Wl,--emit-relocs "$r" -o "$out/$name"
     set +e
     "$out/$name" a b > "$out/$name.native"; native=$?
-    node "$root/runtime/linux/run.ts" "$out/$name" a b > "$out/$name.box"; translated=$?
+    node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.box"; translated=$?
     set -e
     if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.box"; then
       echo "ok   $name"
@@ -80,15 +79,15 @@ if command -v go >/dev/null; then
     (cd "$dir" && CC=musl-gcc CGO_ENABLED=1 go build -ldflags '-linkmode=external -extldflags "-static -Wl,--emit-relocs"' -o "$out/$name" .)
     set +e
     "$out/$name" a b > "$out/$name.native"; native=$?
-    node "$root/runtime/linux/run.ts" "$out/$name" a b > "$out/$name.box"; translated=$?
+    node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.box"; translated=$?
     set -e
     if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.box"; then echo "ok   $name"; else echo "FAIL $name (exit $native vs $translated)"; status=1; fi
   done
 fi
-# The tree (src/tree.h), every name of a directory asked of it and of Linux.
+# The tree (lib/tree.h), every name of a directory asked of it and of Linux.
 if sh "$root/test/tree/tree.sh" > /dev/null 2>&1; then echo "ok   tree"; else echo "FAIL tree"; status=1; fi
 # The kernel's tests.
-for t in "$root"/test/runtime/*.test.ts "$root/../muk"/test/runtime/*.test.ts; do
+for t in "$root"/test/runtime/*.test.ts; do
   if node --test "$t" >/dev/null 2>&1; then echo "ok   $(basename "$t")"; else echo "FAIL $(basename "$t")"; status=1; fi
 done
 exit $status

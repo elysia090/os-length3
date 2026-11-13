@@ -3,7 +3,7 @@ import {existsSync, readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {E, FsError} from '../../runtime/linux/fs.ts';
 import {Kernel} from '../../runtime/linux/process.ts';
-import {NotAProgram, loadTranslator} from '../../runtime/translator.ts';
+import {NotAProgram, loadTranslator} from '../../runtime/translation/translator.ts';
 import {have, shell} from './busybox.ts';
 
 // A file that is run and is no program the translator takes: the exec's own failure (ENOEXEC, as Linux says of a

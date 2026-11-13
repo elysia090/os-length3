@@ -1,33 +1,27 @@
-// Copies kept from earlier runs, read where the kernel runs (module/prompt/runtime/kernel.worker.ts). The page keeps them
-// (why/app/prompt/userland.ts, within its share of the browser's room) where the host keeps such things (sods'
-// host.ts `kept`: a browser's Cache Storage), each program's under the
-// origin of its file in the root (pack.ts: its pack, named by its digest, and its place in it), and says at the start
-// which there are: kept = {cache, at: {[origin]: {main, more}}}, the URL of a program's translation and that of the
-// code it reached later (or null). A program run for the first time in this kernel is then read from there, not
-// translated again, and the exec that wants it waits only for that read. Each copy ends with the SHA-256 of what
-// comes before it, checked as it is read: one that is not what was kept is not used.
-//
-// What a copy holds is not the keeper's: `open(main, more)` makes of the bodies what the kernel takes
-// (sods/runtime/kept.ts taken), or null when they are not that.
+// Copies kept from earlier runs, read where the kernel runs. Whoever keeps them (a page: ricebox's layers/root.ts,
+// within its share of the browser's room) keeps them where the host keeps such things (host.ts `kept`: a browser's
+// Cache Storage), each program's under the origin of its file in the root (its pack, named by its digest, and its
+// place in it), and says at the start which there are: kept = {cache, at: {[origin]: {main, more}}}, the URL of a
+// program's translation and that of the code it reached later (or null). A program run for the first time in this
+// kernel is then read from there, not translated again, and the exec that wants it waits only for that read. Each
+// copy ends with the SHA-256 of what comes before it, checked as it is read: one that is not what was kept is not
+// used. What a copy holds is ../translation/kept.ts's (`taken`).
 
 import {kept, sha256} from '../host.ts';
+import {taken, type Taken} from '../translation/kept.ts';
 
 /** What is kept, by the origin of each program's file: the cache, and the URLs of its translation and later code. */
 export interface Kept { cache: string; at: Record<string, {main: string; more: string | null}> }
-/** What a kernel asks of a keeper: whether something is kept for an origin, and to take it. */
-export interface Keeper<T> { has(origin: string): boolean; take(origin: string): T | null | undefined }
-/** A keeper reading from Cache Storage: also how many reads are under way (what waits, waits for them). */
-export interface Reading<T> extends Keeper<T> { reading(): number }
-/** What the kernel takes, made of a copy's bodies: null when they are not what it takes. */
-export type Open<T> = (main: Uint8Array<ArrayBuffer>, more: Uint8Array<ArrayBuffer> | null) => T | null;
+/** A keeper reading from what the host keeps: what a kernel asks of it, and how many reads are under way (what waits, waits for them). */
+export interface Reading { has(origin: string): boolean; take(origin: string): Taken | null | undefined; reading(): number }
 
 /**
  * {has(origin), take(origin)} for a Kernel: take starts reading what is kept for `origin` and says undefined until it
- * is read, then gives it once (`open` of its bodies), or null for good if it could not be had. `ready` is called
+ * is read, then gives it once, or null for good if it could not be had. `ready` is called
  * whenever a read ends (the kernel looks again); `read(urls)` hears what was read, for the page to count as used.
  */
-export function keeper<T>(kept: Kept, open: Open<T>, ready: () => void, read: (urls: string[]) => void = () => {}): Reading<T> {
-  const state = new Map<string, 'reading' | T | null>(); // origin -> 'reading' | what was read | null
+export function keeper(kept: Kept, ready: () => void, read: (urls: string[]) => void = () => {}): Reading {
+  const state = new Map<string, 'reading' | Taken | null>(); // origin -> 'reading' | what was read | null
   return {
     has: (origin) => Object.hasOwn(kept.at, origin) && state.get(origin) !== null,
     /** How many are being read now. */
@@ -40,7 +34,7 @@ export function keeper<T>(kept: Kept, open: Open<T>, ready: () => void, read: (u
       if (s !== undefined) { state.delete(origin); return s; }
       state.set(origin, 'reading');
       const urls = kept.at[origin];
-      load(kept.cache, urls, open).then((v) => { state.set(origin, v); if (v) read([urls.main, ...(urls.more ? [urls.more] : [])]); },
+      load(kept.cache, urls).then((v) => { state.set(origin, v); if (v) read([urls.main, ...(urls.more ? [urls.more] : [])]); },
         () => state.set(origin, null)).finally(ready);
       return undefined;
     },
@@ -57,9 +51,9 @@ async function checked(read: (url: string) => Promise<Uint8Array<ArrayBuffer> | 
   return body;
 }
 
-/** What `open` makes of a kept copy; null when it is not there or not what was kept. */
-async function load<T>(name: string, {main, more}: {main: string; more: string | null}, open: Open<T>): Promise<T | null> {
+/** A kept copy, as a kernel takes it; null when it is not there or not what was kept. */
+async function load(name: string, {main, more}: {main: string; more: string | null}): Promise<Taken | null> {
   const read = await kept(name);
   const [m, x] = await Promise.all([checked(read, main), more ? checked(read, more).catch(() => null) : null]);
-  return m ? open(m, x) : null;
+  return m ? taken(m, x) : null;
 }

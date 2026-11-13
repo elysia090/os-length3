@@ -4,7 +4,7 @@
 //
 // Each is built static (musl-gcc, its relocations kept, as sods needs) and run three ways: natively; translated,
 // each thread in a Worker of its own (as a cross-origin isolated page runs them); and translated, every thread in
-// this one (MUK_INLINE=1, as a page that is not runs them). N runs only the Nth floor. A floor beside Linux is its
+// this one (SODS_INLINE=1, as a page that is not runs them). N runs only the Nth floor. A floor beside Linux is its
 // ratio, translated over native: under 1, it is lower than Linux's.
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync, rmSync} from 'node:fs';
@@ -29,7 +29,7 @@ try {
       read(execFileSync(cmd[0], [...cmd.slice(1), ...only], {encoding: 'utf8', env: {...process.env, ...env}, maxBuffer: 1 << 24}));
     const native = run({}, exe);
     const apart = run({}, process.execPath, join(here, '..', '..', 'runtime', 'run.ts'), exe);
-    const inline = run({MUK_INLINE: '1'}, process.execPath, join(here, '..', '..', 'runtime', 'run.ts'), exe);
+    const inline = run({SODS_INLINE: '1'}, process.execPath, join(here, '..', '..', 'runtime', 'run.ts'), exe);
     const unit = kind === 'os' ? 'us' : 'ns';
     console.log(`${kind === 'os' ? 'the OS' : 'translated code'} (${unit} a time)`.padEnd(28) + 'Linux'.padStart(12) + 'Workers'.padStart(12) + 'in turn'.padStart(12) + '   ×Linux');
     native.forEach(([name, n], k) => {

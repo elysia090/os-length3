@@ -18,7 +18,7 @@ import {createReadStream, lstatSync, openSync, readFileSync, readSync, readdirSy
 import {join} from 'node:path';
 import {createZstdDecompress, gunzipSync, zstdDecompressSync} from 'node:zlib';
 import type {Readable} from 'node:stream';
-import {checkPacks, checkedRange} from '../module/muk/runtime/table.ts';
+import {checkPacks, checkedRange} from '../module/ricebox/layers/table.ts';
 import type {About, Blob, Index} from '../why/app/prompt/userland.ts';
 
 export type {About, Index};

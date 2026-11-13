@@ -10,7 +10,7 @@ import {shipped} from '../remote/ship/releases.ts';
 
 // Tauri serves the built files from dist/ and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
-// lives in module/sods (the translator) and module/ricebox (the kernel).
+// lives in module/sods (the translator, and the Linux its programs ask for) and module/ricebox (the root's layers).
 
 // The web build's policy is why/app/host/policy.ts's: its own origin and the Remote. Tauri applies its own
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
@@ -177,7 +177,7 @@ export default defineConfig({
   server: {port: 1420, strictPort: true, fs: {allow: [TOP]}, headers: ISOLATED,
     proxy: DEV_REMOTE ? Object.fromEntries(WORKER_FIRST.map((p) => [p, DEV_REMOTE])) : undefined},
   worker: {format: 'es'},
-  // muk's runtime reaches for Node's workers only under Node: in the browser bundle that module is nothing.
+  // sods' runtime reaches for Node's workers only under Node: in the browser bundle that module is nothing.
   resolve: {alias: [{find: 'node:worker_threads', replacement: fileURLToPath(new URL('./shims/worker-threads.ts', import.meta.url))}]},
   define: {__WHY_HOST__: JSON.stringify(HOST)},
   // Most of a build is the core compiled for the browser (coreWasm's buildStart, cargo), which Rolldown would

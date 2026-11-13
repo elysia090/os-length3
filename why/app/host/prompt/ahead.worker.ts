@@ -1,5 +1,5 @@
 // One program of the root translated ahead of its first run (ahead.ts): its bytes fetched from its pack and checked
-// against the pack's table (muk), then translated whole and prepared (sods). One program a worker, so all the
+// against the pack's table (ricebox's layers), then translated whole and prepared (sods). One program a worker, so all the
 // translator held goes back with it; and a worker of its own, so a Prompt is never kept from its next line by it.
 //
 //   in:  {translator: WebAssembly.Module, url, pack, at, len, size, raw, shared, lines, line}   (where the root's
@@ -7,9 +7,8 @@
 //   out: {wasm, segments} or {error}
 
 import {range} from '../../../../module/sods/runtime/host.ts';
-import {fetchStored, type Stored} from '../../../../module/muk/runtime/pack.ts';
-import {aheadOf, type Held} from '../../../../module/sods/runtime/ahead.ts';
-import {loadTranslator} from '../../../../module/sods/runtime/translator.ts';
+import {aheadOf, loadTranslator, type Held} from '../../../../module/sods/runtime/translate.ts';
+import {fetchStored, type Stored} from '../../../../module/ricebox/layers/pack.ts';
 
 self.onmessage = async ({data}: MessageEvent<Stored & Held & {translator: WebAssembly.Module}>) => {
   try {
