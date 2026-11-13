@@ -267,7 +267,7 @@ has user 'write in / 30'
 
 # Every name muk.c's tables have is found there (each by one look, slots.ts): every capability is given, and every
 # option of a mount that is a flag is taken as one (the file system is given none of them, and would refuse it).
-names() { sed -n "/^static const char $1\[\]/,/};/p" "$here/../../src/muk.c" | grep -o '"[A-Za-z_]*"' | tr -d '"'; }
+names() { sed -n "/^static const char $1\[\]/,/};/p" "$here/../../src/bundle.h" | grep -o '"[A-Za-z_]*"' | tr -d '"'; }
 caps=$(names CAPS | sed 's/.*/"CAP_&"/' | paste -sd, -)
 flags=$(names OPTIONS | grep -vx 'bind\|rbind' | sed 's/.*/"&"/' | paste -sd, -)
 n=$((n + 1)); [ "$(names CAPS | wc -l)" = 41 ] && [ "$(names OPTIONS | wc -l)" = 34 ] || no "muk.c's tables are not read: $(names CAPS | wc -l) capabilities, $(names OPTIONS | wc -l) options"
@@ -288,7 +288,7 @@ begins every 'mount /every '
 # What no box asks the kernel: each call muk.c's filter names is answered as it says (EPERM, or ENOSYS as a kernel
 # without it would), the two that are refused by what they are asked are refused for that and not otherwise,
 # another ABI's calls are not there, and what is not named is the box's to ask.
-named=$(sed -n '/^static const struct { u16 nr; u8 how; } FILTER/,/^};/p' "$here/../../src/muk.c" | grep -o '{[0-9]*, F_E[A-Z]*}' | tr -d '{},' | sed 's/F_EPERM/1/; s/F_ENOSYS/38/')
+named=$(sed -n '/^static const struct { u16 nr; u8 how; } FILTER/,/^};/p' "$here/../../src/filter.h" | grep -o '{[0-9]*, F_E[A-Z]*}' | tr -d '{},' | sed 's/F_EPERM/1/; s/F_ENOSYS/38/')
 n=$((n + 1)); [ "$(echo "$named" | wc -l)" -ge 50 ] || no "muk.c's filter is not read"
 bundle asked <<JSON
 {"ociVersion":"1.2.0","process": {"args": ["/probe", $(echo "$named" | sed 's/^\([0-9]*\) .*/"asks:\1",/' | tr '\n' ' ')
@@ -466,11 +466,12 @@ bundle hidden <<'JSON'
 JSON
 printf '\0{"ociVersion":"1.2.0","process": {"args": ["/other"]}}' >> "$t/hidden/config.json"
 refuses hidden 'something follows it'
-# Nesting as deep as the text is long is passed over, not followed down.
+# Nesting as deep as the text is long, in a member muk does not read: refused in words at the depth it reads to
+# (128), never followed down its stack.
 bundle deep <<JSON
-{"annotations": $(awk 'BEGIN {for (i = 0; i < 100000; i++) printf "["; for (i = 0; i < 100000; i++) printf "]"}'), "process": {"args": []}}
+{"extension": $(awk 'BEGIN {for (i = 0; i < 100000; i++) printf "["; for (i = 0; i < 100000; i++) printf "]"}'), "process": {"args": []}}
 JSON
-refuses deep 'process.args'
+refuses deep 'a value is nested too deeply'
 # More than is read is said to be, not read in part.
 bundle long <<JSON
 {"annotations": {"a": "$(awk 'BEGIN {for (i = 0; i < 1100000; i++) printf "x"}')"}, "process": {"args": ["/probe"], "cwd": "/"}}

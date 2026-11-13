@@ -240,7 +240,7 @@ refuses root-itself 'was not lent (--ids)' $ids
 # and processes and (in a network namespace made for it) its own network, and none of those over the host itself,
 # every user lent or not.
 its="CHOWN DAC_OVERRIDE DAC_READ_SEARCH FOWNER FSETID KILL SETGID SETUID SETPCAP NET_BIND_SERVICE NET_BROADCAST NET_ADMIN NET_RAW IPC_OWNER SYS_CHROOT LEASE AUDIT_WRITE SETFCAP"
-names=$(sed -n '/^static const char CAPS\[\]/,/};/p' "$here/../../src/muk.c" | grep -o '"[A-Z_]*"' | tr -d '"')
+names=$(sed -n '/^static const char CAPS\[\]/,/};/p' "$here/../../src/bundle.h" | grep -o '"[A-Z_]*"' | tr -d '"')
 n=$((n + 1)); [ "$(echo "$names" | wc -l)" -ge 41 ] || no "muk.c's capabilities are not read"
 for cap in $names; do
   case " $its " in *" $cap "*) continue ;; esac

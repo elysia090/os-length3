@@ -116,7 +116,10 @@ const threadsApart = (): boolean => typeof SharedArrayBuffer === 'function' && g
 /** Where why is read from: the page's own origin in a browser; in the app (on a machine whose Prompts run translated),
  * the site of the Remote it is built for, which serves the same files to anyone (public/_headers). */
 const BASE = config.base;
-const CACHE = `sods:${new URL(config.base, location.href).href}`;
+/** The name what is kept is under, by where it is read from. Asked when first kept or read, not as the module
+ * loads: where there is no page (a test in node), nothing is kept and nothing asks. */
+let cacheName: string | undefined;
+const cache = (): string => (cacheName ??= `sods:${new URL(config.base, location.href).href}`);
 /** Of what the browser says this origin may hold, the part why's copies may take (the rest is the repos'). */
 const SHARE = 0.25;
 
@@ -155,7 +158,7 @@ const forgetBefore = () => (before ??= (async () => {
   for (const name of (config.oldCaches ?? [])) try { await caches.delete(name); } catch { /* none to let go */ }
 })());
 const open = async (): Promise<Cache | null> => {
-  try { if (!('caches' in globalThis)) return null; await forgetBefore(); return await caches.open(CACHE); } catch { return null; }
+  try { if (!('caches' in globalThis)) return null; await forgetBefore(); return await caches.open(cache()); } catch { return null; }
 };
 const whole = (url: string) => new URL(url, location.href).href;
 /**
@@ -264,7 +267,7 @@ async function keepParts(url: string, parts: Uint8Array[], seal: boolean, lend: 
         answers.set(id, resolve);
         // (A shared buffer is not moved: it goes as itself, as shared memory does.)
         const moved = lend ? [...new Set(parts.map((p) => p.buffer))].filter((b): b is ArrayBuffer => b instanceof ArrayBuffer) : [];
-        w.postMessage({id, keep: {url: whole(url), cache: CACHE, parts, seal}}, moved);
+        w.postMessage({id, keep: {url: whole(url), cache: cache(), parts, seal}}, moved);
       });
       if (r.size === undefined) return false;
     } else {
@@ -450,7 +453,7 @@ async function keptNow(webroot: Webroot): Promise<{cache: string; at: Record<str
     const more = translatedURL(origin, tag, 'more');
     at[origin] = {main: whole(p), more: paths.has(more) ? whole(more) : null};
   }
-  return {cache: CACHE, at};
+  return {cache: cache(), at};
 }
 
 /** A kept copy's SHA-256 after it. */

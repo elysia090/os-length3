@@ -217,6 +217,11 @@ export function asks(text: Uint8Array, ids: {first: bigint; last: bigint} = {fir
       if (!first) take(',');
       const key = string(), its = raw;
       take(':');
+      if (peek() === 110) {
+        if (!is('null')) bad('it is not as JSON is written');
+        j += 4;
+        continue;
+      }
       keyRaw = its;
       each(key);
     }

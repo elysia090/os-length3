@@ -10,7 +10,7 @@ export type {Segment, Blob, About, Index, Webroot, More, Stage} from '../../../m
 const root = createRoot({
   base: isNative ? `${REMOTE_URL}/webroot/` : '/webroot/',
   first: FIRST, usedKey: 'why.webroot.used', planKey: 'why.webroot.start',
-  oldKeys: ['why.l3.used', 'why.l3.start'], oldCaches: ['l3', 'root3-userland'],
+  oldKeys: ['why.l3.used', 'why.l3.start'], oldCaches: ['l3', 'root3-userland', 'webroot'],
   message: t, missing: () => t('why missing (run: npm run webroot)'), errorText,
 });
 export const {threadsApart, watchLoad, about, keptWebroot, keepMore, keptNow, originOf, translationKept, keepTranslation, keepReached, usedKept, hearLater, rootIndex: whyIndex, loadWebroot, warmWebroot, filesNow} = root;

@@ -203,7 +203,10 @@ static char *member(int *first) {
     char *k = string();
     key = k, kl = sl, kw = head(k, sl);
     take(':');
-    return k;
+    if (peek() != 'n') return k;
+    /* (null: as if the member were not there, as runc reads it) */
+    if (j[1] != 'u' || j[2] != 'l' || j[3] != 'l') bad("it is not as JSON is written");
+    j += 4;
   }
 }
 static int element(int *first) {
