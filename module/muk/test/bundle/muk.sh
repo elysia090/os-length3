@@ -83,7 +83,7 @@ bundle plain <<'JSON'
   {"destination": "/dev/mqueue", "type": "mqueue", "source": "mqueue", "options": ["nosuid", "noexec", "nodev"]},
   {"destination": "/sys", "type": "sysfs", "source": "sysfs", "options": ["nosuid", "noexec", "nodev", "ro"]}],
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}],
-  "resources": {"devices": [{"allow": false, "access": "rwm"}]},
+  "resources": {"devices": []},
   "maskedPaths": ["/proc/acpi", "/proc/asound", "/proc/kcore", "/proc/keys", "/proc/latency_stats", "/proc/timer_list", "/proc/timer_stats",
    "/proc/sched_debug", "/proc/scsi", "/proc/interrupts", "/proc/no-such", "/sys/firmware", "/sys/devices/virtual/powercap"],
   "readonlyPaths": ["/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger", "/proc/no-such"]}}
@@ -210,7 +210,7 @@ has joined '/dev/null 20666 1:3'
 # or read-only.
 mkdir -p "$t/floor/rootfs" && mknod "$t/floor/rootfs/disk" c 1 3 && chmod 666 "$t/floor/rootfs/disk"
 bundle floor <<'JSON'
-{"process": {"args": ["/probe", "see:/disk", "see:/dev/null"], "cwd": "/", "noNewPrivileges": false},
+{"ociVersion":"1.2.0","process": {"args": ["/probe", "see:/disk", "see:/dev/null"], "cwd": "/", "noNewPrivileges": false},
  "root": {"path": "rootfs"}, "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}],
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
@@ -235,7 +235,7 @@ n=$((n + 1)); [ ! -e "$t/floor/rootfs/dev/null" ] || no "floor: a device was mad
 
 # A box is not run in the host's UTS namespace, so no name it is given is the host's.
 bundle named <<'JSON'
-{"process": {"args": ["/probe"], "cwd": "/"}, "hostname": "not-the-hosts", "linux": {"namespaces": [{"type": "mount"}, {"type": "pid"}, {"type": "ipc"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "hostname": "not-the-hosts", "linux": {"namespaces": [{"type": "mount"}, {"type": "pid"}, {"type": "ipc"}]}}
 JSON
 before=$(cat /proc/sys/kernel/hostname)
 refuses named 'pid, ipc and uts namespaces of its own'
@@ -272,7 +272,7 @@ caps=$(names CAPS | sed 's/.*/"CAP_&"/' | paste -sd, -)
 flags=$(names OPTIONS | grep -vx 'bind\|rbind' | sed 's/.*/"&"/' | paste -sd, -)
 n=$((n + 1)); [ "$(names CAPS | wc -l)" = 41 ] && [ "$(names OPTIONS | wc -l)" = 34 ] || no "muk.c's tables are not read: $(names CAPS | wc -l) capabilities, $(names OPTIONS | wc -l) options"
 bundle every <<JSON
-{"process": {"args": ["/probe"], "cwd": "/", "capabilities": {"bounding": [$caps], "effective": [$caps], "permitted": [$caps]}},
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/", "capabilities": {"bounding": [$caps], "effective": [$caps], "permitted": [$caps]}},
  "root": {"path": "$t/every/rootfs"},
  "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}, {"destination": "/every", "type": "tmpfs", "source": "tmpfs", "options": [$flags]}],
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
@@ -291,7 +291,7 @@ begins every 'mount /every '
 named=$(sed -n '/^static const struct { u16 nr; u8 how; } FILTER/,/^};/p' "$here/../../src/muk.c" | grep -o '{[0-9]*, F_E[A-Z]*}' | tr -d '{},' | sed 's/F_EPERM/1/; s/F_ENOSYS/38/')
 n=$((n + 1)); [ "$(echo "$named" | wc -l)" -ge 50 ] || no "muk.c's filter is not read"
 bundle asked <<JSON
-{"process": {"args": ["/probe", $(echo "$named" | sed 's/^\([0-9]*\) .*/"asks:\1",/' | tr '\n' ' ')
+{"ociVersion":"1.2.0","process": {"args": ["/probe", $(echo "$named" | sed 's/^\([0-9]*\) .*/"asks:\1",/' | tr '\n' ' ')
    "asks:16:0:21522", "asks:16:0:21532", "asks:16:0:21505", "asks:56:268435456", "asks:1073741863", "asks:39"], "cwd": "/"},
  "root": {"path": "$t/asked/rootfs"}, "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}],
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
@@ -363,43 +363,43 @@ st=0; (cd "$t/user" && "$muk" run $lends -b . --console-socket "$t/console.sock"
 
 # What it does not run: a filter it cannot make yet is not left out; a terminal; hooks; no program; what is not JSON.
 bundle filter <<'JSON'
-{"process": {"args": ["/probe"]}, "linux": {"namespaces": [{"type": "mount"}], "seccomp": {"defaultAction": "SCMP_ACT_ALLOW"}}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"]}, "linux": {"namespaces": [{"type": "mount"}], "seccomp": {"defaultAction": "SCMP_ACT_ALLOW"}}}
 JSON
 refuses filter 'linux.seccomp'
 bundle terminal <<'JSON'
-{"process": {"terminal": true, "args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
+{"ociVersion":"1.2.0","process": {"terminal": true, "args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
 refuses terminal 'process.terminal: its other end goes to the one who asks for it'
 bundle hooks <<'JSON'
-{"process": {"args": ["/probe"]}, "hooks": {"prestart": [{"path": "/bin/true"}]}, "linux": {"namespaces": [{"type": "mount"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"]}, "hooks": {"prestart": [{"path": "/bin/true"}]}, "linux": {"namespaces": [{"type": "mount"}]}}
 JSON
 refuses hooks 'hooks'
 bundle nothing <<'JSON'
-{"process": {"args": [], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}]}}
+{"ociVersion":"1.2.0","process": {"args": [], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}]}}
 JSON
 refuses nothing 'process.args'
 bundle nowhere <<'JSON'
-{"process": {"args": ["/probe"], "cwd": "here"}, "linux": {"namespaces": [{"type": "mount"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "here"}, "linux": {"namespaces": [{"type": "mount"}]}}
 JSON
 refuses nowhere 'process.cwd'
 bundle shared <<'JSON'
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}]}}
 JSON
 refuses shared 'a mount namespace'
 bundle hosts <<'JSON'
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}, {"type": "ipc"}, {"type": "uts"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}, {"type": "ipc"}, {"type": "uts"}]}}
 JSON
 refuses hosts 'pid, ipc and uts namespaces of its own'
 bundle name <<'JSON'
-{"process": {"args": ["/probe"], "capabilities": {"bounding": ["CAP_NO_SUCH"]}}, "linux": {"namespaces": [{"type": "mount"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "capabilities": {"bounding": ["CAP_NO_SUCH"]}}, "linux": {"namespaces": [{"type": "mount"}]}}
 JSON
 refuses name 'no such name: CAP_NO_SUCH'
 bundle torn <<'JSON'
-{"process": {"args": ["/probe"
+{"ociVersion":"1.2.0","process": {"args": ["/probe"
 JSON
 refuses torn 'config.json'
 bundle missing <<JSON
-{"process": {"args": ["/no-such-program"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+{"ociVersion":"1.2.0","process": {"args": ["/no-such-program"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
   "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
 JSON
 refuses missing 'exec /no-such-program (errno 2)'
@@ -410,19 +410,19 @@ refuses empty 'open config.json (errno 2)'
 # with a fraction; a limit says which it is; what confines a box and is not done here is not passed over.
 refused() { # refused NAME WORDS MEMBERS: a box with MEMBERS (of the whole, after its process) is not run, and muk says WORDS
   bundle "$1" <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, $3, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, $3, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
   refuses "$1" "$2"
 }
 in_process() { # in_process NAME WORDS MEMBERS: the same, MEMBERS being its process's
   bundle "$1" <<JSON
-{"process": {"args": ["/probe"], "cwd": "/", $3}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/", $3}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}]}}
 JSON
   refuses "$1" "$2"
 }
 in_linux() { # in_linux NAME WORDS MEMBERS: the same, MEMBERS being linux's
   bundle "$1" <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}], $3}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}], $3}}
 JSON
   refuses "$1" "$2"
 }
@@ -434,6 +434,8 @@ in_process part 'a whole number, zero or more, is wanted' '"user": {"uid": 1.5}'
 in_process power 'a whole number, zero or more, is wanted' '"user": {"uid": 1e3}'
 in_process mask 'a number is greater than what it sets can be' '"user": {"umask": 512}'
 in_process untyped 'process.rlimits' '"rlimits": [{"soft": 0, "hard": 0}]'
+in_process repeated-limit 'process.rlimits: one kind is there twice' '"rlimits": [{"type": "RLIMIT_NOFILE", "soft": 1024, "hard": 1024}, {"type": "RLIMIT_NOFILE", "soft": 1024, "hard": 1024}]'
+in_process changed-limit 'process.rlimits: one kind is there twice' '"rlimits": [{"type": "RLIMIT_NOFILE", "soft": 1024, "hard": 1024}, {"type": "RLIMIT_NOFILE", "soft": 1024, "hard": 2048}]'
 in_process over 'a number is greater than what it sets can be' '"rlimits": [{"type": "RLIMIT_NOFILE", "soft": 18446744073709551616, "hard": 1}]'
 in_process armor 'process.apparmorProfile' '"apparmorProfile": "box"'
 in_process label 'process.selinuxLabel' '"selinuxLabel": "box"'
@@ -447,22 +449,22 @@ in_linux spread 'linux.rootfsPropagation' '"rootfsPropagation": "shared"'
 refused owners 'mounts.uidMappings' '"mounts": [{"destination": "/x", "type": "bind", "source": "/", "uidMappings": []}]'
 refused nowhere-to 'a mount' '"mounts": [{"destination": "x", "type": "tmpfs"}]'
 bundle twice <<'JSON'
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}, {"type": "ipc"}, {"type": "ipc"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}, {"type": "ipc"}, {"type": "ipc"}]}}
 JSON
 refuses twice 'twice'
 bundle later <<'JSON'
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}, {"type": "time"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}, {"type": "time"}]}}
 JSON
 refuses later 'no such namespace is made here: time'
 # What follows the text is not passed over, a NUL before it or not.
 bundle follows <<'JSON'
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}]}} {}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}]}} {}
 JSON
 refuses follows 'something follows it'
 bundle hidden <<'JSON'
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}]}}
 JSON
-printf '\0{"process": {"args": ["/other"]}}' >> "$t/hidden/config.json"
+printf '\0{"ociVersion":"1.2.0","process": {"args": ["/other"]}}' >> "$t/hidden/config.json"
 refuses hidden 'something follows it'
 # Nesting as deep as the text is long is passed over, not followed down.
 bundle deep <<JSON
@@ -557,7 +559,7 @@ grep -qxF 'env HOME=/' "$t/empty.muk" || no "an empty /etc/passwd: the box did n
 # The box's own files are anything: an /etc/passwd that is a pipe no one writes to is not waited on.
 mkdir -p "$t/pipe/rootfs/etc" && mkfifo "$t/pipe/rootfs/etc/passwd"
 bundle pipe <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "root": {"path": "$t/pipe/rootfs"},
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "root": {"path": "$t/pipe/rootfs"},
  "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}],
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
   "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
@@ -579,7 +581,7 @@ st=0; (cd "$t/user" && "$muk" run $lends -b . x 0<&- 2>&-) > "$t/closed.muk" || 
 # Many at once on one root that has none of the places its mounts go: each makes what is missing, and what another
 # made meanwhile is not in its way.
 bundle crowd <<JSON
-{"process": {"args": ["/probe"], "cwd": "/a/place/of/its/own"}, "root": {"path": "$t/crowd/rootfs"},
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/a/place/of/its/own"}, "root": {"path": "$t/crowd/rootfs"},
  "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"},
   {"destination": "/a/b/c/file", "type": "bind", "source": "$t/crowd/config.json", "options": ["bind", "ro"]}],
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
@@ -597,7 +599,7 @@ done
 
 # The box ends when muk does, however muk is ended; a signal sent to muk is the box's.
 bundle waits <<JSON
-{"process": {"args": ["/probe", "wait"], "cwd": "/"}, "root": {"path": "$t/waits/rootfs"},
+{"ociVersion":"1.2.0","process": {"args": ["/probe", "wait"], "cwd": "/"}, "root": {"path": "$t/waits/rootfs"},
  "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
   "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
 JSON

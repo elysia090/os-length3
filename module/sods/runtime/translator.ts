@@ -39,6 +39,8 @@ export class NotAProgram extends Error {
 /** The translator, loaded: an x86-64 program's bytes in, a WebAssembly module's out; and what else it is asked. */
 export interface Translate {
   (elf: Uint8Array): Uint8Array<ArrayBuffer>;
+  /** Whether an error is this translator's rejection of its input, rather than a failure of the translator. */
+  notProgram(error: unknown): boolean;
   whole(elf: Uint8Array): Uint8Array<ArrayBuffer>;
   seeded(elf: Uint8Array, seeds: (bigint | number)[]): Uint8Array<ArrayBuffer>;
   more(elf: Uint8Array, seeds: (bigint | number)[], known: Set<bigint>, base: number): Uint8Array<ArrayBuffer>;
@@ -75,6 +77,7 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
   function translate(elf: Uint8Array): Uint8Array<ArrayBuffer> {
     return output(x.sods_translate(put(elf), elf.length), true);
   }
+  translate.notProgram = (error: unknown): boolean => error instanceof NotAProgram;
   /** As translate, all of the program: as the release translates the hot ones, and a page a program ahead of its run. */
   translate.whole = (elf: Uint8Array): Uint8Array<ArrayBuffer> => output(x.sods_translate_whole(put(elf), elf.length), true);
   const words = (list: (bigint | number)[]): Uint8Array<ArrayBuffer> => new Uint8Array(new BigUint64Array(list.map((w) => BigInt(w))).buffer);

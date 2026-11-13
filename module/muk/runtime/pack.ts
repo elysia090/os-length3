@@ -5,11 +5,14 @@
 // (`rangeNow`, `range`): how a host fetches is its own. What puts a pack's tree in a kernel's is the
 // kernel's (../../muk/runtime/mount.ts).
 
-import {range as ranged, rangeNow} from '../../sods/runtime/host.ts';
+export interface Ranged { status: number; bytes: Uint8Array }
+export type ReadRange = (url: string, at: number, length: number) => Promise<Ranged>;
+export type ReadRangeNow = (url: string, at: number, length: number) => Ranged;
+
 import {LINE, checkFile, checkTable, type Sha256} from './table.ts';
 
 /** In a Worker: the bytes [at, at+len) of a pack in `packs/` under `base`, fetched synchronously. */
-export function syncRange(base: string): (pack: string, at: number, len: number) => Uint8Array {
+export function syncRange(base: string, rangeNow: ReadRangeNow): (pack: string, at: number, len: number) => Uint8Array {
   return (pack, at, len) => {
     if (!len) return new Uint8Array(0);
     const url = new URL(`packs/${pack}`, base).href;
@@ -24,15 +27,15 @@ export function syncRange(base: string): (pack: string, at: number, len: number)
 export interface Stored { url: string | URL; pack: string; at: number; len: number; lines: number; line: number }
 
 /** Bytes [at, at+len) of a pack, by a Range request (of the whole pack, from a server that ignores Range). */
-async function range(url: string | URL, pack: string, at: number, len: number): Promise<Uint8Array> {
+async function range(url: string | URL, pack: string, at: number, len: number, ranged: ReadRange): Promise<Uint8Array> {
   const {status, bytes} = await ranged(new URL(`packs/${pack}`, url).href, at, len);
   if (status !== 206 && status !== 200) throw new Error(`root: packs/${pack} answered ${status}`);
   return status === 200 ? bytes.subarray(at, at + len) : bytes;
 }
 
 /** A file's bytes as its pack holds them, fetched, once they are what the pack's table says (table.ts). */
-export async function fetchStored({url, pack, at, len, lines, line}: Stored, sha256: Sha256): Promise<Uint8Array> {
-  const [table, bytes] = await Promise.all([range(url, pack, 0, lines * LINE), range(url, pack, at, len)]);
+export async function fetchStored({url, pack, at, len, lines, line}: Stored, sha256: Sha256, ranged: ReadRange): Promise<Uint8Array> {
+  const [table, bytes] = await Promise.all([range(url, pack, 0, lines * LINE, ranged), range(url, pack, at, len, ranged)]);
   checkTable(table, pack, sha256);
   checkFile(bytes, table, line, pack, sha256);
   return bytes;

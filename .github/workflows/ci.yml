@@ -245,7 +245,7 @@ jobs:
 
   # The x86-64 → wasm translator against native; and why (static, musl) run under it as the browser runs it.
   browser:
-    name: muk in a browser (${{ matrix.part }})
+    name: sods Linux runtime (${{ matrix.part }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -273,19 +273,23 @@ jobs:
           cache-on-failure: true
       - name: Test against native
         if: matrix.part == 'native'
-        working-directory: module/muk
+        working-directory: module/sods
         run: sh test/programs/run.sh
       # The translator's own tests: among them every opcode scanned as the decoder decodes it.
       - name: Test sods
         if: matrix.part == 'native'
         run: cargo test --locked --release --manifest-path module/sods/Cargo.toml
       # run.ts takes the wasm build of the translator when it is current.
+      - name: Rust translation cache
+        if: matrix.part == 'native'
+        run: cargo test --locked --manifest-path module/cowboy/cache/Cargo.toml
+
       - name: Run why under muk
         if: matrix.part == 'prompt'
         run: |
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
           cargo build --locked --profile prompt -p why --no-default-features --target x86_64-unknown-linux-musl
-          out=$(WHY_REPOS=/root node module/muk/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/why help all)
+          out=$(WHY_REPOS=/root node module/sods/runtime/linux/run.ts target/x86_64-unknown-linux-musl/prompt/why help all)
           echo "$out" | head -3
           echo "$out" | grep -q 'why issue new'
 
@@ -386,8 +390,10 @@ jobs:
           sudo sh module/muk/test/bundle/muk.sh
       - name: A config.json written against it
         run: sudo sh module/muk/test/bundle/hostile.sh
+      - name: Profiler ownership tests
+        run: python3 module/muk/tool/profile.test.py
       - name: prompt, at a terminal
-        run: sudo sh module/prompt/test/prompt.sh
+        run: sh module/prompt/test/prompt.sh
 
   # The root as a release builds it (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), then used inside as a Prompt uses it and
   # under muk. Runs only when what the root is made of changed.
@@ -484,11 +490,11 @@ jobs:
           says "prompt clear | od -An -c | tr -d ' \\n'" '033[H033[2J'
           # The same programs under muk.
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
-          node module/muk/runtime/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
-          node module/muk/runtime/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
-          node module/muk/runtime/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
-          node module/muk/runtime/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
-          printf 'lib/x.c\nweb/src/main.ts\n' | node module/muk/runtime/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
+          node module/sods/runtime/linux/run.ts "$r/usr/bin/git" --version | grep -F "git version $GIT_VERSION"
+          node module/sods/runtime/linux/run.ts "$r/usr/bin/openssl" version | grep -F "OpenSSL $OPENSSL_VERSION "
+          node module/sods/runtime/linux/run.ts "$r/usr/bin/busybox" sh -c 'echo $((6 * 7))' | grep -x 42
+          node module/sods/runtime/linux/run.ts "$r/usr/bin/rg" --version | grep -F "ripgrep $RIPGREP_VERSION"
+          printf 'lib/x.c\nweb/src/main.ts\n' | node module/sods/runtime/linux/run.ts "$r/usr/bin/fzf" --filter main | grep -x web/src/main.ts
           sudo rm -rf target/root-open
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

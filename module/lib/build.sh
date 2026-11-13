@@ -26,16 +26,15 @@ trap 'rm -rf "$o"' EXIT
   -c -o "$o/$name.o" "$src"
 "${CC:-cc}" -nostdlib -static-pie -Wl,-z,relro,-z,now,-z,noexecstack,--gc-sections,--build-id=none -o "$out" "$o/$name.o"
 bad() { echo "$name: $*" >&2; exit 1; }
-d=$(objdump -d "$out")
-echo "$d" | grep -q 'call.*<__stack_chk_fail>' || bad "no stack protector"
-# (A function given its own target, as target("avx2"), is compiled with the stack protector's guard read from a thread's
-# storage, -mstack-protector-guard=global forgotten: there is no such storage, the first read faults.)
-! echo "$d" | grep -q '%fs:' || bad "a read of a thread's storage (an array in a function of its own target?): $(echo "$d" | grep -B30 '%fs:' | grep '>:$' | tail -1)"
-h=$(readelf -hlrdsW "$out")
-echo "$h" | grep -q 'Type: *DYN' || bad "not position-independent"
-echo "$h" | grep -q 'There are no relocations in this file' || bad "something to relocate"
-! echo "$h" | grep -q 'INTERP' || bad "asks for a loader"
-! echo "$h" | grep -q '(NEEDED)' || bad "needs a library"
-echo "$h" | grep -q GNU_RELRO && echo "$h" | grep -qE 'BIND_NOW|FLAGS_1.*NOW' || bad "not full RELRO"
-! echo "$h" | grep -A1 GNU_STACK | grep -q RWE || bad "an executable stack"
-! echo "$h" | awk '$7 == "UND" && $8 != ""' | grep -q . || bad "something left undefined: $(echo "$h" | awk '$7 == "UND" && $8 != "" {print $8}')"
+objdump -d "$out" > "$o/disassembly"
+grep -q 'call.*<__stack_chk_fail>' "$o/disassembly" || bad "no stack protector"
+! grep -q '%fs:' "$o/disassembly" || bad "a read of thread-local storage"
+readelf -hlrdsW "$out" > "$o/headers"
+grep -q 'Type: *DYN' "$o/headers" || bad "not position-independent"
+grep -q 'There are no relocations in this file' "$o/headers" || bad "something to relocate"
+! grep -q 'INTERP' "$o/headers" || bad "asks for a loader"
+! grep -q '(NEEDED)' "$o/headers" || bad "needs a library"
+grep -q GNU_RELRO "$o/headers" && grep -qE 'BIND_NOW|FLAGS_1.*NOW' "$o/headers" || bad "not full RELRO"
+! grep -A1 GNU_STACK "$o/headers" | grep -q RWE || bad "an executable stack"
+awk '$7 == "UND" && $8 != "" {print $8}' "$o/headers" > "$o/undefined"
+[ ! -s "$o/undefined" ] || bad "something left undefined"

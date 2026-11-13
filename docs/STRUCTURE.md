@@ -2,6 +2,14 @@
 
 What the repository is to be, how far it is from that today, and the order it is taken apart in.
 
+## Current responsibility boundary
+
+muk constructs, isolates, starts and supervises boxes; sods owns translation, Linux API compatibility and host differences; prompt attaches to a supplied terminal. The caller assembles them and decides box lifetime. The Web Linux layer is necessary compatibility work, not a second muk. Image pack reads and mounts cross caller-supplied structural ports; the module dependency checks allow no muk↔sods implementation exceptions.
+
+`module/lib` is shared compile-time C support. `module/sods/lib` is private support for its translated runtime. `module/cowboy/cache` is a Rust cache with sods as its only crate dependency. Alternative platform backends are exclusive choices; a translator, its ABI adapter and private helpers are complementary parts of one backend.
+
+This branch establishes those boundaries. Running the C muk through the Web host ABI, replacing the existing native product launcher, and connecting the Rust cache to Web storage remain subsequent integration steps. The older roadmap below describes historical targets and is not a completion claim.
+
 ## The rule
 
 The repository is split by what a person would be glad to find on a release. There are four such things, and read
@@ -16,10 +24,14 @@ word of a service, is in ricebox, muk, sods or lib.
 
 | | On a release as | What it is | Stands on |
 | --- | --- | --- | --- |
-| **muk** | `muk` | the machine: an OCI-compatible VMM. A box run from an image's layers, named by their digest: on Linux by its namespaces, in a browser by answering its system calls itself. No KVM, no Firecracker | lib, sods |
+| **muk** | `muk` | the machine: an OCI-compatible VMM. A box run from an image's layers, named by their digest: on Linux by its namespaces, in a browser by answering its system calls itself. No KVM, no Firecracker | lib |
 | **sods** | `sods` | instructions, and where they run: a program built once (x86-64, for Linux) made to run where there is no such machine and no such kernel, at the speed of the machine it lands on. It is what takes the dull boundaries away (bare metal, one host's system against another's, what a browser allows), so that code under it is the same code everywhere. Today: x86-64 made wasm ahead of the run | — |
 | **ricebox** | `ricebox`, the root, and the same as layers any static host serves | the neutral distribution, as BusyBox is one and as thin: each package from its pinned source by its recipe, and the command line [#80](https://github.com/elysia090/os-length3/issues/80) lists. No window, ordinary POSIX. It knows no service: someone else puts it under theirs | muk, sods, lib |
 | **why** | the app (web, desktop), `why` | the product, as Alpine stands on BusyBox: ricebox run by muk, the faces and the modules a product has. What a service wants is shipto's, and nowhere else | ricebox, muk, sods |
+
+muk and sods do not depend on each other's implementation. Their caller supplies translation; the executable
+format and execution ABI are what they agree on. Today the browser still crosses that boundary for host access,
+x87 and kept translations. Those imports are recorded as debt in `scripts/units.ts`, not allowed architecture.
 
 ## Read from the top
 

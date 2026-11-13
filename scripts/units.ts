@@ -35,13 +35,13 @@ export const UNITS: Unit[] = [
   {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
   {name: 'muk', says: 'the machine: an OCI-compatible VMM. A box run from an image\'s layers, named by their digest and each byte fetched when first touched: on Linux by its namespaces, in a browser by answering its system calls itself over the code sods makes; no KVM and no Firecracker under it',
     holds: ['module/muk', 'why/core/src/prompt/launch.rs', 'why/core/src/prompt/seccomp.rs', 'why/core/src/compute'],
-    takes: ['lib', 'sods']},
+    takes: ['lib']},
   {name: 'prompt', says: "a box someone works in: its terminal (the other end of the one muk makes in the box) and what of it is kept from one run to the next (a box still there with no one at it; what it writes, each part with its owner's lifetime). Nothing of the machine: it has of a box what muk gives it, a run and one descriptor",
-    holds: ['module/prompt', 'why/core/src/prompt', 'why/app/prompt'],
-    takes: ['lib', 'muk', 'sods', 'ricebox']},
-  {name: 'sods', says: 'instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS',
-    holds: ['module/sods/src', 'module/sods/runtime'],
-    takes: []},
+    holds: ['module/prompt', 'why/core/src/prompt'],
+    takes: ['lib']},
+  {name: 'sods', says: 'x86-64 Linux execution where that machine or kernel is absent: translation, execution ABI, Linux calls and host differences; no OCI or product policy',
+    holds: ['module/sods'],
+    takes: ['lib']},
   {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, and the command line #80 lists; no window, ordinary POSIX, and no service known to it',
     holds: ['module/ricebox'],
     takes: ['lib', 'muk', 'sods', 'everyday']},
@@ -52,8 +52,8 @@ export const UNITS: Unit[] = [
     holds: ['module/otter', 'why/core/src/storage'],
     takes: ['lib', 'ricebox', 'muk', 'sods']},
   {name: 'cowboy', says: 'what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH)',
-    holds: ['why/core/src/ssh', 'why/cli/src/cmd/ssh.rs', 'why/cli/src/cmd/address.rs'],
-    takes: ['ricebox']},
+    holds: ['module/cowboy', 'why/core/src/ssh', 'why/cli/src/cmd/ssh.rs', 'why/cli/src/cmd/address.rs'],
+    takes: ['sods', 'ricebox']},
   {name: 'shipto', says: 'what a service wants, all of it and nowhere else: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
     holds: ['why/remote', 'why/core/src/remote', 'why/cli/src/cmd/sync.rs', 'why/cli/src/cmd/git.rs', 'why/cli/src/cmd/remote.rs',
       'why/shared/desktop-releases.json'],
@@ -70,8 +70,8 @@ export const UNITS: Unit[] = [
 export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'everyday', 'ricebox'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'tests', 'module/muk/runtime/run.ts', 'module/muk/test', 'module/sods/examples', 'module/otter/test',
-  'why/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/muk/target', 'research_notes', 'reports',
+export const NOT_UNITS = ['scripts', 'tests', 'module/sods/runtime/linux/run.ts', 'module/sods/test', 'module/muk/test', 'module/sods/examples', 'module/otter/test',
+  'why/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/muk/target', 'module/prompt/target', 'module/cowboy/cache/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 
@@ -80,13 +80,6 @@ const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\
  * Units: 2 sods out, 3 ricebox, 4 otter's hooks, 6 muk, 7 shipto, 8 cowboy). [from, to, file].
  */
 export const OWED: [string, string, string][] = [
-  // A Prompt in a page reaches into the app for what it should be told: the app's words, whether it is the window's
-  // or a browser's, its repos, the Remote's address. Gone when the app hands them to it as it starts one (prompt's
-  // move into module/prompt).
-  ['prompt', 'app', 'why/app/prompt/ssh.ts'],
-  ['prompt', 'app', 'why/app/prompt/system.ts'],
-  ['prompt', 'app', 'why/app/prompt/userland.ts'],
-  ['prompt', 'app', 'why/app/prompt/webroot-fetch.ts'],
 ];
 
 /** The unit of a file (a path from the root): the unit holding the longest path that holds it, or null. */

@@ -8,11 +8,20 @@ publish = false
 # A unit of its own, with its own lock: not a member of the workspace above it (the OS's, at the top).
 [workspace]
 
+[features]
+default = ["translator"]
+translator = ["dep:iced-x86", "dep:wasm-encoder", "dep:ruzstd"]
+
+[[bin]]
+name = "sods"
+path = "src/main.rs"
+required-features = ["translator"]
+
 [dependencies]
-iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "gas"] }
-wasm-encoder = "0.263"
+iced-x86 = { optional = true, version = "1.21", default-features = false, features = ["std", "decoder", "instr_info", "gas"] }
+wasm-encoder = { version = "0.263", optional = true }
 # Decodes the browser root's packs (zstd), where a system call must have the bytes at once.
-ruzstd = { version = "0.9", default-features = false, features = ["std"] }
+ruzstd = { optional = true, version = "0.9", default-features = false, features = ["std"] }
 # Checks what is read from those packs against their tables (runtime/table.ts), as at once.
 sha2 = { version = "0.11", default-features = false }
 
@@ -27,3 +36,35 @@ codegen-units = 1
 
 [lib]
 crate-type = ["rlib", "cdylib"]
+
+[[example]]
+name = "ops"
+required-features = ["translator"]
+
+[[example]]
+name = "dump"
+required-features = ["translator"]
+
+[[example]]
+name = "eager"
+required-features = ["translator"]
+
+[[example]]
+name = "replay"
+required-features = ["translator"]
+
+[[example]]
+name = "scan_table"
+required-features = ["translator"]
+
+[[example]]
+name = "seeded"
+required-features = ["translator"]
+
+[[example]]
+name = "phases"
+required-features = ["translator"]
+
+[[example]]
+name = "func"
+required-features = ["translator"]

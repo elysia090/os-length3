@@ -27,7 +27,7 @@ import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import type {Kernel} from '../module/muk/runtime/process.ts';
+import type {Kernel} from '../module/sods/runtime/linux/process.ts';
 import {openWeb, type Index} from './webroot-tree.ts';
 
 /** What one program run under muk says: its wait status, its output, and how long it took. */
@@ -83,21 +83,21 @@ async function keptIn(dir: string) {
 
 /** One program under muk, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
 async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV}: Asked) {
-  const {Vfs} = await import('../module/muk/runtime/fs.ts');
-  const {mountPack, provide} = await import('../module/muk/runtime/mount.ts');
-  const {Kernel} = await import('../module/muk/runtime/process.ts');
+  const {Vfs, mountTarget, provide} = await import('../module/sods/runtime/linux/fs.ts');
+  const {mountPack} = await import('../module/muk/runtime/mount.ts');
+  const {Kernel} = await import('../module/sods/runtime/linux/process.ts');
   // As a cross-origin isolated page runs it: each thread in a Worker of its own (MUK_INLINE=1: all in turn here).
-  const {RemoteKernel, canRunApart} = await import('../module/muk/runtime/remote.ts');
+  const {RemoteKernel, canRunApart} = await import('../module/sods/runtime/linux/remote.ts');
   const apart = canRunApart() && !process.env.MUK_INLINE;
   const {loadTranslator} = await import('../module/sods/runtime/translator.ts');
-  const {keeper} = await import('../module/muk/runtime/keeper.ts');
+  const {keeper} = await import('../module/sods/runtime/linux/keeper.ts');
   const {taken} = await import('../module/sods/runtime/kept.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
   // --fresh: this checkout's translator, translating everything as it runs (what the next why will be).
   const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));
   const vfs = new Vfs();
-  mountPack(vfs, w.index, {
+  mountPack(mountTarget(vfs), w.index, {
     range: (pack, at, len) => { const b = Buffer.alloc(len); w.readRange(pack, at, len, b); return new Uint8Array(b); },
     decode: (b) => new Uint8Array(w.unzstd(b)),
     sha256: (b) => new Uint8Array(createHash('sha256').update(b).digest()),

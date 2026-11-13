@@ -35,14 +35,14 @@ bundle() { # bundle NAME: $t/NAME, its root holding the probe alone, the box's o
 }
 box() { # box NAME [ARGS [MOUNTS [LINUX [PROCESS [ROOT]]]]]: a box in a user namespace of its own; each part what config.json has there, after a comma
   bundle "$1" <<JSON
-{"process": {"args": ["/probe"${2:+, $2}], "cwd": "/"${5:+, $5}}, "root": {"path": "${6:-rootfs}"},
+{"ociVersion":"1.2.0","process": {"args": ["/probe"${2:+, $2}], "cwd": "/"${5:+, $5}}, "root": {"path": "${6:-rootfs}"},
  "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}${3:+, $3}],
  "linux": {"namespaces": [$own, {"type": "user"}], $maps${4:+, $4}}}
 JSON
 }
 host() { # host NAME [ARGS [MOUNTS [LINUX [PROCESS]]]]: a box in no user namespace: who it is, it is on the host
   bundle "$1" <<JSON
-{"process": {"args": ["/probe"${2:+, $2}], "cwd": "/"${5:+, $5}}, "root": {"path": "rootfs"},
+{"ociVersion":"1.2.0","process": {"args": ["/probe"${2:+, $2}], "cwd": "/"${5:+, $5}}, "root": {"path": "rootfs"},
  "mounts": [{"destination": "/proc", "type": "proc", "source": "proc"}${3:+, $3}],
  "linux": {"namespaces": [$own]${4:+, $4}}}
 JSON
@@ -116,25 +116,25 @@ refuses elsewhere-sys 'a proc is mounted at /proc and a sysfs at /sys, nowhere e
 # apart); and a box has a network namespace, the host's not being its for saying nothing.
 joins() { echo '"namespaces": [{"type": "mount"}, '"$1"'], '"$maps"; }
 bundle hosts-pid <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins '{"type": "pid", "path": "/proc/1/ns/pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}')}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins '{"type": "pid", "path": "/proc/1/ns/pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}')}}
 JSON
 refuses hosts-pid 'was not lent (--lend): /proc/1/ns/pid' $ids
 bundle hosts-net <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins '{"type": "pid"}, {"type": "network", "path": "/proc/1/ns/net"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}')}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins '{"type": "pid"}, {"type": "network", "path": "/proc/1/ns/net"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}')}}
 JSON
 refuses hosts-net 'was not lent (--lend): /proc/1/ns/net' $ids
 bundle hosts-user <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}, {"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user", "path": "/proc/1/ns/user"}]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {"namespaces": [{"type": "mount"}, {"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user", "path": "/proc/1/ns/user"}]}}
 JSON
 refuses hosts-user 'was not lent (--lend): /proc/1/ns/user' $ids
 for kind in pid uts ipc; do
   bundle "own-$kind" <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins "$(echo '{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}' | sed "s|{\"type\": \"$kind\"}|{\"type\": \"$kind\", \"path\": \"/proc/self/ns/$kind\"}|")")}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins "$(echo '{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}' | sed "s|{\"type\": \"$kind\"}|{\"type\": \"$kind\", \"path\": \"/proc/self/ns/$kind\"}|")")}}
 JSON
   refuses "own-$kind" "the host's own is no box's to join: /proc/self/ns/$kind" $ids --lend "/proc/self/ns/$kind"
 done
 bundle netless <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins '{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}')}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins '{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}')}}
 JSON
 refuses netless 'a box has a network namespace of its own, or one lent' $ids
 if [ -n "$root" ]; then
@@ -147,7 +147,7 @@ if [ -n "$root" ]; then
     sleep 0.01
   done
   bundle anothers <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins '{"type": "pid"}, {"type": "network", "path": "/proc/'"$holder"'/ns/net"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}')}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "linux": {$(joins '{"type": "pid"}, {"type": "network", "path": "/proc/'"$holder"'/ns/net"}, {"type": "ipc"}, {"type": "uts"}, {"type": "user"}')}}
 JSON
   refuses anothers "was not lent (--lend): /proc/$holder/ns/net" $ids --lend "/proc/$holder/ns/uts"
 fi
@@ -255,7 +255,7 @@ runs capable $every
 said capable 'CapEff:	00000000b004bdff'
 # (and its network's only where the network is its own: not one lent it, which may be the host's)
 bundle lent-network <<JSON
-{"process": {"args": ["/probe"], "cwd": "/", "capabilities": {"bounding": ["CAP_NET_ADMIN"]}},
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/", "capabilities": {"bounding": ["CAP_NET_ADMIN"]}},
  "linux": {"namespaces": [{"type": "mount"}, {"type": "pid"}, {"type": "network", "path": "/proc/$holder/ns/net"}, {"type": "ipc"}, {"type": "uts"}]}}
 JSON
 refuses lent-network "a box's only in a user namespace: CAP_NET_ADMIN" $every --lend "/proc/$holder/ns/net"
@@ -292,7 +292,7 @@ refuses made 'linux.devices' $every
 host tuned '' '' '"sysctl": {"kernel.core_pattern": "|/probe"}'
 refuses tuned 'linux.sysctl' $every
 bundle hooked <<JSON
-{"process": {"args": ["/probe"], "cwd": "/"}, "hooks": {"createRuntime": [{"path": "/bin/sh", "args": ["sh", "-c", "id > $t/hooked.ran"]}]}, "linux": {"namespaces": [$own]}}
+{"ociVersion":"1.2.0","process": {"args": ["/probe"], "cwd": "/"}, "hooks": {"createRuntime": [{"path": "/bin/sh", "args": ["sh", "-c", "id > $t/hooked.ran"]}]}, "linux": {"namespaces": [$own]}}
 JSON
 refuses hooked 'hooks' $every
 n=$((n + 1)); [ ! -e "$t/hooked.ran" ] || no "hooked: a hook ran"

@@ -72,7 +72,7 @@ const DROPPED = 'dropped';
 function translated(webroot: Webroot, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null | typeof DROPPED> {
   const pack = entries(webroot.index)[f.pack];
   return new Promise((resolve) => {
-    const w = new Worker(new URL('./ahead.worker.ts', import.meta.url), {type: 'module'});
+    const w = new Worker(new URL('../host/prompt/ahead.worker.ts', import.meta.url), {type: 'module'});
     const done = (v: Awaited<ReturnType<typeof translated>>) => { dropping = null; w.terminate(); resolve(v); };
     dropping = () => done(DROPPED);
     w.onmessage = ({data}) => done(data.error ? null : data);

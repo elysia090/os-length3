@@ -7,8 +7,7 @@ where the bound is not reached in plain Rust, C on `../lib` beside it.
 
 Today it is one way across one of those boundaries: static x86-64 Linux programs made WebAssembly ahead of the run. The browser
 used to run Linux by emulating a whole PC (guest kernel, MMU, interrupts, a
-runtime x86→wasm JIT); sods removes the machine instead, and the kernel that
-runs what it makes is ricebox's (`../ricebox`).
+runtime x86→wasm JIT); sods removes the machine instead, and `runtime/linux/` answers its Linux ABI and supervises translated guest processes. ricebox (`../ricebox`) supplies the programs and filesystem, not that ABI.
 
 - `src/` (Rust) translates a static x86-64 ELF ahead of time into one wasm
   module. Guest addresses are wasm addresses, registers are locals, flags
@@ -59,14 +58,18 @@ sods --whole IN OUT.wasm      # every function, ahead of time
 Inputs must be static executables linked with `--emit-relocs`; post-linked
 release binaries have their relocations removed and are not accepted yet.
 Checked natively against the same programs by ricebox's tests
-(`sh ../muk/test/programs/run.sh`).
+(`sh test/programs/run.sh`).
+
+`runtime/web/` owns product-neutral root preparation and fetch. Product words, addresses and Worker assembly are supplied by `why/app`. muk's pack reader uses structural ports and imports no sods implementation. The Rust translation cache at `../cowboy/cache` depends only on sods' identity library, with translator dependencies disabled.
+
+The agreed next compatibility target is the Linux host API needed to run the same C muk on the Web. The current guest ABI still rejects namespace and mount operations and has no host seccomp implementation; this stage does not claim that integration is complete.
 
 ## The boundaries, and which are taken on
 
 | The boundary | Who takes it on | Where it stands |
 | --- | --- | --- |
 | no x86-64 under the program | `src/`: the program made WebAssembly ahead of the run | done for static Linux programs; the lowering still reads its operands through a decoder that is not sods' |
-| no Linux under it | muk's `runtime/`, answering its calls | done in a browser and in node, in TypeScript and far from its bound |
+| no Linux under it | `runtime/linux/`, answering its calls | done in a browser and in node, in TypeScript and far from its bound |
 | which host this is (a page, a Worker, node) | `runtime/host.ts` | asked in one place: node or not, its threads, shared memory, running apart, waiting, processors, what was said from outside |
 | a host's clocks | `runtime/host.ts` (`steady`, `began`, `epoch`) | asked in one place: muk's runtime reads none of the host's own (a test reads its sources for them); the floors the same within their noise |
 | a host's random bytes | `runtime/host.ts` (`random`) | asked in one place: `getrandom` and `AT_RANDOM`, `/dev/urandom`, the UUIDs `/proc` says (made of them by muk) all draw there; the same test reads muk's sources for the host's own |

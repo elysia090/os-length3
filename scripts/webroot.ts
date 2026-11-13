@@ -109,11 +109,13 @@ if (release.VERSION_ID !== version) throw new Error(`${basename(rootFile)}: its 
 // holds while it runs (tens of megabytes at level 19) goes back as it ends, not when a collector gets to it.
 const POOL = 3;
 const pool = Array.from({length: POOL}, () => new Worker(`
-  const {parentPort} = require('node:worker_threads');
+  const {parentPort, isMarkedAsUntransferable} = require('node:worker_threads');
   const {constants, zstdCompressSync} = require('node:zlib');
   parentPort.on('message', ({id, bytes}) => {
     const z = zstdCompressSync(bytes, {params: {[constants.ZSTD_c_compressionLevel]: 19, [constants.ZSTD_c_checksumFlag]: 0}});
-    parentPort.postMessage({id, z}, [z.buffer]);
+    // Small Buffer results can share node's non-transferable slab. Give only those their own backing bytes.
+    const ready = isMarkedAsUntransferable(z.buffer) ? new Uint8Array(z) : z;
+    parentPort.postMessage({id, z: ready}, [ready.buffer]);
   });`, {eval: true}));
 const waiting = new Map<number, (z: Buffer) => void>();
 const idle = [...pool];

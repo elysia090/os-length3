@@ -35,3 +35,5 @@ agent-key
 /tests/app/.report/
 /tests/app/.pg/
 /why/desktop/binaries/
+
+node_modules

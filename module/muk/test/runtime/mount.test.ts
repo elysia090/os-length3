@@ -3,8 +3,8 @@ import {createHash, randomBytes} from 'node:crypto';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {constants, zstdCompressSync, zstdDecompressSync} from 'node:zlib';
-import {Vfs} from '../../runtime/fs.ts';
-import {mountPack, provide} from '../../runtime/mount.ts';
+import {Vfs, mountTarget, provide} from '../../../sods/runtime/linux/fs.ts';
+import {mountPack} from '../../runtime/mount.ts';
 import {checkPacks, packOf} from '../../runtime/table.ts';
 import {loadTranslator} from '../../../sods/runtime/translator.ts';
 
@@ -57,7 +57,7 @@ test('packs mount their tree at once and each file only when read; what was ther
   const reads: number[] = [];
   const v = new Vfs();
   v.writeFile('/etc/given', enc.encode('given first'));
-  mountPack(v, index, {range: (n, a, len) => { assert.equal(n, name); reads.push(a); return pack.slice(a, a + len); }, decode: unzstd, sha256});
+  mountPack(mountTarget(v), index, {range: (n, a, len) => { assert.equal(n, name); reads.push(a); return pack.slice(a, a + len); }, decode: unzstd, sha256});
   assert.equal(reads.length, 0);
   assert.equal(v.file('/usr/bin/one').size, one.size);
   assert.equal(dec.decode(v.readFile('/usr/bin/again', '/')), '#!/bin/sh\necho one\n');
@@ -77,7 +77,7 @@ test('nothing read from a pack is used unless it is what its table says, and the
   const {pack, name, places: [one, two]} = made([{text: '#!/bin/sh\necho one\n'}, {text: 'two\n', raw: true}]);
   const index = {dirs: [{path: '/bin', mode: 0o755}], links: [], codec: 'zstd', packs: [{name, owner: 'local', bytes: pack.length}],
     files: [{path: '/bin/one', mode: 0o755, ...one, pack: 0}, {path: '/bin/two', mode: 0o644, ...two, pack: 0}]};
-  const mounted = (bytes: Uint8Array): Vfs => { const v = new Vfs(); mountPack(v, index, {range: (_, a, len) => bytes.slice(a, a + len), decode: unzstd, sha256}); return v; };
+  const mounted = (bytes: Uint8Array): Vfs => { const v = new Vfs(); mountPack(mountTarget(v), index, {range: (_, a, len) => bytes.slice(a, a + len), decode: unzstd, sha256}); return v; };
   // What was wrong is said (once, as the kernel's console does), and the read fails as a disk's bad block does (EIO).
   const said: string[] = [];
   const warn = console.warn;
@@ -107,7 +107,7 @@ test("a file of the root given with its bytes goes in the root's node, which eac
     codec: 'zstd', packs: [{name, owner: 'local', bytes: pack.length}]};
   let reads = 0;
   const v = new Vfs();
-  mountPack(v, index, {range: (_, a, len) => { reads++; return pack.slice(a, a + len); }, decode: unzstd, sha256});
+  mountPack(mountTarget(v), index, {range: (_, a, len) => { reads++; return pack.slice(a, a + len); }, decode: unzstd, sha256});
   const node = provide(v, {path: '/bin/a', bytes, mode: 0o755, root: true});
   assert.equal(node, v.lookup('/bin/b', '/'));
   assert.equal(dec.decode(v.readFile('/bin/b', '/')), '#!/bin/sh\necho one\n');

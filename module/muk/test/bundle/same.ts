@@ -1,4 +1,4 @@
-// What same.sh runs: a corpus of config.jsons, each asked of `muk run` (Linux) and of runtime/bundle.ts.
+// What same.sh runs: a corpus of config.jsons, each asked of `muk run` (Linux) and of the test-only asks.ts.
 //
 //   node same.ts MUK PROBE DIR
 //
@@ -9,7 +9,7 @@
 import {spawnSync} from 'node:child_process';
 import {copyFileSync, mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {asks, ID, Refused} from '../../runtime/bundle.ts';
+import {asks, ID, Refused} from './asks.ts';
 
 const [muk, probe, dir] = process.argv.slice(2);
 const bundle = join(dir, 'same');
@@ -39,7 +39,7 @@ const base = {
     {destination: '/sys/fs/cgroup', type: 'cgroup', source: 'cgroup', options: ['nosuid', 'noexec', 'nodev', 'relatime', 'ro']},
   ],
   linux: {
-    resources: {devices: [{allow: false, access: 'rwm'}]},
+    resources: {devices: [] as {allow: boolean; access: string}[]},
     namespaces: [{type: 'pid'}, {type: 'network'}, {type: 'ipc'}, {type: 'uts'}, {type: 'mount'}, {type: 'cgroup'}],
     maskedPaths: ['/proc/acpi', '/proc/kcore', '/sys/firmware'], readonlyPaths: ['/proc/bus', '/proc/sys'],
   },
@@ -75,6 +75,10 @@ const wrong: [string, (c: typeof base & Json) => void][] = [
   ['a limit unknown', (c) => { c.process.rlimits = [{type: 'RLIMIT_JOY', hard: 1, soft: 1}]; }],
   ['a limit with no type', (c) => { c.process.rlimits = [{hard: 1, soft: 1} as never]; }],
   ['a limit member unknown', (c) => { c.process.rlimits = [{type: 'RLIMIT_CPU', hard: 1, soft: 1, firm: 1} as never]; }],
+  ['the same limit twice', (c) => { c.process.rlimits.push({...c.process.rlimits[0]}); }],
+  ['a limit twice with other values', (c) => { c.process.rlimits.push({type: 'RLIMIT_NOFILE', hard: 2048, soft: 1024}); }],
+  ['a limit twice, apart', (c) => { c.process.rlimits.push({type: 'RLIMIT_CORE', hard: 0, soft: 0}, {...c.process.rlimits[0]}); }],
+  ['distinct limits', (c) => { c.process.rlimits.push({type: 'RLIMIT_CORE', hard: 0, soft: 0}); }],
   ['seventeen limits', (c) => { c.process.rlimits = Array.from({length: 17}, () => ({type: 'RLIMIT_CPU', hard: 1, soft: 1})); }],
   ['a limit of all there is', (c) => { c.process.rlimits = [{type: 'RLIMIT_CORE', hard: 0, soft: 0}]; }],
   ['a process member unknown', (c) => { (c.process as Json).oomScoreAdj = 3; }],
@@ -146,6 +150,7 @@ const written: [string, string][] = [
   ['unknown and unclosed', text.replace('"hostname"', '"x": [[[{"a": 1}], "hostname"')], ['unknown and closed too often', text.replace('"hostname"', '"x": []], "hostname"')],
 ];
 for (const [name, config] of written) add(name, config);
+for (const value of ['bananas','01','-01','-.1','1.','1e','[1,]','[1 2]','{"x" 1}','{,"x":1}','[}','{]']) add(`invalid JSON extension ${value}`, text.slice(0, -1) + ',"extension":' + value + '}');
 // Every cut of it; and bytes changed in it, two at each place (a few that mean something in JSON among them).
 const whole = bytesOf(text);
 for (let n = 0; n < whole.length; n++) add(`cut at ${n}`, whole.subarray(0, n));
@@ -162,7 +167,7 @@ for (let at = 0; at < whole.length; at++) for (let k = 0; k < 2; k++) {
 const LATER = ['a bind has no source', 'process.rlimits: one is more than', 'process.terminal: its other end', "linux.namespaces: the host's own", "it names what is the host's"];
 function linux(c: Case): string | null {
   writeFileSync(join(bundle, 'config.json'), c.bytes);
-  const r = spawnSync(muk, ['run', ...(c.lent ? ['--ids', '0-4294967294'] : []), '-b', bundle, 'same'], {timeout: 20000, stdio: ['ignore', 'ignore', 'pipe']});
+  const r = spawnSync(muk, ['run', ...['--ids', c.lent ? '0-4294967294' : '1-0'], '-b', bundle, 'same'], {timeout: 20000, stdio: ['ignore', 'ignore', 'pipe']});
   // (muk's words are bytes, config.json's own among them: read as the reader here reads a string's)
   // (all it said, but the line's end: a name of config.json's own may hold one)
   const said = /^muk: (config\.json: [\s\S]*)\n$/.exec(new TextDecoder().decode(r.stderr ?? new Uint8Array(0)))?.[1] ?? null;
