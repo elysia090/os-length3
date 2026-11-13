@@ -27,6 +27,7 @@ import {onLang, t, useLang} from '../i18n/i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
 import {glide, morph, stage, stopStage, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
+import {prime} from '../ui/keys.ts';
 import {caret} from '../ui/caret.ts';
 import {optical} from '../ui/optical.ts';
 import {scrollbars} from '../ui/scrollbars.ts';
@@ -498,7 +499,8 @@ if (asking.has('device')) {
     void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => { if (connection()) render(); }).finally(() => {
       $('page').removeAttribute('aria-busy');
       // The other places' pages, brought while the person reads the first: a place pressed later is drawn at once.
-      const rest = () => { for (const id of Object.keys(BRING) as PurposeId[]) void brought(id)?.catch(() => {}); };
+      // (And the key sounds, fetched and decoded before the first of them is asked for: keys.ts.)
+      const rest = () => { prime(); for (const id of Object.keys(BRING) as PurposeId[]) void brought(id)?.catch(() => {}); };
       if ('requestIdleCallback' in window) requestIdleCallback(rest, {timeout: 3000}); else setTimeout(rest, 1000);
     });
     // What came in meanwhile, for the rail's marks: now, and every little while.

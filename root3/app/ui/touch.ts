@@ -4,7 +4,7 @@
 // nothing gives.
 
 import {paced, still} from './glide.ts';
-import {strike} from './keys.ts';
+import {lift, press, strike, wake} from './keys.ts';
 
 const WHOLE = '.card.repo, .card.new, .issue-card, .board-card';
 const ONE = 'button, [role="button"], [role="radio"], [role="tab"], .chip';
@@ -59,13 +59,23 @@ export function letGo(within: Element) {
   spring = null;
 }
 
+/** The control a trusted press or click sounds on: none for one disabled, inert, or a field written in. */
+function sounding(e: Event): Element | null {
+  if (!e.isTrusted || !(e.target instanceof Element)) return null;
+  const button = e.target.closest(ONE);
+  return !button || button.closest(':disabled, [aria-disabled="true"], [inert]') || e.target.closest('input, textarea, select, [contenteditable]') ? null : button;
+}
+/** The control whose press a pointer's going down sounded: its click does not sound again. */
+let sounded: Element | null = null;
+
 export function touch() {
   // A completed activation only: pointer and native Enter/Space each yield one click. A drag, focus, hover,
   // or programmatic navigation is silent. Motion preference does not mute this small confirmation.
   document.addEventListener('click', (e) => {
-    if (!e.isTrusted || !(e.target instanceof Element)) return;
-    const button = e.target.closest(ONE);
-    if (!button || button.closest(':disabled, [aria-disabled="true"], [inert]') || e.target.closest('input, textarea, select, [contenteditable]')) return;
+    const button = sounding(e);
+    if (!button) return;
+    // (A pointer's press sounded as it went down, below: its click is the same activation.)
+    if (button === sounded) { sounded = null; return; }
     strike('enter');
   }, true);
   // A held press ends below full size with forwards fill. Finishing it preserves that size;
@@ -78,14 +88,26 @@ export function touch() {
     spring = null;
   });
   document.addEventListener('pointerdown', (e) => {
+    // The person's first act opens the sound's output, before a stroke is asked of it.
+    if (e.isTrusted) wake();
     if (e.button !== 0) return;
     const el = pressable(e.target);
     if (el) down(el);
+    // A control pressed with a mouse or a pen sounds as it goes down, as a key does, and its release as it is let
+    // go: heard at the click that ends the press, it was late by as long as the press was held. (A finger's press
+    // may be the start of a scroll: it sounds at its click.)
+    sounded = e.pointerType === 'touch' ? null : sounding(e);
+    if (sounded) press('enter');
   }, true);
   for (const name of ['pointerup', 'pointercancel', 'dragstart']) addEventListener(name, up, true);
+  for (const name of ['pointerup', 'pointercancel', 'dragstart']) {
+    // (The click, if one comes, comes before the control pressed is forgotten.)
+    addEventListener(name, () => { lift(); setTimeout(() => { sounded = null; }, 0); }, true);
+  }
   addEventListener('blur', (e) => { if (e.target === window) up(); });
   // From the keys too: Enter or Space on a button is a press let go at once.
   document.addEventListener('keydown', (e) => {
+    if (e.isTrusted) wake();
     if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat || e.isComposing) return;
     const el = pressable(e.target);
     if (!el || !(e.target as Element).matches(ONE)) return;
