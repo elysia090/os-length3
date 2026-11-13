@@ -29,7 +29,7 @@
  * directory is done, so a tree of any size is walked in what its deepest path needs.
  */
 #define UNIT "rg"
-#define ARENA (1 << 25) /* the patterns' automata and DFAs, and standard input's text */
+#define ARENA (1 << 28) /* the patterns' automata, each thread's DFAs, and standard input's text: what is used of it */
 #include "../../lib/io.h"
 #include "re/automaton.h"
 #include "re/class.h"
@@ -219,6 +219,7 @@ static int main_(int argc, char **argv, char **envp) {
     re_classes(r);
     if (spans && !r->only_lit) re_classes(re_reverse(r));
     grep_init(&g, r);
+    grep_threads(&g, o.threads, o.threads != 0);
   }
   if (from_stdin) {
     u8 *b = grab(1 << 24);

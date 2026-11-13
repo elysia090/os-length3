@@ -122,18 +122,20 @@ static int convert, bin_hit;
 static u64 first_nul(const u8 *t, u64 n);
 /* Whether the line t[ls..le) about to be printed holds a NUL, and where. Looked for as lines are printed and no
  * sooner: what is not printed is never looked at for one (a count, a file's name, a search that finds little pass
- * over the text once, not twice), and where lines are printed one on another each byte is looked at once, 4 KiB at
- * a time, which the search has just had in its hands. t[nul_from..nul_to) is what was looked over last, nul_at the
+ * over the text once, not twice). A line printed by itself is looked at by itself; where lines are printed one
+ * right after another, the look goes on ahead of them, twice as far each time up to 4 KiB, so a text printed whole
+ * is looked at 64 bytes a step and not line by line. t[nul_from..nul_to) is what was looked over last, nul_at the
  * first NUL in it (or text_n). */
-static u64 nul_from, nul_to, nul_at;
+static u64 nul_from, nul_to, nul_at, nul_ahead;
 static u64 nul_in(const u8 *t, u64 ls, u64 le) {
-  if (ls < nul_from || ls >= nul_to || nul_at < ls) nul_from = nul_to = ls, nul_at = text_n; /* (nothing known from here) */
+  if (ls < nul_from || ls > nul_to || nul_at < ls) nul_from = nul_to = ls, nul_at = text_n, nul_ahead = 0; /* (nothing known from here) */
   if (le > nul_to && nul_at == text_n) {
-    u64 to = nul_to + 4096 > le ? nul_to + 4096 : le;
+    u64 to = nul_to + nul_ahead > le ? nul_to + nul_ahead : le;
     if (to > text_n) to = text_n;
     u64 z = first_nul(t + nul_to, to - nul_to);
     if (z < to - nul_to) nul_at = nul_to + z;
     nul_to = to;
+    nul_ahead = nul_ahead ? (nul_ahead < 4096 ? 2 * nul_ahead : 4096) : 64;
   }
   return nul_at < le ? nul_at : le;
 }
@@ -196,7 +198,8 @@ static void print_line(const u8 *t, u64 ls, u64 le, u64 lnum, u8 sep) {
       at = me;
     }
     put(t + at, le - at);
-  } else put(t + from, le - from);
+  } else if (le < text_n && le - from >= SMALL) { put(t + from, le + 1 - from); return; } /* (its line feed with it, from the text: one piece) */
+  else put(t + from, le - from);
   S("\n");
 }
 
@@ -301,7 +304,7 @@ static int search_text(const u8 *t, u64 n, int named) {
   convert = !quit && !o.text, bin_hit = 0;
   u64 look = named && n > 65536 ? 65536 : n, nul = o.text || quit ? n : first_nul(t, look);
   if (nul == look) nul = n;
-  nul_from = nul_to = 0, nul_at = n; /* (a printed line is looked at for a NUL as it is printed: nul_in) */
+  nul_from = nul_to = 0, nul_at = n, nul_ahead = 0; /* (a printed line is looked at for a NUL as it is printed: nul_in) */
   grep_text(&g, t, n);
   g.spans = spans;
   if (nul < n) {
@@ -323,6 +326,7 @@ counted:;
   struct reads rd = {65536, 0, 0, n, quit && nul == n};
   u64 upto = next_read(t, n, &rd);
   grep_text(&g, t, upto);
+  grep_all(&g, n);
   g.spans = spans;
   nm = 0;
   if (o.invert) nm = next_match(t, upto);
@@ -412,8 +416,10 @@ static void search_file(int dir, const char *name, int named) {
     if (m < 0 && m > -4096) warn((const char *)path + shown, m);
     else {
       /* A large file's pages read in at once (MADV_POPULATE_READ; a kernel without it: as each is first touched), not
-       * one fault a page as the search comes to it. */
-      if ((u64)st.size >= READ_AT_ONCE) sys3(SYS_madvise, m, st.size, 22);
+       * one fault a page as the search comes to it. Where more threads than one will search it, only what the first
+       * searches alone: each thread reads in the pieces it takes (re/grep.h). */
+      u64 alone = g.most > 1 && (u64)st.size > (8u << 20) ? 2u << 20 : (u64)st.size;
+      if ((u64)st.size >= READ_AT_ONCE) sys3(SYS_madvise, m, (i64)alone, 22);
       found |= search_text((const u8 *)m, (u64)st.size, named);
       flush();
       sys2(SYS_munmap, m, st.size);

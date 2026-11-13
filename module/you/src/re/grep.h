@@ -30,12 +30,130 @@ struct grep {
   int firsts;          /* the places found by what matches begin with (re firsts: cls_find), not by a literal */
   int pre;             /* or by the few literals every match begins with one of (re prefixes: any_find) */
   struct any any;
-  u64 cands;           /* places those found, to give them up for the lanes where too many come to nothing */
+  u64 cands, began;    /* places those found since the search began (at `began`), to give them up for the lanes where
+                        * too many come to nothing */
   int spans;           /* the caller asks each line for its matches (grep_span): a line the literal finds is not asked
                         * of the DFA first, the first grep_span is that question (one pass over it, not two) */
   u64 passed, verified, tried;
   struct pair pair;    /* the literal's two places it is looked for by, as this search's texts have them (lit_find) */
+  /* More threads than one (below): the whole text's length, how many threads a window is run by and how many at
+   * most, whether that count is settled, and the window: its pieces, the next no thread has taken, which of them
+   * and of its lines is given next, its end. */
+  u64 all, wend;
+  u32 threads, most, settled, pieces, pnext, pat, ptook;
+  u64 rate; /* the last window's bytes a millisecond, by `threads` */
+  int ahead;
+  struct hand *hand;
+  struct piece *piece;
 };
+
+/* ---- More threads than one. A text past its first megabyte is searched a window at a time: the window cut at line
+ * ends into pieces of a megabyte, eight a thread, each thread taking the next piece as it is done with one, with a
+ * search of its own (its own DFAs, its own places a literal is looked for by) and reading in the pages of the piece
+ * it takes (the kernel fills a piece's page table on the thread that will read it, the threads side by side). What
+ * comes of it is each piece's lines that hold a match, in the order of the text; what asks for lines (grep_line) is
+ * given them one at a time as it was by one thread, so what is printed is the same, byte for byte, however many
+ * threads found it. A search that ends in its first megabyte (-m, -l, -q, a small file) starts none.
+ *
+ * How many threads: as many as go faster. The first window is run by as many as the cores this process may run on
+ * (eight at most). Where the text is long enough for the asking to cost nothing that shows (sixteen windows and
+ * more to go), the next is run by half as many: if that searched five sixths as many bytes in a millisecond, the
+ * half is kept and halved again; if not, the count before is kept, for this text and those after it. A text that
+ * comes from memory no faster by four threads than by two (a literal seldom there) is then read by two, and the
+ * other cores left cold; one the automaton reads byte by byte keeps them all. -j N says the count itself.
+ *
+ * What it holds is bounded: a piece's lines are 65536 at most (past them the piece ends there, and the window with
+ * it), so a pattern with much to say takes no more room than one with little. */
+#define AHEAD_AFTER (1u << 20)
+#define AHEAD_PIECE (1u << 20)
+#define AHEAD_LINES (1u << 16)
+#define AHEAD_STACK (1u << 20)
+#define AHEAD_MOST 64 /* pieces a window */
+struct piece { u64 from, to, done; u32 *line, n; };
+struct hand { struct grep g; struct grep *of; int left; u8 *stack; };
+static u64 grep_line(struct grep *g);
+static void grep_text(struct grep *g, const u8 *t, u64 n);
+static void grep_init(struct grep *g, struct re *r);
+/* A thread's part of a window: the next piece no one has taken, until none is left. */
+static void hand_run(void *arg) {
+  struct hand *h = (struct hand *)arg;
+  struct grep *of = h->of;
+  for (u32 k; (k = __atomic_fetch_add(&of->pnext, 1, __ATOMIC_RELAXED)) < of->pieces;) {
+    struct piece *p = &of->piece[k];
+    /* Its pages, read in here: whole pages from the one its first byte is in. */
+    u64 page = (u64)(of->t + p->from) & ~4095ull;
+    sys3(SYS_madvise, (i64)page, (i64)((u64)(of->t + p->to) - page), 22 /* MADV_POPULATE_READ */);
+    grep_text(&h->g, of->t, p->to);
+    h->g.at = h->g.began = p->from;
+    u32 n = 0;
+    for (u64 ls; n < AHEAD_LINES && (ls = grep_line(&h->g)) < p->to;) p->line[n++] = (u32)(ls - p->from);
+    p->n = n;
+    p->done = n < AHEAD_LINES ? p->to : line_end(of->t, p->to, p->from + p->line[n - 1]) + 1;
+  }
+}
+static u64 us_now(void) {
+  struct { i64 s, ns; } ts;
+  sys2(SYS_clock_gettime, 1 /* CLOCK_MONOTONIC */, (i64)&ts);
+  return (u64)ts.s * 1000000ull + (u64)ts.ns / 1000;
+}
+/* The window from `from`: its pieces searched by `threads` threads, this one among them. */
+static void grep_window(struct grep *g, u64 from) {
+  const u8 *t = g->t;
+  if (!g->hand) {
+    g->hand = (struct hand *)grab(sizeof *g->hand * g->most), g->piece = (struct piece *)grab(sizeof *g->piece * AHEAD_MOST);
+    memset(g->hand, 0, sizeof *g->hand * g->most), memset(g->piece, 0, sizeof *g->piece * AHEAD_MOST);
+    (void)char_word(0x80); /* (a word's characters past ASCII, read into their table once, before any thread asks) */
+  }
+  u32 want = 8 * g->threads < AHEAD_MOST ? 8 * g->threads : AHEAD_MOST, n = 0;
+  u64 a = from, began = us_now();
+  for (; n < want && a < g->all; n++) {
+    struct piece *p = &g->piece[n];
+    if (!p->line) p->line = (u32 *)grab(4 * AHEAD_LINES);
+    u64 b = g->all - a <= AHEAD_PIECE ? g->all : line_end(t, g->all, a + AHEAD_PIECE) + 1;
+    if (b > g->all) b = g->all;
+    p->from = a, p->to = b, p->n = 0, p->done = a;
+    a = b;
+  }
+  g->pieces = n, g->pnext = 0, g->pat = g->ptook = 0, g->wend = a;
+  u32 ran = g->threads < n ? g->threads : n;
+  for (u32 k = 0; k < ran; k++) {
+    struct hand *h = &g->hand[k];
+    if (!h->of) { /* its search and (but for this thread's) its stack: made once, kept for every window */
+      grep_init(&h->g, g->r);
+      h->of = g;
+      if (k) h->stack = grab(AHEAD_STACK);
+    }
+    h->left = k ? 1 : 0;
+    if (k && spawn(hand_run, h, h->stack, AHEAD_STACK, &h->left) < 0) h->left = 0; /* (no thread: the rest take its pieces) */
+  }
+  hand_run(&g->hand[0]);
+  for (u32 k = 1; k < ran; k++) join(&g->hand[k].left);
+  /* (A piece that ended at its lines' limit: the window ends there, and what was found past it is not kept.) */
+  for (u32 i = 0; i < n; i++)
+    if (g->piece[i].done < g->piece[i].to) { g->pieces = i + 1, g->wend = g->piece[i].done; break; }
+  /* How many threads the next is run by. */
+  u64 took = us_now() - began, rate = (g->wend - from) * 1000 / (took ? took : 1);
+  if (!g->settled && g->pieces == n && n == want) {
+    if (g->rate && rate * 6 < g->rate * 5) g->threads *= 2, g->settled = 1; /* (the half was slower: back) */
+    else if (g->threads >= 4 && g->all - g->wend >= 16 * (g->wend - from)) g->rate = rate, g->threads /= 2;
+    else g->settled = 1;
+  }
+}
+/* The next line that holds a match, from the windows; g->n when none is before it (what is searched ends there). */
+static u64 grep_ahead(struct grep *g) {
+  for (;;) {
+    for (; g->pat < g->pieces; g->pat++, g->ptook = 0) {
+      struct piece *p = &g->piece[g->pat];
+      if (g->ptook == p->n) continue;
+      u64 ls = p->from + p->line[g->ptook];
+      if (ls >= g->n) return g->n; /* (found, and not yet within what is searched: grep_upto) */
+      g->ptook++;
+      return ls;
+    }
+    if (g->wend >= g->n) return g->n;
+    grep_window(g, g->wend);
+  }
+}
 
 static void grep_init(struct grep *g, struct re *r) {
   static int asked;
@@ -51,11 +169,21 @@ static void grep_init(struct grep *g, struct re *r) {
   g->firsts = !g->pre && !r->only_lit && !r->lit_first && r->nfirst && r->litn < 3;
   if (!r->only_lit) g->lines = dfa_new(r, D_LINES);
   if (!r->only_lit && (r->lit_first || g->firsts || g->pre)) g->at_dfa = dfa_new(r, D_ANCH);
+  g->most = 1;
+}
+/* As many threads as `most` at most, where a text is long enough (0: as many as this process's cores, eight at most);
+ * `fixed`: that many, not as many as go faster. */
+static void grep_threads(struct grep *g, u32 most, int fixed) {
+  if (!most) most = cores() < 8 ? cores() : 8;
+  if (most > 64) most = 64;
+  g->most = most, g->threads = most, g->settled = fixed || most <= 2, g->rate = 0;
 }
 /* The text searched goes on to n (a read more of it, rg.c: what was searched stays as it is). */
 static void grep_upto(struct grep *g, u64 n) { g->n = n; }
+/* The whole text is n bytes, and may be searched ahead of what grep_upto has said (all of it is there to read). */
+static void grep_all(struct grep *g, u64 n) { g->all = n; }
 static void grep_text(struct grep *g, const u8 *t, u64 n) {
-  g->t = t, g->n = n, g->at = 0, g->nfound = g->took = 0, g->cands = 0;
+  g->t = t, g->n = n, g->at = g->began = 0, g->nfound = g->took = 0, g->cands = 0, g->all = n, g->ahead = 0;
   g->lanes = !g->pre && !g->firsts && !g->r->litn, g->passed = g->verified = g->tried = 0;
 }
 
@@ -114,7 +242,13 @@ static u64 grep_line(struct grep *g) {
   struct re *r = g->r;
   const u8 *t = g->t;
   u64 n = g->n;
+  if (g->ahead) return grep_ahead(g);
   while (g->at < n) {
+    /* Past its first megabyte, with as much again to go: the windows from here (more threads than one). */
+    if (g->most > 1 && g->at >= AHEAD_AFTER && g->took >= g->nfound && g->all - g->at >= 4 * AHEAD_PIECE) {
+      g->ahead = 1, g->wend = g->at, g->pieces = g->pat = 0;
+      return grep_ahead(g);
+    }
     if (g->lanes) {
       if (g->took < g->nfound) return g->found[g->took++];
       u64 to = g->at + GREP_BLOCK >= n ? n : line_end(t, n, g->at + GREP_BLOCK);
@@ -133,7 +267,7 @@ static u64 grep_line(struct grep *g) {
     int k = 1, first = r->lit_first || begins;
     /* Too many places that come to nothing (one in every 16 bytes, past the first 256): the lanes from here. */
     /* (From the start of the line it is in: places before it on its line came to nothing, but the lanes ask of lines.) */
-    if (begins && ++g->cands > 256 && (p + 1) < 16 * g->cands) {
+    if (begins && ++g->cands > 256 && (p + 1 - g->began) < 16 * g->cands) {
       g->lanes = 1, g->nfound = g->took = 0, g->at = line_start(t, 0, g->at);
       continue;
     }

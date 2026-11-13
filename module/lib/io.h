@@ -44,6 +44,8 @@ static void staged(const void *p, u64 n, int nl) {
 }
 static void put(const void *p, u64 n) {
   if (n <= SMALL) { staged(p, n, 0); return; }
+  /* (What lies where the piece before it ends is that piece, longer: lines of a text one after another are one piece.) */
+  if (niov && (const u8 *)iov[niov - 1].base + iov[niov - 1].len == (const u8 *)p) { iov[niov - 1].len += n; return; }
   iov[niov].base = p, iov[niov++].len = n;
   if (niov == IOV) flush();
 }

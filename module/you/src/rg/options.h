@@ -8,6 +8,7 @@ static struct {
   u64 max_count, max_columns;
   int have_max_count, preview;
   u32 after, before, max_depth;
+  u32 threads; /* -j: how many threads a long text is searched by (0: as many as go faster, re/grep.h) */
   int hidden, no_ignore;
   const char *glob[64];
   u32 nglob;
@@ -217,12 +218,13 @@ static void longopt(const char *name, const char *v, int argc, char **argv, int 
   else if (same(name, "color") || same(name, "colour")) o.colour = when(v);
   else if (same(name, "max-columns")) o.max_columns = number_of(v, "--max-columns");
   else if (same(name, "max-depth")) o.max_depth = (u32)number_of(v, "--max-depth");
+  else if (same(name, "threads")) o.threads = (u32)number_of(v, "--threads");
   else if (same(name, "sort") || same(name, "sortr")) {
     if (!same(v, "path") && !same(v, "none")) usage("sorted only by path here: ", v);
     o.sort_reverse = same(name, "sortr") && same(v, "path");
   }
-  /* What changes nothing here: one thread, the files mapped, none compressed searched as compressed, CRLF's \r kept. */
-  else if (same(name, "sort-files") || same(name, "no-config") || same(name, "threads") || same(name, "encoding") ||
+  /* What changes nothing here: the files mapped, none compressed searched as compressed, CRLF's \r kept. */
+  else if (same(name, "sort-files") || same(name, "no-config") || same(name, "encoding") ||
            same(name, "no-require-git") || same(name, "no-ignore-parent") || same(name, "no-ignore-global") ||
            same(name, "line-buffered") || same(name, "block-buffered") || same(name, "no-line-buffered") ||
            same(name, "no-block-buffered") || same(name, "engine") || same(name, "one-file-system") ||
@@ -257,7 +259,8 @@ static void shortopts(const char *s, int argc, char **argv, int *a) {
       case 'T': if (o.nuntype < 32) o.untype[o.nuntype++] = v; return;
       case 'M': o.max_columns = number_of(v, "-M"); return;
       case 'd': o.max_depth = (u32)number_of(v, "-d"); return;
-      case 'j': case 'E': return;
+      case 'j': o.threads = (u32)number_of(v, "-j"); return;
+      case 'E': return;
       case 'F': o.fixed = 1; break;
       case 'i': o.kase = 1; break;
       case 'S': o.kase = 2; break;
