@@ -16,5 +16,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["why/app", "why/remote", "scripts", "tests/app/*.ts", "module/sods/runtime", "module/sods/test", "module/muk/make", "module/muk/test", "module/ricebox/make", "module/ricebox/layers", "module/everyday"]
+  "include": ["why/app", "why/remote", "scripts", "tests/app/*.ts", "module/sods/runtime", "module/sods/test", "module/muk/make", "module/muk/test", "module/ricebox/make", "module/ricebox/layers", "module/you/make", "module/everyday"]
 }

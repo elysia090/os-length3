@@ -165,7 +165,7 @@ static int is_dir(const u8 *p) {
 #define HEAD 20
 #define ONE 256u /* a rank of 1 */
 #define MAXAGE (10000u * ONE)
-#ifndef COMPACT_EVERY /* (a test's build makes it again more often: test/zoxide-stress.sh) */
+#ifndef COMPACT_EVERY /* (a test's build makes it again more often: test/you-stress.sh) */
 #define COMPACT_EVERY 16384
 #endif
 #define FORGET_GONE (90u * 86400u)

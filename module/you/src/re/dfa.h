@@ -1,5 +1,5 @@
 /*
- * regex.c's automaton as a DFA made as it is run (lazily, as RE2's and Rust's crate's are): a state is a set of the
+ * The automaton (automaton.h) as a DFA made as it is run (lazily, as RE2's and Rust's crate's are): a state is a set of the
  * automaton's states not yet followed through their empty edges, with what the byte before was (a line's start, a
  * word's character) where the pattern asks; each of its moves, on a class of bytes the pattern does not tell apart, is
  * worked out the first time it is taken and kept. A move also says whether a match ended before its byte. So a text is

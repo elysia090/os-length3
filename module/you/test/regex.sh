@@ -7,14 +7,14 @@
 # and the lines both ways again as the browser looks, 16 bytes a step (YOU_16). you's rg (rg.c) and ripgrep are given
 # the same words each time. A pattern both refuse is the same too.
 #
-#   sh you/ripgrep/regex.sh RG     RG: ripgrep, to compare with; you's rg is built by lib/build.sh
+#   sh you/test/regex.sh RG     RG: ripgrep, to compare with; you's rg is built by lib/build.sh
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 rg=$1
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
-sh "$here/../../lib/build.sh" "$here/rg.c" "$t/you"
-CFLAGS=-DYOU_16 sh "$here/../../lib/build.sh" "$here/rg.c" "$t/you16"
+sh "$here/../../lib/build.sh" "$here/../src/rg.c" "$t/you"
+CFLAGS=-DYOU_16 sh "$here/../../lib/build.sh" "$here/../src/rg.c" "$t/you16"
 # (Past a block of the DFA's lanes.)
 for k in $(seq 3000); do cat "$here/regex-corpus.txt"; done > "$t/big"
 n=0 bad=0

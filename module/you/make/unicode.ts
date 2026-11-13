@@ -1,9 +1,9 @@
-// you/lib/unicode.h, the Unicode that you's regular expressions know (you/lib/regex.c), taken from ripgrep's own
+// you/src/re/unicode.h, the Unicode that you's regular expressions know (you/src/re), taken from ripgrep's own
 // answers so that what `you rg` finds is what `rg` finds: the characters past ASCII that \w, \d and \s take, and which
 // characters are one when case is aside (each character's next in its circle of case: K → k → K (Kelvin) → K).
 // ripgrep is run in a root (bwrap: its own /, as commands.ts runs it) over every character, one a line.
 //
-//   node scripts/you-unicode.ts ROOT_DIR
+//   node module/you/make/unicode.ts ROOT_DIR
 //
 // Each table is a string of numbers, seven bits a byte (the high bit: more follows). Ranges: the gap from the end of
 // the one before (from 0x7f), then the length less one. Circles: runs of characters, each its gap from the last of
@@ -16,8 +16,8 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root = process.argv[2];
-if (!root) throw new Error('usage: node scripts/you-unicode.ts ROOT_DIR');
-const out = fileURLToPath(new URL('../module/you/lib/unicode.h', import.meta.url));
+if (!root) throw new Error('usage: node module/you/make/unicode.ts ROOT_DIR');
+const out = fileURLToPath(new URL('../src/re/unicode.h', import.meta.url));
 const work = mkdtempSync(join(tmpdir(), 'you-unicode-'));
 
 /** What a command of ripgrep's says, run in the root with `work` at /tmp/w. */
@@ -104,7 +104,7 @@ try {
   const s = table(ranges(chars(rgo('\\s', '/tmp/w/all'))));
   const version = rg(['/usr/bin/rg', '--version']).toString().split('\n')[0];
   writeFileSync(out, `/*
- * The Unicode that regex.c knows past ASCII, as ${version} has it: made by scripts/you-unicode.ts, which asks
+ * The Unicode that you's regular expressions know past ASCII, as ${version} has it: made by make/unicode.ts, which asks
  * ripgrep itself (not edited by hand). Numbers seven bits a byte, the high bit saying more follows.
  *
  * U_WORD, U_DIGIT, U_SPACE: what \\w, \\d and \\s take past ASCII, as ranges: each the gap from the end of the one before

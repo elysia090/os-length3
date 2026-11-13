@@ -4,7 +4,7 @@
 # more places than it keeps; the longest place and the most keywords; a file that is not a file; output cut off; and
 # time: its weights, a place gone a season forgotten, a clock gone back.
 #
-#   sh you/zoxide/zoxide-stress.sh [YOU]     YOU: the program (you/you, as lib/build.sh makes it).
+#   sh you/test/you-stress.sh [YOU]     YOU: the program (you/src/you.c, as lib/build.sh makes it).
 #       A build of its own is made beside it for what wants one (lib/build.sh, CC): its file remade every 512
 #       bytes, its time $YOU_NOW when set.
 set -eu
@@ -12,7 +12,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 you=$(cd "$(dirname "${1:-$here/../you}")" && pwd)/$(basename "${1:-$here/../you}")
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
-CFLAGS="${CFLAGS:-} -DCOMPACT_EVERY=512 -DYOU_TEST_CLOCK" sh "$here/../../lib/build.sh" "$here/zoxide.c" "$t/yt"
+CFLAGS="${CFLAGS:-} -DCOMPACT_EVERY=512 -DYOU_TEST_CLOCK" sh "$here/../../lib/build.sh" "$here/../src/you.c" "$t/yt"
 yt=$t/yt
 export HOME="$t/home"
 unset YOU_EXCLUDE XDG_DATA_HOME YOU_NOW

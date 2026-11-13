@@ -53,7 +53,7 @@ export const UNITS: Unit[] = [
     takes: ['lib', 'muk', 'sods', 'everyday']},
   {name: 'everyday', says: 'the look and feel, changed by the one who uses it: what a face is drawn through. A sheet of names and values, a person\'s lines held to it, the way back the file itself; no window of its own',
     holds: ['module/everyday'], takes: []},
-  {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
+  {name: 'you', says: 'the tools a person reaches for, each a unit of C on lib made to its bound: you (the places one has been, zoxide\'s) and rg (a tree searched, ripgrep\'s), on regular expressions of its own', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
     holds: ['module/otter', 'why/core/src/storage'],
     takes: ['lib', 'ricebox', 'muk', 'sods']},
