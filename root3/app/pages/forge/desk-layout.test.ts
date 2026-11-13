@@ -6,14 +6,15 @@ import {BIG, GAP, GRID, inSight, LINE, next, PAD, row, SHADOW, tabbed, tallest, 
 
 const pieces = [{key: 'term', width: TERM, term: true}, {key: 'a.c', width: WIDTH}, {key: 'README.md', width: WIDTH}];
 
-test('the pieces lie in a row on the grid: the terminal, then the files a cell apart', () => {
+test('the pieces lie in a row on the grid: the terminal, then the files three cells apart', () => {
   const {at, end} = row(pieces);
   assert.equal(at.get('term'), PAD);
   assert.equal(at.get('a.c'), PAD + TERM + TERM_GAP);
   assert.equal(at.get('README.md'), PAD + TERM + TERM_GAP + WIDTH + GAP);
   assert.equal(end, at.get('README.md')! + WIDTH + SHADOW + GRID);
-  // Fifty letters and the numbers' margin, on the grid.
-  assert.equal(WIDTH, 23 * GRID);
+  // Fifty letters, the numbers' margin before them and half a cell after, on the grid; twice that when made larger.
+  assert.equal(WIDTH, 20 * GRID);
+  assert.equal(WIDTH * BIG, 40 * GRID);
   for (const x of at.values()) assert.equal(x % GRID, 0);
 });
 

@@ -3,6 +3,7 @@ import {closeUp, keepOut, putAway, still, unfold} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
+import {pageVeil} from '../../ui/page-veil.ts';
 import {bring, remoteOnly} from '../../remote/lifecycle.ts';
 import {store} from '../../repos/repos.ts';
 import {shownName} from '../../repos/issues.ts';
@@ -99,9 +100,8 @@ export class FileTree {
   private carried: {repo: string; path: string} | null = null;
   /** What a move by the pointer could not do, said at the tree's foot until it comes out again. */
   private said = h('p', {class: 'error small tree-said', role: 'alert'});
-  /** The page under the tree, out of focus while it is out (styles: .tree-veil): the same blur over all of it, deeper
-   * only in a strip at the window's top and at its foot. Three layers, each blurring what is under it. */
-  private veil = h('div', {class: 'tree-veil', 'aria-hidden': 'true'}, h('i'), h('i'), h('i'));
+  /** The page under the tree, out of focus while it is out (ui/page-veil.ts). */
+  private veil = pageVeil('all');
   /** Folders being read now, and who waits until none is. */
   private reading = 0;
   private read: (() => void)[] = [];
@@ -203,8 +203,7 @@ export class FileTree {
       }
       this.build(focus);
     }
-    if (!this.veil.isConnected) this.element.before(this.veil);
-    this.veil.classList.add('out');
+    this.veil.out(true);
     this.element.classList.add('open');
     if (still()) this.element.classList.add('settled');
     this.trigger?.setAttribute('aria-expanded', 'true');
@@ -219,7 +218,7 @@ export class FileTree {
     // Its edge again first, to go back in from where it stands.
     if (this.element.classList.contains('settled')) { this.element.classList.remove('settled'); void getComputedStyle(this.element).clipPath; }
     this.element.classList.remove('open');
-    this.veil.classList.remove('out');
+    this.veil.out(false);
     this.trigger?.setAttribute('aria-expanded', 'false');
   }
 

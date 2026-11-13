@@ -9,9 +9,12 @@
 /** The grid the desk is laid on, and a line of what is written on it at its own size. */
 export const GRID = 24;
 export const LINE = GRID;
-/** A sheet's width: fifty letters of the desk's code (16.5 px, .602 of it a letter), the numbers' margin before them
- * (a cell and a half), up to the grid. */
-export const WIDTH = up(1.5 * GRID + 50 * 16.5 * .602);
+/** The desk's code at rest: 14 px on a line of a cell (a sheet at rest is found and glanced at; made larger it is
+ * read: `BIG`). */
+export const CODE = 14;
+/** A sheet's width: fifty letters of the desk's code (.602 of its size a letter), the numbers' margin before them (a
+ * cell and a half) and half a cell after, up to the grid: twenty cells. */
+export const WIDTH = up(1.5 * GRID + 50 * CODE * .602 + GRID / 2);
 /** The terminal's width, and how many lines of it are in sight. */
 export const TERM = 14 * GRID;
 export const TERM_LINES = 18;
@@ -29,8 +32,9 @@ export const TOP = 2 * GRID;
 export const FOOT = 2 * GRID;
 /** A piece's shadow, a cell right and down. */
 export const SHADOW = GRID;
-/** A piece pressed twice is this many times as large (its letters 28 px). */
-export const BIG = 1.7;
+/** A piece pressed twice is this many times as large: exactly twice, so its letters (28 px), its lines (two cells),
+ * its margins and its width (forty cells) are all on the desk's grid as they are at rest. */
+export const BIG = 2;
 
 function up(v: number): number { return GRID * Math.ceil(v / GRID); }
 

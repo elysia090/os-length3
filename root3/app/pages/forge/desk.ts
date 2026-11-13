@@ -13,7 +13,7 @@ import {BIG, GRID, inSight, LINE, next, PAD, row, SHADOW, tabbed, tallest, TERM,
 // name over its top-left corner. Every sheet's top is on one line, and none reaches lower than two cells over the
 // window's foot: what is under that, or past its right edge, is scrolled to inside the sheet. One piece is in hand
 // (its shadow a cell right and down), and the desk is turned along the row only as far as shows that piece whole;
-// nothing is brought to the middle. A piece pressed twice is 1.7 times as large, and again its own size.
+// nothing is brought to the middle. A piece pressed twice is twice as large, and again its own size.
 // (Before: boxes 80 columns wide in columns, one under another and as tall as their text, the one in hand brought to
 // the middle of the face by a camera that stepped back on long ways; a box put beside the rest as a second screen.)
 // A piece is gone to by pressing it. From the keyboard: Escape leaves a text, the keyboard on the desk; there ← and →
@@ -112,7 +112,7 @@ export class Desk {
   #held: string | null = null;
   /** The terminal's closing, waited for after a press took a file (take). */
   #closing = 0;
-  /** The piece pressed twice: 1.7 times as large until it is pressed twice again. */
+  /** The piece pressed twice: twice as large until it is pressed twice again. */
   #big: string | null = null;
   /** Where the row ends (its last piece's shadow, a cell after). */
   #end = 0;
@@ -386,7 +386,7 @@ export class Desk {
     this.element.scrollLeft += dx;
   }
 
-  /** Pressed twice: the piece is 1.7 times as large, and its own size again. On the words of the piece one writes in,
+  /** Pressed twice: the piece is twice as large, and its own size again. On the words of the piece one writes in,
    * twice chooses a word, as in any text: there its size is its margins' (its numbers, its edges). */
   #twice(e: MouseEvent) {
     const on = e.target as Element, key = on.closest<HTMLElement>('.desk-box')?.dataset.key;
@@ -400,7 +400,7 @@ export class Desk {
     this.enlarge(this.#big === key ? null : key);
   }
 
-  /** `key` 1.7 times as large (none: every piece its own size). */
+  /** `key` twice as large (none: every piece its own size). */
   enlarge(key: string | null) {
     this.#big = key && this.#boxes.has(key) ? key : null;
     for (const b of this.#boxes.values()) b.el.classList.toggle('big', b.key === this.#big);
@@ -420,10 +420,10 @@ export class Desk {
     const w = this.element.clientWidth, hgt = this.element.clientHeight;
     if (!w || !hgt) return;
     // A sheet fifty letters wide, or as wide as the face has room for with its shadow.
-    const bw = Math.max(10 * GRID, Math.min(WIDTH, GRID * Math.floor((w - PAD - SHADOW - GRID) / GRID)));
+    const room = Math.max(10 * GRID, GRID * Math.floor((w - PAD - SHADOW - GRID) / GRID)), bw = Math.min(WIDTH, room);
     const pieces = this.#row.map((key) => {
       const term = this.#boxes.get(key)!.laid.kind === 'term', k = key === this.#big ? BIG : 1;
-      return {key, width: (term ? Math.min(key === this.#held ? TERM_HELD : TERM, bw) : bw) * k, term, k};
+      return {key, width: (term ? Math.min(key === this.#held ? TERM_HELD : TERM, room) : bw) * k, term, k};
     });
     const {at, end} = row(pieces);
     for (const p of pieces) {

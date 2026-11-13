@@ -134,17 +134,22 @@
 .file-tree > .tree-pop .pop-item:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 .file-tree > .tree-pop .pop-item.pop-gone:is(:hover, :focus-visible) { color: var(--del); }
 .file-tree > .tree-pop :is(.pop-field, .pop-ask) { padding: var(--s2) var(--u); }
-/* The page under the tree steps back out of focus while it is out (the rail does not: it is what the tree came out
-   of): the same blur over all of it and a thin wash of the ground, and only in a strip at the window's top and at its
+/* The page stepping back out of focus under what is laid over it (ui/page-veil.ts): File's tree, and what the band's
+   search found. The rail does not (it is what the tree came out of), nor, under what the search found, the band's
+   keys. The same blur over all of it and a thin wash of the ground, and only in a strip at the window's top and at its
    foot, lower than a place's icon is tall, deeper, as a lens tilted over it leaves its far edges. So what is dark on
-   the page (the terminal, a sheet's shadow) is not a hard shape in the steps of the tree's own shadow. Three layers,
+   the page (the terminal, a sheet's shadow) is not a hard shape in the steps of a sheet's own shadow. Three layers,
    each blurring what is under it (not one in another: a blurred thing's children see only itself). */
-.tree-veil { position: fixed; inset: 0; z-index: 8; pointer-events: none; }
-.tree-veil > i { position: absolute; inset: 0; transition: backdrop-filter 180ms ease-out, background-color 180ms ease-out; }
-.tree-veil > i:nth-child(2) { mask-image: linear-gradient(to bottom, #000 0, #000 11px, transparent 36px, transparent calc(100% - 36px), #000 calc(100% - 11px), #000 100%); }
-.tree-veil > i:nth-child(3) { mask-image: linear-gradient(to bottom, #000 0, transparent 22px, transparent calc(100% - 22px), #000 100%); }
-.tree-veil.out > i:nth-child(1) { backdrop-filter: blur(6px); background-color: color-mix(in srgb, var(--ground) 35%, transparent); }
-.tree-veil.out > i:nth-child(2) { backdrop-filter: blur(11px); }
-.tree-veil.out > i:nth-child(3) { backdrop-filter: blur(16px); }
+/* (How much of the ground comes over the page: a thin wash under File's tree, which is small and at the window's
+   edge; more under what the search found, which is read across the page: there the page's own contrasts, its ink
+   and its paper, are brought most of the way to the ground, so only the sheets found are read.) */
+.page-veil { --wash: 35%; position: fixed; inset: 0; z-index: 8; pointer-events: none; }
+.page-veil.under-band { --wash: 65%; z-index: 6; }
+.page-veil > i { position: absolute; inset: 0; transition: backdrop-filter 180ms ease-out, background-color 180ms ease-out; }
+.page-veil > i:nth-child(2) { mask-image: linear-gradient(to bottom, #000 0, #000 11px, transparent 36px, transparent calc(100% - 36px), #000 calc(100% - 11px), #000 100%); }
+.page-veil > i:nth-child(3) { mask-image: linear-gradient(to bottom, #000 0, transparent 22px, transparent calc(100% - 22px), #000 100%); }
+.page-veil.out > i:nth-child(1) { backdrop-filter: blur(6px); background-color: color-mix(in srgb, var(--ground) var(--wash), transparent); }
+.page-veil.out > i:nth-child(2) { backdrop-filter: blur(11px); }
+.page-veil.out > i:nth-child(3) { backdrop-filter: blur(16px); }
 .file-tree { z-index: 9; }
-body:has(> .tree-veil.out) .rail { z-index: 9; }
+body:has(> .page-veil.out) .rail { z-index: 9; }

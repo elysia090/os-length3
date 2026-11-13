@@ -64,8 +64,9 @@
   --t-identity: 28px; --t-title: 24px; --t-card: 20px; --t-body: 15px; --t-meta: 13px;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 40px;
   /* Places are rounded squares, actions are round, fields are slightly rounded; a sheet (a file's, the terminal's,
-     File's tree, Home's note) and a key of the band have one corner between a field's and a place's. */
-  --r-field: 8px; --r-sheet: 10px; --r-place: 12px; --r-round: 999px;
+     File's tree, Home's note) has one corner between a field's and a place's; a key of the band is small and drawn in
+     line, and tight at the corner (at a sheet's corner the three read slack). */
+  --r-key: 4px; --r-field: 8px; --r-sheet: 10px; --r-place: 12px; --r-round: 999px;
   /* A card of rows: a row's corner plus the room between them. */
   --r-card: calc(var(--r-field) + var(--s2));
   /* Heights: a pressable thing, a row in a list, a place in the rail. */

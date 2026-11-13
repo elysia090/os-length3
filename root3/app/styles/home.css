@@ -18,7 +18,6 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 /* ---- The two columns, in one place: the person's own, and over it (held in the window as the note is read down)
    what stands against the right edge. ---- */
 .home-main { display: grid; grid-template-columns: minmax(0, 1fr); }
-.home-layout.sheet-down > .home-main { opacity: 0; transition: opacity calc(120ms * var(--pace)) ease-out; }
 .home-own { grid-area: 1 / 1; min-width: 0; padding-top: calc(var(--vy) - var(--outer-top) - 3 * var(--u)); }
 .home-beside { grid-area: 1 / 1; justify-self: end; position: sticky; top: var(--outer-top); width: 0; height: max(calc(100vh - var(--outer-top)), calc(31 * var(--u)));
   margin-top: calc(-3 * var(--u)); pointer-events: none; }

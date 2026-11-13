@@ -49,6 +49,7 @@ export const THINGS: readonly Thing[] = [
   {name: "s4", kind: "length", usual: "16px", least: 8, most: 32, says: ''},
   {name: "s5", kind: "length", usual: "24px", least: 12, most: 48, says: ''},
   {name: "s6", kind: "length", usual: "40px", least: 20, most: 80, says: ''},
+  {name: "r-key", kind: "length", usual: "4px", least: 2, most: 8, says: ''},
   {name: "r-field", kind: "length", usual: "8px", least: 4, most: 16, says: ''},
   {name: "r-sheet", kind: "length", usual: "10px", least: 5, most: 20, says: ''},
   {name: "r-place", kind: "length", usual: "12px", least: 6, most: 24, says: ''},

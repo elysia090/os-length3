@@ -14,10 +14,11 @@ for (const width of [390, 500, 760, 1024, 1400]) {
     // (Measured once the paper has come down and is drawn as it stays: on its way, or between two drawings, it is
     // not where it will be.)
     await expect(async () => {
+      // (The sheets lie from the desk's edge, under the band's keys: past the rail, and no further than the page.)
       const paper = await app.forge.results.boundingBox(), center = await app.main.locator('.center').boundingBox();
-      const words = await row.locator('.sheet-text').boundingBox();
-      expect(paper && center && words).toBeTruthy();
-      expect(paper!.x).toBeGreaterThanOrEqual(center!.x);
+      const words = await row.locator('.sheet-text').boundingBox(), keys = await app.main.locator('.band-tools').boundingBox();
+      expect(paper && center && words && keys).toBeTruthy();
+      expect(paper!.x).toBeGreaterThanOrEqual(keys!.x - 1);
       expect(paper!.x + paper!.width).toBeLessThanOrEqual(center!.x + center!.width + 1);
       expect(paper!.y + paper!.height).toBeLessThan(900);
       // Two fixed sections and an intrinsic filename track used to leave snippets with zero width.

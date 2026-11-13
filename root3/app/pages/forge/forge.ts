@@ -150,6 +150,11 @@ class Forge {
     this.termLinks();
     // The name in hand is set against the right edge by its ink, as wide a window as there is.
     new ResizeObserver(() => this.tellHeld(true)).observe(this.heldName);
+    // (What is searched for, and whether what was found is down, are said on the page's work and its sheet.)
+    const told = new MutationObserver(() => this.tellHeld());
+    told.observe(this.element, {attributes: true, attributeFilter: ['class']});
+    const found = this.element.querySelector('.band-tools .search-results');
+    if (found) told.observe(found, {attributes: true, attributeFilter: ['data-q']});
     // Files from the desktop let go over a piece: into its folder (none written over), the first opened.
     takeFiles(this.center, drag, (repo, path) => this.show(repo, path));
     // Something on the desk scrolled into view (the keyboard going to it, a find): the desk's camera goes there instead.
@@ -316,7 +321,9 @@ class Forge {
    * Set by its ink against the edge, smaller where the band has no room for it at its size (`again`: the room changed). */
   private tellHeld(again = false) {
     const repo = this.now.repo, d = repo ? this.desks.get(repo) : undefined, held = d?.desk.held ?? null;
-    const said = !repo || !d || held === null ? '' : held === TERM ? `${repo} $` : d.desk.said(held)?.name ?? '';
+    // While what the search found is down over the desk, the page's large word is what was searched for.
+    const asked = this.element.classList.contains('sheet-down') ? this.element.querySelector<HTMLElement>('.band-tools .search-results')?.dataset.q ?? '' : '';
+    const said = asked || (!repo || !d || held === null ? '' : held === TERM ? `${repo} $` : d.desk.said(held)?.name ?? '');
     const el = this.heldName;
     if (el.textContent === said && !again) return;
     el.textContent = said;

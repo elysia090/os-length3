@@ -1,10 +1,10 @@
 /* Forge's desk (pages/forge/desk.ts): the page is the desk, the window's whole ground under the band's keys. What is
    open lies on it in a row, on the dots' grid: the terminal first, a sheet of ink lying askew near the places, its
-   shadow its own green; then the files, each a sheet of paper (its corner --r-sheet, the band's keys'), fifty letters wide, its name over its
+   shadow its own green; then the files, each a sheet of paper (its corner --r-sheet), fifty letters wide, its name over its
    top-left corner (its folder quiet before it). Every sheet's top is on one line, and none reaches lower than two
    cells over the window's foot: what is under that, or past its right edge, is scrolled to inside it. The hard shadow,
-   a cell right and down, is under the piece in hand alone. Its code is at the size one writes at (16.5 px, a line a
-   cell); a piece pressed twice has all of it 1.7 times as large (--k).
+   a cell right and down, is under the piece in hand alone. Its code is 14 px on a line of a cell at rest; a piece
+   pressed twice is twice as large (--k), 28 px on lines of two cells, and brought to the desk's edge.
    (Before: boxes inked round with soft corners, 80 columns of 14 px code, in columns one under another, as tall as
    their text, the one in hand brought to the middle of the face; the Prompt a line at the center's foot.) */
 body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--dots); background-size: var(--u) var(--u); }
@@ -20,7 +20,7 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
 .desk-plane { position: absolute; left: 0; top: 0; width: 1px; height: 1px; }
 /* On a narrow window the rail is close set and there is no room beside it: the desk starts where the page does. */
 @media (max-width: 760px) { .desk { left: 0; } }
-.desk-box { --line: calc(var(--u) * var(--k, 1)); --t-code: calc(16.5px * var(--k, 1));
+.desk-box { --line: calc(var(--u) * var(--k, 1)); --t-code: calc(14px * var(--k, 1));
   position: absolute; left: 0; top: 0; box-sizing: border-box; padding: calc(var(--line) / 2) 0; border-radius: var(--r-sheet);
   background: var(--paper); color: var(--ink);
   transition: translate 640ms cubic-bezier(.45, 0, .2, 1), width 220ms var(--land), rotate 220ms var(--land), box-shadow 120ms var(--land), margin 120ms var(--land), opacity 180ms ease-out; }
@@ -42,7 +42,7 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
 /* Its name over its top-left corner, in the letters the desk's small words are set in, its feet half a cell over the
    sheet; its close at the other end of that line, there for the piece under the pointer and for the keyboard. */
 .desk-label { position: absolute; left: 0; bottom: calc(100% + 7px); display: flex; align-items: baseline; gap: 0; white-space: nowrap;
-  font: 700 calc(20px * var(--k, 1))/calc(var(--u) * var(--k, 1)) var(--mono); color: var(--ink); transition: font-size 220ms var(--land); }
+  font: 700 calc(16.5px + 3.5px * (var(--k, 1) - 1))/var(--u) var(--mono); color: var(--ink); transition: font-size 220ms var(--land); }
 .desk-after { margin-left: 1ch; font-weight: 400; color: var(--quiet); }
 .desk-close { position: absolute; right: 0; bottom: calc(100% + 7px); display: grid; place-items: center; width: var(--u); height: var(--u); padding: 0; border: 0;
   border-radius: 0; background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
@@ -55,9 +55,12 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
    is under its foot is scrolled to here, what is past its right edge in its text; neither with the browser's bars
    (ui/scroll-marks.ts says where one is while it is scrolled). */
 .desk-file { position: relative; max-height: calc(var(--tallest, 100vh) - var(--line)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
-.desk-file > .sheet { display: grid; grid-template-columns: minmax(calc(1.1 * var(--line)), max-content) minmax(0, 1fr); column-gap: calc(.4 * var(--line)); padding: 0; }
+/* A sheet's proportions: the words 14 px on a line of a cell, their numbers smaller before them in a margin a cell and
+   a half wide, half a cell after the fiftieth letter; made larger (--k: 2) all of it twice, but the numbers and the
+   name, which only step up (they are found by, not read). */
+.desk-file > .sheet { display: grid; grid-template-columns: minmax(calc(26 / 24 * var(--line)), max-content) minmax(0, 1fr); column-gap: calc(10 / 24 * var(--line)); padding: 0 calc(var(--line) / 2) 0 0; }
 .desk :is(.gutter, .code) { font: var(--t-code)/var(--line) var(--mono); }
-.desk .gutter { color: var(--quiet); min-width: 0; }
+.desk .gutter { color: var(--quiet); min-width: 0; font-size: calc(11px + 5.5px * (var(--k, 1) - 1)); }
 .desk .code { scrollbar-width: none; overscroll-behavior-x: contain; }
 .desk-file > .sheet-note, .desk-file > .sheet > .sheet-note { padding: 0 var(--line); font: var(--t-code)/var(--line) var(--mono); }
 /* What a file says of itself (it could not be saved, it is read in part): at its top right, held there as the sheet

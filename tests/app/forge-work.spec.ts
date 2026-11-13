@@ -417,13 +417,13 @@ test('the terminal\'s words are its own green on ink, at the size one writes at 
   await app.rail.go('forge');
   const term = app.forge.piece('term'), stand = app.page.locator('.desk-term.stand'), chip = stand.locator('.prompt-chip');
   await app.forge.promptBox.click();
-  // In hand it is opened out: twenty-two cells wide and twenty lines tall, a cell over and under them; 16.5 px on
+  // In hand it is opened out: twenty-two cells wide and twenty lines tall, a cell over and under them; 14 px on
   // lines of 24, a whole step of the grid.
   const size = () => term.evaluate((el) => {
     const line = el.querySelector('.prompt-in')!, c = getComputedStyle(line);
     return {w: (el as HTMLElement).offsetWidth, h: (el as HTMLElement).offsetHeight, line: line.getBoundingClientRect().height, font: c.fontSize, colour: c.color};
   });
-  expect(await size()).toEqual({w: TERM_HELD, h: 22 * GRID, line: 24, font: '16.5px', colour: 'rgb(155, 224, 191)'});
+  expect(await size()).toEqual({w: TERM_HELD, h: 22 * GRID, line: 24, font: '14px', colour: 'rgb(155, 224, 191)'});
   // No lamp, nothing lit: the prompt's own colour says whether a shell is there, quieter until one is.
   await expect(stand.locator('.prompt-chip > .lamp')).toBeHidden();
   const colour = () => chip.evaluate((el) => getComputedStyle(el).color);
@@ -440,7 +440,7 @@ test('the terminal\'s words are its own green on ink, at the size one writes at 
   expect(tall).toBeGreaterThan(24);
   expect(tall % 24).toBe(0);
   // The sheet is as it was (what it printed scrolls inside it), and nothing in it closes it.
-  expect(await size()).toEqual({w: TERM_HELD, h: 22 * GRID, line: 24, font: '16.5px', colour: 'rgb(155, 224, 191)'});
+  expect(await size()).toEqual({w: TERM_HELD, h: 22 * GRID, line: 24, font: '14px', colour: 'rgb(155, 224, 191)'});
   await expect(stand.locator('.term-shut')).toBeHidden();
 });
 
@@ -606,19 +606,23 @@ test('Tab in a file is the text\'s, the indent written; out of the text ← and 
   await expect(own).toBeFocused();
 });
 
-test('a piece pressed twice on its margin is 1.7 times as large, its letters 28 px, the pieces after it making way; twice in the words one writes in chooses a word; Escape on the desk, or twice again, and it is its own size', async ({app}) => {
+test('a piece pressed twice on its margin is twice as large, its letters 28 px, the pieces after it making way; twice in the words one writes in chooses a word; Escape on the desk, or twice again, and it is its own size', async ({app}) => {
   await app.rail.go('forge');
   const readme = app.forge.piece('README.md'), main = app.forge.piece('src/main.c'), own = app.forge.editor('README.md');
   const size = () => readme.evaluate((el) => ({w: Math.round(el.getBoundingClientRect().width * 10) / 10, font: Math.round(parseFloat(getComputedStyle(el.querySelector('.code')!).fontSize) * 10) / 10}));
   await own.fill('one two\n');
   await own.press('Escape');
-  expect(await size()).toEqual({w: WIDTH, font: 16.5});
-  const next = (await main.boundingBox())!.x;
-  // On its numbers' margin, twice: large, the piece after it moved along by what it grew.
+  expect(await size()).toEqual({w: WIDTH, font: 14});
+  // (Where a piece lies on the desk, however far the desk is turned.)
+  const lies = async (piece: typeof main) => Math.round((await piece.boundingBox())!.x + await app.forge.desk.evaluate((d) => d.scrollLeft));
+  const next = await lies(main);
+  // On its numbers' margin, twice: large, the piece after it moved along by what it grew; and it is the page's one
+  // sheet, brought to the desk's own edge under the band's keys.
   await readme.locator('.gutter').dblclick({position: {x: 6, y: 6}});
   await expect(readme).toHaveClass(/big/);
-  await expect.poll(size).toEqual({w: Math.round(WIDTH * BIG * 10) / 10, font: 28.1});
-  await expect.poll(async () => Math.round((await main.boundingBox())!.x - next)).toBe(Math.round(WIDTH * (BIG - 1)));
+  await expect.poll(size).toEqual({w: WIDTH * BIG, font: 28});
+  await expect.poll(async () => await lies(main) - next).toBe(WIDTH * (BIG - 1));
+  await expect.poll(async () => Math.round((await readme.boundingBox())!.x - (await app.forge.desk.boundingBox())!.x)).toBe(0);
   // In its words, the piece being the one written in, twice chooses a word: its size stays.
   await own.focus();
   const text = (await own.boundingBox())!;
@@ -630,7 +634,7 @@ test('a piece pressed twice on its margin is 1.7 times as large, its letters 28 
   await expect(app.forge.desk).toBeFocused();
   await app.page.keyboard.press('Escape');
   await expect(readme).not.toHaveClass(/big/);
-  await expect.poll(size).toEqual({w: WIDTH, font: 16.5});
+  await expect.poll(size).toEqual({w: WIDTH, font: 14});
   // A piece not yet gone into, pressed twice anywhere on it: taken in hand and made large; twice on its margin, back.
   await main.locator('.code').dblclick({position: {x: 30, y: 30}});
   await expect(main).toHaveClass(/held/);
