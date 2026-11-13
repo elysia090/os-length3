@@ -41,7 +41,8 @@ for c in "$here"/*.c; do
 done
 # Functions cut into runs of a few blocks (sods' layout.rs RUN cuts only functions of thousands): every jump between runs a
 # tail call to the run that holds its target, loops round them still taking their turns; the same output as native.
-for name in calls switches signals threads jobs; do
+# (strings and flagged: the direction flag and the flags a count of 0 leaves are the thread's across a run's edge too.)
+for name in calls switches signals threads jobs strings flagged; do
   set +e
   SODS_RUN=3 node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.cut"; cut=$?
   "$out/$name" a b > "$out/$name.native"; native=$?

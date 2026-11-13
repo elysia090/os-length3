@@ -78,10 +78,10 @@ pub(crate) struct Kind { pub flow: u8, pub reads: u8, pub writes: u8, pub bits: 
 
 /// Every way an instruction reads and writes the flags kept (read, written): what iced says of each of its codes,
 /// and of each as its operands change it (the test asks them all). An instruction's way is its place here.
-const WAYS: [(u8, u8); 22] = [
+const WAYS: [(u8, u8); 24] = [
     (0x00, 0x00), (0x00, 0x04), (0x00, 0x10), (0x00, 0x11), (0x00, 0x27), (0x00, 0x33), (0x00, 0x36), (0x00, 0x37),
     (0x01, 0x00), (0x01, 0x01), (0x02, 0x00), (0x03, 0x00), (0x04, 0x00), (0x07, 0x00), (0x10, 0x00), (0x10, 0x10),
-    (0x10, 0x11), (0x10, 0x37), (0x14, 0x00), (0x20, 0x00), (0x36, 0x00), (0x37, 0x00),
+    (0x10, 0x11), (0x10, 0x37), (0x11, 0x11), (0x14, 0x00), (0x20, 0x00), (0x36, 0x00), (0x37, 0x00), (0x37, 0x37),
 ];
 fn way(reads: u8, writes: u8) -> u8 { WAYS.iter().position(|&w| w == (reads, writes)).expect("every way with the flags is listed") as u8 }
 
@@ -140,12 +140,17 @@ pub(crate) fn kinds() -> &'static Kinds {
     KINDS.get_or_init(|| Kinds { of: iced_x86::Code::values().map(|_| AtomicU32::new(0)).collect() })
 }
 
+/// A shift, a rotate or a double shift counted by cl: by 0 it leaves every flag as it was, so the flags it writes
+/// are flags it reads (what made them before is still wanted).
+fn counted_by_cl(code: iced_x86::Code) -> bool { format!("{code:?}").ends_with("_CL") }
+
 /// What iced says of the flags an instruction of `code` reads and writes: as it is, then with each immediate and
-/// each pair of registers that may change it.
+/// each pair of registers that may change it. (One counted by cl reads what it writes: counted_by_cl.)
 fn said(code: iced_x86::Code) -> [(u8, u8); 7] {
     let mut i = Instruction::default();
     i.set_code(code);
-    let flags = |i: &Instruction| (read_by(i), written_by(i));
+    let by_cl = counted_by_cl(code);
+    let flags = |i: &Instruction| { let (r, w) = (read_by(i), written_by(i)); (if by_cl { r | w } else { r }, w) };
     let with = |imm: u8| { let mut j = i; j.set_immediate8(imm); flags(&j) };
     let mut j = i;
     j.set_op0_kind(OpKind::Register);

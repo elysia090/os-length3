@@ -168,11 +168,12 @@ impl Fx<'_> {
                     self.get(l_t(1)); self.get(l_t(2));
                     self.e(if op == Mnemonic::Rol { I64_ROTL } else { I64_ROTR });
                 } else {
-                    // rotate within `bits`: (x << c | x >> (bits - c)) & mask, c taken mod bits
-                    self.get(l_t(2)); self.c64(bits); self.e(I64_REM_U); self.set(l_t(2));
+                    // rotate within `bits`: (x << c | x >> (bits - c)) & mask, c the count mod bits (in l_t(5): the
+                    // count as it was masked stays in l_t(2), and says whether the flags change)
+                    self.get(l_t(2)); self.c64(bits); self.e(I64_REM_U); self.set(l_t(5));
                     let (a, b) = if op == Mnemonic::Rol { (I64_SHL, I64_SHR_U) } else { (I64_SHR_U, I64_SHL) };
-                    self.get(l_t(1)); self.get(l_t(2)); self.e(a);
-                    self.get(l_t(1)); self.c64(bits); self.get(l_t(2)); self.e(I64_SUB); self.e(b);
+                    self.get(l_t(1)); self.get(l_t(5)); self.e(a);
+                    self.get(l_t(1)); self.c64(bits); self.get(l_t(5)); self.e(I64_SUB); self.e(b);
                     self.e(I64_OR); self.mask_to(size);
                 }
             }
@@ -214,12 +215,25 @@ impl Fx<'_> {
             });
         } else if need {
             self.hold_flags();
-            // Rotates: CF is the bit that wrapped around.
+            // Rotates: CF is the bit that wrapped around, whenever the count is not 0.
             self.get(l_t(3));
             if op == Mnemonic::Rol { self.c64(1); self.e(I64_AND); } else { self.c64(bits - 1); self.e(I64_SHR_U); self.c64(1); self.e(I64_AND); }
             self.e(I32_WRAP_I64);
             if constant.is_none() { self.get(L_CF); self.get(l_t(2)); self.c64(0); self.e(I64_NE); self.e(SELECT); }
             self.set(L_CF);
+            // OF, defined for a count of 1: the result's top bit against CF after (rol) or the bit beside it (ror).
+            // Any other count leaves it as it was.
+            if constant.is_none() || constant == Some(1) {
+                self.sign_bit(l_t(3), size);
+                if op == Mnemonic::Rol {
+                    self.get(L_CF);
+                } else {
+                    self.get(l_t(3)); self.c64(bits - 2); self.e(I64_SHR_U); self.c64(1); self.e(I64_AND); self.e(I32_WRAP_I64);
+                }
+                self.e(I32_XOR);
+                if constant.is_none() { self.get(L_OF); self.get(l_t(2)); self.c64(1); self.e(I64_EQ); self.e(SELECT); }
+                self.set(L_OF);
+            }
         }
         self.write(i, 0, size, l_t(3))
     }
@@ -276,6 +290,8 @@ impl Fx<'_> {
         let size = Self::size(i, 0);
         let bits = size as i64 * 8;
         let left = i.mnemonic() == Mnemonic::Shld;
+        // The flags before are held first: making them uses l_t(4), where the result goes.
+        if need { self.hold_flags(); }
         if !self.read(i, 0, size) { return false; }
         self.set(l_t(1));
         if !self.read(i, 1, size) { return false; }
@@ -294,16 +310,22 @@ impl Fx<'_> {
         self.get(l_t(1)); self.get(l_t(3)); self.c64(0); self.e(I64_NE); self.e(SELECT);
         self.set(l_t(4));
         if need {
-            self.hold_flags();
+            // A count of 0 changes no flag: each is what was made here only when the count is not 0.
+            let put = |fx: &mut Self, local: u32| {
+                fx.get(local); fx.get(l_t(3)); fx.c64(0); fx.e(I64_NE); fx.e(SELECT); fx.set(local);
+            };
             // CF: last bit shifted out of dst.
             self.get(l_t(1));
             if left { self.c64(bits); self.get(l_t(3)); self.e(I64_SUB); self.e(I64_SHR_U); }
             else { self.get(l_t(3)); self.c64(1); self.e(I64_SUB); self.e(I64_SHR_U); }
             self.c64(1); self.e(I64_AND); self.e(I32_WRAP_I64);
-            self.get(L_CF); self.get(l_t(3)); self.c64(0); self.e(I64_NE); self.e(SELECT); self.set(L_CF);
-            self.get(l_t(4)); self.e(I64_EQZ); self.get(L_ZF); self.get(l_t(3)); self.c64(0); self.e(I64_NE); self.e(SELECT); self.set(L_ZF);
-            self.sign_bit(l_t(4), size); self.get(L_SF); self.get(l_t(3)); self.c64(0); self.e(I64_NE); self.e(SELECT); self.set(L_SF);
-            self.c32(0); self.set(L_OF);
+            put(self, L_CF);
+            self.get(l_t(4)); self.e(I64_EQZ); put(self, L_ZF);
+            self.sign_bit(l_t(4), size); put(self, L_SF);
+            self.get(l_t(4)); self.c64(0xff); self.e(I64_AND); self.e(I64_POPCNT); self.c64(1); self.e(I64_AND); self.e(I64_EQZ);
+            put(self, L_PF);
+            // OF, defined for a count of 1: whether the sign changed.
+            self.sign_bit(l_t(4), size); self.sign_bit(l_t(1), size); self.e(I32_XOR); put(self, L_OF);
         }
         self.write(i, 0, size, l_t(4))
     }
@@ -441,6 +463,8 @@ impl Fx<'_> {
         true
     }
 
+    /// movs and stos, alone or repeated, each way. The way is the block's where its code says it (std or cld before,
+    /// in this block); elsewhere it is the thread's as it runs (G_RF), and both ways are made for DF to choose.
     pub(crate) fn string(&mut self, i: &Instruction) -> bool {
         use Mnemonic::*;
         let (size, store): (u8, bool) = match i.mnemonic() {
@@ -449,63 +473,91 @@ impl Fx<'_> {
             _ => return false,
         };
         let rep = i.has_rep_prefix();
-        if self.backward {
-            // Descending copy (memmove's overlapping case): the same bytes
-            // as one memory.copy of the whole span, which is overlap-safe.
-            if store || !rep { return false; }
-            self.get(l_reg(RCX)); if size > 1 { self.c64(size.trailing_zeros() as i64); self.e(I64_SHL); } self.set(l_t(1));
-            self.get(l_reg(RDI)); self.get(l_t(1)); self.e(I64_SUB); self.c64(size as i64); self.e(I64_ADD); self.e(I32_WRAP_I64);
-            self.get(l_reg(RSI)); self.get(l_t(1)); self.e(I64_SUB); self.c64(size as i64); self.e(I64_ADD); self.e(I32_WRAP_I64);
-            self.get(l_t(1)); self.e(I32_WRAP_I64);
-            self.e(MEMORY_COPY);
-            self.get(l_reg(RSI)); self.get(l_t(1)); self.e(I64_SUB); self.set(l_reg(RSI));
-            self.get(l_reg(RDI)); self.get(l_t(1)); self.e(I64_SUB); self.set(l_reg(RDI));
-            self.c64(0); self.set(l_reg(RCX));
-            return true;
-        }
-        if rep {
-            // count bytes = rcx * size
-            self.get(l_reg(RCX)); if size > 1 { self.c64(size.trailing_zeros() as i64); self.e(I64_SHL); } self.set(l_t(1));
-        } else {
-            self.c64(size as i64); self.set(l_t(1));
-        }
-        if store {
-            if size == 1 || !rep {
-                if size == 1 {
-                    self.get(l_reg(RDI)); self.e(I32_WRAP_I64);
-                    self.get(l_reg(RAX)); self.e(I32_WRAP_I64);
-                    self.get(l_t(1)); self.e(I32_WRAP_I64);
-                    self.e(MEMORY_FILL);
-                } else {
-                    self.get(l_reg(RDI)); self.e(I32_WRAP_I64); self.get(l_reg(RAX)); self.store_sized(size);
-                }
-            } else {
-                // Wider fills: loop over elements.
-                self.get(l_reg(RDI)); self.set(l_t(2));
-                self.get(l_reg(RCX)); self.set(l_t(3));
-                self.block();
-                self.loop_();
-                self.get(l_t(3)); self.e(I64_EQZ); self.br_if(1);
-                self.get(l_t(2)); self.e(I32_WRAP_I64); self.get(l_reg(RAX)); self.store_sized(size);
-                self.get(l_t(2)); self.c64(size as i64); self.e(I64_ADD); self.set(l_t(2));
-                self.get(l_t(3)); self.c64(1); self.e(I64_SUB); self.set(l_t(3));
-                self.br(0);
-                self.end();
+        match self.backward {
+            Some(back) => self.string_way(size, store, rep, back),
+            None => {
+                self.gget(G_RF); self.c64(RF_DF); self.e(I64_AND); self.e(I64_EQZ);
+                self.if_();
+                self.string_way(size, store, rep, false);
+                self.else_();
+                self.string_way(size, store, rep, true);
                 self.end();
             }
-        } else {
-            // x86 forward rep movs copies element by element, so overlapping
-            // forward copies replicate; memory.copy is exact for the
-            // non-overlapping and backward-safe cases compilers emit.
+        }
+        true
+    }
+
+    /// One way of a string instruction: up (DF clear), or down, where rsi and rdi are at the span's last element.
+    fn string_way(&mut self, size: u8, store: bool, rep: bool, back: bool) {
+        // The bytes it covers, in l_t(1): rcx elements, or the one.
+        if rep { self.get(l_reg(RCX)); if size > 1 { self.c64(size.trailing_zeros() as i64); self.e(I64_SHL); } } else { self.c64(size as i64); }
+        self.set(l_t(1));
+        // The span's low end from the register at its start.
+        let low = |fx: &mut Self, r: u32| {
+            fx.get(l_reg(r));
+            if back { fx.get(l_t(1)); fx.e(I64_SUB); fx.c64(size as i64); fx.e(I64_ADD); }
+        };
+        // A repeat of none touches no memory, wherever its registers point.
+        if rep { self.get(l_t(1)); self.e(I64_EQZ); self.e(I32_EQZ); self.if_(); }
+        if !rep {
             self.get(l_reg(RDI)); self.e(I32_WRAP_I64);
-            self.get(l_reg(RSI)); self.e(I32_WRAP_I64);
+            if store { self.get(l_reg(RAX)); } else { self.get(l_reg(RSI)); self.e(I32_WRAP_I64); self.load_sized(size); }
+            self.store_sized(size);
+        } else if store && size == 1 {
+            low(self, RDI); self.e(I32_WRAP_I64);
+            self.get(l_reg(RAX)); self.e(I32_WRAP_I64);
+            self.get(l_t(1)); self.e(I32_WRAP_I64);
+            self.e(MEMORY_FILL);
+        } else if store {
+            // Wider fills: every element the same, so from the low end up, either way.
+            low(self, RDI); self.set(l_t(2));
+            self.get(l_reg(RCX)); self.set(l_t(3));
+            self.block();
+            self.loop_();
+            self.get(l_t(3)); self.e(I64_EQZ); self.br_if(1);
+            self.get(l_t(2)); self.e(I32_WRAP_I64); self.get(l_reg(RAX)); self.store_sized(size);
+            self.get(l_t(2)); self.c64(size as i64); self.e(I64_ADD); self.set(l_t(2));
+            self.get(l_t(3)); self.c64(1); self.e(I64_SUB); self.set(l_t(3));
+            self.br(0);
+            self.end();
+            self.end();
+        } else {
+            // x86 copies element by element the way it goes. Where the destination lies in what is still to be read
+            // (ahead of the source going up, behind it going down, by less than the span), what is copied is read
+            // again further on: there alone the copy differs from one memory.copy of the span, and is done an
+            // element at a time as x86 does it.
+            let (ahead, behind) = if back { (RSI, RDI) } else { (RDI, RSI) };
+            self.get(l_reg(ahead)); self.get(l_reg(behind)); self.e(I64_SUB); self.get(l_t(1)); self.e(I64_GE_U);
+            self.if_();
+            low(self, RDI); self.e(I32_WRAP_I64);
+            low(self, RSI); self.e(I32_WRAP_I64);
             self.get(l_t(1)); self.e(I32_WRAP_I64);
             self.e(MEMORY_COPY);
-            self.get(l_reg(RSI)); self.get(l_t(1)); self.e(I64_ADD); self.set(l_reg(RSI));
+            self.else_();
+            let step = if back { -(size as i64) } else { size as i64 };
+            self.get(l_reg(RSI)); self.set(l_t(2));
+            self.get(l_reg(RDI)); self.set(l_t(3));
+            self.get(l_reg(RCX)); self.set(l_t(5));
+            self.block();
+            self.loop_();
+            self.get(l_t(5)); self.e(I64_EQZ); self.br_if(1);
+            self.get(l_t(3)); self.e(I32_WRAP_I64);
+            self.get(l_t(2)); self.e(I32_WRAP_I64); self.load_sized(size);
+            self.store_sized(size);
+            self.get(l_t(2)); self.c64(step); self.e(I64_ADD); self.set(l_t(2));
+            self.get(l_t(3)); self.c64(step); self.e(I64_ADD); self.set(l_t(3));
+            self.get(l_t(5)); self.c64(1); self.e(I64_SUB); self.set(l_t(5));
+            self.br(0);
+            self.end();
+            self.end();
+            self.end();
         }
-        self.get(l_reg(RDI)); self.get(l_t(1)); self.e(I64_ADD); self.set(l_reg(RDI));
+        if rep { self.end(); }
+        // rdi, and rsi for a copy, past what was covered; a repeat leaves rcx 0.
+        let moved = if back { I64_SUB } else { I64_ADD };
+        if !store { self.get(l_reg(RSI)); self.get(l_t(1)); self.e(moved); self.set(l_reg(RSI)); }
+        self.get(l_reg(RDI)); self.get(l_t(1)); self.e(moved); self.set(l_reg(RDI));
         if rep { self.c64(0); self.set(l_reg(RCX)); }
-        true
     }
 
     pub(crate) fn bit_test(&mut self, i: &Instruction) -> bool {
@@ -584,8 +636,9 @@ impl Fx<'_> {
             self.get(l_t(1)); self.e(I64_EQZ);
             self.set(if m == Mnemonic::Tzcnt || m == Mnemonic::Lzcnt { L_CF } else { L_ZF });
             if m == Mnemonic::Popcnt {
+                // ZF by the source; every other flag clear.
                 self.get(l_t(1)); self.e(I64_EQZ); self.set(L_ZF);
-                self.c32(0); self.set(L_CF);
+                for l in [L_CF, L_SF, L_PF] { self.c32(0); self.set(l); }
             }
             if m == Mnemonic::Tzcnt || m == Mnemonic::Lzcnt {
                 self.get(l_t(3)); self.e(I64_EQZ); self.set(L_ZF);
@@ -640,8 +693,9 @@ impl Fx<'_> {
         let ok = match m {
             Nop | Endbr64 | Pause | Prefetchnta | Prefetcht0 | Prefetcht1 | Prefetcht2 | Prefetchw | Lfence | Mfence
             | Sfence => true,
-            Cld => { self.backward = false; true }
-            Std => { self.backward = true; true }
+            // DF: the thread's (G_RF), and known to the code after in this block.
+            Cld => { self.gget(G_RF); self.c64(!RF_DF); self.e(I64_AND); self.gset(G_RF); self.backward = Some(false); true }
+            Std => { self.gget(G_RF); self.c64(RF_DF); self.e(I64_OR); self.gset(G_RF); self.backward = Some(true); true }
             Shld | Shrd => self.double_shift(i, need),
             // A register write masks to its width and a store keeps only its bytes, so values go straight in.
             Mov => {
@@ -715,7 +769,11 @@ impl Fx<'_> {
                     self.set(L_FB);
                     self.get(L_FA); self.get(L_FB); self.e(I64_ADD); self.mask_to(size); self.set(L_FR);
                     self.defer(Flags::Add(size));
-                    self.write(i, 1, size, L_FA) && self.write(i, 0, size, L_FR)
+                    // The source takes what the destination held, the destination the sum. In memory, the destination
+                    // is written first: its address may be made from the source register, as it was before. Between
+                    // registers the destination is written last (xadd of a register with itself leaves the sum).
+                    let order = if i.op0_kind() == OpKind::Memory { [(0, L_FR), (1, L_FA)] } else { [(1, L_FA), (0, L_FR)] };
+                    order.iter().all(|&(n, l)| self.write(i, n, size, l))
                 }
             }
             Cmpxchg => {
@@ -792,7 +850,7 @@ impl Fx<'_> {
             // an add, sub, inc or dec's operands are still held (bit 4 of a ^ b ^ r), else it reads as clear.
             Pushfq => {
                 self.push_with(|fx| {
-                    fx.c64(0x202 | if fx.backward { 0x400 } else { 0 });
+                    fx.c64(0x202); fx.gget(G_RF); fx.c64(RF_DF); fx.e(I64_AND); fx.e(I64_OR);
                     for (f, bit) in [(Flag::C, 0), (Flag::P, 2), (Flag::Z, 6), (Flag::S, 7), (Flag::O, 11)] {
                         fx.flag(f); fx.e(I64_EXTEND_I32_U);
                         if bit > 0 { fx.c64(bit); fx.e(I64_SHL); }
@@ -805,8 +863,8 @@ impl Fx<'_> {
                     true
                 })
             }
-            // The flags back from the stack. DF is followed in the code as it is written (std, cld); a popped DF set
-            // is a direction this translation does not follow, so it traps rather than copy the wrong way.
+            // The flags back from the stack. DF is the thread's as popped (G_RF): the code after in this block does not
+            // know it, and reads it as it runs.
             Popfq => {
                 self.pop_value(l_t(1));
                 for (l, bit) in [(L_CF, 0), (L_PF, 2), (L_ZF, 6), (L_SF, 7), (L_OF, 11)] {
@@ -814,11 +872,9 @@ impl Fx<'_> {
                     self.c64(1); self.e(I64_AND); self.e(I32_WRAP_I64); self.set(l);
                 }
                 self.set_flags(Flags::Held);
-                self.backward = false;
-                self.get(l_t(1)); self.c64(0x400); self.e(I64_AND); self.e(I64_EQZ); self.e(I32_EQZ);
-                self.if_();
-                self.c64(i.ip() as i64); self.c32(TRAP_UNSUPPORTED); self.call(F_TRAP); self.e(UNREACHABLE);
-                self.end();
+                self.gget(G_RF); self.c64(!RF_DF); self.e(I64_AND);
+                self.get(l_t(1)); self.c64(RF_DF); self.e(I64_AND); self.e(I64_OR); self.gset(G_RF);
+                self.backward = None;
                 true
             }
             Clc | Stc | Cmc => {

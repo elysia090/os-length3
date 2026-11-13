@@ -13,7 +13,9 @@ runs what it makes is ricebox's (`../ricebox`).
 - `src/` (Rust) translates a static x86-64 ELF ahead of time into one wasm
   module. Guest addresses are wasm addresses, registers are locals, flags
   are deferred so `cmp`+`jcc` is one comparison, `rep movs` is
-  `memory.copy`. Code is found from symbols, call targets and the
+  `memory.copy` (an element at a time only where it copies onto what it has
+  still to read, as x86 does), the direction flag is the thread's own as it
+  runs. Code is found from symbols, call targets and the
   relocations kept by `--emit-relocs` (including position-relative jump
   tables); anything reached another way goes through an address dispatcher.
   In one direction, each file one thing: `elf.rs` the program at rest; `x86.rs` an instruction as sods reads it
