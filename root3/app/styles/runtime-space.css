@@ -7,14 +7,18 @@
 .space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
 .space-col > h3 b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .space-list { display: grid; align-content: start; gap: var(--s1); flex: 1; overflow-y: auto; }
-.space-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; }
-.space-what { display: grid; min-width: 0; flex: 1; }
-.space-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A row: what a thing takes is on its name's line against its column's right edge, as the column's total is over
+   it (the figures of a column are one right-aligned column); what is said of it runs the column's width under its
+   name; what is done to it (Free space) is under that, against the same edge. Its gear, come at a touch, is on the
+   name's line beside what it takes. */
+.space-row { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s2) var(--s3); padding: var(--s2) 0; }
+.space-what { display: grid; min-width: 0; flex: 1 0 100%; }
+.space-name { padding-right: calc(4 * var(--u)); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-row:has(> .repo-gear-button) .space-name { padding-right: calc(6 * var(--u)); }
+.space-row > .repo-gear-button { position: absolute; right: calc(3 * var(--u)); top: 0; }
+.space-row > button:not(.repo-gear-button) { margin-left: auto; }
 .space-what .small { overflow-wrap: anywhere; } /* what a row is, and why, read whole */
-.space-size { flex: none; font-size: var(--t-meta); font-variant-numeric: tabular-nums; color: var(--sub); }
-.gear-room { flex: none; width: var(--h-row); }
-/* A column's figure stands over its rows' sizes, clear of the room their gear takes: one column of numbers. */
-.space-col:has(.gear-room) > h3 b { margin-right: calc(var(--h-row) + var(--s3)); }
+.space-size { position: absolute; right: 0; top: var(--s2); font-size: var(--t-meta); line-height: var(--u); font-variant-numeric: tabular-nums; color: var(--sub); }
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
 .space-foot .grow { flex: 1; }
 .link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: var(--cursor-hand); }
