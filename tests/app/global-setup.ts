@@ -3,12 +3,12 @@
 //
 //   1. the app is built for a Remote on its own origin (VITE_LENGTH3_REMOTE=''),
 //      into tests/.dist, unless that build is newer than every source;
-//   2. a fresh Remote (root3/remote/serve/dev.ts) starts on a free port, its data in a
+//   2. a fresh Remote (why/remote/serve/dev.ts) starts on a free port, its data in a
 //      new temporary directory: PGlite, blobs, mail.log, nothing kept (off
 //      CI, its database a copy of an empty one made once, in tests/.pg);
 //   3. `vite preview` serves the build on another free port and passes /api
-//      and /v1 to that Remote (ROOT3_DEV_REMOTE), as `vite` does in development;
-//   4. beside them, the same again for a Remote with the plan (ROOT3_PLAN=1:
+//      and /v1 to that Remote (WHY_DEV_REMOTE), as `vite` does in development;
+//   4. beside them, the same again for a Remote with the plan (WHY_PLAN=1:
 //      the free allowance, the tiers, and Stripe's stand-in, devbilling.ts),
 //      started at the same time, for the specs about paying (SELFTEST_PLAN_APP).
 //      Every other spec meets a Remote with no plan, where everything is open.
@@ -66,8 +66,8 @@ function newest(path: string): number {
   return n;
 }
 
-// The core the browser runs (root3/core/web, built by vite.config.ts) is made from root3/core/src.
-const SOURCES = ['root3/app', 'root3/shared', 'public', 'package-lock.json', 'root3/core/src', 'root3/core/web/src', 'scripts/core-wasm.ts', 'module/sods/runtime', 'module/everyday/src', 'module/muk/runtime', 'module/muk/runtime'];
+// The core the browser runs (why/core/web, built by vite.config.ts) is made from why/core/src.
+const SOURCES = ['why/app', 'why/shared', 'public', 'package-lock.json', 'why/core/src', 'why/core/web/src', 'scripts/core-wasm.ts', 'module/sods/runtime', 'module/everyday/src', 'module/muk/runtime', 'module/muk/runtime'];
 const STAMP = join(OUT, '.built');
 
 /** What the build carries besides the sources: the browser's Prompt, when public/ has it. */
@@ -80,7 +80,7 @@ async function build() {
   if (made > changed && readFileSync(STAMP, 'utf8') === carries()) { console.log('selftest: the build in tests/.dist is fresh'); return; }
   console.log('selftest: building the app for a Remote on its own origin');
   const status = await new Promise<number | null>((resolve, reject) => {
-    const c = spawn(process.execPath, [join(OS, 'node_modules/vite/bin/vite.js'), 'build', '--config', join(OS, 'root3/app/vite.config.ts'), '--outDir', OUT, '--logLevel', 'warn'],
+    const c = spawn(process.execPath, [join(OS, 'node_modules/vite/bin/vite.js'), 'build', '--config', join(OS, 'why/app/vite.config.ts'), '--outDir', OUT, '--logLevel', 'warn'],
       {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
     c.once('error', reject);
     c.once('close', resolve);
@@ -107,7 +107,7 @@ function hashTree(hash: ReturnType<typeof createHash>, path: string) {
  * (one made first and copied would be the slower).
  */
 async function emptyDatabase(): Promise<string> {
-  const migrations = join(OS, 'root3', 'remote', 'migrations');
+  const migrations = join(OS, 'why', 'remote', 'migrations');
   const hash = createHash('sha256');
   for (const pkg of ['@electric-sql/pglite', 'drizzle-orm']) hash.update(readFileSync(join(OS, 'node_modules', pkg, 'package.json')));
   hashTree(hash, migrations);
@@ -185,7 +185,7 @@ async function worker(): Promise<() => Promise<void>> {
   const {remote, bridgeProcess} = await import('../prod/stack.ts');
   const pg = await cluster();
   const b = await bridgeProcess().catch((e) => { pg.destroy(); throw e; });
-  const dir = scratch('root3-selftest-worker-');
+  const dir = scratch('why-selftest-worker-');
   const made: Awaited<ReturnType<typeof remote>>[] = [];
   const teardown = async () => {
     for (const [i, x] of made.entries()) writeFileSync(join(LOGS, i ? 'worker-plan.log' : 'worker.log'), x.log());
@@ -228,7 +228,7 @@ export default async function globalSetup(_config: FullConfig) {
   // Said where it is waited for, below, once the servers are stopped.
   built.catch(() => {});
   const empty = process.env.CI ? null : await emptyDatabase();
-  const data = scratch('root3-selftest-data-');
+  const data = scratch('why-selftest-data-');
   const [remotePort, appPort, planRemotePort, planAppPort] = await freePorts(4);
   const app = `http://localhost:${appPort}`, planApp = `http://localhost:${planAppPort}`;
   const remoteURL = `http://localhost:${remotePort}`;
@@ -243,8 +243,8 @@ export default async function globalSetup(_config: FullConfig) {
   /** A Remote (its data in `dir` under the run's; off CI, its database a copy of the empty one) and the preview that passes to it, `name` naming their logs. */
   const pair = async (name: string, dir: string, rPort: number, aPort: number, env: NodeJS.ProcessEnv = {}) => {
     // The preview first: it waits for nothing.
-    children.push(start(`preview${name}`, [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--config', join(OS, 'root3/app/vite.config.ts'), '--outDir', OUT,
-      '--host', '127.0.0.1', '--port', String(aPort), '--strictPort'], {ROOT3_DEV_REMOTE: `http://127.0.0.1:${rPort}`}));
+    children.push(start(`preview${name}`, [join(OS, 'node_modules/vite/bin/vite.js'), 'preview', '--config', join(OS, 'why/app/vite.config.ts'), '--outDir', OUT,
+      '--host', '127.0.0.1', '--port', String(aPort), '--strictPort'], {WHY_DEV_REMOTE: `http://127.0.0.1:${rPort}`}));
     if (empty) {
       mkdirSync(join(data, dir));
       await copyDir(empty, join(data, dir, 'pg'));
@@ -253,14 +253,14 @@ export default async function globalSetup(_config: FullConfig) {
     // The Remote's own name is localhost too, so the session it sets on sign-in is the app's. It loads its modules as
     // npm test's processes do (scripts/tests-load.ts: their types stripped once, their code compiled once, for every
     // run): a fifth less of the CPU its start took, which every run waited for.
-    children.push(start(`remote${name}`, ['--import', LOAD, 'root3/remote/serve/dev.ts', join(data, dir), String(rPort), at], {ROOT3_DEV_BASE: `http://localhost:${rPort}`, ...env}));
+    children.push(start(`remote${name}`, ['--import', LOAD, 'why/remote/serve/dev.ts', join(data, dir), String(rPort), at], {WHY_DEV_BASE: `http://localhost:${rPort}`, ...env}));
     // Through the preview, so both are up and the one passes to the other. (Between the servers and
     // from here, the address itself: what localhost names first, ::1 or 127.0.0.1, is the system's.)
     return ready(`http://127.0.0.1:${aPort}/v1/about`, children);
   };
   try {
     // The two at once, and the build: the Remote with the plan costs the run no time of its own.
-    await Promise.all([built, pair('', 'open', remotePort, appPort), pair('-plan', 'plan', planRemotePort, planAppPort, {ROOT3_PLAN: '1'})]);
+    await Promise.all([built, pair('', 'open', remotePort, appPort), pair('-plan', 'plan', planRemotePort, planAppPort, {WHY_PLAN: '1'})]);
   } catch (e) {
     await teardown();
     throw e;

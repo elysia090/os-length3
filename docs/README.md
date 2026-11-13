@@ -1,7 +1,7 @@
-# Length³ OS desktop shell
+# why\* desktop shell
 
 The work OS of this repository: the desktop app (Tauri v2), the same
-TypeScript frontend (no UI framework) as the web app, `root3` on the command
+TypeScript frontend (no UI framework) as the web app, `why` on the command
 line, the Rust core all three ask, and the Remote. What is still open is
 tracked in issue #20.
 
@@ -52,7 +52,7 @@ tracked in issue #20.
   top and the reference (the repo's issues, its diff, and what was run)
   grows into the room. No tabs: files are chosen from File.
 - Prompt: in the app with a root installed, the distribution's root itself
-  (`root3 prompt`): its sh, gcc, make, git on this kernel, writing the repo
+  (`why prompt`): its sh, gcc, make, git on this kernel, writing the repo
   directly. Every place it writes has an owner and a lifetime (DESIGN.md
   §5): over the read-only root lies the repo's environment (an overlay;
   `apk add` there is the repo's, in `envs/<repo>`), `/var/cache`,
@@ -64,15 +64,15 @@ tracked in issue #20.
   that root and nothing else: with none installed yet it says so and
   Runtime installs one (it never falls back to the browser's way, whose
   files its build does not carry). In a browser, the same root through
-  sods in a Worker, on the open repo: its own BusyBox `sh`, coreutils, git, gcc, make and root3, at the
+  sods in a Worker, on the open repo: its own BusyBox `sh`, coreutils, git, gcc, make and why, at the
   same paths with the same bytes. What the shell changes under `/root/<repo>` is
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,
-  File, Forge and Git see one repo. Its one dependency is root3 (DESIGN.md,
-  root3: the one base): in a browser, `public/webroot`, made from the release root
-  by `scripts/webroot.ts`: `webroot.json` (which root3, and the root's digest), an index
+  File, Forge and Git see one repo. Its one dependency is why (DESIGN.md,
+  why: the one base): in a browser, `public/webroot`, made from the release root
+  by `scripts/webroot.ts`: `webroot.json` (which why, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
-  first opens it, and the translator with BusyBox, root3 and git translated
+  first opens it, and the translator with BusyBox, why and git translated
   ahead of time. A first Prompt fetches about 0.8 MB (the index, the translator,
   BusyBox and its translation); what it fetched is kept by digest within
   the browser's storage budget, so the next fetches only `webroot.json`. What a
@@ -80,13 +80,13 @@ tracked in issue #20.
   is kept the same way, by the file it was made from, so the next Prompt
   reads it rather than translating it again. Make it
   with `npm run webroot` (`scripts/webroot.sh`: the translator from this tree and the
-  newest root `root3/core/src/root/pins.rs` pins), and check it against that root
+  newest root `why/core/src/root/pins.rs` pins), and check it against that root
   with `npm run webroot:parity -- ROOT public/webroot`; `node scripts/webroot-runnable.ts
   public/webroot ROOT_DIR` says which programs of it run under muk today.
 
-## root3: the same OS on the command line
+## why: the same OS on the command line
 
-`root3` speaks the app's words and goes through the same Rust core
+`why` speaks the app's words and goes through the same Rust core
 (`core/`), so the app and the command cannot disagree about a repo, a file,
 an issue or a TODO. Templates and the naming rules live once in `shared/`,
 read by the core, the app and both test suites.
@@ -103,24 +103,24 @@ Server    server
 Inbox     inbox · name
 ```
 
-Nobody has to learn these first. At a terminal, `root3` alone is the rail:
+Nobody has to learn these first. At a terminal, `why` alone is the rail:
 the same purposes in the same order and words, each with what is there now;
 pick one (↑↓, a number or its first letter, Enter) and its page is printed
-as `root3 <page>` prints it, then its things with their deeds, the ones where
+as `why <page>` prints it, then its things with their deeds, the ones where
 they stand (an issue not started: Start; changed: Commit; committed: Push;
 handed in: Approve, Merge…). A deed asks for what it needs in place, one line
-each, says the command it runs (`→ root3 issue new notes "Fix：title"`) and
+each, says the command it runs (`→ why issue new notes "Fix：title"`) and
 then offers what comes next; q or Esc leaves, and what stays in the
 scrollback is plain text. After a command typed by hand, its next deeds are
-said in one line without taking a key, and `root3 next` opens them to choose
+said in one line without taking a key, and `why next` opens them to choose
 with the keys. It is all lines under what is
 there (over SSH, in a Prompt), redrawn only on a key, the focus a › and
-brackets. Through a pipe, with `--json`, `TERM=dumb` or `ROOT3_PLAIN=1`, nothing
-is offered or asked and root3 writes exactly what it always did.
+brackets. Through a pipe, with `--json`, `TERM=dumb` or `WHY_PLAIN=1`, nothing
+is offered or asked and why writes exactly what it always did.
 
 ```
-$ root3
-Length³ OS · length3.com
+$ why
+why* · length3.com
   › 1  Home     Profile · TODO 1 open of 2
     2  Forge    Your workshop · 1 repo · 1 on the band
     3  File     Files in your repos · /root holds 1 repo
@@ -130,61 +130,61 @@ Length³ OS · length3.com
   ↑↓ choose · Enter open · 1-9 or a letter jumps · q leaves
 ```
 
-One table (`root3/cli/src/words/spec.rs`) says every form: its words and what each
+One table (`why/cli/src/words/spec.rs`) says every form: its words and what each
 slot is (a repo, a path, an issue, text…), its flags, what it needs (the
 Remote; whether it may run inside the app's Prompt) and how it keeps in step
 with the Remote, and, for the menu, which forms make a purpose's page and
 which deeds a form is offered as (its word in both languages, what it is
 pressed on, the facts it is offered under, what it asks). Parsing, the help,
 the completion, the menu, what a Prompt may run and what is sent and taken
-in around each command are all read from it. `root3 help` lists the
-commands by the rail, `root3 help COMMAND` (or `root3 COMMAND --help`) gives one
-command's forms, `root3 help all` every form, a mistyped word gets the nearest
-one ("Did you mean: root3 commit"), and `root3 completion bash|zsh|fish` completes
+in around each command are all read from it. `why help` lists the
+commands by the rail, `why help COMMAND` (or `why COMMAND --help`) gives one
+command's forms, `why help all` every form, a mistyped word gets the nearest
+one ("Did you mean: why commit"), and `why completion bash|zsh|fish` completes
 commands, verbs, flags and what fits each slot (repo names, paths, issues,
 dotfiles). In a repo (its copy, an issue's copy, or its Prompt) the repo may
-be left out and `#N` is that repo's issue N: `root3 commit`, `root3 start #3`,
-`root3 merge #3`, and `root3 file src` reads from where you are. An issue is named
-by its number (`3`, `#3`, `hello#3`) or by words of its title (`root3 start
+be left out and `#N` is that repo's issue N: `why commit`, `why start #3`,
+`why merge #3`, and `why file src` reads from where you are. An issue is named
+by its number (`3`, `#3`, `hello#3`) or by words of its title (`why start
 restart`); words that fit more than one are refused with the choices. What
-root3 says names issues the same way (`#3 Fix：title`), never by the file that
+why says names issues the same way (`#3 Fix：title`), never by the file that
 holds them. Any repo takes an issue (`issue/` is made for the first), and
 issues sort by number; a file there without one (written by hand, or two
 devices' issues that met under one number) is given the next free number
 when Git is drawn while the repo shows main, as the app does, unless a work
 or change refers to it. `--` ends the
-flags for every command (`root3 todo add -- "-1 day"`). Every command takes
+flags for every command (`why todo add -- "-1 day"`). Every command takes
 `--json` (data, camelCase keys; an error is `{"error":{"kind","message"}}`),
 and exits 0 when done, 1 when not, 2 when not how it is written, 3 when the
 Remote is out of reach, 4 when what was named is not there, 5 when it is
-turned off here (`root3 address` with SSH off, in a script). `root3 -V` gives
-root3's version and the root's.
+turned off here (`why address` with SSH off, in a script). `why -V` gives
+why's version and the root's.
 
 Names are written owner first, as DESIGN.md §5 "Names" sets out (one
 namespace of principals, people and servers alike): `hello`,
 `hello/src/a.c`, `hello#3`, `ren:hello` (a repo of `ren`'s), `trip#general`
 (a server's board; `#general` when one is in one server). A name on the
 Remote (`ren`, `trip`) is first come and held five years at a time:
-`root3 name list` shows each name's term and your code (six digits anyone can
-find you by, or write to), `root3 name renew NAME` holds it five more years,
-and `root3 name release NAME` lets it go (held for you 30 days). A name of
+`why name list` shows each name's term and your code (six digits anyone can
+find you by, or write to), `why name renew NAME` holds it five more years,
+and `why name release NAME` lets it go (held for you 30 days). A name of
 your choosing on a domain you own (`ren@ren.dev`) is shown beside it.
 
-### The app, opened from root3
+### The app, opened from why
 
-The desktop app is the same OS in a window, and `root3 app` is the one way
-to it from the command line (`root3 help` says so in a line of its own):
+The desktop app is the same OS in a window, and `why app` is the one way
+to it from the command line (`why help` says so in a line of its own):
 
 ```
-$ root3 app
-Opened the app. Its window's close button, or root3 app close, closes it
+$ why app
+Opened the app. Its window's close button, or why app close, closes it
 ```
 
-The .deb and the AppImage carry root3 beside the app (`scripts/desktop.sh`): the
-.deb puts `/usr/bin/root3` on the PATH beside `/usr/bin/root3-desktop`, so after
-`sudo apt install ./os-length3-linux-X.Y.Z-desktop-amd64.deb` both `root3` and
-`root3 app` work at once, and the app runs that root3 for its Prompts and SSH. It
-is static (musl), with SSH; the root's own `/usr/bin/root3` is built without it.
+The .deb and the AppImage carry why beside the app (`scripts/desktop.sh`): the
+.deb puts `/usr/bin/why` on the PATH beside `/usr/bin/why-desktop`, so after
+`sudo apt install ./os-length3-linux-X.Y.Z-desktop-amd64.deb` both `why` and
+`why app` work at once, and the app runs that why for its Prompts and SSH. It
+is static (musl), with SSH; the root's own `/usr/bin/why` is built without it.
 
 What the machine needs: x86-64 Linux with glibc 2.39 or newer (Ubuntu 24.04,
 Debian 13, Fedora 40 and later; the app is built on Ubuntu 24.04), an X11 or
@@ -207,40 +207,40 @@ passes only on a window that drew; `release.sh` runs it on what it ships.
   anything not there. The Remote hands out this release's .deb and
   AppImage (`/v1/desktop/<file>`, as Runtime's Desktop app card on the
   web offers them): `sudo apt install ./os-length3-linux-X.Y.Z-desktop-amd64.deb`,
-  or the AppImage made runnable (`chmod +x`) in `~/Applications`. root3 takes
-  the program `ROOT3_APP` names, if it names one; else `root3-desktop` on
+  or the AppImage made runnable (`chmod +x`) in `~/Applications`. why takes
+  the program `WHY_APP` names, if it names one; else `why-desktop` on
   the PATH (where the .deb puts it); else the newest such AppImage in
   `~/Applications`, `~/Downloads`, `~/.local/bin` or `~`.
 - **Could not start**: an app that ends at once, a device without a
   screen for its window (no `DISPLAY` or `WAYLAND_DISPLAY`, as over SSH),
   or one that never answers is said as such (exit 1), never as open.
 
-`root3 app close` closes it as its window's close button does: what it saved
-stays, the Prompts it opened end with it, and what root3 runs (SSH, a Prompt
+`why app close` closes it as its window's close button does: what it saved
+stays, the Prompts it opened end with it, and what why runs (SSH, a Prompt
 in a terminal) goes on. With none open it says so and exits 0.
 
 Opening the app turns nothing else on: it listens on no network, starts no
-SSH and signs in to no Remote it is not signed in to already. root3 reaches
+SSH and signs in to no Remote it is not signed in to already. why reaches
 it through a socket in the app's own folder of the data directory
 (`<data>/app/`, owner-only), which only the person can open; while the app
 runs it holds a lock there, which is how a second one knows it is open
-(`root3/core/src/device/desktop.rs`).
+(`why/core/src/device/desktop.rs`).
 
 ### SSH into a repo's Prompt
 
-SSH is the desktop app's (and root3's): the web does not offer it. From the
+SSH is the desktop app's (and why's): the web does not offer it. From the
 host, or, when chosen, another PC on its network, an ordinary OpenSSH
-client lands in a repo's Prompt: the same shell `root3 prompt REPO` gives,
+client lands in a repo's Prompt: the same shell `why prompt REPO` gives,
 inside the root, without privileges, with the repo's network grant.
-`root3 address` says where, one line a repo, ready to paste, and on standard
+`why address` says where, one line a repo, ready to paste, and on standard
 error what to check of it:
 
 ```
-$ root3 address
+$ why address
 ssh -p 23000 notes@127.0.0.1
-root3: From this device only (127.0.0.1): no other PC finds it
-root3: 1 key let in (.authorized_keys)
-root3: Host key SHA256:Fgq+7vT/… (ssh shows it the first time it connects: check it is this)
+why: From this device only (127.0.0.1): no other PC finds it
+why: 1 key let in (.authorized_keys)
+why: Host key SHA256:Fgq+7vT/… (ssh shows it the first time it connects: check it is this)
 $ ssh -p 23000 notes@127.0.0.1 'make test'; echo $?
 ```
 
@@ -248,7 +248,7 @@ The SSH user is the repo. A command runs in the Prompt (`/bin/sh -c`) and
 its exit code comes back; with a terminal (`ssh -t`, or no command) it is
 the interactive shell. Standard input reaches the command, so `ssh …
 'cat > notes.txt' < notes.txt` writes into the repo itself, and `scp -O`
-(the classic protocol, which runs `scp` in the Prompt: root3's root has it)
+(the classic protocol, which runs `scp` in the Prompt: why's root has it)
 copies in and out. There is no sftp subsystem, so `sftp`, and `scp`
 without `-O` (it speaks sftp), do not work; and no port, agent or X11
 forwarding.
@@ -257,8 +257,8 @@ What others see, in each scope:
 
 | Who | この端末だけ (this device only) | 同じネットワークにも (the same network too) |
 |---|---|---|
-| this device | the port on 127.0.0.1 (and ::1); `root3 address` and the app's card show the destinations, the host key and the keys let in | the same, and the LAN addresses too |
-| another PC on the LAN/VPN | nothing: the port is closed (connection refused, no handshake, no banner) | the port on each LAN address and VPN address: `SSH-2.0-root3` and the host key, then only a key from `.authorized_keys` gets in |
+| this device | the port on 127.0.0.1 (and ::1); `why address` and the app's card show the destinations, the host key and the keys let in | the same, and the LAN addresses too |
+| another PC on the LAN/VPN | nothing: the port is closed (connection refused, no handshake, no banner) | the port on each LAN address and VPN address: `SSH-2.0-why` and the host key, then only a key from `.authorized_keys` gets in |
 | a sender on another segment (the public side) that routes to the LAN or VPN address through this device | nothing: the port is closed | the TCP handshake (Linux takes a packet for any of its addresses on any interface), then closed at accept: no banner, no host key |
 | the carrier's other customers, when an ordinary interface has a 100.64/10 address (a carrier's shared NAT) | nothing | nothing: connection refused, no socket there; at the VPN address, closed at accept |
 | containers and VMs behind a bridge (`docker0`, `br-*`, `virbr0`, `veth*`, …), whatever its address | nothing | nothing: connection refused, no socket on a bridge's address |
@@ -269,11 +269,11 @@ No address, port or repo name leaves the device: other devices' pages say
 only "listens for SSH, from that device only" (or "from its network's PCs
 too") with the off switch.
 
-- **Off at first.** `root3 address` with SSH off asks on a terminal whether
+- **Off at first.** `why address` with SSH off asks on a terminal whether
   to turn it on (y/N, No by default), then from where: this device only
   (the default, Enter) or the same network's PCs too. In a script it never
-  asks: it says how and exits 5. `root3 address ssh on [device|network]` and
-  `root3 address ssh off` set it without asking; the app's Runtime has the
+  asks: it says how and exits 5. `why address ssh on [device|network]` and
+  `why address ssh off` set it without asking; the app's Runtime has the
   same switch for its own device, which asks from where in its card first.
 - **Scope**: kept on the device (`<data>/ssh/scope.json`), never on the
   Remote; `on` alone takes the one kept. *This device only* listens on
@@ -288,7 +288,7 @@ too") with the off switch.
   `lxcbr*`, `lxdbr*`, `incusbr*`, `cni*`, `flannel*`, `cali*`,
   `cilium_*`, `podman*`, `vmnet*`, `vboxnet*`), whatever its address;
   never on 0.0.0.0, a public address, or IPv6 but ::1 (deliberately, for
-  now). `root3 address` and the app's card name each interface taken:
+  now). `why address` and the app's card name each interface taken:
   `From PCs on the same network too (wlan0 192.168.1.5, tailscale0
   100.101.102.103)`. The listener looks at the interfaces again every
   5 s: an address that goes, or stops being taken, is let go, and the
@@ -303,7 +303,7 @@ too") with the off switch.
   address through this host, is closed at accept, before the banner.
 - **Keys**: public keys only (no password, no keyboard-interactive), one
   OpenSSH public key a line in the Runtime dotfile `.authorized_keys`
-  (`root3 dotfile write .authorized_keys < ~/.ssh/id_ed25519.pub`). Dotfiles
+  (`why dotfile write .authorized_keys < ~/.ssh/id_ed25519.pub`). Dotfiles
   are kept on the Remote, so a key added (or removed) on one device counts
   on every one; the listener takes them in at most every 10 s as keys are
   tried. Ed25519 and ECDSA keys, the only kinds offered; not RSA. A line
@@ -311,16 +311,16 @@ too") with the off switch.
   turning on says which.
 - **Port**: one per person on the host, the same every time: 22000 plus
   their user number (uid 1000 → 23000), whatever repos there are, never
-  another person's; `ROOT3_SSH_PORT` names another when that one is taken.
-- **What it says of itself**: `SSH-2.0-root3`, not the SSH library or
+  another person's; `WHY_SSH_PORT` names another when that one is taken.
+- **What it says of itself**: `SSH-2.0-why`, not the SSH library or
   its version. The host key is Ed25519, made once per device in
-  `<data>/ssh/host_ed25519`; `root3 address` and the app's card show its
+  `<data>/ssh/host_ed25519`; `why address` and the app's card show its
   SHA256 fingerprint, the one ssh asks about the first time.
-- **Who runs it**: turning on starts `root3 address ssh serve` in the
+- **Who runs it**: turning on starts `why address ssh serve` in the
   background (its own session, its log in `<data>/ssh/log`), recorded in
   `<data>/ssh/listening.json` while it runs, as a Prompt records itself;
-  `root3 runtime` shows it and `root3 address ssh off` stops it. Each session is
-  an `root3 prompt REPO` it starts, so `root3 prompt ls` lists it, and every one
+  `why runtime` shows it and `why address ssh off` stops it. Each session is
+  an `why prompt REPO` it starts, so `why prompt ls` lists it, and every one
   ends with the listener. A failed key from an address counts; twenty in a
   minute and that address is not heard for a minute. A connection not
   signed in within a minute is closed.
@@ -329,28 +329,28 @@ too") with the off switch.
   page of the account shows a card for each, with a switch that turns it
   off; a page can only turn SSH off. The listener asks the Remote every
   5 s, and when it was turned off (or the device signed out, here or from
-  another device: `root3 logout` stops it at once) it stops taking
+  another device: `why logout` stops it at once) it stops taking
   connections and ends every session.
 
-There is no sync command. Connected, root3 keeps each repo in step with the
+There is no sync command. Connected, why keeps each repo in step with the
 Remote by itself: a command that reads a repo takes in the Remote's changes
 to it first, and after every command each repo whose files differ from what
 was last agreed is sent (which differ is seen from the digests kept, so a
 repo in step costs no request). Home's settings kept on the Remote
 (profile, TODO, dotfiles) go the same way, by the app's protocol and rules
-(`root3/core/src/home/`, as `root3/app/remote/settings.ts`): a command that reads one (`root3
-todo`, `root3 profile`, `root3 dotfile`, `root3 prompt`) takes it in first, and one
+(`why/core/src/home/`, as `why/app/remote/settings.ts`): a command that reads one (`why
+todo`, `why profile`, `why dotfile`, `why prompt`) takes it in first, and one
 that differs from what was last agreed is sent after any command; two TODO
 lists changed on two devices are joined item by item. What a person does to the Remote is only
 taking a repo off it; Git's words (commit, push, review, merge) are about
-history, never about getting files there. Signing out (`root3 logout`, or the
+history, never about getting files there. Signing out (`why logout`, or the
 app's) sends every copy first; one that cannot be sent keeps the device
 signed in, since forgetting what was agreed would undo an unsent change (a
 file removed here) at the next sign-in.
 
-On the host it uses the app's data directory (`$ROOT3_HOME` overrides):
+On the host it uses the app's data directory (`$WHY_HOME` overrides):
 `cargo install --path cli`. The same binary, built static for sods, is
-`/usr/bin/root3` in the root and `/bin/root3` in a browser's Prompt, where only
+`/usr/bin/why` in the root and `/bin/why` in a browser's Prompt, where only
 the open repo is present and Home, the Remote and the device are left to
 the app.
 - File: hovering or pressing its icon lays the tree of "/" over any page —
@@ -361,26 +361,26 @@ the app.
   to stay inside its repo after following symlinks.
 - Git: the repos' issues ("#3 Fix：件名", then the detail), filtered by repo
   chips, as boxes side by side; 「Issue を書く」 writes the next one, as
-  `root3 issue new` does (kept as one file in the repo's `issue/`, made natively
+  `why issue new` does (kept as one file in the repo's `issue/`, made natively
   through `repo_add`, which only makes new files in existing directories).
   An issue is worked on with Start, then Commit and Push, which hand it to
   main as its change, then Review and Merge (or Reject) under it.
 - Remote: the canonical copy (`service/`). A browser signs in with a
   provider (GitHub で続ける) and then adds a passkey, so the next time needs
   none (パスキーでサインイン); with every passkey lost, the provider again.
-  The app and root3 show a code that a browser approves
+  The app and why show a code that a browser approves
   (`?device&user_code=`). Signed in: each repo with where it stands
   (Remote と同じ, 送っています, まだ送れていません; Remote にだけあります for
   one not here, which Forge brings here and opens), then passkeys, the code
   to turn a repo off and the providers, then the devices (sessions), as a
-  history (`root3 remote devices rm N` signs another out). Every change is sent
+  history (`why remote devices rm N` signs another out). Every change is sent
   as a diff within half a second; the Remote's changes are seen within five
   seconds and on focus; a file changed on both sides keeps, at its name, the
   version that reached the Remote first, and puts this device's beside it as
   "name (<this device>).ext". In a browser, closing the tab lets go of every
   copy the Remote holds all of.
-- Remote → Plan (`root3/remote/plan/plan.ts`): the Remote decides what an account
-  may do; the app, the desktop app and `root3 remote plan` only show it. Free
+- Remote → Plan (`why/remote/plan/plan.ts`): the Remote decides what an account
+  may do; the app, the desktop app and `why remote plan` only show it. Free
   keeps 3 repos and 100 MB on the Remote and one name there; three tiers are
   paid for, Go (50 GB, $7 a month), Pro (256 GB, $14) and Max (512 GB, $19),
   each adding making servers and names on one's own domain (and more names
@@ -392,7 +392,7 @@ the app.
   and until when, the use against what it keeps as meters, free and the
   three tiers side by side (Subscribe, Upgrade, Downgrade), and Manage the
   plan (Stripe's portal); signed out, the tiers stand under the way in, and
-  one chosen there goes on to its Checkout once signed in. `root3 remote plan
+  one chosen there goes on to its Checkout once signed in. `why remote plan
   subscribe go|pro|max`, `switch go|pro|max` and `manage` print the same
   pages. A subscription that ends, or goes down a tier, takes nothing away:
   servers, names and repos stay as they were, only what would be new is
@@ -404,11 +404,11 @@ the app.
   sent, the root in use). Sizes are allocated blocks; the host's free and
   total are marked as estimates, and after freeing the change the host
   shows is reported as observed. Prompts running show their memory and can
-  be stopped, with a switch for the repo's network (`root3 prompt ls`, `root3
-  prompt stop REPO`, `root3 network on|off REPO`; every Prompt, the app's or a
+  be stopped, with a switch for the repo's network (`why prompt ls`, `why
+  prompt stop REPO`, `why network on|off REPO`; every Prompt, the app's or a
   terminal's, records itself while it runs); then the environment in effect.
 - Server (under Remote in the rail, laid over any page like File): the one
-  purpose whose subject is people, not a repo (`root3/remote/talk/servers.ts`). A
+  purpose whose subject is people, not a repo (`why/remote/talk/servers.ts`). A
   server is people who know each other (added from someone's Inbox
   contacts); its boards are each a conversation and a TODO they keep
   together: Home's TODO box (`pages/kit/todo-list.ts`), kept on the Remote item
@@ -419,13 +419,13 @@ the app.
   right only shows who is in it and the repos they show in it (seen as last
   pushed). What changes it for everyone is behind its gear: people, repos
   shown, how far each board is open (its owner's, asked before it widens),
-  its guests, taking a board home as text (`root3 server get`), leaving or
+  its guests, taking a board home as text (`why server get`), leaving or
   removing it. A board that takes guests lets outsiders write by invitation,
   never by email: any of its people makes a link (one person, once, a week)
   and passes it on themselves; the guest picks a name, always shown as a
   guest's; guests are held to so many posts an hour, each and per board,
   and whoever invited one (or the owner) removes them with their posts.
-- Who sees a repo (`root3/remote/repos/seen.ts`): only you, the servers it is shown
+- Who sees a repo (`why/remote/repos/seen.ts`): only you, the servers it is shown
   in, or everyone, set on its card in Remote. Everyone sees it under the
   name it went public as: the server's (`trip@length3.com:hello`) when it
   went public from one, so nothing it answers names you; your own when you
@@ -433,17 +433,17 @@ the app.
 
 The webview has no other host access: it reads nothing outside the app's
 data directory, runs no shell and launches no root. The app starts no host
-program for a repo; its own tools run inside the root (`root3/core/src/prompt/launch.rs`).
+program for a repo; its own tools run inside the root (`why/core/src/prompt/launch.rs`).
 
 The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in
 production, PGlite in tests and here. Its schema is the migrations in
-`root3/remote/migrations`: those Drizzle generates from `root3/remote/db/schema.ts`, and
+`why/remote/migrations`: those Drizzle generates from `why/remote/db/schema.ts`, and
 `0001` for what Drizzle cannot say (the counted room, the service's role). A step that drops what
 the running Worker still reads is a contract step, tagged `NNNN_contract_…`
 (`drizzle-kit generate --name contract_…`): a deploy runs the migrations
 before it, ships the Worker, and runs it once the new Worker answers
-(`root3/remote/db/stages.ts`). The service connects as
+(`why/remote/db/stages.ts`). The service connects as
 `remote_worker_<when>`, a member of `remote_app`, which reads and writes rows
 and nothing else: a role the deploy makes new for each new `DATABASE_URL`
 (never one changed: Neon's owner is no superuser), dropping the ones before it
@@ -451,26 +451,26 @@ once the new Worker answers. A failure making it says its step and SQLSTATE,
 never the statement (which holds the password). What a page or a device asks
 every little while (what moved, what came, whether SSH is still on) is
 answered without the database while nothing was written, by the mark
-(`root3/remote/serve/mark.ts`, a Durable Object, once `MARK` is bound in
+(`why/remote/serve/mark.ts`, a Durable Object, once `MARK` is bound in
 `wrangler.toml`), so Neon sleeps while nobody does anything. What each part of it does, its routes and tables, and which
-of them the app and root3 need: `root3/remote/README.md`.
+of them the app and why need: `why/remote/README.md`.
 
 ```
-node root3/remote/serve/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
-node root3/remote/serve/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
-ROOT3_PLAN=1 node root3/remote/serve/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe (its test cards: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined, 4000 0025 0000 3155 asks for 3-D Secure)
-ROOT3_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
-ROOT3_REMOTE=http://127.0.0.1:8787 root3 login
+node why/remote/serve/dev.ts DIR 8787 http://localhost:1420     # the Remote, here (no plan: everything open)
+node why/remote/serve/dev.ts DIR 8787 http://localhost:1420 --no-bucket   # one that holds no files, as a Worker without R2
+WHY_PLAN=1 node why/remote/serve/dev.ts DIR 8787 http://localhost:1420   # with the plan, bought from a stand-in for Stripe (its test cards: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined, 4000 0025 0000 3155 asks for 3-D Secure)
+WHY_DEV_REMOTE=http://127.0.0.1:8787 VITE_LENGTH3_REMOTE= npx vite
+WHY_REMOTE=http://127.0.0.1:8787 why login
 ```
 
 The database and the files are apart: Postgres holds every row, R2 only
 the bytes. Without R2 bound the Remote does all the rest, and each route
-that would move bytes answers 503 `{files: false}`; the app and root3 then keep
+that would move bytes answers 503 `{files: false}`; the app and why then keep
 the work on the device, say so, and send it once the Remote can hold it.
 
 On Cloudflare it is one Worker on one origin, the app's files and the Remote
 together (`wrangler.toml`), under one name: `os.length3.com` is the app, the
-Remote the desktop app and root3 sign in to (`root3/core/src/remote/` DEFAULT_URL,
+Remote the desktop app and why sign in to (`why/core/src/remote/` DEFAULT_URL,
 the desktop CSP), what a domain's DNS record names (`remote=os.length3.com`,
 and `/.well-known/length3`) and where passkeys belong. Its former name,
 `remote.length3.com`, still reaches the same Worker, so released clients
@@ -487,7 +487,7 @@ a Remote for research, `ENTER_AS`, which is one person's): `FREE_REPOS`
 A tier is bought with Stripe when both keys and its price are given; with a
 key missing, or no price at all, billing is off and the Remote says paid
 features cannot be bought here yet. Stripe is reached over its REST API with
-fetch (`root3/remote/plan/stripe.ts`: a customer, a Checkout session for a tier's
+fetch (`why/remote/plan/stripe.ts`: a customer, a Checkout session for a tier's
 price, a portal session, what a price is; the webhook's signature checked
 with Web Crypto); tests and dev never reach it. To connect it:
 
@@ -508,10 +508,10 @@ with Web Crypto); tests and dev never reach it. To connect it:
    portal), with cancelling allowed, and switching plans allowed among the
    three products (the Plan opens it at the step that changes the tier).
 5. Checkout and the portal branded as the OS is (the Dashboard's Settings →
-   Branding, and Checkout's appearance): the icon `root3/desktop/icons/128x128.png`,
+   Branding, and Checkout's appearance): the icon `why/desktop/icons/128x128.png`,
    background `#f9f8f5` (its paper), button `#2c2a27` (its ink), rounded
    corners, Inter. Chosen in mock rounds among what Stripe lets be set; the
-   stand-in draws the same (`root3/remote/plan/devbilling.ts` LOOK), so what dev and the
+   stand-in draws the same (`why/remote/plan/devbilling.ts` LOOK), so what dev and the
    selftests show is what a person paying sees.
 
 Each event is taken once by its id (kept 30 days in `billing_event`; one
@@ -526,22 +526,22 @@ to this repository, and its Settings → Build say, once:
 | | |
 |---|---|
 | Root directory | the repository's own (empty) |
-| Build command | `npm run build:cloudflare`: the web root from the release of the newest root3 `root3/core/src/root/pins.rs` pins (`scripts/prompt-files.ts`, taken only at the index pinned for it), then the app |
-| Deploy command | `npm run deploy:cloudflare` (`root3/remote/ship/deploy.ts`): the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`root3/remote/bytes/mirror.ts`): each root `root3/core/src/root/pins.rs` pins and the newest desktop app `root3/shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
+| Build command | `npm run build:cloudflare`: the web root from the release of the newest why `why/core/src/root/pins.rs` pins (`scripts/prompt-files.ts`, taken only at the index pinned for it), then the app |
+| Deploy command | `npm run deploy:cloudflare` (`why/remote/ship/deploy.ts`): the migrations on Neon's production branch (no branch is made for a deploy; a contract step waits until the new Worker answers), the bucket, then the Worker with the secrets it lacks (the first build prints the link in its log), then the release's files the Remote serves to anyone (`why/remote/bytes/mirror.ts`): each root `why/core/src/root/pins.rs` pins and the newest desktop app `why/shared/desktop-releases.json` pins, taken from the GitHub release where the bucket lacks them, checked against those pins, and put with wrangler |
 | Variables and secrets | `NEON_PROJECT_ID`; secrets `NEON_API_KEY` (a Neon API key for the project) and `GITHUB_TOKEN` (optional, read-only: the deploy reads the release's files through GitHub's API, which limits a caller without one to 60 requests an hour; the build's Prompt is read from the public release without it) |
-| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`root3/remote/ship/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
+| Non-production branch deploy command | `npx wrangler versions upload`: another branch's build uploads a version and never deploys (`why/remote/ship/deploy.ts` refuses to run for a branch other than main). The version has no preview URL (`wrangler.toml`: `workers_dev = false`, `preview_urls = false`), since it would run against production's database and bucket: it is checked that it builds. A version that brings a Durable Object class production has not made yet (`[[migrations]]`, as `mark` did) is refused by Cloudflare until main's deploy has made it. Never `npx wrangler deploy`, which would replace production from any branch, without its migrations or its bucket |
 | Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.ts`, from the public release) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `module/ricebox/RELEASE`, `.github/workflows/release.yml`; without
 Actions, `scripts/release.sh` and `scripts/publish-release.ts` by hand), then merging the pins
-the release proposes (Pin vX.Y.Z): root3's one entry in `root3/core/src/root/pins.rs`
+the release proposes (Pin vX.Y.Z): why's one entry in `why/core/src/root/pins.rs`
 (the root, and the index the web reads it by) and the desktop app in
-`root3/shared/desktop-releases.json`. A build
-takes only the root3 this tree pins, and a deploy puts on the Remote only the roots and
+`why/shared/desktop-releases.json`. A build
+takes only the why this tree pins, and a deploy puts on the Remote only the roots and
 desktop files this tree pins, so a release made under that tag by anyone
 else is not what production serves. The Remote serves them to anyone, the
-roots by digest (`/v1/os/<sha256>`, what the app and root3 fetch first) and
+roots by digest (`/v1/os/<sha256>`, what the app and why fetch first) and
 the desktop app by its file's name (`/v1/desktop/<file>`, what the web's
 Runtime offers to download); GitHub keeps no Cloudflare credentials. A new link
 is a new `ENTER_KEY`: set in the Worker's Variables and Secrets, the old
@@ -550,8 +550,8 @@ Cloudflare (`npx wrangler login`):
 
 ```
 npm run build:cloudflare
-OWNER_URL='postgresql://neondb_owner:…' node root3/remote/ship/deploy.ts        # migrations, bucket, secrets, the Worker
-OWNER_URL='postgresql://neondb_owner:…' node root3/remote/ship/deploy.ts link   # a new link, and every session of the account ends
+OWNER_URL='postgresql://neondb_owner:…' node why/remote/ship/deploy.ts        # migrations, bucket, secrets, the Worker
+OWNER_URL='postgresql://neondb_owner:…' node why/remote/ship/deploy.ts link   # a new link, and every session of the account ends
 ```
 
 Before a deploy, the migrations and the Remote can be verified on a Neon
@@ -580,7 +580,7 @@ Linux needs the WebKitGTK toolchain:
 `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev`,
 and `libgles2` to bundle the AppImage (`scripts/desktop.sh` puts it inside).
 The web app runs the same core as the desktop app (`core/`, built for the
-browser by `root3/core/web`), so every web build of the page needs Rust with
+browser by `why/core/web`), so every web build of the page needs Rust with
 `rustup target add wasm32-wasip1`; Vite builds it when `core/` changed (with
 Cargo's `web` profile: the release's, built small, as every browser fetches it
 before the page can draw), and says that command when the target is missing.
@@ -588,7 +588,7 @@ The desktop app's build does not: its core is the app's own.
 
 ### Where the page's code is
 
-`root3/app/` holds the page, a folder to each kind of thing it does, in layers: each takes only from those above it in this
+`why/app/` holds the page, a folder to each kind of thing it does, in layers: each takes only from those above it in this
 table, never from one below, and `pages/` is layered the same way within it (`scripts/layers.ts` holds both orders;
 `npm test` fails on an import against them, a type as much as a value). A module's tests stand beside it
 (`x.test.ts`), and may take from any layer they put together.
@@ -603,7 +603,7 @@ table, never from one below, and `pages/` is layered the same way within it (`sc
 | `repos/` | what a repo holds and how it is read, and each repo kept in step with the Remote (`sync.ts`): issues, history, diffs, search, Edit's grammar, first lines |
 | `home/` | Home's own: the profile, the TODO, dotfiles, the band, the Prompts' network grant, what is half written |
 | `remote/` | talking to the Remote: the connection, Home's settings agreed (`settings.ts`), servers, Inbox, the plan, what is new, and the timing of it all (`lifecycle.ts`) |
-| `prompt/` | the Prompt's machine in a browser: root3's files and guest threads (`userland.ts`), the box's recall, SSH, the tree of `/` |
+| `prompt/` | the Prompt's machine in a browser: why's files and guest threads (`userland.ts`), the box's recall, SSH, the tree of `/` |
 | `account/` | what this device holds for the person signed in: the Agent's key sealed by their passkey, and what is taken off before signing out |
 | `pages/` | each place on the rail: `kit/` what they share (a page's parts, its context, the pane, the TODO list, diffs, the ways to sign in and to the Plan), `bench/` the work bench Forge and Git stand on (the box, the Prompt's screen and terminal, the search), then `git/`, `forge/`, `file/`, `remote/`, `runtime/`, `server/`, `inbox/`, `home/`, `new-repo/`, `me/` |
 | `main.ts`, `start.ts` | the shell (the rail, the page drawn for each place, the moves between them) and the page's first script |
@@ -612,15 +612,15 @@ table, never from one below, and `pages/` is layered the same way within it (`sc
 ### One core, two hosts
 
 A repo, its history, the Remote's sync and Home's settings are the core's
-(`root3/core/src/api/`): the app asks it through one Tauri command, and a page
+(`why/core/src/api/`): the app asks it through one Tauri command, and a page
 asks the very same code, built for `wasm32-wasip1`, in a worker of its own
-(`root3/app/core/worker.ts`, `root3/app/core/wasi.ts`) over files the browser keeps in
+(`why/app/core/worker.ts`, `why/app/core/wasi.ts`) over files the browser keeps in
 IndexedDB: what a listing needs of each file at once, its bytes when the core
-first wants them (`root3/app/core/loader.ts`, read while the core waits, a repo
-read whole when a call goes over all of it). A page calls `core(name, args)` (`root3/app/host/host.ts`) either way and
+first wants them (`why/app/core/loader.ts`, read while the core waits, a repo
+read whole when a call goes over all of it). A page calls `core(name, args)` (`why/app/host/host.ts`) either way and
 gets the same answers, the Remote's refusals included. Tabs of one browser
 take turns under one Web Lock and tell each other each file they wrote.
-Tests run it too: `root3/app/testing/node-core.ts` is the same module in a Node worker,
+Tests run it too: `why/app/testing/node-core.ts` is the same module in a Node worker,
 its requests answered by the test's own Remote.
 
 Each build carries only its own host's part, decided when it is built
@@ -628,8 +628,8 @@ Each build carries only its own host's part, decided when it is built
 web's alone (the browser's core and its worker, the web root and muk,
 passkeys) each has a `.desktop.ts` beside it with the same exports, which the
 app's build takes instead, and leaves out `public/webroot`; Tauri's API
-(`root3/app/host/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
-(`root3/app/host/host.ts`) is that same fact, so a branch for the other host is dropped
+(`why/app/host/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
+(`why/app/host/host.ts`) is that same fact, so a branch for the other host is dropped
 too. The app's page is about 0.4 MB, the web's 1.3 MB with its core.
 
 ```
@@ -637,13 +637,13 @@ npm ci
 npm run check                  # tsc, then npm test
 npm test                       # node:test: the page, the core it asks, the Remote's contracts with a bucket and without
 npm run selftest               # the app end to end in Chromium (below)
-npm run selftest:cli           # root3 end to end against a Remote of its own (tests/cli)
+npm run selftest:cli           # why end to end against a Remote of its own (tests/cli)
 npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (see Deploy)
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
-sh scripts/desktop.sh          # the .deb and the AppImage as they ship, root3 beside the app
+sh scripts/desktop.sh          # the .deb and the AppImage as they ship, why beside the app
 node scripts/styles-prune.ts  # take out of the stylesheet the rules no element can match (--dry: only say which)
-node scripts/styles-split.ts  # the stylesheet in parts by what each styles (root3/app/styles/), in the cascade's order
+node scripts/styles-split.ts  # the stylesheet in parts by what each styles (why/app/styles/), in the cascade's order
 node scripts/styles-check.ts  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS
 ```
 
@@ -654,15 +654,15 @@ cancels the older run. Jobs run side by side, so a run takes as long as its long
 
 | Job | What it does |
 | --- | --- |
-| Core (wasm) | the core for the browser (`root3/core/web`, `wasm32-wasip1`), cached by its sources |
+| Core (wasm) | the core for the browser (`why/core/web`, `wasm32-wasip1`), cached by its sources |
 | Web root | `public/webroot` from the pinned root, checked against that root; cached by the root and the translator |
 | Commands | every command of issue #80 under muk and natively; the table `help` reads checked against the results |
 | Typecheck | `tsc --noEmit` |
 | Unit (n/4) | `npm test`, each shard every fourth file (`NODE_OPTIONS=--test-shard=1/4 npm test` locally) |
 | Selftest (n/4) | Playwright in Chromium, one Remote and one build of the app per shard, `@slow` Prompt tests included |
-| Lint | clippy `-D warnings` on the core, root3/core/web and root3, natively and for `wasm32-wasip1` |
-| Rust | `cargo test` for the core and root3, then `npm run selftest:cli` |
-| muk in a browser (native, prompt) | the translator against native; root3 (static, musl) run under it |
+| Lint | clippy `-D warnings` on the core, why/core/web and why, natively and for `wasm32-wasip1` |
+| Rust | `cargo test` for the core and why, then `npm run selftest:cli` |
+| muk in a browser (native, prompt) | the translator against native; why (static, musl) run under it |
 | Desktop (target) | the app built and bundled on macOS, Windows and Linux on Arm |
 | AppArmor | the .deb's profile on stock Ubuntu 24.04 |
 | Root | the root built, assembled and used as a Prompt uses it; only when its inputs change |
@@ -681,10 +681,10 @@ ends (an open PGlite keeps its process up for seconds).
 `npm run selftest` uses the web app the way a person does, in Chromium
 (`@playwright/test`, `tests/app/`). One run builds the app for a Remote on
 its own origin into `tests/app/.dist` (again only when a source is newer),
-starts a fresh Remote (`root3/remote/serve/dev.ts` with a new temporary data
+starts a fresh Remote (`why/remote/serve/dev.ts` with a new temporary data
 directory) and `vite preview` on free ports, and beside them, at the same
 time, a second pair whose Remote has the plan and Stripe's stand-in
-(`ROOT3_PLAN=1`, for `billing.spec.ts`), runs every `tests/app/*.spec.ts`
+(`WHY_PLAN=1`, for `billing.spec.ts`), runs every `tests/app/*.spec.ts`
 in parallel, and stops them all whatever happened (`global-setup.ts`). The
 browser reaches both as `localhost` (a passkey's relying party is a name,
 never an address); nothing listens on a fixed port and nothing outside the
@@ -697,8 +697,8 @@ repository is read. About 95 journeys take about four minutes on four cores.
   `tests/app/.report`, and what the two servers printed in `tests/app/.logs`.
 - Locally Chromium is `npx playwright install chromium` (or
   `PLAYWRIGHT_BROWSERS_PATH` where one is installed).
-- The Prompt's tests are tagged `@slow` (the root's BusyBox and root3 through
-  the translator) and run with `SELFTEST_SLOW=1` once `public/webroot` holds root3
+- The Prompt's tests are tagged `@slow` (the root's BusyBox and why through
+  the translator) and run with `SELFTEST_SLOW=1` once `public/webroot` holds why
   (`npm run webroot`, or `node scripts/prompt-files.ts`); the build then
   carries it. `first-prompt.spec.ts` measures what a first Prompt fetches.
 - CI (Selftest in `.github/workflows/ci.yml`) runs everything in four
@@ -741,7 +741,10 @@ person does, and it asserts what they then see. Writing one:
   (a file left unsaved while another device saves it), the page's clock is
   held: `app.forge.writeOn(…)`, `lookUntil(…)`, `writingDone()`.
 
-Icons in `root3/desktop/icons` are generated from `root3/desktop/icon.svg` with
-`npx tauri icon root3/desktop/icon.svg -o root3/desktop/icons` (its 32, 128, 256 and 512
-pixel PNGs, `.icns` and `.ico` are the ones kept); the web page's icon is that
-SVG itself (`index.html`).
+The icon is `why/desktop/icons/icon.svg`: the name as it is written, `why*`, on
+an ink tile, set whole in the display face as a heading is (its glyphs as
+outlines, so no font is asked of whoever draws it; the face's own asterisk
+beside the y), the word in paper and the asterisk in the terminal's green. Its
+32, 128, 256 and 512 pixel PNGs are that SVG drawn at each size; `.icns` and
+`.ico` are made from its 1024 pixel PNG by `npx tauri icon`; the web page's icon
+is the SVG itself (`index.html`).

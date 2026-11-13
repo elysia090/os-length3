@@ -1,0 +1,100 @@
+import {ago, h} from '../../ui/dom.ts';
+import {t} from '../../i18n/i18n.ts';
+import * as account from '../../remote/connection.ts';
+import {askFoot, SETTLE} from '../kit/common.ts';
+import {errorText} from '../../host/errors.ts';
+import {button, pressing} from '../kit/remote-parts.ts';
+import {joining} from './device-page.ts';
+import {mark} from '../../ui/icons.ts';
+import {every} from '../../host/runs.ts';
+
+// Remote's Devices part: the devices signed in to the account, signing one out, and letting another in by its code.
+
+/**
+ * The devices signed in: each and when it was last used, this one marked.
+ * Any other is signed out from its row (the same Remote call as `why remote
+ * devices rm N`), asked in the row first, Sign out where it was pressed and
+ * Not now at the left; this one signs out from the person's menu.
+ */
+export function deviceSection(counted: (n: number) => void): HTMLElement {
+  const section = h('div', {class: 'sub-part'});
+  const error = h('p', {class: 'error', role: 'alert'});
+  let drawn = 0;
+  const paint = async () => {
+    const list = await account.devices().catch((e) => { error.textContent = errorText(e); return []; });
+    counted(drawn = list.length);
+    section.replaceChildren(h('div', {class: 'rows'}, ...list.map((d) => deviceRow(d, paint)), next), error);
+    return drawn;
+  };
+  // The one place for the next device, kept as the list is read again (its steps half taken stay as they are).
+  const next = connectRow(paint, () => drawn);
+  void paint();
+  return section;
+}
+
+/** How long a device let in takes at most to come for its session: one of its asks (every 5 s, why/remote/people/auth.ts) and a little more. */
+const COMES = 7000;
+
+/**
+ * Room for another device at the list's foot, and the way to it: a dashed row, Connect a device. Pressed, the row is
+ * the steps the code's own page takes (device-page.ts joining): the code the device shows, which device asks, Connect
+ * or Refuse, Not now putting the row back until the device asks. Let in, the devices are read again (`again`) every
+ * second until it is among them (it takes its session at its next ask), for as long as that can take.
+ */
+function connectRow(again: () => Promise<number>, drawn: () => number): HTMLElement {
+  const place = h('div', {class: 'connect-place'});
+  const open = h('button', {type: 'button', class: 'row-item row-new'}, mark('plus'), h('span', {}, t('Connect device'))) as HTMLButtonElement;
+  open.addEventListener('click', () => {
+    const body = h('div', {class: 'remote-join'});
+    const no = button(t('Cancel'), 'small-button');
+    const ask = h('div', {class: 'row-ask', role: 'group', 'aria-label': t('Connect device')}, body, h('div', {class: 'card-foot'}, no));
+    no.addEventListener('click', () => { place.replaceChildren(open); open.focus(); });
+    place.replaceChildren(ask);
+    joining(body, '', (text) => body.replaceChildren(h('p', {}, text)), (step) => {
+      // Which device asks has its own answers (Refuse, Connect); what came of it is put away with Done.
+      no.hidden = step === 'asking';
+      if (step === 'code') body.querySelector('input')?.focus();
+      if (step !== 'done') return;
+      no.textContent = t('Done');
+      no.focus();
+      const had = drawn(), until = performance.now() + COMES;
+      const looking = every(1000, async () => {
+        if (await again() > had || performance.now() > until) looking.stop();
+      }, {alive: () => place.isConnected});
+    });
+  });
+  place.append(open);
+  return place;
+}
+
+function deviceRow(d: account.Device, again: () => Promise<unknown>): HTMLElement {
+  const name = account.deviceWord(d.userAgent);
+  const out = d.current ? null : button(t('Sign out'), 'small-button');
+  out?.setAttribute('aria-label', t('Sign out {name}', {name}));
+  const row = h('div', {class: 'row-item usage-prompt'}, ...head(d, name), out);
+  out?.addEventListener('click', () => askOut(d, name, row, out, again));
+  return row;
+}
+
+/** Which one it is: its word and when it was last used (two browsers of a kind read the same). */
+const head = (d: account.Device, name: string) => [h('span', {class: 'row-name'}, name), d.current ? h('span', {class: 'row-meta'}, t('This device')) : null,
+  h('span', {class: 'row-meta'}, t('Last used: {when}', {when: ago(Date.parse(d.updatedAt))}))];
+
+/** Signing `d` out, asked in its `row` first, pressed at `out`; signed out, the devices are read again (`again`). */
+function askOut(d: account.Device, name: string, row: HTMLElement, out: HTMLButtonElement, again: () => Promise<unknown>) {
+  const foot = askFoot(out, row);
+  const error = h('p', {class: 'error small', role: 'alert'});
+  const no = button(t('Cancel'), 'small-button'), yes = button(t('Sign out'), 'small-button primary');
+  const ask = h('div', {class: 'row-ask', role: 'group', 'aria-label': t('Sign out {name}', {name})},
+    h('div', {class: 'row-item'}, ...head(d, name)),
+    h('p', {class: 'muted small'}, t('Signed out immediately.')),
+    h('p', {class: 'muted small'}, t('Local data remains intact and will reconnect upon signing in again.')), error, foot(no, yes));
+  no.addEventListener('click', () => { ask.replaceWith(row); out.focus(); });
+  const shown = performance.now();
+  yes.addEventListener('click', () => {
+    if (performance.now() - shown < SETTLE) return;
+    void pressing(yes, error, async () => { await account.endDevice(d); await again(); });
+  });
+  row.replaceWith(ask);
+  yes.focus();
+}

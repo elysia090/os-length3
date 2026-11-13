@@ -6,7 +6,7 @@ test('buttons confirm once with Enter sound, including keyboard activation; move
   await app.page.evaluate(() => {
     const heard: string[] = [];
     Object.assign(window, {heard});
-    window.addEventListener('root3-key', (event) => heard.push((event as CustomEvent<string>).detail));
+    window.addEventListener('why-key', (event) => heard.push((event as CustomEvent<string>).detail));
     // Nested content is common in icon buttons. Use native controls so Enter and Space are real activations.
     const box = document.createElement('div');
     box.id = 'sound-test';
@@ -39,7 +39,7 @@ test('a control pressed with the mouse sounds as it goes down, once, not at the 
   await app.page.evaluate(() => {
     const heard: string[] = [];
     Object.assign(window, {heard});
-    window.addEventListener('root3-key', (event) => heard.push((event as CustomEvent<string>).detail));
+    window.addEventListener('why-key', (event) => heard.push((event as CustomEvent<string>).detail));
     const box = document.createElement('div');
     box.id = 'sound-test';
     box.style.cssText = 'position:fixed;top:10px;left:10px;z-index:2147483647;background:white';

@@ -1,12 +1,12 @@
-// root3 end to end, against a Remote of its own: what the tests in this folder
-// share. One Remote per test file: root3/remote/serve/dev.ts on a free port with a data
-// directory made for it, stopped when the file is done. root3 is built once (or
-// taken from $ROOT3) and copied beside it, so another build cannot swap it
+// why end to end, against a Remote of its own: what the tests in this folder
+// share. One Remote per test file: why/remote/serve/dev.ts on a free port with a data
+// directory made for it, stopped when the file is done. why is built once (or
+// taken from $WHY) and copied beside it, so another build cannot swap it
 // mid-run. Each device is a home directory of its own, signed in through the
 // Remote's stand-in provider and its device approval, as a person would.
 //
 // Nothing here waits by the clock: the Remote is ready when it says so, and
-// root3 login is done when root3 exits (it polls the Remote at the interval the
+// why login is done when why exits (it polls the Remote at the interval the
 // Remote names).
 //
 // SELFTEST_REMOTE_KIND=worker: the Remote as production runs it instead
@@ -31,14 +31,14 @@ let APP = 'http://localhost:4173';
 /** Ports this machine's other servers use: never taken here. */
 const TAKEN = (p: number) => [1420, 8787, 1430, 8797].includes(p) || (p >= 1450 && p <= 1580) || (p >= 8810 && p <= 8950);
 
-/** root3 built from this tree (cargo build -p root3), or $ROOT3 when given; its path. */
-function buildRoot3(): string {
-  if (process.env.ROOT3) return process.env.ROOT3;
-  const r = spawnSync('cargo', ['build', '-p', 'root3', '--message-format=json-render-diagnostics'], {cwd: OS, encoding: 'utf8', maxBuffer: 1 << 28});
+/** why built from this tree (cargo build -p why), or $WHY when given; its path. */
+function buildWhy(): string {
+  if (process.env.WHY) return process.env.WHY;
+  const r = spawnSync('cargo', ['build', '-p', 'why', '--message-format=json-render-diagnostics'], {cwd: OS, encoding: 'utf8', maxBuffer: 1 << 28});
   assert.equal(r.status, 0, r.stderr);
   const exe = r.stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l) as {reason?: string; target?: {name: string}; executable?: string | null})
-    .find((m) => m.reason === 'compiler-artifact' && m.target?.name === 'root3' && m.executable)?.executable;
-  assert.ok(exe, 'cargo named no root3 executable');
+    .find((m) => m.reason === 'compiler-artifact' && m.target?.name === 'why' && m.executable)?.executable;
+  assert.ok(exe, 'cargo named no why executable');
   return exe;
 }
 
@@ -57,7 +57,7 @@ async function freePort(): Promise<number> {
 
 /**
  * One HTTP exchange on a connection of its own: a connection kept between
- * requests can be closed by the Remote while root3 runs, and a request sent on
+ * requests can be closed by the Remote while why runs, and a request sent on
  * it then fails for no fault of either.
  */
 function http(method: string, url: string | URL, headers: Record<string, string> = {}, body?: string) {
@@ -74,7 +74,7 @@ function http(method: string, url: string | URL, headers: Record<string, string>
 }
 /**
  * The bearer of the session a Set-Cookie sets: the session cookie's own value (the token signed, the bearer's form too).
- * A page is handed no bearer (root3/remote/people/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
+ * A page is handed no bearer (why/remote/people/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
  */
 const bearerIn = (setCookies: string[]): string | null => {
   for (const c of setCookies) {
@@ -88,13 +88,13 @@ const cookiesOf = (h: Record<string, string | string[] | undefined>) => ([h['set
 export interface Ran { code: number; out: string; err: string; json: any } // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /**
- * `env`: what the Remote is started with besides (ROOT3_PLAN=1: the plan, and a stand-in for Stripe;
- * ROOT3_NO_BUCKET=1: it holds no files, as a Worker without R2 is).
+ * `env`: what the Remote is started with besides (WHY_PLAN=1: the plan, and a stand-in for Stripe;
+ * WHY_NO_BUCKET=1: it holds no files, as a Worker without R2 is).
  */
 export async function remote(env: Record<string, string> = {}) {
-  const dir = scratch('root3-selftest-');
-  const root3bin = join(dir, 'root3');
-  copyFileSync(buildRoot3(), root3bin);
+  const dir = scratch('why-selftest-');
+  const whybin = join(dir, 'why');
+  copyFileSync(buildWhy(), whybin);
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   let server: ChildProcess | null = null;
@@ -104,7 +104,7 @@ export async function remote(env: Record<string, string> = {}) {
   /** The Remote started (again: on the same port, from the same data, so every session stays). */
   async function start() {
     if (prod) return prod.remote.start();
-    const p = spawn(process.execPath, [join(OS, 'root3', 'remote', 'serve', 'dev.ts'), join(dir, 'remote'), String(port), APP], {cwd: OS, stdio: ['ignore', 'pipe', 'pipe'], env: {...process.env, ...env}});
+    const p = spawn(process.execPath, [join(OS, 'why', 'remote', 'serve', 'dev.ts'), join(dir, 'remote'), String(port), APP], {cwd: OS, stdio: ['ignore', 'pipe', 'pipe'], env: {...process.env, ...env}});
     server = p;
     p.stderr.on('data', (d: Buffer) => { log += d; });
     const from = log.length;
@@ -165,22 +165,22 @@ export async function remote(env: Record<string, string> = {}) {
   };
 
   let devices = 0;
-  /** A device of its own: root3 with its own home, on no Remote until it logs in. */
+  /** A device of its own: why with its own home, on no Remote until it logs in. */
   function device() {
     const home = join(dir, `device-${++devices}`);
     mkdirSync(home);
-    const env = {PATH: process.env.PATH ?? '', HOME: home, ROOT3_HOME: join(home, 'root3'), ROOT3_LANG: 'en', ROOT3_REMOTE: url, NO_COLOR: '1',
+    const env = {PATH: process.env.PATH ?? '', HOME: home, WHY_HOME: join(home, 'why'), WHY_LANG: 'en', WHY_REMOTE: url, NO_COLOR: '1',
       // What it keeps it keeps in files of its home, never in the keyring of whoever runs it.
-      ROOT3_KEYRING: 'off'};
+      WHY_KEYRING: 'off'};
     const parse = (out: string) => { try { return JSON.parse(out); } catch { return null; } };
-    /** Run root3 with these words (and standard input), to its end. */
-    const root3 = (args: string[], input = ''): Ran => {
-      const r = spawnSync(root3bin, args, {env, input, encoding: 'utf8', cwd: home, timeout: 120_000});
+    /** Run why with these words (and standard input), to its end. */
+    const why = (args: string[], input = ''): Ran => {
+      const r = spawnSync(whybin, args, {env, input, encoding: 'utf8', cwd: home, timeout: 120_000});
       return {code: r.status ?? -1, out: r.stdout, err: r.stderr, json: parse(r.stdout)};
     };
-    /** root3 login, approved in `token`'s browser when root3 shows its code. */
+    /** why login, approved in `token`'s browser when why shows its code. */
     const login = (token: string) => new Promise<Ran>((resolve, reject) => {
-      const p = spawn(root3bin, ['login', url], {env, cwd: home, stdio: ['ignore', 'pipe', 'pipe']});
+      const p = spawn(whybin, ['login', url], {env, cwd: home, stdio: ['ignore', 'pipe', 'pipe']});
       let out = '', err = '', approved = false;
       p.stderr.on('data', (d: Buffer) => { err += d; });
       p.stdout.on('data', (d: Buffer) => {
@@ -198,7 +198,7 @@ export async function remote(env: Record<string, string> = {}) {
       });
       p.once('exit', (code) => resolve({code: code ?? -1, out, err, json: null}));
     });
-    return {home, env, root3, login};
+    return {home, env, why, login};
   }
 
   return {url, app: APP, dir, browser, api, device, start, stop, log: () => prod ? prod.remote.log() : log};
@@ -206,7 +206,7 @@ export async function remote(env: Record<string, string> = {}) {
 
 /**
  * The production-like Remote for one test file, on `port` at 127.0.0.1: what `env` asks of dev.ts, asked
- * of the Worker. ROOT3_PLAN=1 is the plan as on Workers with billing through the stand-in for Stripe;
+ * of the Worker. WHY_PLAN=1 is the plan as on Workers with billing through the stand-in for Stripe;
  * without it, every account is paid (dev.ts has no plan then; a Worker outside research always has one).
  */
 async function worker(env: Record<string, string>, dir: string, port: number) {
@@ -214,8 +214,8 @@ async function worker(env: Record<string, string>, dir: string, port: number) {
   const {remote: started, bridgeProcess, appBuild} = await import('../prod/stack.ts');
   const pg = await cluster();
   const b = await bridgeProcess();
-  const plan = env.ROOT3_PLAN === '1';
-  const r = await started(pg, {dir: join(dir, 'worker'), assets: appBuild(), bridge: b.port, port, host: '127.0.0.1', noBucket: env.ROOT3_NO_BUCKET === '1',
-    paid: !plan, plan: plan ? {freeRepos: env.ROOT3_FREE_REPOS, freeMb: env.ROOT3_FREE_MB, billing: true} : undefined});
+  const plan = env.WHY_PLAN === '1';
+  const r = await started(pg, {dir: join(dir, 'worker'), assets: appBuild(), bridge: b.port, port, host: '127.0.0.1', noBucket: env.WHY_NO_BUCKET === '1',
+    paid: !plan, plan: plan ? {freeRepos: env.WHY_FREE_REPOS, freeMb: env.WHY_FREE_MB, billing: true} : undefined});
   return {remote: r, close: async () => { await r.stop(); await b.stop(); pg.destroy(); }};
 }

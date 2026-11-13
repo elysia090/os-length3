@@ -5,7 +5,7 @@
 // once, or none, is shared; a rule with no class at all (an element, an attribute) is the base's.
 
 /**
- * Each part: {name (its file, root3/app/styles/<name>.css), about (its first comment), classes}. A class ending in * is every
+ * Each part: {name (its file, why/app/styles/<name>.css), about (its first comment), classes}. A class ending in * is every
  * class it starts (`tl-*`: tl-post, tl-face…); a class named exactly is taken before any *, and a longer * before a
  * shorter. A class marked ^ is a place: a rule with it on any compound is the place's, whatever its subject is.
  */

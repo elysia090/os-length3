@@ -1,7 +1,7 @@
-# One workspace for the app, the root3 command and the core they share, so the
+# One workspace for the app, the why command and the core they share, so the
 # app and the command can never disagree about what a repo or an issue is.
 [workspace]
-members = ["root3/core", "root3/core/web", "root3/cli", "root3/desktop"]
+members = ["why/core", "why/core/web", "why/cli", "why/desktop"]
 resolver = "2"
 
 # Builds made while working (tests, checks, debug runs): this workspace's own code keeps its debug info, for a
@@ -17,14 +17,14 @@ opt-level = "s"
 panic = "abort"
 strip = true
 
-# The core as a browser runs it (root3/core/web, scripts/core-wasm.ts): every browser fetches it before the app can draw
+# The core as a browser runs it (why/core/web, scripts/core-wasm.ts): every browser fetches it before the app can draw
 # anything, so it is built small over fast: 12% fewer bytes to fetch than at "s", and its work (files written, read,
 # a repo's changes and diff) measured no slower.
 [profile.web]
 inherits = "release"
 opt-level = "z"
 
-# root3 for the Prompt: a full strip would drop the relocations sods reads; debug info can go.
+# why for the Prompt: a full strip would drop the relocations sods reads; debug info can go.
 [profile.prompt]
 inherits = "release"
 strip = "debuginfo"

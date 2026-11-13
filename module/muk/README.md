@@ -215,6 +215,6 @@ node test/floors/floors.ts                       # each floor beside Linux
 sh test/tree/tree.sh [DIR]                       # the tree (src/tree.h) beside Linux, every name of a directory
 ```
 
-A Prompt on Linux is still run by root3's core (`root3/core/src/prompt`: namespaces, the root under an overlay, a
+A Prompt on Linux is still run by why's core (`why/core/src/prompt`: namespaces, the root under an overlay, a
 seccomp filter, an init); the box becomes the bundle prompt writes for `muk run`, and what is left of it there
 (the terminal's group, what is kept) is prompt's.

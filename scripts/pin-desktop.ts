@@ -1,5 +1,5 @@
 // Pin the desktop app a release made: its .deb and AppImage, by name, size and sha256, under the version in
-// root3/shared/desktop-releases.json, where the web offers them and the Remote's deploy takes them (root3/remote/ship/releases.ts).
+// why/shared/desktop-releases.json, where the web offers them and the Remote's deploy takes them (why/remote/ship/releases.ts).
 // The release does it beside pin-root.ts, and both are proposed to main as one change (release.yml), so the
 // source says what was released. Only this version is pinned, as only its root is (pin-root.ts).
 //
@@ -12,7 +12,7 @@ import {readFileSync, writeFileSync} from 'node:fs';
 import {basename} from 'node:path';
 
 const args = process.argv.slice(2);
-const at = args.includes('--json') ? args.splice(args.indexOf('--json'), 2)[1] : new URL('../root3/shared/desktop-releases.json', import.meta.url).pathname;
+const at = args.includes('--json') ? args.splice(args.indexOf('--json'), 2)[1] : new URL('../why/shared/desktop-releases.json', import.meta.url).pathname;
 const [version, deb, appimage] = args;
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(version ?? '') || !deb || !appimage) {
   console.error('node scripts/pin-desktop.ts VERSION DEB APPIMAGE [--json FILE]');

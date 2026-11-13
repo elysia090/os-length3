@@ -383,7 +383,7 @@ export class RemoteKernel extends Kernel {
         if (this.status !== null) break;
         const now = steady();
         // Served without a break for a while: the host gets its turn (input, Ctrl-C) before more.
-        // What the console gathered goes on its way when due (root3/app/prompt/kernel.worker.ts), and before a wait that may be long, whole.
+        // What the console gathered goes on its way when due (why/app/prompt/kernel.worker.ts), and before a wait that may be long, whole.
         this.console.flush?.(false);
         if (now - yielded > YIELD_MS) { await macrotask(); yielded = steady(); continue; }
         if (Atomics.load(this.door, 0) !== seen) continue;

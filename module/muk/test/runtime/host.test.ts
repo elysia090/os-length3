@@ -71,7 +71,7 @@ test('a digest, what is kept and a range fetched are the host\'s to answer: SHA-
   const bytes = new TextEncoder().encode('what is kept, and what is fetched');
   assert.deepEqual([...await sha256(bytes)], [...createHash('sha256').update(bytes).digest()]);
   // node has no Cache Storage: nothing is kept, said to every address rather than thrown.
-  assert.equal(await (await kept('root3-test'))('https://example.invalid/x'), null);
+  assert.equal(await (await kept('why-test'))('https://example.invalid/x'), null);
   // A server that sends ranges, and one that ignores them and sends the whole.
   const body = Uint8Array.from({length: 100}, (_, k) => k);
   const server = createServer((q, r) => {

@@ -116,7 +116,7 @@ test("what is in this browser adds up to the total over it: what the browser cou
   await expect(app.main.locator('.legend > span').first().locator('b')).toHaveText(await here.getByRole('heading').locator('b').innerText());
 });
 
-test('the environments are one card two wide, the desktop app at its right and SSH under both: Length³ and its version apart, one Download a size smaller', async ({signedIn: app}) => {
+test('the environments are one card two wide, the desktop app at its right and SSH under both: why* and its version apart, one Download a size smaller', async ({signedIn: app}) => {
   // The Remote has the release's files, as a deploy puts them there. (Signed in, so SSH is there to be under them.)
   await app.page.route('**/v1/desktop/**', (r) => (r.request().method() === 'HEAD' ? r.fulfill({status: 200, body: ''}) : r.continue()));
   await app.runtime.open('Environments');
@@ -143,8 +143,8 @@ test('the environments are one card two wide, the desktop app at its right and S
   // A size smaller than a small button, still 32 high to press.
   await expect(app_.getByRole('link', {name: 'Download'})).toHaveCSS('font-size', '13px');
   expect((await app_.getByRole('link', {name: 'Download'}).boundingBox())!.height).toBeGreaterThanOrEqual(32);
-  // Length³, no OS; the version in another face.
-  const title = app_.getByText(/^Length³ \d/);
+  // why*; the version in another face.
+  const title = app_.getByText(/^why\* \d/);
   await expect(title).not.toContainText('OS');
   const version = title.locator('.version');
   await expect(version).toHaveText(/^\d+\.\d+\.\d+$/);

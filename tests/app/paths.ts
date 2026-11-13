@@ -11,7 +11,7 @@ export const OUT = join(OS, 'tests', 'app', '.dist');
 export const LOGS = join(OS, 'tests', 'app', '.logs');
 
 /**
- * The root's own command in the web root this build carries: root3, or l3 in a root released before it was named so
+ * The root's own command in the web root this build carries: why, or l3 in a root released before it was named so
  * (0.6.4, which main pins until the next release).
  */
 export function rootCommand(): string {
@@ -19,8 +19,8 @@ export function rootCommand(): string {
     const dir = join(OS, 'public', 'webroot');
     const about = JSON.parse(readFileSync(join(dir, 'webroot.json'), 'utf8')) as {index: {path: string}};
     const index = JSON.parse(readFileSync(join(dir, about.index.path), 'utf8')) as {files: {path: string}[]};
-    return index.files.some((f) => f.path === '/usr/bin/root3') ? 'root3' : 'l3';
-  } catch { return 'root3'; }
+    return index.files.some((f) => f.path === '/usr/bin/why') ? 'why' : 'l3';
+  } catch { return 'why'; }
 }
 
 /**

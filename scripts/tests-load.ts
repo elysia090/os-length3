@@ -26,7 +26,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 enableCompileCache();
 
 /** Where stripped modules are kept, apart for each node (each strips with its own amaro). */
-const STRIPPED = join(tmpdir(), `root3-ts-${process.version}`);
+const STRIPPED = join(tmpdir(), `why-ts-${process.version}`);
 mkdirSync(STRIPPED, {recursive: true});
 
 /**

@@ -20,7 +20,7 @@ const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
 const api = process.env.GITHUB_API_URL || 'https://api.github.com';
 const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 const tag = `os-length3-linux-v${version}`;
-const headers = {accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'user-agent': 'root3-release', ...(token ? {authorization: `Bearer ${token}`} : {})};
+const headers = {accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'user-agent': 'why-release', ...(token ? {authorization: `Bearer ${token}`} : {})};
 
 async function ask(path: string, init: RequestInit & {headers?: Record<string, string>} = {}): Promise<Response> {
   const r = await fetch(path.startsWith('http') ? path : `${api}/repos/${repo}${path}`, {...init, headers: {...headers, ...init.headers}});

@@ -1,0 +1,266 @@
+$ why repo new notes
+[exit 0]
+--- stdout
+Made notes (standard · 1 file)
+--- stderr
+
+$ why issue new notes Fix：restart loses the draft
+[exit 0]
+--- stdout
+Wrote notes#1 Fix：restart loses the draft
+--- stderr
+
+$ why todo add Fix：the rail's names
+[exit 0]
+--- stdout
+Added to TODO: Fix：the rail's names (1 open)
+--- stderr
+
+$ why todo add Docs：readme
+[exit 0]
+--- stdout
+Added to TODO: Docs：readme (2 open)
+--- stderr
+
+$ why todo done 2
+[exit 0]
+--- stdout
+Done: Docs：readme
+--- stderr
+
+$ why 
+[exit 0]
+--- stdout
+why*  $HOME
+  Remote not signed in (why login)
+  repo   1
+  Issue  1
+  TODO   1 open of 2
+`why help` shows how to use it
+--- stderr
+
+$ why --json
+[exit 0]
+--- stdout
+{
+  "home": "$HOME",
+  "issues": 1,
+  "prompt": false,
+  "remote": null,
+  "repos": 1,
+  "todo": {
+    "all": 2,
+    "open": 1
+  }
+}
+--- stderr
+
+$ why todo
+[exit 0]
+--- stdout
+  1 ○ Fix：the rail's names
+  2 ✓ Docs：readme
+--- stderr
+
+$ why profile
+[exit 0]
+--- stdout
+No name yet (why profile name "Your name")
+--- stderr
+
+$ why band
+[exit 0]
+--- stdout
+notes
+--- stderr
+
+$ why file
+[exit 0]
+--- stdout
+notes  2 files · 38 B
+--- stderr
+
+$ why file notes
+[exit 0]
+--- stdout
+docs/
+README.md  8 B
+--- stderr
+
+$ why file notes/issue/001.md
+[exit 1]
+--- stdout
+--- stderr
+why: The issues of notes are kept by the OS: read one with why issue notes#N, write one with why issue new notes "Fix：title"
+
+$ why file /
+[exit 4]
+--- stdout
+--- stderr
+why: / is not in your repos: why reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
+
+$ why file /root
+[exit 0]
+--- stdout
+notes  2 files · 38 B
+--- stderr
+
+$ why file /bin
+[exit 4]
+--- stdout
+--- stderr
+why: /bin is not in your repos: why reads them as /root/REPO/PATH or REPO/PATH (the rest of / is a Prompt's root, seen inside it)
+
+$ why file /root/vocab
+[exit 4]
+--- stdout
+--- stderr
+why: There is no repo vocab here (why repo lists them)
+
+$ why file notes/README.md
+[exit 0]
+--- stdout
+# notes
+--- stderr
+
+$ why file rm notes/docs
+[exit 0]
+--- stdout
+Deleted the folder notes/docs (0 files)
+--- stderr
+
+$ why help commit
+[exit 0]
+--- stdout
+why commit — commit the work
+
+  why commit [REPO] [-m note]               on an issue, named after it
+  why commit [REPO] "Fix：title" [-m note]  with its subject, Kind：subject (on an issue, the words are its note)
+--- stderr
+
+$ why git
+[exit 0]
+--- stdout
+#1 Fix：restart loses the draft
+    notes · not started
+    next: why login
+--- stderr
+
+$ why git --json
+[exit 0]
+--- stdout
+{
+  "closed": [],
+  "issues": [
+    {
+      "approvedBy": [],
+      "commits": null,
+      "detail": "",
+      "file": "001.md",
+      "kind": "Fix",
+      "n": 1,
+      "next": [
+        "why login"
+      ],
+      "repo": "notes",
+      "startedBy": null,
+      "state": "notStarted",
+      "title": "restart loses the draft",
+      "uncommitted": null,
+      "unpushed": null,
+      "version": null
+    }
+  ],
+  "known": true,
+  "merged": []
+}
+--- stderr
+
+$ why issue notes#1
+[exit 0]
+--- stdout
+#1 Fix：restart loses the draft
+    notes · not started
+
+Next
+    Sign in  why login
+    Close    why issue close notes#1
+--- stderr
+
+$ why issue close notes#1
+[exit 0]
+--- stdout
+Closed notes#1; it will not be done (back with: why issue reopen notes#1)
+--- stderr
+
+$ why git
+[exit 0]
+--- stdout
+No open issues
+
+1 issue closed in notes: notes#1 (why issue reopen REPO#N)
+--- stderr
+
+$ why issue reopen notes#1
+[exit 0]
+--- stdout
+Reopened notes#1
+--- stderr
+
+$ why help git
+[exit 0]
+--- stdout
+why git — the issues not merged, and what comes next
+
+  why git [REPO]  each issue, with what comes next
+--- stderr
+
+$ why comit
+[exit 2]
+--- stdout
+--- stderr
+why: Not a command: why comit
+Did you mean: why commit
+
+$ why todo add
+[exit 2]
+--- stdout
+--- stderr
+why: Not how why todo add is written
+
+  why todo
+  why todo add "Fix：title" [-m detail]
+  why todo edit N "Fix：title" [-m detail]
+  why todo done N
+  why todo rm N
+
+$ why inbox
+[exit 3]
+--- stdout
+--- stderr
+why: why inbox needs the Remote, and this device is not signed in to one (why login)
+
+$ why start notes#1
+[exit 3]
+--- stdout
+--- stderr
+why: why start needs the Remote, and this device is not signed in to one (why login)
+
+$ why remote
+[exit 0]
+--- stdout
+Remote  not signed in
+  why login, approved in the browser, signs this device in; then the Remote keeps your repos, and each change goes there by itself.
+--- stderr
+
+$ why server --json
+[exit 3]
+--- stdout
+{
+  "error": {
+    "kind": "offline",
+    "message": "why server needs the Remote, and this device is not signed in to one (why login)"
+  }
+}
+--- stderr
+

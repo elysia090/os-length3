@@ -1,6 +1,6 @@
 import {expect, test} from './fixtures.ts';
 
-// Paying, as a person does it on the Remote with the plan (global-setup.ts: ROOT3_PLAN=1, its Stripe the
+// Paying, as a person does it on the Remote with the plan (global-setup.ts: WHY_PLAN=1, its Stripe the
 // stand-in in test mode): a tier chosen on the Plan, Stripe's Checkout with Stripe's test cards (4242 pays,
 // 0002 is declined, 3155 asks for 3-D Secure first), and the portal, where the tier is changed and the
 // subscription cancelled and kept; each time back on the Plan, which says once how it went. Each test's person
@@ -48,7 +48,7 @@ test('a card that is declined is said under it in Checkout and nothing is sent; 
   await app.page.getByRole('button', {name: 'Subscribe'}).click();
   await expect(app.stripe.cardSays).toHaveText('Your card number is invalid.');
 
-  await app.page.getByRole('link', {name: 'Back to root3'}).click();
+  await app.page.getByRole('link', {name: 'Back to why'}).click();
   await app.settled();
   await expect(app.remote.told).toHaveText('Payment cancelled: no charge applied and plan remains unchanged.');
   // Free as it was: its own card current, nothing said again beside the plans.
@@ -95,7 +95,7 @@ test('a tier changed from the Plan is confirmed in Stripe\'s portal, and the Pla
   await app.page.getByRole('button', {name: 'Confirm'}).click();
   await expect(app.page.getByRole('status')).toHaveText('Your subscription has been updated.');
   await expect(app.page.getByRole('table')).toContainText('Go → Pro');
-  await app.page.getByRole('link', {name: 'Return to root3'}).click();
+  await app.page.getByRole('link', {name: 'Return to why'}).click();
   await app.settled();
   await expect(app.remote.told).toHaveText('You are now on Go.');
   await expect(app.remote.tier('Go Plan')).toHaveAttribute('aria-current', 'true');
@@ -111,7 +111,7 @@ test('cancelled in the portal, it stays to the period\'s end and the Plan says u
   await app.page.getByRole('link', {name: 'Cancel subscription'}).click();
   await app.page.getByRole('button', {name: 'Cancel plan'}).click();
   await expect(app.stripe.subscription).toContainText('Your subscription will be canceled on');
-  await app.page.getByRole('link', {name: 'Return to root3'}).click();
+  await app.page.getByRole('link', {name: 'Return to why'}).click();
   await app.settled();
   await expect(app.remote.told).toHaveText(/^Subscription cancelled: Pro remains active until .+; no further charges\.$/);
   await expect(app.remote.plan).toContainText(/Expires on /);
@@ -121,7 +121,7 @@ test('cancelled in the portal, it stays to the period\'s end and the Plan says u
   await app.remote.plan.getByRole('button', {name: 'Manage plan'}).click();
   await app.page.getByRole('button', {name: 'Renew plan'}).click();
   await expect(app.stripe.subscription).toContainText('Your plan renews on');
-  await app.page.getByRole('link', {name: 'Return to root3'}).click();
+  await app.page.getByRole('link', {name: 'Return to why'}).click();
   await app.settled();
   await expect(app.remote.told).toHaveText(/^Pro active: renews on /);
   await expect(app.remote.plan).toContainText(/Renews /);

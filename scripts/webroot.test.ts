@@ -13,8 +13,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {pinnedRoots} from '../root3/remote/ship/releases.ts';
-import {makeRoot3, standIn} from './webroot-standin.ts';
+import {pinnedRoots} from '../why/remote/ship/releases.ts';
+import {makeWebroot, standIn} from './webroot-standin.ts';
 import type {Index} from './webroot-tree.ts';
 
 const os = fileURLToPath(new URL('..', import.meta.url));
@@ -25,10 +25,10 @@ let work = '', rootFile = '', out = '';
 const files = (dir: string) => readdirSync(dir, {recursive: true, encoding: 'utf8'}).filter((f) => statSync(join(dir, f)).isFile()).sort()
   .map((f) => `${f} ${sha(readFileSync(join(dir, f)))}`);
 
-const make = (root: string, dir: string) => { const r = makeRoot3(root, dir, work); assert.equal(r.status, 0, r.stderr); };
+const make = (root: string, dir: string) => { const r = makeWebroot(root, dir, work); assert.equal(r.status, 0, r.stderr); };
 
 before(() => {
-  work = mkdtempSync(join(tmpdir(), 'root3-test-'));
+  work = mkdtempSync(join(tmpdir(), 'why-test-'));
   rootFile = standIn(work, '9.9.9');
   out = join(work, 'webroot');
   make(rootFile, out);
@@ -40,7 +40,7 @@ test('the web root is the root: every path, type, mode, link target and sha256',
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^same: /m);
   const native = readFileSync(join(work, 'm/native.txt'), 'utf8');
-  // As root3 installs a root: no set-id bit from an archive, the sticky bit kept, a hard link the same bytes.
+  // As why installs a root: no set-id bit from an archive, the sticky bit kept, a hard link the same bytes.
   assert.match(native, /^\/usr\/bin\/su\tfile\t0755\t/m);
   assert.match(native, /^\/tmp\tdir\t1777\t/m);
   assert.match(native, /^\/bin\tlink\t0777\tusr\/bin$/m);
@@ -48,10 +48,10 @@ test('the web root is the root: every path, type, mode, link target and sha256',
   assert.equal(line('/usr/bin/busybox.same'), line('/usr/bin/busybox'));
   assert.equal(native, readFileSync(join(work, 'm/web.txt'), 'utf8'));
   const about = JSON.parse(readFileSync(join(out, 'webroot.json'), 'utf8'));
-  assert.deepEqual([about.name, about.version, about.sha256, about.root.profile], ['root3', '9.9.9', /-([0-9a-f]{64})\.tar\.zst$/.exec(rootFile)?.[1], 'development-standard-v1']);
+  assert.deepEqual([about.name, about.version, about.sha256, about.root.profile], ['why', '9.9.9', /-([0-9a-f]{64})\.tar\.zst$/.exec(rootFile)?.[1], 'development-standard-v1']);
 });
 
-test('the same root and translator make the same root3, byte for byte', () => {
+test('the same root and translator make the same why, byte for byte', () => {
   const again = join(work, 'again');
   make(rootFile, again);
   assert.deepEqual(files(again), files(out));
@@ -68,7 +68,7 @@ test('a pack or an index that is not the root is caught', () => {
 
   rmSync(bad, {recursive: true, force: true});
   cpSync(out, bad, {recursive: true});
-  // An index that says another mode, made to look like root3's own: the parity reads past the digests and finds it.
+  // An index that says another mode, made to look like why's own: the parity reads past the digests and finds it.
   const about = JSON.parse(readFileSync(join(bad, 'webroot.json'), 'utf8'));
   const index: Index = JSON.parse(readFileSync(join(bad, about.index.path), 'utf8'));
   const busybox = index.files.find((f) => f.path === '/usr/bin/busybox');
@@ -82,9 +82,9 @@ test('a pack or an index that is not the root is caught', () => {
   assert.match(r.stdout, /different \(1\):\n {2}\/usr\/bin\/busybox\tfile\t0755/);
 });
 
-test('one entry pins root3 for both: the root, and the index the browser reads it by', () => {
+test('one entry pins why for both: the root, and the index the browser reads it by', () => {
   const rs = join(work, 'root.rs');
-  copyFileSync(join(os, 'root3/core/src/root/pins.rs'), rs);
+  copyFileSync(join(os, 'why/core/src/root/pins.rs'), rs);
   const r = node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', rs]);
   assert.equal(r.status, 0, r.stderr);
   const pins = pinnedRoots(readFileSync(rs, 'utf8'));
@@ -102,14 +102,14 @@ test('one entry pins root3 for both: the root, and the index the browser reads i
   assert.match(node([join(os, 'scripts/pin-root.ts'), rootFile, other, '--rs', rs]).stderr, /a released index is never changed/);
 });
 
-test('a Node-only build takes root3 from its release only at the pin, and refuses anything else', async () => {
-  // A tree as prompt-files.ts reads it: the pins, newest 9.9.9, and the scripts; and a release that has root3's tar.
+test('a Node-only build takes why from its release only at the pin, and refuses anything else', async () => {
+  // A tree as prompt-files.ts reads it: the pins, newest 9.9.9, and the scripts; and a release that has why's tar.
   const tree = join(work, 'repo');
-  for (const d of ['root3/core/src/root', 'scripts', 'root3/remote/ship', 'root3/shared', 'public', 'module/muk/runtime']) mkdirSync(join(tree, d), {recursive: true});
+  for (const d of ['why/core/src/root', 'scripts', 'why/remote/ship', 'why/shared', 'public', 'module/muk/runtime']) mkdirSync(join(tree, d), {recursive: true});
   // And what both of those check packs by, where the repository has it (module/muk).
-  for (const f of ['root3/core/src/root/pins.rs', 'scripts/prompt-files.ts', 'scripts/webroot-tree.ts', 'root3/remote/ship/releases.ts', 'root3/shared/desktop-releases.json',
+  for (const f of ['why/core/src/root/pins.rs', 'scripts/prompt-files.ts', 'scripts/webroot-tree.ts', 'why/remote/ship/releases.ts', 'why/shared/desktop-releases.json',
     'module/muk/runtime/table.ts']) copyFileSync(join(os, f), join(tree, f));
-  assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', join(tree, 'root3/core/src/root/pins.rs')]).status, 0);
+  assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', join(tree, 'why/core/src/root/pins.rs')]).status, 0);
 
   const tarOf = (dir: string) => execFileSync('tar', ['-C', dir, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax', '-cf', '-', '.'], {maxBuffer: 1 << 28});
   let tar = tarOf(out);
@@ -126,7 +126,7 @@ test('a Node-only build takes root3 from its release only at the pin, and refuse
   const port = typeof at === 'object' && at ? at.port : 0;
   // Run in a child the server here can answer (spawnSync would hold this process, and the server, still).
   const go = () => new Promise<{status: number; stdout: string; stderr: string}>((resolve) => {
-    const env = {...process.env, ROOT3_RELEASES: `http://127.0.0.1:${port}`};
+    const env = {...process.env, WHY_RELEASES: `http://127.0.0.1:${port}`};
     execFile(process.execPath, [join(tree, 'scripts/prompt-files.ts')], {env}, (e, stdout, stderr) =>
       resolve({status: e ? (typeof e.code === 'number' ? e.code : 1) : 0, stdout, stderr}));
   });
@@ -166,7 +166,7 @@ test('a Node-only build takes root3 from its release only at the pin, and refuse
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /this tree pins/);
     assert.deepEqual(files(join(tree, 'public/webroot')), files(out));
-    // The pinned root3, but not what the release's SHA256SUMS says of its file: refused too.
+    // The pinned why, but not what the release's SHA256SUMS says of its file: refused too.
     tar = tarOf(out);
     sums = sha(Buffer.from('another'));
     r = await go();

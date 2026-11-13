@@ -1,5 +1,5 @@
 #!/bin/sh
-# OS Length3 Linux's root, put together from its packages (module/ricebox/make/build.sh) and this tree's root3, as one bundle.
+# OS Length3 Linux's root, put together from its packages (module/ricebox/make/build.sh) and this tree's why, as one bundle.
 #
 #   sh module/ricebox/make/assemble.sh PACKAGES OUT [VERSION]
 #
@@ -14,12 +14,12 @@
 #   /tmp, /run the Prompt's own, gone when it ends
 #   /dev, /proc, /sys  the kernel's, made by the app
 #
-# Beside the packages: /usr/bin/root3 (static, musl, this tree's, without the SSH listener: a Prompt listens for no one),
+# Beside the packages: /usr/bin/why (static, musl, this tree's, without the SSH listener: a Prompt listens for no one),
 # /etc/os-release (its version), and what the root is made of,
 # /usr/share/length3/packages (each package's name, version, source digest and key) with the pins it was made from.
 # Its package database says exactly what is there, each file with its checksum (module/ricebox/make/db.ts). The bundle (pax, which
 # the installer reads) is deterministic (sorted names, time 0, owner 0, no per-run header names) and so is its zstd:
-# the same packages and root3 make the same bundle, byte for byte. OUT gets it, its SHA256SUMS and its manifest.
+# the same packages and why make the same bundle, byte for byte. OUT gets it, its SHA256SUMS and its manifest.
 set -eu
 pkgs=$1; out=$2; version=${3:-0.0.0}
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -33,15 +33,15 @@ done
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/length3-root.XXXXXX")
 trap 'rm -rf "${work:?}"' EXIT
-mkdir -p "$work/tree/root" "$work/root3/usr/bin"
+mkdir -p "$work/tree/root" "$work/why/usr/bin"
 root="$work/tree/root"
 
-# root3, as a package of its own.
-(cd "$os" && cargo build -q --locked --profile prompt -p root3 --no-default-features --target x86_64-unknown-linux-musl)
-root3="$os/target/x86_64-unknown-linux-musl/prompt/root3"
-install -m 0755 "$root3" "$work/root3/usr/bin/root3"
+# why, as a package of its own.
+(cd "$os" && cargo build -q --locked --profile prompt -p why --no-default-features --target x86_64-unknown-linux-musl)
+why="$os/target/x86_64-unknown-linux-musl/prompt/why"
+install -m 0755 "$why" "$work/why/usr/bin/why"
 
-# NAME VERSION URL TREE, a line each: the packages, and root3.
+# NAME VERSION URL TREE, a line each: the packages, and why.
 . "$here/pins/sources.env"
 while read -r n v _; do
   # Where its first pin's source is from; - for a package made of this tree's files alone (system-config).
@@ -50,7 +50,7 @@ while read -r n v _; do
   [ -z "$pin" ] || eval "url=\${${pin}_URL}"
   echo "$n $v $url $pkgs/$n/tree"
 done < "$pkgs/record" > "$work/list"
-echo "root3 $version https://github.com/elysia090/os-length3 $work/root3" >> "$work/list"
+echo "why $version https://github.com/elysia090/os-length3 $work/why" >> "$work/list"
 
 # Each tree, none over another's.
 while read -r n _ _ t; do
@@ -88,8 +88,8 @@ node "$here/make/db.ts" "$root" "$work/list"
   echo "format=length3-root-v3"
   echo "version=$version"
   sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\) \([^ ]*\)$/package.\1=\2 \3 \4/' "$root/usr/share/length3/packages"
-  echo "root3.sha256=$(sha256sum "$root3" | cut -d' ' -f1)"
-  echo "root3.source=$(git -C "$os" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$os" status --porcelain -- root3/core root3/cli root3/shared 2>/dev/null | grep -q . && echo +changed)"
+  echo "why.sha256=$(sha256sum "$why" | cut -d' ' -f1)"
+  echo "why.source=$(git -C "$os" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$os" status --porcelain -- why/core why/cli why/shared 2>/dev/null | grep -q . && echo +changed)"
   echo "assembler.sha256=$(cat "$here/make/assemble.sh" "$here/make/db.ts" "$here/etc/os-release" | sha256sum | cut -d' ' -f1)"
 } > "$work/tree/manifest"
 

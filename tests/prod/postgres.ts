@@ -57,7 +57,7 @@ export interface Cluster {
 
 export async function cluster(): Promise<Cluster> {
   if (!existsSync(join(BIN, 'postgres'))) throw new Error(`no Postgres at ${BIN} (PG_BIN names another)`);
-  const dir = mkdtempSync(join(tmpdir(), 'root3-prod-pg-'));
+  const dir = mkdtempSync(join(tmpdir(), 'why-prod-pg-'));
   if (asRoot) chownSync(dir, Number(execFileSync('id', ['-u', 'postgres']).toString()), Number(execFileSync('id', ['-g', 'postgres']).toString()));
   const data = join(dir, 'data'), sock = dir, port = await freePort();
   const password = `owner${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
