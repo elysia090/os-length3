@@ -76,7 +76,6 @@ export const CALLS_OWED: readonly CallOwed[] = [
   {nr: 428, name: 'open_tree', how: 'absent', needs: 'what is mounted at a path, or a copy of it, as a descriptor'},
   {nr: 429, name: 'move_mount', how: 'absent', needs: 'such a descriptor put on a path'},
   {nr: 435, name: 'clone3', how: 'refused', needs: 'a process made in a cgroup that was lent (CLONE_INTO_CGROUP): ENOSYS today'},
-  {nr: 437, name: 'openat2', how: 'absent', needs: 'a path opened that leads nowhere out of where it starts (RESOLVE_BENEATH)'},
   {nr: 442, name: 'mount_setattr', how: 'absent', needs: "a mount's flags and how it spreads, set on its descriptor"},
 ];
 

@@ -8,8 +8,8 @@
 
 import {Description, PIPE_BUF, Pipe, flock, unflock, type Interest} from './fd.ts';
 import * as net from './sys-net.ts';
-import {Made, procDescriptor} from './procfs.ts';
-import {Dir, Device, E, ending, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK, type Entry} from './fs.ts';
+import {Made, magicLink, procDescriptor} from './procfs.ts';
+import {Dir, Device, E, ending, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK, type Entry, type Resolved} from './fs.ts';
 import {Wait} from './flow.ts';
 import type {Calls, Kern, Proc, Termios} from './parts.ts';
 import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.ts';
@@ -64,7 +64,8 @@ function held(p: Proc, d: Description): Dir | string {
 
 /** The directory a *at() path is relative to: where the process works, or the directory `dirfd` holds open. */
 function base(p: Proc, dirfd: bigint): Dir | string {
-  const fd = N(dirfd);
+  // (An int, as Linux takes it: its low 32 bits. AT_FDCWD written into a 32-bit register comes with nothing above it.)
+  const fd = Number(BigInt.asIntN(32, dirfd));
   if (fd === AT_FDCWD) return p.here;
   const d = p.fds.get(fd) ?? fail(E.BADF);
   if (d.kind !== 'dir') fail(E.NOTDIR);
@@ -188,7 +189,108 @@ function statNode(p: Proc, name: string, dirfd: bigint, follow: boolean): Statte
 /** A stat of what `found` is into `st`, or the errno it is, negated. */
 const statOf = (p: Proc, st: bigint, found: Statted | number): number => (typeof found === 'number' ? -found : writeStat(p, st, found));
 
-function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bigint): number {
+/** How openat2 has a path walked (its `resolve`): each a rule the walk is held to. */
+const RESOLVE = {NO_XDEV: 1, NO_MAGICLINKS: 2, NO_SYMLINKS: 4, BENEATH: 8, IN_ROOT: 16, CACHED: 32};
+
+/**
+ * `name` walked from `from` as openat2's `resolve` says, a name at a time. BENEATH: it leads nowhere out of where it
+ * starts (a path or a link from the root, or ".." past the start: EXDEV). IN_ROOT: where it starts is its root (a
+ * path or a link from the root starts there again, ".." there stays). NO_SYMLINKS: no link is followed (ELOOP);
+ * NO_MAGICLINKS: none that leads to what something holds (/proc's fd, cwd, exe, root). NO_XDEV: it stays in what is
+ * mounted where it starts (/proc and /dev are what is mounted here). As Vfs.walk: {node, parent, name}, node null
+ * where only its last name is missing, or the errno; `names` are left its names from the root.
+ */
+function walkHow(p: Proc, name: string, from: Dir | string, resolve: number, follow: boolean, names: string[]): Resolved | number {
+  const vfs = p.kernel.vfs, scoped = resolve & (RESOLVE.BENEATH | RESOLVE.IN_ROOT);
+  const start = typeof from === 'string' ? vfs.find(from, '/') : from;
+  if (typeof start === 'number') return start;
+  if (!(start instanceof Dir)) return E.NOTDIR;
+  const startPath = typeof from === 'string' ? from : vfs.where(start);
+  if (startPath == null) return E.NOENT;
+  const startNames = startPath.split('/').filter(Boolean);
+  const mounted = [vfs.root.entries.get('proc'), vfs.root.entries.get('dev')];
+  let stack: Entry[] = [];
+  /** From where it starts (BENEATH, IN_ROOT), or from the root. */
+  const again = (): void => {
+    stack = scoped ? [start] : [vfs.root];
+    names.length = 0;
+    if (scoped) names.push(...startNames);
+  };
+  if (name.startsWith('/')) {
+    if (resolve & RESOLVE.BENEATH) return E.XDEV;
+    again();
+  } else if (scoped) again();
+  else {
+    // The directories down to where it starts, each as it lies: ".." above the start is its real parent.
+    stack = [vfs.root];
+    names.length = 0;
+    for (const part of startNames) {
+      const node = (stack[stack.length - 1] as Dir).entries.get(part);
+      if (!(node instanceof Dir)) return E.NOENT;
+      stack.push(node);
+      names.push(part);
+    }
+  }
+  let queue = name.split('/'), links = 0;
+  const rest = (i: number): boolean => queue.slice(i).every((part) => part === '' || part === '.');
+  for (let i = 0; i < queue.length; i++) {
+    const part = queue[i];
+    if (part === '' || part === '.') continue;
+    const dir = stack[stack.length - 1];
+    if (!(dir instanceof Dir)) return E.NOTDIR;
+    if (part === '..') {
+      if (stack.length > 1) {
+        const left = stack.pop();
+        names.pop();
+        if (resolve & RESOLVE.NO_XDEV && mounted.includes(left)) return E.XDEV;
+      } else if (resolve & RESOLVE.BENEATH) return E.XDEV;
+      continue;
+    }
+    const node = dir.entries.get(part), last = rest(i + 1), through = last && i + 1 < queue.length;
+    if (!node) return last ? {node: null, parent: dir, name: part} : E.NOENT;
+    if (node instanceof Link && (!last || follow || through)) {
+      if (resolve & RESOLVE.NO_SYMLINKS) return E.LOOP;
+      if (resolve & RESOLVE.NO_MAGICLINKS && magicLink(node)) return E.LOOP;
+      if (++links > 40) return E.LOOP;
+      const target = node.target;
+      if (target.startsWith('/')) {
+        if (resolve & RESOLVE.BENEATH) return E.XDEV;
+        again();
+      }
+      queue = [...target.split('/'), ...queue.slice(i + 1)];
+      i = -1;
+      continue;
+    }
+    if (through && !(node instanceof Dir)) return E.NOTDIR;
+    if (resolve & RESOLVE.NO_XDEV && mounted.includes(node)) return E.XDEV;
+    stack.push(node);
+    names.push(part);
+  }
+  return {node: stack[stack.length - 1], parent: (stack[stack.length - 2] as Dir | undefined) ?? vfs.root, name: names[names.length - 1] ?? '/'};
+}
+
+/**
+ * openat2(2): an open that says how its path is walked (walkHow), and is told what it may not ask rather than
+ * having it passed over: a flag no kernel has, a mode where nothing is made, more than its three words that is not
+ * nothing.
+ */
+function openat2(p: Proc, dirfd: bigint, address: bigint, how: number, size: number): number {
+  if (size < 24) fail(E.INVAL);
+  if (size > 4096) fail(E.TOOBIG);
+  if (p.bytes.subarray(how + 24, how + size).some((b) => b !== 0)) fail(E.TOOBIG);
+  const v = p.view, flags = v.getBigUint64(how, true), mode = v.getBigUint64(how + 8, true), resolve = v.getBigUint64(how + 16, true);
+  const PATH = 0x200000, TMPFILE = 0x400000;
+  if (flags & ~0x7fffc3n || resolve & ~0x3fn) fail(E.INVAL);
+  const f = Number(flags), r = Number(resolve);
+  if (f & PATH && f & ~(PATH | O.DIRECTORY | O.NOFOLLOW | O.CLOEXEC)) fail(E.INVAL);
+  if (mode & ~0o7777n || (mode && !(f & (O.CREAT | TMPFILE)))) fail(E.INVAL);
+  if (r & RESOLVE.BENEATH && r & RESOLVE.IN_ROOT) fail(E.INVAL);
+  // (CACHED: only what is had without waiting; everything here is, but what an open makes or empties is not asked so)
+  if (r & RESOLVE.CACHED && f & (O.CREAT | O.TRUNC | TMPFILE)) fail(E.AGAIN);
+  return openAt(p, dirfd, address, flags, mode, r & ~RESOLVE.CACHED);
+}
+
+function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bigint, resolve = 0): number {
   const f = N(flags), name = path(p, address);
   // The descriptor it will be is found before anything is looked at or changed, as Linux takes one before it walks the
   // path: with none left the open is EMFILE whatever it names, and nothing is made or emptied for it. (Before: found
@@ -197,14 +299,16 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
   if (fd < 0) fail(E.MFILE);
   const install = (d: Description): number => p.fds.install(d, {fd, cloexec: !!(f & O.CLOEXEC)});
   // A descriptor opened by its /proc name opens what it has open: the same pipe or terminal, a file afresh.
-  const named = name.startsWith('/') ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
+  const named = name.startsWith('/') && !(resolve & (RESOLVE.BENEATH | RESOLVE.IN_ROOT)) ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
   if (named) {
+    if (resolve & (RESOLVE.NO_SYMLINKS | RESOLVE.NO_MAGICLINKS)) fail(E.LOOP);
+    if (resolve & RESOLVE.NO_XDEV) fail(E.XDEV);
     const d = named.kind === 'file' || named.kind === 'dir' ? new Description(named.kind, {node: named.node, flags: f, path: named.path}) : named;
     if (d !== named && named.node instanceof File && (f & 3) && (f & O.TRUNC)) named.node.truncate(0);
     return install(d);
   }
   const names: string[] = [];
-  const r = p.kernel.vfs.walk(name, base(p, dirfd), !(f & O.NOFOLLOW), 0, names);
+  const r = resolve ? walkHow(p, name, base(p, dirfd), resolve, !(f & O.NOFOLLOW), names) : p.kernel.vfs.walk(name, base(p, dirfd), !(f & O.NOFOLLOW), 0, names);
   if (typeof r === 'number') return -r;
   let node = r.node;
   if (!node) {
@@ -1369,6 +1473,7 @@ export const FILE_CALLS: Calls = {
   138(fd, buf) { return writeStatfs(this, N(buf), descriptor(this, fd).path ?? '/'); }, // fstatfs
   217(fd, buf, count) { return getdents(this, fd, buf, count); },
   257(dirfd, name, flags, mode) { return openAt(this, dirfd, name, flags, mode); },
+  437(dirfd, name, how, size) { return openat2(this, dirfd, name, N(how), N(size)); },
   258(dirfd, name, mode) { return makeDir(this, dirfd, name, mode); },
   260(dirfd, name, uid, gid, flags) { // fchownat
     const f = N(flags), named = N(name) && this.cstring(N(name));

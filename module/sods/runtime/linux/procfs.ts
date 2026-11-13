@@ -58,9 +58,13 @@ class Found extends Map<string, Entry> {
 /** A link whose target is made each time it is followed. */
 class Pointer extends Link {
   declare readonly make: () => string;
-  constructor(target: () => string) { super(''); this.make = target; }
+  /** It leads to what something holds (a descriptor, where a process works, its program, its root), not along a path: Linux's "magic link". */
+  declare readonly magic: boolean;
+  constructor(target: () => string, magic = false) { super(''); this.make = target; this.magic = magic; }
   override get target(): string { return this.make(); }
 }
+/** Whether `entry` is a link that leads to what something holds, not along a path (openat2's RESOLVE_NO_MAGICLINKS). */
+export const magicLink = (entry: Entry): boolean => entry instanceof Pointer && entry.magic;
 
 const comm = (p: Proc): string => (p.comm ?? (p.argv?.[0] ?? 'init').split('/').at(-1) ?? '').slice(0, 15);
 const state = (k: Kern, p: Proc): 'R' | 'S' | 'Z' | 'T' => p.state === 'zombie' ? 'Z' : p.stopped ? 'T' : k.current?.proc === p ? 'R' : 'S';
@@ -146,7 +150,7 @@ export function mountProc(kernel: Kern): void {
     if (p.mapEnd > p.mapBase) out.push(line(p.mapBase, p.mapEnd, 'rw-p', ''));
     return out.join('\n') + '\n';
   };
-  const fdDir = (p: Proc): Listing => new Listing(() => new Map([...p.fds.slots].map(([fd, s]) => [String(fd), new Pointer(() => { inspect(p); return pointsAt(kernel, s.description); })])), 0o500);
+  const fdDir = (p: Proc): Listing => new Listing(() => new Map([...p.fds.slots].map(([fd, s]) => [String(fd), new Pointer(() => { inspect(p); return pointsAt(kernel, s.description); }, true)])), 0o500);
 
   // Each process's directory, kept while it is there (its inode stays the same between looks).
   const dirs = new Map<number, {proc: Proc; dir: Listing}>();
@@ -165,9 +169,9 @@ export function mountProc(kernel: Kern): void {
       // Its user namespace's: the one id it maps, 0, the person's own outside (core/src/launch.rs).
       ['uid_map', new Made(() => idMap)], ['gid_map', new Made(() => idMap)], ['setgroups', new Made(() => 'deny\n')],
       ['mounts', new Made(() => mounts())],
-      ['cwd', new Pointer(() => { inspect(p); return typeof p.here === 'string' ? p.here : kernel.vfs.shown(p.here) ?? '/'; })],
-      ['exe', new Pointer(() => { inspect(p); return p.exe; })],
-      ['root', new Pointer(() => { inspect(p); return '/'; })],
+      ['cwd', new Pointer(() => { inspect(p); return typeof p.here === 'string' ? p.here : kernel.vfs.shown(p.here) ?? '/'; }, true)],
+      ['exe', new Pointer(() => { inspect(p); return p.exe; }, true)],
+      ['root', new Pointer(() => { inspect(p); return '/'; }, true)],
     ]);
     const dir = new Listing(() => {
       files.set('fd', fdDir(p));

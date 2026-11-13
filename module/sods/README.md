@@ -94,7 +94,6 @@ is not verified or excluded, and ends 1 while there is one: a release of ricebox
 | open_tree (428) | absent | what is mounted at a path, or a copy of it, as a descriptor |
 | move_mount (429) | absent | such a descriptor put on a path |
 | clone3 (435) | refused | a process made in a cgroup that was lent (CLONE_INTO_CGROUP): ENOSYS today |
-| openat2 (437) | absent | a path opened that leads nowhere out of where it starts (RESOLVE_BENEATH) |
 | mount_setattr (442) | absent | a mount's flags and how it spreads, set on its descriptor |
 
 | What is made | By, today | What ends that |
@@ -104,8 +103,9 @@ is not verified or excluded, and ends 1 while there is one: a release of ricebox
 | a terminal where there is no Linux | the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt) | signalfd answered here, and the terminal muk gives away taken by `prompt attach` on this Linux, checked by module/prompt/test/prompt.sh there |
 | a terminal on the desktop (Linux) | why's core's session (why/core/src/prompt) | the session hands the descriptor muk sends to `prompt attach` |
 
-What muk asks and is answered as Linux answers it is checked beside Linux: the filter muk puts over every box, by
-muk's own check of it and by `test/programs/seccomp.c`, the same natively and here.
+What muk asks and is answered is checked beside Linux, the same program run natively and here: the filter muk puts
+over every box (muk's own check of it, and `test/programs/seccomp.c`), and the open that leads nowhere out of
+where it starts (`test/programs/openat2.c`).
 
 ## Its folders
 
