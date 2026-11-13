@@ -162,6 +162,21 @@ has read 'see /up/file 100644 = given'
 n=$((n + 1)); ! grep -qx 'arg first' "$t/read.muk" || no "read: args given twice were both read"
 n=$((n + 1)); [ ! -e "$t/outside" ] && [ ! -e "$t/up" ] && [ ! -e "$t/read/up" ] || no "read: a mount's destination was made outside the box's root"
 
+# HOME, given none, is the home the box's /etc/passwd has for the one it runs as: its first entry for that one, a
+# line that is no entry, or whose user is no number, being no one's.
+mkdir -p "$t/homed/rootfs/etc"
+printf '%s\n' 'not an entry' 'short:x' 'root:x:0:0:root:/root:/bin/sh' 'nouid:x:abc:5:x:/wrong:/bin/sh' 'me:x:1001:1001:Me:/home/me:/bin/sh' \
+  'later:x:1001:1001:Me:/home/later:/bin/sh' > "$t/homed/rootfs/etc/passwd"
+bundle homed <<JSON
+{"ociVersion": "1.0.2",
+ "process": {"user": {"uid": 1001, "gid": 1001}, "args": ["/probe"], "cwd": "/", "capabilities": {}, "noNewPrivileges": true},
+ "root": {"path": "rootfs"}, "mounts": [$dev, {"destination": "/proc", "type": "proc", "source": "proc"}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}], $hidden}}
+JSON
+both homed 0
+has homed 'uid 1001 gid 1001 groups 0 pid 1'
+has homed 'env HOME=/home/me'
+
 # Namespaces that are there already are joined, not made: the box is in the network and UTS namespaces of a process
 # that has its own, and its devices are made as any box's are.
 unshare --net --uts sleep 300 &
@@ -494,6 +509,50 @@ for with in '"' '\\' '{' '}' '[' ']' ',' ':' 'x' '9' '-' ' '; do
     i=$((i + 7))
   done
 done
+
+# A member given twice is the second, however short: of the first's arguments and environment nothing is left after
+# it (each is handed to the program as a list that ends where it ends; before, the first's came after the second's,
+# from where the second ended).
+bundle short <<JSON
+{"ociVersion": "1.0.2",
+ "process": {"args": ["/probe", "unwanted", "more"], "args": ["/probe"], "cwd": "/",
+  "env": ["KEEP=one", "REMOVE=two", "STALE=three"], "env": ["HOME=/chosen"], "noNewPrivileges": true, "capabilities": {}},
+ "root": {"path": "$t/short/rootfs", "readonly": true},
+ "mounts": [
+  {"destination": "/proc", "type": "proc", "source": "proc"},
+  {"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]},
+  {"destination": "/dev/pts", "type": "devpts", "source": "devpts", "options": ["nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620"]}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+  "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}], $hidden}}
+JSON
+both short 0
+has short 'env HOME=/chosen'
+n=$((n + 1)); [ "$(grep '^arg ' "$t/short.muk" | tr '\n' ' ')" = 'arg /probe ' ] || no "short: arguments of the list given first were handed on: $(grep '^arg ' "$t/short.muk" | tr '\n' ' ')"
+n=$((n + 1)); [ "$(grep -c '^env ' "$t/short.muk")" = 1 ] || no "short: the environment is not the list given second alone: $(grep '^env ' "$t/short.muk" | tr '\n' ' ')"
+
+# HOME, given none, where the box's /etc/passwd has no entry for the one it runs as: / (before: all the file said,
+# from its first byte). The environment given twice, the second time empty, is empty but for it. And the same of a
+# file with nothing in it.
+mkdir -p "$t/nohome/rootfs/etc" && printf 'someone:x:1001:1001:Test User:/home/someone:/bin/sh\n' > "$t/nohome/rootfs/etc/passwd"
+bundle nohome <<JSON
+{"ociVersion": "1.0.2",
+ "process": {"args": ["/probe"], "cwd": "/", "env": ["A=1", "B=2"], "env": [], "noNewPrivileges": true, "capabilities": {}},
+ "root": {"path": "$t/nohome/rootfs", "readonly": true},
+ "mounts": [
+  {"destination": "/proc", "type": "proc", "source": "proc"},
+  {"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]},
+  {"destination": "/dev/pts", "type": "devpts", "source": "devpts", "options": ["nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620"]}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "network"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}],
+  "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}], $hidden}}
+JSON
+both nohome 0
+has nohome 'env HOME=/'
+n=$((n + 1)); [ "$(grep -c '^env ' "$t/nohome.muk")" = 1 ] || no "nohome: the environment is not HOME alone: $(grep '^env ' "$t/nohome.muk" | tr '\n' ' ')"
+: > "$t/nohome/rootfs/etc/passwd"
+n=$((n + 1))
+st=0; (cd "$t/nohome" && timeout 20 "$muk" run $lends -b . x) > "$t/empty.muk" 2> "$t/empty.err" || st=$?
+[ "$st" = 0 ] || no "an empty /etc/passwd: muk ended $st: $(cat "$t/empty.err")"
+grep -qxF 'env HOME=/' "$t/empty.muk" || no "an empty /etc/passwd: the box did not say: env HOME=/"
 
 # The box's own files are anything: an /etc/passwd that is a pipe no one writes to is not waited on.
 mkdir -p "$t/pipe/rootfs/etc" && mkfifo "$t/pipe/rootfs/etc/passwd"

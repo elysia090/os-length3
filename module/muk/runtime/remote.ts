@@ -19,6 +19,7 @@ import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import {began, canRunApart, mayWait, nodeThreads, steady} from '../../sods/runtime/host.ts';
 import type {Saved} from '../../sods/runtime/x87.ts';
 import type {Call, Mem, Range} from './parts.ts';
+import type {FdTable} from './fd.ts';
 import {deliverable, take} from './signal.ts';
 
 const NodeWorker = (await nodeThreads())?.Worker ?? null;
@@ -49,6 +50,8 @@ interface Hand {
   x87?: boolean;
   /** The channel it ran its last thread on, where it waits a little for the next once that is gone (channel.ts PARK). */
   channel?: SharedArrayBuffer;
+  /** The host said it failed (its error event): it runs no thread again, and is ended once. */
+  failed?: boolean;
 }
 /** What a RemoteKernel is made with besides a Kernel's: Workers kept spare, who hears it idle, and whether its Workers go on. */
 export interface Apart extends Made { spares?: number; onIdle?: ((r: Pumped) => void) | null; passOn?: boolean }
@@ -76,8 +79,20 @@ const keeps = (w: Hand, memoryId: number | undefined, imageId: number | null): b
  * Start `n` Workers for threads now, before the kernel is made (its program and translator still on their way):
  * a Worker takes a while to load and run its script, and the first threads would otherwise wait for theirs.
  */
-export function warmThreads(n = 2): void {
-  while (warmed.length < n) warmed.push(newWorker());
+export function warmThreads(n = 2, make: () => Hand = newWorker): void {
+  while (warmed.length < n) {
+    const w = make();
+    // One the host says failed before a kernel has it (it could not start) is not handed to one: taken out and ended.
+    // (Once a kernel has it, the kernel hears of it: adoptWorker.)
+    w.onError(() => {
+      if (w.kernel || w.failed) return;
+      w.failed = true;
+      const at = warmed.indexOf(w);
+      if (at >= 0) warmed.splice(at, 1);
+      w.end();
+    });
+    warmed.push(w);
+  }
 }
 
 function newWorker(): Hand {
@@ -143,7 +158,7 @@ export class RemoteKernel extends Kernel {
 
   /** A Worker whose thread ended in a call: free for the next thread (up to a few). */
   keep(w: Hand): void {
-    if (this.spares.length < 8) this.spares.push(w); else w.end();
+    if (!w.failed && this.spares.length < 8) this.spares.push(w); else w.end();
   }
 
   /**
@@ -215,7 +230,20 @@ export class RemoteKernel extends Kernel {
         k.kick();
       }
     });
-    w.onError((e) => { w.kernel?.say(2, enc.encode(`muk: ${e?.message ?? e}\n`)); });
+    // The host's own word that the Worker failed (it could not start, or threw where cpu.ts does not catch): no
+    // message follows it, so its thread is ended here as one whose Worker said 'error' is, and the kernel woken.
+    // The Worker runs nothing again: it is taken out of those kept spare and ended, once however often it is said.
+    w.onError((e) => {
+      if (w.failed) return;
+      w.failed = true;
+      const k = w.kernel;
+      k?.say(2, enc.encode(`muk: ${e?.message ?? e}\n`));
+      for (const kept of k ? [k.spares, warmed] : [warmed]) { const at = kept.indexOf(w); if (at >= 0) kept.splice(at, 1); }
+      const t = k ? [...k.tasks.values()].find((x) => x.worker === w) : undefined;
+      // Its thread's end ends it (RemoteTask.end: a failed one is never kept); with no thread, it is ended here.
+      if (k && t) k.exitProcess(t.proc, 11); else w.end();
+      k?.kick();
+    });
     return w;
   }
 
@@ -541,6 +569,14 @@ class RemoteTask extends Task {
     w.kept = [{memoryId, imageId, extras: this.image.extras.length}, ...(w.kept ?? []).filter((x) => x.memoryId !== memoryId || x.imageId !== imageId)].slice(0, KEEP_INSTANCES);
   }
 
+  /** Its console bits are read from its process's own table from here on, not from the one it shared. */
+  override tableLeft(was: FdTable): void {
+    if (!this.consoles) return;
+    was.readers.delete(this.consoles);
+    this.proc.fds.readers.add(this.consoles);
+    this.proc.fds.show(this.consoles);
+  }
+
   /** Its process's console bits kept where its Worker reads them, in its channel (fd.ts readers). */
   showConsoles(): void {
     const fds = this.proc.fds;
@@ -622,7 +658,7 @@ class RemoteTask extends Task {
     // A Worker waiting in a call (it ended itself, or was ended while it waited) is told to leave and is kept for the
     // next thread; one running guest code is ended where it is.
     const state = Atomics.load(this.i32, CH.STATE);
-    if (w && (state === 1 || state === 3) && !this.kernel.closing) {
+    if (w && !w.failed && (state === 1 || state === 3) && !this.kernel.closing) {
       this.reply(REPLY.AWAY);
       this.kernel.keep(w);
       // Its channel, for another thread once its Worker has left it (CH.LEFT).

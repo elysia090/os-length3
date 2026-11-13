@@ -25,9 +25,11 @@ test('→ on File brings the tree out with the keyboard on its first row', async
   await file.focus();
   await app.page.keyboard.press('ArrowRight');
   await expect(file).toHaveAttribute('aria-expanded', 'true');
-  await expect(app.file.tree.locator('.tree-name').first()).toBeFocused();
+  // (/root has no row of its own: the first row is the first repo's.)
+  await expect(app.file.tree.locator('.tree-name').locator('visible=true').first()).toBeFocused();
   // Back on File with the tree out, → goes into it again.
   await file.focus();
   await app.page.keyboard.press('ArrowRight');
-  await expect(app.file.tree.locator('.tree-name').first()).toBeFocused();
+  // (/root has no row of its own: the first row is the first repo's.)
+  await expect(app.file.tree.locator('.tree-name').locator('visible=true').first()).toBeFocused();
 });

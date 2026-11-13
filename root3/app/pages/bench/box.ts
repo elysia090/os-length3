@@ -739,6 +739,9 @@ export class Box {
       event.preventDefault();
       if (this.#edit.toFile()) return;
     }
+    // On a desk the terminal is a piece as a file's sheet is: Escape leaves its line as it leaves a text, the keyboard
+    // out on the desk (desk.ts), the terminal still in hand. Nothing is given back to where it came from.
+    if (this.#p.desk) { this.#before = null; return; }
     this.#letGo();
   }
 

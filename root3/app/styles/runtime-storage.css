@@ -6,6 +6,10 @@
 .space-meter > span { flex: none; background: var(--edge); }
 .space-meter > span.app { min-width: 3px; background: var(--sub); }
 .legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
+/* Over the box of three columns, the three figures stand over the three columns (each from its column's own left
+   margin), not bunched at the box's left. (The meter stays on the line every page's first box starts on.) */
+.device-part > .legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 0 calc(var(--s4) + 1px); }
+@media (max-width: 900px) { .device-part > .legend { display: flex; gap: var(--s5); padding: 0; } }
 .legend b { font-size: var(--t-card); font-weight: 600; display: block; }
 /* Runtime: each repo's share, what can be given back, Prompts running */
 .usage-prompt { align-items: center; }

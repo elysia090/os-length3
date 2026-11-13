@@ -8,23 +8,54 @@ export const S_IFMT = 0o170000, S_IFDIR = 0o040000, S_IFREG = 0o100000, S_IFLNK 
 
 let inodes = 1;
 
-/** Files whose bytes came from their loader and can go back to it (unchanged since). */
-const LOADED = new Set<File>();
-/** Each such file still holding its bytes. */
-export const loadedFiles = () => LOADED;
+/**
+ * What a tree holds of its files' bytes that came from their loaders and can go back to them (unchanged since):
+ * `files`, each still holding its bytes; and `keepers`, who keep some of those from going (a kernel with translations,
+ * until it ends: the files they read). A tree's own (Vfs.loaded): one tree's files are not another's to count or to
+ * let go, and a kernel on the same tree is asked before one of them goes.
+ */
+export interface Loaded { readonly files: Set<File>; readonly keepers: Set<{sources(): Iterable<File>}> }
 
 /**
  * Every change to what a directory holds or to a file's bytes, counted, and how many files are mapped shared now. One
  * that compares what it saw before (mirror.ts) knows nothing changed while the count is the same and no file is mapped
  * (what is written through a mapping reaches its file only when it settles).
  */
-export const counted = {changes: 0, mapped: 0};
+export const counted = {changes: 0, mapped: 0, placed: 0};
 
-/** A directory's entries, each change counted. */
+/**
+ * A directory's entries, each change counted. A directory put in knows where it lies (the directory it is in and its
+ * name there), and one taken out, or written over, that it lies nowhere: so what holds a directory open can find where
+ * it is now, however it or what is above it was renamed since (Vfs.where). Each such change is counted (`placed`).
+ */
 class Entries extends Map<string, Entry> {
-  override set(name: string, e: Entry): this { counted.changes++; return super.set(name, e); }
-  override delete(name: string): boolean { const had = super.delete(name); if (had) counted.changes++; return had; }
-  override clear(): void { if (this.size) counted.changes++; super.clear(); }
+  declare readonly owner: Dir;
+  constructor(owner: Dir) { super(); this.owner = owner; }
+  override set(name: string, e: Entry): this {
+    counted.changes++;
+    const was = super.get(name);
+    if (was !== e) {
+      if (was instanceof Dir) this.#out(was, name);
+      if (e instanceof Dir) { e.parent = this.owner; e.name = name; e.lies = true; counted.placed++; }
+      // A file knows a folder it was put in: by it, the tree that holds its bytes once they are read (File.loaded).
+      else if (e instanceof File) e.home = this.owner;
+    }
+    return super.set(name, e);
+  }
+  override delete(name: string): boolean {
+    const was = super.get(name), had = super.delete(name);
+    if (had) { counted.changes++; if (was instanceof Dir) this.#out(was, name); }
+    return had;
+  }
+  override clear(): void {
+    if (this.size) counted.changes++;
+    for (const [name, e] of this) if (e instanceof Dir) this.#out(e, name);
+    super.clear();
+  }
+  /** `dir` is no longer here as `name`: it lies nowhere, unless it was put elsewhere first (a rename puts before it takes out). */
+  #out(dir: Dir, name: string): void {
+    if (dir.parent === this.owner && dir.name === name) { dir.lies = false; counted.placed++; }
+  }
 }
 
 export class Node {
@@ -61,6 +92,12 @@ export class Node {
  */
 export interface Mapping { proc: {readonly bytes: Uint8Array}; start: number; length: number; off: number; seen?: Uint8Array }
 
+/**
+ * The most a file holds here: its bytes are one array, with no holes kept, and 2 GiB less a byte is what every engine
+ * this runs on gives one array. A length past it is EFBIG (Linux's tmpfs keeps the holes, and takes any length).
+ */
+export const FILE_MOST = 2 ** 31 - 1;
+
 export class File extends Node {
   declare _data: Uint8Array;
   declare size: number;
@@ -69,6 +106,9 @@ export class File extends Node {
   declare shared: boolean;
   declare version: number;
   declare maps: Set<Mapping> | null;
+  /** The folder it was last put in (Entries), and the files its tree holds read (Loaded.files) while it is one of them. */
+  declare home: Dir | null;
+  declare pool: Set<File> | null;
   /** Where its bytes are in the root's packs (pack.ts), while it is the root's own: what a kept translation is for. */
   declare origin?: string;
   constructor(data: Uint8Array = new Uint8Array(0), mode = 0o644, load: (() => Uint8Array) | null = null) {
@@ -83,7 +123,22 @@ export class File extends Node {
     // MAP_SHARED mappings of it (map below): while one lasts, its memory is the file's bytes there (Linux's page
     // cache), so a read takes what was written through it and a write shows in it.
     this.maps = null;
+    this.home = null;
+    this.pool = null;
   }
+  /**
+   * Its bytes came from its loader, which can give them again: the tree it lies in holds them, found from the folder
+   * it was last put in up to the tree's root (one in no tree is held by none: it is not counted, and not let go).
+   */
+  #loaded(): void {
+    if (!this.reload) return;
+    let dir = this.home ?? undefined;
+    while (dir && !dir.loaded) dir = dir.parent;
+    this.pool = dir?.loaded?.files ?? null;
+    this.pool?.add(this);
+  }
+  /** Its bytes are its own now, or gone back to its loader: its tree holds them no longer. */
+  #unheld(): void { this.pool?.delete(this); this.pool = null; }
   get data(): Uint8Array {
     if (this.load) {
       // Its bytes not to be had (its pack gave other bytes than its table names, or nothing): the call that wanted
@@ -91,7 +146,7 @@ export class File extends Node {
       try { this._data = this.load(); } catch (e) { console.warn(e instanceof Error ? e.message : String(e)); throw new FsError(E.IO); }
       this.size = this._data.length;
       this.load = null;
-      if (this.reload) LOADED.add(this);
+      this.#loaded();
     }
     return this._data;
   }
@@ -116,12 +171,12 @@ export class File extends Node {
     this._data = bytes;
     this.size = bytes.length;
     this.load = null;
-    if (this.reload) LOADED.add(this);
+    this.#loaded();
   }
   /** About to change the bytes: from here on they are this file's own. */
   own(): void {
     if (this.shared) { this._data = this.data.slice(0, this.size); this.shared = false; }
-    LOADED.delete(this);
+    this.#unheld();
     this.reload = null;
   }
   /** Let go of bytes its loader can give again (unchanged since); returns how many. */
@@ -131,7 +186,7 @@ export class File extends Node {
     this._data = new Uint8Array(0);
     this.shared = false;
     this.load = this.reload;
-    LOADED.delete(this);
+    this.#unheld();
     return n;
   }
   write(at: number, bytes: Uint8Array): void {
@@ -150,13 +205,21 @@ export class File extends Node {
     counted.changes++;
     if (this.maps) this.#show(at, need);
   }
+  /**
+   * Its length made `length`: cut there, or grown to it with zeros. A whole number from 0 to FILE_MOST: one that is not
+   * is refused here whoever asks (EINVAL, EFBIG), and one there is no room for is ENOSPC; refused, nothing of the file
+   * is changed. (Before: any number became its size, a negative one too.)
+   */
   truncate(length: number): void {
+    if (!Number.isInteger(length) || length < 0) fail(E.INVAL);
+    if (length > FILE_MOST) fail(E.FBIG);
     if (this.maps) this.settle();
     const was = this.size;
     this.own();
     const data = this.data;
     if (length > data.length) {
-      const grown = new Uint8Array(length);
+      let grown: Uint8Array;
+      try { grown = new Uint8Array(length); } catch { return fail(E.NOSPC); }
       grown.set(data.subarray(0, this.size));
       this._data = grown;
     } else {
@@ -247,7 +310,20 @@ function same(x: Uint8Array, y: Uint8Array): boolean {
 }
 
 export class Dir extends Node {
-  readonly #entries = new Entries();
+  readonly #entries = new Entries(this);
+  /**
+   * Where it lies, as the directory it is in keeps it (Entries): that directory, its name there, and whether it still
+   * lies there (false once taken out or written over: where it lay is kept, for ".." and for what /proc says of it).
+   * `lies` undefined: no directory keeps it (the root, and one made as it is looked at: /proc's).
+   */
+  declare parent?: Dir;
+  declare name?: string;
+  declare lies?: boolean;
+  /** Where it was last found to lie (Vfs.where), and the count of placings that was found at. */
+  declare at?: string | null;
+  declare seen?: number;
+  /** A tree's root alone: what the tree holds of its files' bytes (Vfs.loaded). */
+  declare loaded?: Loaded;
   constructor(mode = 0o755) {
     super(S_IFDIR | mode);
     this.nlink = 2;
@@ -298,7 +374,7 @@ export class Device extends Node {
 export type Entry = File | Dir | Link | Fifo | SocketName | Device;
 
 export const E = {PERM: 1, NOENT: 2, IO: 5, BADF: 9, CHILD: 10, AGAIN: 11, NOMEM: 12, ACCES: 13, FAULT: 14, EXIST: 17,
-  XDEV: 18, NOTDIR: 20, ISDIR: 21, INVAL: 22, MFILE: 24, NOTTY: 25, NOSPC: 28, SPIPE: 29, RANGE: 34, NOSYS: 38,
+  XDEV: 18, NOTDIR: 20, ISDIR: 21, INVAL: 22, MFILE: 24, NOTTY: 25, FBIG: 27, NOSPC: 28, SPIPE: 29, RANGE: 34, NOSYS: 38,
   NOTEMPTY: 39, LOOP: 40, NAMETOOLONG: 36, PIPE: 32, NOEXEC: 8, SRCH: 3, INTR: 4, AFNOSUPPORT: 97, NXIO: 6, TIMEDOUT: 110,
   OPNOTSUPP: 95, BUSY: 16, NODEV: 19, NODATA: 61, TOOBIG: 7};
 
@@ -346,8 +422,11 @@ function onlyDots(path: string, at: number): boolean {
 export class Vfs {
   declare readonly root: Dir;
   declare readonly terminal: Device;
+  /** What it holds of its files' bytes that their loaders can give again, and who keeps some of them (Loaded). */
+  declare readonly loaded: Loaded;
   constructor() {
     this.root = new Dir();
+    this.loaded = this.root.loaded = {files: new Set(), keepers: new Set()};
     const dev = this.mkdirp('/dev');
     dev.entries.set('null', new Device(0x103, () => new Uint8Array(0), (b) => b.length));
     dev.entries.set('zero', new Device(0x105, (n) => new Uint8Array(n), (b) => b.length));
@@ -364,10 +443,38 @@ export class Vfs {
   }
 
   /**
-   * Resolve `path` from `cwd`. Returns {node, parent, name}; node is null
-   * when only the last component is missing (useful for creation).
+   * Where `dir` lies now, by what it is (not by a path it was once reached by): its names from the root. Null once it
+   * lies nowhere (removed, written over, or under one that was); undefined where the tree keeps no place for it (one
+   * made as it is looked at: /proc's). Found again only after a directory was put somewhere or taken out.
    */
-  resolve(path: string, cwd = '/', follow = true): Resolved {
+  where(dir: Dir): string | null | undefined {
+    if (dir.seen === counted.placed) return dir.at;
+    let at: string | null | undefined;
+    if (dir === this.root) at = '/';
+    else if (dir.lies === undefined) at = undefined;
+    else if (!dir.lies) at = null;
+    else {
+      const up = this.where(dir.parent!);
+      at = up == null ? up : up === '/' ? `/${dir.name}` : `${up}/${dir.name}`;
+    }
+    dir.seen = counted.placed;
+    dir.at = at;
+    return at;
+  }
+
+  /** What a directory is called where its place is shown (/proc's links): where it lies, or where it lay, "(deleted)". */
+  shown(dir: Dir): string | undefined {
+    const at = this.where(dir);
+    if (at !== null) return at;
+    const up = dir.parent ? this.shown(dir.parent) : undefined;
+    return up === undefined ? undefined : `${up.replace(/ \(deleted\)$/, '')}${up === '/' ? '' : '/'}${dir.name} (deleted)`;
+  }
+
+  /**
+   * Resolve `path` from `cwd` (a path, or the directory itself: where it lies now is where the walk starts). Returns
+   * {node, parent, name}; node is null when only the last component is missing (useful for creation).
+   */
+  resolve(path: string, cwd: string | Dir = '/', follow = true): Resolved {
     const r = this.walk(path, cwd, follow);
     return typeof r === 'number' ? fail(r) : r;
   }
@@ -376,12 +483,12 @@ export class Vfs {
    * The node at `path`, or the errno its lookup fails with, given back, not thrown: a name that is not there is most of
    * what a shell's PATH search and a compiler's include path ask, and the throw cost more than the lookup.
    */
-  find(path: string, cwd: string, follow = true): Entry | number {
+  find(path: string, cwd: string | Dir, follow = true): Entry | number {
     const r = this.walk(path, cwd, follow);
     return typeof r === 'number' ? r : r.node ?? E.NOENT;
   }
 
-  lookup(path: string, cwd: string, follow = true): Entry {
+  lookup(path: string, cwd: string | Dir, follow = true): Entry {
     const r = this.find(path, cwd, follow);
     return typeof r === 'number' ? fail(r) : r;
   }
@@ -391,10 +498,19 @@ export class Vfs {
    * found (links followed, "." and ".." gone; to its parent, where only its last name is missing): its canonical path,
    * which an open keeps, with no second walk (realpath).
    */
-  walk(path: string, cwd = '/', follow = true, depth = 0, names: string[] | null = null): Resolved | number {
+  walk(path: string, from: string | Dir = '/', follow = true, depth = 0, names: string[] | null = null): Resolved | number {
     if (depth > 40) return E.LOOP;
     if (path === '') return E.NOENT;
     if (names) names.length = 0;
+    let cwd: string;
+    if (typeof from === 'string') cwd = from;
+    else {
+      const at = this.where(from);
+      if (at == null) {
+        if (path.charCodeAt(0) !== SLASH) return at === null ? this.#fromGone(path, from, follow, depth, names) : E.NOENT;
+        cwd = '/';
+      } else cwd = at;
+    }
     // Its components read in place, one after another (not split into an array, filtered and joined again: a stat or
     // an open of a short path spent most of its time there). Empty components and "." are none.
     const full = path.charCodeAt(0) === SLASH ? path : cwd + '/' + path, n = full.length;
@@ -435,8 +551,27 @@ export class Vfs {
     return {node, parent: (stack[stack.length - 2] as Dir | undefined) ?? this.root, name};
   }
 
+  /**
+   * A path asked from a directory that lies nowhere (removed while it was held open, or worked in): it is still itself
+   * ("."), ".." is where it lay, and no name is in it or can be made in it (ENOENT), as Linux has it.
+   */
+  #fromGone(path: string, dir: Dir, follow: boolean, depth: number, names: string[] | null): Resolved | number {
+    for (let i = 0; i < path.length;) {
+      if (path.charCodeAt(i) === SLASH) { i++; continue; }
+      let end = path.indexOf('/', i);
+      if (end < 0) end = path.length;
+      const part = path.slice(i, end);
+      i = end;
+      if (part === '.') continue;
+      if (part === '..' && dir.parent) return this.walk(path.slice(end) || '.', dir.parent, follow, depth + 1, names);
+      return E.NOENT;
+    }
+    return {node: dir, parent: dir.parent ?? dir, name: '.'};
+  }
+
   /** Canonical absolute path of an existing directory. */
-  realpath(path: string, cwd: string): string {
+  realpath(path: string, from: string | Dir): string {
+    const cwd = typeof from === 'string' ? from : path.startsWith('/') ? '/' : this.where(from) ?? fail(E.NOENT);
     // One walk down the tree, each component looked up in the directory reached (not the whole path again from the
     // root for each: an open of a file five deep looked up fifteen names), a link's target walked where it is.
     const parts: string[] = [], nodes: Entry[] = [this.root];
@@ -487,18 +622,18 @@ export class Vfs {
   }
 
   /** The file at `path` (as readFile fails where something else is). */
-  file(path: string, cwd = '/'): File {
+  file(path: string, cwd: string | Dir = '/'): File {
     const node = this.lookup(path, cwd);
     return node instanceof File ? node : fail(node.isDir ? E.ISDIR : E.INVAL);
   }
 
   /** The directory at `path`. */
-  dir(path: string, cwd = '/'): Dir {
+  dir(path: string, cwd: string | Dir = '/'): Dir {
     const node = this.lookup(path, cwd);
     return node instanceof Dir ? node : fail(E.NOTDIR);
   }
 
-  readFile(path: string, cwd = '/'): Uint8Array {
+  readFile(path: string, cwd: string | Dir = '/'): Uint8Array {
     return this.file(path, cwd).bytes();
   }
 

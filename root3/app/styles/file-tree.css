@@ -71,3 +71,85 @@
 .tree-row.taking { background: var(--raised); outline: 1.5px solid var(--ink); outline-offset: -1.5px; }
 .tree-said:empty { display: none; }
 .tree-said { margin: var(--s1) var(--s2) 0; }
+
+/* ---- File's own tree (pages/file/tree.ts), over whatever page is there. One motif twice: a sheet of paper (its corner a desk sheet's),
+   its name over its top-left corner as a file's is over its sheet on the desk, its shadow a cell right and down. The
+   tree is the first ("/"), out from the rail's corner where the band's keys start; what can be done to a row is the
+   second, beside the row it is for, that row's name over it. Its rows are a cell and a half tall, in the desk's code
+   letters: a repo's name heavy and larger, a folder's ending in its stroke, the file Forge is reading heavy with a
+   bar at the sheet's edge. /root has no row of its own (the repos are the first rows), and no triangle is drawn: a
+   name opens and closes what it names. (Before: a soft-cornered card with a hairline, 15 px rows with triangles and
+   sizes, a round ⋯ at each row's end, its menu a card beside it.) ---- */
+.file-tree {
+  --corner: calc(var(--outer) + var(--rail) - 2 * var(--u));
+  left: calc(var(--corner) - var(--s2)); top: var(--tree-top, calc(5 * var(--u)));
+  width: min(calc(13 * var(--u)), calc(100vw - var(--corner) - var(--outer) - var(--u))); max-height: none; overflow: visible;
+  padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink);
+  clip-path: inset(-40px 100% -32px -2px);
+}
+.file-tree.open { left: var(--corner); clip-path: inset(-40px -32px -32px -2px); }
+@media (max-width: 760px) { .file-tree { --corner: calc(var(--outer) + var(--rail)); } }
+.file-tree::before { content: '/'; position: absolute; left: 0; bottom: calc(100% + 7px); font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+/* More rows than the window is tall: scrolled inside the sheet (its foot never lower than two cells over the
+   window's), where it is scrolled to said while it is (ui/scroll-marks.ts), as a sheet on the desk says it. */
+.file-tree > .tree-children { max-height: calc(100vh - var(--tree-top, calc(5 * var(--u))) - 3 * var(--u)); overflow: hidden auto; scrollbar-width: none; }
+.file-tree .tree-home { --out: 1; }
+.file-tree .tree-home > .tree-row { display: none; }
+.file-tree .tree-row { --in: calc(18px + (var(--depth, 0) - var(--out, 0)) * var(--u)); min-height: calc(1.5 * var(--u)); margin: 0 6px; padding-left: var(--in); border-radius: 8px; }
+.file-tree .tree-row:is(:hover, :focus-within) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); }
+/* (The repo Forge is at is not inked here: the file it reads is marked, and that says where one is.) */
+.file-tree .tree-row:has(> [aria-current='page']) { background: none; color: var(--ink); }
+.file-tree .tree-row:has(> [aria-current='page']):is(:hover, :focus-within) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); }
+.file-tree .tree-row:has(> .tree-more[aria-expanded='true']) { background: var(--slot); }
+.file-tree .tree-row:has(> .tree-name:focus-visible) { outline: 2px solid var(--ink); outline-offset: -2px; }
+.file-tree .tree-row.settled:has(> .tree-name:focus-visible) { outline: none; }
+/* (The triangle is there to be pressed and heard, over the row's indent, and not drawn.) */
+.file-tree .tree-toggle { position: absolute; left: 0; top: 0; width: var(--in); height: 100%; opacity: 0; }
+.file-tree .tree-spacer { display: none; }
+.file-tree .tree-name { min-height: calc(1.5 * var(--u)); padding: 0; font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); }
+.file-tree .tree-repo > .tree-row .tree-name { font: 700 20px/calc(1.5 * var(--u)) var(--mono); }
+.file-tree .tree-name[aria-current='location'] { font-weight: 700; }
+.file-tree .tree-row:has(> [aria-current='location'])::before { left: -6px; top: 6px; bottom: 6px; width: 6px; }
+.file-tree .tree-meta { display: none; }
+.file-tree .tree-away > .tree-row > .tree-meta { display: block; padding: 0 var(--s3) 0 var(--s2); font: 400 14px/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); opacity: 1; }
+.file-tree .tree-system { margin-top: calc(var(--u) / 2); }
+.file-tree .tree-system > .tree-row .tree-name { color: var(--quiet); }
+.file-tree .tree-system > .tree-row:is(:hover, :focus-within) .tree-name { color: var(--ink); }
+.file-tree .tree-note { padding: 0 var(--s3) 0 calc(24px + (var(--depth, 0) - var(--out, 0)) * var(--u)); font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); }
+.file-tree .tree-said { margin: var(--s1) var(--u) 0; }
+/* What can be done to a row, asked for at its right end: an angle toward where its sheet comes out, there under the
+   pointer or the keyboard and while it is out; the row pressed (a slot) while it is. */
+.file-tree .tree-more { width: calc(1.5 * var(--u)); height: calc(1.5 * var(--u)); margin: 0; border: 0; border-radius: 0; background: none; color: var(--ink); }
+.file-tree .tree-more[aria-expanded='true'] { background: none; color: var(--ink); }
+.file-tree .tree-more .mark { width: 20px; height: 20px; stroke-width: 2; rotate: -90deg; }
+.file-tree > .tree-pop { display: block; width: max-content; min-width: calc(9 * var(--u)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--outer) - var(--u))); padding: calc(var(--u) / 2) 0;
+  border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink); }
+.file-tree > .tree-pop > .pop-head { position: absolute; left: 0; bottom: calc(100% + 7px); margin: 0; padding: 0; white-space: nowrap;
+  font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.file-tree > .tree-pop :is(.pop-icon, .pop-rule) { display: none; }
+.file-tree > .tree-pop .pop-item { display: flex; align-items: center; width: calc(100% - 12px); min-height: calc(1.5 * var(--u)); height: auto; margin: 0 6px; padding: 0 18px;
+  border: 0; border-radius: 8px; background: none; font: 400 20px/calc(1.5 * var(--u)) var(--mono); color: var(--ink); text-align: left; white-space: nowrap; cursor: var(--cursor-hand); }
+.file-tree > .tree-pop .pop-item:first-of-type { font-weight: 700; }
+.file-tree > .tree-pop .pop-item:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); outline: none; }
+.file-tree > .tree-pop .pop-item:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.file-tree > .tree-pop .pop-item.pop-gone:is(:hover, :focus-visible) { color: var(--del); }
+.file-tree > .tree-pop :is(.pop-field, .pop-ask) { padding: var(--s2) var(--u); }
+/* The page stepping back out of focus under what is laid over it (ui/page-veil.ts): File's tree, and what the band's
+   search found. The rail does not (it is what the tree came out of), nor, under what the search found, the band's
+   keys. The same blur over all of it and a thin wash of the ground, and only in a strip at the window's top and at its
+   foot, lower than a place's icon is tall, deeper, as a lens tilted over it leaves its far edges. So what is dark on
+   the page (the terminal, a sheet's shadow) is not a hard shape in the steps of a sheet's own shadow. Three layers,
+   each blurring what is under it (not one in another: a blurred thing's children see only itself). */
+/* (How much of the ground comes over the page: a thin wash under File's tree, which is small and at the window's
+   edge; more under what the search found, which is read across the page: there the page's own contrasts, its ink
+   and its paper, are brought most of the way to the ground, so only the sheets found are read.) */
+.page-veil { --wash: 35%; position: fixed; inset: 0; z-index: 8; pointer-events: none; }
+.page-veil.under-band { --wash: 65%; z-index: 6; }
+.page-veil > i { position: absolute; inset: 0; transition: backdrop-filter 180ms ease-out, background-color 180ms ease-out; }
+.page-veil > i:nth-child(2) { mask-image: linear-gradient(to bottom, #000 0, #000 11px, transparent 36px, transparent calc(100% - 36px), #000 calc(100% - 11px), #000 100%); }
+.page-veil > i:nth-child(3) { mask-image: linear-gradient(to bottom, #000 0, transparent 22px, transparent calc(100% - 22px), #000 100%); }
+.page-veil.out > i:nth-child(1) { backdrop-filter: blur(6px); background-color: color-mix(in srgb, var(--ground) var(--wash), transparent); }
+.page-veil.out > i:nth-child(2) { backdrop-filter: blur(11px); }
+.page-veil.out > i:nth-child(3) { backdrop-filter: blur(16px); }
+.file-tree { z-index: 9; }
+body:has(> .page-veil.out) .rail { z-index: 9; }

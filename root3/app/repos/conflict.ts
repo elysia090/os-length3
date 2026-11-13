@@ -6,13 +6,15 @@
 
 import {hunks, lineOps, type DiffLine} from './linediff.ts';
 
-type Came = 'same' | 'take' | 'ask';
+type Came = 'same' | 'known' | 'take' | 'ask';
 
 export class Held {
   /** What the store holds as far as this editor knows (what it last read or wrote). */
   saved: string;
   /** The text saved elsewhere while this one had unsaved edits; null when nothing is asked. */
   theirs: string | null = null;
+  /** What this editor is writing now, until the store has it (`writes`, then `wrote`). */
+  private writing: string | null = null;
 
   constructor(saved: string) { this.saved = saved; }
 
@@ -20,11 +22,14 @@ export class Held {
 
   /**
    * A text saved elsewhere came, with `mine` in the editor: 'same' when it is
-   * what is here already, 'take' when nothing here is unsaved (show it),
-   * 'ask' when something is (and keep asking with the newest of theirs).
+   * what is here already, 'known' when it is what this editor itself last wrote
+   * or is writing (its own save heard back, written on since: nothing came),
+   * 'take' when nothing here is unsaved (show it), 'ask' when something is (and
+   * keep asking with the newest of theirs).
    */
   came(text: string, mine: string): Came {
     if (text === mine) { this.saved = text; this.theirs = null; return 'same'; }
+    if (!this.asking && (text === this.saved || text === this.writing)) return 'known';
     if (mine === this.saved && !this.asking) { this.saved = text; return 'take'; }
     this.theirs = text;
     return 'ask';
@@ -55,7 +60,9 @@ export class Held {
     return mine;
   }
 
-  wrote(text: string) { this.saved = text; }
+  /** `text` is being written to the store; `wrote`, it is there. */
+  writes(text: string) { this.writing = text; }
+  wrote(text: string) { this.saved = text; this.writing = null; }
 }
 
 /** What saving here would do to the other text: theirs before, mine after, as a diff shows a change. */

@@ -32,16 +32,20 @@ test('a 320 px window never scrolls sideways, with the menus out or put away', a
   expect(tree.x + tree.width).toBeLessThanOrEqual(320);
 });
 
-test('on a phone, the pill alone on Forge\'s band stands whole to its ×, a long name giving way first', async ({app}) => {
+test('on a phone, Forge\'s band is its keys and the search, whole in the window; the desk is a row turned along, a sheet no wider than the window has room for', async ({app}) => {
   await app.newRepo.make('trip-notes');
   await app.newRepo.openInForge();
   await app.page.setViewportSize({width: 390, height: 844});
-  const band = app.forge.band.locator('.pills');
-  const close = app.forge.band.getByRole('button', {name: 'Remove trip-notes from band'});
-  await expect(close).toBeVisible();
-  const [b, c] = [(await band.boundingBox())!, (await close.boundingBox())!];
-  expect(c.x + c.width).toBeLessThanOrEqual(b.x + b.width);
-  expect(c.width).toBeGreaterThan(28);
+  expect(await sideways(app.page), 'Forge').toBeLessThanOrEqual(0);
+  for (const key of await app.forge.tools.getByRole('button').all()) await expect(key).toBeInViewport({ratio: 1});
+  await expect(app.forge.search).toBeInViewport({ratio: 1});
+  const search = (await app.forge.search.boundingBox())!;
+  expect(search.x + search.width).toBeLessThanOrEqual(390);
+  // The file in hand is whole in sight with its shadow, the desk turned to it.
+  await app.forge.editor('README.md').focus();
+  const [d, b] = [(await app.forge.desk.boundingBox())!, (await app.forge.piece('README.md').boundingBox())!];
+  expect(b.width).toBeLessThanOrEqual(d.width - 48);
+  await expect.poll(async () => { const r = (await app.forge.piece('README.md').boundingBox())!; return r.x >= d.x && r.x + r.width <= d.x + d.width; }).toBe(true);
 });
 
 test('a profile with a word longer than a phone is wide breaks in the word, never pushing Home sideways', async ({signedIn: app}) => {

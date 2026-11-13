@@ -1,4 +1,5 @@
 import {h} from '../../ui/dom.ts';
+import {pageVeil} from '../../ui/page-veil.ts';
 import {glide, LAND, paced, still, where} from '../../ui/glide.ts';
 import {counted} from '../kit/diff-view.ts';
 import * as gitops from '../../repos/history.ts';
@@ -214,6 +215,9 @@ export class Reference {
     }
   }
 
+  /** The page out of focus under what the band's search found. */
+  private veil = pageVeil('band');
+
   /**
    * On the band, whether what is under the box is down over the desk (the box has the keyboard, or something is read
    * or moving there, and it is not going up nor idle): said on the page's work as `sheet-down`, the desk's boxes going
@@ -224,6 +228,8 @@ export class Reference {
     const s = this.search;
     const down = s.matches(':focus-within, .reading, .moving') && !s.matches('.leaving, .idle');
     s.closest('.work, .home-layout')?.classList.toggle('sheet-down', down);
+    // The page under what was found steps back out of focus, as it does under File's tree (ui/page-veil.ts).
+    this.veil.out(down);
   }
 
   /**

@@ -17,6 +17,19 @@ const PATHS = {
   plugin: 'M9 3.5v4M15 3.5v4M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0zM12 16.5v4',
 } satisfies Record<string, string>;
 type PlaceIcon = keyof typeof PATHS;
+/** What each icon encloses: filled with the ground (nearly: styles .icon-in), so the desk's dots do not show through a
+ * place's icon as if they were part of it. */
+const INSIDES: Partial<Record<PlaceIcon, string>> = {
+  home: 'M4 11 12 4l8 7v9H4z',
+  file: 'M6 3h8l4 4v14H6z',
+  git: 'M6.5 15.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM17.5 4a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
+  forge: 'M4 5h16v14H4z',
+  runtime: 'M12 4 3 9v5l9 5 9-5V9z',
+  remote: PATHS.remote,
+  server: 'M9.5 11.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5zM3.5 19.5a6 6 0 0 1 12 0z',
+  inbox: 'M4 13 7 5h10l3 8v6H4z',
+  plugin: 'M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0z',
+};
 
 export function icon(id: PlaceIcon): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
@@ -24,6 +37,13 @@ export function icon(id: PlaceIcon): SVGSVGElement {
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
   svg.classList.add('icon');
+  const inside = INSIDES[id];
+  if (inside) {
+    const within = document.createElementNS(ns, 'path');
+    within.setAttribute('d', inside);
+    within.classList.add('icon-in');
+    svg.append(within);
+  }
   const path = document.createElementNS(ns, 'path');
   path.setAttribute('d', PATHS[id]);
   svg.append(path);

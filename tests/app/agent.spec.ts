@@ -59,10 +59,12 @@ test('a key given in Runtime: `agent` run in the terminal is asked of the Agent,
   await expect(agent.locator('.agent-asked')).toHaveText('How is it built?');
   await expect(agent.locator('.agent-words')).toContainText('Run it so:');
   await expect(agent.locator('.agent-words .answer-code')).toHaveText('make');
-  // (A box of the desk, a column of its own beside the file in hand's, their tops level.)
+  // (A piece of the desk, set down after the terminal it was asked in and before the files, on the row's line.)
   const file = (await app.main.locator('.desk-box[data-key="README.md"]').boundingBox())!;
   const beside = (await app.main.locator('.desk-box[data-key="agent"]').boundingBox())!;
-  expect(beside.x).toBeGreaterThan(file.x + file.width);
+  const order = await app.forge.desk.locator('.desk-box').evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.key));
+  expect(order.slice(0, 3)).toEqual(['term', 'agent', 'README.md']);
+  expect(beside.x + beside.width).toBeLessThan(file.x);
   expect(Math.abs(beside.y - file.y)).toBeLessThan(2);
   // Told the repo and the file in front, and nothing of it in the pane but the line run.
   expect(told[0]).toContain('"hello"');

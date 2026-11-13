@@ -52,14 +52,27 @@ const pipeOf = (d: Description): Pipe => d.pipe ?? fail(E.BADF);
 const counterOf = (d: Description) => d.event ?? fail(E.BADF);
 const interestOf = (d: Description) => d.interest ?? fail(E.INVAL);
 
-/** The directory a *at() path is relative to. */
-function base(p: Proc, dirfd: bigint): string {
+/**
+ * What a directory held open is looked up from: the directory itself, so that it is the one held however it or what is
+ * above it was renamed since, and nothing is in it once it is removed (before: the path it was opened by, which a
+ * rename left naming nothing, or another directory made there since); the path it was opened by where the tree keeps
+ * no place for it (/proc's, made as they are looked at).
+ */
+function held(p: Proc, d: Description): Dir | string {
+  return d.node instanceof Dir && p.kernel.vfs.where(d.node) !== undefined ? d.node : d.path;
+}
+
+/** The directory a *at() path is relative to: where the process works, or the directory `dirfd` holds open. */
+function base(p: Proc, dirfd: bigint): Dir | string {
   const fd = N(dirfd);
-  if (fd === AT_FDCWD) return p.cwd;
+  if (fd === AT_FDCWD) return p.here;
   const d = p.fds.get(fd) ?? fail(E.BADF);
   if (d.kind !== 'dir') fail(E.NOTDIR);
-  return d.path;
+  return held(p, d);
 }
+
+/** The directory the process works in, itself (removed since, it is still what "." is). */
+const working = (p: Proc): Entry => (typeof p.here === 'string' ? p.kernel.vfs.lookup(p.here, '/') : p.here);
 
 function path(p: Proc, address: bigint): string {
   return p.cstring(N(address)) || fail(E.NOENT);
@@ -71,9 +84,12 @@ function put64(v: DataView, at: number, n: number): void {
   v.setInt32(at + 4, Math.floor(n / 4294967296), true);
 }
 
+/** A struct stat as it is made: put together here, then put in the guest's memory at once (in it whole, or EFAULT). */
+const STAT = new Uint8Array(144), STAT_WORDS = new DataView(STAT.buffer);
+
 function writeStat(p: Proc, address: bigint, node: Statted): number {
-  const v = p.view, at = N(address);
-  p.bytes.fill(0, at, at + 144);
+  const v = STAT_WORDS, at = 0;
+  STAT.fill(0);
   const size = node.isFile || node.isLink ? node.size ?? 0 : node.isDir ? 4096 : 0;
   put64(v, at, node.dev ?? 1);
   put64(v, at + 8, node.ino);
@@ -95,6 +111,7 @@ function writeStat(p: Proc, address: bigint, node: Statted): number {
   times(72, node.atime ?? node.mtime, node.atimeNs);
   times(88, node.mtime, node.mtimeNs);
   times(104, node.ctime ?? node.mtime, undefined);
+  p.bytes.set(STAT, N(address));
   return 0;
 }
 
@@ -105,7 +122,7 @@ const DT: Record<number, number> = {[S_IFDIR]: 4, [S_IFLNK]: 10, [S_IFCHR]: 2, [
 /** The file a time-setting call names: by its path from `dirfd`, or the descriptor itself (a NULL or empty path). */
 function timed(p: Proc, dirfd: bigint, name: bigint, follow: boolean): Entry {
   if (!N(name) || !p.bytes[N(name)]) {
-    if (N(dirfd) === AT_FDCWD) return p.kernel.vfs.lookup(p.cwd, '/');
+    if (N(dirfd) === AT_FDCWD) return working(p);
     return descriptor(p, dirfd).node ?? fail(E.BADF);
   }
   return p.kernel.vfs.lookup(path(p, name), base(p, dirfd), follow);
@@ -173,14 +190,18 @@ const statOf = (p: Proc, st: bigint, found: Statted | number): number => (typeof
 
 function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bigint): number {
   const f = N(flags), name = path(p, address);
+  // The descriptor it will be is found before anything is looked at or changed, as Linux takes one before it walks the
+  // path: with none left the open is EMFILE whatever it names, and nothing is made or emptied for it. (Before: found
+  // last, after the file had been made or emptied.)
+  const fd = p.fds.lowest();
+  if (fd < 0) fail(E.MFILE);
+  const install = (d: Description): number => p.fds.install(d, {fd, cloexec: !!(f & O.CLOEXEC)});
   // A descriptor opened by its /proc name opens what it has open: the same pipe or terminal, a file afresh.
   const named = name.startsWith('/') ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
   if (named) {
     const d = named.kind === 'file' || named.kind === 'dir' ? new Description(named.kind, {node: named.node, flags: f, path: named.path}) : named;
     if (d !== named && named.node instanceof File && (f & 3) && (f & O.TRUNC)) named.node.truncate(0);
-    const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
-    if (fd < 0) fail(E.MFILE);
-    return fd;
+    return install(d);
   }
   const names: string[] = [];
   const r = p.kernel.vfs.walk(name, base(p, dirfd), !(f & O.NOFOLLOW), 0, names);
@@ -198,9 +219,7 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
   // The controlling terminal (/dev/tty), and the terminal the console is (/dev/pts/0): the console, where it is one.
   if (node instanceof Device && (node.rdev === 0x500 || node === p.kernel.vfs.terminal)) {
     if (!p.kernel.console.interactive) fail(E.NXIO);
-    const fd = p.fds.install(new Description('console', {flags: f & (3 | O.NONBLOCK), path: 'tty'}), {cloexec: !!(f & O.CLOEXEC)});
-    if (fd < 0) fail(E.MFILE);
-    return fd;
+    return install(new Description('console', {flags: f & (3 | O.NONBLOCK), path: 'tty'}));
   }
   const writing = (f & 3) !== 0;
   if (node.isDir && writing) fail(E.ISDIR);
@@ -230,19 +249,14 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
     node.pending.delete(me);
     pipe.changes++;
     p.kernel.dirty = true;
-    const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
-    if (fd < 0) fail(E.MFILE);
-    return fd;
+    return install(d);
   }
   // /proc's files are read as they are when opened.
   if (node instanceof Made) node = node.snapshot();
   const kind = node.isDir ? 'dir' : node instanceof Device ? 'device' : 'file';
   // Its canonical path (/proc/self/fd's link to it): the names the walk went down by, and its own where it was made.
   const full = `/${(r.node ? names : [...names, r.name]).join('/')}`;
-  const d = new Description(kind, {node, flags: f, path: full});
-  const fd = p.fds.install(d, {cloexec: !!(f & O.CLOEXEC)});
-  if (fd < 0) fail(E.MFILE);
-  return fd;
+  return install(new Description(kind, {node, flags: f, path: full}));
 }
 
 /**
@@ -310,7 +324,42 @@ function readTo(p: Proc, d: Description, into: Uint8Array, at: number, length: n
   return fail(E.BADF);
 }
 
-const readInto = (p: Proc, d: Description, address: number, length: number, offset: number | null = null): number => readTo(p, d, p.bytes, address, length, offset);
+/** The `length` bytes at `address` are the guest's own memory, all of them, or EFAULT (none asked for asks nothing of the address). */
+function whole(p: Proc, address: number, length: number): void {
+  if (length > 0 && !(address >= 0 && address + length <= p.bytes.length)) fail(E.FAULT);
+}
+
+const piped = (d: Description): boolean => d.kind === 'pipe-r' || d.kind === 'pipe-rw';
+/** Where a process's addresses end (Linux's TASK_SIZE on x86-64): a span past it is no span at all (access_ok). */
+const TASK_SIZE = 0x7ffffffff000;
+
+/**
+ * How much of the `length` bytes at `address` a read (`taking`) or a write of `d` may use, as Linux has it. All of
+ * it, where it is the guest's memory. Of a span that runs off the memory's end, a file or a device reads or writes
+ * the part inside (the call says how much: a short count); a pipe read takes what it holds if that much is inside;
+ * anything else uses none of it (EFAULT before a byte is taken from a pipe, a socket or the console, which would be
+ * lost, or put into one). A span that begins outside the memory is EFAULT; an empty one asks nothing of its address.
+ */
+function reach(p: Proc, d: Description, address: number, length: number, taking = false): number {
+  if (length === 0) return 0;
+  if (length < 0 || address + length > TASK_SIZE) fail(E.FAULT);
+  const end = p.bytes.length;
+  if (address >= 0 && address + length <= end) return length;
+  if (taking && piped(d)) {
+    // (Empty, it gives nothing and touches nothing: its end, or a wait, is said whatever the address.)
+    const have = pipeOf(d).size;
+    if (!have || (address >= 0 && address + Math.min(length, have) <= end)) return length;
+  }
+  if ((d.kind !== 'file' && d.kind !== 'device') || !(address >= 0 && address < end)) fail(E.FAULT);
+  return end - address;
+}
+
+function readInto(p: Proc, d: Description, address: number, length: number, offset: number | null = null): number {
+  const into = p.bytes;
+  // (All of it the guest's memory, as nearly always: nothing more is asked.)
+  if (!(length > 0 && address >= 0 && address + length <= into.length)) length = reach(p, d, address, length, true);
+  return readTo(p, d, into, address, length, offset);
+}
 
 /**
  * Write `data` to `d`. A pipe takes what fits; a writer finding it full
@@ -389,21 +438,59 @@ function writeStatfs(p: Proc, buf: number, at: string): number {
   return 0;
 }
 
-const writeFrom = (p: Proc, d: Description, address: number, length: number, offset: number | null = null): number => writeData(p, d, p.bytes.subarray(address, address + length), offset);
+/**
+ * fcntl's record locks: F_GETLK 5, F_SETLK 6, F_SETLKW 7, and the open file description's own (F_OFD_GETLK 36,
+ * F_OFD_SETLK 37, F_OFD_SETLKW 38). None is kept here: every lock asked for is granted, and none is ever found in
+ * the way. What is asked is read as Linux reads it all the same (a struct flock outside the memory EFAULT; a type or
+ * a whence it does not know EINVAL; a lock to write on a descriptor not open to write EBADF), and F_GETLK answers:
+ * nothing is in the way (F_UNLCK, the rest as it was). (Before: 0 with nothing read or written, so a F_GETLK came
+ * back with the type it asked about, which says a lock is in the way.)
+ */
+function recordLock(p: Proc, d: Description, cmd: number, at: number): number {
+  whole(p, at, 32);
+  const v = p.view, type = v.getInt16(at, true), whence = v.getInt16(at + 2, true), ofd = cmd >= 36, asks = cmd === 5 || cmd === 36;
+  if (ofd && v.getInt32(at + 24, true)) fail(E.INVAL);
+  if (whence < 0 || whence > 2) fail(E.INVAL);
+  const RD = 0, WR = 1, UN = 2;
+  if (asks) {
+    if (type !== RD && type !== WR && !(ofd && type === UN)) fail(E.INVAL);
+    v.setInt16(at, UN, true);
+    return 0;
+  }
+  if (type !== RD && type !== WR && type !== UN) fail(E.INVAL);
+  if ((type === RD && (d.flags & 3) === O.WRONLY) || (type === WR && (d.flags & 3) === 0)) fail(E.BADF);
+  return 0;
+}
+
+const NOTHING = new Uint8Array(0);
+function writeFrom(p: Proc, d: Description, address: number, length: number, offset: number | null = null): number {
+  const from = p.bytes;
+  if (!(length > 0 && address >= 0 && address + length <= from.length)) length = reach(p, d, address, length);
+  return writeData(p, d, length > 0 ? from.subarray(address, address + length) : NOTHING, offset);
+}
 function descriptor(p: Proc, fd: bigint): Description {
   return p.fds.get(N(fd)) ?? fail(E.BADF);
 }
 
-/** The (base, length) pairs of an iovec array. */
+/**
+ * The (base, length) pairs of an iovec array. As Linux takes one in: a length that is negative as a signed word is
+ * EINVAL, and together they are at most MAX_RW_COUNT (what is past it is not asked for).
+ */
 function vectors(p: Proc, address: bigint, count: bigint): [number, number][] {
   if (N(count) < 0 || N(count) > 1024) fail(E.INVAL);
   const out: [number, number][] = [];
+  let left = MAX_RW_COUNT;
   for (let k = 0; k < N(count); k++) {
-    const at = N(address) + k * 16;
-    out.push([Number(p.view.getBigUint64(at, true)), Number(p.view.getBigUint64(at + 8, true))]);
+    const at = N(address) + k * 16, length = p.view.getBigInt64(at + 8, true);
+    if (length < 0n) fail(E.INVAL);
+    const n = Math.min(Number(length), left);
+    left -= n;
+    out.push([Number(p.view.getBigUint64(at, true)), n]);
   }
   return out;
 }
+/** The most one read or write moves (Linux's MAX_RW_COUNT: INT_MAX rounded down to a page). */
+const MAX_RW_COUNT = 0x7ffff000;
 
 /** readv: one read for all of it (so a pipe or the console waits once), scattered. */
 function readv(p: Proc, d: Description, address: bigint, count: bigint, offset: number | null = null): number {
@@ -412,8 +499,13 @@ function readv(p: Proc, d: Description, address: bigint, count: bigint, offset: 
     let at = offset;
     return iov(p, address, count, (b, l) => { const n = readInto(p, d, b, l, at); if (at !== null) at += n; return n; });
   }
-  const buf = new Uint8Array(total);
-  const n = readTo(p, d, buf, 0, total);
+  // What it will be put in is the guest's memory before anything is taken: what a pipe or a socket gave up and could
+  // not be put there would be lost. Every part; of a pipe's read, as far as what the pipe holds reaches (Linux's).
+  let need = piped(d) ? Math.min(total, pipeOf(d).size) : total;
+  for (const [b, l] of parts) { if (need <= 0) break; const k = Math.min(l, need); whole(p, b, k); need -= k; }
+  // (No more is taken at once than such a one holds.)
+  const most = Math.min(total, 1 << 20), buf = new Uint8Array(most);
+  const n = readTo(p, d, buf, 0, most);
   let at = 0;
   for (const [b, l] of parts) { if (at >= n) break; const k = Math.min(l, n - at); p.bytes.set(buf.subarray(at, at + k), b); at += k; }
   return n;
@@ -422,17 +514,30 @@ function readv(p: Proc, d: Description, address: bigint, count: bigint, offset: 
 /** writev: what the vectors hold, as one write (a pipe takes it whole or waits, as Linux does). */
 function writev(p: Proc, d: Description, address: bigint, count: bigint, offset: number | null = null): number {
   const parts = vectors(p, address, count), total = parts.reduce((n, [, l]) => n + l, 0);
+  // What each part reaches is gathered before anything is written: a part outside the memory is EFAULT with nothing
+  // written, but for a file, which takes what came before it and as much of it as is inside (a short count), as
+  // Linux's does.
+  for (const [b, l] of parts) if (d.kind !== 'file' && d.kind !== 'device') whole(p, b, l);
   const buf = new Uint8Array(total);
   let at = 0;
-  for (const [b, l] of parts) { buf.set(p.bytes.subarray(b, b + l), at); at += l; }
-  return writeData(p, d, buf, offset);
+  for (const [b, l] of parts) {
+    if (!l) continue;
+    let n: number;
+    try { n = reach(p, d, b, l); } catch (e) { if (at && e instanceof FsError && e.errno === E.FAULT) break; throw e; }
+    buf.set(p.bytes.subarray(b, b + n), at);
+    at += n;
+    if (n < l) break;
+  }
+  return writeData(p, d, at < total ? buf.subarray(0, at) : buf, offset);
 }
 function iov(p: Proc, address: bigint, count: bigint, each: (base: number, length: number) => number): number {
   let total = 0;
   for (let k = 0; k < N(count); k++) {
     const at = N(address) + k * 16;
     const base = Number(p.view.getBigUint64(at, true)), length = Number(p.view.getBigUint64(at + 8, true));
-    const n = each(base, length);
+    // A part outside the memory after some went: what went is the call's (a short count); with none gone, EFAULT.
+    let n: number;
+    try { n = each(base, length); } catch (e) { if (total && e instanceof FsError && e.errno === E.FAULT) break; throw e; }
     total += n;
     if (n < length) break;
   }
@@ -559,8 +664,9 @@ function getdents(p: Proc, fd: bigint, buf: bigint, count: bigint): number {
   let i = 0;
   const after = d.after;
   if (after !== undefined) for (let hi = names.length; i < hi;) { const m = (i + hi) >> 1; if (names[m] <= after) i = m + 1; else hi = m; }
-  let at = N(buf);
-  const end = at + N(count);
+  // The room it gave, as far as it is the guest's memory: entries are put while they fit there.
+  const start = N(buf), asked = start + N(count), end = Math.min(asked, p.bytes.length);
+  let at = start;
   for (;;) {
     const dot = d.offset < 2;
     if (!dot && i >= names.length) break;
@@ -569,7 +675,11 @@ function getdents(p: Proc, fd: bigint, buf: bigint, count: bigint): number {
     if (!node) break;
     const bytes = enc.encode(name);
     const reclen = (19 + bytes.length + 1 + 7) & ~7;
-    if (at + reclen > end) break;
+    if (at + reclen > end) {
+      // Not one put: the room it gave is too small for the next (EINVAL), or was enough and is not its memory (EFAULT).
+      if (at === start) fail(at + reclen > asked ? E.INVAL : E.FAULT);
+      break;
+    }
     const v = p.view;
     v.setBigUint64(at, BigInt(node.ino), true);
     v.setBigInt64(at + 8, BigInt(d.offset + 1), true);
@@ -581,7 +691,7 @@ function getdents(p: Proc, fd: bigint, buf: bigint, count: bigint): number {
     d.offset++;
     if (!dot) d.after = names[i++];
   }
-  return at - N(buf);
+  return at - start;
 }
 
 /** access, faccessat, faccessat2: whether the node is there (F_OK) and may be read, written, run (R_OK 4, W_OK 2,
@@ -593,7 +703,7 @@ function access(p: Proc, dirfd: bigint, address: bigint, mode: bigint, flags = 0
   if (m & ~7) fail(E.INVAL);
   if (f & ~(AT.SYMLINK_NOFOLLOW | AT_EACCESS | AT.EMPTY_PATH)) fail(E.INVAL);
   const node = f & AT.EMPTY_PATH && !p.bytes[N(address)]
-    ? (N(dirfd) === AT_FDCWD ? p.kernel.vfs.lookup(p.cwd, '/') : descriptor(p, dirfd).node ?? fail(E.BADF))
+    ? (N(dirfd) === AT_FDCWD ? working(p) : descriptor(p, dirfd).node ?? fail(E.BADF))
     : p.kernel.vfs.find(path(p, address), base(p, dirfd), !(f & AT.SYMLINK_NOFOLLOW));
   if (typeof node === 'number') return -node;
   if (m & 1 && !node.isDir && !(node.mode & 0o111)) fail(E.ACCES);
@@ -610,7 +720,7 @@ const AT_EACCESS = 0x200;
 const XATTR = {CREATE: 1, REPLACE: 2, NAME_MOST: 255, VALUE_MOST: 65536};
 /** What attributes are kept on: a node, or NONE. */
 interface Attributed { xattrs?: Map<string, Uint8Array> | null; readonly isLink: boolean; readonly takesNone?: boolean }
-const xnode = (p: Proc, name: bigint, follow: boolean): Entry => p.kernel.vfs.lookup(path(p, name), p.cwd, follow);
+const xnode = (p: Proc, name: bigint, follow: boolean): Entry => p.kernel.vfs.lookup(path(p, name), p.here, follow);
 /** What a descriptor with no node has (a pipe's, a socket's): no attributes, and room for none. */
 const NONE: Attributed = {xattrs: null, isLink: false, takesNone: true};
 const xnodeOf = (p: Proc, fd: bigint): Attributed => descriptor(p, fd).node ?? NONE;
@@ -664,10 +774,17 @@ function makeNode(p: Proc, dirfd: bigint, address: bigint, mode: bigint): number
 }
 
 function pipe(p: Proc, address: bigint, flags: bigint): number {
+  // Both its descriptors are found before the pipe is made: with fewer than two left it is EMFILE and nothing is left
+  // behind, as Linux has it. (Before: -1 was written for each end there was no descriptor for and the call said 0;
+  // with one left, the reading end was made and kept.)
+  const r = p.fds.lowest(), w = r < 0 ? -1 : p.fds.lowest(r + 1);
+  if (w < 0) fail(E.MFILE);
+  // And where they are to be told is the guest's memory, or EFAULT with nothing made.
+  whole(p, N(address), 8);
   const pipe = new Pipe();
   const cloexec = !!(N(flags) & O.CLOEXEC), nonblock = N(flags) & O.NONBLOCK;
-  const r = p.fds.install(new Description('pipe-r', {pipe, flags: nonblock}), {cloexec});
-  const w = p.fds.install(new Description('pipe-w', {pipe, flags: O.WRONLY | nonblock}), {cloexec});
+  p.fds.install(new Description('pipe-r', {pipe, flags: nonblock}), {fd: r, cloexec});
+  p.fds.install(new Description('pipe-w', {pipe, flags: O.WRONLY | nonblock}), {fd: w, cloexec});
   p.view.setInt32(N(address), r, true);
   p.view.setInt32(N(address) + 4, w, true);
   return 0;
@@ -1041,7 +1158,7 @@ export const FILE_CALLS: Calls = {
   3(fd) { if (!this.fds.close(N(fd))) fail(E.BADF); return 0; },
   4(name, st) { return statOf(this, st, statNode(this, path(this, name), BigInt(AT_FDCWD), true)); },
   5(fd, st) { return writeStat(this, st, describe(this, descriptor(this, fd))); },
-  6(name, st) { return statOf(this, st, this.kernel.vfs.find(path(this, name), this.cwd, false)); },
+  6(name, st) { return statOf(this, st, this.kernel.vfs.find(path(this, name), this.here, false)); },
   7(fds, count, timeout) { return poll(this, fds, count, Number(BigInt.asIntN(32, timeout))); },
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
   8(fd, offset, whence) {
@@ -1062,7 +1179,8 @@ export const FILE_CALLS: Calls = {
   296(fd, vec, count, off) { return writev(this, descriptor(this, fd), vec, count, N(off)); }, // pwritev
   21(name, mode) { return access(this, BigInt(AT_FDCWD), name, mode); },
   22(fds) { return pipe(this, fds, 0n); },
-  32(fd) { const d = descriptor(this, fd); return this.fds.install(d); },
+  // dup: the lowest descriptor free; none left, EMFILE (before: -1, which a call's value reads as EPERM).
+  32(fd) { const d = descriptor(this, fd), to = this.fds.install(d); return to < 0 ? fail(E.MFILE) : to; },
   33(oldfd, newfd) { if (N(oldfd) === N(newfd)) { descriptor(this, oldfd); return N(newfd); } return dup(this, oldfd, N(newfd), false); },
   72(fd, cmd, arg) {
     const d = descriptor(this, fd), c = N(cmd);
@@ -1084,7 +1202,8 @@ export const FILE_CALLS: Calls = {
       if (n === -2) fail(E.BUSY);
       return n;
     }
-    return 0; // the rest succeed trivially, record locks (F_SETLK and its kin) among them: each is granted
+    if (c === 5 || c === 6 || c === 7 || c === 36 || c === 37 || c === 38) return recordLock(this, d, c, N(arg));
+    return 0; // the rest succeed trivially
   },
 
   // flock: LOCK_SH 1 or LOCK_EX 2, or LOCK_UN 8; with LOCK_NB 4 it says EWOULDBLOCK rather than wait. Waiting, it is
@@ -1176,21 +1295,42 @@ export const FILE_CALLS: Calls = {
   // preadv2 and pwritev2: preadv and pwritev, an offset of -1 the descriptor's own (RWF_ flags change nothing here).
   327(fd, vec, count, pos) { const at = N(pos); return readv(this, descriptor(this, fd), vec, count, at === -1 ? null : at); },
   328(fd, vec, count, pos) { const at = N(pos); return writev(this, descriptor(this, fd), vec, count, at === -1 ? null : at); },
-  76(name, length) { const node = this.kernel.vfs.lookup(path(this, name), this.cwd); if (!(node instanceof File)) return fail(E.INVAL); node.truncate(N(length)); return 0; },
-  77(fd, length) { const d = descriptor(this, fd); if (d.kind !== 'file') fail(E.INVAL); fileOf(d).truncate(N(length)); return 0; },
+  // truncate and ftruncate, each refusal in Linux's order (do_sys_truncate, do_sys_ftruncate): a negative length is
+  // EINVAL before the name or the descriptor is looked at; then what the name or the descriptor is (a folder by its
+  // name EISDIR; anything else not a file, and a descriptor not open for writing, EINVAL); then the length a file
+  // holds here (EFBIG). Refused, the file is as it was. (Before: any length was taken, by any descriptor.)
+  76(name, length) {
+    const n = N(length);
+    if (n < 0) fail(E.INVAL);
+    const node = this.kernel.vfs.lookup(path(this, name), this.here);
+    if (node.isDir) fail(E.ISDIR);
+    if (!(node instanceof File)) return fail(E.INVAL);
+    node.truncate(n);
+    return 0;
+  },
+  77(fd, length) {
+    const n = N(length);
+    if (n < 0) fail(E.INVAL);
+    const d = descriptor(this, fd);
+    if (d.kind !== 'file' || !(d.flags & 3)) fail(E.INVAL);
+    fileOf(d).truncate(n);
+    return 0;
+  },
   79(buf, size) {
-    const bytes = enc.encode(this.cwd + '\0');
+    // (Removed since it was gone to, it lies nowhere: ENOENT, as Linux says.)
+    const bytes = enc.encode((this.cwd ?? fail(E.NOENT)) + '\0');
     if (bytes.length > N(size)) fail(E.RANGE);
     this.bytes.set(bytes, N(buf));
     return bytes.length;
   },
   80(name) {
     const target = path(this, name);
-    if (!this.kernel.vfs.lookup(target, this.cwd).isDir) fail(E.NOTDIR);
-    this.cwd = this.kernel.vfs.realpath(target, this.cwd);
+    const v = this.kernel.vfs, node = v.lookup(target, this.here);
+    if (!(node instanceof Dir)) return fail(E.NOTDIR);
+    this.here = v.where(node) !== undefined ? node : v.realpath(target, this.here);
     return 0;
   },
-  81(fd) { const d = descriptor(this, fd); if (d.kind !== 'dir') fail(E.NOTDIR); this.cwd = d.path; return 0; },
+  81(fd) { const d = descriptor(this, fd); if (d.kind !== 'dir') fail(E.NOTDIR); this.here = held(this, d); return 0; },
   82(a, b) { return rename(this, BigInt(AT_FDCWD), a, BigInt(AT_FDCWD), b); },
   83(name, mode) { return makeDir(this, BigInt(AT_FDCWD), name, mode); },
   84(name) { return remove(this, BigInt(AT_FDCWD), name, true); },
@@ -1199,23 +1339,23 @@ export const FILE_CALLS: Calls = {
   87(name) { return remove(this, BigInt(AT_FDCWD), name, false); },
   88(target, name) { return FILE_CALLS[266].call(this, target, BigInt(AT_FDCWD), name); },
   89(name, buf, size) { return readlink(this, BigInt(AT_FDCWD), name, buf, size); },
-  90(name, mode) { const n = this.kernel.vfs.lookup(path(this, name), this.cwd); n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
+  90(name, mode) { const n = this.kernel.vfs.lookup(path(this, name), this.here); n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
   91(fd, mode) { const n = descriptor(this, fd).node; if (n) n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
-  92(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.cwd), uid, gid); },
+  92(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.here), uid, gid); },
   93(fd, uid, gid) { return chown(this, descriptor(this, fd).node, uid, gid); }, // fchown
-  94(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.cwd, false), uid, gid); }, // lchown
+  94(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.here, false), uid, gid); }, // lchown
   95(mask) { const old = this.umask; this.umask = N(mask) & 0o777; return old; },
   // utime, utimes, futimesat, utimensat: the times of a file that is there (ENOENT for one that is not, which
   // is how touch knows to make it).
   133(name, mode, _dev) { return makeNode(this, BigInt(AT_FDCWD), name, mode); },
   259(dirfd, name, mode, _dev) { return makeNode(this, dirfd, name, mode); },
   132(name, buf) {
-    const n = this.kernel.vfs.lookup(path(this, name), this.cwd);
+    const n = this.kernel.vfs.lookup(path(this, name), this.here);
     if (!N(buf)) return setTimes(n, 'now', 'now');
     const t = (off: number): [number, number] => [Number(this.view.getBigInt64(N(buf) + off, true)), 0];
     return setTimes(n, t(0), t(8));
   },
-  235(name, tv) { const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(this.kernel.vfs.lookup(path(this, name), this.cwd), a, m); },
+  235(name, tv) { const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(this.kernel.vfs.lookup(path(this, name), this.here), a, m); },
   261(dirfd, name, tv) { const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(timed(this, dirfd, name, true), a, m); },
   280(dirfd, name, ts, flags) {
     const [a, m] = timespecs(this, ts) as [Time, Time];
@@ -1223,8 +1363,8 @@ export const FILE_CALLS: Calls = {
   },
   137(name, buf) { // statfs: the filesystem the path is on (it must be there)
     const at = path(this, name);
-    this.kernel.vfs.lookup(at, this.cwd);
-    return writeStatfs(this, N(buf), at.startsWith('/') ? at : `${this.cwd}/${at}`);
+    this.kernel.vfs.lookup(at, this.here);
+    return writeStatfs(this, N(buf), at.startsWith('/') ? at : `${this.cwd ?? ''}/${at}`);
   },
   138(fd, buf) { return writeStatfs(this, N(buf), descriptor(this, fd).path ?? '/'); }, // fstatfs
   217(fd, buf, count) { return getdents(this, fd, buf, count); },
@@ -1232,7 +1372,7 @@ export const FILE_CALLS: Calls = {
   258(dirfd, name, mode) { return makeDir(this, dirfd, name, mode); },
   260(dirfd, name, uid, gid, flags) { // fchownat
     const f = N(flags), named = N(name) && this.cstring(N(name));
-    if (!named && f & AT.EMPTY_PATH) return chown(this, N(dirfd) === AT_FDCWD ? this.kernel.vfs.lookup(this.cwd, '/') : descriptor(this, dirfd).node, uid, gid);
+    if (!named && f & AT.EMPTY_PATH) return chown(this, N(dirfd) === AT_FDCWD ? working(this) : descriptor(this, dirfd).node, uid, gid);
     return chown(this, this.kernel.vfs.lookup(path(this, name), base(this, dirfd), !(f & AT.SYMLINK_NOFOLLOW)), uid, gid);
   },
   262(dirfd, name, st, flags) {

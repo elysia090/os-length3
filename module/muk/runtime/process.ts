@@ -26,7 +26,8 @@ import {machine} from './machine.ts';
 import {mountProc} from './procfs.ts';
 import {Description, FdTable} from './fd.ts';
 import type {Mapping} from './fs.ts';
-import {E, File, FsError, Vfs, loadedFiles} from './fs.ts';
+import {Dir, E, File, FsError, Vfs} from './fs.ts';
+import {GuestBytes, GuestView} from './guest.ts';
 import {FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
 import {PROC_CALLS} from './sys-proc.ts';
@@ -35,7 +36,7 @@ import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
 import type {Taken} from '../../sods/runtime/kept.ts';
 import type {Machine} from './machine.ts';
-import type {Translate} from '../../sods/runtime/translator.ts';
+import {NotAProgram, type Translate} from '../../sods/runtime/translator.ts';
 import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
 import {said, steady} from '../../sods/runtime/host.ts';
 
@@ -124,7 +125,14 @@ class GuestTrap extends Error {
  */
 export function fault(e: unknown): number | null {
   if (e instanceof GuestTrap) return ({1: 11, 2: 4, 3: 4, 4: 8, 7: 4, 8: 5, 9: 11} as Record<number, number>)[e.code] ?? 4;
-  if (e instanceof WebAssembly.RuntimeError && /out of bounds|unreachable/i.test(e.message)) return 11;
+  if (!(e instanceof WebAssembly.RuntimeError)) return null;
+  // A division translated as the engine's own (the divisor's width the dividend's: sods' integer.rs), which the
+  // processor would have refused: by zero, or a quotient too large (the least integer by -1). The engine traps, and
+  // says which in its own words (V8: "divide by zero", "remainder by zero", "divide result unrepresentable";
+  // SpiderMonkey: "integer divide by zero", "integer overflow"; JavaScriptCore: "Division by zero", "Integer
+  // overflow"). SIGFPE, as the wider division's own check gives it (div128: a GuestTrap of code 4).
+  if (/divi(de|sion) by zero|remainder by zero|unrepresentable|integer overflow/i.test(e.message)) return 8;
+  if (/out of bounds|unreachable/i.test(e.message)) return 11;
   return null;
 }
 
@@ -419,7 +427,12 @@ export class Kernel implements Kern {
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
     if (!this.translate) throw new FsError(E.NOEXEC);
     let t = steady();
-    const {wasm, segments} = this.prepare(this.translate(bytes));
+    // What the translator says is no program it takes (an ELF cut short, of another machine, not an executable) is
+    // the file's fault and the exec's failure, as a file with no ELF header's is: ENOEXEC. What else it throws is
+    // its own fault, and stays the host's error.
+    let translated: Uint8Array;
+    try { translated = this.translate(bytes); } catch (e) { if (e instanceof NotAProgram) throw new FsError(E.NOEXEC); throw e; }
+    const {wasm, segments} = this.prepare(translated);
     PROFILE.translate += steady() - t; t = steady();
     // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
@@ -482,6 +495,8 @@ export class Kernel implements Kern {
   remember(node: File, entry: Kept): void {
     entry.image.file = entry;
     this.images.set(node, entry);
+    // With a translation it is one of those keeping its tree's files (sources), until it ends (ended).
+    this.vfs.loaded.keepers.add(this);
   }
 
   /** A translation as it is run here: {wasm, segments} (share.ts; shared memory when threads run apart). */
@@ -581,14 +596,13 @@ export class Kernel implements Kern {
   held(): Held {
     const using = new Set<Program>(this.live().map((p) => p.image));
     let translations = 0, spareTranslations = 0;
-    const keep = new Set<File>();
-    for (const [node, e] of this.images) {
+    for (const e of this.images.values()) {
       translations += e.image.size;
-      if (e.kept || using.has(e.image)) keep.add(node);
-      else spareTranslations += e.image.size;
+      if (!e.kept && !using.has(e.image)) spareTranslations += e.image.size;
     }
+    const keep = this.keptFiles();
     let files = 0, spareFiles = 0;
-    for (const f of loadedFiles()) {
+    for (const f of this.vfs.loaded.files) {
       files += f._data.length;
       if (!keep.has(f)) spareFiles += f._data.length;
     }
@@ -626,11 +640,28 @@ export class Kernel implements Kern {
     if (over > 0 && before.spareTranslator > 0 && this.translate?.renew?.()) over -= before.spareTranslator;
     // A translation that went leaves its program's file spare too: with no budget, every such file goes.
     if (over > 0 || budget === 0) {
-      const keep = new Set([...this.images].filter(([, e]) => e.kept || using.has(e.image)).map(([node]) => node));
-      for (const f of [...loadedFiles()]) if ((over > 0 || budget === 0) && !keep.has(f)) over -= f.release();
+      const keep = this.keptFiles();
+      for (const f of [...this.vfs.loaded.files]) if ((over > 0 || budget === 0) && !keep.has(f)) over -= f.release();
     }
     return {before, after: this.held()};
   }
+
+  /** The files whose translations it keeps or runs: their bytes are not spare, to it or to another kernel on its tree. */
+  sources(): Set<File> {
+    const using = new Set<Program>(this.live().map((p) => p.image));
+    return new Set([...this.images].filter(([, e]) => e.kept || using.has(e.image)).map(([node]) => node));
+  }
+  /**
+   * The files of its tree that are not spare: its own sources, and those of every other kernel running on the same
+   * tree (a tree is shared by a rehearsal and the run after it: what one still reads the other does not let go).
+   */
+  keptFiles(): Set<File> {
+    const keep = this.sources();
+    for (const k of this.vfs.loaded.keepers) if (k !== this) for (const f of k.sources()) keep.add(f);
+    return keep;
+  }
+  /** Its run is over: it keeps nothing of its tree from going any longer (and the tree does not keep it). */
+  ended(): void { this.vfs.loaded.keepers.delete(this); }
 
   /** A new thread of `proc` (the backend's kind). */
   newTask(proc: Process): Task { return new Task(proc, this.nextPid++); }
@@ -1030,7 +1061,9 @@ export class Kernel implements Kern {
     p.unmapShared();
     if (p.memory) this.letGo(p.memory, written);
     p.memory = null;
-    p.fds.closeAll();
+    // Its table of descriptors is let go of: closed, unless another process holds it too (clone's CLONE_FILES).
+    // (Before: closed outright, under a parent that shared it.)
+    p.fds.letGo();
     this.releaseVfork(p);
     this.dirty = true;
     if (p.pid === 1 || p.pid === this.initPid) {
@@ -1040,13 +1073,29 @@ export class Kernel implements Kern {
       this.procs.clear();
       this.runq.length = 0;
       this.blocked.clear();
+      this.ended();
       this.stopped?.();
       return;
     }
-    const init = this.procs.get(1);
+    // Its children go to the nearest process above it that asked for orphans and is alive (prctl
+    // PR_SET_CHILD_SUBREAPER), else to init, as Linux hands them on (find_new_reaper): the one that asked waits for
+    // them. (Before: always to pid 1, whoever had asked.)
+    const reaper = this.reaperOf(p);
     for (const c of p.children) {
-      c.ppid = 1;
-      if (init?.state === 'live') init.children.add(c); else if (c.state === 'zombie') this.procs.delete(c.pid);
+      c.ppid = reaper?.pid ?? 1;
+      if (reaper) {
+        reaper.children.add(c);
+        // One already ended, whose parent never waited for it: its new parent is told, as its parent was (Linux's
+        // reparent_leader), or it goes at once where that one keeps no zombies.
+        if (c.state === 'zombie') {
+          const a = actionOf(reaper, SIG.CHLD);
+          if (a.handler === 1n || a.flags & SA.NOCLDWAIT) { reaper.children.delete(c); this.procs.delete(c.pid); }
+          else {
+            const how = (c.exitStatus ?? 0) & 0x7f;
+            send(this, reaper, SIG.CHLD, {signo: SIG.CHLD, code: how ? CLD.KILLED : CLD.EXITED, pid: c.pid, uid: 0, status: how ? how : (c.exitStatus ?? 0) >> 8});
+          }
+        }
+      } else if (c.state === 'zombie') this.procs.delete(c.pid);
       // Its parent gone: the signal it asked for then (prctl PR_SET_PDEATHSIG).
       if (c.state === 'live' && c.deathSignal) send(this, c, c.deathSignal, {code: SI.USER, pid: p.pid, uid: 0});
     }
@@ -1059,6 +1108,22 @@ export class Kernel implements Kern {
     // A parent that ignores SIGCHLD (or says SA_NOCLDWAIT) leaves no zombie (POSIX).
     if (a.handler === 1n || a.flags & SA.NOCLDWAIT) { parent.children.delete(p); this.procs.delete(p.pid); }
     if (p.exitSignal) send(this, parent, p.exitSignal, info);
+  }
+
+  /** The pid namespace's init: pid 1, or the one a backend names (initPid). */
+  initOf(): Process | undefined {
+    return this.procs.get(1) ?? (this.initPid === undefined ? undefined : this.procs.get(this.initPid));
+  }
+
+  /** Who `p`'s children go to when it ends: the nearest live process above it that asked for orphans, else init; none alive, no one. */
+  reaperOf(p: Process): Process | null {
+    const seen = new Set<Process>([p]);
+    for (let up = this.procs.get(p.ppid); up && !seen.has(up); up = this.procs.get(up.ppid)) {
+      if (up.state === 'live' && up.subreaper) return up;
+      seen.add(up);
+    }
+    const init = this.initOf();
+    return init && init !== p && init.state === 'live' ? init : null;
   }
 
   /** A child made with CLONE_VFORK exec'd or ended: its parent goes on. */
@@ -1160,6 +1225,7 @@ export class Kernel implements Kern {
   halt(): void {
     const init = [...this.procs.values()].find((p) => p.pid === 1 || p.pid === this.initPid);
     if (init) this.exitProcess(init, SIG.KILL);
+    this.ended();
   }
 
   /** Start and run to the end; for hosts whose input is all known up front (a sleep is waited out here). Its wait status
@@ -1254,7 +1320,12 @@ export class Process implements Proc {
   declare pgid: number;
   declare sid: number;
   declare fds: FdTable;
-  declare cwd: string;
+  /**
+   * Where it works: the directory itself, so that one renamed since (or under one renamed) is still where it works and
+   * one removed is nowhere; or the path of one the tree keeps no place for (/proc's, made as they are looked at). What a
+   * path not from the root is looked up from.
+   */
+  declare here: Dir | string;
   declare umask: number;
   declare nice: number;
   declare limits: [bigint, bigint][];
@@ -1296,14 +1367,17 @@ export class Process implements Proc {
   declare bytesBuffer: ArrayBufferLike | undefined;
   declare bytesOf: Uint8Array;
   declare viewOf: DataView;
-  constructor(kernel: Kernel, parent: Process | null) {
+  constructor(kernel: Kernel, parent: Process | null, files = false) {
     this.kernel = kernel;
     this.pid = 0;
     this.ppid = parent?.pid ?? 0;
     this.pgid = parent?.pgid ?? 0;
     this.sid = parent?.sid ?? 0;
-    this.fds = parent ? parent.fds.fork() : new FdTable();
-    this.cwd = parent?.cwd ?? '/';
+    // Its descriptors: the parent's own table where it is to be shared (clone's CLONE_FILES), else a copy of it. Which
+    // is known before either is taken (before: a copy always, thrown away for the shared one with every description
+    // in it still held).
+    this.fds = parent ? (files ? parent.fds.share() : parent.fds.fork()) : new FdTable();
+    this.here = parent?.here ?? kernel.vfs.root;
     this.umask = parent?.umask ?? 0o022;
     // How nice it is (-20 to 19), as getpriority says and a child takes: no scheduling here weighs it.
     this.nice = parent?.nice ?? 0;
@@ -1333,6 +1407,17 @@ export class Process implements Proc {
   }
 
   /** Make one system call as this process's thread (or as a thread of it that has none yet), as the dispatcher does. */
+  /** Where it works, as a path: where that directory lies now (null: it lies nowhere, removed since). */
+  get cwd(): string | null {
+    const h = this.here;
+    return typeof h === 'string' ? h : this.kernel.vfs.where(h) ?? null;
+  }
+  /** It works at `path` (a directory there): held as the directory itself where the tree keeps its place. */
+  set cwd(path: string) {
+    const v = this.kernel.vfs, node = v.find(path, '/');
+    this.here = node instanceof Dir && v.where(node) !== undefined ? node : path;
+  }
+
   syscall(nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next = 0n): bigint {
     const t = [...this.tasks][0] ?? {proc: this, tid: this.pid};
     const v = this.kernel.attempt(t, {nr: Number(nr), args: [a, b, c, d, e, f], next, state: {}});
@@ -1342,18 +1427,23 @@ export class Process implements Proc {
 
   // ---- memory ----
 
-  /** Its memory as bytes: the one view, made again only when the memory grew (another buffer). */
+  /**
+   * Its memory as bytes: the one view, made again only when the memory grew (another buffer). What a call reaches
+   * for outside it is the call's EFAULT (guest.ts).
+   */
   get bytes(): Uint8Array {
     const b = this.memory?.buffer ?? EMPTY;
-    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new Uint8Array(b); this.viewOf = new DataView(b); }
+    if (b !== this.bytesBuffer) { this.bytesBuffer = b; this.bytesOf = new GuestBytes(b); this.viewOf = new GuestView(b); }
     return this.bytesOf;
   }
   /** Its memory as a DataView: the one, as `bytes` (a call reads and writes through it, and made anew it cost each). */
   get view(): DataView { void this.bytes; return this.viewOf; }
 
+  /** The string at `address`, as far as its NUL: one that begins outside the memory, or runs off its end with none, is EFAULT. */
   cstring(address: number): string {
-    const b = this.bytes, end = b.indexOf(0, address);
-    return utf8(b.subarray(address, end < 0 ? b.length : end));
+    const b = this.bytes, end = address >= 0 && address < b.length ? b.indexOf(0, address) : -1;
+    if (end < 0) throw new FsError(E.FAULT);
+    return utf8(b.subarray(address, end));
   }
 
   /** NULL-terminated array of string pointers. */
@@ -1463,7 +1553,7 @@ export class Process implements Proc {
    * other thread with it, and the calling thread starts at the entry.
    */
   execve(path: string, argv: string[], env: string[]): void {
-    const node = this.kernel.vfs.lookup(path, this.cwd);
+    const node = this.kernel.vfs.lookup(path, this.here);
     if (!(node instanceof File)) throw new FsError(node.isDir ? E.ACCES : E.NOEXEC);
     if (!(node.mode & 0o111)) throw new FsError(E.ACCES);
     // A program translated already (this version of it), or whose translation is kept, is an ELF, and is not read to
@@ -1509,7 +1599,12 @@ export class Process implements Proc {
     this.env = env;
     this.comm = null;
     this.caps = {effective: CAPS, permitted: CAPS, inheritable: this.caps.inheritable};
-    this.exe = this.kernel.vfs.realpath(path, this.cwd);
+    this.exe = this.kernel.vfs.realpath(path, this.here);
+    // It execs with a table of descriptors of its own: one shared till now (clone's CLONE_FILES) is left to the others,
+    // so what exec closes here is closed for it alone. (Before: closed in the shared table, under its parent.)
+    const shared = this.fds;
+    this.fds = shared.own();
+    if (this.fds !== shared) for (const x of this.tasks) x.tableLeft(shared);
     this.fds.exec();
     // Handled signals go back to their default; ignored ones stay ignored.
     for (const [sig, h] of this.actions) if (h.handler > 1n) this.actions.delete(sig);
@@ -1612,10 +1707,9 @@ export class Process implements Proc {
   forkProcess(resume: bigint, {stack = 0n, vm = false, files = false, exitSignal = SIG.CHLD, tls = null, clearTid = 0, parent = false}: {stack?: bigint; vm?: boolean; files?: boolean; exitSignal?: number; tls?: bigint | null; clearTid?: number; parent?: boolean} = {}): Process {
     const k = this.kernel, t = this.task;
     this.syncShared(true); // the child's copy of a shared mapping starts as what its file has
-    const child = new Process(k, this);
+    const child = new Process(k, this, files);
     const up = parent ? k.procs.get(this.ppid) ?? this : this;
     child.ppid = up.pid;
-    if (files) child.fds = this.fds;
     const ct = k.newTask(child);
     child.pid = ct.tid;
     child.exitSignal = exitSignal;
@@ -1716,6 +1810,8 @@ export class Task implements Thread {
   /** The backend's: it stopped (SIGSTOP), it goes on (SIGCONT). */
   declare stop?: () => void;
   declare cont?: () => void;
+  /** Its process took a table of descriptors of its own in place of `was` (exec, from one shared): the backend's, where it follows the table (remote.ts). */
+  tableLeft(_was: FdTable): void {}
   constructor(proc: Process, tid: number) {
     this.slice = SLICE_LOOPS; // loops and calls in its next time slice (nextSlice)
     this.proc = proc;

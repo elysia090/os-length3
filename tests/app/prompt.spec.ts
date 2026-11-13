@@ -138,7 +138,6 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).toContainText(/^got 7$/m);
     await expect(out).not.toContainText('hunter2');
     await expect(page.locator('form.prompt[data-hushed]')).toHaveCount(0);
-    await expect(app.forge.pane).not.toContainText('hunter2');
     // Put back as a terminal's own are (stty echo, reset): the line stays the box's, no screen of its own.
     await app.forge.run('stty echo; reset; tty');
     await expect(out).toContainText(/^\/dev\/pts\/0$/m);
@@ -156,16 +155,15 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(out).toContainText(/^whole$/m);
   });
 
-  test('exit puts the terminal away as a terminal\'s window closes, its line left at the desk\'s foot; the band\'s >_ puts it up again with a new shell in it', async ({app}) => {
+  test('exit ends the shell where it is: the terminal stays on the desk, how it ended its last line and no line to type at; the band\'s >_ starts a new shell in it', async ({app}) => {
     const stand = app.forge.prompt.page().locator('.desk-term.stand');
     await app.forge.run('echo before');
-    await expect(stand).toHaveClass(/\bup\b/);
     await app.forge.promptBox.fill('exit');
     await app.forge.promptBox.press('Enter');
-    await expect(stand).not.toHaveClass(/\bup\b/);
-    await expect(app.forge.promptBox).toBeVisible();
+    await expect(stand.locator('.term.ended')).toBeVisible();
+    await expect(stand).toBeVisible();
+    await expect(app.forge.promptBox).toBeHidden();
     await app.forge.tools.getByRole('button', {name: 'Terminal', exact: true}).click();
-    await expect(stand).toHaveClass(/\bup\b/);
     await expect(app.forge.promptBox).toBeFocused();
     await app.forge.run('echo again');
     await expect(app.forge.prompt.locator('.term-out')).toContainText(/^again$/m);
@@ -317,32 +315,17 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.runtime.part('Running Prompts')).toHaveCount(0);
   });
 
-  test('the pane tells the line run, not what it printed; pressed there, the line is lit in the Prompt\'s box', async ({app}) => {
-    await app.forge.run('echo folded-away');
-    const out = app.forge.prompt.locator('.term-out');
-    await expect(out.getByText('folded-away', {exact: true})).toBeVisible();
-    // In the pane: that it ran (its bar green, it ended well), not what it printed.
-    await expect(app.forge.paneRun('echo folded-away')).toHaveAttribute('data-state', 'done');
-    await expect(app.forge.pane.getByText('folded-away', {exact: true})).toHaveCount(0);
-    // Pressed: its line lit where it was run, in view, the keyboard on the box's line again.
-    await app.forge.paneRun('echo folded-away').click();
-    const lit = out.locator('.cmd.lit');
-    await expect(lit).toContainText('echo folded-away');
-    await expect(lit).toBeInViewport();
-    await expect(app.forge.promptBox).toBeFocused();
-  });
-
-  test('lines run follow one another in the Prompt\'s box, as a terminal\'s; the pane lists each, newest last, a failure in red', async ({app}) => {
+  test('lines run follow one another in the terminal, as a terminal\'s, and are still there come back from Git', async ({app}) => {
     await app.forge.run('echo first-run');
     await app.forge.run('false');
     const out = app.forge.prompt.locator('.term-out');
     // The box keeps what ran before it, as a terminal does.
     await expect(out.getByText('first-run', {exact: true})).toBeVisible();
-    const rows = app.forge.pane.locator('.pane-row.run');
-    await expect(rows).toHaveCount(2);
-    await expect(rows.last()).toHaveAttribute('data-state', 'failed');
-    await expect(rows.last()).toContainText('exit 1');
-    await expect(rows.first()).toHaveAttribute('data-state', 'done');
+    // (Git is all desk too: no pane there lists what was run.)
+    await app.rail.go('git');
+    await expect(app.main.locator('.band-bench > .side')).toHaveCount(0);
+    await app.rail.go('forge');
+    await expect(out.getByText('first-run', {exact: true})).toBeVisible();
   });
 
   test('what the Prompt showed is still there after Git and back, and after Home and back', async ({app}) => {

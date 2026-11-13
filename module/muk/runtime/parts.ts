@@ -5,7 +5,7 @@
 // (sys-net.ts: its sockets).
 
 import type {FdTable} from './fd.ts';
-import type {File, Mapping, Vfs} from './fs.ts';
+import type {Dir, File, Mapping, Vfs} from './fs.ts';
 import type {Machine} from './machine.ts';
 
 // ---- signals ----
@@ -201,7 +201,10 @@ export interface Proc {
   pgid: number;
   sid: number;
   fds: FdTable;
-  cwd: string;
+  /** Where it works: the directory itself (or a path, where the tree keeps no place for it); and where that lies now. */
+  here: Dir | string;
+  get cwd(): string | null;
+  set cwd(path: string);
   umask: number;
   nice: number;
   limits: [bigint, bigint][];

@@ -66,7 +66,7 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
   await expect(app.main.getByRole('tabpanel', {name: /^This browser/})).toBeVisible();
   await expect(app.runtime.dotfiles).toBeHidden();
   // Chosen, ink; the others have no fill or edge of their own until the pointer is on them.
-  await expect(app.runtime.part('This browser')).toHaveCSS('background-color', 'rgb(44, 42, 39)');
+  await expect(app.runtime.part('This browser')).toHaveCSS('background-color', 'rgb(23, 22, 20)');
   for (const p of ['Environments', 'Dotfiles'] as const) {
     await expect(app.runtime.part(p)).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(app.runtime.part(p)).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
@@ -283,7 +283,9 @@ test('a repo renamed from its gear keeps its place on the band, worked on, with 
   // (Taken as where one is a moment after the hand is still, as the page has it.)
   await app.page.waitForTimeout(400);
   await app.rail.go('home');
-  await expect(app.page.getByRole('complementary').first()).toContainText('alpha · Continue where you left off');
+  const latelyA = app.main.getByRole('region', {name: 'Recent activity'});
+  await expect(latelyA).toContainText('Continue where you left off');
+  await expect(latelyA).toContainText('alpha');
   await app.rail.go('forge');
   await app.forge.promptBox.focus();
   await app.forge.promptBox.press('Alt+2');
@@ -298,14 +300,14 @@ test('a repo renamed from its gear keeps its place on the band, worked on, with 
   await menu.getByRole('textbox', {name: 'New name'}).press('Enter');
   await expect(repos.getByRole('group', {name: 'gamma', exact: true})).toBeVisible();
   // Where one left off says it under its new name.
-  await expect(app.page.getByRole('complementary').first()).toContainText('gamma · Continue where you left off');
+  const latelyG = app.main.getByRole('region', {name: 'Recent activity'});
+  await expect(latelyG).toContainText('Continue where you left off');
+  await expect(latelyG).toContainText('gamma');
 
   await app.rail.go('forge');
-  const pills = app.forge.band.locator('.pill');
-  await expect(pills).toHaveCount(2);
-  await expect(pills.nth(0)).toHaveAttribute('data-repo', 'gamma');
-  await expect(pills.nth(0)).toHaveAttribute('aria-current', 'page');
-  await expect(pills.nth(1)).toHaveAttribute('data-repo', 'beta');
+  // Its desk is the one on screen, under its new name, as it was left.
+  await expect(app.main.getByRole('region', {name: 'Files in gamma', exact: true})).toBeVisible();
+  await expect(app.main.getByRole('region', {name: 'Files in alpha', exact: true})).toHaveCount(0);
   await expect(app.forge.editor('README.md')).toHaveValue(/^# alpha/);
   await expect(app.forge.promptBox).toHaveValue('Fix: the map is upside down');
   await expect(app.forge.search).toHaveValue('needle');

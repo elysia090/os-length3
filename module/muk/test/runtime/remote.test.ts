@@ -14,8 +14,9 @@ import {have} from './busybox.ts';
 
 const stage = new URL('../../../../target/userland/', import.meta.url);
 
-async function shell(script: string, {input = null, said = null}: {input?: string | null; said?: [number, string][] | null} = {}): Promise<{status: number; out: string; ms: number}> {
+async function shell(script: string, {input = null, said = null, files = {}}: {input?: string | null; said?: [number, string][] | null; files?: Record<string, Uint8Array>} = {}): Promise<{status: number; out: string; ms: number}> {
   const vfs = new Vfs();
+  for (const [path, bytes] of Object.entries(files)) vfs.writeFile(path, bytes, 0o755);
   const busybox = vfs.writeFile('/bin/busybox', readFileSync(new URL('busybox', stage)), 0o755);
   for (const a of ['sh', 'sleep', 'cat', 'kill', 'echo', 'dd', 'wc', 'sha256sum', 'yes', 'head']) vfs.symlink('busybox', `/bin/${a}`);
   let out = '';
@@ -109,4 +110,10 @@ test('the console outbox: writes in order round the ring, fds kept, none past it
   assert.equal(box.put(1, from, [[0, 26]], 26), false);
   assert.equal(box.put(1, from, [[0, 26]], 26), null);
   assert.equal(new TextDecoder().decode(box.take()[0].bytes), 'abcdefghijklmnopqrstuvwxyz'.repeat(2));
+});
+
+test('apart: #143: a file that is no program the translator takes is refused as one (ENOEXEC), and the shell goes on', {skip: !have}, async () => {
+  const r = await shell('/bad-elf; echo "status $?"; echo survived', {files: {'/bad-elf': new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 2, 1])}});
+  assert.match(r.out, /^\/bad-elf: line 1: .*: not found\nstatus 127\nsurvived\n$/s);
+  assert.equal(r.status, 0);
 });

@@ -46,10 +46,10 @@ declare module './fs.ts' {
 }
 declare module './parts.ts' {
   interface Kern {
-    /** Every socket (net-view.ts lists them), the abstract names and netlink ports taken, the loopback ports. */
+    /** Every socket (net-view.ts lists them), the abstract names and netlink ports taken (each protocol's its own), the loopback ports. */
     sockets?: Set<Endpoint>;
     abstractSockets?: Map<string, Endpoint>;
-    netlinkPorts?: Map<number, Endpoint>;
+    netlinkPorts?: Map<number, Map<number, Endpoint>>;
     inetPorts?: Record<number, Map<number, Set<Endpoint>>>;
     inetNext?: number;
     /** A socket's descriptor was passed over a socket (SCM_RIGHTS): only then can sockets hold one another (collect). */
@@ -144,6 +144,7 @@ class Endpoint {
   declare backlogMost: number;
   declare backlogAsked: number;
   declare readonly shut: {rd: boolean; wr: boolean};
+  declare writes: boolean;
   declare creds: Creds;
   declare options: {passcred: boolean; reuseaddr: boolean; reuseport: boolean; v6only: boolean; nodelay: boolean; recvttl: boolean; recvhops: boolean};
   declare filter: number | Uint8Array | null;
@@ -176,6 +177,7 @@ class Endpoint {
     this.backlogMost = 0;
     this.backlogAsked = 0; // listen's, as ss says it
     this.shut = {rd: false, wr: false};
+    this.writes = false; // counted among its peer's writers: from the connection (link) until it is shut for writing or closed
     this.creds = {pid: proc.pid, uid: 0, gid: 0};
     this.options = {passcred: false, reuseaddr: false, reuseport: false, v6only: false, nodelay: false, recvttl: false, recvhops: false};
     this.filter = null; // a raw ICMP socket's types not wanted (ICMP_FILTER's mask, ICMP6_FILTER's bits)
@@ -210,7 +212,7 @@ class Endpoint {
     this.rx.changes++;
     const peer = this.peer;
     if (peer && peer.peer === this) {
-      if (!this.shut.wr) peer.rx.writers--;
+      if (this.writes) peer.rx.writers--;
       peer.rx.changes++;
       peer.events++;
     }
@@ -223,8 +225,8 @@ class Endpoint {
     // The path stays (as on Linux: unlinked by whoever made it), and connecting to it is refused.
     if (this.node?.endpoint === this) this.node.endpoint = null;
     if (this.port) this.port.table.get(this.port.port)?.delete(this);
-    const portid = this.local?.portid;
-    if (this.netlink && portid !== undefined && this.kernel.netlinkPorts?.get(portid) === this) this.kernel.netlinkPorts.delete(portid);
+    const portid = this.local?.portid, ports = this.netlink ? this.kernel.netlinkPorts?.get(this.protocol) : undefined;
+    if (portid !== undefined && ports?.get(portid) === this) ports.delete(portid);
     this.kernel.sockets?.delete(this);
   }
 }
@@ -271,7 +273,9 @@ function link(a: Endpoint, b: Endpoint): void {
   a.peer = b;
   b.peer = a;
   a.state = b.state = 'connected';
-  if (a.type !== SOCK.DGRAM) { a.rx.writers++; b.rx.writers++; }
+  // Each is one more writer of what the other reads, shut for writing before it connected or not: its peer sees the
+  // end when it closes, as on Linux (where the shutting touches only the peer it has then).
+  if (a.type !== SOCK.DGRAM) { a.rx.writers++; b.rx.writers++; a.writes = b.writes = true; }
 }
 
 /** The socket of descriptor `fd`. */
@@ -390,7 +394,7 @@ function writeName(p: Proc, address: bigint, lengthAt: bigint, bytes: Uint8Array
 /** The local socket bound to `name`, or the error connecting to it gives. */
 function namedBy(p: Proc, name: Given): Endpoint {
   if (name.abstract !== undefined) return p.kernel.abstractSockets?.get(name.abstract) ?? fail(ERR.CONNREFUSED);
-  const node = p.kernel.vfs.lookup(name.path ?? '', p.cwd);
+  const node = p.kernel.vfs.lookup(name.path ?? '', p.here);
   return (node instanceof SocketName && node.endpoint) || fail(ERR.CONNREFUSED);
 }
 
@@ -490,25 +494,34 @@ function peek(pipe: Pipe, into: Uint8Array, at: number, n: number): number {
  * sender's address, as sockaddr bytes, or null), rights, creds}. Waits (Wait) as a read of a pipe does; MSG_WAITALL
  * waits for all of `length` on a stream, what came so far kept in the call's state.
  */
-/** What a receive took: how much, the message's whole, the sender's address, descriptors and credentials. */
-interface Received { n: number; size: number; from: Uint8Array | null; rights: Description[]; creds: Creds | null }
+/**
+ * What a receive took: how much, the message's whole, the sender's address, descriptors and credentials. `peeked`:
+ * it was looked at and stays (MSG_PEEK), so its descriptors are still the message's own to keep.
+ */
+interface Received { n: number; size: number; from: Uint8Array | null; rights: Description[]; creds: Creds | null; peeked?: boolean }
 
 function receive(p: Proc, d: Description & {sock: Endpoint}, into: Uint8Array, at: number, length: number, flags: number): Received {
   const s = d.sock, none: Received = {n: 0, size: 0, from: null, rights: [], creds: null};
-  if (s.state === 'listening' || (s.connectionWanted && s.state !== 'connected')) fail(ERR.NOTCONN);
-  if (s.shut.rd) return none;
+  // Not connected: ENOTCONN, but a local stream's is EINVAL (as Linux's unix_stream_recvmsg says it).
+  if (s.state === 'listening' || (s.connectionWanted && s.state !== 'connected')) fail(s.family === AF.UNIX && s.stream ? E.INVAL : ERR.NOTCONN);
   const wait = (): never => { if (nonblocking(d, flags)) fail(E.AGAIN); throw new Wait(); };
+  // Shut for reading, what came before is still read; then it is at its end.
   if (s.rx instanceof Pipe) {
     const pipe = s.rx, state = p.call?.state ?? {};
     const done = state.done ?? 0;
     if (!pipe.size) {
-      if (!pipe.writers || done) return {...none, n: done, size: done};
+      if (!pipe.writers || done || s.shut.rd) return {...none, n: done, size: done};
       wait();
     }
     // A read stops where descriptors came with a later part of the stream (as Linux keeps each send's apart).
     const next = s.rights.find((r) => r.at > s.consumed);
     const most = Math.min(length - done, next ? next.at - s.consumed : Infinity);
-    if (flags & MSG.PEEK) return {...none, n: done + peek(pipe, into, at + done, most)};
+    if (flags & MSG.PEEK) {
+      // Looked at, the descriptors that came with these bytes are handed over each time, and stay with them.
+      const k = peek(pipe, into, at + done, most);
+      const seen = s.rights.filter((x) => x.at >= s.consumed && x.at < s.consumed + k).flatMap((x) => x.descs);
+      return {...none, n: done + k, rights: seen, creds: s.peer?.creds ?? null, peeked: true};
+    }
     const k = pipe.readInto(into, at + done, most);
     const from = s.consumed;
     s.consumed += k;
@@ -522,14 +535,16 @@ function receive(p: Proc, d: Description & {sock: Endpoint}, into: Uint8Array, a
   const q = s.rx;
   if (s.inet) pendingError(s);
   if (!q.list.length) {
-    // A packet socket's peer gone is its end; a datagram socket waits on.
-    if (s.type === SOCK.SEQPACKET && !q.writers) return none;
+    // A packet socket's peer gone, or itself shut for reading, is its end. A datagram socket waits on; shut for
+    // reading it has no more to wait for (0), and one that does not wait is told so as ever (EAGAIN): Linux's own.
+    if (s.type === SOCK.SEQPACKET && (!q.writers || s.shut.rd)) return none;
+    if (s.shut.rd && !nonblocking(d, flags)) return none;
     wait();
   }
-  const m = flags & MSG.PEEK ? q.list[0] : q.shift();
+  const peeked = !!(flags & MSG.PEEK), m = peeked ? q.list[0] : q.shift();
   const n = Math.min(length, m.bytes.length);
   into.set(m.bytes.subarray(0, n), at);
-  return {n, size: m.bytes.length, from: encode(s, m.from), rights: flags & MSG.PEEK ? [] : m.rights, creds: m.creds};
+  return {n, size: m.bytes.length, from: encode(s, m.from), rights: m.rights, creds: m.creds, peeked};
 }
 
 /** A peer that is gone: SIGPIPE (unless MSG_NOSIGNAL), and EPIPE; what was sent before it counts. */
@@ -558,7 +573,8 @@ function datagram(p: Proc, s: Endpoint, data: Uint8Array, target: Address): numb
   const t = traffic(p.kernel);
   t.bytes += data.length;
   t.packets++;
-  if (r.rx instanceof Messages && r.rx.fits(data.length) && !r.shut.rd) r.rx.push({bytes: data.slice(), from, rights: [], creds: s.creds});
+  // (Shut for reading, it takes them still: UDP does not look, and what came is read as ever.)
+  if (r.rx instanceof Messages && r.rx.fits(data.length)) r.rx.push({bytes: data.slice(), from, rights: [], creds: s.creds});
   return data.length;
 }
 
@@ -647,9 +663,14 @@ function icmp(s: Endpoint, data: Uint8Array, target: Address | null): number {
 
 // ---- netlink ----
 
-/** A netlink socket's port: the one asked for, or (0) its process's pid if free, else one of the kernel's own. */
+/**
+ * A netlink socket's port, among its protocol's own (Linux keeps a table for each: the same number is free under
+ * another): the one asked for, or (0) its process's pid if free, else one of the kernel's own.
+ */
 function bindNetlink(p: Proc, s: Endpoint, portid: number, groups: number): void {
-  const ports = (p.kernel.netlinkPorts ??= new Map());
+  const all = (p.kernel.netlinkPorts ??= new Map());
+  let ports = all.get(s.protocol);
+  if (!ports) all.set(s.protocol, ports = new Map());
   if (!portid) {
     portid = p.pid;
     for (let n = 0xfffff000; ports.has(portid); n--) portid = n >>> 0;
@@ -685,27 +706,39 @@ function transmit(p: Proc, d: Description & {sock: Endpoint}, data: Uint8Array, 
       if (!target) return fail(ERR.DESTADDRREQ);
       return datagram(p, s, data, target);
     }
+    // In Linux's order (unix_dgram_sendmsg). Too long; then, shut for writing, it sends nothing more: EPIPE and no
+    // SIGPIPE (a stream's send alone raises one).
+    if (data.length > MESSAGE_ROOM) fail(ERR.MSGSIZE);
+    if (s.shut.wr) fail(E.PIPE);
     const target = to ? namedBy(p, to) : s.peer;
     if (!target) return fail(ERR.NOTCONN);
-    if (target.closed) fail(ERR.CONNREFUSED);
+    // Its peer closed: refused once, and it is connected to nothing from then on (ENOTCONN).
+    if (target.closed) {
+      if (s.peer === target) { s.peer = null; s.remote = null; s.state = 'unconnected'; s.events++; }
+      fail(ERR.CONNREFUSED);
+    }
     if (target.type !== SOCK.DGRAM) fail(ERR.PROTOTYPE);
     // Connected to another, it takes nothing from this one.
     if (target.peer && target.peer !== s) fail(E.PERM);
-    if (data.length > MESSAGE_ROOM) fail(ERR.MSGSIZE);
+    // Shut for reading, nothing reaches it.
+    if (target.shut.rd) fail(E.PIPE);
     if (!(target.rx instanceof Messages)) return fail(ERR.PROTOTYPE);
     if (!target.rx.fits(data.length)) wait();
     target.rx.push({bytes: data.slice(), from: s.local, rights: own(), creds: s.creds});
     return data.length;
   }
-  // A local stream or packet socket takes no address to send to; TCP's is not looked at.
-  if (to && !s.inet) fail(s.state === 'connected' ? ERR.ISCONN : E.OPNOTSUPP);
+  // A local stream takes no address to send to; a packet socket's and TCP's is not looked at.
+  if (to && !s.inet && s.stream) fail(s.state === 'connected' ? ERR.ISCONN : E.OPNOTSUPP);
   if (s.state !== 'connected') return s.inet ? broken(p, flags, 0) : fail(ERR.NOTCONN);
   const state = p.call?.state ?? {}, done = state.done ?? 0;
-  if (s.shut.wr) return broken(p, flags, done);
+  if (s.type === SOCK.SEQPACKET && data.length > MESSAGE_ROOM) fail(ERR.MSGSIZE);
+  // Shut for writing, or its peer gone or shut for reading: a stream's send raises SIGPIPE; a packet socket's is
+  // refused without one, as a local datagram's.
+  const gone = (): number => (s.type === SOCK.SEQPACKET ? fail(E.PIPE) : broken(p, flags, done));
+  if (s.shut.wr) return gone();
   const peer = s.peer;
-  if (!peer || !peer.rx.readers) return broken(p, flags, done);
+  if (!peer || !peer.rx.readers) return gone();
   if (s.type === SOCK.SEQPACKET) {
-    if (data.length > MESSAGE_ROOM) fail(ERR.MSGSIZE);
     if (!(peer.rx instanceof Messages)) return fail(ERR.PROTOTYPE);
     if (!peer.rx.fits(data.length)) wait();
     peer.rx.push({bytes: data.slice(), from: s.local, rights: own(), creds: s.creds});
@@ -736,7 +769,7 @@ function transmit(p: Proc, d: Description & {sock: Endpoint}, data: Uint8Array, 
 export function read(p: Proc, d: Description, into: Uint8Array, at: number, length: number): number {
   const r = receive(p, d as Description & {sock: Endpoint}, into, at, length, 0);
   // Descriptors that came with what a plain read took are let go (as Linux drops them).
-  for (const x of r.rights) x.release();
+  if (!r.peeked) for (const x of r.rights) x.release();
   return r.n;
 }
 /** write and writev of a socket: send without flags. */
@@ -788,7 +821,15 @@ export const pending = (d: Description): number => {
 function vectors(p: Proc, address: number, count: number): [number, number][] {
   if (count < 0 || count > 1024) fail(E.INVAL);
   const out: [number, number][] = [];
-  for (let k = 0; k < count; k++) out.push([Number(p.view.getBigUint64(address + k * 16, true)), Number(p.view.getBigUint64(address + k * 16 + 8, true))]);
+  // (As Linux takes an iovec in: a negative length is EINVAL, and together they are at most MAX_RW_COUNT.)
+  let left = 0x7ffff000;
+  for (let k = 0; k < count; k++) {
+    const length = p.view.getBigInt64(address + k * 16 + 8, true);
+    if (length < 0n) fail(E.INVAL);
+    const n = Math.min(Number(length), left);
+    left -= n;
+    out.push([Number(p.view.getBigUint64(address + k * 16, true)), n]);
+  }
   return out;
 }
 
@@ -821,6 +862,8 @@ function sendmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   const d = socketOf(p, fd), at = N(msg), v = p.view;
   const nameAt = Number(v.getBigUint64(at, true)), nameLen = v.getUint32(at + 8, true);
   const iov = vectors(p, Number(v.getBigUint64(at + 16, true)), Number(v.getBigUint64(at + 24, true)));
+  // (What is to be sent is the guest's memory, before room is made for it.)
+  for (const [b, l] of iov) within(p, b, l);
   const control = Number(v.getBigUint64(at + 32, true)), controlLen = Number(v.getBigUint64(at + 40, true));
   const rights = control && controlLen ? controls(p, control, controlLen) : [];
   const total = iov.reduce((n, [, l]) => n + l, 0), data = new Uint8Array(total);
@@ -849,11 +892,12 @@ function recvmsg(p: Proc, fd: bigint, msg: bigint, flags: bigint): number {
   within(p, nameAt, nameRoom);
   const control = Number(v.getBigUint64(at + 32, true)), room = control ? Number(v.getBigUint64(at + 40, true)) : 0;
   within(p, control, room);
-  const total = iov.reduce((n, [, l]) => n + l, 0), buf = new Uint8Array(total);
+  // (Room is made for no more than a socket holds at once: what is asked for may be all the guest's memory.)
+  const total = Math.min(iov.reduce((n, [, l]) => n + l, 0), 1 << 20), buf = new Uint8Array(total);
   const r = receive(p, d, buf, 0, total, f & ~MSG.WAITALL);
   // What came is this call's to hand on or to let go, whatever happens from here: the descriptors still held for
-  // the message, and those made this process's already.
-  let held = r.rights;
+  // the message (one looked at keeps its own), and those made this process's already.
+  let held = r.peeked ? [] : r.rights;
   const made: number[] = [];
   try {
     return received(p, d, r, at, f, iov, buf, nameAt, nameRoom, control, room, made, () => { held = []; });
@@ -874,31 +918,40 @@ function received(p: Proc, d: Description & {sock: Endpoint}, r: Received, at: n
     if (r.from) p.bytes.set(r.from.subarray(0, Math.min(nameRoom, r.from.length)), nameAt);
     v.setUint32(at + 8, r.from?.length ?? 0, true);
   }
-  // Control data: the descriptors that came (each now one of this process's), and the sender's credentials if asked.
+  // Control data, in Linux's order: the sender's credentials if asked, then the descriptors that came.
   let used = 0, outFlags = r.size > r.n && !d.sock.stream ? MSG.TRUNC : 0;
-  const put = (type: number, words: (at: number) => void, size: number, level = SOL_SOCKET): boolean => {
-    const len = 16 + size, space = (len + 7) & ~7;
-    if (!control || used + len > room) { outFlags |= MSG.CTRUNC; return false; }
-    v.setBigUint64(control + used, BigInt(len), true);
+  // One piece, as Linux's put_cmsg writes it: cut short where the room ends, its length saying how much is there
+  // (and MSG_CTRUNC that some is not); none at all where its header has no room.
+  const put = (type: number, words: number[], level = SOL_SOCKET): void => {
+    const left = control ? room - used : 0, len = 16 + 4 * words.length;
+    if (left < 16) { outFlags |= MSG.CTRUNC; return; }
+    if (left < len) outFlags |= MSG.CTRUNC;
+    const body = new Uint8Array(new Int32Array(words).buffer), fit = Math.min(len, left);
+    v.setBigUint64(control + used, BigInt(fit), true);
     v.setInt32(control + used + 8, level, true);
     v.setInt32(control + used + 12, type, true);
-    words(control + used + 16);
-    used += Math.min(space, room - used);
-    return true;
+    p.bytes.set(body.subarray(0, fit - 16), control + used + 16);
+    used += Math.min((len + 7) & ~7, left);
   };
-  if (r.rights.length) {
-    for (const x of r.rights) made.push(p.fds.install(x, {cloexec: !!(f & MSG.CMSG_CLOEXEC)}));
-    for (const x of r.rights) x.release();
-    handed();
-    if (!put(SCM.RIGHTS, (w) => made.forEach((n, k) => v.setInt32(w + 4 * k, n, true)), 4 * made.length)) { for (const n of made) p.fds.close(n); made.length = 0; }
-  }
   const creds = r.creds;
-  if (d.sock.options.passcred && creds) {
-    put(SCM.CREDENTIALS, (w) => { v.setInt32(w, creds.pid, true); v.setUint32(w + 4, creds.uid, true); v.setUint32(w + 8, creds.gid, true); }, 12);
+  if (d.sock.options.passcred && creds) put(SCM.CREDENTIALS, [creds.pid, creds.uid, creds.gid]);
+  if (r.rights.length) {
+    // As many as the room left can say and as there are descriptors left for, the first of them, each now one of
+    // this process's (Linux's scm_detach_fds). The rest go with the message, and the call says so (MSG_CTRUNC).
+    const fits = control ? Math.max(0, Math.floor((room - used - 16) / 4)) : 0;
+    for (const x of r.rights.slice(0, fits)) {
+      const fd = p.fds.install(x, {cloexec: !!(f & MSG.CMSG_CLOEXEC)});
+      if (fd < 0) break;
+      made.push(fd);
+    }
+    // A message taken lets its own hold on them go; one looked at keeps it, for whoever takes it.
+    if (!r.peeked) { for (const x of r.rights) x.release(); handed(); }
+    if (made.length < r.rights.length) outFlags |= MSG.CTRUNC;
+    if (made.length) put(SCM.RIGHTS, made);
   }
   // Over lo a packet has gone no hop: the TTL and hop limit it was sent with.
-  if (d.sock.inet && !d.sock.stream && d.sock.options.recvttl && d.sock.family === AF.INET) put(IP_TTL, (w) => v.setInt32(w, HOPS, true), 4, SOL.IP);
-  if (d.sock.inet && !d.sock.stream && d.sock.options.recvhops) put(IPV6_HOPLIMIT, (w) => v.setInt32(w, HOPS, true), 4, SOL.IPV6);
+  if (d.sock.inet && !d.sock.stream && d.sock.options.recvttl && d.sock.family === AF.INET) put(IP_TTL, [HOPS], SOL.IP);
+  if (d.sock.inet && !d.sock.stream && d.sock.options.recvhops) put(IPV6_HOPLIMIT, [HOPS], SOL.IPV6);
   v.setBigUint64(at + 40, BigInt(used), true);
   v.setInt32(at + 48, outFlags, true);
   return f & MSG.TRUNC && !d.sock.stream ? r.size : r.n;
@@ -912,7 +965,8 @@ function accept(p: Proc, fd: bigint, address: bigint, lengthAt: bigint, flags: b
   const d = socketOf(p, fd), s = d.sock;
   if (s.state !== 'listening') fail(E.INVAL);
   const server = s.backlog.shift();
-  if (!server) { if (d.flags & O_NONBLOCK) fail(E.AGAIN); throw new Wait(); }
+  // None waiting: it waits; shut for reading meanwhile (what wakes an accept), none will come (EINVAL, Linux's).
+  if (!server) { if (d.flags & O_NONBLOCK) fail(E.AGAIN); if (s.shut.rd) fail(E.INVAL); throw new Wait(); }
   s.events++;
   const n = install(p, server, N(flags));
   writeName(p, address, lengthAt, encode(server, server.remote));
@@ -934,7 +988,8 @@ function connectStream(p: Proc, d: Description, s: Endpoint, target: Given): num
   } else {
     listener = namedBy(p, target);
     if (listener.type !== s.type) fail(ERR.PROTOTYPE);
-    if (listener.state !== 'listening' || listener.closed) fail(ERR.CONNREFUSED);
+    // (A listener shut for reading takes no more.)
+    if (listener.state !== 'listening' || listener.closed || listener.shut.rd) fail(ERR.CONNREFUSED);
   }
   if (listener.backlog.length >= listener.backlogMost) { if (d.flags & O_NONBLOCK) fail(E.AGAIN); throw new Wait(); }
   // A client not bound takes a port of its own, at its family's loopback address (the source Linux's `lo` gives).
@@ -1003,7 +1058,7 @@ export const NET_CALLS: Calls = {
       all.set(a.abstract, s);
       s.abstract = a.abstract;
     } else {
-      const r = this.kernel.vfs.resolve(a.path ?? '', this.cwd, false);
+      const r = this.kernel.vfs.resolve(a.path ?? '', this.here, false);
       if (r.node) fail(ERR.ADDRINUSE);
       const node = new SocketName(0o777 & ~this.umask);
       node.endpoint = s;
@@ -1063,8 +1118,10 @@ export const NET_CALLS: Calls = {
   },
   45(fd, buf, len, flags, address, lengthAt) { // recvfrom
     const d = socketOf(this, fd), f = N(flags);
+    // (Where it is to be put is the guest's memory before anything is taken, as recvmsg's.)
+    if (N(len) > 0) within(this, N(buf), N(len));
     const r = receive(this, d, this.bytes, N(buf), N(len), f);
-    for (const x of r.rights) x.release();
+    if (!r.peeked) for (const x of r.rights) x.release();
     writeName(this, address, lengthAt, r.from);
     return f & MSG.TRUNC && !d.sock.stream ? r.size : r.n;
   },
@@ -1073,11 +1130,13 @@ export const NET_CALLS: Calls = {
   48(fd, how) { // shutdown
     const s = socketOf(this, fd).sock, h = N(how);
     if (h < 0 || h > 2) fail(E.INVAL);
-    if (s.state !== 'connected') fail(ERR.NOTCONN);
+    // A local socket is shut whatever it is connected to, and stays so when it connects (Linux's unix_shutdown
+    // asks nothing); a loopback one must be connected.
+    if (s.state !== 'connected' && s.family !== AF.UNIX) fail(ERR.NOTCONN);
     if (h !== 1 && !s.shut.rd) { s.shut.rd = true; s.rx.readers--; s.rx.changes++; }
     if (h !== 0 && !s.shut.wr) {
       s.shut.wr = true;
-      if (s.peer && s.type !== SOCK.DGRAM) { s.peer.rx.writers--; s.peer.rx.changes++; }
+      if (s.peer && s.writes) { s.writes = false; s.peer.rx.writers--; s.peer.rx.changes++; }
     }
     s.events++;
     return 0;

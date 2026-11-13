@@ -182,17 +182,17 @@ function railButton(id: PurposeId): HTMLButtonElement {
     // page drawn takes that answer (servers.ts), not waiting on one of its own.
     button.addEventListener('pointerenter', () => { if (!connection()) void openBoards().catch(() => {}); });
   } else if (id === 'plugin') {
-    // The plug opens the plugin area at the top of the center, and closes it; elsewhere it opens it in Forge.
-    // It says the area is out only where the area is (Forge's, Git's center): on another page it is kept for
-    // coming back, not out. Escape on the plug puts it away, as Escape does File's tree.
-    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && (current === 'forge' || current === 'git' || current === 'home')));
+    // The plug opens the plugin area, and closes it, where there is one: over what waits on Home, at the top of Git's
+    // pane; elsewhere (Forge is all desk, and has none) it opens it on Home. It says the area is out only where the
+    // area is: on another page it is kept for coming back, not out. Escape on the plug puts it away, as Escape does
+    // File's tree.
+    plugState = () => button.setAttribute('aria-expanded', String(pluginsOpen() && (current === 'git' || current === 'home')));
     plugState();
     onPlugins(() => plugState());
     button.addEventListener('click', () => {
-      // Home, Forge and Git have the right pane the area is at the top of; elsewhere it opens in Forge.
-      const work = current === 'forge' || current === 'git' || current === 'home';
-      if (!work) select('forge');
-      setPluginsOpen(!work || !pluginsOpen());
+      const there = current === 'git' || current === 'home';
+      if (!there) select('home');
+      setPluginsOpen(!there || !pluginsOpen());
     });
     button.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && button.getAttribute('aria-expanded') === 'true') { event.preventDefault(); setPluginsOpen(false); }

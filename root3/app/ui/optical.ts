@@ -41,3 +41,21 @@ export function fitSize(el: HTMLElement, words: string, room: number, tracking: 
   if (!document.fonts.check(pen.font)) void document.fonts.load(pen.font).then(again, () => {});
   return (100 * room) / Math.max(1, pen.measureText(words).width);
 }
+
+/**
+ * Where `el`'s ink ends, told to its styles: words set against an edge stand on it by their ink, not by the box their
+ * face gives them (a letter's side bearing, and the tracking after the last letter, are room, not ink). Kept on `el`
+ * as --ink-left or --ink-right (px to move it by); measured again once its face has come.
+ */
+export function inkEdge(el: HTMLElement, side: 'left' | 'right') {
+  pen ??= document.createElement('canvas').getContext('2d');
+  if (!pen) return;
+  const cs = getComputedStyle(el);
+  pen.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  pen.letterSpacing = cs.letterSpacing;
+  if (!document.fonts.check(pen.font)) void document.fonts.load(pen.font).then(() => inkEdge(el, side), () => {});
+  const m = pen.measureText(el.textContent ?? '');
+  const by = side === 'left' ? m.actualBoundingBoxLeft : m.actualBoundingBoxRight - m.width;
+  const now = `${by.toFixed(2)}px`;
+  if (el.style.getPropertyValue(`--ink-${side}`) !== now) el.style.setProperty(`--ink-${side}`, now);
+}

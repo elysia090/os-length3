@@ -384,8 +384,10 @@ __attribute__((noreturn, cold)) static void no_name(const char *name) { fail("co
 static void process(void) {
   char *k, *k2;
   OBJECT(k) {
-    if (IS("args")) words(c.args, &c.nargs, WORDS - 1);
-    else if (IS("env")) words(c.env, &c.nenv, WORDS - 1);
+    /* (each is handed to the program as a list that ends where it ends: given twice, the second ends where the
+     * second ends, however long the first was) */
+    if (IS("args")) words(c.args, &c.nargs, WORDS - 1), c.args[c.nargs] = 0;
+    else if (IS("env")) words(c.env, &c.nenv, WORDS - 1), c.env[c.nenv] = 0;
     else if (IS("cwd")) c.cwd = string();
     else if (IS("noNewPrivileges")) boolean(); /* (the floor: it gains none, said or not) */
     else if (IS("terminal")) c.terminal = (u8)boolean();
@@ -611,12 +613,19 @@ static char *terminals(char *data) {
   __builtin_memcpy(made + n, most + !n, sizeof most - !n);
   return (char *)made;
 }
-/* The /dev a box has where config.json mounts none: a tmpfs of its own (as config.json would say it). Not inlined:
- * four addresses stored side by side are stored as one constant, which a program with nothing to relocate has not. */
-__attribute__((noinline)) static void own_dev(struct mount *m) {
-  m->to = "/dev", m->type = "tmpfs";
+/* An address as the compiler cannot see it to be a constant: one it stores is then made where it is stored (from
+ * where the program runs), each by itself. Addresses it knows, stored side by side, it may store as one constant read
+ * from the program's data (GCC 14 does, whether or not the function is inlined), and a constant that holds an address
+ * is something to relocate, which a program with nothing to relocate has not. */
+static inline char *held(const char *s) {
+  __asm__("" : "+r"(s));
+  return (char *)s;
+}
+/* The /dev a box has where config.json mounts none: a tmpfs of its own (as config.json would say it). */
+static void own_dev(struct mount *m) {
+  m->to = held("/dev"), m->type = held("tmpfs");
   m->flags = MS_NOSUID | MS_STRICTATIME, m->clear = 0, m->spread = 0, m->tree = -1, m->fresh = 0;
-  m->from = 0, m->data = "mode=755,size=65536k";
+  m->from = 0, m->data = held("mode=755,size=65536k");
 }
 
 static void config(void) {
@@ -1179,7 +1188,8 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
   int home = 0;
   for (u32 i = 0; i < c.nenv; i++) home |= c.env[i][0] == 'H' && c.env[i][1] == 'O' && c.env[i][2] == 'M' && c.env[i][3] == 'E' && c.env[i][4] == '=';
   if (!home && c.nenv < WORDS - 1) {
-    u8 *text = grab((64 << 10) + 8), *at = text + 5;
+    /* ("HOME=/" stands by itself, before where the file is read: it is what is given unless the file has the one) */
+    u8 *text = grab((64 << 10) + 16), *at = text + 8;
     __builtin_memcpy(text, "HOME=/", 7);
     /* (the box's file, and so anything: a pipe is not waited on, a terminal not taken for this one's) */
     i64 fd = sys3(SYS_open, (i64)"/etc/passwd", O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOCTTY, 0), n = fd < 0 ? 0 : sys3(SYS_read, fd, (i64)at, 64 << 10);
@@ -1202,7 +1212,7 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
       }
       l = e + 1;
     }
-    c.env[c.nenv++] = (char *)text;
+    c.env[c.nenv++] = (char *)text, c.env[c.nenv] = 0;
   }
   if (later) ok(sys1(SYS_chdir, (i64)c.cwd), "process.cwd: ", c.cwd);
   sys3(SYS_close_range, 3, ~0u, 4 /* CLOSE_RANGE_CLOEXEC */);

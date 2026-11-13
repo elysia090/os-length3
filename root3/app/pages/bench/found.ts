@@ -182,6 +182,9 @@ function marked(text: string, query: string): (Node | string)[] {
   return parts;
 }
 
+/** How much of a line is kept before what was found in it, in characters, when it is found far along the line. */
+const LEAD = 16;
+
 /** A run as a line of the sheet: `$`, then its line as typed (its first), `query` marked wherever it is in it. */
 function runLine(r: Run, query: string, read: (r: Run) => void): HTMLElement {
   const b = h('button', {type: 'button', class: 'choice run-line'}, h('span', {class: 'run-ps', 'aria-hidden': 'true'}, '$'),
@@ -205,10 +208,14 @@ function fileRows(groups: Group[], query: string, ways: FoundWays, beat: (b: HTM
       rows.push(b);
     }
     for (const hit of g.hits) {
-      const b = h('button', {type: 'button', class: 'choice sheet-hit'},
+      // A row is one line across: the line's words from where they begin (not its indent), or, found far along it,
+      // from a little before what was found (an ellipsis for what is left out), so what was found is always in sight.
+      const indent = hit.text.length - hit.text.trimStart().length, from = hit.from > indent + 2 * LEAD ? hit.from - LEAD : indent;
+      // (Its file's name is drawn on the first of its rows only; it is on each, to be heard and found.)
+      const b = h('button', {type: 'button', class: rows.length ? 'choice sheet-hit again' : 'choice sheet-hit'},
         h('span', {class: 'sheet-file'}, shown),
         h('span', {class: 'sheet-line'}, String(hit.line)),
-        h('span', {class: 'sheet-text'}, ...tucked(hit.text.slice(0, hit.from)), h('mark', {}, ...tucked(hit.text.slice(hit.from, hit.to))), ...tucked(hit.text.slice(hit.to))));
+        h('span', {class: 'sheet-text'}, from > indent ? '…' : null, ...tucked(hit.text.slice(from, hit.from)), h('mark', {}, ...tucked(hit.text.slice(hit.from, hit.to))), ...tucked(hit.text.slice(hit.to))));
       b.addEventListener('click', () => ways.line(g.path, hit.line));
       beat(b);
       rows.push(b);

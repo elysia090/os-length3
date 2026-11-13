@@ -11,16 +11,21 @@ for (const width of [390, 500, 760, 1024, 1400]) {
     const row = app.forge.hit(/Searchable words remain/);
     await expect(row).toBeVisible();
     // A pane's dropdown used to override the desk sheet's anchor on narrow screens, putting it behind the rail.
-    const paper = (await app.forge.results.boundingBox())!;
-    const center = (await app.main.locator('.center').boundingBox())!;
-    expect(paper.x).toBeGreaterThanOrEqual(center.x);
-    expect(paper.x + paper.width).toBeLessThanOrEqual(center.x + center.width + 1);
-    expect(paper.y + paper.height).toBeLessThan(900);
-    // Two fixed sections and an intrinsic filename track used to leave snippets with zero width.
-    const words = (await row.locator('.sheet-text').boundingBox())!;
-    expect(words.width).toBeGreaterThan(100);
-    expect(words.x).toBeGreaterThanOrEqual(paper.x);
-    expect(words.x + words.width).toBeLessThanOrEqual(paper.x + paper.width);
+    // (Measured once the paper has come down and is drawn as it stays: on its way, or between two drawings, it is
+    // not where it will be.)
+    await expect(async () => {
+      // (The sheets lie from the desk's edge, under the band's keys: past the rail, and no further than the page.)
+      const paper = await app.forge.results.boundingBox(), center = await app.main.locator('.center').boundingBox();
+      const words = await row.locator('.sheet-text').boundingBox(), keys = await app.main.locator('.band-tools').boundingBox();
+      expect(paper && center && words && keys).toBeTruthy();
+      expect(paper!.x).toBeGreaterThanOrEqual(keys!.x - 1);
+      expect(paper!.x + paper!.width).toBeLessThanOrEqual(center!.x + center!.width + 1);
+      expect(paper!.y + paper!.height).toBeLessThan(900);
+      // Two fixed sections and an intrinsic filename track used to leave snippets with zero width.
+      expect(words!.width).toBeGreaterThan(100);
+      expect(words!.x).toBeGreaterThanOrEqual(paper!.x);
+      expect(words!.x + words!.width).toBeLessThanOrEqual(paper!.x + paper!.width);
+    }).toPass();
     await app.forge.search.press('ArrowDown');
     await expect(row).toBeFocused();
     await app.page.keyboard.press('Enter');
@@ -58,13 +63,18 @@ for (const width of [500, 1400, 1900]) {
     await expect(app.forge.results.locator('.found-sec')).toHaveCount(2);
     const row = app.forge.results.locator('.sheet-hit:not(.sheet-name)').filter({hasText: 'target at the end'});
     await expect(row.locator('.sheet-line')).toHaveText('123');
-    const words = (await row.locator('.sheet-text').boundingBox())!;
-    const mark = (await row.locator('.sheet-text mark').boundingBox())!;
-    expect(words.width).toBeGreaterThan(100);
-    // The highlighter deliberately bleeds 1px past its text (diff.css mark margin).
-    expect(mark.x).toBeGreaterThanOrEqual(words.x - 1);
-    expect(mark.x + mark.width).toBeLessThanOrEqual(words.x + words.width + 1);
-    expect(mark.y + mark.height).toBeLessThanOrEqual(words.y + words.height + 1);
+    // (The paper is drawn again as each kind's matches come: measured once it has come to rest, a row not there for a
+    // moment between two drawings is not a row with no size.)
+    await expect(async () => {
+      const words = await row.locator('.sheet-text').boundingBox(), mark = await row.locator('.sheet-text mark').boundingBox();
+      expect(words).not.toBeNull();
+      expect(mark).not.toBeNull();
+      expect(words!.width).toBeGreaterThan(100);
+      // The highlighter deliberately bleeds 1px past its text (diff.css mark margin).
+      expect(mark!.x).toBeGreaterThanOrEqual(words!.x - 1);
+      expect(mark!.x + mark!.width).toBeLessThanOrEqual(words!.x + words!.width + 1);
+      expect(mark!.y + mark!.height).toBeLessThanOrEqual(words!.y + words!.height + 1);
+    }).toPass();
     await row.click();
     await expect(app.forge.editor(path)).toBeFocused();
     await expect.poll(() => app.forge.lineChosen(path)).toBe(line);

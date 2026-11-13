@@ -1,140 +1,154 @@
-/* Home: a band along its top, its column under it, and its pane beside both, as Forge's, opening and closing; its
-   repos and servers. */
-
-/* Home: the page in its column, and beside it the right pane Forge and Git have (bench.ts), its switch at its foot,
-   kept in view while Home scrolls under it; put away, the switch alone stays, and Home takes the width. */
-/* Its pane's line and its switch stand exactly where Forge's do, so going from Home to Forge (or back) nothing of the
-   pane moves: the page keeps Forge's margin at the right (s5), and the pane is Forge's W (a quarter of the page,
-   never under 280 px), less that margin, worked out from the page's own margins. */
-/* The room under Home's foot is the column's, not the page's: the pane is held in view only within the page's
-   content, so the page's own foot would push it up off the top line as Home is scrolled to its end. */
+/* Home (and New repo, on the same ground): the desk. Everything on it is set on the grid of the desk's dots (--u, a
+   dot in the middle of every cell): the band's keys along the top, the person's name with its capitals seven cells
+   tall, the repos by name against the right edge, the TODO a yellow note whose upper right corner is the window's
+   vanishing point (its middle, a little right: --vx, --vy), and what waits a slip of paper at the right foot. Two
+   things lie askew, the note and the slip; everything else is square to the grid. */
+body:has(.home-layout) { background-image: var(--dots); background-size: var(--u) var(--u); }
 .page:has(> .home-layout) { padding-bottom: 0; }
-.home-layout > .home-main { padding-bottom: var(--s6); }
 .page > .home-layout {
-  max-width: none; display: grid; column-gap: var(--s5); align-items: start; grid-template-rows: auto minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr) calc(max(280px, (100% + var(--body-left) + var(--s5)) / 4) - var(--s5));
+  /* (Never above the profile's foot: in a short window the note starts under the counts, and Home is read down.) */
+  --vx: round(nearest, 53vw, var(--u)); --vy: max(calc(16 * var(--u)), round(nearest, 50vh, var(--u)));
+  /* Where the layout's left edge is in the window (the body's gutter, the rail's column, the page's own). */
+  --left: calc(var(--outer) + var(--rail) + var(--body-left));
+  position: relative; max-width: none; min-height: calc(100vh - var(--outer-top)); margin-bottom: calc(-1 * var(--outer-bottom));
+  /* The note runs off the foot: cut there, not at the layout's sides (its shadow and the slip's hang over them). */
+  overflow: visible clip;
 }
-.home-layout.pane-closed { grid-template-columns: minmax(0, 1fr) calc(var(--h-row) + var(--line-frame)); } /* the switch and the line it no longer draws: the switch stays where it stood */
-/* It opens and closes as Forge's does: a wipe, landing a touch past and settling as it comes out. */
-.page > .home-layout { transition: grid-template-columns var(--move) var(--land); }
-.page > .home-layout:not(.pane-closed) { transition: grid-template-columns var(--slide) cubic-bezier(.2, 1.4, .32, 1); }
-.page > .home-layout.pane-closed { transition: grid-template-columns var(--leave) cubic-bezier(.4, 0, 1, 1); }
-@media (prefers-reduced-motion: reduce) { .page > .home-layout, .page > .home-layout:not(.pane-closed), .page > .home-layout.pane-closed, .work.bench, .work.bench:not(.pane-closed) { transition: none; } }
-/* The band, Forge's: from the rail's line to the pane's, the top line to a step under the search, plain ground (the
-   dots are the desk's, under it), held at the window's top while Home scrolls under it; its tools and its search
-   where Forge's are, to the pixel, so going between the two the frame is one (main.ts CAMERA). */
-.home-band {
-  grid-column: 1; grid-row: 1; position: sticky; top: 0; z-index: 7; display: flex; align-items: center;
-  margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 calc(-1 * var(--body-left));
-  padding: var(--band) var(--s5) var(--s3) var(--band-left); background: var(--ground);
+/* ---- The band: the three keys from the rail's corner (forge-band.css, one with a desk's). ---- */
+/* ---- The two columns, in one place: the person's own, and over it (held in the window as the note is read down)
+   what stands against the right edge. ---- */
+.home-main { display: grid; grid-template-columns: minmax(0, 1fr); }
+.home-own { grid-area: 1 / 1; min-width: 0; padding-top: calc(var(--vy) - var(--outer-top) - 3 * var(--u)); }
+.home-beside { grid-area: 1 / 1; justify-self: end; position: sticky; top: var(--outer-top); width: 0; height: max(calc(100vh - var(--outer-top)), calc(31 * var(--u)));
+  margin-top: calc(-3 * var(--u)); pointer-events: none; }
+.home-beside > * { pointer-events: auto; }
+/* ---- The TODO: a note, its upper right corner on the vanishing point, turned on it. Its foot comes down to the
+   window's: its lower right corner a quarter of a cell above the edge, the foot sloping off it to the left a little way
+   along, so the note is seen to end and, for most of its foot, to be cut. Its shadow falls a cell to the left and a cell down (said in the note's own turned axes). ---- */
+.home-own > .section {
+  position: relative; box-sizing: border-box; width: calc(var(--vx) - var(--left)); margin: 0;
+  min-height: calc(100vh - var(--vy) - var(--u) / 4); padding: calc(1.5 * var(--u)) 0 var(--u);
+  background: var(--note); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; rotate: -2deg; transform-origin: 100% 0; box-shadow: -24.8px 23.1px 0 var(--ink);
 }
-/* Out to the page's own edges, whatever its margins are at this width (page.css, remote.css): never past them. */
-@media (max-width: 560px) { .home-band { margin-right: 0; padding-right: var(--s2); } }
-.home-band > .band-tools { display: flex; align-items: center; gap: var(--s2); }
-/* While the band's sheet is down, Home steps back out of sight under it as Forge's desk does, and comes back as it
-   goes up (reference.ts paintDown). */
-.home-layout > .home-main { transition: opacity calc(160ms * var(--pace)) ease-out; }
-.home-layout.sheet-down > .home-main { opacity: 0; transition-duration: calc(120ms * var(--pace)); }
-/* Its first line (the name) a step under the band. */
-.home-main { grid-column: 1; grid-row: 2; min-width: 0; width: 100%; max-width: 1080px; padding-top: var(--s4); }
-.home-pane {
-  grid-column: 2; grid-row: 1 / span 2;
-  position: sticky; top: var(--outer-top); height: var(--inner-h); min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr);
-  /* Forge's pane, where Forge's is: from the page's top to its foot, out to its right edge (over the page's margin). */
-  margin: calc(-1 * var(--top-line)) calc(-1 * var(--s5)) 0 0; padding: 0 var(--s5) var(--s4) calc(var(--s5) - var(--line-frame));
-}
-/* Forge's line, where Forge's is: the pane's edge, top line to foot; put away, no pane, no line. */
-.home-pane { border-left: var(--line-frame) solid var(--ink); background: var(--ground); transition: border-color var(--motion); }
-/* Its switch at its foot, where Forge's is: its middle the person's at the rail's foot. */
-.home-pane > .pane-toggle {
-  position: absolute; right: var(--s5); bottom: calc(var(--s5) + var(--prompt-h) / 2 - var(--h-row) / 2); z-index: 6;
-  border-color: var(--ink); border-radius: var(--r-field);
-}
-.home-layout:is(.pane-moving, .pane-closed) .home-pane { overflow-x: clip; grid-template-columns: minmax(0, 1fr); }
-.home-layout.pane-closed .home-pane { padding-left: 0; border-left-color: transparent; transition: border-color var(--leave) cubic-bezier(.7, 0, 1, 1); }
-/* Put away, what it holds goes with its edge to the right, as wide as it was, cut at the window's edge, and is out of
-   sight (and of the keyboard) once the pane is; brought out, it comes in with the edge the same way (as Forge's). */
-.home-layout:is(.pane-moving, .pane-closed) .home-side { width: var(--side-held, auto); }
-.home-layout.pane-closed .home-side { visibility: hidden; transition: visibility 0s var(--leave); }
-/* Its first row where Forge's first run is: 2 px under the band's foot (the band is the column's, the pane its own), its
-   first line's capitals level with the rail's first icon (forge-band.css). */
-.home-side { min-height: 0; overflow: auto; padding-top: calc(var(--band) + var(--h-row) + var(--s3) + 2px); }
-/* Rows only, as Forge's pane: its heading is heard, not shown. */
-.home-side .lately > h2 { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-/* Lately's rows reach a step past its words on each side (their fill under the pointer, their edge opened): the pane
-   scrolls, and what scrolls clips, so its room is that much wider, its words where they were. */
-.home-side { margin-inline: calc(-1 * var(--s3)); padding-inline: var(--s3); }
-.home-side > .plugins { padding: 0; }
-
-/* Home's ground is the desk's: the dots Forge's boxes lie on, going by with Home as it scrolls (as with the desk's
-   camera) and with the page as the rail pans to it. Its pane keeps the plain ground over them, as Forge's does. */
-.page:has(> .home-layout) {
-  background-image: var(--dots);
-  background-size: 24px 24px; background-position: 12px 12px; background-attachment: local;
-}
-/* The ground is the frame's, as Forge's desk is: under the frame's foot (the window's margin there) plain, what
-   scrolls going under it rather than dots and words running on past the lines' ends. */
-.page:has(> .home-layout)::after {
-  content: ''; position: fixed; left: 0; right: 0; bottom: 0; height: var(--outer-bottom); z-index: 6; pointer-events: none; background: var(--ground);
-}
-/* Home's column measured for what is in it (its name fitted to its width by home.ts, its desk by the rules below). */
-.home-main { container-type: inline-size; }
-/* Home is set on the rail's rows (a place tall, a step between: rail.css), from the rail's first place down. Two
-   columns: the person's own, and beside it where their work is. The first row is what each is called: the name (its
-   handle and counts after it on its line), and the repos' heading on the name's own line. From the second row down,
-   what each holds: the TODO's box, its top level with the rail's second place and four places tall at the least, and
-   the repos' names from that same line. On a narrow column one under the other. (In a window too short for the rail's
-   steps the rail closes up, rail.css; Home keeps its own rows.) */
-.home-main { --home-name: 28px; padding-top: 0; }
-.home-desk { display: grid; grid-template-columns: minmax(0, 520px) minmax(240px, 1fr); gap: var(--s6) clamp(var(--s5), 6cqi, 80px); align-items: start; }
-@container (width < 600px) { .home-desk { grid-template-columns: minmax(0, 1fr); } }
-.home-own { display: grid; gap: var(--row-step); align-content: start; min-width: 0; }
-.home-desk .section, .home-places > .section { margin-top: 0; }
-.home-places { display: grid; gap: var(--s5); align-content: start; min-width: 0; }
-/* Each heading the mono label a desk's box has over it: a row tall, its letters' feet where the name's are. */
-.home-places .section > h2 { height: var(--row); margin: 0 0 var(--row-step); font: 600 15px/var(--row) var(--mono); color: var(--ink);
-  translate: 0 calc((var(--home-name) - 15px) * .36); }
-/* The TODO needs no word over it under the person's name (it is heard): what is left of it, and Clear completed, are
-   said at the sheet's own foot, at its right, a row kept for them under the last item. */
-.home-own > .section { position: relative; }
-.home-own > .section > h2 { position: absolute; right: var(--s3); bottom: var(--s2); z-index: 1; min-height: var(--h-row); margin: 0; display: flex; align-items: center;
-  font: var(--t-meta)/1 var(--mono); color: var(--sub); }
-.home-main .todo-items { padding-bottom: calc(var(--h-row) + var(--s2)); }
-/* Where the column is too narrow for the name and all of that line's end, the counts go (their lists are beside the
-   name, or under it): the first row stays one row, the box where it was. */
-@container (width < 800px) { .home-own .counts { display: none; } }
-.home-own > .section > h2 > #todo-title { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-/* The TODO a box on the desk: paper, an ink edge, its shadow; a sheet with room to write on, four of the rail's places
-   tall at the least (its foot level with the fifth's), longer as what is written in it is. */
-.home-main .todo-box { min-height: calc(4 * var(--row) + 3 * var(--row-step)); border: 2px solid var(--ink); border-radius: var(--r-place); box-shadow: 6px 6px 0 0 var(--ink); }
-.home-main .todo-box:hover { border-color: var(--ink); }
-/* Its keys said under it on the ground while it is written in, not in a room kept for them inside it. */
-.home-main .todo-box { position: relative; }
-.home-main .todo-box > .todo-hint { position: absolute; top: calc(100% + var(--s4)); left: 0; right: 0; padding: 0; }
-/* Written in, the profile's sheet as wide as Home: the name's line as long as the name read is. */
-.home-main .edit { max-width: none; }
-/* The repos: a column of their names, each as large as a place is named, what it is beside it in the mono face; the
-   gear at the name's end under the pointer. Not cards: nothing round them but the ground. */
-.grid.home-repos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
-.grid.repo-grid.home-repos > .card { min-height: 0; padding: 0; border: 0; border-radius: var(--r-field); background: transparent; justify-self: start; max-width: 100%; }
-.home-repos > .card.repo.gear-card { display: flex; align-items: center; }
-.home-repos > .gear-card > .card-open { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); width: auto; min-width: 0; padding: 2px var(--s2) 2px 0; }
-.home-repos > .gear-card > .card-open > .card-title { flex: none; max-width: 100%; padding: 0; font: 900 40px/1.05 var(--display); letter-spacing: -.02em;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.home-repos > .gear-card > .card-open > :is(.card-summary, .muted:empty) { display: none; }
-.home-repos > .gear-card > .card-open > .muted { font: var(--t-meta) var(--mono); color: var(--sub); white-space: nowrap; }
-.home-repos > .gear-card > .card-open:hover > .card-title { text-decoration: underline 4px; text-underline-offset: 6px; }
-.home-repos > .gear-card > .repo-gear { position: absolute; top: 50%; left: 100%; translate: 0 -50%; }
-.home-repos > .gear-card > .repo-gear-pop { top: calc(100% + var(--s1)); right: auto; width: max(100%, 280px); }
-.home-repos > .card.repo.revealed { background: var(--raised); }
+.home-own > .section > h2 { position: absolute; top: var(--s3); right: var(--u); z-index: 1; margin: 0; display: block; font: 700 20px/24px var(--mono); }
+.home-own > .section > h2 > #todo-title, .home-own .todo-left > small { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.home-own .todo-clear { padding: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-transform: lowercase; }
+.home-own .todo-clear:hover { background: none; text-decoration: underline 3px; text-underline-offset: 4px; }
+.home-own .todo-box { display: block; min-height: 0; border: 0; border-radius: 0; background: none; }
+.home-own .todo-items { padding: 0; }
+.home-own .todo-item { padding: 0 0 var(--u); }
+.home-own .todo-head { position: relative; grid-template-columns: calc(4 * var(--u)) auto minmax(0, 1fr) auto; column-gap: 0; min-height: calc(2 * var(--u)); padding-right: var(--u); }
+.home-own .todo-dates-detail .todo-head { grid-template-columns: calc(4 * var(--u)) auto minmax(0, 1fr); }
+/* An item's mark: a box drawn as heavy as the words, soft at the corner; ticked, filled. */
+.home-own .todo-mark { position: relative; justify-self: center; width: calc(2 * var(--u)); height: calc(2 * var(--u)); border-radius: var(--r-place); color: var(--ink); }
+.home-own .todo-mark > .icon { display: none; }
+.home-own .todo-mark::before { content: ''; box-sizing: border-box; width: 30px; height: 30px; border: 4px solid currentColor; border-radius: 8px; }
+.home-own .todo-item.done .todo-mark::before { background: currentColor; }
+.home-own .todo-item.done .todo-mark::after { content: ''; position: absolute; left: calc(50% - 8px); top: calc(50% - 7px); width: 16px; height: 8px; box-sizing: border-box;
+  border: 4px solid var(--note); border-top: 0; border-right: 0; rotate: -45deg; }
+.home-own .todo-mark:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); }
+.home-own .todo-mark:disabled { opacity: 1; color: var(--note-quiet); }
+.home-own .todo-item.done .todo-mark { color: var(--ink); }
+.home-own :is(.todo-title, .todo-kind) { font: 700 30px/calc(2 * var(--u)) var(--sans); }
+.home-own .todo-title { min-height: calc(2 * var(--u)); height: calc(2 * var(--u)); }
+.home-own .todo-title::placeholder { color: var(--note-quiet); font-weight: 400; }
+.home-own .todo-item.done .todo-head :is(.todo-title, .todo-kind), .home-own .todo-item.done .todo-detail { color: var(--note-quiet); }
+.home-own .todo-head > .todo-strike { height: 3px; margin-top: 3px; background: var(--note-quiet); }
+.home-own .todo-detail { width: calc(100% - 5 * var(--u)); margin-left: calc(4 * var(--u)); font: 400 20px/var(--u) var(--sans); }
+.home-own .todo-detail::placeholder, .home-own :is(.todo-meta, .todo-created) { color: var(--note-quiet); opacity: 1; }
+.home-own :is(.todo-meta, .todo-created) { font: 400 20px/var(--u) var(--mono); }
+.home-own .todo-dates-detail .todo-created { margin: 0 0 0 calc(4 * var(--u)); }
+.home-own .todo-head > .todo-away { position: absolute; right: 0; top: 0; width: calc(2 * var(--u)); height: calc(2 * var(--u)); border-radius: var(--r-place); background: var(--note); color: var(--ink); }
+.home-own .todo-away .mark { width: var(--u); height: var(--u); stroke-width: 2; }
+.home-own .todo-head > .todo-away:hover { background: color-mix(in srgb, var(--ink) 10%, var(--note)); }
+/* What the keys do, while one writes: at the note's foot, over nothing that moves. */
+.home-own .todo-box .todo-hint { position: absolute; left: 0; right: 0; bottom: var(--s2); padding: 0 var(--u) 0 calc(4 * var(--u)); color: var(--note-quiet); font: 400 14px/var(--u) var(--mono); }
+.home-own .todo-hint kbd { border-color: var(--note-quiet); background: none; color: var(--note-quiet); }
+.home-own > .section > .error:empty { display: none; }
+.home-own > .section > .error { margin: var(--s3) var(--u) 0 calc(4 * var(--u)); }
+.home-own > .error { position: absolute; left: 0; top: calc(16 * var(--u)); }
+/* ---- Against the right edge: the repos by name, a name every three cells, each one's feet on a line of the grid
+   (the third's on the line the person's name stands on). ---- */
+.home-repos-sec { position: absolute; right: 0; top: 0; width: max-content; max-width: calc(100vw - var(--vx)); margin: 0; }
+.home-repos-sec > h2 { display: block; height: calc(3 * var(--u)); margin: 0; padding-top: calc(3 * var(--u) - 19px); box-sizing: border-box;
+  font: 700 20px/var(--u) var(--mono); text-align: right; text-transform: lowercase; white-space: nowrap; }
+.grid.home-repos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; justify-items: end; }
+.grid.repo-grid.home-repos > .card { min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+.home-repos > .card.repo.gear-card { position: relative; display: flex; justify-content: flex-end; align-items: flex-end; height: calc(3 * var(--u)); max-width: 100%; }
+.home-repos > .gear-card > .card-open { position: relative; display: flex; align-items: flex-end; height: 100%; min-width: 0; padding: 0; border: 0; background: none; }
+.home-repos > .gear-card > .card-open > .card-title { --size: calc(2 * var(--u) / .727); flex: none; padding: 0; margin: 0 var(--ink-right, 0px) calc(-.1245 * var(--size)) 0;
+  font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; white-space: nowrap; }
+.home-repos > .gear-card > .card-open > :is(.card-summary, .muted) { display: none; }
+/* Where it stands, said beside its name only while that is something to know (not here yet, being brought). */
+.home-repos > .gear-card:is(.away, [aria-busy='true']) > .card-open > .card-sync { display: block; position: absolute; right: calc(100% + var(--u)); bottom: -5px;
+  font: 400 20px/var(--u) var(--mono); color: var(--quiet); white-space: nowrap; }
+.home-repos > .card.repo.away > .card-open > .card-title { color: var(--quiet); }
+.home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { text-decoration: underline 6px; text-underline-offset: 8px; }
+.home-repos > .card.repo.revealed > .card-open > .card-title { text-decoration: underline 6px; text-underline-offset: 8px; }
 .home-repos > .card.repo.held > .card-open > .card-title { color: var(--sub); }
-/* New repo after them, a quiet line in the mono face. */
-.home-repos > .card.new { display: inline-flex; align-items: center; gap: var(--s2); margin-top: var(--s3); padding: var(--s1) 0; border: 0; color: var(--sub); font: var(--t-meta) var(--mono); place-content: start; }
-.home-repos > .card.new .mark { width: var(--s4); height: var(--s4); }
-.home-repos > .card.new:hover { color: var(--ink); }
-/* The servers as the repos, a size smaller. */
-.home-places .home-servers { display: grid; gap: 2px; justify-items: start; }
-.home-places .home-servers > .chip { min-height: 0; padding: 0; border: 0; border-radius: var(--r-field); background: transparent; font: 900 28px/1.1 var(--display); letter-spacing: -.02em; color: var(--ink); }
-.home-places .home-servers > .chip:hover { text-decoration: underline 3px; text-underline-offset: 5px; }
-.home-places .home-servers > .guest-chip > .muted { margin-left: var(--s2); font: var(--t-meta) var(--mono); letter-spacing: 0; }
-.home-places .home-servers > .muted { font: var(--t-meta) var(--mono); }
+/* Its gear: in the margin after the name, at its capitals' top, there only while the name is touched. */
+.home-repos > .gear-card > .repo-gear { position: absolute; left: 100%; top: var(--u); width: calc(2 * var(--u)); height: calc(2 * var(--u)); display: grid; place-items: center;
+  opacity: 0; transition: opacity var(--motion); }
+.home-repos > .gear-card:is(:hover, :focus-within) > .repo-gear, .home-repos > .gear-card > .repo-gear:has([aria-expanded='true']) { opacity: 1; }
+.home-repos > .gear-card > .repo-gear > button { border: 0; border-radius: var(--r-place); background: none; }
+.home-repos > .gear-card > .repo-gear-pop { top: calc(100% + var(--s1)); right: 0; left: auto; width: max(100%, 280px); text-align: left; }
+.home-repos > .card.new { display: flex; align-items: flex-end; gap: 0; height: calc(2 * var(--u) + 5px); margin: 0; padding: 0; color: var(--ink);
+  font: 700 20px/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
+.home-repos > .card.new > .icon { display: none; }
+.home-repos > .card.new::before { content: '+ '; white-space: pre; }
+.home-repos > .card.new:hover { background: none; text-decoration: underline 3px; text-underline-offset: 4px; }
+.home-repos > p { margin: 0; padding-top: calc(3 * var(--u) - 19px); font: 400 20px/var(--u) var(--mono); color: var(--quiet); }
+/* ---- At the right foot: what waits, a slip of paper turned on its lower right corner, its shadow a cell to the
+   right and down. Over it, while there is any, the plug's area and what an agent asks. ---- */
+.home-waits { position: absolute; right: calc(-1 * var(--u)); bottom: var(--u); display: grid; justify-items: end; gap: calc(2 * var(--u)); }
+/* Eight cells tall (taller as what it says is longer: it grows up from the margin's line). What it is and what it
+   says from its top; where, on its last line, at its foot. */
+.home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(18 * var(--u)); min-height: calc(8 * var(--u)); padding: 29px var(--u) 7px;
+  background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; rotate: 1.5deg; transform-origin: 100% 100%; box-shadow: 24.6px 23.4px 0 var(--ink); text-align: right; }
+.home-waits > .lately > h2 { margin: 0; font: 700 20px/var(--u) var(--mono); color: var(--ink); letter-spacing: 0; text-transform: lowercase; }
+.home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
+.home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; text-align: right; }
+.home-waits .pane-row:first-child { display: flex; flex-direction: column; align-items: flex-end; flex: 1; }
+.home-waits .pane-row:first-child > .pane-at { margin-top: auto; }
+.home-waits .pane-row > .pane-bar { display: none; }
+.home-waits .pane-row > :is(.pane-line, .pane-said, .pane-at) { display: block; overflow: visible; mask: none; white-space: nowrap; }
+.home-waits .pane-row:first-child > .pane-line { --size: calc(2 * var(--u) / .727); margin: 9.2px var(--ink-right, 0px) 0 0; font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; }
+.home-waits .pane-row:first-child > .pane-said { margin-top: 8.78px; }
+.home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 20px/var(--u) var(--mono); color: var(--ink); }
+.home-waits .pane-row > .pane-at { font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.home-waits .pane-row:is(:hover, :focus-visible) > .pane-line { text-decoration: underline 6px; text-underline-offset: 8px; }
+/* What else waits, after the first: a line each, its name and what was said. */
+.home-waits .pane-row + .pane-row { margin-top: var(--s3); }
+.home-waits .pane-row + .pane-row > .pane-line { font: 700 20px/var(--u) var(--mono); letter-spacing: 0; }
+.home-waits .pane-row + .pane-row > .pane-at, .home-waits .pane-row:nth-child(n + 5) { display: none; }
+.home-waits .lately-none { margin: 0; font: 400 20px/var(--u) var(--mono); color: var(--quiet); }
+.home-waits > .plugins { width: calc(18 * var(--u)); min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; }
+.home-waits > .agent-cards { width: calc(18 * var(--u)); }
+/* ---- A window too narrow for the two side by side: one column, the repos and what waits under the note, which lies
+   square and ends where its lines do. ---- */
+@media (max-width: 1100px) {
+  .home-own { padding-top: calc(13 * var(--u)); }
+  .home-own > .section { width: 100%; min-height: calc(12 * var(--u)); margin: 0; padding-bottom: calc(2 * var(--u)); rotate: none; box-shadow: calc(-.5 * var(--u)) calc(.5 * var(--u)) 0 var(--ink); }
+  .home-beside { grid-area: 2 / 1; position: static; justify-self: stretch; width: auto; height: auto; margin: calc(2 * var(--u)) 0 0; display: grid; justify-items: end; gap: calc(2 * var(--u)); padding-bottom: calc(3 * var(--u)); }
+  .home-repos-sec { position: static; max-width: 100%; }
+  .home-waits { position: static; }
+  .home-waits > .lately { max-width: 100%; rotate: none; box-shadow: calc(.5 * var(--u)) calc(.5 * var(--u)) 0 var(--ink); }
+  .page > .home-layout { overflow: visible; margin-bottom: 0; }
+}
+/* A phone: the band's keys and the note's words a size smaller, so a line holds what it says. */
+@media (max-width: 760px) {
+  .home-own { padding-top: calc(11 * var(--u)); }
+  .profile { height: calc(8 * var(--u)); }
+  .identity > :is(.counts, .handle, .bio, .bio-ask, .error) { font-size: 16px; }
+  .identity > .counts { top: calc(9 * var(--u) - 19px); }
+  .identity > .handle { top: calc(10 * var(--u) - 19px); }
+  .identity > :is(.bio, .bio-ask) { top: calc(11 * var(--u) - 19px); max-height: var(--u); }
+  .home-own > .section { padding-top: var(--u); }
+  .home-own .todo-head, .home-own .todo-dates-detail .todo-head { grid-template-columns: calc(2.5 * var(--u)) auto minmax(0, 1fr); padding-right: var(--s3); }
+  .home-own :is(.todo-title, .todo-kind) { font-size: 18px; }
+  .home-own .todo-mark::before { width: 24px; height: 24px; border-width: 3px; border-radius: 6px; }
+  .home-own .todo-detail { width: calc(100% - 3 * var(--u)); margin-left: calc(2.5 * var(--u)); font-size: 16px; }
+  .home-own .todo-dates-detail .todo-created { margin-left: calc(2.5 * var(--u)); font-size: 14px; }
+  .home-own .todo-box .todo-hint { padding-left: calc(2.5 * var(--u)); }
+  .home-waits > .lately { width: min(calc(18 * var(--u)), 100%); }
+}

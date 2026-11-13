@@ -43,6 +43,9 @@ pub const INTERRUPT: u32 = 0x100;
 pub const TRAP_UNMAPPED_TARGET: i32 = 1;
 pub const TRAP_UNDECODED: i32 = 2;
 pub const TRAP_UNSUPPORTED: i32 = 3;
+/// A division the processor refuses (#DE, SIGFPE): a quotient that does not fit where it goes. (The host's wider
+/// division says the same of its own: div128.)
+pub const TRAP_DIVIDE: i32 = 4;
 /// Not faults: the time slice is up (at a loop's head, the address named), or the calls are deep enough that the next
 /// starts from the kernel. Registers and the flags the target reads are in globals.
 pub const TRAP_YIELD: i32 = 5;

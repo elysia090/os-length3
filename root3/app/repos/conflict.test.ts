@@ -54,3 +54,16 @@ test('what differs reads as what saving mine would do to theirs', () => {
   assert.deepEqual([d.added, d.removed], [2, 1]);
   assert.deepEqual(d.lines.map((l) => `${l.kind} ${l.text}`), ['same a', 'del b', 'add B', 'same c', 'add d']);
 });
+
+test('its own save heard back after it was written on again is not asked about', () => {
+  const h = new Held('one\n');
+  // Being written, and written on meanwhile: what comes back is what it is writing.
+  h.writes('two\n');
+  assert.equal(h.came('two\n', 'two and more\n'), 'known');
+  h.wrote('two\n');
+  // Written, and heard back later: what the store holds is what it knows it holds.
+  assert.equal(h.came('two\n', 'two and yet more\n'), 'known');
+  assert.equal(h.asking, false);
+  // Another text from elsewhere is still asked about.
+  assert.equal(h.came('theirs\n', 'two and yet more\n'), 'ask');
+});

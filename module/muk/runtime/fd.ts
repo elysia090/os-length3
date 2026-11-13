@@ -208,11 +208,14 @@ const FDS = 1024;
 export class FdTable {
   declare readonly slots: Map<number, {description: Description; cloexec: boolean}>;
   declare limit: number;
+  /** How many processes hold this table (one; more where clone shared it, CLONE_FILES): the last to let go closes it. */
+  declare holders: number;
   declare readonly consoles: Int32Array;
   declare readonly readers: Set<Int32Array>;
   constructor(limit = FDS) {
     this.slots = new Map(); // fd -> {description, cloexec}
     this.limit = limit; // RLIMIT_NOFILE's soft limit: no descriptor at or past it
+    this.holders = 1;
     // Which of its first 32 descriptors are the console ([0], a bit each) and which of those its stderr ([1]), kept as
     // the table changes, in it and where each of its threads in a Worker of its own reads them (`readers`: two words of
     // the thread's channel, remote.ts), to write there without asking the kernel (cpu.ts toConsole).
@@ -265,6 +268,20 @@ export class FdTable {
     for (const [fd, s] of this.slots) t.slots.set(fd, {description: s.description.retain(), cloexec: s.cloexec});
     t.consoles.set(this.consoles);
     return t;
+  }
+  /** The same table, held by one process more (clone with CLONE_FILES): what one opens or closes, the other sees. */
+  share(): this { this.holders++; return this; }
+  /** One process lets go of it (it ended, or took a table of its own): closed once the last one has. */
+  letGo(): void { if (--this.holders <= 0) this.closeAll(); }
+  /**
+   * The table a process execs with: its own. Shared till then, it takes a copy and lets go of the one shared (as
+   * Linux's unshare_files), so the descriptors exec closes are closed for it alone.
+   */
+  own(): FdTable {
+    if (this.holders <= 1) return this;
+    const mine = this.fork();
+    this.letGo();
+    return mine;
   }
   /** exec closes descriptors marked close-on-exec. */
   exec(): void { for (const [fd, s] of [...this.slots]) if (s.cloexec) this.close(fd); }

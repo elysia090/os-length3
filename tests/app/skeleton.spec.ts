@@ -2,21 +2,23 @@ import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
 
-// The skeleton every page is set on (styles/tokens.css): its own things start at one x, a counter's name is on the
-// line the band's tools are on, its first line stands in the row Home's name does (the rail's first place), and its
-// first box starts where Home's TODO does (the rail's second). Measured against Home at each width, so a page that
-// goes its own way is told from one that moved with the rest.
+// The skeleton the counters are set on (styles/tokens.css): their own things start at one x, the x Home's do; a
+// counter's name is on the line the band's keys stand on (Home's); its first line stands in one row and its first box
+// starts on one line. Home is set on the desk's own grid (home.css), so the rows are read off Runtime, the page the
+// others are set like, at each width: a page that goes its own way is told from one that moved with the rest.
 
 const SIZES = [{width: 1440, height: 900}, {width: 1180, height: 900}, {width: 1024, height: 768}, {width: 390, height: 844}];
 /** Where the one of `l` on screen is (a page left stays in the document, hidden). */
 const at = async (l: Locator) => (await l.locator('visible=true').first().boundingBox())!;
 const mid = (b: {y: number; height: number}) => b.y + b.height / 2;
 
-/** Home's own lines at this width: where its things start, its band's middle, its name's row, its box's top. */
+/** The lines at this width: where Home's things start and its band's keys' middle; Runtime's first row and box. */
 async function lines(app: App) {
   await app.rail.go('home');
-  const name = await at(app.main.locator('.identity > h1')), todo = await at(app.main.locator('.todo-box'));
-  return {left: name.x, band: mid(await at(app.main.locator('.band-tools > .band-tool'))), row: mid(name), rowTop: name.y, box: todo.y};
+  const left = (await at(app.main.locator('.home-own'))).x, band = mid(await at(app.main.locator('.band-tools > .band-tool')));
+  await app.rail.go('runtime');
+  const bar = await at(app.main.locator('.part-bar')), panel = await at(app.main.locator('.part-panel:not([hidden])'));
+  return {left, band, row: mid(bar), rowTop: bar.y, box: panel.y};
 }
 
 type Lines = Awaited<ReturnType<typeof lines>>;
@@ -27,6 +29,12 @@ async function onRows(l: Lines, what: string, first: Locator | null, box: Locato
     expect(Math.abs(b.x - l.left), `${what}: its box's left edge`).toBeLessThan(1);
     expect(Math.abs(b.y - l.box), `${what}: its box's top`).toBeLessThan(1);
     if (first) expect(Math.abs(mid(await at(first)) - l.row), `${what}: its first line's middle`).toBeLessThan(1);
+  }).toPass({timeout: 4000});
+}
+/** Git is all desk, as Forge is (its sheets lie where the desk has them): its band's keys are on the band's line. */
+async function deskOnBand(app: App, l: Lines, what: string) {
+  await expect(async () => {
+    expect(Math.abs(mid(await at(app.main.locator('.band-bench .band-tools > .band-tool'))) - l.band), `${what}: its band's keys' middle`).toBeLessThan(1);
   }).toPass({timeout: 4000});
 }
 /** A counter's name is on the band's line, starting where the page's things do. */
@@ -47,7 +55,7 @@ test('signed out, every page starts at one left edge, its first line in one row 
     await onRows(l, what('New repo'), null, app.main.locator('.nr-box'));
     // Git, signed out: the issues' heading over the place for the first.
     await app.rail.go('git');
-    await onRows(l, what('Git'), app.main.locator('.issues-head'), app.main.locator('.issue-new'));
+    await deskOnBand(app, l, what('Git'));
     await app.rail.go('runtime');
     await headOnBand(app, l, what('Runtime'));
     await onRows(l, what('Runtime'), app.main.locator('.part-bar'), app.main.locator('.part-panel:not([hidden])'));
@@ -75,7 +83,7 @@ test('signed in, Remote, Inbox and Server stand on the same lines, and behind Se
     const l = await lines(app), what = (page: string) => `${page} at ${size.width}×${size.height}`;
     // Git: main's name over what it has not committed.
     await app.rail.go('git');
-    await onRows(l, what('Git'), app.main.locator('#main-title'), app.main.locator('.main-card'));
+    await deskOnBand(app, l, what('Git'));
     await app.rail.go('remote');
     await headOnBand(app, l, what('Remote'));
     for (const part of ['Repos', 'Sign-in', 'Devices'] as const) {

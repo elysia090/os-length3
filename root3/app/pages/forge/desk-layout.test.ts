@@ -1,103 +1,59 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ABOVE_SEEN, arc, bornOn, EYE, FOOT, FOOT_ROOM, GAP, lineKept, next, PAD, slots, standardOn, tabbed, TOP, TURNED, VGAP, WIDTH} from './desk-layout.ts';
+import {BIG, GAP, GRID, inSight, LINE, next, PAD, row, SHADOW, tabbed, tallest, TERM, TERM_GAP, termHeight, WIDTH} from './desk-layout.ts';
 
-// The desk's places and its camera (desk-layout.ts), as numbers.
+// The desk's places and how far it is turned (desk-layout.ts), as numbers.
 
-const cols = [['term'], ['a.c', 'b.c'], ['README.md']];
-const heights = (key: string) => (key === 'term' ? 400 : 200);
+const pieces = [{key: 'term', width: TERM, term: true}, {key: 'a.c', width: WIDTH}, {key: 'README.md', width: WIDTH}];
 
-test('boxes stand in columns on the grid, one under another', () => {
-  const at = slots(cols, heights);
-  assert.deepEqual(at.get('term'), {x: PAD, y: TOP});
-  assert.deepEqual(at.get('a.c'), {x: PAD + WIDTH + GAP, y: TOP});
-  assert.deepEqual(at.get('b.c'), {x: PAD + WIDTH + GAP, y: TOP + 216 + VGAP});
-  assert.equal(WIDTH % 24, 0);
+test('the pieces lie in a row on the grid: the terminal, then the files three cells apart', () => {
+  const {at, end} = row(pieces);
+  assert.equal(at.get('term'), PAD);
+  assert.equal(at.get('a.c'), PAD + TERM + TERM_GAP);
+  assert.equal(at.get('README.md'), PAD + TERM + TERM_GAP + WIDTH + GAP);
+  assert.equal(end, at.get('README.md')! + WIDTH + SHADOW + GRID);
+  // Fifty letters, the numbers' margin before them and half a cell after, on the grid; twice that when made larger.
+  assert.equal(WIDTH, 20 * GRID);
+  assert.equal(WIDTH * BIG, 40 * GRID);
+  for (const x of at.values()) assert.equal(x % GRID, 0);
 });
 
-test('at the standard, the box in hand is in the middle across, at its own size, never low in a tall face', () => {
-  const at = slots(cols, heights), slot = at.get('a.c')!;
-  const v = standardOn(slot, 200, 1000, 800);
-  assert.equal(v.s, 1);
-  assert.equal(v.x + (slot.x + WIDTH / 2) * v.s, 500);
-  // Short in a tall face: its top where the eye starts (level with the rail between Home and File), not in the middle.
-  assert.ok(Math.abs(v.y + slot.y - EYE) < 1e-9);
-  // Taller than the face: from its top, at the same place.
-  const tall = standardOn(slot, 3000, 1000, 800);
-  assert.equal(tall.y + slot.y, EYE);
-  // The box above it in its column (a gap and its name above this one's top) is wholly out of the face.
-  // The box above in its column, with all that hangs from its foot, is out of the face.
-  assert.ok(EYE - VGAP + FOOT < 0);
+test('a sheet is whole lines tall, its foot two cells over the face\'s', () => {
+  // A face 804 high (a 900 px window under the band): 28 lines and half a line over and under them.
+  assert.equal(tallest(804), 29 * LINE);
+  // Larger letters, fewer lines, the same foot or higher.
+  const big = tallest(804, LINE * BIG);
+  assert.ok(big <= 804 - 4 * GRID && big > 804 - 4 * GRID - LINE * BIG);
+  // Never under four lines, however low the face.
+  assert.equal(tallest(100), 5 * LINE);
+  // The terminal: fourteen lines and a cell over and under, or what a low face has room for.
+  assert.equal(termHeight(804), 20 * LINE);
+  assert.equal(termHeight(300), tallest(300));
 });
 
-test('a box just come out from under another keeps that one\'s foot in sight over it, so what it was made under is seen', () => {
-  const at = slots(cols, heights), slot = at.get('a.c')!;
-  // Under a tall one: ABOVE_SEEN of its foot in the face, the gap, then the new box.
-  const v = bornOn(slot, 40, 1000, 800, 600);
-  assert.equal(v.x, standardOn(slot, 40, 1000, 800).x);
-  assert.ok(Math.abs(v.y + slot.y - (ABOVE_SEEN + VGAP)) < 1e-9);
-  // Under a short one: all of it, no more.
-  const short = bornOn(slot, 40, 1000, 800, 60);
-  assert.ok(Math.abs(short.y + slot.y - (60 + VGAP)) < 1e-9);
+test('the desk is turned only as far as brings the piece in hand whole into sight', () => {
+  const {at, end} = row(pieces), face = 1320;
+  // The first two are in sight from the row's start: nothing moves.
+  assert.equal(inSight(0, at.get('term')!, TERM, face, end), 0);
+  assert.equal(inSight(0, at.get('a.c')!, WIDTH, face, end), 0);
+  // The third is cut by the face's edge: turned as little as shows it and its shadow.
+  const to = inSight(0, at.get('README.md')!, WIDTH, face, end);
+  assert.equal(to, at.get('README.md')! + WIDTH + SHADOW + GRID - face);
+  assert.ok(to > 0 && to <= end - face);
+  // Back to the terminal from there: turned back to the start, a cell of ground before it.
+  assert.equal(inSight(to, at.get('term')!, TERM, face, end), 0);
+  // A piece wider than the face is read from its left.
+  assert.equal(inSight(0, at.get('a.c')!, WIDTH, 400, end), at.get('a.c')! - PAD);
 });
 
-test('Tab goes down each column, then to the next, round again; Shift+Tab back', () => {
-  assert.equal(tabbed(cols, 'term'), 'a.c');
-  assert.equal(tabbed(cols, 'a.c'), 'b.c');
-  assert.equal(tabbed(cols, 'b.c'), 'README.md');
-  assert.equal(tabbed(cols, 'README.md'), 'term');
-  assert.equal(tabbed(cols, 'term', true), 'README.md');
-  assert.equal(tabbed([['term']], 'term'), 'term');
-});
-
-test('an arrow goes along a column or to the next', () => {
-  assert.equal(next(cols, 'a.c', 'down'), 'b.c');
-  assert.equal(next(cols, 'b.c', 'right'), 'README.md');
-  assert.equal(next(cols, 'term', 'left'), null);
-});
-
-test('a box narrower than 80 columns (the desk half the face, a box beside it) stands in the middle as a full one does, its columns as far apart as it is wide', () => {
-  const bw = 430, w = 478, hgt = 700;
-  const at = slots([['a.c'], ['b.c']], () => 100, bw);
-  assert.equal(at.get('b.c')!.x - at.get('a.c')!.x, bw + GAP);
-  const v = standardOn(at.get('a.c')!, 100, w, hgt, 1, bw);
-  assert.equal(v.x + at.get('a.c')!.x, (w - bw) / 2);
-  assert.equal(v.y + at.get('a.c')!.y, EYE);
-});
-
-test('going to another column the camera steps back on the way, to about three quarters at its middle, and lands exactly', () => {
-  const w = 1040, hgt = 820, a = standardOn({x: 0, y: 100}, 300, w, hgt), b = standardOn({x: WIDTH + GAP, y: 100}, 300, w, hgt);
-  const r = arc(a, b, w, hgt, 560);
-  assert.ok(r);
-  const ss = Array.from({length: 41}, (_, i) => r.at(i / 40).s);
-  const least = Math.min(...ss);
-  assert.ok(least < .85 && least > .7, `furthest back ${least}`);
-  // Furthest back half way, never nearer than the standard, and where it was asked at its end.
-  assert.ok(Math.abs(ss.indexOf(least) - 20) <= 1);
-  assert.ok(ss.every((s) => s <= 1 + 1e-9));
-  assert.deepEqual(r.at(1), b);
-  assert.ok(Math.abs(r.at(0).x - a.x) < 1e-6 && Math.abs(r.at(0).s - 1) < 1e-9);
-  assert.ok(r.ms > 560 && r.ms < 700, `${r.ms} ms`);
-  // Two columns over: further back, longer, never past half its size.
-  const c = arc(a, standardOn({x: 2 * (WIDTH + GAP), y: 100}, 300, w, hgt), w, hgt, 560)!;
-  const least2 = Math.min(...Array.from({length: 41}, (_, i) => c.at(i / 40).s));
-  assert.ok(least2 < least && least2 >= .5, `${least2}`);
-  assert.ok(c.ms > r.ms && c.ms <= 900);
-});
-
-test('what is in sight from where the camera is (the next box down) is gone to with a plain pan, no step back', () => {
-  const w = 1040, hgt = 820, a = standardOn({x: 0, y: 100}, 300, w, hgt);
-  assert.equal(arc(a, standardOn({x: 0, y: 100 + 300 + VGAP}, 300, w, hgt), w, hgt, 560), null);
-});
-
-test('the line at work stays where it is until it nears the face\'s foot, then the page is turned to it', () => {
-  const hgt = 820, v = {s: 1, x: 0, y: 0};
-  assert.equal(lineKept(v, 300, 320, hgt), v);
-  assert.equal(lineKept(v, hgt - FOOT_ROOM - 20, hgt - FOOT_ROOM, hgt), v);
-  const t = lineKept(v, hgt - FOOT_ROOM, hgt - FOOT_ROOM + 20, hgt);
-  assert.notEqual(t, v);
-  assert.ok(Math.abs(t.y + (hgt - FOOT_ROOM) - TURNED * hgt) < 1e-9);
-  // Gone up past the face's top (a line far above), it is brought down to the same place.
-  const u = lineKept({s: 1, x: 0, y: -2000}, 100, 120, hgt);
-  assert.ok(Math.abs(u.y + 100 - TURNED * hgt) < 1e-9);
+test('Tab goes along the row and round; an arrow to the next, and no further than the ends', () => {
+  const keys = pieces.map((p) => p.key);
+  assert.equal(tabbed(keys, 'term'), 'a.c');
+  assert.equal(tabbed(keys, 'README.md'), 'term');
+  assert.equal(tabbed(keys, 'term', true), 'README.md');
+  assert.equal(tabbed(keys, 'gone'), 'term');
+  assert.equal(next(keys, 'a.c', 'left'), 'term');
+  assert.equal(next(keys, 'a.c', 'right'), 'README.md');
+  assert.equal(next(keys, 'README.md', 'right'), null);
+  assert.equal(next(keys, 'term', 'left'), null);
 });

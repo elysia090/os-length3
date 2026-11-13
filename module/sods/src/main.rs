@@ -21,9 +21,11 @@ fn main() -> ExitCode {
         Ok(b) => b,
         Err(e) => { eprintln!("sods: {input}: {e}"); return ExitCode::FAILURE; }
     };
+    // (No program it takes, as it reads it: an exit status of its own, 8 as ENOEXEC is, so that whoever ran it tells
+    // the file's fault from this program's.)
     let elf = match sods::elf::Elf::parse_owned(bytes) {
         Ok(e) => e,
-        Err(e) => { eprintln!("sods: {input}: {e}"); return ExitCode::FAILURE; }
+        Err(e) => { eprintln!("sods: {input}: {e}"); return ExitCode::from(8); }
     };
     let started = std::time::Instant::now();
     let flag = |name: &str| args.iter().find_map(|a| a.strip_prefix(&format!("--{name}=")).map(str::to_string));

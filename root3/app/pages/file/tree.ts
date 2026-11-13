@@ -2,6 +2,8 @@ import {bytes, h} from '../../ui/dom.ts';
 import {closeUp, keepOut, putAway, still, unfold} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
+import {scrollMarks} from '../../ui/scroll-marks.ts';
+import {pageVeil} from '../../ui/page-veil.ts';
 import {bring, remoteOnly} from '../../remote/lifecycle.ts';
 import {store} from '../../repos/repos.ts';
 import {shownName} from '../../repos/issues.ts';
@@ -98,6 +100,8 @@ export class FileTree {
   private carried: {repo: string; path: string} | null = null;
   /** What a move by the pointer could not do, said at the tree's foot until it comes out again. */
   private said = h('p', {class: 'error small tree-said', role: 'alert'});
+  /** The page under the tree, out of focus while it is out (ui/page-veil.ts). */
+  private veil = pageVeil('all');
   /** Folders being read now, and who waits until none is. */
   private reading = 0;
   private read: (() => void)[] = [];
@@ -105,8 +109,10 @@ export class FileTree {
   constructor(events: FileTreeEvents) {
     this.events = events;
     this.root = h('ul', {class: 'tree-children', role: 'tree', 'aria-label': '/'});
-    // No "/" label of its own: the rows are what is in "/".
-    this.element = h('nav', {class: 'tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root, this.said);
+    // A sheet of paper named "/" over its corner (styles: .tree::before), as a file's sheet is named on the desk; its
+    // rows are what is in "/", scrolled inside it where they are more than the window is tall.
+    this.element = h('nav', {class: 'tree file-tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root, this.said);
+    scrollMarks(this.element);
     // Drawn out (styles.css .tree), it is cut by nothing: a row's menu stands beside it, out of its edge.
     this.element.addEventListener('transitionend', (e) => {
       if (e.target === this.element && e.propertyName === 'clip-path' && this.isOpen) this.element.classList.add('settled');
@@ -189,15 +195,15 @@ export class FileTree {
   open(focus = false) {
     clearTimeout(this.timer);
     if (!this.isOpen) {
-      // Its first row sits level with the File icon.
+      // Its top a cell under the File icon's: its name, over its corner, starts level with the icon's place.
       const at = this.trigger?.getBoundingClientRect();
       if (at) {
-        const pad = parseFloat(getComputedStyle(this.element).paddingTop) || 0;
-        const row = parseFloat(getComputedStyle(this.element).getPropertyValue('--h-row')) || 32;
-        this.element.style.setProperty('--tree-top', `${Math.max(0, at.top + at.height / 2 - pad - row / 2)}px`);
+        const cell = parseFloat(getComputedStyle(this.element).getPropertyValue('--u')) || 24;
+        this.element.style.setProperty('--tree-top', `${Math.max(2 * cell, at.top + cell)}px`);
       }
       this.build(focus);
     }
+    this.veil.out(true);
     this.element.classList.add('open');
     if (still()) this.element.classList.add('settled');
     this.trigger?.setAttribute('aria-expanded', 'true');
@@ -212,6 +218,7 @@ export class FileTree {
     // Its edge again first, to go back in from where it stands.
     if (this.element.classList.contains('settled')) { this.element.classList.remove('settled'); void getComputedStyle(this.element).clipPath; }
     this.element.classList.remove('open');
+    this.veil.out(false);
     this.trigger?.setAttribute('aria-expanded', 'false');
   }
 
@@ -268,7 +275,11 @@ export class FileTree {
       const rest = top.filter((e) => e.origin !== 'repos');
       for (const e of top) if (e.origin === 'repos') this.add(e, this.root, 0);
       if (rest.length) this.root.append(this.system(rest));
-      if (focus) this.root.querySelector<HTMLElement>('.tree-name')?.focus();
+      if (!focus) return;
+      // The keyboard on its first row: a repo's, once /root is read (its own row is not shown, and until then the
+      // only row there is System's).
+      const first = () => { if (this.isOpen) [...this.root.querySelectorAll<HTMLElement>('.tree-name')].find((b) => b.getClientRects().length > 0)?.focus(); };
+      if (this.reading) this.read.push(first); else first();
     });
   }
 
@@ -328,6 +339,9 @@ export class FileTree {
     const item = h('li', {role: 'treeitem', class: isRepo ? 'tree-repo' : e.kind === 'dir' ? 'tree-dir' : 'tree-file', 'aria-label': called}, row);
     // The system's own parts (the kernel's, the distribution's) are there to be found, quieter than the person's repos.
     if (e.origin && e.origin !== 'repos') item.classList.add('tree-sys');
+    // /root itself has no row (styles: .tree-home): the repos in it are the tree's own first rows, always out.
+    const home = e.path === '/root';
+    if (home) item.classList.add('tree-home');
     const meta = e.origin ? t(ORIGIN_LABEL[e.origin]) : e.kind === 'file' && e.size ? bytes(e.size) : '';
 
     if (e.kind !== 'dir') {
@@ -349,8 +363,9 @@ export class FileTree {
       return;
     }
 
-    let expanded = expandedPaths.has(e.path);
-    // The pointer's way to open a folder; from the keyboard → and ← do it on the name.
+    let expanded = home || expandedPaths.has(e.path);
+    // (The triangle is not drawn in the tree's sheet, a folder says it is one by its name's end: the name opens and
+    // closes it. From the keyboard → and ← do it on the name.)
     const toggle = h('button', {class: 'tree-toggle', type: 'button', tabindex: '-1'}) as HTMLButtonElement;
     toggle.append(triangle());
     const name = h('button', {class: 'tree-name', type: 'button', 'data-path': e.path}, e.name);
@@ -358,6 +373,8 @@ export class FileTree {
       name.dataset.repo = at.repo;
       if (at.repo === this.events.current()) name.setAttribute('aria-current', 'page');
     }
+    // A folder says it is one by the stroke after its name (not heard: its name is its name); a repo by its weight.
+    if (!isRepo && !home) name.append(h('span', {class: 'tree-slash', 'aria-hidden': 'true'}, '/'));
     const children = h('ul', {class: 'tree-children', role: 'group'});
     row.append(toggle, name);
     if (meta) row.append(h('span', {class: 'tree-meta'}, meta));
@@ -396,10 +413,11 @@ export class FileTree {
     this.folders.set(item, () => show(true));
     if (at) this.takes(row, at, () => { if (!expanded) void show(true); });
     toggle.addEventListener('click', () => void show(!expanded));
-    // Inside a repo the name also opens that place in Forge; elsewhere it
-    // only opens and closes, like the triangle.
+    // The name opens and closes it. Inside a repo, opened it is also the place Forge goes to (a repo's own row
+    // too, when it is not the one Forge is at: pressed while open, it is gone to, not closed).
     name.addEventListener('click', () => {
       if (!at) { void show(!expanded); return; }
+      if (expanded && (!isRepo || at.repo === this.events.current())) { void show(false); return; }
       if (!expanded) void show(true);
       this.events.choose(at.repo, at.path, false);
     });
@@ -569,16 +587,19 @@ export class FileTree {
       back: () => this.letGo()});
     // Beside the tree, level with the row: out into the free space, so nothing moves under the pointer.
     const box = this.element.getBoundingClientRect(), r = row.getBoundingClientRect();
-    pop.style.left = `${box.right + 8}px`;
-    pop.style.top = `${r.top - 8}px`;
+    // Two cells from the tree's edge (one past its shadow), its top the row's: a sheet as the tree is, the row's name
+    // over its corner.
+    const cell = parseFloat(getComputedStyle(this.element).getPropertyValue('--u')) || 24;
+    pop.style.left = `${box.right + 2 * cell}px`;
+    pop.style.top = `${r.top}px`;
     // Out of the tree's edge: the tree is drawn out whole at once if it was still coming.
     this.element.classList.add('settled');
     this.element.append(pop);
     // A window too narrow for it beside the tree (a phone): just under the row, over the rows below.
     const wide = pop.getBoundingClientRect().right - (innerWidth - 16);
-    if (wide > 0) { pop.style.left = `${Math.max(16, box.right + 8 - wide)}px`; pop.style.top = `${r.bottom + 4}px`; }
+    if (wide > 0) { pop.style.left = `${Math.max(16, box.right + 2 * cell - wide)}px`; pop.style.top = `${r.bottom + cell + 8}px`; }
     const low = pop.getBoundingClientRect().bottom - (innerHeight - 16);
-    if (low > 0) pop.style.top = `${Math.max(16, r.top - 8 - low)}px`;
+    if (low > 0) pop.style.top = `${Math.max(2 * cell, r.top - low)}px`;
     more.setAttribute('aria-expanded', 'true');
     this.pop = {element: pop, name, more};
     if (focus) pop.querySelector<HTMLElement>('.pop-item')?.focus();

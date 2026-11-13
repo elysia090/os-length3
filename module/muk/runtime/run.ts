@@ -17,7 +17,7 @@ import {File, Link, Vfs} from './fs.ts';
 import {mountPack, type Packed} from './mount.ts';
 import {Kernel, PROFILE, type Translator} from './process.ts';
 import {RemoteKernel, canRunApart} from './remote.ts';
-import {loadTranslator} from '../../sods/runtime/translator.ts';
+import {NotAProgram, loadTranslator} from '../../sods/runtime/translator.ts';
 import {steady} from '../../sods/runtime/host.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -71,7 +71,10 @@ const translate: Translator = (bytes: Uint8Array): Uint8Array<ArrayBuffer> => {
     else {
       const elf = join(cacheDir, key + '.elf');
       writeFileSync(elf, bytes);
-      execFileSync(translator, [...traced, ...cut, elf, wasm], {stdio: ['ignore', 'ignore', 'ignore']});
+      // (Its exit status 8: no program it takes, as it read it. The file's fault, as the wasm translator's NotAProgram.)
+      const done = spawnSync(translator, [...traced, ...cut, elf, wasm], {stdio: ['ignore', 'ignore', 'pipe']});
+      if (done.status === 8) throw new NotAProgram(done.stderr.toString().trim());
+      if (done.status !== 0) throw new Error(`sods failed: ${done.stderr}`);
     }
   }
   return new Uint8Array(readFileSync(wasm));

@@ -26,6 +26,16 @@ interface Exports {
   sods_sha256(at: number, length: number): number;
 }
 
+/**
+ * The translator's own word that what it was given is no program it takes: not an ELF it can read (cut short, of
+ * another machine or class, not an executable, not one with nothing to load at run time), said as it reads it and
+ * before it translates anything. Whoever asked to run the file has this as the file's fault (a kernel's exec:
+ * ENOEXEC); anything else thrown by the translator is its own fault and not the file's.
+ */
+export class NotAProgram extends Error {
+  override name = 'NotAProgram';
+}
+
 /** The translator, loaded: an x86-64 program's bytes in, a WebAssembly module's out; and what else it is asked. */
 export interface Translate {
   (elf: Uint8Array): Uint8Array<ArrayBuffer>;
@@ -55,24 +65,25 @@ export async function loadTranslator(source: WebAssembly.Module | BufferSource):
   // What a fresh instance holds: that much never goes back.
   let base = x.memory.buffer.byteLength;
   const put = (bytes: Uint8Array): number => { const p = x.sods_alloc(bytes.length); new Uint8Array(x.memory.buffer, p, bytes.length).set(bytes); return p; };
-  const output = (status: number): Uint8Array<ArrayBuffer> => {
+  // (`read`: the call's only failure is the ELF's reading, as sods_translate and its kin fail: NotAProgram.)
+  const output = (status: number, read = false): Uint8Array<ArrayBuffer> => {
     const out = new Uint8Array(x.memory.buffer, x.sods_output_ptr(), x.sods_output_len()).slice();
-    if (status !== 0) throw new Error(new TextDecoder().decode(out));
+    if (status !== 0) { const why = new TextDecoder().decode(out); throw read ? new NotAProgram(why) : new Error(why); }
     return out;
   };
   // The ELF is the translator's once given (parsed where it lies), so it is not freed here.
   function translate(elf: Uint8Array): Uint8Array<ArrayBuffer> {
-    return output(x.sods_translate(put(elf), elf.length));
+    return output(x.sods_translate(put(elf), elf.length), true);
   }
   /** As translate, all of the program: as the release translates the hot ones, and a page a program ahead of its run. */
-  translate.whole = (elf: Uint8Array): Uint8Array<ArrayBuffer> => output(x.sods_translate_whole(put(elf), elf.length));
+  translate.whole = (elf: Uint8Array): Uint8Array<ArrayBuffer> => output(x.sods_translate_whole(put(elf), elf.length), true);
   const words = (list: (bigint | number)[]): Uint8Array<ArrayBuffer> => new Uint8Array(new BigUint64Array(list.map((w) => BigInt(w))).buffer);
   /** As translate, and from the function starts `seeds` too: the program with the code it reached later, as one module. */
   translate.seeded = function seeded(elf: Uint8Array, seeds: (bigint | number)[]): Uint8Array<ArrayBuffer> {
     const s = put(words(seeds));
     const status = x.sods_translate_seeded(put(elf), elf.length, s, seeds.length);
     x.sods_free(s, seeds.length * 8);
-    return output(status);
+    return output(status, true);
   };
   // Each program's handle (by its set of starts known: one per translation of it, so a program translated again as
   // one module, and its first translation still running, are told apart), while the translator holds its ELF parsed
