@@ -20,6 +20,7 @@ export const CH = {
   PARKED: 123, // its Worker waits here for the next thread it may run (PARK), its last one gone
   CONSOLES: 124, // which of its process's first 32 descriptors are the console (a bit each), [125] which of those its stderr (fd.ts)
   TID: 126, // the thread a Worker is offered (PARK.OFFERED)
+  FILTERED: 127, // its thread has a filter over its calls (seccomp.ts): none is answered in its Worker without the kernel
   // BigInt64 indices
   NR: 2, ARGS: 3, NEXT: 9, VALUE: 10, RIP: 11, ARG0: 12, ARG1: 13, REGS: 16,
   LOW: 40, // how deep the thread's stack has gone (sods' abi.rs G_LOW), as of its last request; 0: not known

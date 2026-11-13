@@ -8,6 +8,7 @@ import {answerTime, clocks, cpuClock, cpuOf} from './clock.ts';
 import {E, File, FsError} from './fs.ts';
 import {Exec, Exit, Wait, randomBytes, utf8} from './flow.ts';
 import type {Calls, Cpu, Proc} from './parts.ts';
+import {ACTIONS, read as readFilter} from './seccomp.ts';
 import {CLD, SIG, send, writeInfo} from './signal.ts';
 import {processors, steady} from '../host.ts';
 
@@ -167,6 +168,47 @@ function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number
   }
   if (s.vfork && !s.vfork.released) throw new Wait();
   return s.child?.pid ?? fail(E.AGAIN);
+}
+
+/**
+ * seccomp(2): strict mode, a filter over this thread's calls, or whether an action is answered here. A filter is set
+ * by one that can gain nothing by what it runs (no_new_privs) or may administer its namespace; it is read and
+ * checked as the kernel reads one, and from then on every call of this thread, and of all it starts, is asked of it.
+ * With TSYNC every thread of the process has it, where each has the same filters before it or fewer of the same;
+ * else the thread that differs is named (or ESRCH), and nothing is set. No one listens for what a filter would have
+ * asked of another process (NEW_LISTENER, and the sizes for it): as on a kernel before that was.
+ */
+function seccomp(p: Proc, op: number, flags: number, uargs: number): number {
+  const t = p.task;
+  if (op === 0) { // SECCOMP_SET_MODE_STRICT
+    if (flags || uargs) fail(E.INVAL);
+    if (t.filters) fail(E.INVAL);
+    t.screen(t.filters, true);
+    return 0;
+  }
+  if (op === 1) { // SECCOMP_SET_MODE_FILTER
+    const TSYNC = 1, LOG = 2, SPEC_ALLOW = 4, TSYNC_ESRCH = 16;
+    if (flags & ~(TSYNC | LOG | SPEC_ALLOW | TSYNC_ESRCH)) fail(E.INVAL);
+    if (t.strict) fail(E.INVAL);
+    if (!p.noNewPrivs && !(p.caps.effective >> 21n & 1n)) fail(E.ACCES); // (CAP_SYS_ADMIN)
+    if (!uargs) fail(E.FAULT);
+    const filter = readFilter(p, uargs), mine = t.filters ?? [];
+    if (flags & TSYNC) {
+      for (const other of p.tasks) {
+        const theirs = other.filters ?? [];
+        if (other === t || (!other.strict && theirs.length <= mine.length && theirs.every((f, i) => f === mine[i]))) continue;
+        return flags & TSYNC_ESRCH ? fail(E.SRCH) : other.tid;
+      }
+    }
+    const filters = [...mine, filter];
+    for (const each of flags & TSYNC ? p.tasks : [t]) each.screen(filters);
+    return 0;
+  }
+  if (op === 2) { // SECCOMP_GET_ACTION_AVAIL
+    if (flags) fail(E.INVAL);
+    return ACTIONS.includes(p.view.getUint32(uargs, true)) ? 0 : fail(E.OPNOTSUPP);
+  }
+  return fail(E.INVAL);
 }
 
 /** futex(2): wait while a word holds a value, and wake those waiting on it. */
@@ -335,8 +377,8 @@ function prctl(p: Proc, option: number, arg2: bigint, arg3: bigint, arg4: bigint
       p.bytes.set(name, a);
       return 0;
     }
-    case 21: return 0; // PR_GET_SECCOMP: none
-    case 22: return fail(E.INVAL); // PR_SET_SECCOMP: neither strict mode nor filters are implemented
+    case 21: return p.task?.strict ? 1 : p.task?.filters ? 2 : 0; // PR_GET_SECCOMP (a process with no thread yet has none)
+    case 22: return a === 1 ? seccomp(p, 0, 0, 0) : a === 2 ? seccomp(p, 1, 0, N(arg3)) : fail(E.INVAL); // PR_SET_SECCOMP
     case 23: if (a < 0 || a > 40) fail(E.INVAL); return p.dropped?.has(a) ? 0 : 1; // PR_CAPBSET_READ
     case 24: if (a < 0 || a > 40) fail(E.INVAL); (p.dropped ??= new Set()).add(a); return 0; // PR_CAPBSET_DROP
     case 27: return 0; // PR_GET_SECUREBITS
@@ -636,5 +678,6 @@ export const PROC_CALLS: Calls = {
   167() { return fail(E.PERM); }, 168() { return fail(E.PERM); }, 175() { return fail(E.PERM); }, 176() { return fail(E.PERM); }, 313() { return fail(E.PERM); }, // swapon, swapoff, modules
   101() { return fail(E.PERM); }, // ptrace: no process here can be traced
   334() { return fail(E.NOSYS); }, // rseq
+  317(op, flags, uargs) { return seccomp(this, N(op), N(flags), N(uargs)); },
   435() { return fail(E.NOSYS); }, // clone3: libc falls back to clone
 };

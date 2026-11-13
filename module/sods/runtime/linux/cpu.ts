@@ -170,7 +170,8 @@ class Thread {
       miss: (address: bigint) => this.miss(address),
       // clock_gettime of a wall or steady clock, answered in the translated code itself (sods' integer.rs clock_gettime): the
       // clock's time in ms, a number crossing as it is; NaN where the kernel answers (a CPU-time clock, no clock).
-      time: (id: number) => this.clock.readMs(id) ?? NaN,
+      // (Not said to a thread with a filter over its calls: its clock_gettime is a call, asked of the filter.)
+      time: (id: number) => (this.i32[CH.FILTERED] ? NaN : this.clock.readMs(id) ?? NaN),
     }};
   }
 
@@ -242,10 +243,13 @@ class Thread {
   }
 
   syscall(nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint): bigint {
-    // A read of the clock is answered here (clock.ts), not by the kernel.
-    if (nr === 228n || nr === 96n || nr === 201n) { const r = answerTime(this.memory, this.clock, nr, a, b); if (r !== null) return r; }
-    // So is a write to the console (write, writev), as its writer sees it: put where the kernel takes it from.
-    if ((nr === 1n || nr === 20n) && this.outbox) { const r = this.toConsole(nr, a, b, c); if (r !== null) return r; }
+    // (A thread with a filter over its calls has every call asked of the kernel, where the filter is: seccomp.ts.)
+    if (!this.i32[CH.FILTERED]) {
+      // A read of the clock is answered here (clock.ts), not by the kernel.
+      if (nr === 228n || nr === 96n || nr === 201n) { const r = answerTime(this.memory, this.clock, nr, a, b); if (r !== null) return r; }
+      // So is a write to the console (write, writev), as its writer sees it: put where the kernel takes it from.
+      if ((nr === 1n || nr === 20n) && this.outbox) { const r = this.toConsole(nr, a, b, c); if (r !== null) return r; }
+    }
     const {i64} = this;
     i64[CH.NR] = nr; i64[CH.ARGS] = a; i64[CH.ARGS + 1] = b; i64[CH.ARGS + 2] = c;
     i64[CH.ARGS + 3] = d; i64[CH.ARGS + 4] = e; i64[CH.ARGS + 5] = f; i64[CH.NEXT] = next;

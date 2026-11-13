@@ -84,6 +84,17 @@ if command -v go >/dev/null; then
     if [ "$native" = "$translated" ] && cmp -s "$out/$name.native" "$out/$name.box"; then echo "ok   $name"; else echo "FAIL $name (exit $native vs $translated)"; status=1; fi
   done
 fi
+# What muk asks of Linux, asked here: the filter muk puts over every box, set and tried by muk's own check of it
+# (../../muk/test/filter.c, a unit of C on lib as muk is), says the same on this kernel as on Linux's.
+if sh "$root/../lib/build.sh" "$root/../muk/test/filter.c" "$out/muk-filter" 2>/dev/null; then
+  set +e
+  "$out/muk-filter" > "$out/muk-filter.native"; native=$?
+  node "$root/runtime/run.ts" "$out/muk-filter" > "$out/muk-filter.box"; translated=$?
+  set -e
+  if [ "$native" = "$translated" ] && cmp -s "$out/muk-filter.native" "$out/muk-filter.box"; then echo "ok   muk-filter"; else echo "FAIL muk-filter (exit $native vs $translated)"; status=1; fi
+else
+  echo "FAIL muk-filter (not built)"; status=1
+fi
 # The tree (lib/tree.h), every name of a directory asked of it and of Linux.
 if sh "$root/test/tree/tree.sh" > /dev/null 2>&1; then echo "ok   tree"; else echo "FAIL tree"; status=1; fi
 # The kernel's tests.

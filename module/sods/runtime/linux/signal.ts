@@ -181,7 +181,11 @@ export function writeInfo(p: Proc, at: number, info: SigInfo): void {
   v.setInt32(at, info.signo, true);
   v.setInt32(at + 4, info.errno ?? 0, true);
   v.setInt32(at + 8, info.code ?? 0, true);
-  if (info.addr !== undefined) { v.setBigUint64(at + 16, BigInt(info.addr), true); return; }
+  if (info.addr !== undefined) {
+    v.setBigUint64(at + 16, BigInt.asUintN(64, BigInt(info.addr)), true);
+    if (info.syscall !== undefined) { v.setInt32(at + 24, info.syscall, true); v.setUint32(at + 28, info.arch ?? 0, true); }
+    return;
+  }
   v.setInt32(at + 16, info.pid ?? 0, true);
   v.setInt32(at + 20, info.uid ?? 0, true);
   if (info.status !== undefined) v.setInt32(at + 24, info.status, true);

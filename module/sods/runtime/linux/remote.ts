@@ -18,7 +18,7 @@ import {CALL_SAMPLE, INTERRUPT, KEEP_INSTANCES, Kernel, PROFILE, REG, TRACE_SYSC
 import {Exec, Exit, Redirect, utf8} from './flow.ts';
 import {began, canRunApart, mayWait, nodeThreads, steady} from '../host.ts';
 import type {Saved} from '../translation/x87.ts';
-import type {Call, Mem, Range} from './parts.ts';
+import type {Call, Filter, Mem, Range} from './parts.ts';
 import type {FdTable} from './fd.ts';
 import {deliverable, take} from './signal.ts';
 
@@ -462,6 +462,13 @@ class RemoteTask extends Task {
     this.execd = false; // a new image waits to be sent to its Worker
     this.fpuState = null;
     this.consoles = null;
+    this.i32[CH.FILTERED] = 0; // (a channel had before by a thread that had one)
+  }
+
+  /** Its Worker is told: with a filter, it answers no call itself (cpu.ts). */
+  override screen(filters: readonly Filter[] | null, strict = this.strict): void {
+    super.screen(filters, strict);
+    this.i32[CH.FILTERED] = filters || strict ? 1 : 0;
   }
 
   override load(image: Image, memory: Mem, from: Task | null = null): void {

@@ -133,7 +133,7 @@ export function mountProc(kernel: Kern): void {
       `Threads:\t${Math.max(1, p.tasks.size)}`, 'SigQ:\t0/63432', `SigPnd:\t${hex(0n)}`, `ShdPnd:\t${hex(0n)}`, `SigBlk:\t${hex(0n)}`,
       `SigIgn:\t${hex(ign)}`, `SigCgt:\t${hex(cgt)}`, `CapInh:\t${hex(p.caps.inheritable)}`, `CapPrm:\t${hex(p.caps.permitted)}`,
       `CapEff:\t${hex(p.caps.effective)}`, `CapBnd:\t${hex(CAPS)}`, `CapAmb:\t${p.ambient.toString(16).padStart(16, '0')}`, `NoNewPrivs:\t${p.noNewPrivs ? 1 : 0}`,
-      'Seccomp:\t0', `Cpus_allowed_list:\t0-${cpus - 1}`, ''].join('\n');
+      `Seccomp:\t${p.task?.strict ? 1 : p.task?.filters ? 2 : 0}`, `Seccomp_filters:\t${p.task?.filters?.length ?? 0}`, `Cpus_allowed_list:\t0-${cpus - 1}`, ''].join('\n');
   };
   const maps = (p: Proc): string => { inspect(p);
     const exe = p.exe;

@@ -36,7 +36,8 @@ import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
 import type {Taken} from '../translation/kept.ts';
 import type {Machine} from './machine.ts';
-import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
+import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, Filter, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
+import {ARCH, RET, STRICT, verdict} from './seccomp.ts';
 import {said, steady} from '../host.ts';
 
 /**
@@ -854,15 +855,54 @@ export class Kernel implements Kern {
     this.cpu.sys += sys;
   }
 
+  /**
+   * `call` asked of `t`'s filters (seccomp.ts), before it is made: null where it may be made; else what it is
+   * answered instead, the call not made. One that ends its thread or its process does (Exit goes through).
+   */
+  screened(t: Task, call: Call): bigint | null {
+    const p = t.proc;
+    if (t.strict && !STRICT.has(call.nr)) { this.exitProcess(p, SIG.KILL); throw new Exit(SIG.KILL); }
+    if (!t.filters) return null;
+    const said = verdict(t.filters, call.nr, call.args, call.next), action = (said & 0xffff0000) >>> 0, word = said & 0xffff;
+    switch (action) {
+      case RET.ALLOW: case RET.LOG: return null;
+      case RET.ERRNO: return BigInt(-Math.min(word, 4095));
+      // (No tracer is attached, and nothing listens: as Linux answers a filter that asks for either.)
+      case RET.TRACE: case RET.USER_NOTIF: return BigInt(-E.NOSYS);
+      case RET.TRAP: {
+        // SIGSYS to this thread, saying which call from where; the call is as if never made (its number is what it
+        // comes back with). Blocked or not taken, it ends the process: a filter's signal is not put off.
+        const a = actionOf(p, SIG.SYS);
+        if (t.mask & bit(SIG.SYS) || a.handler <= 1n) { this.exitProcess(p, SIG.SYS); throw new Exit(SIG.SYS); }
+        send(this, p, SIG.SYS, {code: 1 /* SYS_SECCOMP */, errno: word, addr: call.next, syscall: call.nr, arch: ARCH}, t);
+        return BigInt(call.nr);
+      }
+      default:
+        // Its thread ended (KILL_THREAD, where it has others), or its process: asked for, or its last thread, or an
+        // action no kernel knows.
+        if (action === RET.KILL_THREAD && p.tasks.size > 1) this.exitThread(t, SIG.SYS); else this.exitProcess(p, SIG.SYS);
+        throw new Exit(SIG.SYS);
+    }
+  }
+
   /** Make `call` for `t`: its value, or WAITS. Exit, Exec and Redirect go through. */
   attempt(t: {proc: Process; tid: number}, call: Call): bigint | typeof WAITS {
     const p = t.proc;
     if (t instanceof Task) p.task = t;
     p.call = call;
+    if (t instanceof Task && (t.filters || t.strict) && !call.state.screened) {
+      const held = this.screened(t, call);
+      if (held !== null) return held;
+      call.state.screened = true;
+    }
     const handler = CALLS[call.nr];
     if (!handler) return BigInt(-E.NOSYS);
     const shares = p.maps.length > 0;
     if (shares) p.syncShared();
+    // Whose call this is, while it is made: what /proc's "self" leads to. (A thread run here is `current` as it runs;
+    // one in a Worker of its own is only while the kernel answers it.)
+    const was = this.current;
+    if (t instanceof Task) this.current = t;
     try {
       const r = handler.apply(p, call.args);
       if (!QUIET[call.nr]) this.dirty = true;
@@ -879,6 +919,7 @@ export class Kernel implements Kern {
       if (error instanceof Exit || error instanceof Exec || error instanceof Redirect) this.dirty = true;
       throw error;
     } finally {
+      this.current = was;
       p.call = null;
       // What the call wrote into shared memory (a read into it, a futex word) is seen by the others.
       if (shares && p.state === 'live') p.syncShared();
@@ -1734,6 +1775,7 @@ export class Process implements Proc {
     const up = parent ? k.procs.get(this.ppid) ?? this : this;
     child.ppid = up.pid;
     const ct = k.newTask(child);
+    ct.screen(t.filters, t.strict);
     child.pid = ct.tid;
     child.exitSignal = exitSignal;
     child.image = this.image;
@@ -1779,6 +1821,7 @@ export class Process implements Proc {
     const k = this.kernel, t = this.task;
     const nt = k.newTask(this);
     nt.mask = t.mask;
+    nt.screen(t.filters, t.strict);
     nt.load(this.image, this.memory ?? this.newMemory(1), t);
     const regs = t.context().regs;
     regs[0] = 0n;
@@ -1804,6 +1847,9 @@ export class Task implements Thread {
   declare altstack: AltStack;
   declare clearTid: number;
   declare robust: number;
+  /** The filters over its calls, the first set first, and whether it is in strict mode (seccomp.ts). */
+  declare filters: readonly Filter[] | null;
+  declare strict: boolean;
   declare call: Call | null;
   declare resumeAt: bigint;
   declare redirected: boolean;
@@ -1846,6 +1892,8 @@ export class Task implements Thread {
     this.altstack = {sp: 0n, size: 0n, flags: 2};
     this.clearTid = 0; // CLONE_CHILD_CLEARTID / set_tid_address
     this.robust = 0; // set_robust_list
+    this.filters = null;
+    this.strict = false;
     this.call = null; // the call it waits in: {nr, args, next, state}
     this.resumeAt = 0n;
     this.redirected = false; // its registers were replaced since its call
@@ -1856,6 +1904,12 @@ export class Task implements Thread {
     this.owed = 0;
     this.trail = null;
     this.x87 = 0;
+  }
+
+  /** `filters` are over its calls from here on (and strict mode, when said): what it starts starts with them. */
+  screen(filters: readonly Filter[] | null, strict = this.strict): void {
+    this.filters = filters;
+    this.strict = strict;
   }
 
   /** Run `image` over `memory` from here on (exec, or a new thread or process copying `from`). */
@@ -1923,7 +1977,8 @@ export class Task implements Thread {
       // A read of the clock is answered at once (clock.ts), as Linux's vDSO does.
       syscall: (nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint) => {
         const t = slot.task as Task;
-        return ((nr === 228n || nr === 96n || nr === 201n) ? answerTime(t.memory, CLOCK, nr, a, b) : null) ?? t.kernel.enter(t, nr, [a, b, c, d, e, f], next);
+        // (A read of the clock is answered here, without the kernel: not for a thread with a filter over its calls.)
+        return ((nr === 228n || nr === 96n || nr === 201n) && !t.filters && !t.strict ? answerTime(t.memory, CLOCK, nr, a, b) : null) ?? t.kernel.enter(t, nr, [a, b, c, d, e, f], next);
       },
       trap: trapOrPreempt,
       div128: (hi: bigint, lo: bigint, d: bigint, signed: number) => div128(hi, lo, d, signed),
@@ -1936,7 +1991,8 @@ export class Task implements Thread {
       },
       miss: (address: bigint) => (slot.task as Task).miss(address),
       // clock_gettime of a wall or steady clock, answered in the translated code (sods' integer.rs clock_gettime), as above.
-      time: (id: number) => CLOCK.readMs(id) ?? NaN,
+      // (Not said to a thread with a filter over its calls: its clock_gettime is a call, asked of the filter.)
+      time: (id: number) => { const t = slot.task as Task; return t.filters || t.strict ? NaN : CLOCK.readMs(id) ?? NaN; },
     }};
   }
 

@@ -20,6 +20,9 @@ export interface SigInfo {
   status?: number;
   value?: bigint | number;
   addr?: bigint | number;
+  /** A filter's SIGSYS: the call it was for, and the machine it was made for (with `addr`, where it was made from). */
+  syscall?: number;
+  arch?: number;
 }
 /** What a process does with a signal (sigaction). */
 export interface SigAction { handler: bigint; flags: number; restorer: bigint; mask: bigint }
@@ -47,6 +50,8 @@ export interface CallState {
   done?: number;
   /** A stream send's descriptors went with its first byte (sys-net.ts transmit): not passed again as it goes on. */
   passed?: boolean;
+  /** Its thread's filters were asked, and let it be made (seccomp.ts): not asked again as it waits and is made again. */
+  screened?: boolean;
   /** Whether a timeout was asked (a call so timed is not restarted after a handler). */
   timed?: boolean;
   /** Let go of what it waits on (it was interrupted, or its thread ended). */
@@ -66,6 +71,9 @@ export interface CallState {
 }
 /** A system call being made: its number, arguments, where the thread goes on after it, and its state. */
 export interface Call { nr: number; args: bigint[]; next: bigint; state: CallState }
+
+/** A filter over a thread's calls (seccomp.ts): its instructions, each a code, two jumps and a word. */
+export interface Filter { readonly code: Uint16Array; readonly jt: Uint8Array; readonly jf: Uint8Array; readonly k: Uint32Array }
 
 /** Where a futex word is: a memory and an address in it, or a file and an offset (a shared mapping). */
 export type FutexKey = [WebAssembly.Memory | File, number];
@@ -286,6 +294,11 @@ export interface Thread {
   redirected: boolean;
   state: 'new' | 'ready' | 'running' | 'blocked' | 'stopped' | 'dead';
   dead: boolean;
+  /** The filters over its calls, the first set first (seccomp.ts); null: none. And whether it is in strict mode. */
+  filters: readonly Filter[] | null;
+  strict: boolean;
+  /** Put `filters` over its calls from here on (and strict mode, when said). */
+  screen(filters: readonly Filter[] | null, strict?: boolean): void;
   /** Its time on the processor so far (to `since`: Kern.lap). */
   cpu: Cpu;
   /** Its x87 registers' handle in the kernel's x87 (x87.ts); 0 where it has none here. */

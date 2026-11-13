@@ -22,22 +22,31 @@ const call = (p: Process, nr: number, ...args: (number | bigint)[]): bigint => {
 };
 const put = (p: Process, at: number, text: string): number => { p.bytes.set(new TextEncoder().encode(text + '\0'), at); return at; };
 
-test('seccomp cannot report an installed restriction when no mode is implemented', () => {
+// (What a filter answers, each action and every way one is refused, is checked beside Linux itself:
+// test/programs/seccomp.c, and muk's own filter by muk's check of it. Here, what holds whoever asks.)
+test('a filter is set only by one that can gain nothing or may administer; once set it is seen, asked of the next call, and stays', () => {
   const p = guest(), program = 512, filter = 768;
-  assert.equal(call(p, 157, 21), 0n, 'PR_GET_SECCOMP: none');
-  assert.equal(call(p, 157, 38, 1), 0n, 'PR_SET_NO_NEW_PRIVS');
-  // A valid one-instruction filter that would deny every syscall with EPERM if installed.
-  p.view.setUint16(program, 1, true);
+  p.tasks.add(p.kernel.newTask(p));
+  // getppid refused as the kernel refuses one who may not; every other call the thread's to make.
+  const made: [number, number, number, number][] = [[0x20, 0, 0, 0], [0x15, 0, 1, 110], [0x06, 0, 0, 0x00050001], [0x06, 0, 0, 0x7fff0000]];
+  p.view.setUint16(program, made.length, true);
   p.view.setBigUint64(program + 8, BigInt(filter), true);
-  p.view.setUint16(filter, 0x06, true); // BPF_RET | BPF_K
-  p.view.setUint32(filter + 4, 0x00050001, true); // SECCOMP_RET_ERRNO | EPERM
-  for (const [mode, pointer] of [[1, 0], [2, program], [2, 0], [0, 0], [3, program]]) {
-    assert.equal(call(p, 157, 22, mode, pointer), EINVAL, `PR_SET_SECCOMP mode ${mode}, filter ${pointer}`);
-    assert.equal(call(p, 157, 21), 0n, 'no mode became active');
-    assert.equal(call(p, 157, 39), 1n, 'no_new_privs is unchanged');
-  }
-  assert.equal(call(p, 317, 1, 0, program), -38n, 'seccomp syscall remains unavailable');
-  assert.equal(call(p, 39), BigInt(p.pid), 'getpid remains allowed: no filter was installed');
+  made.forEach(([code, jt, jf, k], i) => {
+    p.view.setUint16(filter + 8 * i, code, true); p.view.setUint8(filter + 8 * i + 2, jt); p.view.setUint8(filter + 8 * i + 3, jf);
+    p.view.setUint32(filter + 8 * i + 4, k, true);
+  });
+  assert.equal(call(p, 157, 21), 0n, 'PR_GET_SECCOMP: none');
+  p.caps.effective = 0n;
+  assert.equal(call(p, 317, 1, 0, program), -13n, 'neither no_new_privs nor CAP_SYS_ADMIN: EACCES');
+  assert.equal(call(p, 157, 21), 0n, 'and none is set');
+  p.caps.effective = CAPS;
+  assert.equal(call(p, 317, 1, 0, program), 0n, 'one who may administer its namespace sets it');
+  assert.equal(call(p, 157, 21), 2n, 'PR_GET_SECCOMP: filters');
+  assert.equal(call(p, 110), EPERM, 'getppid is asked of the filter, and refused');
+  assert.equal(call(p, 39), BigInt(p.pid), 'getpid is still the thread\'s to ask');
+  assert.equal(call(p, 157, 22, 1), EINVAL, 'strict mode is not entered from under a filter');
+  assert.equal(call(p, 157, 22, 2, program), 0n, 'a second filter, by prctl');
+  assert.equal(call(p, 317, 3, 0, 0), EINVAL, 'no one listens for a filter here: as a kernel before that was');
 });
 
 test('only 0 is anyone: set*id to it (or -1, keep) is taken, to another id EINVAL; groups are not to be set', () => {
