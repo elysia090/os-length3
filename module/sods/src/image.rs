@@ -35,9 +35,9 @@ const HELPERS: u32 = FIRST_GUEST - F_MULHU;
 const HOST_IMPORTS: [&str; 8] = ["syscall", "trap", "div128", "clock", "fpu", "trace", "miss", "time"];
 const SHARED: [&str; 5] = ["mulhu", "mulhs", "resolve", "dispatch", "run"];
 fn global_name(n: u32) -> String {
-    match n { 0..=15 => format!("r{n}"), G_FS => "fs".into(), G_FLAGS => "fl".into(), G_BUDGET => "budget".into(), G_DEPTH => "depth".into(), G_LOW => "low".into(), G_X87 => "x87".into(), _ => format!("x{}", n - 17) }
+    match n { 0..=15 => format!("r{n}"), G_FS => "fs".into(), G_FLAGS => "fl".into(), G_BUDGET => "budget".into(), G_DEPTH => "depth".into(), G_LOW => "low".into(), G_X87 => "x87".into(), G_RF => "rf".into(), _ => format!("x{}", n - 17) }
 }
-fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS || n == G_LOW { ValType::I64 } else if n == G_BUDGET || n == G_DEPTH || n == G_X87 { ValType::I32 } else { ValType::V128 } }
+fn global_type(n: u32) -> ValType { if n < 17 || n == G_FLAGS || n == G_LOW || n == G_RF { ValType::I64 } else if n == G_BUDGET || n == G_DEPTH || n == G_X87 { ValType::I32 } else { ValType::V128 } }
 
 fn mem_at(offset: u64, align: u32) -> MemArg { MemArg { offset, align, target: MemArgTarget::Memory(0), ordering: None } }
 
@@ -425,6 +425,8 @@ pub fn translate(elf: &Elf, program: &Program, options: Options) -> Translation 
     globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(-1));
     // Its x87 registers (G_X87): no thread's until the kernel says.
     globals.global(GlobalType { val_type: ValType::I32, mutable: true, shared: false }, &ConstExpr::i32_const(0));
+    // The rest of rflags (G_RF): DF clear, as a program starts.
+    globals.global(GlobalType { val_type: ValType::I64, mutable: true, shared: false }, &ConstExpr::i64_const(0));
 
     let mut exports = ExportSection::new();
     // What a module made later for this program imports: the helpers, every register, the table.

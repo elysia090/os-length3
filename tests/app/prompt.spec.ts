@@ -5,9 +5,9 @@ import {OS} from './paths.ts';
 
 // The prompt box and the Prompt (the repo's sh) behind it. Tab completes a
 // path from the repo's tree as the store has it, so it needs no Prompt. The
-// rest runs the root's BusyBox sh and root3 through the WebAssembly translator:
-// slow (it fetches root3 and translates as it runs), so tagged @slow and run
-// with SELFTEST_SLOW=1, as CI does. Those need root3 in public/webroot (`npm run webroot`,
+// rest runs the root's BusyBox sh and why through the WebAssembly translator:
+// slow (it fetches why and translates as it runs), so tagged @slow and run
+// with SELFTEST_SLOW=1, as CI does. Those need why in public/webroot (`npm run webroot`,
 // or `node scripts/prompt-files.ts` from the release), which the build then
 // carries.
 
@@ -52,7 +52,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
   test.beforeEach(async ({app}) => {
     // Asked for, it is run: without the Prompt's files that is a failure, not a skip.
-    expect(existsSync(PROMPT), 'this build carries no root3 (public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
+    expect(existsSync(PROMPT), 'this build carries no why (public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
     test.setTimeout(300_000);
     await app.forge.startPrompt('hello');
   });

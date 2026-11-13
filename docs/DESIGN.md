@@ -594,7 +594,7 @@ each case it has met.
   full width (：). A name filled in (`{server}`, `{repo}`) is written
   against the Japanese in the catalog and `t()` sets it apart only when it
   is Latin (旅行の人たちへ, trip の人たちへ). `i18n.test.ts` holds all four;
-  root3 and core write their Japanese the same way; the language changed in
+  why and core write their Japanese the same way; the language changed in
   the app is the core's at once too (what it says next, Runtime's lines, an
   error), not only after the page is loaded again.
 - **What one was doing stays where it belongs.** Going to another page
@@ -1082,7 +1082,7 @@ size, with what can be done and why.
 
 A repo's environment is one overlay of its upper layer over the root, and
 all the repo's Prompts on that root share it: the first to start mounts it,
-and each started while one runs (another terminal, an SSH session, `root3
+and each started while one runs (another terminal, an SSH session, `why
 prompt REPO -- CMD`, `.setup`) joins that one's, the same mount cloned into
 its own tree, so what one installs the others see at once. It stays mounted
 until the last of them ends; one ending, being stopped, or stopped for a
@@ -1135,7 +1135,7 @@ trusted for one thing only:
    (`ren2`). Nobody is asked to claim a name before being anyone: making a
    server, writing to someone or showing a repo never waits on one. It is
    theirs as long as the account is: nothing to renew, nothing that lapses.
-   It is changed, never let go (Home's handle, `root3 name set`), at most twice
+   It is changed, never let go (Home's handle, `why name set`), at most twice
    an hour; the one it was is held for them 30 days, so nobody is taken for
    them meanwhile and they may change back, and what went public under it as
    their own goes on under the new one. Home's handle is this name: one name
@@ -1184,7 +1184,7 @@ a commit on main, and a merge into it, push it too, so what its owner
 committed is what the others see, and what is only being written (main's
 draft, a work not merged) is not.
 
-Written the same in root3 and in the app, owner first, as scp is:
+Written the same in why and in the app, owner first, as scp is:
 
 | | |
 |---|---|
@@ -1212,12 +1212,12 @@ nobody else can take it and be taken for its owner:
 | a repo shown in a server | its owner, lent to the server | its Remote | taken off, or its owner leaves the server: at once |
 | a repo's public name (`face:name`) | its owner, under a face | the face (the server, or the owner's address) | taken down, or the face goes: 30 days no one else's repo answers to it |
 | a board, its talk and TODO | its server | its Remote | removed by its owner: 30 days, back at once until then, then gone; or with its server |
-| a copy on a device | the device | the digests | taken back whenever room is wanted (root3/core/src/prompt/writes.rs) |
+| a copy on a device | the device | the digests | taken back whenever room is wanted (why/core/src/prompt/writes.rs) |
 | a session, a code | the person | sign-in | a lease: days for a session, minutes for a code |
 | a guest's invitation | the one of its people who made it, lent to whoever they hand it | its Remote, and its digest | used, revoked, its maker leaves the server, or a week (at most 30 days) |
 | a guest | the board, by an invitation | its token's digest | a lease of 30 days; removed (their posts with them), or the board stops taking guests: at once |
 
-What goes, goes in one place, once a day (`root3/remote/repos/sweep.ts`): nothing a
+What goes, goes in one place, once a day (`why/remote/repos/sweep.ts`): nothing a
 person asks for purges anything on the way, and a file no tree names any
 more goes with the rest.
 
@@ -1249,26 +1249,26 @@ is how they are written (`ren:hello`), found (`ren`, `204816`) and shown.
 Proving a domain later adds a name of their choosing beside it
 (`ren@ren.dev`); the name on the Remote stays theirs as before.
 
-### root3: the one base
+### why: the one base
 
-Everything a Prompt runs comes from one artifact, **root3**, and nothing else
+Everything a Prompt runs comes from one artifact, **why**, and nothing else
 is a dependency: not a BusyBox, a userland or a toolchain of its own. It is
 the same thing for the desktop app and for the web.
 
-- **Name and version.** `root3 X.Y.Z` is the release `os-length3-linux-vX.Y.Z`
+- **Name and version.** `why X.Y.Z` is the release `os-length3-linux-vX.Y.Z`
   (the version in `module/ricebox/RELEASE`).
 - **Digest.** Its identity is the sha256 of its root,
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
-  `root3/core/src/root/pins.rs` RELEASES pins it, for both ways in: `sha256` and
+  `why/core/src/root/pins.rs` RELEASES pins it, for both ways in: `sha256` and
   `bytes`, the root; `web`, the sha256 of the index the browser reads the
   same root by. The release writes that entry (`scripts/pin-root.ts`) and
-  it is committed; nothing else pins root3.
+  it is committed; nothing else pins why.
 - **What it holds.** Sixty-three packages, each made from the source this
   tree pins (`module/ricebox/pins/sources.env`) by its recipe
   (`module/ricebox/packages/NAME/recipe.sh`, made by `module/ricebox/make/build.sh` on
   Alpine 3.24 at one digest, with one libc: its musl, at the root's own
   musl's version and with the same security fixes; a package's own build
-  tools are there for its build alone), and `/usr/bin/root3`, put together by
+  tools are there for its build alone), and `/usr/bin/why`, put together by
   `module/ricebox/make/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
   (GCC, binutils, make, musl with fortify-headers, Linux's headers; its
   `cc` makes a static PIE, hardened as the root's own programs are,
@@ -1306,15 +1306,15 @@ the same thing for the desktop app and for the web.
   (`module/ricebox/pins/advisories.toml`). For the web it also holds the translator
   (sods, as WebAssembly) and the translations of the hot programs made
   ahead of time.
-- **On a device**, the app and `root3` install the root by its digest: from the
+- **On a device**, the app and `why` install the root by its digest: from the
   device's Remote, then the publisher's (each deploy mirrors every pinned
   root to its bucket), then the release itself.
 - **In a browser**, the same root is read through muk (`public/webroot`, made
   from the root itself by `scripts/webroot.ts`, never from anything built
-  beside it): `webroot.json` (which root3: its version and the root's digest), an
+  beside it): `webroot.json` (which why: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes
   are), a pack per package of the root, each file a zstd frame, and blobs
-  for the translator and the hot programs (BusyBox, root3 and git) with their
+  for the translator and the hot programs (BusyBox, why and git) with their
   translations. Everything but `webroot.json` is named by its digest; a pack by
   the digest of its table, the SHA-256 of each file it stores, at its head
   (`module/muk/runtime/table.ts`), so a file read alone from it is checked as
@@ -1323,9 +1323,9 @@ the same thing for the desktop app and for the web.
   the translator and BusyBox with its translation; every other file comes
   from its pack (one Range request, and its pack's table once) when a
   program first opens it, and every
-  other program is translated when it first runs (root3's and git's
+  other program is translated when it first runs (why's and git's
   translations follow quietly once the first Prompt is up, and that Prompt
-  and every one after runs them from its next run of root3 or git; each name of
+  and every one after runs them from its next run of why or git; each name of
   git, a hard link in the root, is the one file and runs the one
   translation). A program run again that reached much of its code later is
   translated again as one module only while the Prompt waits for its next
@@ -1333,32 +1333,32 @@ the same thing for the desktop app and for the web.
   fetched is kept by digest (Cache Storage; the packs in the browser's HTTP
   cache), checked whenever it is read, and only within a quarter of what
   the browser says this origin may hold, the least recently used going
-  first; what the current root3 does not name goes. What is kept is joined,
-  sealed with its digest and put there by the worker that checks root3's files,
+  first; what the current why does not name goes. What is kept is joined,
+  sealed with its digest and put there by the worker that checks why's files,
   never on the page's thread (a translation of tens of MB, copied and put
   there, held it 20–60 ms a time); a translation made ahead comes to the page
   moved, not copied. Runtime lists it under この端末 and frees it like
   anything derived.
 - **The same content.** The web's tree is the root's: every path, type,
-  mode, link target and sha256 the same as the root root3 installs
+  mode, link target and sha256 the same as the root why installs
   (directories at least 0700, files without set-id bits, as the installer
   makes them). `scripts/webroot-parity.ts` proves it on every release and in CI;
   a program that muk cannot run yet still ships, and
   `scripts/webroot-runnable.ts` says which, against the same root run natively.
-- **One release, one pin.** The release makes the root, then root3 for the
+- **One release, one pin.** The release makes the root, then why for the
   browser from it (checked by the parity), pins both in one entry, and only
   then builds the web app and the desktop app, which both trust that entry.
-  A web build that has only Node (Cloudflare's) takes root3 from the release
+  A web build that has only Node (Cloudflare's) takes why from the release
   (`os-length3-linux-X.Y.Z-webroot.tar`) only at the pinned index.
 
 ### Another OS in a Prompt
 
-root3 is to a Prompt what a machine monitor is to its guest: it lays out the
+why is to a Prompt what a machine monitor is to its guest: it lays out the
 places above and stays outside. The guest sees a plain Linux (its own `/`,
 `/proc`, `/dev`, its own package manager writing to its environment) and
-nothing of root3 that it did not ask for. root3's own root is the rescue shell
-and more (BusyBox, git, a compiler, root3 itself); under another OS (Ubuntu,
-Debian, a root of one's own) all of that hands itself back: only the root3
+nothing of why that it did not ask for. why's own root is the rescue shell
+and more (BusyBox, git, a compiler, why itself); under another OS (Ubuntu,
+Debian, a root of one's own) all of that hands itself back: only the why
 command comes in, from outside the guest's tree, and the guest's tools,
 names and `/etc/os-release` are its own.
 
@@ -1396,28 +1396,28 @@ the person meets none of the machinery that keeps them:
 
 A task goes offered → waiting → working → ready, or asking (its reply sends
 it on), done (looked at, or its issue merged), dropped (later), stopped (it
-could not run: why, and the one fix, such as `root3 network on REPO`). Those
-are the core's words (`root3/core/src/agent/tasks.rs`, `<data>/tasks/tasks.json`, never
+could not run: why, and the one fix, such as `why network on REPO`). Those
+are the core's words (`why/core/src/agent/tasks.rs`, `<data>/tasks/tasks.json`, never
 sent). The person sees an offer to hand over, the work going on in its
 issue's box, a question with a field to answer it, something to look at,
 or what could not go on: no stage, queue, session or hook.
 
-**Where it runs.** One task at a time per repo (`root3 agent run`, set off by
+**Where it runs.** One task at a time per repo (`why agent run`, set off by
 the deed), in the repo's Prompt: without privileges, with the repo's own
 network grant, on the issue's copy for what writes (the repo shows it, as
 the work the person would have started; while the repo shows another
 issue's work, it waits until main), on the change's copy for a review. The
-agent is the person's own command line (`root3 agent on claude`; a `.agent`
-dotfile says another), told what to do by `$ROOT3_TASK` and ending with lines
-root3 reads back (`FINDING`, `QUESTION`, `DONE`). What it prints is said on
+agent is the person's own command line (`why agent on claude`; a `.agent`
+dotfile says another), told what to do by `$WHY_TASK` and ending with lines
+why reads back (`FINDING`, `QUESTION`, `DONE`). What it prints is said on
 its issue as it goes and kept whole in a log. Only deeds done on this
 device set anything off: nothing the Remote says runs anything here.
 
 **What agents say themselves.** An agent the person runs on their own
 (in a terminal, in their editor) says what it does through its harness's
-hooks: `root3 agent on` adds them beside the person's own (Claude Code's
-settings; Grok Build's `~/.grok/hooks/root3.json`), and each calls
-`root3 agent hook HARNESS` with the event's JSON on standard input. It says
+hooks: `why agent on` adds them beside the person's own (Claude Code's
+settings; Grok Build's `~/.grok/hooks/why.json`), and each calls
+`why agent hook HARNESS` with the event's JSON on standard input. It says
 nothing and always ends well, so an agent is never held up by being
 watched. Each report is one line of `<data>/agents.jsonl` (0600, never
 sent): which harness and session, the repo and line its cwd is in, a kind
@@ -1436,12 +1436,12 @@ Lately).
 
 What a person runs (a Prompt, a task handed to an agent, a repo's tests) is
 compute, and the OS treats it as one thing whatever runs it: a **Spec**
-says what a run is made of, never where (`root3/core/src/compute/spec.rs`): the root
+says what a run is made of, never where (`why/core/src/compute/spec.rs`): the root
 by its sha256, the environment by the key of what set it up (the root's
 sha256, `.packages`, `.setup`: `launch::environment_key`), the repo and
 its line, what runs and what it is told, whether it asks for the network,
 and its **Budget** (wall and CPU time, memory held at once, processes).
-This device builds the run from the Spec (`root3 agent inside`); a place
+This device builds the run from the Spec (`why agent inside`); a place
 elsewhere that fetches by digest is given the same Spec and builds the
 same run. What a run may use is checked where it runs, not where it was
 asked for: the network only as the repo was given it there.
@@ -1452,10 +1452,10 @@ and what each reaped; pid 1 reaps every orphan), wall time, and the most
 memory and processes it held, sampled every quarter second. Past its
 budget a run is stopped and says what it went past (an agent's task has
 10 to 60 minutes by what it does, half the device's memory, 4096
-processes). A Prompt paused (`root3 prompt pause`) keeps all it holds and
+processes). A Prompt paused (`why prompt pause`) keeps all it holds and
 uses no CPU until it goes on. Every run is in the ledger
 (`<data>/compute/runs.jsonl`, never sent): its Spec's digest, where it
-ran, what it used, what it went past; `root3 runtime` says the last day's,
+ran, what it used, what it went past; `why runtime` says the last day's,
 by repo.
 
 **What scales worst, in order, and how each is solved:**
@@ -1532,8 +1532,8 @@ by repo.
 ### Virtual machines: the OS on servers
 
 The OS also runs on servers, ours or a person's own: any Linux with
-`/dev/kvm` is a host (`root3 host` says what it has and what it lacks, and
-the one fix for each; `root3 host fetch` brings what it lacks). Each run is a
+`/dev/kvm` is a host (`why host` says what it has and what it lacks, and
+the one fix for each; `why host fetch` brings what it lacks). Each run is a
 microVM of its own, made and driven through Firecracker (`core/src/vm`):
 a pinned kernel, the root as one read-only disk shared by every VM booted
 from it, a small sparse disk of its own holding what it is given, no
@@ -1569,56 +1569,56 @@ What scales worst on a host, in order, and how each is met:
 
 *Built:* the Firecracker API (configure, start, pause, snapshot, load,
 balloon), the disks (made by mke2fs from a folder, without mounting
-anything), the host's wire to its guest, `root3 host` and `root3 host fetch`.
-*Next, on a host with KVM:* `root3 guest` (the VM's first process: its
+anything), the host's wire to its guest, `why host` and `why host fetch`.
+*Next, on a host with KVM:* `why guest` (the VM's first process: its
 disks laid out, the run taken over the vsock, what it prints sent back),
-`root3 host run`, the warm pool from a snapshot, the balloon, and boot,
+`why host run`, the warm pool from a snapshot, the balloon, and boot,
 restore and density measured rather than said.
 
 ## 6. One OS, two ways in
 
-The GUI and the command line are two ways into the same things. `root3`'s
+The GUI and the command line are two ways into the same things. `why`'s
 nouns and order are the rail's: Home (`todo`, `profile`, `lang`), Forge
 (`repo`, `band`, `prompt`), File (`file`), Git (`git`, `issue`, `start`,
 `main`, `commit`, `push`, `reset`, `diff`, `log`, `review`, `reply`,
 `merge`, `reject`), Runtime (`runtime`, `free`, `root`, `network`, `dotfile`,
 `address`, `app`), Remote (`remote`, `login`, `logout`), Server (`server`), Inbox
-(`inbox`, `name`); `root3 help` lists them in this order. `root3 address` is where
+(`inbox`, `name`); `why help` lists them in this order. `why address` is where
 this device is reached over SSH, as `ip addr` answers with an address: one
 `ssh -p PORT REPO@HOST` a line, the SSH user being the repo, and on
 standard error who may connect, the keys let in and the host key (Runtime's
-SSH, below); the names people find you by (name@domain, and your code) are `root3
+SSH, below); the names people find you by (name@domain, and your code) are `why
 name`. A path is written as File shows it (`/root/<repo>/…`). A line is
 named the same way everywhere ("Fix：件名"), an issue is called by its
 number in both (#3), and Home's state is the same files, so anything done in one shows in
 the other. The Prompt's shell works on the repo itself: what it changes is
 written back, and what is saved elsewhere comes in.
 
-The one way from the command line to the GUI is `root3 app`: it opens the
+The one way from the command line to the GUI is `why app`: it opens the
 desktop app, or brings forward the one open (one on a device at a time,
 never a second), or, on a device without it, says where the Remote hands
 it out for this release (exit 4). A start is said as one only once the app
-answers; one that ends, or cannot show a window, is said as such. `root3 app
+answers; one that ends, or cannot show a window, is said as such. `why app
 close` closes it as its window's close button does, and nothing else: what
-it saved stays, and what root3 runs (SSH, a Prompt in a terminal) goes on.
+it saved stays, and what why runs (SSH, a Prompt in a terminal) goes on.
 Opening it turns nothing on: no network listening, no SSH, no Remote. It is
 reached through a socket in its own owner-only folder of the data
-directory (`root3/core/src/device/desktop.rs`).
+directory (`why/core/src/device/desktop.rs`).
 
 ### The command line without learning it first
 
 The GUI asks nobody to learn it before using it: the rail shows the
-purposes, a press shows the page, and the next deed is on the page. `root3`
+purposes, a press shows the page, and the next deed is on the page. `why`
 at a terminal is used the same way, and stays a command line:
 
-- **`root3` alone is the rail.** The purposes in the rail's order and words
+- **`why` alone is the rail.** The purposes in the rail's order and words
   (Home, Forge, File, Git, Runtime, Remote, Server, Inbox, +), each with its
   role and what is there now (TODO open, repos, issues open, the root, where
   the Remote stands, servers, what is not read). It is a few lines under
   what is already in the terminal, never a screen taken over: it works over
   SSH and inside a Prompt, and the scrollback stays readable.
 - **A purpose picked prints its page** as its commands print it, each said
-  first as the command it is (`→ root3 git`), then **its things with their
+  first as the command it is (`→ why git`), then **its things with their
   deeds**: each issue, TODO item, repo, conversation, board or thing by size
   is a row, and the focused row's deeds are under it, what the thing is for
   first, what goes against it or leaves it last (§3, Where a deed sits); the
@@ -1640,9 +1640,9 @@ at a terminal is used the same way, and stays a command line:
   move and take by whole characters, Japanese as English; only what is
   typed is kept, never a key's own bytes. Its keys are said under it.
 - **Ctrl-C, Esc and Enter by place**, said where they act: in the rows q,
-  Esc or Ctrl-C leave root3 and Backspace goes back to the rail; in a field
+  Esc or Ctrl-C leave why and Backspace goes back to the rail; in a field
   Enter keeps, Esc is Not now (back to the rows, nothing done) and Ctrl-C
-  leaves root3 as a program Ctrl-C ends does (130), with nothing half made; in
+  leaves why as a program Ctrl-C ends does (130), with nothing half made; in
   a Prompt opened from the menu Ctrl-C is the program's, as at any shell,
   and `exit` comes back to the menu on the repo it was opened on (said as
   it opens). Whether Ctrl-C in a field should go back rather than leave is
@@ -1652,31 +1652,31 @@ at a terminal is used the same way, and stays a command line:
   wraps by whole phrases, the ways back or out (Backspace, q, Esc) first, so
   at 50 columns nothing that leaves is cut off. Past nine rows each keeps its
   number to be read by (1–9 still jump).
-- **Every deed says the command it is** before it runs (`→ root3 start
+- **Every deed says the command it is** before it runs (`→ why start
   notes#1`), so the words are learned by seeing them and never needed. Its
-  answer is root3's own, and then the page's rows again, read anew, with the
+  answer is why's own, and then the page's rows again, read anew, with the
   focus on what was just done or made (§1, What one was doing stays).
 - **After a command typed by hand**, its next deeds are said in one line
-  (`Next for notes#1  Submit · Open · Back to main`), and asked nothing: root3
+  (`Next for notes#1  Submit · Open · Back to main`), and asked nothing: why
   reads no key, so all the person types next is the shell's (a row that
-  waited for a key took the first character of the next command, which root3
+  waited for a key took the first character of the next command, which why
   cannot give back without replaying input). What a command just made comes
   first (the 13th TODO's Done, not the first twelve's), and what is left
   out past twelve is said. A page that listed its next deeds itself (an
   issue's card in full) is not followed by the same words again: only the
-  quiet line that `root3 next` chooses one with the keys. `root3 next` opens them: the same row walked with
+  quiet line that `why next` chooses one with the keys. `why next` opens them: the same row walked with
   ←→ and Enter, Enter alone or Esc going on, each deed done as its command
   and those after it offered again.
-- **One table drives both.** A deed is a form of `root3/cli/src/words/spec.rs` with what
+- **One table drives both.** A deed is a form of `why/cli/src/words/spec.rs` with what
   the menu needs beside it: its word in both languages, what it is pressed
   on, the facts it is offered under, the words it gives itself, what it
   asks, its weight. Each page notes its things and their facts while it is
   made (the issue's from the same reading that writes its card's `next:`
   line), so the menu, the help, the completion and the card cannot drift;
   the tests read every deed back through the parser as the form it is. An
-  issue opened in full (`root3 issue notes#1`) ends with the same deeds as a
+  issue opened in full (`why issue notes#1`) ends with the same deeds as a
   list under Next, each the button's word beside the line that does it
-  (`Approve  root3 review notes#1 approve`), what it is for first and what
+  (`Approve  why review notes#1 approve`), what it is for first and what
   leaves it last, each said once: its Review and Merge say where they stand,
   not the commands again.
 - **Keys** as a list has them: ↑↓ (Tab) to choose a row, ←→ a deed, Enter to
@@ -1685,62 +1685,62 @@ at a terminal is used the same way, and stays a command line:
   so nothing depends on colour (NO_COLOR is honoured); the lines are drawn
   again only when a key is pressed, and what is left when a choice is made
   is plain text: the choice, the command, its answer.
-- **Still a plain command.** With words after it (`root3 git`), root3 does and
+- **Still a plain command.** With words after it (`why git`), why does and
   answers what it did, the short row only following at a terminal; through
   a pipe or a file (standard input or output not a terminal), with
-  `--json`, with `TERM=dumb`, or with `ROOT3_PLAIN=1` (the one switch that keeps
+  `--json`, with `TERM=dumb`, or with `WHY_PLAIN=1` (the one switch that keeps
   a terminal plain too, for a screen reader that prefers it or a recorded
-  session), nothing is offered or asked, and what root3 writes and how it exits
-  are byte for byte what they were (`root3/cli/tests/plain/main.rs` keeps the
-  transcripts; `root3/cli/tests/menu/main.rs` drives the menu through a real pty).
+  session), nothing is offered or asked, and what why writes and how it exits
+  are byte for byte what they were (`why/cli/tests/plain/main.rs` keeps the
+  transcripts; `why/cli/tests/menu/main.rs` drives the menu through a real pty).
 
-### What root3 writes
+### What why writes
 
 The same few rules for every answer, so a line is read the same way
 wherever it comes from:
 
-- **`root3 help` starts with the work.** First the lines that take an issue
+- **`why help` starts with the work.** First the lines that take an issue
   from written to merged, in their order, as one would type them in a repo
-  called notes (`root3 issue new notes "Fix：title"`, `root3 git`, `root3 start
-  notes#1`, `root3 commit notes`, `root3 submit notes`, `root3 review notes#1 approve`,
-  `root3 merge notes#1`); then every command by the rail; then the flags, the
+  called notes (`why issue new notes "Fix：title"`, `why git`, `why start
+  notes#1`, `why commit notes`, `why submit notes`, `why review notes#1 approve`,
+  `why merge notes#1`); then every command by the rail; then the flags, the
   exit codes (0–5) and how names are written, each a line under its word.
   Every line fits 80 columns, Japanese counted two a character.
-- **The table is data too, for an agent.** `root3 help all --json` is every
+- **The table is data too, for an agent.** `why help all --json` is every
   form as a program reads it: its verb, its words in order (each a kind:
   repo, path, issue, text, number, choice with its choices, address,
   dotfile, many, argv; optional or not), its flags (and the value each
   takes), what it needs (the Remote, this device, or nothing more: it runs
   in a Prompt too) and how it keeps in step; beside its usage and its words
-  as `root3 help` says them. One reading and any command can be written. The
+  as `why help` says them. One reading and any command can be written. The
   verbs are the same everywhere (new, ls, mv, rm, set, take; a list is
   `ls`, whatever it lists), and a refusal says the command that helps: a
-  name not found says where the names are listed (`(root3 repo lists them)`),
+  name not found says where the names are listed (`(why repo lists them)`),
   with `--json` as `{error: {kind, message}}` and the exit code.
-- **A name and its facts in two columns.** A listing (`root3 repo`, `root3
-  remote`, `root3 file`, `root3 prompt ls`) writes each name, then its facts
+- **A name and its facts in two columns.** A listing (`why repo`, `why
+  remote`, `why file`, `why prompt ls`) writes each name, then its facts
   starting in one column, as wide as the widest name up to 24 (a longer one
   keeps two spaces after it alone); a folder with nothing to say is its name
   alone. Never a tab: a terminal puts what follows a tab at its next stop,
   out of line after a long name. A script reads `--json`.
 - **A step is ○ until it is ✓**, on a card as in the TODO: `○ Commit`, `✓
   Submit`. Started and nothing changed, Commit says where the work is done, as
-  the app's card does (edit in notes, with `root3 prompt notes` or `root3 file
+  the app's card does (edit in notes, with `why prompt notes` or `why file
   write`; what changes shows here).
 - **What comes next runs as it is pasted.** A card's `next:` line is a
-  command with every word in it and no brackets (`next: root3 commit notes`);
-  a word only the person can write is the help's own (`root3 reply notes#1
+  command with every word in it and no brackets (`next: why commit notes`);
+  a word only the person can write is the help's own (`why reply notes#1
   "text"`). When all that is left is leaving the work, the line says so as
-  `back: root3 main notes`, never as what comes next. Starting an issue says
-  both the way on (edit, then `root3 commit notes`) and the way back.
+  `back: why main notes`, never as what comes next. Starting an issue says
+  both the way on (edit, then `why commit notes`) and the way back.
 - **A log is two lines a commit**: its line, then id, when, the files and
   their lines, its issue, whether a merge; which folders it touched is
   `--json`'s.
 - **A mistake says what to write, and with what.** Its form with the word
-  that was missing in it, and what there is to put there (`Name a repo (root3
+  that was missing in it, and what there is to put there (`Name a repo (why
   commit REPO [-m note]), or run it in one: notes, c1`); an issue is named as
   it is called (`notes#2`, never its work's line name `002`); something
-  done already says where to see it (`notes#1 is merged already (root3 log
+  done already says where to see it (`notes#1 is merged already (why log
   notes shows it)`); nothing to commit says of which repo, and why.
 
 ### The canonical copy is on the Remote
@@ -1763,7 +1763,7 @@ repo on the Remote (`service/`) has two things:
 A tree is path → digest; beside it, a draft and each commit keep **modes**:
 path → the file's permission bits (`{"run.sh": 493}`, 0755), only for a
 file the tree names that has an execute bit. A path not there is a plain
-file. One representation everywhere, for the app's native sync (core), root3
+file. One representation everywhere, for the app's native sync (core), why
 and the web's writeback alike: it is not folded into the tree's values, so
 a tree stays path → digest for everyone who reads one (an old client, the
 sweep, the log's counts), and a commit's id changes only when it has modes.
@@ -1787,12 +1787,12 @@ sweep, the log's counts), and a commit's id changes only when it has modes.
 - **Expand only** (migration 0010): both columns default to `{}`, so the
   Worker before reads past them and every client before keeps working.
 - Where the Remote keeps no modes yet, an execute bit here is named among
-  what cannot be sent (`root3 repo`'s `unsendable`), and **the last copy that
+  what cannot be sent (`why repo`'s `unsendable`), and **the last copy that
   has one is never freed**: Free asks the Remote's modes to be this copy's.
   Owner, ACLs and extended attributes are not carried.
 
 So a device's copy is never the only copy, and history stays deliberate.
-Every change made here (in Forge, by root3, by a Prompt) is sent as a diff
+Every change made here (in Forge, by why, by a Prompt) is sent as a diff
 within half a second; the Remote's changes are seen within five seconds
 and whenever the window comes back. Taking in is file by file against the
 version last agreed: a file only changed there is written here, one only
@@ -1803,14 +1803,14 @@ Linux).md"), so neither is lost and the name says whose it is on every
 device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
 are named and never sent; a repo holding them is never let go. Nor does a
-file that holds a secret (root3/core/src/device/secrets.rs): a model maker's API key, a
+file that holds a secret (why/core/src/device/secrets.rs): a model maker's API key, a
 Stripe live key, a GitHub token, or this device's own sign-in. A Prompt has
 the Agent's key in its environment, so whatever runs there could write it
 into a file; read before it goes, as a push is read by GitHub's push
 protection, that file stays here unsent, said as `secret sk-ant-…a9AA`, and
 Commit says which until it is taken out. Home's
-settings (profile, TODO, dotfiles) are kept there too, by the app and root3
-alike (root3/app/remote/settings.ts, root3/core/src/home/: one protocol, one record of what was
+settings (profile, TODO, dotfiles) are kept there too, by the app and why
+alike (why/app/remote/settings.ts, why/core/src/home/: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
 here, the Remote's is taken; changed on both sides, two TODO lists are
 joined item by item, and any other setting is the Remote's. The band, the
@@ -1820,9 +1820,9 @@ What each host keeps, and when (lifecycle.ts):
 
 |             | comes by itself | goes by itself |
 |-------------|-----------------|----------------|
-| OS          | web: root3, fetched each visit; app: the root, when installed | web: with the tab |
+| OS          | web: why, fetched each visit; app: the root, when installed | web: with the tab |
 | repo        | the Remote's changes, as they happen; one only on the Remote, when opened | each change, to the Remote at once; web: the copy, with the tab, once the Remote has all of it |
-| Home        | at start and when the window comes back; root3: before a command that reads it | each change, at once; root3: after the command |
+| Home        | at start and when the window comes back; why: before a command that reads it | each change, at once; why: after the command |
 | Prompt      | when a repo opens | its processes, when closed |
 
 Room on a device is given back in Runtime (空ける): a repo that goes stays
@@ -1830,7 +1830,7 @@ on the Remote and comes back when opened.
 
 **No sync verb.** Keeping in step is not something a person does: every
 change goes to the Remote as a diff by itself, and the Remote's come in by
-themselves (the app within seconds, root3 when a command reads the repo).
+themselves (the app within seconds, why when a command reads the repo).
 What a person does to the Remote is only taking a repo off it (with a
 passkey, kept 30 days). Git's verbs (commit, push, review, merge) are
 about history; none of them is how files get to the Remote, so the two
@@ -1838,7 +1838,7 @@ never mix in the words or the buttons.
 
 **Who.** One signs in the usual way, with GitHub or Google, and then adds
 a passkey for the device, so the next sign-in needs no provider; a lost
-passkey is replaced by signing in with the provider again. The app and root3
+passkey is replaced by signing in with the provider again. The app and why
 do not hold passkeys: they show a code, a browser where the person is
 signed in approves it on the Remote's page, and the device gets a session
 of its own. What a passkey or a provider does is the browser's for the
@@ -1848,7 +1848,7 @@ in the app itself, and adding a passkey, linking a provider and setting
 the code (Add, Link, Set in the browser) open the Remote's own page there
 at Sign-in; a repo's switch and Discard ask in its card as on the web, and
 Continue in the browser opens that repo's card there with its ask already
-open (`root3/core/src/remote/account.rs` app_page names only that page, of the Remote's
+open (`why/core/src/remote/account.rs` app_page names only that page, of the Remote's
 own app, the way a sign-in's page is checked). Done there, the page says
 to go back; the app reads again what changed when its window comes back.
 Every device is a session, listed on the Remote page and ended
@@ -1856,17 +1856,17 @@ from any other. What proves a session is held where no page reads it. In a
 browser it is the session's cookie (`__Host-`: Secure, HttpOnly,
 SameSite=Lax), which the browser sends and no script reads, so a script
 that should not be on the page cannot carry the session off: the Remote
-hands a page no token, ever (`root3/remote/people/auth.ts`), and the browser's core
-sends the cookie with its own requests. A device (the app, root3) holds a
+hands a page no token, ever (`why/remote/people/auth.ts`), and the browser's core
+sends the cookie with its own requests. A device (the app, why) holds a
 bearer from the device flow, kept apart from everything a page reads
-(`root3/core/src/device/vault.rs`, never in Home's state, which a page reads and which
+(`why/core/src/device/vault.rs`, never in Home's state, which a page reads and which
 is synced): in the OS's own keyring (the Keychain, Credential Manager on
 this computer alone, the Secret Service over D-Bus from Rust alone, so the
-static root3 reaches it as the app does), encrypted at rest with what the
+static why reaches it as the app does), encrypted at rest with what the
 person signs in with and in no file a backup or a token-hunting program
 comes across; where there is none that answers within a minute (a server,
-SSH, a locked keyring), or `ROOT3_KEYRING=off`, a file only the person
-reads (`<data>/secrets/`, 0600). `root3 remote sign-in` says which. The
+SSH, a locked keyring), or `WHY_KEYRING=off`, a file only the person
+reads (`<data>/secrets/`, 0600). `why remote sign-in` says which. The
 app's page asks its Remote through the core (`remote_ask`), which sends
 it. Home's state says only which session the
 device is (its token unsigned) and whose. Either is taken only signed
@@ -1899,13 +1899,13 @@ What leaves this system is kept to what is said here:
   portal) is followed only when it is a web page: https, or http on this
   machine (connection.ts leaveFor); the desktop opens only Stripe's or the
   Remote's own (account.rs). The Remote answers only the app's origins. From the host (the app
-  and root3: the Remote, a release, a distribution's root) it goes one way
-  (root3/core/src/device/net.rs), taking of the host only what the machine already
+  and why: the Remote, a release, a distribution's root) it goes one way
+  (why/core/src/device/net.rs), taking of the host only what the machine already
   decided: its proxy (HTTPS_PROXY, minus NO_PROXY, never for the machine
   itself) and the certificates it trusts (its store or SSL_CERT_FILE,
   beside the bundled ones).
 - **The root.** In the app a Prompt is the distribution's root, run by this
-  machine's kernel without privilege (`root3 prompt`, root3/core/src/prompt/launch.rs): a user
+  machine's kernel without privilege (`why prompt`, why/core/src/prompt/launch.rs): a user
   namespace makes the user root inside it only; its own mount, pid, ipc,
   uts and network namespaces (no network unless granted); the root
   read-only, the repo the only writable place of the person's, fresh
@@ -1913,7 +1913,7 @@ What leaves this system is kept to what is said here:
   made for each Prompt, holding only the ptys opened in it, none of the
   host's sessions); an environment set, not inherited (no
   host home, keys, agent or variables); and a seccomp filter
-  (root3/core/src/prompt/seccomp.rs) over all of it, so the kernel answers none of what a
+  (why/core/src/prompt/seccomp.rs) over all of it, so the kernel answers none of what a
   sandboxed program has no use for and escapes are found through: ptrace,
   mounting, new namespaces, modules, kexec, bpf, perf, keys, userfaultfd,
   io_uring, typing into the terminal it was started from (TIOCSTI) (strace and gdb do not run in a Prompt; a shell, compilers,
@@ -1931,8 +1931,8 @@ What leaves this system is kept to what is said here:
   checked by digest before it is read, unpacked refusing anything that
   would land outside, go through a link or be a device. It is fetched from
   the Remote this device uses, then the publisher's Remote, which each of
-  its deploys fills with every root pinned in `root3/core/src/root/pins.rs`
-  (`root3/remote/bytes/mirror.ts`), and last from the GitHub release, which answers
+  its deploys fills with every root pinned in `why/core/src/root/pins.rs`
+  (`why/remote/bytes/mirror.ts`), and last from the GitHub release, which answers
   only while the repository is public; when none has it, the error says
   what each said.
 - **Host.** The app starts no host program for a repo: history is the
@@ -1940,13 +1940,13 @@ What leaves this system is kept to what is said here:
 - **Files.** The data directory and its settings are the user's alone (0700,
   0600). Writes go to a new temporary next to the file and are renamed over
   it; `.git` is refused in every spelling and through any symlink, from the
-  webview, from `root3` and from the Prompt's write-back.
+  webview, from `why` and from the Prompt's write-back.
 
 ### The Remote
 
-However the OS is reached, in a browser, the desktop app or root3, some of it
+However the OS is reached, in a browser, the desktop app or why, some of it
 is the Remote's and stays so: who someone is (a provider's identity, then
-passkeys; the app and root3 come in by a code a browser approves, each device a
+passkeys; the app and why come in by a code a browser approves, each device a
 session any other can end), the canonical copy of each repo and its
 history, Home's settings, names, the Inbox and servers, and which devices
 listen for SSH (that they do, and to whom; never where). Running natively moves the OS onto the device, not these:
@@ -1954,14 +1954,14 @@ they are what every device agrees through. Its rows and its files are
 apart: Postgres holds everything said here, the bucket only file contents,
 and a Remote without a bucket does all the rest and says plainly that it
 cannot hold files now, so a device keeps its work until it can. Each part,
-its routes and tables, and what the app and root3 need of it that a page does
-not: `root3/remote/README.md`.
+its routes and tables, and what the app and why need of it that a page does
+not: `why/remote/README.md`.
 
 ### The plan: the Remote decides what an account may do
 
 Billing lives on the Remote. The Remote alone decides what an account may
-do (`root3/remote/plan/plan.ts`); every client, the web app, the desktop app and root3,
-only shows what it says (Remote → Plan, `root3 remote plan`) and asks. No
+do (`why/remote/plan/plan.ts`); every client, the web app, the desktop app and why,
+only shows what it says (Remote → Plan, `why remote plan`) and asks. No
 client counts, guesses or greys out on its own.
 
 Free, and three tiers one pays for (`PAID`), each keeping more than the
@@ -1987,7 +1987,7 @@ a new repo and a draft that grows (PATCH draft), making a server, claiming
 a name. Going over never loses or blocks local work: the Remote refuses
 only what would exceed (a new repo past the allowance; a change that makes
 a draft larger while the account keeps more than the allowance), with 402,
-the rule, the tier it is about and the way to the plan, and the app and root3
+the rule, the tier it is about and the way to the plan, and the app and why
 keep the work on the device and say it waits (it is asked again every few
 minutes, and goes the moment there is room or the plan is paid, or goes up
 a tier). A change that does not make a draft larger (an edit of the same
@@ -2025,8 +2025,8 @@ allowance still holds, and the Remote says paid features cannot be bought
 here yet. A Remote given no plan (a Remote of one's own, development unless
 asked, a Remote for research) has no allowance at all.
 
-**Stripe's stand-in** (`root3/remote/plan/devbilling.ts`), on a Remote of one's own
-asked for the plan (`ROOT3_PLAN=1`) and the selftest's, looks and does as
+**Stripe's stand-in** (`why/remote/plan/devbilling.ts`), on a Remote of one's own
+asked for the plan (`WHY_PLAN=1`) and the selftest's, looks and does as
 Stripe's pages do in test mode, so the way from the Plan to paying and back
 is the one people meet; it is Stripe's look, not this language's, and says
 on each page that it is a stand-in and nothing is charged. Checkout: the
@@ -2042,8 +2042,8 @@ credited), the card (the same form and test cards), the invoices, cancelling
 at the period's end and Renew plan to keep it, and, marked as not Stripe's,
 test controls (a payment fails, a payment goes through, it ends now). Each
 step sends the Remote the events Stripe would, signed, before the page goes
-on. The development sign-in provider (`root3/remote/people/devoauth.ts`) asks as a real
-one does: a name, then what root3 asks of it (your name and email), Allow
+on. The development sign-in provider (`why/remote/people/devoauth.ts`) asks as a real
+one does: a name, then what why asks of it (your name and email), Allow
 or Cancel; Cancel comes back with the error a provider sends then.
 
 # Part III. Each place in turn
@@ -2688,7 +2688,7 @@ first prompt line), and one that ended says so in its place, with Start
 again; stopping one is Runtime's. A repo shown, read or written in Forge
 starts nothing: its Prompt, never written to, runs nothing and holds the
 repo nowhere (Runtime counts it with none running, and Free does not wait
-for it); only what it runs on, root3 in a browser, is read ahead as the repo is
+for it); only what it runs on, why in a browser, is read ahead as the repo is
 shown, so the first line is not kept waiting for it. What is written in the box and not sent
 is the repo's: another repo shows its own, and coming back finds it.
 
@@ -3033,8 +3033,8 @@ the right pane is put away is remembered on this device.
 
 The Prompt never goes silent while something takes time:
 
-- **Coming up.** The first Prompt of a visit fetches root3 (2.7 MB) and says how far it
-  is (`root3 を読み込み中 1.5 MB / 2.7 MB`). When the line goes quiet it counts
+- **Coming up.** The first Prompt of a visit fetches why (2.7 MB) and says how far it
+  is (`why を読み込み中 1.5 MB / 2.7 MB`). When the line goes quiet it counts
   the seconds (`応答待ち 4秒`); at ten it counts as broken and is taken up
   again from the byte it reached (`回線が止まりました。続きから読み込みます`),
   the same after a cut or a server error, a few times with growing waits.
@@ -3134,7 +3134,7 @@ or goes).
     has (it comes back when opened), a root that is neither the current one
     nor one a Prompt runs on (the Remote has the release), a temporary this
     OS left half-written
-    (`.<file>.root3-<pid>-<n>`, a setting's `<key>.json.<pid>`, older than
+    (`.<file>.why-<pid>-<n>`, a setting's `<key>.json.<pid>`, older than
     a minute, one link, never inside `.git`), an install that died half way,
     a release bundle or partial download not in use.
   - **空ける** on a repo with changes the Remote does not have yet: the
@@ -3168,14 +3168,14 @@ or goes).
 - **Room made by itself.** Freeing is a deed for who wants it; nobody has
   to. When room is wanted (a Prompt prepared, a root fetched, a repo
   brought here) and the host has less free than that and a reserve (a
-  twentieth of the disk, between 512 MB and 4 GB; `ROOT3_RESERVE` says
-  another), what comes back goes by itself until there is enough (root3/core/src/storage/
+  twentieth of the disk, between 512 MB and 4 GB; `WHY_RESERVE` says
+  another), what comes back goes by itself until there is enough (why/core/src/storage/
   make_room): this OS's leftovers and old roots, caches, what is derived in
   repos, the root before the current one, then copies of repos in step with
   the Remote untouched for a week, the oldest first. Never what only this
   device has: work not sent, an environment, what a Prompt holds now. The
   root itself is fetched the first time a Prompt wants it, in the app and
-  in `root3 prompt` alike: never a step of its own.
+  in `why prompt` alike: never a step of its own.
 - **What is checked is what goes.** A repo's copy is freed only as it was
   when the Remote was seen to hold it, up to the moment it goes: each copy,
   checked, is moved aside in one rename (beside it, `.<name>.freeing-<pid>`,
@@ -3193,7 +3193,7 @@ or goes).
 - **動いている Prompt** is shown while one runs, a small card each (the
   size of Home's cards, smaller, so a few do not stretch across the page):
   where it runs (root, with its process count, and 用意中 while its
-  `.packages` and `.setup` run, or root3), the memory its
+  `.packages` and `.setup` run, or why), the memory its
   processes hold (Pss, from the host's /proc), and 止める at its bottom right. On the root, stopping ends everything in the
   Prompt's pid namespace and is called done only once the host shows none
   left; the row then says what was given back and how long it took
@@ -3202,22 +3202,22 @@ or goes).
   plain switch with the word Network in its card. A namespace cannot be
   given a network once made, so turning it on asks in the card, then stops
   the Prompt, which has the network from its next start; turning it off
-  stops it at once. The grant is this device's (never sent), and `root3
-  prompt` reads the same one (`--network` gives it to one Prompt); `root3
+  stops it at once. The grant is this device's (never sent), and `why
+  prompt` reads the same one (`--network` gives it to one Prompt); `why
   network on|off REPO` is the switch, taking it stopping the repo's Prompts
   as here. In a browser there is no switch: a Prompt's programs have no
   sockets at all.
-  Every Prompt on the root is an `root3 prompt` process that records
-  itself (root3/core/src/prompt/running.rs) from the moment it starts being prepared
+  Every Prompt on the root is an `why prompt` process that records
+  itself (why/core/src/prompt/running.rs) from the moment it starts being prepared
   (`.packages`, `.setup`) until it ends, with its repo and the root it runs
-  on, so `root3 prompt ls` lists the app's and a terminal's alike (one being
-  prepared says 用意中, as its card here does), `root3 prompt stop REPO` stops
+  on, so `why prompt ls` lists the app's and a terminal's alike (one being
+  prepared says 用意中, as its card here does), `why prompt stop REPO` stops
   them as 止める does, prepared or running (what prepares it ends with it),
-  and neither 空ける here nor `root3 free` (one by one or all) lets go of what
+  and neither 空ける here nor `why free` (one by one or all) lets go of what
   one holds: its repo, the repo's environment, caches and what is derived
   in it, and its root, whichever root is current now, so making another
   current takes nothing from under a Prompt that runs. The core reads the
-  records itself, for the app, root3 and a direct call alike. Each thing is
+  records itself, for the app, why and a direct call alike. Each thing is
   looked at again just before it goes, under the one lock a Prompt records
   itself under (only while its root is still whole) and the current root is
   changed under (only to one still whole), so neither can come between the
@@ -3226,23 +3226,23 @@ or goes).
   (a Prompt's card's size), beside the desktop app's (SSH, then it, then the
   desktop app, in one row; on the web SSH's one line is a card wide; where
   the row has no room, each goes under). The one in
-  effect is the card's head: root3, with its version (in the mono face, as a
+  effect is the card's head: why, with its version (in the mono face, as a
   version is), what it is here (in the app, the root installed, on this
   device's kernel; in a browser, the same root through muk) and its
-  digest: the same version and digest in both, the root's (root3: the one
+  digest: the same version and digest in both, the root's (why: the one
   base). Under it the others, a row each, quiet:
   Ubuntu, Debian, Custom (a root of one's own, known by its digest), what
   each is, and at its right what can be done. In the app each other one has Use at its
   right: fetched if it is not here (Ubuntu's base and Debian's official
   root, from their makers or the Remote, taken only at the digest pinned
-  in root3/core/src/root/pins.rs), then the one Prompts run on, each with its own
+  in why/core/src/root/pins.rs), then the one Prompts run on, each with its own
   environment per repo. In a browser they say In the app only: their
   programs are linked as they run, which muk does not do. Custom is not
   yet.
 - **Packages and runtimes are dotfiles**, so nothing is kept twice: the
   OS has no package list or runtime manager of its own. `.packages` names
   what to install with the root's own package manager (apt on Ubuntu and
-  Debian; root3's root has no archive yet), `.setup` is run with sh after it
+  Debian; why's root has no archive yet), `.setup` is run with sh after it
   (the place for a runtime's own installer: rustup, nvm, uv, mise…). Both
   run before a Prompt, with the network, over the repo's environment, so
   what they install is the repo's and stays; and again only when the root
@@ -3252,7 +3252,7 @@ or goes).
   and is tried again at the next start.
 - **SSH** into a repo's Prompt, per device, and the desktop app's alone
   (the web offers none): an ordinary OpenSSH client, with the repo as its
-  user, lands in that repo's Prompt, the same shell `root3 prompt REPO` gives
+  user, lands in that repo's Prompt, the same shell `why prompt REPO` gives
   (a command runs there and its exit code comes back). It is built to show
   as little as it can, and to say plainly what it shows:
   - **Who may connect** is chosen as it is turned on, in the same press:
@@ -3266,7 +3266,7 @@ or goes).
     one socket each, never 0.0.0.0, a public address, or a bridge's or a
     container's (`docker*`, `br-*`, `virbr*`, `veth*`…: containers and VMs
     are not the network a person means), looked at again every few
-    seconds). `root3 address` and the card name each interface taken
+    seconds). `why address` and the card name each interface taken
     (`wlan0 192.168.1.5, tailscale0 100.101.102.103`). Kept on the device,
     never on the Remote.
   - **From the network it came in on.** Linux takes a packet for any of its
@@ -3288,13 +3288,13 @@ or goes).
   - **Nothing of where leaves the device.** The Remote keeps only that a
     device listens, its scope's word, since when and when last heard;
     destinations are worked out and shown on the device itself.
-  - **What it says of itself** is `SSH-2.0-root3`: keys only (Ed25519,
+  - **What it says of itself** is `SSH-2.0-why`: keys only (Ed25519,
     ECDSA), no forwarding, no sftp.
 
   | Who | この端末だけ | 同じネットワークにも |
   |---|---|---|
   | this device | the port on loopback; its card shows the destinations, the host key, the keys let in | the same, and the LAN addresses |
-  | another PC on the LAN/VPN | nothing: the port is closed | `SSH-2.0-root3` and the host key; only a listed key gets in |
+  | another PC on the LAN/VPN | nothing: the port is closed | `SSH-2.0-why` and the host key; only a listed key gets in |
   | a sender on another segment routing to the LAN address through this device | nothing: the port is closed | the handshake, then closed at accept before the banner |
   | the carrier's other customers (100.64/10 on an ordinary interface) | nothing | nothing: no socket there; at a VPN address, closed at accept |
   | containers and VMs behind a bridge (`docker0`, `virbr0`, …) | nothing | nothing: no socket on a bridge's address |
@@ -3313,11 +3313,11 @@ or goes).
   that device only"), how long it has been on (or that it has not been
   heard from lately), and the switch, on; pressed, that device stops taking
   connections and ends its sessions within seconds. SSH is turned on only
-  at the device itself (`root3 address` asks whether, then from where; `root3
+  at the device itself (`why address` asks whether, then from where; `why
   address ssh on [device|network]`; or the app's card): a page can only
   turn a device's SSH off, so the switch on another device's card only goes
   one way. On the web one short line over those cards says SSH is the
-  desktop app's. The listener is root3's, in the background, recorded under
+  desktop app's. The listener is why's, in the background, recorded under
   the data directory as a Prompt is, and asks the Remote every 30 s or so,
   stopping once it was turned off or the device signed out. Keys are the
   `.authorized_keys` dotfile (below), public keys only, so a key added on
@@ -3338,7 +3338,7 @@ or goes).
   there: one changed on another device, or written to the Remote by anyone
   as them (a Remote broken into, a device's session taken), is kept and
   listed but runs nowhere here until taken (its row says not run here yet;
-  a line over the box names them with Take them; `root3 dotfile take`). The
+  a line over the box names them with Take them; `why dotfile take`). The
   device keeps what it took (`trusted`, never sent, never set but by
   writing or taking), and a Prompt, a shell and the SSH listener read only
   that; one taken away elsewhere goes here too (going runs nothing). A
@@ -3369,10 +3369,10 @@ or goes).
   model, and a key of no form of its own, refused), and the model is the
   newest the key opens that answers, read from the maker's own list when the
   key is given (Trying the key…), never written into the OS. It is kept as
-  the device's session is (`root3/core/src/device/vault.rs`: the OS's keyring, else a file
+  the device's session is (`why/core/src/device/vault.rs`: the OS's keyring, else a file
   only the person reads). In a browser, whose keeping is its profile's files,
   it is sealed by the person's passkey where there is one with PRF
-  (`root3/app/account/seal.ts`: AES-256-GCM under a key HKDF derives from what the
+  (`why/app/account/seal.ts`: AES-256-GCM under a key HKDF derives from what the
   passkey's PRF gives, after it verifies the person), opened the first time
   the Agent is asked in a session, and the key itself never reaches the
   core; where none can seal it, it is kept as given, and Runtime says which.
@@ -3386,7 +3386,7 @@ or goes).
   after the environments, on one row (what this device runs on, and can be
   reached by or become), its card the SSH card's size, the cards ending
   level; where the row has no room, it goes under. Few words: its title,
-  Length³, and the version `module/ricebox/RELEASE` names apart from it in the mono face (a
+  `why*`, and the version `module/ricebox/RELEASE` names apart from it in the mono face (a
   name and a number are two things); quietly, x86-64 Linux, which file and
   its size (what it is goes without saying). At its bottom left, Download
   (ダウンロード), the one download: a primary button a size smaller than a
@@ -3395,9 +3395,9 @@ or goes).
   the left because it leaves the page for this computer, as Forge does on
   Remote's card. It gives the .deb, which Debian and Ubuntu install, or the
   AppImage when the Remote has no .deb (the release still has both). They are
-  the files `root3/shared/desktop-releases.json` pins for that version, served by
+  the files `why/shared/desktop-releases.json` pins for that version, served by
   the Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
-  puts them from the release (`root3/remote/bytes/mirror.ts`). It is offered only once
+  puts them from the release (`why/remote/bytes/mirror.ts`). It is offered only once
   the Remote says it has it; with neither there, the section is not shown,
   never a button that cannot act.
 
@@ -3450,7 +3450,7 @@ half written after reading its neighbours or another page.
   words ("#3 Fix：件名", then the detail); that is all a person meets. Any
   repo takes one, and it takes the repo's next number. How it is kept is the
   OS's business: one plain file in the repo's `issue/`, named by its number,
-  so root3 and a Prompt see the same thing and nothing is kept twice; a file
+  so why and a Prompt see the same thing and nothing is kept twice; a file
   there with no number (written by hand, or two devices' issues that met
   under one number) is given the next free one. An issue is main's, whatever
   work its repo shows (the issues are read from main's copy): written, its
@@ -3558,7 +3558,7 @@ half written after reading its neighbours or another page.
   not be done. It goes at once (Reopen brings it back, so nothing is
   asked) and is listed under Closed. Being closed is the issue's own: its
   file says so on its last line, after the detail (`Closed：2031-10-17
-  sora`, the day and who), so root3 (`root3 issue close REPO#N`, `root3 issue
+  sora`, the day and who), so why (`why issue close REPO#N`, `why issue
   reopen REPO#N`) and a Prompt see the same, and it is committed on main by
   itself (Close #3: …, Reopen #3: …), with nothing kept twice.
 - **A diff**, wherever it shows: each file a fold, its name (which opens it)
@@ -3578,7 +3578,7 @@ half written after reading its neighbours or another page.
   it with the marks), and beside Comment, Ask for changes, which sends the
   same with its verdict (it says something: with nothing written or marked,
   the field is where to say it), shown in what was said as Asked for
-  changes, as `root3 review REPO#N changes` is; at the left, Approve as a ○
+  changes, as `why review REPO#N changes` is; at the left, Approve as a ○
   that turns green when pressed.
 - **Merge**, under the Review and not in it: Reject at the left, who
   approved it, and Merge at the right, primary once the version is
@@ -3622,7 +3622,7 @@ what is done with, Committed (on main, from here), Merged and Closed.
   under it in the row and shuts them again (read only then), and one repo
   shown is its card as above. Commit
   asks in the card for the line the commit goes by ("Fix：title"), as
-  `root3 commit REPO "Fix：title"` takes it, Not now at the left and Commit
+  `why commit REPO "Fix：title"` takes it, Not now at the left and Commit
   under the pointer; Enter commits the one line, and the card's height goes
   from its files to the ask and back (280 ms) rather than held at the
   taller. What is typed is kept with its repo until it is committed or put
@@ -3633,7 +3633,7 @@ what is done with, Committed (on main, from here), Merged and Closed.
   issue made of the changes: an issue hides a branch that starts from
   main's last commit, and moving main's draft onto one would be a new
   operation the Remote does not have; a commit on main is already one
-  (`root3 commit` on main), so the app offers the same.
+  (`why commit` on main), so the app offers the same.
 - **Merged**: the issues whose change main took, newest first, a row each:
   "#1 Fix：件名", who handed it in and when it was merged; pressed (its
   small triangle says so, as every fold's does), the row opens to the
@@ -3647,7 +3647,7 @@ what is done with, Committed (on main, from here), Merged and Closed.
   back among the issues at once.
 
 Every change is already on the Remote (the draft, §6); Commit makes it
-history there, the same from the app, a browser and `root3 commit`. Without a
+history there, the same from the app, a browser and `why commit`. Without a
 Remote the issues are shown and one line says that history is kept there.
 
 ### Remote
@@ -3694,9 +3694,9 @@ the gear's do, never swapped in one frame):
   it is written, before any passkey is asked; an account with no passkey
   yet makes one there (on this device) and goes on with it.
   Delete in a repo's gear, in any list, asks the same in the list, and
-  turns it off with its copy here gone (§ Runtime, A repo in a list). root3
-  does what the gear does for a repo only this device has (`root3 repo mv
-  NAME NEW`, `root3 repo rm NAME`), and for one on the Remote says that the
+  turns it off with its copy here gone (§ Runtime, A repo in a list). why
+  does what the gear does for a repo only this device has (`why repo mv
+  NAME NEW`, `why repo rm NAME`), and for one on the Remote says that the
   Remote guards it and where it is turned off: the passkey is the app's.
   Off, the knob is at the left on `off` red and the card is quiet (dashed):
   the Remote keeps the repo 30 days, answering only that it is off, and
@@ -3722,7 +3722,7 @@ the gear's do, never swapped in one frame):
   nothing to press beside it).
 - **Devices**: each session signed in now and when it was last used, this
   one marked. Every other row has Sign out at its right end, the same
-  Remote call as `root3 remote devices rm N`; pressed, the row asks in its
+  Remote call as `why remote devices rm N`; pressed, the row asks in its
   place (its own line on top, then what will happen: it is signed out at
   once, and what is on it stays there), Not now at the left and Sign out
   under the pointer. That device finds out at its next word with the
@@ -3800,7 +3800,7 @@ never on a name to claim. No sheet stands at the right until there is a
 conversation to show (not one drawn empty and taken away). The gear opens, over what is under it (Escape or a press
 outside closes it), a popover: your names, then Add a domain; its first head starts at the box's own room, with no
 group's step before it. Letting a name go is not offered here (the Remote
-still lets a name go, `root3`'s way). Add a domain becomes, in its
+still lets a name go, `why`'s way). Add a domain becomes, in its
 row, one field where the name is written whole, `name@domain` with the @
 too (no second box to go to; a name on one's own domain is paid, and a free
 account is told so under the field, with See the plan), then the one DNS record that proves it (`_length3.<domain>` TXT
@@ -3908,7 +3908,7 @@ choice: its server's people always; if opened, anyone reads it (signed in
 or not); and if it takes guests, an outsider may write in it once one of
 its people has invited them. Everything is kept
 on the Remote, and any board can be taken home as one text (its TODO, its
-talk, or both), in the app or with `root3 server get`.
+talk, or both), in the app or with `why server get`.
 
 **Guests** come by invitation, never by email: the Remote sends nothing to
 anyone, keeps no address, and so cannot be made to send mail for a
@@ -4138,9 +4138,9 @@ into its README.md under its title, and the box grows with them, a line to
 begin with. In the box beside it, what will be made with it (作成され
 るもの), as File will show it: the repo's own row, its name again in ink
 (dashed where nothing is named), and the one scaffold every repo starts from
-(nothing to choose: root3/shared/templates.json's `standard`, as `root3 repo new`
+(nothing to choose: why/shared/templates.json's `standard`, as `why repo new`
 makes it: README.md with docs/ and issue/, no language of its own; C's files
-are `root3 repo new -t c`'s), each row renamed or left out where it stands,
+are `why repo new -t c`'s), each row renamed or left out where it stands,
 New file and New folder at its foot, README.md's size at its row's end as
 File gives it, of what it will say. Create, the one primary action, at the
 box's foot, ↵ beside its word. A name that cannot be is said as it is

@@ -1,0 +1,266 @@
+$ why repo new notes
+[exit 0]
+--- stdout
+notes を作りました（standard · 1ファイル）
+--- stderr
+
+$ why issue new notes Fix：restart loses the draft
+[exit 0]
+--- stdout
+notes#1 Fix：restart loses the draft を書きました
+--- stderr
+
+$ why todo add Fix：the rail's names
+[exit 0]
+--- stdout
+TODO に足しました：Fix：the rail's names（残り1件）
+--- stderr
+
+$ why todo add Docs：readme
+[exit 0]
+--- stdout
+TODO に足しました：Docs：readme（残り2件）
+--- stderr
+
+$ why todo done 2
+[exit 0]
+--- stdout
+完了にしました：Docs：readme
+--- stderr
+
+$ why 
+[exit 0]
+--- stdout
+why*  $HOME
+  Remote まだサインインしていません（why login）
+  repo   1
+  Issue  1
+  TODO   残り 1 / 2
+`why help` で使い方を見られます
+--- stderr
+
+$ why --json
+[exit 0]
+--- stdout
+{
+  "home": "$HOME",
+  "issues": 1,
+  "prompt": false,
+  "remote": null,
+  "repos": 1,
+  "todo": {
+    "all": 2,
+    "open": 1
+  }
+}
+--- stderr
+
+$ why todo
+[exit 0]
+--- stdout
+  1 ○ Fix：the rail's names
+  2 ✓ Docs：readme
+--- stderr
+
+$ why profile
+[exit 0]
+--- stdout
+名前はまだありません（why profile name "名前"）
+--- stderr
+
+$ why band
+[exit 0]
+--- stdout
+notes
+--- stderr
+
+$ why file
+[exit 0]
+--- stdout
+notes  2ファイル · 38 B
+--- stderr
+
+$ why file notes
+[exit 0]
+--- stdout
+docs/
+README.md  8 B
+--- stderr
+
+$ why file notes/issue/001.md
+[exit 1]
+--- stdout
+--- stderr
+why: notes の Issue は OS が持っています。読むには why issue notes#N、書くには why issue new notes "Fix：件名"
+
+$ why file /
+[exit 4]
+--- stdout
+--- stderr
+why: / は repo の中ではありません。why が読むのは /root/REPO/PATH か REPO/PATH です（/ のほかは Prompt の root で、その中から見えます）
+
+$ why file /root
+[exit 0]
+--- stdout
+notes  2ファイル · 38 B
+--- stderr
+
+$ why file /bin
+[exit 4]
+--- stdout
+--- stderr
+why: /bin は repo の中ではありません。why が読むのは /root/REPO/PATH か REPO/PATH です（/ のほかは Prompt の root で、その中から見えます）
+
+$ why file /root/vocab
+[exit 4]
+--- stdout
+--- stderr
+why: この端末に repo vocab はありません（why repo で一覧）
+
+$ why file notes/README.md
+[exit 0]
+--- stdout
+# notes
+--- stderr
+
+$ why file rm notes/docs
+[exit 0]
+--- stdout
+フォルダー notes/docs を消しました（0ファイル）
+--- stderr
+
+$ why help commit
+[exit 0]
+--- stdout
+why commit — 作業を Commit
+
+  why commit [REPO] [-m メモ]              Issue の作業では、その名前で
+  why commit [REPO] "Fix：件名" [-m メモ]  Commit の件名（種別：件名）で（Issue の作業では、メモに）
+--- stderr
+
+$ why git
+[exit 0]
+--- stdout
+#1 Fix：restart loses the draft
+    notes · 未着手
+    次：why login
+--- stderr
+
+$ why git --json
+[exit 0]
+--- stdout
+{
+  "closed": [],
+  "issues": [
+    {
+      "approvedBy": [],
+      "commits": null,
+      "detail": "",
+      "file": "001.md",
+      "kind": "Fix",
+      "n": 1,
+      "next": [
+        "why login"
+      ],
+      "repo": "notes",
+      "startedBy": null,
+      "state": "notStarted",
+      "title": "restart loses the draft",
+      "uncommitted": null,
+      "unpushed": null,
+      "version": null
+    }
+  ],
+  "known": true,
+  "merged": []
+}
+--- stderr
+
+$ why issue notes#1
+[exit 0]
+--- stdout
+#1 Fix：restart loses the draft
+    notes · 未着手
+
+次
+    サインイン  why login
+    閉じる      why issue close notes#1
+--- stderr
+
+$ why issue close notes#1
+[exit 0]
+--- stdout
+notes#1 を閉じました。やらないものです（戻すには why issue reopen notes#1）
+--- stderr
+
+$ why git
+[exit 0]
+--- stdout
+開いている Issue はありません
+
+notes で閉じた：1件の Issue（notes#1。もう一度開くには why issue reopen REPO#N）
+--- stderr
+
+$ why issue reopen notes#1
+[exit 0]
+--- stdout
+notes#1 をもう一度開きました
+--- stderr
+
+$ why help git
+[exit 0]
+--- stdout
+why git — Merge されていない Issue と、次にすること
+
+  why git [REPO]  Issue ごとに、次にすること
+--- stderr
+
+$ why comit
+[exit 2]
+--- stdout
+--- stderr
+why: わからないコマンドです：why comit
+もしかして：why commit
+
+$ why todo add
+[exit 2]
+--- stdout
+--- stderr
+why: why todo add の書き方ではありません
+
+  why todo
+  why todo add "Fix：件名" [-m 詳細]
+  why todo edit N "Fix：件名" [-m 詳細]
+  why todo done N
+  why todo rm N
+
+$ why inbox
+[exit 3]
+--- stdout
+--- stderr
+why: why inbox には Remote がいります。この端末はサインインしていません（why login）
+
+$ why start notes#1
+[exit 3]
+--- stdout
+--- stderr
+why: why start には Remote がいります。この端末はサインインしていません（why login）
+
+$ why remote
+[exit 0]
+--- stdout
+Remote  まだサインインしていません
+  why login をブラウザで承認するとこの端末でサインインでき、Remote があなたの repo を持ちます。変更はひとりでに Remote へ届きます。
+--- stderr
+
+$ why server --json
+[exit 3]
+--- stdout
+{
+  "error": {
+    "kind": "offline",
+    "message": "why server には Remote がいります。この端末はサインインしていません（why login）"
+  }
+}
+--- stderr
+

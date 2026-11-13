@@ -203,7 +203,7 @@ function run(cmd: string, argv: string[], seconds: number, env: NodeJS.ProcessEn
 }
 
 /** The root as a Prompt on the device has it: its own /, /dev, /proc, /tmp and /root, no network, nothing of this machine's,
- * and its user root (uid 0 in a namespace of its own, as root3 starts a Prompt), whoever runs this. */
+ * and its user root (uid 0 in a namespace of its own, as why starts a Prompt), whoever runs this. */
 const sandbox = (root: string) => ['--unshare-all', '--unshare-user', '--uid', '0', '--gid', '0', '--die-with-parent', '--ro-bind', root, '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp',
   '--tmpfs', '/root', '--chdir', '/root', '--clearenv', ...ENV.flatMap((e) => ['--setenv', ...e.split(/=(.*)/s).slice(0, 2)])];
 

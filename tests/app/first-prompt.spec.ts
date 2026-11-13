@@ -4,7 +4,7 @@ import {rootCommand} from './paths.ts';
 
 // The first Prompt in a browser: what it fetches before its prompt line
 // comes, and how long that takes, from a cold browser (nothing cached) and
-// again after a reload (what it fetched before is the browser's). root3 is
+// again after a reload (what it fetched before is the browser's). why is
 // the whole root, but a Prompt reads only what its programs open, so the
 // first prompt costs the index, the translator, its shell's (bash's) and
 // BusyBox's translations and the few files they read, not the root. @slow,
@@ -17,8 +17,8 @@ const BUDGET = 6 * MB;
 
 test.describe('the first Prompt', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
-  // root3 runs in a Prompt after the first, from what the first was given ahead of time (fixtures.ts, root3Ahead).
-  test.use({root3Ahead: true});
+  // why runs in a Prompt after the first, from what the first was given ahead of time (fixtures.ts, whyAhead).
+  test.use({whyAhead: true});
 
   test('comes with a few megabytes, not the whole root, and sooner again once cached', async ({app}) => {
     test.setTimeout(300_000);
@@ -27,13 +27,13 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
     let counting = false;
     const got: {url: string; bytes: number}[] = [];
     // Every response the page and its workers take while the Prompt starts (a worker's synchronous reads too).
-    // What comes once its prompt line is there (root3's translation, a few seconds after, for the Prompts after it) is not the first Prompt's.
+    // What comes once its prompt line is there (why's translation, a few seconds after, for the Prompts after it) is not the first Prompt's.
     app.page.context().on('requestfinished', async (r) => {
       if (!counting || !/\/(webroot|userland|root)\//.test(r.url())) return;
       const s = await r.sizes().catch(() => null);
       if (s) got.push({url: new URL(r.url()).pathname, bytes: s.responseBodySize + s.responseHeadersSize});
     });
-    // From opening the repo (Forge reads root3 ahead as it shows it) to the Prompt's first prompt line, once written to.
+    // From opening the repo (Forge reads why ahead as it shows it) to the Prompt's first prompt line, once written to.
     const first = async (open: () => Promise<unknown>, reloads: boolean) => {
       got.length = 0;
       counting = true;
@@ -51,19 +51,19 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
     };
     const cold = await first(() => app.newRepo.openInForge(), false);
     const warm = await first(async () => { await app.page.reload(); await app.forge.promptBox.waitFor(); }, true);
-    // root3 itself in that Prompt: translated as it runs, until its translation made ahead of time is ready (it comes after
-    // the prompt line), when this Prompt is given it and runs root3 from it from its next run on.
+    // why itself in that Prompt: translated as it runs, until its translation made ahead of time is ready (it comes after
+    // the prompt line), when this Prompt is given it and runs why from it from its next run on.
     let started = Date.now();
     const cmd = rootCommand();
     await app.forge.run(`${cmd} --version`);
     await expect(app.forge.prompt).toContainText(new RegExp(`^${cmd} \\d+\\.\\d+\\.\\d+`, 'm'), {timeout: 120_000});
-    const root3 = {ms: Date.now() - started};
+    const why = {ms: Date.now() - started};
     await expect(app.page.locator('.term[data-ahead]')).toHaveAttribute('data-ahead', new RegExp(`/usr/bin/${cmd}`), {timeout: 120_000});
     started = Date.now();
     await app.forge.run(`${cmd} --version`);
     await expect(app.forge.prompt).toContainText(new RegExp(`^${cmd} \\d+\\.\\d+\\.\\d+`, 'm'), {timeout: 120_000});
-    const root3Ready = {ms: Date.now() - started};
-    const said = JSON.stringify({cold, warm, root3, root3Ready}, null, 2);
+    const whyReady = {ms: Date.now() - started};
+    const said = JSON.stringify({cold, warm, why, whyReady}, null, 2);
     console.log(`first Prompt: ${said}`);
     if (process.env.FIRST_PROMPT_OUT) writeFileSync(process.env.FIRST_PROMPT_OUT, said);
     expect(cold.bytes, said).toBeLessThan(BUDGET);

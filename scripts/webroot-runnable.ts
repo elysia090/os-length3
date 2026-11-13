@@ -1,7 +1,7 @@
-// Which of root3's programs the browser's Prompt can run today: each program
+// Which of why's programs the browser's Prompt can run today: each program
 // of the root (every executable under /usr/bin, /usr/sbin and /usr/libexec,
 // BusyBox's applets by their links) is run once with `--version` under the
-// muk in node, mounted from root3's packs as the browser mounts it
+// muk in node, mounted from why's packs as the browser mounts it
 // (with its translations made ahead of time), and once on this machine's
 // kernel in the same root (bwrap: its own /, /dev, /proc, as a Prompt has), and the two are compared:
 //
@@ -22,7 +22,7 @@
 //
 // WEB is the web root (public/webroot; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
-// is root3's own (its index names it), else ../module/sods' wasm build.
+// is why's own (its index names it), else ../module/sods' wasm build.
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
@@ -94,7 +94,7 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   const {taken} = await import('../module/sods/runtime/kept.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
-  // --fresh: this checkout's translator, translating everything as it runs (what the next root3 will be).
+  // --fresh: this checkout's translator, translating everything as it runs (what the next why will be).
   const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));
   const vfs = new Vfs();
   mountPack(vfs, w.index, {
@@ -217,7 +217,7 @@ async function main() {
   if (!web || !rootDir) { console.error('usage: webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
   const w = openWeb(web);
   const translator = new URL('../module/sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url).pathname;
-  if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: root3 names none, and ${translator} is not built`);
+  if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: why names none, and ${translator} is not built`);
   // What each file is, by its first bytes (ELF, a script and its interpreter).
   const head = (path: string) => { const f = w.index.files.find((x) => x.path === path); return f ? w.read(f).subarray(0, 128) : Buffer.alloc(0); };
   const what = (path: string) => {
@@ -234,12 +234,12 @@ async function main() {
   // Work a person does in a Prompt, each a line of sh, compared the same way: what --version cannot show (fork, pipes, signals, threads).
   const work = only ? [] : await compare(WORK.map(([name, line]) => ({name, what: line, path: '/usr/bin/sh', args: ['-c', line]})), {web, rootDir, translator, jobs, seconds: seconds * 4, fresh, kept});
   const tally = (rs: Row[], v: Row['verdict']) => rs.filter((r) => r.verdict === v).length;
-  const about = w.about ? `root3 ${w.about.version} (sha256 ${w.about.sha256})` : `${w.index.name} ${w.index.version} (a root of packs of before)`;
+  const about = w.about ? `why ${w.about.version} (sha256 ${w.about.sha256})` : `${w.index.name} ${w.index.version} (a root of packs of before)`;
   const cell = (t: unknown) => String(t).replace(/\|/g, '\\|').replace(/`/g, "'").replace(/\n/g, ' ');
   const md = [
-    `# Which programs of root3 the browser's Prompt runs`,
+    `# Which programs of why the browser's Prompt runs`,
     '',
-    `${about}. Each program is run under the muk in node (mounted from root3's packs as the browser mounts it, with its translations made ahead of time) and natively in the same root (bwrap: its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node scripts/webroot-runnable.ts\`.`,
+    `${about}. Each program is run under the muk in node (mounted from why's packs as the browser mounts it, with its translations made ahead of time) and natively in the same root (bwrap: its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node scripts/webroot-runnable.ts\`.`,
     '',
     `- **runs**: the same exit status and output as native (or, as native, no end)`,
     `- **not yet**: present, not yet runnable under muk: it ends otherwise than native (what differs, the system calls it was answered ENOSYS), box said why, or no end within the time`,
@@ -292,7 +292,7 @@ const WORK: [string, string][] = [
   ['what the network is: ip, ss, ping', "ip -4 -br addr; ip -br link; ss -lnt | wc -l; ping -c2 -q localhost | sed -n 4p"],
   ['nothing outside is reached', "curl -sS http://10.1.2.3/ 2>&1 | cut -d' ' -f1-7; curl -sS http://127.0.0.1:1/ 2>&1 | cut -d' ' -f1-7"],
   ['apk info', "apk info 2>/dev/null | wc -l"],
-  ['root3 help', "root3 help | head -n 1"],
+  ['why help', "why help | head -n 1"],
   ['nano --help', "nano --help | head -n 1"],
   // Work as heavy as a person's: threads, many processes, a parallel build, a history, floating point, signals and
   // timers, mmap, deep recursion, big pipelines, crypto, archives of many files.

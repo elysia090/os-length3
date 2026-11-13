@@ -34,7 +34,11 @@ pub const DEPTH_LIMIT: i32 = 400;
 pub const G_LOW: u32 = 36;
 /// The thread's x87 registers: their handle in the coprocessor (x87.rs).
 pub const G_X87: u32 = 37;
-pub const GLOBALS: u32 = 38;
+/// What is kept of rflags beyond G_FLAGS, each bit where x86 has it: DF, set and cleared as the thread runs (std,
+/// cld, popfq) and read by its string instructions, whichever block, function or module they are in.
+pub const G_RF: u32 = 38;
+pub const RF_DF: i64 = 0x400;
+pub const GLOBALS: u32 = 39;
 /// A word below where anything may be mapped: nonzero when the kernel wants the thread to look in (a signal, another
 /// thread's turn), read at each loop's head.
 pub const INTERRUPT: u32 = 0x100;

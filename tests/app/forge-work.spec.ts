@@ -1,5 +1,5 @@
 import {expect, test} from './fixtures.ts';
-import {BIG, GAP, GRID, PAD, SHADOW, TERM, TERM_GAP, TERM_HELD, TOP, WIDTH} from '../../root3/app/pages/forge/desk-layout.ts';
+import {BIG, GAP, GRID, PAD, SHADOW, TERM, TERM_GAP, TERM_HELD, TOP, WIDTH} from '../../why/app/pages/forge/desk-layout.ts';
 
 // Working in Forge without losing anything (issue #20): Tab or Ctrl+] moves lines in
 // and Undo takes it back, a press on a line's number is that line, Undo

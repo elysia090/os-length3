@@ -14,11 +14,11 @@ issue and, if you want, you.
 
 In scope:
 
-- the Remote at `os.length3.com` (`root3/remote`);
-- the web app (`root3/app`);
-- the desktop app (`root3/desktop`);
-- `root3` and its core (`root3/cli`, `root3/core`), including the Prompt's sandbox and
-  `root3 ssh`;
+- the Remote at `os.length3.com` (`why/remote`);
+- the web app (`why/app`);
+- the desktop app (`why/desktop`);
+- `why` and its core (`why/cli`, `why/core`), including the Prompt's sandbox and
+  `why ssh`;
 - the release workflows (`.github/workflows`).
 
 Out of scope:
@@ -29,13 +29,13 @@ Out of scope:
   Prompt is a sandbox, so an escape from it is in scope.
 
 Never test against another person's account or data. Testing against your own
-is welcome, and so is a Remote of your own (`node root3/remote/serve/dev.ts`).
+is welcome, and so is a Remote of your own (`node why/remote/serve/dev.ts`).
 
 ## Supported versions
 
 Only the latest release is supported: the release `module/ricebox/RELEASE` names, which
 the web app at `os.length3.com` always is. Fixes go into the next release.
-Older desktop apps and `root3` builds are asked to update. Nothing earlier is
+Older desktop apps and `why` builds are asked to update. Nothing earlier is
 patched.
 
 ## Threat model, in short
@@ -46,40 +46,40 @@ The whole model is in `docs/DESIGN.md`, Part II:
 - §6, "The canonical copy is on the Remote" and "The Remote";
 - the Prompt, under "One OS, two ways in".
 
-The Remote's checks, item by item, are in `root3/remote/README.md` ("What every
+The Remote's checks, item by item, are in `why/remote/README.md` ("What every
 request passes, and the one secret") and are tested in
-`root3/remote/tests/security.test.ts`.
+`why/remote/tests/security.test.ts`.
 
 - **Who someone is.** GitHub, Google or Apple say it once, and then a
   passkey does. Passkeys require user verification. A device is a session
   that a browser approved by its code (RFC 8628), and any other session can
   end it. In a browser a session is a `__Host-` cookie (HttpOnly: no script
   reads it; the Remote hands a page no token, ever), taken only from the
-  app's own pages; on a device (the app, root3) it is a bearer token from the
+  app's own pages; on a device (the app, why) it is a bearer token from the
   device flow, kept apart from everything the app's page reads
-  (`root3/core/src/device/vault.rs`), and the page asks the Remote through the core.
+  (`why/core/src/device/vault.rs`), and the page asks the Remote through the core.
   Either is taken only signed with the Remote's secret.
 - **Secrets on a device.** The session's bearer and the Agent's key are kept
   in the OS's keyring (the Keychain, Credential Manager without roaming, the
   Secret Service), never in Home's state, a repo or a dotfile; where there is
   no keyring that answers, in a file only the person reads (0600), and
-  `root3 remote sign-in` says which. In a browser the Agent's key is sealed by
+  `why remote sign-in` says which. In a browser the Agent's key is sealed by
   the person's passkey (WebAuthn PRF, AES-256-GCM) and opened once a session;
   where no passkey can seal it, Runtime says it is kept as given. A program running as the person can still
   ask an unlocked keyring for them, as it can on every desktop; what limits
   that is a session's being seen and ended from any other device, and
   Prompts never seeing the folder they are kept in.
 - **What is trusted for what.** The Remote holds one secret and derives one
-  key a purpose from it (`root3/remote/serve/keys.ts`). A domain's name is trusted
+  key a purpose from it (`why/remote/serve/keys.ts`). A domain's name is trusted
   while its DNS names this Remote and account. A root is trusted only by the
-  digest pinned in `root3/core/src/root/pins.rs`, and so is the browser's copy of
+  digest pinned in `why/core/src/root/pins.rs`, and so is the browser's copy of
   it: its index by the digest pinned beside it, each pack by the table of
   its files' digests that names it, each file read from a pack by its line
   of that table (`module/muk/runtime/table.ts`), before any of it is used.
 - **What runs where.** A Prompt runs a distribution's root on the device's
   own kernel without privilege: user, mount, pid, ipc, uts and network
   namespaces, a read-only root, no_new_privs and a seccomp filter
-  (`root3/core/src/prompt/seccomp.rs`). Its network is a per-device grant. The desktop
+  (`why/core/src/prompt/seccomp.rs`). Its network is a per-device grant. The desktop
   webview runs only the app's own files and may only listen for events and
   set its title.
 - **What is out of reach.**

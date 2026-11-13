@@ -1,11 +1,11 @@
-// npm run selftest:prod: the web app and root3 against the Remote as production
+// npm run selftest:prod: the web app and why against the Remote as production
 // runs it (README.md here), each part in turn, one heavy thing at a time:
 //
-//   node tests/prod/run.ts [headers] [research] [web] [root3] [measure] [drills]
+//   node tests/prod/run.ts [headers] [research] [web] [why] [measure] [drills]
 //
-// With no part named: headers, research, web, root3. ROOT3=path runs root3's part with
-// that binary (the release's: cargo build --profile prompt -p root3
-// --no-default-features --target x86_64-unknown-linux-musl); without it, root3 is
+// With no part named: headers, research, web, why. WHY=path runs why's part with
+// that binary (the release's: cargo build --profile prompt -p why
+// --no-default-features --target x86_64-unknown-linux-musl); without it, why is
 // built as selftest:cli builds it. Every server it starts (Postgres, the
 // bridge, workerd) is stopped when it ends, however it ends.
 
@@ -15,16 +15,16 @@ import {randomBytes} from 'node:crypto';
 import {existsSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {API_POLICY} from '../../root3/remote/serve/request.ts';
-import {webPolicy} from '../../root3/app/host/policy.ts';
+import {API_POLICY} from '../../why/remote/serve/request.ts';
+import {webPolicy} from '../../why/app/host/policy.ts';
 import {cluster} from './postgres.ts';
 import {appBuild, bridgeProcess, OS, remote} from './stack.ts';
 
-const ALL = ['headers', 'research', 'web', 'root3', 'measure', 'drills'];
+const ALL = ['headers', 'research', 'web', 'why', 'measure', 'drills'];
 const asked = process.argv.slice(2);
 const bad = asked.filter((a) => !ALL.includes(a));
 if (bad.length) { console.error(`selftest:prod: not a part: ${bad.join(' ')} (${ALL.join(', ')})`); process.exit(2); }
-const parts = asked.length ? asked : ['headers', 'research', 'web', 'root3'];
+const parts = asked.length ? asked : ['headers', 'research', 'web', 'why'];
 const say = (s: string) => console.log(`selftest:prod: ${s}`);
 
 /** Run `args` with node from os/, its output passed on; its exit code. */
@@ -35,7 +35,7 @@ const node = (args: string[], env: NodeJS.ProcessEnv = {}) => new Promise<number
 
 /** A Postgres, the bridge and one Worker, for `f`; all stopped after. */
 async function withRemote<T>(o: Omit<Parameters<typeof remote>[1], 'dir' | 'assets' | 'bridge'>, f: (r: Awaited<ReturnType<typeof remote>>) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), 'root3-prod-run-'));
+  const dir = mkdtempSync(join(tmpdir(), 'why-prod-run-'));
   const pg = await cluster();
   const b = await bridgeProcess();
   let r: Awaited<ReturnType<typeof remote>> | null = null;
@@ -57,7 +57,7 @@ const APP_HEADERS: [string, RegExp][] = [['content-security-policy', exactly(`${
   ['cross-origin-embedder-policy', /^require-corp$/],
   ['cross-origin-resource-policy', /^same-origin$/], ['x-content-type-options', /^nosniff$/],
   ['permissions-policy', /camera=\(\).*publickey-credentials-get=\(self\)/]];
-/** What the Worker's middleware (root3/remote/serve/request.ts unkept) puts on every answer of the Remote's own. */
+/** What the Worker's middleware (why/remote/serve/request.ts unkept) puts on every answer of the Remote's own. */
 const REMOTE_HEADERS: [string, RegExp][] = [['content-security-policy', exactly(API_POLICY)], ['x-frame-options', /^DENY$/],
   ['strict-transport-security', /^max-age=31536000; includeSubDomains$/], ['referrer-policy', /^no-referrer$/],
   ['cross-origin-resource-policy', /^same-origin$/], ['x-content-type-options', /^nosniff$/]];
@@ -111,16 +111,16 @@ async function headers() {
   });
 }
 
-/** Run root3 with `args` in its own home against `url`. */
-function root3(bin: string, home: string, url: string, args: string[]) {
-  const r = spawnSync(bin, args, {env: {PATH: process.env.PATH ?? '', HOME: home, ROOT3_HOME: join(home, 'root3'), ROOT3_LANG: 'en', ROOT3_REMOTE: url, NO_COLOR: '1', ROOT3_KEYRING: 'off'},
+/** Run why with `args` in its own home against `url`. */
+function why(bin: string, home: string, url: string, args: string[]) {
+  const r = spawnSync(bin, args, {env: {PATH: process.env.PATH ?? '', HOME: home, WHY_HOME: join(home, 'why'), WHY_LANG: 'en', WHY_REMOTE: url, NO_COLOR: '1', WHY_KEYRING: 'off'},
     encoding: 'utf8', cwd: home, timeout: 120_000});
   return {code: r.status ?? -1, out: r.stdout, err: r.stderr};
 }
 
 /**
  * The bearer of the session a Set-Cookie sets: the session cookie's own value (the token signed, the bearer's form too).
- * A page is handed no bearer (root3/remote/people/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
+ * A page is handed no bearer (why/remote/people/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
  */
 const bearerIn = (setCookies: string[]): string | null => {
   for (const c of setCookies) {
@@ -130,7 +130,7 @@ const bearerIn = (setCookies: string[]): string | null => {
   return null;
 };
 
-/** A Remote for research (ENTER_AS), as production is configured today: in by the link alone; root3 through the device flow. */
+/** A Remote for research (ENTER_AS), as production is configured today: in by the link alone; why through the device flow. */
 async function research() {
   const key = randomBytes(30).toString('base64url');
   await withRemote({enter: {as: 'banana000000', key}}, async (r) => {
@@ -155,12 +155,12 @@ async function research() {
     const token = bearerIn(entered.cookies)!;
     assert.equal((await json('GET', '/api/auth/passkey/list-user-passkeys', {token})).status, 403, 'no passkey for research');
     assert.equal((await json('PUT', '/v1/home/todo', {token, body: {value: '[]', version: 0}})).status, 200);
-    const bin = process.env.ROOT3;
+    const bin = process.env.WHY;
     if (bin) {
-      const home = mkdtempSync(join(tmpdir(), 'root3-prod-root3-'));
+      const home = mkdtempSync(join(tmpdir(), 'why-prod-why-'));
       try {
         const login = await new Promise<{code: number; out: string}>((resolve, reject) => {
-          const p = spawn(bin, ['login', r.url], {env: {PATH: process.env.PATH ?? '', HOME: home, ROOT3_HOME: join(home, 'root3'), ROOT3_LANG: 'en', NO_COLOR: '1', ROOT3_KEYRING: 'off'}, cwd: home});
+          const p = spawn(bin, ['login', r.url], {env: {PATH: process.env.PATH ?? '', HOME: home, WHY_HOME: join(home, 'why'), WHY_LANG: 'en', NO_COLOR: '1', WHY_KEYRING: 'off'}, cwd: home});
           let out = '', approved = false;
           p.stdout.on('data', (d: Buffer) => {
             out += d;
@@ -178,13 +178,13 @@ async function research() {
           p.once('exit', (c) => resolve({code: c ?? -1, out}));
         });
         assert.equal(login.code, 0, login.out);
-        const made = root3(bin, home, r.url, ['repo', 'new', 'notes', '-t', 'empty']);
+        const made = why(bin, home, r.url, ['repo', 'new', 'notes', '-t', 'empty']);
         assert.equal(made.code, 0, made.err);
-        const listed = root3(bin, home, r.url, ['remote']);
+        const listed = why(bin, home, r.url, ['remote']);
         assert.match(listed.out, /notes {2}in step/, listed.out + listed.err);
-        say('research: root3 signed in through the device flow approved by the entered session, and keeps a repo in step');
+        say('research: why signed in through the device flow approved by the entered session, and keeps a repo in step');
       } finally { rmSync(home, {recursive: true, force: true}); }
-    } else say('research: no Root3 given: root3\'s part of it is left out');
+    } else say('research: no WHY given: why\'s part of it is left out');
     assert.equal((await json('GET', '/v1/repos', {token})).status, 200);
     assert.equal(await r.sweep(), 200);
     for (let i = 0; i < 50 && !/sweep \{/.test(r.log()); i++) await new Promise((x) => setTimeout(x, 100));
@@ -194,10 +194,10 @@ async function research() {
 }
 
 let failed = 0;
-const assets = mkdtempSync(join(tmpdir(), 'root3-prod-assets-'));
+const assets = mkdtempSync(join(tmpdir(), 'why-prod-assets-'));
 try {
   say('building the app for its own origin, as build:cloudflare does');
-  const built = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--config', join(OS, 'root3', 'app', 'vite.config.ts'), '--outDir', assets, '--logLevel', 'error'],
+  const built = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--config', join(OS, 'why', 'app', 'vite.config.ts'), '--outDir', assets, '--logLevel', 'error'],
     {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
   if (built.status !== 0) throw new Error('the app did not build');
   assert.ok(existsSync(join(assets, '_headers')), 'the build carries public/_headers');
@@ -208,10 +208,10 @@ try {
       if (part === 'headers') await headers();
       else if (part === 'research') await research();
       else if (part === 'web') { const c = await node([join(OS, 'node_modules', '@playwright', 'test', 'cli.js'), 'test', '-c', 'tests'], {SELFTEST_REMOTE_KIND: 'worker'}); if (c) throw new Error(`the app's selftest failed (${c})`); }
-      else if (part === 'root3') {
+      else if (part === 'why') {
         if (spawnSync(process.execPath, [join(OS, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', 'tests/cli'], {cwd: OS, stdio: 'inherit'}).status !== 0) throw new Error('tests/cli does not compile');
         const c = await node(['--test', '--test-concurrency=1', 'tests/cli/*.test.ts'], {SELFTEST_REMOTE_KIND: 'worker'});
-        if (c) throw new Error(`root3's selftest failed (${c})`);
+        if (c) throw new Error(`why's selftest failed (${c})`);
       } else if (part === 'measure') { const c = await node([join(OS, 'tests', 'prod', 'measure.ts')]); if (c) throw new Error(`measure failed (${c})`); }
       else if (part === 'drills') { const c = await node([join(OS, 'tests', 'prod', 'drills.ts')]); if (c) throw new Error(`drills failed (${c})`); }
       say(`${part}: passed`);

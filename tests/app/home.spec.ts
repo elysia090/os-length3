@@ -360,16 +360,59 @@ test("Home's band: the terminal's key, the files' and the search, from the rail'
 
 test('what was written on Home and was not yet the core\'s when the page went is kept at the next start', async ({app}) => {
   // Written, and the page loaded again before the core had it: the page kept it meanwhile, where it writes at once.
-  await app.page.evaluate(() => localStorage.setItem('root3.os.unkept.profile', JSON.stringify({name: 'Grace Hopper', handle: '', bio: 'Kept at once.'})));
+  await app.page.evaluate(() => localStorage.setItem('why.os.unkept.profile', JSON.stringify({name: 'Grace Hopper', handle: '', bio: 'Kept at once.'})));
   await app.open();
   await app.rail.go('home');
   await expect(app.page.locator('#profile-name')).toHaveText('Grace Hopper');
   await expect(app.main.getByRole('textbox', {name: 'Bio', exact: true})).toHaveText('Kept at once.');
   // It is the core's now, and the page holds nothing: still so at a start with nothing held.
-  await expect.poll(() => app.page.evaluate(() => localStorage.getItem('root3.os.unkept.profile'))).toBeNull();
+  await expect.poll(() => app.page.evaluate(() => localStorage.getItem('why.os.unkept.profile'))).toBeNull();
   await app.open();
   await app.rail.go('home');
   await expect(app.page.locator('#profile-name')).toHaveText('Grace Hopper');
+});
+
+test('what this browser kept under the name the product had before is carried over: its repos, and what its pages noted', async ({app}) => {
+  await app.newRepo.make('kept');
+  // Off the app (a file of its origin that starts nothing), what is kept is put where a build named root3 kept it:
+  // the core's files (IndexedDB root3-core) and the pages' notes (localStorage root3.…).
+  await app.page.goto('/boot.js');
+  await app.page.evaluate(async () => {
+    const asked = <T,>(r: IDBRequest<T>) => new Promise<T>((ok, no) => { r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+    const now = await asked(indexedDB.open('why-core'));
+    const before = await new Promise<IDBDatabase>((ok, no) => {
+      const r = indexedDB.open('root3-core', now.version);
+      r.onupgradeneeded = () => { for (const [store, by] of [['nodes', 'path'], ['meta', null], ['data', 'path']] as const) r.result.createObjectStore(store, by ? {keyPath: by} : undefined); };
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => no(r.error);
+    });
+    for (const store of ['nodes', 'data', 'meta']) {
+      const from = now.transaction(store).objectStore(store);
+      const [keys, values] = await Promise.all([asked(from.getAllKeys()), asked(from.getAll())]);
+      const tx = before.transaction(store, 'readwrite');
+      keys.forEach((k, i) => (store === 'meta' ? tx.objectStore(store).put(values[i], k) : tx.objectStore(store).put(values[i])));
+      await new Promise<void>((ok, no) => { tx.oncomplete = () => ok(); tx.onerror = () => no(tx.error); });
+    }
+    now.close();
+    before.close();
+    await asked(indexedDB.deleteDatabase('why-core'));
+    for (const k of Object.keys(localStorage)) {
+      if (!k.startsWith('why.')) continue;
+      localStorage.setItem(`root3.${k.slice('why.'.length)}`, localStorage.getItem(k)!);
+      localStorage.removeItem(k);
+    }
+  });
+  const names = () => app.page.evaluate(async () => ({
+    kept: (await indexedDB.databases()).map((d) => d.name).sort(),
+    before: Object.keys(localStorage).filter((k) => k.startsWith('root3.')),
+    repo: localStorage.getItem('why.os.repo'),
+  }));
+  expect(await names()).toMatchObject({kept: ['root3-core'], repo: null});
+  // The app opens on it: the repo is there, last open as it was, and nothing is left under the names before.
+  await app.open();
+  await expect(app.newRepo.madeIn('kept')).toBeVisible();
+  await expect(app.forge.editor('README.md')).toBeVisible();
+  await expect.poll(names).toEqual({kept: ['why-core'], before: [], repo: 'kept'});
 });
 
 test('Home come back to is where it was read to, and the page between starts at its top', async ({app}) => {

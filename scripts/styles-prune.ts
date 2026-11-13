@@ -3,7 +3,7 @@
 //
 //   node scripts/styles-prune.ts [--dry] [--report FILE] [SHEET]
 //
-// SHEET is root3/app/styles/index.css unless named; when it is the entry styles-split.ts writes (only @imports), its parts are
+// SHEET is why/app/styles/index.css unless named; when it is the entry styles-split.ts writes (only @imports), its parts are
 // pruned each in place. --dry changes nothing and only says what it would take out; --report also writes what it
 // says to FILE. Run it again and it finds nothing more.
 //
@@ -153,7 +153,7 @@ export function sheetsOf(sheet: string): string[] {
 
 function main() {
   const {values, positionals} = parseArgs({allowPositionals: true, options: {dry: {type: 'boolean'}, report: {type: 'string'}}});
-  const entry = resolve(positionals[0] ?? join(OS, 'root3', 'app', 'styles', 'index.css'));
+  const entry = resolve(positionals[0] ?? join(OS, 'why', 'app', 'styles', 'index.css'));
   const app = pageWords(OS);
   const lines: string[] = [];
   let rules = 0, pieces = 0;

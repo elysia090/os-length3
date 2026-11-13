@@ -19,7 +19,7 @@ test('a repo made from the scaffold has its README, its summary under the title,
   await app.newRepo.make('hello', {summary: 'Says hello.'});
   await expect(app.forge.editor('README.md')).toHaveValue('# hello\n\nSays hello.\n');
   await expect(app.forge.editor('README.md')).toBeFocused();
-  // C's files are `root3 repo new -t c`'s, not every repo's.
+  // C's files are `why repo new -t c`'s, not every repo's.
   await expect(app.forge.editor('src/main.c')).toHaveCount(0);
   await expect(app.forge.editor('Makefile')).toHaveCount(0);
 });

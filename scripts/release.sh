@@ -2,19 +2,19 @@
 # Everything a release of OS Length3 Linux holds, made from this tree, into OUT:
 #
 #   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
-#                                                  recipe (module/ricebox/make/build.sh), with this tree's root3 (module/ricebox/make/assemble.sh)
+#                                                  recipe (module/ricebox/make/build.sh), with this tree's why (module/ricebox/make/assemble.sh)
 #   os-length3-linux-X.Y.Z-webroot.tar               the same root as the browser reads it (webroot.sh), checked
 #                                                  to be the same tree (webroot-parity.ts)
-#   os-length3-linux-X.Y.Z-web.zip                  the web build, with that root3 (web-release.sh)
+#   os-length3-linux-X.Y.Z-web.zip                  the web build, with that why (web-release.sh)
 #   os-length3-linux-X.Y.Z-desktop-amd64.deb        the desktop app, its Prompt running that root on the
-#   os-length3-linux-X.Y.Z-desktop-x86_64.AppImage  machine, with root3 beside it (desktop.sh)
+#   os-length3-linux-X.Y.Z-desktop-x86_64.AppImage  machine, with why beside it (desktop.sh)
 #   os-length3-linux-X.Y.Z-film.mp4                a film of the release at work, when the release-film branch
 #                                                  holds one (film.mp4, its sha256 in film.sha256)
 #   SHA256SUMS, manifest                           the digests; what the root was made from
 #
 # and OUT/../notes.md, the release's notes. Before the web build and the app are made, the root is pinned
-# in root3/core/src/root/pins.rs (pin-root.ts), so what ships trusts this release's root; once the app is made, it is
-# pinned in root3/shared/desktop-releases.json (pin-desktop.ts). Both changes stay in the tree, to be committed as
+# in why/core/src/root/pins.rs (pin-root.ts), so what ships trusts this release's root; once the app is made, it is
+# pinned in why/shared/desktop-releases.json (pin-desktop.ts). Both changes stay in the tree, to be committed as
 # one: release.yml proposes them to main. The release itself is made by publish-release.ts (or
 # .github/workflows/release.yml, which runs this script).
 #
@@ -39,7 +39,7 @@ if [ -z "${GITHUB_SHA:-}" ] && [ -n "$(git -C "$here" status --porcelain)" ]; th
 fi
 cd "$here"
 
-# The root: its packages, made from this tree's pins, with this tree's root3.
+# The root: its packages, made from this tree's pins, with this tree's why.
 sh module/ricebox/make/assemble.sh "${ROOT_PACKAGES:?the root's packages, as module/ricebox/make/build.sh made them}" "$out" "$version"
 root=$(ls "$out"/os-length3-linux-"$version"-x86_64-*.tar.zst)
 
@@ -67,9 +67,9 @@ node scripts/pin-root.ts "$root" public/webroot
 # The web build (it checks the types and runs the tests) and the desktop app.
 WEBROOT_READY=1 sh scripts/web-release.sh
 web=os-length3-linux-$version-web.zip
-mv root3-web.zip "$out/$web"
-rm -f root3-web.zip.sha256
-# The app with root3 beside it (scripts/desktop.sh): the command line, and what its Prompt and SSH run. It runs its
+mv why-web.zip "$out/$web"
+rm -f why-web.zip.sha256
+# The app with why beside it (scripts/desktop.sh): the command line, and what its Prompt and SSH run. It runs its
 # Prompt on the machine, from the root it installs: its build leaves the web root out (vite.config.ts).
 sh scripts/desktop.sh "$version"
 deb=os-length3-linux-$version-desktop-amd64.deb
@@ -89,7 +89,7 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
 {
   echo "# OS Length3 Linux $version"
   echo
-  echo "The root, laid out for Prompts (merged /usr): each of its $(grep -c '^package\.' manifest) packages made by its recipe (\`module/ricebox/packages\`) from the source this tree pins, checked against its digest, on one pinned Alpine, static and hardened, with root3, its profile and shell from \`$sha\` (\`manifest\` says each package's version, its source's digest and the key it was made under); the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (Length³ OS for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release.${film:+ \`$film\` shows it at work.}"
+  echo "The root, laid out for Prompts (merged /usr): each of its $(grep -c '^package\.' manifest) packages made by its recipe (\`module/ricebox/packages\`) from the source this tree pins, checked against its digest, on one pinned Alpine, static and hardened, with why, its profile and shell from \`$sha\` (\`manifest\` says each package's version, its source's digest and the key it was made under); the web build of the same tree, whose Prompt runs that whole root (each file fetched when a program first reads it); and the desktop app (why* for x86-64 Linux, a .deb and an AppImage): the same UI, its Prompt running that root on the machine, which it installs and trusts by the digest pinned in this release.${film:+ \`$film\` shows it at work.}"
   echo
   echo "| File | Bytes | SHA-256 |"
   echo "| --- | --- | --- |"
@@ -104,13 +104,13 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "mkdir opened && tar --zstd -xf $rootfile -C opened"
   echo '```'
   echo
-  echo "root3 $version is the root (the desktop app installs it) and \`$webroot\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`root3/core/src/root/pins.rs\` RELEASES pins both; the release pinned it:"
+  echo "why $version is the root (the desktop app installs it) and \`$webroot\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`why/core/src/root/pins.rs\` RELEASES pins both; the release pinned it:"
   echo
   echo '```rust'
-  awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/root3/core/src/root/pins.rs"
+  awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/why/core/src/root/pins.rs"
   echo '```'
   echo
-  echo "and its desktop app in \`root3/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes root3 from \`$webroot\` only at the pinned index (\`scripts/prompt-files.ts\`)."
+  echo "and its desktop app in \`why/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes why from \`$webroot\` only at the pinned index (\`scripts/prompt-files.ts\`)."
   echo
   echo '```json'
   echo "\"$version\": {"
@@ -119,6 +119,6 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "}"
   echo '```'
   echo
-  echo "\`manifest\` names each package, the root3 inside and the script that put them together. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it (x86-64 Linux with glibc 2.39 or newer: Ubuntu 24.04, Debian 13 and later, with a desktop's libEGL)."
+  echo "\`manifest\` names each package, the why inside and the script that put them together. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it (x86-64 Linux with glibc 2.39 or newer: Ubuntu 24.04, Debian 13 and later, with a desktop's libEGL)."
 } > ../notes.md
 cat ../notes.md

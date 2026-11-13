@@ -2,7 +2,7 @@ name: Release
 
 # Publishes OS Length3 Linux X.Y.Z: the root (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), the web root, the web build and
 # the desktop app (.deb, AppImage), with digests and build provenance; then proposes the pins to main as one pull
-# request (Pin vX.Y.Z: root3/core/src/root/pins.rs, root3/shared/desktop-releases.json). Asked for by a tag
+# request (Pin vX.Y.Z: why/core/src/root/pins.rs, why/shared/desktop-releases.json). Asked for by a tag
 # os-length3-linux-vX.Y.Z, by a push to main that changes module/ricebox/RELEASE, or by hand.
 #
 # Only main's commits are released (audit R1), one version at a time (audit R2). Only this job's token writes.
@@ -108,8 +108,8 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$branch"
-          git add root3/core/src/root/pins.rs root3/shared/desktop-releases.json
-          git commit -m "Pin $TAG: its root (root3/core/src/root/pins.rs RELEASES) and its desktop app (root3/shared/desktop-releases.json)"
+          git add why/core/src/root/pins.rs why/shared/desktop-releases.json
+          git commit -m "Pin $TAG: its root (why/core/src/root/pins.rs RELEASES) and its desktop app (why/shared/desktop-releases.json)"
           git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "$branch"
           gh pr create --base main --head "$branch" --title "Pin $TAG" \
             --body "What $TAG pinned as it was made (its notes say the same): merged, the tree ships it." \

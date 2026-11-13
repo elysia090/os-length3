@@ -100,7 +100,9 @@ pub struct Fx<'p> {
     pub fr_pending: bool,
     pub fused: Option<Instruction>,
     pub rsp_up: bool,
-    pub backward: bool,
+    /// DF where the code before in this block says it (std, cld): elsewhere it is the thread's (G_RF), read as the
+    /// string instruction runs.
+    pub backward: Option<bool>,
     pub(crate) entry: Vec<bool>,
     /// Each block's successors within, by index (NO: none).
     pub(crate) succ: &'p [[u32; 2]],

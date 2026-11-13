@@ -345,7 +345,7 @@ export class Kernel implements Kern {
     // The x87 its threads run (x87.ts), made when the first is.
     this.x87Module = x87 ?? translate?.module ?? null;
     // A program due to be translated again as one module (consolidate): at once as it is run again, or, where the
-    // host has idle time to give (a Prompt waiting for its next line: root3/app/prompt/kernel.worker.ts), only then (consolidateDue), so no
+    // host has idle time to give (a Prompt waiting for its next line: why/app/prompt/kernel.worker.ts), only then (consolidateDue), so no
     // run waits on it. Each due one: its node -> its entry.
     this.consolidateIdle = consolidateIdle;
     this.due = new Map();

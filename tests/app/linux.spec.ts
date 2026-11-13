@@ -18,7 +18,7 @@ test.use({storageState: async ({helloC}, use) => { await use(helloC); }});
 test.describe('the Prompt is Linux', {tag: '@slow'}, () => {
   test.skip(!process.env.SELFTEST_SLOW, '@slow: SELFTEST_SLOW=1 runs it');
   test.beforeEach(async ({app}) => {
-    expect(existsSync(PROMPT), 'this build carries no root3 (public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
+    expect(existsSync(PROMPT), 'this build carries no why (public/webroot): npm run webroot, or node scripts/prompt-files.ts').toBe(true);
     test.setTimeout(300_000);
     await app.newRepo.openInForge();
     await app.forge.startPrompt('hello');

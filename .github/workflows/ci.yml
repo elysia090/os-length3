@@ -1,10 +1,10 @@
 name: CI
 
-# The app, the root3 command and its core, the translator and the root. A change is tested once, in its pull request
+# The app, the why command and its core, the translator and the root. A change is tested once, in its pull request
 # (on the merge it would make); a branch without one runs by hand.
 on:
   pull_request:
-    paths: ['root3/**', 'module/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
+    paths: ['why/**', 'module/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 # Read-only token. Actions are pinned to full commits (tag beside); Dependabot proposes updates.
@@ -36,11 +36,11 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=core-wasm-${{ hashFiles('root3/core/src/**', 'root3/core/web/src/**', 'root3/core/Cargo.toml', 'root3/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'root3/shared/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=core-wasm-${{ hashFiles('why/core/src/**', 'why/core/web/src/**', 'why/core/Cargo.toml', 'why/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'why/shared/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/wasm32-wasip1/web/root3_core_web.wasm
+          path: target/wasm32-wasip1/web/why_core_web.wasm
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -53,11 +53,11 @@ jobs:
           cache-on-failure: true
       - name: Build
         if: steps.kept.outputs.cache-hit != 'true'
-        run: cargo build --locked --profile web -p root3-core-web --target wasm32-wasip1
+        run: cargo build --locked --profile web -p why-core-web --target wasm32-wasip1
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/wasm32-wasip1/web/root3_core_web.wasm
+          path: target/wasm32-wasip1/web/why_core_web.wasm
           key: ${{ steps.key.outputs.key }}
 
   # The pinned root as the browser reads it, built with this tree's translator and checked against the root.
@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'root3/core/src/root/pins.rs', 'root3/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'why/core/src/root/pins.rs', 'why/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/muk/runtime/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -182,11 +182,11 @@ jobs:
       - name: Restore core (wasm)
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/wasm32-wasip1/web/root3_core_web.wasm
+          path: target/wasm32-wasip1/web/why_core_web.wasm
           key: ${{ needs.core-wasm.outputs.key }}
           fail-on-cache-miss: true
       # Newer than the checkout, so scripts/core-wasm.ts (which goes by mtime) does not rebuild it.
-      - run: touch target/wasm32-wasip1/web/root3_core_web.wasm
+      - run: touch target/wasm32-wasip1/web/why_core_web.wasm
       - run: npm ci
       - name: Test
         env:
@@ -209,10 +209,10 @@ jobs:
           cache-on-failure: true
       # The desktop crate needs GTK and is linted where it is built (desktop job).
       - name: Clippy
-        run: cargo clippy --locked --all-targets -p root3-core -p root3-core-web -p root3 -- -D warnings
+        run: cargo clippy --locked --all-targets -p why-core -p why-core-web -p why -- -D warnings
       - name: Clippy (wasm32-wasip1)
         if: ${{ !cancelled() }}
-        run: cargo clippy --locked -p root3-core -p root3-core-web --target wasm32-wasip1 -- -D warnings
+        run: cargo clippy --locked -p why-core -p why-core-web --target wasm32-wasip1 -- -D warnings
 
   rust:
     name: Rust
@@ -227,7 +227,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
-      # root3 prompt makes user namespaces, which this image's AppArmor restricts.
+      # why prompt makes user namespaces, which this image's AppArmor restricts.
       - name: Allow user namespaces
         run: if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -236,14 +236,14 @@ jobs:
           shared-key: rust-${{ hashFiles('Cargo.toml') }}
           cache-on-failure: true
       - name: Test core and CLI
-        run: cargo test --locked -p root3-core -p root3
+        run: cargo test --locked -p why-core -p why
       - name: Test CLI end to end
         if: ${{ !cancelled() }}
         run: |
           npm ci
           npm run selftest:cli
 
-  # The x86-64 → wasm translator against native; and root3 (static, musl) run under it as the browser runs it.
+  # The x86-64 → wasm translator against native; and why (static, musl) run under it as the browser runs it.
   browser:
     name: muk in a browser (${{ matrix.part }})
     runs-on: ubuntu-24.04
@@ -280,16 +280,16 @@ jobs:
         if: matrix.part == 'native'
         run: cargo test --locked --release --manifest-path module/sods/Cargo.toml
       # run.ts takes the wasm build of the translator when it is current.
-      - name: Run root3 under muk
+      - name: Run why under muk
         if: matrix.part == 'prompt'
         run: |
           cargo build -q --locked --release --target wasm32-unknown-unknown --lib --manifest-path module/sods/Cargo.toml
-          cargo build --locked --profile prompt -p root3 --no-default-features --target x86_64-unknown-linux-musl
-          out=$(ROOT3_REPOS=/root node module/muk/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/root3 help all)
+          cargo build --locked --profile prompt -p why --no-default-features --target x86_64-unknown-linux-musl
+          out=$(WHY_REPOS=/root node module/muk/runtime/run.ts target/x86_64-unknown-linux-musl/prompt/why help all)
           echo "$out" | head -3
-          echo "$out" | grep -q 'root3 issue new'
+          echo "$out" | grep -q 'why issue new'
 
-  # The desktop app built and bundled on macOS, Windows and Linux on Arm, root3 beside it (as scripts/desktop.sh
+  # The desktop app built and bundled on macOS, Windows and Linux on Arm, why beside it (as scripts/desktop.sh
   # does on Linux x86-64). Prompts there run translated.
   desktop:
     name: Desktop (${{ matrix.target }})
@@ -328,19 +328,19 @@ jobs:
           BUNDLES: ${{ matrix.bundles }}
         run: |
           npm ci
-          # root3 is built for the app's minimum macOS (bundle.macOS.minimumSystemVersion, 10.13 by default), so what
+          # why is built for the app's minimum macOS (bundle.macOS.minimumSystemVersion, 10.13 by default), so what
           # both build (ring's C) is built once.
           if [ "$RUNNER_OS" = macOS ]; then
-            export MACOSX_DEPLOYMENT_TARGET=$(node -p "require('./root3/desktop/tauri.conf.json').bundle?.macOS?.minimumSystemVersion ?? '10.13'")
+            export MACOSX_DEPLOYMENT_TARGET=$(node -p "require('./why/desktop/tauri.conf.json').bundle?.macOS?.minimumSystemVersion ?? '10.13'")
           fi
-          cargo build --locked --release -p root3
+          cargo build --locked --release -p why
           ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
-          mkdir -p root3/desktop/binaries
-          cp "target/release/root3$ext" "root3/desktop/binaries/root3-$TARGET$ext"
-          "target/release/root3$ext" root check
-          npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build --config root3/app/vite.config.ts"}, "bundle": {"externalBin": ["binaries/root3"]}}'
+          mkdir -p why/desktop/binaries
+          cp "target/release/why$ext" "why/desktop/binaries/why-$TARGET$ext"
+          "target/release/why$ext" root check
+          npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build --config why/app/vite.config.ts"}, "bundle": {"externalBin": ["binaries/why"]}}'
 
-  # The .deb's AppArmor profile (root3/desktop/deb) on stock Ubuntu 24.04: /usr/bin/root3 can make user namespaces
+  # The .deb's AppArmor profile (why/desktop/deb) on stock Ubuntu 24.04: /usr/bin/why can make user namespaces
   # after postinst installs it, and cannot after postrm removes it.
   apparmor:
     name: AppArmor
@@ -357,16 +357,16 @@ jobs:
       - name: Check the profile
         run: |
           [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1 ]
-          cargo build -q --locked -p root3
-          sudo install -m 0755 target/debug/root3 /usr/bin/root3
-          native() { /usr/bin/root3 root check --json | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0, "utf8")).native))'; }
-          [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/root3 to begin with" >&2; exit 1; }
-          /usr/bin/root3 root check
-          sudo install -D -m 0644 root3/desktop/deb/root3.apparmor /usr/share/root3/apparmor/root3
-          sudo sh root3/desktop/deb/postinst configure
-          [ "$(native)" = true ] || { /usr/bin/root3 root check; exit 1; }
-          sudo sh root3/desktop/deb/postrm remove
-          [ ! -e /etc/apparmor.d/root3 ]
+          cargo build -q --locked -p why
+          sudo install -m 0755 target/debug/why /usr/bin/why
+          native() { /usr/bin/why root check --json | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0, "utf8")).native))'; }
+          [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/why to begin with" >&2; exit 1; }
+          /usr/bin/why root check
+          sudo install -D -m 0644 why/desktop/deb/why.apparmor /usr/share/why/apparmor/why
+          sudo sh why/desktop/deb/postinst configure
+          [ "$(native)" = true ] || { /usr/bin/why root check; exit 1; }
+          sudo sh why/desktop/deb/postrm remove
+          [ ! -e /etc/apparmor.d/why ]
           [ "$(native)" = false ] || { echo "the profile stayed after postrm" >&2; exit 1; }
 
   # muk beside runc: the same bundles run by both, as root (where one who is not may make no user namespace), and what
@@ -452,7 +452,7 @@ jobs:
           [ "$said" = '6.5 7.2999999999999998 87' ] || { echo "the root's gcc compiles literals wrong: $said" >&2; exit 1; }
           # apk lists every package assembled, and every file audits clean.
           inside 'apk info' | sort > "$w/apk-info"
-          { cut -d' ' -f1 target/root-packages/record; echo root3; } | sort | diff - "$w/apk-info"
+          { cut -d' ' -f1 target/root-packages/record; echo why; } | sort | diff - "$w/apk-info"
           audit=$(inside 'apk audit --system 2>&1' || true)
           [ -z "$audit" ] || { echo "apk audit says:" >&2; echo "$audit" >&2; exit 1; }
           inside 'openssl version' | grep -F "OpenSSL $OPENSSL_VERSION "
@@ -582,11 +582,11 @@ jobs:
       - name: Restore core (wasm)
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: target/wasm32-wasip1/web/root3_core_web.wasm
+          path: target/wasm32-wasip1/web/why_core_web.wasm
           key: ${{ needs.core-wasm.outputs.key }}
           fail-on-cache-miss: true
       # Newer than the checkout, so scripts/core-wasm.ts (which goes by mtime) does not rebuild it.
-      - run: touch target/wasm32-wasip1/web/root3_core_web.wasm
+      - run: touch target/wasm32-wasip1/web/why_core_web.wasm
       - name: Restore web root
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

@@ -39,7 +39,7 @@ const timing = (h: string | null, k: string) => { const m = new RegExp(`${k};dur
 
 /**
  * The bearer of the session a Set-Cookie sets: the session cookie's own value (the token signed, the bearer's form too).
- * A page is handed no bearer (root3/remote/people/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
+ * A page is handed no bearer (why/remote/people/auth.ts); this, which is no page, holds what it was sent, as a device holds its own.
  */
 const bearerIn = (setCookies: string[]): string | null => {
   for (const c of setCookies) {
@@ -69,7 +69,7 @@ interface Figures { route: string; status: number; wall: number; wallP90: number
   roundTrips: number; fromDb: number; toDb: number; setup: number; bytes: number; gzip: number }
 
 async function main() {
-  const dir = mkdtempSync(join(tmpdir(), 'root3-measure-'));
+  const dir = mkdtempSync(join(tmpdir(), 'why-measure-'));
   const pg = await cluster();
   const b = await bridgeProcess(DELAY);
   const cleanup: (() => Promise<void> | void)[] = [() => b.stop(), () => pg.destroy(), () => rmSync(dir, {recursive: true, force: true})];

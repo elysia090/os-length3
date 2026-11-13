@@ -1,4 +1,4 @@
-# Sourced by `npm run build:cloudflare`: the core the page runs (root3/core/web) is built from this tree with Rust,
+# Sourced by `npm run build:cloudflare`: the core the page runs (why/core/web) is built from this tree with Rust,
 # and a build machine with only Node (Cloudflare's Workers Builds) gets a minimal toolchain for it first.
 if ! command -v cargo >/dev/null 2>&1; then
   if [ ! -x "$HOME/.cargo/bin/cargo" ]; then

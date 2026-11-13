@@ -41,7 +41,8 @@ for c in "$here"/*.c; do
 done
 # Functions cut into runs of a few blocks (sods' layout.rs RUN cuts only functions of thousands): every jump between runs a
 # tail call to the run that holds its target, loops round them still taking their turns; the same output as native.
-for name in calls switches signals threads jobs; do
+# (strings and flagged: the direction flag and the flags a count of 0 leaves are the thread's across a run's edge too.)
+for name in calls switches signals threads jobs strings flagged; do
   set +e
   SODS_RUN=3 node "$root/runtime/run.ts" "$out/$name" a b > "$out/$name.cut"; cut=$?
   "$out/$name" a b > "$out/$name.native"; native=$?
@@ -52,7 +53,7 @@ for name in calls switches signals threads jobs; do
     echo "FAIL $name cut into runs of 3 (exit $native vs $cut)"; status=1
   fi
 done
-# Rust's std (what root3 is made of), when the musl target is installed.
+# Rust's std (what why is made of), when the musl target is installed.
 if rustup target list --installed 2>/dev/null | grep -q x86_64-unknown-linux-musl; then
   for r in "$here"/*.rs; do
     name=rust-$(basename "$r" .rs)

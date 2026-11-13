@@ -1,5 +1,5 @@
-// Copies kept from earlier runs, read where the kernel runs (root3/app/prompt/kernel.worker.ts). The page keeps them
-// (root3/app/prompt/userland.ts, within its share of the browser's room) where the host keeps such things (sods'
+// Copies kept from earlier runs, read where the kernel runs (why/app/prompt/kernel.worker.ts). The page keeps them
+// (why/app/prompt/userland.ts, within its share of the browser's room) where the host keeps such things (sods'
 // host.ts `kept`: a browser's Cache Storage), each program's under the
 // origin of its file in the root (pack.ts: its pack, named by its digest, and its place in it), and says at the start
 // which there are: kept = {cache, at: {[origin]: {main, more}}}, the URL of a program's translation and that of the

@@ -1,7 +1,7 @@
 # everyday — the look and feel, changed by the one who uses it
 
 ricebox has no window of its own. It has this: the layer a face is drawn through, so that whatever face it is
-given (root3's pages, a terminal, someone's own), its look is one thing, said one way, and the person's to change.
+given (why's pages, a terminal, someone's own), its look is one thing, said one way, and the person's to change.
 
 A look is a sheet: names and their values (a stylesheet's custom properties: colours, faces, sizes, spaces,
 corners, the pace of what moves). A person's changes are a few lines in a file of their own:
@@ -51,9 +51,9 @@ its own, some checked and some not, their usual values in a manual, the way back
 words are the sheet's own, so there are exactly as many as the look has values; a value has one of six kinds and
 is checked as that; the usual value is the sheet's; and the way back is to take the line out.
 
-## In root3
+## In why
 
-root3's pages are one face. Their sheets are `root3/app/styles`; what of them may be changed is written into the
-app by `scripts/look.ts` (`root3/app/ui/look-things.ts`), and a person's lines are the dotfile `.everyday`, kept
-and brought to each device as every dotfile is (Runtime shows and edits it). `root3/app/ui/look.ts` wears it, with
-the words that must stay read on the OS's grounds. Nothing of root3 is known here.
+why's pages are one face. Their sheets are `why/app/styles`; what of them may be changed is written into the
+app by `scripts/look.ts` (`why/app/ui/look-things.ts`), and a person's lines are the dotfile `.everyday`, kept
+and brought to each device as every dotfile is (Runtime shows and edits it). `why/app/ui/look.ts` wears it, with
+the words that must stay read on the OS's grounds. Nothing of why is known here.

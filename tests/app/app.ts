@@ -10,7 +10,7 @@
 // assertions).
 
 import {expect, type Locator, type Page} from '@playwright/test';
-import TEMPLATES from '../../root3/shared/templates.json' with {type: 'json'};
+import TEMPLATES from '../../why/shared/templates.json' with {type: 'json'};
 
 /** The rail's places, as the rail names them (in English). */
 export const PLACES = {
@@ -103,7 +103,7 @@ export class App {
   /**
    * Answer an ask with `yes`: a deed that comes under the pointer holds still a moment (so a double
    * click cannot answer it), so it is pressed until the ask (`ask`) is gone. Pressed again soon: the
-   * moment is half a second (SETTLE, root3/app/pages/kit/common.ts), and a press it takes disables the deed
+   * moment is half a second (SETTLE, why/app/pages/kit/common.ts), and a press it takes disables the deed
    * until it is done, so a press while it is being done waits for it rather than doing it twice.
    */
   async answer(yes: Locator, ask: Locator) {
@@ -136,7 +136,7 @@ export class App {
   }
 
   /**
-   * At the development provider, gone to from a sign-in card: who one is there (`name`), then what root3 asks
+   * At the development provider, gone to from a sign-in card: who one is there (`name`), then what why asks
    * of it, answered `answer` (Allow signs in; Cancel goes back with nothing shared). (Not reached: the card says
    * why, in its alert.)
    */
@@ -145,7 +145,7 @@ export class App {
     await expect(this.page, 'the provider\'s page').toHaveTitle(/Development provider/);
     await this.page.getByRole('textbox', {name: 'Name'}).fill(name);
     await this.page.getByRole('button', {name: 'Continue'}).click();
-    await expect(this.page.getByRole('heading', {name: 'root3 wants to access your Development account'})).toBeVisible();
+    await expect(this.page.getByRole('heading', {name: 'why wants to access your Development account'})).toBeVisible();
     await this.page.getByRole('button', {name: answer, exact: true}).click();
   }
 }
@@ -233,7 +233,7 @@ class NewRepo extends Part {
 
   /**
    * Create a repo and see it made: Forge opens it. `template: 'C'`: then C's files are written into it from File, as
-   * someone would (src/main.c and its Makefile, as `root3 repo new -t c` makes them), and Forge shows it.
+   * someone would (src/main.c and its Makefile, as `why repo new -t c` makes them), and Forge shows it.
    */
   async make(name: string, o: {template?: 'C'; summary?: string} = {}) {
     await this.fill(name, o);
@@ -808,7 +808,7 @@ class Server extends Part {
 }
 
 /**
- * Stripe, as the Remote with the plan has it (root3/remote/plan/devbilling.ts, its stand-in in test mode): Checkout's card
+ * Stripe, as the Remote with the plan has it (why/remote/plan/devbilling.ts, its stand-in in test mode): Checkout's card
  * form, the 3-D Secure step, and the customer portal, found as a person finds them there.
  */
 class Stripe extends Part {

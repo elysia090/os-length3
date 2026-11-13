@@ -42,10 +42,10 @@ the box is ended. The size the box's terminal starts with is config.json's (`con
 before its other end is taken.
 
 Not here yet: what is kept (a box left and come back to, its name, the list of them; the bundle written so that what
-a Prompt writes has its owner's lifetime). On Linux that is still in root3's core, beside the box that is muk's to
+a Prompt writes has its owner's lifetime). On Linux that is still in why's core, beside the box that is muk's to
 replace
-(`root3/core/src/prompt`: `running.rs`, the Prompts that are running and what each holds; `writes.rs`, what a Prompt
+(`why/core/src/prompt`: `running.rs`, the Prompts that are running and what each holds; `writes.rs`, what a Prompt
 writes and how long each part lives; in `launch.rs`, the terminal's group, TERM, and the first process that ends
-everything left). In a page it is `root3/app/prompt` (the box's calls answered by muk's runtime; what is kept from
+everything left). In a page it is `why/app/prompt` (the box's calls answered by muk's runtime; what is kept from
 one load of the page to the next), with four files that still reach into the app for its words, its host, its repos
 and the Remote's address (`scripts/units.ts`, OWED): what a Prompt is told, not what it asks for.

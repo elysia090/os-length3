@@ -282,7 +282,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
     s.f.clear(); s.ev.clear(); s.syncs.clear(); s.kinds.clear(); s.labels.clear();
     let mut fx = Fx {
         f: s.f, syncs: s.syncs, used: 0, ev: s.ev, ev_at: s.ev_at, run: [0; 3], nest: 0, depth: 0,
-        slots: [0; LOCALS], kinds: s.kinds, flags: Flags::Held, fr_pending: false, fused: None, rsp_up: false, backward: false,
+        slots: [0; LOCALS], kinds: s.kinds, flags: Flags::Held, fr_pending: false, fused: None, rsp_up: false, backward: None,
         entry: s.entry, dispatch: !lean, program, function, report, handed, at: 0, budget: has_loop(function), summaries, succ: &function.succ,
         loop_at: s.loop_at, loops: s.loops, within: s.within, heads: s.heads, labels: s.labels, block_at: s.block_at, tables: s.tables,
     };
@@ -344,7 +344,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
         fx.nest = 0;
         fx.depth = fx.labels.len() as u32;
         fx.set_flags(Flags::Held);
-        fx.backward = false;
+        fx.backward = None;
         fx.at = k;
         fx.report.blocks += 1;
         if trace { fx.c64(block.start as i64); fx.call(F_TRACE); }

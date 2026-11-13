@@ -1,6 +1,6 @@
-// A stand-in release root, a few files of each kind a root has, and root3 for
+// A stand-in release root, a few files of each kind a root has, and why for
 // the browser made from it with a stand-in translator: for tests
-// (scripts/webroot.test.ts, root3/app/prompt/userland.test.ts), so they need neither the real
+// (scripts/webroot.test.ts, why/app/prompt/userland.test.ts), so they need neither the real
 // root nor Rust.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -40,7 +40,7 @@ export function standIn(dir: string, version: string) {
 }
 
 /** webroot.ts into `dir` with a stand-in translator (kept in `work`): a wasm module with nothing in it, and a "translation" that is the same. */
-export function makeRoot3(root: string, dir: string, work: string) {
+export function makeWebroot(root: string, dir: string, work: string) {
   const wasm = join(work, 'sods.wasm');
   writeFileSync(wasm, Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
   const sods = join(work, 'sods');

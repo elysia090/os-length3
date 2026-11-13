@@ -171,6 +171,8 @@ const UC = 8, MCONTEXT = UC + 40, SIGMASK = UC + 296, INFO = UC + 304, FRAME = I
 const FLAGS: [number, number][] = [[0, 0x1], [1, 0x40], [2, 0x80], [3, 0x800], [4, 0x4]];
 const toRflags = (fl: bigint): bigint => FLAGS.reduce((r, [k, m]) => (fl >> BigInt(k)) & 1n ? r | BigInt(m) : r, 0x202n);
 const fromRflags = (rf: bigint): bigint => FLAGS.reduce((f, [k, m]) => rf & BigInt(m) ? f | (1n << BigInt(k)) : f, 0n);
+// DF, where rflags has it and where the translation's other flags keep it (sods' abi.rs G_RF, a register's 18).
+const DF = 0x400n;
 
 /** Write a siginfo_t at `at`. */
 export function writeInfo(p: Proc, at: number, info: SigInfo): void {
@@ -213,7 +215,7 @@ function frame(kernel: Kern, task: Thread, sig: number, info: SigInfo, a: SigAct
   writeStack(p, base + UC + 16, task, BigInt.asUintN(64, regs[4]));
   SIGCONTEXT.forEach((r, k) => v.setBigUint64(base + MCONTEXT + k * 8, BigInt.asUintN(64, regs[r]), true));
   v.setBigUint64(base + MCONTEXT + 128, BigInt.asUintN(64, ctx.rip), true);
-  v.setBigUint64(base + MCONTEXT + 136, toRflags(regs[17]), true);
+  v.setBigUint64(base + MCONTEXT + 136, toRflags(regs[17]) | ((regs[18] ?? 0n) & DF), true);
   // The translation's other flags (DF, AC, ID) and MXCSR, kept where sigcontext has room (its reserved words).
   v.setBigUint64(base + MCONTEXT + 192, BigInt.asUintN(64, regs[18] ?? 0n), true);
   v.setUint16(base + MCONTEXT + 144, 0x33, true); // cs
@@ -223,9 +225,11 @@ function frame(kernel: Kern, task: Thread, sig: number, info: SigInfo, a: SigAct
   v.setBigUint64(base + SIGMASK, mask, true);
   writeInfo(p, base + INFO, info);
   task.savedMask = null;
-  // The handler's registers: (sig, &info, &uc), rax 0, on the frame; what it does not use is as it was.
+  // The handler's registers: (sig, &info, &uc), rax 0, on the frame; what it does not use is as it was, but DF,
+  // clear as Linux starts a handler (its code, like any function's, takes it so).
   const next = regs.slice();
   next[7] = BigInt(sig); next[6] = at + BigInt(INFO); next[2] = at + BigInt(UC); next[0] = 0n; next[4] = at;
+  next[18] = (next[18] ?? 0n) & ~DF;
   task.setContext(next, a.handler);
   task.mask = (task.mask | a.mask | (a.flags & SA.NODEFER ? 0n : bit(sig))) & ~UNBLOCKABLE;
   if (a.flags & SA.RESETHAND) p.actions.delete(sig);
@@ -238,8 +242,10 @@ function sigreturn(task: Thread): never {
   if (at < 0 || at + FRAME > (p.memory?.buffer.byteLength ?? 0)) throw new FsError(E.FAULT);
   const regs = task.context().regs;
   SIGCONTEXT.forEach((r, k) => { regs[r] = v.getBigInt64(at + MCONTEXT + k * 8, true); });
-  regs[17] = fromRflags(v.getBigUint64(at + MCONTEXT + 136, true));
-  regs[18] = v.getBigInt64(at + MCONTEXT + 192, true);
+  const rflags = v.getBigUint64(at + MCONTEXT + 136, true);
+  regs[17] = fromRflags(rflags);
+  // DF as the frame's rflags has it (a handler may have changed it there), the rest as kept beside.
+  regs[18] = (v.getBigInt64(at + MCONTEXT + 192, true) & ~DF) | (rflags & DF);
   const rip = v.getBigUint64(at + MCONTEXT + 128, true);
   task.mask = v.getBigUint64(at + SIGMASK, true) & ~UNBLOCKABLE;
   // The alternate stack as the frame says (Linux's restore_altstack), unless the thread is on it.

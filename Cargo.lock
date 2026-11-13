@@ -3626,63 +3626,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "root3"
-version = "0.0.1"
-dependencies = [
- "libc",
- "root3-core",
- "russh",
- "rustix",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "root3-core"
-version = "0.0.1"
-dependencies = [
- "apple-native-keyring-store",
- "base64 0.23.1",
- "flate2",
- "keyring-core",
- "libc",
- "memchr",
- "nix",
- "rustix",
- "rustls",
- "rustls-native-certs",
- "ruzstd",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "ureq",
- "webpki-root-certs",
- "windows-native-keyring-store",
- "zbus-secret-service-keyring-store",
-]
-
-[[package]]
-name = "root3-core-web"
-version = "0.0.1"
-dependencies = [
- "root3-core",
- "serde_json",
-]
-
-[[package]]
-name = "root3-desktop"
-version = "0.0.1"
-dependencies = [
- "libc",
- "root3-core",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
-]
-
-[[package]]
 name = "russh"
 version = "0.65.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5625,6 +5568,63 @@ dependencies = [
  "thiserror 2.0.21",
  "windows",
  "windows-core",
+]
+
+[[package]]
+name = "why"
+version = "0.0.1"
+dependencies = [
+ "libc",
+ "russh",
+ "rustix",
+ "serde_json",
+ "tokio",
+ "why-core",
+]
+
+[[package]]
+name = "why-core"
+version = "0.0.1"
+dependencies = [
+ "apple-native-keyring-store",
+ "base64 0.23.1",
+ "flate2",
+ "keyring-core",
+ "libc",
+ "memchr",
+ "nix",
+ "rustix",
+ "rustls",
+ "rustls-native-certs",
+ "ruzstd",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "ureq",
+ "webpki-root-certs",
+ "windows-native-keyring-store",
+ "zbus-secret-service-keyring-store",
+]
+
+[[package]]
+name = "why-core-web"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "why-core",
+]
+
+[[package]]
+name = "why-desktop"
+version = "0.0.1"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "why-core",
 ]
 
 [[package]]
