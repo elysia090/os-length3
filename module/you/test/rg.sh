@@ -198,6 +198,37 @@ awk 'BEGIN { for (i = 0; i < 20000; i++) print (i % 50 == 7 ? "the performance o
 same -c performance pair.txt
 same -n -o performance pair.txt
 same -c -i PERFORMANCE pair.txt
+# More processes than one (a walk past sixteen files: rg/wide.h) and more threads than one (a text past a megabyte:
+# re/grep.h): what one would print, in the walk's order, with headings, context, counts and nothing found; a file
+# long in one directory beside many short ones; -q ended at the first match; and each count of them the same.
+mkdir -p "$t/many" && cd "$t/many"
+for d in a b c d e f g h i j; do
+  for e in 1 2 3; do
+    mkdir -p "$d/$e/deep"
+    for f in 1 2 3 4 5 6 7 8 9; do
+      printf 'line one\nthe needle %s %s %s\nline three\nnothing\nneedle again\n' "$d" "$e" "$f" > "$d/$e/f$f.txt"
+      printf 'quiet\n' > "$d/$e/deep/q$f.txt"
+    done
+  done
+done
+awk 'BEGIN { for (i = 0; i < 300000; i++) print (i % 997 == 3 ? "a needle in the long file" : "filler filler filler filler") }' > c/2/long.txt
+same needle
+same -c needle
+same --heading -n needle
+same -C1 needle
+same -A1 --heading needle
+same -l needle
+same --files-without-match needle
+same -o -n needle
+same zzzqqq
+same -q needle
+same -m1 needle
+same -c quiet
+for j in 1 2 3 5; do
+  same -j$j -n needle
+  same -j$j -C1 --heading needle
+  same -j$j -c needle c/2/long.txt
+done
 cd "$t/w"
 # Standard input searched when it is a pipe and no path is named.
 n=$((n + 1))

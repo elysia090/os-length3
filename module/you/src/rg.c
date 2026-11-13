@@ -29,6 +29,9 @@
  * directory is done, so a tree of any size is walked in what its deepest path needs.
  */
 #define UNIT "rg"
+struct iovec;
+static long rg_writev(struct iovec *v, unsigned k); /* (rg/wide.h: to standard output, or to the process that orders it) */
+#define IO_WRITEV(v, k) rg_writev((v), (k))
 #define ARENA (1 << 28) /* the patterns' automata, each thread's DFAs, and standard input's text: what is used of it */
 #include "../../lib/io.h"
 #include "re/automaton.h"
@@ -52,6 +55,7 @@ enum { SYS_munmap = 11, SYS_ioctl = 16, SYS_openat = 257 };
 #define DT_UNKNOWN 0
 #include "rg/options.h"
 #include "rg/ignore.h"
+#include "rg/wide.h"
 #include "rg/print.h"
 
 /* -L: whether the directory a link at `path` leads to (`to`) is one the walk is in already, said as ripgrep says it (the
@@ -149,9 +153,15 @@ static void walk_dir(int fd, struct level *up, u32 depth, u32 root) {
     if (t == DT_DIR && link && looped(l, &st)) { pathn = was; continue; }
     if (t == DT_DIR) {
       if (taken(l, nm, nn, 1, root) > 0 && depth + 1 < o.max_depth) {
+        /* (Among several processes: a directory this deep, in one that holds this much, is one's turn whole, and
+         * is not opened by the rest: wide.h.) */
+        int whole = kids && !in_turn && depth + 1 >= 2 && n >= 8;
+        if (whole && !wide_turn()) { pathn = was; continue; }
+        in_turn |= whole;
         i64 d = sys4(SYS_openat, fd, (i64)nm, O_DIRECTORY | O_CLOEXEC, 0);
         if (d >= 0) { walk_dir((int)d, l, depth + 1, root); sys1(SYS_close, d); }
         else { path[pathn] = 0; warn((const char *)path + shown, d); }
+        if (whole) in_turn = 0, wide_turned();
       }
     } else if (t == DT_REG && taken(l, nm, nn, 0, root) > 0) search_file(fd, (const char *)nm, 0);
     pathn = was;
@@ -251,6 +261,7 @@ static int main_(int argc, char **argv, char **envp) {
     } else search_file(AT_FDCWD, p, 1);
   }
   flush();
+  if (kids) wide_done(); /* (one of several: what it found is said to the one that orders them, and it ends) */
   /* Where the walk was of `.` not named and it searched nothing: said, as ripgrep says it (a filter left all out). */
   if (implicit && !searched) {
     static const char said[] = "rg: No files were searched, which means ripgrep probably applied a filter you didn't expect.\n"

@@ -18,7 +18,7 @@ static void put_path(void) {
 /* ---- One file's text searched, and what it holds printed. */
 static struct grep g;
 static int spans; /* each match on a line is wanted (its colour, -o, --column, --count-matches) */
-static int printed_any, heading_said, last_ctx_file;
+static int heading_said;
 static u64 last_printed; /* the number of the last line printed in this file (0: none yet) */
 
 /* The newlines in t[k..at), 64 bytes a step (AVX2): each 32's a mask, counted. */
@@ -47,7 +47,9 @@ static void head(void) {
   if (heading_said) return;
   heading_said = 1;
   if (!o.heading || !o.filename) return;
-  if (printed_any) S("\n");
+  /* (Whether a file before this turn's first printed is another process's to know: said by the one that orders.) */
+  if (kids && !head_asked) head_asked = 1, wide_mark(F_HEAD);
+  else if (printed_any) S("\n");
   put_path();
   S("\n");
 }
@@ -69,6 +71,7 @@ static void prefix(u64 lnum, u64 col, u64 off, u8 sep) {
 }
 static void separate(u64 lnum) {
   if (!o.after && !o.before) return;
+  if (kids && !sep_asked) sep_asked = 1, wide_mark(F_SEP); /* (the file before it, likewise) */
   if ((last_ctx_file || (last_printed && lnum != last_printed + 1)) && !o.no_ctx_sep) {
     const char *c = o.ctx_sep ? o.ctx_sep : "--";
     put(c, slen(c));
@@ -395,9 +398,21 @@ counted:;
 }
 
 /* The file at `path` (opened at `dir`, by `name`) searched. */
-static u64 searched; /* how many files were: none, where no path was named, is said */
+static void search_one(int dir, const char *name, int named);
 #define READ_AT_ONCE (256u << 10)
 static void search_file(int dir, const char *name, int named) {
+  /* More processes than one, where a walk is long enough (wide.h): each walks as this one does and searches the
+   * files whose turn is its own. */
+  if (!o.files && !kids && g.most > 1 && searched >= WIDE_AFTER) wide();
+  if (kids && !in_turn) { /* a turn of its own */
+    if (!wide_turn()) return;
+    search_one(dir, name, named);
+    wide_turned();
+    return;
+  }
+  search_one(dir, name, named);
+}
+static void search_one(int dir, const char *name, int named) {
   struct kstat st;
   if (o.files) {
     /* (A file larger than --max-filesize is left out where the walk came to it.) */
@@ -408,6 +423,21 @@ static void search_file(int dir, const char *name, int named) {
   i64 fd = sys4(SYS_openat, dir, (i64)name, O_CLOEXEC, 0);
   path[pathn] = 0;
   if (fd < 0) { warn((const char *)path + shown, fd); return; }
+  /* A file the walk came to (a regular one: the walk says so) is read, not asked about and mapped: most files of a
+   * tree are a few kilobytes, and one read into a place that is in the cache already is the whole of such a file
+   * (open, read, close: three calls, where asking its size, mapping it and unmapping it made five and a fault for
+   * each of its pages). One that fills the place is a large one, and goes the way below. */
+  if (!named && !o.have_max_filesize) {
+    static u8 *small;
+    if (!small) small = grab(READ_AT_ONCE);
+    i64 got = sys3(SYS_read, fd, (i64)small, READ_AT_ONCE);
+    if (got >= 0 && got < (i64)READ_AT_ONCE) {
+      searched++;
+      if (got > 0) { found |= search_text(small, (u64)got, 0); flush(); }
+      sys1(SYS_close, fd);
+      return;
+    }
+  }
   int fine = sys2(SYS_fstat, fd, (i64)&st) == 0;
   if (fine && !named && o.have_max_filesize && (u64)st.size > o.max_filesize) { sys1(SYS_close, fd); return; }
   searched++;

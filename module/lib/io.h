@@ -20,10 +20,15 @@ static u8 text[IOV / 2 * 32];
 static u64 textn;
 static u8 stage[64 << 10];
 static u64 stagen;
+/* What flush writes by: writev to standard output, unless the unit says its own (IO_WRITEV: rg's, which one of
+ * several processes writes to the one that puts their output in order by). */
+#ifndef IO_WRITEV
+#define IO_WRITEV(v, k) sys3(SYS_writev, 1, (i64)(v), (k))
+#endif
 static void flush(void) {
   struct iovec *v = iov;
   for (u32 k = niov; k;) {
-    i64 r = sys3(SYS_writev, 1, (i64)v, k);
+    i64 r = IO_WRITEV(v, k);
     if (r == -EINTR) continue;
     if (r <= 0) leave(1);
     for (; k && (u64)r >= v->len; v++, k--) r -= (i64)v->len;
@@ -43,6 +48,7 @@ static void staged(const void *p, u64 n, int nl) {
   if (niov == IOV) flush();
 }
 static void put(const void *p, u64 n) {
+  if (!n) return; /* (nothing: no piece, so what is written out always holds a byte) */
   if (n <= SMALL) { staged(p, n, 0); return; }
   /* (What lies where the piece before it ends is that piece, longer: lines of a text one after another are one piece.) */
   if (niov && (const u8 *)iov[niov - 1].base + iov[niov - 1].len == (const u8 *)p) { iov[niov - 1].len += n; return; }
