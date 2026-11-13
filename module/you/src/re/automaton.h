@@ -60,6 +60,12 @@ struct re {
    * one in one of first[j]'s ranges (lo, hi, inclusive), nrange[j] of them. */
   u32 nfirst;
   u8 first[4][4][2], nrange[4];
+  /* What every match begins with, where that is one of a few literals (an alternation's: foo|bar|baz): npre of them,
+   * each prelen bytes (the shortest's length, two at least). pre[k][j] is the kth one's jth byte; prefold[k][j] is
+   * 0x20 where that byte is a letter taken in either case (pre then holds the small one), else 0. prepair: the two
+   * places in them (a < b) they are looked for by, where their bytes are rarest (find.h any_find). */
+  u32 npre, prelen, prepair[2];
+  u8 pre[8][8], prefold[8][8];
   struct re *rev; /* backwards (re_reverse), made when first asked for */
   /* Its groups (RE_CAPTURE): how many, and each one's name (gname[k][0..gnamen[k]), none: 0) by its number. */
   u32 groups;

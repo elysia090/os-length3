@@ -144,7 +144,9 @@ own for the same work.
 | | `cc hello.c` in a box, 2.83 s | 0.79 s translating, 0.48 s compiling 811 modules | | |
 | muk, on Linux | a bundle started (the one `runc spec` writes) | 119 calls, 2.0 ms | 113 calls, 1.9 ms | 1.05× |
 | | reading its config.json | 50,000 instructions | 20,000 | 2.5× |
-| you | rg, a line searched | 1.2× the one-thread path it replaced | not yet counted | |
+| you | rg, a literal seldom there, a byte | 0.22 instructions (0.78× ripgrep's time, one thread) | 0.16 | 1.4× |
+| | rg, a word between its edges, a byte | 0.69 (0.70× ripgrep's) | 0.27 | 2.6× |
+| | rg, one of three words, a byte | 0.92 (0.87× ripgrep's) | 0.64 | 1.4× |
 
 ## The order
 

@@ -5,6 +5,8 @@
  *     at a time, two others taken where the text has those two together often), each place its line;
  *   - one that begins with a literal: the literal's places, each asked of the DFA anchored there (dfa_at: a few bytes,
  *     not the line);
+ *   - one whose matches all begin with one of a few literals (re prefixes: foo|bar|baz, (get|set)_\w+): the places
+ *     where two bytes of one of them are (any_find: 64 places at a time), each asked of the DFA anchored there;
  *   - one with no literal of three bytes, whose matches all begin with bytes rare in text (re firsts: [A-Z]{3,}, \d{4},
  *     (foo|bar)): the places that begin so (cls_find: each first byte's ranges tested 32 or 64 places at a time), each
  *     asked of the DFA anchored there, until too many come to nothing, when the lanes are cheaper;
@@ -26,6 +28,8 @@ struct grep {
   u32 nfound, took;
   int lanes;           /* the literal let go of: the lanes from here */
   int firsts;          /* the places found by what matches begin with (re firsts: cls_find), not by a literal */
+  int pre;             /* or by the few literals every match begins with one of (re prefixes: any_find) */
+  struct any any;
   u64 cands;           /* places those found, to give them up for the lanes where too many come to nothing */
   int spans;           /* the caller asks each line for its matches (grep_span): a line the literal finds is not asked
                         * of the DFA first, the first grep_span is that question (one pass over it, not two) */
@@ -40,15 +44,19 @@ static void grep_init(struct grep *g, struct re *r) {
   g->r = r;
   pair_init(&g->pair, r);
   /* (A literal of three or more is found faster than what a match begins with is: its first and last bytes.) */
-  g->firsts = !r->only_lit && !r->lit_first && r->nfirst && r->litn < 3;
+  /* (What a match begins with over a literal it holds further in, unless that literal is the longer by more than a
+   * byte: a place a match begins at is asked there, a place it holds something at is asked of its whole line.) */
+  g->pre = !r->only_lit && !r->lit_first && r->npre && (r->litn < 3 || (r->prelen >= 3 && r->litn <= r->prelen + 1));
+  if (g->pre) any_init(&g->any, r);
+  g->firsts = !g->pre && !r->only_lit && !r->lit_first && r->nfirst && r->litn < 3;
   if (!r->only_lit) g->lines = dfa_new(r, D_LINES);
-  if (!r->only_lit && (r->lit_first || g->firsts)) g->at_dfa = dfa_new(r, D_ANCH);
+  if (!r->only_lit && (r->lit_first || g->firsts || g->pre)) g->at_dfa = dfa_new(r, D_ANCH);
 }
 /* The text searched goes on to n (a read more of it, rg.c: what was searched stays as it is). */
 static void grep_upto(struct grep *g, u64 n) { g->n = n; }
 static void grep_text(struct grep *g, const u8 *t, u64 n) {
   g->t = t, g->n = n, g->at = 0, g->nfound = g->took = 0, g->cands = 0;
-  g->lanes = !g->r->litn && !g->firsts, g->passed = g->verified = g->tried = 0;
+  g->lanes = !g->pre && !g->firsts && !g->r->litn, g->passed = g->verified = g->tried = 0;
 }
 
 /* ---- The places where a match may begin, by what every match begins with (re firsts): each of the pattern's first
@@ -119,17 +127,18 @@ static u64 grep_line(struct grep *g) {
       g->took = 0, g->at = to;
       continue;
     }
-    u64 p = g->firsts ? cls_find(r, t, n, g->at) : lit_find(t, n, g->at, r->lit, r->litn, r->icase, &g->pair);
+    int begins = g->firsts || g->pre; /* the places are found by what a match begins with */
+    u64 p = g->pre ? any_find(&g->any, r, t, n, g->at) : g->firsts ? cls_find(r, t, n, g->at) : lit_find(t, n, g->at, r->lit, r->litn, r->icase, &g->pair);
     if (p == n) { g->at = n; break; }
-    int k = 1, first = r->lit_first || g->firsts;
+    int k = 1, first = r->lit_first || begins;
     /* Too many places that come to nothing (one in every 16 bytes, past the first 256): the lanes from here. */
     /* (From the start of the line it is in: places before it on its line came to nothing, but the lanes ask of lines.) */
-    if (g->firsts && ++g->cands > 256 && (p + 1) < 16 * g->cands) {
+    if (begins && ++g->cands > 256 && (p + 1) < 16 * g->cands) {
       g->lanes = 1, g->nfound = g->took = 0, g->at = line_start(t, 0, g->at);
       continue;
     }
     if (!r->only_lit && first && (k = dfa_at(g->at_dfa, t, n, p)) == 0) { g->at = p + 1; continue; } /* none begins here */
-    u64 ls = line_start(t, 0, p), le = line_end(t, n, p + (g->firsts ? 0 : r->litn)), ms, me;
+    u64 ls = line_start(t, 0, p), le = line_end(t, n, p + (begins ? 0 : r->litn)), ms, me;
     if (!r->only_lit && (!first || k == 2)) {
       g->passed += le + 1 - g->at, g->verified += le - ls, g->tried++;
       if (g->tried >= 32 && g->verified * 4 > g->passed) g->lanes = 1, g->nfound = g->took = 0; /* (from the next) */

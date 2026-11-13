@@ -189,6 +189,89 @@ static void firsts(struct re *r) {
   if (odds * 32 > 1024) r->nfirst = 0;
 }
 
+/*
+ * What every match begins with, where that is one of a few literals: every way from the start through states that
+ * take one byte (or a letter in either case), as far as eight bytes, to where a way ends (a state that takes more
+ * than that, the eighth byte, or the match: a match that can end before two bytes begins with nothing to look for).
+ * Eight literals at most, cut to the shortest's length and each kept once. An alternation of words is found by
+ * these (find.h any_find: two bytes of each, 32 places at a time), where its first bytes' ranges (firsts) take in
+ * most of a text: foo|bar|baz begins with b or f, then a or o, which is every other word of code. And a word
+ * between its edges by the word: each place it is at is asked of the automaton there, which reads the bytes beside
+ * it and no more of the line.
+ */
+struct preway { struct re *r; u8 at[8], fold[8]; u8 way[64][8], wayfold[64][8], len[64]; u32 ways, least, most; u8 *on; u32 steps; int bad; };
+static void pre_end(struct preway *w, u32 d) {
+  if (d < 2) { w->bad = 1; return; }
+  /* (The same one by another way, a class after it that is many states: once.) */
+  for (u32 k = 0; k < w->ways; k++)
+    if (w->len[k] == d && eq(w->way[k], w->at, d) && eq(w->wayfold[k], w->fold, d)) return;
+  if (w->ways == 64) { w->bad = 1; return; }
+  memcpy(w->way[w->ways], w->at, 8), memcpy(w->wayfold[w->ways], w->fold, 8), w->len[w->ways] = (u8)d;
+  if (!w->ways || d < w->least) w->least = d;
+  w->ways++;
+}
+static void pre_walk(struct preway *w, u32 v, u32 d) {
+  struct re *r = w->r;
+  /* (A way round with no byte read comes back to a state it is at: left there. And a pattern with ways without end.) */
+  if (w->bad || w->on[v] == d + 1 || ++w->steps > 4096) { w->bad |= w->steps > 4096; return; }
+  u8 was = w->on[v];
+  w->on[v] = (u8)(d + 1);
+  struct rstate *st = &r->st[v];
+  if (st->op == S_MATCH) pre_end(w, d);
+  else if (st->op == S_SPLIT) pre_walk(w, st->out, d), pre_walk(w, st->out1, d);
+  else if (st->op != S_SET) pre_walk(w, st->out, d); /* a jump, an assertion, a group's edge */
+  else {
+    /* The one byte it takes, or the two that are a letter's cases; else the way ends before it. */
+    const u64 *b = r->sets + 4 * st->set;
+    u32 n = 0, c[2] = {0, 0};
+    for (u32 x = 0; x < 256 && n <= 2; x++)
+      if (b[x >> 6] >> (x & 63) & 1) { if (n < 2) c[n] = x; n++; }
+    int letter = n == 2 && c[1] == c[0] + 32 && c[0] >= 'A' && c[0] <= 'Z';
+    if (n != 1 && !letter) pre_end(w, d);
+    else {
+      w->at[d] = (u8)(letter ? c[1] : c[0]), w->fold[d] = letter ? 0x20 : 0;
+      if (d + 1 == w->most) pre_end(w, d + 1); else pre_walk(w, st->out, d + 1);
+    }
+  }
+  w->on[v] = was;
+}
+static void prefixes(struct re *r) {
+  static struct preway w; /* (its ways are 1 KiB: not on the stack of a walk that is itself deep) */
+  u8 *on = grab(r->n);
+  r->npre = r->prelen = 0;
+  /* As far as eight bytes, or as far as leaves them few: a class after a word is many ways on from it (\d is every
+   * script's digits, each its own bytes), all of them that word where the ways are cut at its end. */
+  for (u32 most = 8; most >= 2 && !r->npre; most--) {
+    memset(&w, 0, sizeof w), memset(on, 0, r->n);
+    w.r = r, w.on = on, w.most = most;
+    pre_walk(&w, r->start, 0);
+    if (w.bad && w.ways < 64 && w.steps <= 4096) return; /* (a match of under two bytes: no shorter cut has fewer) */
+    if (w.bad) continue;
+    /* Each once, as far as the shortest goes; eight at most. (One alone is what a pattern begins with behind a
+     * word's edge or in a group of its own, \bfor\b and -w's \b(?:for)\b: where a match begins is then known,
+     * and asked there, not of the whole line.) */
+    u32 n = 0, many = 0;
+    for (u32 k = 0; k < w.ways && !many; k++) {
+      u32 same = 0;
+      for (u32 h = 0; h < n && !same; h++) same = eq(r->pre[h], w.way[k], w.least) && eq(r->prefold[h], w.wayfold[k], w.least);
+      if (same) continue;
+      if (n == 8) { many = 1; break; }
+      memcpy(r->pre[n], w.way[k], 8), memcpy(r->prefold[n], w.wayfold[k], 8), n++;
+    }
+    if (many) continue;
+    r->npre = n, r->prelen = w.least;
+  }
+  if (!r->npre) return;
+  /* The two places they are looked for by: where the bytes all of them hold there are rarest together. */
+  u64 least = ~0ull;
+  for (u32 a = 0; a < r->prelen; a++)
+    for (u32 b = a + 1; b < r->prelen; b++) {
+      u64 often = 0;
+      for (u32 k = 0; k < r->npre; k++) often += (u64)(rarity(r->pre[k][a], r->prefold[k][a]) + 1) * (rarity(r->pre[k][b], r->prefold[k][b]) + 1);
+      if (often < least) least = often, r->prepair[0] = a, r->prepair[1] = b;
+    }
+}
+
 static struct re *re_compile(const u8 *pat, u32 n, int flags) {
   struct re *r = (struct re *)grab(sizeof *r);
   memset(r, 0, sizeof *r);
@@ -205,5 +288,6 @@ static struct re *re_compile(const u8 *pat, u32 n, int flags) {
   r->start = f.start == ~0u ? m : f.start;
   required(r, pat, n, flags & RE_ICASE);
   firsts(r);
+  prefixes(r);
   return r;
 }

@@ -160,3 +160,101 @@ static u64 lit_find(const u8 *s, u64 n, u64 from, const u8 *lit, u32 litn, int c
     from = pp->stop;
   }
 }
+
+/*
+ * Where one of a few literals may begin in s[i..n) (re prefixes: what every match of an alternation of words begins
+ * with): the first place that holds, for some one of them, its bytes at the two places they are looked for by (a and
+ * b, the same two for all: the text's bytes there are loaded once, and each literal is two compares of them and an
+ * AND, the literals ORed), and then the whole of one of them. 64 places a step, or 32 in 16-byte registers; n when
+ * there is none. What it gives is a place to ask the automaton at, not a match.
+ *
+ * By hand, for k literals in 32-byte registers: four loads, 4k compares, 2k ANDs and 2k ORs, one mask and its
+ * test, and the step: 8k + 9 instructions for 64 bytes, 0.52 a byte for three. A letter in either case is one OR
+ * more for each of its compares (the text's byte made small first).
+ */
+struct any { u32 n, a, b, len; int fold; u8 A[8][32], B[8][32], FA[8][32], FB[8][32]; };
+static void any_init(struct any *y, const struct re *r) {
+  /* (As many as the loops are made for: 1, 2, 4 or 8, the first one again in the places left over.) */
+  u32 n = r->npre <= 2 ? r->npre : r->npre <= 4 ? 4 : 8;
+  y->n = n, y->a = r->prepair[0], y->b = r->prepair[1], y->len = r->prelen, y->fold = 0;
+  for (u32 k = 0; k < n; k++) {
+    u32 from = k < r->npre ? k : 0;
+    memset(y->A[k], r->pre[from][y->a], 32), memset(y->B[k], r->pre[from][y->b], 32);
+    memset(y->FA[k], r->prefold[from][y->a], 32), memset(y->FB[k], r->prefold[from][y->b], 32);
+    y->fold |= r->prefold[from][y->a] | r->prefold[from][y->b];
+  }
+}
+/* Whether one of the literals is at s[i..n), whole: what a place any_find gives is asked before the automaton is (two
+ * bytes of a literal are often there without it, and across a line's end, where the automaton would be asked of both
+ * lines for nothing). */
+static int any_at(const struct re *r, const u8 *s, u64 n, u64 i) {
+  if (i + r->prelen > n) return 0;
+  for (u32 k = 0; k < r->npre; k++) {
+    u32 j = 0;
+    while (j < r->prelen && (s[i + j] | r->prefold[k][j]) == r->pre[k][j]) j++;
+    if (j == r->prelen) return 1;
+  }
+  return 0;
+}
+/* The first of a step's places (those of `m`'s bits, from i) that holds one of the literals, or n. Out of the steps'
+ * way: a step that finds nothing, which is most of them, is its compares and no more. */
+__attribute__((noinline)) static u64 any_among(const struct re *r, const u8 *s, u64 n, u64 i, u64 m) {
+  for (; m; m &= m - 1) {
+    u64 q = i + (u32)__builtin_ctzll(m);
+    if (any_at(r, s, n, q)) return q;
+  }
+  return n;
+}
+/* The places past the last whole step, one at a time. */
+static u64 any_last(const struct any *y, const struct re *r, const u8 *s, u64 n, u64 i) {
+  for (; i + y->len <= n; i++) if (any_at(r, s, n, i)) return i;
+  return n;
+}
+/* any_find's steps for k literals, `fold` or not: both constants where it is called, so each is a loop of its own with
+ * its literals' compares one after another and nothing counted. */
+__attribute__((target("avx2"), always_inline)) static inline u64 any_steps32(const struct any *y, const struct re *r, const u8 *s, u64 n, u64 i, const u32 k, const int fold) {
+  u32 a = y->a, b = y->b;
+  for (; i + 64 + b <= n; i += 64) {
+    v32 a0 = ld256(s + i + a), b0 = ld256(s + i + b), a1 = ld256(s + i + 32 + a), b1 = ld256(s + i + 32 + b);
+    v32 x0 = (v32){0}, x1 = (v32){0};
+#pragma GCC unroll 8
+    for (u32 j = 0; j < k; j++) {
+      v32 A = ld256(y->A[j]), B = ld256(y->B[j]);
+      if (fold) {
+        v32 FA = ld256(y->FA[j]), FB = ld256(y->FB[j]);
+        x0 |= ((a0 | FA) == A) & ((b0 | FB) == B), x1 |= ((a1 | FA) == A) & ((b1 | FB) == B);
+      } else x0 |= (a0 == A) & (b0 == B), x1 |= (a1 == A) & (b1 == B);
+    }
+    /* (Each place of the step where two bytes are is asked of the literals there: the step is not made again for it.) */
+    u64 m = two32(x0, x1), q;
+    if (__builtin_expect(m != 0, 0) && (q = any_among(r, s, n, i, m)) != n) return q;
+  }
+  return any_last(y, r, s, n, i);
+}
+__attribute__((target("avx2"))) static u64 any_find32(const struct any *y, const struct re *r, const u8 *s, u64 n, u64 i) {
+  if (y->fold) return y->n == 1 ? any_steps32(y, r, s, n, i, 1, 1) : y->n == 2 ? any_steps32(y, r, s, n, i, 2, 1) : y->n == 4 ? any_steps32(y, r, s, n, i, 4, 1) : any_steps32(y, r, s, n, i, 8, 1);
+  return y->n == 1 ? any_steps32(y, r, s, n, i, 1, 0) : y->n == 2 ? any_steps32(y, r, s, n, i, 2, 0) : y->n == 4 ? any_steps32(y, r, s, n, i, 4, 0) : any_steps32(y, r, s, n, i, 8, 0);
+}
+__attribute__((always_inline)) static inline u64 any_steps16(const struct any *y, const struct re *r, const u8 *s, u64 n, u64 i, const u32 k, const int fold) {
+  u32 a = y->a, b = y->b;
+  for (; i + 32 + b <= n; i += 32) {
+    v16 a0 = ld128(s + i + a), b0 = ld128(s + i + b), a1 = ld128(s + i + 16 + a), b1 = ld128(s + i + 16 + b);
+    v16 x0 = (v16){0}, x1 = (v16){0};
+#pragma GCC unroll 8
+    for (u32 j = 0; j < k; j++) {
+      v16 A = ld128(y->A[j]), B = ld128(y->B[j]);
+      if (fold) {
+        v16 FA = ld128(y->FA[j]), FB = ld128(y->FB[j]);
+        x0 |= ((a0 | FA) == A) & ((b0 | FB) == B), x1 |= ((a1 | FA) == A) & ((b1 | FB) == B);
+      } else x0 |= (a0 == A) & (b0 == B), x1 |= (a1 == A) & (b1 == B);
+    }
+    u64 m = mask16(x0) | mask16(x1) << 16, q;
+    if (__builtin_expect(m != 0, 0) && (q = any_among(r, s, n, i, m)) != n) return q;
+  }
+  return any_last(y, r, s, n, i);
+}
+static u64 any_find(const struct any *y, const struct re *r, const u8 *s, u64 n, u64 i) {
+  if (avx2) return any_find32(y, r, s, n, i);
+  if (y->fold) return y->n == 1 ? any_steps16(y, r, s, n, i, 1, 1) : y->n == 2 ? any_steps16(y, r, s, n, i, 2, 1) : y->n == 4 ? any_steps16(y, r, s, n, i, 4, 1) : any_steps16(y, r, s, n, i, 8, 1);
+  return y->n == 1 ? any_steps16(y, r, s, n, i, 1, 0) : y->n == 2 ? any_steps16(y, r, s, n, i, 2, 0) : y->n == 4 ? any_steps16(y, r, s, n, i, 4, 0) : any_steps16(y, r, s, n, i, 8, 0);
+}

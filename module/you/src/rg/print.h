@@ -120,17 +120,34 @@ static void replaced(const u8 *t, u64 ms, u64 me) {
  * that holds one is said to be binary in its place (where it is), and nothing more of the file is printed. */
 static int convert, bin_hit;
 static u64 first_nul(const u8 *t, u64 n);
+/* Whether the line t[ls..le) about to be printed holds a NUL, and where. Looked for as lines are printed and no
+ * sooner: what is not printed is never looked at for one (a count, a file's name, a search that finds little pass
+ * over the text once, not twice), and where lines are printed one on another each byte is looked at once, 4 KiB at
+ * a time, which the search has just had in its hands. t[nul_from..nul_to) is what was looked over last, nul_at the
+ * first NUL in it (or text_n). */
+static u64 nul_from, nul_to, nul_at;
+static u64 nul_in(const u8 *t, u64 ls, u64 le) {
+  if (ls < nul_from || ls >= nul_to || nul_at < ls) nul_from = nul_to = ls, nul_at = text_n; /* (nothing known from here) */
+  if (le > nul_to && nul_at == text_n) {
+    u64 to = nul_to + 4096 > le ? nul_to + 4096 : le;
+    if (to > text_n) to = text_n;
+    u64 z = first_nul(t + nul_to, to - nul_to);
+    if (z < to - nul_to) nul_at = nul_to + z;
+    nul_to = to;
+  }
+  return nul_at < le ? nul_at : le;
+}
 static int span(u64 ls, u64 le, u64 *x, u64 *last, u64 *ms, u64 *me);
 /* The line t[ls..le) printed as one that holds a match (`sep` ':') or one around it ('-'). */
 static void print_line(const u8 *t, u64 ls, u64 le, u64 lnum, u8 sep) {
   head();
   separate(lnum);
   if (convert) {
-    u64 z = first_nul(t + ls, le - ls);
-    if (z < le - ls) {
+    u64 z = nul_in(t, ls, le);
+    if (z < le) {
       if (o.filename && !o.heading) { put_path(); S(": "); }
       S("binary file matches (found \"\\0\" byte around offset ");
-      putn(ls + z);
+      putn(z);
       S(")\n");
       bin_hit = 1;
       return;
@@ -284,9 +301,7 @@ static int search_text(const u8 *t, u64 n, int named) {
   convert = !quit && !o.text, bin_hit = 0;
   u64 look = named && n > 65536 ? 65536 : n, nul = o.text || quit ? n : first_nul(t, look);
   if (nul == look) nul = n;
-  /* A printed line is looked at for a NUL (convert) only where the text holds one: looked for once, at the speed of a
-   * pass over memory, not line by line. */
-  if (convert && nul == n && first_nul(t, n) == n) convert = 0;
+  nul_from = nul_to = 0, nul_at = n; /* (a printed line is looked at for a NUL as it is printed: nul_in) */
   grep_text(&g, t, n);
   g.spans = spans;
   if (nul < n) {
