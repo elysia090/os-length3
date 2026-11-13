@@ -14,22 +14,7 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
   /* The note runs off the foot: cut there, not at the layout's sides (its shadow and the slip's hang over them). */
   overflow: visible clip;
 }
-/* ---- The band: keys pressed into the desk, the terminal's the one in ink. ---- */
-.home-band { position: relative; z-index: 7; height: var(--keys); }
-.home-band > .band-tools { display: flex; align-items: stretch; gap: var(--u); height: 100%; }
-.home-layout > .home-band .band-tool { width: calc(3 * var(--u)); height: auto; border: 0; border-radius: var(--r-place); background: var(--slot); color: var(--ink); }
-.home-layout > .home-band .band-tool .mark { width: 36px; height: 36px; stroke-width: 2; }
-.home-layout > .home-band .band-tool:first-child { width: calc(5 * var(--u)); background: var(--ink); color: var(--green); }
-.home-layout > .home-band .band-tool:first-child .mark { width: 56px; height: 56px; stroke-width: 2.8; }
-.home-layout > .home-band .band-tool:not(:first-child):is(:hover, :focus-visible) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); }
-.home-layout > .home-band .band-tool:first-child:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--ink) 86%, var(--ground)); }
-.home-layout > .home-band .band-tools > .search-box { width: calc(15 * var(--u)); }
-.home-layout > .home-band form.search { height: 100%; }
-.home-layout > .home-band form.search > .mark { left: var(--u); top: calc(50% - 14px); width: 28px; height: 28px; stroke-width: 2; }
-.home-layout > .home-band .search-in { height: 100%; padding: 0 var(--u) 2px calc(var(--u) + 28px + var(--s3)); border: 0; border-radius: var(--r-place); background: var(--slot);
-  box-shadow: inset 0 0 0 1.5px var(--ink); font: 400 var(--u)/1 var(--sans); }
-.home-layout > .home-band .search-in::placeholder { color: var(--sub); }
-.home-layout > .home-band .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
+/* ---- The band: the three keys from the rail's corner (forge-band.css, one with a desk's). ---- */
 /* ---- The two columns, in one place: the person's own, and over it (held in the window as the note is read down)
    what stands against the right edge. ---- */
 .home-main { display: grid; grid-template-columns: minmax(0, 1fr); }
@@ -44,7 +29,7 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 .home-own > .section {
   position: relative; box-sizing: border-box; width: calc(var(--vx) - var(--left)); margin: 0;
   min-height: calc(100vh - var(--vy) - var(--u) / 4); padding: calc(1.5 * var(--u)) 0 var(--u);
-  background: var(--note); border-radius: 3px; rotate: -2deg; transform-origin: 100% 0; box-shadow: -24.8px 23.1px 0 var(--ink);
+  background: var(--note); border-radius: var(--r-sheet); rotate: -2deg; transform-origin: 100% 0; box-shadow: -24.8px 23.1px 0 var(--ink);
 }
 .home-own > .section > h2 { position: absolute; top: var(--s3); right: var(--u); z-index: 1; margin: 0; display: block; font: 700 20px/24px var(--mono); }
 .home-own > .section > h2 > #todo-title, .home-own .todo-left > small { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -120,7 +105,7 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 /* Eight cells tall (taller as what it says is longer: it grows up from the margin's line). What it is and what it
    says from its top; where, on its last line, at its foot. */
 .home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(18 * var(--u)); min-height: calc(8 * var(--u)); padding: 29px var(--u) 7px;
-  background: var(--paper); border-radius: 3px; rotate: 1.5deg; transform-origin: 100% 100%; box-shadow: 24.6px 23.4px 0 var(--ink); text-align: right; }
+  background: var(--paper); border-radius: var(--r-sheet); rotate: 1.5deg; transform-origin: 100% 100%; box-shadow: 24.6px 23.4px 0 var(--ink); text-align: right; }
 .home-waits > .lately > h2 { margin: 0; font: 700 20px/var(--u) var(--mono); color: var(--ink); letter-spacing: 0; text-transform: lowercase; }
 .home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
 .home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; text-align: right; }
@@ -138,12 +123,11 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 .home-waits .pane-row + .pane-row > .pane-line { font: 700 20px/var(--u) var(--mono); letter-spacing: 0; }
 .home-waits .pane-row + .pane-row > .pane-at, .home-waits .pane-row:nth-child(n + 5) { display: none; }
 .home-waits .lately-none { margin: 0; font: 400 20px/var(--u) var(--mono); color: var(--quiet); }
-.home-waits > .plugins { width: calc(18 * var(--u)); min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: 3px; }
+.home-waits > .plugins { width: calc(18 * var(--u)); min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); }
 .home-waits > .agent-cards { width: calc(18 * var(--u)); }
 /* ---- A window too narrow for the two side by side: one column, the repos and what waits under the note, which lies
    square and ends where its lines do. ---- */
 @media (max-width: 1100px) {
-  .home-band .band-tools > .search-box { flex: 1 1 0; width: auto; min-width: 0; }
   .home-own { padding-top: calc(13 * var(--u)); }
   .home-own > .section { width: 100%; min-height: calc(12 * var(--u)); margin: 0; padding-bottom: calc(2 * var(--u)); rotate: none; box-shadow: calc(-.5 * var(--u)) calc(.5 * var(--u)) 0 var(--ink); }
   .home-beside { grid-area: 2 / 1; position: static; justify-self: stretch; width: auto; height: auto; margin: calc(2 * var(--u)) 0 0; display: grid; justify-items: end; gap: calc(2 * var(--u)); padding-bottom: calc(3 * var(--u)); }
@@ -154,13 +138,6 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 }
 /* A phone: the band's keys and the note's words a size smaller, so a line holds what it says. */
 @media (max-width: 760px) {
-  .home-band > .band-tools { gap: var(--s3); }
-  .home-layout > .home-band .band-tool { width: calc(2 * var(--u)); }
-  .home-layout > .home-band .band-tool:first-child { width: calc(3 * var(--u)); }
-  .home-layout > .home-band .band-tool .mark { width: 28px; height: 28px; }
-  .home-layout > .home-band .band-tool:first-child .mark { width: 36px; height: 36px; stroke-width: 2.4; }
-  .home-layout > .home-band form.search > .mark { left: var(--s3); top: calc(50% - 10px); width: 20px; height: 20px; }
-  .home-layout > .home-band .search-in { padding: 0 var(--s2) 1px calc(var(--s3) + 20px + var(--s2)); font-size: 16px; }
   .home-own { padding-top: calc(11 * var(--u)); }
   .profile { height: calc(8 * var(--u)); }
   .identity > :is(.counts, .handle, .bio, .bio-ask, .error) { font-size: 16px; }

@@ -1,139 +1,89 @@
-// Where each box of the desk lies (desk.ts), and where the camera looks: kept apart from the page so it is measured
-// and tested as numbers. The desk is a plane on a 24 px grid; its boxes stand in columns, each box as wide as 80
-// columns of code, one under another in its column with three grid steps between them, the columns two steps apart.
-// The desk has one size, every box at its own, the box in hand in the middle across with its top at the eye (before:
-// three cameras, a step back and the whole desk beside this one).
+// Where each piece of the desk lies (desk.ts), and how far along it the desk is turned: kept apart from the page so it
+// is measured and tested as numbers. The desk is a row on a 24 px grid: the terminal first, from the desk's own edge
+// (the rail's corner, under the band's keys and as wide as they are), then the files, each a sheet fifty letters
+// wide, three cells between them. Every piece's top is on one line; a sheet is as tall as
+// its lines, never lower than two cells over the window's foot, what is under that scrolled to inside it. The desk is
+// turned along the row only as far as brings the piece in hand whole into sight (before: boxes 80 columns wide in
+// columns, one under another, the one in hand brought to the middle of the face by a camera).
 
-/** The grid the desk is laid on. */
+/** The grid the desk is laid on, and a line of what is written on it at its own size. */
 export const GRID = 24;
-/** A box's width: 80 columns of the desk's code (14 px, 8.42 px a column), its numbers and its padding, up to the grid. */
-export const WIDTH = up(80 * 8.42 + 72);
-/** Between two columns, and between two boxes of one column. */
-export const GAP = 2 * GRID;
-export const VGAP = 3 * GRID;
-/** The desk's margin round its boxes. */
-export const PAD = 36;
-/** Room above a column's first box for its name. */
-export const TOP = 48;
-/** The standard: every box at its own size. */
-export const STANDARD = 1;
-/** How far under the face's top the line at work is kept (lineKept). */
-export const KEPT = 2 * GRID;
+export const LINE = GRID;
+/** A sheet's width: fifty letters of the desk's code (16.5 px, .602 of it a letter), the numbers' margin before them
+ * (a cell and a half), up to the grid. */
+export const WIDTH = up(1.5 * GRID + 50 * 16.5 * .602);
+/** The terminal's width, and how many lines of it are in sight. */
+export const TERM = 14 * GRID;
+export const TERM_LINES = 18;
+/** The terminal in hand: opened out to work in, wider and taller, the files gone along the row to make it room. */
+export const TERM_HELD = 22 * GRID;
+export const TERM_HELD_LINES = 20;
+/** Between two sheets (the second is cut by the window's edge, and says the row goes on); after the terminal, which
+ * lies askew and casts its shadow that way. */
+export const GAP = 3 * GRID;
+export const TERM_GAP = 3 * GRID;
+/** The desk's ground before its first piece (none: the terminal starts where the band's keys do), over the pieces
+ * (their names stand in it), and under them. */
+export const PAD = 0;
+export const TOP = 2 * GRID;
+export const FOOT = 2 * GRID;
+/** A piece's shadow, a cell right and down. */
+export const SHADOW = GRID;
+/** A piece pressed twice is this many times as large (its letters 28 px). */
+export const BIG = 1.7;
 
 function up(v: number): number { return GRID * Math.ceil(v / GRID); }
 
-export interface Slot { x: number; y: number }
+/** A piece of the row: its key, how wide it is, and whether it is the terminal (the gap after it is wider). */
+export interface Piece { key: string; width: number; term?: boolean }
 
-/** Each box's place: `cols` (each column's keys, top first), `heights` each box's height. */
-export function slots(cols: readonly (readonly string[])[], heights: (key: string) => number, bw = WIDTH): Map<string, Slot> {
-  const out = new Map<string, Slot>();
-  cols.forEach((col, c) => {
-    let y = TOP;
-    for (const key of col) {
-      out.set(key, {x: PAD + c * (bw + GAP), y});
-      y += up(heights(key)) + VGAP;
-    }
-  });
-  return out;
+/** Where each piece's left edge is on the desk, and where the row ends (the last one's shadow, and a cell after). */
+export function row(pieces: readonly Piece[]): {at: Map<string, number>; end: number} {
+  const at = new Map<string, number>();
+  let x = PAD, end = PAD;
+  for (const p of pieces) {
+    at.set(p.key, x);
+    end = x + p.width + SHADOW + GRID;
+    x += p.width + (p.term ? TERM_GAP : GAP);
+  }
+  return {at, end};
 }
 
-/** The camera: the plane's scale, and where its origin is on the face. */
-export interface View { s: number; x: number; y: number }
+/** The tallest a sheet stands on a face `hgt` high, its lines `line` high: whole lines, half a line over and under
+ * them, its foot no lower than FOOT over the face's; never under four lines. */
+export function tallest(hgt: number, line = LINE): number {
+  return (Math.max(4, Math.floor((hgt - TOP - FOOT - line) / line)) + 1) * line;
+}
 
-/** How far under a box's foot what hangs from it reaches: its close, a dot 16 px under its bottom corner, 9 px across
- * (styles: .desk-close); its shadow, 8 px, falls inside that. */
-export const FOOT = 16 + 9;
-
-/** Where a box's top stands on the face, in px from the desk's top: level with the rail between Home and File (its
- * items stand at fixed places from the top, so this is a distance, not a share of the height). High enough that the box
- * above it in its column (a whole gap above, with its name), its shadow and the dot of its close are wholly out of the
- * face: never a strip, nor a dot, cut by its edge. */
-export const EYE = VGAP - FOOT - 1;
-
-/** A box just come out from under the one above it: so much of that one's foot (on the face) stays in sight over it
- * (or all of it, if it is less), the new box lower than the eye by as much, so what it was made under is seen with it. */
-export const ABOVE_SEEN = 5 * GRID;
-
-/** On the box at `slot` just come out from under one `above` high, at scale `s` (the standard, or a step back): as
- * standardOn, lower by what keeps ABOVE_SEEN of that one in sight (its foot, its close, the gap and the new box's name
- * under them). */
-export function bornOn(slot: Slot, h: number, w: number, hgt: number, above: number, s = STANDARD, bw = WIDTH): View {
-  const v = standardOn(slot, h, w, hgt, s, bw);
-  return {...v, y: v.y + Math.min(above * s, ABOVE_SEEN) + VGAP * s - EYE};
+/** The terminal's height on a face `hgt` high: its lines (more of them while it is `held`) and a cell over and under
+ * them, or as tall as a sheet may be. */
+export function termHeight(hgt: number, line = LINE, held = false): number {
+  return Math.min(((held ? TERM_HELD_LINES : TERM_LINES) + 2) * line, tallest(hgt, line));
 }
 
 /**
- * At the standard, on the box at `slot` (`h` high) in a face `w` by `hgt`: the box's middle in the face's middle across,
- * its top at EYE (a tall one goes on down from there; a short one stands where the eye starts, not in a hole in the
- * middle).
+ * How far the desk is turned (from `now`) to bring the piece from `x`, `w` wide, into sight on a face `face` wide, the
+ * row ending at `end`: where it is while the piece and its shadow are in sight; else as little further as shows them,
+ * the piece at the desk's own edge (where the band's keys start); a piece wider than the face from its left. Never
+ * past the row's end. A piece made larger (`lead`) is the page's one sheet: brought to the desk's edge, under the
+ * band's keys, wherever it was.
  */
-export function standardOn(slot: Slot, _h: number, w: number, _hgt: number, s = STANDARD, bw = WIDTH): View {
-  const x = w / 2 - (slot.x + bw / 2) * s;
-  return {s, x, y: EYE - slot.y * s};
+export function inSight(now: number, x: number, w: number, face: number, end: number, lead = false): number {
+  const most = Math.max(0, end - face), left = x - PAD, right = x + w + SHADOW + GRID - face;
+  const to = lead || now > left ? left : now < right ? Math.min(right, left) : now;
+  return Math.max(0, Math.min(most, to));
 }
 
-/**
- * The camera's way from `a` to `b` over a face `w` by `hgt` when it is long: as a head turns to something across the
- * room, it steps back on the way as far as the way is long and comes down onto what it goes to (van Wijk and Nuij's
- * smooth zoom and pan: back about to where what it left and what it goes to are both nearly in sight at the middle of
- * the way, the boxes passing read, never a whip across the desk at their own size, half boxes going by). `at(t)` is the
- * view at `t` (0 to 1 along the way); `ms` how long it takes, a plain pan's `ms` for the shortest arc, longer as the way
- * is. Null for a way short enough that what it goes to is in sight from where it sets off (a plain pan, no step back).
- */
-export function arc(a: View, b: View, w: number, hgt: number, ms: number): {at(t: number): View; ms: number} | null {
-  const c0 = {x: (w / 2 - a.x) / a.s, y: (hgt / 2 - a.y) / a.s}, c1 = {x: (w / 2 - b.x) / b.s, y: (hgt / 2 - b.y) / b.s};
-  const w0 = w / a.s, w1 = w / b.s, dx = c1.x - c0.x, dy = c1.y - c0.y, d = Math.hypot(dx, dy);
-  if (d < ARC_FROM * Math.min(w, hgt) / Math.max(a.s, b.s)) return null;
-  const r2 = ARC_RHO ** 2, r4 = r2 * r2;
-  const b0 = (w1 * w1 - w0 * w0 + r4 * d * d) / (2 * w0 * r2 * d), b1 = (w1 * w1 - w0 * w0 - r4 * d * d) / (2 * w1 * r2 * d);
-  const q0 = Math.log(Math.sqrt(b0 * b0 + 1) - b0), q1 = Math.log(Math.sqrt(b1 * b1 + 1) - b1), S = (q1 - q0) / ARC_RHO;
-  const at = (t: number): View => {
-    if (t >= 1) return b;
-    const p = t * S, u = (w0 / (r2 * d)) * (Math.cosh(q0) * Math.tanh(ARC_RHO * p + q0) - Math.sinh(q0));
-    const s = w / ((w0 * Math.cosh(q0)) / Math.cosh(ARC_RHO * p + q0)), cx = c0.x + u * dx, cy = c0.y + u * dy;
-    return {s, x: w / 2 - cx * s, y: hgt / 2 - cy * s};
-  };
-  return {at, ms: Math.round(Math.min(ARC_MOST, ms * Math.max(1, Math.sqrt(S / ARC_S))))};
-}
-/** How far apart (a part of the face's shorter side) where the camera is and where it goes are before it arcs. */
-const ARC_FROM = .5;
-/** How far back an arc goes for its length (van Wijk and Nuij's ρ, as d3's zoom): to about three quarters going to
- * the next column, where both are in sight. */
-const ARC_RHO = Math.SQRT2;
-/** An arc's length (in its own measure) that takes a plain pan's time; longer ones take longer, at most ARC_MOST. */
-const ARC_S = .8;
-const ARC_MOST = 900;
-
-/** The line at work in a box (`top` to `bottom`, on the desk), as the camera at `v` over a face `hgt` high should show
- * it: `v` while it is in sight and above the face's foot by FOOT_ROOM; else `v` moved down (or up) as a page is turned,
- * the line then at TURNED of the face, room under it for what comes next. */
-export function lineKept(v: View, top: number, bottom: number, hgt: number): View {
-  const t = v.y + top * v.s, b = v.y + bottom * v.s;
-  if (t >= KEPT && b <= hgt - FOOT_ROOM) return v;
-  return {...v, y: v.y + (TURNED * hgt - t)};
-}
-/** How near the face's foot the line at work comes before the camera goes on down (three grid steps). */
-export const FOOT_ROOM = 3 * GRID;
-/** Where on the face (from its top, a part of its height) the line at work is put when the camera goes on down to it. */
-export const TURNED = .4;
-
-/** The box after `from` (before it, `back`) as Tab goes: down each column, then the next column's top, round again. */
-export function tabbed(cols: readonly (readonly string[])[], from: string, back = false): string | null {
-  const all = cols.flat();
-  const i = all.indexOf(from);
-  if (i < 0) return all[0] ?? null;
-  return all[(i + (back ? all.length - 1 : 1)) % all.length];
+/** The piece after `from` (before it, `back`) as Tab goes along the row, round again. */
+export function tabbed(keys: readonly string[], from: string, back = false): string | null {
+  const i = keys.indexOf(from);
+  if (i < 0) return keys[0] ?? null;
+  return keys[(i + (back ? keys.length - 1 : 1)) % keys.length];
 }
 
-/** The box `from` hands over to going `way` (an arrow, the keyboard on the desk): along its column, or the next column's nearest. */
-export function next(cols: readonly (readonly string[])[], from: string, way: 'up' | 'down' | 'left' | 'right'): string | null {
-  const c = cols.findIndex((col) => col.includes(from));
-  if (c < 0) return null;
-  const i = cols[c].indexOf(from);
-  if (way === 'up') return cols[c][i - 1] ?? null;
-  if (way === 'down') return cols[c][i + 1] ?? null;
-  const to = cols[c + (way === 'left' ? -1 : 1)];
-  if (!to?.length) return null;
-  return to[Math.min(i, to.length - 1)];
+/** The piece `from` hands over to going `way` (an arrow, the keyboard on the desk): the next along the row. */
+export function next(keys: readonly string[], from: string, way: 'left' | 'right'): string | null {
+  const i = keys.indexOf(from);
+  if (i < 0) return null;
+  return keys[i + (way === 'left' ? -1 : 1)] ?? null;
 }
-

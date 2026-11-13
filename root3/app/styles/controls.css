@@ -17,7 +17,7 @@
   /* The menu's pills keep their line's height round the capitals: a file's name cut short there (overflow) keeps
      its descenders. */
   .box-mode-pill :is(.prompt-ps, .prompt-mode > :not(.icon)) { text-box: trim-both cap alphabetic; padding-block: calc((1lh - 1cap) / 2); }
-  .pill-name.pill-name, .server-at.server-at { text-box: trim-both cap alphabetic; padding-block: calc((1lh - 1cap) / 2); }
+  .server-at.server-at { text-box: trim-both cap alphabetic; padding-block: calc((1lh - 1cap) / 2); }
 }
 .input, .edit input, .edit textarea {
   min-height: var(--h-control); padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);

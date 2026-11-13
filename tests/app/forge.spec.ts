@@ -111,16 +111,6 @@ test('Escape out of an empty search gives the keyboard back to what had it', asy
   await expect(app.forge.promptBox).toBeFocused();
 });
 
-test('a pill pressed on its edge, round its name, goes to its repo', async ({signedIn: app}) => {
-  await app.newRepo.make('world');
-  await app.forge.open('hello');
-  await app.forge.open('world');
-  const pill = app.forge.band.locator('.pill', {hasText: 'hello'});
-  const box = (await pill.boundingBox())!;
-  await app.page.mouse.click(box.x + 3, box.y + box.height / 2);
-  await expect(pill).toHaveAttribute('aria-current', 'page');
-});
-
 test('a text grown past what Forge saves says so in its box, and is kept whole when asked, to read in part', async ({signedIn: app}) => {
   await app.file.named('hello', '', 'New file', 'big.txt');
   const editor = app.forge.editor('big.txt');

@@ -13,7 +13,6 @@ import {Activity} from './activity.ts';
 import {endLine, goDark, jolt, switchOver} from './ending.ts';
 import {clips, heldBack, OSC, RAN} from './osc.ts';
 import {Output, strip} from './output.ts';
-import {scrollThumb} from '../../ui/scroll-thumb.ts';
 import {asOne, FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
 import {sessions, type Prompt, type Run} from './sessions.ts';
@@ -193,8 +192,6 @@ export class Session implements Prompt {
     onLang(() => this.sayEnded());
     this.activity = new Activity({live: () => this.live, interrupt: () => this.interrupt(), restart: () => this.restart()});
     this.element = h('div', {class: 'term'}, this.status, this.out.element, this.activity.element);
-    // Its own scroll, drawn in its box (on the desk: forge-desk.css .scroll-thumb), in place of the page's thin bar.
-    scrollThumb(this.out.element);
     this.copy = new WriteBack(repo, this.id, (said) => { this.status.textContent = said; });
   }
 
@@ -387,6 +384,18 @@ export class Session implements Prompt {
     this.runs.push({line: typed, output, started: Date.now(), ms: 0, status});
     if (this.runs.length > RUNS) this.runs.shift();
     this.tell();
+  }
+
+  /**
+   * `head` and `words` said here on a line of their own (a TODO noted, an issue written, from the line one types at):
+   * what the box did that is not the shell's, among what was run as it came, its head heavier. The prompt line the
+   * shell waits at stands again after it; a line a program has under way is left as it is, the note under it.
+   */
+  noted(head: string, words: string) {
+    const ps = this.promptLine || `${this.repo} $ `, at = this.out.lastLine;
+    const line = `\x1b[1m${head}\x1b[22m ${words.replace(/\s+/g, ' ').trim()}\n`;
+    if (at === ps && this.out.takeBack(ps)) this.out.print(line + ps);
+    else this.out.print(`${at ? '\n' : ''}${line}`);
   }
 
   /** Output goes on screen and into the run in progress, which ends at the next prompt. */

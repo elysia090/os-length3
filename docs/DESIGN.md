@@ -40,14 +40,18 @@ Three sources, spent in this order, and in falling amounts.
    is nearer is lighter, and a move says where a thing went. A control does
    what a person who has used any computer expects it to.
 2. **Swiss typography with a punk's nerve, and Russian constructivism, for
-   the voice.** From the Swiss: a grid that is felt and not seen, one
-   grotesque face, everything flush left, type as the only ornament, sizes
-   far apart rather than many. From punk: one thing far too big, on purpose
-   and only once (the person's name at Home, Inter Display Black, set
-   tight). From the constructivists: a page built of few heavy members that
-   say what they hold up (one 2 px line of ink that frames the work, a fill
-   of ink for the thing chosen, a sheet of paper with a hard shadow, as cut
-   card has), and nothing soft: no gradient, no blur, no glow.
+   the voice.** From the Swiss: a grid everything is set on (on a desk it
+   is drawn: a dot in every cell), one grotesque face, type as the only
+   ornament, sizes far apart rather than many, and type set against the
+   right edge as surely as against the left. From punk: things far too big,
+   on purpose (the person's name at Home seven cells tall, the name of what
+   is in hand over Forge, Inter Display Black, set tight), a sheet lying
+   askew where every other is square, and a hand that is a little rude:
+   something on each page that bites. From the constructivists: a page built
+   of few heavy members that say what they hold up (a key of ink, a sheet of
+   ink, a fill of ink for the thing chosen, a sheet of paper with a hard
+   shadow a whole cell deep, as cut card has), and nothing soft: no
+   gradient, no blur, no glow.
 3. **The plain prop of science fiction, for the last touch.** The dotted
    ground of a desk, the names a machine
    would stencil on its parts (set in the code face), a pointer drawn as
@@ -59,6 +63,56 @@ Three sources, spent in this order, and in falling amounts.
 
 The first two explain most of any screen. The third is why it is this OS
 and not a poster, and it is the one that is easiest to overdo.
+
+### What a page is held to
+
+A page is judged on seven things, each on its own; a test that passes, or a
+page that fits its window, settles none of them, and what was not looked at
+has not passed.
+
+1. **The hand.** What happens next can be told before it is pressed, it is
+   pressed without a doubt, and a wrong press is taken back. Apple's manners
+   and Nintendo's answer in the hand are the floor.
+2. **The bet.** Each page stakes something in its letters, its proportions,
+   its room or its placing. A safe page is a failed one.
+3. **Who leads.** What matters now is seen first, and nothing beside it
+   takes the eye from it; what is not needed stands back until it is.
+4. **One language.** Bold and held back at once. The same thought goes
+   through every page; the pages are not made to look alike.
+5. **The grain.** Letters, icons, a sheet's margins, lines, proportions and
+   moves, down to what someone who rices their own desktop would be bothered
+   by.
+6. **Every state.** Empty, one, several, a great many; a long name, a narrow
+   window, half written, left and come back to. A new thing breaks nothing
+   that stood.
+7. **By comparison.** The page as it was, a flat one, and one that stakes
+   more are laid side by side under the same conditions. A crookedness meant
+   is not a fault. What does not beat what was there is not taken.
+
+How it is made follows from that, and each of these is a way a page fails:
+
+- **Words go in last, moves first.** A page is drawn with every word a bar,
+  and set in motion, before a word is written. With no words, moving, it is
+  a film's poster or a magazine's page, or it has failed.
+- **The upper left of a wide window is not dull.** That is where a wide
+  page is entered; if nothing there leads on, the eye was not led.
+- **Contrast is bolder than is thought proper**, and the eye is not tired
+  by it: both, never one for the other.
+- **Type set against the right edge works** (Home's repos, the name in hand
+  on Forge). Where it could not be made to, the page took the easy way.
+- **A Z and an N laid on the page are paths the eye can take** without
+  being stopped.
+- **The vanishing point is the window's exact middle, a little right** (on
+  the grid: the node nearest 53% across and half way down). What lies askew
+  turns about it or toward it; a sheet's shadow falls away from it.
+- **No small lone round thing**, and that is said of ornament at large: a
+  dot, a ring, a lamp, a mark that is there to be pretty.
+- **No line to part two things.** Room parts them, or a change of material.
+- **Something aggressive and unruly stays**, and a little that is
+  uncomfortable to look at; a page with none of it was made by no one.
+
+What is kept in mind while making one: the leaflet in a box of medicine for
+the old, and the box. Large, plain, nothing to be worked out, and not polite.
 
 ### Attention: what is in mind, and what is a step away
 
@@ -95,13 +149,19 @@ three best, and is the measure the others are held to.
 ### Two kinds of place
 
 - **A desk** (Home, Forge, New repo; File laid over them) is where things
-  are made. Its ground is dotted, a dot every 24 px, so a sheet has
-  something to lie on and to be moved across. What is worked on is a sheet
-  of paper, and the one in hand has a hard shadow (8 px down and right, in
-  ink): one on a desk, never one under every sheet, where it said nothing
-  and the sheet worked on looked as the rest did. Names are the machine's
-  (a file's path, a section) and set in the code face. The band is on the
-  top line, the right pane at the right.
+  are made. Its ground is dotted, and the dots are its grid: a cell is 24
+  px, a dot stands in the middle of every one, and everything on a desk (a
+  key, a sheet, a name's capitals, the room between two things) is whole
+  cells wide and tall and stands on the cells' lines. What is worked on is a
+  sheet (paper, cut square), and the one in hand has a hard shadow, a whole
+  cell right and down, in ink: one on a desk, never one under every sheet,
+  where it said nothing and the sheet worked on looked as the rest did. A
+  few sheets lie askew, each for a reason (Home's note turned about the
+  vanishing point, the slip of what waits, Forge's terminal until it is in
+  hand); everything else is square to the grid, and nothing is tilted to
+  look lively. Small words are the machine's (a file's path, a count) and
+  set in the code face; names are large, in the display face. The band is
+  the top line: keys pressed into the desk. There is no pane.
 - **A counter** (Runtime, Remote, Server, Inbox) is where what is so is
   read and set. Its ground is plain. It starts with its head, then its
   parts, then boxes drawn in line on the ground, rows in them. Paper is
@@ -110,51 +170,71 @@ three best, and is the measure the others are held to.
 A place is one or the other. A counter given a dotted ground, or a desk
 given a page head, reads as a third kind of place, and there is none. Git
 stands between the two on purpose, and is the only one that does: it reads
-what a desk made, so on a counter's plain ground it keeps a desk's top line
-(the repos, as chips) and its pane.
+what a desk made, so on a counter's plain ground it keeps a top line (the
+repos, as chips) and a right pane, where what was run in the repo is listed.
 
 ### Material: ground, paper, ink
 
 - **The ground is a tone, not white** (`#DCD9D4`, a paper's warm grey), so
   that one lighter surface can mean something. On white a box is a
   wireframe and a sheet cannot be told from the page.
-- **Paper is what is worked on, and only that**: a file, the TODO, the
-  issue in hand, what a search found. Never a card that leads somewhere, a
-  pane, a page. Lighter is nearer: nothing lighter than the ground is put
-  under something darker.
-- **Ink is the one emphasis.** Words, icons, the thing chosen, the action
-  that matters, the frame. There is no accent colour: what would be red in
+- **Paper is what is worked on, and only that** (`#FBFAF7`): a file, the
+  issue in hand, what a search found, what waits. Never a card that leads
+  somewhere, a pane, a page. Lighter is nearer: nothing lighter than the
+  ground is put under something darker. A sheet is cut square (its corner
+  3 px, a cut's, not a shape's).
+- **A slot is what is pressed into the desk** (`#CBC7C0`, a tone under the
+  ground): a key of the band, the search's slot, the place of the rail one
+  is at. Soft at the corner (12), as a thing pressed is. The ground, a tone
+  over it for what lies on it, a tone under it for what is pressed in.
+- **Two sheets have a colour of their own**, one a desk: Home's TODO is a
+  note (`#F2CF52`), and Forge's terminal a sheet of ink, its words and its
+  shadow its own light (`#9BE0BF`), which is also the mark on the band's
+  terminal key. Neither colour is used for anything else on a desk.
+- **Ink is the one emphasis** (`#171614`). Words, icons, the thing chosen,
+  the action that matters, the shadow under the sheet in hand. There is no
+  accent colour: what would be red in
   a poster is ink here, and red is kept to mean what it means (below).
 - Two surfaces and one ink, then: a third tone (`raised`) only fills a
   field and answers the pointer.
 
 ### Lines, and the frame
 
-Lines are 1 px: `rule` around places, `edge` around what is pressed or
-written in (it must be seen: 3.7:1), dashed `rule` for room that something
-will take. Headings have no rule: a box's own edge is the only line, so
-lines never double.
+There is no line that parts two things, and none that frames the work. The
+rail stands on the ground with no line beside it and no tray under it, the
+band's keys the same; what is beside what is told by room and by material
+(the first cut had 2 px of ink down the rail's side and down the pane's: on a
+desk they read as a fence round something that needed none, and a black tray
+under the rail's icons made the rail the heaviest thing on every page). A
+sheet has no line round it: its paper against the ground is its edge. The
+one line drawn on a desk is inside the search's slot (1.5 px of ink), so a
+field to write in is not taken for a key, and the ring round a place of the
+rail under the pointer (2 px, on paper).
 
-Two lines are heavier, and the same as each other: the rail's and the right
-pane's, 2 px of ink from the top line to the foot. They frame the work: the
-center reads at once as the thing between them. One step heavier than every
-other line is exactly enough to say so (*Tried*).
+On a counter, lines are 1 px: `rule` around places, `edge` around what is
+pressed or written in (it must be seen: 3.7:1), dashed `rule` for room that
+something will take. Headings have no rule: a box's own edge is the only
+line, so lines never double. Git's pane keeps its line of ink at its left.
 
 ### Shape is meaning
 
-A place one goes to is a rounded square (12). An action pressed or a choice
-made is round. A field written in is slightly rounded (8) and filled
-`raised`. The three are far enough apart to be told at a glance and are
-never anything between; what a thing is can be read off its corners before
-its words.
+A thing's corners say what it is before its words do. What is pressed is
+soft at the corner: a place one goes to, a key of the band, a slot (12). A
+field written in is slightly rounded (8). An action on a counter is round.
+What is cut is square: a sheet of paper, the note, the terminal (3, the
+corner a blade leaves). Nothing is between them. Nothing on a desk is a
+circle: a mark that says where one is, how far a thing is scrolled or that
+something came in is a bar or a square, cut as the sheets are.
 
 ### State
 
 - **Chosen is a fill of ink with the ground's colour for its words**: the
   part shown, the repo's chip, the primary button, selected text. One such
   fill a level: the eye finds where it is in one look.
-- **Where one is, on the rail, is paper ringed in ink**: the material of
-  work, at the place one works. Not a fill of ink: the rail is always
+- **Where one is, on the rail, is a slot**: the place pressed into the
+  desk, its icon in ink as the others are. The place under the pointer (or
+  the keyboard) is paper ringed in ink (2 px): the ring is for what is
+  touched, never for where one is. Not a fill of ink: the rail is always
   there, and the heaviest mark on a screen belongs to the page.
 - A large place (a card, an issue's row) is too big to fill: it is current
   by an edge of ink over `raised`. Inside the current thing, where one is
@@ -171,18 +251,40 @@ its words.
 
 ### Type
 
-One face, the system's sans, in five sizes far apart: 28, 24, 20, 15, 13.
-A page's name is 24/700, 1.6 times the body: enough to lead, not to
-announce. Bigness is spent once in the whole OS, on the person's name at
-Home (44, Inter Display Black, −3.5%), and a thing being named for the
-first time borrows that face (a new repo's name, what a search is for). The
-code face is for what is written in code and for what the machine names
-(paths, a file's name on a desk, the keys); a fact beside a name (a size,
-when) is in the body's face with even figures.
+On a desk there are three kinds of letter, far apart. **Names** are in the
+display face (Inter Display Black, tight), in capitals' heights of whole
+cells, their feet on a line of the grid: the person's name seven cells at
+Home (fewer where it is long: whole cells, never a size between), a repo's
+name and the name of what is in hand two. A name is set against its edge by
+its ink, not by its box: the first letter's side bearing, or the last's, is
+measured and taken off, so an S and an H start on one line. **Small words**
+are the machine's, in the code face, 20 px on a line a cell tall, heavy
+where they name (a file's path over its sheet, "repos") and plain where they
+count. **What is written** is 16.5 px on a line a cell tall in a file and in
+the terminal: the size one writes at, fifty letters to a sheet; the TODO's
+lines are 30 px, heavy, on lines two cells tall.
+
+On a counter: one face, the system's sans, in five sizes far apart: 28, 24,
+20, 15, 13. A page's name is 24/700, 1.6 times the body: enough to lead, not
+to announce. The code face is for what is written in code and for what the
+machine names; a fact beside a name (a size, when) is in the body's face
+with even figures.
 
 ### Room
 
-Six steps, each plainly more than the last: 4, 8, 12, 16, 24, 40. Inside a
+**On a desk, room is counted in cells.** The window's edge is a cell from
+everything; the rail's places are three cells square, a cell in from the
+window's side; the band's keys are three cells tall on the rail's first row
+(the terminal's five wide, the files' three, the search fifteen), a cell
+apart; a page's own things start eight cells from the window's left and end
+two from its right. Between two sheets is a cell; a sheet's shadow is a
+cell. What is against the right edge is set against it (the repos' names,
+the name in hand), so a wide window has two edges that are both held, and
+the middle is where the vanishing point is, not where things are centred.
+A phone's cells are the same cells: the rail's places and the band's keys
+are two of them there.
+
+On a counter: six steps, each plainly more than the last: 4, 8, 12, 16, 24, 40. Inside a
 thing 8 and 12; between things 24; between kinds of thing 40. Everything,
 the rail included, sits a little inward from the window's edges (3% of the
 width at the sides, 24 to 64 px), against the instinct to run to them; less
@@ -234,9 +336,9 @@ under *The rules in full*.
 A prop is allowed where three things hold: it says something true (a key
 that works here, a size, a name); it is where the hand or the eye already
 is when it is wanted (a name over its sheet); and the screen is no harder
-to read with it than without. The dotted ground, the hard shadow under the
-sheet in hand, the stencilled names and the OS's own pointers are all of
-them there are. (A line of keys stood at the desk's foot, saying what the
+to read with it than without. The dotted ground, the hard shadow a cell
+deep under the sheet in hand, the stencilled names and the OS's own pointers
+are all of them there are. (A line of keys stood at the desk's foot, saying what the
 hands could do: a screen that needs its keys spelled out along its foot is
 not yet plain, and the line read as a game's. It is gone.) A new one replaces one of
 these or is not added.
@@ -248,12 +350,12 @@ beside the value the OS has. What the neighbour lost is the rule's reason.
 
 | The rule | Its neighbours | What they lost |
 | --- | --- | --- |
-| The frame is 2 px of ink | 1 px; 4 px; none | At 1 px it is one more box's edge, and nothing frames. At 4 px it is the first thing seen on every page, and it is always there. With none the rail floats and the page has no spine. |
+| No line beside the rail, nothing under it | 2 px of ink down its side; a black tray under its icons, round-cornered; a trough pressed into the desk | The line fenced the desk off from the places it is gone to from. The tray was the heaviest thing on every page, and what lay at the page's lower right could not stand against it. The trough said the rail was one thing to press. |
 | The part shown is a pill of ink | underlined; paper ringed; a square block | Underlined, the row is links and the one chosen takes a second look. Paper ringed is the rail's own mark: two levels said the same way. A square block is a button: a thing to press, not where one is. |
 | Corners 8, 12 and round | 0 and 2; 14 and 20 | Sharp, boxes are a table's cells and the place one is at is a tick-box. Rounder, a place nears a circle and is taken for an action. |
 | A box's line is `edge` | `rule`; ink | In `rule` (2.0:1) the box fades from under its rows. In ink it is as heavy as the frame, and nothing is the frame. |
 | A page's name is 24/700 | 20; 34; 56 black | At 20 the parts' pill outweighs the name, and the page is read from its second line. At 34 and above the name of the place outweighs what is in it, on a page gone to for what is in it. |
-| Where one is: paper ringed | a fill of ink; a bar on the line; the others greyed | Filled, the rail holds the heaviest mark on the screen. A bar is found only by looking for it. Greyed, eight places look as if they could not be gone to. |
+| Where one is: a slot; what is touched: paper ringed 2 px | where one is paper ringed; a fill of ink; no mark but a heavier icon; the others greyed | Ringed, where one is and what the pointer is on were said the same way. Filled, the rail holds the heaviest mark on the screen. A heavier icon is found only by looking for it. Greyed, eight places look as if they could not be gone to. |
 | The ground `#DCD9D4` | lighter (`#E8E5E0`); darker (`#CFCCC6`); white | Paper lifts off the ground by 1.33:1. Lighter it is 1.18, and the place one is at no longer reads as a sheet. Darker, quiet words fall to 4.4:1, under what small words need. White: see *Material*. |
 | The body is 15 | 14; 16 | At 14 the quiet line under a name falls to 12 and is read with effort. At 16 lines that fitted wrap, and a screen holds a row fewer. |
 | Room 4 to 40 | a fifth less; a fifth more | Tighter, a box's words crowd its line and it reads as a table. Looser, what was on one screen needs scrolling to. |
@@ -551,12 +653,16 @@ Every page:
 | Role | Value | Use |
 | --- | --- | --- |
 | `ground` | `#DCD9D4` | every surface: a touch lighter than the first `#D2D2CD`, still grey, so long hours stay easy; a paper's grey, warm by a hair (OKLCH hue 80, chroma .0075), where it leaned green before. Chosen from its neighbourhood laid on Home, Forge and Git (lighter and darker by .015, cooler toward hue 230 and warmer toward 80, then the warm side at chroma .005 to .010): cooler read as a slate any app has, warmer at .010 as beige; this one is the same grey, no longer tinged. The family keeps its steps: every grey below took the same hue, words a little less of it |
-| `ink` | `#2C2A27` | text, icons, the current thing, primary action (10.2:1 on ground) |
+| `ink` | `#171614` | text, icons, the current thing, primary action, the shadow under the sheet in hand, the terminal's sheet (12.9:1 on ground) |
 | `rule` | `#9C9995` | dividers, outlines of places; decorative only (2.0:1, kept as before) |
-| `sub` | `#5A5855` | secondary text (5.0:1) |
+| `sub` | `#55524E` | secondary text (5.5:1) |
+| `quiet` | `#8F8C87` | on a desk, words that only say how many or where (a line's number, a folder said after a name); never what is read to be acted on |
 | `edge` | `#6F6D68` | outlines of fields and controls, which must be seen (3.7:1) |
 | `raised` | `#E6E3DE` | field fill, hover (the same small step above ground as before) |
-| `paper` | `#F9F8F5` | the sheet: what is worked on, and only that (a file's box, the TODO, the issue or board in hand, Inbox's box, what the search found); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
+| `paper` | `#FBFAF7` | the sheet: what is worked on, and only that (a file, the issue or board in hand, Inbox's box, what the search found, what waits on Home); never a card that leads somewhere, a pane or a page (Runtime's box, which is read rather than worked in, stays on the ground) |
+| `slot` | `#CBC7C0` | what is pressed into the desk: a key of the band, the search's slot, the place of the rail one is at |
+| `note` | `#F2CF52` | Home's TODO, a note: the one coloured sheet of paper there is (what is not yet written on it, `#8A7A3C`) |
+| `green` | `#9BE0BF` | the terminal's light: the mark on its key, its words on its sheet of ink, its shadow and its scroll mark |
 | `done` | `#0E7C5E` | done and on: a step of an issue's work done, a switch on (its knob), a box ticked (its circle, and a TODO done's tick), a line added (its bar), the Prompt's dot while its shell waits; a deep emerald leaning to blue, so it sits with the greys and does not tire (white on it 5.2:1, it on the ground 3.7:1) |
 | `add` | `#13684F` | the words of an addition, a step darker than `done` to read small: +n and its squares, a line's + (5.4:1 on its tint) |
 | `add-tint` | `#D6EADF` | the ground of a line added in a diff: a sage mint of its own, not `done` thinned |
@@ -578,16 +684,35 @@ over the center is a screen made of these colours, not new ones: its glass
 `done`, the prompt lines `done` lifted toward `add-tint` for the dark, its
 lamp `done` while its shell runs and `off` once it has ended.
 
-Type: the system sans; monospace only for paths, code and the terminal.
-One face of its own: the person's name at Home's top, set in Inter Display
-Black (its Latin letters kept with the app, OFL; any others the system's at
-that weight), 44 (30 on a narrow window), tight (−3.5%): the one big thing,
-its handle a step under it. Sizes 28 (identity), 24 (page title), 20 (card
-title, figures), 15 (body), 13 (meta).
+Type: the system sans; monospace for paths, code, the terminal and a desk's
+small words. One face of its own: Inter Display Black (its Latin letters
+kept with the app, OFL; any others the system's at that weight), tight
+(−5.5% for the person's name, −3.5% elsewhere), for names on a desk, sized
+by their capitals in whole cells (its capitals are .727 of its size, and in
+a line as tall as its size their feet stand .1245 of it over the line's
+foot: a name is placed by those two, never by eye). Sizes on a desk: names
+7 cells (Home's) and 1 (what is in hand, on the band's row); small words 20
+on a 24 line; code 16.5 on a 24 line; the TODO's lines 30 on 48. On a counter: 28 (identity), 24 (page title), 20
+(card title, figures), 15 (body), 13 (meta).
 
-Space: 4, 8, 12, 16, 24, 40. Radius: 8 fields, 12 places, round actions.
-Heights: 40 controls, 32 list rows, 48 rail places. Icons 24 with a 1.6
-stroke (the tree's triangle is the one 12 px icon).
+The grid: a cell is 24 (`--u`), a dot in each. The window's edge 1 cell; the
+rail's places 3 cells square (2 on a narrow window); the band's keys 2 cells
+tall (`--key`) at the top of a row of 3 (`--keys`), from the rail's corner
+(5 cells in), 6 px apart, 14 cells wide together; a counter's name stands on
+the keys' middle line (`--band`), so the top row is one line from page to
+page; a page's things from 8 cells in to 2 from the right edge; a shadow 1
+cell; a sheet 23 cells wide (fifty letters and their numbers), 3 cells
+between two; the terminal 14 wide and 18 lines tall at rest, 22 and 20 in
+hand.
+
+Space on a counter: 4, 8, 12, 16, 24, 40. Radius: 8 fields (and a row
+pressed in a sheet), 10 a sheet and a key of the band (`--r-sheet`: a file's,
+the terminal's, File's two, Home's note and slip; before: 3, cut square,
+harder than everything round it), 12 the rail's places, round a counter's
+actions. Heights: 40 controls, 32 list rows. Icons 36 with a 2 px stroke on
+the rail, what each encloses filled with the ground (85%) so the desk's dots
+do not show through it as a part of it; 26 on the band's keys, the search's
+lens 22; 24 with 1.6 elsewhere.
 
 ## 3. Shared pieces
 
@@ -1932,29 +2057,35 @@ or Cancel; Cancel comes back with the error a provider sends then.
   **Server** (the people you know, on the Remote: the one purpose whose
   subject is people, not a repo; under the cloud, as it lives there) →
   **Inbox** (what was sent to you) → the **plug** (an operation, as File
-  is: it opens the plugin area at the top of the center). **+** (a new repo)
-  comes right under them, a step apart, and is round because it starts
-  something rather than opening a place (§1, shapes).
-- The place one is in is `paper` ringed in `ink` (1.5 px), its icon in
-  ink; not an ink fill: the rail beside every page stays light, and the
-  place is the one thing ringed there. What is out from the rail (File's
-  tree, the person's menu) is ringed so too, and the ink that travels from
-  one place to the next on the rail is that ring.
+  is: it opens the plugin area where there is one, over what waits on Home
+  and at the top of Git's pane; from any other page it goes to Home with it
+  out). **+** (a new repo) comes right under them, a cell apart.
+- The place one is in is a `slot`, pressed into the desk, its icon in ink
+  as the others are; the place under the pointer or the keyboard is `paper`
+  ringed in `ink` (2 px). The ring is for what is touched, never for where
+  one is, so the two are told apart at a glance. What is out from the rail
+  (File's tree, the person's menu) is touched so too, and the slot that
+  travels from one place to the next on the rail is that pressed place.
+  The rail has no line beside it and no tray under it: its icons stand on
+  the desk's own ground, dots and all.
 - A name appears beside an icon on hover or keyboard focus. Choosing an
   icon replaces the whole page; nothing pushes in beside the rail. File is
   the operation: its tree is laid over the page instead; a rest on Server
   brings out one's servers beside the rail, to go to one (below).
-- The rail is 78 px wide: the icons keep 18 px to its line and 12 px to the
-  window's side, so they do not crowd the line.
-- Inbox and Server carry the dot of §3's Something came in; Remote the
-  dot of the Remote away. Nothing else on the rail is marked.
-- Item 48×48, radius 12, icon 24 px with a 1.6 px stroke; + is a 40 px
-  round button with an `edge` outline. States as everywhere (§1).
-- The person's own icon sits at the foot of the rail, on the line of the
-  prompt box at the center's foot (its middle the box's middle: one line
-  across the window's foot, rail to center), a 44 px circle a
-  little larger than the items: their initials, or a head and shoulders
-  (30 px, filling most of it) before there is a name. Touching it brings
+- The rail's places are three cells square, a cell in from the window's
+  side and one under another with nothing between; a page's things start
+  two cells past them.
+- Inbox and Server carry the mark of §3's Something came in, Remote the
+  mark of the Remote away: a square of ink, 8 px, at the place's corner (not
+  a dot: nothing small and round stands alone). Nothing else on the rail is
+  marked.
+- A place is 72×72 (48 on a narrow window), radius 12, its icon 36 px with
+  a 2 px stroke; + is a place as the others are, a cell under the last.
+  States as everywhere (§1).
+- The person's own key sits at the foot of the rail, a place as the others
+  are, three cells square, a cell over the window's foot: their initials in
+  the display face (24 px), or a head and shoulders before there is a name.
+  Under the pointer it is touched as a place is. Touching it brings
   out what is the person's own, in groups under a small heading and with
   no rules between them: Profile (Edit profile; the profile itself is read
   on Home), Account (Sign in; once signed in, Sign-in, Devices, Sign out),
@@ -1987,37 +2118,66 @@ Each page below says only what is its own; the rest is Part I.
 ### Home
 
 A profile that reads the same for its owner and for anyone else; only the
-owner gets "edit". Minimal and sure of itself, on the desk's dotted ground
-(the dots Forge's boxes lie on), and set on the rail's rows (a place tall, a
-step between them), from the rail's first place down, so that what is beside
-the rail lines up with it. The first row is what each thing is called: the
-person's name at the top left, small (28 px: its capitals as tall as an icon
-of the rail's beside it, on a line a place tall; one longer than its line
-breaks instead), the handle after it; and at that line's right end, over the
-box's right edge, quiet in mono, the counts of repos and servers: two ends
-of one line, the room between them empty, never a row of small words packed
-after the name, and nothing between the counts but room (where the column
-is too narrow for the name and both, the counts go, so the first row stays
-one row; a line about the person, where there is one, under them). No face in the column: the rail's own icon is the
-face. No name written yet, it is the one signed in with, as Remote and the Me
-menu say it: one person, one name, never "No name yet" beside "Signed in as
-Sora"; none at all, the line says what goes there ("Your name") in the
-ground's rule colour: a place to write it, not a name. From
-the second row down, what each holds: under the name the **TODO**, a box as
-Forge's are (paper, an ink edge, its shadow), with no word over it (under the
-person's name it needs none; it is heard, and what is left of it and Clear
-completed are said at the sheet's own foot, at its right), its top
-level with the rail's second place, four places tall at the least (its foot
-level with the fifth's; longer as what is in it is) and most of half the
-column wide; and beside the two, the repos and servers: their first heading on
-the name's own line (its letters' feet where the name's are), their names from
-the line the box's top is on, the
-repos and servers, each a name in the display face, what it is
-beside it in mono (a repo: when it last changed), New repo a quiet mono line
-after them. Each server one is in opens Server on it; after them each board
-this browser writes in as a guest, #board with its server and guest beside
-it, opening Server at that board alone, so a guest come back, signed in or
-not, is led back to it. On a narrow column the two go one under the other.
+owner writes in it. It is a desk, set on the grid: with every word a bar it
+is a poster of four things, two of them askew.
+
+- **The name**, top left under the band: the person's name in the display
+  face, its capitals seven cells tall, their feet on the line thirteen cells
+  down, set against the page's left edge by its ink. A longer name is set
+  smaller by whole cells (six, five, down to two), never cut and never a
+  size between; one too long for that at two cells runs on under itself.
+  Under it, small and in the code face, the counts (repos, servers), then
+  the handle and a line about the person where there are any. No face: the
+  rail's own key is the face. No name written yet, it is the one signed in
+  with; none at all, the line says what goes there ("Your name"), quiet: a
+  place to write it, not a name.
+- **The repos**, against the right edge: "repos" small at the top, level
+  with the band, then each repo's name in the display face, capitals two
+  cells tall, one every three cells, set against the right edge by its ink;
+  the third name's feet are on the line the person's name stands on. After
+  them, small, "+ new repo". A name is the repo, opened in Forge; under the
+  pointer its gear stands in the margin past the edge (its card on the
+  Remote, Rename, Free, Delete), so the names' edge is never broken by it.
+  Each server one is in, and each board written in as a guest, follows the
+  repos the same way.
+- **The TODO**, a note: yellow paper, its upper right corner on the
+  window's vanishing point, turned two degrees to the left about that
+  corner, its shadow a cell left and down (away from the vanishing point).
+  It runs from the page's left edge to that corner and off the window's
+  foot, and is cut there: what is seen is its top, and that it goes on. Its
+  lines are heavy, 30 px on lines two cells tall, each with a square box to
+  tick (ink, 4 px, soft at the corner) three cells apart; the line to write
+  the next in is quieter. It has no word over it (under the person's name it
+  needs none; it is heard); what is left of it and Clear completed are said
+  at its foot.
+- **What waits**, a slip of paper at the right foot: its lower right corner
+  a cell in from the window's, turned a degree and a half to the right about
+  it, its shadow a cell right and down. "recent activity" small at its top;
+  what one left off at is its one large line, the file's name in the display
+  face against the right edge; under it, small, the line it was left at (or,
+  where that would only say the name again, nothing) and the repo. Then,
+  each a row, the conversations with something not read, the boards with
+  posts not seen, and the boards written in as a guest. Pressed, a row goes
+  to where the thing is: the line in Forge, the conversation in Inbox, the
+  board in Server. Nothing is answered here. With nothing waiting the slip
+  says so, small. The plugin area comes down over it when the rail's plug
+  opens it, and the Agent's work in hand is listed with it.
+
+The band is the top line, on the rail's first row, the three keys Forge has
+(§ Forge, The band: outlined, two cells tall, from the rail's corner, 14
+cells wide together): the terminal's (the terminal of the repo last worked
+in, in Forge, the keyboard in its line), the files' (that repo in Forge, its
+file deeds out under Forge's own key) and the search, in the repo last
+worked in (or, none yet, the one changed last), named in it ("Search
+garden"). What it finds drops as Forge's sheet does,
+over Home, which steps back out of sight under it; a line found opens in
+Forge at that line. There is no pane on Home.
+
+On a window too narrow for the two columns (1100 and less) they go one under
+the other: the name, the note (square to the grid there, its shadow half a
+cell), then the repos and the slip against the right edge. On a phone the
+name's capitals are fewer cells and everything keeps its order.
+
 TODO is the person's single list; repos do not carry their own inbox or
 TODO files. An item is a first line named like an issue ("Fix：件名",
 "買う：種"), then detail lines (starting on the first line's column, with a
@@ -2029,35 +2189,31 @@ ones together by Clear done. Done strikes through and fades the first line, the 
 across its words from the kind's start as the mark pops (taken back, it goes
 back the way it came), and its detail goes quiet with it, still there to read.
 A detail opened or put away moves the items under it down or up to make room,
-never jumping them. Each repo's name is a repo in a list as Runtime says it:
-the name the repo itself, opened in Forge, its gear at the name's end under
-the pointer what is done to the repo (its card on the Remote, Rename, Free,
-Delete).
+never jumping them. An item goes by its × (§3, the TODO box), the done ones together by
+Clear completed.
 
 What a hand goes to without being told answers it, here and on every page:
 each count is the way to its section further down (a raised fill under the
 pointer; pressed, the page goes there and its heading lights as it lands);
 the TODO's paper pressed under its items gives the caret to the line at its
-foot, as a page written on does. In Forge a file's name in its head,
-pressed (not to choose its words), is written over where it stands, a faint
-box round it under the pointer as a name to write in: its path in the repo,
+foot, as a page written on does. In Forge a file's name over its sheet,
+pressed (not to choose its words), is written over where it stands, a line
+under it: its path in the repo,
 the stem chosen and the ending kept; Enter or leaving it renames it (a path
 written moves it, the folders on its way made), Escape puts it back, a name
 taken is said beside it with the keyboard kept there, and renamed, the
 keyboard goes on into the file (an issue's file is its number, not renamed
-there); pressed under the last file, on nothing, the caret goes to its end. A pill on the band is one
-thing to press: on its edge, round its name, it goes as on the name (its ×
-aside). Server's people are each a
+there); pressed under a file's last line, on its paper, the caret goes to
+its end. Server's people are each a
 conversation: someone else pressed opens the Inbox to them, an arrow at the
-row's end under the pointer. Lately's rows, pressed twice, go straight
-there (what their card's own button does). Every pressable thing answers
+row's end under the pointer. Every pressable thing answers
 the pointer coming, a primary button too (its ink a step toward the ground)
 and the box's pill (its glass catching a little more light). The keyboard
 is never left on nothing: letters typed with it on the rail or the page in
-Forge or Git go into the box; a pill taken off the band hands it to the
-pill worked on next; the box's four put away with Escape give it back to
-the box. The arrow keys go along any list of things pressed (Lately's and
-Inbox's rows, the band's pills, the repo cards), to the nearest one that way
+Forge or Git go into the box (on Forge, the terminal's line); the box's four
+put away with Escape give it back to the box. The arrow keys go along any
+list of things pressed (what waits on Home, Inbox's rows, the repos), to the
+nearest one that way
 on the screen, as they go along the rail; → on File brings its tree out
 with the keyboard on its first row, as a menu's ↓ does; and what scrolls inside the page
 keeps its own turning: past its end, the page behind it does not go on.
@@ -2081,140 +2237,109 @@ others find them, so changed here it is changed on the Remote first, and
 what the Remote says no to (taken, held for its owner, changed twice this
 hour) is said at the handle, nothing saved; left empty, it stays as it was.
 
-Home has Forge's band along its top, held there while Home scrolls under it,
-plain ground from the rail's line to the pane's, tool for tool where Forge's
-are: >_ (the terminal of the repo last worked in, in Forge, the keyboard in
-it), the files button (that repo in Forge, its file deeds out under Forge's
-own files button: New file, New folder, Rename, Delete), and the search box,
-in the
-repo last worked in (or, none yet, the one changed last), named in it since
-no repos on the band say which ("Search garden"); Ctrl+K, Ctrl+P and Ctrl+B
-as in Forge; what it finds drops as Forge's sheet does, over Home, which
-steps back out of sight under it; a line found opens in Forge at that line,
-selected. Its right pane is the same pane as Forge's and Git's, its switch at
-its foot where Forge's is, level with the person at the rail's; its first row
-where Forge's first run is, level with the rail: the row's first line starts
-where the rail's first icon does, so the line's capitals, the bar beside them
-and the icon's ink start on one line (the bar as tall as its words, capitals
-to baseline, never standing proud of them). Between Home and Forge the rail
-switches as it does between any two places (the camera along the rail, above).
-Forge's desk is not laid out while it is out of sight, so its boxes are
-where they were when it comes back, carried in by the camera, never sliding
-to their places after it. The pane holds
-Lately: what waits since the person was last here, a row each in the rows
-Forge's and Git's pane have for what was done (a bar, ink while something of
-it is not read, the paper's rule once it is; what it is in the display face;
-under it what was said, or the line it was left at as written there, in mono;
-where it is, quiet), rows only as Forge's pane is (its head, Recent activity,
-heard and not shown): where they left
-off (the file last read in Forge, its repo, and the line it was left at), the
-conversations with something not read (who wrote; what it is and its words:
-Review：…), the boards with posts not seen,
-and the boards this browser writes in as a guest (Trip · where you write
-as a guest: a way back always there, signed in or not, the one written in
-last first, pressed to that board). A row is two lines at
-most under its name, the second fading out where it runs out of room. The pane keeps its width. In
-the Prompt's lines there, a line run that goes past the pane's width goes on
-under itself beside its prompt line's pill, never back under it; a line
-sent before the shell first waits at its prompt line waits for it. The same round initial
-heads a conversation in Inbox, a person in a server's People and their posts
-on its board (larger there, a guest's no tint, only a dashed ring). With
-nothing new it says so, quietly: the pane out is never a line with nothing
-beside it. The plugin area comes down over it when the rail's plug opens it.
-
-A row in a pane (Lately's here, the word at the foot of Forge's and Git's,
-a line the box wrote in the Prompt) is the same row wherever it is, and it
-tells, it does not hold: it says what came in two lines at most (its name,
-and one line of it cut where it runs out of room), and pressed it goes to
-where the thing is done: the conversation in Inbox, the board in Server,
-the line one left off at in Forge (that line a third of the way down, the
-caret where it was), the issue in Git, the TODO on Home. Nothing is
-answered, posted or written in the pane: a pane that tried to be each of
-those places, in a card the size of a row, was none of them well. Under the
-pointer, a chevron at the row's end says it goes there.
+A row that tells (what waits on Home, the word at the foot of Git's pane, a
+line the box wrote among what was run) is the same row wherever it is, and
+it tells, it does not hold: it says what came in two lines at most, and
+pressed it goes to where the thing is done: the conversation in Inbox, the
+board in Server, the line one left off at in Forge (the caret where it was),
+the issue in Git, the TODO on Home. Nothing is answered, posted or written
+in it: a row that tried to be each of those places was none of them well.
 
 ### Forge
 
-The center is the repo's desk. What is open lies on a plane on dots, each box
-as wide as 80 columns of its code (14 px, a step larger than elsewhere: a box
-is read at its own size), inked round, the one in hand with a hard shadow,
-its name outside its top-left corner (its folder quiet before it) and its
-close outside its top-right, on the name's line: a mark that says what it
-does (×), as large as a press needs (28 px), there for the box in hand and
-the one under the pointer (before: a 9 px dot under the box's foot, read as
-an ornament and too small to press). Each
-file opened is a box of its own, under the one opened before it, written in
-where it lies (there is no Edit to choose: the file is typed into). One box is
-in hand, and a press on it puts the caret where it was pressed, whichever box
-had the keyboard before.
+The page is the repo's desk: the window's whole ground, dotted, from the rail's
+corner to the window's right edge and foot. What is open lies on it in a row,
+on the dots' grid (24 px), every piece's top on one line (six cells down the
+window): the terminal first, then the files, three cells between two pieces.
+The row runs on past the window's right edge, and the piece cut by that edge
+says so: there is more that way. Nothing is under a piece and nothing over
+it; there is no pane beside the desk, no pill over it and no Prompt under it.
 
-The Prompt stands at the center's foot, under the desk, as wide as a box and
-in the middle as the box in hand is: one box, inked round as a file's, on
-plain ground as the band over the desk is. The dots are the desk's: where they
-end the desk ends, and nothing of it passes under the Prompt (the first cut
-stood it over the desk, and a box's name left showing over its corner read as
-its own). The desk's foot is not a cut: its last step fades into that ground,
-dots and boxes alike, so a box that goes on down is seen to go on, not sliced
-through a line of its words. Its letters are the OS's body size (15 px, a
-line 24, a step of the grid: the box 52 high, each of its lines on whole
-pixels), a step over a file's code: it is where one writes to the machine, and
-a terminal's 80 columns still fit its width (before: 14 px, a line 22.4, the
-box 50.4, its words small in a frame as heavy as a file's). At rest it is a
-line: at its start what it will do, the shell's prompt (`garden $`), and after
-it a block where the next letter goes, a terminal's cursor away from the
-keyboard, which is all that says the line is written in (no sentence in grey
-saying what the prompt before it had said). Nothing stands on the line but
-text: whether a shell is there, the prompt's own colour says, quiet before it
-starts and once it has ended, the shell's green while it lives. (Before: a
-lamp in the line's margin, 5 px from the frame, lit and glowing while the
-shell ran: read as dirt on the frame, and a glow nothing else on the page has.
-Taken off, the prompt's colour says the same.) Taken to run
-(pressed, Ctrl+`, the band's `>_`), it is a terminal: what was printed stands
-on that same line, which has not moved, and the file in hand stays in hand
-above it. It stays up while a file is written in, so what a run said is read
-beside the file it is about, and is put away by Escape in its line (the
-keyboard back where it came from, a press on the terminal on the way there
-not forgotten), its ×, or the band's `>_`, which is inked while it is up. The
-× is what was printed's: at the right of its first line, on that line's
-middle, as far in from the frame as the words are at the left, on paper; with
-nothing printed there is nothing to put away, and no × (before: in the corner
-of the line itself, 5 px over its middle, and there once the line had been
-pressed, whether or not anything had been printed). It has no name over it: what it is, its
-lines say. What it printed takes at most 24 lines and never more than about
-half the window, so the file worked on keeps the other half; a program that
-takes the whole screen has its 24 rows, not scrolled, nothing faded at its
-top. While a line runs there is no prompt, as at a terminal, and what is typed
-goes to what runs. Its start, pressed, is a
-switch between the two things the line does all day: run, and note for later
-(TODO, its circle and its word); the rest (an issue) come out of it at Alt+↓,
-each said as the line will say it, and Alt and a number chooses at once. Under
-Run, Enter runs the line and Tab completes it, as at a terminal (Tab never
-leaves the line: it stands outside the desk, where Tab is the boxes'), and
-nothing stands beside it to press. A note or an issue takes more than a line:
-Enter is a new line there, and what sends it is Ctrl+Enter or a word at the
-line's end (Add, Create), in the line's own letters, underlined as a thing to
-press, there once something is written. The hard shadow is where the keyboard
-is: under the Prompt while it is written in, under no box of the desk then.
-With no repo there is no line. (Before: the Prompt was a box of the desk, the
-first, and a line run from a file took the camera off the file to it.)
+**The band.** Three keys in a row from the rail's corner (120 px from the
+window's left, on the row of the rail's first place), two cells tall: the
+terminal's (`>_`), the files' (a page with +) and the search. One material
+for the three: an outline in ink (1.5 px), nothing in it, the corner a key's
+(10 px); six pixels apart, packed and not joined. Together they are as wide
+as the terminal's sheet under them (14 cells), so the band and the first
+piece are one column, hung from the rail's corner, and nothing of the band
+floats. Under the pointer or the keyboard a key is paper ringed in ink
+(2 px), as a place touched in the rail is. Home has the same three, in the
+same place. Against the right edge, on the keys' row, stands the name of what
+is in hand (the file's, or the shell's prompt), in the display face, its
+capitals a cell tall: the one large word of the page, right-aligned by its
+ink, smaller where the band has no room for it and gone under 1100 px.
+(Before: keys three cells tall, the terminal's five wide in ink with its mark
+in green and the others slots, the name's capitals two cells tall: the band
+was heavier than the desk it stands over, and took the page's hierarchy.
+Before that: small outlined tools, a pill for each repo out, and ⊕.)
 
-One box may be put beside the desk, a second screen: the desk is then the left
-half of the center and that box the right, each as wide as its half (never
-smaller letters: the boxes are narrower), their tops level, the halves meeting
-on the dots' grid so the ground is one ground; the Prompt stands under both.
-The box beside stays where it is while the desk is gone through, scrolled in
-itself when it is taller than its room, its name, its close and its way back
-always there. It is put there by the mark beside a box's close (a sheet in
-two, a + in its right half) or Ctrl, Alt and →, an editor's keys for it, the
-keyboard going with it; put back (the same mark, a − in it; Ctrl, Alt and ←)
-it lies where it lay, in hand. Another put beside sends the first back, and a
-desk kept (the app closed, the page loaded again) is kept with its box beside
-it. A center too narrow for two boxes read side by side (a small window) is
-one screen: no box offers the move, and one beside goes back. That
-is all the moving a box has: it is not carried about the desk (before: Ctrl
-and an arrow carried the box in hand a slot at a time anywhere, columns made
-and unmade on the way, and Ctrl and an arrow in a text are a word along on
-every system).
+**The terminal** is a sheet of ink, 14 cells wide and 18 lines tall (a cell of
+margin round them), its letters and its shadow the shell's green, lying 4°
+askew to the left about its upper left corner, which is the desk's own (the
+rail's corner, under the band's first key): the one thing on the desk not
+square to the grid. Taken in hand (pressed, or the band's `>_`) it lies
+straight and is opened out to work in, 22 cells wide and 20 lines tall, the
+files gone along the row at once to make it room; let go, it closes to its
+size at rest and lies askew again, and the files come back (a file pressed
+while it was open stays under the pointer for as long as a second press may
+come, 320 ms, and comes back after). At rest it is a thing on the desk, not
+the lead; in hand it is. (Mocked three ways, five frames each: straightened
+only, it took the hand and stayed 28 columns; never askew, the desk lost the
+one thing that is not square; opened to a terminal's own 80 by 24, it left
+the first file half off the window. Opened part of the way keeps both.) Its
+width sets its columns (28 at rest, 48 in hand); a program that takes the
+whole screen has 80, the sheet as wide as that for as long as it runs,
+straight. It scrolls inside itself. There is one terminal, the
+repo's; ended (exit, its shell stopped) it goes, and the band's `>_` lays a
+new one. (Before: the Prompt was a box at the center's foot, under the desk,
+52 px high at rest and raised over the desk to run; before that the first box
+of the desk.)
+
+**A file** is a sheet of paper, its corner 10 px as a key of the band's is
+(every sheet's: the terminal's, File's tree, Home's note and slip; at 3 px the
+sheets read harder than everything round them), fifty letters wide
+(552 px), written in where it lies, in the code face at the size one writes
+at (16.5 px, a line a cell), its line numbers quiet in a margin a cell and a
+half wide. Its name stands over its top-left corner (mono 700, 20 px; its
+folder before it), its close over its top-right, there under the pointer. A
+sheet is as tall as its lines and never lower than two cells over the
+window's foot: what is under that, and what is past its fiftieth letter, is
+scrolled to inside it. Where a sheet (or the terminal, or the desk itself)
+is scrolled to is said only while it is scrolled and a moment after
+(700 ms): a bar 4 px thick, cut square, just inside the edge it is scrolled
+along, as long as the part in sight is of the whole. At rest nothing is
+drawn, and there is no scrollbar to take.
+
+**In hand.** One piece is in hand: the hard shadow, a cell right and a cell
+down, is under it alone (ink under a file, green under the terminal, whose
+shadow is always there). A piece pressed is in hand, the caret where it was
+pressed. Pressed twice (on its paper, not on a word of the piece already in
+hand, where two presses choose the word), a piece is 1.7 times as large,
+letters, lines and width together (28 px letters), and is the page's one
+sheet: brought to the desk's edge under the band's keys wherever it lay
+(the terminal gone off that edge), its shadow as much longer and its name as
+much larger as it is nearer the eye, the next sheet's edge showing past it.
+Pressed twice again, or Escape on the desk, it is its own size where it
+lies in the row. (Made larger where it lay, the desk turned a little to fit
+it and left the terminal cut in half by the rail's corner: the window's
+upper left looked wrong.)
+
+**Turning the desk.** The desk is turned only along the row, and only as far as
+brings the piece in hand whole into sight with its shadow: a piece in sight
+is not moved by being taken (but for the files' making room as the terminal
+opens and closes). The wheel over bare ground turns it; over a
+piece the wheel is that piece's own scroll and never the desk's. Turned as
+far as its first piece, the terminal stands at the desk's edge, where the
+band's keys start. (Before: boxes 80 columns wide in columns, one under
+another, the one in hand brought to the middle of the face by a camera; one
+box could be put beside the desk as a second screen.)
+
+What the pane and the pills held is not on the page any more. The repos are
+gone to from Home (a repo's name) and from File; a run is read in the
+terminal it ran in, and found again by the search (Output); an issue, a diff
+and what the Agent did are the search's kinds; a note the box makes (an
+issue, a TODO) is said in the terminal as a line of its own. The plug's
+area is Home's and Git's.
 
 The Prompt is a real terminal, 80 columns by 24 rows, a colour xterm's
 (`TERM=xterm-256color`), drawn by a terminal of our own (vt.ts): what programs
@@ -2238,11 +2363,12 @@ A box is gone to by pressing it, and a box in sight pressed stays where it
 stands: the caret goes where it was pressed, the box is in hand, and nothing
 moves (before: any box pressed went to the top of the face, the line pressed
 gone from under the pointer). Only a box gone to from out of sight (a line
-found, a file opened from the tree) is put at the standard's place. From the
+found, a file opened from the tree) is brought into sight, the desk turned as
+little as shows it whole. From the
 keyboard: Escape leaves a text, the keyboard on the desk, and nothing moves;
 there an arrow takes the next box that way in hand (Tab the next in order,
-Shift+Tab back), one in sight where it stands, one cut by the desk's foot up
-by the least that shows it whole; Enter, or a letter typed, goes into the box
+Shift+Tab back), one in sight where it stands, one cut by the window's edge
+along by the least that shows it whole; Enter, or a letter typed, goes into the box
 in hand. Nothing is drawn for the keyboard on the desk but the box in hand's
 own shadow (before: a pointing hand beside its name, the pointer's own, as a
 game's menu has one, with the pointer hidden while it was out; it said
@@ -2252,8 +2378,8 @@ the caret, a selection's lines moved in, Shift+Tab out. Looking along the
 desk with the wheel takes no box in hand while one is written in: the shadow
 stays where the keyboard is. Shift+N, as a new post is begun on X, makes a
 new file beside the one in hand where nothing is being written (the keyboard
-on the desk; written in a file, it is an N): it is laid under the box in
-hand, in its column, as a new post goes under the one before it, named with
+on the desk; written in a file, it is an N): it is laid after the piece in
+hand in the row, the pieces after it making way, named with
 that file's ending (none with no file in hand: untitled), at the size it is
 read at, and its name is written over
 at once in its head, the name itself (its folder quiet before it), a line
@@ -2263,36 +2389,22 @@ the box, at its end; Escape keeps the name it had and goes on in too. The
 files tool's New file, and File's, make it the same way. Writing in a box
 puts the pointer out of the way until it moves.
 
-The desk has one size: every box at its own, the box gone to in the middle
-across, its top level with the rail between Home and File (high enough that
-the box above it in its column, its shadow and the dot of its close are wholly
-out of sight, never a strip nor a dot cut by the edge). Nothing steps back
-from it. It is turned from its first box to its last and no further:
-turned to its top, the first file stands at the top of the face, where a box
-gone to stands; turned to its end, the last one does; a desk whose files are
-all in sight from there does not turn at all. (Before: half a face of bare
-ground lay over the first box, room to stand any box in the face's middle, a
-place no box is put at, so a desk turned to its top showed its files
-beginning half way down the face; and a whole face of ground lay under the
-last, and beside it.) (Before: three cameras, as a game's, Escape going round them: this
-one, the desk at three quarters, the whole desk at half. A key pressed to
-leave a line made the page smaller; what a smaller desk showed, where each
-box lies, the band's pills and the pane already say, at a size that is read;
-and Ctrl and -, + and 0 and a pinch, the window's own on every system, were
-taken for it. Taken off, no deed got worse.) Escape out of a text only takes
-the keyboard out onto the desk (one key, one thing); on the desk it changes
-nothing; from a field that keeps Escape for itself (a search, a rename), that
-comes first. The camera moves as a scroll does, so the keyboard going into a
-box, or something brought into view, takes the camera there and that box into
-hand, and the wheel moves it along the desk. A box taken off by the dot of its close
-(or its file gone) goes in a beat where it lies, the others closing up after
-it and the camera gliding with them, never a cut. A file
-gone goes from the desk; moved, its box is the file where it went. A file named
-in a terminal's output (what ls says, the compiler's count.c:7:24:, grep's
-line) is underlined under the pointer and, pressed, its box opens at that line,
-as a terminal's hints open what they point at. Each
-repo keeps its own desk, as it was left, from one visit to the next; a desk
-never worked at begins with its README, in hand, and the Prompt's line at its foot.
+Escape out of a text only takes the keyboard out onto the desk (one key, one
+thing); on the desk it puts a piece made larger back to its size, and
+otherwise changes nothing; from a field that keeps Escape for itself (a
+search, a rename), that comes first. (Before: three cameras, as a game's,
+Escape going round them: the desk at its size, at three quarters, whole at
+half. A key pressed to leave a line made the page smaller; and Ctrl and -, +
+and 0 and a pinch, the window's own on every system, were taken for it. Taken
+off, no deed got worse.) A piece taken off by its close (or its file gone)
+goes in a beat where it lies, the others closing up after it, never a cut. A
+file gone goes from the desk; moved, its sheet is the file where it went. A
+file named in a terminal's output (what ls says, the compiler's count.c:7:24:,
+grep's line) is underlined under the pointer and, pressed, its sheet opens at
+that line, as a terminal's hints open what they point at. Each repo keeps its
+own desk, as it was left, from one visit to the next (which sheets, in what
+order, which in hand); a desk never worked at begins with its terminal and
+its README, the README in hand.
 
 Where you work. The top line starts with its tools, square as a field: >_,
 which puts the Prompt up at the desk's foot with the keyboard in its line, and
@@ -4052,17 +4164,33 @@ as it was written; typing in it again clears what was said.
 ### File
 
 An operation, not a page. Hovering the File icon (or pressing it) lays the
-tree of "/" over whatever page is showing as a card right beside the rail:
-its corner concentric with its rows (a row's 8 px plus the 8 px between
-them: 16 px), only as tall as what is in it, its first row level with the
-File icon. It has no "/" label of its own: the rows are what is in "/", the
-person's first: /root on top with the repos open in it, and the rest of /
-(the kernel's, the distribution's, what is empty here), wanted now and then,
-put away under one quiet row at its foot, System (its first names beside it),
-shut until it is opened and kept open once it is. While it is out, File is the one filled icon in
-the rail; the page's own icon steps back until it goes, the ink going from
-the one to the other as it does between places (the servers a rest on Server brings out and the plug's
-area take it the same way). It comes out of the rail as a drawer does, a few
+tree of "/" over whatever page is showing, out from the rail's corner where
+the band's keys start. One motif, twice: a sheet of paper (a desk sheet's
+corner, 10 px), its name over its top-left corner as a file's is over its
+sheet on the desk (mono 700, 20 px), its shadow a cell right and a cell
+down, in ink. The tree is the first, named "/", 13 cells wide and only as
+tall as what is in it (scrolled inside itself where that is more than the
+window, where it is scrolled to said as a desk sheet says it); what can be
+done to a row is the second, beside the row it is for, two cells from the
+tree, that row's name over it. Its rows are a cell and a half tall, in the
+code face: a repo's name heavy and larger (20 px), the rest 16.5 px, a
+folder's name ending in its stroke (src/), the file Forge is reading heavy
+with a bar at the sheet's edge. The repos are the first rows (/root has no
+row of its own), and the rest of / (the kernel's, the distribution's, what
+is empty here), wanted now and then, is put away under one quiet row at its
+foot, System, shut until it is opened and kept open once it is.
+
+While it is out the page under it steps back out of focus (the rail does
+not: it is what the tree came out of): the same blur over all of it (6 px)
+and a thin wash of the ground (35%), and only in a strip at the window's top
+and at its foot, lower than a place's icon is tall (36 px), deeper (to
+16 px), as a lens tilted over the page leaves its far edges. What is dark on
+the page (the terminal, a sheet's shadow) is then no hard shape in the steps
+of the tree's own shadow, where it read as a gap. File's place in the rail
+is ringed as a place touched is (paper, 2 px of ink), and the page's own
+place keeps its slot: the page is still there. (Before: a soft-cornered card
+with a hairline beside the rail, 15 px rows with triangles and sizes, File
+the one filled icon and the page's own stepping back.) It comes out of the rail as a drawer does, a few
 pixels from the left, drawn out from its edge, whole the while: never faded
 over the page with the page's words through its own; it goes back the same
 way. Nothing under it moves. The pointer resting on File a moment (300 ms) brings it out, never
@@ -4079,25 +4207,28 @@ distribution (配布), `/dev` and `/proc` are made by the kernel, `/root`
 holds the person's repos, `/etc` and `/tmp` start empty. What the system
 is made of (those, and what is in them) is in `sub`, so `/root` and its
 repos are what the eye finds first; under the pointer or the keyboard a row
-is in ink again. `/root` is open at first. A folder's triangle comes before its name, ▷ closed and ▽ open (one
-outlined shape, turned). Inside a repo a name opens that place in Forge
-(in place when Forge is showing; a folder keeps the tree out, to go on
-down); a file is the one to work on, so choosing it puts the tree away and
-the caret at the file's start. Elsewhere a name opens and closes the
-folder. The file Forge is reading is marked as where one is (§1). Escape
+is in ink again. No triangle is drawn: a name opens and closes what it
+names (the triangle is still there to be pressed and heard, over the row's
+indent, and → and ← on a name do it from the keyboard). Inside a repo a name
+opened is also the place Forge goes to (in place when Forge is showing; a
+folder keeps the tree out, to go on down; a repo's own row pressed while
+open closes it when Forge is already at that repo, and goes to it
+otherwise); a file is the one to work on, so choosing it puts the tree away
+and the caret at the file's start. The file Forge is reading is marked as where one is (§1). Escape
 puts the tree away whatever has the keyboard: what was being written keeps
 its caret, and only from inside the tree does the keyboard go back to File.
 Open folders are remembered while the app runs.
 
 Inside a repo a row is also where a file or folder is made, renamed,
 moved and deleted. At its right end, shown on the row under the pointer or the
-keyboard, a small round button (the down mark, more to choose from) brings
-out the row's menu; a right press on the row, or the menu key (Shift+F10)
-on its name, does the same. The menu is the person's menu (`.pop`): beside
-the tree at the row's height, out in the free space so nothing moves, its
-head the row's name, a row per deed, each with its mark at its left as the
-repo's gear has them (a page with +, a folder with +, the pencil, and after
-a rule the bin, Delete in `off` red). A folder, the repo's own row too, has
+keyboard, an angle toward where its sheet comes out (no ring round it: a
+small round thing alone is the worst mark there is) brings out the row's
+deeds; a right press on the row, or the menu key (Shift+F10) on its name,
+does the same. While they are out the row is pressed (a slot). The deeds are
+the second sheet: beside the tree at the row's own height, out in the free
+space so nothing moves, the row's name over its corner, a row per deed in
+the code face (20 px), the first heavy, no marks and no rule; Delete is in
+`off` red under the pointer or the keyboard. A folder, the repo's own row too, has
 New file and New folder, made in it; a file has them too, made beside it in
 its folder (the same deeds Forge's files button brings out under itself for
 the file read now); a file or folder has Rename and Delete (a

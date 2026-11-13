@@ -12,7 +12,8 @@ test('Issues keeps its band plain and its first action open, without changing Fo
   await app.rail.go('forge');
   await expect(app.main.locator('.forge-first')).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
   await expect(app.main.locator('.desk-bench .search-in')).toBeVisible();
-  await expect(app.main.locator('.desk-bench .pane-toggle')).toBeAttached();
+  // (Forge is all desk: it has no pane, and nothing that puts one away.)
+  await expect(app.main.locator('.desk-bench .pane-toggle')).toHaveCount(0);
 });
 
 test('Issues reference readers still open and dismiss with focus returned to their origin', async ({signedIn: app}) => {
@@ -35,11 +36,10 @@ test('Issues reference readers still open and dismiss with focus returned to the
 });
 
 
-test('Issues keeps its reference reachable after Forge closes the shared pane', async ({signedIn: app}) => {
+test('Issues keeps its reference reachable come to from Forge, which has no pane of its own', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();
-  await app.main.locator('.desk-bench .pane-toggle').click();
-  await expect(app.main.locator('.desk-bench')).toHaveClass(/pane-closed/);
+  await expect(app.main.locator('.desk-bench > .side')).toHaveCount(0);
   await app.rail.go('git');
   const issues = app.main.locator('.plain-band');
   await expect(issues).not.toHaveClass(/pane-closed/);
@@ -48,6 +48,4 @@ test('Issues keeps its reference reachable after Forge closes the shared pane', 
   await expect(issues.locator('.search-results')).toBeVisible();
   await issues.locator('.search-results').press('Escape');
   await expect(head).toBeFocused();
-  await app.rail.go('forge');
-  await expect(app.main.locator('.desk-bench')).toHaveClass(/pane-closed/);
 });

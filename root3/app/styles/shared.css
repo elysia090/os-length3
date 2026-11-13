@@ -9,8 +9,8 @@
 .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']) { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 /* The rail's place, and what is out from the rail (File's tree, the person's menu): paper ringed in ink, its icon in
    ink, not an ink fill: the rail beside every page stays light, and the place is still the one thing ringed there. */
-.rail-item[aria-current='page'], .rail-item[aria-expanded='true'] { background: var(--slot); color: var(--ink); }
-.rail-item:is(:hover, :focus-visible, :active), .me:is(:hover, :focus-visible, :active) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); }
+.rail-item[aria-current='page'] { background: var(--slot); color: var(--ink); }
+.rail-item:is(:hover, :focus-visible, :active, [aria-expanded='true']), .me:is(:hover, :focus-visible, :active) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); }
 .me[aria-expanded='true'] { background: var(--slot); color: var(--ink); }
 /* The touch, in light: the give under the finger (touch.ts) is a few pixels, too little to be seen alone, so the
    surface also takes the finger's shadow the moment it is pressed: an outlined thing a step toward ink, an inked one

@@ -305,11 +305,9 @@ test('a repo renamed from its gear keeps its place on the band, worked on, with 
   await expect(latelyG).toContainText('gamma');
 
   await app.rail.go('forge');
-  const pills = app.forge.band.locator('.pill');
-  await expect(pills).toHaveCount(2);
-  await expect(pills.nth(0)).toHaveAttribute('data-repo', 'gamma');
-  await expect(pills.nth(0)).toHaveAttribute('aria-current', 'page');
-  await expect(pills.nth(1)).toHaveAttribute('data-repo', 'beta');
+  // Its desk is the one on screen, under its new name, as it was left.
+  await expect(app.main.getByRole('region', {name: 'Files in gamma', exact: true})).toBeVisible();
+  await expect(app.main.getByRole('region', {name: 'Files in alpha', exact: true})).toHaveCount(0);
   await expect(app.forge.editor('README.md')).toHaveValue(/^# alpha/);
   await expect(app.forge.promptBox).toHaveValue('Fix: the map is upside down');
   await expect(app.forge.search).toHaveValue('needle');

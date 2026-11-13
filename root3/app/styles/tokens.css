@@ -22,7 +22,7 @@
      heads, the pane, figures, cards that lead somewhere) stands on the ground itself; a sheet's edge is the line. */
   --paper: #fbfaf7;
   /* What is pressed into the desk rather than laid on it (a key of the band, the search's slot, the place of the
-     rail one is at): a tone under the ground, soft at the corner. Paper is cut square. */
+     rail one is at): a tone under the ground, soft at the corner. Paper's corner is a sheet's (--r-sheet). */
   --slot: #cbc7c0;
   /* Words that only say how many or where: quieter than --sub, never for what is read to be acted on. */
   --quiet: #8f8c87;
@@ -63,8 +63,9 @@
   --t-name: clamp(30px, 5.2vw, 44px); --display: 'Inter Display', var(--sans);
   --t-identity: 28px; --t-title: 24px; --t-card: 20px; --t-body: 15px; --t-meta: 13px;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 40px;
-  /* Places are rounded squares, actions are round, fields are slightly rounded. */
-  --r-field: 8px; --r-place: 12px; --r-round: 999px;
+  /* Places are rounded squares, actions are round, fields are slightly rounded; a sheet (a file's, the terminal's,
+     File's tree, Home's note) and a key of the band have one corner between a field's and a place's. */
+  --r-field: 8px; --r-sheet: 10px; --r-place: 12px; --r-round: 999px;
   /* A card of rows: a row's corner plus the room between them. */
   --r-card: calc(var(--r-field) + var(--s2));
   /* Heights: a pressable thing, a row in a list, a place in the rail. */
@@ -108,10 +109,13 @@
   --inner-h: calc(100vh - var(--outer-top) - var(--outer-bottom));
   /* The top line pages start on. */
   --top-line: 0px;
-  /* The band's line: a 32px row centred on the band's keys (three cells tall at the window's top), so a page's name
-     and Forge's tools stand on the line Home's keys do. */
+  /* The band's row: three cells at the window's top, the room the band's keys stand in (the desk's pieces start
+     under it). */
   --keys: calc(3 * var(--u));
-  --band: calc(var(--top-line) + (var(--keys) - var(--h-row)) / 2);
+  /* A key of the band (Home's, a desk's) is two cells tall, at the top of the keys' row; a counter's name stands on
+     the keys' own middle line, so the top row is one line from page to page. */
+  --key: calc(2 * var(--u));
+  --band: calc(var(--top-line) + (var(--key) - var(--h-row)) / 2);
   /* The rail starts one place below the top line, so Home is not first off the mark. */
   --rail-top: 0px;
   /* Rail: 12px from the window's side to the icons, 18px from the icons to its line. */

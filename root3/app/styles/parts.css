@@ -9,7 +9,7 @@
 .parts { position: relative; isolation: isolate; display: flex; flex-wrap: wrap; gap: var(--s1); }
 /* While the ink goes to it, its edge is not yet the ink's (glide.ts): a part has none, a chip or a pill its own. */
 .part.arriving { border-color: transparent !important; }
-.chip.arriving, .pill.arriving { border-color: var(--edge) !important; }
+.chip.arriving { border-color: var(--edge) !important; }
 /* Who this device is on the Remote, and whether the Remote answers: two things said apart, on the head's line after
    the page's name, where its role stood signed out (a line of their own under the parts pushed every part's first
    box down a row). Where there is not room for both, who goes and whether it answers stays, cut short at the end. */

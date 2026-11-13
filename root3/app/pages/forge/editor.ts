@@ -362,6 +362,8 @@ export class Editor {
   take(text: string): boolean {
     const {state} = this.box;
     const came = this.held.came(text, this.area.value);
+    // (Its own save heard back after it was written on again: nothing came from elsewhere.)
+    if (came === 'known') return true;
     if (came === 'ask') { this.asking(); return false; }
     if (came === 'take') this.show(text);
     this.settle();
@@ -372,6 +374,7 @@ export class Editor {
   private async write(text: string) {
     const {state} = this.box;
     try {
+      this.held.writes(text);
       await store.write(this.box.repo, this.box.path, text);
       this.held.wrote(text);
       if (this.area.value === this.held.saved) state.saved(); else state.unsaved();
@@ -425,6 +428,7 @@ export class Editor {
     this.whole.disabled = true;
     try {
       const text = this.area.value;
+      this.held.writes(text);
       await store.put(this.box.repo, this.box.path, new TextEncoder().encode(text));
       this.held.wrote(text);
       this.fits();

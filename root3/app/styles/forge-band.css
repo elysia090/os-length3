@@ -1,47 +1,7 @@
-/* Forge's band: a pill for each repo out, the one worked on in ink, dragged, closed, and ⊕ to bring more out. */
-/* The band sits on the top line. */
-.repo-strip { grid-column: 1; display: flex; gap: var(--s2); align-items: center; padding: var(--band) var(--s5) var(--s3); overflow-x: auto; border-right: var(--line-frame) solid var(--ink); }
-/* The band: pills for the repos out, ⊕ to bring more out beside them. */
-.pills { display: flex; gap: var(--s2); align-items: center; }
-/* The pills take the band's width and scroll there; ⊕ keeps the band's right end, wherever they reach. */
-.repo-strip > .pills { flex: 0 1 auto; min-width: 0; overflow-x: auto; } /* ⊕ right after the last pill; many, they scroll */
-/* Room round the pills inside their scroller, so a focus ring is not cut by its edges (as .parts has). */
-.repo-strip > .pills { padding: var(--s1); margin: calc(-1 * var(--s1)); }
-.pills:empty { display: none; }
-/* The ink of the pill worked on goes from the pill it was on to the one it is on, under the words (glide.ts). */
-.repo-strip > .pills { position: relative; isolation: isolate; }
-.pill { transition: background var(--motion), color var(--motion), opacity var(--motion); cursor: var(--cursor-grab); }
-/* Held, the open hand closes on it, until the drag (the browser's own pointer then) or the hand letting go. */
-.pill:active { cursor: var(--cursor-grabbing); }
-/* Lifted to be dragged: where it was stays, faint, until it is let go. */
-.pill.lifted { opacity: .35; }
-/* Shown beside the one worked on: its outline in ink. */
-.pill.beside { border-color: var(--ink); border-width: var(--line-work); }
-.band-caret { position: absolute; top: var(--s1); bottom: var(--s1); width: 2px; border-radius: 1px; background: var(--ink); pointer-events: none; }
-.pill {
-  flex: none; display: flex; align-items: center; min-height: var(--h-row); padding-left: var(--s3);
-  border: 1px solid var(--edge); border-radius: var(--r-round); font-size: var(--t-meta);
-}
-.pill-name { border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); white-space: nowrap; }
-/* The issue the repo's copy is for, after its name, while it is not main. */
-.pill-issue { margin-left: .4em; font-family: var(--mono); opacity: .7; }
-.pill-close { flex: none; display: grid; place-items: center; width: var(--h-row); height: calc(var(--h-row) - 2px); border: 0; padding: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); border-radius: var(--r-round); }
-/* Alone on a band narrower than it (a phone), the pill gives way in its name, which ends in …, never at its × cut
-   by the band's edge; several scroll, as a band does. */
-.pills > .pill:only-child { flex-shrink: 1; min-width: 0; }
-.pills > .pill:only-child > .pill-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.pill-close .mark, .band-add .mark { width: var(--s4); height: var(--s4); }
-/* The ring is round the part of a pill that has the keyboard, inside the pill: its name, or its ×;
-   on the current pill it is ground over the ink, so it does not sink into it. */
-.pill-name { border-radius: var(--r-round); }
-.pill-name:focus-visible { outline-offset: var(--s1); }
-.pill-close:focus-visible { outline-offset: calc(-1 * var(--s1)); }
-.pill[aria-current] .pill-name:focus-visible, .pill[aria-current] .pill-close:focus-visible { outline-color: var(--ground); }
+/* What a band begins something with (Server's: make a server): round, outlined, a row tall. */
 .band-add { flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; cursor: var(--cursor-hand); }
-/* Nothing left to bring out: ⊕ steps back. */
 .band-add:disabled { opacity: .5; cursor: var(--cursor-arrow); background: transparent; }
-/* The files mark is the band's first, square to the pills' rounded line; ⊕ follows the pills. */
-.band-acts .mark { width: 18px; height: 18px; }
+.band-add .mark { width: var(--s4); height: var(--s4); }
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
   flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
@@ -51,48 +11,55 @@
 .center { grid-column: 1; position: relative; min-height: 0; border-right: var(--line-frame) solid var(--ink); overflow: clip; }
 /* No pane, no line (Server signed out): the center keeps its width, so nothing on it moves. */
 .work.no-side > .center { border-right-color: transparent; }
-/* A desk's top line (Forge's): the band's tools first (>_ for the Prompt at the desk's foot, the file deeds, the search), then
-   the pills; the right pane's switch lies at the foot instead, level with the person at the rail's (bench.ts). One
-   corner on the band, a field's: the tools, the pills and their inner parts and rings, ⊕ (a round ring left inside a
-   square pill is a second shape). */
+/* The band (Home's, and a desk's: Forge's): three keys in a row from the rail's corner, on the row of the rail's first
+   place and two cells tall: the terminal's, the files', and the search. One material for the three: an outline in ink
+   (1.5 px), nothing in it, the corner a sheet's (--r-sheet); a hair apart (6 px), packed, not joined. Together as wide as the
+   terminal's sheet under them (14 cells). Under the pointer or the keyboard a key is paper, ringed as a place touched
+   in the rail is. On a desk, against the right edge on the same row, the name of what is in hand, its capitals a
+   cell tall. (Before: keys three cells tall, the terminal's five wide in ink, the others slots; before that small
+   outlined tools, a pill for each repo out and ⊕.) */
+:is(.home-band, .work.bench.desk-bench > .bar) { --key-gap: 6px; position: relative; z-index: 7; height: var(--keys); margin-left: calc(-1 * var(--body-left) - 2 * var(--u)); }
 .work.desk-bench { position: relative; }
-.work.bench.desk-bench > .bar { grid-template-columns: auto minmax(0, 1fr); }
-.work.bench.desk-bench > .bar > .band-tools { grid-column: 1; display: flex; align-items: center; gap: var(--s2); }
-.work.bench.desk-bench > .bar > .repo-strip { grid-column: 2; }
+.work.bench.desk-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: calc(-2 * var(--u)); }
+:is(.home-band, .work.bench.desk-bench > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: var(--key-gap); width: min(calc(14 * var(--u)), 100%); height: var(--key); }
 .band-tool {
   flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--ink);
   border-radius: var(--r-field); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: background var(--motion);
 }
 .band-tool:hover { background: var(--raised); }
-/* On (the Prompt up, its >_): inked, as the repo worked on is on this band. */
-.band-tool[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
 .band-tool .mark { width: 18px; height: 18px; }
 .band-tools > .search-box { flex: none; width: 220px; }
 .band-tools form.search > .mark { position: absolute; left: 10px; top: calc((var(--h-row) - 16px) / 2); width: 16px; height: 16px; color: var(--ink); pointer-events: none; z-index: 1; }
 .band-tools .search-in { padding-left: 34px; border-color: var(--ink); background: transparent; font-size: var(--t-body); }
 .band-tools .search-in::placeholder { color: var(--sub); }
-.desk-bench .repo-strip :is(.pill, .pill *, .band-add) { border-radius: var(--r-field); }
-.desk-bench .repo-strip .pill :focus-visible { outline-offset: -2px; }
+:is(.home-band, .work.bench.desk-bench > .bar) .band-tool { width: var(--key); height: auto; border: 0; border-radius: var(--r-sheet); background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+:is(.home-band, .work.bench.desk-bench > .bar) .band-tool .mark { width: 26px; height: 26px; stroke-width: 2; }
+:is(.home-band, .work.bench.desk-bench > .bar) .band-tool:is(:hover, :focus-visible):not(:disabled) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
+:is(.home-band, .work.bench.desk-bench > .bar) .band-tool:disabled { color: var(--quiet); box-shadow: inset 0 0 0 1.5px var(--quiet); cursor: var(--cursor-arrow); }
+:is(.home-band, .work.bench.desk-bench > .bar) .band-tools > .search-box { flex: 1 1 0; width: auto; min-width: 0; }
+:is(.home-band, .work.bench.desk-bench > .bar) form.search { height: 100%; }
+:is(.home-band, .work.bench.desk-bench > .bar) form.search > .mark { left: 14px; top: calc(50% - 11px); width: 22px; height: 22px; stroke-width: 2; }
+:is(.home-band, .work.bench.desk-bench > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 44px; border: 0; border-radius: var(--r-sheet); background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ink); font: 400 18px/1 var(--sans); }
+:is(.home-band, .work.bench.desk-bench > .bar) .search-in::placeholder { color: var(--sub); }
+:is(.home-band, .work.bench.desk-bench > .bar) .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
+/* The name of what is in hand: against the right edge by its ink (ui/optical.ts inkEdge), a cell in from the page's
+   edge as Home's repos are, its capitals a cell tall and in the middle of the keys' row; smaller where the band has
+   no room for it at its size (--fit, forge.ts), and gone where there is none at all. Said by the piece itself, so
+   not said twice to those who hear the page. */
+.band-held { --size: calc(var(--u) / .727 * var(--fit, 1)); flex: 1 1 0; min-width: 0; align-self: flex-start; overflow: hidden; white-space: nowrap; text-align: right;
+  margin: calc(1.5 * var(--u) - .8755 * var(--size)) calc(var(--u) - var(--ink-right, 0px)) 0 0; height: var(--size);
+  font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; color: var(--ink); pointer-events: none; user-select: none; }
+@media (max-width: 1100px) { .band-held { display: none; } }
+/* A narrow window: the rail is close set and there is nothing beside it to start from, so the keys start where the
+   page does, and take its width. */
+@media (max-width: 760px) {
+  :is(.home-band, .work.bench.desk-bench > .bar) { margin-left: 0; }
+  :is(.home-band, .work.bench.desk-bench > .bar) > .band-tools { flex: 1 1 0; width: auto; min-width: 0; }
+}
 /* What the band's search found opens under it from its left, its kinds over what they show. */
 .band-tools .search-results { left: calc(-1 * var(--s3)); right: auto; }
 .band-tools .search-pills { position: static; }
-/* The pane's switch at the foot: its middle the person's (rail.css: s5 and half the prompt's height over the foot). */
-.work.bench.desk-bench > .pane-toggle {
-  position: absolute; right: var(--s5); bottom: calc(var(--rail-place) / 2 - var(--h-row) / 2); z-index: 6;
-  width: var(--h-row); height: var(--h-row); border-color: var(--ink); border-radius: var(--r-field);
-}
-/* With no heads over them, a desk's runs start level with the rail: from the band's foot, these 2 px and the row's own
-   10 put its first line's box where the rail's first icon's is (12 px into its 48 px button), so the line's capitals,
-   the bar beside them (pane-rows.css) and the icon's ink all start on one line. Home's pane the same (home.css). */
-.desk-bench .pane-room > .pane-rows { padding-top: 2px; }
-/* On a phone the band's search is its lens alone, as wide as a tool, and opens to be written in: the pills keep the
-   band's room. */
-@media (max-width: 560px) {
-  .band-tools > .search-box { width: var(--h-row); transition: width var(--motion); }
-  .band-tools > .search-box:focus-within { width: min(220px, 56vw); }
-  .band-tools .search-in { padding-right: 0; }
-  .band-tools .search-in:not(:focus)::placeholder { color: transparent; }
-}
 /* What the band's search finds drops as a sheet under the band, across the center (a step in from its sides), inked
    and shadowed as a box on the desk is: the words searched for at its head, large; under them what was found. While it
    is down the desk steps back out of sight, and comes back as it goes up. */

@@ -253,11 +253,13 @@ class NewRepo extends Part {
   }
 }
 
-/** Forge: the band of repos and the search on the top line, the files one after another, the right pane at the right. */
+/** Forge: the band's keys and the search on the top line; under it the repo's desk, the terminal then the files in a row. */
 class Forge extends Part {
-  get band() { return this.main.getByRole('navigation', {name: 'repo'}); }
-  /** The tools first on the top line, before the repos: >_ (the terminal on the desk), the files, the search. */
+  /** The band's keys on the top line: >_ (the terminal on the desk), the files, the search. */
   get tools() { return this.main.getByRole('group', {name: 'Tools'}); }
+  /** The repo's desk (the one on screen), and a piece on it by its key (a file's path; 'term', the terminal). */
+  get desk() { return this.main.locator('section.desk:not([hidden])'); }
+  piece(key: string) { return this.desk.locator(`.desk-box[data-key="${key}"]`); }
   get search() { return this.main.getByRole('searchbox', {name: 'Search this repo'}); }
   /**
    * Under the search box while it (or what is under it) has the keyboard, or something is read there: Issue,
@@ -268,8 +270,6 @@ class Forge extends Part {
   get reference() { return this.results; }
   /** Issue, diff or Output, side by side under the box. */
   kind(view: 'Issue' | 'diff' | 'Output') { return this.results.getByRole('group', {name: 'Search target'}).getByRole('button', {name: view, exact: true}); }
-  /** The switch at the foot, level with the person's, that puts the right pane away and brings it back. */
-  get paneSwitch() { return this.main.getByRole('button', {name: 'Right pane', exact: true}); }
   /** A file's text, which is where it is edited. */
   editor(path: string) { return this.main.getByRole('textbox', {name: `Edit ${path}`, exact: true}); }
   /** A file's name in its head (its path in the repo), pressed to write it over. */
@@ -284,12 +284,11 @@ class Forge extends Part {
     await field.press('Enter');
   }
 
-  /** Open `repo` in Forge (from its card on Home, as a person would). */
+  /** Open `repo` in Forge (from its name on Home, as a person would): its desk is the one on screen. */
   async open(repo: string) {
-    await this.app.rail.go('forge');
-    const pill = this.band.getByRole('button', {name: repo, exact: true});
-    await pill.click();
-    await expect(this.editor('README.md')).toBeVisible();
+    await this.app.rail.go('home');
+    await this.main.getByRole('region', {name: 'Repos'}).locator(`.card[data-repo="${repo}"] .card-open`).click();
+    await expect(this.main.getByRole('region', {name: `Files in ${repo}`, exact: true})).toBeVisible();
   }
 
   /** What a file's header says: nothing while it is simply saved ('Unsaved', or why it could not be). */
@@ -363,13 +362,9 @@ class Forge extends Part {
     await this.results.getByRole('button', {name: new RegExp(`^${escape(line)} `)}).first().click();
   }
 
-  /** The prompt box at the center's foot, and the Prompt (the repo's sh) it writes to. */
+  /** The line one types at in the terminal on the desk, and the Prompt (the repo's sh) it writes to. */
   get promptBox() { return this.main.getByRole('textbox', {name: 'Prompt input', exact: true}); }
   get prompt() { return this.main.getByRole('region', {name: 'Prompt', exact: true}); }
-  /** The right pane's rows: what was done in the repo, a line run each (and what the box did that is not the shell's). */
-  get pane() { return this.main.getByRole('log', {name: 'Prompt', exact: true}); }
-  /** A line run, as the pane tells it. */
-  paneRun(line: string) { return this.pane.getByRole('button', {name: new RegExp(`^${escape(line)}\\b`)}); }
 
   /** What is said under the prompt box (the choices Tab found, Starting up……). */
   promptSays(text: string | RegExp) { return this.main.getByRole('status').filter({hasText: text}); }
@@ -560,6 +555,10 @@ class Git extends Part {
 
   /** The one row of repos above the issues: which are shown, and, while one is written, where it goes. */
   get repos() { return this.main.getByRole('radiogroup', {name: 'repo'}); }
+  /** The right pane's rows: what was done in the repo, a line run each (and what the box did that is not the shell's). */
+  get pane() { return this.main.getByRole('log', {name: 'Prompt', exact: true}); }
+  /** A line run, as the pane tells it. */
+  paneRun(line: string) { return this.pane.getByRole('button', {name: new RegExp(`^${escape(line)}\\b`)}); }
   /** A new issue's first line, which says the repo it goes in (its description). */
   get firstLine() { return this.main.getByRole('textbox', {name: 'First line: Type: Title'}); }
 

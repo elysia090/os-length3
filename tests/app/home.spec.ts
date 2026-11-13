@@ -332,22 +332,22 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
   });
 });
 
-test("Home's band: the terminal's key, the files' and the search, from the page's left edge, level with the rail's first place; the files' key is Forge's", async ({app}) => {
+test("Home's band: the terminal's key, the files' and the search, from the rail's corner on the row of its first place, packed and fourteen cells wide; the files' key is Forge's", async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('home');
   const tools = app.main.getByRole('group', {name: 'Tools'});
   const term = await tools.getByRole('button', {name: 'Terminal'}).boundingBox(), files = await tools.getByRole('button', {name: 'Files: New, Rename, Delete'}).boundingBox();
   const search = await tools.getByRole('searchbox').boundingBox(), first = await app.rail.button('home').boundingBox();
-  const left = await app.main.locator('.home-own').boundingBox();
-  // Keys as tall as the rail's places, on its first place's row; the terminal's the page's first thing, the others
-  // a cell apart.
+  // Keys two cells tall, their tops the rail's first place's; the terminal's a cell after the rail's places (the
+  // rail's corner, left of the page's own things), the others a hair apart (6 px), the three fourteen cells wide.
   for (const key of [term!, files!, search!]) {
     expect(Math.abs(key.y - first!.y)).toBeLessThan(1);
-    expect(Math.abs(key.height - first!.height)).toBeLessThan(1);
+    expect(Math.abs(key.height - 48)).toBeLessThan(1);
   }
-  expect(Math.abs(term!.x - left!.x)).toBeLessThan(1);
-  expect(Math.abs(files!.x - (term!.x + term!.width + 24))).toBeLessThan(1);
-  expect(Math.abs(search!.x - (files!.x + files!.width + 24))).toBeLessThan(1);
+  expect(Math.abs(term!.x - (first!.x + first!.width + 24))).toBeLessThan(1);
+  expect(Math.abs(files!.x - (term!.x + term!.width + 6))).toBeLessThan(1);
+  expect(Math.abs(search!.x - (files!.x + files!.width + 6))).toBeLessThan(1);
+  expect(Math.abs(search!.x + search!.width - term!.x - 14 * 24)).toBeLessThan(1);
   // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (its README in
   // hand there, that file's deeds).
   await app.main.getByRole('button', {name: 'Files: New, Rename, Delete'}).click();

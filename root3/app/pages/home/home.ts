@@ -95,10 +95,11 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
   // What the search finds drops as Forge's does, across the page under the band (forge-band.css): measured, it knows
   // how wide and tall that is and where the box stands in it.
   new ResizeObserver(() => {
-    const at = band.getBoundingClientRect();
-    layout.style.setProperty('--center-w', `${band.clientWidth}px`);
+    // (The band starts at the rail's corner, left of the page's own edge: the sheet is the page's width, from its edge.)
+    const at = band.getBoundingClientRect(), page = layout.getBoundingClientRect();
+    layout.style.setProperty('--center-w', `${layout.clientWidth}px`);
     layout.style.setProperty('--center-h', `${window.innerHeight - at.bottom}px`);
-    layout.style.setProperty('--search-x', `${reference.search.getBoundingClientRect().left - at.left}px`);
+    layout.style.setProperty('--search-x', `${reference.search.getBoundingClientRect().left - page.left}px`);
   }).observe(band);
   // The keys Forge and Git know, here too: Ctrl+K or Ctrl+P (or Ctrl+Shift+F) to the search (⌘ on a Mac).
   const keys = (event: KeyboardEvent) => {

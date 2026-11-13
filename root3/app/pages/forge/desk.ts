@@ -3,55 +3,47 @@ import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
 import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
 import {fieldCarried} from '../../ui/caret.ts';
+import {scrollMarks} from '../../ui/scroll-marks.ts';
 import {t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
-import {arc, bornOn, EYE, FOOT, FOOT_ROOM, GRID, lineKept, next, PAD, slots, STANDARD, standardOn, tabbed, TOP, VGAP, WIDTH, type Slot, type View} from './desk-layout.ts';
+import {BIG, GRID, inSight, LINE, next, PAD, row, SHADOW, tabbed, tallest, TERM, TERM_HELD, termHeight, TOP, WIDTH} from './desk-layout.ts';
 
-// A repo's desk, Forge's center (DESIGN.md § Forge, the desk): what is open lies on a plane, each box as wide as 80
-// columns of code, its name outside its top-left corner, on dots: files opened, each under the one opened before it.
-// One box is in hand, and the camera (never the box) moves to it. One box may be put beside the rest, a second
-// screen: the desk is then the left half, that box the right, each as wide as its half; put back, it lies where it
-// lay. That is all the moving there is: a box is not carried about (before: Ctrl and an arrow carried the box in hand
-// a slot at a time, anywhere, and Ctrl and an arrow in a text is the word's on every system).
-// A box is gone to by pressing it. From the keyboard: Escape leaves a text, the keyboard on the desk; there an arrow
-// (or Tab) takes the next box that way in hand, and Enter (or a letter typed) goes into it. Nothing is drawn for that
-// but the box in hand's own shadow (before: a pointing hand beside its name, a game's cursor, with Tab taken from the
-// text for it). The desk has one size, every box at its own: nothing steps back from it (before: Escape went round
-// three cameras, the desk at three quarters and then half its size, so a key pressed to leave a line made the page
-// smaller). Ctrl and -, + and 0, and a pinch, are the window's own. Ctrl, Alt and → put the box in hand beside (an
-// editor's keys for it), Ctrl, Alt and ← put the one beside back. Where each box lies, and where the camera looks, are
-// numbers kept apart (desk-layout.ts).
+// A repo's desk, Forge's center (DESIGN.md § Forge): what is open lies in a row on dots. The terminal first, a sheet of
+// ink near the places, lying askew until it is in hand; then the files, each a sheet of paper fifty letters wide, its
+// name over its top-left corner. Every sheet's top is on one line, and none reaches lower than two cells over the
+// window's foot: what is under that, or past its right edge, is scrolled to inside the sheet. One piece is in hand
+// (its shadow a cell right and down), and the desk is turned along the row only as far as shows that piece whole;
+// nothing is brought to the middle. A piece pressed twice is 1.7 times as large, and again its own size.
+// (Before: boxes 80 columns wide in columns, one under another and as tall as their text, the one in hand brought to
+// the middle of the face by a camera that stepped back on long ways; a box put beside the rest as a second screen.)
+// A piece is gone to by pressing it. From the keyboard: Escape leaves a text, the keyboard on the desk; there ← and →
+// (or Tab) take the next piece in hand, and Enter (or a letter typed) goes into it. Where each piece lies, and how
+// far the desk is turned, are numbers kept apart (desk-layout.ts).
 
 /** What lies on the desk: its element, and the name said over it (its folder quiet before it, and after it, quiet,
- * what more it is: the Prompt's folder). */
+ * what more it is). */
 export interface Laid {
   element: HTMLElement; name: string; dir: string; after?: string; focus(): void;
   /** Its name pressed: written over in place (a file's). */
   rename?(name: HTMLElement): void;
-  /** It stays on the desk: never put beside (the Agent's terminal, where its work is followed). */
-  stays?: boolean;
+  /** A terminal rather than a file's sheet: the person's ('term': first in the row, never taken off, no name over
+   * it) or the Agent's ('agent'). */
+  kind?: 'term' | 'agent';
 }
 
-type Way = 'up' | 'down' | 'left' | 'right';
-const WAYS: Record<string, Way> = {ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right'};
-
-/** Whether `el` is on its way to its place now (its translate's transition running). */
-const gliding = (el: HTMLElement) => el.getAnimations().some((a) => a instanceof CSSTransition && a.transitionProperty === 'translate' && a.playState === 'running');
-
-/** Whether views `a` and `b` of a face `w` by `hgt` differ by no more than a box growing a few lines moves the camera. */
-const near = (a: View, b: View, w: number, hgt: number) =>
-  Math.abs(a.s - b.s) < .02 && Math.abs(a.x - b.x) < w / 6 && Math.abs(a.y - b.y) < hgt / 6;
+type Way = 'left' | 'right';
+const WAYS: Record<string, Way> = {ArrowLeft: 'left', ArrowRight: 'right'};
 
 /** Whether a key is a program's: one in a terminal reading each key as it comes (vi, less) has every key, as at a
  * terminal (its line says so, data-raw). */
 const theirs = (e: KeyboardEvent) => !!(e.target as Element | null)?.closest?.('[data-raw]');
 
-/** A letter typed with no Ctrl, Alt or ⌘ (a space is a button's, / the search's): with the keyboard on the desk, it goes into the box in hand. */
+/** A letter typed with no Ctrl, Alt or ⌘ (a space is a button's, / the search's): with the keyboard on the desk, it goes into the piece in hand. */
 const letter = (e: KeyboardEvent) => !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1 && e.key !== ' ' && e.key !== '/';
 
-/** Whether something between `from` and `desk` scrolls by itself the way (`dx`, `dy`) goes, with room left to go. */
-function scrollsItself(from: Element, desk: Element, dx: number, dy: number): boolean {
-  for (let el: Element | null = from; el && el !== desk; el = el.parentElement) {
+/** What scrolls of itself round `from` (inside `box`) the way (`dx`, `dy`) goes, with room left to go. */
+function scrollsItself(from: Element, box: Element, dx: number, dy: number): boolean {
+  for (let el: Element | null = from; el && el !== box; el = el.parentElement) {
     const o = getComputedStyle(el);
     if (dy && /auto|scroll/.test(o.overflowY) && el.scrollHeight > el.clientHeight + 1
       && (dy < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1)) return true;
@@ -61,19 +53,18 @@ function scrollsItself(from: Element, desk: Element, dx: number, dy: number): bo
   return false;
 }
 
-/** The dots' pitch on the plane (styles: .desk), the first a half pitch in. */
-const DOT = 24;
-
 /** Minimum jerk: from rest to rest, nothing sudden at either end. */
 const pan = (x: number) => x * x * x * (10 - 15 * x + 6 * x * x);
-/** The ground between a half of the face and the box that fills it, two screens side by side: a step each side. */
-const HALF_PAD = GRID;
-/** The narrowest a box is read at beside another: narrower than two of them (and their ground), the face is one screen. */
-const HALF_LEAST = 336;
+/** How long the desk takes to turn to a piece. */
+const TURN_MS = 420;
+/** As long as a second press of a double press may come after the first. */
+const TWICE_MS = 320;
+/** How long the desk's own mark stays after it was last turned. */
+const MARK_MS = 700;
 
-/** A box on the desk; `placed` once it has stood somewhere (before, it has no place to move from). */
-interface Box { key: string; laid: Laid; el: HTMLElement; label: HTMLElement; slot: Slot; placed?: boolean }
-
+/** A piece on the desk: where its left edge is and how wide it is; `placed` once it has stood somewhere (before, it
+ * has no place to move from). */
+interface Box { key: string; laid: Laid; el: HTMLElement; label: HTMLElement; x: number; w: number; placed?: boolean }
 
 /**
  * The pointer out of sight where it rests while the keyboard writes in a box: `cursor: none` on what
@@ -117,84 +108,60 @@ export class Desk {
   readonly element: HTMLElement;
   readonly #plane: HTMLElement;
   readonly #boxes = new Map<string, Box>();
-  #cols: string[][] = [[]];
+  #row: string[] = [];
   #held: string | null = null;
-  /** A box's width now: 80 columns of code, or what the face has room for. */
-  #bw = WIDTH;
-  /** The second screen, beside the desk (the page puts it there, the desk the left half then): the one box put beside,
-   * at its own size, scrolled in itself when it is taller than its room. */
-  readonly side = h('div', {class: 'desk-side', hidden: ''});
-  /** The box put beside, and where it lay on the desk (its column, its place in it): put back, it lies there. */
-  #beside: {box: Box; col: number; at: number} | null = null;
-  #view: View = {s: 1, x: 0, y: 0};
-  /** The camera's glide under way (its next frame; none at rest), and where it is going: laid again on its way (a box
-   * grown), it goes on to where it is now to go rather than starting again. */
+  /** The terminal's closing, waited for after a press took a file (take). */
+  #closing = 0;
+  /** The piece pressed twice: 1.7 times as large until it is pressed twice again. */
+  #big: string | null = null;
+  /** Where the row ends (its last piece's shadow, a cell after). */
+  #end = 0;
+  /** The desk turning (its next frame; none at rest), and how far it is going: laid again on its way, it goes on to
+   * where it is now to go rather than starting again. */
   #moving = 0;
-  #glide: {to: View} | null = null;
-  /** The camera on its way (its scroll is its own then, not someone's going somewhere). */
-  #gliding = false;
-  /** When a box last began to come out from under the one above it: the camera lets it come out before it follows. */
-  #comingAt = -Infinity;
-  /** A box born beside another (desk.ts lay): the boxes after it make way for it at once, quick, as for one carried in. */
+  #glide: {to: number} | null = null;
+  /** A piece laid beside another: the ones after it make way for it at once, quick, as for one carried in. */
   #makingWay = false;
-  /** The box come out from under another, and that one, while it is the one in hand: the camera keeps the other's foot in
-   * sight over it (bornOn), until another is taken or the camera moves on. */
-  #bornUnder: {key: string; above: string} | null = null;
   /** Where the pointer last was on the face. */
   #pointerAt: {x: number; y: number} | null = null;
-  /** A key pressed while boxes slid: what it scrolled into view is not where the camera is to stay. */
-  #strayed = false;
-  /** The boxes the camera stands over at once (the Agent's at work), or none. */
+  /** The pieces the desk is turned to at once (the Agent's at work), or none. */
   #framed: string[] | null = null;
-  /** Where the box in hand's top stands on the face, as it was when it was taken in hand: it stays there as the box
-   * grows or shrinks under the work (none: to be found again). */
-  #topAt: number | null = null;
-  /** How far the desk turns, across and down: from its first box at its standard place to its last (#relay). */
-  #most = {x: 0, y: 0};
-  /** Each box's size heard: grown or shrunk (a line written, a notice in its head), the desk is laid again, what is
-   * under it pushed as it grows, in the frame it grew in (heard after that frame is laid out, before it is drawn: a
-   * frame later, the grown box is drawn over the one under it). */
-  readonly #sized = new ResizeObserver(() => this.#relay(false, true));
-  /** When the camera last scrolled the desk itself. */
-  #ownScroll = 0;
-  /** The box a press under way is on (the camera waits for it to be let go: its click takes it in hand). */
+  /** Each piece's size heard: grown or shrunk (a line written), the desk is laid again. */
+  readonly #sized = new ResizeObserver(() => this.#relay());
+  /** The piece a press under way is on (the desk waits for it to be let go: its click takes it in hand), and the one
+   * that was in hand as a press (the first of two) began. */
   #pressing: string | null = null;
+  #heldAtPress: string | null = null;
+  /** How far the desk is turned, said at the window's foot while it turns (styles: .desk-turned). */
+  readonly #turned = h('div', {class: 'desk-turned', 'aria-hidden': 'true'});
+  #turnedRest = 0;
+  #turnedTo = 0;
   readonly #shut: (key: string) => void;
-  /** Where the Agent's hand or eye is in a box at work (its line, from the box's top, on the desk), told by the box. */
-  #work: {key: string; top: number; bottom: number} | null = null;
-
   readonly #changed: () => void;
 
-  /** `label`: what the desk is called, to be heard (the repo's files), `repo` whose it is; `shut`: a box's own close pressed (its key);
+  /** `label`: what the desk is called, to be heard (the repo's files), `repo` whose it is; `shut`: a piece's own close pressed (its key);
    * `changed`: what lies where, or which is in hand, changed (to be kept). */
   constructor(label: string, repo: string, shut: (key: string) => void, changed: () => void = () => {}) {
     this.#shut = shut;
     this.#changed = changed;
     this.#plane = h('div', {class: 'desk-plane'});
-    this.element = h('section', {class: 'desk', tabindex: '-1', 'aria-label': label, 'data-repo': repo}, this.#plane);
-    // The rail going by (main.ts select) asks a page's own camera to stand back: the desk has one size, and does not
-    // (before: over the whole desk, at half its size, and back down as the page was come to).
+    this.element = h('section', {class: 'desk', tabindex: '-1', 'aria-label': label, 'data-repo': repo}, this.#plane, this.#turned);
+    // The rail going by (main.ts select) asks a page's own camera to stand back: the desk has one size, and does not.
     ownCamera(this.element, {away: () => Promise.resolve(), afar: () => {}, near: () => {}, far: 1, dots: null});
     this.element.addEventListener('keydown', (e) => this.#key(e));
-    // Beside the desk, Ctrl, Alt and ← put the box back (the keyboard going with it).
-    this.side.addEventListener('keydown', (e) => {
-      if (e.key !== 'ArrowLeft' || !e.ctrlKey || !e.altKey || e.shiftKey || e.metaKey || e.isComposing || theirs(e)) return;
-      e.preventDefault();
-      this.putBack();
-    });
-    // The keyboard gone into a box (a press, a key that summons the Prompt): that box is in hand, the camera with it.
-    // Gone there by a press, the box is taken once the press is let go (its click), never under the pointer.
+    // The keyboard gone into a piece (a press, a key that summons the Prompt): that piece is in hand, the desk turned
+    // to it. Gone there by a press, it is taken once the press is let go (its click), never under the pointer.
     this.element.addEventListener('focusin', (e) => {
       const key = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key;
-      if (key && key !== this.#held && key !== this.#pressing) this.take(key, false, true, 'near');
+      if (key && key !== this.#held && key !== this.#pressing) this.take(key, false);
     });
-    // Written in, the box in hand is come back to from over the Agent's work (their terminal written in).
+    // Written in, the piece in hand is come back to from over the Agent's work (their terminal written in).
     const writtenIn = (at: EventTarget | null) => {
-      // (Its name written, it is not yet gone into: the camera stays where it is.)
+      // (Its name written, it is not yet gone into: the desk stays where it is.)
       if ((at as Element | null)?.closest?.('.desk-label')) return;
       const key = (at as Element | null)?.closest?.<HTMLElement>('.desk-box')?.dataset.key;
       if (!key || key !== this.#held) return;
-      if (this.#framed) { this.#framed = null; this.#topAt = null; this.#look(true); }
+      if (this.#framed) { this.#framed = null; this.#look(true); }
     };
     this.element.addEventListener('keydown', (e) => {
       if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || (e.key.length !== 1 && e.key !== 'Enter' && e.key !== 'Backspace')) return;
@@ -203,26 +170,20 @@ export class Desk {
     // (Written in with no key: a paste, a word chosen from the input method's, a dictation.)
     this.element.addEventListener('beforeinput', (e) => writtenIn(e.target), true);
     this.element.addEventListener('pointerdown', (e) => { this.#pressing = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key ?? null; }, true);
+    this.element.addEventListener('mousedown', (e) => { if (e.detail <= 1) this.#heldAtPress = this.#held; }, true);
     for (const end of ['pointerup', 'pointercancel'] as const) addEventListener(end, () => { setTimeout(() => { this.#pressing = null; }); }, true);
+    this.element.addEventListener('dblclick', (e) => this.#twice(e));
     new ResizeObserver(() => this.#relay()).observe(this.element);
     this.#plane.addEventListener(WORK_AT, (e) => this.#workAt(e as CustomEvent<WorkAt | null>));
     this.element.addEventListener('scroll', () => {
-      // On its way the camera is the plane's move, the desk's scroll at rest: what the page scrolls meanwhile (the caret
-      // brought into view as a box far off is written in) is undone before it is drawn.
-      if (this.#moving && (this.element.scrollLeft || this.element.scrollTop)) { this.element.scrollTo(0, 0); return; }
-      this.#scrolledStandard();
-    });
-    // A key pressed (or the keyboard come into a box) while boxes still slide to their places, a box just opened: what
-    // it brought into view was brought there as it stood on its way. Once they stand, the camera goes back where it was.
-    for (const ev of ['keydown', 'focusin'] as const) this.element.addEventListener(ev, () => { if (this.#sliding()) this.#strayed = true; }, true);
-    this.#plane.addEventListener('transitionend', (e) => {
-      if (e.propertyName !== 'translate' || !this.#strayed || this.#sliding()) return;
-      this.#strayed = false;
-      const el = this.element, v = this.#view;
-      if (v.s === 1 && Math.hypot(el.scrollLeft + v.x, el.scrollTop + v.y) > 1) this.#look(true);
+      // The desk is a row: it is never turned down (what is under a sheet's foot is scrolled to inside it).
+      if (this.element.scrollTop) this.element.scrollTop = 0;
+      if (this.element.scrollLeft === this.#turnedTo) return;
+      this.#turnedTo = this.element.scrollLeft;
+      this.#said();
     });
     this.element.addEventListener('wheel', (e) => this.#wheel(e), {passive: false});
-    // The pointer moved (not something moved under it: the camera's glide moves the page under a pointer at rest), it is
+    // The pointer moved (not something moved under it: the desk turning moves the page under a pointer at rest), it is
     // in use again and back in sight.
     addEventListener('pointermove', (e) => {
       this.#pointerAt = {x: e.clientX, y: e.clientY};
@@ -230,221 +191,117 @@ export class Desk {
       this.element.classList.remove('resting');
       veil.show();
     }, {capture: true, passive: true});
-    // Written in a box, the pointer is out of the way until it moves, as it is over any text typed in: a key, or what
+    // Written in a piece, the pointer is out of the way until it moves, as it is over any text typed in: a key, or what
     // comes in as written without one (a paste, a word the input method gives, text put in).
     const writing = () => veil.hide(this.#pointerAt);
     this.element.addEventListener('keydown', (e) => { if (e.target !== this.element && letter(e)) writing(); });
     this.element.addEventListener('beforeinput', (e) => { if (e.target !== this.element) writing(); });
   }
 
-  /** `scroller`, a box round the desk, scrolled to bring something on it into view: undone, the desk's own camera
-   * going there instead (the box most in view then in hand). */
+  /** `scroller`, a box round the desk, scrolled to bring something on it into view: undone (the desk turns itself). */
   scrolled(scroller: HTMLElement) {
     if (scroller === this.element || (!scroller.scrollLeft && !scroller.scrollTop)) return;
-    const best = this.#mostInView();
     scroller.scrollTo(0, 0);
-    if (best && best.key !== this.#held) this.take(best.key, false, false);
   }
 
-  /** The key of the box in hand. */
+  /** The desk's repo renamed: what it is called (`label`, to be heard) and whose it is, under the new name. */
+  renamed(label: string, repo: string) {
+    this.element.setAttribute('aria-label', label);
+    this.element.dataset.repo = repo;
+  }
+
+  /** The key of the piece in hand. */
   get held(): string | null { return this.#held; }
   /** Whether `key` lies on the desk. */
-  has(key: string): boolean { return this.#boxes.has(key) || this.#beside?.box.key === key; }
-  /** The keys on the desk, column by column. */
-  get columns(): string[][] {
-    const cols = this.#cols.map((c) => [...c]), s = this.#beside;
-    // (The one beside, where it lay: a desk kept is kept whole.)
-    if (s) { const c = cols[Math.min(s.col, cols.length - 1)]; c.splice(Math.min(s.at, c.length), 0, s.box.key); }
-    return cols;
-  }
-  /** The key of the box beside the desk (none: one screen). */
-  get beside(): string | null { return this.#beside?.box.key ?? null; }
-
-  /**
-   * `key` (the box in hand) put beside the desk, a second screen: the desk the left half, this box the right, where it
-   * stays while the desk is gone through; the one beside before it goes back where it lay first. The keyboard goes
-   * with it if it had it; the box after it on the desk is the one in hand.
-   */
-  putBeside(key = this.#held) {
-    const b = key ? this.#boxes.get(key) : undefined;
-    // (A desk not yet on screen has no size to ask: put beside as it was kept, and put back once it is laid out if
-    // there is no room.)
-    if (!b || b.laid.stays || (this.element.clientWidth > 0 && !this.#roomForTwo())) return;
-    const had = b.el.contains(document.activeElement);
-    if (this.#beside) this.#back(false);
-    const col = this.#cols.findIndex((c) => c.includes(b.key)), at = this.#cols[col].indexOf(b.key);
-    const after = next(this.#cols, b.key, 'down') ?? next(this.#cols, b.key, 'up') ?? next(this.#cols, b.key, 'left') ?? next(this.#cols, b.key, 'right');
-    this.#sized.unobserve(b.el);
-    this.#boxes.delete(b.key);
-    this.#cols = this.#cols.map((c) => c.filter((k) => k !== b.key)).filter((c, i) => c.length || i === 0);
-    b.el.classList.remove('held', 'gives');
-    b.el.style.translate = b.el.style.width = '';
-    b.placed = false;
-    this.side.append(b.el);
-    this.side.hidden = false;
-    this.side.scrollTop = 0;
-    this.#beside = {box: b, col, at};
-    this.#says(b, true);
-    if (this.#held === b.key) { this.#held = null; this.#topAt = null; if (after) this.take(after, false); }
-    if (had) b.laid.focus();
-    this.#relay();
-  }
-
-  /** Whether the face (the whole of it: the desk's and, a box beside it, that box's half) has room for two boxes read
-   * side by side. */
-  #roomForTwo(): boolean {
-    const w = this.element.clientWidth + (this.#beside ? this.side.clientWidth : 0);
-    return w >= 2 * (HALF_LEAST + 2 * HALF_PAD);
-  }
-
-  /** The box beside the desk put back where it lay, in hand (the keyboard in it, if it had it). */
-  putBack() { this.#back(true); }
-
-  #back(take: boolean) {
-    const s = this.#beside;
-    if (!s) return;
-    const b = s.box, had = b.el.contains(document.activeElement);
-    this.#beside = null;
-    this.side.hidden = true;
-    const c = this.#cols[Math.min(s.col, this.#cols.length - 1)];
-    c.splice(Math.min(s.at, c.length), 0, b.key);
-    this.#plane.append(b.el);
-    this.#boxes.set(b.key, b);
-    this.#sized.observe(b.el);
-    this.#says(b, false);
-    this.#relay();
-    if (take) this.take(b.key, had);
-  }
-
-  /** What `b`'s move says it does: put back (`beside`: it is beside the desk), or put beside. */
-  #says(b: Box, beside: boolean) {
-    b.el.querySelector('.desk-aside')?.setAttribute('aria-label', t(beside ? 'Put {name} back' : 'Put {name} beside', {name: b.laid.name}));
+  has(key: string): boolean { return this.#boxes.has(key); }
+  /** The keys on the desk, along the row. */
+  get row(): string[] { return [...this.#row]; }
+  /** What is said over the piece `key` (its name), and what kind it is. */
+  said(key: string): {name: string; kind: Laid['kind']} | null {
+    const b = this.#boxes.get(key);
+    return b ? {name: b.label.querySelector('.desk-name')?.textContent ?? b.laid.name, kind: b.laid.kind} : null;
   }
 
   /**
-   * `laid` put on the desk as `key`: beside the box `beside` (a column of its own after that one's), in column `col`,
-   * or under the box in hand (the first box, the first column). `how.slide`: it comes out from under the box above it,
-   * sliding down to its place (one opened now, not one laid again as it was left); `how.instead`: it takes the place
-   * of that box, where it lies, as it is (a file renamed: no move at all), in hand if that one was.
+   * `laid` put on the desk as `key`: after the piece `how.after`, at `how.at` along the row, or after the piece in
+   * hand (the row's end, with none). The terminal is the row's first, and nothing is laid before it. `how.lands`: it
+   * is set down in the room the pieces after it make (one opened now, not one laid again as it was left);
+   * `how.instead`: it takes the place of that piece, where it lies, as it is (a file renamed: no move at all), in
+   * hand if that one was.
    */
-  lay(key: string, laid: Laid, col?: number, beside?: string, how: {slide?: boolean; instead?: string; top?: boolean} = {}) {
+  lay(key: string, laid: Laid, how: {after?: string; at?: number; instead?: string; lands?: boolean} = {}) {
     if (this.has(key)) return;
-    // In the place of the box beside the desk (a file renamed there): that one back first, this one beside after.
-    if (how.instead !== undefined && this.#beside?.box.key === how.instead) {
-      this.#back(false);
-      this.lay(key, laid, col, beside, how);
-      this.putBeside(key);
-      return;
-    }
+    const term = laid.kind === 'term';
     const name = h('span', {class: 'desk-name'}, laid.name);
     const label = h('div', {class: 'desk-label'}, h('span', {class: 'desk-dir'}, laid.dir), name,
       ...(laid.after ? [h('span', {class: 'desk-dir desk-after'}, laid.after)] : []));
     const rename = laid.rename;
     if (rename) name.addEventListener('click', () => { if (!getSelection()?.toString()) rename(name); });
-    const close = h('button', {type: 'button', class: 'desk-close', 'aria-label': t('Close {name}', {name: laid.name})}, mark('close'));
-    close.addEventListener('click', (e) => { e.stopPropagation(); this.#shut(key); });
-    // Beside its close: put beside the desk (↗), and from there put back (↙). The one move a box has.
-    const aside = laid.stays ? null : h('button', {type: 'button', class: 'desk-aside', 'aria-label': t('Put {name} beside', {name: laid.name})}, mark('beside'), mark('putBack'));
-    aside?.addEventListener('click', (e) => { e.stopPropagation(); if (this.#beside?.box.key === key) this.putBack(); else this.putBeside(key); });
-    const el = h('div', {class: 'desk-box', 'data-key': key}, label, laid.element, ...(aside ? [aside] : []), close);
-    // Pressed (what was pressed in it done first: a line run, a link), it is in hand; the camera moves after the
+    const close = term ? null : h('button', {type: 'button', class: 'desk-close', 'aria-label': t('Close {name}', {name: laid.name})}, mark('close'));
+    close?.addEventListener('click', (e) => { e.stopPropagation(); this.#shut(key); });
+    const el = h('div', {class: 'desk-box', 'data-key': key, ...(laid.kind ? {'data-kind': laid.kind} : {})}, ...(term ? [] : [label]), laid.element, ...(close ? [close] : []));
+    // Where it is scrolled to inside it is said in it while it is scrolled, by a mark cut square at its edge.
+    scrollMarks(el);
+    // Pressed (what was pressed in it done first: a line run, a link), it is in hand; the desk turns after the
     // press, never under it.
     el.addEventListener('click', () => {
-      // Beside the desk it stands where it is: pressed, the keyboard is in it.
-      if (this.#beside?.box.key === key) { if (!el.contains(document.activeElement)) laid.focus(); return; }
-      if (this.#held !== key || !el.contains(document.activeElement)) this.take(key, !el.contains(document.activeElement), true, 'where');
+      if (this.#held !== key || !el.contains(document.activeElement)) this.take(key, !el.contains(document.activeElement), true, true);
     });
-    const by = beside === undefined ? undefined : this.#boxes.get(beside);
-    // Born beside another (the Agent's terminal beside the person's): a column of its own just right of that one's,
-    // the columns after it making way; once they have, it is set down there as a box carried is set down
-    // (forge-desk.css .landing), the camera turning to it meanwhile. Never under another box nor over its words: two
-    // edges where one should be, one's words cut by the other's. (Before: it came out from under the person's, the two
-    // sliding over each other.)
-    if (by) {
-      this.#makingWay = true;
-      el.classList.add('landing');
-      const landed = (e: AnimationEvent) => { if (e.target === el) { el.classList.remove('landing'); el.removeEventListener('animationend', landed); } };
-      el.addEventListener('animationend', landed);
-    }
     this.#plane.append(el);
     this.#sized.observe(el);
-    const box: Box = {key, laid, el, label, slot: {x: 0, y: 0}, placed: false};
+    const box: Box = {key, laid, el, label, x: 0, w: 0, placed: false};
     this.#boxes.set(key, box);
-    const byCol = by ? this.#cols.findIndex((k) => k.includes(by.key)) : -1;
     const was = how.instead === undefined ? undefined : this.#boxes.get(how.instead);
     if (was) {
       // In its place, as it is: where it lies, its size, in hand if it was; then the one it takes the place of goes.
-      const c = this.#cols.findIndex((k) => k.includes(was.key));
-      this.#cols[c].splice(this.#cols[c].indexOf(was.key), 0, key);
+      this.#row.splice(this.#row.indexOf(was.key), 0, key);
       this.#plane.insertBefore(el, was.el);
-      box.slot = {...was.slot};
+      box.x = was.x;
+      box.w = was.w;
       box.placed = true;
-      el.style.width = `${this.#bw}px`;
-      standAt(el, was.slot.x, was.slot.y);
+      el.style.width = `${was.w}px`;
+      standAt(el, was.x, TOP);
+      if (this.#big === was.key) this.#big = key;
       if (this.#held === was.key) {
         this.#held = key;
         el.classList.add('held');
       }
-      // (A file renamed as it comes out from under another: still come out from under the same box.)
-      if (this.#bornUnder?.key === was.key) this.#bornUnder = {...this.#bornUnder, key};
       this.lift(was.key, true);
       return;
     }
-    if (byCol >= 0) this.#cols.splice(byCol + 1, 0, [key]);
-    else if (col !== undefined) {
-      while (this.#cols.length <= col) this.#cols.push([]);
-      if (how.top) this.#cols[col].unshift(key); else this.#cols[col].push(key);
-    } else {
-      const c = this.#held === null ? -1 : this.#cols.findIndex((k) => k.includes(this.#held!));
-      if (c < 0) this.#cols[0].push(key);
-      else this.#cols[c].splice(this.#cols[c].indexOf(this.#held!) + 1, 0, key);
-    }
-    // Out from under the box above it: where that one is, beneath it, then down to its own place (its name once out).
-    const column = this.#cols.find((k) => k.includes(key))!, above = this.#boxes.get(column[column.indexOf(key) - 1] ?? '');
-    if (how.slide && above && !by && !still()) {
-      this.#plane.insertBefore(el, above.el);
-      // Out quickly, as a drawer is pulled (forge-desk.css .coming), the camera a beat behind it (#go): never carried
-      // out of sight still under the other.
-      el.classList.add('born', 'coming');
-      el.addEventListener('transitionend', () => el.classList.remove('born'), {once: true});
-      const out = (e: TransitionEvent) => { if (e.target === el && e.propertyName === 'translate') { el.classList.remove('coming'); el.removeEventListener('transitionend', out); } };
-      el.addEventListener('transitionend', out);
-      this.#comingAt = performance.now();
-      this.#bornUnder = {key, above: above.key};
-      el.style.width = `${this.#bw}px`;
-      // (Its height read first: reading it draws it, and it is to be drawn first where it starts.)
-      const tall = el.offsetHeight;
-      standAt(el, above.slot.x, above.slot.y + Math.max(0, above.el.offsetHeight - tall));
-      box.placed = true;
+    const first = this.#row[0] !== undefined && this.#boxes.get(this.#row[0])?.laid.kind === 'term' ? 1 : 0;
+    const by = how.after !== undefined && this.#row.includes(how.after) ? how.after : this.#held !== null && this.#row.includes(this.#held) ? this.#held : null;
+    const at = term ? 0 : Math.max(first, how.at ?? (by === null ? this.#row.length : this.#row.indexOf(by) + 1));
+    this.#row.splice(Math.min(at, this.#row.length), 0, key);
+    // In the page as along the row: what is read out, and where Tab goes, follow the desk from its start.
+    const follows = this.#row[this.#row.indexOf(key) + 1];
+    this.#plane.insertBefore(el, follows === undefined ? null : this.#boxes.get(follows)!.el);
+    // Set down in the room the pieces after it make (forge-desk.css .landing), the desk turning to it meanwhile:
+    // never under another piece nor over its words.
+    if (how.lands && !still() && this.#row.length > 1) {
+      this.#makingWay = true;
+      el.classList.add('landing');
+      const landed = (e: AnimationEvent) => { if (e.target === el) { el.classList.remove('landing'); el.removeEventListener('animationend', landed); } };
+      el.addEventListener('animationend', landed);
     }
     this.#relay();
   }
 
   /** The name over `key` written over in its place (a new file's, as it comes). */
   name(key: string) {
-    const b = this.#boxes.get(key) ?? (this.#beside?.box.key === key ? this.#beside.box : undefined);
-    // Its name is shown at once, being written, even while the box is still on its way out.
-    b?.el.classList.remove('born');
+    const b = this.#boxes.get(key);
     const name = b?.label.querySelector<HTMLElement>('.desk-name');
     if (b?.laid.rename && name) b.laid.rename(name);
   }
 
-  /** `key` taken off the desk; the box in hand, if it was, is the one beside it. */
+  /** `key` taken off the desk; the piece in hand, if it was, is the one beside it. */
   lift(key: string, atOnce = false) {
-    // The one beside the desk: gone, and the desk is the whole face again.
-    if (this.#beside?.box.key === key) {
-      this.#beside.box.el.remove();
-      this.#beside = null;
-      this.side.hidden = true;
-      this.#relay();
-      return;
-    }
     const b = this.#boxes.get(key);
     if (!b) return;
-    const after = next(this.#cols, key, 'up') ?? next(this.#cols, key, 'down') ?? next(this.#cols, key, 'left') ?? next(this.#cols, key, 'right');
+    const after = next(this.#row, key, 'left') ?? next(this.#row, key, 'right');
     this.#sized.unobserve(b.el);
-    // Taken off (its dot, the file gone): it goes in a beat where it lies, the others closing up after it and the camera
-    // gliding with them; never a cut. Taken off for one in its place (a file renamed), at once.
+    // Taken off (its close, the file gone): it goes in a beat where it lies, the others closing up after it and the
+    // desk turning with them; never a cut. Taken off for one in its place (a file renamed), at once.
     if (atOnce || still()) b.el.remove();
     else {
       b.el.inert = true;
@@ -453,285 +310,178 @@ export class Desk {
         .finished.then(() => b.el.remove(), () => b.el.remove());
     }
     this.#boxes.delete(key);
-    this.#cols = this.#cols.map((c) => c.filter((k) => k !== key)).filter((c, i) => c.length || i === 0);
+    this.#row = this.#row.filter((k) => k !== key);
+    if (this.#big === key) this.#big = null;
     this.#relay(true);
-    if (this.#held === key) { this.#held = null; if (after) this.take(after); }
+    if (this.#held === key) { this.#held = null; if (after) this.take(after); else this.#changed(); }
   }
 
   /** The name said over `key` changed (a file renamed). */
   named(key: string, name: string, dir: string) {
-    const b = this.#boxes.get(key) ?? (this.#beside?.box.key === key ? this.#beside.box : undefined);
+    const b = this.#boxes.get(key);
     if (!b) return;
     b.label.querySelector('.desk-dir')!.textContent = dir;
     b.label.querySelector('.desk-name')!.textContent = name;
   }
 
-  /** `key` in hand, the camera going to it (gliding there, unless `glide` is false), with the keyboard (`focus`).
-   * `stay`: taken where it is seen, it stays there (staysAt): 'where', pressed; 'near', the keyboard gone to it. Gone
-   * to from elsewhere (a file opened, a line found), it is put at its standard place: its top at the eye. */
-  take(key: string, focus = true, glide = true, stay: 'where' | 'near' | null = null) {
-    // Beside the desk it stands where it is: the keyboard goes into it, the desk's own box in hand stays.
-    if (this.#beside?.box.key === key) { if (focus) this.#beside.box.laid.focus(); return; }
+  /** `key` in hand, the desk turned to it (gliding there, unless `glide` is false), with the keyboard (`focus`);
+   * `pressed`: taken by a press of the pointer on it. */
+  take(key: string, focus = true, glide = true, pressed = false) {
     const b = this.#boxes.get(key);
     if (!b) return;
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
-    if (this.#bornUnder && this.#bornUnder.key !== key) this.#bornUnder = null;
-    const at = stay ? this.#staysAt(b, stay) : null;
+    // The terminal taken in hand opens out to work in, and closes to its size at rest when something else is: the
+    // pieces after it go along the row at once to make it room, or come back.
+    const was = this.#held === null ? undefined : this.#boxes.get(this.#held);
+    const opens = was !== b && (b.laid.kind === 'term' || was?.laid.kind === 'term');
     this.#held = key;
     this.#framed = null;
-    this.#topAt = at;
-    this.#look(glide);
+    clearTimeout(this.#closing);
+    // (A file pressed while the terminal was open stays under the pointer for as long as a second press may come:
+    // the terminal closes, and the files come back along the row, after that. Taken by the keyboard, at once.)
+    const lay = () => { this.#makingWay = true; this.#relay(glide); };
+    if (opens && pressed && b.laid.kind !== 'term') { this.#closing = window.setTimeout(lay, TWICE_MS); this.#look(glide); }
+    else if (opens) lay();
+    else this.#look(glide);
     if (focus) b.laid.focus();
     this.#changed();
   }
 
-  /**
-   * Where the top of `b`, taken in hand, stays on the face, or null for its standard place (its top at the eye).
-   * Pressed ('where'), it stays exactly where it stands: what was pressed is under the pointer, and a line pressed
-   * that then leaves the pointer is a line lost (before: any box pressed went to the top of the face, 456 px from
-   * the hand; issue #174). The keyboard gone to it ('near'): where it stands while all of it is in sight; cut by the
-   * face's foot, up by the least that brings it whole into sight; taller than the face, or its top out of sight, its
-   * standard place. The camera on its way, there is no place to keep.
-   */
-  #staysAt(b: Box, stay: 'where' | 'near'): number | null {
-    if (this.#glide) return null;
-    const face = this.element.getBoundingClientRect(), r = b.el.getBoundingClientRect();
-    if (!face.height || !r.height) return null;
-    const top = r.top - face.top, foot = face.height - GRID - FOOT;
-    if (stay === 'where') return top;
-    if (top < EYE || r.height > foot - EYE) return null;
-    return Math.min(top, foot - r.height);
-  }
-
-  /**
-   * The camera over `keys` (each a box at work): on the one last at work; none, back on the box in hand.
-   */
+  /** The desk turned to `keys` (each a piece at work): to the one last at work; none, back to the piece in hand. */
   frame(keys: string[]) {
     this.#framed = keys.length ? keys : null;
     this.#look(true);
   }
 
-  /**
-   * Where the camera stands over the framed boxes (`keys` in the order they started): on the one at work now, the
-   * last, as a person looks at what they write in: in the middle across, its top at the eye (never left in the
-   * middle of the face with the room over it empty); the
-   * others at its sides as they lie, saying where they are. A box taller than the face goes on down from its top as
-   * its line at work goes down it, a page turned as that line comes near the face's foot (lineKept), never under it.
-   * Null when none lies here.
-   */
-  #frameView(keys: string[]): View | null {
-    const boxes = keys.map((k) => this.#boxes.get(k)).filter((b): b is Box => !!b);
-    if (!boxes.length) return null;
-    const w = this.element.clientWidth, hgt = this.element.clientHeight, v = this.#view;
-    const last = boxes[boxes.length - 1], h = last.el.offsetHeight;
-    const to = standardOn(last.slot, h, w, hgt);
-    // The line the Agent's hand or eye is on in it, where one has it (what else at its sides tells, it does not follow).
-    const work = this.#work?.key === last.key ? this.#work : null;
-    // (Not while the camera is on its way: where it passes is not where it stays.)
-    const there = !this.#glide && v.s === STANDARD && Math.abs(v.x - to.x) < .5;
-    // A box that fits the face stands with its top at the eye; one taller stays turned down as far as it was.
-    if (h <= hgt - to.y - FOOT_ROOM || !there && !work) return to;
-    const turned = {...to, y: there ? Math.min(to.y, v.y) : to.y};
-    const here = work ? lineKept(turned, last.slot.y + work.top, last.slot.y + work.bottom, hgt) : turned;
-    return here.y > to.y ? to : here;
-  }
-
-  /** The Agent's hand or eye gone to a line of a box (`e.detail`, from the box's own top), or gone from it (null): the
-   * camera over its work keeps that line in sight, turning on down as it nears the face's foot. */
+  /** The Agent's hand or eye gone to a line of a piece (`e.detail`, from what sent it), or gone from it (null): the
+   * piece scrolls itself to keep that line in sight, a page turned as the line nears its foot, and the desk over the
+   * Agent's work is turned to that piece. */
   #workAt(e: CustomEvent<WorkAt | null>) {
-    const box = (e.target as Element).closest<HTMLElement>('.desk-box'), key = box?.dataset.key;
-    if (!box || !key) return;
-    if (!e.detail) { if (this.#work?.key === key) this.#work = null; return; }
-    // Where the line lies in the box, on the desk: what tells it is somewhere inside the box (a file under its name).
-    const s = this.#view.s || 1, r = (e.target as Element).getBoundingClientRect(), b = box.getBoundingClientRect();
-    const top = (r.top - b.top) / s + e.detail.top;
-    this.#work = {key, top, bottom: top + e.detail.height};
-    if (!this.#framed?.includes(key) || this.#glide || still()) return;
-    const to = this.#target(), v = this.#view;
-    if (to && (Math.abs(to.x - v.x) > .5 || Math.abs(to.y - v.y) > .5)) this.#go(to, true);
+    const from = e.target as HTMLElement, box = from.closest<HTMLElement>('.desk-box'), key = box?.dataset.key;
+    if (!box || !key || !e.detail) return;
+    let s: HTMLElement | null = from;
+    while (s && s !== box && !(/auto|scroll/.test(getComputedStyle(s).overflowY) && s.scrollHeight > s.clientHeight + 1)) s = s.parentElement;
+    if (s && s !== box) {
+      const top = from.getBoundingClientRect().top - s.getBoundingClientRect().top + e.detail.top, line = e.detail.height;
+      if (top < line || top + line > s.clientHeight - 3 * line) s.scrollTo({top: s.scrollTop + top - .4 * s.clientHeight, behavior: still() ? 'auto' : 'smooth'});
+    }
+    if (this.#framed?.includes(key) && !still()) this.#look(true);
   }
 
-  /** A wheel over the desk: the camera along the desk (a box's own scroll first: a Prompt's output scrolled within
-   * it). With Ctrl (a pinch) it is the window's own: the desk has one size. */
+  /** A wheel over the desk: what is under it scrolls itself first (a sheet, a terminal's output). Over the bare
+   * ground, or sideways where nothing under it goes sideways, the desk is turned along its row. With Ctrl (a pinch)
+   * it is the window's own: the desk has one size. */
   #wheel(e: WheelEvent) {
-    if (e.ctrlKey || this.#moving || scrollsItself(e.target as Element, this.element, e.deltaX, e.deltaY)) return;
+    if (e.ctrlKey) return;
+    const on = e.target as Element, box = on.closest('.desk-box');
+    if (box && scrollsItself(on, box, e.deltaX, e.deltaY)) return;
+    // (Down a sheet at its foot, nothing more: the desk is not turned sideways by a wheel that went down a file.)
+    const dx = e.deltaX || (box || e.shiftKey ? 0 : e.deltaY);
     e.preventDefault();
-    this.#framed = null;
-    this.element.scrollBy(e.deltaX, e.deltaY);
-  }
-
-  /** Places measured again (a box grew or shrank): the boxes go where they now belong, the camera with them. */
-  relayout() { this.#relay(); }
-
-  /** The boxes to their places, the camera with them: at once (or, on its way, going on to where it now goes), or gliding
-   * there (`glide`: the desk changed under it, a box taken off). `grew`: laid again as a box grew or shrank: what is under it goes with it at once, as a page's lines
-   * under one written do (never sliding after it, the grown box over it meanwhile), and the camera over the Agent's work
-   * glides where it has to go. */
-  #relay(glide = false, grew = false) {
-    // Out of sight (another page shown), the desk has no size: laid out then, its boxes would be moved to where a desk of
-    // none puts them, and slide back from there as it is shown again (under the camera bringing it in). They stay where
-    // they are; shown again, it is laid out at its size, and nothing has moved.
-    if (!this.element.clientWidth || !this.element.clientHeight) return;
-    const heights = (key: string) => this.#boxes.get(key)?.el.offsetHeight ?? 0;
-    // A box as wide as 80 columns of code, or as the face has room for (half the room, a box beside the desk).
-    // (The face grown too narrow for two screens, a window made small: the one beside goes back; no box says it can
-    // be put beside.)
-    const two = this.#roomForTwo();
-    this.element.classList.toggle('single', !two);
-    if (this.#beside && !two) { queueMicrotask(() => this.putBack()); return; }
-    const bw = this.#bw = Math.max(240, Math.min(WIDTH, this.element.clientWidth - 2 * HALF_PAD));
-    for (const b of this.#boxes.values()) b.el.style.width = `${bw}px`;
-    if (this.#beside) this.#beside.box.el.style.width = `${bw}px`;
-    const at = slots(this.#cols, heights, bw);
-    // The plane begins where the first box stands at its standard place (in the middle across, its top at the eye) with
-    // the desk turned to its start, and ends where the last one stands there: the desk is turned from its first box to
-    // its last, with no bare ground before the one or after the other to turn to. (Before: half a face of ground over
-    // the first box, to stand any box in the face's middle, a place no box is put at: a desk turned to its top showed
-    // its files beginning half way down the face; and a whole face of it under the last, and beside it.)
-    const w = this.element.clientWidth, hgt = this.element.clientHeight, ox = Math.max(0, w / 2 - bw / 2 - PAD), oy = EYE - TOP;
-    let right = 0, bottom = 0, lastX = 0, lastY = 0;
-    for (const [key, p] of at) {
-      const b = this.#boxes.get(key)!;
-      p.x += ox;
-      p.y += oy;
-      b.slot = p;
-      right = Math.max(right, p.x + bw);
-      bottom = Math.max(bottom, p.y + heights(key));
-      lastX = Math.max(lastX, p.x);
-      lastY = Math.max(lastY, p.y);
-      // A box born beside another, the ones after it get out of its way at once (styles: .desk-box.gives).
-      b.el.classList.toggle('gives', this.#makingWay);
-      // A box laid with no way in of its own stands in its place at once.
-      if (!b.placed) { standAt(b.el, p.x, p.y); b.placed = true; continue; }
-      const to = `${p.x}px ${p.y}px`;
-      if (b.el.style.translate === to) continue;
-      // (One on its way somewhere goes on there, to where it now belongs.)
-      const pushed = grew && !gliding(b.el);
-      b.el.style.translate = to;
-      if (pushed) for (const a of b.el.getAnimations()) if (a instanceof CSSTransition && a.transitionProperty === 'translate') a.finish();
-    }
-    this.#makingWay = false;
-    // (A box taller than the face is read to its foot, a step of ground under it.)
-    const planeW = Math.max(right + PAD, lastX + (w + bw) / 2), planeH = Math.max(bottom + VGAP, lastY - EYE + hgt);
-    this.#plane.style.width = `${planeW}px`;
-    this.#plane.style.height = `${planeH}px`;
-    this.#most = {x: Math.max(0, planeW - w), y: Math.max(0, planeH - hgt)};
-    {
-      const to = this.#target();
-      // (On its way, it goes on to where it now stays: a little further, as a box grew, in the same glide; somewhere else
-      // altogether, the work gone on to another box, a glide of its own from where it is, never a cut at the end.)
-      if (to && this.#glide && near(this.#glide.to, to, w, hgt)) this.#glide.to = to;
-      else if (to && this.#glide) this.#go(to, !still());
-      // (Moved by what was done to the desk, a box taken off: the camera glides after the boxes as they close up. Over the
-      // Agent's work as it grows, it glides too, where it has to go at all.)
-      else if (to) {
-        const v = this.#view, moves = Math.abs(to.x - v.x) > .5 || Math.abs(to.y - v.y) > .5 || to.s !== v.s;
-        this.#go(to, (glide || (grew && moves && !!this.#framed)) && !still());
-      }
-    }
-    this.#changed();
-  }
-
-  /** Where the camera should look now: over the boxes at work, or on the box in hand. None while the desk is not laid
-   * out. */
-  #target(): View | null {
-    const w = this.element.clientWidth, hgt = this.element.clientHeight;
-    if (!w || !hgt) return null;
-    const bw = this.#bw;
-    const b = this.#held ? this.#boxes.get(this.#held) : this.#boxes.values().next().value;
-    const under = b && this.#bornUnder?.key === b.key ? this.#boxes.get(this.#bornUnder.above) : undefined;
-    // Framed over boxes at work (the Agent's, played), it stays so as they grow, until it is let go or one is taken.
-    const framed = this.#framed ? this.#frameView(this.#framed) : null;
-    if (framed) return this.#within(framed);
-    if (!b) return null;
-    const to = under ? bornOn(b.slot, b.el.offsetHeight, w, hgt, under.el.offsetHeight, STANDARD, bw) : standardOn(b.slot, b.el.offsetHeight, w, hgt, STANDARD, bw);
-    // Its top where it stood when it was taken in hand, whatever it has grown to since; as near that as the desk turns
-    // (what was above it gone, it cannot stay half way down a face with nothing over it), and that is where it now is.
-    if (this.#topAt !== null) to.y = this.#topAt - b.slot.y * to.s;
-    const at = this.#within(to);
-    this.#topAt = at.y + b.slot.y * at.s;
-    return at;
-  }
-
-  /** `v` as near as the desk turns: never past its first box's place, nor past its last's. */
-  #within(v: View): View {
-    if (v.s !== STANDARD) return v;
-    return {s: v.s, x: -Math.min(Math.max(-v.x, 0), this.#most.x), y: -Math.min(Math.max(-v.y, 0), this.#most.y)};
-  }
-
-  /** The camera to where it should look now (`moving`: gliding there). */
-  #look(moving: boolean) {
-    const to = this.#target();
-    if (to) this.#go(to, moving && !still());
-  }
-
-  /**
-   * The camera to `to`, gliding there or at once. At rest the camera is the desk's own scroll, so what brings something
-   * into view (the keyboard going into a box, a find) moves it as a scroll does; on its way the plane is moved (and, on
-   * a long way, scaled: arc) instead.
-   */
-  #go(to: View, moving: boolean) {
-    // On its way there already: it goes on as it goes, never set off again (asked again as what it frames is laid out).
-    const g = this.#glide?.to;
-    if (moving && g && Math.abs(g.x - to.x) < .5 && Math.abs(g.y - to.y) < .5 && Math.abs(g.s - to.s) < 1e-3) return;
+    if (!dx) return;
     cancelAnimationFrame(this.#moving);
     this.#moving = 0;
     this.#glide = null;
-    const {element: el} = this;
-    // Where it is now, as a move of the plane: a scroll taken back into it.
-    const from = el.scrollLeft || el.scrollTop ? {s: 1, x: -el.scrollLeft, y: -el.scrollTop} : {...this.#view};
-    // Going along to what is out of sight (another column, a box far down), the camera steps back on the way and comes
-    // down onto it, as a head turns across a room: never a whip across the desk at the boxes' own size.
-    const long = moving ? arc(from, to, el.clientWidth, this.element.clientHeight, 560) : null;
-    const ms = long ? long.ms : 560;
-    const set = (v: View, done: boolean) => {
-      this.#view = v;
-      el.style.setProperty('--inv', String(1 / v.s));
-      if (done && v.s === 1) {
-        this.#plane.style.transform = '';
-        // The dots are the desk's own again, going with its scroll (styles: .desk, local).
-        el.style.backgroundSize = el.style.backgroundPosition = '';
-        // The scroll this makes is the camera's own, not a person's going somewhere.
-        this.#ownScroll = performance.now();
-        el.scrollTo(-v.x, -v.y);
-        this.#gliding = false;
-        return;
-      }
-      this.#plane.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.s})`;
-      // The dots lie on the plane, as the boxes do: nearer or further, along or across, they go with the camera.
-      el.style.backgroundSize = `${DOT * v.s}px ${DOT * v.s}px`;
-      el.style.backgroundPosition = `${v.x + DOT / 2 * v.s}px ${v.y + DOT / 2 * v.s}px`;
-      if (el.scrollLeft || el.scrollTop) { this.#ownScroll = performance.now(); el.scrollTo(0, 0); }
-      // The caret in a box on it goes with its letter in this same frame.
-      fieldCarried();
-    };
-    this.#gliding = true;
-    if (!moving) { set(to, true); this.#gliding = false; return; }
+    this.#framed = null;
+    this.element.scrollLeft += dx;
+  }
+
+  /** Pressed twice: the piece is 1.7 times as large, and its own size again. On the words of the piece one writes in,
+   * twice chooses a word, as in any text: there its size is its margins' (its numbers, its edges). */
+  #twice(e: MouseEvent) {
+    const on = e.target as Element, key = on.closest<HTMLElement>('.desk-box')?.dataset.key;
+    if (!key || on.closest('button, a, .desk-label')) return;
+    const words = on.closest('textarea, input, [contenteditable], .term-out, .agent-out');
+    if (words && this.#heldAtPress === key) return;
+    // (The word the two presses chose in a piece just taken up is let go: it was pressed for its size.)
+    const at = document.activeElement;
+    if (at instanceof HTMLTextAreaElement && this.#boxes.get(key)?.el.contains(at)) at.setSelectionRange(at.selectionStart, at.selectionStart);
+    else getSelection()?.removeAllRanges();
+    this.enlarge(this.#big === key ? null : key);
+  }
+
+  /** `key` 1.7 times as large (none: every piece its own size). */
+  enlarge(key: string | null) {
+    this.#big = key && this.#boxes.has(key) ? key : null;
+    for (const b of this.#boxes.values()) b.el.classList.toggle('big', b.key === this.#big);
+    this.#relay(true);
+  }
+  /** The piece that is large now. */
+  get big(): string | null { return this.#big; }
+
+  /** Places measured again (a piece grew or shrank): the pieces go where they now belong, the desk with them. */
+  relayout() { this.#relay(); }
+
+  /** The pieces to their places, the desk turned to the one in hand: at once (or, on its way, going on to where it now
+   * goes), or gliding there (`glide`: the desk changed under it, a piece taken off). */
+  #relay(glide = false) {
+    // Out of sight (another page shown), the desk has no size: laid out then, its pieces would be moved to where a desk
+    // of none puts them. They stay where they are; shown again, it is laid out at its size, and nothing has moved.
+    const w = this.element.clientWidth, hgt = this.element.clientHeight;
+    if (!w || !hgt) return;
+    // A sheet fifty letters wide, or as wide as the face has room for with its shadow.
+    const bw = Math.max(10 * GRID, Math.min(WIDTH, GRID * Math.floor((w - PAD - SHADOW - GRID) / GRID)));
+    const pieces = this.#row.map((key) => {
+      const term = this.#boxes.get(key)!.laid.kind === 'term', k = key === this.#big ? BIG : 1;
+      return {key, width: (term ? Math.min(key === this.#held ? TERM_HELD : TERM, bw) : bw) * k, term, k};
+    });
+    const {at, end} = row(pieces);
+    for (const p of pieces) {
+      const b = this.#boxes.get(p.key)!, x = at.get(p.key)!;
+      b.x = x;
+      b.w = p.width;
+      b.el.style.width = `${p.width}px`;
+      b.el.style.setProperty('--k', String(p.k));
+      b.el.style.setProperty('--tallest', `${p.term ? termHeight(hgt, LINE * p.k, p.key === this.#held) : tallest(hgt, LINE * p.k)}px`);
+      // A piece laid beside another, the ones after it get out of its way at once (styles: .desk-box.gives).
+      b.el.classList.toggle('gives', this.#makingWay);
+      // A piece laid with no way in of its own stands in its place at once.
+      if (!b.placed) { standAt(b.el, x, TOP); b.placed = true; continue; }
+      const to = `${x}px ${TOP}px`;
+      if (b.el.style.translate !== to) b.el.style.translate = to;
+    }
+    this.#makingWay = false;
+    this.#end = end;
+    this.#plane.style.width = `${Math.max(end, w)}px`;
+    this.#plane.style.height = `${hgt}px`;
+    this.#look(glide);
+    this.#changed();
+  }
+
+  /** The desk turned to where it should be now: to the piece last at work, or the one in hand (`moving`: gliding). */
+  #look(moving: boolean) {
+    const w = this.element.clientWidth;
+    if (!w) return;
+    const key = this.#framed?.findLast((k) => this.#boxes.has(k)) ?? this.#held ?? this.#row[0];
+    const b = key === undefined ? undefined : this.#boxes.get(key);
+    if (!b) return;
+    this.#go(inSight(this.element.scrollLeft, b.x, b.w, w, this.#end, key === this.#big), moving && !still());
+  }
+
+  /** The desk turned `to` along its row, gliding there or at once. */
+  #go(to: number, moving: boolean) {
+    const el = this.element;
+    // On its way already: it goes on to where it now goes, never set off again.
+    if (moving && this.#glide) { this.#glide.to = to; return; }
+    cancelAnimationFrame(this.#moving);
+    this.#moving = 0;
+    this.#glide = null;
+    const from = el.scrollLeft;
+    if (!moving || Math.abs(to - from) < .5) { if (Math.abs(to - from) >= .5) el.scrollLeft = to; return; }
     // What goes by under a pointer at rest was not pointed at: nothing under it lights up (forge-desk.css .resting)
     // until the pointer moves again.
     el.classList.add('resting');
-    const glide = this.#glide = {to};
-    // A box coming out from under another: it is out before the camera goes after it.
-    const lag = performance.now() - this.#comingAt < 60 ? 90 : 0, t0 = performance.now() + lag;
-    // The camera's way said as an animation of the page's, so what waits for the page to be still (a film, a look at
+    const glide = this.#glide = {to}, t0 = performance.now();
+    // The desk's way said as an animation of the page's, so what waits for the page to be still (a film, a look at
     // where the caret is) waits for it too.
-    this.element.animate([{}, {}], {duration: lag + ms, id: 'desk-camera'});
+    el.animate([{}, {}], {duration: TURN_MS, id: 'desk-camera'});
     const step = (now: number) => {
-      // A glide gone after another is let go: two at once would draw the camera back and forth a frame at a time.
+      // A glide gone after another is let go: two at once would draw the desk back and forth a frame at a time.
       if (this.#glide !== glide) return;
-      const k = Math.max(0, Math.min(1, (now - t0) / ms));
-      // (Where it stays moved on the way, a box growing meanwhile, the arc ends there: what moved comes in with it.)
-      if (long) {
-        const e = glide.to, f = pan(k), v = long.at(f);
-        set(k >= 1 ? e : {s: v.s * Math.pow(e.s / to.s, f), x: v.x + (e.x - to.x) * f, y: v.y + (e.y - to.y) * f}, k >= 1);
-        veil.follow(this.#pointerAt);
-        if (k < 1) this.#moving = requestAnimationFrame(step);
-        else { this.#moving = 0; this.#glide = null; }
-        return;
-      }
-      // A short way: along, from rest to rest (set off from a long way's step back, to its own size as it goes).
-      const p = pan(k), end = glide.to;
-      set(k >= 1 ? end : {s: from.s * Math.pow(end.s / from.s, p), x: from.x + (end.x - from.x) * p, y: from.y + (end.y - from.y) * p}, k >= 1);
+      const k = Math.max(0, Math.min(1, (now - t0) / TURN_MS));
+      el.scrollLeft = k >= 1 ? glide.to : from + (glide.to - from) * pan(k);
+      // The caret in a piece on it goes with its letter in this same frame.
+      fieldCarried();
       veil.follow(this.#pointerAt);
       if (k < 1) this.#moving = requestAnimationFrame(step);
       else { this.#moving = 0; this.#glide = null; }
@@ -739,54 +489,33 @@ export class Desk {
     this.#moving = requestAnimationFrame(step);
   }
 
-  /** Scrolled (the camera moved as a scroll moves it): the box most in view is the one in hand, unless
-   * one is written in: looking along the desk does not take the shadow off the box the keyboard is in. */
-  #scrolledStandard() {
-    if (this.#gliding || performance.now() - this.#ownScroll < 120) return;
-    if (this.#strayed) return;
-    const at = document.activeElement;
-    if (at && at !== this.element && this.element.contains(at)) return;
-    const best = this.#mostInView();
-    if (!best || best.key === this.#held) return;
-    for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === best);
-    this.#held = best.key;
-    this.#changed();
-  }
-
-  /** A box still on its way to its place. */
-  #sliding(): boolean {
-    return this.#plane.getAnimations({subtree: true}).some((a) => a instanceof CSSTransition && a.transitionProperty === 'translate' && a.playState === 'running');
-  }
-
-  #mostInView(): Box | null {
-    const view = this.element.getBoundingClientRect();
-    let best: Box | null = null, most = 0;
-    for (const b of this.#boxes.values()) {
-      const r = b.el.getBoundingClientRect();
-      const seen = Math.max(0, Math.min(r.right, view.right) - Math.max(r.left, view.left)) * Math.max(0, Math.min(r.bottom, view.bottom) - Math.max(r.top, view.top));
-      if (seen > most) { most = seen; best = b; }
-    }
-    return best;
+  /** How far the desk is turned, said at the window's foot while it turns and a moment after: an ink bar cut square,
+   * as long as the part of the row in sight is of the whole, where that part is. Nothing at rest. */
+  #said() {
+    const el = this.element, w = el.clientWidth, far = this.#end - w;
+    if (far <= 1) { this.#turned.classList.remove('shown'); return; }
+    // (From where the page's own things start to a cell short of the window's edge.)
+    const from = 3 * GRID, room = w - from - GRID, len = Math.max(GRID, room * w / this.#end);
+    this.#turned.style.width = `${len}px`;
+    this.#turned.style.translate = `${el.scrollLeft + from + (room - len) * Math.min(1, el.scrollLeft / far)}px 0`;
+    this.#turned.classList.add('shown');
+    clearTimeout(this.#turnedRest);
+    this.#turnedRest = window.setTimeout(() => this.#turned.classList.remove('shown'), MARK_MS);
   }
 
   #key(e: KeyboardEvent) {
     if (e.isComposing || theirs(e) || nativeOptionArrow(e)) return;
     const way = WAYS[e.key];
     const bare = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
-    // The keyboard on the desk itself, a box in hand: not in any text.
+    // The keyboard on the desk itself, a piece in hand: not in any text.
     const onDesk = e.target === this.element && this.#held !== null;
     if (e.key === 'Escape' && !e.defaultPrevented) {
-      // Escape from a box's text is the text's first (a search, a rename). One that reaches the desk takes the
-      // keyboard out of the text onto the desk, and nothing moves. (Before: it also stepped the camera back, the whole
-      // desk a quarter smaller for a key pressed to leave a line, and again to half; issue #173. Ctrl and -, + and 0
-      // are the window's own now, as a pinch is.)
+      // Escape from a piece's text is the text's first (a search, a rename). One that reaches the desk takes the
+      // keyboard out of the text onto the desk; there, it puts a piece made large back to its own size.
       e.preventDefault();
-      this.element.focus({preventScroll: true});
-    } else if ((way === 'left' || way === 'right') && e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey) {
-      // Ctrl, Alt and →: the box in hand beside the desk, a second screen; Ctrl, Alt and ←: the one beside put back.
-      e.preventDefault();
-      if (way === 'right') this.putBeside(); else this.putBack();
-    } else if (way && e.altKey && !e.defaultPrevented && (way === 'left' || way === 'right')) {
+      if (e.target === this.element && this.#big) this.enlarge(null);
+      else this.element.focus({preventScroll: true});
+    } else if (way && e.altKey && !e.defaultPrevented) {
       // Alt and ← or → are a text's (moving what is written): never the browser's back and forward.
       e.preventDefault();
     } else if (onDesk && bare && e.key === 'Enter') {
@@ -794,17 +523,17 @@ export class Desk {
       this.#enter();
     } else if (onDesk && bare && way) {
       e.preventDefault();
-      const to = next(this.#cols, this.#held!, way);
-      if (to && to !== this.#held) this.take(to, false, true, 'near');
+      const to = next(this.#row, this.#held!, way);
+      if (to && to !== this.#held) this.take(to, false);
     } else if (onDesk && e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-      // With no text to indent, Tab goes on to the next box (Shift+Tab back), as it goes on among things anywhere.
+      // With no text to indent, Tab goes on to the next piece (Shift+Tab back), as it goes on among things anywhere.
       e.preventDefault();
-      const to = tabbed(this.#cols, this.#held!, e.shiftKey);
-      if (to && to !== this.#held) this.take(to, false, true, 'near');
+      const to = tabbed(this.#row, this.#held!, e.shiftKey);
+      if (to && to !== this.#held) this.take(to, false);
     } else if (onDesk && letter(e)) this.#enter();
   }
 
-  /** Into the box in hand: the keyboard in it (a letter typed goes on in). */
+  /** Into the piece in hand: the keyboard in it (a letter typed goes on in). */
   #enter() {
     if (!this.#held) return;
     this.#boxes.get(this.#held)?.laid.focus();

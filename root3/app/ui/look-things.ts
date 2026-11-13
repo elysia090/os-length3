@@ -50,6 +50,7 @@ export const THINGS: readonly Thing[] = [
   {name: "s5", kind: "length", usual: "24px", least: 12, most: 48, says: ''},
   {name: "s6", kind: "length", usual: "40px", least: 20, most: 80, says: ''},
   {name: "r-field", kind: "length", usual: "8px", least: 4, most: 16, says: ''},
+  {name: "r-sheet", kind: "length", usual: "10px", least: 5, most: 20, says: ''},
   {name: "r-place", kind: "length", usual: "12px", least: 6, most: 24, says: ''},
   {name: "r-round", kind: "length", usual: "999px", least: 499.5, most: 1998, says: ''},
   {name: "h-control", kind: "length", usual: "40px", least: 20, most: 80, says: ''},
