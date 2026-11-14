@@ -68,7 +68,8 @@ body.has-door :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) >
 /* A row's map (ui/row-desk.ts, DESIGN §6): beside its desk (not on what the desk turns), at the window's foot from the desk's edge, the row twelve times smaller, a
    bar for each piece (the one in the hand in ink), a line under what is in sight. There while some of the row is out
    of sight; a bar pressed goes to its piece. Under a piece's shadow, which ends half a cell over the window's foot. */
-.row-map { position: absolute; left: 0; bottom: 0; z-index: 3; height: calc(var(--u) / 2); }
+/* (A bar is pressed anywhere in the foot's cell over it: what can be pressed is a cell tall, however thin it is drawn.) */
+.row-map { position: absolute; left: 0; bottom: 0; z-index: 3; height: var(--u); }
 .row-map[hidden] { display: none; }
 .row-piece { position: absolute; top: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; cursor: var(--cursor-hand); }
 .row-piece::before { content: ''; position: absolute; left: 0; right: 0; bottom: 5px; height: 4px; background: var(--edge); }

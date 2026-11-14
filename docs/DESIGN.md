@@ -142,6 +142,12 @@ title inside a sheet that has parts, 66 for the person's name alone.
 Why 17 for what is written: on an ordinary screen at a desk's distance one px is about .023°, and reading stops
 slowing when a small letter is about a fifth of a degree tall. A small letter of 17 px mono is .21°; of 14 px, .17°.
 
+**A name in Japanese** is a cell tall too. A kanji's face fills .92 of its square where a capital of the display face
+is .727 of its size, so at the name's size it would stand 30 px tall beside capitals of 24 (measured). It is set in
+the heaviest gothic the system has at 80 % of the size (`Display JP`, `styles/base.css`): its face is then 24 px.
+A name of both writings is one height. (What a screen says must hold when it is said in another language: the
+letters get longer or taller, the room does not.)
+
 A name's capitals stand on a line of the grid: a name `c` cells tall (c = 1 or 2) is set in a box of its own size
 with a top margin of `−.2043·c·u` and a bottom margin of `−.1713·c·u`, so it takes exactly `c` cells of the column.
 Its ink, not its box, stands on the left edge.
@@ -367,6 +373,37 @@ Rules that follow, each of them absolute:
 - **A key is a quicker way to something that can be pressed,** never the only way to it.
 - **The pointer and the caret are the OS's own,** ink on a paper edge.
 
+**Read in the person's favour.** What a hand does is a little off what it meant, and the OS takes what was meant.
+(The makers of a hard game that feels fair say how: "everything is fudged a tiny bit in the player's favor"; a jump
+pressed a moment early or late, or two pixels from the wall, counts.) Here:
+
+- What can be pressed is at least a cell either way, however small it is drawn: a 16 px mark in a 36 px square, a
+  4 px bar of the row's map in the whole of the foot's cell.
+- What is pressed never goes from under the hand that pressed it (§6); a piece pressed while the desk is on its way
+  is gone to from where the desk now is, not from where it was.
+- A press goes down, not up: a thing sounds and answers as it is pressed (§9), a tenth of a second before a click
+  would say so.
+- What follows the hand is moved by the window itself (a row is scrolled, and comes to rest by the browser's own
+  snapping). A finger sees a lag of a hundredth of a second in what it drags; code that reads the finger and then
+  moves the thing is later than that.
+
+**Friction is kept where it says what a place is, and nowhere else.** The same is found by those who make such
+things: moving papers about a desk can be the thing itself, not a cost to it; a screen that is harder to use may
+still be the right one, when ease was not its aim. Three are kept on purpose:
+
+- **In a board and a conversation Enter is a new line, and sending is a key of its own** (Ctrl+Enter, or the key that
+  comes with the words). What is said there is a whole thought that will be read later, not a line in a chat.
+- **One piece is in the hand.** To work in another it is taken up; nothing is done to a piece from a distance.
+- **A far side is a step away** (the door), not a pane beside its place: Git is where the work is judged, not where
+  it is done.
+
+And one kind is not friction but noise: **being asked "are you sure".** Asked every time, it is answered without
+being read. A deed that can be put back is done at once and can be put back; only what cannot be put back is asked,
+and then by something that cannot be answered by habit (§11).
+
+**While something takes time, what is being done is said**, in words, where its result will be: a wait that shows
+its work is trusted more than a short one that shows nothing.
+
 ---
 
 ## 8. Motion
@@ -407,6 +444,11 @@ The sheets have the same law as three times and one curve:
   taken over by the next from where it is.
 - Asked for less motion, nothing moves: each thing is where it ends at once.
 - Nothing overshoots, nothing grows into place, nothing fades in over what it replaces.
+
+**One world, one move.** Going to another place, the place left, the place come to and the ground set off at the same
+instant, in the frame after the place come to is built: each is made held where it starts and all are let go
+together (`ui/glide.ts travel`). Set off as each is made, the ground ran ahead of the sheets on it whenever the place
+come to was long in the building.
 
 ---
 
@@ -557,6 +599,9 @@ breaks; none is a decision to leave it.
 | moves in code | their lengths are still written where they are made (their curve is the law's) | §8 |
 | the sheets (Runtime, the Remote) | what is in them is laid by the window's width in places (27 rules that ask the window how wide it is remain in the sheets, most of them here) | §1, a narrow window has the same rules |
 | signing in, a Remote not answering | the same deed has two looks (Try again in ink on Server, in line on the Remote) | §1, one hand |
+| deeds that ask first | some twenty deeds ask before they are done (remove a dotfile, take a repo off, sign a device out, a server left), each in its place with Cancel beside it, whether or not they can be put back | §7, what can be put back is done and can be put back |
+| Forge, the first time | the desk is long in the building (the Prompt starts with it), and the move to it waits for that | §8, off at once |
+| a board's box | nothing on it says Enter is a new line and which key sends (a conversation's says so under it) | §7, friction kept on purpose is said |
 | `PLACES.md` | speaks of the look as it was | — |
 
 **Which icons the rail needs.** Counted in presses, for a rail of n icons. An icon costs the screen a square for
@@ -588,7 +633,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone (§10) | `tests/app/home.spec.ts` |
 | Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `tests/app/forge-work.spec.ts` |
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `tests/app/focus.spec.ts` |
-| Going to another place: the two pages and the dots move as one in every frame, one way, off at once, at rest within 420 ms (§8) | `tests/app/motion.spec.ts` |
+| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off at once, at rest within 420 ms (§8) | `tests/app/motion.spec.ts` |
 | File comes by a press and by nothing else (§7) | `tests/app/file.spec.ts` |
 | A phone has the same rules (§1) | `tests/app/narrow.spec.ts` |
 

@@ -449,18 +449,36 @@ export function travel(root: HTMLElement, dir: number, axis: 'x' | 'y' = 'y'): (
   for (const settle of settles) settle();
   for (const part of left.querySelectorAll(FRAME)) (part as HTMLElement).style.visibility = 'hidden';
   const gone = () => left.remove();
-  left.animate([{transform: 'none'}, {transform: by(-dir * far)}], {...timing, fill: 'forwards'}).finished.then(gone, gone);
-  document.body.animate(axis === 'y' ? [{backgroundPositionY: '0px'}, {backgroundPositionY: `${-dir * far}px`}] : [{backgroundPositionX: '0px'}, {backgroundPositionX: `${-dir * far}px`}], timing);
+  const going = left.animate([{transform: 'none'}, {transform: by(-dir * far)}], {...timing, fill: 'forwards'});
+  going.finished.then(gone, gone);
+  const dots = document.body.animate(axis === 'y' ? [{backgroundPositionY: '0px'}, {backgroundPositionY: `${-dir * far}px`}] : [{backgroundPositionX: '0px'}, {backgroundPositionX: `${-dir * far}px`}], timing);
+  // One world, one move: the place left, the place come to and the ground set off at the same instant, in the frame
+  // after the place come to is built. Each is made held where it starts and let go together; set off as it is made,
+  // what the page draws itself (the ground) ran a frame or more ahead of what is moved for it (the sheets) whenever
+  // the place come to was long in the building, the dots sliding under sheets that had not yet stirred.
+  const all: Animation[] = [going, dots];
+  for (const x of all) x.pause();
+  let off = false;
+  const setOff = () => {
+    if (off) return;
+    off = true;
+    const now = document.timeline.currentTime;
+    for (const x of all) { if (x.playState === 'idle' || x.playState === 'finished') continue; if (now === null) x.play(); else x.startTime = now; }
+  };
+  // (Never held for want of the place come to: if it is not built by then, the place left goes all the same.)
+  setTimeout(setOff, 300);
   return () => {
     stopStage(root);
     const surfaces = surfacesOf(root);
     staged.set(root, surfaces);
     for (const part of surfaces) {
       const animation = part.animate([{transform: by(dir * far)}, {transform: 'none'}], timing);
+      if (!off) { animation.pause(); all.push(animation); }
       arrivals.set(part, animation);
       const done = () => { if (arrivals.get(part) === animation) arrivals.delete(part); };
       animation.finished.then(done, done);
     }
+    requestAnimationFrame(setOff);
   };
 }
 

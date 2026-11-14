@@ -8,6 +8,17 @@
   src: url('/fonts/inter-display-black.woff2') format('woff2');
   unicode-range: U+0020-007E, U+00A0-017F, U+2010-2027, U+2030-203A, U+20AC;
 }
+/* A name in Japanese: the heaviest gothic the system has, drawn smaller so that a kanji's face (which fills .92 of its
+   square, where a capital of the display face is .727 of its size) is a cell tall as a capital is: 30 px at the name's
+   size becomes 24 (measured). So a name stands a cell tall on the grid in either writing, and a name of both is one
+   height. No such face on the system, the name is in the words' own (styles/tokens.css --display). */
+@font-face {
+  font-family: 'Display JP'; font-weight: 900; font-style: normal; size-adjust: 80%;
+  src: local('Hiragino Sans W8'), local('HiraginoSans-W8'), local('Hiragino Kaku Gothic ProN W6'), local('Noto Sans JP Black'), local('NotoSansJP-Black'),
+    local('Noto Sans CJK JP Black'), local('NotoSansCJKjp-Black'), local('BIZ UDGothic Bold'), local('BIZ-UDGothicB'), local('Yu Gothic UI Bold'), local('YuGothicUI-Bold'),
+    local('Meiryo Bold'), local('Meiryo-Bold');
+  unicode-range: U+3000-30FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FF00-FFEF;
+}
 
 * { box-sizing: border-box; }
 p { text-wrap: pretty; }

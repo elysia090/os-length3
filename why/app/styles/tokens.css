@@ -60,7 +60,7 @@
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
   /* The person's name at Home's top: Inter Display Black, the one big thing (a step smaller on a narrow window). */
-  --t-name: clamp(30px, 5.2vw, 44px); --display: 'Inter Display', var(--sans);
+  --t-name: clamp(30px, 5.2vw, 44px); --display: 'Inter Display', 'Display JP', var(--sans);
   --t-identity: 28px; --t-title: 24px; --t-card: 20px; --t-body: 15px; --t-meta: 13px;
   /* What is said smallest (a key's name, a line's number, a day); a name on a desk, its capitals a cell tall (the
      display face's are .727 of its size). */
