@@ -15,7 +15,8 @@ test('what one person writes to another arrives in their Inbox, and the rail say
 
   // Bo's rail says a message is not read, without opening anything (once Bo's app has looked).
   await bo.comeBack();
-  await expect(bo.rail.button('inbox')).toHaveAccessibleName('Unread messages in Inbox');
+  // (Inbox is Server's far side: what is unread there is said on Server's icon, its own name first.)
+  await expect(bo.rail.button('server')).toHaveAccessibleName('Server · Unread messages in Inbox');
   await bo.rail.go('inbox');
   await expect(bo.main.getByRole('heading', {name: 'Requests'})).toBeVisible();
   await bo.inbox.conversation(ada.handle).click();
@@ -23,7 +24,7 @@ test('what one person writes to another arrives in their Inbox, and the rail say
   await expect(thread.getByText('are you coming on Saturday?', {exact: true})).toBeVisible();
   await expect(thread.getByText('Question', {exact: true})).toBeVisible();
   // Opened, it is read.
-  await expect(bo.rail.button('inbox')).toHaveAccessibleName('Inbox');
+  await expect(bo.rail.button('server')).toHaveAccessibleName('Server');
 
   // Accepted, the two know each other: Bo's answer goes back, and Ada has it.
   // Answered at once, while the conversation is drawn again for the acceptance: what went is not left in the field.

@@ -1,29 +1,25 @@
 /* Home (and New repo, on the same ground): a desk. The frame is the rail's column and the band's row, two cells
    each; the desk starts at their corner, and everything on Home is set on the dots' grid from there (--u, a dot in
-   the middle of every cell). What is on it lies in a row, as a repo's files do on Forge's desk and by the same rule
-   (ui/row.ts): pieces one width (twenty-four cells, or as many as the window has room for), two cells apart, the desk
-   at rest only with a piece at its edge. The first is the person's own: the name, its capitals two cells tall,
-   standing a cell under the band; what is theirs to do, a yellow note. The second, the repos by name and what waits,
-   a slip of paper; its first repo's name stands on the line the person's does. A window half a screen wide shows the
-   first and the edge of the second, a whole screen both, a phone one. Words are in few sizes and no others: 11 and
-   13 px (said quietly, in mono), 15 px (written and read), capitals a cell tall (a name), capitals two cells tall
-   (the person's). */
+   the middle of every cell). Its pieces are short, so they are set as words are in a line: along from the desk's
+   edge, one width (twenty-four cells, or as many as the window has room for), two cells apart, and a piece that does
+   not fit beside the last goes under it, at the desk's edge again, two cells down. (Forge's pieces are as tall as the
+   window: its desk is one line, and is looked along.) So nothing of Home is ever out of sight sideways: a whole
+   screen has the two pieces side by side, half a screen and a phone one under the other.
+   The first is the person's own: the name, its capitals two cells tall, standing a cell under the band; what is
+   theirs to do, a yellow note. The second, the repos by name and what waits, a slip; side by side, its first repo's
+   name stands on the line the person's does. Words are in few sizes and no others: 11 and 13 px (said quietly, in
+   mono), 15 px (written and read), capitals a cell tall (a name), capitals two cells tall (the person's). */
 /* From the desk's corner (no step in from the band's keys: what is under the terminal's key starts where it does) to
    the window's right edge. */
 .page:has(> .home-layout) { --body-left: 0px; padding: 0; }
 .page > .home-layout { position: relative; max-width: none; }
 /* ---- The band: the keys from the rail's corner (forge-band.css, one with a desk's). ---- */
-/* ---- The row. (New repo's own thing is one piece, laid as a page's is.) ---- */
+/* ---- The pieces. (New repo's own thing is one piece, laid as a page's is.) ---- */
 .home-main { display: block; }
-.home-row { --piece: min(calc(24 * var(--u)), round(down, 100% - var(--shade), var(--u))); position: relative; display: flex; align-items: flex-start; gap: calc(2 * var(--u));
-  /* (The desk is the window's under the band: wherever a hand is on it, it is the row that is scrolled.) */
-  min-height: calc(100vh - 2 * var(--u)); box-sizing: border-box; margin-right: calc(-1 * var(--outer)); padding-bottom: calc(2 * var(--u));
-  overflow: auto hidden; scrollbar-width: none; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; }
-.home-row::-webkit-scrollbar { display: none; }
-.home-row > * { flex: none; box-sizing: border-box; width: var(--piece); min-width: 0; scroll-snap-align: start; }
-/* (Room after the last piece for it to stand at the edge.) */
-.home-row::after { content: ''; flex: none; width: max(0px, calc(100% - var(--piece) - 2 * var(--u))); }
-.home-beside { display: grid; align-content: start; justify-items: start; }
+.home-row { --piece: min(calc(24 * var(--u)), round(down, 100% - var(--shade), var(--u))); display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(2 * var(--u));
+  padding-bottom: calc(2 * var(--u)); }
+.home-row > * { flex: none; box-sizing: border-box; width: var(--piece); min-width: 0; }
+.home-beside { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: start; }
 /* ---- The TODO: a note, as wide as the column, a cell under the profile; its shadow half a cell right and down, as
    every sheet's on a desk is (one light). Its rows are the frame's own square (36 px): an item's mark in a square, its
    words on the square's line. As tall as what is written on it and the line of what the keys do, up to the grid's next
@@ -104,7 +100,7 @@
 /* ---- What waits, a cell under the repos: a slip fourteen cells wide, drawn in line on the ground (it is not the
    piece in hand). Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a
    cell; the file, its capitals a cell tall on the next two; then what it says and where, a line each. ---- */
-.home-waits { display: grid; justify-items: start; gap: var(--u); max-width: 100%; margin-top: var(--u); }
+.home-waits { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--u); width: 100%; margin-top: var(--u); }
 .home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(14 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: var(--s3) var(--u) calc(var(--s3) + var(--to-grid, 0px));
   /* (Home's piece in hand is the note, the one thing written in: the slip is line on the ground, as a piece not in
      hand is on any desk.) */

@@ -57,8 +57,8 @@ test('leaving a frameless page releases its camera before the shared page is reu
   await app.rail.go('runtime');
   await whole();
   // A newer request before leaving Runtime replaces the first destination, without keeping its camera.
-  await app.page.evaluate(() => { document.getElementById('purpose-home')!.click(); document.getElementById('purpose-git')!.click(); });
-  await expect(app.rail.button('git')).toHaveAttribute('aria-current', 'page');
+  await app.page.evaluate(() => { document.getElementById('purpose-home')!.click(); document.getElementById('purpose-server')!.click(); });
+  await expect(app.rail.button('server')).toHaveAttribute('aria-current', 'page');
   await whole();
   await app.rail.go('home');
   await whole();
@@ -79,20 +79,20 @@ test('pressed again before the pan has moved, the rail goes straight to the plac
     requestAnimationFrame(tick);
   });
   const seen = () => app.page.evaluate(() => { const w = window as unknown as {drawn: string[]; inks: number}; return {drawn: w.drawn, inks: w.inks}; });
-  // Git, then Remote in the same moment: Remote is the page come to, from Home, and Git is never drawn on the way.
+  // Server, then Runtime in the same moment: Runtime is the page come to, from Home, and Server is never drawn on the way.
   await watch();
-  await app.page.evaluate(() => { document.getElementById('purpose-git')!.click(); document.getElementById('purpose-remote')!.click(); });
-  await expect(app.rail.button('remote')).toHaveAttribute('aria-current', 'page');
+  await app.page.evaluate(() => { document.getElementById('purpose-server')!.click(); document.getElementById('purpose-runtime')!.click(); });
+  await expect(app.rail.button('runtime')).toHaveAttribute('aria-current', 'page');
   await still(app);
-  expect((await seen()).drawn).toEqual(['purpose-remote']);
+  expect((await seen()).drawn).toEqual(['purpose-runtime']);
   expect((await seen()).inks).toBeLessThanOrEqual(1);
-  await expect(app.main.getByRole('heading', {name: 'Remote', level: 1})).toBeVisible();
-  // Home, then Remote again at once: back where it began, it stays; no page comes, none goes.
+  await expect(app.main.getByRole('heading', {name: 'Runtime', level: 1})).toBeVisible();
+  // Home, then Runtime again at once: back where it began, it stays; no page comes, none goes.
   await watch();
-  await app.page.evaluate(() => { document.getElementById('purpose-home')!.click(); document.getElementById('purpose-remote')!.click(); });
+  await app.page.evaluate(() => { document.getElementById('purpose-home')!.click(); document.getElementById('purpose-runtime')!.click(); });
   await still(app);
-  await expect(app.rail.button('remote')).toHaveAttribute('aria-current', 'page');
-  expect((await seen()).drawn.filter((d) => d !== 'purpose-remote')).toEqual([]);
+  await expect(app.rail.button('runtime')).toHaveAttribute('aria-current', 'page');
+  expect((await seen()).drawn.filter((d) => d !== 'purpose-runtime')).toEqual([]);
 });
 
 test('File\'s tree out and away: the rail\'s ink goes from the page\'s place to File and back, never an icon ink on ink', async ({app}) => {
@@ -137,7 +137,7 @@ test('the rail pressed again as its ink goes: one ink, going on from where it is
     const tick = () => {
       const inks = document.querySelectorAll<HTMLElement>('#rail-tabs .glide-ink');
       most = Math.max(most, inks.length);
-      const remote = document.getElementById('purpose-remote')!;
+      const remote = document.getElementById('purpose-runtime')!;
       if (inks.length) {
         tops.push(inks[0].getBoundingClientRect().top);
         // The place it lands on waits with no fill of its own while the ink comes (no second box under it).
@@ -147,12 +147,12 @@ test('the rail pressed again as its ink goes: one ink, going on from where it is
     };
     requestAnimationFrame(tick);
   }));
-  await app.rail.button('git').click();
+  await app.rail.button('server').click();
   await app.page.waitForFunction(() => {
-    const ink = document.querySelector('#rail-tabs .glide-ink'), git = document.getElementById('purpose-git')!;
+    const ink = document.querySelector('#rail-tabs .glide-ink'), git = document.getElementById('purpose-server')!;
     return ink && ink.getBoundingClientRect().top > git.getBoundingClientRect().top - 60;
   });
-  await app.rail.button('remote').click();
+  await app.rail.button('runtime').click();
   const {most, tops, landedFill} = await trip;
   expect(most).toBe(1);
   // Down all the way, never back up toward where it began.

@@ -55,6 +55,9 @@ One world, and the window looks at it.
 
 - **Down: the places.** The places lie one under another in the order of the rail (§4). To go to a place further
   down the rail is to go down.
+- **Along, past the row: a place's far side.** Three pages are not places of their own but the far side of one: Git
+  of Forge, the Remote of Home, Inbox of Server. A far side is a whole screen, a step along from its place, reached
+  through the door (§4) and left through it.
 - **Along: the pieces.** What is in a place lies in a row from the desk's left edge, left to right (§6).
 - **In front: what is called up.** A search's finds, File's tree, a menu: they come in front of the world, and the
   world behind them goes out of focus (blurred) until they are put away.
@@ -156,23 +159,48 @@ corner, **(48, 48)**, and its first dot is at (60, 60).
 
 ### The rail
 
-- A place is a 36 px square about a corner of the grid: the first has its middle at (24, 24), the next 48 px down.
-  So four dots stand round every icon alike. Its icon is 18 px, drawn with a 2 px stroke of its 24 px box.
+- A place is a 36 px square about a corner of the grid: the first has its middle at (24, 24), the next 48 px down,
+  and so every one, at one pitch from first to last. So four dots stand round every icon alike. Its icon is 18 px,
+  drawn with a 2 px stroke of its 24 px box.
 - The place one is in has the slot colour under it; a place under the pointer or the keyboard, paper and a 2 px ink
-  ring.
-- **The order is how far a place is from the person, nearest first, in groups a place's room (48 px more) apart:**
+  ring. At a place's far side its place is the one lit.
+- **An icon stands on the rail only for what the day goes to from anywhere.** In order, nearest the person first:
 
-  | Group | Places | Why here |
+  | | Icon | What it is |
   |---|---|---|
   | mine | Home | who one is, what is one's own to do |
-  | the work | Forge, Git | a repo written and run, then recorded and reviewed. The day's round is Home, these two, and back |
-  | people | Inbox, Server | what was said to one, then where many talk |
-  | the machine | Runtime, Remote | this device, then where the repos are kept. Gone to seldom |
+  | the work | Forge | a repo written and run |
+  | people | Server | where many talk |
+  | the machine | Runtime | this device |
+  | not places | File, the plug, + | File and the plug are called up in front of whatever place is shown; + makes a repo |
 
-- **At the rail's foot, apart, what is not a place:** File and the plug (they open in front of whatever place is
-  shown), + (it makes a repo), and the person's own menu.
-- A window too short for the groups' room (under 700 px) closes the groups up; under 560 px the places close up too
-  and scroll inside the rail.
+  At the rail's foot, the person's own menu.
+- **What is gone to from one place has no icon: it is that place's far side, and its door is there.**
+
+  | Far side | Of | Why it is its far side |
+  |---|---|---|
+  | Git | Forge | the repo written, then the repo recorded and reviewed |
+  | the Remote | Home | what is mine here, then where it is kept |
+  | Inbox | Server | where many talk, then what was said to one |
+
+  What is to be seen at a far side is said on its place's icon, the place's own name first: a red dot on Home while
+  the Remote does not answer; an ink dot on Server while something in Inbox is unread.
+- A window too short for the rail (under 560 px) closes the places up, and they scroll inside the rail.
+
+### The door
+
+The way from a place to its far side, and **in the same spot** the way back: there and back is two presses with the
+hand where it was.
+
+- One key of the band's own make: x = 48 to 96, y = 6 to 42 (two cells wide, as tall as a place of the rail),
+  ground under an 18 px mark, 1 px of ink round it. Its mark is the icon of where it leads. It is the window's,
+  fixed, and there on a far side that has no band of its own.
+- It is the first key of the band: nearest the rail, where the hand was when it came to the place. Where the page
+  has a band, the band goes on from the door and the two are one bar as wide as a piece (the door has no edge of its
+  own on that side).
+- What waits where it leads is a dot on it, as on a place of the rail.
+- Going through it the world goes **along** (§8), the far side coming in from the right; back, from the left.
+- Only these six pages have a door. Runtime, File, the plug and + lead nowhere further.
 
 ### The band
 
@@ -181,7 +209,8 @@ piece (§3). Ground under it, a 1 px ink outline, corner 4. Its keys are parts o
 edge, a 1 px line between them; the search is the rest, its words 13 px. Every edge of the bar is on a line of the
 grid, so no dot is cut by it.
 
-- Home and Forge: the terminal's key, the files' key, the search. Git: the terminal's key, the search.
+- Home and Forge: the door, the terminal's key, the files' key, the search. Git: the door, the terminal's key, the
+  search. New repo: the terminal's key, the files' key, the search (it has no far side).
 - On Forge and Git the name of what is in the hand stands at the band's right end, in the display face, its
   capitals a cell tall about the row's middle.
 - What the search finds comes in front: sheets in a row from the desk's edge, their tops a cell under the band
@@ -237,7 +266,17 @@ being worked in.
 
 ## 6. The row
 
-What lies along a place lies by one rule, the same on Forge's desk and on Home (`ui/row.ts`).
+Pieces are set as words are in a line: along from the desk's edge, and **a piece that does not fit beside the last
+goes under it, at the desk's edge again, two cells down.**
+
+- **A desk of short pieces (Home) is set so and nothing more:** nothing of it is ever out of sight sideways. A whole
+  screen has its pieces side by side; half a screen and a phone, one under the other.
+- **A desk whose pieces are as tall as the window (Forge) has one line only**, and is looked along. The rest of this
+  section is that line (`ui/row.ts`).
+
+Decided by the window's width and nothing else (never by what the device is), and when pieces do not fit side by side
+one is shown whole and the rest are a step along, in order: what the split views of the systems people know do when
+a window narrows.
 
 **Where a piece is.** The pieces are in the order they were opened (on Forge the terminal first). All are one width
 `W` (§3), `G = 48` apart. The n-th (from 0) starts at
@@ -297,9 +336,10 @@ Rules that follow, each of them absolute:
 
 **Three moves, and only these.**
 
-1. **The world up or down:** to another place. The place left stays in sight as it was and goes out the way the
-   world went by; the place come to follows it at one distance; the dots go with them. The way is the window's
-   height in whole cells: `24 · round(H / 24)`. The frame stays.
+1. **The world up or down, or along:** to another page. Down or up to another place; along to a place's far side,
+   and back along from it. The page left stays in sight as it was and goes out the way the world went by; the page
+   come to follows it at one distance; the dots go with them. The way is the window's height in whole cells,
+   `24 · round(H / 24)`, or along, its width, `24 · round(W / 24)`. The frame stays.
 2. **The desk along its row:** to another piece (§6).
 3. **In front and back:** what is called up comes in front and the world behind it goes out of focus; put away, it
    goes and the world is in focus again.
@@ -339,10 +379,11 @@ A key's sound, recorded, for two things the hand does: **a control pressed** and
 
 - A control pressed with a mouse or a pen sounds as it goes down and again, quieter, as it is let go; pressed with a
   finger or from the keyboard, once at its click.
-- A key typed in a field, a text or the terminal's line sounds as it is struck: a letter, a figure, Backspace,
-  Delete and Tab as a key (Backspace is a key as any other); Space as the space bar; Enter as Enter. A key held
-  sounds once. A key struck with Ctrl, Alt or the command key is a command, not typing, and is silent. Enter that
-  presses a form's button is one stroke, not two.
+- A key typed in a field, a text or the terminal's line sounds as it is struck. Every key that writes is one key and
+  one sound: a letter, a figure, Tab, Delete, **Backspace and Enter as any other**. Only Space is the space bar. (A
+  control pressed has Enter's own, heavier sound: that is a press, not typing.) A key held sounds once. A key struck
+  with Ctrl, Alt or the command key is a command, not typing, and is silent. Enter that presses a form's button is
+  one stroke, not two.
 - No two strokes are alike (each a little higher or lower, softer or harder). Silent while the window is out of
   sight. Sound that cannot be had never holds up what the key or the control does.
 
@@ -358,7 +399,7 @@ is written here is only what a place adds.
 *Who one is and what is one's own to do: the one place with a voice.* The person's name is the one large thing in
 the OS.
 
-A desk, its row two pieces (§6):
+A desk of two short pieces (§6):
 
 1. **The person's own.** A cell of desk; the name, capitals two cells tall, from y = 72 to 120 (one cell tall if it
    is longer than the piece at two; longer than that, it breaks over lines); a cell; the counts, 13 px mono, on the
@@ -380,7 +421,7 @@ A desk. Its row: the terminal first, then the files in the order they were opene
 with its words green; not in the hand it is line on the ground, as any piece. A program that takes the whole screen
 has its 80 columns while it runs.
 
-### Git: the work, recorded and reviewed
+### Git: Forge's far side, the work recorded and reviewed
 
 *What a repo is to become, what it became, and what is asked to be taken into it.*
 
@@ -388,7 +429,7 @@ A desk. At the desk's edge main's own sheet, eight cells wide (ink: it is where 
 cells on, the issues, a row of sheets. Which repo is a choice on this desk, not one of the window's instruments: it
 stands on the cell under the band. With no issue yet, the one thing to do stands where the first piece would.
 
-### Inbox: what was said to one
+### Inbox: Server's far side, what was said to one
 
 *Letters: who wrote, and the conversation with them.* A sheet from the desk's corner to a cell over the window's
 foot; the conversation reaches its foot and nothing of the place scrolls away.
@@ -402,7 +443,7 @@ foot; the conversation reaches its foot and nothing of the place scrolls away.
 *The machine one is at: what it holds, what runs on it, how it is set.* A sheet. A place of figures: the figures
 are the one thing with weight (20 px 700), everything else is said in 13 and 15.
 
-### Remote: where the repos are kept
+### The Remote: Home's far side, where the repos are kept
 
 *The other machine: an account, its devices, what it keeps.* A sheet.
 
@@ -412,8 +453,8 @@ are the one thing with weight (20 px 700), everything else is said in 13 and 15.
 
 ### File
 
-*Everything there is, as a tree.* Not a place: it is called up in front of whatever place is shown, from the rail's
-foot, by a press and by nothing else; the place behind it goes out of focus. Each row's menu is always there, quiet.
+*Everything there is, as a tree.* Not a place: it is called up in front of whatever place is shown, from the rail,
+by a press and by nothing else, and it stands whole in the window beside what called it; the place behind it goes out of focus. Each row's menu is always there, quiet.
 
 ---
 
@@ -424,11 +465,10 @@ breaks; none is a decision to leave it.
 
 | Where | What it still does | The rule it breaks |
 |---|---|---|
-| Server | a rest on its icon brings its servers out beside the rail; a post's deeds come up under a pointer | §7, nothing waits on a pointer |
+| Server, Inbox | a post's deeds come up under a pointer | §7, nothing waits on a pointer |
 | Git | under 1100 px wide main's sheet goes over the issues instead of beside them; the issues turn by a carousel of their own, not by §6 | §1, no second way for a narrow window; §6 |
 | Server | its boards turn by a row of their own | §6 |
-| the band | Home, Forge and Git each build their own; Runtime, Remote and Inbox have none | §2, the frame is the window's |
-| File | stands on the rail though it is not a place | §4 (it is at the foot, apart; it belongs in the band) |
+| the band | Home, Forge and Git each build their own (the door alone is the window's); Runtime, the Remote and Inbox have no search | §2, the frame is the window's |
 | the band's end | the name in the hand is not shown under 1100 px wide | §1 |
 | Forge | the desk still turns by itself to where the Agent is working | §8, the world moves only for what was asked |
 | moves in code | their lengths are still written where they are made (their curve is the law's) | §8 |
@@ -436,22 +476,14 @@ breaks; none is a decision to leave it.
 | Server | a board's title is 24 px | §3, seven sizes |
 | `PLACES.md` | speaks of the look as it was | — |
 
-**Whether the rail is needed at all.** Worked out, not yet built. Count presses to reach a place:
-
-| | with the rail | without it, Home as the door |
-|---|---|---|
-| any place from any place | 1 | 2 (the corner's Home, then the place's name on Home) |
-| Forge ↔ Git of one repo | 1 | 0, if a repo's desk holds both |
-| from Home to a repo | 1 (its name) | 1 |
-| what the screen carries for it | ten icons, always | one key at the corner |
-
-The day's round (Home, a repo written, the same repo recorded, back) is cheaper or equal without the rail; only the
-places gone to seldom (the machine, people) cost a press more, and their news already stands on Home's slip. So the
-ideal has **two kinds of row and no rail**: Home's (mine: the note, the repos, what waits, then people and the
-machine as pieces along it), and one row for each repo (its terminal, its files, its issues). Down is then "which
-repo", which Home's list of repos already shows in order. Getting there is three steps, each of them a whole
-design: Git's sheets become pieces of the repo's desk; Inbox, Server, Runtime and Remote become pieces of Home's
-row; the rail goes and its corner holds Home.
+**Which icons the rail needs.** Counted in presses, for a rail of n icons. An icon costs the screen a square for
+ever and saves one press each time its page is gone to from somewhere that is not its place. Git is gone to from
+Forge, the Remote from Home, Inbox from Server (and from what waits on Home, which leads into a conversation
+itself); from anywhere else each is seldom the next thing. So taking their three icons off costs one press on a
+seldom road and nothing on the daily one, and the daily one (Forge and Git, there and back) costs no travel of the
+hand at all, where it was the length of two icons. The rail is not what should go: a place gone to from anywhere
+needs its one press from anywhere. What is still open is the plug, whose press does different things in different
+places, and File, which is called up as the band's things are and stands on the rail.
 
 ---
 
@@ -463,13 +495,13 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 |---|---|
 | The law of motion: its shape, its time; the sheets' curve is the code's; no sheet moves by another curve or a written-out time (§8) | `why/app/ui/law.test.ts` |
 | A piece's place is its number; where the desk rests; going to a piece, every case; a phone by the same rule (§6) | `why/app/pages/forge/desk-layout.test.ts` |
-| The rail's order and groups (§4) | `why/app/host/purposes.test.ts` |
+| The rail's order; which pages are a place's far side, where each door leads and that it leads back (§4) | `why/app/host/purposes.test.ts` |
 | What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `tests/app/sound.spec.ts` |
-| Every place starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, at four widths down to a phone; the dots under every place; nothing wider than the window (§2, §4) | `tests/app/skeleton.spec.ts` |
+| Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `tests/app/skeleton.spec.ts` |
 | Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone (§10) | `tests/app/home.spec.ts` |
 | Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `tests/app/forge-work.spec.ts` |
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `tests/app/focus.spec.ts` |
-| Going to another place: the two places and the dots move as one in every frame, one way, off at once, at rest within 420 ms (§8) | `tests/app/motion.spec.ts` |
+| Going to another place: the two pages and the dots move as one in every frame, one way, off at once, at rest within 420 ms (§8) | `tests/app/motion.spec.ts` |
 | File comes by a press and by nothing else (§7) | `tests/app/file.spec.ts` |
 | A phone has the same rules (§1) | `tests/app/narrow.spec.ts` |
 

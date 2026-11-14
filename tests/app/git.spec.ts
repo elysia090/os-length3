@@ -420,7 +420,8 @@ test('an empty Issue view in Forge writes the first issue for its repo, and Not 
   await expect(app.forge.reference).toContainText('No issues yet');
   await app.forge.reference.getByRole('button', {name: 'Create issue'}).click();
 
-  await expect(app.rail.button('git')).toHaveAttribute('aria-current', 'page');
+  await expect(app.page.locator('#page')).toHaveAttribute('data-place', 'git');
+  await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
   await expect(app.git.firstLine).toBeFocused();
   await expect(app.git.firstLine).toHaveAccessibleDescription('tide');
   await expect(app.git.repos.getByRole('radio', {name: 'notes', exact: true})).toBeChecked();

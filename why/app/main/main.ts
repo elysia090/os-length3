@@ -6,7 +6,6 @@ import {placeholder} from '../pages/kit/common.ts';
 import type {Context, Writing} from '../pages/kit/context.ts';
 import {currentProfile, home, startEditing} from '../pages/home/home.ts';
 import {Me} from '../pages/me/me.ts';
-import {ServerSwitcher} from '../pages/server/switcher.ts';
 import {FileTree} from '../pages/file/tree.ts';
 import {onRenamed} from '../repos/repos.ts';
 import {begin} from '../remote/lifecycle.ts';
@@ -153,13 +152,6 @@ scrollbars();
 // once what Home keeps is read, and again whenever the dotfiles move. With none, the page is as its sheets have it.
 const worn = () => { wear(inEffect()[LOOK]); };
 onState((key) => { if (key === 'dotfiles' || key === 'trusted') worn(); });
-// Server glanced at: a rest on its icon brings one's servers out beside the rail, to jump to; a press goes to its page.
-const serverSwitch = new ServerSwitcher(ctx);
-
-/** How long the pointer rests on another place on the rail before what a rest on File or Server brought out goes. */
-const PASSED = 200;
-let passing = 0;
-
 function railButton(id: PurposeId): HTMLButtonElement {
   const p = purpose(id), button = document.createElement('button');
   button.type = 'button';
@@ -167,18 +159,10 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
   button.setAttribute('aria-label', t(p.label));
   button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
-  // The pointer resting on another place on the rail: File's tree that a rest only brought out (not pressed), or the
-  // servers beside Server, go, so reading the rail's names never leaves one over the page. Only a
-  // rest: the hand crossing the icons on its way from File into the tree must not put the tree away under it.
-  button.addEventListener('pointerenter', () => {
-    clearTimeout(passing);
-    passing = window.setTimeout(() => { if (id !== 'server') serverSwitch.passedBy(); }, PASSED);
-  });
-  button.addEventListener('pointerleave', () => clearTimeout(passing));
   if (id === 'file') {
     fileTree.attach(button);
   } else if (id === 'server') {
-    serverSwitch.attach(button);
+    activateOnPress(button, () => { void select(id); });
     // Signed out, what its page shows first is asked as the pointer comes onto it, a moment before the press: the
     // page drawn takes that answer (servers.ts), not waiting on one of its own.
     button.addEventListener('pointerenter', () => { if (!connection()) void openBoards().catch(() => {}); });
@@ -298,14 +282,15 @@ function draw(id: PurposeId, quiet: boolean) {
   // Where the ink is: the page's own place, or the one whose tree, servers or area is out over it.
   const inkWas = where(inked(expanded()));
   current = id;
-  serverSwitch.close();
   for (const [tabId, tab] of tabs) {
     // (A place's far side is in that place: its icon is the one lit.)
     const selected = tabId === placeOf(id);
     if (tabId !== 'file' && tabId !== 'plugin') { if (selected) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); }
     tab.tabIndex = selected ? 0 : -1;
   }
-  $('page').setAttribute('aria-labelledby', `purpose-${id}`);
+  // (A place's far side has no icon to be named by: it is named in words.)
+  if (isFar(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
+  else { $('page').removeAttribute('aria-label'); $('page').setAttribute('aria-labelledby', `purpose-${id}`); }
   named();
   render();
   hang();
@@ -553,6 +538,5 @@ window.addEventListener('hashchange', () => {
   if (!came) return;
   holdInvite(came.board, came.code);
   history.replaceState(null, '', location.pathname + location.search);
-  serverSwitch.close();
   if (current === 'server') render(); else void select('server');
 });

@@ -19,7 +19,6 @@ import type {Context} from '../kit/context.ts';
 import {latelyRow, pluginArea, waiting, wordLine} from '../kit/pane.ts';
 import {mark, type MarkName} from '../../ui/icons.ts';
 import {fitSize, inkEdge} from '../../ui/optical.ts';
-import {alongRow} from '../../ui/row.ts';
 import {errorText} from '../../host/errors.ts';
 import {nudge, still} from '../../ui/glide.ts';
 
@@ -52,11 +51,10 @@ export function home(ctx: Context): Node[] {
   const waits = h('div', {class: 'home-waits'}, pluginArea(), agentCards((repo, issue) => { void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
   const beside = h('div', {class: 'home-beside'}, repos, waits);
   const note = todoBox();
-  // Home's own things are a row of pieces on its desk, as Forge's files are: the person's (name and note), then the
-  // repos and what waits. One rule for what lies sideways in a place (ui/row.ts).
+  // Home's own things are pieces on its desk: the person's (name and note), then the repos and what waits. They are
+  // short, so they are set as words are (home.css): along, and what does not fit beside the last goes under it.
   const own = h('div', {class: 'home-own'}, header, ...unread, note);
   const main = h('div', {class: 'home-main home-row'}, own, beside);
-  alongRow(main, () => [own, beside]);
   // The note and the slip are whole cells tall, whatever is written on them: what is under them stays on the grid.
   wholeCells(note);
   for (const slip of waits.children) wholeCells(slip as HTMLElement);

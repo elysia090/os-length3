@@ -136,37 +136,23 @@ test('a post by someone else is marked on the rail and the chip until its board 
   await expect(ada.server.chip('Trip')).toHaveAccessibleName('Trip');
 });
 
-test('a rest on Server brings out one\'s servers beside the rail, the one with new posts dotted, to jump to', async ({signedIn: ada, another}) => {
+test('a pointer resting on Server brings nothing out: its servers are on its own page\'s top line, a press away, the one with new posts there', async ({signedIn: ada, another}) => {
   const bo = await addBo(ada, another);
   await ada.server.close();
   await bo.server.open();
   await bo.server.post('general', 'I have the tent.');
   await ada.comeBack();
   await expect(ada.rail.button('server')).toHaveAccessibleName('New posts in server');
-  // Passing over the icon brings nothing out; a rest does, and seeing them sees nothing in them.
-  const servers = ada.page.getByRole('navigation', {name: 'Servers'});
+  // A rest on the icon, however long: nothing beside the rail, and nothing seen.
   await ada.rail.button('server').hover();
-  await expect(servers).toBeVisible();
-  const trip = servers.getByRole('button', {name: 'Trip (new posts)'});
-  await expect(trip).toBeVisible();
+  await ada.page.waitForTimeout(700);
+  await expect(ada.page.getByRole('navigation', {name: 'Servers'})).toHaveCount(0);
   await expect(ada.rail.button('server')).toHaveAccessibleName('New posts in server');
   await expect(ada.server.view).toBeHidden();
-  // One pressed: the Server page at it, the card put away.
-  await trip.click();
-  await expect(servers).toBeHidden();
-  await expect(ada.rail.button('server')).toHaveAttribute('aria-current', 'page');
+  // Pressed: the Server page, its servers on its top line and the one written in shown.
+  await ada.rail.go('server');
   await expect(ada.server.chip('Trip')).toBeChecked();
   await expect(ada.server.talk('general')).toContainText('I have the tent.');
-});
-
-test('Create server among the servers beside the rail goes to one being made; Escape goes back to where one was', async ({signedIn: app}) => {
-  await app.server.close();
-  await app.rail.button('server').hover();
-  await app.page.getByRole('navigation', {name: 'Servers'}).getByRole('button', {name: 'Create server'}).click();
-  const name = app.server.view.getByRole('textbox', {name: 'Name', exact: true});
-  await expect(name).toBeFocused();
-  await app.page.keyboard.press('Escape');
-  await expect(app.server.chip('Trip')).toBeChecked();
 });
 
 test('one just signed in makes a server at once: nothing is claimed first, their username was given at sign-in', async ({another}) => {

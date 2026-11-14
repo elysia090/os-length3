@@ -28,18 +28,15 @@ type Page = 'home' | 'remote';
 // name them again. Signing out is here too, at the foot of the rail. The
 // language shows the one in use;
 // pressed, it opens into the list. It goes away
-// when the pointer leaves, on a press outside, or on Escape.
+// on a press on the face again, a press outside, or Escape.
 
-// It comes out on a rest, as Server's servers do (server/switcher.ts), not as the pointer passes on its way to it: a
-// press, the moment after arriving, then found it open already, the press doing nothing one could see.
-const OPEN_DELAY = 300;
-const CLOSE_DELAY = 400;
+// It comes out by a press and by nothing else, as everything called up does: a pointer over the face brings nothing
+// out and puts nothing away.
 
 export class Me {
   readonly element: HTMLElement;
   private button: HTMLButtonElement;
   private pop: HTMLElement;
-  private timer = 0;
   private ctx: Context;
   private profile: () => Profile;
   /** The language list is open, in place of the language in use. */
@@ -99,10 +96,8 @@ export class Me {
     this.paint();
     // The profile saved (on Home, or from another device): the face on the rail is the new one at once.
     onState((key) => { if (key === 'profile') this.paint(); });
-    this.element.addEventListener('pointerenter', () => this.later(true, OPEN_DELAY));
-    this.element.addEventListener('pointerleave', () => this.later(false, CLOSE_DELAY));
     this.button.addEventListener('click', (event) => {
-      if (this.isOpen && event.detail === 0) { this.close(); return; }
+      if (this.isOpen) { this.close(); return; }
       fill();
       this.open(event.detail === 0);
     });
@@ -123,10 +118,8 @@ export class Me {
       const to = event.relatedTarget as Node | null;
       if (to && !this.element.contains(to) && !this.busy) this.close();
     });
-    this.fill = fill;
   }
 
-  private fill: () => void;
 
   /** Signing out is under way (what is here being taken off): the menu stays out until it has said how it went. */
   private busy = false;
@@ -197,22 +190,13 @@ export class Me {
     this.pop.setAttribute('aria-label', t('Me'));
   }
 
-  private later(open: boolean, after: number) {
-    clearTimeout(this.timer);
-    // Out already, it is left as it is: drawn again under the pointer, the row being pressed would be another by the
-    // time the press ends (the language chosen from its list never taking).
-    this.timer = window.setTimeout(() => { if (open) { if (!this.isOpen) this.fill(); this.open(false); } else if (!this.busy) this.close(); }, after);
-  }
-
   private open(focus: boolean) {
-    clearTimeout(this.timer);
     this.element.classList.add('open');
     this.button.setAttribute('aria-expanded', 'true');
     if (focus) this.pop.querySelector<HTMLElement>('.pop-item')?.focus();
   }
 
   close() {
-    clearTimeout(this.timer);
     this.choosing = false;
     this.element.classList.remove('open');
     this.button.setAttribute('aria-expanded', 'false');

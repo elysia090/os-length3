@@ -202,7 +202,7 @@ test("a TODO's detail starts on its first line's column, with a kind and without
   expect(Math.abs(await left(app.home.detail(plain)) - await left(app.home.title(plain)))).toBeLessThan(1);
 });
 
-test("Home is a row of pieces on the desk's grid: the person's own (name and note) from the desk's edge, then the repos and what waits a width and two cells along, the first repo on the line the name stands on; half a screen shows the first and the edge of the second, which pressed comes to the edge; a phone one", async ({app}) => {
+test("Home's pieces are set as words are on the desk's grid: the person's own (name and note) from the desk's edge, and beside it where both fit the repos and what waits, the first repo on the line the name stands on; half a screen and a phone have the second under the first, and nothing is out of sight sideways", async ({app}) => {
   for (const name of ['notes', 'trip', 'site']) await app.newRepo.make(name);
   await app.rail.go('home');
   await app.page.setViewportSize({width: 1440, height: 900});
@@ -243,24 +243,23 @@ test("Home is a row of pieces on the desk's grid: the person's own (name and not
     expect(Math.abs((await at(slip)).x - second)).toBeLessThan(1);
     expect(await slip.evaluate((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.boxShadow]; })).toEqual(['rgb(220, 217, 212)', 'none']);
   }).toPass();
-  // Half a screen: the first piece whole, the second cut by the window's edge. Pressed, it comes to the desk's edge;
-  // scrolled back and let go, the row rests with the first there again.
-  await app.page.setViewportSize({width: 768, height: 730});
-  const row = app.main.locator('.home-row');
-  await expect.poll(async () => { const r = await at(app.main.locator('.home-beside')); return r.x < 768 && r.x + r.width > 768; }).toBe(true);
-  await repos.getByRole('heading').click({position: {x: 10, y: 10}});
-  await expect.poll(async () => Math.round((await at(repos)).x)).toBe(2 * U);
-  expect(await row.evaluate((el) => el.scrollLeft)).toBe(PIECE + 2 * U);
-  await row.evaluate((el) => { el.scrollLeft = 100; });
-  await expect.poll(() => row.evaluate((el) => el.scrollLeft)).toBe(0);
-  // A phone: a piece as wide as the window has whole cells for, and one in sight; nothing wider than the window.
-  await app.page.setViewportSize({width: 390, height: 844});
-  await expect(async () => {
-    const note = await at(app.home.todo), r = await at(repos);
-    expect(note.width).toBe(13 * U);
-    expect(r.x).toBeGreaterThanOrEqual(390);
-    expect(await app.page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
-  }).toPass();
+  // Half a screen: the second piece does not fit beside the first, so it goes under it, at the desk's edge, two
+  // cells down, on the grid. Nothing of Home is out of sight sideways, and nothing scrolls along.
+  const under = async (W: number, H: number, piece: number) => {
+    await app.page.setViewportSize({width: W, height: H});
+    await expect(async () => {
+      const own = await at(app.main.locator('.home-own')), r = await at(repos), note = await at(app.home.todo);
+      expect(note.width).toBe(piece);
+      expect(Math.abs(r.x - 2 * U)).toBeLessThan(1);
+      expect(Math.abs(r.y - (own.y + own.height + 2 * U))).toBeLessThan(1);
+      expect((r.y - 2 * U) % U).toBeLessThan(1);
+      expect(await app.main.locator('.home-row').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+      expect(await app.page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+    }).toPass();
+  };
+  await under(768, 730, PIECE);
+  // A phone: the same rule, a piece as wide as the window has whole cells for.
+  await under(390, 844, 13 * U);
 });
 
 test('the name written on Home is the account\'s, so what is started, committed and reviewed from here says it', async ({signedIn: app}) => {
