@@ -81,7 +81,7 @@
    name opens and closes what it names. (Before: a soft-cornered card with a hairline, 15 px rows with triangles and
    sizes, a round ⋯ at each row's end, its menu a card beside it.) ---- */
 .file-tree {
-  --corner: calc(var(--outer) + var(--rail) - 2 * var(--u));
+  --corner: calc(var(--outer) + var(--rail));
   left: calc(var(--corner) - var(--s2)); top: var(--tree-top, calc(5 * var(--u)));
   width: min(calc(13 * var(--u)), calc(100vw - var(--corner) - var(--outer) - var(--u))); max-height: none; overflow: visible;
   padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink);

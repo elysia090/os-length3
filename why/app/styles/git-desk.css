@@ -111,7 +111,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-desk .issue-box:has(.work-sum) { padding-bottom: calc(3 * var(--u)); }
 .git-desk .issue-box:has(.work-sum) > .issue-work { margin-bottom: calc(-3 * var(--u)); }
 /* No issue yet: nothing to switch and no sheet; the one thing to do, in the page's own middle. */
-.git-desk .card.new.issue-new { position: absolute; left: calc(50vw - var(--outer) - var(--rail) + 2 * var(--u)); top: calc(50vh - var(--outer-top) - var(--keys)); translate: -50% -50%;
+.git-desk .card.new.issue-new { position: absolute; left: calc(50vw - var(--outer) - var(--rail)); top: calc(50vh - var(--outer-top) - var(--keys)); translate: -50% -50%;
   width: auto; min-height: 0; padding: var(--u); gap: var(--u); background: none; }
 .git-desk .card.new.issue-new > span { font: 700 28px/36px var(--sans); }
 .git-desk .card.new.issue-new > small { font: 400 16.5px/var(--u) var(--sans); }

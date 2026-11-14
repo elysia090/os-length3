@@ -66,4 +66,5 @@ export const THINGS: readonly Thing[] = [
   {name: "line-work", kind: "length", usual: "1.5px", least: 0.75, most: 3, says: ''},
   {name: "line-frame", kind: "length", usual: "2px", least: 1, most: 4, says: ''},
   {name: "rail-line-gap", kind: "length", usual: "18px", least: 9, most: 36, says: ''},
+  {name: "rail-place", kind: "length", usual: "36px", least: 18, most: 72, says: ''},
 ];

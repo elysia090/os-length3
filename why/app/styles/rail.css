@@ -24,7 +24,7 @@
 .me-wrap { position: relative; }
 .me {
   display: grid; place-items: center; width: var(--rail-place); height: var(--rail-place); border: 0; border-radius: var(--r-place);
-  background: transparent; cursor: var(--cursor-hand); font: 900 var(--u)/1 var(--display);
+  background: transparent; cursor: var(--cursor-hand); font: 900 15px/1 var(--display);
 }
 .me .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
@@ -78,20 +78,18 @@
 .pop-rule { height: 1px; margin: var(--s1) var(--s2); background: var(--rule); }
 /* A place of the rail: three cells square at a window's full height, closing up (never under what a finger can press)
    where the window is shorter; its icon half as large again as the app's others, drawn as heavy as a letter. */
-.rail { --rail-icon: 36px; }
+.rail { --rail-icon: 18px; }
 .rail-item {
   position: relative; display: grid; place-items: center; flex: 0 1 var(--rail-place); min-height: 32px;
   width: var(--rail-place); border: 0; border-radius: var(--r-place);
   background: transparent; color: var(--ink); cursor: var(--cursor-hand);
 }
 .rail-item > .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
-.rail-new { margin-top: var(--u); }
+.rail-new { margin-top: var(--s3); }
 /* (A window too short for the rail: + closes up to the places, as they do to one another.) */
 @media (max-height: 820px) { .rail-new { margin-top: 0; } .rail-tabs { padding-bottom: var(--s2); } }
 @media (max-width: 760px) {
-  :root { --rail: calc(2 * var(--u) + var(--s3)); --outer: var(--s3); --rail-place: calc(2 * var(--u)); --keys: calc(2 * var(--u)); }
-  .rail { --rail-icon: 28px; }
-  .me { font-size: 16px; }
+  :root { --outer: var(--s2); --rail: calc(var(--rail-place) + var(--s2)); }
 }
 .rail-tag {
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;

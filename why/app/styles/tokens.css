@@ -103,27 +103,27 @@
   --line-frame: 2px;
   /* Everything, rail included, sits a little inward from the window's edges,
      against the instinct to run to them. */
-  --outer: var(--u);
+  --outer: calc(var(--u) / 2);
   /* Less room above than below, so the weight of everything sits a little high. */
-  --outer-top: var(--u);
-  --outer-bottom: var(--u);
+  --outer-top: var(--outer);
+  --outer-bottom: var(--outer);
   --inner-h: calc(100vh - var(--outer-top) - var(--outer-bottom));
   /* The top line pages start on. */
   --top-line: 0px;
   /* The band's row: three cells at the window's top, the room the band's keys stand in (the desk's pieces start
      under it). */
-  --keys: calc(3 * var(--u));
+  --keys: calc(2 * var(--u));
   /* A key of the band (Home's, a desk's) is two cells tall, at the top of the keys' row; a counter's name stands on
      the keys' own middle line, so the top row is one line from page to page. */
-  --key: calc(2 * var(--u));
+  --key: var(--h-row);
   --band: calc(var(--top-line) + (var(--key) - var(--h-row)) / 2);
   /* The rail starts one place below the top line, so Home is not first off the mark. */
   --rail-top: 0px;
   /* Rail: 12px from the window's side to the icons, 18px from the icons to its line. */
   --rail-line-gap: 18px;
-  --rail: calc(6 * var(--u));
+  --rail: calc(var(--rail-place) + var(--s3));
   /* A place of the rail, and the person's key at its foot: three cells square. */
-  --rail-place: calc(3 * var(--u));
+  --rail-place: 36px;
   /* The skeleton every page is set on. Sideways, two edges from the rail's line: what is on the top line (the band's
      tools, Git's and Server's chips) a step in, and a page's own things a place further in, one x on every page
      whatever the window's width. Down, rows as the rail's are, a place tall and a step between, the first a step
