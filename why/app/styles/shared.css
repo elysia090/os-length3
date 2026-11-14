@@ -50,3 +50,18 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
    is (the dots are the ground's, the window's whole). A place of the rail is a 36 px square about a corner of the
    grid, the next two cells down: four dots stand round every icon alike. */
 .rail-tabs { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: flex-start; gap: calc(2 * var(--u) - var(--rail-place)); flex: 1; min-height: 0; }
+/* The door (main.ts): the way from a place to its far side and, in the same spot, back. A key of the band's own make
+   (two cells wide, as tall as a place of the rail, ground under its mark, ink round it) at the desk's corner on the
+   band's row, fixed to the window. Where the page has a band of its own the band goes on from it, the two one bar as
+   wide as a piece: the door has no edge of its own on that side. What waits where it leads is a dot on it, as on a
+   place of the rail. */
+.door { position: fixed; left: calc(2 * var(--u)); top: var(--outer-top); z-index: 8; display: grid; place-items: center; width: calc(2 * var(--u)); height: var(--key); padding: 0;
+  border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); cursor: var(--cursor-hand); }
+.door[hidden] { display: none; }
+.door > .icon { width: 18px; height: 18px; stroke-width: 2; }
+.door:is(:hover, :focus-visible) { background: var(--paper); outline: none; }
+.door:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
+.door.with-bar { border-radius: var(--r-key) 0 0 var(--r-key); box-shadow: inset 1px 0 0 var(--ink), inset 0 1px 0 var(--ink), inset 0 -1px 0 var(--ink); }
+.door.away::after, .door.news::after { content: ''; position: absolute; top: 6px; right: 10px; width: 8px; height: 8px; border-radius: 2px; background: var(--off); }
+.door.news::after { background: var(--ink); }
+body.has-door :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { margin-left: calc(2 * var(--u)); width: min(calc(22 * var(--u)), round(down, 100% - 2 * var(--u), var(--u))); border-radius: 0 var(--r-key) var(--r-key) 0; }

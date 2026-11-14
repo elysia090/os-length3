@@ -24,7 +24,7 @@ import {getState, loadState, onState} from '../home/state.ts';
 import {inEffect} from '../home/dotfiles.ts';
 import {NAME as LOOK, wear} from '../ui/look.ts';
 import {onLang, t, useLang} from '../i18n/i18n.ts';
-import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
+import {depth, doorOf, isFar, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
 import {glide, morph, stage, stopStage, travel, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
 import {prime} from '../ui/keys.ts';
@@ -165,10 +165,6 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.type = 'button';
   button.id = `purpose-${id}`;
   button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
-  // The first of a group stands a place's room after the group before it; what is not a place, at the rail's foot.
-  const at = RAIL.findIndex((r) => r.id === id);
-  button.dataset.group = p.group;
-  if (at > 0 && RAIL[at - 1].group !== p.group) button.classList.add(p.group === 'tools' ? 'rail-foot' : 'rail-first');
   button.setAttribute('aria-label', t(p.label));
   button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
   // The pointer resting on another place on the rail: File's tree that a rest only brought out (not pressed), or the
@@ -222,6 +218,29 @@ function railButton(id: PurposeId): HTMLButtonElement {
   return button;
 }
 
+/**
+ * The door: at the head of the band, the way from a place to its far side (Forge to Git, Home to the Remote, Server
+ * to Inbox) and, in the same spot, the way back. It is the window's, not the page's: one key at the desk's corner on
+ * the band's row, the page's own band (where it has one) going on from it. It says what waits where it leads.
+ */
+const door = h('button', {type: 'button', id: 'door', class: 'door', hidden: ''}) as HTMLButtonElement;
+door.addEventListener('click', () => { const to = doorOf(current); if (to) void select(to); });
+document.body.append(door);
+function hang() {
+  const to = doorOf(current);
+  door.hidden = !to;
+  document.body.classList.toggle('has-door', !!to);
+  if (!to) return;
+  if (door.dataset.to !== to) { door.dataset.to = to; door.replaceChildren(icon(to)); }
+  const away = to === 'remote' && remoteAway(), unread = to === 'inbox' && marks(news()).inbox;
+  door.classList.toggle('away', away);
+  door.classList.toggle('news', unread);
+  door.setAttribute('aria-label', away ? t('Cannot connect to Remote') : unread ? t('Unread messages in Inbox') : t(purpose(to).label));
+  door.title = t(purpose(to).label);
+  // (A page with a band of its own: the band goes on from the door, the two one bar.)
+  door.classList.toggle('with-bar', !![...document.querySelectorAll('#page .band-tools')].some((b) => b.getClientRects().length));
+}
+
 /** What a repo was last opened from (its card, its row in File), to grow from. */
 let pressedOn: HTMLElement | null = null;
 let pressedAt = 0;
@@ -264,8 +283,10 @@ function draw(id: PurposeId, quiet: boolean) {
   const from = current;
   // To another place: the world goes up or down to it, the way it lies along the rail (the place left kept in sight
   // as it was, from before anything of it changes).
-  const order = RAIL.map((p) => p.id);
-  const arrived = opened && !quiet && from !== id ? travel($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)) || 1) : null;
+  // (To a place's far side, or back from it: along, not down. The two are one place.)
+  const along = placeOf(from) === placeOf(id);
+  const arrived = !opened || quiet || from === id ? null
+    : along ? travel($('page'), isFar(id) ? 1 : -1, 'x') : travel($('page'), Math.sign(depth(id) - depth(from)) || 1);
   // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
   const doc = document.scrollingElement;
   if (opened && from !== id && doc) { readTo.set(from, doc.scrollTop); doc.scrollTop = 0; }
@@ -279,13 +300,15 @@ function draw(id: PurposeId, quiet: boolean) {
   current = id;
   serverSwitch.close();
   for (const [tabId, tab] of tabs) {
-    const selected = tabId === id;
+    // (A place's far side is in that place: its icon is the one lit.)
+    const selected = tabId === placeOf(id);
     if (tabId !== 'file' && tabId !== 'plugin') { if (selected) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); }
     tab.tabIndex = selected ? 0 : -1;
   }
   $('page').setAttribute('aria-labelledby', `purpose-${id}`);
   named();
   render();
+  hang();
   if (from !== id) readAgain(id);
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
@@ -293,7 +316,8 @@ function draw(id: PurposeId, quiet: boolean) {
   if (first && !quiet) { stage($('page'), 1); return; }
   if (from !== id) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
-    glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)', 220);
+    const tab = tabs.get(placeOf(id));
+    glide(inkWas, tab?.getAttribute('aria-current') ? tab : null, $('rail-tabs'), 'var(--r-place)', 220);
     arrived?.();
   }
 }
@@ -339,7 +363,7 @@ function render() {
 const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
 $('rail-me').append(me.element);
 
-$('rail-tabs').append(...PURPOSES.map((p) => railButton(p.id)), railButton(NEW_REPO.id));
+$('rail-tabs').append(...RAIL.map((p) => railButton(p.id)));
 // Where the window is short the places scroll in a box of their own (rail.css), whose edge would cut a place's name
 // off: there the name stands in the window, beside the place under the pointer or the keyboard, which says where.
 const tagAt = (e: Event) => {
@@ -380,23 +404,27 @@ document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
 // Something come in and not seen yet is said the same way on Inbox and Server: a dot in the colour
 // of the place (ink, or ground on ink when it is current), gone once it is seen.
 const railName = (id: PurposeId): string => {
-  if (id === 'remote' && remoteAway()) return t('Cannot connect to Remote');
-  if (id === 'inbox' && marks(news()).inbox) return t('Unread messages in Inbox');
+  // (What is to be seen at a place's far side is said on the place's own icon: the far side has none.)
+  // (The place's own name first: it is still the way there.)
+  const name = t(purpose(id).label);
+  if (id === 'home' && remoteAway()) return `${name} · ${t('Cannot connect to Remote')}`;
+  if (id === 'server' && marks(news()).inbox) return `${name} · ${t('Unread messages in Inbox')}`;
   if (id === 'server' && marks(news()).server) return t('New posts in server');
-  return t(purpose(id).label);
+  return name;
 };
 const mark = (id: PurposeId) => {
   const b = tabs.get(id);
   if (!b) return;
-  b.classList.toggle('away', id === 'remote' && remoteAway());
-  b.classList.toggle('news', (id === 'inbox' && marks(news()).inbox) || (id === 'server' && marks(news()).server));
+  b.classList.toggle('away', id === 'home' && remoteAway());
+  b.classList.toggle('news', id === 'server' && (marks(news()).inbox || marks(news()).server));
   const label = railName(id);
   b.setAttribute('aria-label', label);
   const tag = b.querySelector('.rail-tag');
   if (tag) tag.textContent = label;
+  hang();
 };
-const reach = () => mark('remote');
-onNews(() => { mark('inbox'); mark('server'); });
+const reach = () => mark('home');
+onNews(() => mark('server'));
 let askAgain: {stop(): void} | null = null;
 onReach(() => {
   reach();

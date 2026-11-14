@@ -157,8 +157,15 @@ class Part {
   protected get main() { return this.app.main; }
 }
 
+/** The pages with no icon on the rail, and the place each is the far side of: reached by the door at the head of that
+ * place's band, which in the same spot leads back. */
+const FAR: Partial<Record<Place, Place>> = {git: 'forge', remote: 'home', inbox: 'server'};
+
 /** The rail at the left: one place at a time; File opens its tree over the page, Server its servers beside the rail. */
 class Rail extends Part {
+  /** The door at the head of the band: from a place to its far side, and back. */
+  get door(): Locator { return this.page.locator('#door'); }
+
   button(place: Place): Locator {
     // Its name says more while something is to be seen there ("Unread messages in Inbox", "New posts in server",
     // "Cannot connect to Remote"): the place is a word of it. The rail is named in the language spoken; its places
@@ -167,8 +174,23 @@ class Rail extends Part {
   }
 
   async go(place: Place) {
+    const at = this.page.locator('#page');
+    const of = FAR[place];
+    if (of) {
+      // A far side: to its place (unless there, or at the far side already), then through the door.
+      const now = await at.getAttribute('data-place');
+      if (now !== place) {
+        if (now !== of) await this.go(of);
+        await this.door.click();
+      }
+      await expect(at).toHaveAttribute('data-place', place);
+      return;
+    }
     await this.button(place).click();
-    if (place !== 'file' && place !== 'plugin') await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
+    if (place !== 'file' && place !== 'plugin') {
+      await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
+      await expect(at).toHaveAttribute('data-place', place);
+    }
   }
 }
 

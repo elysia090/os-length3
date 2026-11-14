@@ -149,7 +149,8 @@ export class FileTree {
       const at = this.trigger?.getBoundingClientRect();
       if (at) {
         const cell = parseFloat(getComputedStyle(this.element).getPropertyValue('--u')) || 24;
-        this.element.style.setProperty('--tree-top', `${Math.max(2 * cell, at.top + cell)}px`);
+        // (And never so low that it is cut by the window's foot: at least twelve cells of it are in the window.)
+        this.element.style.setProperty('--tree-top', `${Math.max(2 * cell, Math.min(at.top + cell, cell * Math.floor((innerHeight - 12 * cell) / cell)))}px`);
       }
       this.build(focus);
     }

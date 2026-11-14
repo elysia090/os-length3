@@ -15,13 +15,8 @@
   .rail-tabs::-webkit-scrollbar { display: none; }
   /* A place's name out of that box, in the window beside the place (main.ts says where). */
   .rail-tabs .rail-tag { position: fixed; left: calc(var(--tag-x, 0px) + var(--s3)); top: var(--tag-y, 0px); }
-  /* The places stand in groups by how far they are from the person (host/purposes.ts): the first of a group a place's
-   room under the group before it, so every icon is still about a corner of the grid. What is not a place (File, the
-   plug, +) stands apart at the rail's foot, over the person's own. A window too short for the room closes it up. */
-.rail-first { margin-top: calc(2 * var(--u)); }
-.rail-foot { margin-top: auto; }
-.rail-new { margin-top: 0; }
-@media (max-height: 700px) { .rail-first { margin-top: 0; } }
+  /* The places stand one after another, two cells apart, in the order of how far they are from the person
+   (host/purposes.ts); the person's own menu at the rail's foot. */
 }
 
 /* The person's own icon at the foot of the rail, and what it brings out. Its middle is the prompt box's (the box
@@ -91,15 +86,10 @@
   background: transparent; color: var(--ink); cursor: var(--cursor-hand);
 }
 .rail-item > .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
-/* The places stand in groups by how far they are from the person (host/purposes.ts): the first of a group a place's
-   room under the group before it, so every icon is still about a corner of the grid. What is not a place (File, the
-   plug, +) stands apart at the rail's foot, over the person's own. A window too short for the room closes it up. */
-.rail-first { margin-top: calc(2 * var(--u)); }
-.rail-foot { margin-top: auto; }
-.rail-new { margin-top: 0; }
-@media (max-height: 700px) { .rail-first { margin-top: 0; } }
+/* The places stand one after another, two cells apart, in the order of how far they are from the person
+   (host/purposes.ts); the person's own menu at the rail's foot. */
 /* (A window too short for the rail: + closes up to the places, as they do to one another.) */
-@media (max-height: 560px) { .rail-new { margin-top: 0; } .rail-tabs { gap: 0; padding-bottom: var(--s2); } }
+@media (max-height: 560px) { .rail-tabs { gap: 0; padding-bottom: var(--s2); } }
 .rail-tag {
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
   padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;

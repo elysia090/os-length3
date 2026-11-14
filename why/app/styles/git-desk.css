@@ -123,7 +123,7 @@
    window's middle, wherever that was.) */
 .git-desk .card.new.issue-new { position: absolute; left: 0; top: var(--u); translate: none; box-sizing: border-box;
   width: min(calc(14 * var(--u)), 100%); min-height: 0; padding: var(--u); gap: var(--s2); place-items: start; place-content: start; align-items: flex-start; text-align: left;
-  background: var(--ground); border: 0; border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; }
+  background: var(--ground); border: 0 solid transparent; border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; }
 .git-desk .card.new.issue-new > span { font: 700 var(--t-card)/var(--u) var(--sans); }
 .git-desk .card.new.issue-new > small { font: 400 var(--t-body)/var(--u) var(--sans); }
 .git-desk .card.new.issue-new > svg { width: 18px; height: 18px; }

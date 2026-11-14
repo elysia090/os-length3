@@ -417,16 +417,18 @@ function likeness(el: Element): {copy: Element; settle(): void} {
 }
 
 /**
- * The world gone up or down to another place (`dir`: 1 to one further down the rail, -1 to one further up): asked
- * before the page is drawn again, it keeps the place left in sight as it was; what it gives back is called once the
- * new place is drawn. Then the place left goes out the way the world went by, the new one comes in after it from
- * the other side, and the ground goes with them: one move, a window's height in whole cells, by the OS's law
- * (law.ts). The band and the rail are the window's and stay. Nothing waits on it: the new place is there to be used
- * from the first frame. Asked for less motion, there is no move.
+ * The world gone to another page. Down or up (`axis` 'y'; `dir` 1 to a place further down the rail, -1 to one
+ * further up), or along (`axis` 'x'; `dir` 1 to a place's far side, -1 back from it). Asked before the page is drawn
+ * again, it keeps the page left in sight as it was; what it gives back is called once the new one is drawn. Then the
+ * page left goes out the way the world went by, the new one comes in after it from the other side, and the ground
+ * goes with them: one move, the window's height or width in whole cells, by the OS's law (law.ts). The band and
+ * the rail are the window's and stay. Nothing waits on it: the new page is there to be used from the first frame.
+ * Asked for less motion, there is no move.
  */
-export function travel(root: HTMLElement, dir: number): () => void {
+export function travel(root: HTMLElement, dir: number, axis: 'x' | 'y' = 'y'): () => void {
   if (still() || !dir || !root.getClientRects().length) return () => {};
-  const far = CELL * Math.round(innerHeight / CELL), ms = paced(moveTime(far, far)), timing = {duration: ms, easing: SPRING};
+  const far = CELL * Math.round((axis === 'y' ? innerHeight : innerWidth) / CELL), ms = paced(moveTime(far, far)), timing = {duration: ms, easing: SPRING};
+  const by = (px: number) => (axis === 'y' ? `translateY(${px}px)` : `translateX(${px}px)`);
   const at = root.getBoundingClientRect();
   const page = root.cloneNode(false) as HTMLElement;
   for (const name of ['id', 'tabindex', 'aria-labelledby']) page.removeAttribute(name);
@@ -447,14 +449,14 @@ export function travel(root: HTMLElement, dir: number): () => void {
   for (const settle of settles) settle();
   for (const part of left.querySelectorAll(FRAME)) (part as HTMLElement).style.visibility = 'hidden';
   const gone = () => left.remove();
-  left.animate([{transform: 'none'}, {transform: `translateY(${-dir * far}px)`}], {...timing, fill: 'forwards'}).finished.then(gone, gone);
-  document.body.animate([{backgroundPositionY: '0px'}, {backgroundPositionY: `${-dir * far}px`}], timing);
+  left.animate([{transform: 'none'}, {transform: by(-dir * far)}], {...timing, fill: 'forwards'}).finished.then(gone, gone);
+  document.body.animate(axis === 'y' ? [{backgroundPositionY: '0px'}, {backgroundPositionY: `${-dir * far}px`}] : [{backgroundPositionX: '0px'}, {backgroundPositionX: `${-dir * far}px`}], timing);
   return () => {
     stopStage(root);
     const surfaces = surfacesOf(root);
     staged.set(root, surfaces);
     for (const part of surfaces) {
-      const animation = part.animate([{transform: `translateY(${dir * far}px)`}, {transform: 'none'}], timing);
+      const animation = part.animate([{transform: by(dir * far)}, {transform: 'none'}], timing);
       arrivals.set(part, animation);
       const done = () => { if (arrivals.get(part) === animation) arrivals.delete(part); };
       animation.finished.then(done, done);

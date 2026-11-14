@@ -71,16 +71,16 @@ let sounded: Element | null = null;
 
 /**
  * The key a stroke of the person's own typing sounds as: what is written in a field, a text or a terminal's line is
- * heard as it is struck, as a control pressed is. A letter, a figure, Backspace, Delete and Tab are keys as any
- * other; Space is the space bar; Enter is Enter. A key held sounds once (it is struck once), and one struck with
- * Ctrl, Alt or the command key is a command, not typing: silent here (what it does sounds, if it presses something).
+ * heard as it is struck, as a control pressed is. A letter, a figure, Backspace, Delete, Tab and Enter are keys as
+ * any other (Enter and Backspace have no sound of their own: typing is one sound, however it goes on); Space is the
+ * space bar. A key held sounds once (it is struck once), and one struck with Ctrl, Alt or the command key is a
+ * command, not typing: silent here (what it does sounds, if it presses something).
  */
 export function typedKey(e: {key: string; repeat: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean; isComposing?: boolean}, inText: boolean): Key | null {
   if (!inText || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return null;
-  if (e.key === 'Enter') return 'enter';
   if (e.key === ' ') return 'space';
   // (A stroke taken by an input method is a stroke: its key is not said, the hand struck one all the same.)
-  return e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Tab' || e.key === 'Process' || !!e.isComposing ? 'key' : null;
+  return e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Tab' || e.key === 'Process' || !!e.isComposing ? 'key' : null;
 }
 /** When Enter typed in a field last sounded (ms): the click it gives a form's button is that same stroke, not another. */
 let enterTyped = -Infinity;
@@ -131,7 +131,7 @@ export function touch() {
     if (e.isTrusted && e.target instanceof Element) {
       const field = e.target.closest('input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"]), textarea, [contenteditable]:not([contenteditable="false"])');
       const key = typedKey(e, !!field && !field.closest(':disabled, [inert]'));
-      if (key) { if (key === 'enter') enterTyped = performance.now(); strike(key); }
+      if (key) { if (e.key === 'Enter') enterTyped = performance.now(); strike(key); }
     }
     if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat || e.isComposing) return;
     const el = pressable(e.target);

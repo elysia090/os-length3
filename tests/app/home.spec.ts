@@ -346,21 +346,23 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
   });
 });
 
-test("Home's band: one bar from the desk's edge on the row of the rail's first place, as wide as a piece; the terminal's key and the files' two cells each, edge to edge, the search the rest; the files' key is Forge's", async ({app}) => {
+test("Home's band: one bar from the desk's edge on the row of the rail's first place, as wide as a piece: the door to the Remote, the terminal's key and the files', two cells each, edge to edge, and the search the rest; the files' key is Forge's", async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('home');
   const tools = app.main.getByRole('group', {name: 'Tools'});
   const term = await tools.getByRole('button', {name: 'Terminal'}).boundingBox(), files = await tools.getByRole('button', {name: 'Files: New, Rename, Delete'}).boundingBox();
-  const search = await tools.getByRole('searchbox').boundingBox(), first = await app.rail.button('home').boundingBox(), bar = await tools.boundingBox();
-  // The bar: from the desk's edge (two cells in), as tall as a place of the rail and on its row, twenty-four cells wide.
-  expect(bar).toEqual({x: 48, y: first!.y, width: 24 * 24, height: first!.height});
+  const search = await tools.getByRole('searchbox').boundingBox(), first = await app.rail.button('home').boundingBox(), bar = await tools.boundingBox(), door = await app.rail.door.boundingBox();
+  // The door: at the desk's edge (two cells in), two cells wide, as tall as a place of the rail and on its row. The
+  // band goes on from it to twenty-four cells from the desk's edge.
+  expect(door).toEqual({x: 48, y: first!.y, width: 48, height: first!.height});
+  expect(bar).toEqual({x: 96, y: first!.y, width: 22 * 24, height: first!.height});
   // Its keys two cells wide, edge to edge on the grid's lines; the search to the bar's end.
   for (const key of [term!, files!, search!]) {
     expect(Math.abs(key.y - first!.y)).toBeLessThan(1);
     expect(Math.abs(key.height - first!.height)).toBeLessThan(1);
   }
-  expect([term!.x, term!.width, files!.x, files!.width]).toEqual([48, 48, 96, 48]);
-  expect(Math.abs(search!.x - 144)).toBeLessThan(1);
+  expect([term!.x, term!.width, files!.x, files!.width]).toEqual([96, 48, 144, 48]);
+  expect(Math.abs(search!.x - 192)).toBeLessThan(1);
   expect(Math.abs(search!.x + search!.width - (48 + 24 * 24))).toBeLessThan(1);
   // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (its README in
   // hand there, that file's deeds).

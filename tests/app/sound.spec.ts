@@ -62,7 +62,7 @@ test('a control pressed with the mouse sounds as it goes down, once, not at the 
   await app.page.locator('#sound-test').evaluate((el) => el.remove());
 });
 
-test('what is typed sounds as it is struck: a letter, Backspace and Tab a key, Space the space bar, Enter Enter; a key held sounds once, a command not at all, and Enter that presses a form\'s button is one stroke', async ({app}) => {
+test('what is typed sounds as it is struck: a letter, Backspace, Tab and Enter a key as any other, Space the space bar; a key held sounds once, a command not at all, and Enter that presses a form\'s button is one stroke', async ({app}) => {
   await app.page.evaluate(() => {
     const heard: string[] = [];
     Object.assign(window, {heard});
@@ -83,11 +83,11 @@ test('what is typed sounds as it is struck: a letter, Backspace and Tab a key, S
   await app.page.keyboard.press('Backspace');
   await app.page.keyboard.press('Tab');
   expect(await heard()).toEqual(['key', 'key', 'space', 'key', 'key', 'key']);
-  // Enter in a text is Enter.
+  // Enter in a text is a key as any other.
   await clear();
   await text.focus();
   await app.page.keyboard.press('Enter');
-  expect(await heard()).toEqual(['enter']);
+  expect(await heard()).toEqual(['key']);
   // A key held is struck once; a command (Ctrl and a key) and a key that writes nothing (an arrow, Escape) are silent.
   await clear();
   await app.page.keyboard.down('x');
@@ -103,7 +103,7 @@ test('what is typed sounds as it is struck: a letter, Backspace and Tab a key, S
   await field.focus();
   await app.page.keyboard.type('hi');
   await app.page.keyboard.press('Enter');
-  expect(await heard()).toEqual(['key', 'key', 'enter']);
+  expect(await heard()).toEqual(['key', 'key', 'key']);
   // Out of any text, a letter is not typing.
   await clear();
   await app.page.locator('#sound-send').focus();
