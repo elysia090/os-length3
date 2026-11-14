@@ -85,7 +85,7 @@
   background: transparent; color: var(--ink); cursor: var(--cursor-hand);
 }
 .rail-item > .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
-.rail-new { margin-top: var(--outer); }
+.rail-new { margin-top: 0; }
 /* (A window too short for the rail: + closes up to the places, as they do to one another.) */
 @media (max-height: 560px) { .rail-new { margin-top: 0; } .rail-tabs { gap: 0; padding-bottom: var(--s2); } }
 .rail-tag {

@@ -349,7 +349,8 @@ export class Desk {
       if (b.el.style.translate !== to) b.el.style.translate = to;
     }
     this.#end = end;
-    this.#plane.style.width = `${Math.max(end, w)}px`;
+    // (As far as it turns is whole cells too: at its end the desk is still on the grid.)
+    this.#plane.style.width = `${end > w ? w + GRID * Math.ceil((end - w) / GRID) : w}px`;
     this.#plane.style.height = `${hgt}px`;
     this.#look(glide);
     this.#changed();

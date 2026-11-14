@@ -19,12 +19,13 @@
    cell tall. (Before: keys three cells tall, the terminal's five wide in ink, the others slots; before that small
    outlined tools, a pill for each repo out and ⊕.) */
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) { --key-gap: var(--outer); position: relative; z-index: 7; height: var(--keys); margin-left: calc(-1 * var(--body-left)); }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar)::before { content: ''; position: absolute; left: 0; right: 0; top: calc(-1 * var(--outer-top)); height: calc(2 * var(--u)); z-index: -1; background: var(--ground); pointer-events: none;
-  /* (To the window's right edge, whatever is after the band: a shadow is no room to scroll into, as a box would be.) */
-  box-shadow: 0 0 0 100vmax var(--ground); clip-path: inset(0 -100vmax 0 0); }
 .work.desk-bench { position: relative; }
 .work.bench.desk-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: 0; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: var(--key-gap); width: min(calc(24 * var(--u)), 100%); height: var(--key); }
+/* The band's tools are one bar on the desk's dots: from the desk's edge, as wide as a piece (its edges on the grid's
+   lines, so no dot is cut by it), 36 px tall about the row's middle; ground under its marks and words, ink round it.
+   Its keys are parts of it two cells wide, a line between them; the search is the rest. */
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: 0; width: min(calc(24 * var(--u)), round(down, 100%, var(--u))); height: var(--key);
+  background: var(--ground); border-radius: var(--r-key); outline: 1px solid var(--ink); outline-offset: -1px; }
 .band-tool {
   flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--ink);
   border-radius: var(--r-field); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: background var(--motion);
@@ -35,17 +36,18 @@
 .band-tools form.search > .mark { position: absolute; left: 10px; top: calc((var(--h-row) - 16px) / 2); width: 16px; height: 16px; color: var(--ink); pointer-events: none; z-index: 1; }
 .band-tools .search-in { padding-left: 34px; border-color: var(--ink); background: transparent; font-size: var(--t-body); }
 .band-tools .search-in::placeholder { color: var(--sub); }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { width: var(--key); height: auto; border: 0; border-radius: var(--r-key); background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { width: calc(2 * var(--u)); height: auto; border: 0; border-radius: 0; background: transparent; color: var(--ink); box-shadow: inset -1px 0 0 var(--ink); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool .mark { width: 18px; height: 18px; stroke-width: 2; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:is(:hover, :focus-visible):not(:disabled) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:disabled { color: var(--quiet); box-shadow: inset 0 0 0 1px var(--quiet); cursor: var(--cursor-arrow); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:is(:hover, :focus-visible):not(:disabled) { background: var(--paper); outline: none; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:disabled { color: var(--quiet); cursor: var(--cursor-arrow); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tools > .search-box { flex: 1 1 0; width: auto; min-width: 0; }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search { height: 100%; }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search > .mark { left: 10px; top: calc(50% - 8px); width: 16px; height: 16px; stroke-width: 2; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 34px; border: 0; border-radius: var(--r-key); background: transparent;
-  box-shadow: inset 0 0 0 1px var(--ink); font: 400 var(--t-meta)/1 var(--sans); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 34px; border: 0; border-radius: 0; background: transparent;
+  box-shadow: none; font: 400 var(--t-meta)/1 var(--sans); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in::placeholder { color: var(--sub); }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: none; outline: none; }
 /* The name of what is in hand: against the right edge by its ink (ui/optical.ts inkEdge), a cell in from the page's
    edge as Home's repos are, its capitals a cell tall and in the middle of the keys' row; smaller where the band has
    no room for it at its size (--fit, forge.ts), and gone where there is none at all. Said by the piece itself, so

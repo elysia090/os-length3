@@ -13,7 +13,8 @@ body:has(.home-layout) { background-image: var(--dots); background-size: var(--u
 .page > .home-layout { position: relative; max-width: none; padding-bottom: calc(2 * var(--u)); }
 /* ---- The band: the keys from the rail's corner (forge-band.css, one with a desk's). ---- */
 /* ---- The columns. ---- */
-.home-main { display: grid; grid-template-columns: minmax(0, var(--col)); row-gap: calc(2 * var(--u)); }
+/* (Narrower than the column, a window has as many whole cells of it as it has room for.) */
+.home-main { display: grid; grid-template-columns: min(var(--col), round(down, 100%, var(--u))); row-gap: calc(2 * var(--u)); }
 .home-own { min-width: 0; }
 .home-beside { display: grid; align-content: start; justify-items: start; min-width: 0; }
 @media (min-width: 1176px) { .home-main { grid-template-columns: var(--col) minmax(0, 1fr); column-gap: calc(3 * var(--u)); } }
