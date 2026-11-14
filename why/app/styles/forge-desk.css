@@ -101,7 +101,7 @@
   box-shadow: none; --from: 0 -8px; animation: deeds-drop var(--move) var(--land); }
 @keyframes deeds-drop { from { translate: 0 -12px; clip-path: inset(100% 0 0 0); } to { translate: 0 0; clip-path: inset(0); } }
 .band-deeds .pop-icon, .band-deeds .pop-rule { display: none; }
-.band-deeds .pop-head { display: flex; align-items: center; padding: 0 14px 0 12px; font: 400 12px/1 var(--mono); color: color-mix(in srgb, var(--paper) 55%, transparent); }
+.band-deeds .pop-head { display: flex; align-items: center; padding: 0 14px 0 12px; font: 400 var(--t-meta)/1 var(--mono); color: color-mix(in srgb, var(--paper) 55%, transparent); }
 .band-deeds :is(.pop-item, .button) { display: flex; align-items: center; width: auto; min-height: var(--h-row); height: auto; margin: 0; padding: 0 12px;
   border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--paper); font: 400 13px/1 var(--mono); }
 .band-deeds :is(.pop-item, .button):focus { outline: none; }
@@ -118,7 +118,7 @@
 .band-deeds .pop-ask p { margin-right: 10px; color: color-mix(in srgb, var(--paper) 75%, transparent); font: 400 13px/1 var(--mono); }
 .band-deeds .button.primary { color: var(--paper); text-decoration: underline 1px; text-underline-offset: 4px; }
 .band-deeds .pop-ask .button.primary { color: color-mix(in srgb, var(--del) 45%, var(--paper)); }
-.band-deeds .error { margin: 0 12px; color: color-mix(in srgb, var(--del) 55%, var(--paper)); font: 400 12px/1 var(--mono); }
+.band-deeds .error { margin: 0 12px; color: color-mix(in srgb, var(--del) 55%, var(--paper)); font: 400 var(--t-meta)/1 var(--mono); }
 /* A file named in a terminal's output, under the pointer: underlined, to be pressed (forge.ts termLinks). */
 ::highlight(term-file) { text-decoration: underline 1px currentColor; text-underline-offset: 3px; }
 .term-linking .term-out { cursor: var(--cursor-hand); }

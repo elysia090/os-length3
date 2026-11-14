@@ -25,7 +25,7 @@
    the marker's, a step done's, a removal's, the sky's), round; a file or a board, its mark alone, quiet, as File's.
    The lines under it start where its name does. */
 .lately-badge { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--raised);
-  color: var(--ink); font: 700 12px/1 var(--sans); }
+  color: var(--ink); font: 700 var(--t-fine)/1 var(--sans); }
 .lately-badge:not([data-tint]) { background: none; color: var(--sub); }
 .lately-badge > .icon { width: 14px; height: 14px; }
 .lately-badge[data-tint='0'] { background: var(--marker-soft); }

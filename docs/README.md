@@ -28,8 +28,10 @@ tracked in issue #20.
   "edit". The profile is one of Home's settings: a file in the data
   directory (in a browser, its storage), kept on the Remote too once signed
   in, as the TODO is.
-- The design language (rail order, page structure, colour roles, type,
-  spacing) is in `DESIGN.md`.
+- The design (the world and its frame, the grid, colour, type, the row, what
+  one does, motion, sound, each place, and the test that holds each rule) is
+  in `DESIGN.md`; what the OS is under its places in `OS.md`; what each place
+  does in `PLACES.md`.
 
 ## What is real in this step
 
@@ -53,7 +55,7 @@ tracked in issue #20.
   grows into the room. No tabs: files are chosen from File.
 - Prompt: in the app with a root installed, the distribution's root itself
   (`why prompt`): its sh, gcc, make, git on this kernel, writing the repo
-  directly. Every place it writes has an owner and a lifetime (DESIGN.md
+  directly. Every place it writes has an owner and a lifetime (OS.md
   §5): over the read-only root lies the repo's environment (an overlay;
   `apk add` there is the repo's, in `envs/<repo>`), `/var/cache`,
   `/var/tmp`, `/var/log` and `~/.cache` are the repo's caches
@@ -68,7 +70,7 @@ tracked in issue #20.
   same paths with the same bytes. What the shell changes under `/root/<repo>` is
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,
-  File, Forge and Git see one repo. Its one dependency is why (DESIGN.md,
+  File, Forge and Git see one repo. Its one dependency is why (OS.md,
   why: the one base): in a browser, `public/webroot`, made from the release root
   by `scripts/webroot.ts`: `webroot.json` (which why, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
@@ -160,7 +162,7 @@ Remote is out of reach, 4 when what was named is not there, 5 when it is
 turned off here (`why address` with SSH off, in a script). `why -V` gives
 why's version and the root's.
 
-Names are written owner first, as DESIGN.md §5 "Names" sets out (one
+Names are written owner first, as OS.md §5 "Names" sets out (one
 namespace of principals, people and servers alike): `hello`,
 `hello/src/a.c`, `hello#3`, `ren:hello` (a repo of `ren`'s), `trip#general`
 (a server's board; `#general` when one is in one server). A name on the

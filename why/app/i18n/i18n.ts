@@ -45,7 +45,7 @@ export function setLang(next: Lang): Promise<void> {
   });
 }
 
-/** Kana and kanji (not their punctuation): what a Latin word is set a space apart from (DESIGN.md §1). */
+/** Kana and kanji (not their punctuation): what a Latin word is set a space apart from (a rule of how the OS writes Japanese). */
 export const KANA_KANJI = /[぀-ヺー-ヿ㐀-鿿]/;
 const LATIN = /[A-Za-z]/;
 const apart = (a: string | undefined, b: string | undefined) =>

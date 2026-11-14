@@ -11,7 +11,7 @@
 .pane-row[data-state='done'] .pane-bar { background: var(--add); }
 .pane-row[data-state='failed'] .pane-bar { background: var(--del); }
 .pane-line { grid-area: line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
-  font: 900 30px/1.02 var(--display); letter-spacing: -.01em; }
+  font: 900 var(--t-head)/1.02 var(--display); letter-spacing: -.035em; }
 .pane-row.note .pane-line { font: 600 15px/1.35 var(--sans); }
 /* What the box did, not the shell: its bar the paper's rule, its pill's words (TODO, #1, Agent) under it. */
 .pane-row.note .pane-bar { background: var(--rule); }
@@ -22,14 +22,14 @@
 .pane-row.news { grid-template-areas: "bar line" "bar said" "bar at"; }
 .pane-row.news[data-state='seen'] .pane-bar { background: var(--rule); }
 .pane-said { grid-area: said; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
-  font: 400 14px/1.45 var(--sans); }
+  font: 400 var(--t-body)/1.45 var(--sans); }
 .pane-said.quote { color: var(--sub); font: 13px/1.5 var(--mono); white-space: pre-wrap; }
 /* Cut: the lines before the last whole, the last fading out from a third of the way along. */
 .pane-line.cut, .pane-said.cut, .pane-answer.cut:not(.whole) {
   mask: linear-gradient(#000 0 0) top / 100% calc(100% - 1lh) no-repeat, linear-gradient(to right, #000 30%, transparent 75%) bottom / 100% 1lh no-repeat; }
-.pane-at { grid-area: at; font: 12px/1.3 var(--mono); color: var(--sub); }
+.pane-at { grid-area: at; font: var(--t-fine)/1.3 var(--mono); color: var(--sub); }
 .pane-exit { color: var(--del); font-weight: 600; margin-right: 8px; }
-.pane-answer { margin: 0 0 var(--s2) 20px; font: 14px/1.5 var(--sans); color: var(--ink); display: -webkit-box; -webkit-box-orient: vertical;
+.pane-answer { margin: 0 0 var(--s2) 20px; font: var(--t-body)/1.5 var(--sans); color: var(--ink); display: -webkit-box; -webkit-box-orient: vertical;
   -webkit-line-clamp: 2; overflow: hidden; cursor: var(--cursor-hand); }
 .pane-answer.whole { display: block; }
 /* The Agent's answer as it comes, in the letters people write in; its code, what would be run, on the Prompt's own
@@ -40,7 +40,7 @@
 .pane-answer > .answer-p { margin: 0 0 6px; }
 .pane-answer > :last-child { margin-bottom: 0; }
 .pane-answer > .answer-code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--screen); color: var(--add-tint);
-  font: 12px/1.5 var(--mono); white-space: pre; overflow-x: auto; }
+  font: var(--t-meta)/1.5 var(--mono); white-space: pre; overflow-x: auto; }
 .answer-refused { display: block; color: var(--off); }
 /* Where the Prompt's flow stood in the pane (its second row), the rows stand. */
 .work.bench > .side > .pane-room { grid-row: 2; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; padding-inline: var(--s5); }

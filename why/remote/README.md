@@ -6,8 +6,8 @@ but who someone is, the canonical copy of their repos, their names and the
 people they work with are kept here, so every device answers to the same
 account and agrees with the others. This is the map of that: each part,
 its routes, its tables and who uses it. What the Remote is for, in prose, is
-`DESIGN.md` §6 ("The canonical copy is on the Remote"); this file is the
-reference beside the code, which is why it is here and not there (DESIGN.md
+`OS.md` §6 ("The canonical copy is on the Remote"); this file is the
+reference beside the code, which is why it is here and not there (`OS.md`
 names no routes or tables).
 
 Clients: **page** is the web app (in a browser, and in the desktop app's

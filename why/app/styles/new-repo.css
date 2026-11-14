@@ -56,7 +56,7 @@
 /* Its foot: the plan's word if any, Create at the right, the key that makes it beside its word. */
 .nr-box > .answers { margin: 0; padding: 0 var(--s4) var(--s4) var(--nr-in); }
 .nr-box > .answers > .button.primary { display: inline-flex; align-items: center; gap: var(--s2); }
-.nr-box > .answers > .button.primary > kbd { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: inherit; opacity: .7; font: 600 12px var(--mono); }
+.nr-box > .answers > .button.primary > kbd { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: inherit; opacity: .7; font: 600 var(--t-fine) var(--mono); }
 /* What will be made with it, a box on the desk as the TODO is (an ink edge, a smaller shadow than the name's): File's
    rows, as File will show them, New file and New folder at its foot. */
 .new-repo > .tree.tree-still { min-width: 0; margin: 0; padding: var(--s3) var(--s3) var(--s2); border: 2px solid var(--ink); border-radius: var(--r-place);

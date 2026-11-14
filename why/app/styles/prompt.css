@@ -58,7 +58,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
    terminal's, of the app's colours (its ink, its green): dark glass, the page behind it only a blur in its top where
    glass catches the light, its words lit. Its edge is a fine rim inside it, no shadow under it and no shade over the
    window: it is the box at the foot, lit, not a layer over the page. The raster, the falloff to its edges and the soft
-   light across its top are the screen's own; nothing else in the app has them (DESIGN.md). */
+   light across its top are the screen's own; nothing else in the app has them (docs/PLACES.md, Forge). */
 .work.bench:is(.prompting, .prompt-leaving) .screen {
   position: relative; border-radius: var(--r-card); color: var(--add-tint);
   text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent);

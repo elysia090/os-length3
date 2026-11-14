@@ -200,7 +200,7 @@
   .board-talk, .board-new > .board-lead { padding-inline: var(--s3); }
   .tl-post { grid-template-columns: 28px minmax(0, 1fr); column-gap: var(--s2); }
   .tl-face { width: 28px; height: 28px; font-size: var(--t-meta); }
-  .tl-face.tl-at { width: 28px; font-size: 10px; }
+  .tl-face.tl-at { width: 28px; font-size: var(--t-fine); }
 }
 .todo-read { white-space: pre-wrap; }
 .board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s3) var(--s5); overscroll-behavior: contain; }

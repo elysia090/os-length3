@@ -172,7 +172,7 @@ form.search { position: relative; }
 .ask-words { margin: var(--s2) 0 var(--s3); font: 400 var(--t-meta)/1.65 var(--sans); overflow-wrap: anywhere; }
 .ask-words > .answer-p { margin: 0 0 6px; white-space: pre-wrap; }
 .ask-words > .answer-code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--screen); color: var(--add-tint);
-  font: 12px/1.5 var(--mono); white-space: pre; overflow-x: auto; }
+  font: var(--t-meta)/1.5 var(--mono); white-space: pre; overflow-x: auto; }
 /* Its lines as they were written, several sent at once each on its own (never run together into one). */
 .run-line { font: 600 var(--t-meta) var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; text-align: start; }
 .run-head:has(> .run-line) { align-items: flex-start; }

@@ -2,7 +2,7 @@ import {fieldMoved} from '../../ui/caret.ts';
 import {LAND, msOf, paced, still} from '../../ui/glide.ts';
 import {SPRING} from '../../ui/law.ts';
 
-// The Prompt up as a screen over the center (DESIGN.md § Forge): the box at the foot, lit. Brought up, the glass of
+// The Prompt up as a screen over the center (docs/PLACES.md, Forge): the box at the foot, lit. Brought up, the glass of
 // the box's pill runs along the box's line and rises into the screen that holds the Prompt; put back, it sinks to the
 // line and runs back into the pill, which gives under it as it lands, and the Prompt comes into the pane where it
 // lives. Its state is one of three, and only this file changes it:

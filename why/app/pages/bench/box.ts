@@ -22,7 +22,7 @@ import {fileHands, tail} from '../../repos/agent-hands.ts';
 import {work as workOf} from '../../repos/history.ts';
 import {SPRING} from '../../ui/law.ts';
 
-// The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
+// The box at the foot of a work page's center (docs/PLACES.md, Forge, The box at the foot): one field, and at its left a
 // pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at, pill-line.ts),
 // Write an issue, Add to TODO (box-modes.ts), Edit the file in front (edit-box.ts), and with an API key kept on this
 // device, Ask the Agent (agent.ts), which never brings the Prompt up: its answer comes into the right pane, under the

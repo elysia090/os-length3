@@ -168,7 +168,7 @@
 .git-desk .review-diff > .diff-file > summary .diff-bar { display: none; }
 .git-desk .review-diff > .diff-file > summary :is(.diff-add, .diff-del, .diff-count) { font: 400 var(--t-meta)/var(--u) var(--mono); background: none; }
 .git-desk .review-diff > .diff-file > .diff { margin: 0; padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; overflow: hidden; }
-.git-desk .review-diff .diff-line { min-height: var(--u); font: 400 14px/var(--u) var(--mono); color: var(--ink); background: none; }
+.git-desk .review-diff .diff-line { min-height: var(--u); font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--ink); background: none; }
 .git-desk .review-diff .diff-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
 .git-desk .review-diff .diff-line.del { background: color-mix(in srgb, var(--del) 14%, var(--paper)); }
 .git-desk .review-diff .diff-line:is(.marked, .marking) { background: var(--note); }

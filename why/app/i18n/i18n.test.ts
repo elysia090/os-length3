@@ -73,7 +73,7 @@ test('every error the Remote can answer with has its Japanese', async () => {
   assert.deepEqual(await missing([...new Set(said)].filter((s) => !MACHINE.has(s))), []);
 });
 
-// How Japanese is written beside Latin words and numbers (DESIGN.md §1).
+// How Japanese is written beside Latin words and numbers (a Latin word a space apart from kana and kanji).
 const catalog = () => readdirSync(new URL('.', import.meta.url).pathname).filter((f) => /^ja-[a-z]+\.ts$/.test(f))
   .flatMap((f) => [...readFileSync(new URL(`./${f}`, import.meta.url), 'utf8')
     .matchAll(/^\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"): '((?:[^'\\]|\\.)*)'/gm)]

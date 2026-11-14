@@ -23,7 +23,8 @@
 /* (The room under it is its own, not a margin: a margin there would run together with the next thing's.) */
 .page-head { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; box-sizing: content-box; height: var(--h-row); margin-top: calc(var(--band) - var(--top-line)); padding-bottom: var(--s3); }
 .page-head .icon { align-self: center; flex: none; }
-.page-head h1 { font-size: var(--t-title); font-weight: 700; line-height: var(--h-row); flex: none; }
+/* A place's name is a name as any on a desk is: the display face, its capitals a cell tall. */
+.page-head h1 { font: 900 var(--t-head)/var(--h-row) var(--display); letter-spacing: -.035em; flex: none; }
 .page-head p { color: var(--sub); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 560px) { .page-head p:not(.standing) { display: none; } }
 .section { margin-top: var(--s6); }

@@ -5,7 +5,7 @@ import {Writes} from './edit-apply.ts';
 import {drawMarks, offsetAt, Ring} from './edit-marks.ts';
 import {Holding} from './edit-taken.ts';
 
-// The box at the center's foot as a line of the file in front (DESIGN.md § Forge, Edit), written as any line is:
+// The box at the center's foot as a line of the file in front (docs/PLACES.md, Forge, Edit), written as any line is:
 // nothing to learn, no words that ask for things. The box holds the line the file's caret is on; a line of the file
 // pressed while the box has the keyboard comes into it instead, the caret where it was pressed, and words marked on a
 // line (the pointer drawn across them) come in with it, chosen in the box, to be written over. Where the box's caret

@@ -80,7 +80,7 @@ function sheet(s: servers.Server, w: GearWays): Parts<Part> {
   done.addEventListener('click', () => w.done());
   const tabs = parts<Part>('server-gear', [{id: 'people', label: t('Members')}, {id: 'repos', label: t('Repos')}, {id: 'boards', label: t('Boards')}, {id: 'server', label: t('This server')}]);
   const ids: Part[] = ['people', 'repos', 'boards', 'server'];
-  // Done is the sheet's answer, so it is at its bottom right (DESIGN.md §3, Where a deed sits), under what scrolls:
+  // Done is the sheet's answer, so it is at its bottom right (a deed sits where its answer is read), under what scrolls:
   // found at the same place however long a part is, and on a phone too.
   w.sheet.replaceChildren(
     h('div', {class: 'sheet-head'}, h('div', {class: 'sheet-title'}, h('h2', {}, s.name), h('p', {}, `${named(s.address)} · ${s.code}`))),
