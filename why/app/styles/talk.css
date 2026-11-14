@@ -27,23 +27,24 @@
 /* A guest's face is no tint of theirs, only a dashed ring, beside the word guest: never taken for one of its people's. */
 .tl-guest > .tl-face { border: 1px dashed var(--edge); background: transparent; }
 /* In a run, the face's place holds the time, shown on hover. */
-/* A post in a run: its time, on hover, no taller than the line beside it, so a run's lines keep one rhythm. */
+/* A post in a run: its time, while the post is the one in hand (pressed, or with the keyboard in it), no taller than
+   the line beside it, so a run's lines keep one rhythm. */
 /* The time as the post's head says it (quiet, not bold), whole: wider than the face's place in a wide face, it runs
    on to the left into the post's own padding rather than being cut. */
 .tl-face.tl-at { height: 1lh; margin-top: 0; border: 0; border-radius: 0; place-items: center end; font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums;
   line-height: inherit; color: var(--sub); white-space: nowrap; overflow: visible; visibility: hidden; }
-.tl-post:hover .tl-at, .tl-post:focus-within .tl-at { visibility: visible; }
+.tl-post.held .tl-at, .tl-post:focus-within .tl-at { visibility: visible; }
 .tl-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); }
 .tl-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s1); }
 .tl-foot:empty { display: none; }
-/* A post's deeds come up in its top right corner as the pointer comes onto it (a short fade and rise, never there at
-   once), and go as it leaves; out of the way, they are not there to be pressed. Inside the post, not over the one
-   above: a hand going up the talk lights the post under it, never the one below whose deed it is passing over. */
+/* A post's deeds are in its top right corner while it is the post in hand (pressed, or with the keyboard in it), and
+   on no other: what can be done with a thing is on the thing in hand, and nothing waits on a pointer over it. Inside
+   the post, not over the one above. */
 .tl-acts { position: absolute; top: var(--s1); right: var(--s2); z-index: 1; display: flex; gap: var(--s1);
   opacity: 0; visibility: hidden; translate: 0 3px; transition: opacity var(--motion) var(--spring), translate var(--move) var(--land), visibility 0s var(--motion); }
 .tl-acts:empty { display: none; }
-.tl-post:hover .tl-acts, .tl-post:focus-within .tl-acts { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
+.tl-post.held .tl-acts, .tl-post:focus-within .tl-acts { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
 .tl-act { background: var(--ground); }
 .tl-act[aria-pressed='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .tl-foot-mark { height: 1px; }

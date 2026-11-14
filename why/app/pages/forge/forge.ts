@@ -330,6 +330,8 @@ class Forge {
     el.style.removeProperty('--fit');
     const room = el.clientWidth, wide = el.scrollWidth;
     if (room > 0 && wide > room) el.style.setProperty('--fit', String(Math.max(.5, room / wide)));
+    // (Whole, at its size or down to half of it; where the band has not that much room, not at all: never cut.)
+    el.style.visibility = room <= 0 || wide * .5 > room ? 'hidden' : '';
     inkEdge(el, 'right');
   }
 

@@ -108,6 +108,12 @@ function post(p: servers.Post, runs: boolean, down: (art: HTMLElement) => Promis
   const art = h('article', {class: `tl-post${runs ? ' tl-runs' : ''}${p.guest ? ' tl-guest' : ''}`},
     runs ? h('span', {class: 'tl-face tl-at'}, time) : face(p), main, acts);
   if (p.mayTakeDown) acts.append(takeDown(() => down(art)));
+  // A post pressed is the one in hand: what can be done with it (its time, its deeds) is on it, and on no other. Nothing
+  // waits on a pointer over it.
+  art.addEventListener('click', () => {
+    for (const other of art.parentElement?.querySelectorAll('.tl-post.held') ?? []) if (other !== art) other.classList.remove('held');
+    art.classList.add('held');
+  });
   return art;
 }
 

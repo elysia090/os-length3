@@ -228,26 +228,26 @@ test('a step under way keeps its word and its look, and says it is under way unt
   await expect(app.git.step('Back to main')).toBeVisible();
 });
 
-test('a started issue\'s deeds go down the box\'s right edge, where Start was pressed', async ({signedIn: app}) => {
+test('a started issue\'s deeds go down the sheet\'s left edge, on the line Start stood on', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.git.write('hello', 'Fix: Say hello louder');
-  // Where Start stands once still: the box may still be coming in as it is first seen (a loaded machine is slower).
+  // Where Start stands once still: the sheet may still be coming in as it is first seen (a loaded machine is slower).
   let start = (await app.git.step('Start').boundingBox())!;
   await expect.poll(async () => {
     const was = start;
     start = (await app.git.step('Start').boundingBox())!;
-    return Math.abs(start.x + start.width - was.x - was.width);
+    return Math.abs(start.x - was.x);
   }).toBeLessThan(0.5);
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
-  // Asked again until it holds: the box is drawn as Start is pressed and again as the repo's state comes, and a deed
+  // Asked again until it holds: the sheet is drawn as Start is pressed and again as the repo's state comes, and a deed
   // measured as the first drawing is taken away has no box.
   for (const deed of ['Commit']) {
     await expect.poll(async () => {
       const b = await app.git.step(deed).boundingBox();
-      return b ? Math.abs(b.x + b.width - (start.x + start.width)) : Infinity;
-    // (The sheet lies four degrees askew: a line down it stands under three pixels off the one above.)
-    }).toBeLessThan(4);
+      return b ? Math.abs(b.x - start.x) : Infinity;
+    // (The sheet lies square to the grid: its lines start on one edge.)
+    }).toBeLessThan(1);
   }
 });
 

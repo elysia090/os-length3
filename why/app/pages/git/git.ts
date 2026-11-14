@@ -292,11 +292,20 @@ class GitPage {
   /** `said`, large against the band's right end by its ink; smaller where the band has no room for it at its size. */
   private tellHeld(said: string) {
     const el = this.held;
+    // (Fitted again as the band's room changes: a window made narrower never cuts it.)
+    this.heldRoom ??= (() => { const seen = new ResizeObserver(() => this.fitHeld()); seen.observe(el); return seen; })();
     if (el.textContent === said) return;
     el.textContent = said;
+    this.fitHeld();
+  }
+  private heldRoom: ResizeObserver | null = null;
+  private fitHeld() {
+    const el = this.held;
     el.style.removeProperty('--fit');
     const room = el.clientWidth, wide = el.scrollWidth;
     if (room > 0 && wide > room) el.style.setProperty('--fit', String(Math.max(.5, room / wide)));
+    // (Whole, at its size or down to half of it; where the band has not that much room, not at all: never cut.)
+    el.style.visibility = room <= 0 || wide * .5 > room ? 'hidden' : '';
     inkEdge(el, 'right');
   }
 

@@ -55,7 +55,6 @@
 .band-held { --size: calc(var(--u) / .727 * var(--fit, 1)); flex: 1 1 0; min-width: 0; align-self: flex-start; overflow: hidden; white-space: nowrap; text-align: right;
   margin: calc(1.5 * var(--u) - .8755 * var(--size)) calc(var(--u) - var(--ink-right, 0px)) 0 0; height: var(--size);
   font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; color: var(--ink); pointer-events: none; user-select: none; }
-@media (max-width: 1100px) { .band-held { display: none; } }
 /* What the band's search finds lies on the desk as sheets of its own, a kind a sheet, in a row from the desk's edge
    on the line every sheet's top is on: the same motif again (a name over paper with its shadow; what was run is a
    sheet of ink, its shadow the terminal's green), the name the kind's and how many beside it. The page under them
