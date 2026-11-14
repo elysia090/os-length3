@@ -1,11 +1,12 @@
 // What a Prompt can do, command by command (issue #80's list, in its kinds): each tried by a line of sh that uses it
 // as a person would, run under muk as a browser has it (in node, from the web root) and natively in the same
-// root (bwrap), and the two compared. A command is marked by what was seen, never by what is hoped:
+// root, each in the same box made by the same muk (webroot-runnable.ts), and the two compared. A command is marked by what was seen, never by what is hoped:
 //
 //   +  runs here: every line that uses it ends as natively, saying the same
 //   t  draws on a screen (an editor, a pager, top): runs where the Prompt is a terminal (the app's on the web, one
 //      over SSH), not where it shows output alone (TERM=dumb, the desktop app's); `help` says which holds there
-//   x  in the root, but some line that uses it does not end as natively under muk (what differs is said)
+//   x  in the root, but some line that uses it does not end as natively under muk (what differs is said), or ends
+//      badly in a box on Linux too (what a box is not let do: strace, which traces)
 //   -  not in the root (and what to reach for instead, where there is something)
 //
 // The table it writes, module/ricebox/etc/length3/commands, is what `help` shows (otter): one line a command, its name,
@@ -21,7 +22,7 @@ import {readFileSync, writeFileSync} from 'node:fs';
 import {availableParallelism} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import type {Asked} from './webroot-runnable.ts';
+import {builtMuk, nativeBox, type Asked} from './webroot-runnable.ts';
 import {openWeb} from './webroot-tree.ts';
 
 const OS = fileURLToPath(new URL('..', import.meta.url));
@@ -202,19 +203,22 @@ function run(cmd: string, argv: string[], seconds: number, env: NodeJS.ProcessEn
   });
 }
 
-/** The root as a Prompt on the device has it: its own /, /dev, /proc, /tmp and /root, no network, nothing of this machine's,
- * and its user root (uid 0 in a namespace of its own, as why starts a Prompt), whoever runs this. */
-const sandbox = (root: string) => ['--unshare-all', '--unshare-user', '--uid', '0', '--gid', '0', '--die-with-parent', '--ro-bind', root, '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp',
-  '--tmpfs', '/root', '--chdir', '/root', '--clearenv', ...ENV.flatMap((e) => ['--setenv', ...e.split(/=(.*)/s).slice(0, 2)])];
-
 /** What a line did, natively and here, and whether those are the same. */
 export interface Tried { line: Line; same: boolean; native: Ended; here: Ended & {error: string | null} }
 
-/** A line natively, then under muk (webroot-runnable.ts --child runs one program as the browser's Prompt runs it). */
+/** muk for this machine, made once of this tree's source: what makes the box on both sides. */
+let muk: string | null = null;
+
+/**
+ * A line in its box natively, then in the same box on sods' Linux (webroot-runnable.ts: its `bundle` is the box,
+ * `muk run` of it its making on both, the same environment in each: what a person's Prompt has).
+ */
 async function attempt(line: Line, web: string, root: string, seconds: number): Promise<Tried> {
-  const native = await run('bwrap', [...sandbox(root), '/bin/sh', '-c', line.line], seconds);
-  // The same environment as natively: what a person's Prompt has.
-  const asked: Asked = {web, path: '/bin/sh', args: ['-c', line.line], translator: `${OS}module/sods/target/wasm32-unknown-unknown/release/sods.wasm`, fresh: false, kept: null, env: ENV};
+  muk ??= builtMuk();
+  const there = nativeBox(muk, root, ['/bin/sh', '-c', line.line], ENV);
+  const native = await run(there.cmd, there.argv, seconds, {});
+  there.done();
+  const asked: Asked = {web, path: '/bin/sh', args: ['-c', line.line], translator: `${OS}module/sods/target/wasm32-unknown-unknown/release/sods.wasm`, fresh: false, kept: null, env: ENV, muk};
   const child = await run(process.execPath, [`${OS}scripts/webroot-runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, SODS_INLINE: '1'});
   let said: {status: number | null; stdout: string; stderr: string; error: string | null} | null = null;
   try { said = JSON.parse(child.stdout); } catch { /* it ended without saying: killed, or the kernel threw */ }
@@ -236,9 +240,13 @@ export function marks(tried: Tried[], has: (name: string) => boolean): Map<strin
   for (const name of names) {
     const lines = tried.filter((t) => t.line.uses.includes(name));
     const failed = lines.find((t) => !t.same);
+    // What ends the same on both and ends badly: the box itself does not let it be done (its filter, its floor), on
+    // Linux as here. It is in the root, and is not what a Prompt runs.
+    const refused = lines.find((t) => t.same && t.native.code !== 0);
     const feature = FEATURES.includes(name);
     if (!feature && !has(name)) out.set(name, {mark: '-', why: INSTEAD[name] ?? ''});
     else if (failed) out.set(name, {mark: 'x', why: whyNot(failed)});
+    else if (refused) out.set(name, {mark: 'x', why: `ends ${refused.native.code} in a box, on Linux as here`});
     else if (!lines.length) throw new Error(`${name}: no line uses it`);
     else out.set(name, {mark: SCREEN.has(name) ? 't' : '+', why: ''});
   }
@@ -286,7 +294,7 @@ async function main() {
     for (let k = next++; k < lines.length; k = next++) {
       const t = tried[k] = await attempt(lines[k]!, web, root, seconds);
       const show = (s: string) => JSON.stringify(s.length > 200 ? `${s.slice(0, 200)}…` : s);
-      if (t.same) console.log(`same   ${t.line.uses.join(' ')}`);
+      if (t.same) console.log(`same   ${t.line.uses.join(" ")}${t.native.code ? `  (ends ${t.native.code}, there as here)` : ""}`);
       else console.log(`DIFFER ${t.line.uses.join(' ')}\n  native ${t.native.code} ${show(t.native.stdout)}${t.native.stderr ? ` err ${show(t.native.stderr)}` : ''}`
         + `\n  here   ${t.here.code} ${show(t.here.stdout)}${t.here.stderr ? ` err ${show(t.here.stderr)}` : ''}${t.here.error ? ` (${t.here.error})` : ''}`);
     }

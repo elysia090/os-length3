@@ -70,8 +70,8 @@ export const CALLS_OWED: readonly CallOwed[] = [];
 /** Where a box or a terminal is made by something that is not muk or prompt: what does it today, and what ends that. */
 export interface Branch { what: string; by: string; needs: string }
 export const BRANCHES: readonly Branch[] = [
-  {what: 'a box where there is no Linux (a page, a Worker, node)', by: 'the caller starts its program directly on this Linux (linux.ts linux(): why/app/host/prompt/kernel.worker.ts, scripts/webroot-runnable.ts)',
-    needs: 'the caller writes a bundle and starts `muk run` of it here, as module/sods/test/muk/run.sh does with muk\'s own corpus (muk.sh, hostile.sh), which passes with muk on this Linux'},
+  {what: 'a box in a page or a Worker', by: 'the page\'s Worker starts its program directly on this Linux (linux.ts linux(): why/app/host/prompt/kernel.worker.ts)',
+    needs: 'muk in the root it mounts, and the Worker starting `muk run` of a bundle it writes, as node does already (scripts/webroot-runnable.ts: every program of the root in the same box, made by the same muk, here and on Linux)'},
   {what: 'a box on the desktop (Linux)', by: "why's core makes it itself (why/core/src/prompt/launch.rs, seccomp.rs; why/core/src/compute)",
     needs: 'the launcher runs `muk run` on a bundle it writes, and its own making of a box goes'},
   {what: 'a terminal where there is no Linux', by: "the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt)",

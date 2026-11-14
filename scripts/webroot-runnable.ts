@@ -1,9 +1,12 @@
 // Which of why's programs the browser's Prompt can run today: each program
 // of the root (every executable under /usr/bin, /usr/sbin and /usr/libexec,
-// BusyBox's applets by their links) is run once with `--version` under the
-// muk in node, mounted from why's packs as the browser mounts it
-// (with its translations made ahead of time), and once on this machine's
-// kernel in the same root (bwrap: its own /, /dev, /proc, as a Prompt has), and the two are compared:
+// BusyBox's applets by their links) is run once with `--version` in a box on
+// sods' Linux in node, the root mounted from why's packs as the browser mounts it
+// (with its translations made ahead of time), and once in the same box on this
+// machine's kernel, and the two are compared. The box is one, made by one maker:
+// `muk run` (../module/muk) of the same config.json (`bundle` below: its own /,
+// /dev, /proc, /tmp and /root, no network but its loopback, root of a user
+// namespace of its own), the same C muk on Linux and, translated, on sods.
 //
 //   runs     the same exit status and output as native (or, as native, no end)
 //   not yet  muk cannot run it yet: it ends otherwise than native (and the
@@ -14,26 +17,55 @@
 // A program that cannot run yet still ships: this says which, and why, for
 // the translator's work.
 //
-//   node scripts/webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm]
+//   node scripts/webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]
 //
 // --fresh: this checkout's translator (../module/sods' wasm build), every program translated as it runs, not what WEB carries.
+// --muk MUK: the box's maker, made already for this machine (else made here of module/muk, by module/lib/build.sh).
 // --warm: each line run once before the run timed, what it translated kept between runs as a browser keeps it (Cache
 // Storage, keeper.ts): the time of a Prompt that ran its programs before, not of the first one.
 //
 // WEB is the web root (public/webroot; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
 // is why's own (its index names it), else ../module/sods' wasm build.
-import {spawn} from 'node:child_process';
+import {execFileSync, spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {existsSync, readFileSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {Kernel} from '../module/sods/runtime/linux.ts';
 import {openWeb, type Index} from './webroot-tree.ts';
 
 /** What one program run under muk says: its wait status, its output, and how long it took. */
 interface Ran { status: number | null; stdout: string; stderr: string; error: string | null; ms: number }
-/** What the child (`--child`) is asked to run, and in what environment (ENV unless said). */
-export interface Asked { web: string; path: string; args: string[]; translator: string; fresh: boolean; kept: string | null; env?: string[] }
+/** What the child (`--child`) is asked to run, and in what environment (ENV unless said); `muk`: the box's maker, built for Linux (module/muk). */
+export interface Asked { web: string; path: string; args: string[]; translator: string; fresh: boolean; kept: string | null; env?: string[]; muk: string }
+
+/** What a userns root may do in a box here: what a container is given by default, less the making of devices. */
+const CAPS = ['CHOWN', 'DAC_OVERRIDE', 'FSETID', 'FOWNER', 'NET_RAW', 'SETGID', 'SETUID', 'SETFCAP', 'SETPCAP', 'NET_BIND_SERVICE', 'SYS_CHROOT', 'KILL', 'AUDIT_WRITE'].map((c) => `CAP_${c}`);
+/**
+ * A box of the root at `root` for one program: the config.json `muk run` is given, the same on Linux and on sods
+ * (but for where the root is, and which of the host's users its root is). As a Prompt's: the root read-only, its
+ * own /dev and terminals, /proc of its own processes, /tmp and /root empty and its own, no network but loopback.
+ */
+export function bundle(root: string, argv: string[], env: string[], uid = 0, gid = 0): string {
+  const tmpfs = (at: string, mode: string) => ({destination: at, type: 'tmpfs', source: 'tmpfs', options: ['nosuid', 'nodev', `mode=${mode}`]});
+  return JSON.stringify({
+    ociVersion: '1.0.2',
+    process: {args: argv, env, cwd: '/root', capabilities: {bounding: CAPS, effective: CAPS, permitted: CAPS}, noNewPrivileges: true},
+    root: {path: root, readonly: true},
+    mounts: [
+      {destination: '/proc', type: 'proc', source: 'proc'},
+      {destination: '/dev', type: 'tmpfs', source: 'tmpfs', options: ['nosuid', 'strictatime', 'mode=755', 'size=65536k']},
+      {destination: '/dev/pts', type: 'devpts', source: 'devpts', options: ['nosuid', 'noexec', 'newinstance', 'ptmxmode=0666', 'mode=0620']},
+      tmpfs('/tmp', '1777'), tmpfs('/root', '700'),
+    ],
+    linux: {
+      namespaces: ['pid', 'network', 'ipc', 'uts', 'mount', 'user'].map((type) => ({type})),
+      uidMappings: [{containerID: 0, hostID: uid, size: 1}], gidMappings: [{containerID: 0, hostID: gid, size: 1}],
+    },
+  });
+}
 /** One thing compared: a program's --version, or a line of sh. */
 interface Item { name: string; what: string; path: string; args: string[] }
 interface Row { name: string; what: string; verdict: 'runs' | 'not yet'; why: string; native: string | number | null; ms: number | null; nativeMs: number; first: string }
@@ -81,8 +113,8 @@ async function keptIn(dir: string) {
   return {kept: {cache: 'webroot', at}, save};
 }
 
-/** One program under muk, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
-async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV}: Asked) {
+/** One program in its box on sods' Linux, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
+async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV, muk}: Asked) {
   const {RemoteKernel, Vfs, keeper, linux, mountTarget, provide} = await import('../module/sods/runtime/linux.ts');
   const {loadTranslator} = await import('../module/sods/runtime/translate.ts');
   const {mountPack} = await import('../module/ricebox/layers/mount.ts');
@@ -102,7 +134,10 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
     provide(vfs, {path: t.path, bytes: new Uint8Array(w.blob(t.elf)), mode: f?.mode ?? 0o755, root: true});
     return {path: t.path, wasm: new Uint8Array(w.blob(t.wasm))};
   });
-  vfs.mkdirp('/root');
+  // The box: its maker (the same muk as natively, translated as it is run) and what it is told to make, beside the root.
+  vfs.writeFile('/run/box/muk', new Uint8Array(readFileSync(muk)), 0o755);
+  vfs.writeFile('/run/box/config.json', bundle('/', [path, ...args], env));
+  const run = ['/run/box/muk', 'run', '--lend', '/', '--ids', '0-0', '-b', '/run/box', 'box'];
   let stdout = '', stderr = '';
   const dec = new TextDecoder();
   let kernel: Kernel | null = null;
@@ -122,14 +157,13 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   const k = kernel = linux(options);
   // As the kernel runs them (its memory shared, where threads run apart).
   for (const r of ready) { const {wasm, segments} = k.prepare(r.wasm); k.prebuilt(vfs.file(r.path), new WebAssembly.Module(wasm), segments); }
-  const argv = [path.split('/').pop() ?? path, ...args];
   const t = performance.now();
   let status: number | null = null, error: string | null = null;
   try {
-    if (k instanceof RemoteKernel) status = await k.spawn(path, argv, env, '/root');
+    if (k instanceof RemoteKernel) status = await k.spawn(run[0], run, [], '/');
     // As spawn runs it, and also waiting out a kept translation being read.
     else {
-      k.start(path, argv, env, '/root');
+      k.start(run[0], run, [], '/');
       for (;;) {
         const r = k.pump();
         if (!r.waiting) { status = r.status ?? null; break; }
@@ -146,9 +180,23 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   process.stdout.write(JSON.stringify(ran));
 }
 
-/** The root as a Prompt on the device has it: its own /, /dev, /proc, /tmp and /root, no network, nothing of this machine's. */
-const sandbox = (root: string) => ['--unshare-all', '--die-with-parent', '--ro-bind', root, '/', '--dev', '/dev', '--proc', '/proc',
-  '--tmpfs', '/tmp', '--tmpfs', '/root', '--chdir', '/root', '--clearenv', ...ENV.flatMap((e) => ['--setenv', ...e.split(/=(.*)/s).slice(0, 2)])];
+/**
+ * The same box on this machine's kernel: `muk run` of the bundle written in a directory of its own, the root lent
+ * by its place. (Run by root, the one user of the host's its root is mapped onto is lent too; one who is not root
+ * is lent itself by the kernel.)
+ */
+export function nativeBox(muk: string, rootDir: string, argv: string[], env: string[]): {cmd: string; argv: string[]; done: () => void} {
+  const dir = mkdtempSync(join(tmpdir(), 'webroot-box-')), root = resolve(rootDir), uid = process.getuid?.() ?? 0, gid = process.getgid?.() ?? 0;
+  writeFileSync(join(dir, 'config.json'), bundle(root, argv, env, uid, gid));
+  return {cmd: muk, argv: ['run', '--lend', root, ...(uid === 0 ? ['--ids', '0-0'] : []), '-b', dir, 'box'], done: () => rmSync(dir, {recursive: true, force: true})};
+}
+
+/** muk for this machine, made of this tree's source (module/lib/build.sh), unless one is given (--muk). */
+export function builtMuk(): string {
+  const out = join(mkdtempSync(join(tmpdir(), 'webroot-muk-')), 'muk');
+  execFileSync('sh', [fileURLToPath(new URL('../module/lib/build.sh', import.meta.url)), fileURLToPath(new URL('../module/muk/src/muk.c', import.meta.url)), out], {stdio: ['ignore', 'ignore', 'inherit']});
+  return out;
+}
 
 /** Run `cmd` with a time limit: {code, signal, stdout, stderr, timedOut}. */
 function run(cmd: string, argv: string[], {seconds, env}: {seconds: number; env: NodeJS.ProcessEnv}): Promise<Finished> {
@@ -203,13 +251,13 @@ async function main() {
   const args = process.argv.slice(2);
   const flag = (name: string, d: string | null = null) => { const i = args.indexOf(name); if (i < 0) return d; const v = args[i + 1] ?? d; args.splice(i, 2); return v; };
   const outMd = flag('--out'), outJson = flag('--json'), jobs = Number(flag('--jobs', '4')), only = flag('--only'), seconds = Number(flag('--seconds', '30'));
+  const muk = flag('--muk') ?? builtMuk();
   const workOnly = args.includes('--work-only') && args.splice(args.indexOf('--work-only'), 1);
   const fresh = args.includes('--fresh') && !!args.splice(args.indexOf('--fresh'), 1);
   const warm = args.includes('--warm') && !!args.splice(args.indexOf('--warm'), 1);
-  const {mkdtempSync} = await import('node:fs');
   const kept = warm ? mkdtempSync('/tmp/webroot-kept-') : null;
   const [web, rootDir] = args;
-  if (!web || !rootDir) { console.error('usage: webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N]'); process.exit(2); }
+  if (!web || !rootDir) { console.error('usage: webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]'); process.exit(2); }
   const w = openWeb(web);
   const translator = new URL('../module/sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url).pathname;
   if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: why names none, and ${translator} is not built`);
@@ -225,16 +273,16 @@ async function main() {
   if (only) list = list.filter((p) => new RegExp(only).test(p.path));
   if (workOnly) list = [];
   w.close();
-  const rows = await compare(list.map((p) => ({name: p.path, what: p.type, path: p.path, args: ['--version']})), {web, rootDir, translator, jobs, seconds, fresh, kept});
+  const rows = await compare(list.map((p) => ({name: p.path, what: p.type, path: p.path, args: ['--version']})), {web, rootDir, translator, jobs, seconds, fresh, kept, muk});
   // Work a person does in a Prompt, each a line of sh, compared the same way: what --version cannot show (fork, pipes, signals, threads).
-  const work = only ? [] : await compare(WORK.map(([name, line]) => ({name, what: line, path: '/usr/bin/sh', args: ['-c', line]})), {web, rootDir, translator, jobs, seconds: seconds * 4, fresh, kept});
+  const work = only ? [] : await compare(WORK.map(([name, line]) => ({name, what: line, path: '/usr/bin/sh', args: ['-c', line]})), {web, rootDir, translator, jobs, seconds: seconds * 4, fresh, kept, muk});
   const tally = (rs: Row[], v: Row['verdict']) => rs.filter((r) => r.verdict === v).length;
   const about = w.about ? `why ${w.about.version} (sha256 ${w.about.sha256})` : `${w.index.name} ${w.index.version} (a root of packs of before)`;
   const cell = (t: unknown) => String(t).replace(/\|/g, '\\|').replace(/`/g, "'").replace(/\n/g, ' ');
   const md = [
     `# Which programs of why the browser's Prompt runs`,
     '',
-    `${about}. Each program is run under the muk in node (mounted from why's packs as the browser mounts it, with its translations made ahead of time) and natively in the same root (bwrap: its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node scripts/webroot-runnable.ts\`.`,
+    `${about}. Each program is run in a box on sods' Linux in node (the root mounted from why's packs as the browser mounts it, with its translations made ahead of time) and in the same box natively, each made by the same muk of the same config.json (its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node scripts/webroot-runnable.ts\`.`,
     '',
     `- **runs**: the same exit status and output as native (or, as native, no end)`,
     `- **not yet**: present, not yet runnable under muk: it ends otherwise than native (what differs, the system calls it was answered ENOSYS), box said why, or no end within the time`,
@@ -365,8 +413,8 @@ function sameShape(path: string, a: string, b: string): boolean {
 }
 
 /** Each of `items` ({name, what, path, args}) under muk and natively, `jobs` at a time: one row each. */
-async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, fresh, kept}:
-  {web: string; rootDir: string; translator: string; jobs: number; seconds: number; fresh: boolean; kept: string | null}): Promise<Row[]> {
+async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, fresh, kept, muk}:
+  {web: string; rootDir: string; translator: string; jobs: number; seconds: number; fresh: boolean; kept: string | null; muk: string}): Promise<Row[]> {
   const rows: Row[] = [];
   let next = 0;
   const worker = async () => {
@@ -375,8 +423,10 @@ async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, 
       if (!p) break;
       // One after the other, so neither's time is the other's load.
       const started = performance.now();
-      const native = {...await run('bwrap', [...sandbox(rootDir), p.path, ...p.args], {seconds, env: {}}), ms: Math.round(performance.now() - started)};
-      const asked: Asked = {web, path: p.path, args: p.args, translator, fresh, kept};
+      const there = nativeBox(muk, rootDir, [p.path, ...p.args], ENV);
+      const native = {...await run(there.cmd, there.argv, {seconds, env: {}}), ms: Math.round(performance.now() - started)};
+      there.done();
+      const asked: Asked = {web, path: p.path, args: p.args, translator, fresh, kept, muk};
       const under = (env: NodeJS.ProcessEnv) => run(process.execPath, [fileURLToPath(import.meta.url), '--child', JSON.stringify(asked)], {seconds, env: {...process.env, ...env}});
       // Warm: run once first, keeping what it translates (a Prompt that ran it before).
       if (kept) await under({});
@@ -395,7 +445,8 @@ async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, 
       else {
         const st = x.status ?? 0;
         const xs = st & 0x7f ? `signal ${st & 0x7f}` : st >> 8;
-        const said = x.stderr.split('\n').find((l) => /^(sods|muk):/.test(l));
+        // (what sods says, or what muk says here and did not say there: the box was not made, or not as it is there)
+        const said = x.stderr.split('\n').find((l) => /^sods:/.test(l) || (/^muk:/.test(l) && !native.stderr.split('\n').includes(l)));
         if (said) { verdict = 'not yet'; why = said.slice(0, 160); }
         else if (xs === nativeStatus && (x.stdout === native.stdout || sameShape(p.path, x.stdout, native.stdout))) verdict = 'runs';
         else {
@@ -422,5 +473,8 @@ async function compare(items: Item[], {web, rootDir, translator, jobs, seconds, 
   return rows.sort((a, b) => (a.name < b.name ? -1 : 1));
 }
 
-if (process.argv[2] === '--child') await child(JSON.parse(process.argv[3]));
-else await main();
+// (Run as itself: what another script takes of it, the box and its maker, runs nothing.)
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv[2] === '--child') await child(JSON.parse(process.argv[3]));
+  else await main();
+}
