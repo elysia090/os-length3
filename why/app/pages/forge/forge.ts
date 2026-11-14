@@ -133,7 +133,7 @@ class Forge {
       besideTerm: (repo, element) => {
         // The Agent's own terminal is a piece of the desk, laid after the one in hand.
         const {desk} = this.deskOf(repo);
-        if (!desk.has(AGENT)) desk.lay(AGENT, {element, name: 'agent', dir: '', after: `/root/${repo}`, kind: 'agent', focus: () => element.focus({preventScroll: true})}, {lands: true});
+        if (!desk.has(AGENT)) desk.lay(AGENT, {element, name: 'agent', dir: '', after: `/root/${repo}`, kind: 'agent', focus: () => element.focus({preventScroll: true})});
       },
       went: (repo, to) => {
         if (to !== 'todo' && 'file' in to) { ctx.openRepo(repo, to.file); return; }
@@ -380,7 +380,7 @@ class Forge {
   }
 
   /** `path` of `repo` laid on its desk `d` as a sheet (after the piece in hand, unless `how` says where). */
-  private layFile(repo: string, d: Laid, path: string, how: {at?: number; lands?: boolean; instead?: string} = {}): DeskFile {
+  private layFile(repo: string, d: Laid, path: string, how: {at?: number; instead?: string} = {}): DeskFile {
     const f = deskFile(repo, path, () => d.desk.relayout(), (name) => renameIn(name, path, async (from, written) => {
       const to = await renaming(repo, from, written);
       if (to === from) return;
@@ -413,7 +413,7 @@ class Forge {
     // the box is meanwhile, unseen, and the desk comes back already there as the sheet goes up.
     const unseen = !!this.element.querySelector('.band-tools > .search-box:is(:focus-within, .reading):not(.idle, .leaving)');
     // A file laid for the first time goes under the box in hand.
-    const f = d.files.get(path) ?? this.layFile(repo, d, path, {lands: !unseen});
+    const f = d.files.get(path) ?? this.layFile(repo, d, path);
     // Made, it is not gone into yet: in hand, its name to be written, at the size it is read at (the camera does not
     // step back for it: stepped back, its words were some 10 px tall); Enter goes in.
     if (made) { d.desk.take(path, false, !unseen); return; }
@@ -465,7 +465,7 @@ class Forge {
   private layTerm(desk: Desk) {
     const element = this.work.terminal;
     if (!element || this.termOn === desk) return;
-    this.termOn?.lift(TERM, true);
+    this.termOn?.lift(TERM);
     this.termOn = desk;
     desk.lay(TERM, {element, name: 'Prompt', dir: '', kind: 'term', focus: () => element.querySelector<HTMLElement>('.prompt-in')?.focus({preventScroll: true})});
     // With nothing else to have in hand, the terminal is.
@@ -504,7 +504,7 @@ class Forge {
     for (const name of [...this.desks.keys()]) if (!all.includes(name)) {
       const gone = this.desks.get(name)!;
       for (const f of gone.files.values()) f.drop();
-      if (this.termOn === gone.desk) { gone.desk.lift(TERM, true); this.termOn = null; }
+      if (this.termOn === gone.desk) { gone.desk.lift(TERM); this.termOn = null; }
       gone.desk.element.remove();
       this.desks.delete(name);
       if (this.now.repo === name) this.now.repo = null;

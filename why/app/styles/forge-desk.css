@@ -1,12 +1,17 @@
 /* Forge's desk (pages/forge/desk.ts): the page is the desk, the window's whole ground under the band's keys. What is
-   open lies on it in a row, on the dots' grid: the terminal first, a sheet of ink lying askew near the places, its
-   shadow its own green; then the files, each a sheet of paper (its corner --r-sheet), fifty letters wide, its name over its
-   top-left corner (its folder quiet before it). Every sheet's top is on one line, and none reaches lower than a
-   cell over the window's foot: what is under that, or past its right edge, is scrolled to inside it. The hard shadow,
-   half a cell right and down, is under the piece in hand alone. Its code is 14 px on a line of a cell at rest; a piece
-   pressed twice is twice as large (--k), 28 px on lines of two cells, and brought to the desk's edge.
-   (Before: boxes inked round with soft corners, 80 columns of 14 px code, in columns one under another, as tall as
-   their text, the one in hand brought to the middle of the face; the Prompt a line at the center's foot.) */
+   open lies on it in a row, on the dots' grid, in the order it was opened: the terminal first, then the files, every
+   piece fifty letters wide (twenty-four cells), its name on the cell over its top-left corner, its top a cell under
+   the band; none reaches lower than a cell over the window's foot: what is under that, or past its right edge, is
+   scrolled to inside it. Its words are 17 px on a line of a cell.
+   One piece is in hand, and it alone is filled, casts a shadow (half a cell right and down), has its colours and
+   shows its close: a file in hand is paper, the terminal in hand ink with its words its own green. Every other piece
+   is drawn in a quieter line on the ground, its words a step quieter than ink (still read: a file beside the one
+   written in is looked at). So what is not words (fill, shadow, edge) weighs eight times as much in the piece in
+   hand as in any other, whatever is written in either, and nothing else asks to be looked at.
+   Nothing changes size and nothing lies askew. A piece moves only when one before it is taken off (it closes up, in
+   the time and the way the desk turns).
+   (Before: the terminal a sheet of ink askew at rest whatever was in hand, 14 px code, pieces twice as large
+   pressed twice, set down with a shadow that shortened, the others jostling out of the way.) */
 body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--dots); background-size: var(--u) var(--u); }
 /* The desk reaches past the page's own box to the window's right edge and foot, and two cells left of where a
    page's things start (the terminal lies there, near the places). */
@@ -16,36 +21,25 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
 .work.bench.desk-bench > .center > .desk-room { flex: 1 1 0; height: auto; }
 /* Where the repo's desk is: the whole center. */
 .desk-room { position: relative; height: 100%; min-height: 0; }
-.desk { position: absolute; inset: 0 calc(-1 * var(--outer)) calc(-1 * var(--outer-bottom)) 0; overflow: hidden; outline: none; }
+.desk { position: absolute; inset: 0 calc(-1 * var(--outer)) calc(-1 * var(--outer-bottom)) 0; overflow: auto hidden; scrollbar-width: none; overscroll-behavior-x: contain; outline: none; }
+.desk::-webkit-scrollbar { display: none; }
 .desk-plane { position: absolute; left: 0; top: 0; width: 1px; height: 1px; }
-.desk-box { --line: calc(var(--u) * var(--k, 1)); --t-code: calc(14px * var(--k, 1));
+.desk-box { --line: var(--u); --t-code: 17px;
   position: absolute; left: 0; top: 0; box-sizing: border-box; padding: calc(var(--line) / 2) 0; border-radius: var(--r-sheet);
-  background: var(--paper); color: var(--ink); outline: 1px solid var(--ink); outline-offset: -1px;
-  transition: translate 640ms cubic-bezier(.45, 0, .2, 1), width 220ms var(--land), rotate 220ms var(--land), box-shadow 120ms var(--land), margin 120ms var(--land), opacity 180ms ease-out; }
-/* A piece laid beside another, the ones after it get out of its way at once, quick and a little jostled (desk.ts). */
-.desk-box.gives { transition-duration: 420ms, 220ms, 220ms, 120ms, 120ms, 180ms; transition-delay: 50ms, 0s, 0s, 0s, 0s, 0s;
-  transition-timing-function: cubic-bezier(.25, 1.25, .5, 1), var(--land), var(--land), var(--land), var(--land), ease-out; }
-/* (A piece made larger is nearer the eye: its shadow as much longer, its name as much larger, as it is.) */
-.desk-box.held { box-shadow: calc(var(--shade) * var(--k, 1)) calc(var(--shade) * var(--k, 1)) 0 0 var(--ink); }
-/* Set down beside another (desk.ts lay): the pieces after it get out of its way at once (.gives); once they have gone
-   from its place (some 200 ms), it comes into sight held over it, its shadow long, and is put down onto the desk as
-   the desk turns to it: never under another, nor over its words. */
-.desk-box.landing { z-index: 1; animation: set-down 420ms linear 200ms both; }
-@keyframes set-down {
-  from { opacity: 0; margin: -6px 0 0 -6px; box-shadow: 18px 18px 0 0 var(--ink); animation-timing-function: ease-out; }
-  30% { opacity: 1; margin: -6px 0 0 -6px; box-shadow: 18px 18px 0 0 var(--ink); animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
-  to { opacity: 1; margin: 0; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
-}
-@media (prefers-reduced-motion: reduce) { .desk-box.landing { animation: none; } }
+  background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px;
+  transition: translate 420ms cubic-bezier(.45, 0, .2, 1); }
+.desk-box.held { background: var(--paper); color: var(--ink); outline-color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
+@media (prefers-reduced-motion: reduce) { .desk-box { transition: none; } }
 /* Its name over its top-left corner, in the letters the desk's small words are set in, on the cell over the sheet (the
    one under the band); its close at the other end of that line, there for the piece under the pointer and for the keyboard. */
 .desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
-  font: 700 calc(var(--t-meta) + 2px * (var(--k, 1) - 1))/var(--u) var(--mono); color: var(--ink); transition: font-size 220ms var(--land); }
+  font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 .desk-after { margin-left: 1ch; font-weight: 400; color: var(--quiet); }
 .desk-close { position: absolute; right: 0; bottom: 100%; display: grid; place-items: center; width: var(--u); height: var(--u); padding: 0; border: 0;
   border-radius: 0; background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
 .desk-close > .icon { width: 16px; height: 16px; stroke-width: 2; }
-.desk-box:not(:hover) > .desk-close:not(:focus-visible) { opacity: 0; }
+/* (What can be done with a piece is shown on the one in hand, and on no other: nothing waits on a pointer over it.) */
+.desk-box:not(.held) > .desk-close { display: none; }
 .desk-close:hover { background: var(--ink); color: var(--paper); }
 .desk-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 /* A file's sheet: whole lines, half a line of paper over and under them (the piece's own padding, never scrolled);
@@ -53,12 +47,11 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
    is under its foot is scrolled to here, what is past its right edge in its text; neither with the browser's bars
    (ui/scroll-marks.ts says where one is while it is scrolled). */
 .desk-file { position: relative; max-height: calc(var(--tallest, 100vh) - var(--line)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
-/* A sheet's proportions: the words 14 px on a line of a cell, their numbers smaller before them in a margin a cell and
-   a half wide, half a cell after the fiftieth letter; made larger (--k: 2) all of it twice, but the numbers and the
-   name, which only step up (they are found by, not read). */
+/* A sheet's proportions: the words 17 px on a line of a cell, their numbers smaller before them in a margin a cell and
+   a half wide, half a cell after the fiftieth letter. */
 .desk-file > .sheet { display: grid; grid-template-columns: minmax(calc(26 / 24 * var(--line)), max-content) minmax(0, 1fr); column-gap: calc(10 / 24 * var(--line)); padding: 0 calc(var(--line) / 2) 0 0; }
 .desk :is(.gutter, .code) { font: var(--t-code)/var(--line) var(--mono); }
-.desk .gutter { color: var(--quiet); min-width: 0; font-size: calc(11px + 5.5px * (var(--k, 1) - 1)); }
+.desk .gutter { color: var(--quiet); min-width: 0; font-size: var(--t-fine); }
 .desk .code { scrollbar-width: none; overscroll-behavior-x: contain; }
 .desk-file > .sheet-note, .desk-file > .sheet > .sheet-note { padding: 0 var(--line); font: var(--t-code)/var(--line) var(--mono); }
 /* What a file says of itself (it could not be saved, it is read in part): at its top right, held there as the sheet
@@ -127,56 +120,49 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
 ::highlight(term-file) { text-decoration: underline 1px currentColor; text-underline-offset: 3px; }
 .term-linking .term-out { cursor: var(--cursor-hand); }
 .desk-none { display: grid; place-items: center; height: 100%; color: var(--sub); }
-/* The terminal (bench.ts standOf): the row's first piece, a sheet of ink twelve cells wide and sixteen lines tall, its
-   words its own green. At rest it lies turned four degrees to the left about its upper-left corner; in hand it is
-   square. Its shadow is a cell right and down on the desk either way (said in its own turned axes at rest). What it
+/* The terminal (bench.ts standOf): the row's first piece, as wide as any and eighteen lines tall. In hand it is a
+   sheet of ink, its words its own green and what it prints in a terminal's colours, its shadow green; at rest it is
+   drawn in line on the ground as every piece at rest is, its words a step quieter (--term-fg on --term-bg, either way). What it
    printed scrolls inside it, the line one types at following with nothing between. */
-.desk-box[data-kind] { background: var(--ink); color: var(--green); caret-color: var(--green);
+.desk-box[data-kind] { --term-fg: var(--sub); --term-bg: var(--ground); background: var(--term-bg); color: var(--term-fg); caret-color: var(--term-fg);
+  --ansi-0: var(--quiet); --ansi-1: var(--sub); --ansi-2: var(--sub); --ansi-3: var(--sub); --ansi-4: var(--sub); --ansi-5: var(--sub);
+  --ansi-6: var(--sub); --ansi-7: var(--sub); --ansi-8: var(--quiet); --ansi-9: var(--sub); --ansi-10: var(--sub); --ansi-11: var(--sub);
+  --ansi-12: var(--sub); --ansi-13: var(--sub); --ansi-14: var(--sub); --ansi-15: var(--sub); }
+.desk-box[data-kind].held { --term-fg: var(--green); --term-bg: var(--ink); background: var(--term-bg); box-shadow: var(--shade) var(--shade) 0 0 var(--green);
   --ansi-0: #6b6863; --ansi-1: #f08a9b; --ansi-2: var(--green); --ansi-3: var(--note); --ansi-4: #9cc0f2; --ansi-5: #d8a6e2;
   --ansi-6: #93d9e2; --ansi-7: var(--ground); --ansi-8: var(--quiet); --ansi-9: #f7a9b6; --ansi-10: #c2f0da; --ansi-11: #f7df85;
   --ansi-12: #bdd6f7; --ansi-13: #e6c3ed; --ansi-14: #b9e8ee; --ansi-15: var(--paper); }
-.desk-box[data-kind='term'] { padding: 0; rotate: -4deg; transform-origin: 0 0; box-shadow: 11.15px 12.8px 0 0 var(--green); }
-/* In hand it lies straight and is opened out to work in (desk.ts: 22 cells by 20 lines), the files gone along the row
-   to make it room (.gives); let go, it closes to its size at rest and lies askew again. */
-.desk-box[data-kind='term'] { transition-duration: 640ms, 360ms, 220ms, 120ms, 120ms, 180ms; }
-.desk-box[data-kind='term'].held { rotate: 0deg; box-shadow: calc(var(--shade) * var(--k, 1)) calc(var(--shade) * var(--k, 1)) 0 0 var(--green); }
-.desk-box[data-kind='agent'].held { box-shadow: var(--shade) var(--shade) 0 0 var(--green); }
-.desk-box[data-kind='agent'].landing { animation-name: set-down-green; }
-@keyframes set-down-green {
-  from { opacity: 0; margin: -6px 0 0 -6px; box-shadow: 18px 18px 0 0 var(--green); animation-timing-function: ease-out; }
-  30% { opacity: 1; margin: -6px 0 0 -6px; box-shadow: 18px 18px 0 0 var(--green); animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
-  to { opacity: 1; margin: 0; box-shadow: var(--shade) var(--shade) 0 0 var(--green); }
-}
+.desk-box[data-kind='term'] { padding: 0; }
 .desk-box[data-kind='agent'] { padding: var(--line); }
 .desk-box[data-kind='agent'] > .desk-label { color: var(--ink); }
 /* (Its own rules are written for paper: on ink, what they call ink is the terminal's green, and so on.) */
-.desk-box[data-kind='agent'] > .agent-term { --ink: var(--green); --sub: color-mix(in srgb, var(--green) 65%, #171614); --add: var(--green); --del: #f08a9b;
-  --rule: color-mix(in srgb, var(--green) 40%, #171614); }
-.desk-term.stand { --t-body: var(--t-code); display: flex; flex-direction: column; box-sizing: border-box; height: var(--tallest); padding: var(--line); transition: height 360ms var(--land); }
+.desk-box[data-kind='agent'] > .agent-term { --ink: var(--term-fg); --sub: color-mix(in srgb, var(--term-fg) 65%, var(--term-bg)); --add: var(--term-fg); --del: var(--ansi-1);
+  --rule: color-mix(in srgb, var(--term-fg) 40%, var(--term-bg)); }
+.desk-term.stand { --t-body: var(--t-code); display: flex; flex-direction: column; box-sizing: border-box; height: var(--tallest); padding: var(--line); }
 /* With no repo there is nothing to run in and nothing to note against. */
 .desk-term.stand:has(.prompt-in:disabled) > .dock { visibility: hidden; }
 .desk-term.stand > .term-box { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; padding: 0; }
 .desk-term .term-head { display: none; }
 .desk-term .term { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; margin: 0; gap: 0; }
 .desk-term .term > p:empty, .desk-term .term-activity:empty { display: none; }
-.desk-term .term > p { margin: 0; font: var(--t-code)/var(--line) var(--mono); color: var(--green); }
+.desk-term .term > p { margin: 0; font: var(--t-code)/var(--line) var(--mono); color: var(--term-fg); }
 .desk-term .term-out { flex: 0 1 auto; min-height: 0; margin: 0; font: var(--t-code)/var(--line) var(--mono); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain;
   /* (A terminal's lines break at its last column, in a word or not.) */
   white-space: break-spaces; line-break: anywhere; }
 .desk-term .term-out > :is(.ps, .cmd) { font-weight: 700; }
 .desk-term .term-end { margin-top: 0; font: var(--t-code)/var(--line) var(--mono); }
-.desk-term .term-end > span { color: color-mix(in srgb, var(--green) 70%, var(--ink)); }
+.desk-term .term-end > span { color: color-mix(in srgb, var(--term-fg) 70%, var(--term-bg)); }
 .desk-term .vt-row { height: var(--line); }
-.desk-term .vt-cursor { background: var(--green); color: var(--ink); }
+.desk-term .vt-cursor { background: var(--term-fg); color: var(--term-bg); }
 /* A program that takes the whole screen has its 80 columns and 24 rows: the sheet is as wide and as tall as they are
    while it runs, the pieces after it making way, and the line one types at is its screen's. */
-.desk-box[data-kind='term']:has(.term.raw) { width: calc(80ch + 2 * var(--line)) !important; font: var(--t-code)/var(--line) var(--mono); rotate: 0deg; }
+.desk-box[data-kind='term']:has(.term.raw) { width: calc(80ch + 2 * var(--line)) !important; font: var(--t-code)/var(--line) var(--mono); }
 .desk-box[data-kind='term']:has(.term.raw) > .desk-term.stand { height: auto; }
 /* The prompt line the shell waits at is not said again above the line one types at. */
 .desk-term .term-out > .ps.waits:last-child { display: none; }
 /* The terminal is a terminal: what runs is cut with Ctrl+C, as at any terminal, so its line says what a run does
    without buttons of its own. */
-.desk-term .term-activity { font: var(--t-code)/var(--line) var(--mono); color: color-mix(in srgb, var(--green) 70%, var(--ink)); }
+.desk-term .term-activity { font: var(--t-code)/var(--line) var(--mono); color: color-mix(in srgb, var(--term-fg) 70%, var(--term-bg)); }
 .desk-term .term-activity .button { display: none; }
 /* The line: no field of its own (the sheet is the field), its start the prompt, heavier, what is written after it in
    the same letters. Nothing on it but text. */
@@ -184,7 +170,7 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
 .stand > .dock::before, .stand > .dock::after { display: none; }
 .stand > .dock .prompt { position: relative; align-items: baseline; gap: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .stand > .dock .prompt-chip { position: static; align-self: baseline; height: auto; min-height: 0; margin: 0 1ch 0 0; padding: 0; border-radius: 0; background: none; box-shadow: none;
-  text-shadow: none; color: var(--green); font: 700 var(--t-code)/var(--line) var(--mono); cursor: var(--cursor-hand); }
+  text-shadow: none; color: var(--term-fg); font: 700 var(--t-code)/var(--line) var(--mono); cursor: var(--cursor-hand); }
 .stand > .dock .prompt-chip:hover { text-decoration: underline 1.5px; text-underline-offset: 4px; }
 .stand > .dock .prompt-chip .prompt-mode { align-items: baseline; font: inherit; color: inherit; }
 .stand > .dock .prompt-chip .prompt-mode > .icon { align-self: center; }
@@ -194,24 +180,24 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
 /* No lamp on the line: whether a shell is there, the prompt's own weight says (quieter before it starts and once it
    has ended). */
 .stand > .dock .prompt-chip > .lamp { display: none; }
-.stand > .dock .prompt-chip[data-mode='run']:is([data-state='none'], [data-state='starting'], [data-state='ended']) { color: color-mix(in srgb, var(--green) 60%, var(--ink)); }
-.stand > .dock .prompt-chip .prompt-mode-repo { opacity: 1; color: color-mix(in srgb, var(--green) 60%, var(--ink)); font-weight: 400; }
-.stand > .dock .prompt-in { font: var(--t-code)/var(--line) var(--mono); color: var(--green); caret-color: var(--green); }
+.stand > .dock .prompt-chip[data-mode='run']:is([data-state='none'], [data-state='starting'], [data-state='ended']) { color: color-mix(in srgb, var(--term-fg) 60%, var(--term-bg)); }
+.stand > .dock .prompt-chip .prompt-mode-repo { opacity: 1; color: color-mix(in srgb, var(--term-fg) 60%, var(--term-bg)); font-weight: 400; }
+.stand > .dock .prompt-in { font: var(--t-code)/var(--line) var(--mono); color: var(--term-fg); caret-color: var(--term-fg); }
 /* Away from the keyboard and empty, the line's cursor stays where the next letter goes, a block as a terminal's is. */
 .stand > .dock .prompt-in::placeholder { color: transparent; }
-.stand > .dock .prompt-in:placeholder-shown:not(:focus, :disabled) { background: linear-gradient(var(--green), var(--green)) 0 .15em / 1ch 1.2em no-repeat; }
+.stand > .dock .prompt-in:placeholder-shown:not(:focus, :disabled) { background: linear-gradient(var(--term-fg), var(--term-fg)) 0 .15em / 1ch 1.2em no-repeat; }
 /* What runs a line is Enter, as at a terminal: no button beside it. A note or an issue takes more than a line, so
    Enter is a new line there and what sends it is Ctrl+Enter or, with the pointer, a word at the line's end, in the
    line's own letters, underlined as a thing to press, there once something is written. No keys spelled out. */
 .stand > .dock .prompt-caps { display: none; }
 .stand > .dock .prompt[data-mode='run'] .prompt-run { display: none; }
 .stand > .dock .prompt-run { align-self: baseline; height: auto; min-height: 0; margin: 0 0 0 var(--s3); padding: 0; border: 0; border-radius: 0; background: none;
-  color: var(--green); font: 700 var(--t-code)/var(--line) var(--mono); text-decoration: underline 1.5px; text-underline-offset: 4px; }
+  color: var(--term-fg); font: 700 var(--t-code)/var(--line) var(--mono); text-decoration: underline 1.5px; text-underline-offset: 4px; }
 .stand > .dock .prompt-run:hover:not(:disabled) { background: none; text-decoration-thickness: 2.5px; }
-.stand > .dock .prompt-run:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.stand > .dock .prompt-run:focus-visible { outline: 2px solid var(--term-fg); outline-offset: 3px; }
 .stand > .dock .prompt:has(.prompt-in:placeholder-shown) .prompt-run { visibility: hidden; }
 /* What is said under the line (the choices Tab found, Starting up…): in the terminal's letters, quieter. */
-.stand > .dock :is(.note, .prompt-note, [role='status']) { font: var(--t-code)/var(--line) var(--mono); color: color-mix(in srgb, var(--green) 70%, var(--ink)); }
+.stand > .dock :is(.note, .prompt-note, [role='status']) { font: var(--t-code)/var(--line) var(--mono); color: color-mix(in srgb, var(--term-fg) 70%, var(--term-bg)); }
 /* What comes out of its start at Alt+↓ says each as the line will say it: the same letters, no pill round them. */
 .desk-bench .box-mode > .box-mode-pill { height: auto; padding: 0; border-radius: 0; background: none; box-shadow: none; text-shadow: none; color: var(--ink);
   font: 600 var(--t-body)/1.6 var(--mono); }

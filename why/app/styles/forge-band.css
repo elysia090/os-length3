@@ -24,7 +24,7 @@
   box-shadow: 0 0 0 100vmax var(--ground); clip-path: inset(0 -100vmax 0 0); }
 .work.desk-bench { position: relative; }
 .work.bench.desk-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: 0; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: var(--key-gap); width: min(calc(14 * var(--u)), 100%); height: var(--key); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: var(--key-gap); width: min(calc(24 * var(--u)), 100%); height: var(--key); }
 .band-tool {
   flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--ink);
   border-radius: var(--r-field); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: background var(--motion);

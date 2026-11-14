@@ -72,7 +72,7 @@
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .code { overflow-x: auto; }
 /* The text itself is the field: no box, the caret is the only sign. */
-.code.code-edit { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); resize: none; overflow-y: hidden; }
+.code.code-edit { display: block; width: 100%; border: 0; background: transparent; color: inherit; resize: none; overflow-y: hidden; }
 .code.code-edit:focus { outline: none; }
 /* What the box's Edit holds, drawn under the file's words (edit-marks.ts), in a layer laid over the editor (which
    paints over it, its ground clear): the line held in the marker's yellow under its words, from its start; what the
