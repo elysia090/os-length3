@@ -8,8 +8,6 @@ export default {
   'Published to': '公開先',
   // The boxes.
   'Boards': 'ボード',
-  'Previous board': '前のボード',
-  'Next board': '次のボード',
   'New board': '新規ボード',
   'Message {name}': '{name}にメッセージを入力',
   'Servers will reappear once Remote responds': 'Remote から応答があり次第、サーバーが再表示されます',

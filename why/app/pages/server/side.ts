@@ -72,16 +72,25 @@ export class Side {
   }
 
   /**
-   * The room's boards, by name, the one in the hand in ink: any of them is one press away from here, however many
-   * there are and however far along the row. A board with something not seen yet has its dot.
+   * The room's boards, by name, the one in the hand in ink: any of them is one press away from here. It is the only
+   * way among them that is seen: the row shows the board in the hand alone, beside this sheet, as Inbox shows one
+   * conversation beside who wrote. A board with something not seen yet has its dot.
    */
-  boards(list: readonly {id: string; name: string}[], now: number, go: (j: number) => void) {
-    this.index.replaceChildren(h('h3', {}, t('Boards')), h('ul', {class: 'side-boards'}, ...list.map((b, j) => {
+  boards(list: readonly {id: string; name: string}[], now: number, go: (j: number) => void, more = false) {
+    const lines = list.map((b, j) => {
       const line = h('button', {type: 'button', class: `side-board${boardNew(b.id) ? ' news' : ''}`, 'aria-current': String(j === now)},
         h('span', {class: 'board-mark', 'aria-hidden': 'true'}, '#'), h('span', {}, b.name));
       line.addEventListener('click', () => go(j));
       return h('li', {}, line);
-    })));
+    });
+    // (After them, the way to a new one, as Home's is after its repos: the board not made yet is the row's last.)
+    if (more) {
+      const line = h('button', {type: 'button', class: 'side-board side-new', 'aria-current': String(now === list.length)},
+        h('span', {class: 'board-mark', 'aria-hidden': 'true'}, '+'), h('span', {}, t('New board')));
+      line.addEventListener('click', () => go(list.length));
+      lines.push(h('li', {}, line));
+    }
+    this.index.replaceChildren(h('h3', {}, t('Boards')), h('ul', {class: 'side-boards'}, ...lines));
   }
 
   /** How many people and repos it drew last, and for which server. */

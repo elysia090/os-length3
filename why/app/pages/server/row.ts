@@ -8,8 +8,9 @@ import {RowDesk} from '../../ui/row-desk.ts';
 // (who is in it: `lead`); at the foot of the board in the hand, the box that writes in it (`foot`). What each box
 // holds is the view's to say (board.ts draws them).
 //
-// A board is gone to by pressing it, or along the row with ← →; it is then in the hand, drawn in full, and the desk
-// turns only as far as shows it whole (what is pressed does not go from under the hand). The board left goes as it
+// The row shows the board in the hand alone, beside the room's sheet (as Inbox shows one conversation beside who
+// wrote): a board is gone to by its line on that sheet, or along the row with ← →, and is then drawn in full; the
+// desk turns only as far as shows it whole (what is pressed does not go from under the hand). The board left goes as it
 // was, its posts and TODO with it, and is only its name once the row has stopped (a sheet emptied as it starts to
 // move reads as something lost); come back to before then, it is there as it was left. Pressed along, the next that
 // way is read ahead, so it comes into the hand with what it holds already there.
@@ -46,6 +47,13 @@ export class Row {
       if ((e.target as HTMLElement).closest('input, textarea, [contenteditable]')) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); this.go(this.k - 1); }
       if (e.key === 'ArrowRight') { e.preventDefault(); this.go(this.k + 1); }
+    });
+    // A board not in the hand is its name on the ground: pressed, it is taken up (its line on the room's sheet does
+    // the same, and is the keyboard's way to it).
+    this.track.addEventListener('click', (e) => {
+      const slot = (e.target as Element).closest<HTMLElement>('.slide');
+      const j = slot ? this.slots().indexOf(slot) : -1;
+      if (j >= 0 && j !== this.k) this.go(j, e.detail > 0);
     });
     // Turned along the row, its map at the window's foot: a piece's bar pressed goes to it (a board into the hand).
     this.desk = new RowDesk(stage, this.track, {
@@ -85,12 +93,11 @@ export class Row {
       if (j === k) {
         if (!slot.classList.contains('full')) this.fill1(slot, j, true);
         slot.classList.remove('leaving');
-        slot.querySelector(':scope > .slide-go')?.remove();
         slot.append(this.foot);
         return;
       }
       // In full and left: it goes as it was, and is only its name once the row has stopped.
-      if (slot.classList.contains('full')) { slot.classList.add('leaving'); this.way(slot, j); return; }
+      if (slot.classList.contains('full')) { slot.classList.add('leaving'); return; }
       this.fill1(slot, j, false);
     });
     clearTimeout(this.stopped);
@@ -130,21 +137,7 @@ export class Row {
     slot.replaceChildren(this.ways.box(j, now));
     slot.classList.toggle('full', now);
     slot.classList.remove('leaving');
-    if (j === this.k) slot.append(this.foot); else this.way(slot, j);
-  }
-
-  /**
-   * A board not in the hand is gone to by pressing it, anywhere on it: its whole face is the way to it, named for
-   * where it is from the one in the hand (the next, the one before), or by its own name further along.
-   */
-  private way(slot: HTMLElement, j: number) {
-    slot.querySelector(':scope > .slide-go')?.remove();
-    const name = j === this.k + 1 ? t('Next board') : j === this.k - 1 ? t('Previous board') : slot.querySelector('h2')?.textContent ?? '';
-    const go = h('button', {type: 'button', class: 'slide-go', 'aria-label': name});
-    // A press (not Enter or Space, whose click has no count) is told as one: the view gives a new board's name the
-    // keyboard then.
-    go.addEventListener('click', (e) => this.go(j, e.detail > 0));
-    slot.append(go);
+    if (j === this.k) slot.append(this.foot);
   }
 
   /** Boxes that stand still, the first in the hand and no way along them: the server being made, faint. */

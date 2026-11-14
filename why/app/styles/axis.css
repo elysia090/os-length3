@@ -16,13 +16,15 @@
 
    On a sheet with no room for 6 | 2 | 14 (a phone's piece is 13 cells) who speaks is over the words, as what does
    not fit beside goes under (§6). By the sheet's own width, never the window's. */
-.server-center .slide, .inbox-page .inbox-thread { container-type: inline-size; }
+/* (The board in the hand: one beside it is as wide as its name, which a sheet measured for its own width cannot be.) */
+.server-center .slide[aria-current='true'], .inbox-page .inbox-thread { container-type: inline-size; }
 
 @container (min-width: 576px) {
   /* -- a board -- */
   /* (The board in the hand; one beside it is its name at its own edge.) */
   .slide[aria-current='true'] .board-head { position: relative; padding-left: calc(9 * var(--u)); }
-  .slide[aria-current='true'] .board-head > .board-mark { position: absolute; left: var(--u); width: calc(6 * var(--u)); text-align: right; }
+  /* (Its # hangs in the gutter, close against the name: a mark before a word, not a thing of its own in the margin.) */
+  .slide[aria-current='true'] .board-head > .board-mark { position: absolute; left: var(--u); width: calc(8 * var(--u) - var(--s1)); text-align: right; }
   .slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel)) { box-shadow: none; }
   .slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel))::after {
     content: ''; position: absolute; left: calc(9 * var(--u)); right: 0; bottom: 0; height: 1px; background: var(--rule); }

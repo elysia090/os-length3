@@ -783,13 +783,23 @@ class Server extends Part {
   /** Make a board in the server on screen: its last box makes one (a server starts with #general). */
   async makeBoard(name: string) {
     const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
-    const next = this.view.getByRole('button', {name: 'Next board'});
-    await expect(next.or(field).first()).toBeVisible();
-    // Along the boxes, one at a time, to the last.
-    for (let i = 0; i < 20 && !(await field.isVisible()); i++) await next.click();
+    await this.newBoard();
     await field.fill(name);
     await field.press('Enter');
     await expect(this.board(name)).toBeVisible();
+  }
+
+  /** To the board `name`, by its line on the room's own sheet (the row shows the one in the hand alone). */
+  async goBoard(name: string) {
+    await this.side.getByRole('button', {name, exact: true}).click();
+    await expect(this.board(name)).toBeVisible();
+  }
+
+  /** To the board not made yet, by its line on the room's own sheet: its name then takes the keyboard. */
+  async newBoard() {
+    const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
+    if (!(await field.isVisible())) await this.side.getByRole('button', {name: 'New board', exact: true}).click();
+    await expect(field).toBeVisible();
   }
 
   /** A board's box, by its heading. */

@@ -115,9 +115,6 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* In the hand: paper, an ink edge, its shadow (§5); the box that writes in it at its foot, part of the sheet. */
 .server-center .slide[aria-current='true'] { background: var(--paper); color: var(--ink); outline-color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .server-center .slide > .board-card { flex: 1; min-height: 0; border: 0; border-radius: inherit; background: none; }
-/* A board not in the hand is gone to by a press anywhere on it. */
-.slide-go { position: absolute; inset: 0; z-index: 1; padding: 0; border: 0; border-radius: inherit; background: transparent; cursor: var(--cursor-hand); }
-.slide-go:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 /* What is said in the boards' place (an invitation that opens nothing): a sheet as tall as what it says. */
 .server-center .slide.said { height: auto; align-self: flex-start; }
 /* One read ahead (row.ts) is its name only to look at until it is in the hand, what it holds there unseen. */

@@ -353,7 +353,7 @@ export class ServerView {
 
   /** The room's index: its boards by name on its own sheet, the one in the hand marked; one pressed is gone to. */
   private index() {
-    this.side.boards(this.here.serverId ? this.here.shown : [], this.row.k, (j) => this.row.go(j, true));
+    this.side.boards(this.here.serverId ? this.here.shown : [], this.row.k, (j) => this.row.go(j, true), !!this.here.serverId);
   }
 
   /** The box at the foot: writing in the board on screen (dock.ts). */

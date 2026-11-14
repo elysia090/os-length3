@@ -606,9 +606,12 @@ side, the issues go under the sheet, two cells down.
 *A room: boards of talk, each with a shared list, and the people in it.* Its one large thing is the name of the board
 in the hand.
 
-A desk with a row (§6). First, the room's own sheet, eight cells: its boards by name (the one in the hand in ink, a
-dot on one with something not seen), who is in it, the repos they show. Then its boards, pieces as wide as any; last,
-dashed on the ground, the board that is not made yet. The board in the hand is a sheet: its name in the display
+A desk with a row (§6). First, the room's own sheet, eight cells, packed as Inbox's first sheet is (nothing round
+its lines but the sheet's edge, a line a cell tall, half a cell in): its boards by name (the one in the hand in ink,
+a dot on one with something not seen), the way to a new one, who is in it, the repos they show. Then its boards in
+their order: the one in the hand a sheet as wide as any piece; **one not in the hand is its name on the ground and
+nothing round it**, as wide as the name, as a repo's is on Home; pressed, it is taken up. Last, so too, the board
+not made yet. The board in the hand is a sheet: its name in the display
 face on its second line, its two parts after the name (its talk, its list; they go under the name where they do not
 fit beside it), the part chosen under a quiet rule, and at its foot the box one writes in, part of the sheet. Its
 servers are chips on the band's row after the door; the chip of the server on screen, pressed, turns the desk to the

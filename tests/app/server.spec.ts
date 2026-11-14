@@ -77,25 +77,24 @@ test('what is half written in a board stays with it, through another board and a
   await app.server.makeBoard('Packing');
   await app.server.box('Packing').fill('Bring the');
 
-  await app.server.view.getByRole('button', {name: 'Previous board'}).click();
+  await app.server.goBoard('general');
   await expect(app.server.box('general')).toHaveValue('');
   await app.server.close();
   await app.server.open();
-  // Its boards come from the Remote, at the one it was left at (pressed before, Next board has nothing to go to).
+  // Its boards come from the Remote, at the one it was left at.
   await expect(app.server.box('general')).toBeVisible();
-  await app.server.view.getByRole('button', {name: 'Next board'}).click();
+  await app.server.goBoard('Packing');
 
   await expect(app.server.box('Packing')).toHaveValue('Bring the');
 });
 
 test('a board\'s name half written is there when Server is come back to', async ({signedIn: app}) => {
   const field = app.server.view.getByRole('textbox', {name: 'New board', exact: true});
-  const next = app.server.view.getByRole('button', {name: 'Next board'});
-  for (let i = 0; i < 20 && !(await field.isVisible()); i++) await next.click();
+  await app.server.newBoard();
   await field.fill('Food');
   await app.server.close();
   await app.server.open();
-  for (let i = 0; i < 20 && !(await field.isVisible()); i++) await next.click();
+  await app.server.newBoard();
   await expect(field).toHaveValue('Food');
 });
 
@@ -201,7 +200,7 @@ test("many servers are one row on a phone's width, the one chosen slid into view
 });
 
 test('a new board is named where it will stand: pressed to, its name has the keyboard; made, it stands there', async ({signedIn: app}) => {
-  await app.server.view.getByRole('button', {name: 'Next board'}).click();
+  await app.server.newBoard();
   const name = app.server.view.getByRole('textbox', {name: 'New board', exact: true});
   await expect(name).toBeFocused();
   await app.page.keyboard.type('General');
@@ -369,13 +368,13 @@ test('an empty board says so at its talk\'s foot, by the box one writes in; a ta
   expect(tk.y + tk.height - (e.y + e.height)).toBeLessThan(40);
 
   // New board's line breaks where its sentence does.
-  await app.server.view.getByRole('button', {name: 'Next board'}).click();
+  await app.server.newBoard();
   const about = app.server.view.getByText(/^A board groups discussions/);
   await expect(about.locator('br')).toHaveCount(1);
   await expect(about).toHaveText('A board groups discussions and shared tasks around a topic:e.g. trips, releases, or study groups.');
 
   // A talk longer than its board scrolls inside it, over the box one writes in at the sheet's foot.
-  await app.server.view.getByRole('button', {name: 'Previous board'}).click();
+  await app.server.goBoard('general');
   // Every post on the board at once, it is not said to be every post: that is plain to see.
   const every = talk.getByText('No more posts', {exact: true});
   for (let i = 1; i <= 2; i++) await app.server.post('general', `Post ${i}`);
