@@ -13,7 +13,7 @@
    One with no height of its own keeps its line's height, the capitals on its middle. Where the trim is not had, the
    line's middle, as before. The box's own line moves its words by the same measure, measured (optical.ts). */
 @supports (text-box: trim-both cap alphabetic) {
-  .button, .chip, .stub-code, .share-open > span { text-box: trim-both cap alphabetic; }
+  .button, .chip, .share-open > span { text-box: trim-both cap alphabetic; }
   /* The menu's pills keep their line's height round the capitals: a file's name cut short there (overflow) keeps
      its descenders. */
   .box-mode-pill :is(.prompt-ps, .prompt-mode > :not(.icon)) { text-box: trim-both cap alphabetic; padding-block: calc((1lh - 1cap) / 2); }

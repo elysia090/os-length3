@@ -1,7 +1,8 @@
 import {fieldMoved} from '../../ui/caret.ts';
 import {LAND, msOf, paced, still} from '../../ui/glide.ts';
+import {SPRING} from '../../ui/law.ts';
 
-// The Prompt up as a screen over the center (DESIGN.md § Forge): the box at the foot, lit. Brought up, the glass of
+// The Prompt up as a screen over the center (docs/PLACES.md, Forge): the box at the foot, lit. Brought up, the glass of
 // the box's pill runs along the box's line and rises into the screen that holds the Prompt; put back, it sinks to the
 // line and runs back into the pill, which gives under it as it lands, and the Prompt comes into the pane where it
 // lives. Its state is one of three, and only this file changes it:
@@ -51,7 +52,7 @@ function timing(way: 'up' | 'down'): {duration: number; line: number; first: str
   const cs = getComputedStyle(document.documentElement), v = (n: string) => cs.getPropertyValue(`--prompt-${n}`).trim();
   const [first, then] = way === 'up' ? [v('along'), v('rise')] : [v('sink'), v('back')];
   return {duration: msOf(v(way)) || (way === 'up' ? 460 : 320), line: parseFloat(v(`${way}-line`)) || (way === 'up' ? .38 : .5),
-    first: first || 'ease-out', then: then || 'ease-out'};
+    first: first || SPRING, then: then || SPRING};
 }
 
 /** Each of `els` from where it stood (`was`, its box then) to where it stands now, or (`back`) from here to there. */
@@ -280,8 +281,8 @@ export class Screen implements Rises {
   #caught() {
     const [lamp] = this.#p.line, pill = this.#p.chip;
     pill.animate([{scale: '1 1'}, {scale: '1.07 .8', offset: .22}, {scale: '.97 1.06', offset: .58}, {scale: '1 1'}],
-      {duration: paced(210), easing: 'ease-out'});
+      {duration: paced(210), easing: SPRING});
     if (pill.dataset.state === 'on') lamp.animate([{boxShadow: '0 0 0 3px color-mix(in srgb, var(--done) 30%, transparent), 0 0 12px var(--done)'}, {}],
-      {duration: paced(320), easing: 'ease-out'});
+      {duration: paced(320), easing: SPRING});
   }
 }

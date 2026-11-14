@@ -49,3 +49,15 @@ test('reducing motion cancels a held forwards-filled press before release; resto
   reduced = true;
   for (const change of changes) change({matches: true});
 });
+
+test('a stroke typed is a key as any other, Enter and Backspace too, and Space the space bar; held, with a command key, or out of a text, it is not typing', async () => {
+  const {typedKey} = await import('./touch.ts');
+  const k = (key: string, more: Partial<{repeat: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean; isComposing: boolean}> = {}) => ({key, repeat: false, ctrlKey: false, metaKey: false, altKey: false, ...more});
+  for (const key of ['a', 'Z', '7', '/', 'あ', 'Enter', 'Backspace', 'Delete', 'Tab', 'Process']) assert.equal(typedKey(k(key), true), 'key', key);
+  assert.equal(typedKey(k(' '), true), 'space');
+  assert.equal(typedKey(k('Unidentified', {isComposing: true}), true), 'key');
+  for (const key of ['ArrowLeft', 'Escape', 'Shift', 'F5', 'Home']) assert.equal(typedKey(k(key), true), null, key);
+  assert.equal(typedKey(k('a', {repeat: true}), true), null);
+  for (const mod of ['ctrlKey', 'metaKey', 'altKey'] as const) assert.equal(typedKey(k('a', {[mod]: true}), true), null, mod);
+  assert.equal(typedKey(k('a'), false), null);
+});

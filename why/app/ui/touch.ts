@@ -4,7 +4,8 @@
 // nothing gives.
 
 import {paced, still} from './glide.ts';
-import {lift, press, strike, wake} from './keys.ts';
+import {lift, press, strike, wake, type Key} from './keys.ts';
+import {SPRING} from './law.ts';
 
 const WHOLE = '.card.repo, .card.new, .issue-card, .board-card';
 const ONE = 'button, [role="button"], [role="radio"], [role="tab"], .chip';
@@ -35,7 +36,7 @@ function down(el: HTMLElement) {
   spring = null;
   const s = give(el);
   held?.press.cancel();
-  held = {el, s, press: el.animate([{scale: s}], {duration: 70, easing: 'ease-out', fill: 'forwards'})};
+  held = {el, s, press: el.animate([{scale: s}], {duration: 70, easing: SPRING, fill: 'forwards'})};
 }
 
 function up() {
@@ -45,7 +46,7 @@ function up() {
   press.cancel();
   if (still()) return;
   // Past where it was by a third of the give, then home: the spring.
-  const a = el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: paced(300), easing: 'cubic-bezier(.2, .9, .25, 1)'});
+  const a = el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: paced(300), easing: SPRING});
   spring = {el, a};
 }
 
@@ -68,6 +69,22 @@ function sounding(e: Event): Element | null {
 /** The control whose press a pointer's going down sounded: its click does not sound again. */
 let sounded: Element | null = null;
 
+/**
+ * The key a stroke of the person's own typing sounds as: what is written in a field, a text or a terminal's line is
+ * heard as it is struck, as a control pressed is. A letter, a figure, Backspace, Delete, Tab and Enter are keys as
+ * any other (Enter and Backspace have no sound of their own: typing is one sound, however it goes on); Space is the
+ * space bar. A key held sounds once (it is struck once), and one struck with Ctrl, Alt or the command key is a
+ * command, not typing: silent here (what it does sounds, if it presses something).
+ */
+export function typedKey(e: {key: string; repeat: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean; isComposing?: boolean}, inText: boolean): Key | null {
+  if (!inText || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return null;
+  if (e.key === ' ') return 'space';
+  // (A stroke taken by an input method is a stroke: its key is not said, the hand struck one all the same.)
+  return e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Tab' || e.key === 'Process' || !!e.isComposing ? 'key' : null;
+}
+/** When Enter typed in a field last sounded (ms): the click it gives a form's button is that same stroke, not another. */
+let enterTyped = -Infinity;
+
 export function touch() {
   // A completed activation only: pointer and native Enter/Space each yield one click. A drag, focus, hover,
   // or programmatic navigation is silent. Motion preference does not mute this small confirmation.
@@ -76,6 +93,8 @@ export function touch() {
     if (!button) return;
     // (A pointer's press sounded as it went down, below: its click is the same activation.)
     if (button === sounded) { sounded = null; return; }
+    // (Enter typed in a field sounded as it was struck: the press it gives the form's button is that stroke.)
+    if (e instanceof MouseEvent && e.detail === 0 && performance.now() - enterTyped < 60) return;
     strike('enter');
   }, true);
   // A held press ends below full size with forwards fill. Finishing it preserves that size;
@@ -108,6 +127,12 @@ export function touch() {
   // From the keys too: Enter or Space on a button is a press let go at once.
   document.addEventListener('keydown', (e) => {
     if (e.isTrusted) wake();
+    // What is typed is heard as it is struck.
+    if (e.isTrusted && e.target instanceof Element) {
+      const field = e.target.closest('input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"]), textarea, [contenteditable]:not([contenteditable="false"])');
+      const key = typedKey(e, !!field && !field.closest(':disabled, [inert]'));
+      if (key) { if (e.key === 'Enter') enterTyped = performance.now(); strike(key); }
+    }
     if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat || e.isComposing) return;
     const el = pressable(e.target);
     if (!el || !(e.target as Element).matches(ONE)) return;

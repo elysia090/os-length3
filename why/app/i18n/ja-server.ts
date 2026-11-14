@@ -8,8 +8,6 @@ export default {
   'Published to': '公開先',
   // The boxes.
   'Boards': 'ボード',
-  'Previous board': '前のボード',
-  'Next board': '次のボード',
   'New board': '新規ボード',
   'Message {name}': '{name}にメッセージを入力',
   'Servers will reappear once Remote responds': 'Remote から応答があり次第、サーバーが再表示されます',
@@ -156,6 +154,4 @@ export default {
   'Repo not found on Remote': 'その repo は Remote に存在しません',
   // Who sees a repo (Remote): only you, servers, everyone.
   'Servers': 'サーバー',
-  '{name} (new posts)': '{name}、新着投稿あり',
-  'Sign in to create servers with discussion boards for your team.': 'サインインすると、メンバー用のボードを持つサーバーを作成できます。',
 } as Record<string, string>;

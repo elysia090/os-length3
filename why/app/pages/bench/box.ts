@@ -20,8 +20,9 @@ import {Player, type Stage} from './play.ts';
 import type {Hands} from '../../agent/loop.ts';
 import {fileHands, tail} from '../../repos/agent-hands.ts';
 import {work as workOf} from '../../repos/history.ts';
+import {SPRING} from '../../ui/law.ts';
 
-// The box at the foot of a work page's center (DESIGN.md § Forge, The box at the foot): one field, and at its left a
+// The box at the foot of a work page's center (docs/PLACES.md, Forge, The box at the foot): one field, and at its left a
 // pill that says what it does: Run in the repo's Prompt (the pill the prompt line the shell waits at, pill-line.ts),
 // Write an issue, Add to TODO (box-modes.ts), Edit the file in front (edit-box.ts), and with an API key kept on this
 // device, Ask the Agent (agent.ts), which never brings the Prompt up: its answer comes into the right pane, under the
@@ -386,7 +387,7 @@ export class Box {
     const was = this.note.textContent;
     if (typeof text === 'string') this.note.textContent = text; else this.note.replaceChildren(...text);
     // Something else said in its place comes up out of a light fade, not swapped in one frame (from nothing it is at once).
-    if (was && was !== this.note.textContent && !still()) this.note.animate([{opacity: .35}, {opacity: 1}], {duration: paced(140), easing: 'ease-out'});
+    if (was && was !== this.note.textContent && !still()) this.note.animate([{opacity: .35}, {opacity: 1}], {duration: paced(140), easing: SPRING});
   }
   /** Not done, and why: the line under the box in ink until the box is written in again, the box shaking its head. */
   #refuse(text: string) {
@@ -804,7 +805,7 @@ export class Box {
     if (this.#p.desk && this.#mode === 'run' && event.key === 'Enter' && plain(event) && !event.isComposing) { event.preventDefault(); this.#send(); return; }
     if (event.key === 'Enter' && plain(event) && !prompt.value.includes('\n') && prompt.value.trim() && !still())
       [...this.#sends.children].forEach((k, i) => k.animate([{translate: '0 0'}, {translate: '0 2px', offset: .35}, {translate: '0 0'}],
-        {duration: paced(260), delay: paced(i * 90), easing: 'ease-out'}));
+        {duration: paced(260), delay: paced(i * 90), easing: SPRING}));
   }
 
   /**

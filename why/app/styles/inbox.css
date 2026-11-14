@@ -1,32 +1,38 @@
 /* Inbox: the conversations, their messages, someone who wrote first, and writing to someone. */
-/* Inbox on the page's three columns (inbox.ts): the stub, the field to write to someone new and the conversations in
-   the first, one width and the field the stub's height and shape; the conversation open as a sheet over the other
-   two, from the field's top (the second row) to the page's foot. None yet, there is no sheet. */
-/* The page is the window's height and no more (nothing of it scrolls): its head, and under it the three columns to
-   the page's foot, where the rail's line ends; never under 440 px, a short window scrolling to the rest. */
-.page:has(> div > .inbox-page) { display: flex; flex-direction: column; height: var(--inner-h); padding-bottom: 0; }
-.page > div:has(> .inbox-page) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* Inbox is a desk with a row, as Server's is (DESIGN §10, ui/row-desk.ts): at the desk's edge the sheet of who wrote,
+   twelve cells wide (one's own name, the field to write to someone new, the conversations); two cells on, the
+   conversation open, a piece as wide as any, in the hand: paper, an ink edge, its shadow. From a cell under the band
+   (y = 72) to a cell over the window's foot and to the window's right edge; the conversation reaches its sheet's foot
+   and nothing of the place scrolls away. No conversation open, the first sheet stands alone. */
+.page:has(> div > .inbox-page) { display: flex; flex-direction: column; box-sizing: border-box; height: var(--inner-h); margin: 0; padding: 0; overflow: visible; }
+.page:has(> div > .inbox-page) > .page-head { display: none; }
+.page > div:has(> .inbox-page) { position: relative; flex: 1; min-height: 0; max-width: none; margin: calc(3 * var(--u) - var(--outer-top)) calc(-1 * var(--outer)) calc(-1 * var(--outer-bottom)) 0; }
 /* Each as wide as a page's part is (a column of the page's flex would shrink to what it holds and stand centred). By
    the page's class, not by what it holds: a :has() before `> *` is asked again of the whole page at every change in it
    (a line in a Prompt's output cost a 40 ms restyle of Forge), a class only when it changes. */
-.page.page-inbox > * { width: 100%; }
-/* On the rail's rows, as every page: one's address the first row's, and from the second the field to write to someone
-   new and the conversations, and the conversation open beside them. */
-.inbox-page { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(var(--row), auto) minmax(0, 1fr); column-gap: var(--s5);
-  row-gap: var(--row-step); flex: 1; min-height: 440px; }
-.inbox-page > .stub-holder { grid-area: 1 / 1 / 2 / 2; align-self: center; margin: 0; }
-.inbox-page .stub, .inbox-page .stub-panel { width: 100%; }
-.inbox-box { display: contents; }
-.inbox-page .inbox-list { grid-area: 2 / 1 / 3 / 2; }
-.inbox-page .inbox-thread { grid-area: 2 / 2 / 3 / 4; border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); overflow: hidden; }
+.page.page-inbox > * { width: auto; }
+.inbox-page { box-sizing: border-box; height: 100%; padding-bottom: var(--u); overflow: auto hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.inbox-page::-webkit-scrollbar { display: none; }
+.inbox-box { display: flex; gap: calc(2 * var(--u)); box-sizing: border-box; width: max-content; min-width: 100%; height: 100%; padding-right: calc(100% - var(--piece, 100%)); }
+.inbox-index, .inbox-page .inbox-thread { flex: none; box-sizing: border-box; height: 100%; scroll-snap-align: start; border-radius: var(--r-sheet); outline-offset: -1px; overflow: hidden; }
+.inbox-index { display: flex; flex-direction: column; width: min(calc(12 * var(--u)), var(--piece, 100%)); background: var(--ground); outline: 1px solid var(--edge); overflow: visible; }
+.inbox-page .inbox-thread { width: var(--piece, 100%); background: var(--paper); outline: 1px solid var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); overflow: visible; }
 .inbox-box.none > .inbox-thread { display: none; }
+.inbox-box.none { padding-right: 0; }
+/* On the first sheet: one's own name, its top line; the field to write to someone new; then who wrote. Each a line
+   across the sheet, the frame's square tall, a quiet rule under it. */
+.inbox-index > .stub-holder { flex: none; margin: 0; }
+.inbox-index .stub, .inbox-index .inbox-new { min-height: var(--key); border: 0; border-radius: 0; background: none; box-shadow: 0 1px 0 var(--edge); }
+.inbox-index .stub, .inbox-index .stub-panel { width: 100%; }
+.inbox-index .stub > *, .inbox-index .inbox-new > * { height: var(--key); border-radius: 0; }
+.inbox-index .inbox-list { flex: 1; }
 /* The rows' words start where the field's and the stub's do, a border and a step in. */
-.inbox-page .inbox-row, .inbox-page .inbox-head, .inbox-none { padding-inline: calc(var(--s3) + 1px); }
+.inbox-page .inbox-row, .inbox-page .inbox-head, .inbox-none { padding-inline: var(--s3); }
 .inbox-none { margin: var(--s2) 0 0; color: var(--sub); }
-.inbox-list { display: flex; flex-direction: column; gap: var(--s1); min-height: 0; overflow-y: auto; }
+.inbox-list { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 /* The field to write to someone new, the stub's shape under it: Write is its end, as the gear is the stub's. */
-.inbox-new { flex: none; align-items: stretch; gap: 0; min-height: var(--h-control); margin-bottom: var(--s2); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
-.inbox-new:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.inbox-new { flex: none; align-items: stretch; gap: 0; margin: 0; }
+.inbox-new:focus-within { outline: 2px solid var(--ink); outline-offset: -2px; }
 .inbox-new .line-in { flex: 1; min-width: 0; min-height: 0; height: auto; padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; }
 .inbox-new .line-in:focus, .inbox-new .line-in:focus-visible { outline: none; }
 .inbox-new > .small-button { min-height: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; }
@@ -34,58 +40,62 @@
 /* The rows, drawn again as they come, lie in the list as if it held them itself. */
 .inbox-rows { display: contents; }
 .inbox-head { margin: var(--s3) 0 0; font-size: var(--t-meta); color: var(--sub); }
-.inbox-row { display: grid; gap: 2px; text-align: left; padding: var(--s2); border: 0; border-radius: var(--r-card); background: transparent; cursor: var(--cursor-hand); color: inherit; }
-.inbox-row:hover { background: var(--raised); }
-.inbox-row[aria-current='true'] { box-shadow: inset 0 0 0 var(--line-work) var(--edge); }
+/* Who wrote: two lines of a cell (the name; the last thing said, quiet), the one whose conversation is open in ink. */
+.inbox-row { display: grid; text-align: left; padding-block: 0; border: 0; border-radius: 0; background: transparent; cursor: var(--cursor-hand); color: var(--sub); font: var(--t-body)/var(--u) var(--sans); }
+.inbox-row > .small { font: var(--t-meta)/var(--u) var(--sans); }
+/* (Their address after the name on its line, quiet: two may share a name.) */
+.inbox-row { grid-template-columns: minmax(0, max-content) minmax(0, 1fr); column-gap: var(--s2); }
+.inbox-row > .small:not(.inbox-last) { grid-column: 2; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-row > .inbox-last { grid-column: 1 / -1; }
+.inbox-row:is(:hover, :focus-visible) { color: var(--ink); }
+.inbox-row[aria-current='true'] { background: var(--ink); color: var(--ground); }
+.inbox-row[aria-current='true'] .muted { color: inherit; }
 .inbox-who { display: flex; align-items: center; gap: var(--s2); }
 .inbox-who > b { margin-right: auto; }
 /* Under the round initial, the lines start where the name does. */
-.inbox-row > :not(.inbox-who) { margin-left: calc(24px + var(--s2)); }
+.inbox-who > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-who > .lately-badge { display: none; }
 .inbox-last { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .unread { font: 600 var(--t-meta) var(--mono); padding: 0 var(--s2); border-radius: var(--r-round); border: 1px solid var(--edge); }
 .inbox-thread { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.inbox-top { display: flex; align-items: baseline; gap: var(--s3); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--rule); }
+/* Its head: who it is with, in the display face, capitals a cell tall (a sheet's name, §5); how it reaches them, quiet. */
+.inbox-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); min-height: calc(2 * var(--u)); padding: 0 var(--u); box-shadow: 0 1px 0 var(--rule); }
+.inbox-top > h2 { min-width: 0; margin: 0; font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inbox-top .grow { flex: 1; }
-.inbox-messages { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); overflow-y: auto; }
+.inbox-messages { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--u) var(--u) var(--s3); overflow-y: auto; }
 /* A conversation stands on its foot, by the field it is answered in, as it is read: the last thing said just over
    where the answer is written, never a sheet's height of nothing between them. */
-.inbox-messages > :first-child { margin-top: auto; }
-/* None said yet: the dashed box in the middle of where they will be, not at its foot. */
-.inbox-messages > .inbox-empty { margin: auto; align-self: center; }
-.bubble { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s3); row-gap: var(--s1); align-items: end; max-width: 75%;
-  padding: var(--s2) var(--s3); border: 1px solid var(--rule); border-radius: var(--r-place); justify-self: start; align-self: flex-start;
-  transition: border-radius calc(160ms * var(--pace)) ease-out; } /* as wide as what it says, at its side; never the column's width */
-.bubble[data-mine='true'] { align-self: flex-end; background: var(--raised); }
-/* Its time a small figure at the foot of its last line, not a line of its own; said once for a run (messages from one
-   side a few minutes apart, inbox.ts runs), at its end, the run's bubbles close together, their joining corners tight. */
-.bubble > :not(.bubble-text, .bubble-time) { grid-column: 1 / -1; }
-.bubble-time { font-size: 11px; white-space: nowrap; }
+.inbox-messages > :first-child:first-child { margin-top: auto; }
+/* None said yet: said where the first words will come, at the sheet's edge. */
+.inbox-messages > .inbox-empty { margin: auto 0 0; align-self: flex-start; }
+/* What was said, as a transcript (talk.css): one left edge, for both who speak. Who says it on a line of its own where
+   a run starts (the other's name in ink, one's own a step quieter), then the words under it on lines of a cell; half
+   a line between two of a run, a line before the other speaks. The time, small, after a run's last words. */
+.bubble { display: block; margin-top: calc(var(--u) / 2); font: var(--t-body)/var(--u) var(--sans); }
+.bubble:not(.run-in, .inbox-notice) { margin-top: var(--u); }
+.bubble:not(.run-in, .inbox-notice)::before { content: attr(data-who); display: block; font-weight: 700; }
+.bubble[data-mine='true']::before { color: var(--sub); }
+.bubble-time { margin-left: var(--s2); font: var(--t-meta)/1 var(--mono); white-space: nowrap; }
+.bubble .state-chip { line-height: 1; }
 .bubble.run-on > .bubble-time { display: none; }
-.bubble.run-in { margin-top: calc(3px - var(--s3)); }
-.bubble[data-mine='true'].run-on { border-bottom-right-radius: 4px; }
-.bubble[data-mine='true'].run-in { border-top-right-radius: 4px; }
-.bubble[data-mine='false'].run-on { border-bottom-left-radius: 4px; }
-.bubble[data-mine='false'].run-in { border-top-left-radius: 4px; }
-/* A notice the Remote left (added to a server at once, pages/inbox.ts noticeLine): no one's words, so no bubble on
-   either side, but a quiet line across the conversation, as a day's name is across a board's talk; the server in it a
-   way there once one is in it. */
-.bubble.inbox-notice { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0 var(--s2); align-self: center; max-width: 90%;
-  padding: var(--s1) var(--s2); border: 0; background: transparent; color: var(--sub); font-size: var(--t-meta); text-align: center; }
+/* A notice the Remote left (added to a server at once, pages/inbox.ts noticeLine): no one's words: a quiet line at the
+   same edge, as a day's name is in a board's talk; the server in it a way there once one is in it. */
+.bubble.inbox-notice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); margin-top: var(--u); color: var(--sub); font-size: var(--t-meta); }
 .inbox-notice > .link { padding-block: 2px; font-size: inherit; color: var(--ink); }
 /* Someone who wrote first: over the field, who, what Accept and Block do (and that writing back accepts), the two. */
-.inbox-ask { display: grid; gap: var(--s2); margin: 0 var(--s4) var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); }
+.inbox-ask { display: grid; gap: var(--s2); margin: 0 var(--u) var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
 .inbox-ask p { margin: 0; }
-.inbox-ask-acts { display: flex; justify-content: flex-end; gap: var(--s2); }
-.bubble .state-chip { justify-self: start; }
-.bubble-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.inbox-write { display: grid; gap: var(--s2); padding: var(--s3) var(--s4); border-top: 1px solid var(--rule); }
-.inbox-write .row { align-items: end; }
-.bubble-in { flex: 1; resize: none; min-height: var(--h-control); max-height: 200px; padding: var(--s2) var(--s3); font: var(--t-body)/1.5 var(--sans); }
-.inbox-write .write-line { margin-top: 0; }
+.inbox-ask-acts { display: flex; gap: var(--s2); }
+.bubble .state-chip { margin-right: var(--s2); }
+.bubble > .link, .bubble > .muted { margin-right: var(--s2); }
+.bubble-text { display: inline; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.inbox-write { display: grid; gap: var(--s2); padding: var(--s3) var(--u) var(--u); border-top: 1px solid var(--rule); }
+/* The box one writes in is the one a board's is (prompt.css .prompt): one deed, one look. */
+.bubble-in { flex: 1; min-width: 0; resize: none; min-height: 0; height: auto; max-height: 200px; padding: 0; border: 0; border-radius: 0; background: transparent; font: var(--t-body)/1.6 var(--sans); }
+.bubble-in:focus, .bubble-in:focus-visible { outline: none; }
+.inbox-write .write-line { align-items: flex-end; gap: var(--s3); margin: 0; padding: var(--s3) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
+/* (Its key comes with the words, as a board's does.) */
+.inbox-write .write-line:has(> .bubble-in:placeholder-shown) > .prompt-run { display: none; }
+.inbox-write .write-line:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .write-hint { margin: 0; }
 .at { color: var(--sub); }
-@media (max-width: 900px) {
-  .inbox-page { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(420px, 1fr); height: auto; }
-  .inbox-page > .stub-holder, .inbox-page .inbox-list, .inbox-page .inbox-thread { grid-area: auto; }
-  .inbox-page .inbox-list { max-height: 40vh; }
-}

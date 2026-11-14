@@ -19,6 +19,7 @@ import {laidOut} from '../../repos/git-state.ts';
 import {issueForm, type IssueForm, type Made} from './issue-form.ts';
 import {errorText} from '../../host/errors.ts';
 import {issueStore} from '../../repos/issue-store.ts';
+import {SPRING} from '../../ui/law.ts';
 
 /**
  * Git: what happens between a repo and the outside, in the issues' terms.
@@ -291,11 +292,20 @@ class GitPage {
   /** `said`, large against the band's right end by its ink; smaller where the band has no room for it at its size. */
   private tellHeld(said: string) {
     const el = this.held;
+    // (Fitted again as the band's room changes: a window made narrower never cuts it.)
+    this.heldRoom ??= (() => { const seen = new ResizeObserver(() => this.fitHeld()); seen.observe(el); return seen; })();
     if (el.textContent === said) return;
     el.textContent = said;
+    this.fitHeld();
+  }
+  private heldRoom: ResizeObserver | null = null;
+  private fitHeld() {
+    const el = this.held;
     el.style.removeProperty('--fit');
     const room = el.clientWidth, wide = el.scrollWidth;
     if (room > 0 && wide > room) el.style.setProperty('--fit', String(Math.max(.5, room / wide)));
+    // (Whole, at its size or down to half of it; where the band has not that much room, not at all: never cut.)
+    el.style.visibility = room <= 0 || wide * .5 > room ? 'hidden' : '';
     inkEdge(el, 'right');
   }
 
@@ -421,7 +431,7 @@ class GitPage {
     // The row come into sight (an issue reopened, one come from elsewhere): its box comes in, not there at once; the
     // dashed card that writes the first, there again once the last has gone, the same.
     if (!row && card && !writ) arrive(card.card, 1, 'y', 10, 260);
-    if (!none && this.empty.firstElementChild) this.empty.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: 'ease-out'});
+    if (!none && this.empty.firstElementChild) this.empty.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: SPRING});
   }
 
   /** main's part and the issue in full as they stand, for the drawing after to go on from. */

@@ -168,7 +168,7 @@ lsof	process	+
 fuser	process	+	
 gdb	debug	-	
 lldb	debug	-	
-strace	debug	x	ends 1, natively 0
+strace	debug	x	ends 1 in a box, on Linux as here
 ltrace	debug	-	strace
 addr2line	debug	+	
 builtins	shell	+	

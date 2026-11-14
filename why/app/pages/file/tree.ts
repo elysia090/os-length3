@@ -1,3 +1,4 @@
+import {keepNear} from '../../ui/near.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import {closeUp, keepOut, putAway, still, unfold} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
@@ -14,13 +15,15 @@ import {errorText} from '../../host/errors.ts';
 
 // File is an operation, not a page: the tree of "/", the whole system, as a
 // card laid over whatever page is showing, right beside the rail and only as
-// tall as what is in it. It opens when the
-// pointer rests on the File icon or on the tree, or when File is pressed;
-// once out it stays for LINGER after the pointer leaves, so reaching across
-// the page and back does not lose it; while a name is being written in it or
-// it asks something (or the keyboard is in it), it stays however far the
-// pointer goes, until that is done. A press outside or Escape closes it at
-// once, whatever has the keyboard. Nothing under it moves. A folder's
+// tall as what is in it. It is called up in front of the world by pressing
+// File, and by nothing else: a pointer over File or over the tree brings
+// nothing out and puts nothing away, so it is the one thing on a phone, with
+// a mouse and from the keyboard. Out, it stays until it is put away: File
+// pressed again, a press outside it, or Escape, whatever has the keyboard.
+// Nothing under it moves.
+// (Before: a rest on File brought it out after a wait, it lingered a while
+// after the pointer left, a shorter while if the pointer had not been in it,
+// and a press pinned it; four states and three waits to say which.) A folder's
 // triangle comes before its name: ▷ closed, ▽ open. A file chosen is the one
 // to work on: the tree goes and the caret is in it. The file Forge is
 // reading keeps a quiet mark, apart from what the pointer is over. From the
@@ -37,15 +40,6 @@ import {errorText} from '../../host/errors.ts';
 // place; a new file is the one to work on, so the tree goes and the caret is
 // in it. A row taken by the pointer and let go on a folder of its repo (or on
 // the repo's own row) moves into it.
-
-/** How long the pointer rests on File before the tree comes out: passing over the rail does not bring it out. */
-const OPEN_DELAY = 300;
-/**
- * How long it stays once the pointer has gone: brushed past on the icon alone, a moment; gone from the tree itself,
- * a little longer, for a reach back to it. Brought out by a press, it stays until a press elsewhere or Escape.
- */
-const LINGER_PASSED = 450;
-const LINGER = 1200;
 
 /** Open folders by absolute path, kept while the app runs; System (the rest of /) by a name no path has. */
 const expandedPaths = new Set<string>(['/root']);
@@ -82,20 +76,10 @@ export class FileTree {
   private root: HTMLElement;
   private events: FileTreeEvents;
   private trigger: HTMLElement | null = null;
-  private timer = 0;
   /** The menu of one row, while it is out, and the row's name to go back to. */
   private pop: {element: HTMLElement; name: HTMLElement; more: HTMLElement} | null = null;
   /** Each folder's way to be read again, open, by its row. */
   private folders = new WeakMap<HTMLElement, () => Promise<void>>();
-  /** Whether the pointer is over the tree or File, so a hold let go knows to start the linger. */
-  private over = false;
-  /** When it last came out. */
-  /** The tree was out when the pointer came onto the File button, or a press there brought it out: pressed now, it goes. */
-  private outBefore = false;
-  /** Brought out by a press: it stays until put away (a press elsewhere, Escape, File again), not when the pointer goes. */
-  private pinned = false;
-  /** The pointer has been in the tree since it came out. */
-  private visited = false;
   /** A row being carried by the pointer, to be let go on a folder of its repo. */
   private carried: {repo: string; path: string} | null = null;
   /** What a move by the pointer could not do, said at the tree's foot until it comes out again. */
@@ -117,8 +101,6 @@ export class FileTree {
     this.element.addEventListener('transitionend', (e) => {
       if (e.target === this.element && e.propertyName === 'clip-path' && this.isOpen) this.element.classList.add('settled');
     });
-    this.element.addEventListener('pointerenter', () => { this.visited = true; this.enter(); });
-    this.element.addEventListener('pointerleave', () => this.leave());
     // Escape closes it from anywhere while it is out, before what has the keyboard
     // hears it (so the text being written keeps its caret); the keyboard goes back
     // to File only when it was in the tree or on File.
@@ -138,6 +120,8 @@ export class FileTree {
       if (to && !this.element.contains(to) && to !== this.trigger) this.close();
     });
     this.element.addEventListener('keydown', (event) => this.step(event));
+    // (A press that just misses the tree, or a row's menu out beside it, is still theirs: ui/near.ts.)
+    keepNear(() => (this.isOpen ? this.pop?.element ?? this.element : null));
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
       if (!this.element.contains(at) && !this.trigger?.contains(at)) this.close();
@@ -147,59 +131,29 @@ export class FileTree {
 
   get isOpen() { return this.element.classList.contains('open'); }
 
-  /** The rail's File button: hovering it opens the tree, pressing it opens it at once. */
+  /** File's button: pressed, the tree is out in front (the keyboard in it if a key pressed it); pressed again, it goes. */
   attach(button: HTMLElement) {
     this.trigger = button;
     button.setAttribute('aria-controls', 'file-tree');
     button.setAttribute('aria-expanded', 'false');
-    button.addEventListener('pointerenter', () => { this.outBefore = this.isOpen; this.enter(); });
-    button.addEventListener('pointerleave', () => this.leave());
-    // A press never closes what this same reach's hover opened, however long the press took to come: it keeps it
-    // out. Pressed again, or pressed while it was out before the pointer came, it closes, as the plug and the
-    // person's icon do (issue #45). From the keyboard (detail 0) it toggles and moves focus in.
-    button.addEventListener('click', (event) => {
-      const keyboard = event.detail === 0;
-      if (this.isOpen && (keyboard || this.outBefore)) { this.close(); return; }
-      this.open(keyboard);
-      this.outBefore = true;
-      this.pinned = true;
-    });
+    button.addEventListener('click', (event) => { if (this.isOpen) this.close(); else this.open(event.detail === 0); });
     // → from File goes into the tree, out at its right (brought out first if it was not): ↓ and ↑ stay the rail's.
     button.addEventListener('keydown', (event) => {
       if (event.key !== 'ArrowRight' || event.altKey || event.ctrlKey || event.metaKey) return;
       event.preventDefault();
-      if (!this.isOpen) { this.open(true); this.pinned = true; return; }
+      if (!this.isOpen) { this.open(true); return; }
       [...this.root.querySelectorAll<HTMLElement>('.tree-name')].find((b) => b.getClientRects().length > 0)?.focus();
     });
   }
 
-  enter() { this.over = true; this.later(true, this.isOpen ? 0 : OPEN_DELAY); }
-  leave() {
-    this.over = false;
-    // A name being written, an ask, or the keyboard in the tree: it stays until that is done.
-    if (this.isOpen && (this.pinned || this.holding())) { clearTimeout(this.timer); return; }
-    this.later(false, this.visited ? LINGER : LINGER_PASSED);
-  }
-
-  /** Something in the tree that the pointer going away must not put away: a field or an ask in a row's menu, the keyboard, a row carried. */
-  private holding(): boolean {
-    return !!this.carried || !!this.pop?.element.querySelector('.pop-field, .pop-ask') || !!this.element.querySelector(':focus-visible');
-  }
-
-  /** The pointer on another place on the rail: the tree a rest brought out, not pressed nor held, goes at once. */
-  passedBy() { if (this.isOpen && !this.pinned && !this.holding()) this.close(); }
-
-  /** What held the tree is done: with the pointer away, it goes after the linger as it would have. */
-  private letGo() { if (this.isOpen && !this.over && !this.pinned && !this.holding()) this.later(false, this.visited ? LINGER : LINGER_PASSED); }
-
   open(focus = false) {
-    clearTimeout(this.timer);
     if (!this.isOpen) {
       // Its top a cell under the File icon's: its name, over its corner, starts level with the icon's place.
       const at = this.trigger?.getBoundingClientRect();
       if (at) {
         const cell = parseFloat(getComputedStyle(this.element).getPropertyValue('--u')) || 24;
-        this.element.style.setProperty('--tree-top', `${Math.max(2 * cell, at.top + cell)}px`);
+        // (And never so low that it is cut by the window's foot: at least twelve cells of it are in the window.)
+        this.element.style.setProperty('--tree-top', `${Math.max(2 * cell, Math.min(at.top + cell, cell * Math.floor((innerHeight - 12 * cell) / cell)))}px`);
       }
       this.build(focus);
     }
@@ -210,11 +164,7 @@ export class FileTree {
   }
 
   close() {
-    clearTimeout(this.timer);
     this.unpop();
-    this.outBefore = false;
-    this.pinned = false;
-    this.visited = false;
     // Its edge again first, to go back in from where it stands.
     if (this.element.classList.contains('settled')) { this.element.classList.remove('settled'); void getComputedStyle(this.element).clipPath; }
     this.element.classList.remove('open');
@@ -256,11 +206,6 @@ export class FileTree {
       else if (open) item?.querySelector<HTMLElement>(':scope > .tree-children .tree-name')?.focus();
     } else if (toggle && open) toggle.click();
     else item?.parentElement?.closest('li')?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name')?.focus();
-  }
-
-  private later(open: boolean, after: number) {
-    clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => (open ? this.open() : this.close()), after);
   }
 
   /**
@@ -456,7 +401,6 @@ export class FileTree {
     row.addEventListener('dragend', () => {
       row.classList.remove('carried');
       this.carried = null;
-      this.letGo();
     });
   }
 
@@ -516,7 +460,6 @@ export class FileTree {
     const gone = this.pop.element;
     putAway(gone, () => gone.remove());
     this.pop = null;
-    this.letGo();
   }
 
   /**
@@ -584,7 +527,7 @@ export class FileTree {
         closeUp([...parent?.querySelector(':scope > .tree-children')?.children ?? []].slice(place), gap);
         this.settle(parent?.querySelector<HTMLElement>(':scope > .tree-row > .tree-name'));
       },
-      back: () => this.letGo()});
+      back: () => {}});
     // Beside the tree, level with the row: out into the free space, so nothing moves under the pointer.
     const box = this.element.getBoundingClientRect(), r = row.getBoundingClientRect();
     // Two cells from the tree's edge (one past its shadow), its top the row's: a sheet as the tree is, the row's name

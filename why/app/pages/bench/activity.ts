@@ -2,6 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {paced, still} from '../../ui/glide.ts';
 import type {Run} from './sessions.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // While a line runs in a Prompt, what it is doing, said under its output once it has taken a moment (terminal.ts):
 // reading input (Interrupt reaches it: the kernel is paused), running and still talking (Interrupt lands when it next
@@ -67,7 +68,7 @@ export class Activity {
   #unfollow() {
     if (this.#leaving) return;
     if (!this.element.firstChild || still()) { this.element.replaceChildren(); return; }
-    const going = this.#leaving = this.element.animate([{opacity: 1}, {opacity: 0, translate: '12px 0'}], {duration: paced(170), easing: 'ease-in'});
+    const going = this.#leaving = this.element.animate([{opacity: 1}, {opacity: 0, translate: '12px 0'}], {duration: paced(170), easing: SPRING});
     going.finished.then(() => { if (this.#leaving === going) { this.#leaving = null; this.element.replaceChildren(); } }, () => {});
   }
 

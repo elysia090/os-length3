@@ -67,7 +67,7 @@ function newest(path: string): number {
 }
 
 // The core the browser runs (why/core/web, built by vite.config.ts) is made from why/core/src.
-const SOURCES = ['why/app', 'why/shared', 'public', 'package-lock.json', 'why/core/src', 'why/core/web/src', 'scripts/core-wasm.ts', 'module/sods/runtime', 'module/everyday/src', 'module/muk/runtime', 'module/muk/runtime'];
+const SOURCES = ['why/app', 'why/shared', 'public', 'package-lock.json', 'why/core/src', 'why/core/web/src', 'scripts/core-wasm.ts', 'module/sods/runtime', 'module/everyday/src', 'module/ricebox/layers'];
 const STAMP = join(OUT, '.built');
 
 /** What the build carries besides the sources: the browser's Prompt, when public/ has it. */

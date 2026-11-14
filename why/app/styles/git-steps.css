@@ -28,7 +28,7 @@
 .issue-leave { display: grid; gap: var(--s1); justify-items: start; }
 /* main said as Home says the person's name (Inter Display Black, --t-name): the line every repo's work comes back to,
    one word over its cards, close over them, its m set on their edge (the face's own side bearing taken back). */
-.section.main-part > h2 { margin: 0 0 var(--s3) -.04em; font: 900 var(--t-name)/1.05 var(--display); letter-spacing: -.035em; }
+.section.main-part > h2 { margin: 0 0 var(--s3) -.04em; font: 900 var(--t-head)/1.05 var(--display); letter-spacing: -.035em; }
 .section.main-part > h2 small:empty { display: none; }
 /* main's card on Git, for what it has not committed: a card (rule edge), its repo, Commit at the right. */
 /* main's part stands in the issues' column: each card a sheet (paper, as an issue's box is, never melting into the
@@ -112,4 +112,4 @@ details[open] > summary.done-head::before { rotate: 90deg; }
 .done-diff { max-height: 56vh; overflow: auto; padding: var(--s2) var(--s2) var(--s3) var(--s4); }
 
 /* An Inbox pane with nothing chosen: a quiet line in its middle, not a box in the box. */
-.inbox-thread > .quiet { margin: auto; padding: var(--s4); text-align: center; color: var(--sub); }
+.inbox-thread > .quiet { margin: 0; padding: var(--u); color: var(--sub); }

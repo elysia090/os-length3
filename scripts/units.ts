@@ -29,31 +29,37 @@ export interface Unit {
   holds: string[];
   /** The units it may take from ('*': any, a face's). */
   takes: string[];
+  /**
+   * Its files that what is outside its folder may import; none besides. Not said: any of them. What a unit is made of
+   * can then change without anyone else's code changing (`reaches`, below).
+   */
+  entries?: string[];
 }
 
 export const UNITS: Unit[] = [
   {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
-  {name: 'muk', says: 'the machine: an OCI-compatible VMM. A box run from an image\'s layers, named by their digest and each byte fetched when first touched: on Linux by its namespaces, in a browser by answering its system calls itself over the code sods makes; no KVM and no Firecracker under it',
+  {name: 'muk', says: 'the machine: an OCI bundle\'s box made, isolated, started and waited for (`muk run`), in C on lib and nothing else. Where there is no Linux under it, the Linux it asks for is sods\'; no image, no terminal\'s other end, no KVM and no Firecracker',
     holds: ['module/muk', 'why/core/src/prompt/launch.rs', 'why/core/src/prompt/seccomp.rs', 'why/core/src/compute'],
-    takes: ['lib', 'sods']},
-  {name: 'prompt', says: "a box someone works in: its terminal (the other end of the one muk makes in the box) and what of it is kept from one run to the next (a box still there with no one at it; what it writes, each part with its owner's lifetime). Nothing of the machine: it has of a box what muk gives it, a run and one descriptor",
-    holds: ['module/prompt', 'why/core/src/prompt', 'why/app/prompt'],
-    takes: ['lib', 'muk', 'sods', 'ricebox']},
-  {name: 'sods', says: 'instructions: x86-64 made wasm ahead of the run, kept and shared by digest, never crossing to JS',
-    holds: ['module/sods/src', 'module/sods/runtime'],
-    takes: []},
-  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, and the command line #80 lists; no window, ordinary POSIX, and no service known to it',
+    takes: ['lib'], entries: []},
+  {name: 'prompt', says: "a terminal attached: the other end of the one muk makes in a box, given as one descriptor (`prompt attach FD`): what is typed and shown, its size, the frontend's terminal put back. It starts no process and keeps no box: whoever runs muk owns those",
+    holds: ['module/prompt', 'why/core/src/prompt'],
+    takes: [], entries: []},
+  {name: 'sods', says: 'a program run where its machine, its kernel or its system is absent: translation and what a translation is kept by, the Linux a program asks for, and every difference between hosts (#191: its table is runtime/targets.ts); no image, no OCI and no product policy',
+    holds: ['module/sods'],
+    takes: ['lib'],
+    entries: ['module/sods/runtime/translate.ts', 'module/sods/runtime/linux.ts', 'module/sods/runtime/host.ts', 'module/sods/runtime/targets.ts']},
+  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, the command line #80 lists, and the root as layers (their form, and what reads them); no window, ordinary POSIX, and no service known to it',
     holds: ['module/ricebox'],
     takes: ['lib', 'muk', 'sods', 'everyday']},
   {name: 'everyday', says: 'the look and feel, changed by the one who uses it: what a face is drawn through. A sheet of names and values, a person\'s lines held to it, the way back the file itself; no window of its own',
     holds: ['module/everyday'], takes: []},
-  {name: 'you', says: 'the tools a person reaches for: z, rg, fd, fzf', holds: ['module/you'], takes: ['lib']},
+  {name: 'you', says: 'the tools a person reaches for, each a unit of C on lib made to its bound: you (the places one has been, zoxide\'s) and rg (a tree searched, ripgrep\'s), on regular expressions of its own', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
     holds: ['module/otter', 'why/core/src/storage'],
     takes: ['lib', 'ricebox', 'muk', 'sods']},
   {name: 'cowboy', says: 'what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH)',
     holds: ['why/core/src/ssh', 'why/cli/src/cmd/ssh.rs', 'why/cli/src/cmd/address.rs'],
-    takes: ['ricebox']},
+    takes: ['sods', 'ricebox']},
   {name: 'shipto', says: 'what a service wants, all of it and nowhere else: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
     holds: ['why/remote', 'why/core/src/remote', 'why/cli/src/cmd/sync.rs', 'why/cli/src/cmd/git.rs', 'why/cli/src/cmd/remote.rs',
       'why/shared/desktop-releases.json'],
@@ -70,8 +76,8 @@ export const UNITS: Unit[] = [
 export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'everyday', 'ricebox'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'tests', 'module/muk/runtime/run.ts', 'module/muk/test', 'module/sods/examples', 'module/otter/test',
-  'why/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/muk/target', 'research_notes', 'reports',
+export const NOT_UNITS = ['scripts', 'tests', 'module/sods/test', 'module/muk/test', 'module/sods/examples', 'module/otter/test',
+  'why/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/prompt/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 
@@ -80,13 +86,6 @@ const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\
  * Units: 2 sods out, 3 ricebox, 4 otter's hooks, 6 muk, 7 shipto, 8 cowboy). [from, to, file].
  */
 export const OWED: [string, string, string][] = [
-  // A Prompt in a page reaches into the app for what it should be told: the app's words, whether it is the window's
-  // or a browser's, its repos, the Remote's address. Gone when the app hands them to it as it starts one (prompt's
-  // move into module/prompt).
-  ['prompt', 'app', 'why/app/prompt/ssh.ts'],
-  ['prompt', 'app', 'why/app/prompt/system.ts'],
-  ['prompt', 'app', 'why/app/prompt/userland.ts'],
-  ['prompt', 'app', 'why/app/prompt/webroot-fetch.ts'],
 ];
 
 /** The unit of a file (a path from the root): the unit holding the longest path that holds it, or null. */
@@ -134,7 +133,40 @@ export function check(): {homeless: string[]; crossings: [string, string, string
   return {homeless, crossings};
 }
 
+/** Every TypeScript file under the root, a unit's or not (tests and scripts too), but for what is made or fetched. */
+function everyTs(dir = ROOT): string[] {
+  const out: string[] = [];
+  for (const e of readdirSync(dir, {withFileTypes: true})) {
+    if (e.name.startsWith('.') || ['node_modules', 'target', 'dist', 'public'].includes(e.name)) continue;
+    const p = join(dir, e.name);
+    if (e.isDirectory()) out.push(...everyTs(p));
+    else if (e.name.endsWith('.ts')) out.push(relative(ROOT, p).split(sep).join('/'));
+  }
+  return out;
+}
+
+/**
+ * Every import that goes into a unit past its entries: [file, what it imports]. A unit that says its entries is
+ * taken from through them alone by everything outside its own folder, tests and scripts included; its own files and
+ * its own tests reach where they like.
+ */
+export function reaches(): [string, string][] {
+  const found: [string, string][] = [];
+  const guarded = UNITS.filter((u) => u.entries).map((u) => ({unit: u, folders: u.holds.filter((h) => h.startsWith('module/'))}));
+  for (const rel of everyTs()) {
+    for (const m of readFileSync(join(ROOT, rel), 'utf8').matchAll(IMPORT)) {
+      const target = relative(ROOT, resolve(ROOT, dirname(rel), m[1] ?? m[2] ?? '')).split(sep).join('/');
+      for (const {unit, folders} of guarded) {
+        const inside = (path: string) => folders.some((f) => path.startsWith(f + '/'));
+        if (inside(target) && !inside(rel) && !unit.entries!.includes(target)) found.push([rel, target]);
+      }
+    }
+  }
+  return found;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  for (const [file, target] of reaches()) console.log(`NOT AN ENTRY: ${file} -> ${target}`);
   const {homeless, crossings} = check();
   for (const f of homeless) console.log(`no unit's: ${f}`);
   const owed = new Set(OWED.map((o) => o.join(' ')));

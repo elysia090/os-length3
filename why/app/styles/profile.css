@@ -7,31 +7,29 @@
 .card-summary:empty { display: none; }
 .card-summary ~ .muted { font-size: var(--t-meta); }
 
-/* Home: profile. The name at Home's top, small (home.css --home-name: its capitals an icon of the rail's tall),
-   written where it is read (home.ts profileHeader): no sheet comes round it, no Cancel and no Save. */
-/* The profile, written where it is read: a block twelve cells tall from the band's top, whose foot is the line the
-   name's capitals stand on (the line the third repo's do). Under it, quiet, the counts; then the handle and the line
-   about the person while there are any. */
-.profile { position: absolute; left: 0; top: 0; width: 100%; height: calc(12 * var(--u)); pointer-events: none; }
+/* Home: profile, written where it is read (home.ts profileHeader): no sheet comes round it, no Cancel and no Save.
+   A cell of the desk over it; then the name, its capitals --name-cap cells tall (two; one where the name is longer
+   than the column at two: home.ts fits it), standing on the foot of the second cell either way, its ink on the
+   column's edge (--ink-left); a cell under it, quiet, the counts; then the handle and the line about the person while
+   there are any, a cell each. In a line as tall as its size the face sets its capitals' feet .1245 of the size above
+   the line's foot and their tops .2043 of their own height under its top: the margins take both off, so the name is
+   as tall in the column as its capitals are. */
+.profile { padding-top: var(--u); }
+.identity { position: relative; display: grid; justify-items: start; }
 .identity > * { pointer-events: auto; }
 .identity :is(h1, .handle, .bio) { overflow-wrap: anywhere; }
-/* Its capitals --name-cap cells tall (home.ts fits them); its ink on the left edge (--ink-left). In a line as tall as
-   its size the face sets its capitals' feet .1245 of the size above the line's foot. */
-.identity h1 { --size: calc(var(--name-cap, 7) * var(--u) / .727); position: absolute; left: 0; bottom: calc(-.1245 * var(--size)); max-width: none; margin: 0 0 0 var(--ink-left, 0px);
+.identity h1 { --cap: var(--name-cap, 2); --size: calc(var(--cap) * var(--u) / .727); max-width: none;
+  margin: calc((2 - 1.2043 * var(--cap)) * var(--u)) 0 calc(-.1713 * var(--cap) * var(--u)) var(--ink-left, 0px);
   font: 900 var(--size)/1 var(--display); letter-spacing: -.055em; white-space: nowrap; }
-/* A name longer than its line even two cells tall: it breaks over lines, balanced, and what is under it follows it down
-   (the profile then is as tall as it is, over the note). */
-.identity h1.long { max-width: 100%; white-space: normal; text-wrap: balance; }
-.profile:has(h1.long) { position: static; height: auto; padding: var(--u) 0 0; }
-.identity:has(> h1.long) { display: grid; gap: var(--s2); }
-.identity:has(> h1.long) > * { position: static !important; margin: 0; }
-.home-own:has(h1.long) { padding-top: 0; }
-.home-own:has(h1.long) > .section { margin-top: calc(2 * var(--u)); }
-.identity > :is(.counts, .handle, .bio, .bio-ask, .error) { position: absolute; left: 0; margin: 0; font: 400 20px/var(--u) var(--mono); color: var(--ink); }
-.identity > .counts { top: calc(14 * var(--u) - 19px); display: flex; flex-wrap: wrap; gap: 0 3ch; max-width: 100%; white-space: nowrap; }
-.identity > .handle { top: calc(15 * var(--u) - 19px); }
-.identity > :is(.bio, .bio-ask) { top: calc(16 * var(--u) - 19px); max-width: min(60ch, 100%); max-height: calc(2 * var(--u)); overflow: hidden; white-space: pre-wrap; font-family: var(--sans); color: var(--sub); }
-.identity > .error { top: calc(18 * var(--u) - 19px); color: var(--off); }
+/* A name longer than the column even a cell tall: it breaks over lines, balanced, a cell and a half each. */
+.identity h1.long { max-width: 100%; margin: 0; line-height: calc(1.5 * var(--u)); white-space: normal; text-wrap: balance; }
+.identity > :is(.counts, .handle, .bio, .bio-ask, .error) { margin: 0; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
+.identity > .counts { order: 1; margin-top: var(--u); display: flex; flex-wrap: wrap; gap: 0 3ch; max-width: 100%; white-space: nowrap; }
+.identity > .handle { order: 2; }
+.identity > .bio { order: 3; max-width: min(60ch, 100%); max-height: calc(2 * var(--u)); overflow: hidden; white-space: pre-wrap; font-family: var(--sans); color: var(--sub); }
+/* The way to write a line about oneself: in the cell between the profile and the note, so nothing moves as it shows. */
+.identity > .bio-ask { position: absolute; left: 0; top: 100%; font-family: var(--sans); }
+.identity > .error { order: 4; color: var(--off); }
 .identity [contenteditable] { outline: none; cursor: text; caret-color: var(--ink); }
 .identity [contenteditable]:empty::before { content: attr(data-placeholder); color: var(--rule); }
 .identity h1[contenteditable] { min-width: 3ch; }
@@ -46,4 +44,4 @@
 .count-go { margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field);
   background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
 .count-go:is(:hover, :focus-visible) { text-decoration: underline 3px; text-underline-offset: 4px; }
-.section > h2.landed { animation: landed 1200ms ease-out; border-radius: var(--r-field); }
+.section > h2.landed { animation: landed 1200ms var(--spring); border-radius: var(--r-field); }

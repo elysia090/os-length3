@@ -1,2 +1,4 @@
 # What build.sh makes beside its source when not told where.
-/you
+/src/you
+/src/rg
+!/src/rg/

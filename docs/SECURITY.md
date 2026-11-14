@@ -40,7 +40,7 @@ patched.
 
 ## Threat model, in short
 
-The whole model is in `docs/DESIGN.md`, Part II:
+The whole model is in `docs/OS.md`:
 
 - §5, "Names: who owns what, and what is trusted for it";
 - §6, "The canonical copy is on the Remote" and "The Remote";
@@ -75,7 +75,7 @@ request passes, and the one secret") and are tested in
   digest pinned in `why/core/src/root/pins.rs`, and so is the browser's copy of
   it: its index by the digest pinned beside it, each pack by the table of
   its files' digests that names it, each file read from a pack by its line
-  of that table (`module/muk/runtime/table.ts`), before any of it is used.
+  of that table (`module/ricebox/layers/table.ts`), before any of it is used.
 - **What runs where.** A Prompt runs a distribution's root on the device's
   own kernel without privilege: user, mount, pid, ipc, uts and network
   namespaces, a read-only root, no_new_privs and a seccomp filter

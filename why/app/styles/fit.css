@@ -1,0 +1,53 @@
+/* What the eye finds wanting, and the rule that mends each: after every other sheet, as each is a rule over them all. */
+
+/* ---- What the eye finds wanting, and the rule that mends each (DESIGN §5). ----
+
+   Nothing that is read or pressed has the ground's dots under it. A dot in the middle of a line of small words reads
+   as a full stop that was never written ("1 repo . 1 server"), and in a key as dirt. Words set on the ground stand on
+   a patch of the ground's own colour exactly as large as they are, as a name on a map stands clear of its grid; a key
+   on the ground has the ground's fill. */
+.identity > :is(.counts, .handle, .bio), .home-repos-sec > h2, .home-repos > .card.new, .desk-label, .issue-name, .git-side > .issues-write,
+.side-part h3, .lately > h2 { background-color: var(--ground); }
+.home-repos-sec > h2, .git-side > .issues-write { width: fit-content; }
+.server-chips .chip:not([aria-checked='true']), .band-add, .server-bar > .server-gear:not([aria-expanded='true']) { background-color: var(--ground); }
+
+/* A sheet is as tall as what is on it. Only the piece in the hand reaches the window's foot (it is worked in, and
+   what is under its foot is scrolled to inside it); a sheet not in the hand that stood as tall was a frame round
+   nothing. */
+.server-center .slide:not([aria-current='true']), .slide-track > .server-side, .inbox-index { height: auto; max-height: 100%; align-self: flex-start; }
+.server-center .slide:not([aria-current='true']) > .board-card { flex: none; }
+.slide-track > .server-side { padding-bottom: var(--u); }
+.inbox-index { padding-bottom: calc(var(--u) / 2); }
+
+/* (Runtime's account is a ruled form on its sheet, and stays one: a frame, three columns of one height, its lines the
+   quiet rule's. Only this was off: its three figures stand over its three columns, each from its column's own left
+   margin, to the pixel, where they stood eleven px left of the second and twenty-three of the third.) */
+.device-part > .legend { padding: 0; }
+.device-part > .legend > * { padding-left: calc(var(--s4) + 1px); }
+
+/* A board not in the hand is its name and nothing round it: a name on the ground, as a repo's is on Home, as wide as
+   the name, pressed to take it up. No sheet stands empty between the room's own sheet and the board worked in, and
+   the row is packed close: the room's sheet, the names before, the board in the hand, the names after. */
+.server-center .slide[aria-current='false'] { width: auto; background: none; outline: 0; border-radius: 0; cursor: var(--cursor-hand); }
+.server-center .slide[aria-current='false'] .board-head { padding: 0; min-height: calc(2 * var(--u)); flex-wrap: nowrap; }
+.server-center .slide[aria-current='false'] .board-head > :not(.board-mark, h2) { display: none; }
+.server-center .slide[aria-current='false']:has(> :is(.board-ghost, .board-new)) { outline: 0; }
+.server-center .slide[aria-current='false'] > .board-card > :not(.board-head) { display: none; }
+.server-center .slide[aria-current='false'] .board-head h2 { flex: none; overflow: visible; color: var(--sub); }
+.server-center .slide[aria-current='false']:is(:hover, :focus-visible) h2 { color: var(--ink); }
+.side-board.side-new { font-family: var(--mono); font-size: var(--t-meta); font-weight: 700; text-transform: lowercase; }
+
+/* The room's sheet is packed as Inbox's first sheet is: nothing round its lines but the sheet's own edge, every line
+   a cell tall, half a cell in from the edge; a label, its lines, half a cell, the next label. It was a cell of
+   ground all round and a line and a half to a line: loose. */
+.slide-track > .server-side { padding: 0 0 calc(var(--u) / 2); gap: calc(var(--u) / 2); }
+.slide-track > .server-side > .side-part { gap: 0; }
+.slide-track > .server-side .side-part h3 { padding: 0 calc(var(--u) / 2); line-height: var(--u); }
+.slide-track > .server-side > .side-index { margin: 0; }
+.slide-track > .server-side .side-board { height: var(--u); padding: 0 calc(var(--u) / 2); line-height: var(--u); }
+.slide-track > .server-side .side-board > .board-mark { line-height: var(--u); }
+.slide-track > .server-side :is(.people, .side-repos) { gap: 0; }
+.slide-track > .server-side .people li:not(:has(> .person-go)), .slide-track > .server-side .person-go { padding: 0 calc(var(--u) / 2); line-height: var(--u); }
+.slide-track > .server-side .person-go { width: 100%; margin: 0; border-radius: 0; }
+.slide-track > .server-side .people .lately-badge { width: 20px; height: 20px; align-self: center; }
+.slide-track > .server-side .side-repo { margin: 0; padding: 0 calc(var(--u) / 2); border-radius: 0; line-height: var(--u); }

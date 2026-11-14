@@ -1,4 +1,4 @@
-// Repos kept: the canonical copy of each of an account's repos (DESIGN.md
+// Repos kept: the canonical copy of each of an account's repos (docs/OS.md
 // §6, "The canonical copy is on the Remote"). A repo is lines of work, main
 // and one per issue; each line a draft (the working tree, path -> digest,
 // versioned), a head (its last commit) and what it pushed. Rows only: the

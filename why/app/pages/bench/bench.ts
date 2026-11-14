@@ -294,7 +294,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   if (!parts.desk && !parts.paneless) room.prepend(reference.heads);
   // On a desk the band's tools are the top line's: >_ for the terminal, the file deeds (the page puts its own
   // between), the search; after them, the page's own (Forge: the name of what is in hand, against the right edge).
-  const tools = parts.desk || parts.paneless ? h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, termTool, reference.search) : null;
+  // (Git is Forge's far side: its door, at the band's head, is the way to Forge and its terminal; a key of its own
+  // for the terminal would be a second icon leading where the first leads.)
+  const tools = parts.desk || parts.paneless ? h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, ...(parts.paneless ? [] : [termTool]), reference.search) : null;
   // The band's search box says what it is by a lens at its left, as a short box must; what it finds drops as a sheet
   // under the band, over the desk, the words searched for heading it (dropSheet).
   if (tools) { reference.search.querySelector('form')?.prepend(mark('search')); dropSheet(work, center, reference.search); }

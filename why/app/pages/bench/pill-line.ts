@@ -1,6 +1,7 @@
 import {fieldMoved} from '../../ui/caret.ts';
 import {still} from '../../ui/glide.ts';
 import {promptHolds, sessionIfAny, type Prompt} from './sessions.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // The box's pill while it runs (box.ts): the prompt line the repo's shell waits at, and its lamp, lit while the shell
 // runs. The repo's Prompt is followed for them, and a new one from the moment it is started again.
@@ -72,7 +73,7 @@ export class PillLine {
       this.#speaking = window.setTimeout(() => {
         waits.textContent = now;
         fieldMoved();
-        waits.animate([{opacity: 0}, {opacity: 1}], {duration: 140, easing: 'ease-out'});
+        waits.animate([{opacity: 0}, {opacity: 1}], {duration: 140, easing: SPRING});
       }, s?.settlesIn() ?? 0);
     });
   }

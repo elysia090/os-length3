@@ -43,7 +43,7 @@ export * from './schema.auth.ts';
 /**
  * Beside a tree, each file's mode where it is not a plain file's: path -> its permission bits (0o755 is 493),
  * only for a file its tree names with an execute bit. A path not in it is a plain file. Old clients send none
- * and read past it (DESIGN.md §6, "A file's mode").
+ * and read past it (OS.md §6, "A file's mode").
  */
 export type Modes = Record<string, number>;
 

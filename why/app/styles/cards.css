@@ -8,7 +8,7 @@
 }
 .card.repo { cursor: var(--cursor-hand); }
 .card-title { font-size: var(--t-card); font-weight: 600; overflow-wrap: anywhere; }
-.card.new { border-style: dashed; place-content: center; justify-items: center; cursor: var(--cursor-hand); color: var(--sub); }
+.card.new { border-style: dashed; place-content: center start; justify-items: start; cursor: var(--cursor-hand); color: var(--sub); }
 .card.new:hover { color: var(--ink); }
 .note { grid-column: 1 / -1; }
 
@@ -24,12 +24,13 @@
 .gear-card[aria-busy='true'] > .card-open { cursor: var(--cursor-progress); }
 .repo-gear-button {
   display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0;
-  border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--ground); color: var(--sub); cursor: var(--cursor-hand);
-  opacity: 0; transition: opacity var(--motion);
+  border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--quiet); cursor: var(--cursor-hand);
+  transition: color var(--motion);
 }
 .repo-gear-button .mark { width: 18px; height: 18px; }
-.gear-card:is(:hover, :focus-within) .repo-gear-button, .space-row:is(:hover, :focus-within) .repo-gear-button, .repo-gear-button[aria-expanded='true'] { opacity: 1; }
-@media (hover: none) { .repo-gear-button { opacity: 1; } }
+/* (There always, quiet: what can be done with a thing does not wait on a pointer over it, so it is the one thing with
+   a finger, a mouse and the keyboard. Inked while it is used.) */
+.gear-card:is(:hover, :focus-within) .repo-gear-button, .space-row:is(:hover, :focus-within) .repo-gear-button, .repo-gear-button[aria-expanded='true'] { color: var(--ink); }
 .repo-gear-button:hover, .repo-gear-button[aria-expanded='true'] { background: var(--raised); color: var(--ink); border-color: var(--ink); }
 /* On a card, the list comes down from its gear as wide as the card, over what is under it: never past the card's own
    edges, so a card at the column's left does not reach under the rail with a field or an ask in its list. */
@@ -122,7 +123,7 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .row-meta { flex: none; color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
 /* Room for the next at a list's foot, and the way to it (Remote's Devices: Connect a device): a dashed edge and a
    quiet word in its middle, as the dashed card is. Pressed, its steps take its place. */
-.row-item.row-new { justify-content: center; align-items: center; gap: var(--s2); margin-top: var(--s1); border: 1px dashed var(--rule); color: var(--sub); }
+.row-item.row-new { justify-content: flex-start; align-items: center; gap: var(--s2); margin-top: var(--s1); border: 1px dashed var(--rule); color: var(--sub); }
 .row-item.row-new:hover { color: var(--ink); }
 .row-new .mark { width: var(--s4); height: var(--s4); }
 /* A phone has no room for a row's name beside its facts: the name takes its own line, the facts the next, the deed

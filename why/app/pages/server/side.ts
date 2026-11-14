@@ -2,12 +2,14 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {shown as named, shownAs} from '../../remote/inbox.ts';
 import * as servers from '../../remote/servers.ts';
+import {boardNew} from '../../remote/news.ts';
 import {personBadge} from '../kit/pane.ts';
 import {errorText} from '../../host/errors.ts';
 import {every} from '../../host/runs.ts';
 import {paced, still} from '../../ui/glide.ts';
+import {SPRING} from '../../ui/law.ts';
 
-// Server's right pane, where a repo's reference would be: who is in the server, then the repos they show in it
+// The room's own sheet, the first piece of Server's row: who is in the server, then the repos they show in it
 // (pressing one shows it as it was last pushed; a repo shown is only seen there, never written).
 
 /** What the side needs of the view it is in. */
@@ -26,7 +28,9 @@ const part = (title: string, ...body: (Node | null)[]) => h('section', {class: '
 const faceOf = (address: string) => personBadge(named(address));
 
 export class Side {
-  readonly element = h('aside', {class: 'side server-side', 'aria-label': t('Members and shared repos')});
+  readonly element = h('aside', {class: 'server-side', 'aria-label': t('Members and shared repos')});
+  /** Its boards, by name: the room's index, before who is in it (`boards`). */
+  private readonly index = h('section', {class: 'side-part side-index'});
   /** The reading asked for last: one answered after a later one was asked is dropped. */
   private token = 0;
   private readonly ways: SideWays;
@@ -38,9 +42,11 @@ export class Side {
   /** Who is in server `id`, then the repos they show in it. */
   paint(id: string | null) {
     const mine = ++this.token;
-    // Outside a server (an open board, or none chosen), whose it is is not told: the side stays, empty, so the
-    // center keeps its width and nothing on the band moves when a server is chosen or made.
+    // Outside a server (an open board, or none chosen), whose it is is not told: the row has no such sheet.
+    this.element.hidden = !id;
     if (!id) { this.element.replaceChildren(); return; }
+    // Before who is in it is read, its boards are there already.
+    if (!this.element.contains(this.index)) this.element.replaceChildren(this.index);
     const read = () => Promise.all([servers.people(id), servers.shownIn(id)]);
     let drawn = '';
     const draw = ([people, repos]: [servers.Person[], servers.ShownRepo[]]) => {
@@ -49,11 +55,11 @@ export class Side {
       // one frame beside them; the same server's drawn again (someone came in), they simply stand.
       const another = !!this.counted && this.counted.id !== id && this.element.childElementCount > 0;
       this.counted = {id, people: people.length, repos: repos.length};
-      this.element.replaceChildren(
+      this.element.replaceChildren(this.index,
         part(t('Members'), h('ul', {class: 'people'}, ...people.map((p) => this.person(p)))),
         // The repos shown, when there are any: nothing is said of none here.
         repos.length ? part(t('Repos'), h('ul', {class: 'side-repos'}, ...repos.map((r) => this.repo(r)))) : '');
-      if (another && !still()) this.element.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: 'ease-out'});
+      if (another && !still()) this.element.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: SPRING});
     };
     void read().then((got) => { if (mine === this.token) draw(got); })
       .catch((e) => { if (mine === this.token) this.element.replaceChildren(h('p', {class: 'error'}, errorText(e))); });
@@ -65,6 +71,28 @@ export class Side {
     }, {alive: () => mine === this.token && this.element.isConnected, paced: true});
   }
 
+  /**
+   * The room's boards, by name, the one in the hand in ink: any of them is one press away from here. It is the only
+   * way among them that is seen: the row shows the board in the hand alone, beside this sheet, as Inbox shows one
+   * conversation beside who wrote. A board with something not seen yet has its dot.
+   */
+  boards(list: readonly {id: string; name: string}[], now: number, go: (j: number) => void, more = false) {
+    const lines = list.map((b, j) => {
+      const line = h('button', {type: 'button', class: `side-board${boardNew(b.id) ? ' news' : ''}`, 'aria-current': String(j === now)},
+        h('span', {class: 'board-mark', 'aria-hidden': 'true'}, '#'), h('span', {}, b.name));
+      line.addEventListener('click', () => go(j));
+      return h('li', {}, line);
+    });
+    // (After them, the way to a new one, as Home's is after its repos: the board not made yet is the row's last.)
+    if (more) {
+      const line = h('button', {type: 'button', class: 'side-board side-new', 'aria-current': String(now === list.length)},
+        h('span', {class: 'board-mark', 'aria-hidden': 'true'}, '+'), h('span', {}, t('New board')));
+      line.addEventListener('click', () => go(list.length));
+      lines.push(h('li', {}, line));
+    }
+    this.index.replaceChildren(h('h3', {}, t('Boards')), h('ul', {class: 'side-boards'}, ...lines));
+  }
+
   /** How many people and repos it drew last, and for which server. */
   private counted: {id: string; people: number; repos: number} | null = null;
   /** How many people and repos it drew for server `id`, if it did (the gear's counts, at once). */
@@ -74,6 +102,7 @@ export class Side {
 
   /** Emptied while a server is made, until its first person stands there (`ghost`). */
   clear() {
+    this.element.hidden = false;
     this.element.replaceChildren();
   }
 

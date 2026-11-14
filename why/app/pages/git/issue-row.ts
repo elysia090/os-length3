@@ -2,6 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {after, paced, still} from '../../ui/glide.ts';
 import type {Issue} from '../../repos/issues.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // Git's issues not merged yet, as large boxes side by side: one in full, its neighbours' edges showing at both
 // sides. An edge is the way to the box beside (hover lifts it; ← → and a finger's swipe do the same), and the track
@@ -186,7 +187,7 @@ export class IssueRow {
       slot.inert = false;
       slot.removeAttribute('aria-hidden');
       slot.replaceChildren(...this.ways.slot(x, false));
-      for (const part of slot.children) part.animate([{opacity: 0}, {opacity: 1}], {duration: paced(120), easing: 'ease-out'});
+      for (const part of slot.children) part.animate([{opacity: 0}, {opacity: 1}], {duration: paced(120), easing: SPRING});
     });
   }
 

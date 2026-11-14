@@ -20,7 +20,7 @@
 .add-someone { position: relative; padding-left: calc(var(--s4) + 24px + var(--s2)); }
 .add-someone::before {
   content: '+'; position: absolute; top: var(--s4); left: var(--s4); display: grid; place-items: center; width: 24px; height: 24px;
-  border: 1px dashed var(--edge); border-radius: 50%; font: 400 16px/1 var(--sans); color: var(--sub);
+  border: 1px dashed var(--edge); border-radius: 50%; font: 400 var(--t-body)/1 var(--sans); color: var(--sub);
 }
 .small-card.quiet { border-style: dashed; color: var(--sub); }
 .small-card.new { min-height: 128px; }

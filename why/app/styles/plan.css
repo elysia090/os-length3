@@ -43,7 +43,7 @@
 .plan-told[hidden] { display: none; }
 .plan-told.done::before { content: ''; flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--done)
   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.5 12.5l3.5 3.5 7.5-8' fill='none' stroke='%23f9f8f5' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat; }
-/* The meter (DESIGN.md §3): a round track, `raised` inside an `edge` line, filled `ink` as far as the use goes. */
+/* The meter: a round track, `raised` inside an `edge` line, filled `ink` as far as the use goes. */
 .meter { height: var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); overflow: hidden; }
 .meter > span { display: block; height: 100%; width: calc(var(--share, 0) * 100%); background: var(--ink); }
 .plan-meter.over .row-meta { color: var(--ink); font-weight: 600; }

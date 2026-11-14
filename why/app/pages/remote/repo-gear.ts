@@ -58,7 +58,7 @@ const stopsFirst = () => h('p', {class: 'muted small'}, t('Prompt is stopped; re
  */
 export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): {gear: HTMLButtonElement; list: HTMLElement} {
   const gear = h('button', {type: 'button', class: 'repo-gear-button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-    'aria-label': t('Actions for {name}', {name: repo}), title: t('Actions for {name}', {name: repo})}, mark('gear')) as HTMLButtonElement;
+    'aria-label': t('Actions for {name}', {name: repo}), title: t('Actions for {name}', {name: repo})}, mark('down')) as HTMLButtonElement;
   const list = h('div', {class: 'pop repo-gear-pop', role: 'menu', 'aria-label': t('Actions for {name}', {name: repo}), hidden: ''});
 
   const away = (e: Event) => {

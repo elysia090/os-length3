@@ -1,17 +1,36 @@
 # muk — the machine
 
-An OCI-compatible VMM: an image's layers at rest, named by their digest, each byte fetched when it is first
-touched, and a box run from them, as the OCI runtime says. No KVM and no Firecracker under it. On Linux the host's
-kernel is the machine and a box is its namespaces (`src/muk.c`: C on `../lib` alone, with no C library, written
-as `../you` is: what it does counted by hand first, then written until the counts are those). In a browser there
-is no kernel to ask, so muk answers a box's system calls itself (`runtime/`), over the code sods makes.
+A small x86-64 Linux container runner in C, with no C library or dynamic runtime dependencies: one program, made of
+`../lib`'s headers and nothing else. It makes an OCI bundle's box, isolates it, starts its program and waits for
+it. That is all of it: it reads no image, keeps no box, holds no terminal's other end, and has no code for any
+host but Linux.
+
+```
+src/muk.c        the Linux operations, in the order they are safe in
+src/bundle.h     config.json read where it lies, and the floor every box has whatever it asks
+src/filter.h     the filter over every call a box makes
+src/linux-abi.h  the numbers of the x86-64 Linux ABI it uses
+make/slots.ts    the tables bundle.h finds names by, made again when a name is added
+test/            beside runc, against a hostile config.json, and beside a model of the parser
+tool/            measurement (profile.sh), apart from the checks
+```
 
 ```
 muk run [-b BUNDLE] [--console-socket PATH] [--lend PATH]... [--ids FIRST-LAST] [--cgroup DIR] [ID]
-                              the bundle's process, started and waited for; muk ends as it ends
-sh test/bundle/muk.sh         the same bundles under muk and under runc: what each box says of itself, the same
-sh test/bundle/hostile.sh     a config.json written against muk, every way it has: refused, or a box without it
+                       the bundle's process, started and waited for; muk ends as it ends
+sh test/muk.sh         the same bundles under muk and under runc: what each box says of itself, the same
+sh test/hostile.sh     a config.json written against muk, every way it has: refused, or a box without it
+sh test/same.sh        the C parser and a model of it (test/asks.ts), asked the same 8,748 config.jsons
 ```
+
+**What it is compatible with, and how that is held.** One contract: the OCI runtime bundle (`config.json` and a
+root), read as runc reads it and run as runc runs it, the `run` profile of it (not the whole lifecycle CLI).
+`test/muk.sh` runs the same bundles under both and compares what each box says of itself, line for line. Where muk
+is stricter than runc it refuses in words rather than differing quietly (the floor, below). It has no second
+contract: an image's layers are the distribution's to read ([`../ricebox/layers`](../ricebox/layers)), and where
+there is no Linux under it (a browser, another system) the Linux it asks for is sods'
+([`../sods`](../sods/README.md)), so this same C is what runs there. That last step is not made yet: sods' Linux
+answers what a program asks, and refuses in words what a box's maker asks (namespaces, mounts, a filter).
 
 **Where muk ends.** A run is a box's whole life here: muk names no box, keeps none beyond its run, lists none, and
 writes nothing about one. A terminal is a device of the box, so muk makes it where only it can (in the box's own
@@ -19,9 +38,9 @@ writes nothing about one. A terminal is a device of the box, so muk makes it whe
 descriptors, its session's terminal, /dev/console), and gives its other end away whole: one descriptor sent to the
 one listening at `--console-socket`, and closed. With no one to take it there is no terminal. What is typed and
 shown there, its size as it changes, who is at it, a box left and come back to, a box that outlives what started
-it: those are the Prompt's ([`../prompt`](../prompt/README.md)), which takes muk and which muk knows nothing of.
+it: the caller owns those policies. [`../prompt`](../prompt/README.md) attaches to the supplied descriptor and handles terminal input, output and resize.
 
-`src/muk.c` is all of it. config.json is read once, where it is (a string is used in its place in the text, a NUL
+The C runner owns configuration enforcement. config.json is read once, where it is (a string is used in its place in the text, a NUL
 over its closing quote; nothing is copied, nothing allocated). One clone makes the box in its namespaces. In it the
 root is bound on itself and made the root (pivot_root), **the host's root is taken away, and only then is anything
 looked up in the box**: after pivot_root the old root lies on the new one, and `..` at the box's root steps onto
@@ -61,8 +80,8 @@ own, or what was lent in words config.json has no say in (muk's own: `--lend`, `
 - **Devices.** A device is what muk made, in a /dev that is the box's own (a tmpfs, where config.json mounts
   none), or one lent by its own name. Every other mount is nodev: the root, so a device file an image holds is
   not one; a bind, so one planted in a directory that was lent is not one; a tmpfs, whatever its options say. A
-  box makes none (CAP_MKNOD is of a user namespace), and `linux.devices`, or a device allowed in
-  `linux.resources.devices`, is refused. Its terminals are 256 at most, whatever its devpts asks for: they are
+  box makes none (CAP_MKNOD is of a user namespace), and `linux.devices`, or any nonempty
+  `linux.resources.devices` rule list, is refused rather than silently ignored. Its terminals are 256 at most, whatever its devpts asks for: they are
   the host's to run out of.
 - **Mounts.** What is mounted is what was lent (a bind) or one of the kinds that are a box's own, made new for it:
   proc, sysfs, tmpfs, devpts, mqueue, its cgroups. No other kind: not a disk, not the kernel's own tables
@@ -102,14 +121,14 @@ Where it reads config.json as runc does: null is a member not there, a member gi
 on a link lands on what the link leads to (in the box), where it runs is made when nothing is there. Where it does
 not: a mount's destination through a link that leads nowhere is refused (runc makes what it leads to).
 
-`test/bundle/muk.sh` is the check beside runc: 140 as root, 81 as another user. The same bundles under runc where
+`test/muk.sh` is the check beside runc: 153 as root, 91 as another user. The same bundles under runc where
 it runs them (what each box says of itself the same, line for line, the floor said to runc in its config.json,
 and what runc is given by being run, lent); what is refused; every cut of a config.json and bytes changed in it
 (never a signal, never a wait); 24 runs at once on one root; muk killed; a signal passed on; its three
 descriptors closed; every name of its tables; every call the filter names, asked from inside a box; a terminal,
 its other end taken at a socket, beside runc's.
 
-`test/bundle/hostile.sh` is the check against a config.json that means harm: 255 as root, 63 as another user,
+`test/hostile.sh` is the check against a config.json that means harm: 255 as root, 63 as another user,
 each with nothing lent but what the case says. The root or a bind's source anywhere on the host, through a link,
 up by `..`, beside what was lent; the host's devices by their paths, a device planted in a directory that was
 lent, one an image holds; twenty kinds of file system that are no box's; a proc or a sysfs somewhere the floor
@@ -121,100 +140,21 @@ sysctl, devices; a limit raised; terminals without end; calls the filter never h
 and (where the tree counts processes) one that starts all it can. Each is refused in words, or runs and says of
 itself that it has not got it.
 
-## Its counts
+## Validation and measurement
 
-The bundle `runc spec` writes (2.6 KB of config.json: five namespaces, seven mounts, /dev filled, ten paths hidden
-and five read-only, three capabilities), running `/bin/true`, as root, on one machine (Linux 6.18, a Firecracker
-guest):
-
-| | by hand | muk | runc 1.5.2 |
-| --- | --- | --- | --- |
-| system calls, the whole run | 121 | 127 | 5,761 |
-| instructions in muk itself | 12,000 | 31,400 | (a Go runtime) |
-| time, start to end | 1.9 ms | 2.0 ms | 23 ms |
-| the program, its bytes | | 49 KB | 9.7 MB |
-| muk's memory while its box runs | | 68 KB, 36 KB of it its own | |
-
-By hand, the calls: the bundle read 5 (chdir, open, read, a read that says it was all, close); signals held, the
-pipe, the clone 3. In the box: its end of the pipe closed, its end with muk's, muk's word, the mask 4; the root
-made its own, opened (as the kernel keeps it in the bundle), copied, put on itself, entered, turned, the host's let
-go 7; the seven mounts 7 and three directories made for them
-in the new /dev 3; six devices and five names 11; where it runs 1; twelve paths hidden 14 (the floor's two that `runc spec` does not
-name among them; two are directories here, two calls each); five read-only 9 (one is not there); the root nodev and read-only 1; the mask back, the name, a
-limit 3; the 38 capabilities it may never gain and the first past the kernel's last 39; groups and ids 3; the three
-sets 1; no new privileges 1; its end with muk's again (who it is changed) 1; descriptors closed, signals as they
-were, the filter, the program 4. Outside: muk's word, the wait, the box's end taken, muk's own 4. The six more muk makes are
-HOME read from the box's /etc/passwd, as runc gives it (3), and the cgroup tree as a host with the old
-hierarchies has it, bound with its flags (4 calls for 1). The time by hand is what the kernel takes for a clone
-into six namespaces and two programs started, which nothing in muk can lower.
-
-Instructions: reading config.json is all but 1,400 of them. It was 60,000 (23 a byte): a name looked for in its
-list one name after another, a key compared letter by letter with each key it might be, what is between words
-passed a byte at a time. Now a key is one comparison of words (two for a long one), a capability, an option or one
-of the floor's paths one look in a table made ahead (`src/slots.ts`), a string's end and a run of spaces found
-sixteen bytes at a time, a string with no escape read where it is asked for: 27,400 (11 a byte), the same text
-written with no spaces 22,500. By hand it is 12,000: what is left over is what each of 150 strings and 100 members
-still costs around its bytes (a word looked for before it, its length kept, its key made a word), which a reader
-written as one pass over the text would not pay.
-
-## At density
-
-`sh test/bundle/dense.sh [N]`: N boxes of one bundle at once (the mounts and hidden paths `runc spec` writes, a
-root not written to, each box in namespaces of its own, a network namespace among them), started together, left
-waiting, ended together. 1,000 of them, on the same machine (4 processors, 16 GB):
-
-| 1,000 boxes at once | muk, the host's root | muk, users of its own | runc 1.5.2 |
-| --- | --- | --- | --- |
-| until the last has started | 0.69 s | 0.70 s | 8.8 s |
-| a box, of the machine's memory | 388 KB | 407 KB | 1,056 KB |
-| of that, its processes' own | 59 KB | 59 KB | 6 KB |
-| of that, the kernel's for it | 329 KB | 348 KB | 1,050 KB |
-| until the last is gone | 1.2 s | 1.7 s | 1.3 s |
-
-1,450 boxes a second on four processors, 0.4 MB each: what the kernel takes for a box's namespaces (its network
-namespace most of all) and mounts is four fifths of it, and is the floor of a box made this way. Its processes'
-own is muk's 53 KB and the waiting program's 6: runc is started detached here, so nothing of it stays with a
-box, and what it leaves in the kernel beside the same namespaces is the cgroups it makes for each (muk makes
-none: a box's cgroup is the lender's, `--cgroup`). The muk that stays with each box is the seam still to be cut
-([`../prompt`](../prompt/README.md)): a box's end is waited for by one keeper for all, not by one muk each.
-
-## In a browser
-
-There the machine is muk's too: `runtime/` answers a box's system calls itself (TypeScript, for now, and far from
-its bound: docs/STRUCTURE.md), over the code sods makes of the box's programs.
-
-- Processes run at once, as on Linux: fork returns in the parent at once; a
-  call that must wait (input not typed yet, a child still running, a full
-  pipe) leaves its thread waiting, and muk makes it again when
-  something changed.
-- Threads (clone with CLONE_VM) share their process's memory, with futexes,
-  robust lists and a tid cleared at exit.
-- Signals reach handlers through an rt_sigframe that rt_sigreturn reads back
-  (masks, SA_SIGINFO, SA_RESTART, sigaltstack).
-- Pipes hold 64 KiB in pages as Linux's do, and a full one makes its writer
-  wait.
-- Threads run here one at a time (each until it waits, or for a time slice
-  taken at its calls), or each in its own Worker with memory shared, when the
-  host allows SharedArrayBuffer (`runtime/remote.ts`). There a write to the
-  console, as a read of the clock, is done in the thread's own Worker (into an
-  outbox muk takes from, `runtime/channel.ts`), not asked of muk
-  a line at a time.
-
-The code it runs is sods' (`../sods`). What it reads at rest are a root's layers: a file's bytes by a Range of its
-pack, used only once they are what the pack's table says (`runtime/pack.ts`, `runtime/table.ts`), put in its tree
-(`runtime/mount.ts`; a repo kept in step with the outside, `runtime/mirror.ts`), and the copies kept between runs,
-sealed by their digest (`runtime/keeper.ts`; what a translation's copy holds is sods' `kept.ts`). The tree is to be
-`src/tree.h`: a root's index as bytes, used where it is, which says what Linux says of every name of a whole root
-(`test/tree`); the calls do not walk it yet.
+`sh test/muk.sh` compares native bundle behavior with runc when available; `hostile.sh` checks isolation refusals.
+`same.sh` compares the C configuration parser with a test-only model (`test/asks.ts`), including truncated and
+malformed input; `node --test test/*.test.ts` asks the model alone. The TypeScript model is not a second
+production parser.
 
 ```
-node runtime/run.ts PROGRAM [args...]            # host ELF as /bin/PROGRAM
-node runtime/run.ts --root DIR /bin/sh -c '...'  # a host tree as /
-sh test/programs/run.sh                          # native vs translated, and the unit tests
-node test/floors/floors.ts                       # each floor beside Linux
-sh test/tree/tree.sh [DIR]                       # the tree (src/tree.h) beside Linux, every name of a directory
+sh tool/profile.sh --lifecycle --memory --trials 9 --boxes 8
+sh tool/profile.sh --parser
+sh tool/profile.sh ./candidate --baseline ./baseline --lifecycle
 ```
 
-A Prompt on Linux is still run by why's core (`why/core/src/prompt`: namespaces, the root under an overlay, a
-seccomp filter, an init); the box becomes the bundle prompt writes for `muk run`, and what is left of it there
-(the terminal's group, what is kept) is prompt's.
+The profiler emits raw JSON lines with source and artifact hashes, affinity and toolchain information. Startup is
+first observed guest output, shutdown is stdin EOF to supervisor and known guest exit. PSS separates supervisor and
+guest processes. An optional pre-existing exclusive cgroup supplies kernel memory; global memory fluctuations are
+not attributed to boxes. Counts are bounded and cleanup signals only owned process groups and pidfds. Timing is
+separate from security validation.

@@ -13,7 +13,8 @@ iced-x86 = { version = "1.21", default-features = false, features = ["std", "dec
 wasm-encoder = "0.263"
 # Decodes the browser root's packs (zstd), where a system call must have the bytes at once.
 ruzstd = { version = "0.9", default-features = false, features = ["std"] }
-# Checks what is read from those packs against their tables (runtime/table.ts), as at once.
+# Checks what is read from those packs against their tables (ricebox's layers/table.ts), as at once; and a
+# translation's identity (src/identity.rs).
 sha2 = { version = "0.11", default-features = false }
 
 [dev-dependencies]
@@ -27,3 +28,8 @@ codegen-units = 1
 
 [lib]
 crate-type = ["rlib", "cdylib"]
+
+# The cache's checks beside the unit's others (test/), not in a folder of cargo's own naming.
+[[test]]
+name = "cache"
+path = "test/cache.rs"

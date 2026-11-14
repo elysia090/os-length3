@@ -10,6 +10,7 @@
 //! - `operand`, `flags`, `integer`, `sse`, `fpu`: what each instruction means, written on the frame.
 //! - `lower`: a function's control flow; `image`: the module around the code.
 //! - `x87`: the coprocessor that runs beside the program; `web`: sods itself as a module in a browser.
+//! - `identity`: what makes a translation the same translation (its key); `cache`: translations kept under it.
 
 pub mod elf;
 pub mod x86;
@@ -33,3 +34,7 @@ pub mod image;
 pub mod x87;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
+
+pub mod identity;
+#[cfg(unix)]
+pub mod cache;

@@ -1,4 +1,4 @@
-// A commit's tree as git keeps one (0023; DESIGN.md, "What scales worst", 1): each folder a node named by the digest of
+// A commit's tree as git keeps one (0023; docs/OS.md, "What scales worst", 1): each folder a node named by the digest of
 // its entries, kept once in its repo, and a commit names its root. A commit is made by writing anew only the folders on
 // the paths it changed (edit), the rest being its parent's; a tree without a parent's to share is built whole (build).
 //

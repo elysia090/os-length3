@@ -18,10 +18,14 @@
    in the rail is. On a desk, against the right edge on the same row, the name of what is in hand, its capitals a
    cell tall. (Before: keys three cells tall, the terminal's five wide in ink, the others slots; before that small
    outlined tools, a pill for each repo out and ⊕.) */
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) { --key-gap: 6px; position: relative; z-index: 7; height: var(--keys); margin-left: calc(-1 * var(--body-left) - 2 * var(--u)); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) { --key-gap: var(--outer); position: relative; z-index: 7; height: var(--keys); margin-left: calc(-1 * var(--body-left)); }
 .work.desk-bench { position: relative; }
-.work.bench.desk-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: calc(-2 * var(--u)); }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: var(--key-gap); width: min(calc(14 * var(--u)), 100%); height: var(--key); }
+.work.bench.desk-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: 0; }
+/* The band's tools are one bar on the desk's dots: from the desk's edge, as wide as a piece (its edges on the grid's
+   lines, so no dot is cut by it), 36 px tall about the row's middle; ground under its marks and words, ink round it.
+   Its keys are parts of it two cells wide, a line between them; the search is the rest. */
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: 0; width: min(calc(24 * var(--u)), round(down, 100%, var(--u))); height: var(--key);
+  background: var(--ground); border-radius: var(--r-key); outline: 1px solid var(--ink); outline-offset: -1px; }
 .band-tool {
   flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--ink);
   border-radius: var(--r-field); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: background var(--motion);
@@ -32,17 +36,18 @@
 .band-tools form.search > .mark { position: absolute; left: 10px; top: calc((var(--h-row) - 16px) / 2); width: 16px; height: 16px; color: var(--ink); pointer-events: none; z-index: 1; }
 .band-tools .search-in { padding-left: 34px; border-color: var(--ink); background: transparent; font-size: var(--t-body); }
 .band-tools .search-in::placeholder { color: var(--sub); }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { width: var(--key); height: auto; border: 0; border-radius: var(--r-key); background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool .mark { width: 26px; height: 26px; stroke-width: 2; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:is(:hover, :focus-visible):not(:disabled) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:disabled { color: var(--quiet); box-shadow: inset 0 0 0 1px var(--quiet); cursor: var(--cursor-arrow); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { width: calc(2 * var(--u)); height: auto; border: 0; border-radius: 0; background: transparent; color: var(--ink); box-shadow: inset -1px 0 0 var(--ink); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool .mark { width: 18px; height: 18px; stroke-width: 2; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:is(:hover, :focus-visible):not(:disabled) { background: var(--paper); outline: none; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:disabled { color: var(--quiet); cursor: var(--cursor-arrow); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tools > .search-box { flex: 1 1 0; width: auto; min-width: 0; }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search { height: 100%; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search > .mark { left: 14px; top: calc(50% - 11px); width: 22px; height: 22px; stroke-width: 2; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 44px; border: 0; border-radius: var(--r-key); background: transparent;
-  box-shadow: inset 0 0 0 1px var(--ink); font: 400 18px/1 var(--sans); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search > .mark { left: 10px; top: calc(50% - 8px); width: 16px; height: 16px; stroke-width: 2; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 34px; border: 0; border-radius: 0; background: transparent;
+  box-shadow: none; font: 400 var(--t-meta)/1 var(--sans); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in::placeholder { color: var(--sub); }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: none; outline: none; }
 /* The name of what is in hand: against the right edge by its ink (ui/optical.ts inkEdge), a cell in from the page's
    edge as Home's repos are, its capitals a cell tall and in the middle of the keys' row; smaller where the band has
    no room for it at its size (--fit, forge.ts), and gone where there is none at all. Said by the piece itself, so
@@ -50,13 +55,6 @@
 .band-held { --size: calc(var(--u) / .727 * var(--fit, 1)); flex: 1 1 0; min-width: 0; align-self: flex-start; overflow: hidden; white-space: nowrap; text-align: right;
   margin: calc(1.5 * var(--u) - .8755 * var(--size)) calc(var(--u) - var(--ink-right, 0px)) 0 0; height: var(--size);
   font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; color: var(--ink); pointer-events: none; user-select: none; }
-@media (max-width: 1100px) { .band-held { display: none; } }
-/* A narrow window: the rail is close set and there is nothing beside it to start from, so the keys start where the
-   page does, and take its width. */
-@media (max-width: 760px) {
-  :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) { margin-left: 0; }
-  :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: 1 1 0; width: auto; min-width: 0; }
-}
 /* What the band's search finds lies on the desk as sheets of its own, a kind a sheet, in a row from the desk's edge
    on the line every sheet's top is on: the same motif again (a name over paper with its shadow; what was run is a
    sheet of ink, its shadow the terminal's green), the name the kind's and how many beside it. The page under them
@@ -66,8 +64,11 @@
    which Enter takes, is pressed (a slot). (Before: one sheet across the center, inked round with a shadow of its own
    size, the words searched for 56 px at its head, the desk gone from under it.) */
 .band-tools .search-results {
-  top: calc(5 * var(--u)); left: calc(-2 * var(--key) - 2 * var(--key-gap)); right: auto;
-  width: calc(100vw - var(--outer) - var(--rail)); max-height: none; overflow: visible; box-sizing: border-box; display: block;
+  /* From the desk's edge (--search-x: how far the search is along the band, measured: home.ts, bench.ts) to the
+     a cell from the window's right edge (room for a sheet's shadow), their tops on the line every piece's top is on,
+     a cell under the band. */
+  top: calc(3 * var(--u) - var(--outer-top)); left: calc(-1 * var(--search-x, 4 * var(--u))); right: auto;
+  width: calc(100vw - 3 * var(--u)); max-height: none; overflow: visible; box-sizing: border-box; display: block;
   padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none; animation: none;
 }
 .band-tools .search-results > .search-panel { overflow: visible; }
@@ -85,7 +86,7 @@
 .band-tools .search-results:not([data-q='']) .search-pills:not(:has([aria-pressed='true'])) { display: none; }
 .band-tools .search-pills { gap: var(--u); margin: calc(-31px) 0 7px; }
 .band-tools .search-pills > .chip { height: var(--u); min-height: 0; padding: 0; border: 0; background: none; box-shadow: none;
-  font: 700 20px/var(--u) var(--mono); color: var(--sub); }
+  font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--sub); }
 .band-tools .search-pills > .chip:hover { color: var(--ink); }
 .band-tools .search-pills > .chip[aria-pressed='true'] { color: var(--ink); text-decoration: underline 3px; text-underline-offset: 5px; }
 /* Where in the line of what was searched and read one is: only once there is more than the one in hand. */
@@ -95,19 +96,19 @@
    scrolled inside it). They come down a little onto the desk, one after another. */
 .found-secs { display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(3 * var(--u)); }
 .found-sec { position: relative; flex: 0 1 auto; min-width: calc(9 * var(--u)); max-width: min(calc(31 * var(--u)), 100%); margin: 0; padding: calc(var(--u) / 2) 0;
-  background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink);
-  animation: sheet-down calc(240ms * var(--pace)) var(--land) both; animation-delay: calc(var(--at, 0) * 70ms); }
+  background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink);
+  animation: sheet-down var(--move) var(--land) both; animation-delay: calc(var(--at, 0) * 70ms); }
 .found-sec:nth-child(2) { --at: 1; } .found-sec:nth-child(3) { --at: 2; } .found-sec:nth-child(n + 4) { --at: 3; }
 @keyframes sheet-down { from { opacity: 0; translate: 0 calc(-1.5 * var(--u)); } }
 @media (prefers-reduced-motion: reduce) { .found-sec { animation: none; } }
-.found-sec-head { position: absolute; left: 0; bottom: calc(100% + 7px); margin: 0; white-space: nowrap; font: 700 20px/var(--u) var(--mono); color: var(--ink); }
-.found-sec-head > i { margin-left: 1ch; font: 400 20px/var(--u) var(--mono); font-style: normal; color: var(--quiet); }
+.found-sec-head { position: absolute; left: 0; bottom: 100%; margin: 0; white-space: nowrap; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
+.found-sec-head > i { margin-left: 1ch; font: 400 var(--t-meta)/var(--u) var(--mono); font-style: normal; color: var(--quiet); }
 .found-sec-rows { display: grid; min-width: 0; max-height: calc(100vh - 10 * var(--u)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
 /* A row: a cell and a half tall in the code face, a step in from the sheet's sides, soft at the corner where it is
    pressed or pointed at; whatever kind it is (a line found, an issue, a changed file, what the Agent was asked). */
 .found-sec .choice { display: flex; align-items: center; gap: var(--u); min-width: 0; min-height: calc(1.5 * var(--u)); height: auto; margin: 0 6px; padding: 0 18px;
   border: 0; border-radius: var(--r-field); background: none; box-shadow: none; text-align: left; white-space: nowrap;
-  font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+  font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
 .found-sec .choice:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); outline: none; }
 .found-sec .choice:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 .band-tools .search-box:has(.search-in:focus) .found-secs .choice.first { background: var(--slot); }
@@ -124,7 +125,7 @@
 .found-sec .sheet-name > .sheet-file { color: var(--ink); }
 /* What was run: a sheet of ink as the terminal is, its lines and its shadow the terminal's green, each as it was
    typed after the shell's $. */
-.found-sec:has(.run-line) { background: var(--ink); box-shadow: var(--u) var(--u) 0 0 var(--green); }
+.found-sec:has(.run-line) { background: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--green); }
 .found-sec .run-line { display: flex; color: var(--green); overflow: hidden; text-overflow: ellipsis; }
 .found-sec .run-line:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--green) 18%, var(--ink)); }
 .band-tools .search-box:has(.search-in:focus) .found-secs .run-line.first { background: color-mix(in srgb, var(--green) 26%, var(--ink)); }
@@ -135,7 +136,6 @@
 .band-tools .search-results mark { animation: none; }
 /* A window too narrow for two sheets side by side: one under another, each the window's width. */
 @media (max-width: 760px) {
-  .band-tools .search-results { left: calc(-2 * var(--key) - 2 * var(--key-gap)); width: calc(100vw - 2 * var(--outer) - var(--rail) - var(--u)); }
   .found-sec { max-width: 100%; }
   /* (A row is two lines there: the file's name and the line's number, then the words across the sheet's whole
      width, folded if they are longer, so what was found is in sight however narrow the window.) */

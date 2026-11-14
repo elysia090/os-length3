@@ -3,6 +3,7 @@ import {t} from '../../i18n/i18n.ts';
 import {cutWhenLonger} from '../../ui/cut.ts';
 import {still} from '../../ui/glide.ts';
 import type {Run} from './sessions.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // The right pane of Forge and Git: what was done in the repo, a big row each, newest last, one for both pages. A line run, its bar in
 // green (it ended well), red (it failed, its exit status said) or ink (still running), the line itself in the display
@@ -59,7 +60,7 @@ export class Rows {
   #add(row: HTMLElement) {
     this.element.append(row);
     if (row.animate && !still())
-      row.animate([{opacity: 0, translate: '0 -4px'}, {opacity: 1, translate: '0 0'}], {duration: 360, easing: 'cubic-bezier(.2, .8, .2, 1)'});
+      row.animate([{opacity: 0, translate: '0 -4px'}, {opacity: 1, translate: '0 0'}], {duration: 360, easing: SPRING});
     this.element.scrollTo({top: this.element.scrollHeight});
   }
 

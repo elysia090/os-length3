@@ -6,6 +6,7 @@ import {paced, still} from '../../ui/glide.ts';
 import * as servers from '../../remote/servers.ts';
 import type {Shown} from './parts.ts';
 import {todoList} from '../kit/todo-list.ts';
+import {SPRING} from '../../ui/law.ts';
 
 /** How often a board's TODO is looked at again, while the page is in view. */
 const EVERY = 15_000;
@@ -29,7 +30,7 @@ export async function boardTodo(b: Shown, holder: HTMLElement, told: {left(open:
   // How many are left is said on its part; Clear done, while some are, under the list.
   holder.replaceChildren(box.element, box.clear, status);
   // Read in after its board was drawn: it comes up where it stands, as the talk does.
-  if (!still()) holder.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: 'ease-out'});
+  if (!still()) holder.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: SPRING});
   let seen = JSON.stringify(list);
   // Until the box is gone; one not answered is the next one's to bring.
   every(EVERY, async () => {

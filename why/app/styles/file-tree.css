@@ -15,10 +15,10 @@
      --leave): settling slowly there, its last few pixels stood beside the line as a sliver the line seemed to shake
      with, while the page panned away (File, then Home). */
   visibility: hidden; clip-path: inset(-2px 100% -2px -2px round var(--r-card));
-  transition: clip-path var(--leave) cubic-bezier(.7, 0, 1, 1), left var(--leave) cubic-bezier(.7, 0, 1, 1), visibility 0s var(--leave);
+  transition: clip-path var(--leave) var(--spring), left var(--leave) var(--spring), visibility 0s var(--leave);
 }
 .tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; clip-path: inset(-2px -2px -2px -2px round var(--r-card));
-  transition: clip-path calc(220ms * var(--pace)) var(--land), left calc(220ms * var(--pace)) var(--land), visibility 0s; }
+  transition: clip-path var(--move) var(--land), left var(--move) var(--land), visibility 0s; }
 /* Out, it cuts nothing (tree.ts): a row's menu stands beside it. */
 .tree.open.settled { clip-path: none; }
 .tree ul { list-style: none; margin: 0; padding: 0; }
@@ -58,9 +58,9 @@
    thing pressed is, shown on the row under the pointer or the keyboard, and
    kept while its menu is out. It keeps its room either way, so nothing moves,
    and is there to be heard while unseen. */
-.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: inherit; cursor: var(--cursor-hand); opacity: 0; }
+.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--quiet); cursor: var(--cursor-hand); opacity: 1; }
 .tree-more .mark { width: var(--s4); height: var(--s4); }
-.tree-row:hover > .tree-more, .tree-row:focus-within > .tree-more, .tree-more[aria-expanded='true'] { opacity: 1; }
+.tree-row:hover > .tree-more, .tree-row:focus-within > .tree-more, .tree-more[aria-expanded='true'] { color: var(--ink); }
 .tree-more[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .tree-row:has(> [aria-current='page']) > .tree-more { border-color: currentColor; }
 /* Its menu, beside the tree at the row's height: out in the free space. */
@@ -81,15 +81,15 @@
    name opens and closes what it names. (Before: a soft-cornered card with a hairline, 15 px rows with triangles and
    sizes, a round ⋯ at each row's end, its menu a card beside it.) ---- */
 .file-tree {
-  --corner: calc(var(--outer) + var(--rail) - 2 * var(--u));
+  --corner: calc(var(--outer) + var(--rail));
   left: calc(var(--corner) - var(--s2)); top: var(--tree-top, calc(5 * var(--u)));
   width: min(calc(13 * var(--u)), calc(100vw - var(--corner) - var(--outer) - var(--u))); max-height: none; overflow: visible;
-  padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink);
+  padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink);
   clip-path: inset(-40px 100% -32px -2px);
 }
 .file-tree.open { left: var(--corner); clip-path: inset(-40px -32px -32px -2px); }
 @media (max-width: 760px) { .file-tree { --corner: calc(var(--outer) + var(--rail)); } }
-.file-tree::before { content: '/'; position: absolute; left: 0; bottom: calc(100% + 7px); font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.file-tree::before { content: '/'; position: absolute; left: 0; bottom: 100%; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 /* More rows than the window is tall: scrolled inside the sheet (its foot never lower than two cells over the
    window's), where it is scrolled to said while it is (ui/scroll-marks.ts), as a sheet on the desk says it. */
 .file-tree > .tree-children { max-height: calc(100vh - var(--tree-top, calc(5 * var(--u))) - 3 * var(--u)); overflow: hidden auto; scrollbar-width: none; }
@@ -106,29 +106,30 @@
 /* (The triangle is there to be pressed and heard, over the row's indent, and not drawn.) */
 .file-tree .tree-toggle { position: absolute; left: 0; top: 0; width: var(--in); height: 100%; opacity: 0; }
 .file-tree .tree-spacer { display: none; }
-.file-tree .tree-name { min-height: calc(1.5 * var(--u)); padding: 0; font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); }
-.file-tree .tree-repo > .tree-row .tree-name { font: 700 20px/calc(1.5 * var(--u)) var(--mono); }
+.file-tree .tree-name { min-height: calc(1.5 * var(--u)); padding: 0; font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); }
+.file-tree .tree-repo > .tree-row .tree-name { font: 700 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); }
 .file-tree .tree-name[aria-current='location'] { font-weight: 700; }
 .file-tree .tree-row:has(> [aria-current='location'])::before { left: -6px; top: 6px; bottom: 6px; width: 6px; }
 .file-tree .tree-meta { display: none; }
-.file-tree .tree-away > .tree-row > .tree-meta { display: block; padding: 0 var(--s3) 0 var(--s2); font: 400 14px/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); opacity: 1; }
+.file-tree .tree-away > .tree-row > .tree-meta { display: block; padding: 0 var(--s3) 0 var(--s2); font: 400 var(--t-fine)/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); opacity: 1; }
 .file-tree .tree-system { margin-top: calc(var(--u) / 2); }
 .file-tree .tree-system > .tree-row .tree-name { color: var(--quiet); }
 .file-tree .tree-system > .tree-row:is(:hover, :focus-within) .tree-name { color: var(--ink); }
-.file-tree .tree-note { padding: 0 var(--s3) 0 calc(24px + (var(--depth, 0) - var(--out, 0)) * var(--u)); font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); }
+.file-tree .tree-note { padding: 0 var(--s3) 0 calc(24px + (var(--depth, 0) - var(--out, 0)) * var(--u)); font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); }
 .file-tree .tree-said { margin: var(--s1) var(--u) 0; }
 /* What can be done to a row, asked for at its right end: an angle toward where its sheet comes out, there under the
    pointer or the keyboard and while it is out; the row pressed (a slot) while it is. */
-.file-tree .tree-more { width: calc(1.5 * var(--u)); height: calc(1.5 * var(--u)); margin: 0; border: 0; border-radius: 0; background: none; color: var(--ink); }
+.file-tree .tree-more { width: calc(1.5 * var(--u)); height: calc(1.5 * var(--u)); margin: 0; border: 0; border-radius: 0; background: none; color: var(--quiet); }
+.file-tree .tree-row:is(:hover, :focus-within) > .tree-more, .file-tree .tree-more[aria-expanded='true'] { color: var(--ink); }
 .file-tree .tree-more[aria-expanded='true'] { background: none; color: var(--ink); }
 .file-tree .tree-more .mark { width: 20px; height: 20px; stroke-width: 2; rotate: -90deg; }
 .file-tree > .tree-pop { display: block; width: max-content; min-width: calc(9 * var(--u)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--outer) - var(--u))); padding: calc(var(--u) / 2) 0;
-  border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink); }
-.file-tree > .tree-pop > .pop-head { position: absolute; left: 0; bottom: calc(100% + 7px); margin: 0; padding: 0; white-space: nowrap;
-  font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+  border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
+.file-tree > .tree-pop > .pop-head { position: absolute; left: 0; bottom: 100%; margin: 0; padding: 0; white-space: nowrap;
+  font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 .file-tree > .tree-pop :is(.pop-icon, .pop-rule) { display: none; }
 .file-tree > .tree-pop .pop-item { display: flex; align-items: center; width: calc(100% - 12px); min-height: calc(1.5 * var(--u)); height: auto; margin: 0 6px; padding: 0 18px;
-  border: 0; border-radius: 8px; background: none; font: 400 20px/calc(1.5 * var(--u)) var(--mono); color: var(--ink); text-align: left; white-space: nowrap; cursor: var(--cursor-hand); }
+  border: 0; border-radius: 8px; background: none; font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); text-align: left; white-space: nowrap; cursor: var(--cursor-hand); }
 .file-tree > .tree-pop .pop-item:first-of-type { font-weight: 700; }
 .file-tree > .tree-pop .pop-item:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); outline: none; }
 .file-tree > .tree-pop .pop-item:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
@@ -145,7 +146,7 @@
    and its paper, are brought most of the way to the ground, so only the sheets found are read.) */
 .page-veil { --wash: 35%; position: fixed; inset: 0; z-index: 8; pointer-events: none; }
 .page-veil.under-band { --wash: 65%; z-index: 6; }
-.page-veil > i { position: absolute; inset: 0; transition: backdrop-filter 180ms ease-out, background-color 180ms ease-out; }
+.page-veil > i { position: absolute; inset: 0; transition: backdrop-filter var(--move) var(--spring), background-color var(--move) var(--spring); }
 .page-veil > i:nth-child(2) { mask-image: linear-gradient(to bottom, #000 0, #000 11px, transparent 36px, transparent calc(100% - 36px), #000 calc(100% - 11px), #000 100%); }
 .page-veil > i:nth-child(3) { mask-image: linear-gradient(to bottom, #000 0, transparent 22px, transparent calc(100% - 22px), #000 100%); }
 .page-veil.out > i:nth-child(1) { backdrop-filter: blur(6px); background-color: color-mix(in srgb, var(--ground) var(--wash), transparent); }

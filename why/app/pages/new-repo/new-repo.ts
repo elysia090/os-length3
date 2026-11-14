@@ -12,6 +12,7 @@ import {errorText} from '../../host/errors.ts';
 import {mark} from '../../ui/icons.ts';
 import {liftLine, nudge, paced, putAway, still, textAt, unfold} from '../../ui/glide.ts';
 import {fitSize} from '../../ui/optical.ts';
+import {SPRING} from '../../ui/law.ts';
 
 /**
  * +: the repo's name on the first line; under it, in a large box, what it
@@ -293,7 +294,7 @@ export function newRepo(ctx: Context): Node[] {
     if (alone !== form.classList.contains('alone')) {
       form.classList.toggle('alone', alone);
       if (alone) box.insertBefore(card, actions); else form.append(filesLabel, card);
-      if (!still()) card.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: 'ease-out'});
+      if (!still()) card.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: SPRING});
     }
     const fits = fitSize(name, words, name.clientWidth - pad, -.04, fitted);
     if (fits) box.style.setProperty('--nr-name', `${Math.floor(Math.max(28, Math.min(64, fits)))}px`);

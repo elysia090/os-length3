@@ -161,10 +161,11 @@ test("a repo's name in Runtime opens it in Forge; its gear offers its card on th
   // Shown in Forge, written to by nobody: no Prompt holds it.
   await expect(here).not.toContainText('Locked by an active Prompt');
   const gear = here.getByRole('button', {name: 'Actions for notes'});
-  // Near the repo, its gear shows; showing it does nothing.
-  await expect(gear).toHaveCSS('opacity', '0');
-  await here.getByRole('button', {name: 'notes', exact: true}).hover();
+  // Its gear is there always, quiet (it waits on no pointer), and inked while the repo is used; showing it does nothing.
   await expect(gear).toHaveCSS('opacity', '1');
+  const quiet = await gear.evaluate((el) => getComputedStyle(el).color);
+  await here.getByRole('button', {name: 'notes', exact: true}).hover();
+  await expect.poll(() => gear.evaluate((el) => getComputedStyle(el).color)).not.toBe(quiet);
   await gear.click();
   const menu = here.getByRole('menu', {name: 'Actions for notes'});
   // On Remote, it keeps the name the Remote knows it by: Rename is not offered, nor said why.

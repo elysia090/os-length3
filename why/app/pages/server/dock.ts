@@ -63,10 +63,12 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, n
   field.value = drafts.get(key);
   const fit = () => { field.style.height = 'auto'; field.style.height = `${field.scrollHeight}px`; };
   // Post at the box's bottom right, as Forge's box has Run and Inbox's Send: what sends is in sight, not only known.
-  // Its keys are in its title, as Run's are.
+  // Its keys are in its title, as Run's are, and on it in small.
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   const post = h('button', {type: 'button', class: 'button small-button prompt-run', title: t('Post ({keys})', {keys: mac ? '⌘+Enter' : 'Ctrl+Enter'}),
-    'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter'}, t('Post')) as HTMLButtonElement;
+    'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter'}, t('Post'),
+  // (Enter is a new line here: the key that sends says its keys on itself, as it comes with the words.)
+  h('span', {class: 'key-said', 'aria-hidden': 'true'}, mac ? '⌘↵' : 'Ctrl+↵')) as HTMLButtonElement;
   // Holding words or not: on a phone's width, where the box is narrow, Post comes with the words and leaves its room
   // to what the empty box says (styles.css).
   const form = h('form', {class: 'prompt'});

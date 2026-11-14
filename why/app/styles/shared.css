@@ -20,22 +20,21 @@
 .rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row, .pane-row,
 .inbox-row, .pane-toggle, .pill-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link, button.row-item, .part, .dot-row,
 .pane-head, .hit-diff, .found-shut, .diff-head {
-  transition: background-color calc(200ms * var(--pace)) ease-out, border-color calc(200ms * var(--pace)) ease-out;
+  transition: background-color var(--move) var(--spring), border-color var(--move) var(--spring);
 }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row, .pane-row,
 .inbox-row, .pane-toggle, .pill-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link,
-button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head):hover { transition-duration: calc(60ms * var(--pace)); }
+button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head):hover { transition-duration: var(--motion); }
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row, .pane-row,
-.inbox-row, .pane-toggle, .pill-close, .approve-mark, .tree-row, .dot-row, .pane-head, .hit-diff, .found-shut,
-.server-switch-row):active:not(:disabled) {
-  background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: 40ms;
+.inbox-row, .pane-toggle, .pill-close, .approve-mark, .tree-row, .dot-row, .pane-head, .hit-diff, .found-shut):active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: var(--motion);
 }
 /* A primary button answers the pointer too: its ink a step toward the ground under it, as quickly as a fill comes
    (pressed, a step further). Before, only the outlined ones did, and the one deed that matters most said nothing. */
 .button.primary:hover:not(:disabled) { background-color: color-mix(in srgb, var(--ink) 88%, var(--ground)); border-color: color-mix(in srgb, var(--ink) 88%, var(--ground)); }
 /* The box's pill (what the box does) brings out the four when pressed: under the pointer its glass catches a little
    more light, so it is seen to be pressable. Up as the screen it is the line's start, and says nothing. */
-.work:not(.prompting, .prompt-leaving) .prompt-chip { transition: box-shadow calc(160ms * var(--pace)) ease-out, filter calc(160ms * var(--pace)) ease-out; }
+.work:not(.prompting, .prompt-leaving) .prompt-chip { transition: box-shadow var(--move) var(--spring), filter var(--move) var(--spring); }
 .work:not(.prompting, .prompt-leaving) .prompt-chip:hover { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .28); filter: brightness(1.18); }
 .work:not(.prompting, .prompt-leaving) .prompt-chip:is([data-mode='todo'], [data-mode='edit']):hover { filter: none; background: var(--raised); }
 :is(.button.primary, .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current]):active:not(:disabled) {
@@ -46,4 +45,48 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
 /* The icons keep a little more room on the side of the line than on the
    window's side, so they do not crowd it. */
 .rail { width: var(--rail-place); height: var(--inner-h); position: sticky; top: var(--outer-top); z-index: 6; display: flex; flex-direction: column; }
-.rail-tabs { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: flex-start; flex: 1; min-height: 0; }
+/* The rail's column and the band's row are the frame, two cells wide and two tall, on the desk's dots as everything
+   is (the dots are the ground's, the window's whole). A place of the rail is a 36 px square about a corner of the
+   grid, the next two cells down: four dots stand round every icon alike. */
+.rail-tabs { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: flex-start; gap: calc(2 * var(--u) - var(--rail-place)); flex: 1; min-height: 0; }
+/* The door (main.ts): the way from a place to its far side and, in the same spot, back. A key of the band's own make
+   (two cells wide, as tall as a place of the rail, ground under its mark, ink round it) at the desk's corner on the
+   band's row, fixed to the window. Where the page has a band of its own the band goes on from it, the two one bar as
+   wide as a piece: the door has no edge of its own on that side. What waits where it leads is a dot on it, as on a
+   place of the rail. */
+.door { position: fixed; left: calc(2 * var(--u)); top: var(--outer-top); z-index: 8; display: grid; place-items: center; width: calc(2 * var(--u)); height: var(--key); padding: 0;
+  border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); cursor: var(--cursor-hand); }
+.door[hidden] { display: none; }
+.door > .icon { width: 18px; height: 18px; stroke-width: 2; }
+.door:is(:hover, :focus-visible) { background: var(--paper); outline: none; }
+.door:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
+.door.with-bar { border-radius: var(--r-key) 0 0 var(--r-key); box-shadow: inset 1px 0 0 var(--ink), inset 0 1px 0 var(--ink), inset 0 -1px 0 var(--ink); }
+.door.away::after, .door.news::after { content: ''; position: absolute; top: 6px; right: 10px; width: 8px; height: 8px; border-radius: 2px; background: var(--off); }
+.door.news::after { background: var(--ink); }
+body.has-door :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { margin-left: calc(2 * var(--u)); width: min(calc(22 * var(--u)), round(down, 100% - 2 * var(--u), var(--u))); border-radius: 0 var(--r-key) var(--r-key) 0; }
+
+/* A row's map (ui/row-desk.ts, DESIGN §6): beside its desk (not on what the desk turns), at the window's foot from the desk's edge, the row twelve times smaller, a
+   bar for each piece (the one in the hand in ink), a line under what is in sight. There while some of the row is out
+   of sight; a bar pressed goes to its piece. Under a piece's shadow, which ends half a cell over the window's foot. */
+/* (A bar is pressed anywhere in the foot's cell over it: what can be pressed is a cell tall, however thin it is drawn.) */
+.row-map { position: absolute; left: 0; bottom: 0; z-index: 3; height: var(--u); }
+.row-map[hidden] { display: none; }
+.row-piece { position: absolute; top: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; cursor: var(--cursor-hand); }
+.row-piece::before { content: ''; position: absolute; left: 0; right: 0; bottom: 5px; height: 4px; background: var(--edge); }
+.row-piece[aria-current='true']::before { background: var(--ink); }
+.row-piece:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.row-sight { position: absolute; bottom: 1px; height: 2px; background: var(--ink); pointer-events: none; }
+
+/* Read in the person's favour (DESIGN §7), by the numbers those who make such things settled on in their own code.
+
+   The frame's squares are pressed from the window's very edge and from half the room between two of them: the 6 px
+   between a square and the window, or its neighbour, is the square's to be pressed in (a quarter of a cell: the
+   window a hard game gives a jump that is two pixels off, on tiles of eight). So a pointer thrown against the
+   window's left edge is on the rail, against its top on the band, and in its bottom left corner on the person's own
+   menu: an edge cannot be overshot. Drawn, they are as they were. */
+.rail-item::before, .me::before { content: ''; position: absolute; inset: calc(-1 * var(--outer)); }
+.me { position: relative; }
+.door::before, :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool::before { content: ''; position: absolute; inset: calc(-1 * var(--outer)) 0; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { position: relative; }
+/* (A press that just misses what was called up is still its own: told by where the press was, ui/near.ts, so
+   nothing is laid round a menu that could make the page larger than the window.) */

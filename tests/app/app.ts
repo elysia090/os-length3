@@ -157,8 +157,15 @@ class Part {
   protected get main() { return this.app.main; }
 }
 
+/** The pages with no icon on the rail, and the place each is the far side of: reached by the door at the head of that
+ * place's band, which in the same spot leads back. */
+const FAR: Partial<Record<Place, Place>> = {git: 'forge', remote: 'home', inbox: 'server'};
+
 /** The rail at the left: one place at a time; File opens its tree over the page, Server its servers beside the rail. */
 class Rail extends Part {
+  /** The door at the head of the band: from a place to its far side, and back. */
+  get door(): Locator { return this.page.locator('#door'); }
+
   button(place: Place): Locator {
     // Its name says more while something is to be seen there ("Unread messages in Inbox", "New posts in server",
     // "Cannot connect to Remote"): the place is a word of it. The rail is named in the language spoken; its places
@@ -167,8 +174,23 @@ class Rail extends Part {
   }
 
   async go(place: Place) {
+    const at = this.page.locator('#page');
+    const of = FAR[place];
+    if (of) {
+      // A far side: to its place (unless there, or at the far side already), then through the door.
+      const now = await at.getAttribute('data-place');
+      if (now !== place) {
+        if (now !== of) await this.go(of);
+        await this.door.click();
+      }
+      await expect(at).toHaveAttribute('data-place', place);
+      return;
+    }
     await this.button(place).click();
-    if (place !== 'file' && place !== 'plugin') await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
+    if (place !== 'file' && place !== 'plugin') {
+      await expect(this.button(place)).toHaveAttribute('aria-current', 'page');
+      await expect(at).toHaveAttribute('data-place', place);
+    }
   }
 }
 
@@ -721,7 +743,7 @@ class Inbox extends Part {
   /** Write `text` to `to` (a name or a code) and send it. */
   async writeTo(to: string, text: string) {
     await this.app.rail.go('inbox');
-    await this.conversations.getByRole('textbox', {name: 'Send to username or code'}).fill(to);
+    await this.conversations.getByRole('textbox', {name: 'Send to username'}).fill(to);
     await this.conversations.getByRole('button', {name: 'Compose', exact: true}).click();
     await this.message.fill(text);
     await this.main.getByRole('button', {name: 'Send', exact: true}).click();
@@ -761,13 +783,23 @@ class Server extends Part {
   /** Make a board in the server on screen: its last box makes one (a server starts with #general). */
   async makeBoard(name: string) {
     const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
-    const next = this.view.getByRole('button', {name: 'Next board'});
-    await expect(next.or(field).first()).toBeVisible();
-    // Along the boxes, one at a time, to the last.
-    for (let i = 0; i < 20 && !(await field.isVisible()); i++) await next.click();
+    await this.newBoard();
     await field.fill(name);
     await field.press('Enter');
     await expect(this.board(name)).toBeVisible();
+  }
+
+  /** To the board `name`, by its line on the room's own sheet (the row shows the one in the hand alone). */
+  async goBoard(name: string) {
+    await this.side.getByRole('button', {name, exact: true}).click();
+    await expect(this.board(name)).toBeVisible();
+  }
+
+  /** To the board not made yet, by its line on the room's own sheet: its name then takes the keyboard. */
+  async newBoard() {
+    const field = this.view.getByRole('textbox', {name: 'New board', exact: true});
+    if (!(await field.isVisible())) await this.side.getByRole('button', {name: 'New board', exact: true}).click();
+    await expect(field).toBeVisible();
   }
 
   /** A board's box, by its heading. */

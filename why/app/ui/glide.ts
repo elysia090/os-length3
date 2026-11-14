@@ -8,8 +8,10 @@
 //
 // Asked for less motion, neither moves: each thing is where it ends at once.
 
+import {CELL, moveTime, SPRING} from './law.ts';
+
 /** The camera's landing (styles.css --land): fast off the mark, the last pixels slow. */
-export const LAND = 'cubic-bezier(.2, .9, .25, 1)';
+export const LAND = SPRING;
 
 /** The animations' own clock (ms): what their delays and lengths are counted on, so what is timed against them keeps
  * with them however they are played (the page's clock where there is none). */
@@ -238,7 +240,7 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
     rest.setAttribute('aria-hidden', 'true');
     box.style.overflow = 'hidden';
     box.append(rest);
-    rest.animate([{opacity: 1}, {opacity: 0}], {duration: paced(180), easing: 'ease-out', fill: 'forwards'});
+    rest.animate([{opacity: 1}, {opacity: 0}], {duration: paced(180), easing: SPRING, fill: 'forwards'});
   }
   // Its words go with it, from where they were read to the words they become (the issue's title onto its line).
   const words = carry?.lifted.el;
@@ -298,9 +300,9 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
       // Landed: the box is there under it, and the sheet gives way to it.
       shown();
       if (still()) { done(); return; }
-      to!.animate([{opacity: 0}, {opacity: 1}], {duration: paced(140), easing: 'ease-out'});
-      words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'});
-      box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'}).finished.then(done, done);
+      to!.animate([{opacity: 0}, {opacity: 1}], {duration: paced(140), easing: SPRING});
+      words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: SPRING, fill: 'forwards'});
+      box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: SPRING, fill: 'forwards'}).finished.then(done, done);
     }, () => { shown(); if (!gone) done(); });
   };
   requestAnimationFrame(go);
@@ -314,7 +316,7 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
 export function nudge(el: Element | null) {
   if (still() || !el) return;
   el.animate([{translate: '0 0'}, {translate: '-5px 0'}, {translate: '4px 0'}, {translate: '-2px 0'}, {translate: '1px 0'}, {translate: '0 0'}],
-    {duration: paced(300), easing: 'ease-out'});
+    {duration: paced(300), easing: SPRING});
 }
 
 /** What stood under something taken away closes up over where it was (`by` pixels), rather than being there at once. */
@@ -356,7 +358,7 @@ export function putAway(el: HTMLElement, gone: () => void, o: {fold?: boolean; m
   const frames: Keyframe[] = o.fold
     ? folded(el)
     : [{opacity: 1, translate: '0 0', scale: 1}, {opacity: 0, translate: from, scale: .96}];
-  const a = el.animate(frames, {duration: paced(o.ms ?? 150), easing: o.fold ? 'cubic-bezier(.4, 0, .2, 1)' : 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+  const a = el.animate(frames, {duration: paced(o.ms ?? 150), easing: SPRING, fill: 'forwards'});
   const going = {a, inert: el.inert};
   goingOut.set(el, going);
   el.inert = true;
@@ -392,7 +394,102 @@ export function keepOut(el: HTMLElement) {
 /** A thing just done is rewarded: it pops past its size and settles (a TODO's mark once done). */
 export function pop(el: Element, by = .16, ms = 380) {
   if (still()) return;
-  el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: 'ease-out'});
+  el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: SPRING});
+}
+
+/** What stays where it is while a page comes and goes: the band and the panes, the window's own instruments. */
+const FRAME = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle)';
+
+/** `el` as it is seen now, as a thing of its own that nothing happens to: a copy with what is written in its fields
+ * and drawn on its canvases (`settle`, once it is in the document, puts each part where it was scrolled to). */
+function likeness(el: Element): {copy: Element; settle(): void} {
+  const copy = el.cloneNode(true) as Element;
+  const was = [el, ...el.querySelectorAll('*')], now = [copy, ...copy.querySelectorAll('*')];
+  const scrolled: [Element, number, number][] = [];
+  was.forEach((a, i) => {
+    const b = now[i];
+    if (a instanceof HTMLTextAreaElement || a instanceof HTMLInputElement) (b as HTMLInputElement).value = a.value;
+    else if (a instanceof HTMLCanvasElement && a.width && a.height) (b as HTMLCanvasElement).getContext('2d')?.drawImage(a, 0, 0);
+    if (a.scrollLeft || a.scrollTop) scrolled.push([b, a.scrollLeft, a.scrollTop]);
+    b.removeAttribute('id');
+  });
+  return {copy, settle: () => { for (const [b, x, y] of scrolled) { (b as HTMLElement).style.scrollSnapType = 'none'; b.scrollLeft = x; b.scrollTop = y; } }};
+}
+
+/**
+ * The world gone to another page. Down or up (`axis` 'y'; `dir` 1 to a place further down the rail, -1 to one
+ * further up), or along (`axis` 'x'; `dir` 1 to a place's far side, -1 back from it). Asked before the page is drawn
+ * again, it keeps the page left in sight as it was; what it gives back is called once the new one is drawn. Then the
+ * page left goes out the way the world went by, the new one comes in after it from the other side, and the ground
+ * goes with them: one move, the window's height or width in whole cells, by the OS's law (law.ts). The band and
+ * the rail are the window's and stay. Nothing waits on it: the new page is there to be used from the first frame.
+ * Asked for less motion, there is no move.
+ */
+export function travel(root: HTMLElement, dir: number, axis: 'x' | 'y' = 'y'): () => void {
+  if (still() || !dir || !root.getClientRects().length) return () => {};
+  const far = CELL * Math.round((axis === 'y' ? innerHeight : innerWidth) / CELL), ms = paced(moveTime(far, far)), timing = {duration: ms, easing: SPRING};
+  const by = (px: number) => (axis === 'y' ? `translateY(${px}px)` : `translateX(${px}px)`);
+  const at = root.getBoundingClientRect();
+  const page = root.cloneNode(false) as HTMLElement;
+  for (const name of ['id', 'tabindex', 'aria-labelledby']) page.removeAttribute(name);
+  const settles: (() => void)[] = [];
+  for (const child of root.children) {
+    if ((child as HTMLElement).hidden) continue;
+    const {copy, settle} = likeness(child);
+    page.append(copy);
+    settles.push(settle);
+  }
+  const left = document.createElement('div');
+  left.className = 'place-left';
+  left.inert = true;
+  left.setAttribute('aria-hidden', 'true');
+  Object.assign(left.style, {left: `${at.left}px`, top: `${at.top}px`, width: `${at.width}px`, height: `${at.height}px`});
+  left.append(page);
+  document.body.append(left);
+  for (const settle of settles) settle();
+  for (const part of left.querySelectorAll(FRAME)) (part as HTMLElement).style.visibility = 'hidden';
+  const gone = () => left.remove();
+  const going = left.animate([{transform: 'none'}, {transform: by(-dir * far)}], {...timing, fill: 'forwards'});
+  going.finished.then(gone, gone);
+  const dots = document.body.animate(axis === 'y' ? [{backgroundPositionY: '0px'}, {backgroundPositionY: `${-dir * far}px`}] : [{backgroundPositionX: '0px'}, {backgroundPositionX: `${-dir * far}px`}], timing);
+  // One world, one move: the place left, the place come to and the ground set off at the same instant, in the frame
+  // after the place come to is built. Each is made held where it starts and let go together; set off as it is made,
+  // what the page draws itself (the ground) ran a frame or more ahead of what is moved for it (the sheets) whenever
+  // the place come to was long in the building, the dots sliding under sheets that had not yet stirred.
+  const all: Animation[] = [going, dots];
+  for (const x of all) x.pause();
+  let off = false;
+  const setOff = () => {
+    if (off) return;
+    off = true;
+    const now = document.timeline.currentTime;
+    for (const x of all) { if (x.playState === 'idle' || x.playState === 'finished') continue; if (now === null) x.play(); else x.startTime = now; }
+  };
+  // (Never held for want of the place come to: if it is not built by then, the place left goes all the same.)
+  setTimeout(setOff, 300);
+  return () => {
+    stopStage(root);
+    const surfaces = surfacesOf(root);
+    staged.set(root, surfaces);
+    for (const part of surfaces) {
+      const animation = part.animate([{transform: by(dir * far)}, {transform: 'none'}], timing);
+      if (!off) { animation.pause(); all.push(animation); }
+      arrivals.set(part, animation);
+      const done = () => { if (arrivals.get(part) === animation) arrivals.delete(part); };
+      animation.finished.then(done, done);
+    }
+    requestAnimationFrame(setOff);
+  };
+}
+
+/** The parts of `root` that are the page's own (its frame left where it is). */
+function surfacesOf(root: HTMLElement): HTMLElement[] {
+  const parts = (el: HTMLElement): HTMLElement[] => {
+    if (!el.getClientRects().length || el.matches(FRAME)) return [];
+    if (!el.querySelector(FRAME)) return [el];
+    return [...el.children].flatMap((child) => parts(child as HTMLElement));
+  };
+  return parts(root);
 }
 
 const staged = new WeakMap<HTMLElement, HTMLElement[]>();
@@ -406,13 +503,7 @@ export function stopStage(root: HTMLElement) {
  * cards are never hidden again for a stagger. The rail, band and pane stay fixed as landmarks. */
 export function stage(root: HTMLElement, dir: number) {
   stopStage(root);
-  const frame = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle)';
-  const parts = (el: HTMLElement): HTMLElement[] => {
-    if (!el.getClientRects().length || el.matches(frame)) return [];
-    if (!el.querySelector(frame)) return [el];
-    return [...el.children].flatMap((child) => parts(child as HTMLElement));
-  };
-  const surfaces = parts(root);
+  const surfaces = surfacesOf(root);
   staged.set(root, surfaces);
   for (const part of surfaces) arrive(part, dir, 'y', 12, 200);
 }

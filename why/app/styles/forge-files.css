@@ -64,7 +64,7 @@
 .file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
 /* Not saved yet: a dot, not a word that flickers with each key; it shows only once the writing pauses (a save comes
    0.7 s after), so steady typing is not watched over. */
-.unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle; animation: unsaved-in calc(200ms * var(--pace)) ease-out calc(350ms * var(--pace)) both; }
+.unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle; animation: unsaved-in var(--move) var(--spring) var(--slide) both; }
 @keyframes unsaved-in { from { opacity: 0; scale: .4; } }
 @media (prefers-reduced-motion: reduce) { .unsaved-dot { animation: none; } }
 .sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: var(--cursor-text); }
@@ -72,7 +72,7 @@
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .code { overflow-x: auto; }
 /* The text itself is the field: no box, the caret is the only sign. */
-.code.code-edit { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); resize: none; overflow-y: hidden; }
+.code.code-edit { display: block; width: 100%; border: 0; background: transparent; color: inherit; resize: none; overflow-y: hidden; }
 .code.code-edit:focus { outline: none; }
 /* What the box's Edit holds, drawn under the file's words (edit-marks.ts), in a layer laid over the editor (which
    paints over it, its ground clear): the line held in the marker's yellow under its words, from its start; what the
@@ -81,7 +81,7 @@
 .sheet { position: relative; }
 .code.code-edit { position: relative; }
 .edit-layer { position: absolute; pointer-events: none; clip-path: inset(-4px 0 -4px calc(-1 * var(--s3))); }
-.edit-marks { animation: fresh calc(90ms * var(--pace)) ease-out; }
+.edit-marks { animation: fresh var(--motion) var(--spring); }
 .edit-mark { position: absolute; left: 0; right: 0; border-radius: 4px; }
 .edit-mark.lines { left: calc(-1 * var(--s2)); background: color-mix(in srgb, var(--marker-soft) 75%, transparent); }
 .edit-mark.held { left: calc(-1 * var(--s2)); right: auto; background: color-mix(in srgb, var(--marker) 60%, transparent); }
@@ -101,7 +101,7 @@
 .sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
 /* Landed on from a search, File or Git: its head lit with the marker for a moment, then fading back, so the eye is
    led to where it landed without anything staying lit. The line asked for is selected in the marker too. */
-.flow .revealed > .path { animation: landed 1200ms ease-out; }
+.flow .revealed > .path { animation: landed 1200ms var(--spring); }
 /* A file open beside, in a box of its own, is only its head in its repo's page: the page reads on past it, so side
    by side the row never shows one text twice. Its head quiet, its window-cut mark in ink (it is out, beside):
    pressed, the row goes to its box. */

@@ -52,11 +52,11 @@
   font: 900 var(--nr-name)/1.1 var(--display); letter-spacing: -.04em; color: var(--rule); }
 /* What it is for, under the name: the words written straight in it, a sentence's size; the box grows with them. */
 .nr-box > .summary-box { flex: 1; min-height: 0; padding: var(--s2) calc(var(--nr-in) + 4px) var(--s4); border: 0; border-radius: 0; background: transparent; }
-.nr-box > .summary-box > .todo-detail { min-height: 1.45em; font: 19px/1.45 var(--sans); overflow: hidden; }
+.nr-box > .summary-box > .todo-detail { min-height: 1.45em; font: var(--t-body)/1.6 var(--sans); overflow: hidden; }
 /* Its foot: the plan's word if any, Create at the right, the key that makes it beside its word. */
 .nr-box > .answers { margin: 0; padding: 0 var(--s4) var(--s4) var(--nr-in); }
 .nr-box > .answers > .button.primary { display: inline-flex; align-items: center; gap: var(--s2); }
-.nr-box > .answers > .button.primary > kbd { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: inherit; opacity: .7; font: 600 12px var(--mono); }
+.nr-box > .answers > .button.primary > kbd { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: inherit; opacity: .7; font: 600 var(--t-fine) var(--mono); }
 /* What will be made with it, a box on the desk as the TODO is (an ink edge, a smaller shadow than the name's): File's
    rows, as File will show them, New file and New folder at its foot. */
 .new-repo > .tree.tree-still { min-width: 0; margin: 0; padding: var(--s3) var(--s3) var(--s2); border: 2px solid var(--ink); border-radius: var(--r-place);
@@ -96,8 +96,7 @@
 .tree-still .tree-ours .tree-name { color: var(--ink); font: inherit; }
 /* No more-button at a row's end here (its two deeds are), so no room is kept for one after the size (file-tree.css). */
 .tree-still .tree-row:not(:has(> .tree-more)) > .tree-meta { margin-right: 0; }
-.tree-deeds { flex: none; display: flex; gap: 2px; margin-right: var(--s1); opacity: 0; transition: opacity calc(120ms * var(--pace)) ease-out; }
-.tree-row:hover > .tree-deeds, .tree-row:focus-within > .tree-deeds { opacity: 1; }
+.tree-deeds { flex: none; display: flex; gap: 2px; margin-right: var(--s1); }
 .tree-deed { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .tree-deed .mark { width: 15px; height: 15px; }
 .tree-deed:hover, .tree-deed:focus-visible { background: var(--paper); color: var(--ink); outline: none; }
@@ -108,9 +107,9 @@
 /* New file and New folder at the card's foot, in words: what can be added is said, not hidden behind a mark. */
 .tree-makes { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); margin-top: var(--s2); padding: var(--s2) var(--s1) 0; border-top: 1px solid var(--rule); }
 .tree-make { display: inline-flex; align-items: center; gap: var(--s2); min-height: 32px; padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent;
-  color: var(--sub); font: var(--t-meta) var(--sans); cursor: var(--cursor-hand); transition: background-color calc(200ms * var(--pace)) ease-out, color calc(200ms * var(--pace)) ease-out; }
+  color: var(--sub); font: var(--t-meta) var(--sans); cursor: var(--cursor-hand); transition: background-color var(--move) var(--spring), color var(--move) var(--spring); }
 .tree-make .mark { width: 16px; height: 16px; }
-.tree-make:hover, .tree-make:focus-visible { background: var(--raised); color: var(--ink); outline: none; transition-duration: calc(60ms * var(--pace)); }
+.tree-make:hover, .tree-make:focus-visible { background: var(--raised); color: var(--ink); outline: none; transition-duration: var(--motion); }
 .tree-still > .error:not(:empty) { margin: var(--s2) var(--s2) 0; display: flex; align-items: baseline; gap: 6px; color: var(--ink); }
 .tree-still > .error:not(:empty)::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--off); translate: 0 -1px; }
 /* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */

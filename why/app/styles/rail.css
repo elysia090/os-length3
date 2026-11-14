@@ -5,17 +5,18 @@
 /* A phone (560 px and less): the rail's places a size smaller and closer, and the window's gutter narrower, so a page
    has a fifth more of the width; the rail stays the rail (File's tree and Server's layer come out of it as anywhere). */
 @media (max-width: 560px) {
-  :root { --outer: var(--s2); --h-place: 40px; --band-left: var(--s4); --body-left: var(--s4); }
+  :root { --h-place: 40px; --band-left: var(--s4); --body-left: var(--s4); }
 }
 /* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays
    where it is, in the window, as tall as the window, never going with the page (issue #44). Its places close up;
    the person's icon stays at its foot, and what still does not fit scrolls inside the rail, not the page. */
-@media (max-height: 820px) {
+@media (max-height: 560px) {
   .rail-tabs { overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
   .rail-tabs::-webkit-scrollbar { display: none; }
   /* A place's name out of that box, in the window beside the place (main.ts says where). */
   .rail-tabs .rail-tag { position: fixed; left: calc(var(--tag-x, 0px) + var(--s3)); top: var(--tag-y, 0px); }
-  .rail-new { margin-top: 0; }
+  /* The places stand one after another, two cells apart, in the order of how far they are from the person
+   (host/purposes.ts); the person's own menu at the rail's foot. */
 }
 
 /* The person's own icon at the foot of the rail, and what it brings out. Its middle is the prompt box's (the box
@@ -23,16 +24,17 @@
 .rail-me { display: grid; }
 .me-wrap { position: relative; }
 .me {
-  display: grid; place-items: center; width: var(--rail-place); height: var(--rail-place); border: 0; border-radius: var(--r-place);
-  background: transparent; cursor: var(--cursor-hand); font: 900 var(--u)/1 var(--display);
+  display: grid; place-items: center; width: var(--rail-place); height: var(--rail-place); border: 0; border-radius: var(--r-field);
+  background: transparent; cursor: var(--cursor-hand); font: 900 15px/1 var(--display);
 }
 .me .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
-.pop { display: grid; padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card); }
+/* A menu is a sheet laid over what called it: paper, an ink edge, its shadow (DESIGN §5), as File's tree is. */
+.pop { display: grid; padding: var(--s2); background: var(--paper); border: 0; border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 /* A menu out of a row, a card or a gear comes out of it as it shows: grown from the corner it opens at, a few pixels
    from that side, landing a touch past its size, as the person's menu rises from the face (not there at once, as if
    it had always been). */
-.tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: menu-in calc(280ms * var(--pace)) var(--pop-in) both; }
+.tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: menu-in var(--move) var(--pop-in) both; }
 .repo-gear-pop, .stub-panel { --from: 0 -4px; transform-origin: right top; }
 .stub-panel { transform-origin: top; }
 .share-pop { --from: 0 4px; transform-origin: bottom; }
@@ -48,14 +50,14 @@
   min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail-place) - var(--s3)));
   max-width: calc(100vw - 2 * var(--outer) - var(--rail-place) - var(--s3));
   visibility: hidden; opacity: 0; translate: 0 6px; scale: .92; transform-origin: left bottom;
-  transition: opacity var(--motion), translate var(--move) var(--land), scale calc(280ms * var(--pace)) var(--pop-in), visibility 0s var(--motion);
+  transition: opacity var(--motion), translate var(--move) var(--land), scale var(--move) var(--pop-in), visibility 0s var(--motion);
 }
 /* Out, it rises the last few pixels up from the face it came from as it shows. */
-.me-wrap.open .me-pop { visibility: visible; opacity: 1; translate: 0 0; scale: 1; transition: opacity var(--motion), translate var(--move) var(--land), scale calc(280ms * var(--pace)) var(--pop-in), visibility 0s; }
+.me-wrap.open .me-pop { visibility: visible; opacity: 1; translate: 0 0; scale: 1; transition: opacity var(--motion), translate var(--move) var(--land), scale var(--move) var(--pop-in), visibility 0s; }
 @media (prefers-reduced-motion: reduce) { .me-pop, .me-wrap.open .me-pop { translate: none; scale: none; } }
 .me-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); }
 /* The face again, the size of the button, beside the name. */
-.me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
+.me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-mark); font: 600 var(--t-meta) var(--sans); }
 .me-who > svg.icon { padding: 4px; box-sizing: border-box; }
 .me-name { display: grid; min-width: 0; }
 .pop-group { display: grid; margin-top: var(--s2); }
@@ -78,31 +80,26 @@
 .pop-rule { height: 1px; margin: var(--s1) var(--s2); background: var(--rule); }
 /* A place of the rail: three cells square at a window's full height, closing up (never under what a finger can press)
    where the window is shorter; its icon half as large again as the app's others, drawn as heavy as a letter. */
-.rail { --rail-icon: 36px; }
+.rail { --rail-icon: 18px; }
 .rail-item {
   position: relative; display: grid; place-items: center; flex: 0 1 var(--rail-place); min-height: 32px;
-  width: var(--rail-place); border: 0; border-radius: var(--r-place);
+  width: var(--rail-place); border: 0; border-radius: var(--r-field);
   background: transparent; color: var(--ink); cursor: var(--cursor-hand);
 }
 .rail-item > .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
-.rail-new { margin-top: var(--u); }
+/* The places stand one after another, two cells apart, in the order of how far they are from the person
+   (host/purposes.ts); the person's own menu at the rail's foot. */
 /* (A window too short for the rail: + closes up to the places, as they do to one another.) */
-@media (max-height: 820px) { .rail-new { margin-top: 0; } .rail-tabs { padding-bottom: var(--s2); } }
-@media (max-width: 760px) {
-  :root { --rail: calc(2 * var(--u) + var(--s3)); --outer: var(--s3); --rail-place: calc(2 * var(--u)); --keys: calc(2 * var(--u)); }
-  .rail { --rail-icon: 28px; }
-  .me { font-size: 16px; }
-}
+@media (max-height: 560px) { .rail-tabs { gap: 0; padding-bottom: var(--s2); } }
 .rail-tag {
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
   padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;
   background: var(--ink); color: var(--ground); font-size: var(--t-meta); line-height: 1.8;
   opacity: 0; translate: -6px 0; pointer-events: none; transition: opacity var(--motion), translate var(--move) var(--land);
 }
-/* Out from the place's edge as the pointer comes on it, and back into it as the pointer leaves: never gone at once. */
+/* A place's name stands out from it while the keyboard is on it, saying where the keyboard is. A pointer over it
+   brings nothing out (DESIGN §7): the name it is told by is its own, said by the browser as any thing's is. */
 .rail-item:focus-visible .rail-tag { opacity: 1; translate: 0 0; }
-/* Only where a pointer rests: a finger's press leaves the place hovered, and its name would stay out over the page. */
-@media (hover: hover) { .rail-item:hover .rail-tag { opacity: 1; translate: 0 0; } }
 /* While File's tree is out, File is ringed as a place touched is (shared.css), and the page's own place keeps its
    slot: the page is still there, under the tree. */
 /* While File's tree is out, the tree itself says what it is. */
@@ -117,7 +114,7 @@
 .rail-item.news::after { background: currentColor; }
 .chip.news::after, .board-head.news > .board-mark::after {
   content: ''; display: inline-block; width: 7px; height: 7px; margin-left: var(--s2); vertical-align: middle;
-  border-radius: var(--r-round); background: currentColor;
+  border-radius: var(--r-mark); background: currentColor;
 }
 /* A board's # is quiet; its dot is the ink one all the same. */
 .board-head.news > .board-mark::after { background: var(--ink); }

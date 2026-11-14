@@ -6,10 +6,11 @@
 For each component a file pins it reads its makers' own listing (their download directory, release feed or tags),
 picks the newest release by the rule written beside it, downloads the archive over HTTPS and takes the digests it
 is pinned by (SHA-256, SHA-512 or both). A component with no newer release is downloaded from its pin and checked
-against it: a maker that moved a file, or a pin no longer reachable, is said. It prints the table and writes,
-in the current folder, NAME.next: the file as it would be with every newer release in it.
-Nothing in the tree is changed: a person reads the table and moves the file over (module/ricebox/make/build.sh checks every
-archive against it, as before).
+against it: a maker that changed a file (PIN BROKEN) or a pin that cannot be had (PIN NOT REACHED) is said, and the
+run ends 1 by either. A newest release that could not be looked up or taken is said too, its pin checked as any that
+stays, and does not fail the run. It prints the table and writes, in the current folder, NAME.next: the file as it
+would be with every newer release in it. Nothing in the tree is changed: a person reads the table and moves the file
+over (module/ricebox/make/build.sh checks every archive against it, as before).
 
 Rules beyond "the newest release, not a candidate":
   BusyBox            only a release its makers call stable (1.37 and 1.38 have been called unstable).
@@ -240,13 +241,18 @@ def moved_url(url, old, new):
     return url
 
 
+# What a row says where a newer release was found and its archive could not be had (the .next keeps the pin).
+NOT_TAKEN = 'newer not taken'
+
+
 def digests(data, pins, name):
     return {a: hashlib.new(a.lower(), data).hexdigest() for a in ('SHA256', 'SHA512') if f'{name}_{a}' in pins}
 
 
 def one_file(path):
     """The table's rows for the file at `path`, and the file as it would be."""
-    lines = open(path).read().splitlines()
+    with open(path) as f:
+        lines = f.read().splitlines()
     pins = dict(l.split('=', 1) for l in lines if '=' in l and not l.startswith('#'))
     names = [k[:-len('_URL')] for k in pins if k.endswith('_URL')]
 
@@ -256,25 +262,31 @@ def one_file(path):
         except Exception as e:  # said in the table; the pin stays as it is
             return name, None, f'{type(e).__name__}: {e}'
 
+    def pin_checked(name):
+        """The pin's own archive against its digests: broken where it is another file, not reached where it cannot be had."""
+        url = pins[f'{name}_URL']
+        try:
+            got = digests(get(url, binary=True), pins, name)
+        except Exception as e:
+            return f'PIN NOT REACHED: {e}'
+        bad = [a for a, d in got.items() if pins[f'{name}_{a}'] != d]
+        return f'PIN BROKEN: {url} is not its {", ".join(bad)}' if bad else 'pin checked'
+
     def take(found):
         name, latest, why = found
         at = None
         if isinstance(latest, tuple):  # a rule that knows where the release is, not only its version
             latest, at = latest
         was = pins.get(f'{name}_VERSION') or pins.get(f'{name}_DATE')
-        newer = latest and not why and latest != was
-        url = (at or moved_url(pins[f'{name}_URL'], was, latest)) if newer else pins[f'{name}_URL']
+        if not latest or why or latest == was:
+            return name, was, latest or '?', (why + '; ' if why else '') + pin_checked(name), {}
+        url = at or moved_url(pins[f'{name}_URL'], was, latest)
         try:
             data = get(url, binary=True)
-        except Exception as e:
-            return name, was, latest or '?', f'{url}: {e}', {}
-        got = digests(data, pins, name)
-        if not newer:
-            bad = [a for a, d in got.items() if pins[f'{name}_{a}'] != d]
-            note = f'PIN BROKEN: {url} is not its {", ".join(bad)}' if bad else 'pin checked'
-            return name, was, latest or '?', (why + '; ' if why else '') + note, {}
+        except Exception as e:  # the newer one is not had: the pin stays, and is checked as any that stays
+            return name, was, latest, f'{NOT_TAKEN}: {e}; {pin_checked(name)}', {}
         field = f'{name}_VERSION' if f'{name}_VERSION' in pins else f'{name}_DATE'
-        changed = {field: latest, f'{name}_URL': url, **{f'{name}_{a}': d for a, d in got.items()}}
+        changed = {field: latest, f'{name}_URL': url, **{f'{name}_{a}': d for a, d in digests(data, pins, name).items()}}
         return name, was, latest, f'{len(data)} bytes', changed
 
     with ThreadPoolExecutor(12) as pool:
@@ -290,7 +302,8 @@ def one_file(path):
 
 def bash_patches(path):
     """bash's makers' patches to the release pinned: how many module/ricebox/packages/bash/ holds, and how many they publish."""
-    pins = dict(l.split('=', 1) for l in open(path).read().splitlines() if '=' in l and not l.startswith('#'))
+    with open(path) as f:
+        pins = dict(l.split('=', 1) for l in f.read().splitlines() if '=' in l and not l.startswith('#'))
     release = pins.get('GNU_BASH_VERSION')
     if not release:
         return []
@@ -316,10 +329,14 @@ def main():
     for name, was, latest, note in rows:
         mark = '  ' if was == latest else '->'
         print(f'{name:{width}}  {was:12}  {mark} {latest:12}  {note}')
-    newer = sum(1 for r in rows if r[1] != r[2] and r[2] != '?')
+    newer = sum(1 for r in rows if r[1] != r[2] and r[2] != '?' and NOT_TAKEN not in r[3])
     broken = sum(1 for r in rows if 'PIN BROKEN' in r[3])
-    print(f'\n{newer} newer, {broken} pins broken; {", ".join(outs)} hold the newer ones')
-    sys.exit(1 if broken else 0)
+    lost = sum(1 for r in rows if 'PIN NOT REACHED' in r[3])
+    unknown = sum(1 for r in rows if r[2] == '?' or NOT_TAKEN in r[3])
+    print(f'\n{newer} newer, {broken} pins broken, {lost} pins not reached, {unknown} whose newest is not known; '
+          f'{", ".join(outs)} hold the newer ones')
+    # A pin that is another file, or that cannot be had, is not a pin checked: the run fails by either.
+    sys.exit(1 if broken or lost else 0)
 
 
 if __name__ == '__main__':

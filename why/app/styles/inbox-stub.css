@@ -8,12 +8,10 @@
 /* Taken, it is a name, not a field: on the ground with a place's line, so the field to write to someone, under it
    and of its size, is the one that reads as a field (raised, its edge seen). Each part lifts under the pointer. */
 .stub:has(> .stub-text) { border-color: var(--rule); background: transparent; }
-.stub-text:hover, .stub-code:hover { background: var(--raised); }
+.stub-text:hover { background: var(--raised); }
 .stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stub-text { cursor: var(--cursor-copy); }
 /* The code beside the name: six digits to be found by, copied by a press. */
-.stub-code { flex: none; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-left: 1px solid var(--rule); background: transparent; color: var(--sub); font: var(--t-meta)/1 var(--mono); letter-spacing: .08em; cursor: var(--cursor-copy); }
-.stub-code:hover { color: var(--ink); }
 .stub-in:focus { outline: none; }
 .sign-in-card .stub { width: 100%; }
 .sign-in-card .stub-holder { display: grid; gap: var(--s2); justify-items: stretch; margin: 0; }
