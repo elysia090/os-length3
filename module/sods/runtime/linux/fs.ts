@@ -3,7 +3,7 @@
 // (a host directory, an archive, browser storage) on first read.
 import {epoch, random} from '../host.ts';
 
-export const S_IFMT = 0o170000, S_IFDIR = 0o040000, S_IFREG = 0o100000, S_IFLNK = 0o120000, S_IFCHR = 0o020000,
+export const S_IFMT = 0o170000, S_IFDIR = 0o040000, S_IFREG = 0o100000, S_IFLNK = 0o120000, S_IFCHR = 0o020000, S_IFBLK = 0o060000,
   S_IFIFO = 0o010000, S_IFSOCK = 0o140000;
 
 let inodes = 1;
@@ -72,6 +72,8 @@ export class Node {
   declare ctime?: number;
   /** Its extended attributes (sys-file.ts), as tmpfs keeps them. */
   declare xattrs?: Map<string, Uint8Array> | null;
+  /** The mounts that cover it, in whatever mount each is (null, or not there: none). */
+  declare covered?: Mount[] | null;
   constructor(mode: number) {
     this.mode = mode;
     this.ino = inodes++;
@@ -319,9 +321,6 @@ export class Dir extends Node {
   declare parent?: Dir;
   declare name?: string;
   declare lies?: boolean;
-  /** Where it was last found to lie (Vfs.where), and the count of placings that was found at. */
-  declare at?: string | null;
-  declare seen?: number;
   /** A tree's root alone: what the tree holds of its files' bytes (Vfs.loaded). */
   declare loaded?: Loaded;
   constructor(mode = 0o755) {
@@ -340,6 +339,11 @@ export class Link extends Node {
   }
   /** Where it points (procfs.ts's are made as they are followed). */
   get target(): string { return this.#target; }
+  /**
+   * One that leads to what something holds, not along a path (/proc's links to a descriptor, to where a process
+   * works, to a namespace): where a walk through it goes on, a place, or what holds no node (`held`); or the errno.
+   */
+  declare leap?: () => {mnt?: Mount; node?: Entry; held?: unknown} | number;
   get size(): number { return new TextEncoder().encode(this.target).length; }
 }
 
@@ -361,13 +365,35 @@ export class Device extends Node {
   declare readonly rdev: number;
   declare readonly readDevice: (n: number) => Uint8Array;
   declare readonly writeDevice: (bytes: Uint8Array) => number;
+  /** No driver is behind its number here: opened, there is no such device (ENXIO). */
+  declare readonly none?: boolean;
   readonly size = 0;
-  constructor(rdev: number, read: (n: number) => Uint8Array, write: (bytes: Uint8Array) => number) {
-    super(S_IFCHR | 0o666);
+  constructor(rdev: number, read: (n: number) => Uint8Array, write: (bytes: Uint8Array) => number, type = S_IFCHR) {
+    super(type | 0o666);
     this.rdev = rdev;
     this.readDevice = read;
     this.writeDevice = write;
   }
+}
+
+const nothing = (): Uint8Array => new Uint8Array(0), taken = (b: Uint8Array): number => b.length;
+/** What stands behind a character device's number (major << 8 | minor), where something does. */
+const DRIVERS: Record<number, [(n: number) => Uint8Array, (b: Uint8Array) => number]> = {
+  0x103: [nothing, taken], // null
+  0x105: [(n) => new Uint8Array(n), taken], // zero
+  0x107: [(n) => new Uint8Array(n), () => fail(E.NOSPC)], // full
+  0x108: [(n) => random(Math.min(n, 65536)), taken], // random
+  0x109: [(n) => random(Math.min(n, 65536)), taken], // urandom
+  0x500: [nothing, taken], // tty: the controlling terminal (sys-file.ts opens it as such)
+  0x502: [nothing, taken], // ptmx: a new terminal of the devpts beside it (sys-file.ts opens it as such)
+};
+/** A device node for number `rdev` (mknod's): a character device, or (`block`) a block device, which none here stands behind. */
+export function device(rdev: number, mode: number, block = false): Device {
+  const driver = block ? undefined : DRIVERS[rdev];
+  const d = new Device(rdev, driver?.[0] ?? (() => fail(E.NXIO)), driver?.[1] ?? (() => fail(E.NXIO)), block ? S_IFBLK : S_IFCHR);
+  d.mode = (d.mode & S_IFMT) | (mode & 0o7777);
+  if (!driver) (d as {none?: boolean}).none = true;
+  return d;
 }
 
 /** Any node of the tree. */
@@ -376,7 +402,7 @@ export type Entry = File | Dir | Link | Fifo | SocketName | Device;
 export const E = {PERM: 1, NOENT: 2, IO: 5, BADF: 9, CHILD: 10, AGAIN: 11, NOMEM: 12, ACCES: 13, FAULT: 14, EXIST: 17,
   XDEV: 18, NOTDIR: 20, ISDIR: 21, INVAL: 22, MFILE: 24, NOTTY: 25, FBIG: 27, NOSPC: 28, SPIPE: 29, RANGE: 34, NOSYS: 38,
   NOTEMPTY: 39, LOOP: 40, NAMETOOLONG: 36, PIPE: 32, NOEXEC: 8, SRCH: 3, INTR: 4, AFNOSUPPORT: 97, NXIO: 6, TIMEDOUT: 110,
-  OPNOTSUPP: 95, BUSY: 16, NODEV: 19, NODATA: 61, TOOBIG: 7};
+  OPNOTSUPP: 95, BUSY: 16, NODEV: 19, NODATA: 61, TOOBIG: 7, ROFS: 30, MLINK: 31, USERS: 87, NOTBLK: 15};
 
 /**
  * A call's failure, as the errno it answers (thrown where it cannot go on; the call's value, Kernel.attempt). Not an
@@ -392,11 +418,83 @@ export class FsError {
 
 const fail = (errno: number): never => { throw new FsError(errno); };
 
-/** Where `resolve` found a path: its node (null when only its last part is missing), its directory and its name. */
-export interface Resolved { node: Entry | null; parent: Dir; name: string }
+// ---- What is mounted. A file system is a tree with what it is (`Super`: its kind, where it came from, how it was
+// asked for); a mount is one look at such a tree, or a part of one, from a place in another mount (`Mount`), with
+// what that look allows (read-only, no devices, no programs run from it). A place is a mount and a node in it
+// (`Place`): a process's root, where it works, what a descriptor holds. One tree is reached by as many mounts as
+// there are (a bind is a second mount of the same nodes), and a namespace is the mounts under its root. What makes
+// and moves them is mount.ts; here is what a path is walked by.
+
+/** A mount's flags, as mount_setattr(2) numbers them (the three times of access are one field, ATIME). */
+export const MNT = {RDONLY: 1, NOSUID: 2, NODEV: 4, NOEXEC: 8, ATIME: 0x70, NOATIME: 0x10, STRICTATIME: 0x20, NODIRATIME: 0x80, NOSYMFOLLOW: 0x200000};
+
+let supers = 0;
+/** A file system: one tree, however often it is mounted. */
+export class Super {
+  /** Its device number (st_dev; mountinfo's major:minor): no disk's, so major 0. */
+  readonly dev = ((n: number): number => (n & 0xff) | ((n & ~0xff) << 12))(++supers + 19);
+  /** Read-only as a whole (every mount of it), and what else was asked of it, as mountinfo says after rw or ro. */
+  readonly = false;
+  options = '';
+  /** No device node in it is a device (one mounted by a user namespace that is not the first: a device is the machine's). */
+  nodev = false;
+  /** Whose it is: the user namespace it was mounted in (cred.ts), and what its kind keeps of it (a devpts's terminals, a proc's processes). */
+  owner: object | null = null;
+  data: unknown = null;
+  declare readonly kind: string;
+  declare readonly magic: number;
+  declare source: string;
+  declare readonly root: Entry;
+  constructor(kind: string, magic: number, root: Entry, source = kind) { this.kind = kind; this.magic = magic; this.root = root; this.source = source; }
+}
+
+let mounts = 0;
+export class Mount {
+  readonly id = ++mounts + 20;
+  /** The mount it is in and the node there it covers; that node's directory and name there (a file's has no other way up). */
+  parent: Mount | null = null;
+  point: Entry | null = null;
+  pointDir: Dir | null = null;
+  pointName = '';
+  /** Where its root lies in its file system, where that root is no directory (a file bound): its directory and name. */
+  rootDir: Dir | null = null;
+  rootName = '';
+  readonly children = new Set<Mount>();
+  flags = 0;
+  /** How what is mounted under it spreads: to its peers (`group`), from its master (`master`), or neither; `unbindable`: nor copied. */
+  group = 0;
+  master = 0;
+  unbindable = false;
+  /** The namespace it is in (mount.ts Space); null once taken out, or not yet put in (open_tree's copy). */
+  space: object | null = null;
+  /** What holds it: descriptors, where processes work and their roots (a mount held is busy to umount). */
+  refs = 0;
+  /** It, and the flags it has, came with a namespace from a more privileged one: not taken away, nor loosened (mount.ts). */
+  locked = false;
+  lockedFlags = 0;
+  declare readonly sb: Super;
+  declare readonly root: Entry;
+  constructor(sb: Super, root: Entry = sb.root, flags = 0) { this.sb = sb; this.root = root; this.flags = flags; }
+}
+
+/** A mount and a node in it. */
+export interface Place { mnt: Mount; node: Entry }
+/**
+ * Where a walk came to: its node (null when only its last name is missing: what a creation wants) in `mnt`, and the
+ * directory and name it was found by, in `up` (the mount of that directory: another, where the node is what is
+ * mounted there). `held`: it was reached through what something holds open (/proc's fd links), which may have no
+ * node at all (a pipe, a socket).
+ */
+export interface Found { mnt: Mount; node: Entry | null; parent: Dir; name: string; up: Mount; held?: unknown }
+/** Who walks: its root, and who it is (cred.ts: null, one that is asked nothing). */
+export interface Walker { root: Place; cred: object | null }
+/** Whether one who is `cred` may look a name up in `dir` (cred.ts sets it: here nothing is known of users). */
+export const guard: {search: ((cred: object, dir: Dir) => boolean) | null} = {search: null};
+
+/** How a path is walked: its last link followed; openat2's rules (RESOLVE_*); `DOWN`: what is mounted on what it comes to is entered (umount's). */
+export const WALK = {NO_XDEV: 1, NO_MAGICLINKS: 2, NO_SYMLINKS: 4, BENEATH: 8, IN_ROOT: 16, FOLLOW: 0x100, DOWN: 0x200};
 
 const SLASH = 47, DOT = 46;
-/** Whether `path` from `at` on holds no component but empty ones and "." (the one before `at` is its last). */
 /**
  * How a path ends: `slash`, with a slash after its last name (what it names must be a folder); `dot`, with "." (1)
  * or ".." (2) as that name, which names no entry to take away or to move; `bare`, the path without the slashes at
@@ -409,6 +507,7 @@ export function ending(path: string): {slash: boolean; dot: 0 | 1 | 2; bare: str
   return {slash: n < path.length, dot: last === '.' ? 1 : last === '..' ? 2 : 0, bare};
 }
 
+/** Whether `path` from `at` on holds no component but empty ones and "." (the one before `at` is its last). */
 function onlyDots(path: string, at: number): boolean {
   for (let i = at; i < path.length; i++) {
     const c = path.charCodeAt(i);
@@ -419,198 +518,223 @@ function onlyDots(path: string, at: number): boolean {
   return true;
 }
 
+/** What is mounted on `node` of `mnt`, and on that, to the last: where a walk that comes to `node` is. */
+export function down(mnt: Mount, node: Entry): Place {
+  for (let over = node.covered; over; over = node.covered) {
+    let top: Mount | undefined;
+    for (const m of over) if (m.parent === mnt) top = m;
+    if (!top) break;
+    mnt = top;
+    node = top.root;
+  }
+  return {mnt, node};
+}
+
+/**
+ * `path` walked from `from` by `who`, a name at a time, in place (no array of its names made: a stat or an open of
+ * a short path would spend most of its time there). A link is followed from the directory it is in; ".." is the
+ * directory a directory lies in, the one a mount covers where it is a mount's root, and nothing above who's root;
+ * a name that something is mounted on is what is mounted there. The errno where it fails, given back, not thrown:
+ * a name that is not there is most of what a shell's PATH search and a compiler's include path ask.
+ *
+ * `how` (WALK): FOLLOW its last link; BENEATH: it leads nowhere out of where it starts (a path or a link from the
+ * root, ".." past the start: EXDEV); IN_ROOT: where it starts is its root; NO_SYMLINKS, NO_MAGICLINKS: no link is
+ * followed (ELOOP), none that leads to what something holds; NO_XDEV: it stays in the mount it starts in.
+ */
+export function walk(who: Walker, path: string, from: Place, how = WALK.FOLLOW, scope: Place | null = how & (WALK.BENEATH | WALK.IN_ROOT) ? from : null, depth = 0): Found | number {
+  if (depth > 40) return E.LOOP;
+  if (path === '') return E.NOENT;
+  const n = path.length, root = scope ?? who.root, cred = who.cred, search = cred ? guard.search : null;
+  let mnt: Mount, node: Entry;
+  if (path.charCodeAt(0) === SLASH) {
+    if (how & WALK.BENEATH) return E.XDEV;
+    if (how & WALK.NO_XDEV && from.mnt !== root.mnt) return E.XDEV;
+    ({mnt, node} = root);
+  } else ({mnt, node} = from);
+  let parent: Dir | null = null, name = '', up = mnt, held: unknown;
+  for (let i = 0; i < n;) {
+    if (path.charCodeAt(i) === SLASH) { i++; continue; }
+    const start = i;
+    let end = path.indexOf('/', i);
+    if (end < 0) end = n;
+    i = end;
+    if (end - start === 1 && path.charCodeAt(start) === DOT) continue;
+    // (".." is asked of a folder as any name is: through a file it is ENOTDIR, not the folder the file lies in.)
+    if (!(node instanceof Dir)) return E.NOTDIR;
+    if (search && !search(cred!, node)) return E.ACCES;
+    held = undefined;
+    if (end - start === 2 && path.charCodeAt(start) === DOT && path.charCodeAt(start + 1) === DOT) {
+      if (mnt === root.mnt && node === root.node) { if (how & WALK.BENEATH) return E.XDEV; continue; }
+      // Out of a mount's root: the directory the mount covers lies in (and so on up, where that is a root too).
+      let m = mnt, d: Entry = node, top = false;
+      while (d === m.root) {
+        if (!m.parent || !m.point) { top = true; break; }
+        d = m.point;
+        m = m.parent;
+        if (m === root.mnt && d === root.node) { top = true; break; }
+      }
+      if (top) continue;
+      if (m !== mnt && how & WALK.NO_XDEV) return E.XDEV;
+      const above = d instanceof Dir ? d.parent : m.pointDir;
+      if (!above) continue;
+      ({mnt, node} = down(m, above));
+      if (mnt !== m && how & WALK.NO_XDEV) return E.XDEV;
+      parent = null;
+      continue;
+    }
+    const part = path.slice(start, end), child = node.entries.get(part);
+    // Its last name with more of the path after it (a slash, "." or ".."): the path goes through what it names,
+    // which must then be a folder (ENOTDIR for a file, as Linux says to "file/" and "file/."), and a link there
+    // is followed whoever asks.
+    const last = onlyDots(path, end), through = last && end < n;
+    if (!child) return last ? {mnt, node: null, parent: node, name: part, up: mnt} : E.NOENT;
+    if (child instanceof Link && (!last || how & WALK.FOLLOW || through)) {
+      if (how & WALK.NO_SYMLINKS || mnt.flags & MNT.NOSYMFOLLOW) return E.LOOP;
+      const leap = child.leap;
+      if (leap) {
+        // It leads to what something holds, not along a path: the walk goes on from there.
+        if (how & WALK.NO_MAGICLINKS) return E.LOOP;
+        const to = leap();
+        if (typeof to === 'number') return to;
+        if (how & WALK.NO_XDEV && to.mnt && to.mnt !== mnt) return E.XDEV;
+        if (!to.node || !to.mnt) return last && !through ? {mnt, node: null, parent: node, name: part, up: mnt, held: to.held} : E.NOTDIR;
+        if (scope) return E.XDEV;
+        up = mnt, parent = node, name = part;
+        ({mnt, node} = to as Place);
+        held = to.held;
+        continue;
+      }
+      const target = child.target;
+      if (target === '') return E.NOENT;
+      // The link's target from the directory it is in, then what comes after it.
+      return walk(who, last && !through ? target : target + path.slice(end), {mnt, node}, last ? how | WALK.FOLLOW : how, scope, depth + 1);
+    }
+    if (through && !(child instanceof Dir)) return E.NOTDIR;
+    up = mnt, parent = node, name = part;
+    if (child.covered) {
+      ({mnt, node} = down(mnt, child));
+      if (mnt !== up && how & WALK.NO_XDEV) return E.XDEV;
+    } else node = child;
+    // (One made as it is looked at, /proc's, lies where it was found.)
+    if (node instanceof Dir && node.parent === undefined && node !== mnt.root) { node.parent = parent; node.name = part; }
+  }
+  if (how & WALK.DOWN) ({mnt, node} = down(mnt, node));
+  if (!parent) {
+    // It came to no name in a directory ("/", ".", ".."): what it lies in, as far as that is known.
+    const d = node === mnt.root ? mnt.point ?? node : node;
+    parent = (d instanceof Dir ? d.parent : mnt.pointDir) ?? (node instanceof Dir ? node : mnt.pointDir!);
+    name = (d instanceof Dir ? d.name : mnt.pointName) ?? '/';
+    up = node === mnt.root ? mnt.parent ?? mnt : mnt;
+  }
+  return held === undefined ? {mnt, node, parent, name, up} : {mnt, node, parent, name, up, held};
+}
+
+/**
+ * Where `node` of `mnt` is, as one whose root is `root` names it: its names up to that root, through each mount to
+ * what it covers. One that is not a directory is named by the directory and the name it was reached by (`dir`,
+ * `name`). What was removed since is said to be ("(deleted)"); what lies under no name `root` can reach (another
+ * namespace's, a mount taken out) is named from as far up as it goes, after `beyond`.
+ */
+export function pathOf(root: Place, mnt: Mount, node: Entry, dir: Dir | null = null, name = '', beyond = ''): string {
+  const names: string[] = [];
+  let gone = false, reached = false, d: Entry | null = node;
+  if (!(d instanceof Dir) && d !== mnt.root) {
+    if (!dir) return beyond + '/';
+    names.push(name);
+    gone = dir.entries.get(name) !== node;
+    d = dir;
+  }
+  for (let hops = 0; d && hops < 4096; hops++) {
+    if (mnt === root.mnt && d === root.node) { reached = true; break; }
+    if (d === mnt.root) {
+      if (!mnt.parent || !mnt.point) break;
+      if (mnt.point instanceof Dir) d = mnt.point;
+      else { names.push(mnt.pointName); d = mnt.pointDir; }
+      mnt = mnt.parent;
+      continue;
+    }
+    if (!(d instanceof Dir) || !d.parent) break;
+    if (d.lies === false) gone = true;
+    names.push(d.name ?? '');
+    d = d.parent;
+  }
+  return `${reached ? '' : beyond}/${names.reverse().join('/')}${gone ? ' (deleted)' : ''}`;
+}
+
+/**
+ * A tree and the first look at it: the root file system as its host fills it, before any process runs, and reads it
+ * after (by paths from its root, through whatever the kernel mounted there). With /dev, the devices every program
+ * looks for, a file system of its own mounted on it.
+ */
 export class Vfs {
   declare readonly root: Dir;
+  /** The mount of the root tree: the first namespace's root (mount.ts), and where a path here is walked from. */
+  declare readonly mount: Mount;
+  declare readonly devices: Mount;
   declare readonly terminal: Device;
   /** What it holds of its files' bytes that their loaders can give again, and who keeps some of them (Loaded). */
   declare readonly loaded: Loaded;
+  declare readonly who: Walker;
   constructor() {
     this.root = new Dir();
     this.loaded = this.root.loaded = {files: new Set(), keepers: new Set()};
-    const dev = this.mkdirp('/dev');
-    dev.entries.set('null', new Device(0x103, () => new Uint8Array(0), (b) => b.length));
-    dev.entries.set('zero', new Device(0x105, (n) => new Uint8Array(n), (b) => b.length));
-    dev.entries.set('urandom', new Device(0x109, (n) => random(Math.min(n, 65536)), (b) => b.length));
-    dev.entries.set('random', dev.entries.get('urandom')!);
-    // The controlling terminal: the console, where it is one (sys-file.ts opens it as such).
-    dev.entries.set('tty', new Device(0x500, () => new Uint8Array(0), (b) => b.length));
+    this.mount = new Mount(new Super('overlay', 0x794c7630, this.root));
+    this.who = {root: {mnt: this.mount, node: this.root}, cred: null};
+    for (const d of ['/dev', '/tmp', '/root', '/proc', '/sys', '/etc']) this.mkdirp(d);
+    const dev = new Dir();
+    const devices = new Super('devtmpfs', 0x01021994, dev);
+    devices.options = 'mode=755';
+    this.devices = new Mount(devices, dev, MNT.NOSUID);
+    attach(this.devices, this.mount, this.root.entries.get('dev')!, this.root, 'dev');
+    for (const [name, rdev] of [['null', 0x103], ['zero', 0x105], ['full', 0x107], ['random', 0x108], ['urandom', 0x109], ['tty', 0x500], ['ptmx', 0x502]] as const) dev.entries.set(name, device(rdev, 0o666));
     // The terminal the console is (its own name, as ttyname finds it: /proc/self/fd/0's link, the same file): opened,
     // the console again; the console's stat is its.
     this.terminal = new Device(0x8800, () => new Uint8Array(0), (b) => b.length);
     this.terminal.mode = S_IFCHR | 0o620;
-    this.mkdirp('/dev/pts').entries.set('0', this.terminal);
-    for (const d of ['/tmp', '/root', '/proc', '/etc']) this.mkdirp(d);
+    dev.entries.set('pts', new Dir());
+    dev.nlink++;
   }
 
-  /**
-   * Where `dir` lies now, by what it is (not by a path it was once reached by): its names from the root. Null once it
-   * lies nowhere (removed, written over, or under one that was); undefined where the tree keeps no place for it (one
-   * made as it is looked at: /proc's). Found again only after a directory was put somewhere or taken out.
-   */
-  where(dir: Dir): string | null | undefined {
-    if (dir.seen === counted.placed) return dir.at;
-    let at: string | null | undefined;
-    if (dir === this.root) at = '/';
-    else if (dir.lies === undefined) at = undefined;
-    else if (!dir.lies) at = null;
-    else {
-      const up = this.where(dir.parent!);
-      at = up == null ? up : up === '/' ? `/${dir.name}` : `${up}/${dir.name}`;
-    }
-    dir.seen = counted.placed;
-    dir.at = at;
-    return at;
+  /** The place `from` is: a path from the root, or a directory of the root's tree. */
+  #place(from: string | Dir): Place | number {
+    if (typeof from !== 'string') return {mnt: this.mount, node: from};
+    const r = walk(this.who, from, this.who.root);
+    return typeof r === 'number' ? r : r.node ? {mnt: r.mnt, node: r.node} : E.NOENT;
   }
 
-  /** What a directory is called where its place is shown (/proc's links): where it lies, or where it lay, "(deleted)". */
-  shown(dir: Dir): string | undefined {
-    const at = this.where(dir);
-    if (at !== null) return at;
-    const up = dir.parent ? this.shown(dir.parent) : undefined;
-    return up === undefined ? undefined : `${up.replace(/ \(deleted\)$/, '')}${up === '/' ? '' : '/'}${dir.name} (deleted)`;
+  /** As `walk`, from the root's tree: `from` a path from the root, or a directory of that tree. */
+  walk(path: string, from: string | Dir = '/', follow = true): Found | number {
+    const at = from === '/' ? this.who.root : this.#place(from);
+    return typeof at === 'number' ? at : walk(this.who, path, at, follow ? WALK.FOLLOW : 0);
   }
 
-  /**
-   * Resolve `path` from `cwd` (a path, or the directory itself: where it lies now is where the walk starts). Returns
-   * {node, parent, name}; node is null when only the last component is missing (useful for creation).
-   */
-  resolve(path: string, cwd: string | Dir = '/', follow = true): Resolved {
+  /** `walk`, its errno thrown: {node, parent, name}, node null when only the last name is missing (useful for creation). */
+  resolve(path: string, cwd: string | Dir = '/', follow = true): Found {
     const r = this.walk(path, cwd, follow);
     return typeof r === 'number' ? fail(r) : r;
   }
 
-  /**
-   * The node at `path`, or the errno its lookup fails with, given back, not thrown: a name that is not there is most of
-   * what a shell's PATH search and a compiler's include path ask, and the throw cost more than the lookup.
-   */
-  find(path: string, cwd: string | Dir, follow = true): Entry | number {
+  /** The node at `path`, or the errno its lookup fails with, given back. */
+  find(path: string, cwd: string | Dir = '/', follow = true): Entry | number {
     const r = this.walk(path, cwd, follow);
     return typeof r === 'number' ? r : r.node ?? E.NOENT;
   }
 
-  lookup(path: string, cwd: string | Dir, follow = true): Entry {
+  lookup(path: string, cwd: string | Dir = '/', follow = true): Entry {
     const r = this.find(path, cwd, follow);
     return typeof r === 'number' ? fail(r) : r;
   }
 
-  /**
-   * As resolve, its errno given back (find). Given `names`, it leaves there the names it went down by to what it
-   * found (links followed, "." and ".." gone; to its parent, where only its last name is missing): its canonical path,
-   * which an open keeps, with no second walk (realpath).
-   */
-  walk(path: string, from: string | Dir = '/', follow = true, depth = 0, names: string[] | null = null): Resolved | number {
-    if (depth > 40) return E.LOOP;
-    if (path === '') return E.NOENT;
-    if (names) names.length = 0;
-    let cwd: string;
-    if (typeof from === 'string') cwd = from;
-    else {
-      const at = this.where(from);
-      if (at == null) {
-        if (path.charCodeAt(0) !== SLASH) return at === null ? this.#fromGone(path, from, follow, depth, names) : E.NOENT;
-        cwd = '/';
-      } else cwd = at;
-    }
-    // Its components read in place, one after another (not split into an array, filtered and joined again: a stat or
-    // an open of a short path spent most of its time there). Empty components and "." are none.
-    const full = path.charCodeAt(0) === SLASH ? path : cwd + '/' + path, n = full.length;
-    const stack: Entry[] = [this.root];
-    let name = '/';
-    for (let i = 0; i < n;) {
-      if (full.charCodeAt(i) === SLASH) { i++; continue; }
-      const start = i;
-      let end = full.indexOf('/', i);
-      if (end < 0) end = n;
-      i = end;
-      if (end - start === 1 && full.charCodeAt(start) === DOT) continue;
-      const part = full.slice(start, end), dir = stack[stack.length - 1];
-      name = part;
-      // (".." is asked of a folder as any name is: through a file it is ENOTDIR, not the folder the file lies in.)
-      if (!(dir instanceof Dir)) return E.NOTDIR;
-      if (part === '..') { if (stack.length > 1) { stack.pop(); names?.pop(); } continue; }
-      const node = dir.entries.get(part);
-      const last = onlyDots(full, end);
-      // Its last name with more of the path after it (a slash, "." or ".."): the path goes through what it names,
-      // which must then be a folder (ENOTDIR for a file, as Linux says to "file/" and "file/."), and a link there
-      // is followed whoever asks.
-      const through = last && end < n;
-      if (!node) {
-        if (last) return {node: null, parent: dir, name: part};
-        return E.NOENT;
-      }
-      if (node instanceof Link && (!last || follow || through)) {
-        // The link's target from the directory it is in (what came before it), then what comes after it.
-        const target = node.target.startsWith('/') ? node.target : full.slice(0, start) + '/' + node.target;
-        return this.walk(last && !through ? target : target + full.slice(end), '/', follow, depth + 1, names);
-      }
-      if (through && !(node instanceof Dir)) return E.NOTDIR;
-      stack.push(node);
-      names?.push(part);
-    }
-    const node = stack[stack.length - 1];
-    return {node, parent: (stack[stack.length - 2] as Dir | undefined) ?? this.root, name};
-  }
-
-  /**
-   * A path asked from a directory that lies nowhere (removed while it was held open, or worked in): it is still itself
-   * ("."), ".." is where it lay, and no name is in it or can be made in it (ENOENT), as Linux has it.
-   */
-  #fromGone(path: string, dir: Dir, follow: boolean, depth: number, names: string[] | null): Resolved | number {
-    for (let i = 0; i < path.length;) {
-      if (path.charCodeAt(i) === SLASH) { i++; continue; }
-      let end = path.indexOf('/', i);
-      if (end < 0) end = path.length;
-      const part = path.slice(i, end);
-      i = end;
-      if (part === '.') continue;
-      if (part === '..' && dir.parent) return this.walk(path.slice(end) || '.', dir.parent, follow, depth + 1, names);
-      return E.NOENT;
-    }
-    return {node: dir, parent: dir.parent ?? dir, name: '.'};
-  }
-
-  /** Canonical absolute path of an existing directory. */
-  realpath(path: string, from: string | Dir): string {
-    const cwd = typeof from === 'string' ? from : path.startsWith('/') ? '/' : this.where(from) ?? fail(E.NOENT);
-    // One walk down the tree, each component looked up in the directory reached (not the whole path again from the
-    // root for each: an open of a file five deep looked up fifteen names), a link's target walked where it is.
-    const parts: string[] = [], nodes: Entry[] = [this.root];
-    let links = 0;
-    const walk = (p: string): void => {
-      for (let i = 0; i < p.length;) {
-        if (p.charCodeAt(i) === SLASH) { i++; continue; }
-        let end = p.indexOf('/', i);
-        if (end < 0) end = p.length;
-        const part = p.slice(i, end);
-        i = end;
-        if (part === '.') continue;
-        if (part === '..') { if (parts.length) { parts.pop(); nodes.pop(); } continue; }
-        const dir = nodes[nodes.length - 1];
-        if (!(dir instanceof Dir)) fail(E.NOTDIR);
-        const node = (dir as Dir).entries.get(part) ?? fail(E.NOENT);
-        if (node instanceof Link) {
-          if (++links > 40) fail(E.LOOP);
-          if (node.target.startsWith('/')) { parts.length = 0; nodes.length = 1; }
-          walk(node.target);
-          continue;
-        }
-        parts.push(part);
-        nodes.push(node);
-      }
-    };
-    walk(path.startsWith('/') ? path : cwd + '/' + path);
-    return '/' + parts.join('/');
-  }
-
   mkdirp(path: string): Dir {
-    let dir = this.root;
+    let at: Place = this.who.root;
     for (const part of path.split('/').filter(Boolean)) {
+      const dir = at.node as Dir;
       let next = dir.entries.get(part);
       if (!next) { next = new Dir(); dir.entries.set(part, next); dir.nlink++; }
-      if (!(next instanceof Dir)) return fail(E.NOTDIR);
-      dir = next;
+      at = down(at.mnt, next);
+      if (!(at.node instanceof Dir)) return fail(E.NOTDIR);
     }
-    return dir;
+    return at.node as Dir;
   }
 
   writeFile(path: string, bytes: Uint8Array | string, mode = 0o644): File {
@@ -641,6 +765,28 @@ export class Vfs {
     const at = path.lastIndexOf('/');
     this.mkdirp(path.slice(0, at)).entries.set(path.slice(at + 1), new Link(target));
   }
+}
+
+/** `m` put on `point` of `parent` (which lies in `dir` as `name`): a walk that comes there is in `m` from now on. */
+export function attach(m: Mount, parent: Mount, point: Entry, dir: Dir | null, name: string): void {
+  m.parent = parent;
+  m.point = point;
+  m.pointDir = dir;
+  m.pointName = name;
+  m.space = parent.space;
+  parent.children.add(m);
+  (point.covered ??= []).push(m);
+}
+
+/** `m` taken off what it covers (what is mounted in it stays in it). */
+export function detach(m: Mount): void {
+  const over = m.point?.covered;
+  if (over) {
+    over.splice(over.indexOf(m), 1);
+    if (!over.length) m.point!.covered = null;
+  }
+  m.parent?.children.delete(m);
+  m.parent = m.point = m.pointDir = null;
 }
 
 /** Image mounting through ordinary file operations, supplied by the caller to an image reader. */

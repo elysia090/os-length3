@@ -25,7 +25,9 @@
 // changes, below); its last descriptor closed, Description.release closes it.
 
 import {Description, Pipe} from './fd.ts';
-import {E, FsError, SocketName, S_IFSOCK} from './fs.ts';
+import {E, FsError, MNT, SocketName, S_IFSOCK, walk} from './fs.ts';
+import {MAY, may, shownIn} from './cred.ts';
+import {nrIn, type Net} from './space.ts';
 import {answer, interfaceControl, traffic, type Address} from './net-view.ts';
 import {Wait, utf8} from './flow.ts';
 import type {Calls, Kern, Proc} from './parts.ts';
@@ -44,14 +46,19 @@ declare module './fs.ts' {
     endpoint: Endpoint | null;
   }
 }
-declare module './parts.ts' {
-  interface Kern {
-    /** Every socket (net-view.ts lists them), the abstract names and netlink ports taken (each protocol's its own), the loopback ports. */
-    sockets?: Set<Endpoint>;
+declare module './space.ts' {
+  interface Net {
+    /** What is a network namespace's own: the abstract names and netlink ports taken (each protocol's its own), the loopback ports. */
     abstractSockets?: Map<string, Endpoint>;
     netlinkPorts?: Map<number, Map<number, Endpoint>>;
     inetPorts?: Record<number, Map<number, Set<Endpoint>>>;
     inetNext?: number;
+  }
+}
+declare module './parts.ts' {
+  interface Kern {
+    /** Every socket (net-view.ts lists those of the network namespace of the one who reads). */
+    sockets?: Set<Endpoint>;
     /** A socket's descriptor was passed over a socket (SCM_RIGHTS): only then can sockets hold one another (collect). */
     socketsPassed?: boolean;
     /** collect is looking: what it lets go does not start it again. */
@@ -156,8 +163,10 @@ class Endpoint {
   declare rights: {at: number; descs: Description[]}[];
   declare arrived: number;
   declare consumed: number;
+  declare readonly net: Net;
   constructor(kernel: Kern, family: number, type: number, proc: Proc, protocol: number | null = null) {
     this.kernel = kernel;
+    this.net = proc.ns.net; // the network it is in: its maker's, whoever holds it later
     this.family = family;
     this.type = type;
     // A raw or netlink socket's is the one asked for; the others', their family's and type's.
@@ -178,7 +187,7 @@ class Endpoint {
     this.backlogAsked = 0; // listen's, as ss says it
     this.shut = {rd: false, wr: false};
     this.writes = false; // counted among its peer's writers: from the connection (link) until it is shut for writing or closed
-    this.creds = {pid: proc.pid, uid: 0, gid: 0};
+    this.creds = {pid: proc.pid, uid: proc.cred.euid, gid: proc.cred.egid}; // (the kernel's own numbers: said as whoever asks numbers them)
     this.options = {passcred: false, reuseaddr: false, reuseport: false, v6only: false, nodelay: false, recvttl: false, recvhops: false};
     this.filter = null; // a raw ICMP socket's types not wanted (ICMP_FILTER's mask, ICMP6_FILTER's bits)
     this.events = 0; // what else moves its readiness (a connection to accept, its peer closing)
@@ -221,11 +230,11 @@ class Endpoint {
     if (this.rx instanceof Messages) for (const m of this.rx.list) for (const d of m.rights) d.release();
     for (const s of this.backlog) s.close();
     this.backlog = [];
-    if (this.abstract !== null && this.kernel.abstractSockets?.get(this.abstract) === this) this.kernel.abstractSockets.delete(this.abstract);
+    if (this.abstract !== null && this.net.abstractSockets?.get(this.abstract) === this) this.net.abstractSockets.delete(this.abstract);
     // The path stays (as on Linux: unlinked by whoever made it), and connecting to it is refused.
     if (this.node?.endpoint === this) this.node.endpoint = null;
     if (this.port) this.port.table.get(this.port.port)?.delete(this);
-    const portid = this.local?.portid, ports = this.netlink ? this.kernel.netlinkPorts?.get(this.protocol) : undefined;
+    const portid = this.local?.portid, ports = this.netlink ? this.net.netlinkPorts?.get(this.protocol) : undefined;
     if (portid !== undefined && ports?.get(portid) === this) ports.delete(portid);
     this.kernel.sockets?.delete(this);
   }
@@ -393,17 +402,20 @@ function writeName(p: Proc, address: bigint, lengthAt: bigint, bytes: Uint8Array
 
 /** The local socket bound to `name`, or the error connecting to it gives. */
 function namedBy(p: Proc, name: Given): Endpoint {
-  if (name.abstract !== undefined) return p.kernel.abstractSockets?.get(name.abstract) ?? fail(ERR.CONNREFUSED);
-  const node = p.kernel.vfs.lookup(name.path ?? '', p.here);
+  if (name.abstract !== undefined) return p.ns.net.abstractSockets?.get(name.abstract) ?? fail(ERR.CONNREFUSED);
+  // (a socket's name is connected to by one who may write to it)
+  const r = walk(p, name.path || fail(E.NOENT), p.fs.pwd);
+  const node = typeof r === 'number' ? fail(r) : r.node ?? fail(E.NOENT);
+  if (!may(p.cred, node, MAY.WRITE)) fail(E.ACCES);
   return (node instanceof SocketName && node.endpoint) || fail(ERR.CONNREFUSED);
 }
 
 // ---- loopback ports ----
 
-/** The kernel's ports for a protocol: port -> the sockets bound to it. */
-function portsOf(kernel: Kern, protocol: number): Map<number, Set<Endpoint>> {
-  kernel.inetPorts ??= {[IPPROTO.TCP]: new Map(), [IPPROTO.UDP]: new Map()};
-  return kernel.inetPorts[protocol];
+/** A network's ports for a protocol: port -> the sockets bound to it. */
+function portsOf(net: Net, protocol: number): Map<number, Set<Endpoint>> {
+  net.inetPorts ??= {[IPPROTO.TCP]: new Map(), [IPPROTO.UDP]: new Map()};
+  return net.inetPorts[protocol];
 }
 
 /** Whether a socket bound to `ip` is reached at `target` (an exact address, or the wildcard of a family that takes it). */
@@ -424,7 +436,7 @@ function overlap(a: Endpoint, ip: Uint8Array, b: Endpoint): boolean {
 function bindInet(s: Endpoint, ip: Uint8Array, port: number): void {
   if (!isAny(ip) && !isLoopback(ip) && !isGroup(ip)) fail(ERR.ADDRNOTAVAIL);
   if (s.family === AF.INET6 && mapped(ip) && s.options.v6only) fail(ERR.ADDRNOTAVAIL);
-  const table = portsOf(s.kernel, s.protocol);
+  const table = portsOf(s.net, s.protocol);
   // Two may share a port that both say so of: SO_REUSEPORT; SO_REUSEADDR, for UDP, or for TCP while the other does
   // not listen (as Linux's inet_csk_bind_conflict).
   const shared = (o: Endpoint): boolean => (s.options.reuseport && o.options.reuseport)
@@ -432,13 +444,13 @@ function bindInet(s: Endpoint, ip: Uint8Array, port: number): void {
   const free = (n: number): boolean => [...(table.get(n) ?? [])].every((o) => o.closed || !overlap(s, ip, o) || shared(o));
   if (!port) {
     const [lo, hi] = EPHEMERAL, span = hi - lo + 1;
-    const next = s.kernel.inetNext ?? lo;
+    const next = s.net.inetNext ?? lo;
     for (let k = 0; k < span && !port; k++) {
       const n = lo + ((next - lo + k) % span);
       if (free(n)) port = n;
     }
     if (!port) fail(ERR.ADDRINUSE);
-    s.kernel.inetNext = port + 1 > hi ? lo : port + 1;
+    s.net.inetNext = port + 1 > hi ? lo : port + 1;
   } else if (!free(port)) fail(ERR.ADDRINUSE);
   let at = table.get(port);
   if (!at) table.set(port, (at = new Set()));
@@ -461,9 +473,9 @@ function reachable(s: Endpoint, target: Address): {ip: Uint8Array; port: number}
  * The socket that takes what comes to `target`: a listener (TCP), or one bound there (UDP: one connected takes only
  * what comes `from` its peer); an exact address first.
  */
-function boundAt(kernel: Kern, protocol: number, target: {ip: Uint8Array; port: number}, listening: boolean, from: {ip: Uint8Array; port: number} | null = null): Endpoint | null {
+function boundAt(net: Net, protocol: number, target: {ip: Uint8Array; port: number}, listening: boolean, from: {ip: Uint8Array; port: number} | null = null): Endpoint | null {
   let wild: Endpoint | null = null;
-  for (const s of portsOf(kernel, protocol).get(target.port) ?? []) {
+  for (const s of portsOf(net, protocol).get(target.port) ?? []) {
     if (s.closed || (listening && s.state !== 'listening')) continue;
     if (from && s.remote && !(same(ipOf(s.remote), from.ip) && s.remote.port === from.port)) continue;
     const ip = ipOf(s.local);
@@ -565,7 +577,7 @@ function datagram(p: Proc, s: Endpoint, data: Uint8Array, target: Address): numb
   if (!s.local) bindInet(s, s.family === AF.INET ? ANY4 : ANY6, 0);
   const own = ipOf(s.local);
   const from = {ip: isAny(own) ? (mapped(to.ip) ? LOOPBACK4 : LOOPBACK6) : own, port: s.local?.port ?? 0};
-  const r = boundAt(p.kernel, IPPROTO.UDP, to, false, from);
+  const r = boundAt(p.ns.net, IPPROTO.UDP, to, false, from);
   if (!r) {
     if (s.remote) { s.error = ERR.CONNREFUSED; s.events++; }
     return data.length;
@@ -625,13 +637,13 @@ function ipv4(src: Uint8Array, dst: Uint8Array, icmp: Uint8Array, dontFragment: 
 }
 
 /** An ICMP message of `family` arriving on lo from `src` for `dst`: to each raw socket that takes it (as Linux's raw_v4_input). */
-function arrive(kernel: Kern, family: number, icmp: Uint8Array, src: Uint8Array, dst: Uint8Array, request: boolean): void {
+function arrive(kernel: Kern, net: Net, family: number, icmp: Uint8Array, src: Uint8Array, dst: Uint8Array, request: boolean): void {
   const t = traffic(kernel);
   t.packets++;
   t.bytes += icmp.length + (family === AF.INET ? 20 : 40);
   const wire = family === AF.INET ? ipv4(src, dst, icmp, request) : null;
   for (const r of kernel.sockets ?? []) {
-    if (r.closed || r.type !== SOCK.RAW || r.family !== family || r.shut.rd || !(r.rx instanceof Messages)) continue;
+    if (r.closed || r.net !== net || r.type !== SOCK.RAW || r.family !== family || r.shut.rd || !(r.rx instanceof Messages)) continue;
     if (r.local && !isAny(ipOf(r.local)) && !same(ipOf(r.local), dst)) continue;
     if (r.remote && !same(ipOf(r.remote), src)) continue;
     const type = icmp[0];
@@ -649,14 +661,14 @@ function icmp(s: Endpoint, data: Uint8Array, target: Address | null): number {
   const message = data.slice();
   // ICMPv6's checksum is the kernel's to make; ICMP's, the sender's.
   if (!v4 && message.length >= 4) new DataView(message.buffer).setUint16(2, checksum6(src, to.ip, message), false);
-  arrive(s.kernel, s.family, message, src, to.ip, true);
+  arrive(s.kernel, s.net, s.family, message, src, to.ip, true);
   const ECHO = v4 ? 8 : 128;
   if (message.length >= 8 && message[0] === ECHO && message[1] === 0) {
     const reply = message.slice();
     reply[0] = v4 ? 0 : 129;
     reply[2] = reply[3] = 0;
     new DataView(reply.buffer).setUint16(2, v4 ? checksum(reply) : checksum6(to.ip, src, reply), false);
-    arrive(s.kernel, s.family, reply, to.ip, src, false);
+    arrive(s.kernel, s.net, s.family, reply, to.ip, src, false);
   }
   return data.length;
 }
@@ -668,7 +680,7 @@ function icmp(s: Endpoint, data: Uint8Array, target: Address | null): number {
  * another): the one asked for, or (0) its process's pid if free, else one of the kernel's own.
  */
 function bindNetlink(p: Proc, s: Endpoint, portid: number, groups: number): void {
-  const all = (p.kernel.netlinkPorts ??= new Map());
+  const all = (p.ns.net.netlinkPorts ??= new Map());
   let ports = all.get(s.protocol);
   if (!ports) all.set(s.protocol, ports = new Map());
   if (!portid) {
@@ -934,7 +946,7 @@ function received(p: Proc, d: Description & {sock: Endpoint}, r: Received, at: n
     used += Math.min((len + 7) & ~7, left);
   };
   const creds = r.creds;
-  if (d.sock.options.passcred && creds) put(SCM.CREDENTIALS, [creds.pid, creds.uid, creds.gid]);
+  if (d.sock.options.passcred && creds) put(SCM.CREDENTIALS, [nrIn(p.kernel.numbers, p.pidns, creds.pid), shownIn(p.cred.ns, creds.uid), shownIn(p.cred.ns, creds.gid, true)]);
   if (r.rights.length) {
     // As many as the room left can say and as there are descriptors left for, the first of them, each now one of
     // this process's (Linux's scm_detach_fds). The rest go with the message, and the call says so (MSG_CTRUNC).
@@ -984,7 +996,7 @@ function connectStream(p: Proc, d: Description, s: Endpoint, target: Given): num
   let listener: Endpoint, at: {ip: Uint8Array; port: number} | null = null;
   if (s.inet) {
     at = reachable(s, target);
-    listener = boundAt(p.kernel, IPPROTO.TCP, at, true) ?? fail(ERR.CONNREFUSED);
+    listener = boundAt(p.ns.net, IPPROTO.TCP, at, true) ?? fail(ERR.CONNREFUSED);
   } else {
     listener = namedBy(p, target);
     if (listener.type !== s.type) fail(ERR.PROTOTYPE);
@@ -1053,14 +1065,20 @@ export const NET_CALLS: Calls = {
     }
     if (s.inet) { bindInet(s, ipOf(a), a.port ?? 0); return 0; }
     if (a.abstract !== undefined) {
-      const all = (this.kernel.abstractSockets ??= new Map());
+      const all = (this.ns.net.abstractSockets ??= new Map());
       if (all.has(a.abstract)) fail(ERR.ADDRINUSE);
       all.set(a.abstract, s);
       s.abstract = a.abstract;
     } else {
-      const r = this.kernel.vfs.resolve(a.path ?? '', this.here, false);
+      // Its name is made where it is bound, as any file is made: in a directory that is there, written to, and the caller's to write.
+      const found = walk(this, a.path || fail(E.NOENT), this.fs.pwd, 0);
+      const r = typeof found === 'number' ? fail(found) : found;
       if (r.node) fail(ERR.ADDRINUSE);
+      if (r.parent.lies === false) fail(E.NOENT);
+      if (r.up.flags & MNT.RDONLY || r.up.sb.readonly) fail(E.ROFS);
+      if (!may(this.cred, r.parent, MAY.WRITE | MAY.EXEC)) fail(E.ACCES);
       const node = new SocketName(0o777 & ~this.umask);
+      node.uid = this.cred.fsuid, node.gid = this.cred.fsgid;
       node.endpoint = s;
       r.parent.entries.set(r.name, node);
       s.node = node;
@@ -1194,10 +1212,11 @@ export const NET_CALLS: Calls = {
         case SO.REUSEPORT: bytes = int(s.options.reuseport ? 1 : 0); break;
         case SO.SNDBUF: case SO.RCVBUF: bytes = int(s.stream ? STREAM_ROOM : MESSAGE_ROOM); break;
         case SO.PEERCRED: {
-          const c = s.peer?.creds ?? {pid: 0, uid: -1 >>> 0, gid: -1 >>> 0};
+          const c = s.peer?.creds, ns = this.cred.ns;
           bytes = new Uint8Array(12);
           const w = new DataView(bytes.buffer);
-          w.setInt32(0, c.pid, true); w.setUint32(4, c.uid, true); w.setUint32(8, c.gid, true);
+          w.setInt32(0, c ? nrIn(this.kernel.numbers, this.pidns, c.pid) : 0, true);
+          w.setUint32(4, c ? shownIn(ns, c.uid) : -1 >>> 0, true); w.setUint32(8, c ? shownIn(ns, c.gid, true) : -1 >>> 0, true);
           break;
         }
         default: return fail(ERR.NOPROTOOPT);

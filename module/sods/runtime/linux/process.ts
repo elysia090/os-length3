@@ -19,14 +19,21 @@
 //     memory shared (SharedArrayBuffer) and system calls made to this
 //     kernel through Atomics: preempted by the host, as a Linux thread is.
 
-import {CAPS, Exec, Exit, Redirect, Wait, randomBytes, utf8} from './flow.ts';
+import {Exec, Exit, Redirect, Wait, randomBytes, utf8} from './flow.ts';
 import {zero} from './bulk.ts';
 import {namesIn, x87Of, type X87} from '../translation/x87.ts';
 import {machine} from './machine.ts';
-import {mountProc} from './procfs.ts';
+import {procfs} from './procfs.ts';
+import {sysfs} from './sysfs.ts';
+import {devpts, type Instance} from './pty.ts';
+import {MOUNT_CALLS} from './sys-mount.ts';
 import {Description, FdTable} from './fd.ts';
-import type {Mapping} from './fs.ts';
-import {Dir, E, File, FsError, Vfs} from './fs.ts';
+import type {Dir, Mapping, Place, Super} from './fs.ts';
+import {E, File, FsError, Link, MNT, Mount, Vfs, pathOf, walk} from './fs.ts';
+import {HOST, MAY, ROOT, asProgram, idIn, may, type Cred} from './cred.ts';
+import {copy, firstSpace, put} from './mount.ts';
+import {CgroupNs, Fs, byNr, firstSpaces, forget, nrIn, number, type Numbers, type PidNs, type Spaces} from './space.ts';
+import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
 import {GuestBytes, GuestView} from './guest.ts';
 import {FILE_CALLS} from './sys-file.ts';
 import {NET_CALLS} from './sys-net.ts';
@@ -93,7 +100,7 @@ const GUARD = 1 << 16;
 /** The kernel's clocks (clock.ts). */
 const CLOCK = clocks();
 
-const CALLS: Calls = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS};
+const CALLS: Calls = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS, ...MOUNT_CALLS};
 const enc = new TextEncoder();
 
 /** How long a thread runs before another that can run gets a turn (checked at the calls in YIELDS that are timed). */
@@ -322,7 +329,6 @@ export class Kernel implements Kern {
   declare readonly keeper: Keeper | null;
   declare readonly translateMore: NonNullable<Translator['more']> | null;
   declare readonly console: Console;
-  declare nextPid: number;
   declare readonly images: Map<File, Kept>;
   declare uses: number;
   declare budget: number;
@@ -343,8 +349,13 @@ export class Kernel implements Kern {
   /** Everything ended (remote.ts hears of it). */
   declare stopped?: () => void;
   declare inputs?: number;
-  declare hostname?: string;
-  declare domainname?: string;
+  declare readonly root: Place;
+  declare readonly spaces: Spaces;
+  declare readonly numbers: Numbers;
+  /** The next number the first pid namespace gives. */
+  get nextPid(): number { return this.spaces.children.last + 1; }
+  /** The cgroups: the tree's root, and the file system it is. */
+  declare readonly cgroups: {root: Cgroup; sb: Super};
   declare loopbackTraffic?: {bytes: number; packets: number};
   declare readonly cpu: Cpu;
   /** Calls made, so that one in CALL_SAMPLE is timed. */
@@ -374,7 +385,7 @@ export class Kernel implements Kern {
     // Code reached later, when the translator can do it: translate.more(elf, seeds, known, base).
     this.translateMore = translate?.more ?? null;
     this.console = console;
-    this.nextPid = 1;
+    this.numbers = new Map();
     this.images = new Map(); // File node -> {version, image, used, kept}
     this.uses = 0; // counts loads, so the least recently used image is known
     // What may be kept for programs run again (translations, the translator, root files read) once nothing runs them.
@@ -396,8 +407,36 @@ export class Kernel implements Kern {
     // Memories processes let go of (exec, exit), for the next to take: a new one costs its pages faulted in and the
     // old one collected; a used one costs zeroing what is given out of it (Kernel.takeMemory).
     this.spareMemories = [];
-    // What a program reads of the machine and of its processes: /proc, made from this kernel as it is read.
-    mountProc(this);
+    // The tree as its first process sees it: this kernel's own mounts of it (another kernel on the same tree has
+    // its own), under a first namespace of each kind.
+    const root = copy(vfs.mount, vfs.root, {deep: true, whole: true}) as Mount;
+    // (a cgroup's processes are read and written by the numbers the one who reads or writes calls them)
+    const viewer = (): PidNs => this.current?.proc.pidns ?? this.spaces.children;
+    this.cgroups = cgroups({find: (nr) => this.procs.get(byNr(viewer(), nr)), nr: (p) => nrIn(this.numbers, viewer(), p.pid),
+      kill: (p) => { send(this, p, SIG.KILL, {signo: SIG.KILL, code: SI.KERNEL}); }});
+    this.spaces = firstSpaces(firstSpace(root, HOST), new CgroupNs(HOST, this.cgroups.root));
+    this.root = vfs.who.root = {mnt: root, node: vfs.root};
+    // What a program reads of the machine and of its processes: /proc and /sys, made from this kernel as they are
+    // read, and the cgroups where Linux has them.
+    const most = MNT.NOSUID | MNT.NODEV | MNT.NOEXEC;
+    this.mount('/proc', new Mount(this.spaces.children.proc = procfs(this), undefined, most));
+    this.mount('/sys', new Mount(this.spaces.net.sys = sysfs(this), undefined, most));
+    this.mount('/sys/fs/cgroup', cgroupMount(this.cgroups.sb, this.cgroups.root));
+    // The terminals programs make (/dev/pts); the console is the first of them by name, /dev/pts/0.
+    const pts = devpts(null, 'devpts', 'mode=620,ptmxmode=666', 1);
+    (pts.data as Instance).others.set('0', vfs.terminal);
+    this.mount('/dev/pts', new Mount(pts, undefined, MNT.NOSUID | MNT.NOEXEC));
+    // As on Linux: /dev/fd and the standard streams through /proc/self.
+    const dev = vfs.dir('/dev');
+    for (const [name, target] of [['fd', '/proc/self/fd'], ['stdin', '/proc/self/fd/0'], ['stdout', '/proc/self/fd/1'], ['stderr', '/proc/self/fd/2']]) {
+      if (!dev.entries.has(name)) dev.entries.set(name, new Link(target));
+    }
+  }
+
+  /** `m` mounted at `path` of the first process's tree (a directory that is there). */
+  mount(path: string, m: Mount): void {
+    const at = this.vfs.resolve(path);
+    put(m, {mnt: at.mnt, node: at.node!}, at.parent, at.name);
   }
 
   /** Whether `node` is a root file, unchanged, whose translation is kept (so it is not read to be translated). */
@@ -679,12 +718,31 @@ export class Kernel implements Kern {
   ended(): void { this.vfs.loaded.keepers.delete(this); }
 
   /** A new thread of `proc` (the backend's kind). */
-  newTask(proc: Process): Task { return new Task(proc, this.nextPid++); }
+  newTask(proc: Process): Task { return new Task(proc, this.numbered(proc)); }
+
+  /**
+   * A number for a new thread of `proc`: the kernel's own, and, made in a pid namespace that is not the first, one
+   * there and in each above (kept: space.ts). Now and then the numbers that are no one's any more are let go of.
+   */
+  numbered(proc: Process): number {
+    const space = proc.pidns, nrs = number(space), id = nrs[0];
+    if (space.parent) {
+      this.numbers.set(id, {space, nrs});
+      if (this.numbers.size > 2 * this.tasks.size + 64) {
+        const used = new Set<number>(this.tasks.keys());
+        for (const p of this.procs.values()) used.add(p.pid).add(p.pgid).add(p.sid);
+        used.add(id);
+        forget(this.numbers, used);
+      }
+    }
+    return id;
+  }
 
   /** Create the first process (pid 1, a session and group of its own, in front on the console). */
   start(path: string, argv: string[], env: string[], cwd = '/'): void {
     const p = new Process(this, null);
-    p.cwd = cwd;
+    const at = this.vfs.walk(cwd);
+    if (typeof at !== 'number' && at.node) p.fs.go({mnt: at.mnt, node: at.node});
     ['stdin', 'stdout', 'stderr'].forEach((name, fd) => p.fds.install(new Description('console', {path: name}), {fd}));
     const t = this.newTask(p);
     p.pid = p.pgid = p.sid = t.tid;
@@ -1073,6 +1131,7 @@ export class Kernel implements Kern {
     const at = this.runq.indexOf(t);
     if (at >= 0) this.runq.splice(at, 1);
     this.tasks.delete(t.tid);
+    t.fs.drop();
     if (t.x87) { this.x87.free(t.x87); t.x87 = 0; }
     const p = t.proc;
     if (p.memory) {
@@ -1119,8 +1178,22 @@ export class Kernel implements Kern {
     // Its table of descriptors is let go of: closed, unless another process holds it too (clone's CLONE_FILES).
     // (Before: closed outright, under a parent that shared it.)
     p.fds.letGo();
+    if (!p.taken) p.fs0.drop();
+    p.cgroup.procs.delete(p);
     this.releaseVfork(p);
     this.dirty = true;
+    // The first process of a pid namespace of its own is gone: everything in it goes with it, and nothing more is made there.
+    const space = p.pidns;
+    if (space.parent && space.init === p.pid) {
+      space.ended = true;
+      const inside = (q: Process): boolean => { for (let ns: PidNs | null = q.pidns; ns; ns = ns.parent) if (ns === space) return true; return false; };
+      for (const q of [...this.procs.values()]) if (q !== p && inside(q)) {
+        this.exitProcess(q, SIG.KILL);
+        // (no one in it is left to wait for them)
+        this.procs.get(q.ppid)?.children.delete(q);
+        this.procs.delete(q.pid);
+      }
+    }
     if (p.pid === 1 || p.pid === this.initPid) {
       // Init is gone: everything else goes with it (a PID namespace's end).
       for (const q of this.live()) this.exitProcess(q, SIG.KILL);
@@ -1172,12 +1245,13 @@ export class Kernel implements Kern {
 
   /** Who `p`'s children go to when it ends: the nearest live process above it that asked for orphans, else init; none alive, no one. */
   reaperOf(p: Process): Process | null {
+    // (one that asked for orphans is asked within the pid namespace `p` is in, and no further up)
     const seen = new Set<Process>([p]);
-    for (let up = this.procs.get(p.ppid); up && !seen.has(up); up = this.procs.get(up.ppid)) {
+    for (let up = this.procs.get(p.ppid); up && !seen.has(up) && up.pidns === p.pidns; up = this.procs.get(up.ppid)) {
       if (up.state === 'live' && up.subreaper) return up;
       seen.add(up);
     }
-    const init = this.initOf();
+    const init = p.pidns.parent ? this.procs.get(p.pidns.init) : this.initOf();
     return init && init !== p && init.state === 'live' ? init : null;
   }
 
@@ -1376,23 +1450,23 @@ export class Process implements Proc {
   declare sid: number;
   declare fds: FdTable;
   /**
-   * Where it works: the directory itself, so that one renamed since (or under one renamed) is still where it works and
-   * one removed is nowhere; or the path of one the tree keeps no place for (/proc's, made as they are looked at). What a
-   * path not from the root is looked up from.
+   * Where it is in the tree, its namespaces and who it is are each thread's own (a thread may leave what the others
+   * share: unshare, setns, set*id), and a process's are those of the thread that calls. What it is made with, until
+   * its first thread has them (`fs0`, `ns0`, `alone`; `taken`: that thread has).
    */
-  declare here: Dir | string;
-  declare umask: number;
+  declare fs0: Fs;
+  declare ns0: Spaces;
+  declare alone?: Cred;
+  declare taken: boolean;
+  declare pidns: PidNs;
+  declare cgroup: Cgroup;
   declare nice: number;
   declare limits: [bigint, bigint][];
-  declare caps: {effective: bigint; permitted: bigint; inheritable: bigint};
   declare comm: string | null;
   declare noNewPrivs: boolean;
   declare dumpable: boolean;
-  declare ambient: bigint;
-  declare keepCaps?: boolean;
   declare subreaper?: boolean;
   declare deathSignal?: number;
-  declare dropped?: Set<number>;
   declare readonly children: Set<Process>;
   declare readonly tasks: Set<Task>;
   declare readonly actions: Map<number, SigAction>;
@@ -1401,6 +1475,7 @@ export class Process implements Proc {
   declare started: number;
   declare maps: Shared[];
   declare exe: string;
+  declare exeAt?: {mnt: Mount; node: File; dir: Dir; name: string};
   declare env: string[];
   declare argv: string[];
   declare exitStatus: number | undefined;
@@ -1424,7 +1499,7 @@ export class Process implements Proc {
   declare bytesBuffer: ArrayBufferLike | undefined;
   declare bytesOf: Uint8Array;
   declare viewOf: DataView;
-  constructor(kernel: Kernel, parent: Process | null, files = false) {
+  constructor(kernel: Kernel, parent: Process | null, files = false, fs = false, ns: Spaces | null = null, cgroup: Cgroup | null = null) {
     this.kernel = kernel;
     this.pid = 0;
     this.ppid = parent?.pid ?? 0;
@@ -1434,17 +1509,18 @@ export class Process implements Proc {
     // is known before either is taken (before: a copy always, thrown away for the shared one with every description
     // in it still held).
     this.fds = parent ? (files ? parent.fds.share() : parent.fds.fork()) : new FdTable();
-    this.here = parent?.here ?? kernel.vfs.root;
-    this.umask = parent?.umask ?? 0o022;
+    // Where it is in the tree: its parent's own where that is to be shared (CLONE_FS), else one like it.
+    this.fs0 = parent ? (fs ? (parent.fs.users++, parent.fs) : parent.fs.copy()) : new Fs(kernel.root);
+    this.ns0 = ns ?? parent?.ns ?? kernel.spaces;
+    this.taken = false;
+    // The pid namespace it is made in is the one its parent's children are made in: its own, from here on.
+    this.pidns = this.ns0.children;
+    enter(this, cgroup ?? parent?.cgroup ?? kernel.cgroups.root);
     // How nice it is (-20 to 19), as getpriority says and a child takes: no scheduling here weighs it.
     this.nice = parent?.nice ?? 0;
     this.limits = (parent?.limits ?? RLIMITS).map(([soft, hard]): [bigint, bigint] => [soft, hard]); // getrlimit's, kept across exec
-    // Its capabilities in its user namespace (root's: all of them; capset may drop some, exec as root has them again).
-    this.caps = parent ? {...parent.caps} : {effective: CAPS, permitted: CAPS, inheritable: 0n};
     this.comm = parent?.comm ?? null; // its name, when prctl(PR_SET_NAME) gave it one (else its program's)
     this.dumpable = parent?.dumpable ?? true;
-    this.ambient = parent?.ambient ?? 0n;
-    this.dropped = parent?.dropped ? new Set(parent.dropped) : undefined;
     this.noNewPrivs = parent?.noNewPrivs ?? false; // PR_SET_NO_NEW_PRIVS: once said, for it and all it starts
     this.children = new Set(); // Process
     this.tasks = new Set(); // its threads
@@ -1456,6 +1532,7 @@ export class Process implements Proc {
     this.waited = {user: 0, sys: 0}; // its children's that it waited for, theirs and what they waited for
     this.maps = []; // its MAP_SHARED file mappings, {proc, node, start, length, off} (fs.ts File.map)
     this.exe = parent?.exe ?? ''; // what it runs, and with what environment (/proc/PID/exe, environ)
+    this.exeAt = parent?.exeAt;
     this.env = parent?.env ?? [];
     this.exitStatus = undefined;
     this.exitSignal = SIG.CHLD;
@@ -1467,16 +1544,22 @@ export class Process implements Proc {
   }
 
   /** Make one system call as this process's thread (or as a thread of it that has none yet), as the dispatcher does. */
-  /** Where it works, as a path: where that directory lies now (null: it lies nowhere, removed since). */
-  get cwd(): string | null {
-    const h = this.here;
-    return typeof h === 'string' ? h : this.kernel.vfs.where(h) ?? null;
+  /** The thread whose it is, where one of its is asked for: the one that calls, or its first. */
+  get own(): Task | undefined {
+    if (this.task) return this.task;
+    for (const t of this.tasks) return t;
+    return undefined;
   }
-  /** It works at `path` (a directory there): held as the directory itself where the tree keeps its place. */
-  set cwd(path: string) {
-    const v = this.kernel.vfs, node = v.find(path, '/');
-    this.here = node instanceof Dir && v.where(node) !== undefined ? node : path;
-  }
+  get fs(): Fs { return this.own?.fs ?? this.fs0; }
+  set fs(fs: Fs) { const t = this.own; if (t) t.fs = fs; else this.fs0 = fs; }
+  get ns(): Spaces { return this.own?.ns ?? this.ns0; }
+  set ns(ns: Spaces) { const t = this.own; if (t) t.ns = ns; else this.ns0 = ns; }
+  get root(): Place { return this.fs.root; }
+  get umask(): number { return this.fs.umask; }
+  set umask(mask: number) { this.fs.umask = mask; }
+  /** Who the thread that calls is (a process with no thread yet: root). */
+  get cred(): Cred { return this.own?.cred ?? this.alone ?? ROOT; }
+  set cred(c: Cred) { const t = this.own; if (t) t.cred = c; else this.alone = c; }
 
   syscall(nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next = 0n): bigint {
     const t = [...this.tasks][0] ?? {proc: this, tid: this.pid};
@@ -1613,9 +1696,13 @@ export class Process implements Proc {
    * other thread with it, and the calling thread starts at the entry.
    */
   execve(path: string, argv: string[], env: string[]): void {
-    const node = this.kernel.vfs.lookup(path, this.here);
+    const at = walk(this, path, this.fs.pwd);
+    if (typeof at === 'number') throw new FsError(at);
+    if (!at.node) throw new FsError(E.NOENT);
+    const node = at.node;
     if (!(node instanceof File)) throw new FsError(node.isDir ? E.ACCES : E.NOEXEC);
-    if (!(node.mode & 0o111)) throw new FsError(E.ACCES);
+    // One that may be run: by its mode and who asks, and from a mount that programs are run from.
+    if (!(node.mode & 0o111) || !may(this.cred, node, MAY.EXEC) || at.mnt.flags & MNT.NOEXEC) throw new FsError(E.ACCES);
     // A program translated already (this version of it), or whose translation is kept, is an ELF, and is not read to
     // be run (a compiler's is tens of megabytes; a shell's commands are run again and again).
     const head = this.kernel.translated(node) || this.kernel.keptFor(node) ? null : node.read(0, 128);
@@ -1658,12 +1745,17 @@ export class Process implements Proc {
     this.argv = argv;
     this.env = env;
     this.comm = null;
-    const bounding = [...(this.dropped ?? [])].reduce((caps, bit) => caps & ~(1n << BigInt(bit)), CAPS);
-    const permitted = this.noNewPrivs ? bounding & this.caps.permitted : bounding;
-    this.caps = {effective: permitted, permitted, inheritable: this.caps.inheritable};
-    this.ambient &= permitted & this.caps.inheritable;
-    this.dumpable = true;
-    this.exe = this.kernel.vfs.realpath(path, this.here);
+    // Who it is as it runs this: the file's owner or group where its mode says so (not from a mount that gives no
+    // such thing, nor for one that may gain nothing, nor an owner its user namespace has no number for).
+    const c = this.cred, suid = !(at.mnt.flags & MNT.NOSUID) && !this.noNewPrivs;
+    const setuid = suid && node.mode & 0o4000 && idIn(c.ns, node.uid) >= 0 ? node.uid : -1;
+    const setgid = suid && (node.mode & 0o2010) === 0o2010 && idIn(c.ns, node.gid, true) >= 0 ? node.gid : -1;
+    const next = asProgram(c, setuid, setgid);
+    // (one that may gain nothing has, of what a program of root's would be given, only what it had)
+    this.cred = this.noNewPrivs ? next.with({permitted: next.permitted & (c.permitted | next.ambient), effective: next.effective & (c.permitted | next.ambient)}) : next;
+    this.dumpable = setuid < 0 && setgid < 0;
+    this.exe = pathOf(this.fs.root, at.mnt, node, at.parent, at.name);
+    this.exeAt = {mnt: at.mnt, node, dir: at.parent, name: at.name};
     // It execs with a table of descriptors of its own: one shared till now (clone's CLONE_FILES) is left to the others,
     // so what exec closes here is closed for it alone. (Before: closed in the shared table, under its parent.)
     const shared = this.fds;
@@ -1768,15 +1860,19 @@ export class Process implements Proc {
    * starting at `resume` with `stack` (0: the caller's) and rax 0. Its
    * memory is a copy, or this very memory with CLONE_VM. It is ready to run.
    */
-  forkProcess(resume: bigint, {stack = 0n, vm = false, files = false, exitSignal = SIG.CHLD, tls = null, clearTid = 0, parent = false}: {stack?: bigint; vm?: boolean; files?: boolean; exitSignal?: number; tls?: bigint | null; clearTid?: number; parent?: boolean} = {}): Process {
+  forkProcess(resume: bigint, {stack = 0n, vm = false, files = false, fs = false, ns = null, cred = null, cgroup = null, exitSignal = SIG.CHLD, tls = null, clearTid = 0, parent = false}:
+    {stack?: bigint; vm?: boolean; files?: boolean; fs?: boolean; ns?: Spaces | null; cred?: Cred | null; cgroup?: Cgroup | null; exitSignal?: number; tls?: bigint | null; clearTid?: number; parent?: boolean} = {}): Process {
     const k = this.kernel, t = this.task;
     this.syncShared(true); // the child's copy of a shared mapping starts as what its file has
-    const child = new Process(k, this, files);
+    const child = new Process(k, this, files, fs, ns, cgroup);
     const up = parent ? k.procs.get(this.ppid) ?? this : this;
     child.ppid = up.pid;
     const ct = k.newTask(child);
     ct.screen(t.filters, t.strict);
+    ct.cred = cred ?? t.cred;
     child.pid = ct.tid;
+    // The first process made in a pid namespace is the one it ends with.
+    if (!child.pidns.init) child.pidns.init = child.pid;
     child.exitSignal = exitSignal;
     child.image = this.image;
     child.stackLow = this.stackLow;
@@ -1850,6 +1946,9 @@ export class Task implements Thread {
   /** The filters over its calls, the first set first, and whether it is in strict mode (seccomp.ts). */
   declare filters: readonly Filter[] | null;
   declare strict: boolean;
+  declare cred: Cred;
+  declare ns: Spaces;
+  declare fs: Fs;
   declare call: Call | null;
   declare resumeAt: bigint;
   declare redirected: boolean;
@@ -1894,6 +1993,13 @@ export class Task implements Thread {
     this.robust = 0; // set_robust_list
     this.filters = null;
     this.strict = false;
+    // Who it is, its namespaces and where it is in the tree: the thread's that makes it (its process's, where it
+    // is the first), until it goes its own way.
+    const from = proc.own;
+    this.cred = from?.cred ?? proc.alone ?? ROOT;
+    this.ns = from?.ns ?? proc.ns0;
+    this.fs = from?.fs ?? proc.fs0;
+    if (from) this.fs.users++; else proc.taken = true;
     this.call = null; // the call it waits in: {nr, args, next, state}
     this.resumeAt = 0n;
     this.redirected = false; // its registers were replaced since its call

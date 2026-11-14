@@ -142,7 +142,7 @@ export class RemoteKernel extends Kernel {
     while (this.spares.length < this.spareCount) this.spares.push(this.spawnWorker());
   }
 
-  override newTask(proc: Process): RemoteTask { return new RemoteTask(proc, this.nextPid++); }
+  override newTask(proc: Process): RemoteTask { return new RemoteTask(proc, this.numbered(proc)); }
   override ready(t: Task): void { this.go(t); }
   override go(t: Task): void { (t as RemoteTask).answer(); }
   // Its run ends at the call: counted to here, so the wait is not (answer counts from when it goes on).

@@ -5,66 +5,21 @@
 // so a reader sees one consistent text however it reads it; stat says 0 bytes, as Linux does. The machine-wide files
 // (uptime, loadavg, stat, meminfo, cpuinfo, mounts, version, sys/..., net/...) say what this kernel is doing.
 
-import {Dir, File, Link, S_IFREG, E, FsError} from './fs.ts';
+import {Link, S_IFREG, E, FsError, Super, pathOf} from './fs.ts';
 import {cpuOf} from './clock.ts';
 import {procNet} from './net-view.ts';
-import {CAPS, uuid} from './flow.ts';
+import {uuid} from './flow.ts';
+import {CAP, CAP_LAST, capable, idIn, idOf, shownIn, spans, type UserNs} from './cred.ts';
+import {Lazy, Listing, Made, Pointer, refuse} from './made.ts';
+import {mountinfo, mountsText} from './mount.ts';
+import {NS, byNr, fileOf, nrIn, type Kind, type Named, type PidNs} from './space.ts';
 import type {Description} from './fd.ts';
-import type {Entry} from './fs.ts';
+import type {Entry, Place} from './fs.ts';
 import type {Kern, Proc} from './parts.ts';
 import {epoch, processors, steady} from '../host.ts';
 
-const enc = new TextEncoder();
 const HZ = 100;
 const PAGE = 4096;
-
-/** A file whose text is made when it is opened. */
-class Made extends File {
-  declare readonly make: () => string;
-  constructor(make: () => string, mode = 0o444) { super(new Uint8Array(0), mode); this.make = make; }
-  /** What an open reads: the text as it is now, a file of its own (its inode this one's). */
-  snapshot(): File { const f = new File(enc.encode(this.make()), this.mode & 0o7777); f.ino = this.ino; return f; }
-}
-
-/** A directory whose entries are made each time it is looked in. */
-class Listing extends Dir {
-  declare readonly list: () => Map<string, Entry>;
-  constructor(list: () => Map<string, Entry>, mode = 0o555) { super(mode); this.list = list; }
-  override get entries(): Map<string, Entry> { return this.list(); }
-}
-
-/**
- * A directory's entries found one at a time where a name is asked for (a path walked through it), made whole only
- * where they are listed or counted: /proc made every process's directory for each look at /proc/self.
- */
-class Found extends Map<string, Entry> {
-  declare readonly find: (name: string) => Entry | undefined;
-  declare readonly whole: () => Map<string, Entry>;
-  constructor(find: (name: string) => Entry | undefined, whole: () => Map<string, Entry>) {
-    super();
-    this.find = find;
-    this.whole = whole;
-  }
-  override get(name: string): Entry | undefined { return this.find(name); }
-  override has(name: string): boolean { return this.find(name) !== undefined; }
-  override get size(): number { return this.whole().size; }
-  override keys(): MapIterator<string> { return this.whole().keys(); }
-  override values(): MapIterator<Entry> { return this.whole().values(); }
-  override entries(): MapIterator<[string, Entry]> { return this.whole().entries(); }
-  override [Symbol.iterator](): MapIterator<[string, Entry]> { return this.whole()[Symbol.iterator](); }
-  override forEach(fn: (value: Entry, key: string, map: Map<string, Entry>) => void, self?: unknown): void { this.whole().forEach(fn, self); }
-}
-
-/** A link whose target is made each time it is followed. */
-class Pointer extends Link {
-  declare readonly make: () => string;
-  /** It leads to what something holds (a descriptor, where a process works, its program, its root), not along a path: Linux's "magic link". */
-  declare readonly magic: boolean;
-  constructor(target: () => string, magic = false) { super(''); this.make = target; this.magic = magic; }
-  override get target(): string { return this.make(); }
-}
-/** Whether `entry` is a link that leads to what something holds, not along a path (openat2's RESOLVE_NO_MAGICLINKS). */
-export const magicLink = (entry: Entry): boolean => entry instanceof Pointer && entry.magic;
 
 const comm = (p: Proc): string => (p.comm ?? (p.argv?.[0] ?? 'init').split('/').at(-1) ?? '').slice(0, 15);
 const state = (k: Kern, p: Proc): 'R' | 'S' | 'Z' | 'T' => p.state === 'zombie' ? 'Z' : p.stopped ? 'T' : k.current?.proc === p ? 'R' : 'S';
@@ -83,14 +38,14 @@ function signalMasks(p: Proc): {ign: bigint; cgt: bigint} {
 }
 
 /**
- * What one of a process's descriptors points at, as /proc/PID/fd/N says it. A directory: where it lies now (renamed
- * since it was opened, its new place; removed, where it lay, "(deleted)"), not the path it was opened by.
+ * What one of a process's descriptors points at, as /proc/PID/fd/N says it to one whose root is `root`: where it is
+ * now (renamed since it was opened, its new place; removed, where it lay, "(deleted)"), not the path it was opened by.
  */
-function pointsAt(kernel: Kern, d: Description): string {
+function pointsAt(root: Place, d: Description): string {
+  if (d.mnt && d.node && d.kind !== 'console') return pathOf(root, d.mnt, d.node, d.dir, d.name);
   switch (d.kind) {
-    case 'dir': return (d.node instanceof Dir ? kernel.vfs.shown(d.node) : undefined) ?? (d.path || '/');
-    case 'file': case 'device': return d.path || '/';
-    case 'pipe-r': case 'pipe-w': return `pipe:[${d.pipe?.id ?? 0}]`;
+    case 'file': case 'dir': case 'device': return d.path || '/';
+    case 'pipe-r': case 'pipe-w': case 'pipe-rw': return `pipe:[${d.pipe?.id ?? 0}]`;
     case 'console': return '/dev/pts/0';
     case 'eventfd': return 'anon_inode:[eventfd]';
     case 'epoll': return 'anon_inode:[eventpoll]';
@@ -99,9 +54,43 @@ function pointsAt(kernel: Kern, d: Description): string {
   }
 }
 
-/** Mount /proc on `kernel.vfs`, made from `kernel`. */
-export function mountProc(kernel: Kern): void {
-  const vfs = kernel.vfs;
+/**
+ * An id map of user namespace `ns` written (/proc/PID/uid_map, gid_map; `group`: the groups'), by `writer`: once
+ * only; by one in it or in its parent, with the capability to set ids in it; of its parent's ids that are someone's
+ * there; and, by one with no such capability over the parent, of the one id it is itself and no other (its groups'
+ * only once setgroups is denied there).
+ */
+function writeMap(ns: UserNs, text: string, group: boolean, writer: Proc): void {
+  const w = writer.cred, cap = group ? CAP.SETGID : CAP.SETUID, parent = ns.parent ?? refuse(E.PERM);
+  if (group ? ns.gids : ns.uids) refuse(E.PERM);
+  if ((w.ns !== ns && w.ns !== parent) || !capable(w, cap, ns)) refuse(E.PERM);
+  const map = spans(text) ?? refuse(E.INVAL);
+  for (const m of map) if (idOf(parent, m.outside, group) < 0 || idOf(parent, m.outside + m.n - 1, group) < 0) refuse(E.PERM);
+  if (!capable(w, cap, parent)) {
+    if (map.length !== 1 || map[0].n !== 1 || idOf(parent, map[0].outside, group) !== (group ? w.egid : w.euid)) refuse(E.PERM);
+    if (!group && w.euid !== ns.owner) refuse(E.PERM);
+    if (group && ns.setgroups) refuse(E.PERM);
+  }
+  if (group) ns.gids = map; else ns.uids = map;
+}
+/** That map as it is read by one in `reader`: its ids, and what `reader` (or, read from inside, its parent) calls each. */
+function readMap(ns: UserNs, group: boolean, reader: UserNs): string {
+  const pad = (n: number): string => String(n).padStart(10);
+  if (!ns.parent) return `${pad(0)} ${pad(0)} ${pad(4294967295)}\n`;
+  const lower = reader === ns ? ns.parent : reader, up = ns.parent;
+  return ((group ? ns.gids : ns.uids) ?? []).map((m) => {
+    const out = idIn(lower, idOf(up, m.outside, group), group);
+    return `${pad(m.inside)} ${pad(out < 0 ? 4294967295 : out)} ${pad(m.n)}\n`;
+  }).join('');
+}
+
+/**
+ * A /proc of `kernel` for pid namespace `space`: the file system, made from the kernel as it is read. The processes
+ * in it are those that namespace sees, each by the number it has there.
+ */
+export function procfs(kernel: Kern, space: PidNs = kernel.spaces.children): Super {
+  /** What this /proc calls the process, thread, group or session the kernel numbers `id` (0: it is not seen here). */
+  const nr = (id: number): number => nrIn(kernel.numbers, space, id);
   const booted = steady();
   const bootEpoch = Math.floor(epoch() / 1000);
   const cpus = processors();
@@ -111,10 +100,13 @@ export function mountProc(kernel: Kern): void {
   const idle = () => Math.max(0, (steady() - booted) * cpus - kernel.cpu.user - kernel.cpu.sys);
   const total = kernel.machine.memory; // the machine's (machine.ts)
   const caller = () => kernel.current?.proc ?? kernel.procs.get(1);
-  const live = () => [...kernel.procs.values()];
+  /** The root of the one who reads: what a place is named from. */
+  const rootOf = (): Place => caller()?.fs.root ?? kernel.root;
+  const readerNs = (): UserNs => caller()?.cred.ns ?? kernel.root.mnt.sb.owner as UserNs;
+  const live = () => [...kernel.procs.values()].filter((p) => nr(p.pid) > 0);
   const inspect = (target: Proc): void => {
     const from = caller();
-    if (from && from !== target && !target.dumpable && !(from.caps.effective & (1n << 19n))) throw new FsError(E.ACCES);
+    if (from && from !== target && !target.dumpable && !capable(from.cred, CAP.SYS_PTRACE, target.cred.ns)) throw new FsError(E.ACCES);
   };
 
   const stat = (p: Proc): string => {
@@ -122,7 +114,7 @@ export function mountProc(kernel: Kern): void {
     const tty = p.sid && p.sid === kernel.tty.sid ? 34816 : 0;
     // Its time on the processor and its waited-for children's (utime, stime, cutime, cstime): ps's TIME, top's %CPU.
     const c = cpuOf(p), w = p.waited;
-    const f = [p.pid, `(${comm(p)})`, state(kernel, p), p.ppid, p.pgid, p.sid, tty, tty ? kernel.tty.fg : -1, 4194560,
+    const f = [nr(p.pid), `(${comm(p)})`, state(kernel, p), nr(p.ppid), nr(p.pgid), nr(p.sid), tty, tty ? nr(kernel.tty.fg) : -1, 4194560,
       0, 0, 0, 0, ticks(c.user), ticks(c.sys), ticks(w.user), ticks(w.sys), 20, 0, Math.max(1, p.tasks.size), 0, ticks(p.started - booted),
       mem, Math.ceil(mem / PAGE), '18446744073709551615', 0, 0, p.stackTop ?? 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 17, 0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0, 0, p.exitStatus ?? 0];
@@ -131,12 +123,13 @@ export function mountProc(kernel: Kern): void {
   const status = (p: Proc): string => {
     const {ign, cgt} = signalMasks(p);
     const kb = Math.ceil(memoryBytes(p) / 1024);
+    const c = p.cred, ns = readerNs(), u = (id: number): number => shownIn(ns, id), g = (id: number): number => shownIn(ns, id, true);
     return [`Name:\t${comm(p)}`, `Umask:\t${p.umask.toString(8).padStart(4, '0')}`, `State:\t${STATE[state(kernel, p)]}`,
-      `Tgid:\t${p.pid}`, 'Ngid:\t0', `Pid:\t${p.pid}`, `PPid:\t${p.ppid}`, 'TracerPid:\t0', 'Uid:\t0\t0\t0\t0', 'Gid:\t0\t0\t0\t0',
-      `FDSize:\t${Math.max(64, p.fds.slots.size)}`, 'Groups:\t', `VmPeak:\t${kb} kB`, `VmSize:\t${kb} kB`, `VmRSS:\t${kb} kB`,
+      `Tgid:\t${nr(p.pid)}`, 'Ngid:\t0', `Pid:\t${nr(p.pid)}`, `PPid:\t${nr(p.ppid)}`, 'TracerPid:\t0', `Uid:\t${u(c.uid)}\t${u(c.euid)}\t${u(c.suid)}\t${u(c.fsuid)}`, `Gid:\t${g(c.gid)}\t${g(c.egid)}\t${g(c.sgid)}\t${g(c.fsgid)}`,
+      `FDSize:\t${Math.max(64, p.fds.slots.size)}`, `Groups:\t${c.groups.map((x) => `${g(x)} `).join('')}`, `VmPeak:\t${kb} kB`, `VmSize:\t${kb} kB`, `VmRSS:\t${kb} kB`,
       `Threads:\t${Math.max(1, p.tasks.size)}`, 'SigQ:\t0/63432', `SigPnd:\t${hex(0n)}`, `ShdPnd:\t${hex(0n)}`, `SigBlk:\t${hex(0n)}`,
-      `SigIgn:\t${hex(ign)}`, `SigCgt:\t${hex(cgt)}`, `CapInh:\t${hex(p.caps.inheritable)}`, `CapPrm:\t${hex(p.caps.permitted)}`,
-      `CapEff:\t${hex(p.caps.effective)}`, `CapBnd:\t${hex(CAPS)}`, `CapAmb:\t${p.ambient.toString(16).padStart(16, '0')}`, `NoNewPrivs:\t${p.noNewPrivs ? 1 : 0}`,
+      `SigIgn:\t${hex(ign)}`, `SigCgt:\t${hex(cgt)}`, `CapInh:\t${hex(c.inheritable)}`, `CapPrm:\t${hex(c.permitted)}`,
+      `CapEff:\t${hex(c.effective)}`, `CapBnd:\t${hex(c.bounding)}`, `CapAmb:\t${hex(c.ambient)}`, `NoNewPrivs:\t${p.noNewPrivs ? 1 : 0}`,
       `Seccomp:\t${p.task?.strict ? 1 : p.task?.filters ? 2 : 0}`, `Seccomp_filters:\t${p.task?.filters?.length ?? 0}`, `Cpus_allowed_list:\t0-${cpus - 1}`, ''].join('\n');
   };
   const maps = (p: Proc): string => { inspect(p);
@@ -150,7 +143,24 @@ export function mountProc(kernel: Kern): void {
     if (p.mapEnd > p.mapBase) out.push(line(p.mapBase, p.mapEnd, 'rw-p', ''));
     return out.join('\n') + '\n';
   };
-  const fdDir = (p: Proc): Listing => new Listing(() => new Map([...p.fds.slots].map(([fd, s]) => [String(fd), new Pointer(() => { inspect(p); return pointsAt(kernel, s.description); }, true)])), 0o500);
+  /** A link to what descriptor `d` of `p` has open: its mode what the descriptor may do (read, write), as Linux shows it. */
+  const fdLink = (p: Proc, d: Description): Pointer => {
+    const link = new Pointer(() => { inspect(p); return pointsAt(rootOf(), d); }, () => { inspect(p); return d.mnt && d.node ? {mnt: d.mnt, node: d.node, held: d} : {held: d}; });
+    const access = d.flags & 3;
+    link.mode = 0o120000 | (access !== 1 ? 0o500 : 0) | (access !== 0 ? 0o200 : 0);
+    return link;
+  };
+  const fdDir = (p: Proc): Listing => {
+    const entries = new Lazy((name) => { const d = /^\d+$/.test(name) ? p.fds.get(Number(name)) : undefined; return d ? fdLink(p, d) : undefined; },
+      () => new Map([...p.fds.slots].map(([fd, s]) => [String(fd), fdLink(p, s.description)])));
+    return new Listing(() => entries, 0o500);
+  };
+  /** /proc/PID/ns: a link to each namespace `p` is in, by its kind and number. */
+  const spacesOf = (p: Proc): [string, Kind, Named][] => [['cgroup', 'cgroup', p.ns.cgroup], ['ipc', 'ipc', p.ns.ipc], ['mnt', 'mnt', p.ns.mnt], ['net', 'net', p.ns.net],
+    ['pid', 'pid', p.pidns], ['pid_for_children', 'pid', p.ns.children], ['user', 'user', p.cred.ns], ['uts', 'uts', p.ns.uts]];
+  const nsDir = (p: Proc): Listing => new Listing(() => new Map(spacesOf(p).map(([name, kind, ns]) =>
+    [name, new Pointer(() => { inspect(p); return `${kind}:[${ns.id}]`; }, () => { inspect(p); return fileOf(kind, ns); })])), 0o511);
+  void NS;
 
   // Each process's directory, kept while it is there (its inode stays the same between looks).
   const dirs = new Map<number, {proc: Proc; dir: Listing}>();
@@ -166,18 +176,32 @@ export function mountProc(kernel: Kern): void {
       ['maps', new Made(() => maps(p))],
       ['statm', new Made(() => { const pg = Math.ceil(memoryBytes(p) / PAGE); return `${pg} ${pg} 0 0 0 ${pg} 0\n`; })],
       ['limits', new Made(() => limits(p))],
-      // Its user namespace's: the one id it maps, 0, the person's own outside (core/src/launch.rs).
-      ['uid_map', new Made(() => idMap)], ['gid_map', new Made(() => idMap)], ['setgroups', new Made(() => 'deny\n')],
-      ['mounts', new Made(() => mounts())],
-      ['cwd', new Pointer(() => { inspect(p); return typeof p.here === 'string' ? p.here : kernel.vfs.shown(p.here) ?? '/'; }, true)],
-      ['exe', new Pointer(() => { inspect(p); return p.exe; }, true)],
-      ['root', new Pointer(() => { inspect(p); return '/'; }, true)],
+      // Its user namespace's maps, written once by the one who made it; and whether groups may be set in it.
+      ['uid_map', new Made(() => readMap(p.cred.ns, false, readerNs()), 0o644, (text) => writeMap(p.cred.ns, text, false, caller() ?? p))],
+      ['gid_map', new Made(() => readMap(p.cred.ns, true, readerNs()), 0o644, (text) => writeMap(p.cred.ns, text, true, caller() ?? p))],
+      ['setgroups', new Made(() => (p.cred.ns.setgroups ? 'allow\n' : 'deny\n'), 0o644, (text) => {
+        const ns = p.cred.ns, allow = text.trim() === 'allow';
+        if (!allow && text.trim() !== 'deny') refuse();
+        if (!capable((caller() ?? p).cred, CAP.SYS_ADMIN, ns)) refuse(E.PERM);
+        if (allow ? !ns.setgroups : ns.gids !== null && ns.setgroups) refuse(E.PERM);
+        if (!allow && !ns.parent) refuse(E.PERM);
+        ns.setgroups = allow;
+      })],
+      ['mounts', new Made(() => mountsText(p.fs.root))],
+      ['mountinfo', new Made(() => mountinfo(p.fs.root))],
+      ['cgroup', new Made(() => { const base = (caller() ?? p).ns.cgroup.root.path, at = p.cgroup.path; return `0::${at === base ? '/' : at.startsWith(base === '/' ? '/' : base + '/') ? at.slice(base === '/' ? 0 : base.length) : '/..' + at}\n`; })],
+      ['cwd', new Pointer(() => { inspect(p); const at = p.fs.pwd; return pathOf(rootOf(), at.mnt, at.node); }, () => { inspect(p); return p.fs.pwd; })],
+      ['exe', new Pointer(() => { inspect(p); const at = p.exeAt; return at ? pathOf(rootOf(), at.mnt, at.node, at.dir, at.name) : p.exe; }, () => { inspect(p); return p.exeAt ?? E.NOENT; })],
+      ['root', new Pointer(() => { inspect(p); const at = p.fs.root; return pathOf(rootOf(), at.mnt, at.node); }, () => { inspect(p); return p.fs.root; })],
     ]);
+    for (const name of ['uid_map', 'gid_map', 'setgroups']) { const f = files.get(name)!; f.uid = p.cred.euid; f.gid = p.cred.egid; }
     const dir = new Listing(() => {
       files.set('fd', fdDir(p));
+      files.set('ns', nsDir(p));
       files.set('net', net);
-      files.set('task', new Listing(() => new Map([...p.tasks].map((t) => [String(t.tid), new Listing(() => new Map<string, Entry>([
-        ['stat', new Made(() => stat(p).replace(/^\d+/, String(t.tid)))], ['status', new Made(() => status(p))], ['comm', new Made(() => comm(p) + '\n')],
+      files.set('task', new Listing(() => new Map([...p.tasks].map((t) => [String(nr(t.tid)), new Listing(() => new Map<string, Entry>([
+        ['stat', new Made(() => stat(p).replace(/^\d+/, String(nr(t.tid))))], ['status', new Made(() => status(p))], ['comm', new Made(() => comm(p) + '\n')],
+        ['children', new Made(() => [...p.children].filter((c) => c.state === 'live' && nr(c.pid) > 0).map((c) => `${nr(c.pid)} `).join(''))],
       ]))]))));
       return files;
     });
@@ -197,32 +221,37 @@ export function mountProc(kernel: Kern): void {
       return `${name.padEnd(26)}${say(soft).padEnd(21)}${say(hard).padEnd(21)}${unit ? unit.padEnd(10) : ''}\n`;
     }).join('');
   };
-  const idMap = `${'0'.padStart(10)} ${'1000'.padStart(10)} ${'1'.padStart(10)}\n`;
   // /proc/net (and each process's: one network here), made from net-view.ts.
   const netFiles = procNet(kernel);
   const net = new Listing(() => new Map(Object.entries(netFiles).map(([name, make]) => [name, new Made(make)])));
 
-  const mounts = () => 'rootfs / rootfs rw 0 0\nproc /proc proc rw,nosuid,nodev,noexec,relatime 0 0\ntmpfs /tmp tmpfs rw,nosuid,nodev 0 0\ndevtmpfs /dev devtmpfs rw,nosuid 0 0\n';
   const used = () => live().reduce((n, p) => n + (p.state === 'live' ? memoryBytes(p) : 0), 0);
   const sys = new Map<string, Entry>([
     ['kernel', new Listing(() => new Map<string, Entry>([
       ['ostype', new Made(() => 'Linux\n')], ['osrelease', new Made(() => '6.1.0\n')], ['version', new Made(() => '#1 muk\n')],
-      ['hostname', new Made(() => `${kernel.hostname ?? 'length3'}\n`)], ['pid_max', new Made(() => '4194304\n')], ['threads-max', new Made(() => '63432\n')],
+      ['hostname', new Made(() => `${(caller()?.ns ?? kernel.spaces).uts.hostname}\n`)], ['domainname', new Made(() => `${(caller()?.ns ?? kernel.spaces).uts.domainname}\n`)],
+      ['pid_max', new Made(() => '4194304\n')], ['threads-max', new Made(() => '63432\n')],
+      ['cap_last_cap', new Made(() => `${CAP_LAST}\n`)], ['ngroups_max', new Made(() => '65536\n')],
+      ['overflowuid', new Made(() => '65534\n')], ['overflowgid', new Made(() => '65534\n')],
+      // (what the machine does with a program that fails, and what loads its parts: kept as written, and nothing done by either)
+      ['core_pattern', new Made(() => corePattern + '\n', 0o644, (text) => { corePattern = text.replace(/\n$/, ''); })],
+      ['modprobe', new Made(() => modprobe + '\n', 0o644, (text) => { modprobe = text.replace(/\n$/, ''); })],
       ['random', new Listing(() => new Map<string, Entry>([['uuid', new Made(() => uuid() + '\n')], ['boot_id', new Made(() => bootId + '\n')]]))],
     ]))],
     ['vm', new Listing(() => new Map<string, Entry>([['overcommit_memory', new Made(() => '0\n')], ['max_map_count', new Made(() => '65530\n')]]))],
     ['fs', new Listing(() => new Map<string, Entry>([['file-max', new Made(() => '9223372036854775807\n')], ['nr_open', new Made(() => '1048576\n')]]))],
   ]);
   const bootId = uuid();
+  let corePattern = 'core', modprobe = '/sbin/modprobe';
   const machine = new Map<string, Entry>([
     ['uptime', new Made(() => { const u = uptime(); return `${u.toFixed(2)} ${(idle() / 1000).toFixed(2)}\n`; })],
-    ['loadavg', new Made(() => { const r = Math.max(1, kernel.runq.length); const l = Math.min(r, cpus).toFixed(2); return `${l} ${l} ${l} ${r}/${live().length} ${kernel.nextPid - 1}\n`; })],
+    ['loadavg', new Made(() => { const r = Math.max(1, kernel.runq.length); const l = Math.min(r, cpus).toFixed(2); return `${l} ${l} ${l} ${r}/${live().length} ${space.last}\n`; })],
     ['stat', new Made(() => {
       // The time the threads ran their programs and the kernel their calls, and the rest of every processor's: idle.
       const user = ticks(kernel.cpu.user / cpus), sys = ticks(kernel.cpu.sys / cpus), rest = ticks(idle() / cpus);
       const cpu = (n: string, k = 1): string => `${n} ${user * k} 0 ${sys * k} ${rest * k} 0 0 0 0 0 0`;
       return [cpu('cpu ', cpus), ...Array.from({length: cpus}, (_, k) => cpu(`cpu${k}`)), 'intr 0', 'ctxt 0', `btime ${bootEpoch}`,
-        `processes ${kernel.nextPid - 1}`, `procs_running ${Math.max(1, kernel.runq.length)}`, `procs_blocked ${kernel.blocked.size}`, ''].join('\n');
+        `processes ${space.last}`, `procs_running ${Math.max(1, kernel.runq.length)}`, `procs_blocked ${kernel.blocked.size}`, ''].join('\n');
     })],
     ['meminfo', new Made(() => {
       // Linux's fields in Linux's order (tools look for several of them together, BusyBox's free for Cached,
@@ -237,46 +266,33 @@ export function mountProc(kernel: Kern): void {
         .map(([k, v]) => v === null ? `${k}:       0` : `${(k + ':').padEnd(16)}${kb(v)}`).join('\n') + '\n';
     })],
     ['cpuinfo', new Made(() => Array.from({length: cpus}, (_, k) => `processor\t: ${k}\nvendor_id\t: GenuineIntel\nmodel name\t: sods x86-64\ncpu MHz\t\t: 3000.000\ncpu cores\t: ${cpus}\nflags\t\t: fpu tsc cx8 cmov sse sse2 ssse3 sse4_1 sse4_2 popcnt\n\n`).join(''))],
-    ['mounts', new Made(mounts)],
+    ['mounts', new Link('self/mounts')],
+    ['sysrq-trigger', new Made(() => '', 0o200, () => undefined)],
     ['version', new Made(() => 'Linux version 6.1.0 (muk) #1 muk\n')],
-    ['filesystems', new Made(() => 'nodev\tproc\nnodev\ttmpfs\nnodev\tdevtmpfs\n')],
+    ['filesystems', new Made(() => ['sysfs', 'tmpfs', 'proc', 'cgroup2', 'devtmpfs', 'devpts', 'mqueue'].map((k) => `nodev\t${k}\n`).join(''))],
     ['cmdline', new Made(() => 'console=ttyS0\n')],
-    ['self', new Pointer(() => String(caller()?.pid ?? 1))],
+    ['self', new Pointer(() => String(nr(caller()?.pid ?? 1)))],
     ['net', new Link('self/net')],
-    ['thread-self', new Pointer(() => { const t = kernel.current; return t ? `${t.proc.pid}/task/${t.tid}` : '1'; })],
+    ['thread-self', new Pointer(() => { const t = kernel.current; return t ? `${nr(t.proc.pid)}/task/${nr(t.tid)}` : '1'; })],
     ['sys', new Listing(() => sys)],
   ]);
   const prune = (): void => { for (const pid of dirs.keys()) if (!kernel.procs.has(pid)) dirs.delete(pid); };
-  const entries = new Found((name) => {
+  const entries = new Lazy((name) => {
     const m = machine.get(name);
     if (m || !/^[1-9]\d*$/.test(name)) return m;
-    const p = kernel.procs.get(Number(name));
+    const p = kernel.procs.get(byNr(space, Number(name)));
     // (Those of processes gone are let go of now and then, as a listing lets them go.)
     if (dirs.size > 2 * kernel.procs.size + 64) prune();
     return p ? dirOf(p) : undefined;
   }, () => {
     const m = new Map<string, Entry>(machine);
-    for (const [pid, p] of kernel.procs) m.set(String(pid), dirOf(p));
+    for (const [pid, p] of kernel.procs) if (nr(pid) > 0) m.set(String(nr(pid)), dirOf(p));
     prune();
     return m;
   });
   const proc = new Listing(() => entries);
-  vfs.root.entries.set('proc', proc);
-  // As on Linux: /dev/fd and the standard streams through /proc/self.
-  const dev = vfs.mkdirp('/dev');
-  for (const [name, target] of [['fd', '/proc/self/fd'], ['stdin', '/proc/self/fd/0'], ['stdout', '/proc/self/fd/1'], ['stderr', '/proc/self/fd/2']]) {
-    if (!dev.entries.has(name)) dev.entries.set(name, new Link(target));
-  }
+  proc.refuses = E.NOENT;
+  return new Super('proc', 0x9fa0, proc, 'proc');
 }
 
-/** A /proc/PID/fd/N an open names: that process and descriptor (opening it opens what the descriptor has open). */
-export function procDescriptor(kernel: Kern, path: string): Description | null {
-  const m = /^\/proc\/(\d+)\/fd\/(\d+)$/.exec(path);
-  if (!m) return null;
-  const p = kernel.procs.get(Number(m[1]));
-  const from = kernel.current?.proc ?? kernel.procs.get(1);
-  if (p && from && from !== p && !p.dumpable && !(from.caps.effective & (1n << 19n))) throw new FsError(E.ACCES);
-  return p?.fds.get(Number(m[2])) ?? null;
-}
-
-export {Made, S_IFREG};
+export {S_IFREG};

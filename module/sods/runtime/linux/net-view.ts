@@ -29,6 +29,8 @@ const inet = (a: Address | null): Inet | null => (a?.ip ? {ip: a.ip, port: a.por
 
 /** A socket as the tables read it (sys-net.ts's Endpoint). */
 export interface Seen {
+  /** The network namespace it is in. */
+  readonly net?: object;
   readonly state: 'unconnected' | 'listening' | 'connected';
   readonly type: number;
   readonly family: number;
@@ -44,7 +46,7 @@ export interface Seen {
   readonly peer: {ino: number} | null;
 }
 /** What the tables read of the kernel: its sockets, and what has moved over lo. */
-export interface Net { sockets?: Iterable<Seen>; loopbackTraffic?: {bytes: number; packets: number} }
+export interface Net { sockets?: Iterable<Seen>; loopbackTraffic?: {bytes: number; packets: number}; current?: {proc: {ns: {net: object}}} | null }
 
 /** The one interface, as Linux has lo. */
 const LO = {
@@ -74,7 +76,8 @@ const queued = (s: Seen): number => (s.state === 'listening' ? s.backlog.length 
 /** A listener's backlog as asked (what ss says as its Send-Q); nothing else waits to be sent, lo has taken it. */
 const room = (s: Seen): number => (s.state === 'listening' ? s.backlogAsked : 0);
 
-const live = (kernel: Net): Seen[] => [...(kernel.sockets ?? [])].filter((s) => !s.closed);
+/** The sockets there are, as the one who reads sees them: those of the network namespace it is in. */
+const live = (kernel: Net): Seen[] => { const net = kernel.current?.proc.ns.net; return [...(kernel.sockets ?? [])].filter((s) => !s.closed && (!net || s.net === net)); };
 /** The internet sockets of one family and protocol that a table lists: bound or connected (TCP: not just made). */
 const inetOf = (kernel: Net, family: number, protocol: number): Seen[] => live(kernel).filter((s) => s.family === family && s.protocol === protocol
   && s.type !== SOCK.RAW && (s.local || s.remote) && (protocol !== IPPROTO.TCP || s.state !== 'unconnected'));

@@ -9,11 +9,12 @@ import {FILE_CALLS} from '../../runtime/linux/sys-file.ts';
 import {NET_CALLS} from '../../runtime/linux/sys-net.ts';
 import {PROC_CALLS} from '../../runtime/linux/sys-proc.ts';
 import {SIGNAL_CALLS} from '../../runtime/linux/signal.ts';
+import {MOUNT_CALLS} from '../../runtime/linux/sys-mount.ts';
 import {BRANCHES, CALLS_OWED, owed, targets} from '../../runtime/targets.ts';
 
 const root = new URL('../../../../', import.meta.url);
 const text = (path: string): string => readFileSync(new URL(path, root), 'utf8');
-const ANSWERED = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS};
+const ANSWERED = {...FILE_CALLS, ...PROC_CALLS, ...NET_CALLS, ...SIGNAL_CALLS, ...MOUNT_CALLS};
 
 /** Each call muk's C makes, by its number: every SYS_ name its sources and lib's use, as their headers number them. */
 function asked(): Map<number, string> {
@@ -51,20 +52,26 @@ test('every call muk makes is answered here, or is owed by name', () => {
   for (const c of CALLS_OWED) assert.equal(calls.get(c.nr), c.name, `${c.name} (${c.nr}) is owed, and muk does not make it`);
 });
 
-test('what is owed as refused is refused still: answered since, it is struck from the list', () => {
-  const EPERM = -1n, ENOSYS = -38n, p = guest();
-  const refusals: Record<string, () => bigint> = {
-    clone: () => call(p, 56, 0x20000 /* CLONE_NEWNS */ | 17),
-    setgroups: () => call(p, 116, 0, 0),
-    pivot_root: () => call(p, 155, 0, 0),
-    mount: () => call(p, 165, 0, 0, 0, 0, 0),
-    umount2: () => call(p, 166, 0, 0),
-    setns: () => call(p, 308, 0, 0),
-    clone3: () => call(p, 435, 0, 0),
-  };
-  const refused = CALLS_OWED.filter((c) => c.how === 'refused');
-  assert.deepEqual(refused.map((c) => c.name).sort(), Object.keys(refusals).sort());
-  for (const c of refused) assert.equal(refusals[c.name](), c.name === 'clone3' ? ENOSYS : EPERM, c.name);
+test('what muk asks to be put in namespaces by is answered: by one who may, done; by one who may not, EPERM', () => {
+  const EPERM = -1n, ENOENT = -2n, EINVAL = -22n, p = guest();
+  p.tasks.add(p.kernel.newTask(p));
+  assert.deepEqual(CALLS_OWED, []);
+  // Each as Linux answers it where nothing is asked of it (no path, no descriptor): never "no such call", never a refusal of all.
+  assert.equal(call(p, 165, 0, 0, 0, 0, 0), ENOENT, 'mount of nothing on nothing');
+  assert.equal(call(p, 166, 0, 0), ENOENT, 'umount2 of nothing');
+  assert.equal(call(p, 155, 0, 0), ENOENT, 'pivot_root to nothing');
+  assert.equal(call(p, 308, -1, 0), -9n, 'setns by no descriptor');
+  assert.equal(call(p, 435, 0, 0), EINVAL, 'clone3 told by nothing');
+  assert.equal(call(p, 116, 0, 0), 0n, 'setgroups, by root of the first namespace');
+  assert.equal(call(p, 272, 0x2000000), 0n, 'unshare: a cgroup namespace begun where it is');
+  assert.notEqual(p.ns.cgroup, p.kernel.spaces.cgroup);
+  // One with no capability over its namespace is refused each.
+  p.cred = p.cred.with({effective: 0n});
+  for (const [name, asked] of Object.entries({mount: () => call(p, 165, 0, 512, 0, 0, 0), umount2: () => call(p, 166, 512, 0), pivot_root: () => call(p, 155, 512, 512),
+    unshare: () => call(p, 272, 0x20000), setgroups: () => call(p, 116, 0, 0)})) {
+    p.bytes.set(new TextEncoder().encode('/tmp\0'), 512);
+    assert.equal(asked(), EPERM, name);
+  }
 });
 
 test('where something else makes a box or a terminal, what does it is there to be seen', () => {

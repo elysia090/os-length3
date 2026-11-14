@@ -4,9 +4,12 @@
 // under both, and each part that keeps state of its own on the kernel or a description says so where it is made
 // (sys-net.ts: its sockets).
 
+import type {Cgroup} from './cgroup.ts';
+import type {Cred} from './cred.ts';
 import type {FdTable} from './fd.ts';
-import type {Dir, File, Mapping, Vfs} from './fs.ts';
+import type {Dir, File, Mapping, Mount, Place, Super, Vfs} from './fs.ts';
 import type {Machine} from './machine.ts';
+import type {Fs, Numbers, PidNs, Spaces} from './space.ts';
 
 // ---- signals ----
 
@@ -209,23 +212,25 @@ export interface Proc {
   pgid: number;
   sid: number;
   fds: FdTable;
-  /** Where it works: the directory itself (or a path, where the tree keeps no place for it); and where that lies now. */
-  here: Dir | string;
-  get cwd(): string | null;
-  set cwd(path: string);
+  /** Where it is in the tree: its root, where it works, its umask (space.ts): its own, or shared with what CLONE_FS made. */
+  fs: Fs;
+  /** Its root (fs.root): what a path of its from the root is walked from. */
+  readonly root: Place;
   umask: number;
+  /** Who the thread that calls is (cred.ts): its ids, its capabilities, its user namespace. */
+  cred: Cred;
+  /** The namespaces it is in (space.ts), and the cgroup. */
+  ns: Spaces;
+  cgroup: Cgroup;
+  /** The pid namespace it was made in: what it calls processes by. */
+  pidns: PidNs;
   nice: number;
   limits: [bigint, bigint][];
-  caps: {effective: bigint; permitted: bigint; inheritable: bigint};
   comm: string | null;
   noNewPrivs: boolean;
   dumpable: boolean;
-  ambient: bigint;
-  keepCaps?: boolean;
   subreaper?: boolean;
   deathSignal?: number;
-  /** The capabilities dropped from its bounding set (PR_CAPBSET_DROP). */
-  dropped?: Set<number>;
   readonly children: Set<Proc>;
   readonly tasks: Set<Thread>;
   readonly actions: Map<number, SigAction>;
@@ -234,6 +239,8 @@ export interface Proc {
   started: number;
   maps: (Mapping & {proc: Proc; node: File})[];
   exe: string;
+  /** Where the program it runs is (its /proc exe leads there). */
+  exeAt?: {mnt: Mount; node: File; dir: Dir; name: string};
   env: string[];
   argv: string[];
   exitStatus: number | undefined;
@@ -272,7 +279,7 @@ export interface Proc {
   unmapShared(start?: number, length?: number): void;
   execve(path: string, argv: string[], env: string[]): void;
   written(): Range[];
-  forkProcess(resume: bigint, how?: {stack?: bigint; vm?: boolean; files?: boolean; exitSignal?: number; tls?: bigint | null; clearTid?: number; parent?: boolean}): Proc;
+  forkProcess(resume: bigint, how?: {stack?: bigint; vm?: boolean; files?: boolean; fs?: boolean; ns?: Spaces | null; cred?: Cred | null; cgroup?: Cgroup | null; exitSignal?: number; tls?: bigint | null; clearTid?: number; parent?: boolean}): Proc;
   newThread(resume: bigint, stack: bigint, tls: bigint | null): Thread;
 }
 
@@ -294,6 +301,10 @@ export interface Thread {
   redirected: boolean;
   state: 'new' | 'ready' | 'running' | 'blocked' | 'stopped' | 'dead';
   dead: boolean;
+  /** Who it is (cred.ts), its namespaces and where it is in the tree (space.ts): its own, where it left what its process's threads share. */
+  cred: Cred;
+  ns: Spaces;
+  fs: Fs;
   /** The filters over its calls, the first set first (seccomp.ts); null: none. And whether it is in strict mode. */
   filters: readonly Filter[] | null;
   strict: boolean;
@@ -333,7 +344,9 @@ export interface Kern {
   readonly blocked: Set<Thread>;
   readonly futexes: Map<WebAssembly.Memory | File, Map<number, Set<FutexWaiter>>>;
   readonly timers: Set<Timer>;
-  nextPid: number;
+  readonly nextPid: number;
+  /** The numbers of what was not made in the first pid namespace (space.ts). */
+  readonly numbers: Numbers;
   dirty: boolean;
   current: Thread | null;
   tty: Tty;
@@ -342,8 +355,11 @@ export interface Kern {
   initPid?: number;
   /** Keys typed so far (what a poll of the console counts as a change). */
   inputs?: number;
-  hostname?: string;
-  domainname?: string;
+  /** The first process's root, namespaces and cgroup: what a process made of nothing starts in. */
+  readonly root: Place;
+  readonly spaces: Spaces;
+  /** The cgroups: the tree's root, and the file system it is. */
+  readonly cgroups: {root: Cgroup; sb: Super};
   /** What has moved over lo (net-view.ts). */
   loopbackTraffic?: {bytes: number; packets: number};
   /** All the time its threads have had on the processor (/proc/stat). */

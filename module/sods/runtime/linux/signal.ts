@@ -11,6 +11,8 @@
 // moved already. A signal whose action is to end the process ends it when
 // it is sent, as Linux does, however busy the process is.
 
+import {CAP, capable, shownIn} from './cred.ts';
+import {byNr, nrIn} from './space.ts';
 import {E, FsError} from './fs.ts';
 import {Redirect, Wait} from './flow.ts';
 import type {Calls, Kern, Proc, SigAction, SigInfo, Thread} from './parts.ts';
@@ -186,8 +188,9 @@ export function writeInfo(p: Proc, at: number, info: SigInfo): void {
     if (info.syscall !== undefined) { v.setInt32(at + 24, info.syscall, true); v.setUint32(at + 28, info.arch ?? 0, true); }
     return;
   }
-  v.setInt32(at + 16, info.pid ?? 0, true);
-  v.setInt32(at + 20, info.uid ?? 0, true);
+  // (who sent it, as the one told calls them: its number here, or none where it is not seen from here; its user as this namespace numbers it)
+  v.setInt32(at + 16, info.pid ? nrIn(p.kernel.numbers, p.pidns, info.pid) : 0, true);
+  v.setInt32(at + 20, shownIn(p.cred.ns, info.uid ?? 0), true);
   if (info.status !== undefined) v.setInt32(at + 24, info.status, true);
   else if (info.value !== undefined) v.setBigUint64(at + 24, BigInt.asUintN(64, BigInt(info.value)), true);
 }
@@ -366,31 +369,54 @@ export const SIGNAL_CALLS: Calls = {
   200(tid, sig) { return tkill(this, -1, N(tid), N(sig)); }, // tkill
   234(tgid, tid, sig) { return tkill(this, N(tgid), N(tid), N(sig)); }, // tgkill
   129(pid, sig, info) { // rt_sigqueueinfo
-    const i = {code: this.view.getInt32(N(info) + 8, true), pid: this.pid, value: this.view.getBigInt64(N(info) + 24, true)};
+    const i = {code: this.view.getInt32(N(info) + 8, true), pid: this.pid, uid: this.cred.uid, value: this.view.getBigInt64(N(info) + 24, true)};
     return kill(this, N(pid), N(sig), i);
   },
 };
 
-/** kill(2): one process, a group (0: the caller's), or every process but init and the caller (-1). */
-export function kill(p: Proc, pid: number, sig: number, info: Partial<SigInfo> = {code: SI.USER, pid: p.pid, uid: 0}): number {
+/**
+ * Whether `p` may send `sig` to `q`: its real or effective user is `q`'s real or saved one, or it has CAP_KILL over
+ * the user namespace `q` is in; and SIGCONT goes to any process of its own session.
+ */
+function maySignal(p: Proc, q: Proc, sig: number): boolean {
+  const c = p.cred, t = q.cred;
+  return c.euid === t.suid || c.euid === t.uid || c.uid === t.suid || c.uid === t.uid || capable(c, CAP.KILL, t.ns) || (sig === SIG.CONT && p.sid === q.sid);
+}
+/**
+ * Whether `sig` from `p` is nothing to `q`: `q` is the first process of its pid namespace and has not asked to be
+ * sent it (it neither takes it nor holds it back to be waited for). From inside that namespace nothing ends such a
+ * one; from above it, SIGKILL and SIGSTOP alone do.
+ */
+function spared(p: Proc, q: Proc, sig: number): boolean {
+  const k = p.kernel, first = q.pidns.parent ? q.pidns.init === q.pid : q.pid === 1 || q.pid === k.initPid;
+  if (!first || actionOf(q, sig).handler !== 0n || [...q.tasks].some((t) => t.mask & bit(sig))) return false;
+  const above = p.pidns !== q.pidns;
+  return !(above && (sig === SIG.KILL || sig === SIG.STOP));
+}
+
+/** kill(2): one process, a group (0: the caller's), or every process the caller sees but its namespace's first and itself (-1), each by the number the caller calls it. */
+export function kill(p: Proc, pid: number, sig: number, info: Partial<SigInfo> = {code: SI.USER, pid: p.pid, uid: p.cred.uid}): number {
   if (sig < 0 || sig > NSIG) fail(E.INVAL);
-  const k = p.kernel;
+  const k = p.kernel, seen = (q: Proc): boolean => nrIn(k.numbers, p.pidns, q.pid) > 0;
   let targets: Proc[];
-  if (pid > 0) targets = [k.procs.get(pid)].filter((q): q is Proc => !!q);
+  if (pid > 0) targets = [k.procs.get(byNr(p.pidns, pid))].filter((q): q is Proc => !!q);
   else if (pid === 0) targets = k.group(p.pgid);
-  else if (pid === -1) targets = [...k.procs.values()].filter((q) => q.pid !== 1 && q !== p);
-  else targets = k.group(-pid);
+  else if (pid === -1) targets = [...k.procs.values()].filter((q) => seen(q) && nrIn(k.numbers, p.pidns, q.pid) !== 1 && q !== p);
+  else targets = k.group(byNr(p.pidns, -pid) || -1).filter(seen);
   if (!targets.length) fail(E.SRCH);
+  const allowed = targets.filter((q) => maySignal(p, q, sig));
+  if (!allowed.length) fail(E.PERM);
   // A zombie is still there to be signalled; nothing happens to it.
-  for (const q of targets) if (sig && q.state === 'live') send(k, q, sig, {...info, signo: sig});
+  for (const q of allowed) if (sig && q.state === 'live' && !spared(p, q, sig)) send(k, q, sig, {...info, signo: sig});
   return 0;
 }
 
 function tkill(p: Proc, tgid: number, tid: number, sig: number): number {
   if (sig < 0 || sig > NSIG || tid <= 0) fail(E.INVAL);
-  const k = p.kernel, t = k.tasks.get(tid);
-  if (!t || (tgid > 0 && t.proc.pid !== tgid)) return fail(E.SRCH);
-  if (sig) send(k, t.proc, sig, {signo: sig, code: SI.TKILL, pid: p.pid, uid: 0}, t);
+  const k = p.kernel, t = k.tasks.get(byNr(p.pidns, tid));
+  if (!t || (tgid > 0 && t.proc.pid !== byNr(p.pidns, tgid))) return fail(E.SRCH);
+  if (!maySignal(p, t.proc, sig)) fail(E.PERM);
+  if (sig && !spared(p, t.proc, sig)) send(k, t.proc, sig, {signo: sig, code: SI.TKILL, pid: p.pid, uid: p.cred.uid}, t);
   return 0;
 }
 

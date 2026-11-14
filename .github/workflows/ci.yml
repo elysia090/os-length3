@@ -251,7 +251,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [native, prompt]
+        part: [native, prompt, muk]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -262,7 +262,7 @@ jobs:
       - name: Install toolchains
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends musl-tools
+          sudo apt-get install -y --no-install-recommends musl-tools busybox-static
           rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -287,6 +287,12 @@ jobs:
         run: |
           node --test module/ricebox/layers/test/*.test.ts module/muk/test/*.test.ts
           sh module/muk/test/same.sh
+
+      # The one muk on every host: muk's own corpus (module/muk/test/muk.sh, hostile.sh) run whole inside sods, the
+      # same C muk translated, each box made by the calls it makes on Linux (a static busybox its shell and tools).
+      - name: muk's own corpus, with muk on sods' Linux
+        if: matrix.part == 'muk'
+        run: sh module/sods/test/muk/run.sh "$(command -v busybox)"
 
       - name: Run why under muk
         if: matrix.part == 'prompt'

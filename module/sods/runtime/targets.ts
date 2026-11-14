@@ -60,34 +60,22 @@ export function targets(): {input: Isa; runs: Isa; where: Where; state: State}[]
 // muk is the C that makes a box and prompt the Rust at a terminal's other end, on every host: where there is no
 // Linux under them, the Linux they ask for is answered here, and nothing is written a second time for a host. What
 // stands between today and that is below, each with what it needs: the calls muk makes that this Linux does not
-// answer yet (CALLS_OWED: a test reads muk's sources and this kernel's tables, so a call answered is struck here
-// and a call muk comes to make is added), and where a box or a terminal is still made by something else (BRANCHES).
+// answer (CALLS_OWED: none now; a test reads muk's sources and this kernel's tables, so a call muk comes to make
+// that is not answered is added), and where a box or a terminal is still made by something else (BRANCHES).
 
-/** A call muk makes that sods' Linux has no answer for (`absent`), or answers by refusing (`refused`: what with, and when). */
+/** A call muk makes that sods' Linux has no answer for (`absent`), or answers by refusing (`refused`: what with, and when). None is: each is answered as Linux answers it (linux/sys-mount.ts, linux/sys-proc.ts), and muk's own corpus runs with muk on this Linux (test/muk/run.sh). */
 export interface CallOwed { nr: number; name: string; how: 'absent' | 'refused'; needs: string }
-export const CALLS_OWED: readonly CallOwed[] = [
-  {nr: 56, name: 'clone', how: 'refused', needs: 'a process made in namespaces of its own (CLONE_NEWNS, NEWPID, NEWUSER, NEWUTS, NEWIPC, NEWNET, NEWCGROUP): EPERM today'},
-  {nr: 116, name: 'setgroups', how: 'refused', needs: 'groups set by one whose user namespace lets it (its gid_map written, setgroups not denied): EPERM always today'},
-  {nr: 155, name: 'pivot_root', how: 'refused', needs: 'a root of its own for a mount namespace: paths are walked from one root today'},
-  {nr: 165, name: 'mount', how: 'refused', needs: 'proc, sysfs, tmpfs, devpts, mqueue and cgroup2 mounted, a bind, a remount with its flags, how a mount spreads'},
-  {nr: 166, name: 'umount2', how: 'refused', needs: 'a mount taken away (MNT_DETACH: the old root, after pivot_root)'},
-  {nr: 272, name: 'unshare', how: 'absent', needs: 'a cgroup namespace begun where the process is'},
-  {nr: 308, name: 'setns', how: 'refused', needs: 'a namespace joined by its descriptor (/proc/PID/ns/*): EPERM today'},
-  {nr: 428, name: 'open_tree', how: 'absent', needs: 'what is mounted at a path, or a copy of it, as a descriptor'},
-  {nr: 429, name: 'move_mount', how: 'absent', needs: 'such a descriptor put on a path'},
-  {nr: 435, name: 'clone3', how: 'refused', needs: 'a process made in a cgroup that was lent (CLONE_INTO_CGROUP): ENOSYS today'},
-  {nr: 442, name: 'mount_setattr', how: 'absent', needs: "a mount's flags and how it spreads, set on its descriptor"},
-];
+export const CALLS_OWED: readonly CallOwed[] = [];
 
 /** Where a box or a terminal is made by something that is not muk or prompt: what does it today, and what ends that. */
 export interface Branch { what: string; by: string; needs: string }
 export const BRANCHES: readonly Branch[] = [
   {what: 'a box where there is no Linux (a page, a Worker, node)', by: 'the caller starts its program directly on this Linux (linux.ts linux(): why/app/host/prompt/kernel.worker.ts, scripts/webroot-runnable.ts)',
-    needs: 'the calls owed above answered, and a terminal made in a /dev/pts of the box (ptmx, its pair, TIOCGPTPEER); then `muk run` of a bundle here, checked by muk\'s own corpus (module/muk/test/muk.sh, hostile.sh) with muk on this Linux'},
+    needs: 'the caller writes a bundle and starts `muk run` of it here, as module/sods/test/muk/run.sh does with muk\'s own corpus (muk.sh, hostile.sh), which passes with muk on this Linux'},
   {what: 'a box on the desktop (Linux)', by: "why's core makes it itself (why/core/src/prompt/launch.rs, seccomp.rs; why/core/src/compute)",
     needs: 'the launcher runs `muk run` on a bundle it writes, and its own making of a box goes'},
   {what: 'a terminal where there is no Linux', by: "the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt)",
-    needs: 'signalfd answered here, and the terminal muk gives away taken by `prompt attach` on this Linux, checked by module/prompt/test/prompt.sh there'},
+    needs: 'signalfd answered here, and the terminal muk gives away (made here: linux/pty.ts) taken by `prompt attach` on this Linux, checked by module/prompt/test/prompt.sh there'},
   {what: 'a terminal on the desktop (Linux)', by: "why's core's session (why/core/src/prompt)", needs: 'the session hands the descriptor muk sends to `prompt attach`'},
 ];
 
@@ -101,11 +89,10 @@ export function owed(): string[] {
   ];
 }
 
-/** The calls and the branches as README.md has them. */
+/** The calls owed (where any is) and the branches as README.md has them. */
 export function owedTable(): string {
-  return ['| Call muk makes | Here | What it needs |', '| --- | --- | --- |',
-    ...CALLS_OWED.map((c) => `| ${c.name} (${c.nr}) | ${c.how} | ${c.needs} |`), '',
-    '| What is made | By, today | What ends that |', '| --- | --- | --- |',
+  const calls = CALLS_OWED.length ? ['| Call muk makes | Here | What it needs |', '| --- | --- | --- |', ...CALLS_OWED.map((c) => `| ${c.name} (${c.nr}) | ${c.how} | ${c.needs} |`), ''] : [];
+  return [...calls, '| What is made | By, today | What ends that |', '| --- | --- | --- |',
     ...BRANCHES.map((b) => `| ${b.what} | ${b.by} | ${b.needs} |`)].join('\n');
 }
 

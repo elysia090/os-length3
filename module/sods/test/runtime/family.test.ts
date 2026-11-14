@@ -24,7 +24,7 @@ class Bare extends Task {
   override setContext(regs: bigint[], rip: bigint): void { this.regs = [...regs]; this.resumeAt = rip; }
 }
 class Bench extends Kernel {
-  override newTask(proc: Process): Task { return new Bare(proc, this.nextPid++); }
+  override newTask(proc: Process): Task { return new Bare(proc, this.numbered(proc)); }
 }
 
 /** A kernel with its first process (pid 1), one page of memory, a thread that runs nothing. */
@@ -51,21 +51,45 @@ function child(p: Process, flags = 0): Process {
 }
 const exit = (p: Process, code = 0): void => { try { call(p, EXIT_GROUP, code); } catch { /* it ended: nothing comes back */ } };
 
-test('clone refuses new namespaces before creating a process or thread or writing its id', () => {
-  const p = first(), k = p.kernel;
-  const namespaces = [0x80, 0x20000, 0x2000000, 0x4000000, 0x8000000, 0x10000000, 0x20000000, 0x40000000];
+test('clone into namespaces: what cannot be is refused before anything is made or written; what can be is made', () => {
+  const p = first(), k = p.kernel, EINVAL = -22n;
+  const NEWNS = 0x20000, NEWCGROUP = 0x2000000, NEWUTS = 0x4000000, NEWIPC = 0x8000000, NEWUSER = 0x10000000, NEWPID = 0x20000000, NEWNET = 0x40000000;
+  const FS = 0x200, THREAD = 0x10000 | 0x800, TIDS = 0x100000 | 0x1000000; // (THREAD | SIGHAND; PARENT_SETTID | CHILD_SETTID)
   const snapshot = () => [k.nextPid, k.procs.size, k.tasks.size, p.children.size, p.tasks.size];
   const before = snapshot();
   p.view.setInt32(1024, 1234, true);
   p.view.setInt32(1032, 5678, true);
-  for (const namespace of [...namespaces, namespaces.reduce((a, b) => a | b, 0)]) {
-    for (const kind of [SIGCHLD, 0x10000 | 0x800 /* THREAD | SIGHAND */]) {
-      const flags = CLONE_VM | kind | namespace | 0x100000 | 0x1000000; // PARENT_SETTID | CHILD_SETTID
-      assert.equal(call(p, CLONE, flags, 0, 1024, 1032), EPERM, `flags 0x${flags.toString(16)}`);
-      assert.deepEqual(snapshot(), before);
-      assert.deepEqual([p.view.getInt32(1024, true), p.view.getInt32(1032, true)], [1234, 5678]);
-    }
-  }
+  const refused = (flags: number, errno: bigint): void => {
+    assert.equal(call(p, CLONE, CLONE_VM | flags | TIDS, 0, 1024, 1032), errno, `flags 0x${flags.toString(16)}`);
+    assert.deepEqual(snapshot(), before);
+    assert.deepEqual([p.view.getInt32(1024, true), p.view.getInt32(1032, true)], [1234, 5678]);
+  };
+  // A thread in a user or pid namespace of its own; a mount or user namespace for one that shares where it is in the tree.
+  refused(THREAD | NEWUSER, EINVAL);
+  refused(THREAD | NEWPID, EINVAL);
+  refused(SIGCHLD | NEWNS | FS, EINVAL);
+  refused(SIGCHLD | NEWUSER | FS, EINVAL);
+  // By one that may not administer its user namespace, each kind but a user namespace (which anyone makes).
+  const root = p.cred;
+  p.cred = root.with({effective: 0n});
+  for (const kind of [NEWNS, NEWCGROUP, NEWUTS, NEWIPC, NEWPID, NEWNET]) refused(SIGCHLD | kind, EPERM);
+  p.cred = root;
+  // Made: a child in namespaces of its own is the first process there, and is another to its parent.
+  const pid = Number(call(p, CLONE, CLONE_VM | SIGCHLD | NEWNS | NEWCGROUP | NEWUTS | NEWIPC | NEWPID | NEWNET));
+  assert.ok(pid > p.pid, `clone: ${pid}`);
+  const c = k.procs.get(pid)!;
+  assert.equal(call(c, 39), 1n, 'its own number in its pid namespace');
+  assert.equal(call(c, 110), 0n, 'its parent is not of that namespace');
+  for (const kind of ['mnt', 'cgroup', 'uts', 'ipc', 'net'] as const) assert.notEqual(c.ns[kind], p.ns[kind], kind);
+  assert.notEqual(c.pidns, p.pidns);
+  assert.equal(c.cred.ns, p.cred.ns, 'and the same user');
+  // A user namespace: by anyone, who is root of nothing above it and has every capability in it.
+  p.cred = root.with({effective: 0n, permitted: 0n});
+  const boxed = k.procs.get(Number(call(p, CLONE, CLONE_VM | SIGCHLD | NEWUSER | NEWNS)))!;
+  p.cred = root;
+  assert.equal(boxed.cred.ns.parent, p.cred.ns);
+  assert.notEqual(boxed.ns.mnt, p.ns.mnt);
+  assert.equal(call(boxed, 102), 65534n, 'no one, until its ids are mapped');
   // Ordinary creation still works: neither request asks for a new namespace.
   assert.ok(child(p).pid > p.pid);
   assert.ok(call(p, CLONE, CLONE_VM | 0x10000 | 0x800) > 0n);

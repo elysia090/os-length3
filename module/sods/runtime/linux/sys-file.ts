@@ -8,9 +8,13 @@
 
 import {Description, PIPE_BUF, Pipe, flock, unflock, type Interest} from './fd.ts';
 import * as net from './sys-net.ts';
-import {Made, magicLink, procDescriptor} from './procfs.ts';
-import {Dir, Device, E, ending, Fifo, File, FsError, Link, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFSOCK, type Entry, type Resolved} from './fs.ts';
-import {Wait} from './flow.ts';
+import {Listing, Made, madeOf} from './made.ts';
+import {Dir, Device, E, ending, Fifo, File, FsError, Link, MNT, S_IFBLK, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG, S_IFSOCK, SocketName, WALK, device, pathOf, walk, type Entry, type Found, type Mount, type Place} from './fs.ts';
+import {CAP, MAY, capable, capableOver, idOf, may, owns, shownIn} from './cred.ts';
+import {take} from './mount.ts';
+import * as pty from './pty.ts';
+import {byNr, nrIn} from './space.ts';
+import {Wait, utf8} from './flow.ts';
 import type {Calls, Kern, Proc, Termios} from './parts.ts';
 import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.ts';
 import {epoch, steady} from '../host.ts';
@@ -52,28 +56,74 @@ const pipeOf = (d: Description): Pipe => d.pipe ?? fail(E.BADF);
 const counterOf = (d: Description) => d.event ?? fail(E.BADF);
 const interestOf = (d: Description) => d.interest ?? fail(E.INVAL);
 
-/**
- * What a directory held open is looked up from: the directory itself, so that it is the one held however it or what is
- * above it was renamed since, and nothing is in it once it is removed (before: the path it was opened by, which a
- * rename left naming nothing, or another directory made there since); the path it was opened by where the tree keeps
- * no place for it (/proc's, made as they are looked at).
- */
-function held(p: Proc, d: Description): Dir | string {
-  return d.node instanceof Dir && p.kernel.vfs.where(d.node) !== undefined ? d.node : d.path;
-}
-
-/** The directory a *at() path is relative to: where the process works, or the directory `dirfd` holds open. */
-function base(p: Proc, dirfd: bigint): Dir | string {
+/** Where a path that is not from the root starts: where the process works, or what `dirfd` holds open. */
+function base(p: Proc, dirfd: bigint): Place {
   // (An int, as Linux takes it: its low 32 bits. AT_FDCWD written into a 32-bit register comes with nothing above it.)
   const fd = Number(BigInt.asIntN(32, dirfd));
-  if (fd === AT_FDCWD) return p.here;
+  if (fd === AT_FDCWD) return p.fs.pwd;
   const d = p.fds.get(fd) ?? fail(E.BADF);
-  if (d.kind !== 'dir') fail(E.NOTDIR);
-  return held(p, d);
+  return d.mnt && d.node ? {mnt: d.mnt, node: d.node} : fail(E.NOTDIR);
 }
 
-/** The directory the process works in, itself (removed since, it is still what "." is). */
-const working = (p: Proc): Entry => (typeof p.here === 'string' ? p.kernel.vfs.lookup(p.here, '/') : p.here);
+/** `name` walked from `dirfd` by `p` (fs.ts walk): where it came to, or the errno. One from the root asks nothing of `dirfd`. */
+const look = (p: Proc, dirfd: bigint, name: string, how = WALK.FOLLOW): Found | number =>
+  walk(p, name, name.charCodeAt(0) === 47 && !(how & (WALK.BENEATH | WALK.IN_ROOT)) ? p.fs.root : base(p, dirfd), how);
+
+/** What is at `name`, and the mount it is in. Thrown: the walk's errno, or ENOENT where nothing is there. */
+function at(p: Proc, dirfd: bigint, name: string, follow = true): Found & {node: Entry} {
+  const r = look(p, dirfd, name, follow ? WALK.FOLLOW : 0);
+  if (typeof r === 'number') return fail(r);
+  return r.node ? r as Found & {node: Entry} : fail(E.NOENT);
+}
+
+/** What a call names: by its path from `dirfd`, or (no path, or an empty one, where `empty` allows it) what `dirfd` itself is. */
+function named(p: Proc, dirfd: bigint, address: bigint, follow: boolean, empty: boolean): {mnt: Mount | null; node: Entry} {
+  if (empty && (!N(address) || !p.bytes[N(address)])) {
+    if (Number(BigInt.asIntN(32, dirfd)) === AT_FDCWD) return p.fs.pwd;
+    const d = descriptor(p, dirfd);
+    return {mnt: d.mnt, node: d.node ?? fail(E.BADF)};
+  }
+  return at(p, dirfd, path(p, address), follow);
+}
+
+/** A change to what `mnt` shows is refused where it, or its file system, is read-only (EROFS). */
+const writable = (mnt: Mount | null): void => { if (mnt && (mnt.flags & MNT.RDONLY || mnt.sb.readonly)) fail(E.ROFS); };
+
+/**
+ * The directory a new name goes in, where the walk `r` found none there: one that still lies somewhere (in one
+ * removed nothing is made: ENOENT), in a mount that is written to, that is not made as it is looked at, and that
+ * the caller may write to and search.
+ */
+function making(p: Proc, r: Found): Dir {
+  if (r.node || r.held !== undefined) fail(E.EXIST);
+  const dir = r.parent;
+  if (dir.lies === false) fail(E.NOENT);
+  writable(r.up);
+  if (dir instanceof Listing) fail(dir.refuses);
+  if (!may(p.cred, dir, MAY.WRITE | MAY.EXEC)) fail(E.ACCES);
+  return dir;
+}
+/** `node`, new in `dir`: its owner the one who makes it; its group the directory's where that is set-group-ID (and a directory made there is too). */
+function owned<T extends Entry>(p: Proc, dir: Dir, node: T): T {
+  const c = p.cred;
+  node.uid = c.fsuid;
+  node.gid = dir.mode & 0o2000 ? dir.gid : c.fsgid;
+  if (dir.mode & 0o2000 && node.isDir) node.mode |= 0o2000;
+  return node;
+}
+/**
+ * A name about to be taken out of its directory (unlink, rmdir, a rename's two): the mount written to, the directory
+ * one the caller may write to and search, and, in a sticky directory, the file or the directory the caller's own.
+ */
+function taking(p: Proc, r: Found & {node: Entry}): void {
+  const dir = r.parent, c = p.cred;
+  writable(r.up);
+  if (dir instanceof Listing && !dir.rmdir) fail(dir.refuses);
+  if (!may(c, dir, MAY.WRITE | MAY.EXEC)) fail(E.ACCES);
+  if (dir.mode & 0o1000 && c.fsuid !== r.node.uid && c.fsuid !== dir.uid && !capableOver(c, r.node, CAP.FOWNER)) fail(E.PERM);
+}
+/** What is mounted on `node` in other namespaces goes with it (in the caller's own, it would have been in the way). */
+const uncover = (node: Entry): void => { for (const m of [...node.covered ?? []]) take(m, true); };
 
 function path(p: Proc, address: bigint): string {
   return p.cstring(N(address)) || fail(E.NOENT);
@@ -88,16 +138,17 @@ function put64(v: DataView, at: number, n: number): void {
 /** A struct stat as it is made: put together here, then put in the guest's memory at once (in it whole, or EFAULT). */
 const STAT = new Uint8Array(144), STAT_WORDS = new DataView(STAT.buffer);
 
-function writeStat(p: Proc, address: bigint, node: Statted): number {
-  const v = STAT_WORDS, at = 0;
+function writeStat(p: Proc, address: bigint, node: Statted, mnt: Mount | null = null): number {
+  const v = STAT_WORDS, at = 0, ns = p.cred.ns;
   STAT.fill(0);
   const size = node.isFile || node.isLink ? node.size ?? 0 : node.isDir ? 4096 : 0;
-  put64(v, at, node.dev ?? 1);
+  put64(v, at, node.dev ?? mnt?.sb.dev ?? 1);
   put64(v, at + 8, node.ino);
   put64(v, at + 16, node.nlink);
   v.setUint32(at + 24, node.mode, true);
-  v.setUint32(at + 28, node.uid, true);
-  v.setUint32(at + 32, node.gid, true);
+  // (its owner and group as the caller's user namespace numbers them; no one's, where it has no number for them)
+  v.setUint32(at + 28, ns.parent ? shownIn(ns, node.uid) : node.uid, true);
+  v.setUint32(at + 32, ns.parent ? shownIn(ns, node.gid, true) : node.gid, true);
   put64(v, at + 40, node.rdev ?? 0);
   put64(v, at + 48, size);
   put64(v, at + 56, 4096);
@@ -120,14 +171,17 @@ const UTIME_NOW = (1 << 30) - 1, UTIME_OMIT = (1 << 30) - 2;
 /** A directory entry's type (d_type) by its node's: DT_DIR, DT_LNK, DT_CHR, DT_FIFO, DT_SOCK; else DT_REG. */
 const DT: Record<number, number> = {[S_IFDIR]: 4, [S_IFLNK]: 10, [S_IFCHR]: 2, [S_IFIFO]: 1, [S_IFSOCK]: 12};
 
-/** The file a time-setting call names: by its path from `dirfd`, or the descriptor itself (a NULL or empty path). */
-function timed(p: Proc, dirfd: bigint, name: bigint, follow: boolean): Entry {
-  if (!N(name) || !p.bytes[N(name)]) {
-    if (N(dirfd) === AT_FDCWD) return working(p);
-    return descriptor(p, dirfd).node ?? fail(E.BADF);
-  }
-  return p.kernel.vfs.lookup(path(p, name), base(p, dirfd), follow);
+/**
+ * The file a time-setting call names (by its path from `dirfd`, or the descriptor itself: a NULL or empty path),
+ * which the caller may set the times of: to now, one who owns it or may write it; to times it gives, its owner alone.
+ */
+function timed(p: Proc, dirfd: bigint, name: bigint, follow: boolean, now: boolean): Entry {
+  const x = named(p, dirfd, name, follow, true);
+  writable(x.mnt);
+  if (!owns(p.cred, x.node) && !(now && may(p.cred, x.node, MAY.WRITE))) fail(now ? E.ACCES : E.PERM);
+  return x.node;
 }
+const bothNow = (a: Time, m: Time): boolean => a === 'now' && m === 'now';
 
 /** Set a file's access and modification times, each [seconds, nanoseconds], 'now' or 'omit'; its ctime is now. */
 function setTimes(node: Entry, access: Time, modify: Time): number {
@@ -171,102 +225,16 @@ function describe(p: Proc, d: Description): Statted {
   return p.kernel.vfs.terminal as Statted | undefined ?? {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: epoch(), isFile: false, isDir: false, isLink: false};
 }
 
-/** /dev/fd/N, /dev/stdin and the rest, and /proc/self/fd/N, as the /proc/PID/fd/N they are. */
-function descriptorPath(p: Proc, name: string): string {
-  if (!name.startsWith('/dev/') && !name.startsWith('/proc/self/fd/')) return name;
-  const std = ({'/dev/stdin': 0, '/dev/stdout': 1, '/dev/stderr': 2} as Record<string, number>)[name];
-  if (std !== undefined) return `/proc/${p.pid}/fd/${std}`;
-  const m = /^\/(?:dev\/fd|proc\/self\/fd)\/(\d+)$/.exec(name);
-  return m ? `/proc/${p.pid}/fd/${m[1]}` : name;
-}
-
-/** What a stat of `name` that follows links stats: a descriptor's /proc name (Linux's links to what is open there), what
- * that descriptor has open, a file renamed over or removed included; else the node there, or the errno its lookup fails with. */
-function statNode(p: Proc, name: string, dirfd: bigint, follow: boolean): Statted | number {
-  const d = follow && name.startsWith('/') ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
-  return d ? describe(p, d) : p.kernel.vfs.find(name, base(p, dirfd), follow);
-}
-/** A stat of what `found` is into `st`, or the errno it is, negated. */
-const statOf = (p: Proc, st: bigint, found: Statted | number): number => (typeof found === 'number' ? -found : writeStat(p, st, found));
-
-/** How openat2 has a path walked (its `resolve`): each a rule the walk is held to. */
-const RESOLVE = {NO_XDEV: 1, NO_MAGICLINKS: 2, NO_SYMLINKS: 4, BENEATH: 8, IN_ROOT: 16, CACHED: 32};
-
 /**
- * `name` walked from `from` as openat2's `resolve` says, a name at a time. BENEATH: it leads nowhere out of where it
- * starts (a path or a link from the root, or ".." past the start: EXDEV). IN_ROOT: where it starts is its root (a
- * path or a link from the root starts there again, ".." there stays). NO_SYMLINKS: no link is followed (ELOOP);
- * NO_MAGICLINKS: none that leads to what something holds (/proc's fd, cwd, exe, root). NO_XDEV: it stays in what is
- * mounted where it starts (/proc and /dev are what is mounted here). As Vfs.walk: {node, parent, name}, node null
- * where only its last name is missing, or the errno; `names` are left its names from the root.
+ * A stat of what `name` leads to from `dirfd` into `st`: the node there; what a descriptor has open, where the name
+ * is one's link under /proc (a pipe, a socket, the console, a file renamed over or removed since); or the errno,
+ * negated.
  */
-function walkHow(p: Proc, name: string, from: Dir | string, resolve: number, follow: boolean, names: string[]): Resolved | number {
-  const vfs = p.kernel.vfs, scoped = resolve & (RESOLVE.BENEATH | RESOLVE.IN_ROOT);
-  const start = typeof from === 'string' ? vfs.find(from, '/') : from;
-  if (typeof start === 'number') return start;
-  if (!(start instanceof Dir)) return E.NOTDIR;
-  const startPath = typeof from === 'string' ? from : vfs.where(start);
-  if (startPath == null) return E.NOENT;
-  const startNames = startPath.split('/').filter(Boolean);
-  const mounted = [vfs.root.entries.get('proc'), vfs.root.entries.get('dev')];
-  let stack: Entry[] = [];
-  /** From where it starts (BENEATH, IN_ROOT), or from the root. */
-  const again = (): void => {
-    stack = scoped ? [start] : [vfs.root];
-    names.length = 0;
-    if (scoped) names.push(...startNames);
-  };
-  if (name.startsWith('/')) {
-    if (resolve & RESOLVE.BENEATH) return E.XDEV;
-    again();
-  } else if (scoped) again();
-  else {
-    // The directories down to where it starts, each as it lies: ".." above the start is its real parent.
-    stack = [vfs.root];
-    names.length = 0;
-    for (const part of startNames) {
-      const node = (stack[stack.length - 1] as Dir).entries.get(part);
-      if (!(node instanceof Dir)) return E.NOENT;
-      stack.push(node);
-      names.push(part);
-    }
-  }
-  let queue = name.split('/'), links = 0;
-  const rest = (i: number): boolean => queue.slice(i).every((part) => part === '' || part === '.');
-  for (let i = 0; i < queue.length; i++) {
-    const part = queue[i];
-    if (part === '' || part === '.') continue;
-    const dir = stack[stack.length - 1];
-    if (!(dir instanceof Dir)) return E.NOTDIR;
-    if (part === '..') {
-      if (stack.length > 1) {
-        const left = stack.pop();
-        names.pop();
-        if (resolve & RESOLVE.NO_XDEV && mounted.includes(left)) return E.XDEV;
-      } else if (resolve & RESOLVE.BENEATH) return E.XDEV;
-      continue;
-    }
-    const node = dir.entries.get(part), last = rest(i + 1), through = last && i + 1 < queue.length;
-    if (!node) return last ? {node: null, parent: dir, name: part} : E.NOENT;
-    if (node instanceof Link && (!last || follow || through)) {
-      if (resolve & RESOLVE.NO_SYMLINKS) return E.LOOP;
-      if (resolve & RESOLVE.NO_MAGICLINKS && magicLink(node)) return E.LOOP;
-      if (++links > 40) return E.LOOP;
-      const target = node.target;
-      if (target.startsWith('/')) {
-        if (resolve & RESOLVE.BENEATH) return E.XDEV;
-        again();
-      }
-      queue = [...target.split('/'), ...queue.slice(i + 1)];
-      i = -1;
-      continue;
-    }
-    if (through && !(node instanceof Dir)) return E.NOTDIR;
-    if (resolve & RESOLVE.NO_XDEV && mounted.includes(node)) return E.XDEV;
-    stack.push(node);
-    names.push(part);
-  }
-  return {node: stack[stack.length - 1], parent: (stack[stack.length - 2] as Dir | undefined) ?? vfs.root, name: names[names.length - 1] ?? '/'};
+function statAt(p: Proc, dirfd: bigint, name: string, follow: boolean, st: bigint): number {
+  const r = look(p, dirfd, name, follow ? WALK.FOLLOW : 0);
+  if (typeof r === 'number') return -r;
+  if (r.held !== undefined && (!r.node || (r.held as Description).kind === 'console')) return writeStat(p, st, describe(p, r.held as Description));
+  return r.node ? writeStat(p, st, r.node, r.mnt) : -E.NOENT;
 }
 
 /**
@@ -289,44 +257,73 @@ function openat2(p: Proc, dirfd: bigint, address: bigint, how: number, size: num
   if (r & RESOLVE.CACHED && f & (O.CREAT | O.TRUNC | TMPFILE)) fail(E.AGAIN);
   return openAt(p, dirfd, address, flags, mode, r & ~RESOLVE.CACHED);
 }
+/** How openat2 has a path walked (its `resolve`): fs.ts WALK's rules, and one more (what is had without waiting). */
+const RESOLVE = {...WALK, CACHED: 32};
+const O_PATH = 0x200000;
 
 function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bigint, resolve = 0): number {
-  const f = N(flags), name = path(p, address);
+  const f = N(flags), name = path(p, address), c = p.cred, bare = (f & O_PATH) !== 0;
   // The descriptor it will be is found before anything is looked at or changed, as Linux takes one before it walks the
   // path: with none left the open is EMFILE whatever it names, and nothing is made or emptied for it. (Before: found
   // last, after the file had been made or emptied.)
   const fd = p.fds.lowest();
   if (fd < 0) fail(E.MFILE);
   const install = (d: Description): number => p.fds.install(d, {fd, cloexec: !!(f & O.CLOEXEC)});
-  // A descriptor opened by its /proc name opens what it has open: the same pipe or terminal, a file afresh.
-  const named = name.startsWith('/') && !(resolve & (RESOLVE.BENEATH | RESOLVE.IN_ROOT)) ? procDescriptor(p.kernel, descriptorPath(p, name)) : null;
-  if (named) {
-    if (resolve & (RESOLVE.NO_SYMLINKS | RESOLVE.NO_MAGICLINKS)) fail(E.LOOP);
-    if (resolve & RESOLVE.NO_XDEV) fail(E.XDEV);
-    const d = named.kind === 'file' || named.kind === 'dir' ? new Description(named.kind, {node: named.node, flags: f, path: named.path}) : named;
-    if (d !== named && named.node instanceof File && (f & 3) && (f & O.TRUNC)) named.node.truncate(0);
-    return install(d);
-  }
-  const names: string[] = [];
-  const r = resolve ? walkHow(p, name, base(p, dirfd), resolve, !(f & O.NOFOLLOW), names) : p.kernel.vfs.walk(name, base(p, dirfd), !(f & O.NOFOLLOW), 0, names);
+  // (a name to be made that must not be there is not looked through: a link there is in the way)
+  const r = look(p, dirfd, name, resolve | (f & O.NOFOLLOW || (f & O.CREAT && f & O.EXCL) ? 0 : WALK.FOLLOW));
   if (typeof r === 'number') return -r;
-  let node = r.node;
+  // What a descriptor has open, opened by its /proc name: the same pipe or terminal; a file or a directory afresh.
+  const held = r.held as Description | undefined;
+  if (held && !bare && (!r.node || held.kind === 'console' || held.kind.startsWith('pipe'))) return install(held);
+  let node = r.node, made = false;
   if (!node) {
     if (!(f & O.CREAT)) return -E.NOENT;
-    node = new File(new Uint8Array(0), N(mode) & ~p.umask & 0o7777);
-    r.parent.entries.set(r.name, node);
+    if (ending(name).slash) fail(E.ISDIR);
+    const dir = making(p, r);
+    node = owned(p, dir, new File(new Uint8Array(0), N(mode) & ~p.umask & 0o7777));
+    dir.entries.set(r.name, node);
+    made = true;
   } else if ((f & O.CREAT) && (f & O.EXCL)) {
     fail(E.EXIST);
   }
-  if (node instanceof Link) fail(E.LOOP);
+  if (node instanceof Link && !bare) fail(E.LOOP);
   if ((f & O.DIRECTORY) && !node.isDir) fail(E.NOTDIR);
-  // The controlling terminal (/dev/tty), and the terminal the console is (/dev/pts/0): the console, where it is one.
-  if (node instanceof Device && (node.rdev === 0x500 || node === p.kernel.vfs.terminal)) {
-    if (!p.kernel.console.interactive) fail(E.NXIO);
-    return install(new Description('console', {flags: f & (3 | O.NONBLOCK), path: 'tty'}));
+  const place = held && r.node ? {mnt: r.mnt, dir: held.dir, name: held.name} : {mnt: r.mnt, dir: r.parent, name: r.name};
+  // Only a place in the tree is held (O_PATH): nothing of it is read or written through this, so nothing is asked.
+  if (bare) return install(new Description(node.isDir ? 'dir' : node instanceof Device ? 'device' : 'file', {node, flags: f, ...place}));
+  const access = f & 3, reads = access !== 1, writes = access !== 0 || (f & O.TRUNC) !== 0;
+  if (!made) {
+    // As Linux asks, in its order: a directory is not written; a device is one only from a mount that has devices;
+    // its file system written to; the caller allowed by its mode; its mount written to.
+    if (node.isDir && writes) fail(E.ISDIR);
+    if (node instanceof Device && (r.mnt.flags & MNT.NODEV || r.mnt.sb.nodev)) fail(E.ACCES);
+    const kept = node.isFile || node.isDir;
+    if (writes && kept && r.mnt.sb.readonly) fail(E.ROFS);
+    if (!may(c, node, (reads ? MAY.READ : 0) | (writes ? MAY.WRITE : 0))) fail(E.ACCES);
+    if (writes && kept) writable(r.mnt);
+  }
+  if (node instanceof Device) {
+    if (node.none) fail(E.NXIO);
+    // A devpts's ptmx (or the /dev/ptmx beside one): a new terminal, this its master. And one of its terminals, by number.
+    if (node.rdev === 0x502) {
+      const of = pty.instanceOf(r.mnt, r.parent) ?? fail(E.NXIO);
+      return install(pty.openMaster(p, of.inst, of.mnt, f));
+    }
+    if (r.mnt.sb.kind === 'devpts' && node !== p.kernel.vfs.terminal) {
+      const t = (r.mnt.sb.data as pty.Instance).ptys.get(node.rdev - 0x8800);
+      if (!t || t.node !== node) return fail(E.IO);
+      return install(pty.openSlave(p, t, r.mnt, f));
+    }
+    // The controlling terminal (/dev/tty): a terminal a program made, where the session has one; else the console,
+    // as is the terminal the console is (/dev/pts/0), where it is one.
+    if (node.rdev === 0x500 || node === p.kernel.vfs.terminal) {
+      const own = node.rdev === 0x500 ? pty.controlling(p) : null;
+      if (own) { const d = pty.openSlave(p, own, null, f | 0x100); d.path = '/dev/tty'; return install(d); }
+      if (!p.kernel.console.interactive) fail(E.NXIO);
+      return install(new Description('console', {flags: f & (3 | O.NONBLOCK), path: 'tty'}));
+    }
   }
   const writing = (f & 3) !== 0;
-  if (node.isDir && writing) fail(E.ISDIR);
   if (node instanceof File && writing && (f & O.TRUNC)) node.truncate(0);
   // A named pipe: read, write or both ends of the one pipe its opens share. As on Linux, a reader waits for a writer
   // and a writer for a reader, each there from the moment its open began (so two waiting opens meet); O_RDWR and a
@@ -342,7 +339,7 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
       if (kind === 'pipe-w' && (f & O.NONBLOCK) && !pipe.readers) fail(E.NXIO);
       // What each side waits for is an open of the other since it began (Linux's r_counter and w_counter): a writer
       // that came, wrote and went while a reader waited still lets it go on, to what it wrote.
-      d = new Description(kind, {pipe, flags: f & (3 | O.NONBLOCK), path: name});
+      d = new Description(kind, {pipe, flags: f & (3 | O.NONBLOCK), path: name, node, ...place});
       d.seen = {reads: pipe.readOpens, writes: pipe.writeOpens};
       if (kind !== 'pipe-w') pipe.readOpens++;
       if (kind !== 'pipe-r') pipe.writeOpens++;
@@ -358,9 +355,8 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
   // /proc's files are read as they are when opened.
   if (node instanceof Made) node = node.snapshot();
   const kind = node.isDir ? 'dir' : node instanceof Device ? 'device' : 'file';
-  // Its canonical path (/proc/self/fd's link to it): the names the walk went down by, and its own where it was made.
-  const full = `/${(r.node ? names : [...names, r.name]).join('/')}`;
-  return install(new Description(kind, {node, flags: f, path: full}));
+  // Where it is (/proc/self/fd's link to it): the mount it was found in, and the directory and name it was found by.
+  return install(new Description(kind, {node, flags: f, ...place}));
 }
 
 /**
@@ -378,6 +374,7 @@ function background(p: Proc): boolean {
 
 /** Bytes read from `d` into `into` at `at` (a view of guest memory, or a buffer readv scatters). */
 function readTo(p: Proc, d: Description, into: Uint8Array, at: number, length: number, offset: number | null = null): number {
+  if (d.flags & O_PATH) fail(E.BADF);
   if (length === 0) return 0;
   const nonblock = d.flags & O.NONBLOCK;
   switch (d.kind) {
@@ -424,6 +421,7 @@ function readTo(p: Proc, d: Description, into: Uint8Array, at: number, length: n
     }
     case 'dir': return fail(E.ISDIR);
     case 'socket': return net.read(p, d, into, at, length);
+    case 'pty-m': case 'pty-s': return pty.read(p, d, into, at, length);
   }
   return fail(E.BADF);
 }
@@ -473,12 +471,17 @@ function readInto(p: Proc, d: Description, address: number, length: number, offs
  */
 function writeData(p: Proc, d: Description, data: Uint8Array, offset: number | null = null): number {
   const length = data.length, nonblock = d.flags & O.NONBLOCK;
+  if (d.flags & O_PATH) fail(E.BADF);
+  // What is written to a file made as it is read (/proc's, the cgroups') is told to what made it, whole.
+  const of = d.kind === 'file' ? madeOf(d.node) : undefined;
+  if (of?.put) { of.put(utf8(data)); return length; }
   switch (d.kind) {
     case 'console':
       // What shows it has not taken in what came before (a flood): the writer waits, as on a terminal.
       if (p.kernel.console.full?.()) { if (nonblock) fail(E.AGAIN); throw new Wait(); }
       p.kernel.say(d.path === 'stderr' ? 2 : 1, data.slice());
       return length;
+    case 'pty-m': case 'pty-s': return pty.write(p, d, data);
     case 'pipe-w': case 'pipe-rw': {
       const pipe = pipeOf(d), s = p.call!.state;
       const done = s.done ?? 0;
@@ -521,24 +524,29 @@ function writeData(p: Proc, d: Description, data: Uint8Array, offset: number | n
 }
 
 /**
- * struct statfs for the filesystem `at` is on, as large as the machine's storage is and as free (machine.ts): /proc
- * is proc's, /dev a tmpfs, and the rest the root as it is, read-only files under the ones written (an overlay).
+ * struct statfs for the file system `mnt` is a mount of (none: the root's), as large as the machine's storage is and
+ * as free (machine.ts): its kind, and how it is mounted here (read-only, no devices, no programs: ST_*).
  */
-function writeStatfs(p: Proc, buf: number, at: string): number {
-  const BLOCK = 4096, m = p.kernel.machine;
+function writeStatfs(p: Proc, buf: number, mnt: Mount | null): number {
+  const BLOCK = 4096, m = p.kernel.machine, at = mnt ?? p.kernel.root.mnt;
   const s = m.storage() ?? {total: m.memory, free: Math.max(0, m.memory - p.kernel.memoryBytes())};
-  const type = /^\/proc(\/|$)/.test(at) ? 0x9fa0 : /^\/dev(\/|$)/.test(at) ? 0x01021994 : 0x794c7630;
-  const v = p.view, blocks = BigInt(Math.floor(s.total / BLOCK)), free = BigInt(Math.floor(s.free / BLOCK));
+  const made = at.sb.kind === 'proc' || at.sb.kind === 'sysfs' || at.sb.kind === 'cgroup2' || at.sb.kind === 'devpts' || at.sb.kind === 'nsfs' || at.sb.kind === 'mqueue';
+  const v = p.view, blocks = made ? 0n : BigInt(Math.floor(s.total / BLOCK)), free = made ? 0n : BigInt(Math.floor(s.free / BLOCK));
+  const f = at.flags, atime = f & MNT.ATIME;
+  const flags = 0x20 | (f & MNT.RDONLY || at.sb.readonly ? 1 : 0) | (f & MNT.NOSUID ? 2 : 0) | (f & MNT.NODEV ? 4 : 0) | (f & MNT.NOEXEC ? 8 : 0) |
+    (atime === MNT.NOATIME ? 1024 : 0) | (f & MNT.NODIRATIME ? 2048 : 0) | (atime === 0 ? 4096 : 0) | (f & MNT.NOSYMFOLLOW ? 8192 : 0);
   p.bytes.fill(0, buf, buf + 120);
-  v.setBigInt64(buf, BigInt(type), true); // f_type
+  v.setBigInt64(buf, BigInt(at.sb.magic), true); // f_type
   v.setBigInt64(buf + 8, BigInt(BLOCK), true); // f_bsize
   v.setBigUint64(buf + 16, blocks, true); // f_blocks
   v.setBigUint64(buf + 24, free, true); // f_bfree
   v.setBigUint64(buf + 32, free, true); // f_bavail
   v.setBigUint64(buf + 40, blocks, true); // f_files: an inode a block at most
   v.setBigUint64(buf + 48, free, true); // f_ffree
+  v.setUint32(buf + 56, at.sb.dev, true); // f_fsid
   v.setBigInt64(buf + 64, 255n, true); // f_namelen
   v.setBigInt64(buf + 72, BigInt(BLOCK), true); // f_frsize
+  v.setBigInt64(buf + 80, BigInt(flags), true); // f_flags
   return 0;
 }
 
@@ -653,20 +661,23 @@ function remove(p: Proc, dirfd: bigint, address: bigint, directory: boolean): nu
   // ENOTEMPTY, unlink of either EISDIR), and a slash after the name says a folder, without following a link there.
   const whole = path(p, address), end = ending(whole);
   // (The way to it is walked first: through a file, or a name not there, is said before what "." cannot be.)
-  if (end.dot) { p.kernel.vfs.lookup(whole, base(p, dirfd), false); fail(directory ? (end.dot === 1 ? E.INVAL : E.NOTEMPTY) : E.ISDIR); }
-  const r = p.kernel.vfs.resolve(end.bare, base(p, dirfd), false);
-  const node = r.node ?? fail(E.NOENT);
-  if (node === p.kernel.vfs.root) fail(directory ? E.BUSY : E.ISDIR);
+  if (end.dot) { at(p, dirfd, whole, false); fail(directory ? (end.dot === 1 ? E.INVAL : E.NOTEMPTY) : E.ISDIR); }
+  const r = at(p, dirfd, end.bare, false), node = r.node, dir = r.parent;
   if (directory) {
     if (!(node instanceof Dir)) return fail(E.NOTDIR);
-    if (node.entries.size) fail(E.NOTEMPTY);
   } else if (node.isDir) {
     fail(E.ISDIR);
   } else if (end.slash) {
     fail(E.NOTDIR);
   }
-  r.parent.entries.delete(r.name);
-  unlinked(r.parent, node);
+  taking(p, r);
+  // (what something is mounted on, here, is not taken from under it; nor is the root itself)
+  if (r.mnt !== r.up) fail(E.BUSY);
+  if (dir instanceof Listing) { dir.rmdir!(r.name); return 0; }
+  if (node instanceof Dir && node.entries.size) fail(E.NOTEMPTY);
+  uncover(node);
+  dir.entries.delete(r.name);
+  unlinked(dir, node);
   return 0;
 }
 
@@ -677,10 +688,20 @@ function unlinked(dir: Dir, node: Entry): void {
 }
 
 function makeDir(p: Proc, dirfd: bigint, address: bigint, mode: bigint): number {
-  const r = p.kernel.vfs.resolve(path(p, address), base(p, dirfd), false);
+  const r = look(p, dirfd, path(p, address), 0);
+  if (typeof r === 'number') return fail(r);
   if (r.node) fail(E.EXIST);
-  r.parent.entries.set(r.name, new Dir(N(mode) & ~p.umask & 0o7777));
-  r.parent.nlink++;
+  const up = r.parent;
+  // (a directory of the cgroups made is a cgroup made)
+  if (up instanceof Listing && up.mkdir) {
+    writable(r.up);
+    if (!may(p.cred, up, MAY.WRITE | MAY.EXEC)) fail(E.ACCES);
+    up.mkdir(r.name, N(mode) & ~p.umask & 0o7777);
+    return 0;
+  }
+  const dir = making(p, r);
+  dir.entries.set(r.name, owned(p, dir, new Dir(N(mode) & ~p.umask & 0o7777)));
+  dir.nlink++;
   return 0;
 }
 
@@ -700,21 +721,28 @@ function within(under: Dir, dir: Dir): boolean {
  * the name moved over what was there (gone), or with EXCHANGE the two swapped.
  */
 function rename(p: Proc, olddir: bigint, oldaddr: bigint, newdir: bigint, newaddr: bigint, flags = 0n): number {
-  const vfs = p.kernel.vfs, f = N(flags);
+  const f = N(flags);
   if (f & ~(RENAME.NOREPLACE | RENAME.EXCHANGE | RENAME.WHITEOUT)) fail(E.INVAL);
   if (f & RENAME.EXCHANGE && f & (RENAME.NOREPLACE | RENAME.WHITEOUT)) fail(E.INVAL);
   if (f & RENAME.WHITEOUT) fail(E.INVAL);
   // A name in a folder moved to a name in a folder: "." and ".." name none (EBUSY, as Linux), and a slash after
   // either name says a folder (ENOTDIR for a file moved, or moved to such a name), a link there not followed.
   const oldPath = path(p, oldaddr), newPath = path(p, newaddr), old = ending(oldPath), next = ending(newPath);
-  if (old.dot) { vfs.lookup(oldPath, base(p, olddir), false); fail(E.BUSY); }
-  if (next.dot) { vfs.lookup(newPath, base(p, newdir), false); fail(E.BUSY); }
-  const from = vfs.resolve(old.bare, base(p, olddir), false);
-  const node = from.node ?? fail(E.NOENT);
-  const to = vfs.resolve(next.bare, base(p, newdir), false);
+  if (old.dot) { at(p, olddir, oldPath, false); fail(E.BUSY); }
+  if (next.dot) { at(p, newdir, newPath, false); fail(E.BUSY); }
+  const from = at(p, olddir, old.bare, false), node = from.node;
+  const found = look(p, newdir, next.bare, 0);
+  const to = typeof found === 'number' ? fail(found) : found;
   const there = to.node;
   if ((old.slash || next.slash) && !node.isDir) fail(E.NOTDIR);
-  if (node === vfs.root || there === vfs.root) fail(E.BUSY);
+  // From one mount to another it is not a rename (EXDEV); what something is mounted on stays where it is (EBUSY).
+  if (from.up !== to.up) fail(E.XDEV);
+  if (from.mnt !== from.up || to.mnt !== to.up) fail(E.BUSY);
+  taking(p, from);
+  if (there) taking(p, to as Found & {node: Entry});
+  else { if (to.parent.lies === false) fail(E.NOENT); if (to.parent instanceof Listing) fail(to.parent.refuses); if (!may(p.cred, to.parent, MAY.WRITE | MAY.EXEC)) fail(E.ACCES); }
+  // (a directory moved to another has its ".." written: it is itself written to)
+  if (node.isDir && from.parent !== to.parent && !may(p.cred, node, MAY.WRITE)) fail(E.ACCES);
   // A directory is never put into itself or under itself, nor swapped with one it holds: it would hold itself and
   // be reached from nowhere.
   if (node instanceof Dir && within(node, to.parent)) fail(E.INVAL);
@@ -741,7 +769,7 @@ function rename(p: Proc, olddir: bigint, oldaddr: bigint, newdir: bigint, newadd
     if (there instanceof Dir && there.entries.size) fail(E.NOTEMPTY);
   }
   from.parent.entries.delete(from.name);
-  if (there) unlinked(to.parent, there);
+  if (there) { uncover(there); unlinked(to.parent, there); }
   to.parent.entries.set(to.name, node);
   if (node.isDir && from.parent !== to.parent) { from.parent.nlink--; to.parent.nlink++; }
   return 0;
@@ -749,8 +777,10 @@ function rename(p: Proc, olddir: bigint, oldaddr: bigint, newdir: bigint, newadd
 
 /** What a link holds; else its errno, given back (realpath asks it of each name on the way). */
 function readlink(p: Proc, dirfd: bigint, address: bigint, buf: bigint, size: bigint): number {
-  const node = p.kernel.vfs.find(path(p, address), base(p, dirfd), false);
-  if (typeof node === 'number') return -node;
+  const r = look(p, dirfd, path(p, address), 0);
+  if (typeof r === 'number') return -r;
+  const node = r.node;
+  if (!node) return -E.NOENT;
   if (!(node instanceof Link)) return -E.INVAL;
   const bytes = enc.encode(node.target).subarray(0, N(size));
   p.bytes.set(bytes, N(buf));
@@ -798,19 +828,30 @@ function getdents(p: Proc, fd: bigint, buf: bigint, count: bigint): number {
   return at - start;
 }
 
-/** access, faccessat, faccessat2: whether the node is there (F_OK) and may be read, written, run (R_OK 4, W_OK 2,
- * X_OK 1). Every process here is root (uid 0, the one mapped): reading and writing are always allowed, as
- * CAP_DAC_OVERRIDE allows them, but running only a directory or a node with some x bit, as Linux has it (a file of
- * 0644 is not run, and a shell says Permission denied of it, not "bad interpreter"). */
+/**
+ * access, faccessat, faccessat2: whether the node is there (F_OK) and may be read, written, run (R_OK 4, W_OK 2,
+ * X_OK 1) by who the caller really is (its real ids, with its capabilities only where that one is root), or, with
+ * AT_EACCESS, by who it is in effect. Written, only where its mount is written to (EROFS).
+ */
 function access(p: Proc, dirfd: bigint, address: bigint, mode: bigint, flags = 0n): number {
   const m = N(mode), f = N(flags);
   if (m & ~7) fail(E.INVAL);
   if (f & ~(AT.SYMLINK_NOFOLLOW | AT_EACCESS | AT.EMPTY_PATH)) fail(E.INVAL);
-  const node = f & AT.EMPTY_PATH && !p.bytes[N(address)]
-    ? (N(dirfd) === AT_FDCWD ? working(p) : descriptor(p, dirfd).node ?? fail(E.BADF))
-    : p.kernel.vfs.find(path(p, address), base(p, dirfd), !(f & AT.SYMLINK_NOFOLLOW));
-  if (typeof node === 'number') return -node;
-  if (m & 1 && !node.isDir && !(node.mode & 0o111)) fail(E.ACCES);
+  let c = p.cred;
+  if (!(f & AT_EACCESS) && (c.uid !== c.fsuid || c.gid !== c.fsgid || c.effective !== c.permitted)) {
+    c = c.with({fsuid: c.uid, fsgid: c.gid, effective: c.uid === idOf(c.ns, 0) ? c.permitted : 0n});
+  }
+  let x: {mnt: Mount | null; node: Entry};
+  if (f & AT.EMPTY_PATH && !p.bytes[N(address)]) x = named(p, dirfd, address, true, true);
+  else {
+    const r = walk({root: p.fs.root, cred: c}, path(p, address), path(p, address).charCodeAt(0) === 47 ? p.fs.root : base(p, dirfd), f & AT.SYMLINK_NOFOLLOW ? 0 : WALK.FOLLOW);
+    if (typeof r === 'number') return -r;
+    if (!r.node) return r.held !== undefined ? 0 : -E.NOENT;
+    x = {mnt: r.mnt, node: r.node};
+  }
+  if (!m) return 0;
+  if (!may(c, x.node, m)) fail(E.ACCES);
+  if (m & 2 && (x.node.isFile || x.node.isDir || x.node.isLink)) writable(x.mnt);
   return 0;
 }
 const AT_EACCESS = 0x200;
@@ -824,7 +865,7 @@ const AT_EACCESS = 0x200;
 const XATTR = {CREATE: 1, REPLACE: 2, NAME_MOST: 255, VALUE_MOST: 65536};
 /** What attributes are kept on: a node, or NONE. */
 interface Attributed { xattrs?: Map<string, Uint8Array> | null; readonly isLink: boolean; readonly takesNone?: boolean }
-const xnode = (p: Proc, name: bigint, follow: boolean): Entry => p.kernel.vfs.lookup(path(p, name), p.here, follow);
+const xnode = (p: Proc, name: bigint, follow: boolean): Entry => at(p, BigInt(AT_FDCWD), path(p, name), follow).node;
 /** What a descriptor with no node has (a pipe's, a socket's): no attributes, and room for none. */
 const NONE: Attributed = {xattrs: null, isLink: false, takesNone: true};
 const xnodeOf = (p: Proc, fd: bigint): Attributed => descriptor(p, fd).node ?? NONE;
@@ -866,14 +907,24 @@ function removeXattr(p: Proc, node: Attributed, at: bigint): number {
   return 0;
 }
 
-/** mknod: a named pipe or an empty regular file where nothing is; a device is not made here (EPERM). */
-function makeNode(p: Proc, dirfd: bigint, address: bigint, mode: bigint): number {
-  const r = p.kernel.vfs.resolve(path(p, address), base(p, dirfd), false);
-  if (r.node) fail(E.EXIST);
-  const m = N(mode), perm = m & ~p.umask & 0o7777, type = m & 0o170000;
-  if (type === S_IFIFO) r.parent.entries.set(r.name, new Fifo(perm));
-  else if (type === 0 || type === 0o100000) r.parent.entries.set(r.name, new File(new Uint8Array(0), perm));
-  else fail(E.PERM);
+/**
+ * mknod: a named pipe, a socket's name or an empty regular file where nothing is; or a device node, by one who may
+ * make them (CAP_MKNOD, in the first user namespace: a device is the machine's). What stands behind a device's
+ * number is fs.ts's to say: a node whose number nothing stands behind is made, and is no device when opened.
+ */
+function makeNode(p: Proc, dirfd: bigint, address: bigint, mode: bigint, dev: bigint): number {
+  const m = N(mode), perm = m & ~p.umask & 0o7777, type = m & S_IFMT;
+  if (type === S_IFDIR) fail(E.PERM);
+  if (type !== 0 && type !== S_IFREG && type !== S_IFIFO && type !== S_IFSOCK && type !== S_IFCHR && type !== S_IFBLK) fail(E.INVAL);
+  const r = look(p, dirfd, path(p, address), 0);
+  if (typeof r === 'number') return fail(r);
+  const dir = making(p, r);
+  if ((type === S_IFCHR || type === S_IFBLK) && !capable(p.cred, CAP.MKNOD)) fail(E.PERM);
+  // (a device's number as mknod is given it: its major above its minor's low byte, the rest of its minor above that)
+  const d = Number(BigInt.asUintN(64, dev)), rdev = ((d >>> 8) & 0xfff) << 8 | (d & 0xff) | ((Math.floor(d / 4096) & 0xfff00) << 8);
+  const node = type === S_IFIFO ? new Fifo(perm) : type === S_IFSOCK ? new SocketName(perm) : type === S_IFCHR || type === S_IFBLK ? device(rdev, perm, type === S_IFBLK)
+    : new File(new Uint8Array(0), perm);
+  dir.entries.set(r.name, owned(p, dir, node));
   return 0;
 }
 
@@ -912,6 +963,7 @@ function readiness(p: Proc, d: Description): number {
     case 'eventfd': { const e = counterOf(d); r = (e.count ? POLL.IN : 0) | (e.count < 0xfffffffffffffffen ? POLL.OUT : 0); break; }
     case 'epoll': r = epollReady(p, d, 1).length ? POLL.IN : 0; break;
     case 'socket': r = net.ready(d); break;
+    case 'pty-m': case 'pty-s': r = pty.ready(d); break;
     default: r = POLL.IN | POLL.OUT;
   }
   if (r & POLL.IN) r |= POLL.RDNORM;
@@ -920,7 +972,7 @@ function readiness(p: Proc, d: Description): number {
 }
 
 /** A counter that moves whenever `d`'s readiness may have (epoll's edge). */
-const changes = (p: Proc, d: Description): number => (d.kind === 'socket' ? net.changes(d) : d.pipe?.changes ?? d.event?.changes ?? (d.kind === 'console' ? p.kernel.inputs ?? 0 : 0));
+const changes = (p: Proc, d: Description): number => (d.kind === 'socket' ? net.changes(d) : d.pty?.changes ?? d.pipe?.changes ?? d.event?.changes ?? (d.kind === 'console' ? p.kernel.inputs ?? 0 : 0));
 
 /** The calling thread's mask is `set` while the call waits (ppoll, pselect6, epoll_pwait), as rt_sigsuspend does. */
 function swapMask(p: Proc, address: number): void {
@@ -1133,6 +1185,8 @@ function ioctl(p: Proc, d: Description, request: number, arg: number): number {
   }
   // A socket's (SIOCOUTQ, what an interface is): sys-net.ts's.
   if (d.kind === 'socket') return net.control(p, d, r, arg);
+  // A terminal a program made (pty.ts): either end of it.
+  if (d.pty) return pty.control(p, d, r, arg, (made, cloexec) => { const fd = p.fds.lowest(); if (fd < 0) { made.retain().release(); fail(E.MFILE); } return p.fds.install(made, {fd, cloexec}); }) ?? fail(E.NOTTY);
   // The console's output, where what is written to it is shown as a terminal's screen (`screen`: the app's Prompt), is
   // a terminal to what writes to it: as wide as the screen, set as a terminal is, so a listing comes in columns. What
   // reads keys from it is not, until the console is interactive (the keys are sent a line at a time).
@@ -1183,17 +1237,17 @@ function ioctl(p: Proc, d: Description, request: number, arg: number): number {
       k.console.cols = v.getUint16(arg + 2, true);
       for (const q of k.group(k.tty.fg)) send(k, q, SIG.WINCH, {code: SI.KERNEL});
       return 0;
-    case 0x540f: v.setInt32(arg, k.tty.fg, true); return 0; // TIOCGPGRP
+    case 0x540f: v.setInt32(arg, nrIn(k.numbers, p.pidns, k.tty.fg), true); return 0; // TIOCGPGRP
     case 0x5410: { // TIOCSPGRP: a group of the terminal's session
-      const g = v.getInt32(arg, true);
+      const asked = v.getInt32(arg, true), g = byNr(p.pidns, asked);
       if (p.sid !== k.tty.sid) fail(E.NOTTY);
-      if (g < 0) fail(E.INVAL);
+      if (asked < 0) fail(E.INVAL);
       if (!k.hasGroup(g, p.sid)) fail(E.PERM);
       handed(k, tio, g);
       k.tty.fg = g;
       return 0;
     }
-    case 0x5429: v.setInt32(arg, k.tty.sid, true); return 0; // TIOCGSID
+    case 0x5429: v.setInt32(arg, nrIn(k.numbers, p.pidns, k.tty.sid), true); return 0; // TIOCGSID
     case 0x540e: // TIOCSCTTY
       if (p.sid !== p.pid) fail(E.PERM);
       k.tty.sid = p.sid;
@@ -1205,19 +1259,40 @@ function ioctl(p: Proc, d: Description, request: number, arg: number): number {
   return fail(E.NOTTY);
 }
 /**
- * chown of `node` (looked up already: a name not there is ENOENT first): to the one owner this machine has, 0, or -1
- * to keep it; any other id is not mapped in the Prompt's namespace (EINVAL, as there). As Linux's, it takes away a
- * file's set-user-ID bit, and its set-group-ID bit where the group may run it.
+ * chown of what `x` is, to `uid` and `gid` as the caller's user namespace numbers them (-1: as it is; one that
+ * namespace has no number for, EINVAL). Its owner is changed by one with CAP_CHOWN over it; its group by that one,
+ * or by its owner to a group the owner is in. As Linux's, it takes away a file's set-user-ID bit, and its
+ * set-group-ID bit where the group may run it.
  */
-function chown(_p: Proc, node: Entry | null, uid: bigint, gid: bigint): number {
-  for (const id of [uid, gid]) {
-    const x = Number(BigInt.asUintN(32, id));
-    if (x !== 0 && x !== 0xffffffff) fail(E.INVAL);
-  }
-  if (node && !node.isDir && node.mode !== undefined) {
+function chown(p: Proc, x: {mnt: Mount | null; node: Entry}, uid: bigint, gid: bigint): number {
+  const c = p.cred, node = x.node, want = (id: bigint, group: boolean): number => {
+    const n = Number(BigInt.asUintN(32, id));
+    if (n === 0xffffffff) return -1;
+    const k = idOf(c.ns, n, group);
+    return k < 0 ? fail(E.INVAL) : k;
+  };
+  const u = want(uid, false), g = want(gid, true);
+  writable(x.mnt);
+  const over = capableOver(c, node, CAP.CHOWN), mine = c.fsuid === node.uid;
+  if (u >= 0 && !over && !(mine && u === node.uid)) fail(E.PERM);
+  if (g >= 0 && !over && !(mine && (g === c.fsgid || c.groups.includes(g)))) fail(E.PERM);
+  if (u >= 0) node.uid = u;
+  if (g >= 0) node.gid = g;
+  if (!node.isDir) {
     node.mode &= ~0o4000;
     if (node.mode & 0o010) node.mode &= ~0o2000;
   }
+  return 0;
+}
+
+/** chmod of what `x` is, by its owner (or one who stands for it); its set-group-ID bit kept only by one of that group (or CAP_FSETID). */
+function chmod(p: Proc, x: {mnt: Mount | null; node: Entry}, mode: bigint): number {
+  const c = p.cred, node = x.node;
+  writable(x.mnt);
+  if (!owns(c, node)) fail(E.PERM);
+  let m = N(mode) & 0o7777;
+  if (!node.isDir && m & 0o2000 && c.fsgid !== node.gid && !c.groups.includes(node.gid) && !capableOver(c, node, CAP.FSETID)) m &= ~0o2000;
+  node.mode = (node.mode & ~0o7777) | m;
   return 0;
 }
 
@@ -1260,9 +1335,9 @@ export const FILE_CALLS: Calls = {
   1(fd, buf, len) { return writeFrom(this, descriptor(this, fd), N(buf), N(len)); },
   2(name, flags, mode) { return openAt(this, BigInt(AT_FDCWD), name, flags, mode); },
   3(fd) { if (!this.fds.close(N(fd))) fail(E.BADF); return 0; },
-  4(name, st) { return statOf(this, st, statNode(this, path(this, name), BigInt(AT_FDCWD), true)); },
-  5(fd, st) { return writeStat(this, st, describe(this, descriptor(this, fd))); },
-  6(name, st) { return statOf(this, st, this.kernel.vfs.find(path(this, name), this.here, false)); },
+  4(name, st) { return statAt(this, BigInt(AT_FDCWD), path(this, name), true, st); },
+  5(fd, st) { const d = descriptor(this, fd); return writeStat(this, st, describe(this, d), d.mnt); },
+  6(name, st) { return statAt(this, BigInt(AT_FDCWD), path(this, name), false, st); },
   7(fds, count, timeout) { return poll(this, fds, count, Number(BigInt.asIntN(32, timeout))); },
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
   8(fd, offset, whence) {
@@ -1406,9 +1481,12 @@ export const FILE_CALLS: Calls = {
   76(name, length) {
     const n = N(length);
     if (n < 0) fail(E.INVAL);
-    const node = this.kernel.vfs.lookup(path(this, name), this.here);
+    const x = at(this, BigInt(AT_FDCWD), path(this, name)), node = x.node;
     if (node.isDir) fail(E.ISDIR);
     if (!(node instanceof File)) return fail(E.INVAL);
+    if (x.mnt.sb.readonly) fail(E.ROFS);
+    if (!may(this.cred, node, MAY.WRITE)) fail(E.ACCES);
+    writable(x.mnt);
     node.truncate(n);
     return 0;
   },
@@ -1421,20 +1499,28 @@ export const FILE_CALLS: Calls = {
     return 0;
   },
   79(buf, size) {
-    // (Removed since it was gone to, it lies nowhere: ENOENT, as Linux says.)
-    const bytes = enc.encode((this.cwd ?? fail(E.NOENT)) + '\0');
+    // (Removed since it was gone to, it lies nowhere: ENOENT, as Linux says. Out of its root's reach, it is said to be.)
+    const here = this.fs.pwd;
+    if (here.node instanceof Dir && here.node.lies === false) fail(E.NOENT);
+    const bytes = enc.encode(pathOf(this.fs.root, here.mnt, here.node, null, '', '(unreachable)') + '\0');
     if (bytes.length > N(size)) fail(E.RANGE);
     this.bytes.set(bytes, N(buf));
     return bytes.length;
   },
   80(name) {
-    const target = path(this, name);
-    const v = this.kernel.vfs, node = v.lookup(target, this.here);
-    if (!(node instanceof Dir)) return fail(E.NOTDIR);
-    this.here = v.where(node) !== undefined ? node : v.realpath(target, this.here);
+    const x = at(this, BigInt(AT_FDCWD), path(this, name));
+    if (!(x.node instanceof Dir)) return fail(E.NOTDIR);
+    if (!may(this.cred, x.node, MAY.EXEC)) fail(E.ACCES);
+    this.fs.go({mnt: x.mnt, node: x.node});
     return 0;
   },
-  81(fd) { const d = descriptor(this, fd); if (d.kind !== 'dir') fail(E.NOTDIR); this.here = held(this, d); return 0; },
+  81(fd) {
+    const d = descriptor(this, fd);
+    if (!(d.node instanceof Dir) || !d.mnt) return fail(E.NOTDIR);
+    if (!may(this.cred, d.node, MAY.EXEC)) fail(E.ACCES);
+    this.fs.go({mnt: d.mnt, node: d.node});
+    return 0;
+  },
   82(a, b) { return rename(this, BigInt(AT_FDCWD), a, BigInt(AT_FDCWD), b); },
   83(name, mode) { return makeDir(this, BigInt(AT_FDCWD), name, mode); },
   84(name) { return remove(this, BigInt(AT_FDCWD), name, true); },
@@ -1443,67 +1529,69 @@ export const FILE_CALLS: Calls = {
   87(name) { return remove(this, BigInt(AT_FDCWD), name, false); },
   88(target, name) { return FILE_CALLS[266].call(this, target, BigInt(AT_FDCWD), name); },
   89(name, buf, size) { return readlink(this, BigInt(AT_FDCWD), name, buf, size); },
-  90(name, mode) { const n = this.kernel.vfs.lookup(path(this, name), this.here); n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
-  91(fd, mode) { const n = descriptor(this, fd).node; if (n) n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
-  92(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.here), uid, gid); },
-  93(fd, uid, gid) { return chown(this, descriptor(this, fd).node, uid, gid); }, // fchown
-  94(name, uid, gid) { return chown(this, this.kernel.vfs.lookup(path(this, name), this.here, false), uid, gid); }, // lchown
+  90(name, mode) { return chmod(this, at(this, BigInt(AT_FDCWD), path(this, name)), mode); },
+  91(fd, mode) { const d = descriptor(this, fd); return d.node ? chmod(this, {mnt: d.mnt, node: d.node}, mode) : 0; },
+  92(name, uid, gid) { return chown(this, at(this, BigInt(AT_FDCWD), path(this, name)), uid, gid); },
+  93(fd, uid, gid) { const d = descriptor(this, fd); return d.node ? chown(this, {mnt: d.mnt, node: d.node}, uid, gid) : 0; }, // fchown
+  94(name, uid, gid) { return chown(this, at(this, BigInt(AT_FDCWD), path(this, name), false), uid, gid); }, // lchown
   95(mask) { const old = this.umask; this.umask = N(mask) & 0o777; return old; },
   // utime, utimes, futimesat, utimensat: the times of a file that is there (ENOENT for one that is not, which
   // is how touch knows to make it).
-  133(name, mode, _dev) { return makeNode(this, BigInt(AT_FDCWD), name, mode); },
-  259(dirfd, name, mode, _dev) { return makeNode(this, dirfd, name, mode); },
+  133(name, mode, dev) { return makeNode(this, BigInt(AT_FDCWD), name, mode, dev); },
+  259(dirfd, name, mode, dev) { return makeNode(this, dirfd, name, mode, dev); },
   132(name, buf) {
-    const n = this.kernel.vfs.lookup(path(this, name), this.here);
+    if (!this.bytes[N(name)]) fail(E.NOENT);
+    const n = timed(this, BigInt(AT_FDCWD), name, true, !N(buf));
     if (!N(buf)) return setTimes(n, 'now', 'now');
     const t = (off: number): [number, number] => [Number(this.view.getBigInt64(N(buf) + off, true)), 0];
     return setTimes(n, t(0), t(8));
   },
-  235(name, tv) { const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(this.kernel.vfs.lookup(path(this, name), this.here), a, m); },
-  261(dirfd, name, tv) { const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(timed(this, dirfd, name, true), a, m); },
+  235(name, tv) { if (!this.bytes[N(name)]) fail(E.NOENT); const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(timed(this, BigInt(AT_FDCWD), name, true, bothNow(a, m)), a, m); },
+  261(dirfd, name, tv) { const [a, m] = timevals(this, tv) as [Time, Time]; return setTimes(timed(this, dirfd, name, true, bothNow(a, m)), a, m); },
   280(dirfd, name, ts, flags) {
     const [a, m] = timespecs(this, ts) as [Time, Time];
-    return setTimes(timed(this, dirfd, name, !(N(flags) & AT.SYMLINK_NOFOLLOW)), a, m);
+    return setTimes(timed(this, dirfd, name, !(N(flags) & AT.SYMLINK_NOFOLLOW), bothNow(a, m)), a, m);
   },
-  137(name, buf) { // statfs: the filesystem the path is on (it must be there)
-    const at = path(this, name);
-    this.kernel.vfs.lookup(at, this.here);
-    return writeStatfs(this, N(buf), at.startsWith('/') ? at : `${this.cwd ?? ''}/${at}`);
-  },
-  138(fd, buf) { return writeStatfs(this, N(buf), descriptor(this, fd).path ?? '/'); }, // fstatfs
+  137(name, buf) { return writeStatfs(this, N(buf), at(this, BigInt(AT_FDCWD), path(this, name)).mnt); }, // statfs: the file system the path is on (it must be there)
+  138(fd, buf) { return writeStatfs(this, N(buf), descriptor(this, fd).mnt); }, // fstatfs
   217(fd, buf, count) { return getdents(this, fd, buf, count); },
   257(dirfd, name, flags, mode) { return openAt(this, dirfd, name, flags, mode); },
   437(dirfd, name, how, size) { return openat2(this, dirfd, name, N(how), N(size)); },
   258(dirfd, name, mode) { return makeDir(this, dirfd, name, mode); },
   260(dirfd, name, uid, gid, flags) { // fchownat
-    const f = N(flags), named = N(name) && this.cstring(N(name));
-    if (!named && f & AT.EMPTY_PATH) return chown(this, N(dirfd) === AT_FDCWD ? working(this) : descriptor(this, dirfd).node, uid, gid);
-    return chown(this, this.kernel.vfs.lookup(path(this, name), base(this, dirfd), !(f & AT.SYMLINK_NOFOLLOW)), uid, gid);
+    const f = N(flags);
+    return chown(this, named(this, dirfd, name, !(f & AT.SYMLINK_NOFOLLOW), (f & AT.EMPTY_PATH) !== 0), uid, gid);
   },
   262(dirfd, name, st, flags) {
-    if ((N(flags) & AT.EMPTY_PATH) && !this.bytes[N(name)]) return writeStat(this, st, describe(this, descriptor(this, dirfd)));
-    return statOf(this, st, statNode(this, path(this, name), dirfd, !(N(flags) & AT.SYMLINK_NOFOLLOW)));
+    if ((N(flags) & AT.EMPTY_PATH) && !this.bytes[N(name)]) {
+      if (Number(BigInt.asIntN(32, dirfd)) === AT_FDCWD) return writeStat(this, st, this.fs.pwd.node, this.fs.pwd.mnt);
+      const d = descriptor(this, dirfd);
+      return writeStat(this, st, describe(this, d), d.mnt);
+    }
+    return statAt(this, dirfd, path(this, name), !(N(flags) & AT.SYMLINK_NOFOLLOW), st);
   },
   263(dirfd, name, flags) { return remove(this, dirfd, name, (N(flags) & AT.REMOVEDIR) !== 0); },
   264(od, oa, nd, na) { return rename(this, od, oa, nd, na); },
-  265(od, oa, nd, na) {
-    const vfs = this.kernel.vfs;
-    const node = vfs.lookup(path(this, oa), base(this, od), false);
+  265(od, oa, nd, na, flags) { // linkat: another name for a file, in the mount it is in (AT_SYMLINK_FOLLOW 0x400: of what a link leads to)
+    const from = at(this, od, path(this, oa), (N(flags) & 0x400) !== 0), node = from.node;
     if (node.isDir) fail(E.PERM);
-    const to = vfs.resolve(path(this, na), base(this, nd), false);
+    const to = look(this, nd, path(this, na), 0);
+    if (typeof to === 'number') return fail(to);
     if (to.node) fail(E.EXIST);
-    to.parent.entries.set(to.name, node);
+    if (from.mnt !== to.up) fail(E.XDEV);
+    making(this, to).entries.set(to.name, node);
     node.nlink++;
     return 0;
   },
   266(target, dirfd, name) {
-    const to = this.kernel.vfs.resolve(path(this, name), base(this, dirfd), false);
-    if (to.node) fail(E.EXIST);
-    to.parent.entries.set(to.name, new Link(this.cstring(N(target))));
+    const to = look(this, dirfd, path(this, name), 0);
+    if (typeof to === 'number') return fail(to);
+    const dir = making(this, to);
+    dir.entries.set(to.name, owned(this, dir, new Link(this.cstring(N(target)))));
     return 0;
   },
   267(dirfd, name, buf, size) { return readlink(this, dirfd, name, buf, size); },
-  268(dirfd, name, mode) { const n = this.kernel.vfs.lookup(path(this, name), base(this, dirfd)); n.mode = (n.mode & ~0o7777) | (N(mode) & 0o7777); return 0; },
+  268(dirfd, name, mode) { return chmod(this, at(this, dirfd, path(this, name)), mode); },
   269(dirfd, name, mode) { return access(this, dirfd, name, mode); },
   292(oldfd, newfd, flags) { if (N(oldfd) === N(newfd)) fail(E.INVAL); return dup(this, oldfd, N(newfd), (N(flags) & O.CLOEXEC) !== 0); },
   293(fds, flags) { return pipe(this, fds, flags); },

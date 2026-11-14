@@ -4,7 +4,7 @@ import {statfsSync} from 'node:fs';
 import {test} from 'node:test';
 import {MEMORY_FLOOR, machine} from '../../runtime/linux/machine.ts';
 import {Kernel} from '../../runtime/linux/process.ts';
-import {Made} from '../../runtime/linux/procfs.ts';
+import {Made} from '../../runtime/linux/made.ts';
 import type {Console} from '../../runtime/linux/parts.ts';
 
 // What programs are told of the machine is the machine: its memory and its storage as the host says them, not a

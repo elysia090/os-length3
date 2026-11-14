@@ -1,6 +1,6 @@
 // Open file descriptions and per-process descriptor tables.
 
-import type {Entry} from './fs.ts';
+import type {Dir, Entry, Mount} from './fs.ts';
 
 declare module './fs.ts' {
   /** A named pipe's pipe: what its opens share, made afresh once every end of the last is closed. */
@@ -147,7 +147,7 @@ export function unflock(d: Description): void {
 
 /** One open file description, shared by dup'd and inherited descriptors. */
 /** What a description is of. */
-export type Kind = 'file' | 'dir' | 'pipe-r' | 'pipe-w' | 'pipe-rw' | 'console' | 'device' | 'eventfd' | 'epoll' | 'socket';
+export type Kind = 'file' | 'dir' | 'pipe-r' | 'pipe-w' | 'pipe-rw' | 'console' | 'device' | 'eventfd' | 'epoll' | 'socket' | 'pty-m' | 'pty-s';
 
 /** An eventfd's counter (and whether it is a semaphore's), and how often it changed. */
 export interface Counter { count: bigint; semaphore: boolean; changes: number }
@@ -159,7 +159,16 @@ export class Description {
   declare node: Entry | null;
   declare pipe: Pipe | null;
   declare flags: number;
+  /** What it is called where it has no place in a tree (the console's three, a pipe by name, a memfd). */
   declare path: string;
+  /** The mount its node was opened in (held while it is open), and the directory and name it was reached by there: where it is, as pathOf says it. */
+  declare mnt: Mount | null;
+  declare dir: Dir | null;
+  declare name: string;
+  /** open_tree's copy of a mount: taken apart when it is closed, unless it was put somewhere (sys-mount.ts). */
+  declare tree?: boolean;
+  /** What is done once it is closed for good (a terminal's end gone, a mount's copy taken apart). */
+  declare gone?: () => void;
   declare offset: number;
   declare refs: number;
   declare closed: boolean;
@@ -172,12 +181,16 @@ export class Description {
   declare event?: Counter;
   /** An epoll instance's interest list. */
   declare interest?: Map<number, Interest>;
-  constructor(kind: Kind, {node = null, pipe = null, flags = 0, path = ''}: {node?: Entry | null; pipe?: Pipe | null; flags?: number; path?: string} = {}) {
+  constructor(kind: Kind, {node = null, pipe = null, flags = 0, path = '', mnt = null, dir = null, name = ''}: {node?: Entry | null; pipe?: Pipe | null; flags?: number; path?: string; mnt?: Mount | null; dir?: Dir | null; name?: string} = {}) {
     this.kind = kind; // file | dir | pipe-r | pipe-w | console | device | eventfd | epoll | socket (`sock`: sys-net.ts)
     this.node = node;
     this.pipe = pipe;
     this.flags = flags;
     this.path = path;
+    this.mnt = mnt;
+    this.dir = dir;
+    this.name = name;
+    if (mnt) mnt.refs++;
     this.offset = 0;
     this.refs = 0;
     this.closed = false;
@@ -194,6 +207,8 @@ export class Description {
       return;
     }
     this.closed = true;
+    if (this.mnt) this.mnt.refs--;
+    this.gone?.();
     unflock(this);
     if (this.pipe && (this.kind === 'pipe-r' || this.kind === 'pipe-rw')) { this.pipe.readers--; this.pipe.changes++; }
     if (this.pipe && (this.kind === 'pipe-w' || this.kind === 'pipe-rw')) { this.pipe.writers--; this.pipe.changes++; }

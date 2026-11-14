@@ -5,8 +5,6 @@
 
 import {isShared, random} from '../host.ts';
 
-/** Every capability Linux has (to CAP_CHECKPOINT_RESTORE, 40): root's in its own user namespace. */
-export const CAPS = (1n << 41n) - 1n;
 
 /** Thrown through wasm frames once the thread (or its whole process) has ended. */
 export class Exit {
