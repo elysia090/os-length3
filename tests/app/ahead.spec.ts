@@ -35,7 +35,8 @@ test.describe('translated ahead', {tag: '@slow'}, () => {
     const ahead = aheadFor(index);
     expect(ahead.length, 'this root has none of the programs translated ahead').toBeGreaterThan(0);
     const keptOf = (origins: string[]) => app.page.evaluate(async (os) => {
-      const urls = (await (await caches.open('webroot')).keys()).map((r) => r.url);
+      // Where ricebox keeps a root's translations in a page: a cache named for where the root is served from (layers/root.ts).
+      const urls = (await (await caches.open(`ricebox:${new URL('/webroot/', location.href).href}`)).keys()).map((r) => r.url);
       return os.filter((o) => urls.some((u) => u.includes(`/webroot/tr/${o}-`)));
     }, origins);
     // Nothing is run: the Prompt only waits for its next line, and each is kept meanwhile, one after another.
