@@ -29,7 +29,8 @@
 }
 .me .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
-.pop { display: grid; padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card); }
+/* A menu is a sheet laid over what called it: paper, an ink edge, its shadow (DESIGN §5), as File's tree is. */
+.pop { display: grid; padding: var(--s2); background: var(--paper); border: 0; border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 /* A menu out of a row, a card or a gear comes out of it as it shows: grown from the corner it opens at, a few pixels
    from that side, landing a touch past its size, as the person's menu rises from the face (not there at once, as if
    it had always been). */

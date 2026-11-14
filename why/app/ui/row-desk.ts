@@ -29,9 +29,10 @@ const MAP = 12;
  * The row's map, at the window's foot from the desk's edge (DESIGN §6): the row twelve times smaller, a bar for each
  * piece (the one in the hand in ink), a line under the part of it that is in sight. It is there while some of the row
  * is out of sight, and says what is: how many pieces, which way, how far. A bar pressed goes to its piece, so nothing
- * on a row is reached by scrolling alone. Drawn again by `paint` (as the desk turns, or its pieces change).
+ * on a row is reached by scrolling alone. Drawn again by `paint` (as the desk turns, or its pieces change); `turned`:
+ * how far the desk is turned along the row (how far `stage` is scrolled, unless the row is moved another way).
  */
-export function rowMap(stage: HTMLElement, pieces: () => Piece[]): {element: HTMLElement; paint(): void} {
+export function rowMap(stage: HTMLElement, pieces: () => Piece[], turned: () => number = () => stage.scrollLeft): {element: HTMLElement; paint(): void} {
   const sight = h('span', {class: 'row-sight', 'aria-hidden': 'true'});
   const element = h('div', {class: 'row-map', role: 'group', hidden: ''}, sight);
   let drawn = '';
@@ -54,8 +55,9 @@ export function rowMap(stage: HTMLElement, pieces: () => Piece[]): {element: HTM
       }));
       element.style.width = `${Math.round(whole * by)}px`;
     }
-    sight.style.left = `${Math.round(stage.scrollLeft * by)}px`;
-    sight.style.width = `${Math.round(Math.min(face, whole - stage.scrollLeft) * by)}px`;
+    const at = turned();
+    sight.style.left = `${Math.round(at * by)}px`;
+    sight.style.width = `${Math.round(Math.min(face, whole - at) * by)}px`;
   };
   return {element, paint};
 }

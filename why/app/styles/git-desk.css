@@ -63,8 +63,15 @@
 /* The row: the heading that names it is heard, not shown (the sheets say what they are). */
 .git-desk .issues-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .git-desk > .section, .git-desk > .main-part + .section { margin-top: 0; }
-.git-desk .issue-column { --row-peek: calc(3 * var(--u)); --gap: calc(2 * var(--u)); }
-.git-desk .issue-stage::before, .git-desk .issue-stage::after { display: none; }
+/* The issues are a row of sheets (DESIGN §6, git/issue-row.ts): one width (--piece, as the row's room allows), two cells
+   apart, the one in the hand at the row's edge and those after it beside it; nothing peeks from before it. What is out
+   of sight is on the row's map at the window's foot. */
+.git-desk .issue-column { --row-peek: 0px; --gap: calc(2 * var(--u)); }
+.git-desk .issue-track { transform: translateX(calc(-1 * var(--at) * (var(--piece, 100%) + var(--gap)))); }
+.git-desk .issue-slot { flex: 0 0 var(--piece, 100%); container: issue / inline-size; }
+.git-desk .stage-hit.next { left: calc(var(--piece, 100%) + var(--gap)); right: 0; width: auto; border-radius: var(--r-sheet); }
+.git-desk .stage-hit::after { content: none; }
+.git-desk .issue-column > .row-map { position: fixed; left: calc(2 * var(--u)); }
 /* (A sheet's shadow lies a cell past it: the row is not cut before that.) */
 .git-desk .issue-stage { margin-right: calc(-1 * var(--u)); padding-right: var(--u); }
 .git-desk .issue-card { position: relative; padding: var(--u); border: 0; border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); }
@@ -83,15 +90,18 @@
 .git-desk .issue-words { display: block; margin-bottom: calc(1.5 * var(--u)); }
 /* The title, its capitals a cell and a half tall on lines of two and a half, their first top on the sheet's margin;
    the number, heard in the heading, drawn large against the right margin from that same top to the second line's foot. */
-.git-desk .issue-big-head:not(.peek) { display: block; min-height: calc(4 * var(--u)); padding-right: calc(8 * var(--u)); }
-.git-desk .issue-big-head:not(.peek) h2 { margin: 0; font: 900 var(--t-head)/calc(1.5 * var(--u)) var(--display); letter-spacing: -.035em; color: var(--ink); }
-.git-desk .issue-big-head:not(.peek) .issue-no { position: absolute; right: 0; top: -6px; font: 900 calc(2 * var(--u) / .727)/1 var(--display); letter-spacing: -.05em; color: var(--ink); }
+.git-desk .issue-big-head { display: block; }
+/* An issue's title is its name: the display face, its capitals a cell tall on lines of a cell and a half; the one
+   large thing of the sheet. Its number is said small over the sheet's corner (and at the band's end), not again here. */
+.git-desk .issue-big-head h2 { margin: 0; font: 900 var(--t-head)/calc(1.5 * var(--u)) var(--display); letter-spacing: -.035em; color: inherit; white-space: normal; overflow-wrap: anywhere; }
+.git-desk .issue-big-head:not(.peek) .issue-no { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .git-desk .issue-big-head:not(.peek) .issue-kind { font-size: 0; }
-.git-desk .issue-big-head.peek .issue-no { font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
+.git-desk .issue-big-head.peek .issue-no { display: block; font: 700 var(--t-meta)/var(--u) var(--mono); letter-spacing: 0; color: inherit; }
+.git-desk .issue-slot[aria-current='false'] .issue-card { padding: calc(1.5 * var(--u)); }
+.git-desk .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: left; }
 /* Its words: the work's margin note. */
 .git-desk .issue-summary-wrap { grid-column: 1; margin: 0; }
-.git-desk .issue-summary { width: 100%; min-height: 20px; margin: 0; padding: 0; border: 0 solid transparent; border-radius: 0; background: none; font: 400 13px/20px var(--sans); color: var(--sub); text-align: right; }
-.git-desk .issue-box.no-work .issue-summary { text-align: left; }
+.git-desk .issue-summary { width: 100%; min-height: 20px; margin: 0; padding: 0; border: 0 solid transparent; border-radius: 0; background: none; font: 400 13px/20px var(--sans); color: var(--sub); }
 .git-desk .issue-summary:focus { background: none; color: var(--ink); outline: none; }
 .git-desk .issue-box > .agent-line { grid-column: 1; margin-top: var(--u); justify-items: end; }
 .git-desk .issue-foot { grid-column: 1; margin-top: var(--u); justify-content: flex-end; font-size: 13px; }
@@ -132,12 +142,11 @@
 .git-desk .card.new.issue-new > span { font: 700 var(--t-card)/var(--u) var(--sans); }
 .git-desk .card.new.issue-new > small { font: 400 var(--t-body)/var(--u) var(--sans); }
 .git-desk .card.new.issue-new > svg { width: 18px; height: 18px; }
-@media (max-width: 1100px) {
+/* A sheet with no room for its words and its work side by side has the work under the words: by the sheet's own width
+   (30 cells), not the window's. */
+@container issue (max-width: 720px) {
   .git-desk .issue-box { grid-template-columns: minmax(0, 1fr); }
   .git-desk .issue-work { grid-column: 1; grid-row: auto; margin-top: var(--u); }
-  .git-desk .issue-summary { text-align: left; }
-  .git-desk .issue-big-head:not(.peek) { padding-right: 0; }
-  .git-desk .issue-big-head:not(.peek) .issue-no { position: static; font-size: inherit; }
 }
 /* Under the sheet, read down as the page is scrolled: a dotted line goes on from the foot of the sheet's left margin
    (the title's and the total's edge), its dots squares half a cell wide, a cell apart. At the line, the change's
@@ -204,7 +213,7 @@
 .git-desk .issue-end :is(.issue-leave, .merge-row) { display: block; margin: 0; padding: 0; border: 0; background: none; }
 .git-desk .issue-end :is(.issue-leave, .merge-row) .button { font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 .git-desk .issue-end .merge-row .button { color: var(--del); }
-@media (max-width: 1100px) {
+@container issue (max-width: 720px) {
   .git-desk .issue-run { padding-left: calc(3 * var(--u)); }
   .issue-history { position: static; width: auto; margin: 31px 0 calc(2 * var(--u)); }
   .history-at { text-align: left; }
@@ -212,19 +221,7 @@
 /* Word from someone, come while one is here: a sheet at the page's foot, against its right edge. */
 .work.band-bench > .pane-word { position: fixed; left: auto; right: calc(2 * var(--u)); bottom: calc(2 * var(--u)); z-index: 6; width: min(calc(14 * var(--u)), calc(100vw - 4 * var(--u))); }
 .work.band-bench > .pane-word > .pane-row { border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
-/* A narrow window: the keys start where the page does (the rail is close set), main's sheet lies straight over the
-   row, and the sheet in full takes the row: a neighbour shows a cell, the title a size a phone's line holds. */
+/* (Nothing starts left of the page, and what is wider than a narrow window is cut at the page's edge.) */
 @media (max-width: 760px) {
-  .work.bench.band-bench > .bar { margin-left: 0; }
-  /* (Nothing starts left of the page here, and the Prompt at the foot, wider than a phone, is cut at the page's edge.) */
   .page.page-work[data-place='git'], .work.bench.band-bench > .center { overflow-x: clip; }
-  .git-flow.git-desk { padding: var(--u) var(--u) calc(3 * var(--u)) 0; }
-  .git-desk > .git-side { width: auto; max-width: calc(8 * var(--u)); margin-right: var(--u); }
-  .git-desk .issue-column { --row-peek: var(--u); --gap: calc(var(--u) / 2); }
-  .git-desk .issue-slot[aria-current='true'] .issue-card { padding: var(--u); box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
-  .git-desk .issue-words { margin-bottom: var(--u); }
-  .git-desk .issue-big-head:not(.peek) { min-height: 0; }
-  .git-desk .issue-big-head:not(.peek) h2 { margin: 0; font: 900 var(--t-card)/var(--u) var(--display); overflow-wrap: anywhere; }
-  .git-desk .issue-work { margin-right: calc(-1 * var(--u)); }
-  .git-desk .work-line { font-size: 13px; line-height: var(--u); }
 }

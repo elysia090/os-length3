@@ -1,3 +1,4 @@
+import {pageVeil} from '../../ui/page-veil.ts';
 import {h} from '../../ui/dom.ts';
 import {currentLang, LANGS, setLang, t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
@@ -190,13 +191,18 @@ export class Me {
     this.pop.setAttribute('aria-label', t('Me'));
   }
 
+  /** The page under the menu, out of focus while it is out, as under File's tree (ui/page-veil.ts): it is called up from the rail, in front of the world. */
+  private readonly veil = pageVeil('all');
+
   private open(focus: boolean) {
+    this.veil.out(true);
     this.element.classList.add('open');
     this.button.setAttribute('aria-expanded', 'true');
     if (focus) this.pop.querySelector<HTMLElement>('.pop-item')?.focus();
   }
 
   close() {
+    this.veil.out(false);
     this.choosing = false;
     this.element.classList.remove('open');
     this.button.setAttribute('aria-expanded', 'false');
