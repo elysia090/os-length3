@@ -165,6 +165,10 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.type = 'button';
   button.id = `purpose-${id}`;
   button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
+  // The first of a group stands a place's room after the group before it; what is not a place, at the rail's foot.
+  const at = RAIL.findIndex((r) => r.id === id);
+  button.dataset.group = p.group;
+  if (at > 0 && RAIL[at - 1].group !== p.group) button.classList.add(p.group === 'tools' ? 'rail-foot' : 'rail-first');
   button.setAttribute('aria-label', t(p.label));
   button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
   // The pointer resting on another place on the rail: File's tree that a rest only brought out (not pressed), or the

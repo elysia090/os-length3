@@ -31,8 +31,11 @@
 .git-band > .chips.lone { display: none; }
 .work.band-bench:has(.issue-form:not([hidden], .issue-edit)) .git-band > .chips.lone { display: flex; }
 
-.git-flow.git-desk { position: relative; margin-left: calc(-2 * var(--u)); padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(3 * var(--u)) calc(11 * var(--u)); }
-.git-desk > .git-side { position: absolute; left: 0; top: calc(2 * var(--u)); width: calc(8 * var(--u)); transform-origin: 0 0; rotate: -4deg; }
+/* Git's desk: from the desk's edge, its pieces' tops a cell under the band as on any desk. First main's own sheet,
+   eight cells wide, square to the grid (ink, as the terminal in hand is: it is where the repo's work is switched);
+   two cells on, the issues, a row of sheets. */
+.git-flow.git-desk { position: relative; margin-left: 0; padding: var(--u) calc(2 * var(--u)) calc(3 * var(--u)) calc(10 * var(--u)); }
+.git-desk > .git-side { position: absolute; left: 0; top: var(--u); width: calc(8 * var(--u)); }
 .git-desk > .git-side.none { display: none; }
 .git-switch { padding: calc(1.5 * var(--u)) 0; border-radius: var(--r-sheet); background: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--green); }
 .git-switch:empty { display: none; }
@@ -115,12 +118,15 @@
 .work-sum { position: absolute; left: 0; bottom: 0; display: flex; gap: .25em; margin: 0; font: 900 calc(1.5 * var(--u) / .7344)/.7344 var(--display); letter-spacing: -.035em; }
 .git-desk .issue-box:has(.work-sum) { padding-bottom: calc(3 * var(--u)); }
 .git-desk .issue-box:has(.work-sum) > .issue-work { margin-bottom: calc(-3 * var(--u)); }
-/* No issue yet: nothing to switch and no sheet; the one thing to do, in the page's own middle. */
-.git-desk .card.new.issue-new { position: absolute; left: calc(50vw - var(--outer) - var(--rail)); top: calc(50vh - var(--outer-top) - var(--keys)); translate: -50% -50%;
-  width: auto; min-height: 0; padding: var(--u); gap: var(--u); background: none; }
+/* No issue yet: nothing to switch and no sheet; the one thing to do stands where the first piece would, at the
+   desk's edge a cell under the band, drawn in line on the ground as a piece not yet in hand is. (Before: in the
+   window's middle, wherever that was.) */
+.git-desk .card.new.issue-new { position: absolute; left: 0; top: var(--u); translate: none; box-sizing: border-box;
+  width: min(calc(14 * var(--u)), 100%); min-height: 0; padding: var(--u); gap: var(--s2); place-items: start; place-content: start; align-items: flex-start; text-align: left;
+  background: var(--ground); border: 0; border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; }
 .git-desk .card.new.issue-new > span { font: 700 var(--t-card)/var(--u) var(--sans); }
 .git-desk .card.new.issue-new > small { font: 400 var(--t-body)/var(--u) var(--sans); }
-.git-desk .card.new.issue-new > svg { width: 36px; height: 36px; }
+.git-desk .card.new.issue-new > svg { width: 18px; height: 18px; }
 @media (max-width: 1100px) {
   .git-flow.git-desk { margin-left: 0; padding-left: 0; }
   .git-desk > .git-side { position: static; rotate: none; margin-bottom: calc(3 * var(--u)); }
