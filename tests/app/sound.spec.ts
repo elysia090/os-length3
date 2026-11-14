@@ -61,3 +61,53 @@ test('a control pressed with the mouse sounds as it goes down, once, not at the 
   expect(await heard()).toEqual(['enter', 'enter']);
   await app.page.locator('#sound-test').evaluate((el) => el.remove());
 });
+
+test('what is typed sounds as it is struck: a letter, Backspace and Tab a key, Space the space bar, Enter Enter; a key held sounds once, a command not at all, and Enter that presses a form\'s button is one stroke', async ({app}) => {
+  await app.page.evaluate(() => {
+    const heard: string[] = [];
+    Object.assign(window, {heard});
+    window.addEventListener('why-key', (event) => heard.push((event as CustomEvent<string>).detail));
+    const box = document.createElement('form');
+    box.id = 'sound-test';
+    box.style.cssText = 'position:fixed;top:10px;left:10px;z-index:2147483647;background:white';
+    box.innerHTML = '<input aria-label="Sound field"><textarea aria-label="Sound text"></textarea><button id="sound-send">Send</button>';
+    box.addEventListener('submit', (event) => event.preventDefault());
+    document.body.append(box);
+  });
+  const heard = () => app.page.evaluate(() => (window as unknown as {heard: string[]}).heard);
+  const clear = () => app.page.evaluate(() => { (window as unknown as {heard: string[]}).heard.length = 0; });
+  const text = app.page.getByRole('textbox', {name: 'Sound text'}), field = app.page.getByRole('textbox', {name: 'Sound field'});
+  // Each stroke once, as its key: letters and Backspace are keys as any other.
+  await text.focus();
+  await app.page.keyboard.type('ab c');
+  await app.page.keyboard.press('Backspace');
+  await app.page.keyboard.press('Tab');
+  expect(await heard()).toEqual(['key', 'key', 'space', 'key', 'key', 'key']);
+  // Enter in a text is Enter.
+  await clear();
+  await text.focus();
+  await app.page.keyboard.press('Enter');
+  expect(await heard()).toEqual(['enter']);
+  // A key held is struck once; a command (Ctrl and a key) and a key that writes nothing (an arrow, Escape) are silent.
+  await clear();
+  await app.page.keyboard.down('x');
+  await app.page.keyboard.down('x');
+  await app.page.keyboard.down('x');
+  await app.page.keyboard.up('x');
+  await app.page.keyboard.press('Control+a');
+  await app.page.keyboard.press('ArrowLeft');
+  await app.page.keyboard.press('Escape');
+  expect(await heard()).toEqual(['key']);
+  // Enter in a form's field presses its button: one stroke heard, not two.
+  await clear();
+  await field.focus();
+  await app.page.keyboard.type('hi');
+  await app.page.keyboard.press('Enter');
+  expect(await heard()).toEqual(['key', 'key', 'enter']);
+  // Out of any text, a letter is not typing.
+  await clear();
+  await app.page.locator('#sound-send').focus();
+  await app.page.keyboard.press('q');
+  expect(await heard()).toEqual([]);
+  await app.page.locator('#sound-test').evaluate((el) => el.remove());
+});
