@@ -356,6 +356,7 @@ export class Kernel implements Kern {
   get nextPid(): number { return this.spaces.children.last + 1; }
   /** The cgroups: the tree's root, and the file system it is. */
   declare readonly cgroups: {root: Cgroup; sb: Super};
+  declare readonly terminals: Mount;
   declare loopbackTraffic?: {bytes: number; packets: number};
   declare readonly cpu: Cpu;
   /** Calls made, so that one in CALL_SAMPLE is timed. */
@@ -425,7 +426,7 @@ export class Kernel implements Kern {
     // The terminals programs make (/dev/pts); the console is the first of them by name, /dev/pts/0.
     const pts = devpts(null, 'devpts', 'mode=620,ptmxmode=666', 1);
     (pts.data as Instance).others.set('0', vfs.terminal);
-    this.mount('/dev/pts', new Mount(pts, undefined, MNT.NOSUID | MNT.NOEXEC));
+    this.mount('/dev/pts', this.terminals = new Mount(pts, undefined, MNT.NOSUID | MNT.NOEXEC));
     // As on Linux: /dev/fd and the standard streams through /proc/self.
     const dev = vfs.dir('/dev');
     for (const [name, target] of [['fd', '/proc/self/fd'], ['stdin', '/proc/self/fd/0'], ['stdout', '/proc/self/fd/1'], ['stderr', '/proc/self/fd/2']]) {

@@ -225,6 +225,9 @@ function describe(p: Proc, d: Description): Statted {
   return p.kernel.vfs.terminal as Statted | undefined ?? {mode: 0o020620, ino: 0, nlink: 1, uid: 0, gid: 0, rdev: 0x8800, mtime: epoch(), isFile: false, isDir: false, isLink: false};
 }
 
+/** A stat of what descriptor `d` has open into `st`. (The console is the terminal /dev/pts/0 names: on the same device as that name.) */
+const statOpen = (p: Proc, d: Description, st: bigint): number => writeStat(p, st, describe(p, d), d.kind === 'console' ? p.kernel.terminals : d.mnt);
+
 /**
  * A stat of what `name` leads to from `dirfd` into `st`: the node there; what a descriptor has open, where the name
  * is one's link under /proc (a pipe, a socket, the console, a file renamed over or removed since); or the errno,
@@ -233,7 +236,7 @@ function describe(p: Proc, d: Description): Statted {
 function statAt(p: Proc, dirfd: bigint, name: string, follow: boolean, st: bigint): number {
   const r = look(p, dirfd, name, follow ? WALK.FOLLOW : 0);
   if (typeof r === 'number') return -r;
-  if (r.held !== undefined && (!r.node || (r.held as Description).kind === 'console')) return writeStat(p, st, describe(p, r.held as Description));
+  if (r.held !== undefined && (!r.node || (r.held as Description).kind === 'console')) return statOpen(p, r.held as Description, st);
   return r.node ? writeStat(p, st, r.node, r.mnt) : -E.NOENT;
 }
 
@@ -1338,7 +1341,7 @@ export const FILE_CALLS: Calls = {
   2(name, flags, mode) { return openAt(this, BigInt(AT_FDCWD), name, flags, mode); },
   3(fd) { if (!this.fds.close(N(fd))) fail(E.BADF); return 0; },
   4(name, st) { return statAt(this, BigInt(AT_FDCWD), path(this, name), true, st); },
-  5(fd, st) { const d = descriptor(this, fd); return writeStat(this, st, describe(this, d), d.mnt); },
+  5(fd, st) { return statOpen(this, descriptor(this, fd), st); },
   6(name, st) { return statAt(this, BigInt(AT_FDCWD), path(this, name), false, st); },
   7(fds, count, timeout) { return poll(this, fds, count, Number(BigInt.asIntN(32, timeout))); },
   271(fds, count, spec, mask) { return poll(this, fds, count, timespecMs(this, N(spec)) ?? -1, N(mask)); },
@@ -1567,8 +1570,7 @@ export const FILE_CALLS: Calls = {
   262(dirfd, name, st, flags) {
     if ((N(flags) & AT.EMPTY_PATH) && !this.bytes[N(name)]) {
       if (Number(BigInt.asIntN(32, dirfd)) === AT_FDCWD) return writeStat(this, st, this.fs.pwd.node, this.fs.pwd.mnt);
-      const d = descriptor(this, dirfd);
-      return writeStat(this, st, describe(this, d), d.mnt);
+      return statOpen(this, descriptor(this, dirfd), st);
     }
     return statAt(this, dirfd, path(this, name), !(N(flags) & AT.SYMLINK_NOFOLLOW), st);
   },

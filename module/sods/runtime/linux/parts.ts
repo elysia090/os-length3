@@ -360,6 +360,8 @@ export interface Kern {
   readonly spaces: Spaces;
   /** The cgroups: the tree's root, and the file system it is. */
   readonly cgroups: {root: Cgroup; sb: Super};
+  /** The first mount of the terminals (/dev/pts): where the console is one, by name. */
+  readonly terminals: Mount;
   /** What has moved over lo (net-view.ts). */
   loopbackTraffic?: {bytes: number; packets: number};
   /** All the time its threads have had on the processor (/proc/stat). */

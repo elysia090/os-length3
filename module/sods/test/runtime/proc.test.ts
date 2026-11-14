@@ -78,10 +78,13 @@ test('a trap for a signal from a child runs while the shell waits for it', {skip
   assert.equal(r.out, 'cleanup\nafter\n');
 });
 
-test('an untrapped TERM ends the shell (143), an ignored one does nothing', {skip: !have}, async () => {
-  assert.equal((await run('kill -TERM $$; echo not here')).status, 15);
+test('an untrapped TERM ends a shell (143), an ignored one does nothing; the first process is sent only what it asked for', {skip: !have}, async () => {
+  assert.match((await run('sh -c "kill -TERM \\$\\$; echo not here"; echo $?')).out, /^(Terminated\n)?143\n$/);
   const r = await run('trap "" TERM; kill -TERM $$; echo still here');
   assert.equal(r.out, 'still here\n');
+  // As on Linux, where the first process of a pid namespace is not ended by a signal it neither takes nor waits
+  // for (a shell that is a container's first process): from inside nothing ends it, SIGKILL neither.
+  assert.equal((await run('kill -TERM $$; kill -KILL $$; echo here still')).out, 'here still\n');
 });
 
 test('flock: one holds a lock at a time; -n is refused while it is held, and taken once it is let go', {skip: !have}, async () => {
