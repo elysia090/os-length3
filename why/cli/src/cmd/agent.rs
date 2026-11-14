@@ -8,7 +8,7 @@
 use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{ago, Error, Reply, Result};
-use why_core::{agent::activity, agent::tasks, compute::spec, fs::paths, fs::write, tr};
+use why_core::{agent::activity, agent::spec, agent::tasks, fs::paths, fs::write, tr};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
@@ -348,7 +348,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
             repo: repo.into(), line: line.into(), kind, text: activity::line_of(text) };
         if let Err(why) = activity::append(&e) { crate::say::out::note(&why); }
     };
-    // What the run is, by what it is made of (core compute/spec.rs): the same Spec builds it here, and anywhere else.
+    // What the run is, by what it is made of (core agent/spec.rs): the same Spec builds it here, and anywhere else.
     let root = match super::runtime::root_now(paths::data_dir()) {
         Ok((_, about)) => about.sha256,
         Err(e) => return stopped(e.message().to_string(), "why root fetch".into()),
@@ -378,15 +378,15 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     o
 }
 
-/// The environment the person's dotfiles ask of the root `root` here (prompt/launch.rs environment_of; none off Linux).
+/// The environment the person's dotfiles ask of the root `root` here (prompt/start.rs environment_of; none off Linux).
 fn launch_environment(root: &str) -> String {
     #[cfg(target_os = "linux")]
-    return why_core::prompt::launch::environment_of(root, &why_core::home::dotfiles_in_effect());
+    return why_core::prompt::start::environment_of(root, &why_core::home::dotfiles_in_effect());
     #[cfg(not(target_os = "linux"))]
     return { let _ = root; String::new() };
 }
 
-/// The run itself: `why agent inside N` (the Prompt), given its Spec; watched as it goes (core compute/spec.rs watch),
+/// The run itself: `why agent inside N` (the Prompt), given its Spec; watched as it goes (core agent/spec.rs watch),
 /// stopped past its budget; what it prints read line by line into the journal (an agent's stream of JSON as its
 /// tools) and the log; its last words and session kept. What it used, and what of its budget it went past.
 fn supervise(k: &tasks::Task, spec: &spec::Spec, journal: &dyn Fn(activity::Kind, &str)) -> (tasks::Outcome, spec::Usage, Option<spec::Over>) {
@@ -438,7 +438,7 @@ fn supervise(k: &tasks::Task, spec: &spec::Spec, journal: &dyn Fn(activity::Kind
     (o, usage, over)
 }
 
-/// The run `pid` supervises, watched until `ended` (core compute/spec.rs watch); off Linux, only its wall time.
+/// The run `pid` supervises, watched until `ended` (core agent/spec.rs watch); off Linux, only its wall time.
 fn watched(pid: u32, budget: &spec::Budget, ended: &std::sync::atomic::AtomicBool, stop: impl FnOnce()) -> (spec::Usage, Option<spec::Over>) {
     let is_over = || ended.load(std::sync::atomic::Ordering::SeqCst);
     #[cfg(target_os = "linux")]
@@ -448,13 +448,13 @@ fn watched(pid: u32, budget: &spec::Budget, ended: &std::sync::atomic::AtomicBoo
         (spec::Usage { wall_ms: t.elapsed().as_millis() as u64, ..Default::default() }, None) };
 }
 
-/// `why agent inside N` (by `why agent run`): the run its Spec says (WHY_SPEC, core compute/spec.rs), built here: the root
+/// `why agent inside N` (by `why agent run`): the run its Spec says (WHY_SPEC, core agent/spec.rs), built here: the root
 /// it names (held here by its sha256), the repo's copy of its line (main's, the issue's), what it is told in its
 /// environment, the network only if the repo has it here (a Spec asking for more is refused, whoever wrote it).
 /// Ends with its command's code.
 #[cfg(target_os = "linux")]
 pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use why_core::{home, prompt::launch, prompt::running, root};
+    use why_core::{home, prompt::running, prompt::start, root};
     let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (WHY_REPO)", "どの repo ですか（WHY_REPO）")))?;
     task_id(call)?;
     let spec: spec::Spec = serde_json::from_str(&std::env::var("WHY_SPEC").unwrap_or_default())
@@ -470,14 +470,14 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repos = ctx.repos()?;
     let copy = why_core::repos::lines::worktree(&repo, &spec.line);
     let dir = if spec.line == why_core::repos::lines::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: spec.argv.clone(), network: spec.network,
-        dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: [spec.env.clone(), why_core::device::agent_key::env()].concat() };
+    let s = start::Prompt { root, other: held.distro.is_some(), repo: dir, name: repo.clone(), cmd: spec.argv.clone(), network: spec.network,
+        dotfiles: start::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: [spec.env.clone(), why_core::device::agent_key::env()].concat() };
     // Recorded as any Prompt is: why prompt ls and Runtime see it, why prompt stop ends it.
     let mut recorded = running::record(data, &repo, s.network, &s.root)?;
     why_core::storage::make_room(data, paths::repos_dir(), super::forge::PROMPT_ROOM);
-    launch::set_up(&s, held.distro.is_some())?;
+    s.set_up()?;
     recorded.ready()?;
-    let code = launch::run(&s)?;
+    let code = s.run()?;
     drop(recorded);
     if ctx.connected() { crate::cmd::sync::send(&repo); }
     std::process::exit(code);

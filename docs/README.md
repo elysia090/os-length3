@@ -56,8 +56,8 @@ tracked in issue #20.
 - Prompt: in the app with a root installed, the distribution's root itself
   (`why prompt`): its sh, gcc, make, git on this kernel, writing the repo
   directly. Every place it writes has an owner and a lifetime (OS.md
-  §5): over the read-only root lies the repo's environment (an overlay;
-  `apk add` there is the repo's, in `envs/<repo>`), `/var/cache`,
+  §5): the root is read-only, or, where the repo's `.packages` or `.setup`
+  ask an environment, a root of the repo's own (in `envs/<repo>`), `/var/cache`,
   `/var/tmp`, `/var/log` and `~/.cache` are the repo's caches
   (`caches/<repo>`), `/tmp` and `/run` end with the Prompt. Runtime lists
   each part, and what is derived in the repo (node_modules beside
@@ -435,7 +435,7 @@ the app.
 
 The webview has no other host access: it reads nothing outside the app's
 data directory, runs no shell and launches no root. The app starts no host
-program for a repo; its own tools run inside the root (`why/core/src/prompt/launch.rs`).
+program for a repo; its own tools run inside the root, in a box muk makes (`why/core/src/prompt/start.rs`).
 
 The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in

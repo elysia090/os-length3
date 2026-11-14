@@ -50,8 +50,10 @@ test('a Prompt is given the root\'s own BusyBox at its own path, its translation
     assert.ok(f.module instanceof WebAssembly.Module);
     assert.deepEqual(new Uint8Array(gunzipSync(readFileSync(join(out, t.elf.path)))), f.bytes);
   }
-  // What a first Prompt waited for: webroot.json, the index, the translator and BusyBox's two blobs. No pack: the Worker reads those as programs open them.
-  assert.deepEqual([...new Set(asked.filter((p) => p !== '/webroot/webroot.json'))].sort(), [`/webroot/${about.index.path}`, `/webroot/${index.translator.path}`,
+  // What a first Prompt waited for: webroot.json, the index, the translator and BusyBox's two blobs; and what says where the
+  // box's maker is (muk.json: this root is served with none, so it is given none). No pack: the Worker reads those as programs open them.
+  assert.equal(webroot.muk, null);
+  assert.deepEqual([...new Set(asked.filter((p) => p !== '/webroot/webroot.json' && p !== '/webroot/muk.json'))].sort(), [`/webroot/${about.index.path}`, `/webroot/${index.translator.path}`,
     ...index.translations.flatMap((t) => [`/webroot/${t.elf.path}`, `/webroot/${t.wasm.path}`])].filter((p, k, all) => all.indexOf(p) === k).sort());
 });
 

@@ -27,13 +27,14 @@
 // WEB is the web root (public/webroot; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
 // is why's own (its index names it), else ../module/sods' wasm build.
-import {execFileSync, spawn} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {Kernel} from '../module/sods/runtime/linux.ts';
+import {buildMuk} from './muk.ts';
 import {openWeb, type Index} from './webroot-tree.ts';
 
 /** What one program run under muk says: its wait status, its output, and how long it took. */
@@ -191,12 +192,8 @@ export function nativeBox(muk: string, rootDir: string, argv: string[], env: str
   return {cmd: muk, argv: ['run', '--lend', root, ...(uid === 0 ? ['--ids', '0-0'] : []), '-b', dir, 'box'], done: () => rmSync(dir, {recursive: true, force: true})};
 }
 
-/** muk for this machine, made of this tree's source (module/lib/build.sh), unless one is given (--muk). */
-export function builtMuk(): string {
-  const out = join(mkdtempSync(join(tmpdir(), 'webroot-muk-')), 'muk');
-  execFileSync('sh', [fileURLToPath(new URL('../module/lib/build.sh', import.meta.url)), fileURLToPath(new URL('../module/muk/src/muk.c', import.meta.url)), out], {stdio: ['ignore', 'ignore', 'inherit']});
-  return out;
-}
+/** muk for this machine, made of this tree's source (scripts/muk.ts), unless one is given (--muk). */
+export const builtMuk = (): string => buildMuk();
 
 /** Run `cmd` with a time limit: {code, signal, stdout, stderr, timedOut}. */
 function run(cmd: string, argv: string[], {seconds, env}: {seconds: number; env: NodeJS.ProcessEnv}): Promise<Finished> {

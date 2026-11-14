@@ -49,7 +49,7 @@ test.describe('the Prompt is Linux', {tag: '@slow'}, () => {
     await says(app, 'jobs', /^\[1\]- +Running +sleep 30 &$/m, /^\[2\]\+ +Running +sleep 31 &$/m);
     await says(app, 'kill %1 %2; wait; echo jobs-done', /^\[1\]- +Terminated +sleep 30$/m, 'jobs-done');
     await says(app, 'echo 日本語 | wc -m; touch 日本.txt; ls 日本.txt; printf "%s\\n" é | wc -c; tty; stty size; [ -t 0 ] && echo in-tty; [ -t 1 ] && echo out-tty',
-      '4', '日本.txt', '3', '/dev/pts/0', /^\d+ \d+$/m, 'in-tty', 'out-tty');
+      '4', '日本.txt', '3', '/dev/console', /^\d+ \d+$/m, 'in-tty', 'out-tty');
   });
 
   test('the shell\'s own: the environment, a local variable, arithmetic, parameter expansion, globs, if and until, && and ||, a subshell, a here document', async ({app}) => {

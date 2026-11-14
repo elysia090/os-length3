@@ -11,18 +11,18 @@ test('a unit takes only from the units the table lets it, besides what is owed w
   assert.deepEqual(check().crossings.map((c) => c.join(' ')).filter((c) => !owed.has(c)), []);
 });
 
-test('muk and prompt: a terminal and what is kept are prompt\'s, and muk takes nothing of it', () => {
+test('muk and prompt: each a program and nothing of why\'s; what why asks of them (the bundle, a Prompt\'s record) is why\'s own', () => {
   const unit = (name: string) => UNITS.find((u) => u.name === name)!;
-  assert.equal(unitOf('why/core/src/prompt/running.rs')?.name, 'prompt');
-  assert.equal(unitOf('why/core/src/prompt/writes.rs')?.name, 'prompt');
+  // The box is made by muk and its terminal held by prompt, each its own folder and no file of why's: why's core
+  // writes the bundle and starts them (prompt/bundle.rs, prompt/start.rs), and makes no box itself.
+  assert.deepEqual(unit('muk').holds, ['module/muk']);
+  assert.deepEqual(unit('prompt').holds, ['module/prompt']);
+  for (const f of ['bundle.rs', 'start.rs', 'running.rs', 'writes.rs']) assert.equal(unitOf(`why/core/src/prompt/${f}`)?.name, 'app');
   assert.equal(unitOf('why/app/prompt/userland.ts')?.name, 'app');
   assert.equal(unitOf('module/prompt/README.md')?.name, 'prompt');
-  // (the box itself and its filter are muk's, to be replaced by muk run)
-  assert.equal(unitOf('why/core/src/prompt/seccomp.rs')?.name, 'muk');
   assert.deepEqual(unit('prompt').takes, []);
   assert.ok(!unit('muk').takes.includes('prompt'));
   // (nothing under ricebox takes it: it is cut out without a Prompt)
-  for (const name of UNDER_RICEBOX) assert.ok(!unit(name).takes.includes('prompt'), name);
 });
 
 test('what is owed is still made: one no longer made is struck from OWED', () => {
@@ -60,7 +60,6 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   assert.equal(unitOf('module/sods/runtime/translation/translator.ts')?.name, 'sods');
   assert.equal(unitOf('module/sods/runtime/linux/process.ts')?.name, 'sods');
   assert.equal(unitOf('module/ricebox/make/db.ts')?.name, 'ricebox');
-  assert.equal(unitOf('why/core/src/prompt/launch.rs')?.name, 'muk');
 });
 
 test('ricebox can be cut out with the units under it: none of them takes from a unit over them, by the table or by an import', () => {

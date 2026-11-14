@@ -2,9 +2,9 @@ import * as dotfiles from '../../home/dotfiles.ts';
 import {agentUse} from '../../account/agent-key.ts';
 import {store} from '../../repos/repos.ts';
 import {bytes, h} from '../../ui/dom.ts';
-import {promptOpen, rootFetch, rootHere, rootStatus, type Holding, type Stopped} from '../../host/host.ts';
+import {core, promptOpen, rootFetch, rootHere, rootStatus, type Holding, type Stopped} from '../../host/host.ts';
 import {currentLang, onLang, t, tn} from '../../i18n/i18n.ts';
-import {filesNow, hearLater, keepMore, keepReached, keepTranslation, keptNow, loadWebroot, promptWorker, readyPrompt, takeReady, usedKept, warmWebroot, watchLoad, type Webroot, type Stage} from '../../prompt/userland.ts';
+import {BOX, filesNow, hearLater, keepMore, keepReached, keepTranslation, keptNow, loadWebroot, promptWorker, readyPrompt, takeReady, usedKept, warmWebroot, watchLoad, type Box, type Webroot, type Stage} from '../../prompt/userland.ts';
 import {every} from '../../host/runs.ts';
 import {errorText} from '../../host/errors.ts';
 import {still} from '../../ui/glide.ts';
@@ -74,9 +74,6 @@ function loadWords(s: Stage): string {
  * once, it was there a frame, and moved the line under it down and back). */
 const STARTING_SAID = 600;
 
-/** The Prompt's shell, as the app's Prompts run it (why prompt, on the machine): bash, interactive, reading the root's
- * settings for the app's Prompt (/etc/length3/shrc), its line edited in the box, not by bash (--noediting). */
-const SHELL = ['/bin/bash', '--noediting', '--rcfile', '/etc/length3/shrc', '-i'];
 /** The person's time zone by its name, as the browser knows it: the root has every zone, so its clock reads as theirs. */
 function zone(): string {
   try {
@@ -84,24 +81,27 @@ function zone(): string {
     return /^[A-Za-z0-9_+-]+(\/[A-Za-z0-9_+-]+)*$/.test(z) ? z : 'UTC';
   } catch { return 'UTC'; }
 }
-/** Its environment, as the app's Prompts on the machine have it (core's prompt/launch.rs): why here sees repos where the
- * shell does, under /root; its shell reads as the app's; its clock is the person's; its terminal is a colour xterm's
- * (output.ts draws what one draws, vt.ts). */
-const shellEnv = (repo: string) => ['HOME=/root', 'USER=root', 'LOGNAME=root', 'SHELL=/bin/bash', 'TERM=xterm-256color', 'COLORTERM=truecolor', 'LANG=C.UTF-8',
-  `TZ=${zone()}`, 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
-  'WHY_REPOS=/root', 'WHY_PROMPT=1', `WHY_REPO=${repo}`, `WHY_LANG=${currentLang()}`,
-  // The same four by the names the root released as 0.6.4 reads them by (its l3 and its shell's settings), and where
-  // an interactive sh finds those settings: all five go when the pin is of a root made after it.
-  'LENGTH3_REPOS=/root', 'L3_PROMPT=1', `LENGTH3_REPO=${repo}`, `LENGTH3_LANG=${currentLang()}`, 'ENV=/etc/length3/shrc'];
-/** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell, in no repo yet, with no key. */
-const readyNext = (webroot: Webroot) => readyPrompt(webroot, {argv: SHELL, env: shellEnv(''), cwd: '/root'});
+/**
+ * The box a page's Prompt runs in: the bundle the core writes for muk (why/core/src/prompt/bundle.rs, the one writer
+ * for every host): its shell and what it runs with said there, as for the app's Prompts on the machine. What is
+ * said here is what this host lends: the tree the Worker's kernel is given, whole and its own to write (the root is
+ * `/` there, the repo's copy laid in it already); root as itself; the kernel's console by its name, which is the
+ * page's screen (a colour xterm's: output.ts draws what one draws, vt.ts); the person's clock and language.
+ */
+const boxOf = (repo: string, more: [string, string][] = []) => core<Box>('prompt_bundle', {
+  repo, shell: {bash: true, other: false, edits: false},
+  told: {term: 'xterm-256color', zone: zone(), lang: currentLang(), more: [['COLORTERM', 'truecolor'], ...more]},
+  lent: {root: '/', written: true, uid: 0, gid: 0, console: '/dev/pts/0'}, dir: BOX,
+});
+/** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell in the same box, in no repo yet, with no key. */
+const readyNext = (webroot: Webroot) => boxOf('').then((box) => readyPrompt(webroot, box), () => { /* the start itself says what is wrong */ });
 
 /**
  * What a browser's Prompt's Worker is told to start with: why, the repo's copy (`copy`), what was kept of why, and the
  * Agent's key, if one is kept on this device, under its maker's variable (`key`), as the app's Prompts have it. A
  * Worker readied ahead (readyPrompt) has the translator, the root and the files `given` already: only the rest goes.
  */
-function startMessage(repo: string, webroot: Webroot, copy: Awaited<ReturnType<typeof snapshot>>, kept: unknown, key: string[], given: Set<string> | null) {
+function startMessage(repo: string, webroot: Webroot, copy: Awaited<ReturnType<typeof snapshot>>, kept: unknown, box: Box, given: Set<string> | null) {
   const cwd = `/root/${repo}`;
   return {
     type: 'start',
@@ -109,9 +109,8 @@ function startMessage(repo: string, webroot: Webroot, copy: Awaited<ReturnType<t
     files: [...filesNow(webroot).filter((f) => !given?.has(f.path)), ...dotfiles.asFiles(), ...copy.files],
     dirs: copy.dirs,
     // The whole root around them: the same programs, files and links as the app's Prompt, each file read when a program first opens it.
-    ...(given ? {} : {translator: webroot.translator, root: {index: webroot.index, url: webroot.url}}),
-    argv: SHELL,
-    env: [...shellEnv(repo), ...key],
+    ...(given ? {} : {translator: webroot.translator, root: {index: webroot.index, url: webroot.url}, muk: webroot.muk}),
+    box,
     // It is a terminal, shown as a screen as wide as a box on the desk (80 columns) and 24 rows tall: a listing comes in
     // columns, and a whole-screen program (vi, less, top) has all of it.
     screen: true, cols: COLS, rows: ROWS,
@@ -562,11 +561,13 @@ export class Session implements Prompt {
     this.worker = worker;
     if (!ready) worker.postMessage({type: 'warm'});
     worker.onmessage = ({data}) => this.fromWorker(data);
-    const [webroot, copy, kept, use] = await Promise.all([loadWebroot(), snapshot(this.repo), loadWebroot().then(keptNow).catch(() => null), agentUse(false)]).finally(unwatch);
+    const [webroot, copy, kept, box] = await Promise.all([loadWebroot(), snapshot(this.repo), loadWebroot().then(keptNow).catch(() => null),
+      // The Agent's key, if one is kept on this device, under its maker's variable, as the app's Prompts have it.
+      agentUse(false).then((use) => boxOf(this.repo, use ? [[use.variable, use.key]] : []))]).finally(unwatch);
     // Stopped while it came: it stays stopped.
     if (this.worker !== worker) return;
     this.webrootOf = webroot;
-    const start = startMessage(this.repo, webroot, copy, kept, use ? [`${use.variable}=${use.key}`] : [], ready?.given ?? null);
+    const start = startMessage(this.repo, webroot, copy, kept, box, ready?.given ?? null);
     worker.postMessage(start);
     this.given = new Set([...(ready?.given ?? []), ...start.files.map((f) => f.path)]);
     // What is saved elsewhere comes into the shell's copy.

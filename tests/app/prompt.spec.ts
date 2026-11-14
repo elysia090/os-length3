@@ -140,7 +140,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(page.locator('form.prompt[data-hushed]')).toHaveCount(0);
     // Put back as a terminal's own are (stty echo, reset): the line stays the box's, no screen of its own.
     await app.forge.run('stty echo; reset; tty');
-    await expect(out).toContainText(/^\/dev\/pts\/0$/m);
+    await expect(out).toContainText(/^\/dev\/console$/m);
     await expect(ps).toHaveText(/hello \$/);
     await expect(page.locator('form.prompt[data-raw]')).toHaveCount(0);
     await app.forge.run('echo still');

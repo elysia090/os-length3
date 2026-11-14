@@ -132,57 +132,32 @@ pub fn band_set(ctx: &Ctx, call: &Call) -> Result<Reply> {
 #[cfg(target_os = "linux")]
 pub(crate) const PROMPT_ROOM: u64 = 256 << 20;
 
-/// The Prompt's shell: bash, interactive. On this distribution's root it reads the root's settings for the app's Prompt
-/// (/etc/length3/shrc: how a run ended, told before each prompt line; z, direnv), and edits its line itself only on a
-/// terminal: in the app, what is typed is the app's box's, sent a line at a time. Another distribution's bash is as
-/// that distribution sets it up, on a terminal; sh is the shell where there is no bash, or no terminal for another's.
-#[cfg(target_os = "linux")]
-fn shell(root: &std::path::Path, other: bool, terminal: bool) -> Vec<String> {
-    let bash = root.join("bin/bash").exists();
-    let words: &[&str] = match (bash, other, terminal) {
-        (true, false, true) => &["/bin/bash", "--rcfile", "/etc/length3/shrc", "-i"],
-        (true, false, false) => &["/bin/bash", "--noediting", "--rcfile", "/etc/length3/shrc", "-i"],
-        (true, true, true) => &["/bin/bash", "-i"],
-        _ => &["/bin/sh", "-i"],
-    };
-    words.iter().map(|w| w.to_string()).collect()
-}
-
 /// `why prompt [REPO] [-- CMD…]`: the repo inside the root, without privileges.
 #[cfg(target_os = "linux")]
 pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use why_core::{fs::paths, prompt::launch, prompt::running};
-    use std::io::IsTerminal;
+    use why_core::{fs::paths, prompt::running, prompt::start};
     let repo = target::repo(ctx, call, 0)?;
     let data = paths::data_dir();
     let dir = ctx.repos()?.dir(&repo)?;
     let (root, about) = super::runtime::root_now(data)?;
-    let cmd = call.words(1);
-    let argv: Vec<String> = if cmd.is_empty() { shell(&root, about.distro.is_some(), std::io::stdin().is_terminal()) } else { cmd };
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv, network: call.flags.network || why_core::home::network(&repo), dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: why_core::device::agent_key::env() };
+    let s = start::Prompt { root, other: about.distro.is_some(), repo: dir, name: repo.clone(), cmd: call.words(1), network: call.flags.network || why_core::home::network(&repo),
+        dotfiles: start::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: why_core::device::agent_key::env() };
+    if crate::say::menu::active() {
+        // Said before the shell takes the keys: in it, Ctrl-C is the program's (as at any shell), and leaving it comes back here.
+        crate::say::out::note(&tr!("exit (or Ctrl-D) comes back to the menu; Ctrl-C goes to what runs in the Prompt", "exit（か Ctrl-D）でメニューに戻ります。Ctrl-C は Prompt の中で動くものに届きます"));
+    }
     // Recorded from the start, by the process that runs it, so `why prompt ls` (and Runtime) see it, `why prompt stop`
     // can end it, and nothing it holds is freed (storage/): first being prepared, as what .packages and .setup ask for
-    // is set up (once, while they and the root stay as they are), then running.
-    let prepared = || -> std::io::Result<running::Recorded> {
+    // is set up (once, while they and the root stay as they are), then running. The box is muk's, a process of its
+    // own: this one keeps its own namespaces, and runs another after it as it ran this.
+    let code = (|| -> std::io::Result<i32> {
         let mut recorded = running::record(data, &repo, s.network, &s.root)?;
         // Recorded, what it holds stays; room is made round it if the device is short (storage/free.rs make_room).
         why_core::storage::make_room(data, paths::repos_dir(), PROMPT_ROOM);
-        launch::set_up(&s, about.distro.is_some())?;
+        s.set_up()?;
         recorded.ready()?;
-        Ok(recorded)
-    };
-    let code = if crate::say::menu::active() {
-        // Said before the shell takes the keys: in it, Ctrl-C is the program's (as at any shell), and leaving it comes back here.
-        crate::say::out::note(&tr!("exit (or Ctrl-D) comes back to the menu; Ctrl-C goes to what runs in the Prompt", "exit（か Ctrl-D）でメニューに戻ります。Ctrl-C は Prompt の中で動くものに届きます"));
-        // From the menu, in a child: the menu keeps its own namespaces (a second Prompt could not be made
-        // in them) and may have a thread still asking the Remote (a process with two cannot make them).
-        launch::run_apart_with(&s, prepared)
-    } else {
-        let recorded = prepared().map_err(|e| Error::Io(e.to_string()))?;
-        let code = launch::run(&s);
-        drop(recorded);
-        code
-    };
+        s.run()
+    })();
     let code = code.map_err(|e| Error::Io(e.to_string()))?;
     if ctx.connected() { crate::cmd::sync::send(&repo); }
     // Opened from the menu, the menu goes on once the shell ends, back on the repo it was opened on; typed, why ends with the shell's code.

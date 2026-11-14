@@ -3,9 +3,9 @@
 //! or inside the app's Prompt) both use this crate, so the two cannot drift.
 //!
 //! Unsafe code is only where the OS is called and no safe interface has the call yet, each block a single call with
-//! its arguments made just before it: the Prompt's fork, unshare, signals and exec (prompt/launch.rs) and its seccomp
-//! filter (prompt/seccomp.rs). The host's other calls (mounts, namespaces, a signal, a sync, its name, a filesystem's
-//! room, the routes and interfaces a network is reached by) go through rustix's and nix's safe interfaces; the
+//! its arguments made just before it: a signal's handler, a child told to end with its parent, and the wait for a
+//! Prompt's box (prompt/start.rs; the box itself is muk's to make, module/muk). The host's other calls (a signal, a
+//! sync, its name, a filesystem's room, the routes and interfaces a network is reached by) go through rustix's and nix's safe interfaces; the
 //! browser's core asks the page through why/core/web, which hands device/net.rs the call. A layer with none says
 //! `#![forbid(unsafe_code)]` once, for all its files (fs/), and so does every module without it.
 
@@ -24,7 +24,6 @@ pub mod remote;
 pub mod history;
 pub mod root;
 pub mod storage;
-pub mod compute;
 pub mod api;
 
 pub type Result<T> = std::result::Result<T, String>;

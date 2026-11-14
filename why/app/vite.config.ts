@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
 import {bootScript} from '../../scripts/boot.ts';
 import {buildCoreWasm, coreWasmPath} from '../../scripts/core-wasm.ts';
+import {putMuk} from '../../scripts/muk.ts';
 import {DEFAULT_REMOTE, headersOf, webPolicy} from './host/policy.ts';
 import {shipped} from '../remote/ship/releases.ts';
 
@@ -83,6 +84,20 @@ const coreWasm = (): Plugin => ({
   }),
   // The desktop app's core is its own (desktop), so its build needs none for the browser.
   buildStart() { if (HOST === 'web') buildCoreWasm(); },
+});
+
+/**
+ * The box's maker beside the web root (scripts/muk.ts: muk.json and its blob in public/webroot), built from this tree
+ * when its sources changed, once per dev-server start and per build: a page's Prompt runs the root's programs in a
+ * box muk makes, as the app's does on Linux. Only where this build carries a web root (the web's; the desktop app
+ * reads the Remote's), which is where muk can be built too.
+ */
+const muk = (): Plugin => ({
+  name: 'why-muk',
+  buildStart() {
+    const web = resolve(TOP, 'public', 'webroot');
+    if (HOST === 'web' && existsSync(resolve(web, 'webroot.json'))) putMuk(web);
+  },
 });
 
 /**
@@ -183,5 +198,5 @@ export default defineConfig({
   // Most of a build is the core compiled for the browser (coreWasm's buildStart, cargo), which Rolldown would
   // report each time as a plugin's slow callback: it is the build's work, not a plugin's overhead.
   build: {target: 'es2022', outDir: resolve(TOP, ASSETS), emptyOutDir: true, rolldownOptions: {checks: {bundlerTimings: false}}},
-  plugins: [hostOnly(), coreWasm(), boot(), metaPolicy(), buildStamp(), preloadApp()],
+  plugins: [hostOnly(), coreWasm(), muk(), boot(), metaPolicy(), buildStamp(), preloadApp()],
 });

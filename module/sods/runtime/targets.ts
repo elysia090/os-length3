@@ -61,23 +61,18 @@ export function targets(): {input: Isa; runs: Isa; where: Where; state: State}[]
 // Linux under them, the Linux they ask for is answered here, and nothing is written a second time for a host. What
 // stands between today and that is below, each with what it needs: the calls muk makes that this Linux does not
 // answer (CALLS_OWED: none now; a test reads muk's sources and this kernel's tables, so a call muk comes to make
-// that is not answered is added), and where a box or a terminal is still made by something else (BRANCHES).
+// that is not answered is added), and where a box or a terminal is still made by something else (BRANCHES: none
+// now. A box is made by `muk run` of one bundle on every host: in a page's Worker and in node on this Linux, on a
+// Linux machine by its kernel. At a person's terminal on Linux the box has one of its own, held by `prompt attach`;
+// in a page the terminal is the page itself, which is this kernel's console, lent to the box by its name).
 
 /** A call muk makes that sods' Linux has no answer for (`absent`), or answers by refusing (`refused`: what with, and when). None is: each is answered as Linux answers it (linux/sys-mount.ts, linux/sys-proc.ts), and muk's own corpus runs with muk on this Linux (test/muk/run.sh). */
 export interface CallOwed { nr: number; name: string; how: 'absent' | 'refused'; needs: string }
 export const CALLS_OWED: readonly CallOwed[] = [];
 
-/** Where a box or a terminal is made by something that is not muk or prompt: what does it today, and what ends that. */
+/** Where a box or a terminal is made by something that is not muk or prompt: what does it, and what ends that. None is. */
 export interface Branch { what: string; by: string; needs: string }
-export const BRANCHES: readonly Branch[] = [
-  {what: 'a box in a page or a Worker', by: 'the page\'s Worker starts its program directly on this Linux (linux.ts linux(): why/app/host/prompt/kernel.worker.ts)',
-    needs: 'muk in the root it mounts, and the Worker starting `muk run` of a bundle it writes, as node does already (scripts/webroot-runnable.ts: every program of the root in the same box, made by the same muk, here and on Linux)'},
-  {what: 'a box on the desktop (Linux)', by: "why's core makes it itself (why/core/src/prompt/launch.rs, seccomp.rs; why/core/src/compute)",
-    needs: 'the launcher runs `muk run` on a bundle it writes, and its own making of a box goes'},
-  {what: 'a terminal where there is no Linux', by: "the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt)",
-    needs: 'the caller hands the terminal muk gives away to `prompt attach` here, which runs on this Linux (module/sods/test/prompt/run.sh: prompt\'s own check of it passes, the terminals this kernel\'s), and its own console goes'},
-  {what: 'a terminal on the desktop (Linux)', by: "why's core's session (why/core/src/prompt)", needs: 'the session hands the descriptor muk sends to `prompt attach`'},
-];
+export const BRANCHES: readonly Branch[] = [];
 
 /** Everything owed before nothing is: each row that is not verified or excluded, each call, each branch. */
 export function owed(): string[] {
@@ -89,9 +84,13 @@ export function owed(): string[] {
   ];
 }
 
+/** What README.md says where no box and no terminal is made by anything else. */
+const NONE = 'No box and no terminal is made by anything but muk and prompt.';
+
 /** The calls owed (where any is) and the branches as README.md has them. */
 export function owedTable(): string {
   const calls = CALLS_OWED.length ? ['| Call muk makes | Here | What it needs |', '| --- | --- | --- |', ...CALLS_OWED.map((c) => `| ${c.name} (${c.nr}) | ${c.how} | ${c.needs} |`), ''] : [];
+  if (!BRANCHES.length) return [...calls, NONE].join('\n');
   return [...calls, '| What is made | By, today | What ends that |', '| --- | --- | --- |',
     ...BRANCHES.map((b) => `| ${b.what} | ${b.by} | ${b.needs} |`)].join('\n');
 }

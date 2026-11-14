@@ -260,6 +260,11 @@ pub fn all(data: &Path) -> Vec<Running> {
     let mut out = Vec::new();
     for e in dir.flatten() {
         let path = e.path();
+        // A bundle (prompt/start.rs: `<pid>.box`) whose Prompt was killed before it could take it away goes here.
+        if path.extension().is_some_and(|x| x == "box") {
+            if path.file_stem().and_then(|n| n.to_str()).and_then(|n| n.parse::<u32>().ok()).is_none_or(|pid| !alive(pid)) { let _ = fs::remove_dir_all(&path); }
+            continue;
+        }
         if path.extension().is_none_or(|x| x != "json") { continue; }
         let read = match fs::read(&path) {
             Ok(b) => b,

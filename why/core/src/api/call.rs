@@ -128,6 +128,14 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
             d => Err(crate::tr!("There is no deed {}", "{} という操作はありません", d)),
         },
 
+        // The bundle a page's Prompt is started with, where the page runs muk itself (on sods' Linux): config.json and
+        // muk's words, written by the one function that writes them for every host (prompt/bundle.rs).
+        "prompt_bundle" => {
+            let asked: crate::prompt::bundle::Asked = serde_json::from_value(args.clone()).map_err(|e| format!("prompt_bundle: {e}"))?;
+            let (config, words) = crate::prompt::bundle::asked(&asked);
+            Ok(json!({"config": config, "words": words}))
+        }
+
         // What this OS holds: `open`, the repos a Prompt has open (the host's to know).
         "space" => to(storage::space(paths::data_dir(), paths::repos_dir(), &a.list("open")?, a.opt("fresh")?.unwrap_or(false))),
         "free" => to(storage::free(paths::data_dir(), paths::repos_dir(), &a.list("ids")?, &a.list("open")?)),

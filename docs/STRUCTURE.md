@@ -18,9 +18,8 @@ compares the two), and no second one: it reads no image and has no code for a ho
 by where a program runs is sods', all of it and nowhere else
 ([#191](https://github.com/elysia090/os-length3/issues/191)): `module/sods/runtime/targets.ts` is the table of every
 input instruction set, machine and host, each verified, unverified, unimplemented or excluded with its reason. So
-where there is no Linux, the same C muk is to run over the Linux sods answers; that step is not made yet (sods
-refuses in words what a box's maker asks: namespaces, mounts, a filter), and until it is, a browser starts a box's
-programs directly on sods' Linux.
+where there is no Linux, the same C muk runs over the Linux sods answers: a box is made by `muk run` of one bundle
+on every host (below, A Prompt is a bundle), in a page's Worker and in node as on a Linux machine.
 
 An image's layers are the distribution's: their form, what writes them and what reads them are ricebox's
 (`module/ricebox/layers`), mounted into a tree sods lends through a port neither side names the other by. What makes
@@ -31,8 +30,8 @@ muk, hands prompt the terminal, and decides how long a box lives.
 
 `module/lib` is shared compile-time C support. `module/sods/lib` is private support for sods' runtime. Alternative
 platform backends are exclusive choices; a translator, its ABI adapter and private helpers are complementary parts
-of one backend. Replacing the existing native product launcher with `muk run` and `prompt attach` remains a
-subsequent step. The older roadmap below describes historical targets and is not a completion claim.
+of one backend. The product's launcher is `muk run` and `prompt attach` and nothing else (below, A Prompt is a
+bundle). The older roadmap below describes historical targets and is not a completion claim.
 
 ## The rule
 
@@ -101,22 +100,153 @@ inside out, so that nothing of a product is left further in than the product.
 | runtime, src, test, tests | each unit's folders, named four ways | what runs in a page; the unit itself; its checks | one name each, the same in every unit |
 | unit, module | `module/`, `scripts/units.ts` | one thing | module |
 
+## A Prompt is a bundle
+
+One way to start a box, on every host, and no second one:
+
+```
+why writes a bundle   →   muk run   →   its terminal, where it has one, to prompt attach
+```
+
+| Where | muk | The Linux it asks |
+| --- | --- | --- |
+| a Linux machine (x86-64) that lets a program make user namespaces | the program beside `why` | the host's kernel |
+| a page's Worker, node, a desktop that is not such a machine | the same program, translated as any program of the root is | sods' |
+
+Nothing of why makes a namespace, a mount or a filter, starts a box's program itself, or says a second time what a
+Prompt runs with. The bundle is why's whole say in a box, and one function writes it (`prompt/bundle.rs`), for a
+page too: the core as wasm, asked through `api` as everything else is.
+
+**What a Prompt's box is**, as its config.json says it:
+
+```
+/                   the root, read-only; where the person's dotfiles ask an environment (.packages, .setup), the
+                    repo's own root instead, written
+/root               the Prompt's home: a directory of the bundle's, the dotfiles written in it, gone with the Prompt
+/root/<repo>        the repo (lent)
+/var/cache, /var/tmp, /var/log, /root/.cache
+                    the repo's caches (lent), freed whenever room is wanted
+/tmp, /run          empty, gone with it
+/dev, /dev/pts, /proc
+                    its own, as muk makes every box's
+network             none but its loopback; the host's where the repo was granted it (lent, with the resolver's file)
+who                 root of a user namespace of its own, mapped onto the one who runs why
+calls               muk's filter: no box asks less
+```
+
+A bundle is a directory: `config.json`, `home/`, and with the network `resolv.conf`. On Linux it is
+`<data>/prompts/<pid>/`, kept with the Prompt's record and gone with it; on sods it is `/run/box/` in the tree the
+kernel is given, with the repo's copy and muk beside it, under the tmpfs the box has at /run.
+
+**What the core's launcher did that muk does not, and where each went.** Nothing is kept beside.
+
+| The launcher (`prompt/launch.rs`, `seccomp.rs`) | Now |
+| --- | --- |
+| namespaces, mounts, pivot_root, /dev, terminals, the filter | muk's, all of it |
+| a pid 1 of its own that reaps and ends what is left with the shell | the kernel's: the box's process is the first of its pid namespace, and every process in it ends with it |
+| Ctrl-C passed on to the shell's group by a signal of its own | a terminal's. At a terminal a Prompt has one of its own (muk makes it, `prompt attach` holds its other end) and Ctrl-C is a byte typed; with none, the signal is sent to the box's group, as a terminal sends it. A command run and not a shell (`why prompt REPO -- CMD`) that is interrupted ends its box |
+| the terminal's group taken for the shell and given back | never taken: the shell is at a terminal of its own |
+| the repo's environment as an overlay over the root, one for all its Prompts by joining a running one's namespaces | a root of the repo's own: a copy of the installed root, made when `.packages` or `.setup` first ask for one (shared blocks where the filesystem has them), lent writable. Any number of Prompts run on it, as on one machine. No overlay, nothing joined; with no ask, the installed root, read-only |
+| the host's resolver written into the root | a file of the bundle's, bound where the root looks for it |
+| whether this machine lets a Prompt run on the root (a child that makes namespaces) | asked of muk: a bundle whose root holds muk alone, run |
+| `compute/` (Firecracker, disks, vsock) | gone; a run's Spec and ledger are `agent/`'s |
+
+**A terminal** is asked for in config.json (`process.terminal`) only where there is one to hold its other end:
+
+| Who starts the Prompt | The box's three descriptors | Ctrl-C |
+| --- | --- | --- |
+| `why prompt` at a terminal (a person's, an SSH session's, the menu) | a terminal of its own; `prompt attach` between it and the person's | a byte |
+| the desktop app, `why prompt REPO -- CMD`, a test | the caller's own (pipes) | the signal, to the box's group |
+| a page | the kernel's console, which is the page's screen | the console's (the kernel sends it) |
+
+**What the hosts differ in** is said once, by who lends: the root's place (`<data>/system/<sha256>/root`; `/` of the
+tree sods lends), the user root is mapped onto, whether the repo is a directory lent or a copy kept in step
+(`mirror.ts`), and where muk is (beside `why`; in the tree at `/run/box/muk` until the root carries it).
+
+## why, inside
+
+why is its parts and its faces. A part is one responsibility, a folder of why holding all of it whatever it is
+written in (the Rust the core is compiled of, the TypeScript a page loads); a face holds no judgement, only how a
+part is shown and asked. `ls why` is then what why is.
+
+```
+why/
+  repo/       what a repo is, and what was done in it      store, issues, lines, measure; commits, review, work
+  home/       what a person keeps on a device              todo, profile, band, dotfiles, grants, the Agent's key
+  prompt/     a repo's box                                 bundle (for muk), running (its record and what it holds),
+                                                           kept (its environment and caches), the page's Worker
+  agent/      work handed over                             tasks, activity, hands, spec (a run's words and ledger)
+  device/     the machine under it                         files, the vault, room and what frees it
+  shipto/     what a service wants                         the client (was the core's remote, the command's
+                                                           remote, sync, git) and the Remote itself (was why/remote)
+  cowboy/     links out of a box and between boxes         below
+  text/       why's words, in its two languages            tr!, a title's kind, a name's rule, a diff
+  api/        the one door a face asks through             call, answer; the core as wasm
+  app/        a face: the window                           pages/, ui/, styles/, main/
+  cli/        a face: the words                            words/ (the one table), say/, cmd/
+  desktop/    a face: the window on a desktop
+  test/       why driven as a person drives it             was tests/
+```
+
+What is not why's and was in it:
+
+| It was | It is | Whose |
+| --- | --- | --- |
+| a box made (`core/src/prompt/launch.rs`, `seccomp.rs`), a machine driven (`core/src/compute`) | gone | muk's |
+| a root unpacked, held and made current (`core/src/root/unpack.rs`, `held.rs`, `install.rs`) | `module/ricebox/install` | ricebox's: its own form at rest |
+| the layers written (`scripts/webroot*.ts`), the root's programs checked under muk (`scripts/webroot-runnable.ts`, `commands.ts`) | `module/ricebox/make` | ricebox's |
+| the layers fetched and kept in a page, which programs are read first and translated ahead (`app/prompt/webroot-fetch.ts`, `first.ts`, `ahead.ts`), the root's tree for a page (`app/prompt/system.ts`) | `module/ricebox/layers` | ricebox's |
+| the shell's words and its settings' place (`/etc/length3/shrc`, four copies of what a Prompt's shell is run as) | one, in `prompt/bundle.rs`, until the root says it itself | ricebox's, once a root released from this tree carries it |
+| which roots why trusts (`core/src/root/pins.rs`), where one is fetched from | `prompt/roots.rs` | why's: a product's choice of a distribution |
+
+## cowboy
+
+What is on its way: links out of a box and between boxes. Written in Rust, run where the box runs (as wasm in a
+page), so that almost all of it is done on the device and what a service is left to do costs next to nothing.
+
+A link is a stream of bytes between two ends, and cowboy is what decides how each is made. It has no packets: a
+box's sockets are calls (sods answers them; on Linux the box is in the host's network or in none), so there is no
+TCP to run again and no frame to parse on the way. Its unit of work is a byte carried, and its bound is one copy:
+from the writer's buffer into a ring both ends hold.
+
+| A link to | Made by | A service does |
+| --- | --- | --- |
+| a name (DNS) | cowboy answers itself: each name asked for is given an address of cowboy's own, kept beside the name, so a connection is known by the name it was meant for | nothing |
+| the box itself, another box on the device | a ring in memory | nothing |
+| a box on another device | a channel between the two devices (WebRTC), cowboy at each end | says where each is, once (the Remote) |
+| a host that answers a page (HTTP, with CORS) | the page's own request | nothing |
+| any other host (TCP: git, SSH, a registry) | one WebSocket to a relay that opens the connection and copies bytes; what is said over it is sealed between the box and the host (TLS, SSH), not read | copies bytes: no judgement, no state past the connection |
+
+So what a service runs for all of it is one relay that copies, and a word of where a device is.
+
+```
+module/cowboy/
+  src/lib.rs      a link: its two ends, its ring, its state
+  src/ring.rs     the bytes on their way
+  src/names.rs    names asked and the addresses given them
+  src/route.rs    which way a link is made, from what it is to
+  src/frame.rs    what goes over a relay: nothing but the bytes, after one line of where to
+  test/
+```
+
+sods lends a port for it as it lends a tree: what its Linux cannot reach itself (an address that is not the
+machine's own) it asks of whoever was given at `linux({net})`, and knows nothing of who answers. ricebox knows
+nothing of it. why gives it to a repo granted the network, and shipto runs the relay.
+
 ## Today, against that
 
 - **A release is one lump**, named for neither thing it holds: 0.6.4 holds the root, the root as layers, the web
   app and the desktop app as `os-length3-linux-0.6.4-…`. It is to be two: ricebox 0.6.4 (the root, its layers) and
   why 0.0.1 (the app, the command), with `muk` and `sods` beside them.
 - **The Linux a browser answers is 9,500 lines of TypeScript** (`module/sods/runtime/linux`): not thin, and far
-  from its bound. It is sods' now, and nothing of muk's; the same C muk does not run over it yet.
-- **muk on Linux is still why's core's.** A box is run by `why/core/src/prompt` (1,344 lines of Rust over
-  rustix), with Home's dotfiles and the repo written into it; `why/core/src/compute` (616 lines) drives
-  Firecracker, which muk rules out. `muk run` has the floor every box has, held against a config.json that means
-  harm (config.json asks, the one who runs muk lends: a path, a namespace, a user, a cgroup of the host's are a
-  box's only by `--lend`, `--ids`, `--cgroup`; no capability over the host outside a user namespace; no device
-  but its own; no call the filter was not written against) and is checked beside runc and against 255 such
-  config.jsons; it makes the box's terminal and gives its other end away. It does not yet make a filter of
-  config.json's own, or set a cgroup's limits itself (they are the lender's, on the cgroup lent). A box kept beyond a run, and everything a terminal is to the one at it, are
-  not muk's to make: they are prompt's, which today is the rest of `why/core/src/prompt` and `why/app/prompt`.
+  from its bound. It is sods' now, and nothing of muk's; the same C muk runs over it.
+- **A box is muk's on every host** (above, A Prompt is a bundle): why's core makes none, and its Firecracker
+  driver is gone. `muk run` has the floor every box has, held against a config.json that means harm (config.json
+  asks, the one who runs muk lends: a path, a namespace, a user, a cgroup of the host's are a box's only by
+  `--lend`, `--ids`, `--cgroup`; no capability over the host outside a user namespace; no device but its own; no
+  call the filter was not written against) and is checked beside runc and against 255 such config.jsons; it makes
+  the box's terminal and gives its other end away. It does not make a filter of config.json's own, or set a
+  cgroup's limits itself (they are the lender's, on the cgroup lent).
 - **What makes ricebox's layers is not in ricebox**: `scripts/webroot*.ts` write the packs `module/ricebox/layers`
   reads.
 - **shipto is in five places**: `why/remote` (8,403 lines), `why/core/src/remote` (2,479), and three of the
@@ -164,8 +294,8 @@ Names first, from the inside out, since a wrong name is paid at every reading; t
    for the lowering, which is keyed on its types (`operand.rs`, `flags.rs`, `integer.rs`, `sse.rs`, `fpu.rs`: 2,070
    lines) and reads every operand through it. Next cut: an instruction of its own, decoded by tables as the scan
    is, its operands what the lowering asks; then the calls it makes (a call is 8.5× native).
-4. **muk on Linux takes the box from why's core.** The seccomp filter and the terminal in `muk run`; then a
-   Prompt is the bundle why writes, and the Firecracker driver goes.
+4. **muk on Linux takes the box from why's core.** Done: the filter and the terminal are `muk run`'s, a Prompt
+   is a bundle, and the Firecracker driver is gone.
 5. **A release per thing**: `muk`, `sods`, ricebox, why 0.0.1. A release of ricebox under its own name (0.0.1)
    holds the root and its layers, and stands on `muk` and `sods` beside it at the boundaries they publish: nothing
    of why is in it or needed by it. It is used as it is taken, so it owes nothing: every input, machine and host

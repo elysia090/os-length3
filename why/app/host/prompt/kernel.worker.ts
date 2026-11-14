@@ -1,7 +1,10 @@
-// A Prompt's kernel in a Worker: the root (ricebox, its layers mounted) and the Linux that runs it (sods: the tree,
-// the kernel, what the translator makes and what was kept of it), the repo kept in step. The page (userland.ts promptWorker) posts
-//   {type: 'start', translator, files: [{path, bytes, mode}], dirs: [path],
-//    links: [{path, target}], argv, env, cwd}
+// A Prompt's kernel in a Worker: the root (ricebox, its layers mounted), the Linux that runs it (sods: the tree,
+// the kernel, what the translator makes and what was kept of it) and the box its programs run in, which muk makes
+// here as it does on a Linux machine: the same program, run on this Linux with the bundle the core wrote for it
+// (why/core/src/prompt/bundle.rs). Nothing here starts a box's program itself. The repo is kept in step. The page
+// (userland.ts promptWorker) posts
+//   {type: 'start', translator, muk, files: [{path, bytes, mode}], dirs: [path],
+//    links: [{path, target}], box: {config, words}, cwd}
 // (`translator` and a file's optional `module`, its translation made ahead
 // of time, may be compiled WebAssembly.Modules, shared between workers.)
 // then {type: 'input', bytes} as the person types and {type: 'eof'}, and
@@ -62,10 +65,11 @@
 // and 'start' then brings only what is its own (the repo, the dotfiles, argv
 // and env; its `files` go over those readied, and its `translator` and
 // `root` are not needed). Without it, 'start' readies the same itself.
-// With `rehearse: {argv, env, cwd}`, a start is rehearsed: that program
-// runs to its end in a kernel of its own, nothing to read, its output
-// dropped, so that what a start runs (the kernel's code and the program's,
-// each compiled as it is first run) is compiled when 'start' comes, and
+// With `rehearse: {config, words}` (a box, as 'start' has one), a start is
+// rehearsed: that box's program runs to its end in a kernel of its own,
+// nothing to read, its output dropped, so that what a start runs (the
+// kernel's code, muk's and the program's, each compiled as it is first
+// run) is compiled when 'start' comes, and
 // the Workers its threads ran in are warm and taken by the kernel of
 // 'start'. What it runs must write nothing (a shell reading no input does
 // not), as the files are those 'start' runs on.
@@ -93,13 +97,15 @@ import {syncRange} from '../../../../module/ricebox/layers/pack.ts';
 interface Reached { module: WebAssembly.Module; bytes: Uint8Array; base: number }
 /** A program given: its bytes, and its translation where the page has one (made for memory `shared` or not). */
 interface Program extends Given { module?: WebAssembly.Module; segments?: Segment[] | null; shared?: boolean; more?: Reached[] }
-/** A start rehearsed: what runs, with what, where. */
-interface Rehearsal { argv: string[]; env: string[]; cwd: string }
-/** What every start has the same ('ready', or 'start' where none came first). */
-interface Ready { translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; rehearse?: Rehearsal }
-/** What 'start' brings of its own. */
-interface Start extends Ready, Rehearsal {
+/** A box as the core writes it for muk (why/core/src/prompt/bundle.rs): config.json, and the words muk is run with. */
+interface Box { config: string; words: string[] }
+/** What every start has the same ('ready', or 'start' where none came first). `muk`: the box's maker, served beside the root. */
+interface Ready { translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
+/** What 'start' brings of its own: the box to make, and where in the tree the repo's copy is. */
+interface Start extends Ready {
   type: 'start';
+  box: Box;
+  cwd: string;
   dirs?: string[];
   links?: {path: string; target: string}[];
   screen?: boolean;
@@ -119,8 +125,19 @@ type Posted =
   | {type: 'kept'; at: Kept['at']}
   | (Ready & {type: 'ready'})
   | Start;
-/** What was readied: the translator loaded, the files given and the root put around them. */
+/** What was readied: the translator loaded, the files given and the root put around them, the box's maker beside it. */
 interface Readied { translate: Translate; vfs: Vfs; files: Program[] }
+
+/** Where the bundle is in the tree (the page's BOX), under the tmpfs the box has at /run: its maker and its config.json. */
+const BOX = '/run/box';
+/**
+ * `box` written where muk is told it is, and what is run for it: muk itself, with its words. The program config.json
+ * names is muk's to start, in the box it makes: nothing is started here but muk.
+ */
+function boxed(vfs: Vfs, box: Box): string[] {
+  vfs.writeFile(`${BOX}/config.json`, box.config);
+  return [`${BOX}/muk`, ...box.words];
+}
 
 /** The buffers of `views` that can be moved to the page (not shared memory, each once). */
 const moved = (...views: {buffer: ArrayBufferLike}[]): {transfer: ArrayBuffer[]} =>
@@ -156,6 +173,9 @@ function ready(data: Ready): Promise<Readied> {
     if (data.root) mountPack(mountTarget(vfs), data.root.index, {range: syncRange(data.root.url, rangeNow), decode: translate.unzstd, sha256: translate.sha256});
     // Over the root, so what was given (why, its BusyBox) is what runs: a hot program in the root's own node.
     for (const f of data.files ?? []) provide(vfs, f);
+    // The box's maker, beside the root it makes boxes of. A root served with none has no way to run its programs.
+    if (!data.muk) throw new Error('This root is served with no muk beside it (scripts/muk.ts puts it there)');
+    vfs.writeFile(`${BOX}/muk`, data.muk, 0o755);
     const r: Readied = {translate, vfs, files: data.files ?? []};
     if (data.rehearse) await rehearse(r, data.rehearse).catch(() => { /* only a start that is not faster */ });
     return r;
@@ -166,8 +186,9 @@ function ready(data: Ready): Promise<Readied> {
 /** How long a rehearsal may take: what has not ended by then is left (a program that waits for time). */
 const REHEARSAL_MS = 2000;
 
-/** `argv` run to its end over what is readied, in a kernel made for it alone (see 'ready'). */
-async function rehearse({translate, vfs, files}: Readied, {argv, env, cwd}: Rehearsal): Promise<void> {
+/** `box` run to its end over what is readied, in a kernel made for it alone (see 'ready'). */
+async function rehearse({translate, vfs, files}: Readied, box: Box): Promise<void> {
+  const argv = boxed(vfs, box), env: string[] = [], cwd = '/';
   const quiet: Console = {interactive: false, write() {}, read: () => new Uint8Array(0), ready: () => true, pending: () => 0};
   const k = linux({vfs, translate, console: quiet, passOn: true, translated: files});
   const timer = setTimeout(() => k.halt(), REHEARSAL_MS);
@@ -416,7 +437,8 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     apart = k instanceof RemoteKernel;
     for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);
     if (data.mirror) mirror = new Mirror(vfs, data.mirror);
-    k.start(data.argv[0] ?? '', data.argv, data.env, data.cwd);
+    const run = boxed(vfs, data.box);
+    k.start(run[0], run, [], '/');
     self.postMessage({type: 'threads', apart});
   } catch (e) {
     failed(e);

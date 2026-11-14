@@ -1,8 +1,8 @@
-//! Compute, in time and in space: what a run is wherever it runs (Spec), what it may use (Budget), what it used
+//! A run, in time and in space: what it is wherever it runs (Spec), what it may use (Budget), what it used
 //! (Usage, read from the kernel, never assumed), and every run's account (the ledger).
 //!
 //! A Spec names what a run is made of, never where it is: the root by its sha256 (root pins it), the
-//! environment by the key of what set it up (prompt/launch.rs environment_key), the repo by its name and line, and what
+//! environment by the key of what set it up (prompt/start.rs environment_key), the repo by its name and line, and what
 //! runs, with what it is told, the network it may have, and its budget. This device builds the run from it
 //! (`why agent inside`), and a place elsewhere that can fetch by digest (another device, a machine in the cloud)
 //! is given the same Spec and builds the same run: nothing in it says this machine. What it may use is checked

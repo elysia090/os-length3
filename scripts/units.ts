@@ -39,10 +39,10 @@ export interface Unit {
 export const UNITS: Unit[] = [
   {name: 'lib', says: "what the units of C stand on: system calls, words, output; no C library", holds: ['module/lib'], takes: []},
   {name: 'muk', says: 'the machine: an OCI bundle\'s box made, isolated, started and waited for (`muk run`), in C on lib and nothing else. Where there is no Linux under it, the Linux it asks for is sods\'; no image, no terminal\'s other end, no KVM and no Firecracker',
-    holds: ['module/muk', 'why/core/src/prompt/launch.rs', 'why/core/src/prompt/seccomp.rs', 'why/core/src/compute'],
+    holds: ['module/muk'],
     takes: ['lib'], entries: []},
   {name: 'prompt', says: "a terminal attached: the other end of the one muk makes in a box, given as one descriptor (`prompt attach FD`): what is typed and shown, its size, the frontend's terminal put back. It starts no process and keeps no box: whoever runs muk owns those",
-    holds: ['module/prompt', 'why/core/src/prompt'],
+    holds: ['module/prompt'],
     takes: [], entries: []},
   {name: 'sods', says: 'a program run where its machine, its kernel or its system is absent: translation and what a translation is kept by, the Linux a program asks for, and every difference between hosts (#191: its table is runtime/targets.ts); no image, no OCI and no product policy',
     holds: ['module/sods'],

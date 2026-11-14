@@ -34,6 +34,12 @@ export interface Webroot {
   files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean; root?: boolean; more?: More[]}[];
   /** Where the packs are (the Worker reads them under packs/). */
   url: string;
+  /**
+   * The maker of a box (muk: an x86-64 Linux program, as every program of the root is), where the root is served
+   * with one beside it (muk.json: its place and digest): what runs the root runs it in a box this makes, translated
+   * as the root's programs are. It is beside the root, not in it, until a root is released that carries it.
+   */
+  muk: Uint8Array | null;
 }
 export interface More { module: WebAssembly.Module; bytes: Uint8Array; base: number }
 export type Stage =
@@ -648,13 +654,18 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
     // Not JSON is a build without why (the host answered with the page): said so, never the parser's words.
     try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(config.missing()); }
   });
+  // The box's maker, served beside the root: asked for while the rest comes, and kept by its digest as a blob is.
+  const maker = download(`${BASE}muk.json`, {}, undefined, {attempts: 2})
+    .then((b) => JSON.parse(new TextDecoder().decode(b)) as {path: string; sha256: string; size: number})
+    .then((m) => (/^blobs\/[0-9a-f]{64}\.bin$/.test(m.path) ? bytesOf(m.path, m).then((bytes) => ({bytes, path: m.path})) : null), () => null);
   const read = plan && plan.sha256 === a.sha256 && plan.index.sha256 === a.index.sha256 ? await ahead : null;
   const index0 = read ? read[0] as Uint8Array : await bytesOf(a.index.path, a.index);
   const index = JSON.parse(new TextDecoder().decode(index0)) as Index;
   if (index.sha256 !== a.sha256 || index.version !== a.version) throw new Fatal(`webroot: its index is of another root (${index.version})`);
   const modeOf = (path: string) => index.files.find((f) => f.path === path)?.mode ?? 0o755;
   const first = index.translations.filter((t) => config.first.includes(t.path));
-  const live = new Set([`${BASE}${a.index.path}`, `${BASE}${index.translator.path}`,
+  const muk = await maker;
+  const live = new Set([`${BASE}${a.index.path}`, `${BASE}${index.translator.path}`, ...(muk ? [`${BASE}${muk.path}`] : []),
     ...index.translations.flatMap((t) => [`${BASE}${t.elf.path}`, `${BASE}${t.wasm.path}`, moreURL(t, index.translator.sha256, threadsApart())])]);
   // And the translations Prompts made of the root's programs, by this translator, of files in this root's packs.
   const packs = new Set(index.packs.map((p) => p.name.replace(/\.pack$/, '')));
@@ -686,7 +697,7 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
     localStorage.setItem(PLAN, JSON.stringify(next));
   } catch { /* not remembered: the next start reads as webroot.json says */ }
   tell({at: 'ready'});
-  return {about: a, index, translator, files: files.map(taken), url: new URL(BASE, location.href).href};
+  return {about: a, index, translator, files: files.map(taken), url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
 })().catch((e) => {
   loading = null;
   tell({at: 'failed', message: config.errorText(e)});

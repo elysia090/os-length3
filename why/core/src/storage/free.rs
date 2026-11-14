@@ -21,7 +21,7 @@ pub fn fetch_root(data: &Path, remote: &str, progress: impl FnMut(crate::device:
     crate::root::fetch_and_install(data, remote, |want| { make_room(data, crate::fs::paths::repos_dir(), want); }, progress)
 }
 
-/// A repo brought here from the Remote (compute/vm.rs fetch), room made for it first if the device is short.
+/// A repo brought here from the Remote (remote/copies.rs), room made for it first if the device is short.
 pub fn bring_repo(repos: &crate::repos::store::Repos, repo: &str) -> Result<crate::remote::Synced, String> {
     crate::remote::fetch(repos, repo, || { make_room(crate::fs::paths::data_dir(), crate::fs::paths::repos_dir(), 0); })
 }

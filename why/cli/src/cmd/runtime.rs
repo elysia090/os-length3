@@ -24,7 +24,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     // What runs used of time and space in the last day, by repo (core compute/spec.rs ledger): the most CPU first.
-    let used = why_core::compute::spec::by_repo(&why_core::compute::spec::runs(), crate::say::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
+    let used = why_core::agent::spec::by_repo(&why_core::agent::spec::runs(), crate::say::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
     if !used.is_empty() {
         t.push(tr!("Compute, the last day", "計算資源（この1日）"));
         let secs = |ms: u64| if ms < 60_000 { format!("{:.1} s", ms as f64 / 1000.0) } else { format!("{} min", ms / 60_000) };
@@ -103,11 +103,10 @@ pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::data(t.join("\n"), data))
 }
 
-/// Whether a Prompt runs on the root here: this machine lets why make the namespaces one is made in (prompt/launch.rs
-/// kept_from_namespaces). Where it does not, the app runs its Prompts translated, as a browser does, and says why.
+/// Whether a Prompt runs on the root here: this machine lets muk make a box (prompt/start.rs kept_from_boxes). Where it does not, the app runs its Prompts translated, as a browser does, and says why.
 pub fn root_check(_: &Ctx, _: &Call) -> Result<Reply> {
     #[cfg(target_os = "linux")]
-    let why = why_core::prompt::launch::kept_from_namespaces();
+    let why = why_core::prompt::start::kept_from_boxes();
     #[cfg(not(target_os = "linux"))]
     let why = Some(tr!("A Prompt runs on the root on Linux only; here it runs translated, as in a browser", "root の上で Prompt が動くのは Linux だけです。ここではブラウザと同じく翻訳して動きます"));
     let data = json!({"native": why.is_none(), "why": why});
@@ -274,39 +273,6 @@ fn ssh_here() -> (String, serde_json::Value) {
 #[cfg(not(unix))]
 fn ssh_here() -> (String, serde_json::Value) {
     (tr!("SSH  not here (Linux only for now)", "SSH  ここにはありません（いまは Linux だけ）"), serde_json::Value::Null)
-}
-
-#[cfg(target_os = "linux")]
-pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
-    let h = why_core::compute::vm::host(paths::data_dir());
-    let yes = |b: bool| if b { "✓" } else { "○" };
-    let mut t = vec![
-        format!("{} KVM", yes(h.kvm)),
-        format!("{} firecracker{}", yes(h.firecracker.is_some()), h.firecracker.as_deref().map(|v| format!("  {v}")).unwrap_or_default()),
-        format!("{} jailer{}", yes(h.jailer.is_some()), h.jailer.as_deref().map(|v| format!("  {v}")).unwrap_or_default()),
-        format!("{} kernel{}", yes(h.kernel.is_some()), h.kernel.as_deref().map(|k| format!("  {}", out::short(k))).unwrap_or_default()),
-        tr!("  {} CPUs · {} memory", "  CPU {} · メモリ {}", h.cpus, bytes(h.memory)),
-    ];
-    if h.lacks.is_empty() { t.push(tr!("This machine runs VMs", "この機械は VM を動かせます")); }
-    for (what, fix) in &h.lacks { t.push(if fix.is_empty() { what.clone() } else { format!("{what} ({fix})") }); }
-    Ok(Reply::data(t.join("\n"), json!(h)))
-}
-
-/// `why host fetch`: what this machine lacks to run VMs (Firecracker, its jailer, the kernel), fetched by digest.
-#[cfg(target_os = "linux")]
-pub fn host_fetch(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    why_core::compute::vm::fetch(paths::data_dir(), progress())?;
-    host(ctx, call)
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn host_fetch(_: &Ctx, _: &Call) -> Result<Reply> {
-    Err(Error::Refused(tr!("VMs run on a Linux host with KVM", "VM は KVM のある Linux で動きます")))
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
-    Err(Error::Refused(tr!("VMs run on a Linux host with KVM", "VM は KVM のある Linux で動きます")))
 }
 
 #[cfg(test)]

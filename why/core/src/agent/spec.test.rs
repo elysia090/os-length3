@@ -1,4 +1,4 @@
-//! The tests of compute/spec.rs.
+//! The tests of agent/spec.rs.
 
 use super::*;
 

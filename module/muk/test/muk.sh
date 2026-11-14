@@ -268,6 +268,26 @@ has user '/dev/null 20666 1:3'
 begins user 'mount /dev/null '
 has user 'write in / 30'
 
+# The network muk itself is in, lent to a box in a user namespace of its own: the box is in it as it is. Nothing is
+# joined: one who is not root may join no namespace, the one it is in neither, so a box of such a one has the
+# host's network only this way. (Run by muk alone: runc joins by the path, which only root may.)
+bundle own-net <<JSON
+{"ociVersion": "1.0.2",
+ "process": {"args": ["/probe", "see:/proc/self/ns/net"], "cwd": "/", "noNewPrivileges": true, "capabilities": {}},
+ "root": {"path": "$t/own-net/rootfs", "readonly": true}, "hostname": "mine",
+ "mounts": [
+  {"destination": "/proc", "type": "proc", "source": "proc"},
+  {"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]}],
+ "linux": {"namespaces": [{"type": "pid"}, {"type": "ipc"}, {"type": "uts"}, {"type": "mount"}, {"type": "user"}, {"type": "network", "path": "/proc/self/ns/net"}],
+  "uidMappings": [{"containerID": 0, "hostID": $(id -u), "size": 1}], "gidMappings": [{"containerID": 0, "hostID": $(id -g), "size": 1}]}}
+JSON
+n=$((n + 1))
+st=0; (cd "$t/own-net" && "$muk" run $lends --lend /proc/self/ns/net -b . "muk$n") > "$t/own-net.muk" 2> "$t/own-net.muk.err" || st=$?
+[ "$st" = 0 ] || no "own-net: muk ended $st, not 0: $(cat "$t/own-net.muk.err")"
+has own-net "see /proc/self/ns/net 120777 -> $(readlink /proc/self/ns/net)"
+has own-net 'uid 0 gid 0 groups 0 pid 1'
+# (and a network that is not the one muk is in is still joined, or refused to one who may not: the box above, `joined`)
+
 # Every name muk.c's tables have is found there (each by one look, slots.ts): every capability is given, and every
 # option of a mount that is a flag is taken as one (the file system is given none of them, and would refuse it).
 names() { sed -n "/^static const char $1\[\]/,/};/p" "$here/../src/bundle.h" | grep -o '"[A-Za-z_]*"' | tr -d '"'; }

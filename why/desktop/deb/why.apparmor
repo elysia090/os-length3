@@ -1,12 +1,12 @@
-# why makes the user namespaces its Prompts run in (why/core/src/prompt/launch.rs), which AppArmor keeps from unprivileged
-# programs on Ubuntu 23.10 and later unless a profile lets them. This one lets /usr/bin/why make them and changes
-# nothing else: why is not confined by it. Put in place by the .deb's postinst only where the kernel has that
-# restriction (deb/postinst).
+# muk makes the user namespace a Prompt's box is in (module/muk; why runs it: why/core/src/prompt/start.rs), which
+# AppArmor keeps from unprivileged programs on Ubuntu 23.10 and later unless a profile lets them. This one lets
+# /usr/bin/muk make them and changes nothing else: muk is not confined by it, and why, which makes none, has no
+# profile. Put in place by the .deb's postinst only where the kernel has that restriction (deb/postinst).
 abi <abi/4.0>,
 include <tunables/global>
 
-profile why /usr/bin/why flags=(unconfined) {
+profile muk /usr/bin/muk flags=(unconfined) {
   userns,
 
-  include if exists <local/why>
+  include if exists <local/muk>
 }

@@ -64,16 +64,13 @@ help: there is no disk image whose freed blocks the host cannot see, and no
 balloon or trim for a guest to forget. Runtime lists each owner's part by
 size, with what can be done and why.
 
-A repo's environment is one overlay of its upper layer over the root, and
-all the repo's Prompts on that root share it: the first to start mounts it,
-and each started while one runs (another terminal, an SSH session, `why
-prompt REPO -- CMD`, `.setup`) joins that one's, the same mount cloned into
-its own tree, so what one installs the others see at once. It stays mounted
-until the last of them ends; one ending, being stopped, or stopped for a
-network change, leaves the others' as it was. Two overlays on one upper
-layer are never mounted (the second clears the first's scratch directory,
-and the first can then make no new directory over the root: #55), so a
-Prompt that cannot join the one running is not started, and says why.
+A repo's environment is a root of the repo's own: a copy of the installed
+root, made the first time its `.packages` or `.setup` ask for one (the
+installed root itself is never written), and lent to the repo's Prompts
+to write. All of them run on it as programs run on one machine: what one
+installs the others see at once, and one ending, being stopped, or stopped
+for a network change, takes nothing from the others (#55). A repo that
+asks for nothing runs on the installed root as it is, read-only.
 
 The root itself is laid out the same way, by what each place is: `/usr`
 is what the root is (programs, libraries, data; `/bin`, `/sbin` and `/lib`
@@ -420,9 +417,9 @@ Lately).
 
 What a person runs (a Prompt, a task handed to an agent, a repo's tests) is
 compute, and the OS treats it as one thing whatever runs it: a **Spec**
-says what a run is made of, never where (`why/core/src/compute/spec.rs`): the root
+says what a run is made of, never where (`why/core/src/agent/spec.rs`): the root
 by its sha256, the environment by the key of what set it up (the root's
-sha256, `.packages`, `.setup`: `launch::environment_key`), the repo and
+sha256, `.packages`, `.setup`: `prompt::start::environment_key`), the repo and
 its line, what runs and what it is told, whether it asks for the network,
 and its **Budget** (wall and CPU time, memory held at once, processes).
 This device builds the run from the Spec (`why agent inside`); a place
@@ -488,7 +485,7 @@ by repo.
    streams what the run prints back as the journal's lines and returns
    the ledger's Run.
 3. **An environment is one repo's, on one machine.** What `.packages`
-   and `.setup` installed is an overlay of that repo on that root: two
+   and `.setup` installed is a root of that repo's own, made of that root: two
    repos asking the same install it twice, and nothing moves. *Solved
    in part:* an environment is named by its key (the same key, the same
    environment, wherever it is made; set-up stamps by it). *To build:*
@@ -512,52 +509,6 @@ by repo.
    length, time and inode). *To build:* the host's change notices
    (fanotify, FSEvents) say which paths changed; a whole walk only at
    start and now and then as a check.
-
-### Virtual machines: the OS on servers
-
-The OS also runs on servers, ours or a person's own: any Linux with
-`/dev/kvm` is a host (`why host` says what it has and what it lacks, and
-the one fix for each; `why host fetch` brings what it lacks). Each run is a
-microVM of its own, made and driven through Firecracker (`core/src/vm`):
-a pinned kernel, the root as one read-only disk shared by every VM booted
-from it, a small sparse disk of its own holding what it is given, no
-network unless the repo was given it, and one vsock to its host, over
-which the host gives it its run (a Spec, as above) and it says what it
-prints, the repo as the run left it, and its exit code (`vm/wire.rs`).
-Firecracker v1.17.0 (with its jailer) and its CI's kernel 6.18.56 (the
-guest kernel it supports since v1.17) are fetched by digest, as roots
-are: Firecracker's matching the digest its publisher gives beside it,
-the kernel's pinned as it was fetched.
-
-What scales worst on a host, in order, and how each is met:
-
-1. **Memory**, which bounds how many VMs a host holds. The root is one
-   disk, in the host's page cache once for all; the balloon gives back
-   what a guest frees as it frees it (free page reporting); a VM nobody
-   uses is snapshotted and let go, and made again from its snapshot, its
-   memory read in only as the guest touches it.
-2. **Boot time**, which bounds how finely time is sold. A VM booted once
-   is snapshotted; a run starts as a VM loaded from it, from a pool kept
-   warm, never booting.
-3. **Disk**. Nothing is copied per VM but what it is given and what it
-   writes: the root by its digest, an environment by its key, a run's
-   own disk sparse.
-4. **Network**. None by default: the vsock alone. A repo given the
-   network goes out through its host, which sees and bounds what leaves.
-5. **Placement across hosts**: each host says what it has room for; the
-   Remote places by memory first.
-6. **The VMM's own boundary**: Firecracker under its jailer (its own
-   user, a chroot, seccomp, a cgroup).
-7. **Metering**: each VM's CPU and memory from its cgroup, into the
-   ledger, by the millisecond.
-
-*Built:* the Firecracker API (configure, start, pause, snapshot, load,
-balloon), the disks (made by mke2fs from a folder, without mounting
-anything), the host's wire to its guest, `why host` and `why host fetch`.
-*Next, on a host with KVM:* `why guest` (the VM's first process: its
-disks laid out, the run taken over the vsock, what it prints sent back),
-`why host run`, the warm pool from a snapshot, the balloon, and boot,
-restore and density measured rather than said.
 
 ## 6. One OS, two ways in
 
@@ -888,16 +839,18 @@ What leaves this system is kept to what is said here:
   decided: its proxy (HTTPS_PROXY, minus NO_PROXY, never for the machine
   itself) and the certificates it trusts (its store or SSL_CERT_FILE,
   beside the bundled ones).
-- **The root.** In the app a Prompt is the distribution's root, run by this
-  machine's kernel without privilege (`why prompt`, why/core/src/prompt/launch.rs): a user
-  namespace makes the user root inside it only; its own mount, pid, ipc,
-  uts and network namespaces (no network unless granted); the root
-  read-only, the repo the only writable place of the person's, fresh
-  `/tmp`, `/run` and a minimal `/dev` with terminals of its own (a devpts
-  made for each Prompt, holding only the ptys opened in it, none of the
-  host's sessions); an environment set, not inherited (no
-  host home, keys, agent or variables); and a seccomp filter
-  (why/core/src/prompt/seccomp.rs) over all of it, so the kernel answers none of what a
+- **The root.** In the app a Prompt is the distribution's root in a box
+  muk makes (`why prompt` writes its bundle and runs `muk run` on it:
+  why/core/src/prompt/bundle.rs, start.rs; module/muk), by this machine's
+  kernel without privilege: a user namespace makes the user root inside
+  it only; its own mount, pid, ipc, uts and network namespaces (no
+  network unless granted); the root read-only, the repo the only
+  writable place of the person's, fresh `/tmp`, `/run` and a minimal
+  `/dev` with terminals of its own (a devpts made for each Prompt,
+  holding only the ptys opened in it, none of the host's sessions); an
+  environment set, not inherited (no host home, keys, agent or
+  variables); and muk's filter (module/muk/src/filter.h) over all of it,
+  from its program's first instruction, so the kernel answers none of what a
   sandboxed program has no use for and escapes are found through: ptrace,
   mounting, new namespaces, modules, kexec, bpf, perf, keys, userfaultfd,
   io_uring, typing into the terminal it was started from (TIOCSTI) (strace and gdb do not run in a Prompt; a shell, compilers,

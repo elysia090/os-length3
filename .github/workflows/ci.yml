@@ -357,8 +357,8 @@ jobs:
           "target/release/why$ext" root check
           npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build --config why/app/vite.config.ts"}, "bundle": {"externalBin": ["binaries/why"]}}'
 
-  # The .deb's AppArmor profile (why/desktop/deb) on stock Ubuntu 24.04: /usr/bin/why can make user namespaces
-  # after postinst installs it, and cannot after postrm removes it.
+  # The .deb's AppArmor profile (why/desktop/deb) on stock Ubuntu 24.04: /usr/bin/muk, beside /usr/bin/why, can make
+  # user namespaces after postinst installs it, and cannot after postrm removes it.
   apparmor:
     name: AppArmor
     runs-on: ubuntu-24.04
@@ -376,8 +376,10 @@ jobs:
           [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1 ]
           cargo build -q --locked -p why
           sudo install -m 0755 target/debug/why /usr/bin/why
+          sh module/lib/build.sh module/muk/src/muk.c "$RUNNER_TEMP/muk"
+          sudo install -m 0755 "$RUNNER_TEMP/muk" /usr/bin/muk
           native() { /usr/bin/why root check --json | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0, "utf8")).native))'; }
-          [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/why to begin with" >&2; exit 1; }
+          [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/muk to begin with" >&2; exit 1; }
           /usr/bin/why root check
           sudo install -D -m 0644 why/desktop/deb/why.apparmor /usr/share/why/apparmor/why
           sudo sh why/desktop/deb/postinst configure
