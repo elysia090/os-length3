@@ -76,10 +76,9 @@
 .stage-hit:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 /* A neighbour runs on past the column's edge: there it goes into the ground, not cut off square as if broken (Server's
    boards, the search's finds, Git's issues alike). */
-.slide-stage::before, .slide-stage::after, .issue-stage::before, .issue-stage::after { content: ''; position: absolute; top: 0; bottom: 0; z-index: 1; width: min(var(--peek), var(--s5)); pointer-events: none; opacity: 0; transition: opacity var(--motion); }
-.slide-stage::before, .issue-stage::before { left: 0; background: linear-gradient(to left, transparent, var(--ground)); }
-.slide-stage::after, .issue-stage::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
-.slide-stage:has(.slide[aria-current='true'] + .slide)::after, .slide-stage:has(.slide + .slide[aria-current='true'])::before,
+.issue-stage::before, .issue-stage::after { content: ''; position: absolute; top: 0; bottom: 0; z-index: 1; width: min(var(--peek), var(--s5)); pointer-events: none; opacity: 0; transition: opacity var(--motion); }
+.issue-stage::before { left: 0; background: linear-gradient(to left, transparent, var(--ground)); }
+.issue-stage::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
 .issue-stage:has(.issue-slot[aria-current='true'] + .issue-slot)::after, .issue-stage:has(.issue-slot + .issue-slot[aria-current='true'])::before { opacity: 1; }
 .space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 

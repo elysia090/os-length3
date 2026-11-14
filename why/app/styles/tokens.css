@@ -69,9 +69,11 @@
   /* Places are rounded squares, actions are round, fields are slightly rounded; a sheet (a file's, the terminal's,
      File's tree, Home's note) has one corner between a field's and a place's; a key of the band is small and drawn in
      line, and tight at the corner (at a sheet's corner the three read slack). */
-  --r-key: 4px; --r-field: 8px; --r-sheet: 10px; --r-place: 12px; --r-round: 999px;
+  --r-key: 4px; --r-field: 8px; --r-sheet: 10px; --r-round: 999px;
+  /* (Four corners and no others, DESIGN §3: what was a place's or a card's own is a sheet's.) */
+  --r-place: var(--r-sheet);
   /* A card of rows: a row's corner plus the room between them. */
-  --r-card: calc(var(--r-field) + var(--s2));
+  --r-card: var(--r-sheet);
   /* Heights: a pressable thing, a row in a list, a place in the rail. */
   --h-control: 40px; --h-row: 32px; --h-place: 48px;
   /* The prompt box's height (one line of body text, its padding and edge): the foot line the rail's person sits on. */

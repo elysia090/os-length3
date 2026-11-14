@@ -64,16 +64,17 @@
 /* On the desk nothing in a sheet says it is not yet saved: it saves itself (on a pause, on leaving it), so a dot for
    it is a state to watch that needs no watching. What does need saying (it failed, it changed elsewhere) is said. */
 .desk-file-head .unsaved-dot { display: none; }
-/* Where a piece is scrolled to (ui/scroll-marks.ts), and how far the desk is turned along its row (desk.ts): bars cut
+/* Where a piece is scrolled to (ui/scroll-marks.ts): bars cut
    square, ink (the terminal's its own green), four px thick, four in from the edge they run along; there while it is
    scrolled and a moment after, nothing at rest. */
-.scroll-mark, .desk-turned { position: absolute; z-index: 3; background: var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--move) var(--spring); }
+.scroll-mark { position: absolute; z-index: 3; background: var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--move) var(--spring); }
 .scroll-mark.down { top: 0; right: 4px; width: 4px; }
 .scroll-mark.across { left: 0; bottom: 4px; height: 4px; }
-.desk-turned { left: 0; bottom: 4px; height: 4px; }
-:is(.scroll-mark, .desk-turned).shown { opacity: 1; transition-duration: 0s; }
+/* (How far the desk is turned along its row is said by the row's map, at the window's foot: shared.css .row-map.) */
+.desk ~ .row-map { bottom: calc(-1 * var(--outer-bottom)); }
+.scroll-mark.shown { opacity: 1; transition-duration: 0s; }
 .desk-box[data-kind] > .scroll-mark { background: var(--green); }
-@media (prefers-reduced-motion: reduce) { .scroll-mark, .desk-turned { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .scroll-mark { transition: none; } }
 /* The line chosen washed under its text, across the whole sheet (desk-file.ts). */
 .desk-mark { position: absolute; left: 0; right: 0; background: var(--marker-soft); pointer-events: none; }
 /* Where the Agent's eye is as it reads (desk-file.ts gaze): a line lit faintly across the sheet, an ink bar at its

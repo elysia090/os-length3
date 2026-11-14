@@ -743,7 +743,7 @@ class Inbox extends Part {
   /** Write `text` to `to` (a name or a code) and send it. */
   async writeTo(to: string, text: string) {
     await this.app.rail.go('inbox');
-    await this.conversations.getByRole('textbox', {name: 'Send to username or code'}).fill(to);
+    await this.conversations.getByRole('textbox', {name: 'Send to username'}).fill(to);
     await this.conversations.getByRole('button', {name: 'Compose', exact: true}).click();
     await this.message.fill(text);
     await this.main.getByRole('button', {name: 'Send', exact: true}).click();

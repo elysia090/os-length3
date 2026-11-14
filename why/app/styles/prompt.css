@@ -247,7 +247,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 @keyframes box-goes { from { opacity: 1; } to { opacity: 0; } }
 @keyframes box-comes { from { opacity: 0; } to { opacity: 1; } }
 .dock > .prompt, .screen > .prompt { min-width: 0; }
-.prompt { display: flex; align-items: flex-end; gap: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); padding: var(--s3) var(--s4); }
+.prompt { display: flex; align-items: flex-end; gap: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); padding: var(--s3) var(--s4); }
 /* Run at the box's bottom right, the word alone (its keys are in its title and name), a small button that does
    not make the box taller; inside the raised box its hover is a step back to the ground. */
 .prompt-run { flex: none; margin-block: calc((var(--t-body) * 1.6 - var(--h-row)) / 2); }

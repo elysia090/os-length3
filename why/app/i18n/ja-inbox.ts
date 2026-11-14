@@ -39,15 +39,13 @@ export default {
     '承認または返信すると自由にやり取りできます（双方がオンライン時は直接通信）。ブロックすると以降届かなくなります。',
   'Send': '送信',
   'Sent as request: recipient will see it once accepted.': 'リクエストとして送信しました。相手が承認するとメッセージが表示されます。',
-  'Send to username or code': 'ユーザー名またはコード宛てに送信',
-  'Message {address}…': '{address}宛てに入力…',
+  'Send to username': 'ユーザー名宛てに送信',
   'New messages': '新着メッセージ',
   'Prefix with Review: or Question: · specify /root/… path · Ctrl+Enter to send': '先頭に Review: または Question: を指定 · /root/… で対象を指定 · Ctrl+Enter で送信',
   // Names: letting one go, a domain that lapsed.
   'Username released; reserved for previous owner until {date}': 'その名前は手放されました。元の所有者のため{date}まで保護されています。',
   // Names: on this Remote, first come, theirs as long as they keep it; a code to be found by; a domain's beside.
   'Your usernames': 'あなたの名前一覧',
-  'Your code: {code}': 'あなたのコード：{code}',
   'Add domain': 'ドメインを追加',
   'name@example.org': 'name@example.org',
   'Custom domain name': 'カスタムドメインでの名前',

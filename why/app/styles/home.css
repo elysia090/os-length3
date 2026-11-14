@@ -49,6 +49,9 @@
 .home-own .todo-item.done .todo-mark { color: var(--ink); }
 .home-own :is(.todo-title, .todo-kind) { font: 700 var(--t-body)/var(--key) var(--sans); }
 .home-own .todo-title { min-height: var(--key); height: var(--key); }
+/* (The kind is a row's height and no taller, whatever its colon's box is, and a word space before the title: "Fix: The
+   title" on one line, both on the row's middle.) */
+.home-own .todo-kind:not([hidden]) { display: flex; align-items: center; height: var(--key); margin-right: .25em; white-space: nowrap; }
 .home-own .todo-title::placeholder { color: var(--note-quiet); font-weight: 400; }
 .home-own .todo-item.done .todo-head :is(.todo-title, .todo-kind), .home-own .todo-item.done .todo-detail { color: var(--note-quiet); }
 .home-own .todo-head > .todo-strike { height: 2px; margin-top: 1px; background: var(--note-quiet); }

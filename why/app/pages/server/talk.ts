@@ -105,8 +105,9 @@ function post(p: servers.Post, runs: boolean, down: (art: HTMLElement) => Promis
   const main = h('div', {class: 'tl-main'},
     ...(runs ? [] : [h('div', {class: 'tl-who'}, h('b', {}, name), h('span', {class: 'muted small'}, where), time)]),
     h('p', {class: 'tl-body'}, p.body), below);
-  const art = h('article', {class: `tl-post${runs ? ' tl-runs' : ''}${p.guest ? ' tl-guest' : ''}`},
-    runs ? h('span', {class: 'tl-face tl-at'}, time) : face(p), main, acts);
+  // (In a run the time is among what the post in hand shows, with its deeds: the speaker's line is said once.)
+  if (runs) acts.append(time);
+  const art = h('article', {class: `tl-post${runs ? ' tl-runs' : ''}${p.guest ? ' tl-guest' : ''}`}, runs ? null : face(p), main, acts);
   if (p.mayTakeDown) acts.append(takeDown(() => down(art)));
   // A post pressed is the one in hand: what can be done with it (its time, its deeds) is on it, and on no other. Nothing
   // waits on a pointer over it.

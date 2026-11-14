@@ -7,6 +7,7 @@ import {scrollMarks} from '../../ui/scroll-marks.ts';
 import {t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {ground} from '../../ui/row.ts';
+import {rowMap} from '../../ui/row-desk.ts';
 import {atRest, eased, GRID, next, PAD, planeWidth, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
 
 // A repo's desk, Forge's center: what is open lies in a row on dots, in the order it was opened, the terminal first;
@@ -51,8 +52,6 @@ const letter = (e: KeyboardEvent) => !e.ctrlKey && !e.metaKey && !e.altKey && e.
 
 /** How long after the desk was last scrolled by hand it is taken to be let go of. */
 const REST_MS = 140;
-/** How long the desk's own mark stays after it was last turned. */
-const MARK_MS = 700;
 
 /** A piece on the desk: where its left edge is and how wide it is; `placed` once it has stood somewhere (before, it
  * has no place to move from). */
@@ -102,8 +101,6 @@ export class Desk {
   readonly #boxes = new Map<string, Box>();
   #row: string[] = [];
   #held: string | null = null;
-  /** Where the row ends (its last piece's shadow, a cell after). */
-  #end = 0;
   /** The desk turning (its next frame; none at rest), and how far it is going: laid again on its way, it goes on to
    * where it is now to go rather than starting again. */
   #moving = 0;
@@ -118,9 +115,8 @@ export class Desk {
   readonly #sized = new ResizeObserver(() => this.#relay());
   /** The piece a press under way is on (the desk waits for it to be let go: its click takes it in hand). */
   #pressing: string | null = null;
-  /** How far the desk is turned, said at the window's foot while it turns (styles: .desk-turned). */
-  readonly #turned = h('div', {class: 'desk-turned', 'aria-hidden': 'true'});
-  #turnedRest = 0;
+  /** The row's map at the window's foot (ui/row-desk.ts): what is out of sight, which way and how far, and the way to it by a press. */
+  readonly #map: {element: HTMLElement; paint(): void};
   #turnedTo = 0;
   readonly #shut: (key: string) => void;
   readonly #changed: () => void;
@@ -131,7 +127,11 @@ export class Desk {
     this.#shut = shut;
     this.#changed = changed;
     this.#plane = h('div', {class: 'desk-plane'});
-    this.element = h('section', {class: 'desk', tabindex: '-1', 'aria-label': label, 'data-repo': repo}, this.#plane, this.#turned);
+    this.element = h('section', {class: 'desk', tabindex: '-1', 'aria-label': label, 'data-repo': repo}, this.#plane);
+    this.#map = rowMap(this.element, () => this.#row.map((key) => {
+      const b = this.#boxes.get(key)!;
+      return {x: b.x, w: b.w, held: key === this.#held, name: b.el.querySelector('.desk-label')?.textContent?.trim() || key, go: () => this.take(key)};
+    }));
     // The rail going by (main.ts select) asks a page's own camera to stand back: the desk has one size, and does not.
     ownCamera(this.element, {away: () => Promise.resolve(), afar: () => {}, near: () => {}, far: 1, dots: null});
     this.element.addEventListener('keydown', (e) => this.#key(e));
@@ -303,6 +303,7 @@ export class Desk {
     this.#held = key;
     this.#framed = null;
     this.#look(glide);
+    this.#said();
     if (focus) b.laid.focus();
     this.#changed();
   }
@@ -352,11 +353,11 @@ export class Desk {
       const to = `${x}px ${TOP}px`;
       if (b.el.style.translate !== to) b.el.style.translate = to;
     }
-    this.#end = end;
     // (Wide enough for the last piece to stand at the edge.)
     const last = this.#row.at(-1);
     this.#plane.style.width = `${Math.max(end, last === undefined ? w : planeWidth(at.get(last)!, w))}px`;
     this.#plane.style.height = `${hgt}px`;
+    this.#said();
     this.#look(glide);
     this.#changed();
   }
@@ -408,18 +409,10 @@ export class Desk {
     this.#moving = requestAnimationFrame(step);
   }
 
-  /** How far the desk is turned, said at the window's foot while it turns and a moment after: an ink bar cut square,
-   * as long as the part of the row in sight is of the whole, where that part is. Nothing at rest. */
+  /** The row's map drawn again: beside the desk (not on what it turns), at the window's foot. */
   #said() {
-    const el = this.element, w = el.clientWidth, far = this.#end - w;
-    if (far <= 1) { this.#turned.classList.remove('shown'); return; }
-    // (From where the page's own things start to a cell short of the window's edge.)
-    const from = 3 * GRID, room = w - from - GRID, len = Math.max(GRID, room * w / this.#end);
-    this.#turned.style.width = `${len}px`;
-    this.#turned.style.translate = `${el.scrollLeft + from + (room - len) * Math.min(1, el.scrollLeft / far)}px 0`;
-    this.#turned.classList.add('shown');
-    clearTimeout(this.#turnedRest);
-    this.#turnedRest = window.setTimeout(() => this.#turned.classList.remove('shown'), MARK_MS);
+    if (!this.#map.element.isConnected) this.element.parentElement?.append(this.#map.element);
+    this.#map.paint();
   }
 
   #key(e: KeyboardEvent) {

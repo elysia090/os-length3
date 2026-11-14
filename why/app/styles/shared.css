@@ -64,3 +64,14 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
 .door.away::after, .door.news::after { content: ''; position: absolute; top: 6px; right: 10px; width: 8px; height: 8px; border-radius: 2px; background: var(--off); }
 .door.news::after { background: var(--ink); }
 body.has-door :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { margin-left: calc(2 * var(--u)); width: min(calc(22 * var(--u)), round(down, 100% - 2 * var(--u), var(--u))); border-radius: 0 var(--r-key) var(--r-key) 0; }
+
+/* A row's map (ui/row-desk.ts, DESIGN §6): beside its desk (not on what the desk turns), at the window's foot from the desk's edge, the row twelve times smaller, a
+   bar for each piece (the one in the hand in ink), a line under what is in sight. There while some of the row is out
+   of sight; a bar pressed goes to its piece. Under a piece's shadow, which ends half a cell over the window's foot. */
+.row-map { position: absolute; left: 0; bottom: 0; z-index: 3; height: calc(var(--u) / 2); }
+.row-map[hidden] { display: none; }
+.row-piece { position: absolute; top: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; cursor: var(--cursor-hand); }
+.row-piece::before { content: ''; position: absolute; left: 0; right: 0; bottom: 5px; height: 4px; background: var(--edge); }
+.row-piece[aria-current='true']::before { background: var(--ink); }
+.row-piece:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.row-sight { position: absolute; bottom: 1px; height: 2px; background: var(--ink); pointer-events: none; }

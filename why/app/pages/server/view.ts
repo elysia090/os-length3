@@ -64,18 +64,19 @@ export class ServerView {
     const signedIn = connection() !== null;
     this.here = {signedIn, list: [], shown: [], serverId: null, alone: null, naming: null};
     this.band = new Band(this.here, {
-      show: (id) => this.switchTo(id),
+      // (The server already on screen pressed: to the row's start, where its own sheet is.)
+      show: (id) => { if (id === this.here.serverId && this.showing === 'boards') this.row.toStart(); else this.switchTo(id); },
       showAlone: (b) => this.showAlone(b),
       make: () => this.makeAnew(),
       gear: () => { if (this.showing === 'settings') this.place('boards'); else this.settings(); },
     });
     const center = h('div', {class: 'center server-center'});
-    this.row = new Row(center, {box: (j, now) => this.box(j, now), landed: (k, pressed) => this.landed(k, pressed)});
     this.side = new Side({isMe: (a) => this.isMe(a), seeRepo: (r) => this.seeRepo(r), write: (a) => this.write(a)});
-    center.append(this.band.element, this.row.element, this.sheet, this.dock);
-    this.work = h('div', {class: 'work no-strip'}, center, this.side.element, h('div', {class: 'server-bar'}, this.band.gear));
-    // Signed out, whose a board is is not told: there is no right pane, and so no line where it would start.
-    if (!signedIn) { this.side.element.hidden = true; this.work.classList.add('no-side'); }
+    // The room's own sheet is the row's first piece, at the desk's edge before its boards; the box that writes in a
+    // board is at that board's foot, in the hand with it. Signed out, whose a board is is not told: no such sheet.
+    this.row = new Row({box: (j, now) => this.box(j, now), landed: (k, pressed) => this.landed(k, pressed)}, this.dock, signedIn ? this.side.element : null);
+    center.append(this.band.element, this.row.element, this.sheet);
+    this.work = h('div', {class: 'work no-strip no-side'}, center, h('div', {class: 'server-bar'}, this.band.gear));
     this.myself = signedIn ? me().catch(() => null) : Promise.resolve(null);
     this.hear();
     const held = servers.heldInvite();
@@ -248,8 +249,8 @@ export class ServerView {
     const want = board ?? (this.at.server === id ? this.at.board : undefined);
     const i = this.here.shown.findIndex((b) => b.id === want);
     // Its boards, and after them the last box, a new board.
-    this.row.fill(this.here.shown.length + 1, i >= 0 ? i : 0);
     this.side.paint(this.here.serverId);
+    this.row.fill(this.here.shown.length + 1, i >= 0 ? i : 0);
   }
 
   /**
@@ -270,8 +271,8 @@ export class ServerView {
     this.place('boards');
     this.band.paint();
     this.here.shown = [b];
-    this.row.fill(1, 0);
     this.side.paint(this.here.serverId);
+    this.row.fill(1, 0);
   }
 
   /** No server chosen: one is made, where it will stand. */
@@ -344,9 +345,15 @@ export class ServerView {
     const b = this.here.shown[k];
     if (b) remember({server: this.here.serverId ?? undefined, board: b.id});
     this.paintDock(b ?? null);
+    this.index();
     if (!b && pressed) this.row.track.querySelector<HTMLInputElement>('.slide[aria-current="true"] .board-name-in')?.focus({preventScroll: true});
     // Read ahead and now on screen, what its talk shows is seen.
     seenNow();
+  }
+
+  /** The room's index: its boards by name on its own sheet, the one in the hand marked; one pressed is gone to. */
+  private index() {
+    this.side.boards(this.here.serverId ? this.here.shown : [], this.row.k, (j) => this.row.go(j, true));
   }
 
   /** The box at the foot: writing in the board on screen (dock.ts). */
@@ -366,6 +373,7 @@ export class ServerView {
       if (!this.work.isConnected) { unhear(); return; }
       this.band.mark();
       for (const head of this.row.track.querySelectorAll<HTMLElement>('.board-head[data-board]')) markBoard(head, this.here.signedIn);
+      this.index();
       // The board on screen: what came is read in now, and is seen if its foot is in view.
       const on = this.here.shown[this.row.k];
       if (this.showing === 'boards' && on?.member && boardNew(on.id)) cameTo(on.id);
@@ -379,11 +387,9 @@ export class ServerView {
     // the box at the foot with them (not there a moment before the board it writes in).
     if (now !== this.showing) {
       arrive(now === 'boards' ? this.row.element : this.sheet, now === 'boards' ? -1 : 1, 'x', 16, 260);
-      if (now === 'boards') arrive(this.dock, -1, 'x', 16, 260);
     }
     this.showing = now;
     this.row.element.hidden = now !== 'boards';
-    this.dock.hidden = now !== 'boards';
     this.sheet.hidden = now === 'boards';
     if (now === 'boards') this.sheet.replaceChildren();
     if (now !== 'repo') this.side.seen(null);

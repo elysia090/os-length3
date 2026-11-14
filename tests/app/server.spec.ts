@@ -110,8 +110,13 @@ test('someone added by name is asked in their Inbox, and is in the server once t
   // Who asked sees them come in where they are, not only when Server is next opened: back in her window, who is in it
   // is looked at again at once (and every little while it is on screen, 15 s, app/runs.ts).
   await ada.page.evaluate(() => dispatchEvent(new Event('focus')));
+  // (Who is in it is on the room's own sheet, the first of its row: back from behind the gear, with its boards.)
+  const gear = ada.server.view.getByRole('button', {name: 'Manage members, boards, and repos'});
+  await gear.click();
   await expect(ada.server.side).toContainText(bo.handle, {timeout: 5000});
   // And behind the gear, where it was asked, People counts them.
+  await gear.click();
+  await ada.server.view.getByRole('tab', {name: /^Members/}).click();
   await expect(ada.server.view.getByRole('tab', {name: /^Members\s?2$/})).toBeVisible();
   // Added already, the card says so rather than asking again.
   await ada.server.close();
@@ -212,17 +217,19 @@ test('a new board is named where it will stand: pressed to, its name has the key
   await expect(name).not.toBeFocused();
 });
 
-test("on a phone's width Post comes with the words, the empty box saying whom it writes to whole", async ({signedIn: app}) => {
-  await app.page.setViewportSize({width: 390, height: 844});
+test('Post comes with the words, the empty box saying whom it writes to whole: on a phone as on a whole screen', async ({signedIn: app}) => {
   const field = app.server.box('general');
   const post = app.server.view.getByRole('button', {name: 'Post', exact: true});
-  await expect(field).toBeVisible();
-  await expect(post).toBeHidden();
-  await field.fill('Who brings the tent?');
-  await expect(post).toBeVisible();
-  await post.click();
-  await expect(app.server.talk('general')).toContainText('Who brings the tent?');
-  await expect(post).toBeHidden();
+  for (const [size, words] of [[{width: 390, height: 844}, 'Who brings the tent?'], [{width: 1440, height: 900}, 'And the stove?']] as const) {
+    await app.page.setViewportSize(size);
+    await expect(field).toBeVisible();
+    await expect(post).toBeHidden();
+    await field.fill(words);
+    await expect(post).toBeVisible();
+    await post.click();
+    await expect(app.server.talk('general')).toContainText(words);
+    await expect(post).toBeHidden();
+  }
 });
 
 test('Post at the box sends what is written, the keyboard staying in the box', async ({signedIn: app}) => {
@@ -354,7 +361,7 @@ test('This server says what leaving and removing it come to: its maker alone a d
   await expect(leave).toContainText(`Leave Trip.Ownership transfers to ${bo.handle}.`);
 });
 
-test('an empty board says so at its talk\'s foot, by the box one writes in; a board with more below opens at its foot', async ({signedIn: app}) => {
+test('an empty board says so at its talk\'s foot, by the box one writes in; a talk longer than its board says at its top that it is whole', async ({signedIn: app}) => {
   const talk = app.server.talk('general');
   const empty = talk.getByText('No posts yet', {exact: true});
   await expect(empty).toBeVisible();
@@ -367,8 +374,7 @@ test('an empty board says so at its talk\'s foot, by the box one writes in; a bo
   await expect(about.locator('br')).toHaveCount(1);
   await expect(about).toHaveText('A board groups discussions and shared tasks around a topic:e.g. trips, releases, or study groups.');
 
-  // A talk longer than its board (the board's whole height is the talk's): at its foot the board is closed; scrolled
-  // up, it is open at its foot.
+  // A talk longer than its board scrolls inside it, over the box one writes in at the sheet's foot.
   await app.server.view.getByRole('button', {name: 'Previous board'}).click();
   // Every post on the board at once, it is not said to be every post: that is plain to see.
   const every = talk.getByText('No more posts', {exact: true});
@@ -376,14 +382,11 @@ test('an empty board says so at its talk\'s foot, by the box one writes in; a bo
   await expect(talk).toContainText('Post 2');
   await expect(every).toBeHidden();
   for (let i = 3; i <= 30; i++) await app.server.post('general', `Post ${i}`);
-  const card = app.server.view.locator('.slide[aria-current="true"] .board-card');
-  const bottom = () => card.evaluate((el) => getComputedStyle(el).borderBottomColor);
   await expect(talk).toContainText('Post 30');
-  await expect.poll(bottom).not.toBe('rgba(0, 0, 0, 0)');
+  // The box it is written in stays at the sheet's foot, in sight, however far the talk is scrolled.
+  const field = app.server.box('general');
   await talk.evaluate((el) => { el.scrollTop = 0; });
-  await expect.poll(bottom).toBe('rgba(0, 0, 0, 0)');
+  await expect(field).toBeInViewport();
   // More than the board shows, at its top it is said.
   await expect(every).toBeVisible();
-  await talk.evaluate((el) => { el.scrollTop = el.scrollHeight; });
-  await expect.poll(bottom).not.toBe('rgba(0, 0, 0, 0)');
 });

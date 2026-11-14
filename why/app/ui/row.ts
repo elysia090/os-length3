@@ -31,3 +31,14 @@ export function atRest(now: number, starts: readonly number[]): number {
 export function ground(by: number, cell = 24) {
   document.body.style.backgroundPositionX = by % cell ? `${-(by % cell)}px` : '';
 }
+
+/** A piece's width in cells, and the narrowest it is on a window with no room for that (DESIGN §3). */
+const WIDE = 24, NARROW = 10;
+
+/**
+ * As wide as a piece is on a desk `face` px wide: 24 cells, or as many whole cells as the desk has room for with the
+ * piece's shadow (`shade`), never under ten.
+ */
+export function pieceWidth(face: number, cell = 24, shade = 12): number {
+  return cell * Math.min(WIDE, Math.max(NARROW, Math.floor((face - shade) / cell)));
+}
