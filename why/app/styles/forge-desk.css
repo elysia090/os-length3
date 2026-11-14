@@ -1,9 +1,9 @@
 /* Forge's desk (pages/forge/desk.ts): the page is the desk, the window's whole ground under the band's keys. What is
    open lies on it in a row, on the dots' grid: the terminal first, a sheet of ink lying askew near the places, its
    shadow its own green; then the files, each a sheet of paper (its corner --r-sheet), fifty letters wide, its name over its
-   top-left corner (its folder quiet before it). Every sheet's top is on one line, and none reaches lower than two
-   cells over the window's foot: what is under that, or past its right edge, is scrolled to inside it. The hard shadow,
-   a cell right and down, is under the piece in hand alone. Its code is 14 px on a line of a cell at rest; a piece
+   top-left corner (its folder quiet before it). Every sheet's top is on one line, and none reaches lower than a
+   cell over the window's foot: what is under that, or past its right edge, is scrolled to inside it. The hard shadow,
+   half a cell right and down, is under the piece in hand alone. Its code is 14 px on a line of a cell at rest; a piece
    pressed twice is twice as large (--k), 28 px on lines of two cells, and brought to the desk's edge.
    (Before: boxes inked round with soft corners, 80 columns of 14 px code, in columns one under another, as tall as
    their text, the one in hand brought to the middle of the face; the Prompt a line at the center's foot.) */
@@ -26,25 +26,25 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
 .desk-box.gives { transition-duration: 420ms, 220ms, 220ms, 120ms, 120ms, 180ms; transition-delay: 50ms, 0s, 0s, 0s, 0s, 0s;
   transition-timing-function: cubic-bezier(.25, 1.25, .5, 1), var(--land), var(--land), var(--land), var(--land), ease-out; }
 /* (A piece made larger is nearer the eye: its shadow as much longer, its name as much larger, as it is.) */
-.desk-box.held { box-shadow: calc(var(--u) * var(--k, 1)) calc(var(--u) * var(--k, 1)) 0 0 var(--ink); }
+.desk-box.held { box-shadow: calc(var(--shade) * var(--k, 1)) calc(var(--shade) * var(--k, 1)) 0 0 var(--ink); }
 /* Set down beside another (desk.ts lay): the pieces after it get out of its way at once (.gives); once they have gone
    from its place (some 200 ms), it comes into sight held over it, its shadow long, and is put down onto the desk as
    the desk turns to it: never under another, nor over its words. */
 .desk-box.landing { z-index: 1; animation: set-down 420ms linear 200ms both; }
 @keyframes set-down {
-  from { opacity: 0; margin: -12px 0 0 -12px; box-shadow: 36px 36px 0 0 var(--ink); animation-timing-function: ease-out; }
-  30% { opacity: 1; margin: -12px 0 0 -12px; box-shadow: 36px 36px 0 0 var(--ink); animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
-  to { opacity: 1; margin: 0; box-shadow: var(--u) var(--u) 0 0 var(--ink); }
+  from { opacity: 0; margin: -6px 0 0 -6px; box-shadow: 18px 18px 0 0 var(--ink); animation-timing-function: ease-out; }
+  30% { opacity: 1; margin: -6px 0 0 -6px; box-shadow: 18px 18px 0 0 var(--ink); animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
+  to { opacity: 1; margin: 0; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 }
 @media (prefers-reduced-motion: reduce) { .desk-box.landing { animation: none; } }
-/* Its name over its top-left corner, in the letters the desk's small words are set in, its feet half a cell over the
-   sheet; its close at the other end of that line, there for the piece under the pointer and for the keyboard. */
-.desk-label { position: absolute; left: 0; bottom: calc(100% + 7px); display: flex; align-items: baseline; gap: 0; white-space: nowrap;
-  font: 700 calc(16.5px + 3.5px * (var(--k, 1) - 1))/var(--u) var(--mono); color: var(--ink); transition: font-size 220ms var(--land); }
+/* Its name over its top-left corner, in the letters the desk's small words are set in, on the cell over the sheet (the
+   one under the band); its close at the other end of that line, there for the piece under the pointer and for the keyboard. */
+.desk-label { position: absolute; left: 0; bottom: 100%; display: flex; align-items: baseline; gap: 0; white-space: nowrap;
+  font: 700 calc(var(--t-meta) + 2px * (var(--k, 1) - 1))/var(--u) var(--mono); color: var(--ink); transition: font-size 220ms var(--land); }
 .desk-after { margin-left: 1ch; font-weight: 400; color: var(--quiet); }
-.desk-close { position: absolute; right: 0; bottom: calc(100% + 7px); display: grid; place-items: center; width: var(--u); height: var(--u); padding: 0; border: 0;
+.desk-close { position: absolute; right: 0; bottom: 100%; display: grid; place-items: center; width: var(--u); height: var(--u); padding: 0; border: 0;
   border-radius: 0; background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
-.desk-close > .icon { width: 18px; height: 18px; stroke-width: 2.4; }
+.desk-close > .icon { width: 16px; height: 16px; stroke-width: 2; }
 .desk-box:not(:hover) > .desk-close:not(:focus-visible) { opacity: 0; }
 .desk-close:hover { background: var(--ink); color: var(--paper); }
 .desk-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
@@ -135,17 +135,17 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
   --ansi-0: #6b6863; --ansi-1: #f08a9b; --ansi-2: var(--green); --ansi-3: var(--note); --ansi-4: #9cc0f2; --ansi-5: #d8a6e2;
   --ansi-6: #93d9e2; --ansi-7: var(--ground); --ansi-8: var(--quiet); --ansi-9: #f7a9b6; --ansi-10: #c2f0da; --ansi-11: #f7df85;
   --ansi-12: #bdd6f7; --ansi-13: #e6c3ed; --ansi-14: #b9e8ee; --ansi-15: var(--paper); }
-.desk-box[data-kind='term'] { padding: 0; rotate: -4deg; transform-origin: 0 0; box-shadow: 22.3px 25.6px 0 0 var(--green); }
+.desk-box[data-kind='term'] { padding: 0; rotate: -4deg; transform-origin: 0 0; box-shadow: 11.15px 12.8px 0 0 var(--green); }
 /* In hand it lies straight and is opened out to work in (desk.ts: 22 cells by 20 lines), the files gone along the row
    to make it room (.gives); let go, it closes to its size at rest and lies askew again. */
 .desk-box[data-kind='term'] { transition-duration: 640ms, 360ms, 220ms, 120ms, 120ms, 180ms; }
-.desk-box[data-kind='term'].held { rotate: 0deg; box-shadow: calc(var(--u) * var(--k, 1)) calc(var(--u) * var(--k, 1)) 0 0 var(--green); }
-.desk-box[data-kind='agent'].held { box-shadow: var(--u) var(--u) 0 0 var(--green); }
+.desk-box[data-kind='term'].held { rotate: 0deg; box-shadow: calc(var(--shade) * var(--k, 1)) calc(var(--shade) * var(--k, 1)) 0 0 var(--green); }
+.desk-box[data-kind='agent'].held { box-shadow: var(--shade) var(--shade) 0 0 var(--green); }
 .desk-box[data-kind='agent'].landing { animation-name: set-down-green; }
 @keyframes set-down-green {
-  from { opacity: 0; margin: -12px 0 0 -12px; box-shadow: 36px 36px 0 0 var(--green); animation-timing-function: ease-out; }
-  30% { opacity: 1; margin: -12px 0 0 -12px; box-shadow: 36px 36px 0 0 var(--green); animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
-  to { opacity: 1; margin: 0; box-shadow: var(--u) var(--u) 0 0 var(--green); }
+  from { opacity: 0; margin: -6px 0 0 -6px; box-shadow: 18px 18px 0 0 var(--green); animation-timing-function: ease-out; }
+  30% { opacity: 1; margin: -6px 0 0 -6px; box-shadow: 18px 18px 0 0 var(--green); animation-timing-function: cubic-bezier(.2, .9, .25, 1); }
+  to { opacity: 1; margin: 0; box-shadow: var(--shade) var(--shade) 0 0 var(--green); }
 }
 .desk-box[data-kind='agent'] { padding: var(--line); }
 .desk-box[data-kind='agent'] > .desk-label { color: var(--ink); }

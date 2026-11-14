@@ -1,8 +1,9 @@
 // Where each piece of the desk lies (desk.ts), and how far along it the desk is turned: kept apart from the page so it
 // is measured and tested as numbers. The desk is a row on a 24 px grid: the terminal first, from the desk's own edge
 // (the rail's corner, under the band's keys and as wide as they are), then the files, each a sheet fifty letters
-// wide, three cells between them. Every piece's top is on one line; a sheet is as tall as
-// its lines, never lower than two cells over the window's foot, what is under that scrolled to inside it. The desk is
+// wide, two cells between them. Every piece's top is on one line, a cell under the band (their names stand in that
+// cell); a sheet is as tall as its lines, never lower than a cell over the window's foot, what is under that scrolled
+// to inside it. The desk is
 // turned along the row only as far as brings the piece in hand whole into sight (before: boxes 80 columns wide in
 // columns, one under another, the one in hand brought to the middle of the face by a camera).
 
@@ -21,17 +22,17 @@ export const TERM_LINES = 18;
 /** The terminal in hand: opened out to work in, wider and taller, the files gone along the row to make it room. */
 export const TERM_HELD = 22 * GRID;
 export const TERM_HELD_LINES = 20;
-/** Between two sheets (the second is cut by the window's edge, and says the row goes on); after the terminal, which
- * lies askew and casts its shadow that way. */
-export const GAP = 3 * GRID;
+/** Between two sheets (the second is cut by the window's edge, and says the row goes on): two cells, the shadow of
+ * the one in hand and a cell and a half clear of it; after the terminal, which lies askew and leans that way, three. */
+export const GAP = 2 * GRID;
 export const TERM_GAP = 3 * GRID;
 /** The desk's ground before its first piece (none: the terminal starts where the band's keys do), over the pieces
  * (their names stand in it), and under them. */
 export const PAD = 0;
-export const TOP = 2 * GRID;
-export const FOOT = 2 * GRID;
-/** A piece's shadow, a cell right and down. */
-export const SHADOW = GRID;
+export const TOP = GRID;
+export const FOOT = GRID;
+/** A piece's shadow, half a cell right and down (styles: --shade). */
+export const SHADOW = GRID / 2;
 /** A piece pressed twice is this many times as large: exactly twice, so its letters (28 px), its lines (two cells),
  * its margins and its width (forty cells) are all on the desk's grid as they are at rest. */
 export const BIG = 2;
@@ -67,13 +68,14 @@ export function termHeight(hgt: number, line = LINE, held = false): number {
 
 /**
  * How far the desk is turned (from `now`) to bring the piece from `x`, `w` wide, into sight on a face `face` wide, the
- * row ending at `end`: where it is while the piece and its shadow are in sight; else as little further as shows them,
+ * row ending at `end`: where it is while the piece and its shadow are in sight; else as little further, in whole cells, as shows them,
  * the piece at the desk's own edge (where the band's keys start); a piece wider than the face from its left. Never
  * past the row's end. A piece made larger (`lead`) is the page's one sheet: brought to the desk's edge, under the
  * band's keys, wherever it was.
  */
 export function inSight(now: number, x: number, w: number, face: number, end: number, lead = false): number {
-  const most = Math.max(0, end - face), left = x - PAD, right = x + w + SHADOW + GRID - face;
+  // (Whole cells, always: turned, the pieces are still on the desk's dots.)
+  const most = Math.max(0, up(end - face)), left = x - PAD, right = up(x + w + SHADOW - face);
   const to = lead || now > left ? left : now < right ? Math.min(right, left) : now;
   return Math.max(0, Math.min(most, to));
 }

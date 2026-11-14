@@ -50,15 +50,20 @@ export function home(ctx: Context): Node[] {
   const repos = h('section', {class: 'section home-repos-sec', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid);
   const waits = h('div', {class: 'home-waits'}, pluginArea(), agentCards((repo, issue) => { void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
   const beside = h('div', {class: 'home-beside'}, repos, waits);
-  const main = h('div', {class: 'home-main'}, h('div', {class: 'home-own'}, header, ...unread, todoBox()), beside);
-  // The names' ink stands on the right edge (not their boxes), and the person's name is as large as the room the
-  // repos leave it: measured as the repos are drawn, and as what waits is.
+  const note = todoBox();
+  const main = h('div', {class: 'home-main'}, h('div', {class: 'home-own'}, header, ...unread, note), beside);
+  // The note and the slip are whole cells tall, whatever is written on them: what is under them stays on the grid.
+  wholeCells(note);
+  for (const slip of waits.children) wholeCells(slip as HTMLElement);
+  // The names' ink stands on the column's left edge (not their boxes), and the person's name is as large as the column
+  // has room for: measured as the repos are drawn, and as what waits is.
   const edges = () => {
-    for (const el of beside.querySelectorAll<HTMLElement>('.home-repos .card-title, .lately-list > .pane-row:first-child > .pane-line')) inkEdge(el, 'right');
+    for (const el of beside.querySelectorAll<HTMLElement>('.home-repos .card-title, .lately-list > .pane-row:first-child > .pane-line')) inkEdge(el, 'left');
     fitName(header);
   };
   new MutationObserver(edges).observe(beside, {childList: true, subtree: true, characterData: true});
-  new ResizeObserver(edges).observe(repos);
+  const sized = new ResizeObserver(edges);
+  sized.observe(repos); sized.observe(header);
   return [onTheGround(main, ctx, listed)];
 }
 
@@ -216,21 +221,30 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
 const U = 24, CAP = .727;
 
 /**
- * The name on its line: its capitals whole cells tall, seven where there is room, fewer as the name is longer or the
- * window narrower (the repos' names keep their column), never under two; longer than that, it breaks over lines. Its
- * ink, not its box, stands on the left edge.
+ * `el` kept whole cells tall: as its own height changes, the room at its foot (--to-grid, which its styles add under
+ * what is in it) is what brings it to the next line of the grid.
+ */
+function wholeCells(el: HTMLElement) {
+  new ResizeObserver(() => {
+    const had = parseFloat(el.style.getPropertyValue('--to-grid')) || 0;
+    const needs = (U - ((el.offsetHeight - had) % U)) % U;
+    if (needs !== had) el.style.setProperty('--to-grid', `${needs}px`);
+  }).observe(el);
+}
+
+/**
+ * The name on its line: its capitals two cells tall, one where the name is longer than the column at two; longer than
+ * the column at one, it breaks over lines. Its ink, not its box, stands on the left edge.
  */
 function fitName(header: HTMLElement) {
   const name = header.querySelector<HTMLElement>('.identity > h1'), layout = header.closest<HTMLElement>('.home-layout');
   if (!name || !layout) return;
-  const repos = layout.querySelector<HTMLElement>('.home-repos-sec');
-  const beside = repos && getComputedStyle(repos).position === 'absolute' ? repos.offsetWidth + 2 * U : 0;
   // (With no name written, what stands in its place is measured: the placeholder.)
-  const fits = fitSize(name, name.textContent || name.dataset.placeholder || '', layout.clientWidth - beside, -.055, () => fitName(header));
+  const fits = fitSize(name, name.textContent || name.dataset.placeholder || '', header.clientWidth, -.055, () => fitName(header));
   if (!fits) return;
   const cells = Math.floor((fits * CAP) / U);
-  name.style.setProperty('--name-cap', String(Math.max(2, Math.min(7, cells))));
-  name.classList.toggle('long', cells < 2);
+  name.style.setProperty('--name-cap', String(Math.max(1, Math.min(2, cells))));
+  name.classList.toggle('long', cells < 1);
   inkEdge(name, 'left');
 }
 

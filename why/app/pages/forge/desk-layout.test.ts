@@ -6,7 +6,7 @@ import {BIG, GAP, GRID, inSight, LINE, next, PAD, row, SHADOW, tabbed, tallest, 
 
 const pieces = [{key: 'term', width: TERM, term: true}, {key: 'a.c', width: WIDTH}, {key: 'README.md', width: WIDTH}];
 
-test('the pieces lie in a row on the grid: the terminal, then the files three cells apart', () => {
+test('the pieces lie in a row on the grid: the terminal, then the files two cells apart', () => {
   const {at, end} = row(pieces);
   assert.equal(at.get('term'), PAD);
   assert.equal(at.get('a.c'), PAD + TERM + TERM_GAP);
@@ -18,12 +18,12 @@ test('the pieces lie in a row on the grid: the terminal, then the files three ce
   for (const x of at.values()) assert.equal(x % GRID, 0);
 });
 
-test('a sheet is whole lines tall, its foot two cells over the face\'s', () => {
-  // A face 804 high (a 900 px window under the band): 28 lines and half a line over and under them.
-  assert.equal(tallest(804), 29 * LINE);
+test('a sheet is whole lines tall, its foot a cell over the face\'s', () => {
+  // A face 804 high: 30 lines and half a line over and under them.
+  assert.equal(tallest(804), 31 * LINE);
   // Larger letters, fewer lines, the same foot or higher.
   const big = tallest(804, LINE * BIG);
-  assert.ok(big <= 804 - 4 * GRID && big > 804 - 4 * GRID - LINE * BIG);
+  assert.ok(big <= 804 - 2 * GRID && big > 804 - 2 * GRID - LINE * BIG);
   // Never under four lines, however low the face.
   assert.equal(tallest(100), 5 * LINE);
   // The terminal: fourteen lines and a cell over and under, or what a low face has room for.
@@ -38,8 +38,8 @@ test('the desk is turned only as far as brings the piece in hand whole into sigh
   assert.equal(inSight(0, at.get('a.c')!, WIDTH, face, end), 0);
   // The third is cut by the face's edge: turned as little as shows it and its shadow.
   const to = inSight(0, at.get('README.md')!, WIDTH, face, end);
-  assert.equal(to, at.get('README.md')! + WIDTH + SHADOW + GRID - face);
-  assert.ok(to > 0 && to <= end - face);
+  assert.equal(to, GRID * Math.ceil((at.get('README.md')! + WIDTH + SHADOW - face) / GRID));
+  assert.ok(to > 0 && to <= end - face && to % GRID === 0);
   // Back to the terminal from there: turned back to the start, a cell of ground before it.
   assert.equal(inSight(to, at.get('term')!, TERM, face, end), 0);
   // A piece wider than the face is read from its left.

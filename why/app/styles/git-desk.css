@@ -29,7 +29,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-flow.git-desk { position: relative; margin-left: calc(-2 * var(--u)); padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(3 * var(--u)) calc(11 * var(--u)); }
 .git-desk > .git-side { position: absolute; left: 0; top: calc(2 * var(--u)); width: calc(8 * var(--u)); transform-origin: 0 0; rotate: -4deg; }
 .git-desk > .git-side.none { display: none; }
-.git-switch { padding: calc(1.5 * var(--u)) 0; border-radius: var(--r-sheet); background: var(--ink); box-shadow: var(--u) var(--u) 0 0 var(--green); }
+.git-switch { padding: calc(1.5 * var(--u)) 0; border-radius: var(--r-sheet); background: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--green); }
 .git-switch:empty { display: none; }
 .switch-lines { display: grid; }
 .switch-line { position: relative; display: flex; justify-content: flex-end; align-items: center; height: 42px; padding: 0 calc(1.5 * var(--u)); }
@@ -56,7 +56,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 /* (A sheet's shadow lies a cell past it: the row is not cut before that.) */
 .git-desk .issue-stage { margin-right: calc(-1 * var(--u)); padding-right: var(--u); }
 .git-desk .issue-card { position: relative; padding: var(--u); border: 0; border-radius: var(--r-sheet); background: var(--paper); }
-.git-desk .issue-slot[aria-current='true'] .issue-card { padding: calc(1.5 * var(--u)); background: var(--paper); box-shadow: var(--u) var(--u) 0 0 var(--ink); }
+.git-desk .issue-slot[aria-current='true'] .issue-card { padding: calc(1.5 * var(--u)); background: var(--paper); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 /* A sheet's edge: one pixel of ink round it, over what it holds (the work's bands run to it). */
 .git-desk .issue-card::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--ink); pointer-events: none; }
 .git-desk .issue-slot > :not(.issue-card) { margin-top: calc(2 * var(--u)); }
@@ -162,7 +162,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-desk .review-diff .diff-line.del { background: color-mix(in srgb, var(--del) 14%, var(--paper)); }
 .git-desk .review-diff .diff-line:is(.marked, .marking) { background: var(--note); }
 .git-desk .review-diff .diff-no { font: 400 11px/var(--u) var(--mono); color: var(--quiet); }
-.git-desk .review-sheet { position: relative; margin-top: calc(3 * var(--u) + 31px); padding: calc(1.5 * var(--u)); border-radius: var(--r-sheet); background: var(--paper); box-shadow: var(--u) var(--u) 0 0 var(--ink); }
+.git-desk .review-sheet { position: relative; margin-top: calc(3 * var(--u) + 31px); padding: calc(1.5 * var(--u)); border-radius: var(--r-sheet); background: var(--paper); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .git-desk .review-sheet::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--ink); pointer-events: none; }
 .git-desk .review-sheet > .stage-head { position: absolute; left: 0; right: 0; bottom: calc(100% + 7px); display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); margin: 0; padding: 0; border: 0; }
 .git-desk .review-sheet > .stage-head > h3 { margin: 0; font: 700 20px/var(--u) var(--mono); letter-spacing: 0; text-transform: none; color: var(--ink); }

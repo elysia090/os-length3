@@ -5,12 +5,12 @@
 /* A phone (560 px and less): the rail's places a size smaller and closer, and the window's gutter narrower, so a page
    has a fifth more of the width; the rail stays the rail (File's tree and Server's layer come out of it as anywhere). */
 @media (max-width: 560px) {
-  :root { --outer: var(--s2); --h-place: 40px; --band-left: var(--s4); --body-left: var(--s4); }
+  :root { --h-place: 40px; --band-left: var(--s4); --body-left: var(--s4); }
 }
 /* A window too short for all of it (a browser's tab under its own bars, a laptop at 200% zoom): the rail stays
    where it is, in the window, as tall as the window, never going with the page (issue #44). Its places close up;
    the person's icon stays at its foot, and what still does not fit scrolls inside the rail, not the page. */
-@media (max-height: 820px) {
+@media (max-height: 560px) {
   .rail-tabs { overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
   .rail-tabs::-webkit-scrollbar { display: none; }
   /* A place's name out of that box, in the window beside the place (main.ts says where). */
@@ -23,7 +23,7 @@
 .rail-me { display: grid; }
 .me-wrap { position: relative; }
 .me {
-  display: grid; place-items: center; width: var(--rail-place); height: var(--rail-place); border: 0; border-radius: var(--r-place);
+  display: grid; place-items: center; width: var(--rail-place); height: var(--rail-place); border: 0; border-radius: var(--r-field);
   background: transparent; cursor: var(--cursor-hand); font: 900 15px/1 var(--display);
 }
 .me .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
@@ -81,16 +81,13 @@
 .rail { --rail-icon: 18px; }
 .rail-item {
   position: relative; display: grid; place-items: center; flex: 0 1 var(--rail-place); min-height: 32px;
-  width: var(--rail-place); border: 0; border-radius: var(--r-place);
+  width: var(--rail-place); border: 0; border-radius: var(--r-field);
   background: transparent; color: var(--ink); cursor: var(--cursor-hand);
 }
 .rail-item > .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
-.rail-new { margin-top: var(--s3); }
+.rail-new { margin-top: var(--outer); }
 /* (A window too short for the rail: + closes up to the places, as they do to one another.) */
-@media (max-height: 820px) { .rail-new { margin-top: 0; } .rail-tabs { padding-bottom: var(--s2); } }
-@media (max-width: 760px) {
-  :root { --outer: var(--s2); --rail: calc(var(--rail-place) + var(--s2)); }
-}
+@media (max-height: 560px) { .rail-new { margin-top: 0; } .rail-tabs { gap: 0; padding-bottom: var(--s2); } }
 .rail-tag {
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
   padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;

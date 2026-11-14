@@ -62,6 +62,9 @@
   /* The person's name at Home's top: Inter Display Black, the one big thing (a step smaller on a narrow window). */
   --t-name: clamp(30px, 5.2vw, 44px); --display: 'Inter Display', var(--sans);
   --t-identity: 28px; --t-title: 24px; --t-card: 20px; --t-body: 15px; --t-meta: 13px;
+  /* What is said smallest (a key's name, a line's number, a day); a name on a desk, its capitals a cell tall (the
+     display face's are .727 of its size). */
+  --t-fine: 11px; --t-head: calc(var(--u) / .727);
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 40px;
   /* Places are rounded squares, actions are round, fields are slightly rounded; a sheet (a file's, the terminal's,
      File's tree, Home's note) has one corner between a field's and a place's; a key of the band is small and drawn in
@@ -101,9 +104,14 @@
   --line-work: 1.5px;
   /* The two lines that frame the work, the rail's and the right pane's: one weight, in ink, top line to foot. */
   --line-frame: 2px;
+  /* A sheet's shadow on a desk: half a cell right and down, whatever the sheet (one light). */
+  --shade: calc(var(--u) / 2);
+  /* A page's column on a desk: a half screen's width (thirty-two cells of a 1536 px screen's sixty-four) less the
+     frame's two and a cell at the window's edge. A window half a screen wide shows it whole; a whole screen, two. */
+  --col: calc(29 * var(--u));
   /* Everything, rail included, sits a little inward from the window's edges,
      against the instinct to run to them. */
-  --outer: calc(var(--u) / 2);
+  --outer: 6px;
   /* Less room above than below, so the weight of everything sits a little high. */
   --outer-top: var(--outer);
   --outer-bottom: var(--outer);
@@ -112,16 +120,16 @@
   --top-line: 0px;
   /* The band's row: three cells at the window's top, the room the band's keys stand in (the desk's pieces start
      under it). */
-  --keys: calc(2 * var(--u));
+  --keys: calc(var(--key) + var(--outer));
   /* A key of the band (Home's, a desk's) is two cells tall, at the top of the keys' row; a counter's name stands on
      the keys' own middle line, so the top row is one line from page to page. */
-  --key: var(--h-row);
+  --key: var(--rail-place);
   --band: calc(var(--top-line) + (var(--key) - var(--h-row)) / 2);
   /* The rail starts one place below the top line, so Home is not first off the mark. */
   --rail-top: 0px;
   /* Rail: 12px from the window's side to the icons, 18px from the icons to its line. */
   --rail-line-gap: 18px;
-  --rail: calc(var(--rail-place) + var(--s3));
+  --rail: calc(var(--rail-place) + var(--outer));
   /* A place of the rail, and the person's key at its foot: three cells square. */
   --rail-place: 36px;
   /* The skeleton every page is set on. Sideways, two edges from the rail's line: what is on the top line (the band's

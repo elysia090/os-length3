@@ -43,6 +43,7 @@ export const THINGS: readonly Thing[] = [
   {name: "t-card", kind: "length", usual: "20px", least: 10, most: 40, says: ''},
   {name: "t-body", kind: "length", usual: "15px", least: 7.5, most: 30, says: ''},
   {name: "t-meta", kind: "length", usual: "13px", least: 6.5, most: 26, says: ''},
+  {name: "t-fine", kind: "length", usual: "11px", least: 5.5, most: 22, says: ''},
   {name: "s1", kind: "length", usual: "4px", least: 2, most: 8, says: ''},
   {name: "s2", kind: "length", usual: "8px", least: 4, most: 16, says: ''},
   {name: "s3", kind: "length", usual: "12px", least: 6, most: 24, says: ''},
@@ -65,6 +66,7 @@ export const THINGS: readonly Thing[] = [
   {name: "prompt-down-line", kind: "share", usual: ".42", least: 0, most: 1, says: ''},
   {name: "line-work", kind: "length", usual: "1.5px", least: 0.75, most: 3, says: ''},
   {name: "line-frame", kind: "length", usual: "2px", least: 1, most: 4, says: ''},
+  {name: "outer", kind: "length", usual: "6px", least: 3, most: 12, says: ''},
   {name: "rail-line-gap", kind: "length", usual: "18px", least: 9, most: 36, says: ''},
   {name: "rail-place", kind: "length", usual: "36px", least: 18, most: 72, says: ''},
 ];

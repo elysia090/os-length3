@@ -18,7 +18,10 @@
    in the rail is. On a desk, against the right edge on the same row, the name of what is in hand, its capitals a
    cell tall. (Before: keys three cells tall, the terminal's five wide in ink, the others slots; before that small
    outlined tools, a pill for each repo out and ⊕.) */
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) { --key-gap: 4px; position: relative; z-index: 7; height: var(--keys); margin-left: calc(-1 * var(--body-left)); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) { --key-gap: var(--outer); position: relative; z-index: 7; height: var(--keys); margin-left: calc(-1 * var(--body-left)); }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar)::before { content: ''; position: absolute; left: 0; right: 0; top: calc(-1 * var(--outer-top)); height: calc(2 * var(--u)); z-index: -1; background: var(--ground); pointer-events: none;
+  /* (To the window's right edge, whatever is after the band: a shadow is no room to scroll into, as a box would be.) */
+  box-shadow: 0 0 0 100vmax var(--ground); clip-path: inset(0 -100vmax 0 0); }
 .work.desk-bench { position: relative; }
 .work.bench.desk-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: 0; }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: none; display: flex; align-items: stretch; gap: var(--key-gap); width: min(calc(14 * var(--u)), 100%); height: var(--key); }
@@ -33,13 +36,13 @@
 .band-tools .search-in { padding-left: 34px; border-color: var(--ink); background: transparent; font-size: var(--t-body); }
 .band-tools .search-in::placeholder { color: var(--sub); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { width: var(--key); height: auto; border: 0; border-radius: var(--r-key); background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool .mark { width: 16px; height: 16px; stroke-width: 2; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool .mark { width: 18px; height: 18px; stroke-width: 2; }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:is(:hover, :focus-visible):not(:disabled) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool:disabled { color: var(--quiet); box-shadow: inset 0 0 0 1px var(--quiet); cursor: var(--cursor-arrow); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tools > .search-box { flex: 1 1 0; width: auto; min-width: 0; }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search { height: 100%; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search > .mark { left: 9px; top: calc(50% - 7px); width: 14px; height: 14px; stroke-width: 2; }
-:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 30px; border: 0; border-radius: var(--r-key); background: transparent;
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search > .mark { left: 10px; top: calc(50% - 8px); width: 16px; height: 16px; stroke-width: 2; }
+:is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 34px; border: 0; border-radius: var(--r-key); background: transparent;
   box-shadow: inset 0 0 0 1px var(--ink); font: 400 var(--t-meta)/1 var(--sans); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in::placeholder { color: var(--sub); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); outline: none; }
@@ -47,7 +50,7 @@
    edge as Home's repos are, its capitals a cell tall and in the middle of the keys' row; smaller where the band has
    no room for it at its size (--fit, forge.ts), and gone where there is none at all. Said by the piece itself, so
    not said twice to those who hear the page. */
-.band-held { --size: calc(var(--key) / 2 / .727 * var(--fit, 1)); flex: 1 1 0; min-width: 0; align-self: flex-start; overflow: hidden; white-space: nowrap; text-align: right;
+.band-held { --size: calc(var(--u) / .727 * var(--fit, 1)); flex: 1 1 0; min-width: 0; align-self: flex-start; overflow: hidden; white-space: nowrap; text-align: right;
   margin: calc(1.5 * var(--u) - .8755 * var(--size)) calc(var(--u) - var(--ink-right, 0px)) 0 0; height: var(--size);
   font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; color: var(--ink); pointer-events: none; user-select: none; }
 @media (max-width: 1100px) { .band-held { display: none; } }
@@ -95,7 +98,7 @@
    scrolled inside it). They come down a little onto the desk, one after another. */
 .found-secs { display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(3 * var(--u)); }
 .found-sec { position: relative; flex: 0 1 auto; min-width: calc(9 * var(--u)); max-width: min(calc(31 * var(--u)), 100%); margin: 0; padding: calc(var(--u) / 2) 0;
-  background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink);
+  background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink);
   animation: sheet-down calc(240ms * var(--pace)) var(--land) both; animation-delay: calc(var(--at, 0) * 70ms); }
 .found-sec:nth-child(2) { --at: 1; } .found-sec:nth-child(3) { --at: 2; } .found-sec:nth-child(n + 4) { --at: 3; }
 @keyframes sheet-down { from { opacity: 0; translate: 0 calc(-1.5 * var(--u)); } }
@@ -124,7 +127,7 @@
 .found-sec .sheet-name > .sheet-file { color: var(--ink); }
 /* What was run: a sheet of ink as the terminal is, its lines and its shadow the terminal's green, each as it was
    typed after the shell's $. */
-.found-sec:has(.run-line) { background: var(--ink); box-shadow: var(--u) var(--u) 0 0 var(--green); }
+.found-sec:has(.run-line) { background: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--green); }
 .found-sec .run-line { display: flex; color: var(--green); overflow: hidden; text-overflow: ellipsis; }
 .found-sec .run-line:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--green) 18%, var(--ink)); }
 .band-tools .search-box:has(.search-in:focus) .found-secs .run-line.first { background: color-mix(in srgb, var(--green) 26%, var(--ink)); }
