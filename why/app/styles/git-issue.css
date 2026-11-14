@@ -55,9 +55,32 @@
 /* Small, on the line the title's words stand on (its line is the title's: the number alone set small in it). */
 .issue-big-head.peek .issue-no { font-size: var(--t-body); }
 .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
+/* Hovered, the neighbour lifts (raised, its edge and number in ink, the number a step toward the box it would become)
+   and its edge shows which way it goes, a chevron there: where the pointer is is a way along, said before it is
+   pressed. */
+.issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
+.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { border-color: var(--edge); color: var(--ink); background: var(--raised); }
+.issue-big-head.peek { transition: translate var(--move) var(--land); }
+.issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-big-head.peek { translate: 4px 0; }
+.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { translate: -4px 0; }
+.issue-stage > .stage-hit::after {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 9px; height: 9px; border: solid var(--ink); border-width: 0 2px 2px 0;
+  opacity: 0; transition: opacity var(--motion), translate var(--move) var(--land);
+}
+.issue-stage > .stage-hit.next::after { margin: -5px 0 0 -7px; rotate: -45deg; translate: -3px 0; }
+.issue-stage > .stage-hit.prev::after { margin: -5px 0 0 -2px; rotate: 135deg; translate: 3px 0; }
+.issue-stage > .stage-hit:is(:hover, :focus-visible)::after { opacity: 1; translate: 0 0; }
 .stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: var(--cursor-hand); }
+.stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }
 .stage-hit.next { right: 0; width: calc((2 - var(--lead)) * var(--peek)); }
 .stage-hit:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* A neighbour runs on past the column's edge: there it goes into the ground, not cut off square as if broken (Server's
+   boards, the search's finds, Git's issues alike). */
+.slide-stage::before, .slide-stage::after, .issue-stage::before, .issue-stage::after { content: ''; position: absolute; top: 0; bottom: 0; z-index: 1; width: min(var(--peek), var(--s5)); pointer-events: none; opacity: 0; transition: opacity var(--motion); }
+.slide-stage::before, .issue-stage::before { left: 0; background: linear-gradient(to left, transparent, var(--ground)); }
+.slide-stage::after, .issue-stage::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
+.slide-stage:has(.slide[aria-current='true'] + .slide)::after, .slide-stage:has(.slide + .slide[aria-current='true'])::before,
+.issue-stage:has(.issue-slot[aria-current='true'] + .issue-slot)::after, .issue-stage:has(.issue-slot + .issue-slot[aria-current='true'])::before { opacity: 1; }
 .space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
 
 /* An agent at work on the issue (git/agent-line.ts): its dot breathes while it works, beats at each tool, and holds

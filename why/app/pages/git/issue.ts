@@ -134,8 +134,7 @@ function standing(s: RepoState | undefined, issue: Issue): string {
  */
 export function issueHead(issue: Issue, peek = false): HTMLElement {
   const no = issueName(issue);
-  // (Beside the one in the hand, a sheet by its name: its number, then its title.)
-  if (peek) return h('div', {class: 'issue-big-head peek'}, h('h2', {}, h('span', {class: 'issue-no'}, no || '#', issue.kind ? ' ' : null, ...(issue.kind ? kindWords(issue.kind) : [])), agentMark(issue), issue.kind ? null : ' ', issue.title));
+  if (peek) return h('div', {class: 'issue-big-head peek'}, h('h2', {}, h('span', {class: 'issue-no'}, no || '#'), agentMark(issue)));
   return h('div', {class: 'issue-big-head'},
     h('h2', {}, no ? h('span', {class: 'issue-no'}, no) : null, no ? ' ' : null, issue.kind ? h('span', {class: 'issue-kind'}, ...kindWords(issue.kind)) : null, issue.title));
 }

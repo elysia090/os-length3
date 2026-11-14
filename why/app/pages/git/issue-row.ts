@@ -2,14 +2,11 @@ import {h} from '../../ui/dom.ts';
 import {t} from '../../i18n/i18n.ts';
 import {after, paced, still} from '../../ui/glide.ts';
 import type {Issue} from '../../repos/issues.ts';
-import {CELL, SPRING} from '../../ui/law.ts';
-import {pieceWidth} from '../../ui/row.ts';
-import {rowMap} from '../../ui/row-desk.ts';
+import {SPRING} from '../../ui/law.ts';
 
-// Git's issues not merged yet, as a row of sheets (DESIGN §6): one width (a piece's), two cells apart, the one in the
-// hand at the row's edge in full, those after it beside it where the window has room, by their names. A sheet beside
-// is gone to by pressing it; ← →, a finger's swipe and the row's map at the window's foot go along the row both ways,
-// and the track slides there. The keyboard stays on the same part of the sheet as one goes along the row.
+// Git's issues not merged yet, as large boxes side by side: one in full, its neighbours' edges showing at both
+// sides. An edge is the way to the box beside (hover lifts it; ← → and a finger's swipe do the same), and the track
+// slides there. The keyboard stays on the same part of the box as one goes along the row.
 
 /** What the row needs of the page it is in. */
 interface RowWays {
@@ -34,11 +31,8 @@ export class IssueRow {
   /** Put the keyboard on the new issue's words once it is drawn. */
   land = false;
   private readonly track = h('div', {class: 'issue-track'});
+  private readonly prev: HTMLButtonElement;
   private readonly next: HTMLButtonElement;
-  /** The row's map (ui/row-desk.ts): what is out of sight, before and after, and the way to it by a press. */
-  private readonly map: {element: HTMLElement; paint(): void};
-  /** A sheet's width, as the row's room allows, and the room between two. */
-  private piece = 24 * CELL;
   private shown: Issue[] = [];
   private k = 0;
   /** The box in full before the last move (-1 once drawn anew). */
@@ -49,20 +43,13 @@ export class IssueRow {
 
   constructor(ways: RowWays) {
     this.ways = ways;
-    // The sheet beside the one in the hand: pressed anywhere, it is gone to.
+    // The edges over the neighbours: clear, lifted on hover like any place.
+    this.prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous issue')}) as HTMLButtonElement;
     this.next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next issue')}) as HTMLButtonElement;
-    this.stage = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'}, this.track, this.next);
-    const step = () => this.piece + 2 * CELL;
-    this.map = rowMap(this.stage, () => this.shown.map((x, j) => ({x: j * step(), w: this.piece, held: j === this.k, name: x.title || t('Issues'), go: () => this.go(j, true)})), () => this.k * step());
-    this.column = h('div', {class: 'issue-column'}, this.stage, this.map.element);
+    this.stage = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'}, this.track, this.prev, this.next);
+    this.column = h('div', {class: 'issue-column'}, this.stage);
+    this.prev.addEventListener('click', () => this.go(this.k - 1, true));
     this.next.addEventListener('click', () => this.go(this.k + 1, true));
-    new ResizeObserver(() => {
-      const w = this.stage.clientWidth;
-      if (!w) return;
-      this.piece = pieceWidth(w);
-      this.stage.style.setProperty('--piece', `${this.piece}px`);
-      this.map.paint();
-    }).observe(this.stage);
     // A finger swiped along the row (sideways more than down, and far enough) goes to the box beside, as its edge
     // pressed does: on a phone the edges are a sliver, and a swipe is what a hand tries first.
     let from: {x: number; y: number; id: number} | null = null;
@@ -151,7 +138,6 @@ export class IssueRow {
     this.shown = [];
     this.track.replaceChildren();
     this.stage.hidden = true;
-    this.map.paint();
   }
 
   /**
@@ -181,9 +167,9 @@ export class IssueRow {
     const card = this.track.children[k]?.querySelector<HTMLElement>('.issue-card');
     this.sized.disconnect();
     if (card) this.sized.observe(card);
-    const edge = document.activeElement === this.next;
+    const edge = document.activeElement === this.prev || document.activeElement === this.next;
+    this.prev.hidden = k === 0;
     this.next.hidden = k === this.shown.length - 1;
-    this.map.paint();
     this.focus(this.track.children[k] as HTMLElement | undefined, had, edge);
   }
 

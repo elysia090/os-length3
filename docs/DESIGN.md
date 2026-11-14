@@ -32,7 +32,8 @@ else is held back. It never has:
 - a colour, a shadow or an angle that means nothing;
 - a thing that is there only while a pointer is over it;
 - a layout set in the middle of the window, or one mirrored left and right;
-- blur or transparency as decoration (blur is depth: what is behind what was called up in front, and only that);
+- blur or transparency as decoration (blur is depth: what is behind what was called up in front, and what a change
+  is seen against in Git's work; nothing else);
 - a picture of a material (paper's grain, leather). A material is shown by how it behaves, not by how it looks;
 - a second way to do a thing for a narrow window or a finger. A phone has the same rules with a smaller number.
 
@@ -57,7 +58,7 @@ part, and each has already changed something:
 |---|---|---|---|
 | Gerstner, *Designing Programmes* | "Squared paper is a grid, but not a programme." A programme is a scale of proportions "that makes the bad difficult and the good easy"; "to describe the problem is part of the solution" | are the measures a regulator, or only lines to snap to? | the widths are one programme (§3): a sheet is 24 or 48 cells because its inside and one gutter are then 24 or 48, which divide by 2, 3, 4 and 6 |
 | Vignelli, *Canon* | appropriateness is "the search for the specific of any given problem"; design is "a discipline", not a style; "we love complexities but hate complications" | what does this thing want to be, here? | a far side is a step away, not an icon; a board is a sheet with its box at its foot, not a chat with a side pane |
-| Rams, 1976 | the designer is a "gestaltingenieur"; order is there so that what a thing does is told; what is made "to impress, to polish things up" is packaging; users are "intelligent and responsible" | does this tell what the thing does, or dress it? | nothing is said twice (an issue's number once); nothing explains itself in a tooltip that a name would say |
+| Rams, 1976 | the designer is a "gestaltingenieur"; order is there so that what a thing does is told; what is made "to impress, to polish things up" is packaging; users are "intelligent and responsible" | does this tell what the thing does, or dress it? | nothing explains itself in a tooltip that a name would say; a place with nothing in it says the one thing to do |
 | Morrison and Fukasawa, *Super Normal* | special things "demand attention for the wrong reasons"; "a certain lack of noticeability has become a requirement"; a thing earns its worth in daily use | inside a sheet, is anything asking to be looked at? | one voice a screen (a name) and the rest quiet: the hand's piece is the only fill |
 | Hara, for MUJI | not "this is what I want" but "this will do": acceptance, not appetite; emptiness is "a possibility of being filled" | is the desk a vessel for the work, or a show of itself? | the ground is empty and the same everywhere; a place with nothing in it says the one thing to do and nothing else |
 | Giampietro, *Default Systems* | "the center is a default position"; "the system makes assumptions that, unchallenged, become truths" | which shapes are here because every interface has them? | the pill went (a key is a key, §3); a person's mark is their seal, not a tinted face; nothing is centred |
@@ -65,6 +66,14 @@ part, and each has already changed something:
 | Chimero, *The Web's Grain* | a material has a grain; the web's is edgeless; build up from parts, then frame | does it fit a window, or go on past it? | rows run past the window's edge and the window looks along them; there is no layout for a size, only pieces that are set as words are |
 | Playdate's own guide | "measure cap height, not total font height"; hold it against a printed book | is a size a number, or what the eye gets? | a name is sized by its capitals (and a kanji's face, §3); the words written are sized by the angle they subtend |
 | the OP-1's tape | lift, drop, split, join: the verbs of the thing it stands for, and no others | are the verbs the material's own? | take up, put away, put back, go; a thing is never "selected" or "activated" |
+
+**A rule yields to a composition.** The rules here are general answers. Where a place already has a composition
+that is the specific answer to what it is for, the composition stands and the rule is not laid over it: Git's sheet
+(a number two cells tall at its top right, its title at the left, its work a column running to the sheet's right
+edge, the sum of the work large at its foot) and Runtime's ruled account are such. Twice they were flattened by
+rules that were true in general ("a number is said once", "one left edge", "no frame in a sheet"), and twice what
+made the place its own went with them. A rule is laid on what has no answer of its own yet; what is specific is kept
+("appropriateness is the search for the specific of any given problem").
 
 **The test of anything expressive.** It must answer, at the same time as it pleases, one of: *where am I*, *what is
 in my hand*, *what can I do next*. The size of words answers by rank, movement by where things are, material by
@@ -346,8 +355,8 @@ goes under it, at the desk's edge again, two cells down.**
 - **A desk of short pieces (Home) is set so and nothing more:** nothing of it is ever out of sight sideways. A whole
   screen has its pieces side by side; half a screen and a phone, one under the other.
 - **A desk whose pieces are as tall as the window has one line only**, and is looked along: Forge's files, Server's
-  boards, Inbox's conversation, and Git's issues (which are as tall as what is on them, and are looked along all the
-  same: there may be many). The rest of this section is that line (`ui/row.ts`, `ui/row-desk.ts`).
+  boards, Inbox's conversation. The rest of this section is that line (`ui/row.ts`, `ui/row-desk.ts`). (Git's issues
+  are a row of their own make, §10.)
 
 Decided by the window's width and nothing else (never by what the device is), and when pieces do not fit side by side
 one is shown whole and the rest are a step along, in order: what the split views of the systems people know do when
@@ -556,18 +565,26 @@ has its 80 columns while it runs.
 
 ### Git: Forge's far side, the work recorded and reviewed
 
-*What a repo is to become, what it became, and what is asked to be taken into it.* Its one large thing is the title
-of the issue in the hand.
+*What a repo is to become, what it became, and what is asked to be taken into it.* It has a composition of its own,
+and it is kept (§1).
 
 A desk. At the desk's edge main's own sheet, eight cells wide (ink: it is where the repo's work is switched); two
-cells on, the issues, a row (§6): one width, the one in the hand at the row's edge in full, those after it beside it
-by their number and title, nothing showing of those before it (they are on the row's map). An issue's title is its
-name: the display face, capitals a cell tall on lines of a cell and a half, at every width. Its number and kind are
-said once, small, in the cell over the sheet's corner (and the number at the band's end). In a sheet with room (30
-cells) its words and its work lie side by side; in a narrower one the work is under the words: by the sheet's width,
-never the window's. Which repo is a choice on this desk, not one of the window's instruments: it stands on the cell
-under the band. With no issue yet, the one thing to do stands where the first piece would. On a window with no room
-for main's sheet and an issue side by side, the row goes under the sheet, two cells down (§6).
+cells on, the issues. The issue in the hand is a wide sheet, set as a poster is:
+
+- its **number** at its top right, two cells tall in the display face: the place's large thing;
+- its **title** at its top left, capitals a cell tall on lines of a cell and a half;
+- under them, at the left, what is said of it (its summary, whose it is), set against the work's edge; at the right
+  **the work**, a column that runs to the sheet's right edge: each file's name and count, the lines that changed on
+  a band of the change's colour across the column, the lines beside them out of focus (they are what the change is
+  seen against, behind it);
+- at its foot, left, **the sum of the work**, large;
+- its number and kind, small, in the cell over its corner.
+
+The issues before and after it show a cell or three of themselves at the row's two ends, with their numbers; an end
+pressed goes to that issue. Under the sheet in the hand, its history runs down a dotted line. Which repo is a choice
+on this desk, not one of the window's instruments: it stands on the cell under the band. With no issue yet, the one
+thing to do stands where the first piece would. On a window with no room for main's sheet and an issue side by
+side, the issues go under the sheet, two cells down.
 
 ### Server: where many talk
 
@@ -642,8 +659,8 @@ breaks; none is a decision to leave it.
 
 | Where | What it still does | The rule it breaks |
 |---|---|---|
-| Git | its row is slid by code of its own (a finger's swipe is read by it), not turned as a desk is, so it does not follow the hand; under the issue in the hand the page is scrolled down to its history and review | §6, a row is looked along as anything is scrolled, and is never turned down |
-| Git | under an issue: a day in its history is two cells tall | §3, seven sizes |
+| Git | its row is slid by code of its own (a finger's swipe is read by it), not turned as a desk is, so it does not follow the hand; the issue beside lights under a pointer | §6, a row is looked along as anything is scrolled; §7, nothing waits on a pointer |
+| Git | under 1100 px wide the sheet's work goes under its words and its number into its title's line: by the window's width | §1, a narrow window has the same rules |
 | Server | a board not in the hand is its name only: what it holds is read when it is taken up | §5, a piece not in the hand is read, a step quieter |
 | Server | behind its gear and a repo shown: a page of the old make (its title 24 px, its parts on a sliding line) | §3, §5 |
 | Server's chips, a sheet's parts | a line of them longer than its room slides, its end faded into the ground, a › over the fade | §1, no transparency as decoration; §6, what does not fit goes under |
@@ -683,7 +700,6 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `tests/app/sound.spec.ts` |
 | Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `tests/app/skeleton.spec.ts` |
 | Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `tests/app/skeleton.spec.ts` |
-| Git's row: the one in the hand at its edge, the next beside it, the one before on the map; a bar of the map goes to its piece (§6) | `tests/app/git.spec.ts` |
 | A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `tests/app/server.spec.ts` |
 | Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone (§10) | `tests/app/home.spec.ts` |
 | Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `tests/app/forge-work.spec.ts` |
