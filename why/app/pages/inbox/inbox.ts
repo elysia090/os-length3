@@ -19,6 +19,7 @@ import {errorText} from '../../host/errors.ts';
 import * as servers from '../../remote/servers.ts';
 import {remember as serverAt} from '../server/parts.ts';
 import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} from '../../ui/glide.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // Inbox: what comes to you, typed, from people found by address. Not a mail
 // screen: each message says what it is (a message, a review request, a
@@ -544,7 +545,7 @@ export function inboxPage(ctx: Context): Node[] {
         h('div', {class: 'row write-line'}, text, sendB),
         h('p', {class: 'muted small write-hint'}, t('Prefix with Review: or Question: · specify /root/… path · Ctrl+Enter to send')), error));
     if (text.value) grow();
-    if (switching && !still()) for (const c of pane.children) c.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: 'ease-out'});
+    if (switching && !still()) for (const c of pane.children) c.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: SPRING});
     text.focus();
     text.setSelectionRange(text.value.length, text.value.length);
     if (th.mutual) startLive();

@@ -32,7 +32,7 @@
 /* A menu out of a row, a card or a gear comes out of it as it shows: grown from the corner it opens at, a few pixels
    from that side, landing a touch past its size, as the person's menu rises from the face (not there at once, as if
    it had always been). */
-.tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: menu-in calc(280ms * var(--pace)) var(--pop-in) both; }
+.tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: menu-in var(--move) var(--pop-in) both; }
 .repo-gear-pop, .stub-panel { --from: 0 -4px; transform-origin: right top; }
 .stub-panel { transform-origin: top; }
 .share-pop { --from: 0 4px; transform-origin: bottom; }
@@ -48,10 +48,10 @@
   min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail-place) - var(--s3)));
   max-width: calc(100vw - 2 * var(--outer) - var(--rail-place) - var(--s3));
   visibility: hidden; opacity: 0; translate: 0 6px; scale: .92; transform-origin: left bottom;
-  transition: opacity var(--motion), translate var(--move) var(--land), scale calc(280ms * var(--pace)) var(--pop-in), visibility 0s var(--motion);
+  transition: opacity var(--motion), translate var(--move) var(--land), scale var(--move) var(--pop-in), visibility 0s var(--motion);
 }
 /* Out, it rises the last few pixels up from the face it came from as it shows. */
-.me-wrap.open .me-pop { visibility: visible; opacity: 1; translate: 0 0; scale: 1; transition: opacity var(--motion), translate var(--move) var(--land), scale calc(280ms * var(--pace)) var(--pop-in), visibility 0s; }
+.me-wrap.open .me-pop { visibility: visible; opacity: 1; translate: 0 0; scale: 1; transition: opacity var(--motion), translate var(--move) var(--land), scale var(--move) var(--pop-in), visibility 0s; }
 @media (prefers-reduced-motion: reduce) { .me-pop, .me-wrap.open .me-pop { translate: none; scale: none; } }
 .me-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); }
 /* The face again, the size of the button, beside the name. */

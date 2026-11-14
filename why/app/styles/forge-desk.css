@@ -30,7 +30,7 @@
 .desk-box { --line: var(--u); --t-code: 17px; scroll-snap-align: start;
   position: absolute; left: 0; top: 0; box-sizing: border-box; padding: calc(var(--line) / 2) 0; border-radius: var(--r-sheet);
   background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px;
-  transition: translate 420ms cubic-bezier(.2, 0, 0, 1); }
+  transition: translate var(--slide) var(--spring); }
 .desk-box.held { background: var(--paper); color: var(--ink); outline-color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 @media (prefers-reduced-motion: reduce) { .desk-box { transition: none; } }
 /* Its name over its top-left corner, in the letters the desk's small words are set in, on the cell over the sheet (the
@@ -67,7 +67,7 @@
 /* Where a piece is scrolled to (ui/scroll-marks.ts), and how far the desk is turned along its row (desk.ts): bars cut
    square, ink (the terminal's its own green), four px thick, four in from the edge they run along; there while it is
    scrolled and a moment after, nothing at rest. */
-.scroll-mark, .desk-turned { position: absolute; z-index: 3; background: var(--ink); opacity: 0; pointer-events: none; transition: opacity calc(160ms * var(--pace)) ease-out; }
+.scroll-mark, .desk-turned { position: absolute; z-index: 3; background: var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--move) var(--spring); }
 .scroll-mark.down { top: 0; right: 4px; width: 4px; }
 .scroll-mark.across { left: 0; bottom: 4px; height: 4px; }
 .desk-turned { left: 0; bottom: 4px; height: 4px; }
@@ -79,7 +79,7 @@
 /* Where the Agent's eye is as it reads (desk-file.ts gaze): a line lit faintly across the sheet, an ink bar at its
    left edge, gliding from line to line. */
 .desk-gaze { position: absolute; left: 0; right: 0; pointer-events: none; background: color-mix(in srgb, var(--ink) 6%, transparent);
-  box-shadow: inset 3px 0 0 var(--ink); transition: top calc(90ms * var(--pace)) var(--land); }
+  box-shadow: inset 3px 0 0 var(--ink); transition: top var(--motion) var(--land); }
 /* Resting on a line (the Agent thinking over it), the eye breathes: slow, faint, so it is seen at work, not stopped. */
 .desk-gaze.resting { animation: gaze-rest calc(1400ms * var(--pace)) ease-in-out infinite alternate; }
 @keyframes gaze-rest { to { opacity: .45; } }
@@ -91,14 +91,14 @@
 .desk-file > .sheet > .gutter { position: relative; }
 /* The band's files tool out (forge.ts deeds): the desk moved down by the bar's room, gliding as the bar drops, and back
    as it goes; moved, not laid out again. */
-.desk-room > .desk { translate: 0 var(--push, 0px); transition: translate calc(170ms * var(--pace)) var(--land); }
+.desk-room > .desk { translate: 0 var(--push, 0px); transition: translate var(--move) var(--land); }
 /* The band's files tool's deeds, as a bar dropped from under it (dmenu's): ink, square, a band's row high, its left edge
    the tool's, a band's gap under it; its path quiet at its head, the deed chosen (the keyboard's, or under the pointer)
    in the paper's colours, as a selection is, the whole height of the bar. A name asked for, or a Delete to be sure of,
    is asked in its place on the bar, in the same letters. */
 .deeds-under.band-deeds { display: flex; align-items: stretch; flex-wrap: wrap; width: max-content; max-width: calc(100vw - 32px);
   min-height: var(--h-row); box-sizing: border-box; padding: 0; border: 0; border-radius: 0; background: var(--ink); color: var(--paper);
-  box-shadow: none; --from: 0 -8px; animation: deeds-drop calc(170ms * var(--pace)) var(--land); }
+  box-shadow: none; --from: 0 -8px; animation: deeds-drop var(--move) var(--land); }
 @keyframes deeds-drop { from { translate: 0 -12px; clip-path: inset(100% 0 0 0); } to { translate: 0 0; clip-path: inset(0); } }
 .band-deeds .pop-icon, .band-deeds .pop-rule { display: none; }
 .band-deeds .pop-head { display: flex; align-items: center; padding: 0 14px 0 12px; font: 400 12px/1 var(--mono); color: color-mix(in srgb, var(--paper) 55%, transparent); }

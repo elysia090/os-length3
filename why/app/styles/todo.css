@@ -72,9 +72,9 @@ span.todo-title { min-height: 0; }
    (todo-list.ts measures it to the words); read, not written, it is the words' own. */
 .todo-item.done .todo-head :is(.todo-title, .todo-kind) { color: var(--sub); }
 .todo-item.done .todo-head:not(:has(.todo-strike)) :is(.todo-title, .todo-kind) { text-decoration: line-through; }
-.todo-head :is(.todo-title, .todo-kind) { transition: color calc(240ms * var(--pace)) ease-out; }
+.todo-head :is(.todo-title, .todo-kind) { transition: color var(--move) var(--spring); }
 .todo-head > .todo-strike { grid-column: 2 / 4; grid-row: 1; justify-self: start; align-self: center; height: 1px; margin-top: 2px; background: var(--sub);
-  pointer-events: none; scale: 0 1; transform-origin: left; transition: scale calc(300ms * var(--pace)) cubic-bezier(.6, 0, .25, 1); }
+  pointer-events: none; scale: 0 1; transform-origin: left; transition: scale var(--move) var(--spring); }
 .todo-item.done .todo-head > .todo-strike { scale: 1 1; }
 /* Its detail goes quiet with it, still there to read. */
 .todo-item.done .todo-detail { color: var(--sub); }
@@ -82,7 +82,7 @@ span.todo-title { min-height: 0; }
 .todo-item.done .todo-mark { color: var(--done); }
 .todo-hint { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); padding: var(--s2) var(--s4) var(--s3); color: var(--sub); font-size: var(--t-meta); }
 /* Said only while the box is written in, fading in where it always stands, so nothing moves. */
-.todo-box .todo-hint { opacity: 0; transition: opacity 200ms ease-out; }
+.todo-box .todo-hint { opacity: 0; transition: opacity var(--move) var(--spring); }
 .todo-box:focus-within .todo-hint { opacity: 1; }
 /* A key, as the key itself: its name on a small cap, the cap's foot a little heavier, as a key stands on a board. */
 .key-hint { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }

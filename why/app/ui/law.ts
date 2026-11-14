@@ -18,8 +18,10 @@ export function eased(u: number): number {
 /** How long a move of `far` px takes where a whole way is `whole` px (the window's, the desk's face). */
 export function moveTime(far: number, whole: number): number { return 250 + 170 * Math.min(1, Math.abs(far) / Math.max(1, whole)); }
 
-/** The law as a browser's animation takes it: the curve sampled every twentieth of its time. */
-export const SPRING = `linear(${Array.from({length: 21}, (_, i) => Math.round(eased(i / 20) * 1000) / 1000).join(', ')})`;
+/** The law as a browser's animation takes it: the curve sampled every twentieth of its time; where a browser knows no
+ * such curve, the Bezier nearest it (styles: --spring, the same two). */
+const SAMPLED = `linear(${Array.from({length: 21}, (_, i) => Math.round(eased(i / 20) * 1000) / 1000).join(', ')})`;
+export const SPRING = typeof CSS === 'undefined' || CSS.supports?.('transition-timing-function', 'linear(0, 1)') ? SAMPLED : 'cubic-bezier(.2, 0, 0, 1)';
 
 /** The grid the world is laid on (styles: --u): a move of the world is whole cells, so its dots stand where they stood. */
 export const CELL = 24;

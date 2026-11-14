@@ -96,7 +96,7 @@
 .tree-still .tree-ours .tree-name { color: var(--ink); font: inherit; }
 /* No more-button at a row's end here (its two deeds are), so no room is kept for one after the size (file-tree.css). */
 .tree-still .tree-row:not(:has(> .tree-more)) > .tree-meta { margin-right: 0; }
-.tree-deeds { flex: none; display: flex; gap: 2px; margin-right: var(--s1); opacity: 0; transition: opacity calc(120ms * var(--pace)) ease-out; }
+.tree-deeds { flex: none; display: flex; gap: 2px; margin-right: var(--s1); opacity: 0; transition: opacity var(--motion) var(--spring); }
 .tree-row:hover > .tree-deeds, .tree-row:focus-within > .tree-deeds { opacity: 1; }
 .tree-deed { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .tree-deed .mark { width: 15px; height: 15px; }
@@ -108,9 +108,9 @@
 /* New file and New folder at the card's foot, in words: what can be added is said, not hidden behind a mark. */
 .tree-makes { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); margin-top: var(--s2); padding: var(--s2) var(--s1) 0; border-top: 1px solid var(--rule); }
 .tree-make { display: inline-flex; align-items: center; gap: var(--s2); min-height: 32px; padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent;
-  color: var(--sub); font: var(--t-meta) var(--sans); cursor: var(--cursor-hand); transition: background-color calc(200ms * var(--pace)) ease-out, color calc(200ms * var(--pace)) ease-out; }
+  color: var(--sub); font: var(--t-meta) var(--sans); cursor: var(--cursor-hand); transition: background-color var(--move) var(--spring), color var(--move) var(--spring); }
 .tree-make .mark { width: 16px; height: 16px; }
-.tree-make:hover, .tree-make:focus-visible { background: var(--raised); color: var(--ink); outline: none; transition-duration: calc(60ms * var(--pace)); }
+.tree-make:hover, .tree-make:focus-visible { background: var(--raised); color: var(--ink); outline: none; transition-duration: var(--motion); }
 .tree-still > .error:not(:empty) { margin: var(--s2) var(--s2) 0; display: flex; align-items: baseline; gap: 6px; color: var(--ink); }
 .tree-still > .error:not(:empty)::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--off); translate: 0 -1px; }
 /* What it is for: a raised box as Home's TODO is, the words written straight in it as a TODO's detail is. */

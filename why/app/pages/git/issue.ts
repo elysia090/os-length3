@@ -13,6 +13,7 @@ import {agentLine, agentMark} from './agent-line.ts';
 import {errorText} from '../../host/errors.ts';
 import {busy} from './held.ts';
 import {issueStore} from '../../repos/issue-store.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // An issue on the Git page, as one large box (issue #17). Its branch and
 // worktree are never named: Start gives the issue its own copy of the repo,
@@ -298,7 +299,7 @@ function closeDeed(issue: Issue, error: HTMLElement, events: IssueEvents, after:
   leave.addEventListener('click', doing(leave, error, async () => {
     // It goes down as it is closed, toward Closed under the page, where its line lands lit; not closed, it is back.
     const going = still() ? null : (leave.closest('.issue-slot') ?? leave.closest('.issue-box'))?.animate([{transform: 'none', opacity: 1}, {transform: 'translateY(28px) scale(.97)', opacity: 0}],
-      {duration: paced(240), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+      {duration: paced(240), easing: SPRING, fill: 'forwards'});
     // Said before its file is written: the page is drawn again as the file changes (git.ts watch), and the line that
     // drawing puts under Closed is the one that lands, not one there plain and then landing again.
     closedNow = {repo: issue.repo, path: issuePath(issue), until: performance.now() + 3000};
@@ -386,7 +387,7 @@ export function resize(el: HTMLElement, from: number) {
   if (to > from) {
     for (const c of el.children) {
       if (c instanceof HTMLElement && c.getBoundingClientRect().top - box.top >= from - 4) {
-        c.animate([{opacity: 0}, {opacity: 0, offset: .3}, {opacity: 1}], {duration: ms, easing: 'ease-out'});
+        c.animate([{opacity: 0}, {opacity: 0, offset: .3}, {opacity: 1}], {duration: ms, easing: SPRING});
       }
     }
   }
@@ -462,7 +463,7 @@ function over(ghost: HTMLElement, now: HTMLElement, parent: HTMLElement, from: n
 /** A part of a box drawn again coming in (crossfade), named so a drawing after it can go on from it. */
 const COMING = 'coming-in';
 const comeIn = (p: Element) => {
-  const a = p.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), delay: paced(40), easing: 'ease-out', fill: 'backwards'});
+  const a = p.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), delay: paced(40), easing: SPRING, fill: 'backwards'});
   a.id = COMING;
   return a;
 };

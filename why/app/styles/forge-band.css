@@ -101,7 +101,7 @@
 .found-secs { display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(3 * var(--u)); }
 .found-sec { position: relative; flex: 0 1 auto; min-width: calc(9 * var(--u)); max-width: min(calc(31 * var(--u)), 100%); margin: 0; padding: calc(var(--u) / 2) 0;
   background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink);
-  animation: sheet-down calc(240ms * var(--pace)) var(--land) both; animation-delay: calc(var(--at, 0) * 70ms); }
+  animation: sheet-down var(--move) var(--land) both; animation-delay: calc(var(--at, 0) * 70ms); }
 .found-sec:nth-child(2) { --at: 1; } .found-sec:nth-child(3) { --at: 2; } .found-sec:nth-child(n + 4) { --at: 3; }
 @keyframes sheet-down { from { opacity: 0; translate: 0 calc(-1.5 * var(--u)); } }
 @media (prefers-reduced-motion: reduce) { .found-sec { animation: none; } }

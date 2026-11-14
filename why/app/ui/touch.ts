@@ -5,6 +5,7 @@
 
 import {paced, still} from './glide.ts';
 import {lift, press, strike, wake} from './keys.ts';
+import {SPRING} from './law.ts';
 
 const WHOLE = '.card.repo, .card.new, .issue-card, .board-card';
 const ONE = 'button, [role="button"], [role="radio"], [role="tab"], .chip';
@@ -35,7 +36,7 @@ function down(el: HTMLElement) {
   spring = null;
   const s = give(el);
   held?.press.cancel();
-  held = {el, s, press: el.animate([{scale: s}], {duration: 70, easing: 'ease-out', fill: 'forwards'})};
+  held = {el, s, press: el.animate([{scale: s}], {duration: 70, easing: SPRING, fill: 'forwards'})};
 }
 
 function up() {
@@ -45,7 +46,7 @@ function up() {
   press.cancel();
   if (still()) return;
   // Past where it was by a third of the give, then home: the spring.
-  const a = el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: paced(300), easing: 'cubic-bezier(.2, .9, .25, 1)'});
+  const a = el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: paced(300), easing: SPRING});
   spring = {el, a};
 }
 

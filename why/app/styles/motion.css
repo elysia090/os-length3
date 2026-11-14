@@ -20,7 +20,7 @@
 .os-caret-field { caret-color: transparent; }
 .os-caret {
   position: fixed; left: 0; top: 0; z-index: 9; width: 1.5px; border-radius: 1px; background: var(--ink); pointer-events: none; opacity: 0;
-  transition: transform 70ms cubic-bezier(.2, .9, .25, 1), height 70ms;
+  transition: transform var(--motion) var(--spring), height var(--motion);
 }
 .os-caret.on { opacity: 1; }
 .os-caret.jump { transition: none; }

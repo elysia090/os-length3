@@ -8,7 +8,7 @@
   position: absolute; z-index: 4; top: calc(100% + var(--s3)); right: calc(-1 * (2 * var(--s3) + var(--h-row))); width: calc(2 * var(--pane-w) + 2 * var(--s3));
   padding: var(--s3);
   /* It comes down out of the box it was typed in: a few pixels and a fade, never a jump. */
-  animation: from-box calc(180ms * var(--pace)) var(--land);
+  animation: from-box var(--move) var(--land);
 }
 @keyframes from-box { from { opacity: 0; transform: translateY(calc(-1 * var(--s2))); } }
 /* Under the box, while it has the keyboard or something chosen is read there: Issue, diff and Output side by
@@ -143,7 +143,7 @@
 .search-in, .line-in {
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
-  transition: background-color calc(180ms * var(--pace)) ease-out, border-color calc(180ms * var(--pace)) ease-out;
+  transition: background-color var(--move) var(--spring), border-color var(--move) var(--spring);
 }
 :is(.search-in, .line-in):focus { transition-duration: var(--motion); }
 .search-in:disabled { opacity: .5; }

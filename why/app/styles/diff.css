@@ -62,7 +62,7 @@ button.diff-no:hover { color: var(--ink); background: var(--raised); border-radi
 mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 0 / 100% 100%; color: var(--ink); }
 /* As what was found is drawn (each letter typed draws it again), each stroke is drawn on left to right, one line
    after the next, as a highlighter goes down a page. */
-.search-results mark { animation: stroke calc(280ms * var(--pace)) var(--land) backwards; animation-delay: calc(var(--i, 0) * calc(45ms * var(--pace))); }
+.search-results mark { animation: stroke var(--move) var(--land) backwards; animation-delay: calc(var(--i, 0) * calc(45ms * var(--pace))); }
 @keyframes stroke { from { background-size: 0 100%; } }
 .mono { font-family: var(--mono); font-size: var(--t-meta); }
 .issue-list { list-style: none; margin: 0; padding: 0; }

@@ -11,7 +11,7 @@
 import {CELL, moveTime, SPRING} from './law.ts';
 
 /** The camera's landing (styles.css --land): fast off the mark, the last pixels slow. */
-export const LAND = 'cubic-bezier(.2, .9, .25, 1)';
+export const LAND = SPRING;
 
 /** The animations' own clock (ms): what their delays and lengths are counted on, so what is timed against them keeps
  * with them however they are played (the page's clock where there is none). */
@@ -240,7 +240,7 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
     rest.setAttribute('aria-hidden', 'true');
     box.style.overflow = 'hidden';
     box.append(rest);
-    rest.animate([{opacity: 1}, {opacity: 0}], {duration: paced(180), easing: 'ease-out', fill: 'forwards'});
+    rest.animate([{opacity: 1}, {opacity: 0}], {duration: paced(180), easing: SPRING, fill: 'forwards'});
   }
   // Its words go with it, from where they were read to the words they become (the issue's title onto its line).
   const words = carry?.lifted.el;
@@ -300,9 +300,9 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
       // Landed: the box is there under it, and the sheet gives way to it.
       shown();
       if (still()) { done(); return; }
-      to!.animate([{opacity: 0}, {opacity: 1}], {duration: paced(140), easing: 'ease-out'});
-      words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'});
-      box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: 'ease-out', fill: 'forwards'}).finished.then(done, done);
+      to!.animate([{opacity: 0}, {opacity: 1}], {duration: paced(140), easing: SPRING});
+      words?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: SPRING, fill: 'forwards'});
+      box.animate([{opacity: 1}, {opacity: 0}], {duration: paced(140), easing: SPRING, fill: 'forwards'}).finished.then(done, done);
     }, () => { shown(); if (!gone) done(); });
   };
   requestAnimationFrame(go);
@@ -316,7 +316,7 @@ export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, r
 export function nudge(el: Element | null) {
   if (still() || !el) return;
   el.animate([{translate: '0 0'}, {translate: '-5px 0'}, {translate: '4px 0'}, {translate: '-2px 0'}, {translate: '1px 0'}, {translate: '0 0'}],
-    {duration: paced(300), easing: 'ease-out'});
+    {duration: paced(300), easing: SPRING});
 }
 
 /** What stood under something taken away closes up over where it was (`by` pixels), rather than being there at once. */
@@ -358,7 +358,7 @@ export function putAway(el: HTMLElement, gone: () => void, o: {fold?: boolean; m
   const frames: Keyframe[] = o.fold
     ? folded(el)
     : [{opacity: 1, translate: '0 0', scale: 1}, {opacity: 0, translate: from, scale: .96}];
-  const a = el.animate(frames, {duration: paced(o.ms ?? 150), easing: o.fold ? 'cubic-bezier(.4, 0, .2, 1)' : 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+  const a = el.animate(frames, {duration: paced(o.ms ?? 150), easing: SPRING, fill: 'forwards'});
   const going = {a, inert: el.inert};
   goingOut.set(el, going);
   el.inert = true;
@@ -394,7 +394,7 @@ export function keepOut(el: HTMLElement) {
 /** A thing just done is rewarded: it pops past its size and settles (a TODO's mark once done). */
 export function pop(el: Element, by = .16, ms = 380) {
   if (still()) return;
-  el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: 'ease-out'});
+  el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: SPRING});
 }
 
 /** What stays where it is while a page comes and goes: the band and the panes, the window's own instruments. */

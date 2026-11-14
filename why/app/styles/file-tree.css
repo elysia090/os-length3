@@ -15,10 +15,10 @@
      --leave): settling slowly there, its last few pixels stood beside the line as a sliver the line seemed to shake
      with, while the page panned away (File, then Home). */
   visibility: hidden; clip-path: inset(-2px 100% -2px -2px round var(--r-card));
-  transition: clip-path var(--leave) cubic-bezier(.7, 0, 1, 1), left var(--leave) cubic-bezier(.7, 0, 1, 1), visibility 0s var(--leave);
+  transition: clip-path var(--leave) var(--spring), left var(--leave) var(--spring), visibility 0s var(--leave);
 }
 .tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; clip-path: inset(-2px -2px -2px -2px round var(--r-card));
-  transition: clip-path calc(220ms * var(--pace)) var(--land), left calc(220ms * var(--pace)) var(--land), visibility 0s; }
+  transition: clip-path var(--move) var(--land), left var(--move) var(--land), visibility 0s; }
 /* Out, it cuts nothing (tree.ts): a row's menu stands beside it. */
 .tree.open.settled { clip-path: none; }
 .tree ul { list-style: none; margin: 0; padding: 0; }
@@ -145,7 +145,7 @@
    and its paper, are brought most of the way to the ground, so only the sheets found are read.) */
 .page-veil { --wash: 35%; position: fixed; inset: 0; z-index: 8; pointer-events: none; }
 .page-veil.under-band { --wash: 65%; z-index: 6; }
-.page-veil > i { position: absolute; inset: 0; transition: backdrop-filter 180ms ease-out, background-color 180ms ease-out; }
+.page-veil > i { position: absolute; inset: 0; transition: backdrop-filter var(--move) var(--spring), background-color var(--move) var(--spring); }
 .page-veil > i:nth-child(2) { mask-image: linear-gradient(to bottom, #000 0, #000 11px, transparent 36px, transparent calc(100% - 36px), #000 calc(100% - 11px), #000 100%); }
 .page-veil > i:nth-child(3) { mask-image: linear-gradient(to bottom, #000 0, transparent 22px, transparent calc(100% - 22px), #000 100%); }
 .page-veil.out > i:nth-child(1) { backdrop-filter: blur(6px); background-color: color-mix(in srgb, var(--ground) var(--wash), transparent); }

@@ -6,6 +6,7 @@ import * as servers from '../../remote/servers.ts';
 import {coalesced, every} from '../../host/runs.ts';
 import {errorText} from '../../host/errors.ts';
 import {personBadge} from '../kit/pane.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // A board's talk: read as a conversation is, oldest above and newest at the
 // foot, by the box one writes in. Its people write in it; so may a guest,
@@ -314,7 +315,7 @@ class Talk {
     if (fresh) arrive(s.el, fresh === 'mine' ? 1 : -1, fresh === 'mine' ? 'y' : 'x', 18, 300);
     // The talk as it opens, read in after its board was drawn (the board slid to): it comes up where it stands, not
     // all at once in one frame.
-    else if (!still()) s.el.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: 'ease-out'});
+    else if (!still()) s.el.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: SPRING});
   }
 
   private tell() {

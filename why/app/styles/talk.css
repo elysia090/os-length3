@@ -41,7 +41,7 @@
    once), and go as it leaves; out of the way, they are not there to be pressed. Inside the post, not over the one
    above: a hand going up the talk lights the post under it, never the one below whose deed it is passing over. */
 .tl-acts { position: absolute; top: var(--s1); right: var(--s2); z-index: 1; display: flex; gap: var(--s1);
-  opacity: 0; visibility: hidden; translate: 0 3px; transition: opacity 120ms ease-out, translate 160ms var(--land), visibility 0s 120ms; }
+  opacity: 0; visibility: hidden; translate: 0 3px; transition: opacity var(--motion) var(--spring), translate var(--move) var(--land), visibility 0s var(--motion); }
 .tl-acts:empty { display: none; }
 .tl-post:hover .tl-acts, .tl-post:focus-within .tl-acts { opacity: 1; visibility: visible; translate: 0 0; transition-delay: 0s; }
 .tl-act { background: var(--ground); }

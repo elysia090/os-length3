@@ -19,6 +19,7 @@ import {laidOut} from '../../repos/git-state.ts';
 import {issueForm, type IssueForm, type Made} from './issue-form.ts';
 import {errorText} from '../../host/errors.ts';
 import {issueStore} from '../../repos/issue-store.ts';
+import {SPRING} from '../../ui/law.ts';
 
 /**
  * Git: what happens between a repo and the outside, in the issues' terms.
@@ -421,7 +422,7 @@ class GitPage {
     // The row come into sight (an issue reopened, one come from elsewhere): its box comes in, not there at once; the
     // dashed card that writes the first, there again once the last has gone, the same.
     if (!row && card && !writ) arrive(card.card, 1, 'y', 10, 260);
-    if (!none && this.empty.firstElementChild) this.empty.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: 'ease-out'});
+    if (!none && this.empty.firstElementChild) this.empty.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: SPRING});
   }
 
   /** main's part and the issue in full as they stand, for the drawing after to go on from. */

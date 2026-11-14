@@ -15,6 +15,7 @@ import {asksIn, watchAsks, type Ask} from './asks.ts';
 import {foundView, patched, readAll, search, type Files} from './found.ts';
 import {drawLine, remember, seenButton, seenIn, seenKey, seenKind, seenLabel, type Seen, type Slot} from './seen.ts';
 import {issueStore} from '../../repos/issue-store.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // The way to what the center refers to: the search box over the right pane,
 // reaching a quarter of the pane's width into the center so that what opens
@@ -384,7 +385,7 @@ export class Reference {
     const frames = this.band
       ? [{transform: 'none', clipPath: 'inset(-12px -12px -12px -12px)'}, {transform: 'translateY(calc(-100% - var(--s3)))', clipPath: 'inset(100% -12px -12px -12px)'}]
       : [{opacity: 1, transform: 'none'}, {opacity: 0, transform: 'translateY(calc(-1 * var(--s2)))'}];
-    const a = this.leaving = this.under.animate(frames, {duration: paced(this.band ? 220 : 150), easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards'});
+    const a = this.leaving = this.under.animate(frames, {duration: paced(this.band ? 220 : 150), easing: SPRING, fill: 'forwards'});
     a.finished.then(() => {
       if (this.leaving !== a) return;
       this.leaving = null;

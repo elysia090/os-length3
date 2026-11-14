@@ -3,7 +3,7 @@
 /* Put away, the center takes the whole width; the pane is only out of sight. No pane, no line. It goes as a wipe:
    the pane's column closes to nothing, what it holds staying at its width and cut at the moving edge (not squeezed),
    and is out of sight (and of the keyboard) once closed; brought back, it opens the same way. */
-.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns var(--leave) cubic-bezier(.4, 0, 1, 1); }
+.work.bench.pane-closed { grid-template-columns: minmax(0, 1fr) 0px; transition: grid-template-columns var(--leave) var(--spring); }
 .work.bench > .side { min-width: 0; grid-template-columns: max(280px, calc(var(--bench-w, 1200px) / 4)); }
 .work.bench.pane-closed > .side { overflow-x: clip; visibility: hidden; transition: visibility 0s var(--leave); }
 @media (prefers-reduced-motion: reduce) {
@@ -26,4 +26,4 @@
 }
 /* Put away, the line goes with the pane, gathering speed to the right (260 ms), and is gone as it gets there: never
    left standing at the window's edge. */
-.work.bench.pane-closed > .side::before { opacity: 0; transition: opacity var(--leave) cubic-bezier(.7, 0, 1, 1); }
+.work.bench.pane-closed > .side::before { opacity: 0; transition: opacity var(--leave) var(--spring); }

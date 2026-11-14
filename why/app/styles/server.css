@@ -22,13 +22,13 @@
   display: grid; gap: 2px; width: min(260px, calc(100vw - 2 * var(--outer) - var(--rail))); max-height: calc(100vh - var(--switch-top, 0px) - var(--outer-bottom)); overflow: auto;
   padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card);
   visibility: hidden; opacity: 0; translate: -6px 0;
-  transition: opacity calc(160ms * var(--pace)) ease-out, translate calc(220ms * var(--pace)) var(--land), visibility 0s calc(220ms * var(--pace));
+  transition: opacity var(--move) var(--spring), translate var(--move) var(--land), visibility 0s var(--move);
 }
-.server-switch.out { visibility: visible; opacity: 1; translate: 0 0; transition: opacity calc(160ms * var(--pace)) ease-out, translate calc(220ms * var(--pace)) var(--land), visibility 0s; }
+.server-switch.out { visibility: visible; opacity: 1; translate: 0 0; transition: opacity var(--move) var(--spring), translate var(--move) var(--land), visibility 0s; }
 @media (prefers-reduced-motion: reduce) { .server-switch { transition: none; } }
 .server-switch-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: var(--s3); min-height: 44px; padding: var(--s1) var(--s2);
   border: 0; border-radius: var(--r-field); background: none; color: var(--ink); font: inherit; text-align: left; cursor: var(--cursor-hand); transition: background-color var(--motion); }
-.server-switch-row:is(:hover, :focus-visible) { background: var(--raised); transition-duration: calc(60ms * var(--pace)); }
+.server-switch-row:is(:hover, :focus-visible) { background: var(--raised); transition-duration: var(--motion); }
 .server-switch-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-field); background: var(--ink); color: var(--ground); font-size: var(--t-meta); font-weight: 700; letter-spacing: .02em; transition: border-radius var(--motion); }
 .server-switch-row:is(:hover, :focus-visible) .server-switch-mark { border-radius: var(--r-place); }
 .server-switch-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
@@ -149,7 +149,7 @@
 .slide[aria-current='true'] .board-card { border-color: var(--ink); background: var(--paper); }
 /* The pointer on an edge, the box it goes to is lit as a thing under the pointer is (raised, its edge in ink), coming
    and going over a moment, so a hand resting on the line between the board and the edge does not make it flicker. */
-.slide .board-card { transition: border-color calc(160ms * var(--pace)) ease-out, color calc(160ms * var(--pace)) ease-out, background-color calc(160ms * var(--pace)) ease-out; }
+.slide .board-card { transition: border-color var(--move) var(--spring), color var(--move) var(--spring), background-color var(--move) var(--spring); }
 .slide-stage:has(.stage-hit.next:hover) .slide[aria-current='true'] + .slide .board-card,
 .slide-stage:has(.stage-hit.prev:hover) .slide:has(+ .slide[aria-current='true']) .board-card { border-color: var(--ink); background: var(--raised); color: var(--ink); }
 /* Its name as near its top as a file's head is to a file's (a step, s2), so it sits by the line the pane's head (People)
@@ -237,14 +237,14 @@
 /* Someone else is a conversation with them (server/side.ts): the row pressed, a raised fill under the pointer. */
 .person-go { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; width: calc(100% + 2 * var(--s2)); margin: 0 calc(-1 * var(--s2));
   padding: 2px var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
-  transition: background-color calc(200ms * var(--pace)) ease-out; }
-.person-go:hover { background: var(--raised); transition-duration: calc(60ms * var(--pace)); }
+  transition: background-color var(--move) var(--spring); }
+.person-go:hover { background: var(--raised); transition-duration: var(--motion); }
 .person-go > .lately-badge { align-self: center; }
 .person-go > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }
 .person-go > .muted { flex: none; }
 /* It goes to the Inbox: under the pointer, an arrow at its end says so. */
 .person-go::after { content: '→'; flex: none; margin-left: auto; color: var(--sub); opacity: 0; translate: -3px 0;
-  transition: opacity calc(120ms * var(--pace)) ease-out, translate calc(160ms * var(--pace)) var(--land); }
+  transition: opacity var(--motion) var(--spring), translate var(--move) var(--land); }
 .person-go:hover::after, .person-go:focus-visible::after { opacity: 1; translate: 0 0; }
 .side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
 .side-repo:hover, .side-repo[aria-current='true'] { background: var(--raised); }

@@ -6,6 +6,7 @@ import {personBadge} from '../kit/pane.ts';
 import {errorText} from '../../host/errors.ts';
 import {every} from '../../host/runs.ts';
 import {paced, still} from '../../ui/glide.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // Server's right pane, where a repo's reference would be: who is in the server, then the repos they show in it
 // (pressing one shows it as it was last pushed; a repo shown is only seen there, never written).
@@ -53,7 +54,7 @@ export class Side {
         part(t('Members'), h('ul', {class: 'people'}, ...people.map((p) => this.person(p)))),
         // The repos shown, when there are any: nothing is said of none here.
         repos.length ? part(t('Repos'), h('ul', {class: 'side-repos'}, ...repos.map((r) => this.repo(r)))) : '');
-      if (another && !still()) this.element.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: 'ease-out'});
+      if (another && !still()) this.element.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: SPRING});
     };
     void read().then((got) => { if (mine === this.token) draw(got); })
       .catch((e) => { if (mine === this.token) this.element.replaceChildren(h('p', {class: 'error'}, errorText(e))); });

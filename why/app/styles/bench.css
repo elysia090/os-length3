@@ -33,7 +33,7 @@
 .work.bench { grid-template-columns: minmax(0, 1fr) max(280px, 25%); transition: grid-template-columns var(--move) var(--land); }
 /* Brought out, its edge lands a touch past where it stops and settles back, as a thing pushed out does (glide.ts
    paneOut brings what it holds in after it); put away, it goes straight. */
-.work.bench:not(.pane-closed) { transition: grid-template-columns var(--slide) cubic-bezier(.2, 1.4, .32, 1); }
+.work.bench:not(.pane-closed) { transition: grid-template-columns var(--slide) var(--spring); }
 .work.bench > .bar {
   --pane-w: max(280px, calc(var(--bench-w, 1200px) / 4));
   --search-w: calc(var(--pane-w) - 2 * var(--s5) - var(--h-row) - var(--s3));

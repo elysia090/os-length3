@@ -77,29 +77,27 @@
   /* The prompt box's height (one line of body text, its padding and edge): the foot line the rail's person sits on. */
   --prompt-h: calc(2 * var(--s3) + var(--t-body) * 1.6 + 2px);
   --icon: 24px; --stroke: 1.6px;
-  /* The pace of the OS's moves (a page panned, the pane, a menu, a box coming, a thing landing): each move's length is
-     its own times this, so they keep with one another; 1, the standard lengths (at 2 the moves were watched rather
-     than seen, and the hand waited on each). Sideways, the camera goes slower (--slide: the band's repos, the row of
-     boxes, the issues, the boards, the pane), as a long pan does. A hover's light and a colour change go at the same
-     pace, a little quicker than a move (--motion); only what answers the hand at once (a press, the caret) is not
-     paced, and the Prompt keeps its own (--prompt-up, --prompt-down). */
+  /* The one law every move of the OS follows (ui/law.ts, where it is derived and tested): a thing moved goes as a
+     hand moves it and stops it, off at once, most of the way in the first third of its time, then settling with no
+     bounce (--spring: a critically damped spring, sampled every twentieth of its time; where a browser knows no
+     such curve, the nearest Bezier). Its time is a quarter of a second for a thing that comes or goes where it is
+     (--move), and up to 420 ms for a whole way (--slide: the world to another place, the desk along its row). What
+     answers the hand (a hover's light, a press, a colour) is not a move: it is there in 90 ms (--motion), and a
+     thing put away is gone in that again and a half (--leave). Every length is its own times --pace. */
   --pace: 1;
-  --motion: calc(90ms * var(--pace)); --move: calc(280ms * var(--pace)); --slide: calc(450ms * var(--pace));
-  /* A thing put away goes in a fraction of its coming (the pane, 130 ms): what is no longer wanted is not watched
-     going, and the hand that put it away is not kept waiting on it. */
+  --spring: cubic-bezier(.2, 0, 0, 1);
+  --motion: calc(90ms * var(--pace)); --move: calc(250ms * var(--pace)); --slide: calc(420ms * var(--pace));
   --leave: calc(130ms * var(--pace));
   /* The Prompt's screen: how long it takes to come up out of the box's pill (running along the line for the first part
      of it, then rising) and to go back down into it (sinking to the line for the first part, then running back), and
      how each part moves. Along, it slows into the line's end; it rises fast off the line, landing a touch past; it
      sinks as a thing let go, moving from the first frame and gathering, and runs on into the pill at that speed,
      braking hard there, which gives under it as it is caught (bench.ts). */
-  --prompt-up: 460ms; --prompt-up-line: .38; --prompt-down: 420ms; --prompt-down-line: .42;
-  --prompt-along: cubic-bezier(.3, .1, .25, 1); --prompt-rise: cubic-bezier(.2, 1.15, .32, 1);
-  --prompt-sink: cubic-bezier(.32, .04, .7, .45); --prompt-back: cubic-bezier(.2, 0, 0, 1);
-  /* How a thing moves: fast off the mark, settling the last few pixels slowly, as a camera that lands. */
-  --land: cubic-bezier(.2, .9, .25, 1);
-  /* How a thing out of another grows into its place: a touch past its size, then back (a menu, a popover). */
-  --pop-in: cubic-bezier(.2, 1.3, .3, 1);
+  --prompt-up: var(--slide); --prompt-up-line: .38; --prompt-down: var(--move); --prompt-down-line: .42;
+  --prompt-along: var(--spring); --prompt-rise: var(--spring);
+  --prompt-sink: var(--spring); --prompt-back: var(--spring);
+  /* (The names the sheets knew the law by before it was one: how a thing lands, how one comes out of another.) */
+  --land: var(--spring); --pop-in: var(--spring);
   /* Lines are 1px; the file being worked on is drawn a little heavier. */
   --line-work: 1.5px;
   /* The two lines that frame the work, the rail's and the right pane's: one weight, in ink, top line to foot. */
@@ -175,4 +173,7 @@
     --cursor-col-resize: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M11.25 16.75L11.25 7.25Q11.25 6.75 11.75 6.75L12.25 6.75Q12.75 6.75 12.75 7.25L12.75 16.75Q12.75 17.25 12.25 17.25L11.75 17.25Q11.25 17.25 11.25 16.75Z'/%3E%3Cpath d='M6.38 15.2L3.71 12.33Q3.4 12 3.71 11.67L6.38 8.8Q6.75 8.4 6.75 8.95L6.75 15.05Q6.75 15.6 6.38 15.2Z'/%3E%3Cpath d='M10.5 11.25L6.75 11.25L6.75 12.75L10.5 12.75Z'/%3E%3Cpath d='M17.62 15.2L20.29 12.33Q20.6 12 20.29 11.67L17.62 8.8Q17.25 8.4 17.25 8.95L17.25 15.05Q17.25 15.6 17.62 15.2Z'/%3E%3Cpath d='M13.5 11.25L17.25 11.25L17.25 12.75L13.5 12.75Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%232c2a27' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f9f8f5' stroke='%23f9f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%232c2a27'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, col-resize;
     --cursor-row-resize: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27' height='27'%3E%3Cdefs%3E%3Cg id='b'%3E%3Cpath d='M16.75 11.25L7.25 11.25Q6.75 11.25 6.75 11.75L6.75 12.25Q6.75 12.75 7.25 12.75L16.75 12.75Q17.25 12.75 17.25 12.25L17.25 11.75Q17.25 11.25 16.75 11.25Z'/%3E%3Cpath d='M15.2 6.38L12.33 3.71Q12 3.4 11.67 3.71L8.8 6.38Q8.4 6.75 8.95 6.75L15.05 6.75Q15.6 6.75 15.2 6.38Z'/%3E%3Cpath d='M11.25 10.5L11.25 6.75L12.75 6.75L12.75 10.5Z'/%3E%3Cpath d='M15.2 17.62L12.33 20.29Q12 20.6 11.67 20.29L8.8 17.62Q8.4 17.25 8.95 17.25L15.05 17.25Q15.6 17.25 15.2 17.62Z'/%3E%3Cpath d='M11.25 13.5L11.25 17.25L12.75 17.25L12.75 13.5Z'/%3E%3C/g%3E%3Cfilter id='s' x='-1' y='-1' width='3' height='3'%3E%3CfeDropShadow dx='0' dy='.75' stdDeviation='.85' flood-color='%232c2a27' flood-opacity='.32'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Cg fill='%23f9f8f5' stroke='%23f9f8f5' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3Cg fill='%232c2a27'%3E%3Cuse href='%23b'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 12 12, row-resize;
   }
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root { --spring: linear(0, 0.062, 0.192, 0.338, 0.477, 0.596, 0.694, 0.771, 0.831, 0.877, 0.911, 0.937, 0.955, 0.969, 0.979, 0.986, 0.991, 0.994, 0.997, 0.999, 1); }
 }

@@ -22,6 +22,7 @@ import {seeRepo as repoSheet} from './repo.ts';
 import {Row} from './row.ts';
 import {Side} from './side.ts';
 import {cameTo, seenNow} from './talk.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // What is on the Server page (page.ts): the band of servers on the top line
 // (band.ts), under it the boards of the one chosen as a row of boxes (row.ts, board.ts), or a step away in their
@@ -311,7 +312,7 @@ export class ServerView {
     this.show(s.id);
     const chip = this.band.chip(s.id);
     if (chip) pop(chip, .12, 340);
-    this.row.track.querySelector('.slide[aria-current="true"] .board-card')?.animate([{opacity: .35}, {opacity: 1}], {duration: paced(360), easing: 'ease-out'});
+    this.row.track.querySelector('.slide[aria-current="true"] .board-card')?.animate([{opacity: .35}, {opacity: 1}], {duration: paced(360), easing: SPRING});
   }
 
   /** After leaving or removing the server on screen: the next one, or making one. */
@@ -331,7 +332,7 @@ export class ServerView {
   /** A board made in the last box: it stands where the box was, whole, as a server made does. */
   private boardMade(id: string, board: string) {
     this.show(id, board);
-    this.row.track.querySelector('.slide[aria-current="true"] .board-card')?.animate([{opacity: .35}, {opacity: 1}], {duration: paced(360), easing: 'ease-out'});
+    this.row.track.querySelector('.slide[aria-current="true"] .board-card')?.animate([{opacity: .35}, {opacity: 1}], {duration: paced(360), easing: SPRING});
   }
 
   /**

@@ -44,4 +44,4 @@
 .count-go { margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field);
   background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
 .count-go:is(:hover, :focus-visible) { text-decoration: underline 3px; text-underline-offset: 4px; }
-.section > h2.landed { animation: landed 1200ms ease-out; border-radius: var(--r-field); }
+.section > h2.landed { animation: landed 1200ms var(--spring); border-radius: var(--r-field); }
