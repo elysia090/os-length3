@@ -35,7 +35,11 @@
    line (as Home's are): first main's own sheet, eight cells wide, where the repo's work is switched; two cells on,
    the issues, a row of sheets; where the issues have not a piece's width beside main's sheet, they go under it, at
    the desk's edge. (Before: by the window's width, under 1100 px.) */
-.git-flow.git-desk { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(2 * var(--u)); margin-left: 0; padding: var(--u) calc(2 * var(--u)) calc(3 * var(--u)) 0; }
+/* (Its lines are as tall as what is on them: what goes under starts two cells down, however tall the window is. The
+   row of issues goes to the window's right edge, as every row does; what is read under it stops a cell short.) */
+.git-flow.git-desk { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: calc(2 * var(--u)); margin-left: 0; padding: var(--u) 0 calc(3 * var(--u)) 0; }
+.git-desk > .section { padding-right: var(--u); }
+.git-desk .issue-column { margin-right: calc(-1 * var(--u)); }
 .git-desk > .git-side { flex: none; width: calc(8 * var(--u)); }
 .git-desk > .section { flex: 1 1 calc(24 * var(--u)); min-width: 0; }
 .git-desk > .git-side.none { display: none; }
@@ -72,8 +76,6 @@
 .git-desk .stage-hit.next { left: calc(var(--piece, 100%) + var(--gap)); right: 0; width: auto; border-radius: var(--r-sheet); }
 .git-desk .stage-hit::after { content: none; }
 .git-desk .issue-column > .row-map { position: fixed; left: calc(2 * var(--u)); }
-/* (A sheet's shadow lies a cell past it: the row is not cut before that.) */
-.git-desk .issue-stage { margin-right: calc(-1 * var(--u)); padding-right: var(--u); }
 .git-desk .issue-card { position: relative; padding: var(--u); border: 0; border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); }
 .git-desk .issue-slot[aria-current='true'] .issue-card { padding: calc(1.5 * var(--u)); background: var(--paper); color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 /* A sheet's edge: one pixel of ink round it, over what it holds (the work's bands run to it). */
@@ -81,7 +83,7 @@
 .git-desk .issue-slot[aria-current='true'] .issue-card::after { box-shadow: inset 0 0 0 1px var(--ink); }
 .git-desk .issue-slot > :not(.issue-card) { margin-top: calc(2 * var(--u)); }
 /* Its name over its corner: its number and kind, and how it stands. */
-.issue-name { position: absolute; left: calc(-1.5 * var(--u)); bottom: calc(100% + 1.5 * var(--u) + 7px); margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); white-space: nowrap; color: var(--ink); }
+.issue-name { position: absolute; left: calc(-1.5 * var(--u)); bottom: calc(100% + 1.5 * var(--u)); margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); white-space: nowrap; color: var(--ink); }
 .issue-name > i { font-style: normal; color: var(--quiet); }
 .git-desk .issue-box { position: relative; display: grid; grid-template-columns: calc(11.5 * var(--u)) minmax(0, 1fr); gap: 0 var(--u); align-items: start; }
 .git-desk .issue-box.no-work { grid-template-columns: minmax(0, 1fr); }

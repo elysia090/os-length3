@@ -97,10 +97,9 @@
   background: var(--ink); color: var(--ground); font-size: var(--t-meta); line-height: 1.8;
   opacity: 0; translate: -6px 0; pointer-events: none; transition: opacity var(--motion), translate var(--move) var(--land);
 }
-/* Out from the place's edge as the pointer comes on it, and back into it as the pointer leaves: never gone at once. */
+/* A place's name stands out from it while the keyboard is on it, saying where the keyboard is. A pointer over it
+   brings nothing out (DESIGN §7): the name it is told by is its own, said by the browser as any thing's is. */
 .rail-item:focus-visible .rail-tag { opacity: 1; translate: 0 0; }
-/* Only where a pointer rests: a finger's press leaves the place hovered, and its name would stay out over the page. */
-@media (hover: hover) { .rail-item:hover .rail-tag { opacity: 1; translate: 0 0; } }
 /* While File's tree is out, File is ringed as a place touched is (shared.css), and the page's own place keeps its
    slot: the page is still there, under the tree. */
 /* While File's tree is out, the tree itself says what it is. */

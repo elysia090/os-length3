@@ -409,11 +409,21 @@ export class Desk {
     this.#moving = requestAnimationFrame(step);
   }
 
-  /** The row's map drawn again: beside the desk (not on what it turns), at the window's foot. */
+  /**
+   * The row's map drawn again: beside the desk (not on what it turns), at the window's foot. Once a frame, after
+   * what changed the row has been laid (asked for many times as a desk is built, it is drawn once, and measures
+   * nothing in the middle of that).
+   */
   #said() {
-    if (!this.#map.element.isConnected) this.element.parentElement?.append(this.#map.element);
-    this.#map.paint();
+    if (this.#saying) return;
+    this.#saying = requestAnimationFrame(() => {
+      this.#saying = 0;
+      if (!this.element.isConnected) return;
+      if (!this.#map.element.isConnected) this.element.parentElement?.append(this.#map.element);
+      this.#map.paint();
+    });
   }
+  #saying = 0;
 
   #key(e: KeyboardEvent) {
     if (e.isComposing || theirs(e) || nativeOptionArrow(e)) return;

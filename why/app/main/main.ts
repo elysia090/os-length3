@@ -158,6 +158,7 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.id = `purpose-${id}`;
   button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
   button.setAttribute('aria-label', t(p.label));
+  button.title = t(p.label);
   button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
   if (id === 'file') {
     fileTree.attach(button);
@@ -404,6 +405,7 @@ const mark = (id: PurposeId) => {
   b.classList.toggle('news', id === 'server' && (marks(news()).inbox || marks(news()).server));
   const label = railName(id);
   b.setAttribute('aria-label', label);
+  b.title = label;
   const tag = b.querySelector('.rail-tag');
   if (tag) tag.textContent = label;
   hang();

@@ -59,7 +59,7 @@ export class IssueRow {
     new ResizeObserver(() => {
       const w = this.stage.clientWidth;
       if (!w) return;
-      this.piece = pieceWidth(w - CELL);
+      this.piece = pieceWidth(w);
       this.stage.style.setProperty('--piece', `${this.piece}px`);
       this.map.paint();
     }).observe(this.stage);

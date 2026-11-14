@@ -36,6 +36,19 @@ else is held back. It never has:
 - a picture of a material (paper's grain, leather). A material is shown by how it behaves, not by how it looks;
 - a second way to do a thing for a narrow window or a finger. A phone has the same rules with a smaller number.
 
+**What its sources ask, kept as rules.** The skeleton is not a taste; it is what the Swiss school's own manuals say to
+do, and each is a rule here with a number:
+
+| The source says | Here |
+|---|---|
+| A grid drawn from the line spacing (Vignelli, *Canon*: "one can draw a grid based on the leading size") | the cell is the line: 24 px (§3) |
+| "Stick to one or two type sizes", the large about twice the small, white between them (*Canon*) | on one sheet: its name, its words, and one small size beside them (§3) |
+| A subhead is the text's size in bold, "a line space above and none below" (*Canon*) | who speaks, over what they said (§10, a transcript) |
+| Flush left; centred only for what is lapidary (*Canon*; Bringhurst 2.1.3) | one left edge; nothing is set in the middle (§1) |
+| Vertical space is added in whole intervals of the leading (Bringhurst 2.2.2) | every gap is a cell or half a cell |
+| A comfortable measure (Bringhurst 2.1.2); read fastest long, preferred at 45 to 72 letters, slow under 35 | a line of what is said is 36 to 72 letters at every width (§10) |
+| Outside margins small, for tension between the edge and what is on the page (*Canon*) | 6 px from the window (§4) |
+
 **The test of anything expressive.** It must answer, at the same time as it pleases, one of: *where am I*, *what is
 in my hand*, *what can I do next*. The size of words answers by rank, movement by where things are, material by
 state. What answers none of the three is decoration, and on a desk decoration only takes the eye from the work.
@@ -59,8 +72,10 @@ One world, and the window looks at it.
   of Forge, the Remote of Home, Inbox of Server. A far side is a whole screen, a step along from its place, reached
   through the door (§4) and left through it.
 - **Along: the pieces.** What is in a place lies in a row from the desk's left edge, left to right (§6).
-- **In front: what is called up.** A search's finds, File's tree, a menu: they come in front of the world, and the
-  world behind them goes out of focus (blurred) until they are put away.
+- **In front: what is called up from the frame.** A search's finds, File's tree, the person's menu: they come in front
+  of the world, and the world behind them goes out of focus (blurred) until they are put away. A thing's own menu (a
+  repo's gear, a row's deeds) is not in front of the world: it is a sheet laid on the thing that called it (paper, an
+  ink edge, its shadow), and nothing behind it changes.
 - **Fixed to the window: the frame.** The rail and the band (§4) are the window's instruments. They do not move; the
   world goes by under them.
 
@@ -112,13 +127,17 @@ Seven sizes and no others:
 
 | Size | Face | On a line of | For |
 |---|---|---|---|
-| 11 | mono | 16 or 24 | a line's number, a key's name, a day |
-| 13 | mono 700 (lowercase) or sans | 24 | what is said: a label over a piece, a count, what the band and a menu say |
+| 11 | mono | 16 or 24 | a line's number, a key's name |
+| 13 | mono 700 (lowercase) or sans | 24 | what is said beside: a label over a piece, a count, a time, a day, what the band and a menu say |
 | 15 | sans | 24 (in the note, 36) | what is read on a sheet; an item of the note (700) |
 | 17 | mono | 24 | what is written: a file's text, the terminal |
 | 20 | sans 700 | 24 | a title inside a sheet |
 | 33.01 (= u / .727) | display | — | a name: a repo, a file in the hand, a place. Its capitals are one cell tall |
 | 66.02 (= 2u / .727) | display | — | the person's name. Its capitals are two cells tall |
+
+**On one sheet, three.** Its name (33), its words (15, or 17 where they are written), and one small size (13) for
+what stands beside them: a time, a day, a label, a hint. 11 is for a line's number and a key's name only, 20 for a
+title inside a sheet that has parts, 66 for the person's name alone.
 
 Why 17 for what is written: on an ordinary screen at a desk's distance one px is about .023°, and reading stops
 slowing when a small letter is about a fifth of a degree tall. A small letter of 17 px mono is .21°; of 14 px, .17°.
@@ -140,8 +159,10 @@ Its ink, not its box, stands on the left edge.
 |---|---|
 | a piece on a desk (a file, the terminal, Home's pieces, the band's bar) | **24 cells** = 576: fifty letters of 17 px mono (50 × 17 × .602), a margin of a cell and a half for the numbers before them and half a cell after, up to the grid |
 | between two pieces | **2 cells** |
-| a place that is one sheet (Runtime, Remote, Inbox) | to a cell from the window's right edge, at most 50 cells |
+| a place that is one sheet (Runtime, the Remote) | to a cell from the window's right edge, at most 50 cells |
 | Home's slip | 14 cells |
+| a row's first sheet (§6): Git's own, Server's | **8 cells**: a whole screen then shows it and two pieces whole (48 + 192 + 48 + 576 + 48 + 576 + 12 = 1500 ≤ 1536; 9 cells is the most that does) |
+| Inbox's first sheet | 12 cells: one piece follows it, and it holds a name and what was last said on a line |
 | a window narrower than a piece and its shadow | a piece is `24 · max(10, ⌊(W − 48 − 12) / 24⌋)` px: as many whole cells as there is room for |
 
 A window half a screen wide (768) shows one piece and the edge of the next; a whole screen (1536) shows two and the
@@ -163,7 +184,8 @@ corner, **(48, 48)**, and its first dot is at (60, 60).
   and so every one, at one pitch from first to last. So four dots stand round every icon alike. Its icon is 18 px,
   drawn with a 2 px stroke of its 24 px box.
 - The place one is in has the slot colour under it; a place under the pointer or the keyboard, paper and a 2 px ink
-  ring. At a place's far side its place is the one lit.
+  ring. At a place's far side its place is the one lit. A place's name stands out beside it while the keyboard is on
+  it; a pointer over it brings nothing out (§7).
 - **An icon stands on the rail only for what the day goes to from anywhere.** In order, nearest the person first:
 
   | | Icon | What it is |
@@ -259,7 +281,7 @@ being worked in.
 - A file's numbers are 11 px, quiet, in a margin a cell and a half wide; its words start there.
 - Nothing on a desk changes size, and nothing lies askew.
 
-**A place that is one sheet** (Runtime, Remote, Inbox) is that sheet in the hand: paper from the desk's corner
+**A place that is one sheet** (Runtime, the Remote) is that sheet in the hand: paper from the desk's corner
 (48, 48), a cell of paper round what is on it, its shadow, its name in the display face.
 
 ---
@@ -271,19 +293,26 @@ goes under it, at the desk's edge again, two cells down.**
 
 - **A desk of short pieces (Home) is set so and nothing more:** nothing of it is ever out of sight sideways. A whole
   screen has its pieces side by side; half a screen and a phone, one under the other.
-- **A desk whose pieces are as tall as the window (Forge) has one line only**, and is looked along. The rest of this
-  section is that line (`ui/row.ts`).
+- **A desk whose pieces are as tall as the window has one line only**, and is looked along: Forge's files, Server's
+  boards, Inbox's conversation, and Git's issues (which are as tall as what is on them, and are looked along all the
+  same: there may be many). The rest of this section is that line (`ui/row.ts`, `ui/row-desk.ts`).
 
 Decided by the window's width and nothing else (never by what the device is), and when pieces do not fit side by side
 one is shown whole and the rest are a step along, in order: what the split views of the systems people know do when
 a window narrows.
 
-**Where a piece is.** The pieces are in the order they were opened (on Forge the terminal first). All are one width
-`W` (§3), `G = 48` apart. The n-th (from 0) starts at
+**Where a piece is.** The pieces are in the order they were opened (on Forge the terminal first; on Server the
+boards' own order). All are one width `W` (§3), `G = 48` apart. The n-th (from 0) starts at
 
     x(n) = n · (W + G)
 
 from the desk's edge. A piece's place is its number and nothing else.
+
+**The row's first sheet.** A row that has things of one kind to choose among (Server's boards, the people who wrote
+to one) starts with a sheet that is its index: narrower than a piece (§3), not in the hand, at the desk's edge. Its
+lines are the frame's square tall across it; the one whose piece is in the hand is in ink; a line pressed goes to its
+piece. So any piece is one press away while the sheet is in sight (a whole screen), and two from anywhere (to the
+sheet, then to the piece). The pieces then start `F + G` along, `F` the sheet's width.
 
 **Where the desk rests.** Only with some piece's left edge at the desk's edge: the desk is turned by one of the
 `x(n)`, never between. Scrolled by hand and let go, it comes to rest at the nearest (the browser's own snapping, so
@@ -303,6 +332,14 @@ The first line is a rule of its own: **what is pressed never goes from under the
 
 **The row's end.** The desk turns as far as brings its last piece to the edge and no further. It is never turned
 down: what is under a piece's foot is inside the piece.
+
+**The row's map.** While some of a row is out of sight, its map stands at the window's foot from the desk's edge, in
+the lower half of the foot's cell (under a piece's shadow): the row twelve times smaller (a piece of 24 cells is a
+bar 48 px long, two cells between are 4 px), each piece a bar 4 px thick, the one in the hand in ink and the rest in
+the quiet line's colour, and a 2 px line of ink under the part that is in sight. A row longer than the window's
+width times twelve is drawn smaller, to fit. It answers what the window cannot show: how many pieces, which way, how
+far. **A bar pressed goes to its piece**, so nothing on a row is reached by scrolling alone. With the whole row in
+sight there is no map.
 
 ---
 
@@ -423,20 +460,64 @@ has its 80 columns while it runs.
 
 ### Git: Forge's far side, the work recorded and reviewed
 
-*What a repo is to become, what it became, and what is asked to be taken into it.*
+*What a repo is to become, what it became, and what is asked to be taken into it.* Its one large thing is the title
+of the issue in the hand.
 
 A desk. At the desk's edge main's own sheet, eight cells wide (ink: it is where the repo's work is switched); two
-cells on, the issues, a row of sheets. Which repo is a choice on this desk, not one of the window's instruments: it
-stands on the cell under the band. With no issue yet, the one thing to do stands where the first piece would.
-
-### Inbox: Server's far side, what was said to one
-
-*Letters: who wrote, and the conversation with them.* A sheet from the desk's corner to a cell over the window's
-foot; the conversation reaches its foot and nothing of the place scrolls away.
+cells on, the issues, a row (§6): one width, the one in the hand at the row's edge in full, those after it beside it
+by their number and title, nothing showing of those before it (they are on the row's map). An issue's title is its
+name: the display face, capitals a cell tall on lines of a cell and a half, at every width. Its number and kind are
+said once, small, in the cell over the sheet's corner (and the number at the band's end). In a sheet with room (30
+cells) its words and its work lie side by side; in a narrower one the work is under the words: by the sheet's width,
+never the window's. Which repo is a choice on this desk, not one of the window's instruments: it stands on the cell
+under the band. With no issue yet, the one thing to do stands where the first piece would. On a window with no room
+for main's sheet and an issue side by side, the row goes under the sheet, two cells down (§6).
 
 ### Server: where many talk
 
-*A room: a board of talk and a shared list, and the people in it.* A desk of boards in a row.
+*A room: boards of talk, each with a shared list, and the people in it.* Its one large thing is the name of the board
+in the hand.
+
+A desk with a row (§6). First, the room's own sheet, eight cells: its boards by name (the one in the hand in ink, a
+dot on one with something not seen), who is in it, the repos they show. Then its boards, pieces as wide as any; last,
+dashed on the ground, the board that is not made yet. The board in the hand is a sheet: its name in the display
+face on its second line, its two parts after the name (its talk, its list; they go under the name where they do not
+fit beside it), the part chosen under a quiet rule, and at its foot the box one writes in, part of the sheet. Its
+servers are chips on the band's row after the door; the chip of the server on screen, pressed, turns the desk to the
+row's start.
+
+### Inbox: Server's far side, what was said to one
+
+*Letters: who wrote, and the conversation with them.* Its one large thing is the name of who the conversation is
+with.
+
+The same instrument as Server (so it is learnt once). First, the sheet of who wrote, twelve cells: one's own name
+(pressed, it is copied; its gear at its end), the field that writes to someone new, then each conversation on two
+lines of a cell, the name with the address quiet after it and under it the last thing said; the one open in ink.
+Then the conversation open, a piece in the hand. One is found by one's name: there is no number beside it. With no
+conversation open the first sheet stands alone. Signed out, or with no name yet, it is a sheet with the one thing
+to do, as the Remote's is.
+
+### What is said: a transcript
+
+A board's talk and a conversation are set the same way, as a transcript is, not as bubbles on two sides:
+
+- **One left edge.** Everyone's words start at the sheet's own margin, a cell in. Who said them is said, not shown by
+  a side: the speaker's line (their mark a cell wide, their name in bold, the time small after it), then the words
+  under it. In a conversation one's own name is a step quieter than the other's.
+- **On the grid.** Words are 15 px on lines of a cell. A run of one person's posts a few minutes apart says who once;
+  between two posts of a run, half a line; before another speaker, a line. A day's name is a small line of its own at
+  the same edge.
+- **The measure.** A line is the sheet's width less a cell each side: 528 px on a piece of 24 cells, about 72
+  letters; 264 px on a phone's piece of 13, about 36. Both are inside what is read without slowing (35 to 72). A
+  column for faces beside the words would leave a phone 216 px, 30 letters: that is why who speaks is over the
+  words, not beside them.
+- **Standing on its foot.** The latest is just over the box one answers in; a talk longer than its sheet scrolls
+  inside it, and the box stays in sight.
+- **The box one writes in** is one thing in both places: a field at the sheet's foot under a quiet rule; its key
+  (Post, Send) comes with the words, and Ctrl+Enter does the same.
+- **What can be done with a post** (its time in a run, taking it down) is on the post in the hand: pressed, or with
+  the keyboard in it.
 
 ### Runtime: this device
 
@@ -465,15 +546,17 @@ breaks; none is a decision to leave it.
 
 | Where | What it still does | The rule it breaks |
 |---|---|---|
-| Server, Inbox | a post's deeds come up under a pointer | §7, nothing waits on a pointer |
-| Git | under 1100 px wide main's sheet goes over the issues instead of beside them; the issues turn by a carousel of their own, not by §6 | §1, no second way for a narrow window; §6 |
-| Server | its boards turn by a row of their own | §6 |
-| the band | Home, Forge and Git each build their own (the door alone is the window's); Runtime, the Remote and Inbox have no search | §2, the frame is the window's |
-| the band's end | the name in the hand is not shown under 1100 px wide | §1 |
+| Git | its row is slid by code of its own (a finger's swipe is read by it), not turned as a desk is, so it does not follow the hand; under the issue in the hand the page is scrolled down to its history and review | §6, a row is looked along as anything is scrolled, and is never turned down |
+| Git | under an issue: a day in its history is two cells tall | §3, seven sizes |
+| Server | a board not in the hand is its name only: what it holds is read when it is taken up | §5, a piece not in the hand is read, a step quieter |
+| Server | behind its gear and a repo shown: a page of the old make (its title 24 px, its parts on a sliding line) | §3, §5 |
+| Server's chips, a sheet's parts | a line of them longer than its room slides, its end faded into the ground, a › over the fade | §1, no transparency as decoration; §6, what does not fit goes under |
+| the search's finds | the find beside the one read lights under a pointer | §7, nothing waits on a pointer |
+| the band | Home, Forge and Git each build their own (the door alone is the window's); Runtime, the Remote, Server and Inbox have no search | §2, the frame is the window's |
 | Forge | the desk still turns by itself to where the Agent is working | §8, the world moves only for what was asked |
 | moves in code | their lengths are still written where they are made (their curve is the law's) | §8 |
-| Git | its sheets have sizes of their own: an issue's title a cell and a half tall, its number four cells tall, a day two | §3, seven sizes |
-| Server | a board's title is 24 px | §3, seven sizes |
+| the sheets (Runtime, the Remote) | what is in them is laid by the window's width in places (27 rules that ask the window how wide it is remain in the sheets, most of them here) | §1, a narrow window has the same rules |
+| signing in, a Remote not answering | the same deed has two looks (Try again in ink on Server, in line on the Remote) | §1, one hand |
 | `PLACES.md` | speaks of the look as it was | — |
 
 **Which icons the rail needs.** Counted in presses, for a rail of n icons. An icon costs the screen a square for
@@ -495,9 +578,13 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 |---|---|
 | The law of motion: its shape, its time; the sheets' curve is the code's; no sheet moves by another curve or a written-out time (§8) | `why/app/ui/law.test.ts` |
 | A piece's place is its number; where the desk rests; going to a piece, every case; a phone by the same rule (§6) | `why/app/pages/forge/desk-layout.test.ts` |
+| A piece's width at every window; a row whose first sheet is narrower than its pieces (§3, §6) | `why/app/ui/row.test.ts` |
 | The rail's order; which pages are a place's far side, where each door leads and that it leads back (§4) | `why/app/host/purposes.test.ts` |
 | What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `tests/app/sound.spec.ts` |
 | Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `tests/app/skeleton.spec.ts` |
+| Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `tests/app/skeleton.spec.ts` |
+| Git's row: the one in the hand at its edge, the next beside it, the one before on the map; a bar of the map goes to its piece (§6) | `tests/app/git.spec.ts` |
+| A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `tests/app/server.spec.ts` |
 | Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone (§10) | `tests/app/home.spec.ts` |
 | Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `tests/app/forge-work.spec.ts` |
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `tests/app/focus.spec.ts` |
@@ -505,7 +592,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | File comes by a press and by nothing else (§7) | `tests/app/file.spec.ts` |
 | A phone has the same rules (§1) | `tests/app/narrow.spec.ts` |
 
-`npm test` runs the first four; `npm run selftest` the rest, in a browser against a real Remote.
+`npm test` runs the first five; `npm run selftest` the rest, in a browser against a real Remote.
 
 To add a rule: write it here as a number or a sentence that can be false, then write the test that would find it
 false, then make it true. To change one: change it here first.
