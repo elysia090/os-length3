@@ -28,10 +28,9 @@
   color: var(--ink); font: 700 var(--t-fine)/1 var(--sans); }
 .lately-badge:not([data-tint]) { background: none; color: var(--sub); }
 .lately-badge > .icon { width: 14px; height: 14px; }
-.lately-badge[data-tint='0'] { background: var(--marker-soft); }
-.lately-badge[data-tint='1'] { background: var(--add-tint); }
-.lately-badge[data-tint='2'] { background: var(--del-tint); }
-.lately-badge[data-tint='3'] { background: var(--sky-tint); }
+/* A person's mark is their seal: a ring of ink round their initial, on whatever it is set on. (It had one of four
+   pale tints under it, as a face in any chat has; a tint that told no one from another.) */
+.lately-badge[data-tint] { background: none; box-shadow: inset 0 0 0 1px currentColor; }
 .lately-row > .lately-quote { margin-left: calc(24px + var(--s2)); }
 /* Read whole as it is; only a word of pages (a message of thousands of letters) stops at six lines, its card has it all. */
 .lately-row > .lately-quote { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden; }

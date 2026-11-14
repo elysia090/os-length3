@@ -104,7 +104,7 @@
    piece in hand). Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a
    cell; the file, its capitals a cell tall on the next two; then what it says and where, a line each. ---- */
 .home-waits { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--u); width: 100%; margin-top: var(--u); }
-.home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(14 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: var(--s3) var(--u) calc(var(--s3) + var(--to-grid, 0px));
+.home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: var(--s3) var(--u) calc(var(--s3) + var(--to-grid, 0px));
   /* (Home's piece in hand is the note, the one thing written in: the slip is line on the ground, as a piece not in
      hand is on any desk.) */
   background: var(--ground); border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; text-align: left; }
@@ -122,5 +122,5 @@
 .home-waits .pane-row + .pane-row > .pane-line { font: 700 var(--t-meta)/var(--u) var(--mono); letter-spacing: 0; }
 .home-waits .pane-row + .pane-row > .pane-at, .home-waits .pane-row:nth-child(n + 5) { display: none; }
 .home-waits .lately-none { margin: 0; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--quiet); }
-.home-waits > .plugins { width: calc(14 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; }
-.home-waits > .agent-cards { width: calc(14 * var(--u)); max-width: 100%; }
+.home-waits > .plugins { width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; }
+.home-waits > .agent-cards { width: calc(12 * var(--u)); max-width: 100%; }

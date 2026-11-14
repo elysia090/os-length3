@@ -57,7 +57,7 @@
 @media (prefers-reduced-motion: reduce) { .me-pop, .me-wrap.open .me-pop { translate: none; scale: none; } }
 .me-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); }
 /* The face again, the size of the button, beside the name. */
-.me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-round); font: 600 var(--t-meta) var(--sans); }
+.me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-mark); font: 600 var(--t-meta) var(--sans); }
 .me-who > svg.icon { padding: 4px; box-sizing: border-box; }
 .me-name { display: grid; min-width: 0; }
 .pop-group { display: grid; margin-top: var(--s2); }
@@ -114,7 +114,7 @@
 .rail-item.news::after { background: currentColor; }
 .chip.news::after, .board-head.news > .board-mark::after {
   content: ''; display: inline-block; width: 7px; height: 7px; margin-left: var(--s2); vertical-align: middle;
-  border-radius: var(--r-round); background: currentColor;
+  border-radius: var(--r-mark); background: currentColor;
 }
 /* A board's # is quiet; its dot is the ink one all the same. */
 .board-head.news > .board-mark::after { background: var(--ink); }

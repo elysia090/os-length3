@@ -26,7 +26,7 @@
 .tl-post.tl-runs { margin-top: calc(var(--u) / 2); }
 .tl-post.held, .tl-post:focus-within { background: var(--raised); }
 .tl-main { display: contents; }
-.tl-face { display: grid; place-items: center; width: var(--u); height: var(--u); border-radius: var(--r-round); font: 700 var(--t-fine) var(--sans); }
+.tl-face { display: grid; place-items: center; width: var(--u); height: var(--u); border-radius: var(--r-mark); font: 700 var(--t-fine) var(--sans); }
 /* A guest's face is no tint of theirs, only a dashed ring, beside the word guest: never taken for one of its people's. */
 .tl-guest > .tl-face { border: 1px dashed var(--edge); background: transparent; }
 .tl-who { grid-column: 2; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); min-width: 0; }

@@ -69,7 +69,11 @@
   /* Places are rounded squares, actions are round, fields are slightly rounded; a sheet (a file's, the terminal's,
      File's tree, Home's note) has one corner between a field's and a place's; a key of the band is small and drawn in
      line, and tight at the corner (at a sheet's corner the three read slack). */
-  --r-key: 4px; --r-field: 8px; --r-sheet: 10px; --r-round: 999px;
+  --r-key: 4px; --r-field: 8px; --r-sheet: 10px;
+  /* What is pressed is a key: one corner for all of them (the band's keys, a sheet's, a chosen part). A pill is the
+     shape of every other interface's button, taken without being asked what it means here; it meant nothing.
+     Round is a person's mark (their seal) and a dot, and nothing else. */
+  --r-round: var(--r-key); --r-mark: 50%;
   /* (Four corners and no others, DESIGN §3: what was a place's or a card's own is a sheet's.) */
   --r-place: var(--r-sheet);
   /* A card of rows: a row's corner plus the room between them. */

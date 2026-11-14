@@ -49,6 +49,23 @@ do, and each is a rule here with a number:
 | A comfortable measure (Bringhurst 2.1.2); read fastest long, preferred at 45 to 72 letters, slow under 35 | a line of what is said is 36 to 72 letters at every width (§10) |
 | Outside margins small, for tension between the edge and what is on the page (*Canon*) | 6 px from the window (§4) |
 
+**Not a likeness.** It would be easy to look like the things it comes from: squared paper, a heavy grotesque, a
+hard shadow. What those things were made by is harder, and is what is kept here. Each is a question asked of every
+part, and each has already changed something:
+
+| Whose | What they say | What it asks here | What it changed |
+|---|---|---|---|
+| Gerstner, *Designing Programmes* | "Squared paper is a grid, but not a programme." A programme is a scale of proportions "that makes the bad difficult and the good easy"; "to describe the problem is part of the solution" | are the measures a regulator, or only lines to snap to? | the widths are one programme (§3): a sheet is 24 or 48 cells because its inside and one gutter are then 24 or 48, which divide by 2, 3, 4 and 6 |
+| Vignelli, *Canon* | appropriateness is "the search for the specific of any given problem"; design is "a discipline", not a style; "we love complexities but hate complications" | what does this thing want to be, here? | a far side is a step away, not an icon; a board is a sheet with its box at its foot, not a chat with a side pane |
+| Rams, 1976 | the designer is a "gestaltingenieur"; order is there so that what a thing does is told; what is made "to impress, to polish things up" is packaging; users are "intelligent and responsible" | does this tell what the thing does, or dress it? | nothing is said twice (an issue's number once); nothing explains itself in a tooltip that a name would say |
+| Morrison and Fukasawa, *Super Normal* | special things "demand attention for the wrong reasons"; "a certain lack of noticeability has become a requirement"; a thing earns its worth in daily use | inside a sheet, is anything asking to be looked at? | one voice a screen (a name) and the rest quiet: the hand's piece is the only fill |
+| Hara, for MUJI | not "this is what I want" but "this will do": acceptance, not appetite; emptiness is "a possibility of being filled" | is the desk a vessel for the work, or a show of itself? | the ground is empty and the same everywhere; a place with nothing in it says the one thing to do and nothing else |
+| Giampietro, *Default Systems* | "the center is a default position"; "the system makes assumptions that, unchallenged, become truths" | which shapes are here because every interface has them? | the pill went (a key is a key, §3); a person's mark is their seal, not a tinted face; nothing is centred |
+| Alexander, *Notes on the Synthesis of Form* | good fit cannot be described, but each misfit can be named, and fit is their absence | can what is wrong be named and counted? | §11 is a list of named misfits, each with the rule it breaks, and §12 the tests that find them |
+| Chimero, *The Web's Grain* | a material has a grain; the web's is edgeless; build up from parts, then frame | does it fit a window, or go on past it? | rows run past the window's edge and the window looks along them; there is no layout for a size, only pieces that are set as words are |
+| Playdate's own guide | "measure cap height, not total font height"; hold it against a printed book | is a size a number, or what the eye gets? | a name is sized by its capitals (and a kanji's face, §3); the words written are sized by the angle they subtend |
+| the OP-1's tape | lift, drop, split, join: the verbs of the thing it stands for, and no others | are the verbs the material's own? | take up, put away, put back, go; a thing is never "selected" or "activated" |
+
 **The test of anything expressive.** It must answer, at the same time as it pleases, one of: *where am I*, *what is
 in my hand*, *what can I do next*. The size of words answers by rank, movement by where things are, material by
 state. What answers none of the three is decoration, and on a desk decoration only takes the eye from the work.
@@ -155,7 +172,9 @@ Its ink, not its box, stands on the left edge.
 ### Lines, corners, shadow
 
 - A line is 1 px. A piece's edge is an outline of 1 px inside its box.
-- Corners: a key 4, a field 8, a sheet 10, a pill 999. Nothing else.
+- Corners: a key 4, a field 8, a sheet 10. Nothing else. **What is pressed is a key**, in the band and in a sheet
+  alike (a button, a chosen part, a chip). Round is a person's mark, which is their seal (a ring of ink round their
+  initial), and a dot. There is no pill: it is the shape a button has everywhere else, and it said nothing here.
 - **A shadow is hard, ink (the terminal's: green), 12 px right and 12 px down (u/2), and only the piece in the hand
   has one.** One light, the same on every desk.
 
@@ -165,11 +184,20 @@ Its ink, not its box, stands on the left edge.
 |---|---|
 | a piece on a desk (a file, the terminal, Home's pieces, the band's bar) | **24 cells** = 576: fifty letters of 17 px mono (50 × 17 × .602), a margin of a cell and a half for the numbers before them and half a cell after, up to the grid |
 | between two pieces | **2 cells** |
-| a place that is one sheet (Runtime, the Remote) | to a cell from the window's right edge, at most 50 cells |
-| Home's slip | 14 cells |
+| a place that is one sheet (Runtime, the Remote) | to a cell from the window's right edge, at most **48 cells** (two pieces' insides and what is between them) |
+| Home's slip | 12 cells |
 | a row's first sheet (§6): Git's own, Server's | **8 cells**: a whole screen then shows it and two pieces whole (48 + 192 + 48 + 576 + 48 + 576 + 12 = 1500 ≤ 1536; 9 cells is the most that does) |
 | Inbox's first sheet | 12 cells: one piece follows it, and it holds a name and what was last said on a line |
 | a window narrower than a piece and its shadow | a piece is `24 · max(10, ⌊(W − 48 − 12) / 24⌋)` px: as many whole cells as there is room for |
+
+**The widths are one programme.** A sheet has a cell of paper each side, and what is set in it in columns has two
+cells between them. So `n` columns of `c` cells fill an inside of `n·c + 2·(n − 1)`, which is to say
+**inside + 2 = n · (c + 2)**. A piece is 24 cells, its inside 22, and 22 + 2 = 24 = 2³·3: it divides into
+1, 2, 3, 4 and 6 columns of 22, 10, 6, 4 and 2 cells with nothing over. That is why a piece is 24 and not 25 or 20.
+The other widths are those columns with their own cell of paper put back: a first sheet of 12 cells holds a half
+(10), one of 8 a third (6). A place that is one sheet is 48 cells, its inside 46 = 22 + 2 + 22, two pieces' insides,
+and 46 + 2 = 48 divides into 1, 2, 3, 4, 6, 8 and 12. Nothing on a desk has a width outside this: a width is chosen
+from it, never drawn. (Squared paper only gives lines to stand on; this says which widths there are.)
 
 A window half a screen wide (768) shows one piece and the edge of the next; a whole screen (1536) shows two and the
 edge of a third; a phone (390) shows one. These are not three layouts: they are the one rule at three widths.
@@ -379,6 +407,14 @@ pressed a moment early or late, or two pixels from the wall, counts.) Here:
 
 - What can be pressed is at least a cell either way, however small it is drawn: a 16 px mark in a 36 px square, a
   4 px bar of the row's map in the whole of the foot's cell.
+- **The window's edges are the frame's.** The 6 px between a square of the frame and the window, or the square next
+  to it, are that square's to be pressed in (a quarter of a cell: the same game's own code gives a jump four pixels
+  of grace on tiles of eight, a tenth of a second after the ledge is left). So a pointer thrown against the window's
+  left edge is on the rail, against its top on the band or the door, and in its bottom left corner on the person's
+  menu: an edge cannot be overshot, and between two places there is no room that is nobody's.
+- **A press that just misses a menu is the menu's.** 16 px round what was called up neither put it away nor land on
+  what is under it; its shadow lies in them. (The margin a toolkit that copies the phones' manners keeps round a
+  popup, "inside which we do not consider a tap to dismiss".)
 - What is pressed never goes from under the hand that pressed it (§6); a piece pressed while the desk is on its way
   is gone to from where the desk now is, not from where it was.
 - A press goes down, not up: a thing sounds and answers as it is pressed (§9), a tenth of a second before a click
@@ -598,6 +634,8 @@ breaks; none is a decision to leave it.
 | Forge | the desk still turns by itself to where the Agent is working | §8, the world moves only for what was asked |
 | moves in code | their lengths are still written where they are made (their curve is the law's) | §8 |
 | the sheets (Runtime, the Remote) | what is in them is laid by the window's width in places (27 rules that ask the window how wide it is remain in the sheets, most of them here) | §1, a narrow window has the same rules |
+| the Remote's repos | a repo on or off the Remote is a switch drawn as a phone's is (a knob in a slot) | §1, no shape taken unasked |
+| inside the sheets | what is set in columns in Runtime and the Remote is not yet set by the programme's columns (14, 10, 6) | §3, the widths are one programme |
 | signing in, a Remote not answering | the same deed has two looks (Try again in ink on Server, in line on the Remote) | §1, one hand |
 | deeds that ask first | some twenty deeds ask before they are done (remove a dotfile, take a repo off, sign a device out, a server left), each in its place with Cancel beside it, whether or not they can be put back | §7, what can be put back is done and can be put back |
 | Forge, the first time | the desk is long in the building (the Prompt starts with it), and the move to it waits for that | §8, off at once |
@@ -632,6 +670,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone (§10) | `tests/app/home.spec.ts` |
 | Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `tests/app/forge-work.spec.ts` |
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `tests/app/focus.spec.ts` |
+| The window's edges are the frame's; a press just off a menu is the menu's (§7) | `tests/app/favour.spec.ts` |
 | Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off at once, at rest within 420 ms (§8) | `tests/app/motion.spec.ts` |
 | File comes by a press and by nothing else (§7) | `tests/app/file.spec.ts` |
 | A phone has the same rules (§1) | `tests/app/narrow.spec.ts` |
