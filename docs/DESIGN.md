@@ -324,6 +324,21 @@ being worked in.
 - A file's numbers are 11 px, quiet, in a margin a cell and a half wide; its words start there.
 - Nothing on a desk changes size, and nothing lies askew.
 
+**What makes a sheet a composition** (said of Git's, without looking at it; it is what a sheet with something to
+read on it is given):
+
+1. **An axis that is not the sheet's left edge.** Things hang on both sides of it: right-aligned against it at the
+   left, left-aligned from it at the right. One line inside the sheet, not two margins.
+2. **A division that is not into equal parts.** Never halves; a third and two thirds, or less and more than that.
+3. **White that is part of it.** The smaller side is mostly paper, and is one unbroken column of it.
+4. **One side where the margin is broken.** What is on the larger side runs out to the sheet's edge; the other side
+   keeps its margin.
+5. **Sizes that jump.** Each at least twice the one under it (13, 33, 66), with none between.
+6. **Large things at corners, across from one another,** and the middle left to the paper.
+
+A sheet where everything starts at the left edge, runs the whole measure and keeps the same margin both sides has
+none of these, however correct each of its parts is.
+
 **What is ruled on a sheet.** A sheet may be ruled, as a form or a ledger is: lines of the quiet `rule`, 1 px, with
 no fill and no shadow, and never of ink (ink is words, and the edge of what is in the hand). An account that is read
 across (Runtime's: what is here, what is on the Remote, what can be freed) is one frame of columns of one height,
@@ -611,24 +626,29 @@ Then the conversation open, a piece in the hand. One is found by one's name: the
 conversation open the first sheet stands alone. Signed out, or with no name yet, it is a sheet with the one thing
 to do, as the Remote's is.
 
-### What is said: a transcript
+### What is said: a transcript on an axis
 
-A board's talk and a conversation are set the same way, as a transcript is, not as bubbles on two sides:
+A board's talk and a conversation are set the same way, as a transcript is, on the sheet's axis (§5); not as bubbles
+on two sides.
 
-- **One left edge.** Everyone's words start at the sheet's own margin, a cell in. Who said them is said, not shown by
-  a side: the speaker's line (their mark a cell wide, their name in bold, the time small after it), then the words
-  under it. In a conversation one's own name is a step quieter than the other's.
-- **On the grid.** Words are 15 px on lines of a cell. A run of one person's posts a few minutes apart says who once;
-  between two posts of a run, half a line; before another speaker, a line. A day's name is a small line of its own at
-  the same edge.
-- **The measure.** A line is the sheet's width less a cell each side: 528 px on a piece of 24 cells, about 72
-  letters; 264 px on a phone's piece of 13, about 36. Both are inside what is read without slowing (35 to 72). A
-  column for faces beside the words would leave a phone 216 px, 30 letters: that is why who speaks is over the
-  words, not beside them.
+- **The axis.** The sheet's inside is 22 cells, set **6 | 2 | 14**. The first six are the margin: who speaks (their
+  name in bold) and when, right-aligned against the axis, and paper. The words start at the axis and have 14 cells.
+  This is a letter's sheet as the *Canon* sets one: three columns, "leaving the left one blank", the text "flush
+  left from the second column toward the right margin".
+- **The measure.** 14 cells are 336 px, about 46 letters to a line: in the middle of what is read with ease (45 to
+  72), where the whole inside (72 letters) was at its far end.
+- **The sheet's name stands at the axis** too, with what is said of it small in the margin beside it (a board's #,
+  how a conversation reaches the other). The sheet's lines (under its name, over the box one writes in) start at the
+  axis and run out to the sheet's right edge: the margin is one column of paper from the sheet's top to its foot.
+- **The box one writes in** stands in the words' column, under them. Its key (Post, Send) comes with the words, and
+  says its keys on itself; Enter is a new line.
+- **On the grid.** Words are 15 px on lines of a cell. A run of one person's posts a few minutes apart says who
+  once, and the margin beside the rest of the run is paper; half a line between two posts of a run, a line before
+  another speaker. A day's name is a small line of its own in the margin.
+- **A sheet with no room for 6 | 2 | 14** (a phone's piece is 13 cells, 264 px inside, 36 letters) has who speaks
+  over the words, as what does not fit beside goes under (§6). By the sheet's own width, never the window's.
 - **Standing on its foot.** The latest is just over the box one answers in; a talk longer than its sheet scrolls
   inside it, and the box stays in sight.
-- **The box one writes in** is one thing in both places: a field at the sheet's foot under a quiet rule; its key
-  (Post, Send) comes with the words, and Ctrl+Enter does the same.
 - **What can be done with a post** (its time in a run, taking it down) is on the post in the hand: pressed, or with
   the keyboard in it.
 

@@ -1,0 +1,54 @@
+/* The axis of a sheet where something is said (a board, a conversation): DESIGN §5, §10.
+
+   What made Git's sheet its own, said without looking at it: an axis that is not the sheet's left edge, with things
+   hung on both sides of it (right-aligned against it at the left, left-aligned from it at the right); a division that
+   is not into equal parts; white that is part of the composition, not what is left over; and one side only where the
+   margin is broken. A board and a conversation had none of these: everything from the left edge, the whole measure,
+   the same margin both sides.
+
+   A letter's sheet is set so already (the Canon's own letterhead: three columns, "leaving the left one blank", the
+   text "flush left from the second column toward the right margin"). So here: the sheet's inside is 22 cells, set
+   6 | 2 | 14. The first six are the margin: who speaks and when, right-aligned against the axis, and white. The words
+   start at the axis and have 14 cells, 336 px, about 46 letters to a line: in the middle of what is read with ease,
+   where the whole 22 (72 letters) was at its far end. The sheet's lines (under its name, over the box one writes in)
+   start at the axis and run out to the sheet's right edge, so the margin is one unbroken column of paper from the
+   sheet's top to its foot.
+
+   On a sheet with no room for 6 | 2 | 14 (a phone's piece is 13 cells) who speaks is over the words, as what does
+   not fit beside goes under (§6). By the sheet's own width, never the window's. */
+.server-center .slide, .inbox-page .inbox-thread { container-type: inline-size; }
+
+@container (min-width: 576px) {
+  /* -- a board -- */
+  /* (The board in the hand; one beside it is its name at its own edge.) */
+  .slide[aria-current='true'] .board-head { position: relative; padding-left: calc(9 * var(--u)); }
+  .slide[aria-current='true'] .board-head > .board-mark { position: absolute; left: var(--u); width: calc(6 * var(--u)); text-align: right; }
+  .slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel)) { box-shadow: none; }
+  .slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel))::after {
+    content: ''; position: absolute; left: calc(9 * var(--u)); right: 0; bottom: 0; height: 1px; background: var(--rule); }
+  .tl-post { display: block; padding-left: calc(8 * var(--u) + var(--s2)); min-height: var(--u); }
+  .tl-post > .tl-face { display: none; }
+  .tl-who { position: absolute; left: var(--s2); top: 0; width: calc(6 * var(--u)); height: auto; overflow: visible; display: grid; justify-items: end; text-align: right; gap: 0; }
+  .tl-who > b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-who > time { line-height: var(--u); }
+  /* (Who speaks stands two lines in the margin, their name and the time: a post of one line is as tall.) */
+  .tl-post:not(.tl-runs) { min-height: calc(2 * var(--u)); }
+  .tl-day { width: calc(6 * var(--u)); text-align: right; }
+  .tl-start { padding-left: calc(8 * var(--u)); }
+  .slide > .dock { position: relative; inset: auto; padding-left: calc(9 * var(--u)); }
+  .slide > .board-card:has(> .board-talk, > .part-panel) + .dock { border-top: 0; }
+  .slide > .board-card:has(> .board-talk, > .part-panel) + .dock::before { content: ''; position: absolute; left: calc(9 * var(--u)); right: 0; top: 0; height: 1px; background: var(--rule); }
+  .board-todo { padding-left: calc(9 * var(--u)); }
+
+  /* -- a conversation -- */
+  .inbox-top { position: relative; padding-left: calc(9 * var(--u)); box-shadow: none; }
+  .inbox-top::after { content: ''; position: absolute; left: calc(9 * var(--u)); right: 0; bottom: 0; height: 1px; background: var(--rule); }
+  /* (How it reaches them is a note in the margin, beside their name.) */
+  .inbox-top > .muted { position: absolute; left: var(--u); width: calc(6 * var(--u)); text-align: right; line-height: calc(2 * var(--u)); }
+  .bubble:not(.inbox-notice) { position: relative; padding-left: calc(8 * var(--u)); }
+  .bubble:not(.run-in, .inbox-notice)::before { position: absolute; left: 0; top: 0; width: calc(6 * var(--u)); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bubble.inbox-notice, .inbox-messages > .inbox-empty { margin-left: calc(8 * var(--u)); }
+  .inbox-ask { margin-left: calc(9 * var(--u)); }
+  .inbox-write { position: relative; padding-left: calc(9 * var(--u)); border-top: 0; }
+  .inbox-write::before { content: ''; position: absolute; left: calc(9 * var(--u)); right: 0; top: 0; height: 1px; background: var(--rule); }
+}
