@@ -43,7 +43,7 @@ import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
 import type {Taken} from '../translation/kept.ts';
 import type {Machine} from './machine.ts';
-import type {AltStack, Call, Calls, Console, Cpu, Extra, Facts, Filter, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
+import type {AltStack, Call, Calls, Console, Outside, Cpu, Extra, Facts, Filter, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
 import {ARCH, RET, STRICT, verdict} from './seccomp.ts';
 import {said, steady} from '../host.ts';
 
@@ -314,6 +314,8 @@ export interface Made {
   translate?: Translator;
   console: Console;
   keeper?: Keeper | null;
+  /** What lies past this machine's network (sys-net.ts Outside): whoever answers a connection or a datagram that leaves it. None: its loopback alone. */
+  outside?: Outside | null;
   machine?: Machine;
   consolidateIdle?: boolean;
   /** The translator's module, its x87 an instance of (x87.ts); else the translator's own (`translate.module`). */
@@ -327,6 +329,7 @@ export class Kernel implements Kern {
   declare readonly machine: Machine;
   declare readonly translate: Translator | undefined;
   declare readonly keeper: Keeper | null;
+  declare readonly outside: Outside | null;
   declare readonly translateMore: NonNullable<Translator['more']> | null;
   declare readonly console: Console;
   declare readonly images: Map<File, Kept>;
@@ -367,7 +370,7 @@ export class Kernel implements Kern {
    * console: {write(fd, bytes), read(n) -> Uint8Array | null (nothing yet), ready?(), interactive?, screen?, cols?,
    * rows?} (`screen`: its output is shown as a terminal's screen, `cols` by `rows`, though keys come a line at a time).
    */
-  constructor({vfs = new Vfs(), translate, console, keeper = null, machine: host = machine(), consolidateIdle = false, x87}: Made) {
+  constructor({vfs = new Vfs(), translate, console, keeper = null, outside = null, machine: host = machine(), consolidateIdle = false, x87}: Made) {
     this.vfs = vfs;
     // The x87 its threads run (x87.ts), made when the first is.
     this.x87Module = x87 ?? translate?.module ?? null;
@@ -383,6 +386,7 @@ export class Kernel implements Kern {
     // {module, segments, size, more} once read, null when it cannot be had, or undefined while it is being read
     // (the exec that wants it waits; the keeper wakes the kernel when it is read).
     this.keeper = keeper;
+    this.outside = outside;
     // Code reached later, when the translator can do it: translate.more(elf, seeds, known, base).
     this.translateMore = translate?.more ?? null;
     this.console = console;

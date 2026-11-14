@@ -334,10 +334,48 @@ export interface Thread {
 export interface Held { guest: number; translations: number; translator: number; files: number; spare: number; total: number; spareTranslator: number }
 
 /** The kernel as the calls see it (process.ts Kernel; remote.ts's). */
+/** What lies past this machine: whoever was given at linux({outside}) answers what its own network cannot reach (sys-net.ts). */
+export interface Outside {
+  /** A stream is asked for to `to`: `far` is its other end, to be opened or refused, now or later. */
+  connect(far: Far, to: {ip: Uint8Array; port: number}): void;
+  /** A datagram was sent to `to`: what comes back, each time something does, is given to `reply`. */
+  datagram(to: {ip: Uint8Array; port: number}, bytes: Uint8Array, reply: (bytes: Uint8Array) => void): void;
+}
+
+/**
+ * The far end of a stream that leaves the machine, as whoever answers for the outside holds it. What the machine's
+ * process writes is read here (`take`), what is written here it reads (`give`), each with the room a stream has:
+ * the same pipes as a connection between two of the machine's own processes. After anything done here that a
+ * waiting call may be waiting for, the kernel is told to look again by whoever runs it (the host's own wake).
+ */
+export interface Far {
+  /** Called when the process wrote, shut its way or closed (`take` has more, or `gone`); and when it read (room for `give`). */
+  onwrote: (() => void) | null;
+  onroom: (() => void) | null;
+  /** The connection is made: the process's connect ends well. */
+  opened(): void;
+  /** It is not made: the process's connect fails with `errno` (Linux's: ECONNREFUSED 111, ENETUNREACH 101, ETIMEDOUT 110, EHOSTUNREACH 113). */
+  refused(errno: number): void;
+  /** Bytes come from the far side: as many as the process's side has room for go in; how many. */
+  give(bytes: Uint8Array): number;
+  /** The far side sends no more: the process reads the end after what was given. */
+  finish(): void;
+  /** The far side is gone, both ways. */
+  close(): void;
+  /** What the process wrote and has not been taken: up to `most` bytes of it (none: nothing waits). */
+  take(most?: number): Uint8Array;
+  /** The process sends no more (it shut its way or closed), once what it wrote is taken. */
+  readonly gone: boolean;
+  /** The process has closed its end. */
+  readonly closed: boolean;
+}
+
 export interface Kern {
   readonly vfs: Vfs;
   readonly machine: Machine;
   readonly console: Console;
+  /** What lies past the machine's network, where it was given one (sys-net.ts). */
+  readonly outside: Outside | null;
   readonly procs: Map<number, Proc>;
   readonly tasks: Map<number, Thread>;
   readonly runq: Thread[];

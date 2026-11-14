@@ -23,7 +23,7 @@ export {Kernel, type Image, type Pumped} from './linux/process.ts';
 export {RemoteKernel, warmThreads} from './linux/remote.ts';
 export {keeper, type Kept, type Reading} from './linux/keeper.ts';
 export {said, type Said} from './linux/waiting.ts';
-export type {Console} from './linux/parts.ts';
+export type {Console, Far, Outside} from './linux/parts.ts';
 
 /** A program of the tree given with its translation: its module, its data beside it, and whether it was made for memory shared between threads. */
 export interface Translated { path: string; module?: WebAssembly.Module | null; segments?: Segment[] | null; shared?: boolean }

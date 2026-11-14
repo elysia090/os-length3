@@ -58,7 +58,7 @@ export const UNITS: Unit[] = [
     holds: ['module/otter', 'why/core/src/storage'],
     takes: ['lib', 'ricebox', 'muk', 'sods']},
   {name: 'cowboy', says: 'what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH)',
-    holds: ['why/core/src/ssh', 'why/cli/src/cmd/ssh.rs', 'why/cli/src/cmd/address.rs'],
+    holds: ['module/cowboy', 'why/core/src/ssh', 'why/cli/src/cmd/ssh.rs', 'why/cli/src/cmd/address.rs'],
     takes: ['sods', 'ricebox']},
   {name: 'shipto', says: 'what a service wants, all of it and nowhere else: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
     holds: ['why/remote', 'why/core/src/remote', 'why/cli/src/cmd/sync.rs', 'why/cli/src/cmd/git.rs', 'why/cli/src/cmd/remote.rs',
@@ -76,7 +76,7 @@ export const UNITS: Unit[] = [
 export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'everyday', 'ricebox'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'tests', 'module/sods/test', 'module/muk/test', 'module/sods/examples', 'module/otter/test',
+export const NOT_UNITS = ['scripts', 'tests', 'module/sods/test', 'module/muk/test', 'module/sods/examples', 'module/otter/test', 'module/cowboy/test', 'module/cowboy/target',
   'why/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/prompt/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);

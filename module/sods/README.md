@@ -104,6 +104,13 @@ not made while anything is owed.
 
 No box and no terminal is made by anything but muk and prompt.
 
+**What lies past the machine is asked of whoever was given** (`linux({outside})`: `runtime/linux/sys-net.ts`). This
+Linux has its loopback and nothing else of its own. A TCP connect or a UDP datagram of the machine's own network
+to an address that is not the machine's is handed over: a stream's far end is the outside's to open, refuse, write
+to and read from, with the room a stream has; a datagram is its to answer. Who answers is not known here (cowboy
+does, `../cowboy`); a box in a network namespace of its own has none, as with the network off.
+
+
 ## Its folders
 
 ```

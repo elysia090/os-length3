@@ -16,6 +16,12 @@
 // That is what a Prompt on the device has with its network off (its own namespace, `lo` alone), and what a browser
 // can give a page: no packet leaves it. Packet sockets and the other families are not here (EAFNOSUPPORT).
 //
+//   outside              what lies past this machine, where it was given one (linux({outside}): a port, as the tree
+//                        is one; who answers is not known here). A TCP connect or a UDP datagram of the machine's own
+//                        network namespace to an address that is not the machine's is asked of it: a stream's far
+//                        end is its to open, refuse, write to and read from; a datagram is its to answer. A box with
+//                        a network namespace of its own has none (its loopback alone), as with the network off.
+//
 // A connected stream (local, or TCP) is two pipes (fd.ts), one each way: each end reads its own and writes its
 // peer's. So what a pipe does, a stream does as Linux's: a full one makes the writer wait and an empty one the reader,
 // the last writer gone is the end of the data and the last reader gone EPIPE (and SIGPIPE, unless MSG_NOSIGNAL).
@@ -30,7 +36,7 @@ import {CAP, MAY, capable, may, shownIn} from './cred.ts';
 import {nrIn, type Net} from './space.ts';
 import {answer, interfaceControl, traffic, type Address} from './net-view.ts';
 import {Wait, utf8} from './flow.ts';
-import type {Calls, Kern, Proc} from './parts.ts';
+import type {Calls, Far, Kern, Outside, Proc} from './parts.ts';
 import {SIG, SI, send} from './signal.ts';
 import {epoch} from '../host.ts';
 
@@ -77,7 +83,7 @@ const N = (x: bigint): number => Number(BigInt.asIntN(64, x));
 const fail = (errno: number): never => { throw new FsError(errno); };
 // (Those fs.ts does not name, as Linux numbers them.)
 const ERR = {PROTOTYPE: 91, NOPROTOOPT: 92, PROTONOSUPPORT: 93, SOCKTNOSUPPORT: 94, ADDRINUSE: 98, ADDRNOTAVAIL: 99,
-  NOTSOCK: 88, DESTADDRREQ: 89, MSGSIZE: 90, NETUNREACH: 101, ISCONN: 106, NOTCONN: 107, CONNREFUSED: 111, INPROGRESS: 115};
+  NOTSOCK: 88, DESTADDRREQ: 89, MSGSIZE: 90, NETUNREACH: 101, ISCONN: 106, NOTCONN: 107, CONNREFUSED: 111, ALREADY: 114, INPROGRESS: 115};
 
 const AF = {UNSPEC: 0, UNIX: 1, INET: 2, INET6: 10, NETLINK: 16};
 const NETLINK = {ROUTE: 0, SOCK_DIAG: 4};
@@ -158,6 +164,9 @@ class Endpoint {
   declare events: number;
   declare error: number;
   declare connecting: boolean;
+  /** A stream that leaves the machine: its far end (the outside's), and whether it is still being made. */
+  declare far: FarEnd | null;
+  declare opening: boolean;
   declare closed: boolean;
   declare readonly ino: number;
   declare rights: {at: number; descs: Description[]}[];
@@ -193,6 +202,8 @@ class Endpoint {
     this.events = 0; // what else moves its readiness (a connection to accept, its peer closing)
     this.error = 0; // a connected UDP socket's pending error (its datagram refused), SO_ERROR's
     this.connecting = false; // a TCP connect that did not wait, not yet told its end
+    this.far = null;
+    this.opening = false;
     this.closed = false;
     this.ino = inodes++;
     // A stream's descriptors in flight (SCM_RIGHTS), each with the byte of the stream it came with.
@@ -225,6 +236,9 @@ class Endpoint {
       peer.rx.changes++;
       peer.events++;
     }
+    // A stream that left the machine: whoever holds its far end hears (it reads the end, and lets go).
+    const far = this.far;
+    if (far) { if (!peer) far.end.close(); queueMicrotask(() => far.onwrote?.()); }
     for (const r of this.rights) for (const d of r.descs) d.release();
     this.rights = [];
     if (this.rx instanceof Messages) for (const m of this.rx.list) for (const d of m.rights) d.release();
@@ -275,6 +289,70 @@ function collect(kernel: Kern): void {
   }
   kernel.collecting = true;
   try { for (const d of freed) d.release(); } finally { kernel.collecting = false; }
+}
+
+/** An address as the outside is told it: IPv4's four bytes where it is one (kept here as IPv6 holds it), else its sixteen. */
+const asGiven = (ip: Uint8Array): Uint8Array => (mapped(ip) ? ip.slice(12) : ip.slice());
+
+/** The far end of a stream that leaves the machine (parts.ts Far), over the two sockets it is made of. */
+export class FarEnd implements Far {
+  /** Called when the process wrote, shut its way or closed (`take` has more, or `gone`); and when it read (room for `give`). */
+  onwrote: (() => void) | null = null;
+  onroom: (() => void) | null = null;
+  declare readonly near: Endpoint;
+  declare readonly end: Endpoint;
+  constructor(near: Endpoint, end: Endpoint) { this.near = near; this.end = end; }
+  /** The connection is made: the process's connect ends well. */
+  opened(): void {
+    const s = this.near;
+    if (s.closed || s.far !== this || s.state === 'connected') return;
+    link(s, this.end);
+    s.opening = false;
+    s.events++;
+    s.kernel.dirty = true;
+  }
+  /** It is not made: the process's connect fails with `errno` (Linux's: ECONNREFUSED 111, ENETUNREACH 101, ETIMEDOUT 110, EHOSTUNREACH 113). */
+  refused(errno: number): void {
+    const s = this.near;
+    if (s.far !== this || s.state === 'connected') return;
+    s.opening = false;
+    s.far = null;
+    s.error = errno;
+    s.events++;
+    s.kernel.dirty = true;
+    this.end.close();
+  }
+  /** Bytes come from the far side: as many as the process's side has room for go in; how many. */
+  give(bytes: Uint8Array): number {
+    const s = this.near;
+    if (s.closed || s.shut.rd || !(s.rx instanceof Pipe)) return bytes.length;
+    const n = s.rx.write(bytes);
+    s.arrived += n;
+    if (n) { const t = traffic(s.kernel); t.bytes += n; t.packets++; s.kernel.dirty = true; }
+    return n;
+  }
+  /** The far side sends no more: the process reads the end after what was given. */
+  finish(): void {
+    const e = this.end;
+    if (e.writes) { e.writes = false; this.near.rx.writers--; this.near.rx.changes++; this.near.events++; this.near.kernel.dirty = true; }
+  }
+  /** The far side is gone, both ways. */
+  close(): void {
+    this.finish();
+    this.end.close();
+    this.near.kernel.dirty = true;
+  }
+  /** What the process wrote and has not been taken: up to `most` bytes of it (none: nothing waits). */
+  take(most = 65536): Uint8Array {
+    const rx = this.end.rx as Pipe;
+    const out = rx.read(most);
+    if (out.length) this.near.kernel.dirty = true;
+    return out;
+  }
+  /** The process sends no more (it shut its way or closed), once what it wrote is taken. */
+  get gone(): boolean { return !this.end.rx.writers && (this.end.rx as Pipe).size === 0; }
+  /** The process has closed its end. */
+  get closed(): boolean { return this.near.closed; }
 }
 
 /** Two ends of a connection, each reading what the other writes. */
@@ -462,10 +540,14 @@ function bindInet(s: Endpoint, ip: Uint8Array, port: number): void {
 }
 
 /** Where a loopback socket's connection or datagram to `target` goes: this machine's own address, or nowhere. */
-function reachable(s: Endpoint, target: Address): {ip: Uint8Array; port: number} {
+function reachable(s: Endpoint, target: Address): {ip: Uint8Array; port: number; outside?: Outside} {
   const given = ipOf(target);
   // To any address is to this machine's (Linux connects to its own).
   const ip = isAny(given) ? (mapped(given) || s.family === AF.INET ? LOOPBACK4 : LOOPBACK6) : given;
+  // Not this machine's own: asked of the outside, where the machine has one and the socket is in the machine's own
+  // network (a box in a network of its own has its loopback alone).
+  const outside = s.kernel.outside;
+  if (!isLoopback(ip) && outside && s.net.up && s.net === s.kernel.spaces.net && s.type !== SOCK.RAW) return {ip, port: target.port ?? 0, outside};
   if (!isLoopback(ip) || !s.net.up) fail(ERR.NETUNREACH);
   if (s.family === AF.INET6 && mapped(ip) && s.options.v6only) fail(ERR.NETUNREACH);
   return {ip, port: target.port ?? 0};
@@ -539,6 +621,8 @@ function receive(p: Proc, d: Description & {sock: Endpoint}, into: Uint8Array, a
     const k = pipe.readInto(into, at + done, most);
     const from = s.consumed;
     s.consumed += k;
+    // (a stream that left the machine: there is room for what its far end has to give)
+    if (k && s.far) s.far.onroom?.();
     const rights: Description[] = [];
     for (const r of s.rights.filter((x) => x.at >= from && x.at < s.consumed)) { rights.push(...r.descs); s.rights.splice(s.rights.indexOf(r), 1); }
     const got = done + k;
@@ -577,6 +661,19 @@ function datagram(p: Proc, s: Endpoint, data: Uint8Array, target: Address): numb
   if (data.length > (s.family === AF.INET ? 65507 : 65527)) fail(ERR.MSGSIZE);
   const to = reachable(s, target);
   if (!s.local) bindInet(s, s.family === AF.INET ? ANY4 : ANY6, 0);
+  // Past the machine: the outside's to answer, and what comes back is from where it was sent.
+  if (to.outside) {
+    const t = traffic(p.kernel);
+    t.bytes += data.length;
+    t.packets++;
+    to.outside.datagram({ip: asGiven(to.ip), port: to.port}, data.slice(), (bytes) => {
+      if (s.closed || !(s.rx instanceof Messages) || !s.rx.fits(bytes.length)) return;
+      s.rx.push({bytes: bytes.slice(), from: {ip: to.ip, port: to.port}, rights: [], creds: s.creds});
+      s.events++;
+      s.kernel.dirty = true;
+    });
+    return data.length;
+  }
   const own = ipOf(s.local);
   const from = {ip: isAny(own) ? (mapped(to.ip) ? LOOPBACK4 : LOOPBACK6) : own, port: s.local?.port ?? 0};
   const r = boundAt(p.ns.net, IPPROTO.UDP, to, false, from);
@@ -770,6 +867,8 @@ function transmit(p: Proc, d: Description & {sock: Endpoint}, data: Uint8Array, 
   }
   peer.arrived += wrote - done;
   if (s.inet && wrote > done) { const t = traffic(p.kernel); t.bytes += wrote - done; t.packets++; }
+  // (a stream that left the machine: whoever holds its far end has something to take)
+  if (s.far && wrote > done) s.far.onwrote?.();
   if (wrote === data.length) return wrote;
   if (nonblocking(d, flags)) return wrote || fail(E.AGAIN);
   if (wrote > done) p.kernel.dirty = true;
@@ -801,7 +900,9 @@ export function ready(d: Description): number {
     if (!target || target.closed || target.rx.writable) r |= POLL.OUT;
     return s.error ? r | POLL.ERR : r;
   }
-  if (s.state !== 'connected') return r | POLL.OUT | POLL.HUP;
+  // A stream being made past the machine is ready for nothing yet; one refused, for its error.
+  if (s.opening) return r;
+  if (s.state !== 'connected') return r | POLL.OUT | POLL.HUP | (s.error && s.connectionWanted ? POLL.ERR : 0);
   const ended = !s.rx.writers || s.shut.rd;
   if (ended) r |= POLL.IN | POLL.RDHUP;
   const gone = !s.peer || !s.peer.rx.readers || s.shut.wr;
@@ -992,12 +1093,31 @@ function connectStream(p: Proc, d: Description, s: Endpoint, target: Given): num
   // AF_UNSPEC: a TCP socket not connected stays so.
   if (target.unspec) return s.state !== 'connected' ? 0 : fail(ERR.ISCONN);
   // A connect it did not wait for is told its end once (0), as Linux's next connect tells it; then: connected.
+  // One being made past the machine: still being made (waited for, or said to be under way); made; or refused.
+  if (s.opening) { if (d.flags & O_NONBLOCK) fail(ERR.ALREADY); throw new Wait(); }
+  if (s.far && s.state === 'connected' && s.connecting) { s.connecting = false; return 0; }
+  if (s.error && s.state !== 'connected' && s.inet) { const e = s.error; s.error = 0; s.connecting = false; fail(e); }
   if (s.connecting) { s.connecting = false; return 0; }
   if (s.state === 'connected') fail(ERR.ISCONN);
   if (s.state === 'listening') fail(E.INVAL);
-  let listener: Endpoint, at: {ip: Uint8Array; port: number} | null = null;
+  let listener: Endpoint, at: {ip: Uint8Array; port: number; outside?: Outside} | null = null;
   if (s.inet) {
     at = reachable(s, target);
+    if (at.outside) {
+      // Its far end is the outside's to make: a socket of the kernel's own that no process holds.
+      if (!s.local) bindInet(s, mapped(at.ip) ? ANY4 : ANY6, 0);
+      const end = new Endpoint(p.kernel, s.family, s.type, p);
+      end.local = {ip: at.ip, port: at.port};
+      end.remote = s.local;
+      s.remote = end.local;
+      const far = s.far = new FarEnd(s, end);
+      s.opening = true;
+      at.outside.connect(far, {ip: asGiven(at.ip), port: at.port});
+      // (answered at once, where whoever answers already knows)
+      if (!s.opening) { if (s.state === 'connected') return 0; const e = s.error; s.error = 0; fail(e || ERR.CONNREFUSED); }
+      if (d.flags & O_NONBLOCK) { s.connecting = true; fail(ERR.INPROGRESS); }
+      throw new Wait();
+    }
     listener = boundAt(p.ns.net, IPPROTO.TCP, at, true) ?? fail(ERR.CONNREFUSED);
   } else {
     listener = namedBy(p, target);
@@ -1157,6 +1277,8 @@ export const NET_CALLS: Calls = {
     if (h !== 0 && !s.shut.wr) {
       s.shut.wr = true;
       if (s.peer && s.writes) { s.writes = false; s.peer.rx.writers--; s.peer.rx.changes++; }
+      // (a stream that left the machine: whoever holds its far end hears that no more comes)
+      s.far?.onwrote?.();
     }
     s.events++;
     return 0;

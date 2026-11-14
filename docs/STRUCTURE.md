@@ -222,36 +222,36 @@ That layout is not made yet: the parts are still `why/core/src/<part>` and `why/
 ## cowboy
 
 What is on its way: links out of a box and between boxes. Written in Rust, run where the box runs (as wasm in a
-page), so that almost all of it is done on the device and what a service is left to do costs next to nothing.
+page: 6.5 kB, importing nothing), so that almost all of it is done on the device and what a service is left to do
+costs next to nothing.
 
 A link is a stream of bytes between two ends, and cowboy is what decides how each is made. It has no packets: a
 box's sockets are calls (sods answers them; on Linux the box is in the host's network or in none), so there is no
-TCP to run again and no frame to parse on the way. Its unit of work is a byte carried, and its bound is one copy:
-from the writer's buffer into a ring both ends hold.
+TCP to run again and no frame to parse on the way.
 
 | A link to | Made by | A service does |
 | --- | --- | --- |
 | a name (DNS) | cowboy answers itself: each name asked for is given an address of cowboy's own, kept beside the name, so a connection is known by the name it was meant for | nothing |
-| the box itself, another box on the device | a ring in memory | nothing |
-| a box on another device | a channel between the two devices (WebRTC), cowboy at each end | says where each is, once (the Remote) |
-| a host that answers a page (HTTP, with CORS) | the page's own request | nothing |
+| the box itself, another box on the device | the machine's own loopback (sods) | nothing |
+| a box on another device | a channel between the two devices (WebRTC), cowboy at each end: not made yet | says where each is, once (the Remote) |
+| a host that answers a page (HTTP, with CORS) | the page's own request: not made yet | nothing |
 | any other host (TCP: git, SSH, a registry) | one WebSocket to a relay that opens the connection and copies bytes; what is said over it is sealed between the box and the host (TLS, SSH), not read | copies bytes: no judgement, no state past the connection |
-
-So what a service runs for all of it is one relay that copies, and a word of where a device is.
 
 ```
 module/cowboy/
-  src/lib.rs      a link: its two ends, its ring, its state
-  src/ring.rs     the bytes on their way
-  src/names.rs    names asked and the addresses given them
-  src/route.rs    which way a link is made, from what it is to
-  src/frame.rs    what goes over a relay: nothing but the bytes, after one line of where to
-  test/
+  src/names.rs     names asked and the addresses given them: laid out once, allocated never
+  src/route.rs     which way a link is made, from what it is to
+  src/frame.rs     what goes over a relay: one line of where to, one byte back, then nothing but the bytes
+  src/lib.rs       the three calls a host makes of it as wasm
+  host/outside.ts  cowboy at sods' port; host/relay.ts, a link carried by a relay from a page
+  test/            the root's own curl on sods' Linux in node, reaching a server by its name
 ```
 
 sods lends a port for it as it lends a tree: what its Linux cannot reach itself (an address that is not the
-machine's own) it asks of whoever was given at `linux({net})`, and knows nothing of who answers. ricebox knows
-nothing of it. why gives it to a repo granted the network, and shipto runs the relay.
+machine's own) it asks of whoever was given at `linux({outside})`, and knows nothing of who answers; a box has it
+only where it was lent the machine's network. ricebox knows nothing of it. Made so far: cowboy itself, sods' port,
+and a real program reaching a host by its name through both, in node. Not yet: a page given it (the Worker takes
+no outside yet), and the relay, which is shipto's to serve (who may use it, to where, how much).
 
 ## Today, against that
 

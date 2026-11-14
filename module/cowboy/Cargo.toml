@@ -1,0 +1,19 @@
+[package]
+name = "cowboy"
+version = "0.1.0"
+description = "Links out of a box and between boxes: what is on its way, decided where the box runs"
+edition = "2021"
+publish = false
+
+# A unit of its own, with its own lock: not a member of the workspace above it (the OS's, at the top).
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
