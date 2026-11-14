@@ -135,6 +135,9 @@
 @media (max-width: 1100px) {
   .git-desk .issue-box { grid-template-columns: minmax(0, 1fr); }
   .git-desk .issue-work { grid-column: 1; grid-row: auto; margin-top: var(--u); }
+  /* (Under one another, nothing is pulled up over the work: what is said of the issue stands under it, at its edge.) */
+  .git-desk .issue-box:has(.work-sum) > .issue-work { margin-bottom: 0; }
+  .git-desk .issue-foot, .git-desk .issue-foot > .issue-about { justify-content: flex-start; }
   .git-desk .issue-summary { text-align: left; }
   .git-desk .issue-big-head:not(.peek) { padding-right: 0; }
   .git-desk .issue-big-head:not(.peek) .issue-no { position: static; font-size: inherit; }
