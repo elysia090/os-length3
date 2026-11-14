@@ -8,6 +8,8 @@
 // (Before: a terminal fourteen cells wide lying askew, wider while in hand; sheets twenty cells wide of 14 px code,
 // twice as large pressed twice; before that boxes 80 columns wide in columns, the one in hand brought to the middle.)
 
+import {eased, moveTime} from '../../ui/law.ts';
+
 /** The grid the desk is laid on, and a line of what is written on it. */
 export const GRID = 24;
 export const LINE = GRID;
@@ -80,19 +82,10 @@ export function atRest(now: number, starts: readonly number[]): number {
 /** How wide the desk's plane is so that its last piece, at `last`, can stand at the edge of a face `face` wide. */
 export function planeWidth(last: number, face: number): number { return last - PAD + face; }
 
-/**
- * How long the desk takes to go `far` px on a face `face` wide: a quarter of a second, and up to a sixth more as the
- * way is longer, never over a face's worth. And how far along it is at `u` (0 to 1) of that time: as a spring with no
- * bounce comes to rest (critically damped, as a hand moves a thing and stops it): off at once, most of the way in
- * the first third, then settling. One law, for every move of the desk.
- */
-export function turnTime(far: number, face: number): number { return 250 + 170 * Math.min(1, Math.abs(far) / Math.max(1, face)); }
-const SETTLE = 8;
-export function eased(u: number): number {
-  if (u <= 0) return 0;
-  if (u >= 1) return 1;
-  return (1 - (1 + SETTLE * u) * Math.exp(-SETTLE * u)) / (1 - (1 + SETTLE) * Math.exp(-SETTLE));
-}
+/** How long the desk takes to go `far` px on a face `face` wide, and how far along it is at a part of that time: the
+ * OS's one law (ui/law.ts). */
+export const turnTime = moveTime;
+export {eased};
 
 /** The piece after `from` (before it, `back`) as Tab goes along the row, round again. */
 export function tabbed(keys: readonly string[], from: string, back = false): string | null {

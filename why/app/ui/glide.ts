@@ -8,6 +8,8 @@
 //
 // Asked for less motion, neither moves: each thing is where it ends at once.
 
+import {CELL, moveTime, SPRING} from './law.ts';
+
 /** The camera's landing (styles.css --land): fast off the mark, the last pixels slow. */
 export const LAND = 'cubic-bezier(.2, .9, .25, 1)';
 
@@ -395,6 +397,81 @@ export function pop(el: Element, by = .16, ms = 380) {
   el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: 'ease-out'});
 }
 
+/** What stays where it is while a page comes and goes: the band and the panes, the window's own instruments. */
+const FRAME = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle)';
+
+/** `el` as it is seen now, as a thing of its own that nothing happens to: a copy with what is written in its fields
+ * and drawn on its canvases (`settle`, once it is in the document, puts each part where it was scrolled to). */
+function likeness(el: Element): {copy: Element; settle(): void} {
+  const copy = el.cloneNode(true) as Element;
+  const was = [el, ...el.querySelectorAll('*')], now = [copy, ...copy.querySelectorAll('*')];
+  const scrolled: [Element, number, number][] = [];
+  was.forEach((a, i) => {
+    const b = now[i];
+    if (a instanceof HTMLTextAreaElement || a instanceof HTMLInputElement) (b as HTMLInputElement).value = a.value;
+    else if (a instanceof HTMLCanvasElement && a.width && a.height) (b as HTMLCanvasElement).getContext('2d')?.drawImage(a, 0, 0);
+    if (a.scrollLeft || a.scrollTop) scrolled.push([b, a.scrollLeft, a.scrollTop]);
+    b.removeAttribute('id');
+  });
+  return {copy, settle: () => { for (const [b, x, y] of scrolled) { (b as HTMLElement).style.scrollSnapType = 'none'; b.scrollLeft = x; b.scrollTop = y; } }};
+}
+
+/**
+ * The world gone up or down to another place (`dir`: 1 to one further down the rail, -1 to one further up): asked
+ * before the page is drawn again, it keeps the place left in sight as it was; what it gives back is called once the
+ * new place is drawn. Then the place left goes out the way the world went by, the new one comes in after it from
+ * the other side, and the ground goes with them: one move, a window's height in whole cells, by the OS's law
+ * (law.ts). The band and the rail are the window's and stay. Nothing waits on it: the new place is there to be used
+ * from the first frame. Asked for less motion, there is no move.
+ */
+export function travel(root: HTMLElement, dir: number): () => void {
+  if (still() || !dir || !root.getClientRects().length) return () => {};
+  const far = CELL * Math.round(innerHeight / CELL), ms = paced(moveTime(far, far)), timing = {duration: ms, easing: SPRING};
+  const at = root.getBoundingClientRect();
+  const page = root.cloneNode(false) as HTMLElement;
+  for (const name of ['id', 'tabindex', 'aria-labelledby']) page.removeAttribute(name);
+  const settles: (() => void)[] = [];
+  for (const child of root.children) {
+    if ((child as HTMLElement).hidden) continue;
+    const {copy, settle} = likeness(child);
+    page.append(copy);
+    settles.push(settle);
+  }
+  const left = document.createElement('div');
+  left.className = 'place-left';
+  left.inert = true;
+  left.setAttribute('aria-hidden', 'true');
+  Object.assign(left.style, {left: `${at.left}px`, top: `${at.top}px`, width: `${at.width}px`, height: `${at.height}px`});
+  left.append(page);
+  document.body.append(left);
+  for (const settle of settles) settle();
+  for (const part of left.querySelectorAll(FRAME)) (part as HTMLElement).style.visibility = 'hidden';
+  const gone = () => left.remove();
+  left.animate([{transform: 'none'}, {transform: `translateY(${-dir * far}px)`}], {...timing, fill: 'forwards'}).finished.then(gone, gone);
+  document.body.animate([{backgroundPositionY: '0px'}, {backgroundPositionY: `${-dir * far}px`}], timing);
+  return () => {
+    stopStage(root);
+    const surfaces = surfacesOf(root);
+    staged.set(root, surfaces);
+    for (const part of surfaces) {
+      const animation = part.animate([{transform: `translateY(${dir * far}px)`}, {transform: 'none'}], timing);
+      arrivals.set(part, animation);
+      const done = () => { if (arrivals.get(part) === animation) arrivals.delete(part); };
+      animation.finished.then(done, done);
+    }
+  };
+}
+
+/** The parts of `root` that are the page's own (its frame left where it is). */
+function surfacesOf(root: HTMLElement): HTMLElement[] {
+  const parts = (el: HTMLElement): HTMLElement[] => {
+    if (!el.getClientRects().length || el.matches(FRAME)) return [];
+    if (!el.querySelector(FRAME)) return [el];
+    return [...el.children].flatMap((child) => parts(child as HTMLElement));
+  };
+  return parts(root);
+}
+
 const staged = new WeakMap<HTMLElement, HTMLElement[]>();
 /** Release a shared root before it is reused by another page. */
 export function stopStage(root: HTMLElement) {
@@ -406,13 +483,7 @@ export function stopStage(root: HTMLElement) {
  * cards are never hidden again for a stagger. The rail, band and pane stay fixed as landmarks. */
 export function stage(root: HTMLElement, dir: number) {
   stopStage(root);
-  const frame = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle)';
-  const parts = (el: HTMLElement): HTMLElement[] => {
-    if (!el.getClientRects().length || el.matches(frame)) return [];
-    if (!el.querySelector(frame)) return [el];
-    return [...el.children].flatMap((child) => parts(child as HTMLElement));
-  };
-  const surfaces = parts(root);
+  const surfaces = surfacesOf(root);
   staged.set(root, surfaces);
   for (const part of surfaces) arrive(part, dir, 'y', 12, 200);
 }

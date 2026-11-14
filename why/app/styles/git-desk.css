@@ -16,10 +16,9 @@
    (Before: a column of bordered cards under a row of repo pills, the steps as buttons down the card's right edge,
    and a pane of what was run beside the page.) */
 /* (The desk's dotted ground, and nothing of the page cut at the rail's edge: its keys and main's sheet start left of it.) */
-body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots); background-size: var(--u) var(--u); }
 .page.page-work[data-place='git'] { overflow: visible; }
 .work.band-bench { position: relative; grid-template-columns: minmax(0, 1fr); }
-.work.bench.band-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: calc(-2 * var(--u)); }
+.work.bench.band-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: 0; }
 .work.bench.band-bench > .center { overflow: visible; }
 .git-band { flex: 1 1 0; min-width: 0; align-items: flex-start; gap: var(--u); }
 .git-band > .chips { flex: 0 1 auto; height: var(--key); align-items: center; margin: 0; padding: 0; }

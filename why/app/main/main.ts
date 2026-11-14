@@ -25,7 +25,7 @@ import {inEffect} from '../home/dotfiles.ts';
 import {NAME as LOOK, wear} from '../ui/look.ts';
 import {onLang, t, useLang} from '../i18n/i18n.ts';
 import {NEW_REPO, PURPOSES, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
-import {glide, morph, stage, stopStage, where, type Carry} from '../ui/glide.ts';
+import {glide, morph, stage, stopStage, travel, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
 import {prime} from '../ui/keys.ts';
 import {caret} from '../ui/caret.ts';
@@ -258,6 +258,10 @@ function readAgain(id: PurposeId) {
 
 function draw(id: PurposeId, quiet: boolean) {
   const from = current;
+  // To another place: the world goes up or down to it, the way it lies along the rail (the place left kept in sight
+  // as it was, from before anything of it changes).
+  const order = RAIL.map((p) => p.id);
+  const arrived = opened && !quiet && from !== id ? travel($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)) || 1) : null;
   // The page left keeps where it was read to; the one come to starts at its top, never where the last was read to.
   const doc = document.scrollingElement;
   if (opened && from !== id && doc) { readTo.set(from, doc.scrollTop); doc.scrollTop = 0; }
@@ -286,8 +290,7 @@ function draw(id: PurposeId, quiet: boolean) {
   if (from !== id) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
     glide(inkWas, tabs.get(id)?.getAttribute('aria-current') ? tabs.get(id)! : null, $('rail-tabs'), 'var(--r-place)', 220);
-    const order = RAIL.map((p) => p.id);
-    if (!quiet) stage($('page'), Math.sign(order.indexOf(id) - order.indexOf(from)));
+    arrived?.();
   }
 }
 

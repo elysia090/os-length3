@@ -6,7 +6,6 @@
    wide enough for two has the repos and the slip in a second column, a half screen along, the first repo's name on
    the line the person's stands on. Words are in four sizes and no others: 11 and 13 px (said quietly, in mono), 15 px
    (written and read), capitals a cell tall (a name), capitals two cells tall (the person's). */
-body:has(.home-layout) { background-image: var(--dots); background-size: var(--u) var(--u); }
 /* From the desk's corner (no step in from the band's keys: what is under the terminal's key starts where it does) to
    a cell from the window's right edge. */
 .page:has(> .home-layout) { --body-left: 0px; padding: 0 calc(var(--u) - var(--outer)) 0 0; }

@@ -5,6 +5,11 @@
    (the bench's, where the pane's switch ends): never the window's 5%, which moved the column as the window was sized,
    nor centred in what room there is, which moved it as the pane was put away. */
 .page { min-width: 0; padding: var(--top-line) var(--s5) var(--s6) var(--body-left); }
+/* A place that is one thing to read (Runtime, Remote, Inbox) is a sheet on the desk as any piece is, and the one in
+   hand: paper, its shadow half a cell right and down; from the desk's corner (the band's row is the window's, left
+   clear), as tall as what is on it, at most fifty cells wide. */
+.page:not(.page-work):not(:has(> .home-layout)) { align-self: start; box-sizing: border-box; max-width: calc(50 * var(--u)); margin: calc(2 * var(--u) - var(--outer-top)) calc(var(--u) - var(--outer)) var(--u) 0;
+  padding: var(--u) var(--u) calc(2 * var(--u)); background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 var(--ink); }
 .page:focus { outline: none; }
 /* index.html's word for a page whose scripts never run; boot.js marks the page scripted as it starts. */
 .boot-static { max-width: 34rem; margin: 15vh auto 0; }

@@ -13,7 +13,6 @@
    is taken off (it closes up, in the time and the way the desk turns).
    (Before: the terminal a sheet of ink askew at rest whatever was in hand, 14 px code, pieces twice as large
    pressed twice, set down with a shadow that shortened, the others jostling out of the way.) */
-body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--dots); background-size: var(--u) var(--u); }
 /* The desk reaches past the page's own box to the window's right edge and foot, and two cells left of where a
    page's things start (the terminal lies there, near the places). */
 .page.page-work[data-place='forge'] { overflow: visible; }
