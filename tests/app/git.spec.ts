@@ -474,6 +474,7 @@ test('on a phone the issue in full takes the row, nothing in it wider than it, a
     return deeds.every((d) => [...card.querySelectorAll('button')].some((b) => b.textContent === d && b.getBoundingClientRect().right <= edge + .5));
   }, ['Close'])).toBe(true);
   // (Its steps are main's sheet's lines, over the row on a phone, none wider than the window.)
+  await expect(app.git.step('Start')).toBeVisible();
   const start = (await app.git.step('Start').boundingBox())!;
   expect(start.x).toBeGreaterThanOrEqual(0);
   expect(start.x + start.width).toBeLessThanOrEqual(390);

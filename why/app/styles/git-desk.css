@@ -107,10 +107,9 @@
 .git-desk .issue-summary { width: 100%; min-height: 20px; margin: 0; padding: 0; border: 0 solid transparent; border-radius: 0; background: none; font: 400 13px/20px var(--sans); color: var(--sub); }
 .git-desk .issue-summary:focus { background: none; color: var(--ink); outline: none; }
 .git-desk .issue-box > .agent-line { grid-column: 1; margin-top: var(--u); justify-items: end; }
-.git-desk .issue-foot { grid-column: 1; margin-top: var(--u); justify-content: flex-end; font-size: 13px; }
-.git-desk .issue-box.no-work .issue-foot { justify-content: flex-start; }
-.git-desk .issue-box.no-work .issue-foot > .issue-about { justify-content: flex-start; }
-.git-desk .issue-foot > .issue-about { flex: 0 1 auto; justify-content: flex-end; }
+/* (What is said of it, at the same left edge as everything on the sheet, under its work.) */
+.git-desk .issue-foot { grid-column: 1; margin-top: var(--u); justify-content: flex-start; font-size: 13px; }
+.git-desk .issue-foot > .issue-about { flex: 0 1 auto; justify-content: flex-start; }
 /* What is done to the sheet itself (Close, Back to main, Reject): words, not boxes. */
 .git-desk :is(.issue-foot, .issue-leave, .merge-row) .button { min-width: 0; min-height: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
@@ -131,11 +130,11 @@
 .work-line > .work-text { min-width: 0; }
 .work-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
 .work-line.del { background: color-mix(in srgb, var(--del) 14%, var(--paper)); }
-.work-line.far { height: calc(1.5 * var(--u)); overflow: hidden; white-space: pre; color: var(--sub); filter: blur(.8px); }
+/* (A line that did not change, beside one that did: quiet, and sharp. Blur is depth and nothing else, §1.) */
+.work-line.far { height: calc(1.5 * var(--u)); overflow: hidden; white-space: pre; color: var(--quiet); }
 /* How much the work is, where the sheet turns: at its foot's left, as large as the title. */
 .work-sum { position: absolute; left: 0; bottom: 0; display: flex; gap: .25em; margin: 0; font: 900 var(--t-head)/.727 var(--display); letter-spacing: -.035em; }
 .git-desk .issue-box:has(.work-sum) { padding-bottom: calc(3 * var(--u)); }
-.git-desk .issue-box:has(.work-sum) > .issue-work { margin-bottom: calc(-3 * var(--u)); }
 /* No issue yet: nothing to switch and no sheet; the one thing to do stands where the first piece would, at the
    desk's edge a cell under the band, drawn in line on the ground as a piece not yet in hand is. (Before: in the
    window's middle, wherever that was.) */
