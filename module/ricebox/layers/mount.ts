@@ -1,4 +1,4 @@
-// A root from packs (scripts/webroot.ts), put in a tree someone lends (MountTarget: a kernel's, sods' linux.ts
+// A root from packs (module/ricebox/make/layers.ts), put in a tree someone lends (MountTarget: a kernel's, sods' linux.ts
 // mountTarget, or any other): its directories and links at once, each file's bytes only when a program first reads
 // it. A kernel reads inside a system call, where nothing can wait, so the bytes are fetched synchronously:
 // `range(pack, at, len)` returns them from the pack of that name (in a Worker, a synchronous Range request, pack.ts

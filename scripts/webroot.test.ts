@@ -1,5 +1,5 @@
 // The web root against the root it is made from, on a stand-in
-// release root (a few files of each kind a root has): made by scripts/webroot.ts,
+// release root (a few files of each kind a root has): made by module/ricebox/make/layers.ts,
 // it is the root (webroot-parity.ts), the same twice, and anything changed in it
 // is caught; pin-root.ts pins both in one entry, and prompt-files.ts takes
 // it from a stand-in release only at that pin. The real root is checked the
@@ -14,8 +14,8 @@ import {join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {pinnedRoots} from '../why/remote/ship/releases.ts';
-import {makeWebroot, standIn} from './webroot-standin.ts';
-import type {Index} from './webroot-tree.ts';
+import {makeWebroot, standIn} from '../module/ricebox/make/standin.ts';
+import type {Index} from '../module/ricebox/make/tree.ts';
 
 const os = fileURLToPath(new URL('..', import.meta.url));
 const sha = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex');
@@ -36,7 +36,7 @@ before(() => {
 after(() => rmSync(work, {recursive: true, force: true}));
 
 test('the web root is the root: every path, type, mode, link target and sha256', () => {
-  const r = node([join(os, 'scripts/webroot-parity.ts'), rootFile, out, '--manifests', join(work, 'm')]);
+  const r = node([join(os, 'module/ricebox/make/parity.ts'), rootFile, out, '--manifests', join(work, 'm')]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^same: /m);
   const native = readFileSync(join(work, 'm/native.txt'), 'utf8');
@@ -62,7 +62,7 @@ test('a pack or an index that is not the root is caught', () => {
   cpSync(out, bad, {recursive: true});
   const pack = join(bad, 'packs', readdirSync(join(bad, 'packs'))[0] ?? '');
   const b = readFileSync(pack); b[b.length - 1] ^= 1; writeFileSync(pack, b);
-  let r = node([join(os, 'scripts/webroot-parity.ts'), rootFile, bad]);
+  let r = node([join(os, 'module/ricebox/make/parity.ts'), rootFile, bad]);
   assert.equal(r.status, 1);
   assert.match(r.stderr + r.stdout, /not the file its table names/);
 
@@ -77,7 +77,7 @@ test('a pack or an index that is not the root is caught', () => {
   const json = Buffer.from(JSON.stringify(index));
   writeFileSync(join(bad, about.index.path), json);
   writeFileSync(join(bad, 'webroot.json'), JSON.stringify({...about, index: {...about.index, sha256: sha(json), size: json.length}}));
-  r = node([join(os, 'scripts/webroot-parity.ts'), rootFile, bad]);
+  r = node([join(os, 'module/ricebox/make/parity.ts'), rootFile, bad]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /different \(1\):\n {2}\/usr\/bin\/busybox\tfile\t0755/);
 });
@@ -105,10 +105,10 @@ test('one entry pins why for both: the root, and the index the browser reads it 
 test('a Node-only build takes why from its release only at the pin, and refuses anything else', async () => {
   // A tree as prompt-files.ts reads it: the pins, newest 9.9.9, and the scripts; and a release that has why's tar.
   const tree = join(work, 'repo');
-  for (const d of ['why/core/src/root', 'scripts', 'why/remote/ship', 'why/shared', 'public', 'module/ricebox/layers']) mkdirSync(join(tree, d), {recursive: true});
+  for (const d of ['why/core/src/root', 'scripts', 'why/remote/ship', 'why/shared', 'public', 'module/ricebox/layers', 'module/ricebox/make']) mkdirSync(join(tree, d), {recursive: true});
   // And what both of those check packs by, where the repository has it (module/ricebox/layers).
-  for (const f of ['why/core/src/root/pins.rs', 'scripts/prompt-files.ts', 'scripts/webroot-tree.ts', 'why/remote/ship/releases.ts', 'why/shared/desktop-releases.json',
-    'module/ricebox/layers/table.ts']) copyFileSync(join(os, f), join(tree, f));
+  for (const f of ['why/core/src/root/pins.rs', 'scripts/prompt-files.ts', 'module/ricebox/make/tree.ts', 'why/remote/ship/releases.ts', 'why/shared/desktop-releases.json',
+    'module/ricebox/layers/table.ts', 'module/ricebox/layers/shape.ts']) copyFileSync(join(os, f), join(tree, f));
   assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', join(tree, 'why/core/src/root/pins.rs')]).status, 0);
 
   const tarOf = (dir: string) => execFileSync('tar', ['-C', dir, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax', '-cf', '-', '.'], {maxBuffer: 1 << 28});

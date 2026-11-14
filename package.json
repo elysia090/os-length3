@@ -17,7 +17,7 @@
     "deploy:cloudflare": "node why/remote/ship/deploy.ts",
     "tauri": "tauri",
     "webroot": "sh scripts/webroot.sh",
-    "webroot:parity": "node scripts/webroot-parity.ts",
+    "webroot:parity": "node module/ricebox/make/parity.ts",
     "web-release": "sh scripts/web-release.sh"
   },
   "devDependencies": {

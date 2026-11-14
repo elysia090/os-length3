@@ -48,7 +48,7 @@ export const UNITS: Unit[] = [
     holds: ['module/sods'],
     takes: ['lib'],
     entries: ['module/sods/runtime/translate.ts', 'module/sods/runtime/linux.ts', 'module/sods/runtime/host.ts', 'module/sods/runtime/targets.ts']},
-  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, the command line #80 lists, and the root as layers (their form, and what reads them); no window, ordinary POSIX, and no service known to it',
+  {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, the command line #80 lists, the root as layers (their form, what writes and what reads them), and the root where it is used: unpacked and held on a device, and run in a box (the bundle muk is given, the box started, in a page its Worker); no window, ordinary POSIX, and no service or product known to it',
     holds: ['module/ricebox'],
     takes: ['lib', 'muk', 'sods', 'everyday']},
   {name: 'everyday', says: 'the look and feel, changed by the one who uses it: what a face is drawn through. A sheet of names and values, a person\'s lines held to it, the way back the file itself; no window of its own',

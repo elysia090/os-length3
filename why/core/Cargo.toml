@@ -12,10 +12,10 @@ libc = "0.2"
 memchr = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-ruzstd = "0.9"
-# Other distributions publish their roots as .tar.gz (Ubuntu base, Debian's official images).
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 sha2 = "0.11"
+# A root on a device (its bundle unpacked, the roots held, the one in use) is ricebox's: root/ says only which roots
+# why trusts and where one comes from.
+ricebox = { path = "../../module/ricebox" }
 
 # The host's own calls (a filesystem's room, a rename that never replaces one, a signal, the host's name, a sync) through
 # a safe interface: the core's own code says no unsafe for them.
@@ -46,3 +46,7 @@ windows-native-keyring-store = { version = "1.1.0", default-features = false }
 # The Secret Service over D-Bus from Rust alone (zbus, and its crypto in Rust): the static why reaches it as the app does.
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus-secret-service-keyring-store = { version = "1.0.1", features = ["rt-async-io-crypto-rust"] }
+
+# A distribution's archive made for a test of what why does with one (root/mod.test.rs).
+[dev-dependencies]
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

@@ -17,7 +17,7 @@
 // A program that cannot run yet still ships: this says which, and why, for
 // the translator's work.
 //
-//   node scripts/webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]
+//   node module/ricebox/make/runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]
 //
 // --fresh: this checkout's translator (../module/sods' wasm build), every program translated as it runs, not what WEB carries.
 // --muk MUK: the box's maker, made already for this machine (else made here of module/muk, by module/lib/build.sh).
@@ -33,9 +33,9 @@ import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import type {Kernel} from '../module/sods/runtime/linux.ts';
+import type {Kernel} from '../../sods/runtime/linux.ts';
 import {buildMuk} from './muk.ts';
-import {openWeb, type Index} from './webroot-tree.ts';
+import {openWeb, type Index} from './tree.ts';
 
 /** What one program run under muk says: its wait status, its output, and how long it took. */
 interface Ran { status: number | null; stdout: string; stderr: string; error: string | null; ms: number }
@@ -82,7 +82,7 @@ const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 
 async function keptIn(dir: string) {
   const {mkdirSync, readdirSync, renameSync, rmSync} = await import('node:fs');
   const {createHash} = await import('node:crypto');
-  const {packMain, packMore} = await import('../module/sods/runtime/translate.ts');
+  const {packMain, packMore} = await import('../../sods/runtime/translate.ts');
   mkdirSync(dir, {recursive: true});
   const url = (name: string) => new URL(name, `file://${dir}/`).href;
   // keeper.ts reads through the Cache Storage API (its match alone): here, the files.
@@ -116,9 +116,9 @@ async function keptIn(dir: string) {
 
 /** One program in its box on sods' Linux, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
 async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV, muk}: Asked) {
-  const {RemoteKernel, Vfs, keeper, linux, mountTarget, provide} = await import('../module/sods/runtime/linux.ts');
-  const {loadTranslator} = await import('../module/sods/runtime/translate.ts');
-  const {mountPack} = await import('../module/ricebox/layers/mount.ts');
+  const {RemoteKernel, Vfs, keeper, linux, mountTarget, provide} = await import('../../sods/runtime/linux.ts');
+  const {loadTranslator} = await import('../../sods/runtime/translate.ts');
+  const {mountPack} = await import('../layers/mount.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
   // --fresh: this checkout's translator, translating everything as it runs (what the next why will be).
@@ -192,7 +192,7 @@ export function nativeBox(muk: string, rootDir: string, argv: string[], env: str
   return {cmd: muk, argv: ['run', '--lend', root, ...(uid === 0 ? ['--ids', '0-0'] : []), '-b', dir, 'box'], done: () => rmSync(dir, {recursive: true, force: true})};
 }
 
-/** muk for this machine, made of this tree's source (scripts/muk.ts), unless one is given (--muk). */
+/** muk for this machine, made of this tree's source (module/ricebox/make/muk.ts), unless one is given (--muk). */
 export const builtMuk = (): string => buildMuk();
 
 /** Run `cmd` with a time limit: {code, signal, stdout, stderr, timedOut}. */
@@ -254,9 +254,9 @@ async function main() {
   const warm = args.includes('--warm') && !!args.splice(args.indexOf('--warm'), 1);
   const kept = warm ? mkdtempSync('/tmp/webroot-kept-') : null;
   const [web, rootDir] = args;
-  if (!web || !rootDir) { console.error('usage: webroot-runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]'); process.exit(2); }
+  if (!web || !rootDir) { console.error('usage: runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]'); process.exit(2); }
   const w = openWeb(web);
-  const translator = new URL('../module/sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url).pathname;
+  const translator = new URL('../../sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url).pathname;
   if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: why names none, and ${translator} is not built`);
   // What each file is, by its first bytes (ELF, a script and its interpreter).
   const head = (path: string) => { const f = w.index.files.find((x) => x.path === path); return f ? w.read(f).subarray(0, 128) : Buffer.alloc(0); };
@@ -279,7 +279,7 @@ async function main() {
   const md = [
     `# Which programs of why the browser's Prompt runs`,
     '',
-    `${about}. Each program is run in a box on sods' Linux in node (the root mounted from why's packs as the browser mounts it, with its translations made ahead of time) and in the same box natively, each made by the same muk of the same config.json (its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node scripts/webroot-runnable.ts\`.`,
+    `${about}. Each program is run in a box on sods' Linux in node (the root mounted from why's packs as the browser mounts it, with its translations made ahead of time) and in the same box natively, each made by the same muk of the same config.json (its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node module/ricebox/make/runnable.ts\`.`,
     '',
     `- **runs**: the same exit status and output as native (or, as native, no end)`,
     `- **not yet**: present, not yet runnable under muk: it ends otherwise than native (what differs, the system calls it was answered ENOSYS), box said why, or no end within the time`,

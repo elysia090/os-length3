@@ -4,11 +4,10 @@ import {store} from '../../repos/repos.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import {core, promptOpen, rootFetch, rootHere, rootStatus, type Holding, type Stopped} from '../../host/host.ts';
 import {currentLang, onLang, t, tn} from '../../i18n/i18n.ts';
-import {BOX, filesNow, hearLater, keepMore, keepReached, keepTranslation, keptNow, loadWebroot, promptWorker, readyPrompt, takeReady, usedKept, warmWebroot, watchLoad, type Box, type Webroot, type Stage} from '../../prompt/userland.ts';
+import {aheadFor, BOX, filesNow, hearAhead, hearLater, holdAhead, translateAhead, keepMore, keepReached, keepTranslation, keptNow, loadWebroot, promptWorker, readyPrompt, takeReady, usedKept, warmWebroot, watchLoad, type Box, type Webroot, type Stage} from '../../prompt/userland.ts';
 import {every} from '../../host/runs.ts';
 import {errorText} from '../../host/errors.ts';
 import {still} from '../../ui/glide.ts';
-import {aheadFor, hearAhead, holdAhead, translateAhead} from '../../prompt/ahead.ts';
 import {Activity} from './activity.ts';
 import {endLine, goDark, jolt, switchOver} from './ending.ts';
 import {clips, heldBack, OSC, RAN} from './osc.ts';
@@ -82,15 +81,16 @@ function zone(): string {
   } catch { return 'UTC'; }
 }
 /**
- * The box a page's Prompt runs in: the bundle the core writes for muk (why/core/src/prompt/bundle.rs, the one writer
- * for every host): its shell and what it runs with said there, as for the app's Prompts on the machine. What is
+ * The box a page's Prompt runs in: the bundle ricebox writes for muk (module/ricebox/src/bundle.rs, the one writer
+ * for every host, asked through the core: prompt/mod.rs), its shell and what it runs with said there, as for the
+ * app's Prompts on the machine. What is
  * said here is what this host lends: the tree the Worker's kernel is given, whole and its own to write (the root is
  * `/` there, the repo's copy laid in it already); root as itself; the kernel's console by its name, which is the
  * page's screen (a colour xterm's: output.ts draws what one draws, vt.ts); the person's clock and language.
  */
 const boxOf = (repo: string, more: [string, string][] = []) => core<Box>('prompt_bundle', {
   repo, shell: {bash: true, other: false, edits: false},
-  told: {term: 'xterm-256color', zone: zone(), lang: currentLang(), more: [['COLORTERM', 'truecolor'], ...more]},
+  lang: currentLang(), told: {term: 'xterm-256color', zone: zone(), more: [['COLORTERM', 'truecolor'], ...more]},
   lent: {root: '/', written: true, uid: 0, gid: 0, console: '/dev/pts/0'}, dir: BOX,
 });
 /** A start rehearsed in a Worker readied ahead (readyPrompt): the same shell in the same box, in no repo yet, with no key. */
@@ -245,7 +245,7 @@ export class Session implements Prompt {
     this.worker?.postMessage({type: 'input', bytes}, [bytes.buffer]);
   }
 
-  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (prompt/kernel.worker.ts). */
+  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (module/ricebox/layers/worker.ts). */
   typing() { this.worker?.postMessage({type: 'typing'}); }
 
   /** `sig` to what runs in front (a key that makes a signal). */
@@ -256,7 +256,7 @@ export class Session implements Prompt {
 
   /**
    * A key that makes a signal flushes what was written and not yet shown, as a terminal's line discipline does (unless
-   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (prompt/kernel.worker.ts), so ^C
+   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (module/ricebox/layers/worker.ts), so ^C
    * stands where the run was cut, not under the megabyte a flood had on its way.
    */
   private flush(): {flush?: number} {

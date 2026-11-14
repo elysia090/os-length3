@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
 import {bootScript} from '../../scripts/boot.ts';
 import {buildCoreWasm, coreWasmPath} from '../../scripts/core-wasm.ts';
-import {putMuk} from '../../scripts/muk.ts';
+import {putMuk} from '../../module/ricebox/make/muk.ts';
 import {DEFAULT_REMOTE, headersOf, webPolicy} from './host/policy.ts';
 import {shipped} from '../remote/ship/releases.ts';
 
@@ -87,7 +87,7 @@ const coreWasm = (): Plugin => ({
 });
 
 /**
- * The box's maker beside the web root (scripts/muk.ts: muk.json and its blob in public/webroot), built from this tree
+ * The box's maker beside the web root (module/ricebox/make/muk.ts: muk.json and its blob in public/webroot), built from this tree
  * when its sources changed, once per dev-server start and per build: a page's Prompt runs the root's programs in a
  * box muk makes, as the app's does on Linux. Only where this build carries a web root (the web's; the desktop app
  * reads the Remote's), which is where muk can be built too.

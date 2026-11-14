@@ -291,7 +291,7 @@ the same thing for the desktop app and for the web.
   device's Remote, then the publisher's (each deploy mirrors every pinned
   root to its bucket), then the release itself.
 - **In a browser**, the same root is read through muk (`public/webroot`, made
-  from the root itself by `scripts/webroot.ts`, never from anything built
+  from the root itself by `module/ricebox/make/layers.ts`, never from anything built
   beside it): `webroot.json` (which why: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes
   are), a pack per package of the root, each file a zstd frame, and blobs
@@ -323,9 +323,9 @@ the same thing for the desktop app and for the web.
 - **The same content.** The web's tree is the root's: every path, type,
   mode, link target and sha256 the same as the root why installs
   (directories at least 0700, files without set-id bits, as the installer
-  makes them). `scripts/webroot-parity.ts` proves it on every release and in CI;
+  makes them). `module/ricebox/make/parity.ts` proves it on every release and in CI;
   a program that muk cannot run yet still ships, and
-  `scripts/webroot-runnable.ts` says which, against the same root run natively.
+  `module/ricebox/make/runnable.ts` says which, against the same root run natively.
 - **One release, one pin.** The release makes the root, then why for the
   browser from it (checked by the parity), pins both in one entry, and only
   then builds the web app and the desktop app, which both trust that entry.
@@ -840,8 +840,8 @@ What leaves this system is kept to what is said here:
   itself) and the certificates it trusts (its store or SSL_CERT_FILE,
   beside the bundled ones).
 - **The root.** In the app a Prompt is the distribution's root in a box
-  muk makes (`why prompt` writes its bundle and runs `muk run` on it:
-  why/core/src/prompt/bundle.rs, start.rs; module/muk), by this machine's
+  muk makes (`why prompt` says what it lends, why/core/src/prompt/start.rs;
+  ricebox writes the bundle and runs `muk run` on it, module/ricebox/src; module/muk), by this machine's
   kernel without privilege: a user namespace makes the user root inside
   it only; its own mount, pid, ipc, uts and network namespaces (no
   network unless granted); the root read-only, the repo the only

@@ -3,11 +3,11 @@
 // with the same bytes. Nothing is built or chosen apart from the root:
 // BusyBox, why and /etc are the root's own.
 //
-//   node scripts/webroot.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR]
+//   node module/ricebox/make/layers.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR]
 //
 // ROOT is a release root, os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst
 // (checked against the digest in its name), read as why installs it
-// (scripts/webroot-tree.ts). OUT (public/webroot) receives:
+// (module/ricebox/make/tree.ts). OUT (public/webroot) receives:
 //
 //   webroot.json               what why this is: {name: 'why', version, sha256 and bytes
 //                         of the root (the digest why/core/src/root/pins.rs pins), file,
@@ -48,10 +48,10 @@ import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
-import {packOf} from '../module/ricebox/layers/table.ts';
-import {readTarball, sha256, type Index} from './webroot-tree.ts';
+import {packOf} from '../layers/table.ts';
+import {readTarball, sha256, type Index} from './tree.ts';
 
-const here = fileURLToPath(new URL('..', import.meta.url));
+const here = fileURLToPath(new URL('../../..', import.meta.url));
 const repo = here;
 
 const args = process.argv.slice(2);

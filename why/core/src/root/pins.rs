@@ -86,7 +86,7 @@ pub struct Release {
     /// The GitHub release it was published under (its tag).
     pub tag: &'static str,
     /// The same root as a browser reads it: the sha256 of why's index for the
-    /// web (scripts/webroot.ts), made from this bundle in the same release.
+    /// web (module/ricebox/make/layers.ts), made from this bundle in the same release.
     /// Empty for a release made before there was one. The app never reads it;
     /// it is here so one entry is the whole of why's pin, for both.
     pub web: &'static str,

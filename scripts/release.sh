@@ -60,7 +60,7 @@ fi
 
 # The web root, the same root: every path, type, mode, link target and sha256 as the app installs.
 sh scripts/webroot.sh "$root" public/webroot
-node scripts/webroot-parity.ts "$root" public/webroot
+node module/ricebox/make/parity.ts "$root" public/webroot
 webroot=os-length3-linux-$version-webroot.tar
 tar -C public/webroot --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
   --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -cf "$out/$webroot" .

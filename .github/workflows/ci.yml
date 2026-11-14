@@ -36,7 +36,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=core-wasm-${{ hashFiles('why/core/src/**', 'why/core/web/src/**', 'why/core/Cargo.toml', 'why/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'why/shared/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=core-wasm-${{ hashFiles('why/core/src/**', 'why/core/web/src/**', 'why/core/Cargo.toml', 'why/core/web/Cargo.toml', 'module/ricebox/src/**', 'module/ricebox/Cargo.toml', 'module/ricebox/build.rs', 'Cargo.toml', 'Cargo.lock', 'why/shared/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'why/core/src/root/pins.rs', 'why/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/ricebox/layers/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'why/core/src/root/pins.rs', 'why/remote/ship/releases.ts', 'scripts/webroot.sh', 'module/ricebox/make/layers.ts', 'module/ricebox/make/tree.ts', 'scripts/root-file.ts', 'module/ricebox/make/parity.ts', 'module/ricebox/layers/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -101,7 +101,7 @@ jobs:
           npm ci
           root=$(node scripts/root-file.ts target/root)
           sh scripts/webroot.sh "$root" public/webroot
-          node scripts/webroot-parity.ts "$root" public/webroot
+          node module/ricebox/make/parity.ts "$root" public/webroot
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -130,7 +130,7 @@ jobs:
           path: public/webroot
           key: ${{ needs.webroot.outputs.key }}
           fail-on-cache-miss: true
-      # Each line's box is made by muk on both sides (scripts/webroot-runnable.ts), natively in a user namespace
+      # Each line's box is made by muk on both sides (module/ricebox/make/runnable.ts), natively in a user namespace
       # of the runner's own, which Ubuntu's AppArmor restricts by default.
       - name: Allow user namespaces
         run: if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
@@ -141,7 +141,7 @@ jobs:
           npm ci
           root=$(node scripts/root-file.ts target/root)
           mkdir -p target/root-open && tar --zstd -xf "$root" -C target/root-open
-          node scripts/commands.ts public/webroot target/root-open/root --jobs 4 --check
+          node module/ricebox/make/commands.ts public/webroot target/root-open/root --jobs 4 --check
 
   typecheck:
     name: Typecheck
@@ -208,7 +208,7 @@ jobs:
           cache-on-failure: true
       # The desktop crate needs GTK and is linted where it is built (desktop job).
       - name: Clippy
-        run: cargo clippy --locked --all-targets -p why-core -p why-core-web -p why -- -D warnings
+        run: cargo clippy --locked --all-targets -p ricebox -p why-core -p why-core-web -p why -- -D warnings
       - name: Clippy (wasm32-wasip1)
         if: ${{ !cancelled() }}
         run: cargo clippy --locked -p why-core -p why-core-web --target wasm32-wasip1 -- -D warnings
@@ -235,7 +235,7 @@ jobs:
           shared-key: rust-${{ hashFiles('Cargo.toml') }}
           cache-on-failure: true
       - name: Test core and CLI
-        run: cargo test --locked -p why-core -p why
+        run: cargo test --locked -p ricebox -p why-core -p why
       - name: Test CLI end to end
         if: ${{ !cancelled() }}
         run: |
@@ -411,7 +411,7 @@ jobs:
         run: sh module/prompt/test/prompt.sh
 
   # The root as a release builds it (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), then used inside as a Prompt uses it and
-  # under muk. Runs only when what the root is made of changed.
+  # under muk. Runs only when what the root is made of changed (what makes its layers, beside those in make/, is not).
   root:
     name: Root
     runs-on: ubuntu-24.04
@@ -422,7 +422,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('module/ricebox/RELEASE', 'module/ricebox/make/**', 'module/ricebox/packages/**', 'module/ricebox/pins/**', 'module/ricebox/etc/**', 'module/ricebox/usr/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('module/ricebox/RELEASE', 'module/ricebox/make/build.sh', 'module/ricebox/make/lift.sh', 'module/ricebox/make/assemble.sh', 'module/ricebox/make/db.ts', 'module/ricebox/packages/**', 'module/ricebox/pins/**', 'module/ricebox/etc/**', 'module/ricebox/usr/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

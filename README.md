@@ -80,10 +80,12 @@ another, none holding another, each standing on what is under it. Read from the 
   Linux runs in a browser.
 - **ricebox**, the neutral distribution, as BusyBox is one, and as thin: the root, each package from its pinned
   source by its recipe, and the command line [#80](https://github.com/elysia090/os-length3/issues/80) lists,
-  ordinary POSIX with no window; its layers served from any web host as they are. It knows no service, so anyone
-  can cut it out, with what is under it, and put it under a service of their own.
-- **why**, the product, as Alpine stands on BusyBox: ricebox run by muk, the app and the command, and the
-  modules a product has. What a service wants (who one is, what one may use, the Remote and its sync, its
+  ordinary POSIX with no window; its layers served from any web host as they are. The weight of running it is
+  its own: it unpacks and holds its root, writes the bundle its box is made from, starts that box (muk makes it),
+  and in a page mounts its layers and runs them. It knows no service and no product, so anyone can cut it out,
+  with what is under it, and put it under a service of their own.
+- **why**, the product, as Alpine stands on BusyBox: thin on ricebox. It says which root it trusts, what it lends
+  a box (a repo, a home) and what it tells it; the app and the command, and the modules a product has. What a service wants (who one is, what one may use, the Remote and its sync, its
   gateway's rules, its deploy) is shipto's, and nowhere else.
 
 The smaller modules are each a part of the one that ships it (you and otter, ricebox's command line's own programs;
@@ -100,7 +102,7 @@ from; ricebox and the units under it take from nothing over them, and no unit's 
 | muk | the machine, an OCI-compatible VMM: an OCI bundle's box made, isolated, started and waited for (`muk run`); no image, no terminal's other end | lib |
 | prompt | a terminal attached: the other end of the one muk makes in a box, given as one descriptor (`prompt attach FD`); it starts no process and keeps no box | — |
 | sods | a program run where its machine, its kernel or its system is absent: translation and what a translation is kept by, the Linux a program asks for, every difference between hosts; taken through four files | lib |
-| ricebox | the neutral distribution: the root, each package from its pinned source by its recipe, the command line #80 lists, and the root as layers | lib, muk, sods, everyday |
+| ricebox | the neutral distribution: the root, each package from its pinned source by its recipe, the command line #80 lists, the root as layers, and the root where it is used: unpacked and held on a device, run in a box muk makes | lib, muk, sods, everyday |
 | you | the tools a person reaches for: z, rg, fd, fzf | lib |
 | otter | to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said | lib, ricebox, muk, sods |
 | cowboy | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | sods, ricebox |

@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zstdCompressSync} from 'node:zlib';
 
-const os = fileURLToPath(new URL('..', import.meta.url));
+const os = fileURLToPath(new URL('../../..', import.meta.url));
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
 /** A release root of a few files: a program and its links (one a hard link), set-id and sticky bits, an empty file, the package db. */
@@ -46,6 +46,6 @@ export function makeWebroot(root: string, dir: string, work: string) {
   const sods = join(work, 'sods');
   writeFileSync(sods, `#!${process.execPath}\nrequire('fs').copyFileSync(${JSON.stringify(wasm)}, process.argv.at(-1));\n`);
   chmodSync(sods, 0o755);
-  return spawnSync(process.execPath, [join(os, 'scripts/webroot.ts'), root, dir, '--translator', wasm, '--sods', sods, '--hot', '/usr/bin/busybox'], {encoding: 'utf8'});
+  return spawnSync(process.execPath, [join(os, 'module/ricebox/make/layers.ts'), root, dir, '--translator', wasm, '--sods', sods, '--hot', '/usr/bin/busybox'], {encoding: 'utf8'});
 }
 

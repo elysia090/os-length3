@@ -42,7 +42,7 @@ import {test as base, expect, type Browser, type BrowserContextOptions, type Pag
 import {App} from './app.ts';
 export {handleOf} from './app.ts';
 import {BROWSER, OUT} from './paths.ts';
-import {FIRST} from '../../why/app/prompt/first.ts';
+import {FIRST} from '../../module/ricebox/layers/first.ts';
 
 /** What a browser keeps (its localStorage, and IndexedDB, where the repos are), as Playwright reads and restores it. */
 type Kept = Exclude<BrowserContextOptions['storageState'], string | undefined>;
@@ -72,7 +72,7 @@ export function addressOf(info: TestInfo, who = 'Ada'): string {
 
 /**
  * The files of what a Prompt is given ahead of time for the Prompts after it (each translation in the build's why but
- * those a Prompt starts with: why/app/prompt/first.ts), as the browser's blocked URLs say them; none in a build without why.
+ * those a Prompt starts with: module/ricebox/layers/first.ts), as the browser's blocked URLs say them; none in a build without why.
  */
 const AHEAD: string[] = (() => {
   const about = join(OUT, 'webroot', 'webroot.json');

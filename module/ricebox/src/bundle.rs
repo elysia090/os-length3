@@ -1,27 +1,25 @@
-//! The bundle why writes for muk: a Prompt's box, said once. On every host a Prompt is started one way, `muk run` of
-//! this bundle (docs/STRUCTURE.md, A Prompt is a bundle): on a Linux machine by the host's kernel, anywhere else by
-//! the same muk over the Linux sods answers. Nothing here makes a namespace, a mount or a filter; this is what is
+//! A root run in a box: the bundle muk is given for it, said once. On every host a root's programs are started one
+//! way, `muk run` of this bundle: on a Linux machine by the host's kernel (run.rs), anywhere else by the same muk over
+//! the Linux sods answers (layers/worker.ts). Nothing here makes a namespace, a mount or a filter: this is what is
 //! asked for, in the words muk reads (the OCI runtime's config.json) and the words it is run with (what is lent).
 //!
-//!   /                 the root, read-only; the repo's own root where its environment was asked for, written
-//!   /root             the Prompt's home: a directory of the bundle's, the dotfiles in it, gone with the Prompt
-//!   /root/<repo>      the repo (lent)
-//!   /var/cache, /var/tmp, /var/log, /root/.cache
-//!                     the repo's caches (lent), freed whenever room is wanted
+//!   /                 the root, read-only, or written where it is the box's own to write
+//!   what is lent      each directory or file of the host's, where the box is to have it, in the order given
 //!   /tmp, /run        empty, gone with it
 //!   /dev, /dev/pts, /proc
 //!                     its own, as muk makes every box's
-//!   network           none but its loopback; the host's where the repo was granted it (lent, with the resolver's file)
-//!   who               root of a user namespace of its own, mapped onto the one who runs why
+//!   network           none but its loopback; the host's where it is lent (with the resolver's file)
+//!   who               root of a user namespace of its own, mapped onto the one who runs muk
 //!   calls             muk's filter: no box asks less
 //!
-//! The environment is set, not inherited: no host home, keys, agent or variables come in.
+//! The environment is set, not inherited: nothing of the host's comes in. What a product puts in a box (a repo, a
+//! home, its own variables) it says as what is lent and what is told besides; nothing of a product is named here.
 //!
 //! Its bound, counted by hand: config.json is n bytes, so it is n bytes written, each once, into one piece of memory
 //! asked for once at its size. It is said twice by one function (`say`): first to one that only counts (no memory),
 //! then to the text itself, which is then exactly full. No tree of values is made on the way and nothing is copied
 //! after it is written. bundle.test.rs holds it there: the text is as long as it was counted, in the memory it was
-//! given, and one allocation is all a bundle costs.
+//! given.
 
 #![forbid(unsafe_code)]
 
@@ -30,6 +28,16 @@ use serde::Deserialize;
 /// Where a Prompt's programs are looked for.
 pub const PATH: &str = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
+/// A directory or a file of the host's lent to a box: where it is inside (from /, as `root/.cache`), its path as the
+/// one who runs muk names it, and whether the box only reads it.
+#[derive(Deserialize, Default, Clone, Debug)]
+#[serde(default)]
+pub struct Bind {
+    pub inside: String,
+    pub from: String,
+    pub read_only: bool,
+}
+
 /// What of the host's a box is lent, each by its path as the one who runs muk names it. config.json asks; these are
 /// what muk is told it may give (`--lend`, `--ids`): a path asked for and not lent is refused by muk, not here.
 #[derive(Deserialize, Default, Clone, Debug)]
@@ -37,14 +45,10 @@ pub const PATH: &str = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 pub struct Lent {
     /// The root.
     pub root: String,
-    /// It is written (the repo's own root, its environment; a tree that is the Prompt's alone), not read-only.
+    /// It is written (a tree that is the box's own to write), not read-only.
     pub written: bool,
-    /// The Prompt's home, to be /root; none where the root's own /root is the Prompt's alone already.
-    pub home: Option<String>,
-    /// The repo's directory, to be /root/<repo>; none where it lies there already.
-    pub repo: Option<String>,
-    /// The repo's caches: where each is inside (from /), and its directory.
-    pub caches: Vec<(String, String)>,
+    /// What else is lent, mounted in this order (a directory before what lies in it).
+    pub binds: Vec<Bind>,
     /// The user and the group root in the box is.
     pub uid: u32,
     pub gid: u32,
@@ -60,11 +64,13 @@ pub struct Lent {
 /// What a box runs.
 #[derive(Clone, Copy, Debug)]
 pub struct Run<'a> {
-    /// The repo's name; none, a Prompt of no repo yet (one readied ahead).
-    pub repo: &'a str,
     pub argv: &'a [String],
     /// Its whole environment (`environment`).
     pub env: &'a [String],
+    /// Where it starts, inside.
+    pub cwd: &'a str,
+    /// The box's name for itself.
+    pub hostname: &'a str,
     /// A terminal of its own, this many columns and rows (muk makes it and gives its other end away); none, it has
     /// the descriptors of the one who runs muk.
     pub screen: Option<(u16, u16)>,
@@ -112,6 +118,12 @@ impl Sink for String {
 /// `s` as JSON says a string: what needs no escape goes as it lies, a run at a time.
 fn string(out: &mut impl Sink, s: &str) {
     out.put("\"");
+    string_body(out, s);
+    out.put("\"");
+}
+
+/// `s` as it stands between a JSON string's quotes.
+fn string_body(out: &mut impl Sink, s: &str) {
     let bytes = s.as_bytes();
     let mut from = 0;
     for (i, &b) in bytes.iter().enumerate() {
@@ -136,7 +148,6 @@ fn string(out: &mut impl Sink, s: &str) {
         from = i + 1;
     }
     out.put(&s[from..]);
-    out.put("\"");
 }
 
 /// `n` in decimal.
@@ -188,13 +199,9 @@ fn say(out: &mut impl Sink, run: &Run, lent: &Lent) {
     strings(out, run.argv);
     out.put(",\"env\":");
     strings(out, run.env);
-    out.put(",\"cwd\":\"/root");
-    if !run.repo.is_empty() {
-        out.put("/");
-        // (a repo's name is letters, digits, . _ and -: text/names.rs; said as it is)
-        out.put(run.repo);
-    }
-    out.put("\",\"capabilities\":{\"bounding\":");
+    out.put(",\"cwd\":");
+    string(out, run.cwd);
+    out.put(",\"capabilities\":{\"bounding\":");
     out.put(CAPS);
     out.put(",\"effective\":");
     out.put(CAPS);
@@ -203,8 +210,10 @@ fn say(out: &mut impl Sink, run: &Run, lent: &Lent) {
     out.put("},\"noNewPrivileges\":true},\"root\":{\"path\":");
     string(out, &lent.root);
     out.put(if lent.written { ",\"readonly\":false}" } else { ",\"readonly\":true}" });
+    out.put(",\"hostname\":");
+    string(out, run.hostname);
     out.put(concat!(
-        ",\"hostname\":\"why\",\"mounts\":[",
+        ",\"mounts\":[",
         "{\"destination\":\"/proc\",\"type\":\"proc\",\"source\":\"proc\"}",
         ",{\"destination\":\"/dev\",\"type\":\"tmpfs\",\"source\":\"tmpfs\",\"options\":[\"nosuid\",\"strictatime\",\"mode=755\",\"size=65536k\"]}",
         ",{\"destination\":\"/dev/pts\",\"type\":\"devpts\",\"source\":\"devpts\",\"options\":[\"nosuid\",\"noexec\",\"newinstance\",\"ptmxmode=0666\",\"mode=0620\"]}",
@@ -214,20 +223,13 @@ fn say(out: &mut impl Sink, run: &Run, lent: &Lent) {
         ",{\"destination\":\"/tmp\",\"type\":\"tmpfs\",\"source\":\"tmpfs\",\"options\":[\"nosuid\",\"nodev\",\"mode=1777\",\"size=1g\"]}",
         ",{\"destination\":\"/run\",\"type\":\"tmpfs\",\"source\":\"tmpfs\",\"options\":[\"nosuid\",\"nodev\",\"mode=1777\",\"size=64m\"]}",
     ));
-    if let Some(home) = &lent.home { bind(out, "/root", home, "[\"rbind\",\"rw\",\"nosuid\"]"); }
-    if let Some(repo) = &lent.repo {
-        out.put(",{\"destination\":\"/root/");
-        out.put(run.repo);
-        out.put("\",\"type\":\"bind\",\"source\":");
-        string(out, repo);
-        out.put(",\"options\":[\"rbind\",\"rw\"]}");
-    }
-    for (inside, dir) in &lent.caches {
+    for b in &lent.binds {
         out.put(",{\"destination\":\"/");
-        out.put(inside);
+        // (a path inside, as whoever lends it wrote it: names and slashes)
+        string_body(out, &b.inside);
         out.put("\",\"type\":\"bind\",\"source\":");
-        string(out, dir);
-        out.put(",\"options\":[\"rbind\",\"rw\",\"nosuid\"]}");
+        string(out, &b.from);
+        out.put(if b.read_only { ",\"options\":[\"rbind\",\"ro\",\"nosuid\"]}" } else { ",\"options\":[\"rbind\",\"rw\",\"nosuid\"]}" });
     }
     if let Some((file, inside)) = &lent.resolver { bind(out, inside, file, "[\"bind\",\"ro\"]"); }
     out.put("],\"linux\":{\"namespaces\":[{\"type\":\"pid\"},{\"type\":\"ipc\"},{\"type\":\"uts\"},{\"type\":\"mount\"},{\"type\":\"user\"},{\"type\":\"network\"");
@@ -253,11 +255,9 @@ pub fn length(run: &Run, lent: &Lent) -> usize {
 pub fn bundle(run: &Run, lent: &Lent) -> Bundle {
     let mut config = String::with_capacity(length(run, lent));
     say(&mut config, run, lent);
-    let mut lends = Vec::with_capacity(4 + lent.caches.len());
+    let mut lends = Vec::with_capacity(4 + lent.binds.len());
     lends.push(lent.root.clone());
-    lends.extend(lent.home.iter().cloned());
-    lends.extend(lent.repo.iter().cloned());
-    lends.extend(lent.caches.iter().map(|(_, dir)| dir.clone()));
+    lends.extend(lent.binds.iter().map(|b| b.from.clone()));
     lends.extend(lent.network.iter().cloned());
     lends.extend(lent.resolver.iter().map(|(file, _)| file.clone()));
     lends.extend(lent.console.iter().cloned());
@@ -266,7 +266,7 @@ pub fn bundle(run: &Run, lent: &Lent) -> Bundle {
     Bundle { config, lends, ids }
 }
 
-/// The shell a Prompt is: what is run when nothing else is asked for.
+/// The root's shell: what is run when nothing else is asked for.
 #[derive(Deserialize, Default, Clone, Copy, Debug)]
 #[serde(default)]
 pub struct Shell {
@@ -274,13 +274,12 @@ pub struct Shell {
     pub bash: bool,
     /// The root is another distribution's (Ubuntu, Debian): its bash is as that distribution sets it up.
     pub other: bool,
-    /// It is at a terminal it edits its line on; else what is typed is the app's box's, sent a line at a time.
+    /// It is at a terminal it edits its line on; else what is typed is edited by what shows it, and sent a line at a time.
     pub edits: bool,
 }
 
-/// The Prompt's shell: bash, interactive. On this distribution's root it reads the root's settings for the app's
-/// Prompt (/etc/length3/shrc: how a run ended, told before each prompt line; z, direnv), and edits its line itself
-/// only at a terminal. Another distribution's bash is as that distribution sets it up, at a terminal; sh is the
+/// The shell: bash, interactive. On this distribution's root it reads the root's settings (/etc/length3/shrc: how
+/// a run ended, told before each prompt line; z, direnv), and edits its line itself only at a terminal. Another distribution's bash is as that distribution sets it up, at a terminal; sh is the
 /// shell where there is no bash, or no terminal for another's.
 pub fn shell(s: Shell) -> Vec<String> {
     let words: &[&str] = match (s.bash, s.other, s.edits) {
@@ -292,7 +291,7 @@ pub fn shell(s: Shell) -> Vec<String> {
     words.iter().map(|w| w.to_string()).collect()
 }
 
-/// What a Prompt is told of where it is.
+/// What a box's programs are told of where they are.
 #[derive(Deserialize, Default, Clone, Debug)]
 #[serde(default)]
 pub struct Told {
@@ -300,21 +299,19 @@ pub struct Told {
     pub term: String,
     /// The person's time zone by its name; none, UTC.
     pub zone: Option<String>,
-    /// The person's language: ja, else en.
-    pub lang: String,
-    /// What it is told besides (a task's words, the Agent's key under its maker's variable), each by a name of
+    /// What it is told besides (a product's own variables, a key under its maker's variable), each by a name of
     /// capitals, digits and _.
     pub more: Vec<(String, String)>,
 }
 
-/// What a Prompt runs with: set here, never taken from the host; then what it is told besides (`told.more`), each
-/// by a name of capitals, digits and _ that is none of these, its words without a NUL. `argv`: what it runs (the
-/// shell a person's programs start for them, an editor's :! or tmux's panes, is the one they were given).
-pub fn environment(repo: &str, argv: &[String], told: &Told) -> Vec<String> {
+/// What a box's programs run with: set here, never taken from the host; then what it is told besides
+/// (`told.more`), each by a name of capitals, digits and _ that is none of these, its words without a NUL. `argv`:
+/// what it runs (the shell a person's programs start for them, an editor's :! or tmux's panes, is the one they were
+/// given).
+pub fn environment(argv: &[String], told: &Told) -> Vec<String> {
     let shell = if argv.first().is_some_and(|a| a.ends_with("/bash")) { "/bin/bash" } else { "/bin/sh" };
-    let lang = if told.lang == "ja" { "ja" } else { "en" };
     let term = if plain_term(&told.term) { told.term.as_str() } else { "dumb" };
-    let mut all: Vec<String> = Vec::with_capacity(19 + told.more.len());
+    let mut all: Vec<String> = Vec::with_capacity(10 + told.more.len());
     all.extend([
         format!("PATH={PATH}"),
         "HOME=/root".into(),
@@ -324,18 +321,7 @@ pub fn environment(repo: &str, argv: &[String], told: &Told) -> Vec<String> {
         format!("TERM={term}"),
         "LANG=C.UTF-8".into(),
         "PS1=$PWD $ ".into(),
-        // The root's own why sees the open repo where the shell does, and leaves Home, the Remote and the
-        // device to the app; it speaks the person's language (Home's).
-        "WHY_REPOS=/root".into(),
-        "WHY_PROMPT=1".into(),
-        format!("WHY_REPO={repo}"),
-        format!("WHY_LANG={lang}"),
-        // The same four by the names the root released as 0.6.4 reads them by (its l3 and its shell's settings),
-        // and where an interactive sh finds those settings: all five go when the pin is of a root made after it.
-        "LENGTH3_REPOS=/root".into(),
-        "L3_PROMPT=1".into(),
-        format!("LENGTH3_REPO={repo}"),
-        format!("LENGTH3_LANG={lang}"),
+        // Where an interactive sh finds the root's settings (the name the root released as 0.6.4 keeps them by).
         "ENV=/etc/length3/shrc".into(),
     ]);
     // The person's clock: the root has every zone the host may name, so date, ls -l and git's log read as theirs.
@@ -358,30 +344,6 @@ pub fn plain_zone(z: &str) -> bool {
 /// A terminal's name as terminfo has them: nothing else of the host's passes.
 pub fn plain_term(t: &str) -> bool {
     !t.is_empty() && t.len() <= 64 && t.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._+".contains(&b))
-}
-
-/// What a face asks for a bundle with (api: prompt_bundle), where it starts muk itself (a page, on sods).
-#[derive(Deserialize, Default, Clone, Debug)]
-#[serde(default)]
-pub struct Asked {
-    pub repo: String,
-    /// What to run; none, the Prompt's shell.
-    pub argv: Vec<String>,
-    pub shell: Shell,
-    pub told: Told,
-    pub screen: Option<(u16, u16)>,
-    pub lent: Lent,
-    /// The bundle's directory, as the one who runs muk names it.
-    pub dir: String,
-}
-
-/// The bundle a face asked for: config.json, and muk's words.
-pub fn asked(a: &Asked) -> (String, Vec<String>) {
-    let argv = if a.argv.is_empty() { shell(a.shell) } else { a.argv.clone() };
-    let env = environment(&a.repo, &argv, &a.told);
-    let b = bundle(&Run { repo: &a.repo, argv: &argv, env: &env, screen: a.screen }, &a.lent);
-    let words = b.words(&a.dir, None, "box");
-    (b.config, words)
 }
 
 #[cfg(test)]

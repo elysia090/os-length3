@@ -1,8 +1,8 @@
-// A Prompt's kernel in a Worker: the root (ricebox, its layers mounted), the Linux that runs it (sods: the tree,
-// the kernel, what the translator makes and what was kept of it) and the box its programs run in, which muk makes
-// here as it does on a Linux machine: the same program, run on this Linux with the bundle the core wrote for it
-// (why/core/src/prompt/bundle.rs). Nothing here starts a box's program itself. The repo is kept in step. The page
-// (userland.ts promptWorker) posts
+// The root run in a page's Worker: its layers mounted (mount.ts), the Linux that runs it (sods: the tree, the
+// kernel, what the translator makes and what was kept of it) and the box its programs run in, which muk makes here
+// as it does on a Linux machine: the same program, run on this Linux with the bundle written for it (../src/bundle.rs,
+// the one writer for every host). Nothing here starts a box's program itself. A directory of the tree is kept in
+// step with the page where it asks (`mirror`: a product's repo). The page posts
 //   {type: 'start', translator, muk, files: [{path, bytes, mode}], dirs: [path],
 //    links: [{path, target}], box: {config, words}, cwd}
 // (`translator` and a file's optional `module`, its translation made ahead
@@ -47,7 +47,7 @@
 // the `from`th on, for the page to keep and give the next Prompt.
 //
 // {type: 'hot', files}, after 'start': programs given with their translation
-// once the Prompt is up (the page readies why's and git's after its first
+// once the Prompt is up (the page readies the others after its first
 // Prompt starts), each in the root's file (pack.ts provide: each name of it,
 // a hard link, runs it), run from its next run on.
 //
@@ -79,25 +79,25 @@
 // translation an earlier Prompt made is read from that Cache Storage instead
 // (by its file's origin, pack.ts: the URLs of its translation and of the
 // code it reached later, keeper.ts), and the exec waits only for that read.
-// A program the page translates ahead while a person reads (why/app/prompt/ahead.ts) is told as it is kept,
+// A program the page translates ahead while a person reads (ahead.ts) is told as it is kept,
 // {type: 'kept', at: {[origin]: {main, more}}}, and read as one kept before would be.
 // What is translated here of a root file is said once the kernel pauses, for
 // the page to keep: {type: 'translated', origin, wasm, segments} once, then
 // {type: 'reached', origin, from, more} as code is reached later; and what
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
-import {canRunApart, rangeNow} from '../../../../module/sods/runtime/host.ts';
+import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
 import {Mirror, RemoteKernel, Vfs, keeper, linux, mountTarget, provide, said, warmThreads,
-  type Console, type File, type Image, type Kept, type Kernel, type Pumped, type Reading, type Said} from '../../../../module/sods/runtime/linux.ts';
-import {loadTranslator, type Segment, type Translate} from '../../../../module/sods/runtime/translate.ts';
-import {mountPack, type Given, type Packed} from '../../../../module/ricebox/layers/mount.ts';
-import {syncRange} from '../../../../module/ricebox/layers/pack.ts';
+  type Console, type File, type Image, type Kept, type Kernel, type Pumped, type Reading, type Said} from '../../sods/runtime/linux.ts';
+import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
+import {mountPack, type Given, type Packed} from './mount.ts';
+import {syncRange} from './pack.ts';
 
 /** A module of code a run reached later: its first table slot and bytes (Image.adopt). */
 interface Reached { module: WebAssembly.Module; bytes: Uint8Array; base: number }
 /** A program given: its bytes, and its translation where the page has one (made for memory `shared` or not). */
 interface Program extends Given { module?: WebAssembly.Module; segments?: Segment[] | null; shared?: boolean; more?: Reached[] }
-/** A box as the core writes it for muk (why/core/src/prompt/bundle.rs): config.json, and the words muk is run with. */
+/** A box as it is written for muk (../src/bundle.rs): config.json, and the words muk is run with. */
 interface Box { config: string; words: string[] }
 /** What every start has the same ('ready', or 'start' where none came first). `muk`: the box's maker, served beside the root. */
 interface Ready { translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
@@ -128,7 +128,7 @@ type Posted =
 /** What was readied: the translator loaded, the files given and the root put around them, the box's maker beside it. */
 interface Readied { translate: Translate; vfs: Vfs; files: Program[] }
 
-/** Where the bundle is in the tree (the page's BOX), under the tmpfs the box has at /run: its maker and its config.json. */
+/** Where the bundle is in the tree (BOX, as whoever asks for the bundle names it), under the tmpfs the box has at /run: its maker and its config.json. */
 const BOX = '/run/box';
 /**
  * `box` written where muk is told it is, and what is run for it: muk itself, with its words. The program config.json
@@ -174,7 +174,7 @@ function ready(data: Ready): Promise<Readied> {
     // Over the root, so what was given (why, its BusyBox) is what runs: a hot program in the root's own node.
     for (const f of data.files ?? []) provide(vfs, f);
     // The box's maker, beside the root it makes boxes of. A root served with none has no way to run its programs.
-    if (!data.muk) throw new Error('This root is served with no muk beside it (scripts/muk.ts puts it there)');
+    if (!data.muk) throw new Error('This root is served with no muk beside it (module/ricebox/make/muk.ts puts it there)');
     vfs.writeFile(`${BOX}/muk`, data.muk, 0o755);
     const r: Readied = {translate, vfs, files: data.files ?? []};
     if (data.rehearse) await rehearse(r, data.rehearse).catch(() => { /* only a start that is not faster */ });
@@ -393,7 +393,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
   if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
   if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
   if (data.type === 'hot') { if (kernel) given(kernel, data.files); return; }
-  // A program translated ahead by the page since this Prompt started (why/app/prompt/ahead.ts): read when it is run.
+  // A program translated ahead by the page since this Prompt started (ahead.ts): read when it is run.
   if (data.type === 'kept') { if (keptAt) Object.assign(keptAt, data.at); return; }
   // (A failure is said by the 'start' that waits for it.)
   if (data.type === 'ready') { ready(data).catch(() => {}); return; }

@@ -72,7 +72,7 @@ tracked in issue #20.
   what is saved anywhere else is put into the shell's copy, so the shell,
   File, Forge and Git see one repo. Its one dependency is why (OS.md,
   why: the one base): in a browser, `public/webroot`, made from the release root
-  by `scripts/webroot.ts`: `webroot.json` (which why, and the root's digest), an index
+  by `module/ricebox/make/layers.ts`: `webroot.json` (which why, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
   first opens it, and the translator with BusyBox, why and git translated
   ahead of time. A first Prompt fetches about 0.8 MB (the index, the translator,
@@ -83,7 +83,7 @@ tracked in issue #20.
   reads it rather than translating it again. Make it
   with `npm run webroot` (`scripts/webroot.sh`: the translator from this tree and the
   newest root `why/core/src/root/pins.rs` pins), and check it against that root
-  with `npm run webroot:parity -- ROOT public/webroot`; `node scripts/webroot-runnable.ts
+  with `npm run webroot:parity -- ROOT public/webroot`; `node module/ricebox/make/runnable.ts
   public/webroot ROOT_DIR` says which programs of it run under muk today.
 
 ## why: the same OS on the command line
@@ -435,7 +435,7 @@ the app.
 
 The webview has no other host access: it reads nothing outside the app's
 data directory, runs no shell and launches no root. The app starts no host
-program for a repo; its own tools run inside the root, in a box muk makes (`why/core/src/prompt/start.rs`).
+program for a repo; its own tools run inside the root, in a box muk makes (`why/core/src/prompt/start.rs` lends, `module/ricebox/src/run.rs` runs).
 
 The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in

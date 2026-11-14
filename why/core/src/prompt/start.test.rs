@@ -2,57 +2,9 @@ use super::*;
 
 /// This machine makes a box, or says in muk's own words why not: asked of muk itself, with nothing but muk in the box.
 #[test]
-fn whether_a_box_can_be_made_here_is_asked_of_muk() {
-    match kept_from_boxes() {
-        None => {}
-        Some(why) => assert!(why.contains("muk"), "{why}"),
-    }
-}
-
-#[test]
 fn a_package_name_is_what_apt_takes_and_nothing_a_shell_reads() {
     for p in ["git", "g++", "libssl-dev", "python3.12", "nodejs=20.1-1~deb", "libc6:amd64"] { assert!(package_name(p), "{p}"); }
     for p in ["", "-y", "a b", "a;b", "$(x)", "a`b`", "a|b", "a&b", &"x".repeat(129)] { assert!(!package_name(p), "{p}"); }
-}
-
-#[test]
-fn a_link_into_run_is_followed_inside_the_root() {
-    assert_eq!(clean(Path::new("/etc/../run/systemd/resolve/stub-resolv.conf")), Path::new("/run/systemd/resolve/stub-resolv.conf"));
-    assert_eq!(clean(Path::new("/etc/../../../run/x")), Path::new("/run/x"));
-    let top = crate::fs::testing::dir("why-resolver-test");
-    let _ = std::fs::remove_dir_all(&top);
-    std::fs::create_dir_all(top.join("etc")).unwrap();
-    assert_eq!(resolver_inside(&top), None);
-    std::os::unix::fs::symlink("../run/systemd/resolve/stub-resolv.conf", top.join("etc/resolv.conf")).unwrap();
-    assert_eq!(resolver_inside(&top).as_deref(), Some("/run/systemd/resolve/stub-resolv.conf"));
-    std::fs::remove_file(top.join("etc/resolv.conf")).unwrap();
-    std::os::unix::fs::symlink("/var/elsewhere", top.join("etc/resolv.conf")).unwrap();
-    assert_eq!(resolver_inside(&top), None);
-    std::fs::remove_file(top.join("etc/resolv.conf")).unwrap();
-    std::fs::write(top.join("etc/resolv.conf"), "").unwrap();
-    assert_eq!(resolver_inside(&top).as_deref(), Some("/etc/resolv.conf"));
-    let _ = std::fs::remove_dir_all(&top);
-}
-
-#[test]
-fn a_tree_is_copied_as_it_is_a_file_of_several_names_one_file_still() {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let top = crate::fs::testing::dir("why-copy-test");
-    let _ = std::fs::remove_dir_all(&top);
-    let (from, to) = (top.join("from"), top.join("to"));
-    std::fs::create_dir_all(from.join("usr/bin")).unwrap();
-    std::fs::write(from.join("usr/bin/busybox"), "elf").unwrap();
-    std::fs::set_permissions(from.join("usr/bin/busybox"), std::fs::Permissions::from_mode(0o755)).unwrap();
-    std::fs::hard_link(from.join("usr/bin/busybox"), from.join("usr/bin/ls")).unwrap();
-    std::os::unix::fs::symlink("usr/bin", from.join("bin")).unwrap();
-    std::fs::set_permissions(from.join("usr"), std::fs::Permissions::from_mode(0o750)).unwrap();
-    copy_tree(&from, &to).unwrap();
-    let (a, b) = (std::fs::metadata(to.join("usr/bin/busybox")).unwrap(), std::fs::metadata(to.join("usr/bin/ls")).unwrap());
-    assert_eq!((a.ino(), a.nlink(), a.mode() & 0o777), (b.ino(), 2, 0o755));
-    assert_ne!(a.ino(), std::fs::metadata(from.join("usr/bin/busybox")).unwrap().ino(), "a copy, not the root's own file");
-    assert_eq!(std::fs::read_link(to.join("bin")).unwrap(), Path::new("usr/bin"));
-    assert_eq!(std::fs::metadata(to.join("usr")).unwrap().mode() & 0o777, 0o750);
-    let _ = std::fs::remove_dir_all(&top);
 }
 
 /// `f` in a process of its own (a Prompt is run by a process with one thread: it waits for any child, and its bundle
@@ -70,121 +22,29 @@ fn ended(pid: libc::pid_t) -> i32 {
     if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) } else { -1 }
 }
 
-/// Run `script` in a Prompt on a root made of this host's own /usr and /etc (lent as they are), the repo at /root/t;
-/// what it wrote to /root/t/out. None where this host makes no box, or lacks a compiler or Python.
-fn prompt_on_this_host(script: &str, network: bool) -> Option<String> {
-    if !Path::new("/usr/bin/cc").exists() || !Path::new("/usr/bin/python3").exists() || kept_from_boxes().is_some() { return None; }
-    // A place of each call's own: the tests that call this run side by side.
-    static CALLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let top = crate::fs::testing::dir(&format!("why-prompt-test-{}", CALLS.fetch_add(1, Ordering::SeqCst)));
+/// What why lends a Prompt's box: a home of its own with the person's dotfiles in it, the repo where it starts
+/// (written back), and what it is told: its repo, where repos are, the language, and a task's words under no name
+/// of those.
+#[test]
+fn a_prompt_has_a_home_of_its_own_the_repo_where_it_starts_and_is_told_what_it_is() {
+    if !Path::new("/usr/bin/cc").exists() || !Path::new("/usr/bin/python3").exists() || kept_from_boxes().is_some() { eprintln!("skipped: no box here"); return; }
+    let top = crate::fs::testing::dir("why-prompt-home-test");
     let _ = std::fs::remove_dir_all(&top);
     let (root, repo) = (top.join("root"), top.join("repo"));
-    for d in ["usr", "etc", "root", "tmp", "run", "dev", "proc"] { std::fs::create_dir_all(root.join(d)).ok()?; }
-    for (link, to) in [("bin", "usr/bin"), ("sbin", "usr/sbin"), ("lib", "usr/lib"), ("lib64", "usr/lib64")] {
-        std::os::unix::fs::symlink(to, root.join(link)).ok()?;
-    }
-    std::fs::create_dir_all(&repo).ok()?;
-    let p = Prompt { root, other: false, repo: repo.clone(), name: "t".into(), cmd: vec!["/bin/sh".into(), "-c".into(), script.into()], env: Vec::new(),
-        network, dotfiles: Vec::new(), data: None, also: vec![("usr".into(), "/usr".into()), ("etc".into(), "/etc".into())] };
-    let code = ended(apart(|| p.run().unwrap_or_else(|e| { eprintln!("{e}"); 200 })));
-    let out = std::fs::read_to_string(repo.join("out")).ok();
+    for d in ["usr", "etc", "root", "tmp", "run", "dev", "proc"] { std::fs::create_dir_all(root.join(d)).unwrap(); }
+    for (link, to) in [("bin", "usr/bin"), ("sbin", "usr/sbin"), ("lib", "usr/lib"), ("lib64", "usr/lib64")] { std::os::unix::fs::symlink(to, root.join(link)).unwrap(); }
+    std::fs::create_dir_all(&repo).unwrap();
+    let script = r#"echo "pwd $PWD home $HOME host $(hostname)" > out; cat ~/.profile >> out; ls -A ~ | tr '\n' ' ' >> out; echo >> out
+echo "told $WHY_REPO $WHY_REPOS $WHY_PROMPT $LENGTH3_REPO $TASK" >> out; echo x > ~/scratch"#;
+    let p = Prompt { root, other: false, repo: repo.clone(), name: "t".into(), cmd: vec!["/bin/sh".into(), "-c".into(), script.into()],
+        env: vec![("TASK".into(), "do".into()), ("WHY_REPO".into(), "other".into())], network: false,
+        dotfiles: vec![(".profile".into(), "export P=1\n".into()), (".t".into(), "the repo's own name is not a dotfile there".into()), ("../x".into(), "no".into())],
+        data: None, also: vec![("usr".into(), "/usr".into()), ("etc".into(), "/etc".into())] };
+    assert_eq!(ended(apart(|| p.run().unwrap_or(200))), 0);
+    assert_eq!(std::fs::read_to_string(repo.join("out")).unwrap(), "pwd /root/t home /root host why\nexport P=1\n.profile t \ntold t /root 1 t do\n");
+    // Its home went with it: what was written there is nowhere, and nothing of the Prompt is left behind.
+    assert!(!std::env::temp_dir().join(format!("why-prompt-{}.box", std::process::id())).exists());
     let _ = std::fs::remove_dir_all(&top);
-    assert_eq!(code, 0, "the Prompt ended with {code}; it wrote: {out:?}");
-    out
-}
-
-/// Calls muk's filter refuses, asked from Python inside the Prompt (x86-64 numbers), each line `name result errno`.
-#[cfg(target_arch = "x86_64")]
-const ASK: &str = r#"
-import ctypes
-libc = ctypes.CDLL(None, use_errno=True)
-for name, nr, args in [('ptrace', 101, (0, 0, 0, 0)), ('mount', 165, (0, 0, 0, 0, 0)), ('umount2', 166, (0, 0)),
-        ('unshare', 272, (0x10000000,)), ('setns', 308, (0, 0)), ('kexec_load', 246, (0, 0, 0, 0)), ('init_module', 175, (0, 0, 0)),
-        ('finit_module', 313, (0, 0, 0)), ('bpf', 321, (0, 0, 0)), ('perf_event_open', 298, (0, 0, -1, -1, 0)),
-        ('keyctl', 250, (0, 0, 0, 0, 0)), ('add_key', 248, (0, 0, 0, 0, 0)), ('userfaultfd', 323, (0,)),
-        ('open_by_handle_at', 304, (0, 0, 0)), ('clone_newuser', 56, (0x10000000 | 17, 0, 0, 0, 0)),
-        ('clone3', 435, (0, 0)), ('io_uring_setup', 425, (1, 0)), ('fsopen', 430, (0, 0)), ('pivot_root', 155, (0, 0))]:
-    r = libc.syscall(nr, *args)
-    print(name, r, ctypes.get_errno())
-"#;
-
-/// A Prompt is a box muk made: its programs run, and what muk's filter names (module/muk/src/filter.h) no program
-/// in it asks the kernel, as the launcher's own filter held before it.
-#[cfg(target_arch = "x86_64")]
-#[test]
-fn a_prompt_runs_a_shell_and_a_compiler_in_a_box_of_muks_and_asks_the_kernel_nothing_its_filter_names() {
-    let script = format!(r#"
-out=/root/t/out
-echo shell ok > $out
-printf 'int main(void) {{ return 42; }}\n' > /tmp/a.c && cc /tmp/a.c -o /tmp/a; /tmp/a; echo "cc $?" >> $out
-cat > /tmp/ask.py <<'PY'
-{ASK}
-PY
-python3 /tmp/ask.py >> $out 2>&1
-grep '^Seccomp:' /proc/self/status >> $out
-grep '^NoNewPrivs:' /proc/self/status >> $out
-unshare -U true 2>/dev/null; echo "unshare-command $?" >> $out
-echo "host $(hostname) pwd $PWD home $HOME pid $$" >> $out
-touch /usr/x 2>/dev/null; echo "root-written $?" >> $out
-"#);
-    let Some(out) = prompt_on_this_host(&script, false) else { eprintln!("skipped: no box, compiler or Python here"); return };
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[0], "shell ok");
-    assert!(lines.contains(&"cc 42"), "{out}");
-    assert!(lines.contains(&"Seccomp:\t2") && lines.contains(&"NoNewPrivs:\t1"), "the Prompt's processes are filtered: {out}");
-    assert!(lines.iter().any(|l| l.starts_with("unshare-command ") && *l != "unshare-command 0"), "{out}");
-    assert!(lines.contains(&"host why pwd /root/t home /root pid 1"), "{out}");
-    for (name, errno) in [("ptrace", libc::EPERM), ("mount", libc::EPERM), ("umount2", libc::EPERM), ("unshare", libc::EPERM), ("setns", libc::EPERM),
-        ("kexec_load", libc::EPERM), ("init_module", libc::EPERM), ("finit_module", libc::EPERM), ("bpf", libc::EPERM), ("perf_event_open", libc::EPERM),
-        ("keyctl", libc::EPERM), ("add_key", libc::EPERM), ("userfaultfd", libc::EPERM), ("open_by_handle_at", libc::EPERM),
-        ("clone_newuser", libc::EPERM), ("clone3", libc::ENOSYS), ("io_uring_setup", libc::ENOSYS), ("fsopen", libc::EPERM), ("pivot_root", libc::EPERM)] {
-        assert!(lines.contains(&format!("{name} -1 {errno}").as_str()), "{name}: {out}");
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[test]
-fn a_prompt_granted_the_network_reaches_it() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let heard = std::thread::spawn(move || {
-        listener.set_nonblocking(false).unwrap();
-        let (mut s, _) = listener.accept().unwrap();
-        let mut b = [0u8; 2];
-        std::io::Read::read_exact(&mut s, &mut b).unwrap();
-        b
-    });
-    let script = format!("python3 -c 'import socket; s = socket.create_connection((\"127.0.0.1\", {port}), timeout=5); s.sendall(b\"hi\"); print(\"net ok\")' > /root/t/out 2>&1");
-    let Some(out) = prompt_on_this_host(&script, true) else { eprintln!("skipped: no box, compiler or Python here"); return };
-    assert_eq!(out.trim(), "net ok");
-    assert_eq!(&heard.join().unwrap(), b"hi");
-}
-
-/// A Prompt's terminals are its own (#59): a devpts made for it, which shows only the ptys opened in it (none of
-/// the host's sessions), and /dev/ptmx, where they are opened: apt runs dpkg on one, script and tmux run a shell
-/// on theirs (each tried where this host has it).
-#[cfg(target_arch = "x86_64")]
-#[test]
-fn a_prompt_opens_terminals_of_its_own_and_sees_none_of_the_hosts() {
-    let script = r#"
-out=/root/t/out
-echo "pts $(ls -A /dev/pts)" > $out
-echo "ptmx $(readlink /dev/ptmx)" >> $out
-python3 -c 'import os; m, s = os.openpty(); print("python", os.ttyname(s), os.isatty(s))' >> $out 2>&1
-if command -v script >/dev/null; then echo "script $(script -qc tty /dev/null | tr -d '\r')" >> $out; fi
-if command -v tmux >/dev/null; then
-    tmux -S /tmp/tmux new-session -d 'tty > /tmp/tty; exec sleep 60'
-    i=0; while [ ! -s /tmp/tty ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
-    echo "tmux $(cat /tmp/tty)" >> $out
-    tmux -S /tmp/tmux kill-server
-fi
-"#;
-    let Some(out) = prompt_on_this_host(script, false) else { eprintln!("skipped: no box, compiler or Python here"); return };
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[..3], ["pts ptmx", "ptmx pts/ptmx", "python /dev/pts/0 True"], "{out}");
-    for line in &lines[3..] {
-        assert!(line.starts_with("script /dev/pts/") || line.starts_with("tmux /dev/pts/"), "{out}");
-    }
 }
 
 /// This host's shell and `programs`, each with the libraries it loads at the same paths, copied into `root`: a

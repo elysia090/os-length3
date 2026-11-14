@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {aheadFor} from './ahead.ts';
-import type {Index} from './userland.ts';
+import {aheadFor} from '../ahead.ts';
+import type {Index} from '../shape.ts';
 
 /** An index of these programs (each executable), the hot ones translated in the release. */
 function index(programs: string[], hot: string[] = ['/usr/bin/busybox', '/usr/bin/git']): Index {

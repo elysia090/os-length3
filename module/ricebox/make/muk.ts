@@ -4,17 +4,17 @@
 // which. A root's programs run in a box muk makes, in a page as on Linux (the same program, translated there as
 // the root's own are); it is served beside the root until a root is released that carries it.
 //
-//   node scripts/muk.ts [WEB]     WEB: the web root (public/webroot)
+//   node module/ricebox/make/muk.ts [WEB]     WEB: the web root (public/webroot)
 //
 // By the Vite plugin (why/app/vite.config.ts) at each dev-server start and build, where there is a web root; and by
-// what checks the root's programs in node (webroot-runnable.ts).
+// what checks the root's programs in node (runnable.ts).
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const OS = fileURLToPath(new URL('..', import.meta.url));
+const OS = fileURLToPath(new URL('../../..', import.meta.url));
 const SOURCES = ['module/muk/src', 'module/lib'].map((p) => join(OS, p));
 
 /** Where muk is built (CARGO_TARGET_DIR is honoured, as what is made is kept there). */

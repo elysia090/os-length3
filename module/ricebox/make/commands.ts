@@ -1,6 +1,6 @@
 // What a Prompt can do, command by command (issue #80's list, in its kinds): each tried by a line of sh that uses it
 // as a person would, run under muk as a browser has it (in node, from the web root) and natively in the same
-// root, each in the same box made by the same muk (webroot-runnable.ts), and the two compared. A command is marked by what was seen, never by what is hoped:
+// root, each in the same box made by the same muk (runnable.ts), and the two compared. A command is marked by what was seen, never by what is hoped:
 //
 //   +  runs here: every line that uses it ends as natively, saying the same
 //   t  draws on a screen (an editor, a pager, top): runs where the Prompt is a terminal (the app's on the web, one
@@ -12,7 +12,7 @@
 // The table it writes, module/ricebox/etc/length3/commands, is what `help` shows (otter): one line a command, its name,
 // its kind, its mark and what instead, by tabs. The root's builtins of the shell are a kind of their own.
 //
-//   node scripts/commands.ts WEB ROOT_DIR [--only REGEX] [--jobs N] [--seconds N] [--write | --check]
+//   node module/ricebox/make/commands.ts WEB ROOT_DIR [--only REGEX] [--jobs N] [--seconds N] [--write | --check]
 //
 // WEB is the web root (public/webroot), ROOT_DIR the same root unpacked; --write writes the table, --check fails
 // when the table kept is not what was seen (CI: so `help` never says more, or less, than is so); without either, the
@@ -22,10 +22,10 @@ import {readFileSync, writeFileSync} from 'node:fs';
 import {availableParallelism} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import {builtMuk, nativeBox, type Asked} from './webroot-runnable.ts';
-import {openWeb} from './webroot-tree.ts';
+import {builtMuk, nativeBox, type Asked} from './runnable.ts';
+import {openWeb} from './tree.ts';
 
-const OS = fileURLToPath(new URL('..', import.meta.url));
+const OS = fileURLToPath(new URL('../../..', import.meta.url));
 const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'LANG=C.UTF-8', 'TERM=xterm-256color', 'USER=root', 'SHELL=/bin/sh'];
 
 /** A kind of command, as #80 names it, and the commands of it, in its order. */
@@ -210,7 +210,7 @@ export interface Tried { line: Line; same: boolean; native: Ended; here: Ended &
 let muk: string | null = null;
 
 /**
- * A line in its box natively, then in the same box on sods' Linux (webroot-runnable.ts: its `bundle` is the box,
+ * A line in its box natively, then in the same box on sods' Linux (runnable.ts: its `bundle` is the box,
  * `muk run` of it its making on both, the same environment in each: what a person's Prompt has).
  */
 async function attempt(line: Line, web: string, root: string, seconds: number): Promise<Tried> {
@@ -219,7 +219,7 @@ async function attempt(line: Line, web: string, root: string, seconds: number): 
   const native = await run(there.cmd, there.argv, seconds, {});
   there.done();
   const asked: Asked = {web, path: '/bin/sh', args: ['-c', line.line], translator: `${OS}module/sods/target/wasm32-unknown-unknown/release/sods.wasm`, fresh: false, kept: null, env: ENV, muk};
-  const child = await run(process.execPath, [`${OS}scripts/webroot-runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, SODS_INLINE: '1'});
+  const child = await run(process.execPath, [`${OS}module/ricebox/make/runnable.ts`, '--child', JSON.stringify(asked)], seconds, {...process.env, SODS_INLINE: '1'});
   let said: {status: number | null; stdout: string; stderr: string; error: string | null} | null = null;
   try { said = JSON.parse(child.stdout); } catch { /* it ended without saying: killed, or the kernel threw */ }
   // A wait status: an exit's code, or 128 and the signal, as a shell says it.
@@ -274,14 +274,14 @@ export function table(m: ReturnType<typeof marks>, builtins: string[]): string {
   });
   // The shell's builtins, each there unless the line that asks for them all named it as not.
   for (const b of BUILTINS) lines.push(`${b}\tbuiltin\t${builtins.includes(b) ? '-' : '+'}\t`);
-  return `# What a Prompt runs, as scripts/commands.ts saw it: name, kind, mark (+ runs, t needs a terminal, x not yet here, - not in the root), why or what instead.\n${lines.join('\n')}\n`;
+  return `# What a Prompt runs, as module/ricebox/make/commands.ts saw it: name, kind, mark (+ runs, t needs a terminal, x not yet here, - not in the root), why or what instead.\n${lines.join('\n')}\n`;
 }
 
 async function main() {
   const {values, positionals} = parseArgs({allowPositionals: true, options: {only: {type: 'string'}, jobs: {type: 'string'}, seconds: {type: 'string'},
     write: {type: 'boolean'}, check: {type: 'boolean'}}});
   const [web, root] = positionals;
-  if (!web || !root) { console.error('usage: node scripts/commands.ts WEB ROOT_DIR [--only REGEX] [--jobs N] [--seconds N] [--write | --check]'); process.exit(2); }
+  if (!web || !root) { console.error('usage: node module/ricebox/make/commands.ts WEB ROOT_DIR [--only REGEX] [--jobs N] [--seconds N] [--write | --check]'); process.exit(2); }
   const only = values.only ? new RegExp(values.only) : null;
   const jobs = Number(values.jobs ?? Math.max(1, availableParallelism() - 1)), seconds = Number(values.seconds ?? 60);
   const w = openWeb(web);
@@ -310,7 +310,7 @@ async function main() {
     const kept = readFileSync(at, 'utf8').split('\n'), seen = out.split('\n');
     const differ = seen.filter((l) => !kept.includes(l));
     if (!differ.length && kept.length === seen.length) { console.log(`module/ricebox/etc/length3/commands: what was seen, all ${seen.length - 2} commands`); return; }
-    console.error(`module/ricebox/etc/length3/commands is not what was seen (node scripts/commands.ts ${web} ${root} --write makes it so):\n${differ.map((l) => `  ${l}`).join('\n')}`);
+    console.error(`module/ricebox/etc/length3/commands is not what was seen (node module/ricebox/make/commands.ts ${web} ${root} --write makes it so):\n${differ.map((l) => `  ${l}`).join('\n')}`);
     process.exit(1);
   }
   writeFileSync(at, out);

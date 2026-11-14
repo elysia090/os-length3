@@ -6,7 +6,7 @@
 //                        without set-id bits, symlinks as they are, a hard link the
 //                        same bytes as its file. No other kind is part of a root.
 //   nativeTree(DIR)      a root already installed (<data>/system/<sha256>/root)
-//   webTree(DIR)         the web root (scripts/webroot.ts): its index,
+//   webTree(DIR)         the web root (module/ricebox/make/layers.ts): its index,
 //                        and every file decoded from its pack
 //
 // Each gives the same shape, one entry a path (sorted):
@@ -18,8 +18,8 @@ import {createReadStream, lstatSync, openSync, readFileSync, readSync, readdirSy
 import {join} from 'node:path';
 import {createZstdDecompress, gunzipSync, zstdDecompressSync} from 'node:zlib';
 import type {Readable} from 'node:stream';
-import {checkPacks, checkedRange} from '../module/ricebox/layers/table.ts';
-import type {About, Blob, Index} from '../why/app/prompt/userland.ts';
+import {checkPacks, checkedRange} from '../layers/table.ts';
+import type {About, Blob, Index} from '../layers/shape.ts';
 
 export type {About, Index};
 /** A file of the web root, as its index names it. */
@@ -115,7 +115,7 @@ const inRoot = (name: string) => {
 /**
  * The root in a release tarball, as why installs it, and its manifest file:
  * {entries, manifest}. `each(entry, bytes)` sees every file's bytes once
- * (scripts/webroot.ts packs them from here).
+ * (module/ricebox/make/layers.ts packs them from here).
  */
 export async function readTarball(file: string, each: (entry: Entry, bytes: Buffer | null) => void = () => {}): Promise<Tree> {
   const entries: Entry[] = [];

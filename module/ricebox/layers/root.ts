@@ -1,47 +1,10 @@
+import {createAhead} from './ahead.ts';
 import {digest, download as fetchFile, Fatal, type Check} from './fetch.ts';
+import {FIRST} from './first.ts';
 import {canRunApart} from '../../sods/runtime/host.ts';
 import {MORE, madeBy, packMain, packMore, prepare, unpackMore, type Segment} from '../../sods/runtime/translate.ts';
-export type {Segment};
-export interface Blob { path: string; sha256: string; size: number; bytes: number }
-export interface About {
-  name: string; version: string;
-  /** The root this why was made from, by the digest why/core/src/root pins: the same as the app's. */
-  sha256: string; bytes: number; file: string;
-  root: {name: string; profile: string};
-  index: {path: string; sha256: string; size: number};
-  translator: {name: string; version: string};
-}
-interface Translation { path: string; sha256: string; elf: Blob; wasm: Blob }
-export interface Index {
-  name: string; version: string; sha256: string; codec: string;
-  packs: {name: string; owner: string; bytes: number}[];
-  dirs: {path: string; mode: number}[];
-  links: {path: string; target: string}[];
-  files: {path: string; mode: number; size: number; pack: number; at: number; len: number; raw?: boolean}[];
-  translator: Blob & {name: string; version: string; wasm: string};
-  translations: Translation[];
-}
-export interface Webroot {
-  about: About;
-  index: Index;
-  translator: WebAssembly.Module;
-  /**
-   * What the Worker is given beside the packs: each hot program at its own path in the root, with its translation
-   * (its module, its data kept outside it, and whether its memory is shared: threads in Workers of their own). Its
-   * bytes are the root's own (checked against its digest), so the Worker puts them in the root's file (`root`), which
-   * each of its names shares: git's commands are names of git, and each runs git's translation.
-   */
-  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean; root?: boolean; more?: More[]}[];
-  /** Where the packs are (the Worker reads them under packs/). */
-  url: string;
-  /**
-   * The maker of a box (muk: an x86-64 Linux program, as every program of the root is), where the root is served
-   * with one beside it (muk.json: its place and digest): what runs the root runs it in a box this makes, translated
-   * as the root's programs are. It is beside the root, not in it, until a root is released that carries it.
-   */
-  muk: Uint8Array | null;
-}
-export interface More { module: WebAssembly.Module; bytes: Uint8Array; base: number }
+export type {Segment, Blob, About, Translation, Index, Webroot, More} from './shape.ts';
+import type {About, Blob, Index, More, Translation, Webroot} from './shape.ts';
 export type Stage =
   | {at: 'fetch'; got: number; of: number; quiet?: number}
   | {at: 'retry'; attempt: number; why: string; got: number; of: number}
@@ -51,7 +14,8 @@ export type Stage =
 interface Plan { sha256: string; index: About['index']; translator: Index['translator']; first: {t: Translation; mode: number}[] }
 export interface RootConfig {
   base: string;
-  first: readonly string[];
+  /** The hot programs a first start waits for (first.ts, unless said). */
+  first?: readonly string[];
   usedKey: string;
   planKey: string;
   oldKeys?: readonly string[];
@@ -62,9 +26,15 @@ export interface RootConfig {
 }
 
 /** A root and its sessions, supplied with the product's address, startup choices and words. */
+/** A box as it is written for muk (../src/bundle.rs): config.json, and the words muk is run with. */
+export interface Box { config: string; words: string[] }
+/** Where a page's bundle is, in the tree its Worker's kernel is given: under the tmpfs the box has at /run. */
+export const BOX = '/run/box';
+
 export function createRoot(config: RootConfig) {
   const download: typeof fetchFile = (url, expect, progress, options) =>
     fetchFile(url, expect, progress, {message: config.message, ...options});
+  const first0 = config.first ?? FIRST;
 
 
 
@@ -77,7 +47,7 @@ const threadsApart = canRunApart;
 
 // why, the one thing the Prompt depends on: the release root the desktop app
 // installs (why/core/src/root pins it, one entry for both), read here as the
-// browser reads it (scripts/webroot.ts). webroot.json says which why it is (its
+// browser reads it (module/ricebox/make/layers.ts). webroot.json says which why it is (its
 // version, and the sha256 of the root it was made from) and names its index
 // by digest; everything else is named by its digest too:
 //
@@ -595,7 +565,7 @@ let warming: Promise<void> | null = null;
 function warm(index: Index) {
   warming ??= (async () => {
     for (const t of index.translations) {
-      if (config.first.includes(t.path) || later.has(t.path)) continue;
+      if (first0.includes(t.path) || later.has(t.path)) continue;
       const f = await hot(t, index.files.find((x) => x.path === t.path)?.mode ?? 0o755, index.translator.sha256, undefined, idle).catch(() => null);
       if (!f?.module) continue;
       const file = taken(f);
@@ -663,7 +633,7 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
   const index = JSON.parse(new TextDecoder().decode(index0)) as Index;
   if (index.sha256 !== a.sha256 || index.version !== a.version) throw new Fatal(`webroot: its index is of another root (${index.version})`);
   const modeOf = (path: string) => index.files.find((f) => f.path === path)?.mode ?? 0o755;
-  const first = index.translations.filter((t) => config.first.includes(t.path));
+  const first = index.translations.filter((t) => first0.includes(t.path));
   const muk = await maker;
   const live = new Set([`${BASE}${a.index.path}`, `${BASE}${index.translator.path}`, ...(muk ? [`${BASE}${muk.path}`] : []),
     ...index.translations.flatMap((t) => [`${BASE}${t.elf.path}`, `${BASE}${t.wasm.path}`, moreURL(t, index.translator.sha256, threadsApart())])]);
@@ -716,5 +686,25 @@ const filesNow = (webroot: Webroot): Webroot['files'] => [...webroot.files, ...l
 const withMore = (f: Webroot['files'][number]): Webroot['files'][number] => ({...f, more: more.get(f.path)?.list ?? []});
 
 
-  return {threadsApart, watchLoad, about, keptWebroot, keepMore, keptNow, originOf, translationKept, keepTranslation, keepReached, usedKept, hearLater, rootIndex, loadWebroot, warmWebroot, filesNow};
+  /** A Worker that runs the root (worker.ts): given the root and its maker, and the box to make. */
+  const rootWorker = (): Worker => new Worker(new URL('./worker.ts', import.meta.url), {type: 'module'});
+  /**
+   * A Worker readied ahead of the start that will take it: the translator loaded, the root and its maker in place,
+   * and a start rehearsed in the box `rehearse` (the same shell in the same box, so what a start runs is compiled
+   * when it comes). One at a time; `takeReady` gives it to the start, with the programs it was given.
+   */
+  let spare: {worker: Worker; given: Set<string>} | null = null;
+  function readyWorker(webroot: Webroot, rehearse: Box): void {
+    if (spare) return;
+    const worker = rootWorker(), files = filesNow(webroot);
+    worker.postMessage({type: 'warm'});
+    worker.postMessage({type: 'ready', translator: webroot.translator, files, root: {index: webroot.index, url: webroot.url}, muk: webroot.muk, rehearse});
+    spare = {worker, given: new Set(files.map((f) => f.path))};
+  }
+  function takeReady(): {worker: Worker; given: Set<string>} | null {
+    const value = spare; spare = null; return value;
+  }
+
+  return {threadsApart, watchLoad, about, keptWebroot, keepMore, keptNow, originOf, translationKept, keepTranslation, keepReached, usedKept, hearLater, rootIndex, loadWebroot, warmWebroot, filesNow,
+    rootWorker, readyWorker, takeReady, ...createAhead({keepTranslation, originOf, threadsApart, translationKept})};
 }

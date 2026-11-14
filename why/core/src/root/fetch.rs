@@ -1,8 +1,7 @@
 //! A root fetched over the network (the Remote by digest first, then its makers), room asked for before a byte
 //! comes, then installed and made the one Prompts use. A browser's core fetches none: the web reads why its own way.
 
-use super::held::{Installed, system_dir, use_held};
-use super::install::{install, install_distro};
+use super::{install_distro, put_release, system_dir, use_held, Installed};
 use super::pins::{by_digest, Distro, RELEASES, sources};
 use std::fs;
 use std::path::Path;
@@ -21,7 +20,8 @@ pub fn fetch_and_install(data: &Path, remote: &str, room: impl FnOnce(u64), prog
     // (`sources`). Whichever gives it, the bytes are only kept if they are
     // the pinned digest.
     fetch_first(&sources(remote, r), r.sha256, r.bytes, &bundle, progress)?;
-    let installed = install(data, &bundle)?;
+    // (taken at its pin as it came, and checked against it again as it is unpacked, through the handle it is read by)
+    let installed = put_release(data, r, &bundle)?;
     let _ = fs::remove_file(&bundle);
     Ok(installed)
 }

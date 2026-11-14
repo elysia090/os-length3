@@ -3,16 +3,16 @@
 // a device and the web root, file by file from its packs, and
 // says where they differ; exits 1 when they do.
 //
-//   node scripts/webroot-parity.ts ROOT WEB [--manifests DIR]
+//   node module/ricebox/make/parity.ts ROOT WEB [--manifests DIR]
 //
 // ROOT  the release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst),
 //       or a root installed from it (<data>/system/<sha256>/root)
-// WEB   the web root (public/webroot, scripts/webroot.ts), each pack checked
+// WEB   the web root (public/webroot, module/ricebox/make/layers.ts), each pack checked
 //       whole against its table (module/ricebox/layers/table.ts)
 // --manifests DIR  writes native.txt and web.txt there, one line a path
 import {mkdirSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
-import {counts, differences, manifestOf, nativeTree, sha256, webTree} from './webroot-tree.ts';
+import {counts, differences, manifestOf, nativeTree, sha256, webTree} from './tree.ts';
 import {readFileSync} from 'node:fs';
 
 const args = process.argv.slice(2);

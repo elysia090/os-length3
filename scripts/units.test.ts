@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {existsSync} from 'node:fs';
 import {OWED, UNDER_RICEBOX, UNITS, check, reaches, unitOf} from './units.ts';
 
 test('every file of code is one unit\'s, or a test, a script or something made (scripts/units.ts)', () => {
@@ -11,13 +12,21 @@ test('a unit takes only from the units the table lets it, besides what is owed w
   assert.deepEqual(check().crossings.map((c) => c.join(' ')).filter((c) => !owed.has(c)), []);
 });
 
-test('muk and prompt: each a program and nothing of why\'s; what why asks of them (the bundle, a Prompt\'s record) is why\'s own', () => {
+test('muk and prompt: each a program and nothing of why\'s; the root in a box is ricebox\'s to run, and why only lends', () => {
   const unit = (name: string) => UNITS.find((u) => u.name === name)!;
-  // The box is made by muk and its terminal held by prompt, each its own folder and no file of why's: why's core
-  // writes the bundle and starts them (prompt/bundle.rs, prompt/start.rs), and makes no box itself.
+  // The box is made by muk and its terminal held by prompt, each its own folder and no file of why's. The bundle
+  // muk is given, the root's shell, and the root run in a box (on this machine, in a page's Worker) are ricebox's;
+  // why's core says what it lends and tells, and keeps a Prompt's record.
   assert.deepEqual(unit('muk').holds, ['module/muk']);
   assert.deepEqual(unit('prompt').holds, ['module/prompt']);
-  for (const f of ['bundle.rs', 'start.rs', 'running.rs', 'writes.rs']) assert.equal(unitOf(`why/core/src/prompt/${f}`)?.name, 'app');
+  for (const f of ['src/bundle.rs', 'src/run.rs', 'src/held.rs', 'src/unpack.rs', 'layers/worker.ts', 'layers/ahead.ts', 'layers/first.ts', 'layers/tree.ts']) {
+    assert.ok(existsSync(new URL(`../module/ricebox/${f}`, import.meta.url)), f);
+    assert.equal(unitOf(`module/ricebox/${f}`)?.name, 'ricebox');
+  }
+  for (const gone of ['why/core/src/prompt/launch.rs', 'why/core/src/prompt/bundle.rs', 'why/core/src/root/unpack.rs', 'why/app/host/prompt/kernel.worker.ts', 'why/app/prompt/ahead.ts']) {
+    assert.ok(!existsSync(new URL(`../${gone}`, import.meta.url)), `${gone} is why's no more`);
+  }
+  for (const f of ['start.rs', 'running.rs', 'writes.rs']) assert.equal(unitOf(`why/core/src/prompt/${f}`)?.name, 'app');
   assert.equal(unitOf('why/app/prompt/userland.ts')?.name, 'app');
   assert.equal(unitOf('module/prompt/README.md')?.name, 'prompt');
   assert.deepEqual(unit('prompt').takes, []);

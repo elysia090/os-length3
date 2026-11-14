@@ -56,7 +56,7 @@ export class Mirror {
 
   /**
    * What changed in the guest since the last call; null when nothing did. Asked as often as anything is said (before
-   * each piece of output: kernel.worker.ts), so nothing changed anywhere is told without looking.
+   * each piece of output: module/ricebox/layers/worker.ts), so nothing changed anywhere is told without looking.
    */
   changes(): Changes | null {
     if (counted.changes === this.at && !counted.mapped) return null;

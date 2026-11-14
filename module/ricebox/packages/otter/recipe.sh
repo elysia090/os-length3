@@ -1,7 +1,7 @@
 # otter: what a Prompt has, and what each thing is: `help` in the Prompt's shell (/etc/length3/shrc), and whatis and
 # apropos by their links. Made from this repository's own source (otter/src/otter.c, a unit of C with no C library,
 # on lib's three headers, its own checks in otter/test), with the table it reads
-# (module/ricebox/etc/length3/commands, which scripts/commands.ts writes from what each command did under the browser's kernel
+# (module/ricebox/etc/length3/commands, which module/ricebox/make/commands.ts writes from what each command did under the browser's kernel
 # and natively) and the root's tldr pages for what each thing is.
 version=1
 inputs="../lib/word.h ../lib/sys.h ../lib/io.h ../lib/build.sh ../otter/src/otter.c

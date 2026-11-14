@@ -1,23 +1,19 @@
 // "/" is the root of the whole system, the same tree the Prompt's shell
-// sees: in the app, the root installed on this machine (why/core/src/root/
-// list); in a browser, why's root (userland.ts), read from its index. Each top-level
-// directory says where it comes from: the distribution (why), the kernel
-// (/dev, /proc, /sys, made when a shell starts), the person's repos
-// (/root), or nothing (/tmp, /run start empty).
+// sees: in the app, the root installed on this machine (ricebox's list,
+// through the core); in a browser, the root as its index has it (ricebox's
+// layers/tree.ts). Each top-level directory says where it comes from: the
+// distribution, the kernel (/dev, /proc, /sys, made when a box starts) or
+// nothing (/tmp, /run start empty), which ricebox says; or the person's
+// repos (/root), which is why's to say.
 
+import {devices, madeBy, treeOf, type TreeEntry} from '../../../module/ricebox/layers/tree.ts';
 import {native, rootHere} from '../host/host.ts';
 import {t} from '../i18n/i18n.ts';
 import {shownTree, store} from '../repos/repos.ts';
 
 export type Origin = 'distribution' | 'kernel' | 'repos' | 'empty';
 
-export interface SystemEntry {
-  name: string;
-  kind: 'dir' | 'file' | 'link' | 'device';
-  /** Absolute path. */
-  path: string;
-  size?: number;
-  target?: string;
+export interface SystemEntry extends TreeEntry {
   /** Top-level directories only. */
   origin?: Origin;
 }
@@ -30,10 +26,6 @@ export const ORIGIN_LABEL: Record<Origin, string> = {
   empty: 'empty',
 };
 
-/** What the kernel makes, and what starts empty, whatever the root has there. */
-const KERNEL = new Set(['dev', 'proc', 'sys']);
-const EMPTY = new Set(['tmp', 'run']);
-
 /** The repo and the path inside it, for a path under /root/<repo>. */
 export function inRepo(path: string): {repo: string; path: string} | null {
   const m = /^\/root\/([^/]+)(?:\/(.*))?$/.exec(path);
@@ -42,38 +34,26 @@ export function inRepo(path: string): {repo: string; path: string} | null {
 
 const join = (dir: string, name: string) => (dir === '/' ? `/${name}` : `${dir}/${name}`);
 
-/** Every entry of why's root under each directory, from its index (what why this build carries; none without one). */
+/** Every entry of the root under each directory, from its index (the root this build carries; none without one). */
 let distribution: Promise<Map<string, SystemEntry[]>> | null = null;
 async function root(): Promise<Map<string, SystemEntry[]>> {
-  // why's own module, brought when its root is first listed: the tree of / is drawn without the Prompt's machine.
+  // The root's own module, brought when it is first listed: the tree of / is drawn without the Prompt's machine.
   const index = await (await import('./userland.ts')).whyIndex();
   if (!index) throw new Error(t('Distribution not fetched'));
-  const under = new Map<string, SystemEntry[]>();
-  const add = (e: SystemEntry) => {
-    const dir = e.path.slice(0, e.path.lastIndexOf('/')) || '/';
-    if (!under.has(dir)) under.set(dir, []);
-    under.get(dir)!.push(e);
-  };
-  const name = (p: string) => p.slice(p.lastIndexOf('/') + 1);
-  for (const d of index.dirs) add({name: name(d.path), kind: 'dir', path: d.path});
-  for (const l of index.links) add({name: name(l.path), kind: 'link', path: l.path, target: l.target});
-  for (const f of index.files) add({name: name(f.path), kind: 'file', path: f.path, size: f.size});
-  for (const list of under.values()) list.sort((a, b) => a.name.localeCompare(b.name));
-  return under;
+  return treeOf(index);
 }
 
 /** At "/", each top-level directory says where it comes from. */
 function origins(path: string, entries: SystemEntry[]): SystemEntry[] {
   if (path !== '/') return entries;
-  return entries.map((e) => (e.kind !== 'dir' ? e : {...e,
-    origin: e.name === 'root' ? 'repos' : KERNEL.has(e.name) ? 'kernel' : EMPTY.has(e.name) ? 'empty' : 'distribution'}));
+  return entries.map((e) => (e.kind !== 'dir' ? e : {...e, origin: e.name === 'root' ? 'repos' : madeBy(e.name)}));
 }
 
 export async function list(path: string): Promise<SystemEntry[]> {
   if (path === '/root') {
     return (await store.names()).map((name) => ({name, kind: 'dir', path: `/root/${name}`}));
   }
-  if (path === '/dev') return ['null', 'random', 'urandom', 'zero'].map((name) => ({name, kind: 'device', path: `/dev/${name}`}));
+  if (path === '/dev') return devices();
   const at = inRepo(path);
   if (at) {
     return (await shownTree(at.repo, at.path)).map((e) => ({name: e.name, kind: e.kind, path: join(path, e.name), size: e.size}));

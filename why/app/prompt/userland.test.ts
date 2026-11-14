@@ -5,12 +5,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {gunzipSync} from 'node:zlib';
-import {makeWebroot, standIn} from '../../../scripts/webroot-standin.ts';
+import {makeWebroot, standIn} from '../../../module/ricebox/make/standin.ts';
 import type {About, Index} from './userland.ts';
 
 // What a Prompt in a browser is given of why: the root's own files at their
 // own paths, nothing in place of them. Served from why made from a stand-in
-// root (scripts/webroot-standin.ts), as the page fetches it.
+// root (module/ricebox/make/standin.ts), as the page fetches it.
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 let work = '', out = '';

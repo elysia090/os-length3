@@ -1,6 +1,6 @@
 // The web root (public/webroot): why for the browser's Prompt, taken from the release of the
 // newest why this tree pins: the same root the desktop app installs, as the browser reads it
-// (scripts/webroot.ts). It is made where Rust is, by the release
+// (module/ricebox/make/layers.ts). It is made where Rust is, by the release
 // (.github/workflows/release.yml), and is the OS that version is; a build
 // that only has Node (Cloudflare's Workers Builds) takes it from it, and
 // takes only the why this tree pins: why/core/src/root/pins.rs
@@ -25,7 +25,7 @@ import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {pinnedRoots} from '../why/remote/ship/releases.ts';
 import {checkPacks} from '../module/ricebox/layers/table.ts';
-import {tarMembers, type About, type Index} from './webroot-tree.ts';
+import {tarMembers, type About, type Index} from '../module/ricebox/make/tree.ts';
 
 const here = new URL('..', import.meta.url).pathname;
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';

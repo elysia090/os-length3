@@ -1,7 +1,7 @@
 // Pin the why this tree releases: its entry is why/core/src/root/pins.rs's RELEASES,
 // the whole of its pin for both ways in: the root (the bundle the
 // desktop app installs, by sha256 and size) and `web`, the sha256 of the
-// index the browser reads the same root by (scripts/webroot.ts, made from that
+// index the browser reads the same root by (module/ricebox/make/layers.ts, made from that
 // bundle). why and the app built from this tree install that root (and no
 // other new one), and the web build takes only that index
 // (scripts/prompt-files.ts). The release does it before building what

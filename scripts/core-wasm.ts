@@ -12,7 +12,8 @@ const TARGET = 'wasm32-wasip1';
 const PROFILE = 'web';
 const BUILD = ['build', '--profile', PROFILE, '-p', 'why-core-web', '--target', TARGET];
 // templates.json is compiled in (core/src/templates.rs include_str!).
-const SOURCES = ['why/core/src', 'why/core/web/src', 'why/core/Cargo.toml', 'why/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'why/shared/templates.json'].map((p) => join(OS, p));
+// (and ricebox's own Rust, which the core is made with: the bundle a page asks it for is ricebox's to write)
+const SOURCES = ['why/core/src', 'why/core/web/src', 'why/core/Cargo.toml', 'why/core/web/Cargo.toml', 'module/ricebox/src', 'module/ricebox/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'why/shared/templates.json'].map((p) => join(OS, p));
 
 /** Where cargo puts the module (CARGO_TARGET_DIR is honoured, as cargo honours it). */
 export function coreWasmPath(): string {

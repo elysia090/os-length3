@@ -29,12 +29,12 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
-# The web root (scripts/webroot.ts): every file but webroot.json is named by its digest, so it never changes under its name and
+# The web root (module/ricebox/make/layers.ts): every file but webroot.json is named by its digest, so it never changes under its name and
 # is kept a year; the Worker's Range requests into a pack are answered from what the browser has of it.
 # webroot.json says which why this build carries: asked again each time.
 /webroot/webroot.json
   Cache-Control: no-cache
-# muk.json says which blob the box's maker is (scripts/muk.ts): asked again each time, as webroot.json is.
+# muk.json says which blob the box's maker is (module/ricebox/make/muk.ts): asked again each time, as webroot.json is.
 /webroot/muk.json
   Cache-Control: no-cache
 /webroot/index-*

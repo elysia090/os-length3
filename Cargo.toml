@@ -1,7 +1,9 @@
 # One workspace for the app, the why command and the core they share, so the
-# app and the command can never disagree about what a repo or an issue is.
+# app and the command can never disagree about what a repo or an issue is; and
+# ricebox's own Rust (a root on a device, a root run in a box), which the core
+# is made with: it takes nothing of them, and is tested alone (cargo test -p ricebox).
 [workspace]
-members = ["why/core", "why/core/web", "why/cli", "why/desktop"]
+members = ["why/core", "why/core/web", "why/cli", "why/desktop", "module/ricebox"]
 resolver = "2"
 
 # Builds made while working (tests, checks, debug runs): this workspace's own code keeps its debug info, for a

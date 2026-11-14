@@ -25,6 +25,6 @@ once), and the outer terminal and the descriptors it was given are left as they 
 program, so it is the same where the terminals are Linux's (`sh test/prompt.sh`) and where they are sods' Linux's
 (`sh ../sods/test/prompt/run.sh`: the same prompt, translated, with signalfd and the terminals answered there).
 
-The product starts it so: `why prompt` at a terminal has muk make the box a terminal of its own, takes its other end
-from the socket muk sends it over, and runs `prompt attach` on it (`why/core/src/prompt/start.rs`). In a page there
+It is started so: a root run at a terminal (ricebox: `module/ricebox/src/run.rs`, as `why prompt` asks) has muk make
+the box a terminal of its own, takes its other end from the socket muk sends it over, and runs `prompt attach` on it. In a page there
 is no `prompt`: the page is the terminal, and its kernel's console is lent to the box by its name.

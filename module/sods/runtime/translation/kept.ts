@@ -1,5 +1,5 @@
 // A translation as it is kept between runs: written by whoever keeps it (a page: ricebox's layers/root.ts; node:
-// scripts/webroot-runnable.ts), read back by a kernel through its keeper (../linux/keeper.ts), which checks each copy
+// module/ricebox/make/runnable.ts), read back by a kernel through its keeper (../linux/keeper.ts), which checks each copy
 // against the SHA-256 that seals it. These are the bodies.
 //
 //   main: 'L3T1', its data segments (count, or 0xffffffff when they are in the module, then offset, length and

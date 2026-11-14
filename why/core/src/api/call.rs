@@ -129,10 +129,11 @@ pub fn call(name: &str, args: &Value) -> crate::Result<Value> {
         },
 
         // The bundle a page's Prompt is started with, where the page runs muk itself (on sods' Linux): config.json and
-        // muk's words, written by the one function that writes them for every host (prompt/bundle.rs).
+        // muk's words, written by the one function that writes them for every host (ricebox's bundle.rs), of what why
+        // lends and tells (prompt/mod.rs).
         "prompt_bundle" => {
-            let asked: crate::prompt::bundle::Asked = serde_json::from_value(args.clone()).map_err(|e| format!("prompt_bundle: {e}"))?;
-            let (config, words) = crate::prompt::bundle::asked(&asked);
+            let asked: crate::prompt::Asked = serde_json::from_value(args.clone()).map_err(|e| format!("prompt_bundle: {e}"))?;
+            let (config, words) = crate::prompt::asked(&asked);
             Ok(json!({"config": config, "words": words}))
         }
 
