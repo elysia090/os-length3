@@ -466,14 +466,17 @@ test('the band\'s >_ brings the terminal back from wherever the desk is turned: 
   await expect.poll(() => desk.evaluate((d) => d.scrollLeft)).toBe(0);
 });
 
-test('a piece in sight pressed is in hand where it lies, the caret where it was pressed, and nothing on the desk moves; one cut by the window\'s edge is brought in by as little as shows it, in whole cells; scrolled, the desk keeps what is in hand and rests on the grid', async ({app}) => {
+test('a piece whole in sight pressed is in hand where it lies, the caret where it was pressed: nothing moves; one cut by the window\'s edge is brought in by the nearest rest that shows it whole; scrolled by hand, the desk rests with the nearest piece at its edge and keeps what is in hand', async ({app}) => {
   await app.rail.go('forge');
-  const box = (key: string) => app.forge.piece(key), desk = app.forge.desk;
+  const box = (key: string) => app.forge.piece(key), desk = app.forge.desk, pitch = WIDTH + GAP;
+  // Where each piece is in the window, and its size.
   const lie = () => desk.locator('.desk-box').evaluateAll((bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]; }));
   await app.forge.promptBox.click();
   await expect(box('term')).toHaveClass(/held/);
-  // The file beside it, in sight: pressed in its text, it is in hand where it lies. No piece moves or changes size,
-  // then or a moment after, and the desk is not turned.
+  await expect.poll(() => desk.evaluate((d) => d.scrollLeft)).toBe(0);
+  // The file beside it, whole in sight: pressed in its text, it is in hand where it lies, the keyboard in it. No
+  // piece moves or changes size, then or a moment after, and the desk is not turned: what is pressed does not go from
+  // under the hand that pressed it.
   const own = app.forge.editor('README.md');
   const before = await lie();
   const text = (await own.boundingBox())!;
@@ -484,27 +487,22 @@ test('a piece in sight pressed is in hand where it lies, the caret where it was 
   await app.page.waitForTimeout(600);
   expect(await lie()).toEqual(before);
   expect(await desk.evaluate((d) => d.scrollLeft)).toBe(0);
-  // The last file is cut by the window's edge: taken in hand, the desk turns only as far as shows it and its shadow,
-  // in whole cells (the pieces stay on the desk's dots).
+  // The last file is cut by the window's edge or past it: taken in hand, the desk turns to the nearest rest (a piece
+  // at its edge) that shows it and its shadow whole.
   const keys = await desk.locator('.desk-box').evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.key!));
-  const last = keys.at(-1)!;
+  const last = keys.at(-1)!, face = (await desk.evaluate((d) => d.clientWidth));
+  const rest = pitch * Math.max(0, Math.ceil(((keys.length - 1) * pitch + WIDTH + SHADOW - face) / pitch));
   await app.forge.editor(last).focus();
   await expect(box(last)).toHaveClass(/held/);
-  await expect.poll(() => desk.evaluate((d) => d.scrollLeft)).toBeGreaterThan(0);
-  const room = async () => {
-    const [d, b] = [(await desk.boundingBox())!, (await box(last).boundingBox())!];
-    return Math.round(d.x + d.width - (b.x + b.width));
-  };
-  await expect.poll(room).toBeGreaterThanOrEqual(SHADOW);
-  // (At most to the row's end: the last piece's shadow, a cell of ground, and what makes the turn whole cells.)
-  expect(await room()).toBeLessThan(SHADOW + 2 * GRID);
-  expect(await desk.evaluate((d) => d.scrollLeft % 24)).toBe(0);
-  // Scrolled sideways, as anything is: the desk goes, what is in hand stays in hand with the keyboard in it; let go
-  // of between two lines of the grid, it comes to rest on the nearer.
-  const face = (await desk.boundingBox())!, turned = await desk.evaluate((d) => d.scrollLeft);
-  await app.page.mouse.move(face.x + face.width / 2, face.y + face.height - 12);
-  await app.page.mouse.wheel(-100, 0);
-  await expect.poll(() => desk.evaluate((d) => d.scrollLeft)).toBe(turned - 96);
+  await expect.poll(() => desk.evaluate((d) => d.scrollLeft)).toBe(rest);
+  const [d, b] = [(await desk.boundingBox())!, (await box(last).boundingBox())!];
+  expect(b.x).toBeGreaterThanOrEqual(d.x);
+  expect(b.x + b.width + SHADOW).toBeLessThanOrEqual(d.x + d.width);
+  // Scrolled sideways, as anything is, and let go between two pieces: the desk comes to rest with the nearer at its
+  // edge; what is in hand stays in hand with the keyboard in it.
+  await app.page.mouse.move(d.x + d.width / 2, d.y + d.height - 12);
+  await app.page.mouse.wheel(-pitch * .7, 0);
+  await expect.poll(() => desk.evaluate((d) => d.scrollLeft)).toBe(rest - pitch);
   await expect(box(last)).toHaveClass(/held/);
   await expect(app.forge.editor(last)).toBeFocused();
   // The desk is a row: it is never turned down.
@@ -512,7 +510,7 @@ test('a piece in sight pressed is in hand where it lies, the caret where it was 
   expect(await desk.evaluate((d) => d.scrollTop)).toBe(0);
 });
 
-test('the desk is a row on the grid: a piece\'s place is its number in the row, every piece one width and two cells from the next, every top on one line, whichever is in hand; turned to its end the last piece stands with its shadow in sight; it is not turned down', async ({app}) => {
+test('the desk is a row on the grid: a piece\'s place is its number in the row, every piece one width and two cells from the next, every top on one line, whichever is in hand; it turns as far as brings its last piece to the edge, and never down', async ({app}) => {
   await app.rail.go('forge');
   const desk = app.forge.desk;
   await expect(desk.locator('.desk-plane > .desk-box')).not.toHaveCount(0);
@@ -522,25 +520,23 @@ test('the desk is a row on the grid: a piece\'s place is its number in the row, 
     return {boxes, turned: [d.scrollLeft, d.scrollTop], room: [d.scrollWidth - d.clientWidth, d.scrollHeight - d.clientHeight], face: Math.round(face.width)};
   });
   const row = (n: number) => Array.from({length: n}, (_, i) => ({x: PAD + i * (WIDTH + GAP), y: TOP, w: WIDTH}));
-  // The terminal in hand, then a file: the row is the same row.
+  // The terminal in hand, then a file: the row is the same row, the desk turned to the one in hand.
   await app.forge.promptBox.click();
   await expect(app.forge.piece('term')).toHaveClass(/held/);
+  await expect.poll(async () => (await at()).turned).toEqual([0, 0]);
   const laid = await at();
-  expect(laid.turned).toEqual([0, 0]);
   expect(laid.boxes).toEqual(row(laid.boxes.length));
   await app.forge.editor('README.md').focus();
   await expect(app.forge.piece('README.md')).toHaveClass(/held/);
   await app.page.waitForTimeout(600);
+  expect((await at()).turned[0] % (WIDTH + GAP)).toBe(0);
   expect((await at()).boxes).toEqual(row(laid.boxes.length));
-  // Turned along as far as it goes: the last piece and its shadow in sight, the desk on the grid.
+  // Turned along as far as it goes: the last piece at the desk's edge, no further.
   await desk.evaluate((d) => { d.scrollLeft = d.scrollWidth; });
   await expect.poll(async () => { const a = await at(); return a.turned[0] === a.room[0]; }).toBe(true);
   const end = await at(), last = end.boxes.at(-1)!;
-  expect(end.room[0]).toBeGreaterThan(0);
+  expect(end.room[0]).toBe(last.x - PAD);
   expect(end.room[0] % GRID).toBe(0);
-  const room = end.face - (last.x - end.turned[0] + last.w);
-  expect(room).toBeGreaterThanOrEqual(SHADOW + GRID);
-  expect(room).toBeLessThan(SHADOW + 2 * GRID);
   // And back to its start; nothing lies under the row to turn down to.
   await desk.evaluate((d) => { d.scrollLeft = 0; });
   await expect.poll(async () => (await at()).turned).toEqual([0, 0]);

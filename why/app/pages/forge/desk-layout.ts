@@ -3,8 +3,8 @@
 // order they were opened (the terminal first), every one the same width, two cells between them, so a piece's place is
 // its number in the row and nothing else: x = n * (WIDTH + GAP). Every piece's top is on one line, a cell under the
 // band (its name stands in that cell); it is as tall as its lines, never lower than a cell over the window's foot,
-// what is under that scrolled to inside it. The desk is turned only to bring the piece taken in hand whole into
-// sight, in whole cells, by the shortest way.
+// what is under that scrolled to inside it. The desk rests only with a piece at its edge: a piece gone to that is
+// not whole in sight is brought in by the nearest such rest, and scrolled by hand the desk comes to rest at the nearest.
 // (Before: a terminal fourteen cells wide lying askew, wider while in hand; sheets twenty cells wide of 14 px code,
 // twice as large pressed twice; before that boxes 80 columns wide in columns, the one in hand brought to the middle.)
 
@@ -52,20 +52,47 @@ export function termHeight(hgt: number): number {
 }
 
 /**
- * How far the desk is turned (from `now`) to bring the piece from `x`, `w` wide, into sight on a face `face` wide, the
- * row ending at `end`: where it is while the piece and its shadow are in sight; else as little further, in whole
- * cells, as shows them; a piece wider than the face from its left. Never past the row's end.
+ * Where the desk rests: with a piece's left edge at its own (under the band's first key), and nowhere else. So how far
+ * it is turned is a whole number, which piece is at the edge, and what is out of sight is known from that: the next
+ * piece starts a width and two cells along, the one before ended two cells back.
+ *
+ * How far it is turned (from `now`) for the piece at `x`, `w` wide, gone to on a face `face` wide, the pieces starting
+ * at `starts`: where it is while that piece and its shadow are whole in sight (what is pressed does not go from under
+ * the hand that pressed it); else the nearest rest that shows it whole: the piece itself at the edge if it was before
+ * the edge, or the earliest piece at the edge that brings its far side in.
  */
-export function inSight(now: number, x: number, w: number, face: number, end: number): number {
-  // (Whole cells, always: turned, the pieces are still on the desk's dots.)
-  const most = Math.max(0, up(end - face)), left = x - PAD, right = up(x + w + SHADOW - face);
-  const to = now > left ? left : now < right ? Math.min(right, left) : now;
-  return Math.max(0, Math.min(most, to));
+export function turnedTo(now: number, x: number, w: number, face: number, starts: readonly number[]): number {
+  const left = x - PAD, far = x + w + SHADOW - face;
+  if (now <= left && now >= far) return now;
+  if (now > left) return left;
+  let to = left;
+  for (const s of starts) if (s - PAD >= far && s - PAD < to) to = s - PAD;
+  return to;
 }
 
-/** Where the desk rests, left to itself at `now` (a hand let go of it): the nearest line of the grid, so the pieces
- * are on the desk's dots. */
-export function atRest(now: number): number { return GRID * Math.round(now / GRID); }
+/** The piece at the desk's edge when the desk, let go of at `now`, comes to rest: the nearest of `starts`. */
+export function atRest(now: number, starts: readonly number[]): number {
+  let best = starts[0] ?? PAD;
+  for (const x of starts) if (Math.abs(x - PAD - now) < Math.abs(best - PAD - now)) best = x;
+  return best - PAD;
+}
+
+/** How wide the desk's plane is so that its last piece, at `last`, can stand at the edge of a face `face` wide. */
+export function planeWidth(last: number, face: number): number { return last - PAD + face; }
+
+/**
+ * How long the desk takes to go `far` px on a face `face` wide: a quarter of a second, and up to a sixth more as the
+ * way is longer, never over a face's worth. And how far along it is at `u` (0 to 1) of that time: as a spring with no
+ * bounce comes to rest (critically damped, as a hand moves a thing and stops it): off at once, most of the way in
+ * the first third, then settling. One law, for every move of the desk.
+ */
+export function turnTime(far: number, face: number): number { return 250 + 170 * Math.min(1, Math.abs(far) / Math.max(1, face)); }
+const SETTLE = 8;
+export function eased(u: number): number {
+  if (u <= 0) return 0;
+  if (u >= 1) return 1;
+  return (1 - (1 + SETTLE * u) * Math.exp(-SETTLE * u)) / (1 - (1 + SETTLE) * Math.exp(-SETTLE));
+}
 
 /** The piece after `from` (before it, `back`) as Tab goes along the row, round again. */
 export function tabbed(keys: readonly string[], from: string, back = false): string | null {

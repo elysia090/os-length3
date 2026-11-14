@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {atRest, CODE, GAP, GRID, inSight, LINE, next, row, SHADOW, tabbed, tallest, termHeight, WIDTH} from './desk-layout.ts';
+import {atRest, CODE, eased, GAP, GRID, LINE, next, planeWidth, row, SHADOW, tabbed, tallest, termHeight, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
 
 // The desk's places and how far it is turned (desk-layout.ts), as numbers.
 
@@ -35,22 +35,49 @@ test('a sheet is whole lines tall, its foot a cell over the face\'s', () => {
   assert.equal(termHeight(300), tallest(300));
 });
 
-test('the desk is turned only as far as brings the piece in hand whole into sight, in whole cells', () => {
-  const {at, end} = row(keys), face = 1488;
-  // The first two are in sight from the row's start: nothing moves.
-  assert.equal(inSight(0, at.get('term')!, WIDTH, face, end), 0);
-  assert.equal(inSight(0, at.get('a.c')!, WIDTH, face, end), 0);
-  // The third is cut by the face's edge: turned as little as shows it and its shadow.
-  const to = inSight(0, at.get('README.md')!, WIDTH, face, end);
-  assert.equal(to, GRID * Math.ceil((at.get('README.md')! + WIDTH + SHADOW - face) / GRID));
-  assert.ok(to > 0 && to % GRID === 0);
-  // Back to the terminal from there: turned back to the start.
-  assert.equal(inSight(to, at.get('term')!, WIDTH, face, end), 0);
-  // A piece wider than the face is read from its left.
-  assert.equal(inSight(0, at.get('a.c')!, WIDTH, 400, end), at.get('a.c')!);
-  // Let go of between two lines of the grid, the desk rests on the nearer.
-  assert.equal(atRest(130), 5 * GRID);
-  assert.equal(atRest(133), 6 * GRID);
+test('the desk rests with a piece at its edge and nowhere else; a piece whole in sight is gone to where it lies, one cut or out of sight by the nearest rest that shows it whole', () => {
+  const four = [...keys, 'Makefile'], {at} = row(four), starts = [...at.values()], pitch = WIDTH + GAP;
+  const go = (now: number, key: string, face: number) => turnedTo(now, at.get(key)!, WIDTH, face, starts);
+  // A whole screen (61 cells of desk): two pieces whole in sight. The second pressed: nothing moves.
+  const whole = 1536 - 48;
+  assert.equal(go(0, 'term', whole), 0);
+  assert.equal(go(0, 'a.c', whole), 0);
+  // The third is cut by the edge: brought in by one piece, the second now at the edge (not the third: the least move).
+  assert.equal(go(0, 'README.md', whole), pitch);
+  // The fourth from the start: the third at the edge.
+  assert.equal(go(0, 'Makefile', whole), 2 * pitch);
+  // Back to one before the edge: that one at the edge.
+  assert.equal(go(2 * pitch, 'term', whole), 0);
+  assert.equal(go(2 * pitch, 'a.c', whole), pitch);
+  // Half a screen (29 cells): one piece whole in sight. Any other gone to is at the edge.
+  const half = 768 - 48;
+  assert.equal(go(0, 'a.c', half), pitch);
+  assert.equal(go(pitch, 'Makefile', half), 3 * pitch);
+  // A phone (a piece as wide as the face has room for): the same.
+  const narrow = row(four, 13 * GRID), ns = [...narrow.at.values()];
+  assert.equal(turnedTo(0, narrow.at.get('a.c')!, 13 * GRID, 342, ns), 15 * GRID);
+  // Every rest is a piece's start, on the grid.
+  for (const face of [whole, half]) for (const from of starts) for (const key of four) { const to = go(from, key, face); assert.ok(starts.includes(to) && to % GRID === 0); }
+  // Scrolled by hand and let go, the desk comes to rest at the nearest piece.
+  assert.equal(atRest(0, starts), 0);
+  assert.equal(atRest(.49 * pitch, starts), 0);
+  assert.equal(atRest(.51 * pitch, starts), pitch);
+  assert.equal(atRest(99999, starts), 3 * pitch);
+  assert.equal(atRest(77, []), 0);
+  // The last piece can stand at the edge: the plane is that much wider than the row.
+  assert.equal(planeWidth(at.get('Makefile')!, whole) - whole, at.get('Makefile')!);
+});
+
+test('one law for every move of the desk: off at once, most of the way in the first third, at rest at the end; a longer way takes a little longer, never over 420 ms', () => {
+  assert.equal(eased(0), 0);
+  assert.equal(eased(1), 1);
+  assert.ok(eased(1 / 3) > .7 && eased(1 / 3) < .8);
+  assert.ok(eased(.05) > 0);
+  for (let u = 0; u < 1; u += .05) assert.ok(eased(u + .05) > eased(u));
+  assert.equal(turnTime(0, 1488), 250);
+  assert.equal(turnTime(744, 1488), 335);
+  assert.equal(turnTime(1488, 1488), 420);
+  assert.equal(turnTime(-9999, 1488), 420);
 });
 
 test('Tab goes along the row and round; an arrow to the next, and no further than the ends', () => {

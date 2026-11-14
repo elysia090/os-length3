@@ -8,8 +8,9 @@
    is drawn in a quieter line on the ground, its words a step quieter than ink (still read: a file beside the one
    written in is looked at). So what is not words (fill, shadow, edge) weighs eight times as much in the piece in
    hand as in any other, whatever is written in either, and nothing else asks to be looked at.
-   Nothing changes size and nothing lies askew. A piece moves only when one before it is taken off (it closes up, in
-   the time and the way the desk turns).
+   Nothing changes size and nothing lies askew. The desk rests only with a piece at its edge, the one gone to; its
+   ground goes with it (desk.ts moves the dots as the pieces move). A piece moves on the desk only when one before it
+   is taken off (it closes up, in the time and the way the desk turns).
    (Before: the terminal a sheet of ink askew at rest whatever was in hand, 14 px code, pieces twice as large
    pressed twice, set down with a shadow that shortened, the others jostling out of the way.) */
 body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--dots); background-size: var(--u) var(--u); }
@@ -21,13 +22,16 @@ body:has(> .page[data-place='forge'] > .desk-bench) { background-image: var(--do
 .work.bench.desk-bench > .center > .desk-room { flex: 1 1 0; height: auto; }
 /* Where the repo's desk is: the whole center. */
 .desk-room { position: relative; height: 100%; min-height: 0; }
-.desk { position: absolute; inset: 0 calc(-1 * var(--outer)) calc(-1 * var(--outer-bottom)) 0; overflow: auto hidden; scrollbar-width: none; overscroll-behavior-x: contain; outline: none; }
+/* Scrolled by hand, it comes to rest with a piece at its edge (the browser's own, with the hand's speed: where it
+   was going, the nearest piece). */
+.desk { position: absolute; inset: 0 calc(-1 * var(--outer)) calc(-1 * var(--outer-bottom)) 0; overflow: auto hidden; scrollbar-width: none; overscroll-behavior-x: contain; outline: none;
+  scroll-snap-type: x mandatory; }
 .desk::-webkit-scrollbar { display: none; }
 .desk-plane { position: absolute; left: 0; top: 0; width: 1px; height: 1px; }
-.desk-box { --line: var(--u); --t-code: 17px;
+.desk-box { --line: var(--u); --t-code: 17px; scroll-snap-align: start;
   position: absolute; left: 0; top: 0; box-sizing: border-box; padding: calc(var(--line) / 2) 0; border-radius: var(--r-sheet);
   background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px;
-  transition: translate 420ms cubic-bezier(.45, 0, .2, 1); }
+  transition: translate 420ms cubic-bezier(.2, 0, 0, 1); }
 .desk-box.held { background: var(--paper); color: var(--ink); outline-color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 @media (prefers-reduced-motion: reduce) { .desk-box { transition: none; } }
 /* Its name over its top-left corner, in the letters the desk's small words are set in, on the cell over the sheet (the

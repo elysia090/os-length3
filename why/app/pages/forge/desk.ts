@@ -6,7 +6,7 @@ import {fieldCarried} from '../../ui/caret.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
 import {t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
-import {atRest, GRID, inSight, next, PAD, row, SHADOW, tabbed, tallest, termHeight, TOP, WIDTH} from './desk-layout.ts';
+import {atRest, eased, GRID, next, PAD, planeWidth, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
 
 // A repo's desk, Forge's center: what is open lies in a row on dots, in the order it was opened, the terminal first;
 // every piece is one width (fifty letters), its name over its top-left corner, its top on one line. What is under a
@@ -15,10 +15,14 @@ import {atRest, GRID, inSight, next, PAD, row, SHADOW, tabbed, tallest, termHeig
 //   hand   One piece is in hand. It alone is filled, casts a shadow, has its colours and shows what can be done with
 //          it (its close); the rest are drawn in line on the ground. So the eye is where the hand is.
 //   go     A piece is gone to by pressing it (or ← → and Tab with the keyboard on the desk, Enter or a letter to go
-//          into it; Escape leaves a text for the desk). Going to a piece is the one thing that turns the desk: as
-//          little as shows it whole, in whole cells.
-//   look   The desk is looked along by scrolling it, as anything is; let go of, it rests on the grid.
-// Nothing changes size, and nothing moves but the desk under the piece gone to. Where each piece lies, and how far
+//          into it; Escape leaves a text for the desk). Whole in sight, it is in hand where it lies: what is
+//          pressed never goes from under the hand that pressed it. Cut by the window's edge or past it, it is
+//          brought in by the nearest rest that shows it whole.
+//   look   The desk is looked along by scrolling it, as anything is; let go of, it comes to rest with the nearest
+//          piece at its edge. So the desk rests in as many places as it has pieces and no others: what is out of
+//          sight is known from which piece is at the edge.
+// The desk is the world and the window looks at it: turned, its ground goes with its pieces (the dots move as the
+// pieces do, and stand where they stood at every rest). Nothing changes size, and nothing moves but the desk. Where each piece lies, and how far
 // the desk is turned, are numbers kept apart (desk-layout.ts).
 // (Before: the terminal askew until in hand and wider while it was; a piece twice as large pressed twice; pieces
 // making way for one set down; a wheel over the ground turned into a turn of the desk.)
@@ -44,10 +48,6 @@ const theirs = (e: KeyboardEvent) => !!(e.target as Element | null)?.closest?.('
 /** A letter typed with no Ctrl, Alt or ⌘ (a space is a button's, / the search's): with the keyboard on the desk, it goes into the piece in hand. */
 const letter = (e: KeyboardEvent) => !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1 && e.key !== ' ' && e.key !== '/';
 
-/** Minimum jerk: from rest to rest, nothing sudden at either end. */
-const pan = (x: number) => x * x * x * (10 - 15 * x + 6 * x * x);
-/** How long the desk takes to turn to a piece. */
-const TURN_MS = 420;
 /** How long after the desk was last scrolled by hand it is taken to be let go of. */
 const REST_MS = 140;
 /** How long the desk's own mark stays after it was last turned. */
@@ -164,9 +164,12 @@ export class Desk {
       if (this.element.scrollLeft === this.#turnedTo) return;
       this.#turnedTo = this.element.scrollLeft;
       this.#said();
-      // Scrolled by hand (not turned to a piece) and then left: it rests on the grid, the pieces on the dots.
+      // The ground goes with the pieces: the dots are the desk's, not the window's (whole cells at every rest).
+      document.body.style.backgroundPositionX = this.#turnedTo % GRID ? `${-(this.#turnedTo % GRID)}px` : '';
+      // Scrolled by hand (not turned to a piece) and then left, where the browser has not brought it to rest at a
+      // piece itself (styles: scroll-snap): it goes on to the nearest.
       clearTimeout(this.#letGo);
-      if (!this.#glide) this.#letGo = window.setTimeout(() => { if (!this.#glide && this.#pressing === null) this.#go(atRest(this.element.scrollLeft), true); }, REST_MS);
+      if (!this.#glide) this.#letGo = window.setTimeout(() => { if (!this.#glide && this.#pressing === null) this.#go(atRest(this.element.scrollLeft, this.#starts()), true); }, REST_MS);
     });
     // The pointer moved (not something moved under it: the desk turning moves the page under a pointer at rest), it is
     // in use again and back in sight.
@@ -349,12 +352,16 @@ export class Desk {
       if (b.el.style.translate !== to) b.el.style.translate = to;
     }
     this.#end = end;
-    // (As far as it turns is whole cells too: at its end the desk is still on the grid.)
-    this.#plane.style.width = `${end > w ? w + GRID * Math.ceil((end - w) / GRID) : w}px`;
+    // (Wide enough for the last piece to stand at the edge.)
+    const last = this.#row.at(-1);
+    this.#plane.style.width = `${Math.max(end, last === undefined ? w : planeWidth(at.get(last)!, w))}px`;
     this.#plane.style.height = `${hgt}px`;
     this.#look(glide);
     this.#changed();
   }
+
+  /** Where each piece starts, along the row. */
+  #starts(): number[] { return this.#row.map((k) => this.#boxes.get(k)!.x); }
 
   /** The desk turned to where it should be now: to the piece last at work, or the one in hand (`moving`: gliding). */
   #look(moving: boolean) {
@@ -363,7 +370,7 @@ export class Desk {
     const key = this.#framed?.findLast((k) => this.#boxes.has(k)) ?? this.#held ?? this.#row[0];
     const b = key === undefined ? undefined : this.#boxes.get(key);
     if (!b) return;
-    this.#go(inSight(this.element.scrollLeft, b.x, b.w, w, this.#end), moving && !still());
+    this.#go(turnedTo(atRest(this.#glide?.to ?? this.element.scrollLeft, this.#starts()), b.x, b.w, w, this.#starts()), moving && !still());
   }
 
   /** The desk turned `to` along its row, gliding there or at once. */
@@ -374,25 +381,28 @@ export class Desk {
     cancelAnimationFrame(this.#moving);
     this.#moving = 0;
     this.#glide = null;
+    el.style.scrollSnapType = '';
     const from = el.scrollLeft;
     if (!moving || Math.abs(to - from) < .5) { if (Math.abs(to - from) >= .5) el.scrollLeft = to; return; }
     // What goes by under a pointer at rest was not pointed at: nothing under it lights up (forge-desk.css .resting)
     // until the pointer moves again.
     el.classList.add('resting');
-    const glide = this.#glide = {to}, t0 = performance.now();
+    // (On its way the desk is taken where it is told: it comes to rest at a piece by going to one.)
+    el.style.scrollSnapType = 'none';
+    const glide = this.#glide = {to}, t0 = performance.now(), ms = turnTime(to - from, el.clientWidth);
     // The desk's way said as an animation of the page's, so what waits for the page to be still (a film, a look at
     // where the caret is) waits for it too.
-    el.animate([{}, {}], {duration: TURN_MS, id: 'desk-camera'});
+    el.animate([{}, {}], {duration: ms, id: 'desk-camera'});
     const step = (now: number) => {
       // A glide gone after another is let go: two at once would draw the desk back and forth a frame at a time.
       if (this.#glide !== glide) return;
-      const k = Math.max(0, Math.min(1, (now - t0) / TURN_MS));
-      el.scrollLeft = k >= 1 ? glide.to : from + (glide.to - from) * pan(k);
+      const k = Math.max(0, Math.min(1, (now - t0) / ms));
+      el.scrollLeft = k >= 1 ? glide.to : from + (glide.to - from) * eased(k);
       // The caret in a piece on it goes with its letter in this same frame.
       fieldCarried();
       veil.follow(this.#pointerAt);
       if (k < 1) this.#moving = requestAnimationFrame(step);
-      else { this.#moving = 0; this.#glide = null; }
+      else { this.#moving = 0; this.#glide = null; el.style.scrollSnapType = ''; }
     };
     this.#moving = requestAnimationFrame(step);
   }
