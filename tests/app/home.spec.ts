@@ -202,7 +202,7 @@ test("a TODO's detail starts on its first line's column, with a kind and without
   expect(Math.abs(await left(app.home.detail(plain)) - await left(app.home.title(plain)))).toBeLessThan(1);
 });
 
-test("Home is set on the desk's grid: the name, the repos against the right edge, the TODO from the vanishing point; on a phone, one column", async ({app}) => {
+test("Home is a row of pieces on the desk's grid: the person's own (name and note) from the desk's edge, then the repos and what waits a width and two cells along, the first repo on the line the name stands on; half a screen shows the first and the edge of the second, which pressed comes to the edge; a phone one", async ({app}) => {
   for (const name of ['notes', 'trip', 'site']) await app.newRepo.make(name);
   await app.rail.go('home');
   await app.page.setViewportSize({width: 1440, height: 900});
@@ -210,42 +210,56 @@ test("Home is set on the desk's grid: the name, the repos against the right edge
   const names = repos.getByRole('group');
   await expect(names).toHaveCount(3);
   const at = async (l: Locator) => (await l.boundingBox())!;
-  /** Where `l` lies with its turn taken off (the note and the slip lie turned). */
-  const square = (l: Locator) => l.evaluate((el: HTMLElement) => {
-    const was = el.style.rotate;
-    el.style.rotate = 'none';
-    const r = el.getBoundingClientRect();
-    el.style.rotate = was;
-    return {x: r.x, y: r.y, right: r.right, bottom: r.bottom};
-  });
-  const U = 24, W = 1440, H = 900, V = {x: Math.round(W * .53 / U) * U, y: Math.round(H * .5 / U) * U};
+  const U = 24, CAP = .727, FOOT = .1245, PIECE = 24 * U;
+  /** Where a name's capitals stand: their top and their feet (the display face sets them so in a line of its size). */
+  const caps = (l: Locator) => l.evaluate((el, [cap, foot]) => { const r = el.getBoundingClientRect(), size = parseFloat(getComputedStyle(el).fontSize); const feet = r.bottom - foot * size; return {top: feet - cap * size, feet, x: r.x}; }, [CAP, FOOT]);
   await expect(async () => {
-    // The repos: a name every three cells, their right edges on one line, two cells in from the window's.
-    const boxes = await Promise.all((await names.all()).map((n) => at(n.locator('.card-open'))));
-    for (const [i, b] of boxes.entries()) {
-      expect(Math.abs(b.x + b.width - (W - 2 * U)), `name ${i}: its right edge`).toBeLessThan(3);
-      if (i) expect(Math.abs(b.y + b.height - (boxes[i - 1].y + boxes[i - 1].height) - 3 * U), `name ${i}: three cells under the last`).toBeLessThan(1);
+    // The person's name: its capitals two cells tall, a cell under the band, from the desk's edge.
+    const name = await caps(app.page.locator('#profile-name'));
+    expect(Math.abs(name.top - 3 * U)).toBeLessThan(1.5);
+    expect(Math.abs(name.feet - 5 * U)).toBeLessThan(1.5);
+    expect(Math.abs(name.x - 2 * U)).toBeLessThan(6);
+    // The note: the piece in hand, from the desk's edge, a cell under the counts, as wide as a piece; paper its own
+    // yellow, its shadow half a cell right and down; whole cells tall.
+    const note = await at(app.home.todo);
+    expect(Math.abs(note.x - 2 * U)).toBeLessThan(1);
+    expect(Math.abs(note.y - 8 * U)).toBeLessThan(1);
+    expect(Math.abs(note.width - PIECE)).toBeLessThan(1);
+    expect(note.height % U).toBeLessThan(1);
+    expect(await app.home.todo.evaluate((el) => getComputedStyle(el).boxShadow)).toMatch(/12px 12px 0px 0px$/);
+    // The repos: the second piece, a width and two cells along; said on the first cell; a name every two cells,
+    // capitals a cell tall, their left edges on one line; the first on the line the person's name stands on.
+    const second = 2 * U + PIECE + 2 * U;
+    expect(Math.abs((await at(repos)).x - second)).toBeLessThan(1);
+    expect(Math.abs((await at(repos.getByRole('heading'))).y - 2 * U)).toBeLessThan(1);
+    const titles = await Promise.all((await names.all()).map((n) => caps(n.locator('.card-title'))));
+    for (const [i, t] of titles.entries()) {
+      expect(Math.abs(t.x - second), `name ${i}: its left edge`).toBeLessThan(6);
+      expect(Math.abs(t.feet - t.top - U), `name ${i}: capitals a cell tall`).toBeLessThan(1.5);
+      expect(Math.abs(t.feet - (name.feet + i * 2 * U)), `name ${i}: its feet`).toBeLessThan(1.5);
     }
-    // The third name's feet on the line the person's name stands on, twelve cells under the band's top.
-    const profile = await at(app.main.locator('.profile'));
-    expect(Math.abs(profile.y + profile.height - (U + 12 * U))).toBeLessThan(1);
-    expect(Math.abs(boxes[2].y + boxes[2].height - (profile.y + profile.height))).toBeLessThan(1);
-    // The TODO: its upper right corner on the vanishing point (the window's middle, a little right, on the grid).
-    const note = await square(app.home.todo);
-    expect(Math.abs(note.right - V.x)).toBeLessThan(1);
-    expect(Math.abs(note.y - V.y)).toBeLessThan(1);
-    // Its foot comes down to the window's, a quarter of a cell above its edge at the right.
-    expect(Math.abs(note.bottom - (H - U / 4))).toBeLessThan(1);
-    // What waits: a slip at the right foot, its lower right corner a cell in from the window's.
-    const slip = await square(app.main.getByRole('region', {name: 'Recent activity'}));
-    expect(Math.abs(slip.right - (W - U))).toBeLessThan(1);
-    expect(Math.abs(slip.bottom - (H - U))).toBeLessThan(1);
+    // What waits: a slip under the repos, in line on the ground (it is not the piece in hand): no fill, no shadow.
+    const slip = app.main.getByRole('region', {name: 'Recent activity'});
+    expect(Math.abs((await at(slip)).x - second)).toBeLessThan(1);
+    expect(await slip.evaluate((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.boxShadow]; })).toEqual(['rgb(220, 217, 212)', 'none']);
   }).toPass();
-  // On a phone: the repos under the TODO.
+  // Half a screen: the first piece whole, the second cut by the window's edge. Pressed, it comes to the desk's edge;
+  // scrolled back and let go, the row rests with the first there again.
+  await app.page.setViewportSize({width: 768, height: 730});
+  const row = app.main.locator('.home-row');
+  await expect.poll(async () => { const r = await at(app.main.locator('.home-beside')); return r.x < 768 && r.x + r.width > 768; }).toBe(true);
+  await repos.getByRole('heading').click({position: {x: 10, y: 10}});
+  await expect.poll(async () => Math.round((await at(repos)).x)).toBe(2 * U);
+  expect(await row.evaluate((el) => el.scrollLeft)).toBe(PIECE + 2 * U);
+  await row.evaluate((el) => { el.scrollLeft = 100; });
+  await expect.poll(() => row.evaluate((el) => el.scrollLeft)).toBe(0);
+  // A phone: a piece as wide as the window has whole cells for, and one in sight; nothing wider than the window.
   await app.page.setViewportSize({width: 390, height: 844});
   await expect(async () => {
-    const todo = await at(app.home.todo);
-    expect((await at(names.first())).y).toBeGreaterThan(todo.y + todo.height);
+    const note = await at(app.home.todo), r = await at(repos);
+    expect(note.width).toBe(13 * U);
+    expect(r.x).toBeGreaterThanOrEqual(390);
+    expect(await app.page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
   }).toPass();
 });
 
@@ -332,22 +346,22 @@ test.describe("on 'hello', made from C's files and worked in last", () => {
   });
 });
 
-test("Home's band: the terminal's key, the files' and the search, from the rail's corner on the row of its first place, packed and fourteen cells wide; the files' key is Forge's", async ({app}) => {
+test("Home's band: one bar from the desk's edge on the row of the rail's first place, as wide as a piece; the terminal's key and the files' two cells each, edge to edge, the search the rest; the files' key is Forge's", async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('home');
   const tools = app.main.getByRole('group', {name: 'Tools'});
   const term = await tools.getByRole('button', {name: 'Terminal'}).boundingBox(), files = await tools.getByRole('button', {name: 'Files: New, Rename, Delete'}).boundingBox();
-  const search = await tools.getByRole('searchbox').boundingBox(), first = await app.rail.button('home').boundingBox();
-  // Keys two cells tall, their tops the rail's first place's; the terminal's a cell after the rail's places (the
-  // rail's corner, left of the page's own things), the others a hair apart (6 px), the three fourteen cells wide.
+  const search = await tools.getByRole('searchbox').boundingBox(), first = await app.rail.button('home').boundingBox(), bar = await tools.boundingBox();
+  // The bar: from the desk's edge (two cells in), as tall as a place of the rail and on its row, twenty-four cells wide.
+  expect(bar).toEqual({x: 48, y: first!.y, width: 24 * 24, height: first!.height});
+  // Its keys two cells wide, edge to edge on the grid's lines; the search to the bar's end.
   for (const key of [term!, files!, search!]) {
     expect(Math.abs(key.y - first!.y)).toBeLessThan(1);
-    expect(Math.abs(key.height - 48)).toBeLessThan(1);
+    expect(Math.abs(key.height - first!.height)).toBeLessThan(1);
   }
-  expect(Math.abs(term!.x - (first!.x + first!.width + 24))).toBeLessThan(1);
-  expect(Math.abs(files!.x - (term!.x + term!.width + 6))).toBeLessThan(1);
-  expect(Math.abs(search!.x - (files!.x + files!.width + 6))).toBeLessThan(1);
-  expect(Math.abs(search!.x + search!.width - term!.x - 14 * 24)).toBeLessThan(1);
+  expect([term!.x, term!.width, files!.x, files!.width]).toEqual([48, 48, 96, 48]);
+  expect(Math.abs(search!.x - 144)).toBeLessThan(1);
+  expect(Math.abs(search!.x + search!.width - (48 + 24 * 24))).toBeLessThan(1);
   // Its files button is Forge's, for the repo last worked in: there, its menu out under Forge's own (its README in
   // hand there, that file's deeds).
   await app.main.getByRole('button', {name: 'Files: New, Rename, Delete'}).click();
@@ -419,13 +433,13 @@ test('Home come back to is where it was read to, and the page between starts at 
   await app.page.setViewportSize({width: 1280, height: 300});
   await app.rail.go('home');
   const read = () => app.page.evaluate(() => Math.round(document.scrollingElement!.scrollTop));
-  // Read down to 60 px, once Home is that long (what it lists is drawn as it is read from the store).
+  // Read down to 30 px, once Home is that long (what it lists is drawn as it is read from the store).
   await expect(async () => {
-    await app.page.evaluate(() => { document.scrollingElement!.scrollTop = 60; });
-    expect(await read()).toBe(60);
+    await app.page.evaluate(() => { document.scrollingElement!.scrollTop = 30; });
+    expect(await read()).toBe(30);
   }).toPass();
   await app.rail.go('runtime');
   await expect.poll(read).toBe(0);
   await app.rail.go('home');
-  await expect.poll(read).toBe(60);
+  await expect.poll(read).toBe(30);
 });

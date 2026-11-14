@@ -2,119 +2,81 @@ import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
 
-// The skeleton the counters are set on (styles/tokens.css): their own things start at one x, the x Home's do; a
-// counter's name is on the line the band's keys stand on (Home's); its first line stands in one row and its first box
-// starts on one line. Home is set on the desk's own grid (home.css), so the rows are read off Runtime, the page the
-// others are set like, at each width: a page that goes its own way is told from one that moved with the rest.
+// The skeleton every place is set on (styles/tokens.css, base.css): the frame is the rail's column and the band's row,
+// two cells each, and the world starts at their corner, 48 px in and 48 down, at every width (a phone's too: there is
+// no other skeleton for a narrow window). A place is a desk (Home, New repo, Forge, Git), its band one bar from the
+// desk's edge, 36 px tall about the row's middle; or one thing to read (Runtime, Remote, Inbox), a sheet of paper from
+// the desk's corner. A place that goes its own way is told from one that stands with the rest.
 
 const SIZES = [{width: 1440, height: 900}, {width: 1180, height: 900}, {width: 1024, height: 768}, {width: 390, height: 844}];
+const U = 24;
 /** Where the one of `l` on screen is (a page left stays in the document, hidden). */
 const at = async (l: Locator) => (await l.locator('visible=true').first().boundingBox())!;
-const mid = (b: {y: number; height: number}) => b.y + b.height / 2;
 
-/** The lines at this width: where Home's things start and its band's keys' middle; Runtime's first row and box. */
-async function lines(app: App) {
-  await app.rail.go('home');
-  const left = (await at(app.main.locator('.home-own'))).x, band = mid(await at(app.main.locator('.band-tools > .band-tool')));
-  await app.rail.go('runtime');
-  const bar = await at(app.main.locator('.part-bar')), panel = await at(app.main.locator('.part-panel:not([hidden])'));
-  return {left, band, row: mid(bar), rowTop: bar.y, box: panel.y};
-}
-
-type Lines = Awaited<ReturnType<typeof lines>>;
-/** `first` stands in the first row and `box` starts on the second, both from the page's own left edge. */
-async function onRows(l: Lines, what: string, first: Locator | null, box: Locator) {
+/** A desk: its band is one bar from the desk's edge on the row of the rail's first place, whole cells wide. */
+async function desk(app: App, what: string) {
   await expect(async () => {
-    const b = await at(box);
-    expect(Math.abs(b.x - l.left), `${what}: its box's left edge`).toBeLessThan(1);
-    expect(Math.abs(b.y - l.box), `${what}: its box's top`).toBeLessThan(1);
-    if (first) expect(Math.abs(mid(await at(first)) - l.row), `${what}: its first line's middle`).toBeLessThan(1);
+    const bar = await at(app.main.locator('.band-tools')), first = await at(app.rail.button('home'));
+    expect(Math.abs(bar.x - 2 * U), `${what}: its band's left edge`).toBeLessThan(1);
+    expect(Math.abs(bar.y - first.y), `${what}: its band's top, the rail's first place's`).toBeLessThan(1);
+    expect(Math.abs(bar.height - first.height), `${what}: its band as tall as a place`).toBeLessThan(1);
+    expect(bar.width % U, `${what}: its band whole cells wide`).toBeLessThan(1);
   }).toPass({timeout: 4000});
 }
-/** Git is all desk, as Forge is (its sheets lie where the desk has them): its band's keys are on the band's line. */
-async function deskOnBand(app: App, l: Lines, what: string) {
+/** A sheet: paper from the desk's corner. */
+async function sheet(app: App, what: string) {
   await expect(async () => {
-    expect(Math.abs(mid(await at(app.main.locator('.band-bench .band-tools > .band-tool'))) - l.band), `${what}: its band's keys' middle`).toBeLessThan(1);
+    const page = await at(app.main);
+    expect(Math.abs(page.x - 2 * U), `${what}: its left edge`).toBeLessThan(1);
+    expect(Math.abs(page.y - 2 * U), `${what}: its top`).toBeLessThan(1);
+    expect(await app.main.evaluate((el) => getComputedStyle(el).backgroundColor), `${what}: paper`).toBe('rgb(251, 250, 247)');
   }).toPass({timeout: 4000});
 }
-/** A counter's name is on the band's line, starting where the page's things do. */
-async function headOnBand(app: App, l: Lines, what: string) {
-  const head = await at(app.main.locator('.page-head > h1')), icon = await at(app.main.locator('.page-head > .icon'));
-  expect(Math.abs(mid(head) - l.band), `${what}: its name's middle`).toBeLessThan(1);
-  // (The icon's ink, not its square, is at the edge: common.ts inkAtEdge takes two to four pixels back.)
-  expect(Math.abs(icon.x - l.left), `${what}: its head's left edge`).toBeLessThan(5);
-}
+/** The ground is the desk's dots, under every place. */
+const dotted = (app: App) => app.page.evaluate(() => getComputedStyle(document.body).backgroundImage.includes('radial-gradient'));
+/** How far the page is wider than the window (it never is). */
+const sideways = (app: App) => app.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 
-test('signed out, every page starts at one left edge, its first line in one row and its first box on one line', async ({app}) => {
+test('signed out, every place starts at the frame\'s corner: a desk\'s band from the desk\'s edge, a sheet from the desk\'s corner, at every width', async ({app}) => {
   await app.newRepo.make('hello', {template: 'C'});
   for (const size of SIZES) {
     await app.page.setViewportSize(size);
-    const l = await lines(app), what = (page: string) => `${page} at ${size.width}×${size.height}`;
-    await app.rail.go('new-repo');
-    await app.newRepo.name.fill('count');
-    await onRows(l, what('New repo'), null, app.main.locator('.nr-box'));
-    // Git, signed out: the issues' heading over the place for the first.
-    await app.rail.go('git');
-    await deskOnBand(app, l, what('Git'));
-    await app.rail.go('runtime');
-    await headOnBand(app, l, what('Runtime'));
-    await onRows(l, what('Runtime'), app.main.locator('.part-bar'), app.main.locator('.part-panel:not([hidden])'));
-    for (const part of ['Environments', 'Dotfiles', 'Agent'] as const) {
-      await app.runtime.open(part);
-      await onRows(l, what(`Runtime, ${part}`), app.main.locator('.part-bar'), app.main.locator('.part-panel:not([hidden])'));
-    }
-    // The pages that ask for a sign-in: the card is their first box, the row over it left for the parts to come.
-    // (Server's is the same card under the same head, but only while no board on the Remote is open to everyone,
-    // which another test may have made: not asked here.)
-    for (const place of ['remote', 'inbox'] as const) {
+    const what = (page: string) => `${page} at ${size.width}×${size.height}`;
+    for (const place of ['home', 'new-repo', 'forge', 'git'] as const) {
       await app.rail.go(place);
-      await headOnBand(app, l, what(place));
-      await onRows(l, what(place), null, app.main.locator('.sign-in-card'));
+      await desk(app, what(place));
+      expect(await dotted(app), what(place)).toBe(true);
+      expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
+    }
+    for (const place of ['runtime', 'remote', 'inbox'] as const) {
+      await app.rail.go(place);
+      await sheet(app, what(place));
+      expect(await dotted(app), what(place)).toBe(true);
+      expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
     }
   }
 });
 
-test('signed in, Remote, Inbox and Server stand on the same lines, and behind Server\'s gear its parts take the second row', async ({signedIn: app}) => {
+test('signed in, Remote and Inbox are sheets from the desk\'s corner still, and Server\'s board is whole in the window', async ({signedIn: app}) => {
   await app.newRepo.make('hello', {template: 'C'});
   await app.inbox.named();
   await app.server.make('Length3', `len${Date.now() % 1e6}`);
   for (const size of SIZES) {
     await app.page.setViewportSize(size);
-    const l = await lines(app), what = (page: string) => `${page} at ${size.width}×${size.height}`;
-    // Git: main's name over what it has not committed.
+    const what = (page: string) => `${page} at ${size.width}×${size.height}`;
     await app.rail.go('git');
-    await deskOnBand(app, l, what('Git'));
-    await app.rail.go('remote');
-    await headOnBand(app, l, what('Remote'));
-    for (const part of ['Repos', 'Sign-in', 'Devices'] as const) {
-      await app.remote.part(part).click();
-      await onRows(l, what(`Remote, ${part}`), app.main.locator('.part-bar'), app.main.locator('.part-panel:not([hidden])'));
+    await desk(app, what('Git'));
+    for (const place of ['remote', 'inbox'] as const) {
+      await app.rail.go(place);
+      await sheet(app, what(place));
     }
-    // Inbox: one's address is the first row's; the field to write to someone new starts the second.
-    await app.rail.go('inbox');
-    await headOnBand(app, l, what('Inbox'));
-    await onRows(l, what('Inbox'), app.main.locator('.stub'), app.main.locator('.inbox-new'));
-    // Server: the board's head is the first row (its sheet's top the row's), what it holds starts on the second
-    // (a narrow board's head is two lines, its name and under it its parts: only its top is the row's).
     await app.server.open();
     const board = app.server.view.locator('.slide[aria-current="true"] .board-card');
     await expect(async () => {
-      const b = await at(board), talk = await at(board.locator('.board-talk'));
-      expect(Math.abs(b.x - l.left), `${what('Server')}: its board's left edge`).toBeLessThan(1);
-      expect(Math.abs(b.y - l.rowTop), `${what('Server')}: its board's top`).toBeLessThan(1);
-      if (size.width > 760) expect(Math.abs(talk.y - l.box), `${what('Server')}: its talk's top`).toBeLessThan(1.5);
+      const b = await at(board);
+      expect(b.x, `${what('Server')}: its board's left edge`).toBeGreaterThanOrEqual(2 * U - 1);
+      expect(b.x + b.width, `${what('Server')}: its board's right edge`).toBeLessThanOrEqual(size.width);
     }).toPass({timeout: 4000});
-    // Behind its gear: its name the first row's, its parts the second's, what the part holds from the third.
-    await app.server.view.getByRole('button', {name: 'Manage members, boards, and repos'}).click();
-    const sheet = app.server.view.locator('.server-sheet');
-    await expect(async () => {
-      const head = await at(sheet.locator('.sheet-head')), part = await at(sheet.locator('.sheet-body > .parts > .part')), panel = await at(sheet.locator('.part-panel:not([hidden])'));
-      const row = l.box - l.rowTop;
-      expect(Math.abs(head.x - l.left), `${what('Server settings')}: its left edge`).toBeLessThan(1);
-      expect(Math.abs(mid(head) - l.row), `${what('Server settings')}: its name's middle`).toBeLessThan(1);
-      expect(Math.abs(mid(part) - (l.row + row)), `${what('Server settings')}: its parts' middle`).toBeLessThan(1);
-      expect(Math.abs(panel.y - (l.box + row)), `${what('Server settings')}: its part's top`).toBeLessThan(1);
-    }).toPass({timeout: 4000});
-    await app.server.view.getByRole('button', {name: 'Done', exact: true}).click();
+    expect(await sideways(app), what('Server')).toBeLessThanOrEqual(0);
   }
 });

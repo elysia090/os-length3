@@ -20,6 +20,9 @@
 .work.band-bench { position: relative; grid-template-columns: minmax(0, 1fr); }
 .work.bench.band-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: 0; }
 .work.bench.band-bench > .center { overflow: visible; }
+/* (The Prompt's box hides nothing under it here: the desk's ground is the window's own, to its foot. Its strip of
+   plain ground, half a window to either side, made the page that much wider than the window.) */
+.work.band-bench .dock::after { display: none; }
 .git-band { flex: 1 1 0; min-width: 0; align-items: flex-start; gap: var(--u); }
 .git-band > .chips { flex: 0 1 auto; height: var(--key); align-items: center; margin: 0; padding: 0; }
 .git-band > .chips.lone { display: none; }

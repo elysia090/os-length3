@@ -44,7 +44,9 @@ test('on a phone, Forge\'s band is its keys and the search, whole in the window;
   // The file in hand is whole in sight with its shadow, the desk turned to it.
   await app.forge.editor('README.md').focus();
   const [d, b] = [(await app.forge.desk.boundingBox())!, (await app.forge.piece('README.md').boundingBox())!];
-  expect(b.width).toBeLessThanOrEqual(d.width - 48);
+  // (As many whole cells as the window has room for with its shadow.)
+  expect(b.width + 12).toBeLessThanOrEqual(d.width);
+  expect(b.width % 24).toBe(0);
   await expect.poll(async () => { const r = (await app.forge.piece('README.md').boundingBox())!; return r.x >= d.x && r.x + r.width <= d.x + d.width; }).toBe(true);
 });
 

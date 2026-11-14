@@ -210,15 +210,24 @@ test('a box in Forge follows its file through moves one after another and throug
   await expect(app.forge.editor('other.md')).toBeVisible();
 });
 
-test('File pressed keeps out the tree its hover brought out, however late the press; pressed again it goes', async ({app}) => {
+test('File pressed brings the tree out, and nothing else does: a pointer resting on File or on the tree brings nothing out and puts nothing away; pressed again it goes', async ({app}) => {
   const file = app.rail.button('file');
+  // The pointer rests on File: nothing comes out, however long.
   await file.hover();
-  await expect(app.file.tree).toBeVisible();
-  await app.page.waitForTimeout(1200);
+  await app.page.waitForTimeout(600);
+  await expect(app.file.tree).toBeHidden();
+  // Pressed: out. The pointer gone far from it and left there: still out.
   await file.click();
   await expect(app.file.tree).toBeVisible();
+  await app.page.mouse.move(900, 600);
+  await app.page.waitForTimeout(1500);
+  await expect(app.file.tree).toBeVisible();
+  // Pressed again: gone; and again: out.
   await file.click();
   await expect(app.file.tree).toBeHidden();
   await file.click();
   await expect(app.file.tree).toBeVisible();
+  // Escape puts it away.
+  await app.page.keyboard.press('Escape');
+  await expect(app.file.tree).toBeHidden();
 });

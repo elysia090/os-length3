@@ -172,7 +172,7 @@ function railButton(id: PurposeId): HTMLButtonElement {
   // rest: the hand crossing the icons on its way from File into the tree must not put the tree away under it.
   button.addEventListener('pointerenter', () => {
     clearTimeout(passing);
-    passing = window.setTimeout(() => { if (id !== 'file') fileTree.passedBy(); if (id !== 'server') serverSwitch.passedBy(); }, PASSED);
+    passing = window.setTimeout(() => { if (id !== 'server') serverSwitch.passedBy(); }, PASSED);
   });
   button.addEventListener('pointerleave', () => clearTimeout(passing));
   if (id === 'file') {

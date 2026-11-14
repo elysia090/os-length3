@@ -56,12 +56,6 @@
   margin: calc(1.5 * var(--u) - .8755 * var(--size)) calc(var(--u) - var(--ink-right, 0px)) 0 0; height: var(--size);
   font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; color: var(--ink); pointer-events: none; user-select: none; }
 @media (max-width: 1100px) { .band-held { display: none; } }
-/* A narrow window: the rail is close set and there is nothing beside it to start from, so the keys start where the
-   page does, and take its width. */
-@media (max-width: 760px) {
-  :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) { margin-left: 0; }
-  :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { flex: 1 1 0; width: auto; min-width: 0; }
-}
 /* What the band's search finds lies on the desk as sheets of its own, a kind a sheet, in a row from the desk's edge
    on the line every sheet's top is on: the same motif again (a name over paper with its shadow; what was run is a
    sheet of ink, its shadow the terminal's green), the name the kind's and how many beside it. The page under them
