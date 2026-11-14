@@ -19,7 +19,7 @@
  * lends: nothing of the host's is a box's for its asking. A path of the host's (the root, what a bind takes, a
  * namespace joined) is the bundle's own or one lent (--lend), opened once and by the kernel's rule that nothing
  * leads out of it; its mount, pid, ipc, uts and network namespaces are its own or one lent, the first four never
- * the host's, and it has a cgroup namespace; each of the host's users it can be is one lent (--ids); it gains no
+ * the host's (a network of its own has its loopback up and nothing else), and it has a cgroup namespace; each of the host's users it can be is one lent (--ids); it gains no
  * privilege by what it runs (no_new_privs); it has the capabilities config.json names and, in no user namespace,
  * none over the host itself; a device is what muk made in a /dev that is the box's own or one lent by its own
  * name, every other mount being nodev (the root, a bind, a tmpfs), and it makes none (CAP_MKNOD is a user
@@ -330,6 +330,18 @@ __attribute__((noreturn)) static void inside(const u64 *mask, const int *told) {
     ok(sys2(SYS_prctl, 1 /* PR_SET_PDEATHSIG */, SIGKILL), "PDEATHSIG: ", "not set");
     sys3(SYS_fcntl, told[0], 4 /* F_SETFL */, O_NONBLOCK);
     if (!sys3(SYS_read, told[0], (i64)&go, 1)) leave(1);
+  }
+  /* A network namespace made for it has its loopback up, as runc leaves one it makes: the kernel makes it down, and a
+   * box with no capability over its network could not bring it up itself. (One lent is as its lender left it.) */
+  if (c.spaces & CLONE_NEWNET) {
+    struct { char name[16]; short flags; u8 rest[22]; } lo = {"lo", 0, {0}};
+    i64 s = sys3(SYS_socket, 2 /* AF_INET */, 2 /* SOCK_DGRAM */ | O_CLOEXEC, 0);
+    if (s >= 0) { /* (a kernel with no IPv4 has no loopback to bring up) */
+      ok(sys3(SYS_ioctl, s, 0x8913 /* SIOCGIFFLAGS */, (i64)&lo), "the network: ", "its loopback is not there");
+      lo.flags |= 1 /* IFF_UP */;
+      ok(sys3(SYS_ioctl, s, 0x8914 /* SIOCSIFFLAGS */, (i64)&lo), "the network: ", "its loopback is not brought up");
+      sys1(SYS_close, s);
+    }
   }
   i64 old_umask = sys1(SYS_umask, 0);
   /* (put in the cgroup lent it as it was made: its cgroup namespace begins there, so it is made here, in it) */

@@ -91,6 +91,7 @@ JSON
 both plain 0
 has plain 'uid 0 gid 0 groups 0 pid 1'
 has plain 'host box domain there'
+has plain 'lo up'
 has plain 'arg a b'
 has plain 'env A="q" \ /'
 has plain 'CapEff:	0000000020000420'
@@ -203,6 +204,8 @@ kill "$holder" 2> /dev/null || :
 has joined "see /proc/self/ns/net 120777 -> $(readlink /proc/self/ns/net | sed 's/[0-9]*]$//')$(sed -n 's|^see /proc/self/ns/net .*\[\([0-9]*\)]$|\1|p' "$t/joined.muk")]"
 n=$((n + 1)); ! grep -qx "see /proc/self/ns/net 120777 -> $(readlink /proc/self/ns/net)" "$t/joined.muk" || no "joined: the box is in the host's network namespace"
 has joined 'host joined domain (none)'
+# (a network lent is as its lender left it: this one's loopback was never brought up)
+has joined 'lo down'
 has joined '/dev/null 20666 1:3'
 
 # The floor, where config.json asks for less: it gains no privilege, has no capability it does not name, has a /dev

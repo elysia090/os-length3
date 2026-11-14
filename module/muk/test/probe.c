@@ -13,7 +13,7 @@
 #define UNIT "probe"
 #include "../../lib/io.h"
 
-enum { SYS_rt_sigprocmask = 14, SYS_ioctl = 16, SYS_rt_sigtimedwait = 128, SYS_getpid = 39, SYS_uname = 63, SYS_fcntl = 72, SYS_readlink = 89, SYS_getuid = 102, SYS_getgid = 104, SYS_getgroups = 115, SYS_prlimit64 = 302 };
+enum { SYS_socket = 41, SYS_rt_sigprocmask = 14, SYS_ioctl = 16, SYS_rt_sigtimedwait = 128, SYS_getpid = 39, SYS_uname = 63, SYS_fcntl = 72, SYS_readlink = 89, SYS_getuid = 102, SYS_getgid = 104, SYS_getgroups = 115, SYS_prlimit64 = 302 };
 
 static void say(const char *s) { put(s, slen(s)); }
 static void number(u64 v, u32 base) {
@@ -132,6 +132,12 @@ static int main_(int argc, char **argv, char **envp) {
   u8 *names = grab(6 * 65);
   sys1(SYS_uname, (i64)names);
   say("host "), say((char *)names + 65), say(" domain "), say((char *)names + 5 * 65), say("\n");
+  /* Its network's loopback: up where the network was made for it, as its lender left it where it was lent. */
+  struct { char name[16]; short flags; u8 rest[22]; } lo = {"lo", 0, {0}};
+  i64 s = sys3(SYS_socket, 2 /* AF_INET */, 2 /* SOCK_DGRAM */, 0);
+  if (s >= 0 && sys3(SYS_ioctl, s, 0x8913 /* SIOCGIFFLAGS */, (i64)&lo) >= 0) say(lo.flags & 1 ? "lo up\n" : "lo down\n");
+  else say("lo none\n");
+  if (s >= 0) sys1(SYS_close, s);
   u8 *cwd = grab(4096);
   sys2(SYS_getcwd, (i64)cwd, 4096);
   say("cwd "), say((char *)cwd), say("\n");

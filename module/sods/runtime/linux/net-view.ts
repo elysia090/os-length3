@@ -46,7 +46,11 @@ export interface Seen {
   readonly peer: {ino: number} | null;
 }
 /** What the tables read of the kernel: its sockets, and what has moved over lo. */
-export interface Net { sockets?: Iterable<Seen>; loopbackTraffic?: {bytes: number; packets: number}; current?: {proc: {ns: {net: object}}} | null }
+export interface Net { sockets?: Iterable<Seen>; loopbackTraffic?: {bytes: number; packets: number}; current?: {proc: {ns: {net: {up: boolean}}; mayAdministerNet?(): boolean}} | null }
+/** Whether the loopback of the network namespace of the one who asks is up (no one asking: the first one's, which is). */
+const up = (kernel: Net): boolean => kernel.current?.proc.ns.net.up ?? true;
+/** lo's flags there: IFF_LOOPBACK, and, up, IFF_UP, IFF_RUNNING and IFF_LOWER_UP. */
+const flagsOf = (kernel: Net): number => (up(kernel) ? LO.flags : 0x8);
 
 /** The one interface, as Linux has lo. */
 const LO = {
@@ -137,12 +141,12 @@ const NLM = {REQUEST: 1, MULTI: 2, ACK: 4, DUMP: 0x300};
 const NLMSG = {NOOP: 1, ERROR: 2, DONE: 3};
 const RTM = {NEWLINK: 16, GETLINK: 18, NEWADDR: 20, GETADDR: 22, NEWROUTE: 24, GETROUTE: 26, NEWRULE: 32, GETRULE: 34};
 
-function link(): Uint8Array {
-  const info = concat([u8(AF.UNSPEC), u8(0), u16(LO.type), i32(LO.index), u32(LO.flags), u32(0)]);
+function link(kernel: Net): Uint8Array {
+  const info = concat([u8(AF.UNSPEC), u8(0), u16(LO.type), i32(LO.index), u32(flagsOf(kernel)), u32(0)]);
   return concat([info,
     attr(3, cstr(LO.name)), // IFLA_IFNAME
     attr(13, u32(LO.txqlen)), // IFLA_TXQLEN
-    attr(16, u8(0)), // IFLA_OPERSTATE: unknown, as lo's
+    attr(16, u8(up(kernel) ? 0 : 2)), // IFLA_OPERSTATE: unknown, as lo's is while it is up; down
     attr(17, u8(0)), // IFLA_LINKMODE
     attr(4, u32(LO.mtu)), // IFLA_MTU
     attr(50, u32(0)), attr(51, u32(0)), // IFLA_MIN_MTU, IFLA_MAX_MTU
@@ -293,21 +297,32 @@ function request(kernel: Net, protocol: number, portid: number, m: Uint8Array, o
     if ((family === AF.INET || family === AF.INET6) && (body[1] === IPPROTO.TCP || body[1] === IPPROTO.UDP)) return dump(type, inetDiag(kernel, family, body[1], word(4)));
     return -E.NOENT;
   }
-  if ((type & 3) !== 2) return -E.OPNOTSUPP; // a change (a link set, an address or route added): not made here
+  if (type === RTM.NEWLINK || type === 19 /* RTM_SETLINK */) {
+    // lo brought up or down (`ip link set lo up`): its IFF_UP as the message's flags say, where its change mask names it.
+    const index = body.length >= 8 ? v.getInt32(20, true) : 0, a = attrs(body, 16), name = a.get(3);
+    if ((index && index !== LO.index) || (name && textOf(name) !== LO.name) || (!index && !name)) return -E.NODEV;
+    const net = kernel.current?.proc.ns.net, flags = body.length >= 12 ? v.getUint32(24, true) : 0, change = body.length >= 16 ? v.getUint32(28, true) : 0;
+    if (!net || !kernel.current?.proc.mayAdministerNet?.()) return -E.PERM;
+    if (change & 1 || change === 0) net.up = (flags & 1) !== 0;
+    return 0;
+  }
+  if ((type & 3) !== 2) return -E.OPNOTSUPP; // another change (an address or route added): not made here
   if (isDump) {
     // A link dump is the same whatever family it names (Linux keeps only PF_UNSPEC's).
-    if (type === RTM.GETLINK) return dump(RTM.NEWLINK, [concat([link(), linkStats(kernel)])]);
-    if (type === RTM.GETADDR) return dump(RTM.NEWADDR, addresses(family));
-    if (type === RTM.GETROUTE) return dump(RTM.NEWROUTE, routes(family));
+    if (type === RTM.GETLINK) return dump(RTM.NEWLINK, [concat([link(kernel), linkStats(kernel)])]);
+    // (a loopback that is down has no address yet, and no route)
+    if (type === RTM.GETADDR) return dump(RTM.NEWADDR, up(kernel) ? addresses(family) : []);
+    if (type === RTM.GETROUTE) return dump(RTM.NEWROUTE, up(kernel) ? routes(family) : []);
     if (type === RTM.GETRULE) return dump(RTM.NEWRULE, rules(family));
     return dump(type - 2, []); // neighbours, queues, the rest: none on lo
   }
   if (type === RTM.GETLINK) {
     const index = body.length >= 8 ? v.getInt32(20, true) : 0, a = attrs(body, 16), name = a.get(3) ?? a.get(53);
     if ((index && index !== LO.index) || (name && textOf(name) !== LO.name) || (!index && !name)) return -E.NODEV;
-    return one(RTM.NEWLINK, concat([link(), linkStats(kernel)]));
+    return one(RTM.NEWLINK, concat([link(kernel), linkStats(kernel)]));
   }
   if (type === RTM.GETROUTE) {
+    if (!up(kernel)) return -101; // ENETUNREACH: nothing is reached while lo is down
     const r = routeTo(family, attrs(body, 12).get(1));
     return typeof r === 'number' ? r : one(RTM.NEWROUTE, r);
   }
@@ -318,10 +333,11 @@ function request(kernel: Net, protocol: number, portid: number, m: Uint8Array, o
 
 const IFREQ = 40;
 /** A socket ioctl about interfaces (`request`, its ifreq at `arg`): true when it was one, an errno when it fails. */
-export function interfaceControl(p: {view: DataView; bytes: Uint8Array}, request: number, arg: number): boolean | number {
+export function interfaceControl(p: {view: DataView; bytes: Uint8Array}, request: number, arg: number, net: {up: boolean} = {up: true}, mayAdminister = false): boolean | number {
   const v = p.view, b = p.bytes;
-  if (request === 0x8912) { // SIOCGIFCONF: each interface with an IPv4 address
+  if (request === 0x8912) { // SIOCGIFCONF: each interface with an IPv4 address (lo, once it is up)
     const len = v.getInt32(arg, true), buf = Number(v.getBigUint64(arg + 8, true));
+    if (!net.up) { v.setInt32(arg, 0, true); return true; }
     if (!buf) { v.setInt32(arg, IFREQ, true); return true; }
     if (len < IFREQ) { v.setInt32(arg, 0, true); return true; }
     b.fill(0, buf, buf + IFREQ);
@@ -331,8 +347,8 @@ export function interfaceControl(p: {view: DataView; bytes: Uint8Array}, request
     v.setInt32(arg, IFREQ, true);
     return true;
   }
-  const GETS = [0x8910, 0x8913, 0x8915, 0x8917, 0x8919, 0x891b, 0x891d, 0x8921, 0x8927, 0x8933, 0x8942, 0x8970];
-  // The rest of SIOC*IF*: a change to lo is not made here.
+  const GETS = [0x8910, 0x8913, 0x8914, 0x8915, 0x8917, 0x8919, 0x891b, 0x891d, 0x8921, 0x8927, 0x8933, 0x8942, 0x8970];
+  // The rest of SIOC*IF*: a change to lo, but for bringing it up or down, is not made here.
   if (!GETS.includes(request)) return request >= 0x8910 && request < 0x8980 ? -E.OPNOTSUPP : false;
   const name = utf8(b.subarray(arg, arg + 16)).replace(/\0[\s\S]*$/, '');
   if (request === 0x8910) { // SIOCGIFNAME: by its index
@@ -344,8 +360,12 @@ export function interfaceControl(p: {view: DataView; bytes: Uint8Array}, request
   if (name !== LO.name) return -E.NODEV;
   const field = arg + 16, sin = (ip: number[]): void => { b.fill(0, field, field + 16); v.setUint16(field, AF.INET, true); b.set(ip, field + 4); };
   switch (request) {
-    case 0x8913: v.setInt16(field, LO.flags & 0xffff, true); break; // SIOCGIFFLAGS
-    case 0x8915: case 0x8917: sin(LO.ipv4); break; // SIOCGIFADDR, SIOCGIFDSTADDR
+    case 0x8913: v.setInt16(field, (net.up ? LO.flags : 0x8) & 0xffff, true); break; // SIOCGIFFLAGS
+    case 0x8914: // SIOCSIFFLAGS: brought up or down, by one that may administer its network
+      if (!mayAdminister) return -E.PERM;
+      net.up = (v.getInt16(field, true) & 1) !== 0;
+      break;
+    case 0x8915: case 0x8917: if (!net.up) return -99; sin(LO.ipv4); break; // SIOCGIFADDR, SIOCGIFDSTADDR (EADDRNOTAVAIL: it has none while down)
     case 0x8919: sin([0, 0, 0, 0]); break; // SIOCGIFBRDADDR
     case 0x891b: sin(LO.netmask); break; // SIOCGIFNETMASK
     case 0x891d: v.setInt32(field, 0, true); break; // SIOCGIFMETRIC
@@ -406,7 +426,7 @@ export function procNet(kernel: Net): Record<string, () => string> {
         + ' face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n'
         + `${LO.name.padStart(6)}:${n(t.bytes, 8)} ${n(t.packets, 7)}    0    0    0     0          0         0 ${n(t.bytes, 8)} ${n(t.packets, 7)}    0    0    0     0       0          0\n`;
     },
-    if_inet6: () => `${LO.ipv6.map((x) => x.toString(16).padStart(2, '0')).join('')} ${hex4(LO.index).slice(2).toLowerCase()} 80 10 80 ${LO.name.padStart(8)}\n`,
+    if_inet6: () => !up(kernel) ? '' : `${LO.ipv6.map((x) => x.toString(16).padStart(2, '0')).join('')} ${hex4(LO.index).slice(2).toLowerCase()} 80 10 80 ${LO.name.padStart(8)}\n`,
     route: () => padded('Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT', 127) + '\n',
     ipv6_route: () => `${'0'.repeat(31)}1 80 ${'0'.repeat(32)} 00 ${'0'.repeat(32)} 00000100 00000001 00000000 00000001       lo\n`,
     tcp: () => socketTable(kernel, AF.INET, IPPROTO.TCP),

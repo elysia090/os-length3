@@ -26,7 +26,7 @@
 
 import {Description, Pipe} from './fd.ts';
 import {E, FsError, MNT, SocketName, S_IFSOCK, walk} from './fs.ts';
-import {MAY, may, shownIn} from './cred.ts';
+import {CAP, MAY, capable, may, shownIn} from './cred.ts';
 import {nrIn, type Net} from './space.ts';
 import {answer, interfaceControl, traffic, type Address} from './net-view.ts';
 import {Wait, utf8} from './flow.ts';
@@ -435,6 +435,8 @@ function overlap(a: Endpoint, ip: Uint8Array, b: Endpoint): boolean {
 /** Bind loopback socket `s` to `ip` and `port` (0: an ephemeral one). */
 function bindInet(s: Endpoint, ip: Uint8Array, port: number): void {
   if (!isAny(ip) && !isLoopback(ip) && !isGroup(ip)) fail(ERR.ADDRNOTAVAIL);
+  // (a loopback that is down has no address to bind to yet)
+  if (!s.net.up && isLoopback(ip)) fail(ERR.ADDRNOTAVAIL);
   if (s.family === AF.INET6 && mapped(ip) && s.options.v6only) fail(ERR.ADDRNOTAVAIL);
   const table = portsOf(s.net, s.protocol);
   // Two may share a port that both say so of: SO_REUSEPORT; SO_REUSEADDR, for UDP, or for TCP while the other does
@@ -464,7 +466,7 @@ function reachable(s: Endpoint, target: Address): {ip: Uint8Array; port: number}
   const given = ipOf(target);
   // To any address is to this machine's (Linux connects to its own).
   const ip = isAny(given) ? (mapped(given) || s.family === AF.INET ? LOOPBACK4 : LOOPBACK6) : given;
-  if (!isLoopback(ip)) fail(ERR.NETUNREACH);
+  if (!isLoopback(ip) || !s.net.up) fail(ERR.NETUNREACH);
   if (s.family === AF.INET6 && mapped(ip) && s.options.v6only) fail(ERR.NETUNREACH);
   return {ip, port: target.port ?? 0};
 }
@@ -816,7 +818,7 @@ export const stat = (d: Description) => ({mode: S_IFSOCK | 0o777, ino: d.sock?.i
 /** A socket's ioctl (FIONREAD aside, sys-file.ts's): SIOCOUTQ, and what an interface is (net-view.ts). */
 export function control(p: Proc, _d: Description, request: number, arg: number): number {
   if (request === 0x5411) { p.view.setInt32(arg, 0, true); return 0; } // SIOCOUTQ: lo has taken it all
-  const r = interfaceControl(p, request, arg);
+  const r = interfaceControl(p, request, arg, p.ns.net, capable(p.cred, CAP.NET_ADMIN, p.ns.net.owner));
   if (r === true) return 0;
   return fail(r === false ? E.NOTTY : -r);
 }
@@ -1059,7 +1061,7 @@ export const NET_CALLS: Calls = {
     // A raw socket's address is what it takes packets for; it holds no port.
     if (s.type === SOCK.RAW) {
       const ip = ipOf(a);
-      if (!isAny(ip) && !isLoopback(ip)) fail(ERR.ADDRNOTAVAIL);
+      if (!isAny(ip) && (!isLoopback(ip) || !s.net.up)) fail(ERR.ADDRNOTAVAIL);
       s.local = {ip, port: 0};
       return 0;
     }

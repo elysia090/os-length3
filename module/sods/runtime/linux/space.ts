@@ -81,7 +81,9 @@ export class Net implements Named {
   sys: Super | null = null;
   /** The first one: what is asked of it past this machine goes to the host's network. */
   declare readonly first: boolean;
-  constructor(owner: UserNs, first = false) { this.owner = owner; this.first = first; }
+  /** Its loopback is up (the first one's is; one made is made with it down, as Linux makes it, until it is brought up). */
+  up: boolean;
+  constructor(owner: UserNs, first = false) { this.owner = owner; this.first = first; this.up = first; }
 }
 /** A view of the cgroups: the one that is its root. */
 export class CgroupNs implements Named {

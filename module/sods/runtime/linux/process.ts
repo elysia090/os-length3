@@ -30,7 +30,7 @@ import {MOUNT_CALLS} from './sys-mount.ts';
 import {Description, FdTable} from './fd.ts';
 import type {Dir, Mapping, Place, Super} from './fs.ts';
 import {E, File, FsError, Link, MNT, Mount, Vfs, pathOf, walk} from './fs.ts';
-import {HOST, MAY, ROOT, asProgram, idIn, may, type Cred} from './cred.ts';
+import {CAP, HOST, MAY, ROOT, asProgram, capable, idIn, may, type Cred} from './cred.ts';
 import {copy, firstSpace, put} from './mount.ts';
 import {CgroupNs, Fs, byNr, firstSpaces, forget, nrIn, number, type Numbers, type PidNs, type Spaces} from './space.ts';
 import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
@@ -1556,6 +1556,8 @@ export class Process implements Proc {
   get ns(): Spaces { return this.own?.ns ?? this.ns0; }
   set ns(ns: Spaces) { const t = this.own; if (t) t.ns = ns; else this.ns0 = ns; }
   get root(): Place { return this.fs.root; }
+  /** Whether it may change its network (CAP_NET_ADMIN over the user namespace that owns its network namespace). */
+  mayAdministerNet(): boolean { return capable(this.cred, CAP.NET_ADMIN, this.ns.net.owner); }
   get umask(): number { return this.fs.umask; }
   set umask(mask: number) { this.fs.umask = mask; }
   /** Who the thread that calls is (a process with no thread yet: root). */
