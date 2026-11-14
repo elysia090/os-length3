@@ -4,7 +4,9 @@
    two, from the field's top (the second row) to the page's foot. None yet, there is no sheet. */
 /* The page is the window's height and no more (nothing of it scrolls): its head, and under it the three columns to
    the page's foot, where the rail's line ends; never under 440 px, a short window scrolling to the rest. */
-.page:has(> div > .inbox-page) { display: flex; flex-direction: column; height: var(--inner-h); padding-bottom: 0; }
+/* (A sheet from the desk's corner to a cell over the window's foot: the conversation reaches its foot, and nothing of
+   the page scrolls away.) */
+.page:has(> div > .inbox-page) { display: flex; flex-direction: column; height: calc(100vh - 3 * var(--u) - var(--outer-bottom)); }
 .page > div:has(> .inbox-page) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* Each as wide as a page's part is (a column of the page's flex would shrink to what it holds and stand centred). By
    the page's class, not by what it holds: a :has() before `> *` is asked again of the whole page at every change in it

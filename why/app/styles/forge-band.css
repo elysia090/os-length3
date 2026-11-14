@@ -65,8 +65,11 @@
    which Enter takes, is pressed (a slot). (Before: one sheet across the center, inked round with a shadow of its own
    size, the words searched for 56 px at its head, the desk gone from under it.) */
 .band-tools .search-results {
-  top: calc(5 * var(--u)); left: calc(-2 * var(--key) - 2 * var(--key-gap)); right: auto;
-  width: calc(100vw - var(--outer) - var(--rail)); max-height: none; overflow: visible; box-sizing: border-box; display: block;
+  /* From the desk's edge (--search-x: how far the search is along the band, measured: home.ts, bench.ts) to the
+     a cell from the window's right edge (room for a sheet's shadow), their tops on the line every piece's top is on,
+     a cell under the band. */
+  top: calc(3 * var(--u) - var(--outer-top)); left: calc(-1 * var(--search-x, 4 * var(--u))); right: auto;
+  width: calc(100vw - 3 * var(--u)); max-height: none; overflow: visible; box-sizing: border-box; display: block;
   padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none; animation: none;
 }
 .band-tools .search-results > .search-panel { overflow: visible; }
@@ -134,7 +137,6 @@
 .band-tools .search-results mark { animation: none; }
 /* A window too narrow for two sheets side by side: one under another, each the window's width. */
 @media (max-width: 760px) {
-  .band-tools .search-results { left: calc(-2 * var(--key) - 2 * var(--key-gap)); width: calc(100vw - 2 * var(--outer) - var(--rail) - var(--u)); }
   .found-sec { max-width: 100%; }
   /* (A row is two lines there: the file's name and the line's number, then the words across the sheet's whole
      width, folded if they are longer, so what was found is in sight however narrow the window.) */

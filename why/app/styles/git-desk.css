@@ -24,7 +24,10 @@
    plain ground, half a window to either side, made the page that much wider than the window.) */
 .work.band-bench .dock::after { display: none; }
 .git-band { flex: 1 1 0; min-width: 0; align-items: flex-start; gap: var(--u); }
-.git-band > .chips { flex: 0 1 auto; height: var(--key); align-items: center; margin: 0; padding: 0; }
+/* Which repo: not one of the window's instruments but a choice on this desk, so it stands on the desk, on the cell
+   under the band where a piece's name stands, and the band is the bar it is everywhere. */
+.git-band > .chips { position: absolute; left: 0; top: calc(2 * var(--u) - var(--outer-top)); height: var(--u); align-items: center; gap: var(--s2); margin: 0; padding: 0; }
+.git-band > .chips .chip { min-height: 0; height: var(--u); padding: 0 var(--s2); border-radius: var(--r-key); font: 700 var(--t-meta)/var(--u) var(--mono); }
 .git-band > .chips.lone { display: none; }
 .work.band-bench:has(.issue-form:not([hidden], .issue-edit)) .git-band > .chips.lone { display: flex; }
 
