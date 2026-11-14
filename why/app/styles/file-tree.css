@@ -89,7 +89,7 @@
 }
 .file-tree.open { left: var(--corner); clip-path: inset(-40px -32px -32px -2px); }
 @media (max-width: 760px) { .file-tree { --corner: calc(var(--outer) + var(--rail)); } }
-.file-tree::before { content: '/'; position: absolute; left: 0; bottom: calc(100% + 7px); font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.file-tree::before { content: '/'; position: absolute; left: 0; bottom: 100%; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 /* More rows than the window is tall: scrolled inside the sheet (its foot never lower than two cells over the
    window's), where it is scrolled to said while it is (ui/scroll-marks.ts), as a sheet on the desk says it. */
 .file-tree > .tree-children { max-height: calc(100vh - var(--tree-top, calc(5 * var(--u))) - 3 * var(--u)); overflow: hidden auto; scrollbar-width: none; }
@@ -106,16 +106,16 @@
 /* (The triangle is there to be pressed and heard, over the row's indent, and not drawn.) */
 .file-tree .tree-toggle { position: absolute; left: 0; top: 0; width: var(--in); height: 100%; opacity: 0; }
 .file-tree .tree-spacer { display: none; }
-.file-tree .tree-name { min-height: calc(1.5 * var(--u)); padding: 0; font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); }
-.file-tree .tree-repo > .tree-row .tree-name { font: 700 20px/calc(1.5 * var(--u)) var(--mono); }
+.file-tree .tree-name { min-height: calc(1.5 * var(--u)); padding: 0; font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); }
+.file-tree .tree-repo > .tree-row .tree-name { font: 700 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); }
 .file-tree .tree-name[aria-current='location'] { font-weight: 700; }
 .file-tree .tree-row:has(> [aria-current='location'])::before { left: -6px; top: 6px; bottom: 6px; width: 6px; }
 .file-tree .tree-meta { display: none; }
-.file-tree .tree-away > .tree-row > .tree-meta { display: block; padding: 0 var(--s3) 0 var(--s2); font: 400 14px/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); opacity: 1; }
+.file-tree .tree-away > .tree-row > .tree-meta { display: block; padding: 0 var(--s3) 0 var(--s2); font: 400 var(--t-fine)/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); opacity: 1; }
 .file-tree .tree-system { margin-top: calc(var(--u) / 2); }
 .file-tree .tree-system > .tree-row .tree-name { color: var(--quiet); }
 .file-tree .tree-system > .tree-row:is(:hover, :focus-within) .tree-name { color: var(--ink); }
-.file-tree .tree-note { padding: 0 var(--s3) 0 calc(24px + (var(--depth, 0) - var(--out, 0)) * var(--u)); font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); }
+.file-tree .tree-note { padding: 0 var(--s3) 0 calc(24px + (var(--depth, 0) - var(--out, 0)) * var(--u)); font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); }
 .file-tree .tree-said { margin: var(--s1) var(--u) 0; }
 /* What can be done to a row, asked for at its right end: an angle toward where its sheet comes out, there under the
    pointer or the keyboard and while it is out; the row pressed (a slot) while it is. */
@@ -124,11 +124,11 @@
 .file-tree .tree-more .mark { width: 20px; height: 20px; stroke-width: 2; rotate: -90deg; }
 .file-tree > .tree-pop { display: block; width: max-content; min-width: calc(9 * var(--u)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--outer) - var(--u))); padding: calc(var(--u) / 2) 0;
   border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
-.file-tree > .tree-pop > .pop-head { position: absolute; left: 0; bottom: calc(100% + 7px); margin: 0; padding: 0; white-space: nowrap;
-  font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.file-tree > .tree-pop > .pop-head { position: absolute; left: 0; bottom: 100%; margin: 0; padding: 0; white-space: nowrap;
+  font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 .file-tree > .tree-pop :is(.pop-icon, .pop-rule) { display: none; }
 .file-tree > .tree-pop .pop-item { display: flex; align-items: center; width: calc(100% - 12px); min-height: calc(1.5 * var(--u)); height: auto; margin: 0 6px; padding: 0 18px;
-  border: 0; border-radius: 8px; background: none; font: 400 20px/calc(1.5 * var(--u)) var(--mono); color: var(--ink); text-align: left; white-space: nowrap; cursor: var(--cursor-hand); }
+  border: 0; border-radius: 8px; background: none; font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); text-align: left; white-space: nowrap; cursor: var(--cursor-hand); }
 .file-tree > .tree-pop .pop-item:first-of-type { font-weight: 700; }
 .file-tree > .tree-pop .pop-item:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); outline: none; }
 .file-tree > .tree-pop .pop-item:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }

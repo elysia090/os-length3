@@ -52,7 +52,7 @@
   font: 900 var(--nr-name)/1.1 var(--display); letter-spacing: -.04em; color: var(--rule); }
 /* What it is for, under the name: the words written straight in it, a sentence's size; the box grows with them. */
 .nr-box > .summary-box { flex: 1; min-height: 0; padding: var(--s2) calc(var(--nr-in) + 4px) var(--s4); border: 0; border-radius: 0; background: transparent; }
-.nr-box > .summary-box > .todo-detail { min-height: 1.45em; font: 19px/1.45 var(--sans); overflow: hidden; }
+.nr-box > .summary-box > .todo-detail { min-height: 1.45em; font: var(--t-body)/1.6 var(--sans); overflow: hidden; }
 /* Its foot: the plan's word if any, Create at the right, the key that makes it beside its word. */
 .nr-box > .answers { margin: 0; padding: 0 var(--s4) var(--s4) var(--nr-in); }
 .nr-box > .answers > .button.primary { display: inline-flex; align-items: center; gap: var(--s2); }

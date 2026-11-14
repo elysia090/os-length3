@@ -35,7 +35,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .switch-line { position: relative; display: flex; justify-content: flex-end; align-items: center; height: 42px; padding: 0 calc(1.5 * var(--u)); }
 .switch-line.next::before { content: ''; position: absolute; inset: 4px 0; background: var(--green); }
 .git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: auto; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
-  font: 400 28px/42px var(--mono); color: var(--green); white-space: nowrap; }
+  font: 400 var(--t-card)/calc(1.5 * var(--u)) var(--mono); color: var(--green); white-space: nowrap; }
 .git-switch .switch-line > button { cursor: var(--cursor-hand); }
 .git-switch .switch-line > button:disabled { cursor: var(--cursor-arrow); opacity: 1; }
 .git-switch .switch-line.next > :is(button, span) { font-weight: 700; color: var(--ink); }
@@ -43,7 +43,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-switch .switch-line.next > button:focus-visible { outline-color: var(--ink); }
 .switch-lines > .error { margin: var(--u) calc(1.5 * var(--u)) 0; font: 400 13px/20px var(--sans); color: var(--paper); text-align: right; }
 .switch-lines > .error:empty { display: none; }
-.git-side > .issues-write { display: block; margin: calc(1.5 * var(--u)) 0 0 auto; padding: 0; border: 0; background: none; font: 700 20px/var(--u) var(--mono); color: var(--ink);
+.git-side > .issues-write { display: block; margin: calc(1.5 * var(--u)) 0 0 auto; padding: 0; border: 0; background: none; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink);
   white-space: nowrap; cursor: var(--cursor-hand); }
 .git-side > .issues-write:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
 .git-side > .issues-write:disabled { color: var(--quiet); cursor: var(--cursor-arrow); }
@@ -61,7 +61,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-desk .issue-card::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--ink); pointer-events: none; }
 .git-desk .issue-slot > :not(.issue-card) { margin-top: calc(2 * var(--u)); }
 /* Its name over its corner: its number and kind, and how it stands. */
-.issue-name { position: absolute; left: calc(-1.5 * var(--u)); bottom: calc(100% + 1.5 * var(--u) + 7px); margin: 0; font: 700 20px/var(--u) var(--mono); white-space: nowrap; color: var(--ink); }
+.issue-name { position: absolute; left: calc(-1.5 * var(--u)); bottom: calc(100% + 1.5 * var(--u) + 7px); margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); white-space: nowrap; color: var(--ink); }
 .issue-name > i { font-style: normal; color: var(--quiet); }
 .git-desk .issue-box { position: relative; display: grid; grid-template-columns: calc(11.5 * var(--u)) minmax(0, 1fr); gap: 0 var(--u); align-items: start; }
 .git-desk .issue-box.no-work { grid-template-columns: minmax(0, 1fr); }
@@ -74,7 +74,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-desk .issue-big-head:not(.peek) h2 { margin: -12px 0 0; font: 900 calc(1.5 * var(--u) / .7344)/calc(2.5 * var(--u)) var(--display); letter-spacing: -.035em; color: var(--ink); }
 .git-desk .issue-big-head:not(.peek) .issue-no { position: absolute; right: 0; top: -17px; font: 900 calc(4 * var(--u) / .7344)/1 var(--display); letter-spacing: -.05em; color: var(--ink); }
 .git-desk .issue-big-head:not(.peek) .issue-kind { font-size: 0; }
-.git-desk .issue-big-head.peek .issue-no { font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.git-desk .issue-big-head.peek .issue-no { font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 /* Its words: the work's margin note. */
 .git-desk .issue-summary-wrap { grid-column: 1; margin: 0; }
 .git-desk .issue-summary { width: 100%; min-height: 20px; margin: 0; padding: 0; border: 0 solid transparent; border-radius: 0; background: none; font: 400 13px/20px var(--sans); color: var(--sub); text-align: right; }
@@ -87,7 +87,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-desk .issue-foot > .issue-about { flex: 0 1 auto; justify-content: flex-end; }
 /* What is done to the sheet itself (Close, Back to main, Reject): words, not boxes. */
 .git-desk :is(.issue-foot, .issue-leave, .merge-row) .button { min-width: 0; min-height: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
-  font: 700 16.5px/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+  font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
 .git-desk :is(.issue-foot, .issue-leave, .merge-row) .button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
 .git-desk .issue-foot .button { font-size: 13px; }
 /* Its work. */
@@ -95,12 +95,12 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-desk .issue-work.none { margin-right: 0; padding-left: 12px; }
 .work-file + .work-file { margin-top: calc(1.5 * var(--u)); }
 .work-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--u); height: calc(2 * var(--u)); padding: 0 calc(1.5 * var(--u)) 0 12px; }
-.work-name { min-width: 0; padding: 0; border: 0; background: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 20px/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+.work-name { min-width: 0; padding: 0; border: 0; background: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
 .work-name:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.work-count { flex: none; display: flex; gap: 1ch; font: 400 20px/var(--u) var(--mono); }
+.work-count { flex: none; display: flex; gap: 1ch; font: 400 var(--t-meta)/var(--u) var(--mono); }
 .work-count > .diff-add, .work-sum > .diff-add { color: var(--add); }
 .work-count > .diff-del, .work-sum > .diff-del { color: var(--del); }
-.work-line { display: flex; min-height: calc(1.5 * var(--u)); padding: 0 calc(.5 * var(--u)) 0 12px; font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.work-line { display: flex; min-height: calc(1.5 * var(--u)); padding: 0 calc(.5 * var(--u)) 0 12px; font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .work-line > .work-sign { flex: none; width: 2ch; }
 .work-line > .work-text { min-width: 0; }
 .work-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
@@ -113,8 +113,8 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 /* No issue yet: nothing to switch and no sheet; the one thing to do, in the page's own middle. */
 .git-desk .card.new.issue-new { position: absolute; left: calc(50vw - var(--outer) - var(--rail)); top: calc(50vh - var(--outer-top) - var(--keys)); translate: -50% -50%;
   width: auto; min-height: 0; padding: var(--u); gap: var(--u); background: none; }
-.git-desk .card.new.issue-new > span { font: 700 28px/36px var(--sans); }
-.git-desk .card.new.issue-new > small { font: 400 16.5px/var(--u) var(--sans); }
+.git-desk .card.new.issue-new > span { font: 700 var(--t-card)/var(--u) var(--sans); }
+.git-desk .card.new.issue-new > small { font: 400 var(--t-body)/var(--u) var(--sans); }
 .git-desk .card.new.issue-new > svg { width: 36px; height: 36px; }
 @media (max-width: 1100px) {
   .git-flow.git-desk { margin-left: 0; padding-left: 0; }
@@ -150,12 +150,12 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-desk .review-diff { display: grid; gap: calc(3 * var(--u) - 31px); margin: 0; padding: 0; border: 0; background: none; max-height: none; overflow: visible; }
 .git-desk .review-diff > .diff-file { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
 .git-desk .review-diff > .diff-file > summary { display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); min-height: var(--u); margin: 0 0 7px; padding: 0; border: 0; background: none;
-  font: 700 20px/var(--u) var(--mono); color: var(--ink); list-style: none; cursor: var(--cursor-hand); }
+  font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); list-style: none; cursor: var(--cursor-hand); }
 .git-desk .review-diff > .diff-file > summary::-webkit-details-marker { display: none; }
 .git-desk .review-diff > .diff-file > summary::before, .git-desk .review-diff > .diff-file > summary::after { display: none; }
 .git-desk .review-diff > .diff-file > summary .diff-name { font: inherit; color: inherit; }
 .git-desk .review-diff > .diff-file > summary .diff-bar { display: none; }
-.git-desk .review-diff > .diff-file > summary :is(.diff-add, .diff-del, .diff-count) { font: 400 20px/var(--u) var(--mono); background: none; }
+.git-desk .review-diff > .diff-file > summary :is(.diff-add, .diff-del, .diff-count) { font: 400 var(--t-meta)/var(--u) var(--mono); background: none; }
 .git-desk .review-diff > .diff-file > .diff { margin: 0; padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; overflow: hidden; }
 .git-desk .review-diff .diff-line { min-height: var(--u); font: 400 14px/var(--u) var(--mono); color: var(--ink); background: none; }
 .git-desk .review-diff .diff-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
@@ -164,23 +164,23 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-desk .review-diff .diff-no { font: 400 11px/var(--u) var(--mono); color: var(--quiet); }
 .git-desk .review-sheet { position: relative; margin-top: calc(3 * var(--u) + 31px); padding: calc(1.5 * var(--u)); border-radius: var(--r-sheet); background: var(--paper); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .git-desk .review-sheet::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--ink); pointer-events: none; }
-.git-desk .review-sheet > .stage-head { position: absolute; left: 0; right: 0; bottom: calc(100% + 7px); display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); margin: 0; padding: 0; border: 0; }
-.git-desk .review-sheet > .stage-head > h3 { margin: 0; font: 700 20px/var(--u) var(--mono); letter-spacing: 0; text-transform: none; color: var(--ink); }
-.git-desk .review-sheet > .stage-head > .muted { margin: 0; font: 400 20px/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
+.git-desk .review-sheet > .stage-head { position: absolute; left: 0; right: 0; bottom: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); margin: 0; padding: 0; border: 0; }
+.git-desk .review-sheet > .stage-head > h3 { margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); letter-spacing: 0; text-transform: none; color: var(--ink); }
+.git-desk .review-sheet > .stage-head > .muted { margin: 0; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
 .git-desk .review-chat { display: grid; gap: var(--u); margin: 0 0 var(--u); padding: 0; border: 0; background: none; max-height: none; }
 .git-desk .review-chat[hidden] { display: none; }
 .git-desk .review-chat .bubble { display: block; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .git-desk .review-chat .bubble > .muted { display: block; font: 400 13px/20px var(--sans); color: var(--sub); }
 .git-desk .review-chat .bubble > .step-done { display: block; font: 700 13px/20px var(--mono); color: var(--del); }
-.git-desk .review-chat .bubble-text { margin: 0; font: 400 16.5px/var(--u) var(--sans); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.git-desk .review-chat .bubble-text { margin: 0; font: 400 var(--t-body)/var(--u) var(--sans); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .git-desk .review-in { display: block; width: 100%; min-height: calc(4 * var(--u)); margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; resize: none;
-  font: 400 16.5px/var(--u) var(--sans); color: var(--ink); }
+  font: 400 var(--t-body)/var(--u) var(--sans); color: var(--ink); }
 .git-desk .review-in:is(:focus, :focus-visible) { outline: none; }
 .git-desk .review-in[hidden], .git-desk .review-verdict[hidden] { display: none; }
 .git-desk .review-verdict { display: flex; align-items: center; justify-content: flex-end; gap: calc(1.5 * var(--u)); margin: var(--u) 0 0; padding: 0; border: 0; }
 .git-desk .review-verdict > .grow { display: none; }
 .git-desk .review-verdict > :is(.button, .approve-mark, .step-done) { order: 0; min-width: 0; min-height: 0; height: calc(2 * var(--u)); margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
-  font: 700 16.5px/calc(2 * var(--u)) var(--mono); color: var(--ink); white-space: nowrap; }
+  font: 700 var(--t-meta)/calc(2 * var(--u)) var(--mono); color: var(--ink); white-space: nowrap; }
 .git-desk .review-verdict > .button:last-child { order: -1; }
 .git-desk .review-verdict > :is(.approve-mark, .step-done) { order: 1; display: inline-grid; place-items: center; padding: 0 var(--u); border-radius: var(--r-key); background: var(--ink); color: var(--green); }
 .git-desk .review-verdict > .approve-mark { cursor: var(--cursor-hand); }
@@ -189,7 +189,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .git-desk .review-sheet > .error:empty { display: none; }
 .git-desk .issue-end { display: grid; justify-items: start; gap: calc(var(--u) / 2); margin: calc(2 * var(--u)) 0 0 calc(1.5 * var(--u)); }
 .git-desk .issue-end :is(.issue-leave, .merge-row) { display: block; margin: 0; padding: 0; border: 0; background: none; }
-.git-desk .issue-end :is(.issue-leave, .merge-row) .button { font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.git-desk .issue-end :is(.issue-leave, .merge-row) .button { font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 .git-desk .issue-end .merge-row .button { color: var(--del); }
 @media (max-width: 1100px) {
   .git-desk .issue-run { padding-left: calc(3 * var(--u)); }
@@ -211,7 +211,7 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
   .git-desk .issue-slot[aria-current='true'] .issue-card { padding: var(--u); box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
   .git-desk .issue-words { margin-bottom: var(--u); }
   .git-desk .issue-big-head:not(.peek) { min-height: 0; }
-  .git-desk .issue-big-head:not(.peek) h2 { margin: 0; font: 900 28px/36px var(--display); overflow-wrap: anywhere; }
+  .git-desk .issue-big-head:not(.peek) h2 { margin: 0; font: 900 var(--t-card)/var(--u) var(--display); overflow-wrap: anywhere; }
   .git-desk .issue-work { margin-right: calc(-1 * var(--u)); }
   .git-desk .work-line { font-size: 13px; line-height: var(--u); }
 }

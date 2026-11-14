@@ -88,7 +88,7 @@
 .band-tools .search-results:not([data-q='']) .search-pills:not(:has([aria-pressed='true'])) { display: none; }
 .band-tools .search-pills { gap: var(--u); margin: calc(-31px) 0 7px; }
 .band-tools .search-pills > .chip { height: var(--u); min-height: 0; padding: 0; border: 0; background: none; box-shadow: none;
-  font: 700 20px/var(--u) var(--mono); color: var(--sub); }
+  font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--sub); }
 .band-tools .search-pills > .chip:hover { color: var(--ink); }
 .band-tools .search-pills > .chip[aria-pressed='true'] { color: var(--ink); text-decoration: underline 3px; text-underline-offset: 5px; }
 /* Where in the line of what was searched and read one is: only once there is more than the one in hand. */
@@ -103,14 +103,14 @@
 .found-sec:nth-child(2) { --at: 1; } .found-sec:nth-child(3) { --at: 2; } .found-sec:nth-child(n + 4) { --at: 3; }
 @keyframes sheet-down { from { opacity: 0; translate: 0 calc(-1.5 * var(--u)); } }
 @media (prefers-reduced-motion: reduce) { .found-sec { animation: none; } }
-.found-sec-head { position: absolute; left: 0; bottom: calc(100% + 7px); margin: 0; white-space: nowrap; font: 700 20px/var(--u) var(--mono); color: var(--ink); }
-.found-sec-head > i { margin-left: 1ch; font: 400 20px/var(--u) var(--mono); font-style: normal; color: var(--quiet); }
+.found-sec-head { position: absolute; left: 0; bottom: 100%; margin: 0; white-space: nowrap; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
+.found-sec-head > i { margin-left: 1ch; font: 400 var(--t-meta)/var(--u) var(--mono); font-style: normal; color: var(--quiet); }
 .found-sec-rows { display: grid; min-width: 0; max-height: calc(100vh - 10 * var(--u)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
 /* A row: a cell and a half tall in the code face, a step in from the sheet's sides, soft at the corner where it is
    pressed or pointed at; whatever kind it is (a line found, an issue, a changed file, what the Agent was asked). */
 .found-sec .choice { display: flex; align-items: center; gap: var(--u); min-width: 0; min-height: calc(1.5 * var(--u)); height: auto; margin: 0 6px; padding: 0 18px;
   border: 0; border-radius: var(--r-field); background: none; box-shadow: none; text-align: left; white-space: nowrap;
-  font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+  font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
 .found-sec .choice:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); outline: none; }
 .found-sec .choice:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 .band-tools .search-box:has(.search-in:focus) .found-secs .choice.first { background: var(--slot); }
