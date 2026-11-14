@@ -127,6 +127,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .slide > .dock::after { content: none; }
 /* Its key comes with the words (server/dock.ts): empty, the box says whom it writes to, whole, at every width. */
 .slide > .dock > .prompt:not(.has-words) > .prompt-run { display: none; }
+.prompt-run > .key-said { margin-left: var(--s2); font: var(--t-fine)/1 var(--mono); color: var(--sub); }
 .slide > .board-card:has(> .board-talk, > .part-panel) + .dock { border-top: 1px solid var(--rule); }
 /* A board's head: its name in the display face, its capitals a cell tall on the second line of the sheet (a sheet's
    name, §5), a cell of paper before it; after the name its two parts, which go under it where they do not fit beside

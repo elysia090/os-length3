@@ -601,7 +601,6 @@ breaks; none is a decision to leave it.
 | signing in, a Remote not answering | the same deed has two looks (Try again in ink on Server, in line on the Remote) | §1, one hand |
 | deeds that ask first | some twenty deeds ask before they are done (remove a dotfile, take a repo off, sign a device out, a server left), each in its place with Cancel beside it, whether or not they can be put back | §7, what can be put back is done and can be put back |
 | Forge, the first time | the desk is long in the building (the Prompt starts with it), and the move to it waits for that | §8, off at once |
-| a board's box | nothing on it says Enter is a new line and which key sends (a conversation's says so under it) | §7, friction kept on purpose is said |
 | `PLACES.md` | speaks of the look as it was | — |
 
 **Which icons the rail needs.** Counted in presses, for a rail of n icons. An icon costs the screen a square for
