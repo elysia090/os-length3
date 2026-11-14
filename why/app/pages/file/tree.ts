@@ -1,3 +1,4 @@
+import {keepNear} from '../../ui/near.ts';
 import {bytes, h} from '../../ui/dom.ts';
 import {closeUp, keepOut, putAway, still, unfold} from '../../ui/glide.ts';
 import {t} from '../../i18n/i18n.ts';
@@ -119,6 +120,8 @@ export class FileTree {
       if (to && !this.element.contains(to) && to !== this.trigger) this.close();
     });
     this.element.addEventListener('keydown', (event) => this.step(event));
+    // (A press that just misses the tree, or a row's menu out beside it, is still theirs: ui/near.ts.)
+    keepNear(() => (this.isOpen ? this.pop?.element ?? this.element : null));
     document.addEventListener('pointerdown', (event) => {
       const at = event.target as Node;
       if (!this.element.contains(at) && !this.trigger?.contains(at)) this.close();

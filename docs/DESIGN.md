@@ -315,6 +315,24 @@ being worked in.
 - A file's numbers are 11 px, quiet, in a margin a cell and a half wide; its words start there.
 - Nothing on a desk changes size, and nothing lies askew.
 
+**What is ruled on a sheet.** A sheet may be ruled, as a form or a ledger is: lines of the quiet `rule`, 1 px, with
+no fill and no shadow, and never of ink (ink is words, and the edge of what is in the hand). An account that is read
+across (Runtime's: what is here, what is on the Remote, what can be freed) is one frame of columns of one height,
+its figures at each column's right edge: the frame and the height are what make three lists one account. This is not
+a sheet in a sheet. A sheet in a sheet has a fill or a shadow of its own, and there are none.
+
+**What a sheet not in the hand stands as.** As tall as what is on it. Only the piece in the hand reaches the window's
+foot; a board beside it is its name, the row's first sheet its lines, and neither is a frame round nothing.
+
+**Nothing read or pressed has the ground's dots under it.** Words set on the ground stand on a patch of the ground's
+colour exactly their own size, as a name on a map stands clear of its grid; a key on the ground has the ground's
+fill. A dot in a line of small words reads as a full stop nobody wrote.
+
+**A thing's menu is called by one mark,** a chevron pointing down, everywhere (a file's row, a repo, one's own name,
+a server); out, it points back up. A mark is a few strokes of one weight, as the rail's are. There is no gear: it is
+a picture of a machine's part, too fine to be drawn at a mark's size, and it says "settings" where what opens is what
+can be done with the thing.
+
 **A place that is one sheet** (Runtime, the Remote) is that sheet in the hand: paper from the desk's corner
 (48, 48), a cell of paper round what is on it, its shadow, its name in the display face.
 

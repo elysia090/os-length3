@@ -88,8 +88,5 @@ body.has-door :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) >
 .me { position: relative; }
 .door::before, :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool::before { content: ''; position: absolute; inset: calc(-1 * var(--outer)) 0; }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { position: relative; }
-/* A press that just misses what was called up neither puts it away nor lands on what is under it: 16 px round a menu
-   are the menu's (its shadow lies in them). The margin a toolkit that copies the phones' own manners keeps round a
-   popup, inside which a tap is not a tap outside it. */
-:is(.me-pop, .tree-pop, .stub-panel, .share-pop, .gear-card > .repo-gear-pop)::before { content: ''; position: absolute; inset: -16px; z-index: -1; }
-.file-tree::after { content: ''; position: absolute; inset: -16px -16px -16px 0; z-index: -1; }
+/* (A press that just misses what was called up is still its own: told by where the press was, ui/near.ts, so
+   nothing is laid round a menu that could make the page larger than the window.) */

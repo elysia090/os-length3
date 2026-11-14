@@ -1,3 +1,4 @@
+import {keepNear} from '../../ui/near.ts';
 import {pageVeil} from '../../ui/page-veil.ts';
 import {h} from '../../ui/dom.ts';
 import {currentLang, LANGS, setLang, t} from '../../i18n/i18n.ts';
@@ -111,6 +112,8 @@ export class Me {
       const at = items.indexOf(document.activeElement as HTMLElement);
       items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
     });
+    // (A press that just misses the menu is still the menu's: ui/near.ts.)
+    keepNear(() => (this.isOpen ? this.pop : null));
     document.addEventListener('pointerdown', (event) => {
       if (!this.element.contains(event.target as Node) && !this.busy) this.close();
     });

@@ -89,7 +89,8 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
    eighth, a tooth's step, so it comes to rest looking as it did. */
 .server-bar > .server-gear[aria-expanded='true'] { border-color: var(--ink); background: var(--ink); color: var(--ground); }
 .server-gear svg { width: 18px; height: 18px; transition: rotate var(--move) var(--land); }
-.server-gear[aria-expanded='true'] svg { rotate: 45deg; }
+/* (Its mark is the one every thing's menu is called by, pointing down; out, it points back up.) */
+.server-gear[aria-expanded='true'] svg { rotate: 180deg; }
 @media (max-width: 760px) { .server-top { padding-right: calc(var(--s5) + var(--h-row)); } }
 /* Signed out, with nothing open to read: Server's head and the card signing in where a page has them (page.css):
    the center's padding is a step narrower than a page's at the left and a step deeper at the top, given back here. */

@@ -75,7 +75,7 @@ function took(stub: HTMLElement, from: DOMRect) {
  * seconds while open, and the name claimed as soon as the record is there.
  */
 function addressStub(me: inbox.Me, again: () => void, toPlan: () => void): HTMLElement {
-  const gear = h('button', {type: 'button', class: 'stub-gear', 'aria-label': t('Your usernames'), 'aria-expanded': 'false'}, mark('gear')) as HTMLButtonElement;
+  const gear = h('button', {type: 'button', class: 'stub-gear', 'aria-label': t('Your usernames'), 'aria-expanded': 'false'}, mark('down')) as HTMLButtonElement;
   const panel = h('div', {class: 'stub-panel pop', hidden: ''});
   const a = inbox.shown(inbox.username(me));
   const text = h('button', {type: 'button', class: 'stub-text'}, a);

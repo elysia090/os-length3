@@ -44,7 +44,7 @@ export class Band {
     this.here = here;
     this.ways = ways;
     this.chips = h('div', {class: 'chips server-chips', role: 'radiogroup', 'aria-label': 'Server'});
-    this.gear = h('button', {type: 'button', class: 'server-gear unseen', 'aria-label': t('Manage members, boards, and repos'), title: t('Manage members, boards, and repos'), 'aria-expanded': 'false', disabled: ''}, mark('gear')) as HTMLButtonElement;
+    this.gear = h('button', {type: 'button', class: 'server-gear unseen', 'aria-label': t('Manage members, boards, and repos'), title: t('Manage members, boards, and repos'), 'aria-expanded': 'false', disabled: ''}, mark('down')) as HTMLButtonElement;
     this.plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Create server'), title: t('Create server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
     this.plus.addEventListener('click', () => ways.make());
     this.gear.addEventListener('click', () => ways.gear());

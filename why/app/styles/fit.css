@@ -1,0 +1,26 @@
+/* What the eye finds wanting, and the rule that mends each: after every other sheet, as each is a rule over them all. */
+
+/* ---- What the eye finds wanting, and the rule that mends each (DESIGN §5). ----
+
+   Nothing that is read or pressed has the ground's dots under it. A dot in the middle of a line of small words reads
+   as a full stop that was never written ("1 repo . 1 server"), and in a key as dirt. Words set on the ground stand on
+   a patch of the ground's own colour exactly as large as they are, as a name on a map stands clear of its grid; a key
+   on the ground has the ground's fill. */
+.identity > :is(.counts, .handle, .bio), .home-repos-sec > h2, .home-repos > .card.new, .desk-label, .issue-name, .git-side > .issues-write,
+.side-part h3, .lately > h2 { background-color: var(--ground); }
+.home-repos-sec > h2, .git-side > .issues-write { width: fit-content; }
+.server-chips .chip:not([aria-checked='true']), .band-add, .server-bar > .server-gear:not([aria-expanded='true']) { background-color: var(--ground); }
+
+/* A sheet is as tall as what is on it. Only the piece in the hand reaches the window's foot (it is worked in, and
+   what is under its foot is scrolled to inside it); a sheet not in the hand that stood as tall was a frame round
+   nothing. */
+.server-center .slide:not([aria-current='true']), .slide-track > .server-side, .inbox-index { height: auto; max-height: 100%; align-self: flex-start; }
+.server-center .slide:not([aria-current='true']) > .board-card { flex: none; }
+.slide-track > .server-side { padding-bottom: var(--u); }
+.inbox-index { padding-bottom: calc(var(--u) / 2); }
+
+/* (Runtime's account is a ruled form on its sheet, and stays one: a frame, three columns of one height, its lines the
+   quiet rule's. Only this was off: its three figures stand over its three columns, each from its column's own left
+   margin, to the pixel, where they stood eleven px left of the second and twenty-three of the third.) */
+.device-part > .legend { padding: 0; }
+.device-part > .legend > * { padding-left: calc(var(--s4) + 1px); }
