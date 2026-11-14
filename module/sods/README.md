@@ -84,6 +84,10 @@ own corpus passes with muk on this Linux: `sh test/muk/run.sh BUSYBOX` runs `mod
 move_mount, pivot_root, its mounts, a terminal of its own and the filter, and saying of itself what it says on
 Linux.
 
+**prompt runs here.** `sh test/prompt/run.sh` runs prompt's own check of it (`module/prompt/test/attach.c`, the
+same program as on Linux) inside sods: the same Rust prompt, translated, in front of one terminal this kernel makes
+and given another, its signals read as a file (signalfd).
+
 What is not so yet is where a box or a terminal is still made by something else. `node
 module/sods/runtime/targets.ts --owed` lists every line owed, these and every row above that is not verified or
 excluded, and ends 1 while there is one: a release of ricebox under its own name is held to it
@@ -93,7 +97,7 @@ excluded, and ends 1 while there is one: a release of ricebox under its own name
 | --- | --- | --- |
 | a box where there is no Linux (a page, a Worker, node) | the caller starts its program directly on this Linux (linux.ts linux(): why/app/host/prompt/kernel.worker.ts, scripts/webroot-runnable.ts) | the caller writes a bundle and starts `muk run` of it here, as module/sods/test/muk/run.sh does with muk's own corpus (muk.sh, hostile.sh), which passes with muk on this Linux |
 | a box on the desktop (Linux) | why's core makes it itself (why/core/src/prompt/launch.rs, seccomp.rs; why/core/src/compute) | the launcher runs `muk run` on a bundle it writes, and its own making of a box goes |
-| a terminal where there is no Linux | the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt) | signalfd answered here, and the terminal muk gives away (made here: linux/pty.ts) taken by `prompt attach` on this Linux, checked by module/prompt/test/prompt.sh there |
+| a terminal where there is no Linux | the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt) | the caller hands the terminal muk gives away to `prompt attach` here, which runs on this Linux (module/sods/test/prompt/run.sh: prompt's own check of it passes, the terminals this kernel's), and its own console goes |
 | a terminal on the desktop (Linux) | why's core's session (why/core/src/prompt) | the session hands the descriptor muk sends to `prompt attach` |
 
 ## Its folders
@@ -120,7 +124,7 @@ runtime/              what runs beside a translated program
 lib/tree.h            C on ../lib: every name of a root as Linux says it (written to its bound; the calls do not
                       walk it yet)
 test/                 programs/ (each built static, run natively and translated: the same output and status),
-                      muk/ (muk's own corpus, with muk on this Linux), runtime/ (the kernel's, node:test),
+                      muk/ and prompt/ (each one's own check, with it on this Linux), runtime/ (the kernel's, node:test),
                       floors/, tree/, cache.rs
 examples/             what measures and dumps the translator
 ```
@@ -135,6 +139,7 @@ their relocations removed and are not accepted yet.
 ```
 sh test/programs/run.sh                          every test program, native beside translated
 sh test/muk/run.sh BUSYBOX                       muk's own corpus, with muk on this Linux (a static busybox its shell)
+sh test/prompt/run.sh                            prompt's own check, with prompt on this Linux
 cargo test --locked --release                    the translator's own, the identity's and the cache's
 SODS_INLINE=1 node runtime/run.ts PROGRAM        its threads in turn on one thread, not each in a Worker
 SODS_SYSCALLS=1, SODS_FAULTS=1, SODS_TIMING=1    every call listed; each fault said; where the time went

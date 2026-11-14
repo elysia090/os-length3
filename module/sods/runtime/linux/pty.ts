@@ -242,6 +242,8 @@ function echo(t: Pty, c: number): void {
 /** What the master wrote: typed at the terminal. Through the line discipline to what the slave reads. */
 function input(p: Proc, t: Pty, bytes: Uint8Array): void {
   const tio = t.termios, i = tio.iflag, l = tio.lflag, cc = tio.cc;
+  // Set to pass every byte as it is (raw): nothing is looked at, and all of it is there to be read at once.
+  if (!(i & (I.ISTRIP | I.IGNCR | I.ICRNL | I.INLCR | I.IXON)) && !(l & (L.ISIG | L.ICANON | L.ECHO | L.ECHONL))) { t.typed.put(bytes.slice()); return; }
   const is = (c: number, at: number): boolean => cc[at] !== 0 && c === cc[at];
   for (let c of bytes) {
     if (i & I.ISTRIP) c &= 0x7f;
@@ -317,11 +319,12 @@ export function read(p: Proc, d: Description, into: Uint8Array, at: number, leng
     if (end < b.length) { const rest = b.subarray(end), later = t.typed.take(t.typed.size); t.typed.put(rest.slice()); t.typed.put(later); }
     into.set(b.subarray(0, end), at);
     t.changes++;
+    p.kernel.dirty = true;
     return end;
   }
   // Key by key: as soon as there are VMIN of them (none wanted: whatever is there, at once).
   const min = tio.cc[CC.MIN];
-  if (t.typed.size >= Math.max(1, Math.min(min, length)) || (min === 0 && t.typed.size)) { const b = t.typed.take(length); into.set(b, at); t.changes++; return b.length; }
+  if (t.typed.size >= Math.max(1, Math.min(min, length)) || (min === 0 && t.typed.size)) { const b = t.typed.take(length); into.set(b, at); t.changes++; p.kernel.dirty = true; return b.length; }
   if (min === 0) {
     const tenths = tio.cc[CC.TIME], s = p.call!.state;
     if (!tenths) return 0;

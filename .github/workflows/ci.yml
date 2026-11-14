@@ -293,6 +293,10 @@ jobs:
       - name: muk's own corpus, with muk on sods' Linux
         if: matrix.part == 'muk'
         run: sh module/sods/test/muk/run.sh "$(command -v busybox)"
+      # And the one prompt: prompt's own check of it at two terminals, the terminals sods' Linux's.
+      - name: prompt, at a terminal, on sods' Linux
+        if: matrix.part == 'muk'
+        run: sh module/sods/test/prompt/run.sh
 
       - name: Run why under muk
         if: matrix.part == 'prompt'

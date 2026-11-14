@@ -75,7 +75,7 @@ export const BRANCHES: readonly Branch[] = [
   {what: 'a box on the desktop (Linux)', by: "why's core makes it itself (why/core/src/prompt/launch.rs, seccomp.rs; why/core/src/compute)",
     needs: 'the launcher runs `muk run` on a bundle it writes, and its own making of a box goes'},
   {what: 'a terminal where there is no Linux', by: "the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt)",
-    needs: 'signalfd answered here, and the terminal muk gives away (made here: linux/pty.ts) taken by `prompt attach` on this Linux, checked by module/prompt/test/prompt.sh there'},
+    needs: 'the caller hands the terminal muk gives away to `prompt attach` here, which runs on this Linux (module/sods/test/prompt/run.sh: prompt\'s own check of it passes, the terminals this kernel\'s), and its own console goes'},
   {what: 'a terminal on the desktop (Linux)', by: "why's core's session (why/core/src/prompt)", needs: 'the session hands the descriptor muk sends to `prompt attach`'},
 ];
 

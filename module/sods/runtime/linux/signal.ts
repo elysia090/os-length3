@@ -14,6 +14,7 @@
 import {CAP, capable, shownIn} from './cred.ts';
 import {byNr, nrIn} from './space.ts';
 import {E, FsError} from './fs.ts';
+import {Description} from './fd.ts';
 import {Redirect, Wait} from './flow.ts';
 import type {Calls, Kern, Proc, SigAction, SigInfo, Thread} from './parts.ts';
 import {steady} from '../host.ts';
@@ -366,6 +367,23 @@ export const SIGNAL_CALLS: Calls = {
     return 0;
   },
   62(pid, sig) { return kill(this, N(pid), N(sig)); },
+  282(fd, set, size) { return SIGNAL_CALLS[289].call(this, fd, set, size, 0n); }, // signalfd
+  289(fd, set, size, flags) { // signalfd4: a descriptor that reads the signals of `set`; or (`fd` one already) its set made `set`
+    const f = N(flags), CLOEXEC = 0x80000, NONBLOCK = 0x800, at = Number(BigInt.asIntN(32, fd));
+    if (N(size) !== 8 || f & ~(CLOEXEC | NONBLOCK)) fail(E.INVAL);
+    const mask = readSet(this, N(set)) & ~UNBLOCKABLE;
+    if (at !== -1) {
+      const d = this.fds.get(at) ?? fail(E.BADF);
+      if (d.kind !== 'signalfd') fail(E.INVAL);
+      d.signals = mask;
+      return at;
+    }
+    const to = this.fds.lowest();
+    if (to < 0) fail(E.MFILE);
+    const d = new Description('signalfd', {flags: f & NONBLOCK});
+    d.signals = mask;
+    return this.fds.install(d, {fd: to, cloexec: (f & CLOEXEC) !== 0});
+  },
   200(tid, sig) { return tkill(this, -1, N(tid), N(sig)); }, // tkill
   234(tgid, tid, sig) { return tkill(this, N(tgid), N(tid), N(sig)); }, // tgkill
   129(pid, sig, info) { // rt_sigqueueinfo
@@ -373,6 +391,47 @@ export const SIGNAL_CALLS: Calls = {
     return kill(this, N(pid), N(sig), i);
   },
 };
+
+// ---- signalfd: signals read as a file is read. What is read is a signal that waits for the reader (one it holds
+// back: taken here it is not delivered), as rt_sigtimedwait takes one, a record of 128 bytes each.
+
+/** The signal of `d`'s set that waits for `p`'s calling thread, taken; or null. */
+function waiting(p: Proc, d: Description, take: boolean): SigInfo | null {
+  const want = d.signals ?? 0n;
+  for (const from of [p.task.pending, p.pending]) {
+    const m = from.mask & want;
+    if (!m) continue;
+    for (let sig = 1; sig <= NSIG; sig++) if (m & bit(sig)) return take ? {...from.take(sig), signo: sig} : {signo: sig, code: 0};
+  }
+  return null;
+}
+/** Whether a read of signalfd `d` by `p` would read one. */
+export const signalReady = (p: Proc, d: Description): boolean => waiting(p, d, false) !== null;
+/** A read of signalfd `d`: as many whole records as wait and fit (one at least: a read with room for none is EINVAL). */
+export function signalRead(p: Proc, d: Description, into: Uint8Array, at: number, length: number): number {
+  const RECORD = 128, most = Math.floor(length / RECORD);
+  if (!most) fail(E.INVAL);
+  let n = 0;
+  for (; n < most; n++) {
+    const i = waiting(p, d, true);
+    if (!i) break;
+    const record = new Uint8Array(RECORD), v = new DataView(record.buffer);
+    v.setUint32(0, i.signo, true);
+    v.setInt32(4, i.errno ?? 0, true);
+    v.setInt32(8, i.code ?? 0, true);
+    v.setUint32(12, i.pid ? nrIn(p.kernel.numbers, p.pidns, i.pid) : 0, true);
+    v.setUint32(16, shownIn(p.cred.ns, i.uid ?? 0), true);
+    if (i.status !== undefined) v.setInt32(40, i.status, true);
+    if (i.value !== undefined) { v.setInt32(44, Number(BigInt.asIntN(32, BigInt(i.value))), true); v.setBigUint64(48, BigInt.asUintN(64, BigInt(i.value)), true); }
+    if (i.addr !== undefined) v.setBigUint64(72, BigInt.asUintN(64, BigInt(i.addr)), true);
+    into.set(record, at + n * RECORD);
+  }
+  if (n) return n * RECORD;
+  if (d.flags & 0x800) fail(E.AGAIN);
+  // Waiting, its set is taken as unblocked so that sending one wakes this call.
+  p.call!.state.waitFor = d.signals ?? 0n;
+  throw new Wait();
+}
 
 /**
  * Whether `p` may send `sig` to `q`: its real or effective user is `q`'s real or saved one, or it has CAP_KILL over

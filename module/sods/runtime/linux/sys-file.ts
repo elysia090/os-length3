@@ -16,7 +16,7 @@ import * as pty from './pty.ts';
 import {byNr, nrIn} from './space.ts';
 import {Wait, utf8} from './flow.ts';
 import type {Calls, Kern, Proc, Termios} from './parts.ts';
-import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send} from './signal.ts';
+import {SIG, SI, UNBLOCKABLE, actionOf, bit, deliverable, send, signalRead, signalReady} from './signal.ts';
 import {epoch, steady} from '../host.ts';
 
 const AT_FDCWD = -100;
@@ -422,6 +422,7 @@ function readTo(p: Proc, d: Description, into: Uint8Array, at: number, length: n
     case 'dir': return fail(E.ISDIR);
     case 'socket': return net.read(p, d, into, at, length);
     case 'pty-m': case 'pty-s': return pty.read(p, d, into, at, length);
+    case 'signalfd': return signalRead(p, d, into, at, length);
   }
   return fail(E.BADF);
 }
@@ -964,6 +965,7 @@ function readiness(p: Proc, d: Description): number {
     case 'epoll': r = epollReady(p, d, 1).length ? POLL.IN : 0; break;
     case 'socket': r = net.ready(d); break;
     case 'pty-m': case 'pty-s': r = pty.ready(d); break;
+    case 'signalfd': r = signalReady(p, d) ? POLL.IN : 0; break;
     default: r = POLL.IN | POLL.OUT;
   }
   if (r & POLL.IN) r |= POLL.RDNORM;

@@ -147,7 +147,7 @@ export function unflock(d: Description): void {
 
 /** One open file description, shared by dup'd and inherited descriptors. */
 /** What a description is of. */
-export type Kind = 'file' | 'dir' | 'pipe-r' | 'pipe-w' | 'pipe-rw' | 'console' | 'device' | 'eventfd' | 'epoll' | 'socket' | 'pty-m' | 'pty-s';
+export type Kind = 'file' | 'dir' | 'pipe-r' | 'pipe-w' | 'pipe-rw' | 'console' | 'device' | 'eventfd' | 'epoll' | 'socket' | 'pty-m' | 'pty-s' | 'signalfd';
 
 /** An eventfd's counter (and whether it is a semaphore's), and how often it changed. */
 export interface Counter { count: bigint; semaphore: boolean; changes: number }
@@ -177,6 +177,8 @@ export class Description {
   declare after?: string;
   /** A FIFO open: the other end's opens as they were when it began. */
   declare seen?: {reads: number; writes: number};
+  /** A signalfd's signals: those read from it. */
+  declare signals?: bigint;
   /** An eventfd's counter. */
   declare event?: Counter;
   /** An epoll instance's interest list. */
