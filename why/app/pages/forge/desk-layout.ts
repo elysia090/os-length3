@@ -9,6 +9,7 @@
 // twice as large pressed twice; before that boxes 80 columns wide in columns, the one in hand brought to the middle.)
 
 import {eased, moveTime} from '../../ui/law.ts';
+import {atRest, turnedTo as rowTurnedTo} from '../../ui/row.ts';
 
 /** The grid the desk is laid on, and a line of what is written on it. */
 export const GRID = 24;
@@ -54,30 +55,13 @@ export function termHeight(hgt: number): number {
 }
 
 /**
- * Where the desk rests: with a piece's left edge at its own (under the band's first key), and nowhere else. So how far
- * it is turned is a whole number, which piece is at the edge, and what is out of sight is known from that: the next
- * piece starts a width and two cells along, the one before ended two cells back.
- *
- * How far it is turned (from `now`) for the piece at `x`, `w` wide, gone to on a face `face` wide, the pieces starting
- * at `starts`: where it is while that piece and its shadow are whole in sight (what is pressed does not go from under
- * the hand that pressed it); else the nearest rest that shows it whole: the piece itself at the edge if it was before
- * the edge, or the earliest piece at the edge that brings its far side in.
+ * Where the desk rests: with a piece's left edge at its own (under the band's first key), and nowhere else; and how
+ * far it is turned for a piece gone to. The rule is every row's (ui/row.ts), with this desk's shadow.
  */
 export function turnedTo(now: number, x: number, w: number, face: number, starts: readonly number[]): number {
-  const left = x - PAD, far = x + w + SHADOW - face;
-  if (now <= left && now >= far) return now;
-  if (now > left) return left;
-  let to = left;
-  for (const s of starts) if (s - PAD >= far && s - PAD < to) to = s - PAD;
-  return to;
+  return rowTurnedTo(now, x, w, face, starts, SHADOW);
 }
-
-/** The piece at the desk's edge when the desk, let go of at `now`, comes to rest: the nearest of `starts`. */
-export function atRest(now: number, starts: readonly number[]): number {
-  let best = starts[0] ?? PAD;
-  for (const x of starts) if (Math.abs(x - PAD - now) < Math.abs(best - PAD - now)) best = x;
-  return best - PAD;
-}
+export {atRest};
 
 /** How wide the desk's plane is so that its last piece, at `last`, can stand at the edge of a face `face` wide. */
 export function planeWidth(last: number, face: number): number { return last - PAD + face; }

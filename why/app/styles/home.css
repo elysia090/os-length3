@@ -1,22 +1,29 @@
-/* Home (and New repo, on the same ground): the desk. The frame is the rail's column and the band's row, two cells
-   each; the desk and its dots start at their corner, and everything on Home is set on the dots' grid from there (--u,
-   a dot in the middle of every cell). One column, a half screen's width less the frame (--col: a window that is half
-   of a screen shows it whole, edge to edge): the person's name, its capitals two cells tall, standing a cell under
-   the band; what is theirs to do, a yellow note; then the repos by name and what waits, a slip of paper. A window
-   wide enough for two has the repos and the slip in a second column, a half screen along, the first repo's name on
-   the line the person's stands on. Words are in four sizes and no others: 11 and 13 px (said quietly, in mono), 15 px
-   (written and read), capitals a cell tall (a name), capitals two cells tall (the person's). */
+/* Home (and New repo, on the same ground): a desk. The frame is the rail's column and the band's row, two cells
+   each; the desk starts at their corner, and everything on Home is set on the dots' grid from there (--u, a dot in
+   the middle of every cell). What is on it lies in a row, as a repo's files do on Forge's desk and by the same rule
+   (ui/row.ts): pieces one width (twenty-four cells, or as many as the window has room for), two cells apart, the desk
+   at rest only with a piece at its edge. The first is the person's own: the name, its capitals two cells tall,
+   standing a cell under the band; what is theirs to do, a yellow note. The second, the repos by name and what waits,
+   a slip of paper; its first repo's name stands on the line the person's does. A window half a screen wide shows the
+   first and the edge of the second, a whole screen both, a phone one. Words are in few sizes and no others: 11 and
+   13 px (said quietly, in mono), 15 px (written and read), capitals a cell tall (a name), capitals two cells tall
+   (the person's). */
 /* From the desk's corner (no step in from the band's keys: what is under the terminal's key starts where it does) to
-   a cell from the window's right edge. */
-.page:has(> .home-layout) { --body-left: 0px; padding: 0 calc(var(--u) - var(--outer)) 0 0; }
-.page > .home-layout { position: relative; max-width: none; padding-bottom: calc(2 * var(--u)); }
+   the window's right edge. */
+.page:has(> .home-layout) { --body-left: 0px; padding: 0; }
+.page > .home-layout { position: relative; max-width: none; }
 /* ---- The band: the keys from the rail's corner (forge-band.css, one with a desk's). ---- */
-/* ---- The columns. ---- */
-/* (Narrower than the column, a window has as many whole cells of it as it has room for.) */
-.home-main { display: grid; grid-template-columns: min(var(--col), round(down, 100%, var(--u))); row-gap: calc(2 * var(--u)); }
-.home-own { min-width: 0; }
-.home-beside { display: grid; align-content: start; justify-items: start; min-width: 0; }
-@media (min-width: 1176px) { .home-main { grid-template-columns: var(--col) minmax(0, 1fr); column-gap: calc(3 * var(--u)); } }
+/* ---- The row. (New repo's own thing is one piece, laid as a page's is.) ---- */
+.home-main { display: block; }
+.home-row { --piece: min(calc(24 * var(--u)), round(down, 100% - var(--shade), var(--u))); position: relative; display: flex; align-items: flex-start; gap: calc(2 * var(--u));
+  /* (The desk is the window's under the band: wherever a hand is on it, it is the row that is scrolled.) */
+  min-height: calc(100vh - 2 * var(--u)); box-sizing: border-box; margin-right: calc(-1 * var(--outer)); padding-bottom: calc(2 * var(--u));
+  overflow: auto hidden; scrollbar-width: none; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; }
+.home-row::-webkit-scrollbar { display: none; }
+.home-row > * { flex: none; box-sizing: border-box; width: var(--piece); min-width: 0; scroll-snap-align: start; }
+/* (Room after the last piece for it to stand at the edge.) */
+.home-row::after { content: ''; flex: none; width: max(0px, calc(100% - var(--piece) - 2 * var(--u))); }
+.home-beside { display: grid; align-content: start; justify-items: start; }
 /* ---- The TODO: a note, as wide as the column, a cell under the profile; its shadow half a cell right and down, as
    every sheet's on a desk is (one light). Its rows are the frame's own square (36 px): an item's mark in a square, its
    words on the square's line. As tall as what is written on it and the line of what the keys do, up to the grid's next
@@ -94,12 +101,14 @@
 .home-repos > .card.new::before { content: '+ '; white-space: pre; }
 .home-repos > .card.new:hover { background: none; text-decoration: underline 2px; text-underline-offset: 3px; }
 .home-repos > p { margin: 0; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--quiet); }
-/* ---- What waits, a cell under the repos: a slip of paper as wide as the terminal is (fourteen cells), its shadow
-   the note's. Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a cell;
-   the file, its capitals a cell tall on the next two; then what it says and where, a line each. ---- */
+/* ---- What waits, a cell under the repos: a slip fourteen cells wide, drawn in line on the ground (it is not the
+   piece in hand). Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a
+   cell; the file, its capitals a cell tall on the next two; then what it says and where, a line each. ---- */
 .home-waits { display: grid; justify-items: start; gap: var(--u); max-width: 100%; margin-top: var(--u); }
 .home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(14 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: var(--s3) var(--u) calc(var(--s3) + var(--to-grid, 0px));
-  background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 var(--ink); text-align: left; }
+  /* (Home's piece in hand is the note, the one thing written in: the slip is line on the ground, as a piece not in
+     hand is on any desk.) */
+  background: var(--ground); border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; text-align: left; }
 .home-waits > .lately > h2 { margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); letter-spacing: 0; text-transform: lowercase; }
 .home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
 .home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; text-align: left; }

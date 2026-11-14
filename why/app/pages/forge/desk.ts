@@ -6,6 +6,7 @@ import {fieldCarried} from '../../ui/caret.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
 import {t} from '../../i18n/i18n.ts';
 import {mark} from '../../ui/icons.ts';
+import {ground} from '../../ui/row.ts';
 import {atRest, eased, GRID, next, PAD, planeWidth, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
 
 // A repo's desk, Forge's center: what is open lies in a row on dots, in the order it was opened, the terminal first;
@@ -165,7 +166,7 @@ export class Desk {
       this.#turnedTo = this.element.scrollLeft;
       this.#said();
       // The ground goes with the pieces: the dots are the desk's, not the window's (whole cells at every rest).
-      document.body.style.backgroundPositionX = this.#turnedTo % GRID ? `${-(this.#turnedTo % GRID)}px` : '';
+      ground(this.#turnedTo, GRID);
       // Scrolled by hand (not turned to a piece) and then left, where the browser has not brought it to rest at a
       // piece itself (styles: scroll-snap): it goes on to the nearest.
       clearTimeout(this.#letGo);
