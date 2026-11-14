@@ -28,12 +28,10 @@
    yet is, and not a thing to press (a press there goes to the line). */
 .todo-mark:disabled { opacity: .45; pointer-events: none; }
 .todo-mark:disabled path { stroke-dasharray: 2.2 2.4; }
-/* An item's ×, quiet at its line's end, there while the pointer is on the item or the keyboard in it (always, where
-   nothing hovers), as a box's × in Forge is. */
-.todo-away { display: grid; place-items: center; width: var(--s5); height: var(--s5); padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); opacity: 0; transition: opacity var(--motion); }
+/* An item's ×, quiet at its line's end, there always (it waits on no pointer), inked while the item is used. */
+.todo-away { display: grid; place-items: center; width: var(--s5); height: var(--s5); padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--quiet); cursor: var(--cursor-hand); }
 .todo-away .mark { width: var(--s4); height: var(--s4); }
-.todo-item:hover .todo-away, .todo-item:focus-within .todo-away { opacity: 1; }
-@media (hover: none) { .todo-away { opacity: 1; } }
+.todo-item:hover .todo-away, .todo-item:focus-within .todo-away { color: var(--ink); }
 .todo-box .todo-away:hover { color: var(--ink); background: var(--ground); }
 /* Clear done beside what is left, a word as quiet as the count it stands by. */
 .todo-left { display: inline-flex; align-items: baseline; gap: var(--s2); }

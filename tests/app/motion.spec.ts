@@ -341,3 +341,44 @@ test('reducing motion during a held press restores its size before pointerup and
   await still(app);
   expect(await scale()).toBe('none');
 });
+
+test('going to another place the world goes by: the place left, the place come to and the ground move as one, a window\'s height in whole cells, off at once and at rest within 420 ms', async ({app}) => {
+  await app.newRepo.make('hello');
+  await app.rail.go('home');
+  await still(app);
+  const U = 24;
+  for (const [to, dir] of [['forge', 1], ['home', -1], ['runtime', 1], ['home', -1]] as const) {
+    const far = U * Math.round((await app.page.evaluate(() => innerHeight)) / U);
+    // Every frame of the move: how far the place left has gone, the place come to, and the ground's dots.
+    const frames = app.page.evaluate(() => new Promise<{t: number; left: number | null; come: number | null; dots: number; place: string}[]>((done) => {
+      const out: {t: number; left: number | null; come: number | null; dots: number; place: string}[] = [], t0 = performance.now();
+      const y = (el: Element | null | undefined) => (el ? new DOMMatrix(getComputedStyle(el).transform).m42 : null);
+      const step = () => {
+        const page = document.getElementById('page')!;
+        const part = [...page.querySelectorAll('*')].find((e) => e.getAnimations().some((a) => (a.effect as KeyframeEffect | null)?.getKeyframes().some((k) => /translateY/.test(String(k.transform ?? '')))));
+        out.push({t: performance.now() - t0, left: y(document.querySelector('.place-left')), come: y(part), dots: parseFloat(getComputedStyle(document.body).backgroundPositionY) || 0, place: page.dataset.place ?? ''});
+        if (performance.now() - t0 < 800) requestAnimationFrame(step); else done(out);
+      };
+      requestAnimationFrame(step);
+    }));
+    await app.rail.button(to).click();
+    const all = await frames, moving = all.filter((f) => f.left !== null);
+    // The place left stays in sight as the world moves, and the one come to follows it at one distance: no gap
+    // opens or closes between them, and the ground's dots go as they do.
+    expect(moving.length, `to ${to}`).toBeGreaterThan(5);
+    for (const f of moving) {
+      if (f.come !== null) expect(Math.abs(f.come - dir * far - f.left!), `to ${to}: the two places a window apart`).toBeLessThan(1.5);
+      expect(Math.abs(f.dots - f.left!), `to ${to}: the dots with the places`).toBeLessThan(1.5);
+    }
+    // One way, never back; most of the way in the first third of its time; at rest within 420 ms (and a frame).
+    for (let i = 1; i < moving.length; i++) expect(dir * (moving[i - 1].left! - moving[i].left!), `to ${to}: one way`).toBeGreaterThanOrEqual(-.01);
+    const first = moving[0], last = moving.at(-1)!, third = moving.find((f) => f.t - first.t >= (last.t - first.t) / 3)!;
+    expect(Math.abs(third.left!) / far, `to ${to}: off at once`).toBeGreaterThan(.6);
+    expect(last.t - first.t, `to ${to}: its time`).toBeLessThanOrEqual(470);
+    // At rest: the place left is gone, the dots stand where they stood, and the way was whole cells.
+    const end = all.at(-1)!;
+    expect([end.left, end.dots, end.place], `to ${to}: at rest`).toEqual([null, 0, to]);
+    expect(far % U).toBe(0);
+    await still(app);
+  }
+});

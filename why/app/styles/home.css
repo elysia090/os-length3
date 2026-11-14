@@ -60,7 +60,8 @@
 .home-own .todo-detail::placeholder, .home-own :is(.todo-meta, .todo-created) { color: var(--note-quiet); opacity: 1; }
 .home-own :is(.todo-meta, .todo-created) { font: 400 var(--t-fine)/16px var(--mono); }
 .home-own .todo-dates-detail .todo-created { margin: 0 0 var(--s2) var(--key); }
-.home-own .todo-head > .todo-away { position: absolute; right: 0; top: 0; width: var(--key); height: var(--key); border-radius: var(--r-field); background: var(--note); color: var(--ink); }
+.home-own .todo-head > .todo-away { position: absolute; right: 0; top: 0; width: var(--key); height: var(--key); border-radius: var(--r-field); background: var(--note); color: var(--note-quiet); }
+.home-own .todo-item:is(:hover, :focus-within) .todo-head > .todo-away { color: var(--ink); }
 .home-own .todo-away .mark { width: 16px; height: 16px; stroke-width: 2; }
 .home-own .todo-head > .todo-away:hover { background: color-mix(in srgb, var(--ink) 10%, var(--note)); }
 /* What the keys do, while one writes: at the note's foot, over nothing that moves. */
@@ -87,11 +88,10 @@
 .home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { text-decoration: underline 3px; text-underline-offset: 4px; }
 .home-repos > .card.repo.revealed > .card-open > .card-title { text-decoration: underline 3px; text-underline-offset: 4px; }
 .home-repos > .card.repo.held > .card-open > .card-title { color: var(--sub); }
-/* Its gear: after the name, small, its middle on the capitals' top; there only while the name is touched. No ring
-   round it. */
+/* Its gear: after the name, small and quiet, its middle on the capitals' top; there always (it waits on no pointer).
+   No ring round it. */
 .home-repos > .gear-card > .repo-gear { position: absolute; left: calc(100% + var(--s1)); right: auto; top: var(--s3); width: var(--u); height: var(--u); display: grid; place-items: center;
-  opacity: 0; transition: opacity var(--motion); }
-.home-repos > .gear-card:is(:hover, :focus-within) > .repo-gear, .home-repos > .gear-card > .repo-gear:has([aria-expanded='true']) { opacity: 1; }
+  }
 .home-repos > .gear-card > .repo-gear > button { width: var(--u); height: var(--u); border: 0; border-radius: var(--r-field); background: none; }
 .home-repos > .gear-card > .repo-gear > button .mark { width: 14px; height: 14px; }
 .home-repos > .gear-card > .repo-gear-pop { top: calc(100% + var(--s1)); left: 0; right: auto; width: max(100%, 280px); text-align: left; }

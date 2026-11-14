@@ -58,9 +58,9 @@
    thing pressed is, shown on the row under the pointer or the keyboard, and
    kept while its menu is out. It keeps its room either way, so nothing moves,
    and is there to be heard while unseen. */
-.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: inherit; cursor: var(--cursor-hand); opacity: 0; }
+.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--quiet); cursor: var(--cursor-hand); opacity: 1; }
 .tree-more .mark { width: var(--s4); height: var(--s4); }
-.tree-row:hover > .tree-more, .tree-row:focus-within > .tree-more, .tree-more[aria-expanded='true'] { opacity: 1; }
+.tree-row:hover > .tree-more, .tree-row:focus-within > .tree-more, .tree-more[aria-expanded='true'] { color: var(--ink); }
 .tree-more[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .tree-row:has(> [aria-current='page']) > .tree-more { border-color: currentColor; }
 /* Its menu, beside the tree at the row's height: out in the free space. */
@@ -119,7 +119,8 @@
 .file-tree .tree-said { margin: var(--s1) var(--u) 0; }
 /* What can be done to a row, asked for at its right end: an angle toward where its sheet comes out, there under the
    pointer or the keyboard and while it is out; the row pressed (a slot) while it is. */
-.file-tree .tree-more { width: calc(1.5 * var(--u)); height: calc(1.5 * var(--u)); margin: 0; border: 0; border-radius: 0; background: none; color: var(--ink); }
+.file-tree .tree-more { width: calc(1.5 * var(--u)); height: calc(1.5 * var(--u)); margin: 0; border: 0; border-radius: 0; background: none; color: var(--quiet); }
+.file-tree .tree-row:is(:hover, :focus-within) > .tree-more, .file-tree .tree-more[aria-expanded='true'] { color: var(--ink); }
 .file-tree .tree-more[aria-expanded='true'] { background: none; color: var(--ink); }
 .file-tree .tree-more .mark { width: 20px; height: 20px; stroke-width: 2; rotate: -90deg; }
 .file-tree > .tree-pop { display: block; width: max-content; min-width: calc(9 * var(--u)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--outer) - var(--u))); padding: calc(var(--u) / 2) 0;

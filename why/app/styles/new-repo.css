@@ -96,8 +96,7 @@
 .tree-still .tree-ours .tree-name { color: var(--ink); font: inherit; }
 /* No more-button at a row's end here (its two deeds are), so no room is kept for one after the size (file-tree.css). */
 .tree-still .tree-row:not(:has(> .tree-more)) > .tree-meta { margin-right: 0; }
-.tree-deeds { flex: none; display: flex; gap: 2px; margin-right: var(--s1); opacity: 0; transition: opacity var(--motion) var(--spring); }
-.tree-row:hover > .tree-deeds, .tree-row:focus-within > .tree-deeds { opacity: 1; }
+.tree-deeds { flex: none; display: flex; gap: 2px; margin-right: var(--s1); }
 .tree-deed { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .tree-deed .mark { width: 15px; height: 15px; }
 .tree-deed:hover, .tree-deed:focus-visible { background: var(--paper); color: var(--ink); outline: none; }
