@@ -1,9 +1,9 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import * as servers from '../../remote/servers.ts';
-import {boardNew, sawBoard} from '../../remote/news.ts';
+import {t} from '../../../text/i18n.ts';
+import * as servers from '../../../shipto/servers.ts';
+import {boardNew, sawBoard} from '../../../shipto/news.ts';
 import {nudge} from '../../ui/glide.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {seenNow, timeline} from './talk.ts';
 import {parts} from '../kit/common.ts';
 import {boardTodo} from './todo.ts';

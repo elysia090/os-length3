@@ -1,10 +1,12 @@
 import {h} from '../../ui/dom.ts';
 import {nudge, putAway} from '../../ui/glide.ts';
-import {t} from '../../i18n/i18n.ts';
-import {isIssues, ISSUES, plainPart, plainPath, store} from '../../repos/repos.ts';
+import {t} from '../../../text/i18n.ts';
+import {isIssues, ISSUES, plainPart, plainPath, store} from '../../../repo/repos.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
 import type {MarkName} from '../../ui/icons.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
+import {wayOut} from '../../ui/way-out.ts';
+import {changes, putBack} from '../../../repo/history.ts';
 
 // What can be done to a file or a folder of a repo, as one menu (the person's menu, `.pop`), wherever it is brought
 // out: File's row, and Forge's files button for the file in front. Its name over its deeds; a deed pressed becomes
@@ -67,6 +69,8 @@ interface Deeds {
   move(to: string): Promise<void>;
   /** Deleted from the store. */
   removed(): Promise<void> | void;
+  /** Put back as it was at the last commit (Revert): the menu's work is done. */
+  reverted(): void;
   /** Not now: put back as it was; the keyboard goes back to what had it. */
   back(): void;
 }
@@ -89,7 +93,7 @@ export function fileDeeds(d: Deeds): HTMLElement {
     const input = h('input', {class: 'line-in mono', placeholder: label, 'aria-label': label, autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     input.value = value;
     const error = h('p', {class: 'error small', role: 'alert'});
-    const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
+    const no = wayOut(h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement);
     const yes = h('button', {type: 'button', class: 'button small-button primary'}, deed) as HTMLButtonElement;
     const make = async () => {
       const v = input.value.trim();
@@ -168,6 +172,37 @@ export function fileDeeds(d: Deeds): HTMLElement {
     }, true));
   }
   pop.append(h('div', {class: 'pop-head muted small'}, d.head ?? d.name), ...rows);
+  // A file changed since the repo's last commit can be put back as it was there: Revert, last, after the deeds that
+  // cannot be undone (it takes what was written since), asked in its place as Delete is. Read as the menu comes out,
+  // and laid at its end, so nothing above it moves under the pointer. (Before, it was the diff's, under the search.)
+  // (Busy while it is read: the menu is not whole until then.)
+  if (!d.dir && path) pop.setAttribute('aria-busy', 'true');
+  if (!d.dir && path) void changes(repo).finally(() => pop.removeAttribute('aria-busy')).then((c) => {
+    // (Signed out there is no last commit to go back to: commits are kept on the Remote.)
+    const f = c.connected ? c.folders.flatMap((x) => x.files).find((x) => x.path === path) : undefined;
+    if (!f || f.status === 'removed' || !pop.isConnected) return;
+    pop.append(entry(t('Revert'), 'putBack', (b) => {
+      const foot = askFoot(b, pop);
+      const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
+      const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Revert')) as HTMLButtonElement;
+      const error = h('p', {class: 'error small', role: 'alert'});
+      const said = f.status === 'added' ? [t('Not present in latest commit; removing')] : [t('Reverted to state at latest commit.'), t('Local modifications discarded.')];
+      const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Revert {path}', {path: d.name})},
+        ...said.map((line) => h('p', {class: 'muted small'}, line)), error, foot(no, yes));
+      no.addEventListener('click', () => { ask.replaceWith(b); b.focus(); d.back(); });
+      const shown = performance.now();
+      yes.addEventListener('click', async () => {
+        if (performance.now() - shown < SETTLE) return;
+        yes.disabled = true;
+        try {
+          await putBack(repo, path);
+          if (f.status === 'added') await d.removed(); else d.reverted();
+        } catch (err) { yes.disabled = false; error.textContent = errorText(err); }
+      });
+      b.replaceWith(ask);
+      yes.focus();
+    }, true));
+  }, () => {});
   // ↑ ↓ go along its rows (← → too, along a bar's).
   pop.addEventListener('keydown', (event) => {
     if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
@@ -181,11 +216,14 @@ export function fileDeeds(d: Deeds): HTMLElement {
   return pop;
 }
 
+/** How long the pointer may be off the key and its menu (crossing the gap between them) before the menu goes. */
+const OFF = 300;
+
 /**
  * `pop` laid under `at`, its left edge on `at`'s (over it where there is no room under it), out over what is there so
- * nothing moves under the pointer; Escape, a press outside it, or `at` pressed again put it away, and the keyboard goes
- * back to `at`. `gone` is told as it goes. Returned: the way to put it away (a deed done): gone at once then, in the
- * press's frame, so what the deed did is seen with nothing fading over it.
+ * nothing moves under the pointer; Escape, a press outside it, `at` pressed again, or the pointer gone off both of them
+ * put it away, and the keyboard goes back to `at`. `gone` is told as it goes. Returned: the way to put it away (a deed
+ * done): gone at once then, in the press's frame, so what the deed did is seen with nothing fading over it.
  */
 export function deedsUnder(at: HTMLElement, pop: HTMLElement, gone: () => void): () => void {
   pop.classList.add('deeds-under');
@@ -201,6 +239,9 @@ export function deedsUnder(at: HTMLElement, pop: HTMLElement, gone: () => void):
     if (!out) return;
     out = false;
     document.removeEventListener('pointerdown', outside, true);
+    clearTimeout(leaving);
+    at.removeEventListener('pointerleave', off);
+    at.removeEventListener('pointerenter', on);
     at.setAttribute('aria-expanded', 'false');
     if (now) pop.remove(); else putAway(pop, () => pop.remove());
     gone();
@@ -208,11 +249,23 @@ export function deedsUnder(at: HTMLElement, pop: HTMLElement, gone: () => void):
   const outside = (event: PointerEvent) => {
     const on = event.target as Node;
     if (pop.contains(on)) return;
-    // Pressed again, it goes as the press's own (the button would bring it out again otherwise).
-    if (at.contains(on)) event.preventDefault();
+    // Pressed again, it goes, and that is the press's whole answer: the click the press ends in is the key's no more
+    // (it brought the menu straight out again, so a second press seemed to do nothing).
+    if (at.contains(on)) {
+      event.preventDefault();
+      at.addEventListener('click', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, {capture: true, once: true});
+    }
     away();
   };
   document.addEventListener('pointerdown', outside, true);
+  // The pointer gone off the key and its menu, it goes: out with the pointer, away with it. (Crossing the gap between
+  // them is not going off: the pointer back on either within OFF keeps it.)
+  let leaving = 0;
+  // (Never while a name is being written in it: what is written is not lost to the pointer's going.)
+  const writing = () => pop.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement!.tagName);
+  const off = () => { clearTimeout(leaving); leaving = window.setTimeout(() => { if (out && !writing()) away(); }, OFF); };
+  const on = () => clearTimeout(leaving);
+  for (const el of [at, pop]) { el.addEventListener('pointerleave', off); el.addEventListener('pointerenter', on); }
   pop.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
     event.preventDefault();

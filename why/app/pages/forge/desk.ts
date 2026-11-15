@@ -4,11 +4,11 @@ import {still} from '../../ui/glide.ts';
 import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
 import {fieldCarried} from '../../ui/caret.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {ground} from '../../ui/row.ts';
 import {rowMap} from '../../ui/row-desk.ts';
-import {atRest, eased, GRID, next, PAD, planeWidth, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
+import {ahead, atRest, eased, GRID, next, PAD, planeWidth, restFor, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
 
 // A repo's desk, Forge's center: what is open lies in a row on dots, in the order it was opened, the terminal first;
 // every piece is one width (fifty letters), its name over its top-left corner, its top on one line. What is under a
@@ -101,6 +101,10 @@ export class Desk {
   readonly #boxes = new Map<string, Box>();
   #row: string[] = [];
   #held: string | null = null;
+  /** The piece put down while the desk turns away from it: as it was in the hand till the desk is at rest. */
+  #leaving: HTMLElement | null = null;
+  /** The piece in the hand before the one in it now: where a piece called out (the terminal) is put away to. */
+  #before: string | null = null;
   /** The desk turning (its next frame; none at rest), and how far it is going: laid again on its way, it goes on to
    * where it is now to go rather than starting again. */
   #moving = 0;
@@ -115,6 +119,17 @@ export class Desk {
   readonly #sized = new ResizeObserver(() => this.#relay());
   /** The piece a press under way is on (the desk waits for it to be let go: its click takes it in hand). */
   #pressing: string | null = null;
+  /** The piece in hand was taken by a press on it (the eye is on it where it is), not gone to (a key, a find, the place
+   * come to: the eye is where the last subject stood, at the desk's edge). */
+  #pressed = false;
+  /** Out of sight when last laid (another page shown): come back to, the eye is at the frame, not on the piece. */
+  #away = false;
+  /** Where the desk was last turned to: scrolled anywhere else just after the hand was on it (a wheel, a touch, a
+   * press on the desk), it was turned by hand, and the eye is where it looked. */
+  #aim = 0;
+  #handAt = 0;
+  /** The width every piece had when the row was last laid. */
+  #bw = 0;
   /** The row's map at the window's foot (ui/row-desk.ts): what is out of sight, which way and how far, and the way to it by a press. */
   readonly #map: {element: HTMLElement; paint(): void};
   #turnedTo = 0;
@@ -155,7 +170,9 @@ export class Desk {
     }, true);
     // (Written in with no key: a paste, a word chosen from the input method's, a dictation.)
     this.element.addEventListener('beforeinput', (e) => writtenIn(e.target), true);
-    this.element.addEventListener('pointerdown', (e) => { this.#pressing = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key ?? null; }, true);
+    this.element.addEventListener('pointerdown', (e) => { this.#pressing = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key ?? null; this.#handAt = performance.now(); }, true);
+    // The hand on the desk itself: a wheel turned, a finger moved on it (the scroll after it is the hand's).
+    for (const name of ['wheel', 'touchmove'] as const) this.element.addEventListener(name, () => { this.#handAt = performance.now(); }, {capture: true, passive: true});
     for (const end of ['pointerup', 'pointercancel'] as const) addEventListener(end, () => { setTimeout(() => { this.#pressing = null; }); }, true);
     new ResizeObserver(() => this.#relay()).observe(this.element);
     this.#plane.addEventListener(WORK_AT, (e) => this.#workAt(e as CustomEvent<WorkAt | null>));
@@ -164,6 +181,8 @@ export class Desk {
       if (this.element.scrollTop) this.element.scrollTop = 0;
       if (this.element.scrollLeft === this.#turnedTo) return;
       this.#turnedTo = this.element.scrollLeft;
+      // Turned by hand (not by the desk going somewhere): what is in hand stays where the hand left it, as if pressed.
+      if (!this.#glide && Math.abs(this.#turnedTo - this.#aim) > .5 && performance.now() - this.#handAt < 1000) this.#pressed = true;
       this.#said();
       // The ground goes with the pieces: the dots are the desk's, not the window's (whole cells at every rest).
       ground(this.#turnedTo, GRID);
@@ -234,7 +253,7 @@ export class Desk {
     // Pressed (what was pressed in it done first: a line run, a link), it is in hand; the desk turns after the
     // press, never under it.
     el.addEventListener('click', () => {
-      if (this.#held !== key || !el.contains(document.activeElement)) this.take(key, !el.contains(document.activeElement));
+      if (this.#held !== key || !el.contains(document.activeElement)) this.take(key, !el.contains(document.activeElement), true, true);
     });
     this.#plane.append(el);
     this.#sized.observe(el);
@@ -295,17 +314,42 @@ export class Desk {
     b.label.querySelector('.desk-name')!.textContent = name;
   }
 
-  /** `key` in hand, the desk turned to it (gliding there, unless `glide` is false), with the keyboard (`focus`). */
-  take(key: string, focus = true, glide = true) {
+  /** `key` in hand, the desk turned to it (gliding there, unless `glide` is false), with the keyboard (`focus`):
+   * `pressed`, by a press on it, so it stays under the hand; gone to any other way, it comes to the desk's edge. */
+  take(key: string, focus = true, glide = true, pressed = false) {
     const b = this.#boxes.get(key);
     if (!b) return;
+    const was = this.#held === null ? undefined : this.#boxes.get(this.#held);
+    if (this.#held !== null && this.#held !== key) this.#before = this.#held;
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
     this.#held = key;
+    this.#pressed = pressed;
     this.#framed = null;
     this.#look(glide);
+    // The piece put down stays as it was in the hand while the desk turns away from it, and is put down once the desk
+    // is at rest: what moves is seen from the press (DESIGN §8). Put down at the press, the only piece in the hand's
+    // light was the one gone to, often out of sight: for the first frames of the turn nothing lit was there moving.
+    this.#putDown();
+    if (was && was !== b && this.#glide) { was.el.classList.add('leaving'); this.#leaving = was.el; }
     this.#said();
     if (focus) b.laid.focus();
     this.#changed();
+  }
+
+  /**
+   * `key` (in the hand) put away: the piece in the hand before it taken up again, the desk turning back to it. False
+   * when `key` is not in the hand or there was none before it.
+   */
+  putAway(key: string): boolean {
+    if (this.#held !== key || this.#before === null || !this.#boxes.has(this.#before)) return false;
+    this.take(this.#before);
+    return true;
+  }
+
+  /** The piece the desk turned away from, put down now. */
+  #putDown() {
+    this.#leaving?.classList.remove('leaving');
+    this.#leaving = null;
   }
 
   /** The desk turned to `keys` (each a piece at work): to the one last at work; none, back to the piece in hand. */
@@ -324,7 +368,7 @@ export class Desk {
     while (s && s !== box && !(/auto|scroll/.test(getComputedStyle(s).overflowY) && s.scrollHeight > s.clientHeight + 1)) s = s.parentElement;
     if (s && s !== box) {
       const top = from.getBoundingClientRect().top - s.getBoundingClientRect().top + e.detail.top, line = e.detail.height;
-      if (top < line || top + line > s.clientHeight - 3 * line) s.scrollTo({top: s.scrollTop + top - .4 * s.clientHeight, behavior: still() ? 'auto' : 'smooth'});
+      if (top < line || top + line > s.clientHeight - 3 * line) s.scrollTo({top: s.scrollTop + top - .4 * s.clientHeight}); // (at once, DESIGN §8)
     }
     if (this.#framed?.includes(key) && !still()) this.#look(true);
   }
@@ -338,9 +382,15 @@ export class Desk {
     // Out of sight (another page shown), the desk has no size: laid out then, its pieces would be moved to where a desk
     // of none puts them. They stay where they are; shown again, it is laid out at its size, and nothing has moved.
     const w = this.element.clientWidth, hgt = this.element.clientHeight;
-    if (!w || !hgt) return;
+    if (!w || !hgt) { this.#away = true; return; }
+    // Come back to from another place: the eye is at the frame's corner, and the piece in hand comes to the desk's edge.
+    if (this.#away) { this.#away = false; this.#pressed = false; }
+    // Where the line being written may stand in a sheet (§2 look room): out of the third it goes towards.
+    const lead = ahead(hgt);
     // Every piece fifty letters wide, or as wide as the face has room for with its shadow (a phone's: the one rule).
     const bw = Math.min(WIDTH, Math.max(10 * GRID, GRID * Math.floor((w - PAD - SHADOW) / GRID)));
+    const resized = this.#bw !== 0 && this.#bw !== bw;
+    this.#bw = bw;
     const {at, end} = row(this.#row, bw);
     for (const key of this.#row) {
       const b = this.#boxes.get(key)!, x = at.get(key)!;
@@ -348,8 +398,13 @@ export class Desk {
       b.w = bw;
       b.el.style.width = `${bw}px`;
       b.el.style.setProperty('--tallest', `${b.laid.kind === 'term' ? termHeight(hgt) : tallest(hgt)}px`);
+      b.el.style.setProperty('--ahead-top', `${lead.top}px`);
+      b.el.style.setProperty('--ahead', `${lead.foot}px`);
       // A piece laid with no place yet stands in its place at once.
-      if (!b.placed) { standAt(b.el, x, TOP); b.placed = true; continue; }
+      // A piece laid with no place yet, or every piece when the row's width changed (the window made wider or
+      // narrower: not a move asked, and the browser's snapping would hold the desk to where they were on the way),
+      // stands in its place at once.
+      if (!b.placed || resized) { standAt(b.el, x, TOP); b.placed = true; continue; }
       const to = `${x}px ${TOP}px`;
       if (b.el.style.translate !== to) b.el.style.translate = to;
     }
@@ -372,17 +427,22 @@ export class Desk {
     const key = this.#framed?.findLast((k) => this.#boxes.has(k)) ?? this.#held ?? this.#row[0];
     const b = key === undefined ? undefined : this.#boxes.get(key);
     if (!b) return;
-    this.#go(turnedTo(atRest(this.#glide?.to ?? this.element.scrollLeft, this.#starts()), b.x, b.w, w, this.#starts()), moving && !still());
+    const now = atRest(this.#glide?.to ?? this.element.scrollLeft, this.#starts());
+    // (Over the Agent's work the desk turns as little as shows it; the piece in hand by how it was taken.)
+    const to = this.#framed ? turnedTo(now, b.x, b.w, w, this.#starts()) : restFor(this.#pressed, now, b.x, b.w, w, this.#starts());
+    this.#go(to, moving && !still());
   }
 
   /** The desk turned `to` along its row, gliding there or at once. */
   #go(to: number, moving: boolean) {
     const el = this.element;
     // On its way already: it goes on to where it now goes, never set off again.
-    if (moving && this.#glide) { this.#glide.to = to; return; }
+    if (moving && this.#glide) { this.#glide.to = this.#aim = to; return; }
+    this.#aim = to;
     cancelAnimationFrame(this.#moving);
     this.#moving = 0;
     this.#glide = null;
+    this.#putDown();
     el.style.scrollSnapType = '';
     const from = el.scrollLeft;
     if (!moving || Math.abs(to - from) < .5) { if (Math.abs(to - from) >= .5) el.scrollLeft = to; return; }
@@ -404,7 +464,7 @@ export class Desk {
       fieldCarried();
       veil.follow(this.#pointerAt);
       if (k < 1) this.#moving = requestAnimationFrame(step);
-      else { this.#moving = 0; this.#glide = null; el.style.scrollSnapType = ''; }
+      else { this.#moving = 0; this.#glide = null; el.style.scrollSnapType = ''; this.#putDown(); }
     };
     this.#moving = requestAnimationFrame(step);
   }

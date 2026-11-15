@@ -1,7 +1,7 @@
 
 /* No repo at all: a plain invitation to make the first, with room to press around its words. */
 .forge-first { width: 100%; min-height: 180px; gap: var(--s1); }
-.forge-first > small { max-width: 36ch; font-size: var(--t-meta); }
+.forge-first > small { max-width: 36ch; font-size: var(--t-word); }
 /* Alone, a box is the row's whole width by its basis, not by growing from none: split, its basis goes from that width
    to its own (and back), so it never passes through no width at all (a frame with the center empty). */
 .col { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; }
@@ -11,24 +11,24 @@
    box's, a sheet to act on (paper), who and the first line of what they said, the newest come in from the window's
    edge. Pressed, Inbox at that conversation. */
 .pane-word { position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2; display: grid; gap: var(--s2); }
-/* What came, over the pane's rows: a card lifted a little off them, as something arrived. */
-.pane-word > .pane-row { margin: 0; background: var(--paper); box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--ink) 30%, transparent); }
+/* What came, over the pane's rows: a card of paper with an edge, as a piece not in the hand (no shadow: the hand's is
+   the only one, DESIGN §3). */
+.pane-word > .pane-row { margin: 0; background: var(--paper); box-shadow: inset 0 0 0 1px var(--edge); }
 .pane-word:empty { display: none; }
 
 /* The row slides as one. A box opened comes in at its own width where it stands, fading in as the row brings it, and
    one closed fades where it stands before the row closes over its place: never squeezed from or to no width, its
    words crushed and two boxes over each other on the way. */
-.col { transition: flex-basis var(--slide) var(--land), transform var(--slide) var(--land), translate var(--move) var(--spring),
-  opacity var(--move) var(--spring); }
+.col { transition: none; }
 /* The pointer on a box's edge, the row leans toward it before it is pressed, as far as the pointer is into it (up
    to a step), and that box's words come up as it does: what the press will bring in is already on its way, and
    leaving it, the row settles back. The row's own (columns.ts lean, --lean and --lit), never the pointer's hover: on
    the edge itself, a hand never quite still would lean and unlean the row with every tremor. */
 .col.nothing { opacity: 0; }
-.col > .flow { transition: padding-top var(--move) var(--land), opacity var(--move) var(--spring); }
+.col > .flow { transition: none; }
 /* Of the box worked on, the sheet with the keyboard is in ink (.file:focus-within), as alone; a file beside, one sheet,
    is in ink whole while it is the one worked on. Never two sheets in ink at once. */
-.col .file { transition: border-color var(--motion); }
+.col .file { transition: none; }
 /* A file beside is as tall as the row it stands in, down to a step over the prompt box: side by side, the boxes are
    one height, not one short and one running on. */
 .col > .flow > .dir.only { display: flex; flex-direction: column; min-height: calc(100% + 160px - var(--s5) - var(--prompt-h) - var(--s3)); }
@@ -37,9 +37,8 @@
    gliding from place to place as the pointer moves, so where it lands is seen before it is let go. */
 .drop-hint {
   position: absolute; top: var(--s2); bottom: var(--s5); z-index: 2; pointer-events: none;
-  display: grid; place-items: center; border: var(--line-work) dashed var(--ink); border-radius: var(--r-place);
-  background: color-mix(in srgb, var(--paper) 70%, transparent); color: var(--ink); font-size: var(--t-meta); font-weight: 600;
-  transition: left var(--move) var(--land), width var(--move) var(--land);
-  animation: hint-in var(--motion) var(--spring);
+  display: grid; place-items: center; border: 1px dashed var(--ink); border-radius: var(--r-place);
+  background: var(--paper); color: var(--ink); font-size: var(--t-word); font-weight: 700;
+  transition: none;
+  
 }
-@keyframes hint-in { from { opacity: 0; } }

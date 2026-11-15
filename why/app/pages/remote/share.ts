@@ -1,11 +1,11 @@
 import {h} from '../../ui/dom.ts';
 import {mark} from '../../ui/icons.ts';
-import {t} from '../../i18n/i18n.ts';
-import * as servers from '../../remote/servers.ts';
+import {t} from '../../../text/i18n.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {keepOut, putAway} from '../../ui/glide.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {pressing} from '../kit/remote-parts.ts';
-import {plan as readPlan} from '../../remote/plan.ts';
+import {plan as readPlan} from '../../../shipto/plan.ts';
 
 // A repo card's Share: which servers it is shown in, chosen from a list over the card.
 

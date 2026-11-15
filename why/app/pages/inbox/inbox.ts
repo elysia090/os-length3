@@ -1,24 +1,25 @@
 import {takeNext} from '../kit/next.ts';
-import {ago, arrowKeys, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import * as inbox from '../../remote/inbox.ts';
-import {connection} from '../../remote/connection.ts';
-import {look, onNews} from '../../remote/news.ts';
-import {Drafts} from '../../home/drafts.ts';
-import {kindOf} from '../../repos/text.ts';
+import {arrowKeys, h} from '../../ui/dom.ts';
+import {ago} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import * as inbox from '../../../shipto/inbox.ts';
+import {connection} from '../../../shipto/connection.ts';
+import {look, onNews} from '../../../shipto/news.ts';
+import {Drafts} from '../../../home/drafts.ts';
+import {kindOf} from '../../../repo/text.ts';
 import {mark} from '../../ui/icons.ts';
 import {copying, pageHead} from '../kit/common.ts';
 import {personBadge} from '../kit/pane.ts';
-import {every} from '../../host/runs.ts';
+import {every} from '../../../api/runs.ts';
 import {goToPlan, planRefused, planSaid} from '../kit/plan-gate.ts';
 import {signInBox, signInLead, signInPlace} from '../kit/sign-in.ts';
 import {unreachedError, unreachedPlace} from '../kit/unreached.ts';
-import {plan as readPlan} from '../../remote/plan.ts';
+import {plan as readPlan} from '../../../shipto/plan.ts';
 import type {Context} from '../kit/context.ts';
-import {errorText} from '../../host/errors.ts';
-import * as servers from '../../remote/servers.ts';
+import {errorText} from '../../../api/errors.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {remember as serverAt} from '../server/parts.ts';
-import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} from '../../ui/glide.ts';
+import {arrive, closeUp, cut, keepOut, LAND, nudge, paced, putAway, still, where} from '../../ui/glide.ts';
 import {SPRING} from '../../ui/law.ts';
 import {RowDesk} from '../../ui/row-desk.ts';
 
@@ -58,12 +59,12 @@ function took(stub: HTMLElement, from: DOMRect) {
   stub.animate([
     {transform: `translate(${from.left - at.left}px, ${from.top - at.top}px) scale(${from.width / at.width}, ${from.height / at.height})`, backgroundColor: 'var(--raised)', borderColor: 'var(--edge)'},
     {transform: 'none'},
-  ], {duration: paced(380), easing: LAND}).finished.then(back, back);
+  ], {duration: cut() ? 0 : paced(380), easing: LAND}).finished.then(back, back);
   for (const el of stub.querySelectorAll<HTMLElement>('.stub-gear')) {
-    el.animate([{opacity: 0, transform: 'translateX(-8px)'}, {opacity: 1, transform: 'none'}], {duration: paced(260), delay: paced(300), easing: LAND, fill: 'backwards'});
+    el.animate([{opacity: 0, transform: 'translateX(-8px)'}, {opacity: 1, transform: 'none'}], {duration: cut() ? 0 : paced(260), delay: cut() ? 0 : paced(300), easing: LAND, fill: 'backwards'});
   }
   const under = stub.closest('.inbox-page')?.querySelector<HTMLElement>('.inbox-list');
-  under?.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: paced(300), delay: paced(160), easing: LAND, fill: 'backwards'});
+  under?.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: cut() ? 0 : paced(300), delay: cut() ? 0 : paced(160), easing: LAND, fill: 'backwards'});
 }
 
 /**
@@ -184,7 +185,7 @@ function runs(messages: HTMLElement, seen = false) {
   if (!moved) return;
   for (const b of all) {
     const was = wide.get(b) ?? 0, now = b.getBoundingClientRect().width;
-    if (was && now && Math.abs(was - now) > .5) b.animate([{width: `${was}px`}, {width: `${now}px`}], {duration: paced(240), easing: LAND});
+    if (was && now && Math.abs(was - now) > .5) b.animate([{width: `${was}px`}, {width: `${now}px`}], {duration: cut() ? 0 : paced(240), easing: LAND});
   }
 }
 
@@ -193,7 +194,7 @@ function runs(messages: HTMLElement, seen = false) {
  * (asked and not in yet, nothing to press). Pressed, Server's page opens at it.
  */
 function serverLink(id: string, ctx: Context): HTMLElement {
-  const go = h('button', {type: 'button', class: 'link', title: t('Open in Server'), hidden: ''});
+  const go = h('button', {type: 'button', class: 'link', hidden: ''});
   void servers.servers().then((list) => {
     const s = list.find((x) => x.id === id);
     if (!s) return;
@@ -215,7 +216,7 @@ function noticeLine(words: string, m: inbox.Message, ctx: Context): HTMLElement 
   if (typeof id !== 'string') return line;
   void servers.servers().then((list) => {
     if (!list.some((x) => x.id === id) || !line.isConnected) return;
-    const go = h('button', {type: 'button', class: 'link inbox-notice-words', title: t('Open in Server')}, words);
+    const go = h('button', {type: 'button', class: 'link inbox-notice-words'}, words);
     go.addEventListener('click', () => { serverAt({server: id}); ctx.go('server'); });
     line.querySelector('.inbox-notice-words')?.replaceWith(go);
   }, () => {});
@@ -509,7 +510,11 @@ export function inboxPage(ctx: Context): Node[] {
     text.value = drafts.get(address);
     const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight, 200)}px`; };
     text.addEventListener('input', () => { drafts.set(address, text.value); grow(); });
+    // (Its keys said on it as it comes with the words, as a board's Post says them: one deed, one look.)
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
     const sendB = button(t('Send'), 'small-button prompt-run');
+    sendB.setAttribute('aria-keyshortcuts', mac ? 'Meta+Enter' : 'Control+Enter');
+    sendB.append(h('span', {class: 'key-said', 'aria-hidden': 'true'}, mac ? '⌘↵' : 'Ctrl+↵'));
     const go = async () => {
       if (sendB.disabled) return;
       if (!text.value.trim()) { text.focus(); nudge(text); return; }
@@ -551,10 +556,10 @@ export function inboxPage(ctx: Context): Node[] {
       messages,
       ...(ask ? [ask] : []),
       h('div', {class: 'inbox-write'},
-        h('div', {class: 'row write-line'}, text, sendB),
-        h('p', {class: 'muted small write-hint'}, t('Prefix with Review: or Question: · specify /root/… path · Ctrl+Enter to send')), error));
+        // (No line under it explaining it, DESIGN §1: its key says its keys as the words come, as a board's does.)
+        h('div', {class: 'row write-line'}, text, sendB), error));
     if (text.value) grow();
-    if (switching && !still()) for (const c of pane.children) c.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: SPRING});
+    if (switching && !still()) for (const c of pane.children) c.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(180), easing: SPRING});
     // The conversation gone to is whole in sight: the desk turns to it where it is not (a phone's shows one piece).
     desk?.show(pane);
     text.focus();

@@ -1,5 +1,5 @@
 // For tests: a browser on one Remote, all in this process. Its core is the one a page runs (testing/node-core.ts),
-// and every fetch, the core's too, goes to the service itself (why/remote/tests/testing.ts), so the app's own sync
+// and every fetch, the core's too, goes to the service itself (why/shipto/remote/tests/testing.ts), so the app's own sync
 // runs as it does in a page. Not
 // part of the app; only the tests import it.
 //
@@ -8,11 +8,11 @@
 // One per file (a process); its tests keep apart by using repos of their own.
 
 import assert from 'node:assert/strict';
-import {createApp, sha256} from '../../remote/serve/app.ts';
-import {createAuth} from '../../remote/people/auth.ts';
-import {memoryBucket} from '../../remote/bytes/bucket.ts';
-import {bearerOf, fileDb, SECRET} from '../../remote/tests/testing.ts';
-import type {Billing, PlanConfig} from '../../remote/plan/plan.ts';
+import {createApp, sha256} from '../../shipto/remote/serve/app.ts';
+import {createAuth} from '../../shipto/remote/people/auth.ts';
+import {memoryBucket} from '../../shipto/remote/bytes/bucket.ts';
+import {bearerOf, fileDb, SECRET} from '../../shipto/remote/tests/testing.ts';
+import type {Billing, PlanConfig} from '../../shipto/remote/plan/plan.ts';
 import {buildCoreWasm} from '../../../scripts/core-wasm.ts';
 import {cookieJar} from './cookies.ts';
 import {nodeCore} from './node-core.ts';
@@ -21,8 +21,8 @@ const URL_ = 'http://remote.test', APP = 'http://app.test';
 const enc = new TextEncoder();
 
 /**
- * `o`: the Remote's plan and how it is bought (why/remote/plan/plan.ts), none as before: everything open;
- * `bucket: false`: a Remote that holds no files (why/remote/bytes/bucket.ts), as a Worker without R2 is.
+ * `o`: the Remote's plan and how it is bought (why/shipto/remote/plan/plan.ts), none as before: everything open;
+ * `bucket: false`: a Remote that holds no files (why/shipto/remote/bytes/bucket.ts), as a Worker without R2 is.
  */
 export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; bucket?: boolean} = {}) {
   const shelf = new Map<string, string>();
@@ -49,15 +49,15 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
     return r;
   }});
 
-  // The core this browser runs, the very one (why/core/web), over files of its own; it is the device named in
+  // The core this browser runs, the very one (why/api/web), over files of its own; it is the device named in
   // a file both sides changed.
-  const {useCore} = await import('../host/host.ts');
+  const {useCore} = await import('../../api/host.ts');
   useCore(nodeCore(buildCoreWasm({quiet: true}), {WHY_HOME: '/data', WHY_REMOTE: URL_, WHY_DEVICE: 'Chrome Linux'}));
-  const {store} = await import('../repos/repos.ts');
-  const draft = await import('../repos/sync.ts');
-  const settings = await import('../remote/settings.ts');
-  const history = await import('../repos/history.ts');
-  const state = await import('../home/state.ts');
+  const {store} = await import('../../repo/repos.ts');
+  const draft = await import('../../repo/sync.ts');
+  const settings = await import('../../shipto/settings.ts');
+  const history = await import('../../repo/history.ts');
+  const state = await import('../../home/state.ts');
 
   /** Signing in as the browser does: the stand-in provider's page, then back (as `name`: another person). */
   const signIn = async (name?: string) => {
@@ -74,7 +74,7 @@ export async function browserOnRemote(o: {plan?: PlanConfig; billing?: Billing; 
   /** This browser in as `token`'s session, as a sign-in leaves it: the session's cookie, and the core told which it is. */
   const browserAs = async (token: string) => {
     jar.session(token);
-    await (await import('../host/host.ts')).core('remote_connect', {url: URL_});
+    await (await import('../../api/host.ts')).core('remote_connect', {url: URL_});
     await state.loadState(['remote']);
   };
   const token = await signIn();

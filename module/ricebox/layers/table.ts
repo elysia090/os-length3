@@ -3,7 +3,7 @@
 // each, in the order the files are in it; and the pack is named by the SHA-256 of its table. A file's bytes are
 // checked against its line, the table against the pack's name, and the name is the index's, which is checked against
 // the digest a release pins: so nothing read from a pack is used before it is known to be the root's. The writer
-// (scripts/webroot.ts), every reader (pack.ts, scripts/webroot-tree.ts, scripts/prompt-files.ts) and
+// (module/ricebox/make/layers.ts), every reader (pack.ts, module/ricebox/make/tree.ts, scripts/prompt-files.ts) and
 // their tests take this one account of it. `sha256(bytes)` gives the 32 bytes of a digest: the translator's in a
 // browser (where a system call must have the bytes at once), node's elsewhere.
 

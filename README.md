@@ -50,9 +50,9 @@ devices. Building from source, `why` is `cargo install --path why/cli`.
 
 | Directory | What is there | Start at |
 | --- | --- | --- |
-| [`why/`](why/) | **why\***, the product: the app ([`app/`](why/app/), TypeScript, no framework; [`desktop/`](why/desktop/), Tauri for the window), [`cli/`](why/cli/), the `why` command, the core both use ([`core/`](why/core/), also built for `wasm32-wasip1` for the browser), and the Remote ([`remote/`](why/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design in [`docs/DESIGN.md`](docs/DESIGN.md), what the OS is under it in [`docs/OS.md`](docs/OS.md), what each place does in [`docs/PLACES.md`](docs/PLACES.md) |
+| [`why/`](why/) | **why\***, the product: the app ([`app/`](why/app/), TypeScript, no framework; [`desktop/`](why/desktop/), Tauri for the window), [`cli/`](why/cli/), the `why` command, and under both its parts, each a folder of all it is (a repo, a home, a Prompt, an Agent's work, a device, what a service wants: one Rust core, [`lib.rs`](why/lib.rs), also built for `wasm32-wasip1` for the browser, and what a page does of each beside it), with the Remote among them ([`shipto/remote/`](why/shipto/remote/): Hono on a Cloudflare Worker, Postgres on Neon) | [`docs/README.md`](docs/README.md), the design in [`docs/DESIGN.md`](docs/DESIGN.md), what the OS is under it in [`docs/OS.md`](docs/OS.md), what each place does in [`docs/PLACES.md`](docs/PLACES.md) |
 | [`module/`](module/) | the units, each a folder of its own: [`sods/`](module/sods/) instructions and where they run (static x86-64 Linux programs made WebAssembly ahead of the run, the Linux they ask for, the differences between hosts), [`muk/`](module/muk/) the machine (an OCI-compatible VMM: an OCI bundle's box, in C for Linux alone), [`prompt/`](module/prompt/) a terminal attached, [`ricebox/`](module/ricebox/) the neutral distribution (the root: its pins, a recipe per package, what makes it, and its layers); and [`you/`](module/you/), [`otter/`](module/otter/), [`lib/`](module/lib/), units of C with no C library (the tools a person reaches for, z and rg; help and what each thing is; what they stand on) | each unit's `README.md`, or its files' heads |
-| [`scripts/`](scripts/), [`tests/`](tests/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
+| [`scripts/`](scripts/), [`why/test/`](why/test/) | what builds, releases and checks (`npm test` runs `scripts/tests.ts`), and the selftests: the app driven in a browser as a person drives it (`npm run selftest`) | each file's head |
 | [`docs/`](docs/) | what the OS is and how it ships ([`README.md`](docs/README.md)), what the repository is to be and the order it is taken apart in ([`STRUCTURE.md`](docs/STRUCTURE.md)), its design language ([`DESIGN.md`](docs/DESIGN.md)), what it promises about security ([`SECURITY.md`](docs/SECURITY.md)) | |
 
 A folder holds files, or folders and at most its own README and manifests, never both. At the top are why's own
@@ -80,10 +80,12 @@ another, none holding another, each standing on what is under it. Read from the 
   Linux runs in a browser.
 - **ricebox**, the neutral distribution, as BusyBox is one, and as thin: the root, each package from its pinned
   source by its recipe, and the command line [#80](https://github.com/elysia090/os-length3/issues/80) lists,
-  ordinary POSIX with no window; its layers served from any web host as they are. It knows no service, so anyone
-  can cut it out, with what is under it, and put it under a service of their own.
-- **why**, the product, as Alpine stands on BusyBox: ricebox run by muk, the app and the command, and the
-  modules a product has. What a service wants (who one is, what one may use, the Remote and its sync, its
+  ordinary POSIX with no window; its layers served from any web host as they are. The weight of running it is
+  its own: it unpacks and holds its root, writes the bundle its box is made from, starts that box (muk makes it),
+  and in a page mounts its layers and runs them. It knows no service and no product, so anyone can cut it out,
+  with what is under it, and put it under a service of their own.
+- **why**, the product, as Alpine stands on BusyBox: thin on ricebox. It says which root it trusts, what it lends
+  a box (a repo, a home) and what it tells it; the app and the command, and the modules a product has. What a service wants (who one is, what one may use, the Remote and its sync, its
   gateway's rules, its deploy) is shipto's, and nowhere else.
 
 The smaller modules are each a part of the one that ships it (you and otter, ricebox's command line's own programs;
@@ -100,7 +102,7 @@ from; ricebox and the units under it take from nothing over them, and no unit's 
 | muk | the machine, an OCI-compatible VMM: an OCI bundle's box made, isolated, started and waited for (`muk run`); no image, no terminal's other end | lib |
 | prompt | a terminal attached: the other end of the one muk makes in a box, given as one descriptor (`prompt attach FD`); it starts no process and keeps no box | — |
 | sods | a program run where its machine, its kernel or its system is absent: translation and what a translation is kept by, the Linux a program asks for, every difference between hosts; taken through four files | lib |
-| ricebox | the neutral distribution: the root, each package from its pinned source by its recipe, the command line #80 lists, and the root as layers | lib, muk, sods, everyday |
+| ricebox | the neutral distribution: the root, each package from its pinned source by its recipe, the command line #80 lists, the root as layers, and the root where it is used: unpacked and held on a device, run in a box muk makes | lib, muk, sods, everyday |
 | you | the tools a person reaches for: z, rg, fd, fzf | lib |
 | otter | to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said | lib, ricebox, muk, sods |
 | cowboy | what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH) | sods, ricebox |

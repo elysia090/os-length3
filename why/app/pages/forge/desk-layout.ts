@@ -17,10 +17,11 @@ export const LINE = GRID;
 /** What is read and written on the desk: 17 px on a line of a cell. (A small letter of it is a fifth of a degree
  * tall at a desk's distance on an ordinary screen, where reading stops slowing; 14 px is a sixth.) */
 export const CODE = 17;
-/** A piece's width, a file's or a terminal's: fifty letters (.602 of their size each), the numbers' margin before them
- * (a cell and a half) and half a cell after, up to the grid: twenty-four cells. A window half a screen wide (29 cells
- * of desk) shows one and the edge of the next; a whole screen (61), two and the edge of the third. */
-export const WIDTH = up(1.5 * GRID + 50 * CODE * .602 + GRID / 2);
+/** A piece's width, a file's or a terminal's: the numbers' two cells before its words (three figures and a letter's
+ * room), forty-nine letters (.602 of their size each), and a cell of paper after, up to the grid: twenty-four cells.
+ * Every column of it whole cells (DESIGN §3). A window half a screen wide (29 cells of desk) shows one and the edge of
+ * the next; a whole screen (61), two and the edge of the third. */
+export const WIDTH = up(2 * GRID + 49 * CODE * .602 + GRID);
 /** How many lines of the terminal are in sight. */
 export const TERM_LINES = 18;
 /** Between two pieces: the shadow of the one in hand, and a cell and a half clear of it. */
@@ -43,15 +44,38 @@ export function row(keys: readonly string[], width = WIDTH): {at: Map<string, nu
   return {at, end: keys.length ? PAD + (keys.length - 1) * (width + GAP) + width + SHADOW + GRID : PAD};
 }
 
-/** The tallest a sheet stands on a face `hgt` high: whole lines, half a line over and under them, its foot no lower
+/** The tallest a sheet stands on a face `hgt` high: whole lines, a cell of paper over and under them, its foot no lower
  * than FOOT over the face's; never under four lines. */
 export function tallest(hgt: number): number {
-  return (Math.max(4, Math.floor((hgt - TOP - FOOT - LINE) / LINE)) + 1) * LINE;
+  return (Math.max(4, Math.floor((hgt - TOP - FOOT - 2 * LINE) / LINE)) + 2) * LINE;
 }
 
-/** The terminal's height on a face `hgt` high: its lines and a cell over and under them, or as tall as a sheet may be. */
+/**
+ * Where the line being written may stand in a sheet on a face `hgt` high (DESIGN §2, look room): never in the third of
+ * the world it goes towards. Measured from the top of what scrolls in the sheet (a cell under the piece's top):
+ * `foot`, the lowest a line's foot may be (the lower third line, up to the line above it), and `top`, the highest a
+ * line's top may be while there is more above to turn back to (the upper third line, down to the next line).
+ */
+export function ahead(hgt: number): {top: number; foot: number} {
+  const from = TOP + LINE;
+  return {top: LINE * Math.ceil((hgt / 3 - from) / LINE), foot: LINE * Math.floor((2 * hgt / 3 - from) / LINE)};
+}
+
+/** The terminal's height on a face `hgt` high: its lines and a cell over and under them, as many as keep its last line
+ * (where its work is) out of the lower third, at most TERM_LINES and never under four. */
 export function termHeight(hgt: number): number {
-  return Math.min((TERM_LINES + 2) * LINE, tallest(hgt));
+  const lines = Math.max(4, Math.min(TERM_LINES, Math.floor((2 * hgt / 3 - TOP - LINE) / LINE)));
+  return Math.min((lines + 2) * LINE, tallest(hgt));
+}
+
+/**
+ * Where the desk is turned for the piece at `x` (`w` wide) now in hand, with the desk turned by `now` on a face `face`
+ * wide (DESIGN §2, eye-trace before the plane): `pressed`, the eye is on it where it was pressed, and it does not go
+ * from under the hand (`turnedTo`); gone to any other way (a key, a find, the place come to), the eye is where the
+ * last subject stood, at the desk's edge, and it comes there, the row ahead of it.
+ */
+export function restFor(pressed: boolean, now: number, x: number, w: number, face: number, starts: readonly number[]): number {
+  return pressed ? turnedTo(now, x, w, face, starts) : x;
 }
 
 /**

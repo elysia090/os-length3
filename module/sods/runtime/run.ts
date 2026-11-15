@@ -4,7 +4,7 @@
 // Run a static x86-64 program translated by sods, on node. PROGRAM is a host path
 // (placed at /bin/<name>) or, with --root, a path inside that tree (a root unpacked).
 // stdin/stdout/stderr attach to this process. A root still in its layers is run by
-// what reads layers (ricebox: scripts/webroot-runnable.ts), over the same linux.ts.
+// what reads layers (ricebox: module/ricebox/make/runnable.ts), over the same linux.ts.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs';

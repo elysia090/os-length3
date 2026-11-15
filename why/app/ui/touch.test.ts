@@ -2,24 +2,22 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {touch} from './touch.ts';
 
-test('reducing motion cancels a held forwards-filled press before release; restoring it does not replay the press', (t) => {
+test('a press is down at once and up at once, with less motion asked for too: being held is a state, not a move', (t) => {
   const document = new EventTarget(), window = new EventTarget();
-  const changes: ((event: {matches: boolean}) => void)[] = [];
-  let reduced = false;
-  const animations: {cancelled: boolean; options: KeyframeAnimationOptions}[] = [];
+  const animations: {cancelled: boolean; frames: Keyframe[]; options: KeyframeAnimationOptions}[] = [];
   class Button extends EventTarget {
     closest(selector: string) { return selector.startsWith('button') ? this : null; }
     matches() { return false; }
     getBoundingClientRect() { return {width: 40, height: 40}; }
-    animate(_frames: Keyframe[], options: KeyframeAnimationOptions) {
-      const animation = {cancelled: false, options};
+    animate(frames: Keyframe[], options: KeyframeAnimationOptions) {
+      const animation = {cancelled: false, frames, options};
       animations.push(animation);
       return {cancel() { animation.cancelled = true; }};
     }
   }
   const values = {
     document, window, Element: Button,
-    matchMedia: () => ({matches: reduced, addEventListener: (_name: string, fn: typeof changes[number]) => changes.push(fn)}),
+    matchMedia: () => ({matches: true, addEventListener: () => {}}),
     addEventListener: window.addEventListener.bind(window),
   };
   for (const [key, value] of Object.entries(values)) {
@@ -35,19 +33,13 @@ test('reducing motion cancels a held forwards-filled press before release; resto
   };
   touch();
   press();
-  assert.equal(animations.length, 1);
-  assert.equal(animations[0].options.fill, 'forwards');
-  reduced = true;
-  for (const change of changes) change({matches: true});
-  assert.equal(animations[0].cancelled, true);
-  reduced = false;
-  for (const change of changes) change({matches: false});
+  assert.equal(animations.length, 1, 'held down, motion reduced or not');
+  assert.equal(animations[0]!.options.duration, 0, 'down at once, never drawn going down');
+  assert.equal(animations[0]!.options.fill, 'forwards', 'held for as long as the press is');
+  assert.equal((animations[0]!.frames[0] as {scale: number}).scale, .92, 'a few pixels, never more than 8 %');
   window.dispatchEvent(new Event('pointerup'));
-  assert.equal(animations.length, 1, 'release after restoring motion must not spring a stale press');
-  press();
-  assert.equal(animations.length, 2, 'subsequent presses still give feedback');
-  reduced = true;
-  for (const change of changes) change({matches: true});
+  assert.equal(animations[0]!.cancelled, true, 'up the moment it is let go');
+  assert.equal(animations.length, 1, 'and nothing drawn coming home');
 });
 
 test('a stroke typed is a key as any other, Enter and Backspace too, and Space the space bar; held, with a command key, or out of a text, it is not typing', async () => {
@@ -59,5 +51,8 @@ test('a stroke typed is a key as any other, Enter and Backspace too, and Space t
   for (const key of ['ArrowLeft', 'Escape', 'Shift', 'F5', 'Home']) assert.equal(typedKey(k(key), true), null, key);
   assert.equal(typedKey(k('a', {repeat: true}), true), null);
   for (const mod of ['ctrlKey', 'metaKey', 'altKey'] as const) assert.equal(typedKey(k('a', {[mod]: true}), true), null, mod);
+  // Enter with Ctrl or the command key sends what was written: its last stroke, heard; with Alt, a command.
+  for (const mod of ['ctrlKey', 'metaKey'] as const) assert.equal(typedKey(k('Enter', {[mod]: true}), true), 'key', mod);
+  assert.equal(typedKey(k('Enter', {altKey: true}), true), null);
   assert.equal(typedKey(k('a'), false), null);
 });

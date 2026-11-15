@@ -1,10 +1,10 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {flush, look, remoteAll} from '../../remote/lifecycle.ts';
-import * as account from '../../remote/connection.ts';
-import {freeOff} from '../../account/space.ts';
+import {t} from '../../../text/i18n.ts';
+import {flush, look, remoteAll} from '../../../shipto/lifecycle.ts';
+import * as account from '../../../shipto/connection.ts';
+import {freeOff} from '../../../device/space.ts';
 import {askFoot, SETTLE} from '../kit/common.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button, pressing} from '../kit/remote-parts.ts';
 
 // Turning a repo off, or discarding it: asked in its card first, its name written out, then a passkey (as GitHub asks

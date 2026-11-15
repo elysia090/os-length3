@@ -42,3 +42,19 @@ const WIDE = 24, NARROW = 10;
 export function pieceWidth(face: number, cell = 24, shade = 12): number {
   return cell * Math.min(WIDE, Math.max(NARROW, Math.floor((face - shade) / cell)));
 }
+
+/**
+ * `el` kept whole cells tall (`way` 'tall') or wide ('wide'), as everything on a desk has its edges on lines of the
+ * grid (DESIGN §3): as its own size changes, the room at its foot or its right (--to-grid, --to-cell, which its styles
+ * add to what is in it) is what brings it to the grid's next line. For what is as tall or as wide as what is on it: a
+ * note, a piece being made, a name on the ground.
+ */
+export function wholeCells(el: HTMLElement, way: 'tall' | 'wide' = 'tall', cell = 24) {
+  const prop = way === 'tall' ? '--to-grid' : '--to-cell';
+  new ResizeObserver(() => {
+    const had = parseFloat(el.style.getPropertyValue(prop)) || 0;
+    const size = way === 'tall' ? el.offsetHeight : el.offsetWidth;
+    const needs = (cell - ((size - had) % cell)) % cell;
+    if (needs !== had) el.style.setProperty(prop, `${needs}px`);
+  }).observe(el);
+}

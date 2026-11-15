@@ -1,15 +1,15 @@
 import {keepNear} from '../../ui/near.ts';
 import {pageVeil} from '../../ui/page-veil.ts';
 import {h} from '../../ui/dom.ts';
-import {currentLang, LANGS, setLang, t} from '../../i18n/i18n.ts';
+import {currentLang, LANGS, setLang, t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
-import {connection, myName, signOut} from '../../remote/connection.ts';
-import {onState, setState} from '../../home/state.ts';
-import {initials, type Profile} from '../../home/profile.ts';
+import {connection, myName, signOut} from '../../../shipto/connection.ts';
+import {onState, setState} from '../../../home/state.ts';
+import {initials, type Profile} from '../../../home/profile.ts';
 import {answers, choosePart, SETTLE} from '../kit/common.ts';
-import {errorText} from '../../host/errors.ts';
-import {takeOff} from '../../account/space.ts';
-import {releaseHome} from '../../remote/lifecycle.ts';
+import {errorText} from '../../../api/errors.ts';
+import {takeOff} from '../../../device/space.ts';
+import {releaseHome} from '../../../shipto/lifecycle.ts';
 import {allSessions} from '../bench/sessions.ts';
 import type {Context} from '../kit/context.ts';
 
@@ -195,7 +195,7 @@ export class Me {
   }
 
   /** The page under the menu, out of focus while it is out, as under File's tree (ui/page-veil.ts): it is called up from the rail, in front of the world. */
-  private readonly veil = pageVeil('all');
+  private readonly veil = pageVeil('thin');
 
   private open(focus: boolean) {
     this.veil.out(true);

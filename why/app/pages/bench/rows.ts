@@ -1,7 +1,6 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {cutWhenLonger} from '../../ui/cut.ts';
-import {still} from '../../ui/glide.ts';
+import {t} from '../../../text/i18n.ts';
+import {cut, still} from '../../ui/glide.ts';
 import type {Run} from './sessions.ts';
 import {SPRING} from '../../ui/law.ts';
 
@@ -47,7 +46,6 @@ export class Rows {
         row.addEventListener('click', () => this.open(run));
         this.#rows.set(run, row);
         this.#add(row);
-        cutWhenLonger(row.querySelector('.pane-line')!);
       }
       const ended = run.ms !== null, failed = ended && (run.status ?? 0) !== 0;
       const state = !ended ? 'running' : failed ? 'failed' : 'done';
@@ -60,7 +58,7 @@ export class Rows {
   #add(row: HTMLElement) {
     this.element.append(row);
     if (row.animate && !still())
-      row.animate([{opacity: 0, translate: '0 -4px'}, {opacity: 1, translate: '0 0'}], {duration: 360, easing: SPRING});
+      row.animate([{opacity: 0, translate: '0 -4px'}, {opacity: 1, translate: '0 0'}], {duration: cut() ? 0 : 360, easing: SPRING});
     this.element.scrollTo({top: this.element.scrollHeight});
   }
 
@@ -71,7 +69,6 @@ export class Rows {
       h('span', {class: 'pane-bar', 'aria-hidden': 'true'}), h('span', {class: 'pane-line'}, text), h('span', {class: 'pane-at'}, head));
     row.addEventListener('click', () => go(row));
     this.#add(row);
-    cutWhenLonger(row.querySelector('.pane-line')!);
     return row;
   }
 
@@ -79,8 +76,7 @@ export class Rows {
   answer(row: HTMLElement): HTMLElement {
     const el = h('div', {class: 'pane-answer waiting'});
     row.after(el);
-    // Its words, as they come, cut at two lines; pressed, all of them.
-    cutWhenLonger(el, true);
+    // Its words, as they come, cut at two lines (ending in …); pressed, all of them.
     el.addEventListener('click', () => el.classList.toggle('whole'));
     return el;
   }

@@ -29,8 +29,8 @@ root), read as runc reads it and run as runc runs it, the `run` profile of it (n
 is stricter than runc it refuses in words rather than differing quietly (the floor, below). It has no second
 contract: an image's layers are the distribution's to read ([`../ricebox/layers`](../ricebox/layers)), and where
 there is no Linux under it (a browser, another system) the Linux it asks for is sods'
-([`../sods`](../sods/README.md)), so this same C is what runs there. That last step is not made yet: sods' Linux
-answers what a program asks, and refuses in words what a box's maker asks (namespaces, mounts, a filter).
+([`../sods`](../sods/README.md)), so this same C is what runs there: in a page's Worker and in node a box is made by this muk, translated, on the
+Linux sods answers (`../sods/test/muk/run.sh` runs this corpus there).
 
 **Where muk ends.** A run is a box's whole life here: muk names no box, keeps none beyond its run, lists none, and
 writes nothing about one. A terminal is a device of the box, so muk makes it where only it can (in the box's own
@@ -65,7 +65,8 @@ own, or what was lent in words config.json has no say in (muk's own: `--lend`, `
 - **Namespaces.** Its mount, pid, ipc, uts and network namespaces are its own or one lent by its path, and the
   first four are never the host's, lent or not (the one muk itself is in: a box in it is refused); it has a
   cgroup namespace. The host's network is a box's only by being lent, as a path: saying nothing is not asking
-  for it.
+  for it. The one muk itself is in, lent, is the box's by its being made there: nothing is joined (one who is not
+  root may join no namespace, its own neither).
 - **Users.** Each of the host's users and groups a box can be is one lent (`--ids FIRST-LAST`; to one who is not
   root the kernel lends the one it is; root's muk lends none until told). In a user namespace of its own: those
   its own are mapped onto. In none: the ones it runs as, or, where it may change who it is (SETUID, SETGID),

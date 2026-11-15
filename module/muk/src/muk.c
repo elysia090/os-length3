@@ -599,7 +599,7 @@ static int main_(int argc, char **argv, char **envp) {
   /* The namespaces it joins (the user's first: it says what one may do in the others). What is in them already
    * can see the box's process from the moment it is made, while it is still this program and holds the host's
    * root: it is made as one that may not be traced or read through /proc, until it is the box's program. */
-  if (c.njoined) ok(sys2(SYS_prctl, 4 /* PR_SET_DUMPABLE */, 0), "dumpable: ", "not cleared before joining");
+  int hidden = 0;
   for (int user = 1; user >= 0; user--)
     for (u32 k = 0; k < c.njoined; k++) {
       if ((c.joined[k].flag == CLONE_NEWUSER) != user) continue;
@@ -617,6 +617,15 @@ static int main_(int argc, char **argv, char **envp) {
         ok(sys4(SYS_newfstatat, AT_FDCWD, (i64)own, (i64)&mine, 0), "stat ", own);
         if (its.dev == mine.dev && its.ino == mine.ino) fail("config.json: linux.namespaces: the host's own is no box's to join: ", c.joined[k].path);
       }
+      else {
+        /* The network muk itself is in, lent: the box is in it by being made here, and there is nothing to join
+         * (one who is not root may join none, its own neither: the kernel asks a privilege over it for the asking). */
+        __attribute__((uninitialized)) struct kstat its, mine;
+        ok(sys4(SYS_newfstatat, fd, (i64)"", (i64)&its, 0x1000 /* AT_EMPTY_PATH */), "stat ", c.joined[k].path);
+        ok(sys4(SYS_newfstatat, AT_FDCWD, (i64)"/proc/self/ns/net", (i64)&mine, 0), "stat ", "/proc/self/ns/net");
+        if (its.dev == mine.dev && its.ino == mine.ino) { sys1(SYS_close, fd); continue; }
+      }
+      if (!hidden) ok(sys2(SYS_prctl, 4 /* PR_SET_DUMPABLE */, 0), "dumpable: ", "not cleared before joining"), hidden = 1;
       ok(sys2(SYS_setns, fd, c.joined[k].flag), "setns ", c.joined[k].path);
       sys1(SYS_close, fd);
     }

@@ -47,7 +47,7 @@ export function rowMap(stage: HTMLElement, pieces: () => Piece[], turned: () => 
     if (key !== drawn) {
       drawn = key;
       element.replaceChildren(sight, ...all.map((p) => {
-        const b = h('button', {type: 'button', class: 'row-piece', 'aria-label': p.name, title: p.name, 'aria-current': String(p.held)});
+        const b = h('button', {type: 'button', class: 'row-piece', 'aria-label': p.name, 'aria-current': String(p.held)});
         b.style.left = `${Math.round(p.x * by)}px`;
         b.style.width = `${Math.max(4, Math.round(p.w * by))}px`;
         b.addEventListener('click', () => p.go());

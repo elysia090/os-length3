@@ -2,11 +2,7 @@
 
 /* A step's row: what it stands at at the left, its button at the right (its done mark in its place once done). */
 .steps { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: start; gap: var(--s3) var(--s3); margin-top: 0; padding: 0 0 var(--s4); }
-.step-act { display: flex; align-items: center; justify-content: flex-end; min-height: var(--h-control); }
-.step-act .button { min-width: 96px; justify-content: center; }
-.step-done { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 600; white-space: nowrap; }
-.step-about { min-width: 0; min-height: var(--h-control); padding-top: calc((var(--h-control) - 1.5em) / 2); }
-.step-about p { margin: 0; }
+.step-done { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 700; white-space: nowrap; }
 .steps > .error { grid-column: 1 / -1; }
 /* In the issue's box: Commit over Push, their buttons down the box's right edge, where Start was and Merge is under
    the Review, what each stands at at the left (git/issue.ts steps). */
@@ -16,7 +12,7 @@
 .issue-summary {
   min-height: calc(1.6em + 2 * var(--s2) + 2px); padding: var(--s2) var(--s3); margin-left: calc(-1 * var(--s3)); field-sizing: content;
   width: calc(100% + 2 * var(--s3)); border: 1px solid transparent; border-radius: var(--r-field); background: transparent;
-  color: var(--ink); font: var(--t-body)/1.6 var(--sans); resize: none; cursor: var(--cursor-text);
+  color: var(--ink); font: var(--t-word)/var(--u) var(--sans); resize: none; cursor: var(--cursor-text);
 }
 /* Where a field cannot be as tall as its words, it keeps room for a few lines, as it did. */
 @supports not (field-sizing: content) { .issue-summary { min-height: calc(4 * 1.6em + 2 * var(--s2)); } }
@@ -24,7 +20,6 @@
 .issue-summary:hover { border-color: var(--rule); }
 .issue-summary:focus { border-color: var(--edge); background: var(--raised); }
 /* Under the current issue's box, out of it: Back to main at the left, Write an issue at the right. */
-.issue-under { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); margin-top: var(--s3); }
 .issue-leave { display: grid; gap: var(--s1); justify-items: start; }
 /* main said as Home says the person's name (Inter Display Black, --t-name): the line every repo's work comes back to,
    one word over its cards, close over them, its m set on their edge (the face's own side bearing taken back). */
@@ -36,19 +31,19 @@
    from here under the cards, on those edges too (its --row-peek and --row-lead are the row's: see .issue-column). */
 .main-part > .main-card {
   width: calc(100% - 2 * var(--peek)); margin-left: calc(var(--lead) * var(--peek));
-  transition: margin-left var(--slide), width var(--slide); /* as the track goes */
+  transition: none; /* as the track goes */
 }
 /* As an issue's box: the same padding, the files under its name, and its foot (how many wait at the left, Commit at
    the right) where an issue's next step is. Its name is only which repo (main is said over it): a label at the size of
    the file named under it, not a title as large as an issue's, which is a sentence. */
 .main-card { display: grid; gap: var(--s3); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }
-.main-title { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.main-title { margin: 0; font-size: var(--t-word); font-weight: 700; }
 .main-card + .main-card { margin-top: var(--s3); }
 /* Each card drawn as a history draws its line: the repo's main where it stands (a dot at its name), what waits on it
    down a dashed line (not yet), and at its foot the ring of the commit Commit makes. The line is the files' edge, so
    the diff's own green edge gives way to it. A row of many (brief) is one line across, not down: none there. */
 .main-card:not(.brief) { position: relative; padding-left: calc(var(--s5) + 28px); }
-.main-card:not(.brief) .main-title { line-height: 24px; }
+.main-card:not(.brief) .main-title { line-height: var(--u); }
 .main-card:not(.brief)::before {
   content: ''; position: absolute; left: calc(var(--s5) + 6px); width: 2px;
   top: calc(var(--s4) + var(--s1) + 12px); bottom: calc(var(--s5) + var(--h-control) / 2);
@@ -58,24 +53,15 @@
   content: ''; position: absolute; left: calc(var(--s5) + 2px); top: calc(var(--s4) + var(--s1) + 7px);
   width: 10px; height: 10px; border-radius: 50%; background: var(--ink);
 }
-.main-card:not(.brief) > .main-foot, .main-card:not(.brief) > .off-ask > :is(.card-foot, .answers) { position: relative; }
-.main-card:not(.brief) > .main-foot::before, .main-card:not(.brief) > .off-ask > :is(.card-foot, .answers)::before {
-  content: ''; position: absolute; left: -27px; top: 50%; width: 12px; height: 12px; margin-top: -6px; box-sizing: border-box;
-  border: 2px solid var(--ink); border-radius: 50%; background: var(--paper);
-}
 .main-card:not(.brief) .diff-line { border-left-width: 0; }
 /* Its files close under its name, as what is in it (the card's gap, a step from its foot, is room between parts). */
 .main-card > .main-title + .changes { margin-top: calc(-1 * var(--s2)); }
-/* Many waiting in All (done.ts BRIEF): a row each, its name at the left and how many with Commit at the right; its name
-   pressed, its files open under it, the row's own width. Asked for a commit's line, it is the card again. */
+/* Many waiting in All (done.ts BRIEF): a row each, its name at the left and how many with Commit at the right, its line
+   under them; its name pressed, its files open under it, the row's own width. */
 .main-card.brief { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: var(--s2) var(--s3) var(--s2) var(--s5); }
-.main-card.brief:has(> .off-ask) { grid-template-columns: minmax(0, 1fr); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); }
-.main-card.brief > .main-foot { margin: 0; gap: var(--s4); }
+.main-card.brief > :is(.main-line, .error) { grid-column: 1 / -1; }
 .main-card.brief > .changes { grid-column: 1 / -1; padding-bottom: var(--s3); }
 .main-card.brief + .main-card.brief { margin-top: var(--s2); }
-.main-open { display: inline-flex; align-items: center; gap: var(--s2); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: var(--cursor-hand); }
-.main-open::before { content: ''; width: 0; height: 0; border-block: 4px solid transparent; border-left: 6px solid currentColor; transition: rotate var(--motion); }
-.main-open[aria-expanded='true']::before { rotate: 90deg; }
 /* main's card: the repo, how many files wait and Commit on one line; the files under it on the card itself, no box
    inside the box. */
 .changes { display: grid; gap: var(--s1); min-width: 0; }
@@ -87,29 +73,31 @@ details.diff-file > summary.diff-head { list-style: none; }
 details.diff-file > summary.diff-head::-webkit-details-marker { display: none; }
 details.diff-file > summary.diff-head::before {
   content: ''; flex: none; align-self: baseline; translate: 0 -.5px; width: 0; height: 0; margin-right: calc(-1 * var(--s1));
-  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: rotate var(--motion);
+  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: none;
 }
 details.diff-file[open] > summary.diff-head::before { rotate: 90deg; }
 /* What waits of a long file, under its lines where they stop, quiet until pressed. */
-.diff-more { justify-self: start; margin-top: var(--s1); padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); }
+.diff-more { justify-self: start; margin-top: var(--s1); padding: 0 var(--s2); border: 0; border-radius: var(--r-key); background: transparent; color: var(--sub); font: var(--t-word) var(--mono); }
 button.diff-more { cursor: var(--cursor-hand); }
-button.diff-more:hover { color: var(--ink); background: var(--raised); }
+button.diff-more:hover { color: var(--ink); }
 /* What is done with (merged, closed): rows, space between them; a merged one opens to its diff. */
 .done-list { display: grid; gap: var(--s1); margin-inline: calc(-1 * var(--s2)); } /* its words on its heading's edge, past each row's own s2 */
-.done-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s2); border-radius: var(--r-field); }
+.done-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s2); border-radius: var(--r-key); }
 summary.done-head { cursor: var(--cursor-hand); list-style: none; }
-summary.done-head:hover { background: var(--raised); }
+summary.done-head:hover { color: var(--ink); }
 /* A merged one opens to its change: the small triangle every fold has says so before it is pressed, turned down open. */
 summary.done-head::-webkit-details-marker { display: none; }
 summary.done-head::before {
   content: ''; flex: none; align-self: center; width: 0; height: 0; margin-right: calc(-1 * var(--s1));
-  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: rotate var(--motion);
+  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: none;
 }
 details[open] > summary.done-head::before { rotate: 90deg; }
 .done-head > .grow { flex: 1; }
-.done-name { font-weight: 600; overflow-wrap: anywhere; }
+.done-name { font-weight: 700; overflow-wrap: anywhere; }
 .done-head > .error { flex-basis: 100%; }
 .done-diff { max-height: 56vh; overflow: auto; padding: var(--s2) var(--s2) var(--s3) var(--s4); }
 
 /* An Inbox pane with nothing chosen: a quiet line in its middle, not a box in the box. */
 .inbox-thread > .quiet { margin: 0; padding: var(--u); color: var(--sub); }
+/* Its line, always there to be written (done.ts): as wide as the card's inside, what was said of it under it. */
+.main-card > .error:empty { display: none; }

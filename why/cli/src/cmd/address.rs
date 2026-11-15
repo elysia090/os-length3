@@ -17,33 +17,33 @@
 use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{Error, note, Reply, Result};
-use why_core::{fs::paths, remote, ssh, tr};
+use why_core::{fs::paths, shipto, cowboy, tr};
 use serde_json::json;
 
 /// This device's SSH as data: whether it listens, to whom, where, its host key, the keys let in.
-fn shown(h: &ssh::Here) -> serde_json::Value {
+fn shown(h: &cowboy::Here) -> serde_json::Value {
     json!({"on": h.on, "scope": h.scope, "port": h.port, "bound": h.bound, "interfaces": h.interfaces, "destinations": h.destinations,
         "fingerprint": h.fingerprint, "keys": h.keys, "started": h.started})
 }
 
 /// The addresses taken besides loopback, each after its interface (`wlan0 192.168.1.5`); a record from before
 /// interfaces were kept names the addresses alone.
-fn taken(h: &ssh::Here) -> Vec<String> {
+fn taken(h: &cowboy::Here) -> Vec<String> {
     if !h.interfaces.is_empty() { return h.interfaces.iter().map(|t| format!("{} {}", t.interface, t.addr)).collect(); }
     h.bound.iter().filter(|a| !matches!(a.as_str(), "127.0.0.1" | "::1")).cloned().collect()
 }
 
 /// What a person checks before trusting it, plainly, a line each: who may connect (and on which interfaces and
 /// addresses here), how many keys are let in, and the host key ssh will show the first time.
-fn facts(h: &ssh::Here) -> Vec<String> {
+fn facts(h: &cowboy::Here) -> Vec<String> {
     let lan = taken(h);
     let mut out = vec![match h.scope {
-        ssh::Scope::Device => tr!("From this device only (127.0.0.1): no other PC finds it", "この端末からだけ（127.0.0.1）：ほかの PC からは見えません"),
-        ssh::Scope::Network if lan.is_empty() => tr!("From PCs on the same network too (no LAN or VPN address here now: this device only until one comes)",
+        cowboy::Scope::Device => tr!("From this device only (127.0.0.1): no other PC finds it", "この端末からだけ（127.0.0.1）：ほかの PC からは見えません"),
+        cowboy::Scope::Network if lan.is_empty() => tr!("From PCs on the same network too (no LAN or VPN address here now: this device only until one comes)",
             "同じネットワークの PC からも（いまは LAN や VPN のアドレスがないので、できるまでこの端末からだけ）"),
-        ssh::Scope::Network => tr!("From PCs on the same network too ({}); never from the Internet", "同じネットワークの PC からも（{}）。インターネットからは入れません", lan.join(", ")),
+        cowboy::Scope::Network => tr!("From PCs on the same network too ({}); never from the Internet", "同じネットワークの PC からも（{}）。インターネットからは入れません", lan.join(", ")),
     }];
-    out.push(if h.keys == 1 { tr!("1 key let in ({})", "入れる鍵：1本（{}）", ssh::KEYS) } else { tr!("{} keys let in ({})", "入れる鍵：{}本（{}）", h.keys, ssh::KEYS) });
+    out.push(if h.keys == 1 { tr!("1 key let in ({})", "入れる鍵：1本（{}）", cowboy::KEYS) } else { tr!("{} keys let in ({})", "入れる鍵：{}本（{}）", h.keys, cowboy::KEYS) });
     if let Some(f) = &h.fingerprint {
         out.push(tr!("Host key {} (ssh shows it the first time it connects: check it is this)", "ホスト鍵 {}（初めて接続するとき ssh が表示します。これと同じか確かめてください）", f));
     }
@@ -53,14 +53,14 @@ fn facts(h: &ssh::Here) -> Vec<String> {
 /// How to turn it on, said wherever it is off.
 fn how_on() -> String {
     tr!("why address ssh on turns it on, from this device only (on network: from the same network too); your key goes in the {} dotfile",
-        "why address ssh on でオンにできます。この端末からだけです（on network なら同じネットワークからも）。鍵は {} の dotfile に置きます", ssh::KEYS)
+        "why address ssh on でオンにできます。この端末からだけです（on network なら同じネットワークからも）。鍵は {} の dotfile に置きます", cowboy::KEYS)
 }
 
 /// `why address`: each destination, one a line, and what to check of it on standard error; off, it asks on a
 /// terminal (whether, then from where) and says so elsewhere.
 pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
-    let h = ssh::here(data);
+    let h = cowboy::here(data);
     if h.on {
         for f in facts(&h) { note(&f); }
         return Ok(Reply::data(h.destinations.join("\n"), shown(&h)));
@@ -76,16 +76,16 @@ pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
     if !matches!(answer.trim(), "y" | "Y" | "yes" | "Yes" | "YES" | "はい") {
         return Err(Error::Off(tr!("SSH stays off. {}", "SSH はオフのままです。{}", how_on())));
     }
-    let kept = ssh::scope(data);
-    let first = if kept == ssh::Scope::Network { 2 } else { 1 };
+    let kept = cowboy::scope(data);
+    let first = if kept == cowboy::Scope::Network { 2 } else { 1 };
     eprint!("{}", tr!("Who may connect?\n  1  this device only: no other PC finds it\n  2  PCs on the same network too (a LAN, a VPN), never the Internet\n[{}] ",
         "どこから接続できるようにしますか？\n  1  この端末からだけ：ほかの PC からは見えません\n  2  同じネットワークの PC からも（LAN、VPN）。インターネットからは入れません\n[{}] ", first));
     let mut answer = String::new();
     let _ = std::io::stdin().read_line(&mut answer);
     let scope = match answer.trim() {
         "" => kept,
-        "1" => ssh::Scope::Device,
-        "2" => ssh::Scope::Network,
+        "1" => cowboy::Scope::Device,
+        "2" => cowboy::Scope::Network,
         _ => return Err(Error::Off(tr!("SSH stays off: 1 or 2 is the answer. {}", "SSH はオフのままです（1 か 2 で答えます）。{}", how_on()))),
     };
     let h = turn_on(scope)?;
@@ -98,8 +98,8 @@ pub fn show(_: &Ctx, call: &Call) -> Result<Reply> {
 pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     if call.word(0) == Some("on") {
-        let was = ssh::listening(data);
-        let scope = call.word(1).and_then(ssh::Scope::from_word).unwrap_or_else(|| ssh::scope(data));
+        let was = cowboy::listening(data);
+        let scope = call.word(1).and_then(cowboy::Scope::from_word).unwrap_or_else(|| cowboy::scope(data));
         let h = turn_on(scope)?;
         let first = match &was {
             Some(l) if l.scope == scope => tr!("SSH was on already", "SSH はもうオンです"),
@@ -109,9 +109,9 @@ pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
         let lines: Vec<String> = std::iter::once(first).chain(facts(&h)).chain(h.destinations.iter().cloned()).collect();
         return Ok(Reply::done(lines.join("\n"), json!({"changed": was.is_none_or(|l| l.scope != scope), "ssh": shown(&h)})));
     }
-    let stopped = ssh::stop(data);
+    let stopped = cowboy::stop(data);
     // Said to the Remote here too, in case the listener could not (it was killed): pages stop showing it.
-    if remote::connection().is_some() { let _ = remote::ssh::withdraw(); }
+    if shipto::connection().is_some() { let _ = shipto::ssh::withdraw(); }
     let text = if stopped.is_some() { tr!("SSH is off; its sessions ended", "SSH をオフにしました。そのセッションは終わりました") }
         else { tr!("SSH was off already", "SSH はもうオフです") };
     Ok(Reply::done(text, json!({"changed": stopped.is_some(), "ssh": {"on": false}})))
@@ -120,28 +120,28 @@ pub fn set(_: &Ctx, call: &Call) -> Result<Reply> {
 /// Turn SSH on here, to `scope` (kept for next time): the keys taken in from the Remote and checked, then the
 /// listener started in the background and waited for until it listens (or says why it cannot). One running already
 /// takes the scope at once, its other sessions going on.
-fn turn_on(scope: ssh::Scope) -> Result<ssh::Here> {
+fn turn_on(scope: cowboy::Scope) -> Result<cowboy::Here> {
     let data = paths::data_dir();
-    if ssh::listening(data).is_some() {
-        ssh::set_scope(data, scope)?;
-        ssh::rescope(data, scope).ok_or_else(|| Error::Io(tr!("The SSH listener did not take the scope asked; why address ssh off, then on", "SSH の待ち受けが範囲の変更を受けませんでした。why address ssh off のあと、もう一度 on にしてください")))?;
-        return Ok(ssh::here(data));
+    if cowboy::listening(data).is_some() {
+        cowboy::set_scope(data, scope)?;
+        cowboy::rescope(data, scope).ok_or_else(|| Error::Io(tr!("The SSH listener did not take the scope asked; why address ssh off, then on", "SSH の待ち受けが範囲の変更を受けませんでした。why address ssh off のあと、もう一度 on にしてください")))?;
+        return Ok(cowboy::here(data));
     }
-    if remote::connection().is_none() {
+    if shipto::connection().is_none() {
         return Err(Error::Offline(tr!("SSH is turned on for a device signed in to a Remote, so any of your devices can see it and turn it off (why login)",
             "SSH は Remote にサインインした端末でオンにします。どの端末からも見えて、オフにできるように（why login）")));
     }
     // The keys as the Remote has them (a key added on another device counts); out of reach, this device's.
-    let _ = remote::sync_home("dotfiles");
-    let keys = ssh::keys();
-    for (line, why) in &keys.skipped { note(&tr!("{} line {}: {}", "{} の {} 行目：{}", ssh::KEYS, line, why)); }
+    let _ = shipto::sync_home("dotfiles");
+    let keys = cowboy::keys();
+    for (line, why) in &keys.skipped { note(&tr!("{} line {}: {}", "{} の {} 行目：{}", cowboy::KEYS, line, why)); }
     if keys.keys.is_empty() {
         return Err(Error::Refused(tr!("Add a key first: your OpenSSH public key, one a line, in the {0} dotfile (Runtime → Dotfiles, or why dotfile write {0} < ~/.ssh/id_ed25519.pub)",
-            "先に鍵を置いてください：OpenSSH の公開鍵を1行にひとつ、{0} の dotfile に（Runtime → Dotfiles、または why dotfile write {0} < ~/.ssh/id_ed25519.pub）", ssh::KEYS)));
+            "先に鍵を置いてください：OpenSSH の公開鍵を1行にひとつ、{0} の dotfile に（Runtime → Dotfiles、または why dotfile write {0} < ~/.ssh/id_ed25519.pub）", cowboy::KEYS)));
     }
-    ssh::set_scope(data, scope)?;
+    cowboy::set_scope(data, scope)?;
     start_listener()?;
-    let h = ssh::here(data);
+    let h = cowboy::here(data);
     if !h.on { return Err(Error::Io(tr!("The SSH listener said it listens, but is not there", "SSH の待ち受けは始まったと言いましたが、見当たりません"))); }
     Ok(h)
 }

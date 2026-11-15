@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {shown as named, shownAs} from '../../remote/inbox.ts';
-import * as servers from '../../remote/servers.ts';
-import {boardNew} from '../../remote/news.ts';
+import {t} from '../../../text/i18n.ts';
+import {shown as named} from '../../../shipto/inbox.ts';
+import * as servers from '../../../shipto/servers.ts';
+import {boardNew} from '../../../shipto/news.ts';
 import {personBadge} from '../kit/pane.ts';
-import {errorText} from '../../host/errors.ts';
-import {every} from '../../host/runs.ts';
-import {paced, still} from '../../ui/glide.ts';
+import {errorText} from '../../../api/errors.ts';
+import {every} from '../../../api/runs.ts';
+import {cut, paced, still} from '../../ui/glide.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // The room's own sheet, the first piece of Server's row: who is in the server, then the repos they show in it
@@ -59,7 +59,7 @@ export class Side {
         part(t('Members'), h('ul', {class: 'people'}, ...people.map((p) => this.person(p)))),
         // The repos shown, when there are any: nothing is said of none here.
         repos.length ? part(t('Repos'), h('ul', {class: 'side-repos'}, ...repos.map((r) => this.repo(r)))) : '');
-      if (another && !still()) this.element.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: SPRING});
+      if (another && !still()) this.element.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(220), easing: SPRING});
     };
     void read().then((got) => { if (mine === this.token) draw(got); })
       .catch((e) => { if (mine === this.token) this.element.replaceChildren(h('p', {class: 'error'}, errorText(e))); });
@@ -118,7 +118,7 @@ export class Side {
     // Someone else pressed is a conversation with them, in the Inbox: who they are is who one writes to.
     void this.ways.isMe(p.address).then((me) => {
       if (me || !li.isConnected) return;
-      const b = h('button', {type: 'button', class: 'person-go', title: t('Message {name}', {name: named(p.address)})}, ...li.childNodes);
+      const b = h('button', {type: 'button', class: 'person-go', 'aria-label': t('Message {name}', {name: named(p.address)})}, ...li.childNodes);
       b.addEventListener('click', () => this.ways.write(p.address));
       li.replaceChildren(b);
     });
@@ -127,8 +127,7 @@ export class Side {
 
   /** A repo shown in it: whose, and said when everyone sees it; lit while it is the one in the boards' place. */
   private repo(r: servers.ShownRepo): HTMLElement {
-    const b = h('button', {type: 'button', class: 'side-repo', 'data-repo': `${r.owner}:${r.name}`,
-      title: r.as ? t('Publicly visible as "{name}"', {name: shownAs(r.as)}) : `${named(r.owner)}:${r.name}`},
+    const b = h('button', {type: 'button', class: 'side-repo', 'data-repo': `${r.owner}:${r.name}`},
     h('span', {}, r.name), h('span', {class: 'muted small'}, named(r.owner)), r.as ? h('span', {class: 'seen-mark muted small'}, t('Public')) : null);
     if (b.dataset.repo === this.seeing) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => this.ways.seeRepo(r));

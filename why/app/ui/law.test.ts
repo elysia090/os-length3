@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
-import {CELL, eased, moveTime, SPRING} from './law.ts';
+import {CELL, eased, moveTime, readTime, SPRING} from './law.ts';
 
 // The one law every move of the OS follows (law.ts), and that the sheets and the code have no other.
 
@@ -45,4 +45,16 @@ test('no sheet moves a thing by another curve, or in a time that is not one of t
       }
     }
   }
+});
+
+test('words shown for a moment stay long enough to be read once: half a second at least, four full-width letters a second, seventeen Latin', () => {
+  assert.equal(readTime('OK'), 500);
+  assert.equal(readTime('Copied'), 500);
+  // Japanese subtitling's four a second: seven letters, 1.75 s.
+  assert.equal(readTime('コピーしました'), 1750);
+  assert.equal(readTime('この投稿を削除しますか？'), 3000);
+  // Seventeen Latin letters a second (spaces between words counted as letters).
+  assert.equal(readTime('Delete this post?'), 1000);
+  // A line of both writings: each at its own rate.
+  assert.equal(readTime('Fix: 件名'), Math.ceil(1000 * (2 / 4 + 5 / 17)));
 });

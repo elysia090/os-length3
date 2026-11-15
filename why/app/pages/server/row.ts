@@ -1,7 +1,8 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {moveTime} from '../../ui/law.ts';
 import {RowDesk} from '../../ui/row-desk.ts';
+import {wholeCells} from '../../ui/row.ts';
 
 // Server's boards as the row of a desk (DESIGN §6, ui/row.ts): pieces one width, two cells apart, the desk at rest
 // only with a piece at its edge, one of them in the hand. Before the boards, at the desk's edge, the room's own sheet
@@ -76,7 +77,8 @@ export class Row {
 
   /** `count` boxes, the `at`th in the hand. */
   fill(count: number, at: number) {
-    this.track.replaceChildren(...(this.lead ? [this.lead] : []), ...Array.from({length: count}, () => h('div', {class: 'slide'})));
+    // (A board not in the hand is as wide as its name, brought up to whole cells: what follows it stays on the grid.)
+    this.track.replaceChildren(...(this.lead ? [this.lead] : []), ...Array.from({length: count}, () => { const s = h('div', {class: 'slide'}); wholeCells(s, 'wide'); return s; }));
     this.was = at;
     this.stage.scrollLeft = 0;
     this.go(at, false, false);

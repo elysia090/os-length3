@@ -1,8 +1,8 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {askFoot, SETTLE} from '../kit/common.ts';
-import {errorText} from '../../host/errors.ts';
-import type {Server} from '../../remote/servers.ts';
+import {errorText} from '../../../api/errors.ts';
+import type {Server} from '../../../shipto/servers.ts';
 
 // The pieces Server's parts share (its view, band, boards, gear, dock and the rest in this folder).
 

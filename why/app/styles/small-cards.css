@@ -7,23 +7,23 @@
 /* Runtime in parts: a part's first section starts at the part's own step; the environments' row wraps 40 apart. */
 [id^='panel-runtime-'] > .section:first-child, [id^='panel-runtime-'] > .section-row > .section { margin-top: 0; }
 [id^='panel-runtime-'] > .section-row { row-gap: var(--s6); }
-.small-card { min-height: 128px; display: flex; flex-direction: column; }
+.small-card { min-height: calc(5 * var(--u)); display: flex; flex-direction: column; }
 /* What can be done sits at the card's foot, however many lines are above it, so cards side by side keep their buttons on one line. */
 .small-card > .card-foot { margin-top: auto; align-self: stretch; }
 .small-card > .off-ask { flex: 1; }
-.small-card .card-title { font-size: var(--t-body); }
+.small-card .card-title { font-size: var(--t-word); }
 /* A person's card: their face before their name, as the side lists them; its line under starts under the name. */
 .person-title { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .small-card:has(.person-title) > .card-title + .muted { padding-left: calc(24px + var(--s2)); }
 /* Beside them, the card that adds someone has a face's place of its own, a dashed + in it: its word starts where their
    names do. */
-.add-someone { position: relative; padding-left: calc(var(--s4) + 24px + var(--s2)); }
+.add-someone { position: relative; padding-left: calc(var(--u) + 24px + var(--s2)); }
 .add-someone::before {
-  content: '+'; position: absolute; top: var(--s4); left: var(--s4); display: grid; place-items: center; width: 24px; height: 24px;
-  border: 1px dashed var(--edge); border-radius: 50%; font: 400 var(--t-body)/1 var(--sans); color: var(--sub);
+  content: '+'; position: absolute; top: calc(var(--u) - 1px); left: calc(var(--u) - 1px); display: grid; place-items: center; width: 24px; height: 24px;
+  border: 1px dashed var(--edge); border-radius: 50%; font: 400 var(--t-word)/1 var(--sans); color: var(--sub);
 }
 .small-card.quiet { border-style: dashed; color: var(--sub); }
-.small-card.new { min-height: 128px; }
+.small-card.new { min-height: calc(5 * var(--u)); }
 /* The card that adds someone: their name or code beside its deed, as Inbox's way to write to someone new. */
 .add-card { gap: var(--s2); }
 .add-by-name { margin-top: auto; }

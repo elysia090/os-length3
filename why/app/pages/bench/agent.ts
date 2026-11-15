@@ -1,10 +1,10 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {shownTree} from '../../repos/repos.ts';
-import {AgentError, type Use} from '../../agent/ask.ts';
-import {Agent, type Done, type Hands} from '../../agent/loop.ts';
-import {boxSaid} from '../../repos/agents.ts';
-import {LAND, paced, still} from '../../ui/glide.ts';
+import {t} from '../../../text/i18n.ts';
+import {shownTree} from '../../../repo/repos.ts';
+import {AgentError, type Use} from '../../../agent/ask.ts';
+import {Agent, type Done, type Hands} from '../../../agent/loop.ts';
+import {boxSaid} from '../../../repo/agents.ts';
+import {cut, LAND, paced, still} from '../../ui/glide.ts';
 import {askChanged, asked} from './asks.ts';
 import type {Player} from './play.ts';
 
@@ -14,7 +14,7 @@ import type {Player} from './play.ts';
 // reads the repo's files, runs its commands in a Prompt of its own that no one looks at (a build, the tests), and, on
 // an issue's work only, writes files, which the screen shows changing where they are open (Forge, its diff). What it
 // did comes into the right pane's flow under what it was asked, a line a step (read, ran and how that ended, edited),
-// and its words last. It says what it does as any agent's hooks do (asked, each tool, its turn over: repos/agents.ts
+// and its words last. It says what it does as any agent's hooks do (asked, each tool, its turn over: repo/agents.ts
 // boxSaid), so wherever agents are shown at work (an issue's box in Git), it is too.
 
 /** The box's Agent's session while the app runs: started once a repo is first asked about. */
@@ -84,7 +84,7 @@ function hookWords(name: string, args: Record<string, unknown>): string {
 
 /**
  * An agent's hooks, outside its loop: started once per repo, asked, each tool about to be used, its turn over (with
- * its last words, or why it stopped), said as any agent's hooks say them (repos/agents.ts boxSaid).
+ * its last words, or why it stopped), said as any agent's hooks say them (repo/agents.ts boxSaid).
  */
 function hooks(agent: Agent, repo: string): void {
   if (!started.has(repo)) { started.add(repo); boxSaid(SESSION, repo, 'start'); }
@@ -131,7 +131,7 @@ export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Us
     a.classList.remove('waiting');
     a.replaceChildren(...nodes);
     if (refused) a.classList.add('refused');
-    if (!still() && !typed) a.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}], {duration: paced(220), easing: LAND});
+    if (!still() && !typed) a.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}], {duration: cut() ? 0 : paced(220), easing: LAND});
   };
   // The pane follows the screen: each line as what it says is played (play.ts), never ahead of it.
   player.subscribe((e) => {

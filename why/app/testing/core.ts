@@ -2,10 +2,10 @@
 // of its own, before any module asks it. One on a Remote of its own (testing/remote.ts) takes another.
 // It starts at the first question: a process that never asks one (the Remote's own tests) pays nothing.
 
-import type {Ask} from '../core/client.ts';
+import type {Ask} from '../../api/client.ts';
 import {buildCoreWasm} from '../../../scripts/core-wasm.ts';
 import {nodeCore} from './node-core.ts';
-import {useCore} from '../host/host.ts';
+import {useCore} from '../../api/host.ts';
 
 let ask: Ask | undefined;
 useCore((name, args) => (ask ??= nodeCore(buildCoreWasm({quiet: true}), {WHY_HOME: '/data', WHY_REMOTE: ''}))(name, args));

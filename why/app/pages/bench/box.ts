@@ -1,25 +1,25 @@
 import {fieldMoved} from '../../ui/caret.ts';
 import {h} from '../../ui/dom.ts';
-import {errorText} from '../../host/errors.ts';
-import {keepOut, LAND, nudge, paced, putAway, still} from '../../ui/glide.ts';
-import {t} from '../../i18n/i18n.ts';
-import {complete, pathWord, Recall} from '../../prompt/recall.ts';
-import {kindOf} from '../../repos/text.ts';
-import {onChange, onRenamed, shownTree, store, type Entry} from '../../repos/repos.ts';
-import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
+import {errorText} from '../../../api/errors.ts';
+import {cut, keepOut, LAND, nudge, paced, putAway, still} from '../../ui/glide.ts';
+import {t} from '../../../text/i18n.ts';
+import {complete, pathWord, Recall} from '../../../prompt/recall.ts';
+import {kindOf} from '../../../repo/text.ts';
+import {onChange, onRenamed, shownTree, store, type Entry} from '../../../repo/repos.ts';
+import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Rises, ScreenState} from './screen.ts';
 import {agentSessionFor, Session, sessionFor, terminalFor} from './terminal.ts';
 import {type AgentTerm, agentTermFor} from './agent-term.ts';
 import {sessionIfAny} from './sessions.ts';
 import {PillLine} from './pill-line.ts';
 import {EditLine} from './edit-box.ts';
-import {agentKey, agentUse} from '../../account/agent-key.ts';
+import {agentKey, agentUse} from '../../../device/agent-key.ts';
 import {setRightPane} from '../kit/pane.ts';
 import {atWork, told, type Flow} from './agent.ts';
 import {Player, type Stage} from './play.ts';
-import type {Hands} from '../../agent/loop.ts';
-import {fileHands, tail} from '../../repos/agent-hands.ts';
-import {work as workOf} from '../../repos/history.ts';
+import type {Hands} from '../../../agent/loop.ts';
+import {fileHands, tail} from '../../../repo/agent-hands.ts';
+import {work as workOf} from '../../../repo/history.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // The box at the foot of a work page's center (docs/PLACES.md, Forge, The box at the foot): one field, and at its left a
@@ -127,7 +127,6 @@ export class Box {
   #landing: Promise<void> = Promise.resolve();
   /** An `agent` line on its way to being asked (its key being opened): asked once, however many Enters. */
   #asking = false;
-  readonly #keys: string;
   readonly #menu: ReturnType<typeof modeMenu>;
   /** Run: the repo's Prompt followed, and the prompt line its shell waits at, in the pill. */
   readonly #pillLine: PillLine;
@@ -142,7 +141,6 @@ export class Box {
     // Run: Ctrl+Enter (⌘+Enter) is how it is done from the box, said in its title, not beside the word. Never Enter
     // alone: Enter is what confirms a Japanese conversion, and a line must not run because a word was chosen.
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-    this.#keys = mac ? '⌘+Enter' : 'Ctrl+Enter';
     this.runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter'}) as HTMLButtonElement;
     const lamp = h('span', {class: 'lamp'});
     this.chip = h('button', {type: 'button', class: 'prompt-chip', tabindex: '-1', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'data-mode': 'run'},
@@ -150,7 +148,7 @@ export class Box {
     // The keys that bring it up from anywhere, said at rest as keys are; while it is written in, in their place the
     // keys that send (Run says them in its title too): Enter is a new line here, as in every box one writes in. One
     // over the other in one place, so nothing on the line moves as the keyboard comes and goes.
-    this.#sends = h('span', {class: 'prompt-sends'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), h('kbd', {}, 'Enter'));
+    this.#sends = h('span', {class: 'prompt-sends'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), h('kbd', {}, '↵'));
     const caps = h('span', {class: 'prompt-caps', 'aria-hidden': 'true'},
       h('span', {class: 'prompt-keys'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), this.#summonKey), this.#sends);
     this.form = h('form', {class: 'prompt'}, this.chip, this.prompt, caps, this.runIt) as HTMLFormElement;
@@ -387,7 +385,7 @@ export class Box {
     const was = this.note.textContent;
     if (typeof text === 'string') this.note.textContent = text; else this.note.replaceChildren(...text);
     // Something else said in its place comes up out of a light fade, not swapped in one frame (from nothing it is at once).
-    if (was && was !== this.note.textContent && !still()) this.note.animate([{opacity: .35}, {opacity: 1}], {duration: paced(140), easing: SPRING});
+    if (was && was !== this.note.textContent && !still()) this.note.animate([{opacity: .35}, {opacity: 1}], {duration: cut() ? 0 : paced(140), easing: SPRING});
   }
   /** Not done, and why: the line under the box in ink until the box is written in again, the box shaking its head. */
   #refuse(text: string) {
@@ -425,7 +423,7 @@ export class Box {
     if (mode === 'issue') this.#numberTurns(was);
   }
 
-  /** What the box does said where it is pressed: the pill's mode and name, the keys that bring it, Run's word and title. */
+  /** What the box does said where it is pressed: the pill's mode and name, the keys that bring it, Run's word. */
   #keysSay(mode: Mode) {
     this.chip.dataset.mode = mode;
     this.form.dataset.mode = mode;
@@ -433,7 +431,6 @@ export class Box {
     this.#summonKey.classList.toggle('tick', mode !== 'edit');
     this.chip.setAttribute('aria-label', t('Input box action: {what}', {what: sendWord(mode)}));
     this.runIt.textContent = sendWord(mode);
-    this.runIt.title = sendTitle(mode, this.#keys);
     // Edit has nothing to send: what is typed is in the file already.
     this.runIt.hidden = mode === 'edit';
   }
@@ -442,7 +439,7 @@ export class Box {
   #numberTurns(was: string | null | undefined) {
     const b = this.#modeWords.querySelector('b');
     if (b && was && was !== '#' && b.textContent !== was && !still())
-      b.animate([{translate: '0 11px', opacity: 0}, {translate: '0 0', opacity: 1}], {duration: paced(260), easing: LAND});
+      b.animate([{translate: '0 11px', opacity: 0}, {translate: '0 0', opacity: 1}], {duration: cut() ? 0 : paced(260), easing: LAND});
   }
 
   /** Told when another Prompt is followed (the reference reads its runs again). */
@@ -805,7 +802,7 @@ export class Box {
     if (this.#p.desk && this.#mode === 'run' && event.key === 'Enter' && plain(event) && !event.isComposing) { event.preventDefault(); this.#send(); return; }
     if (event.key === 'Enter' && plain(event) && !prompt.value.includes('\n') && prompt.value.trim() && !still())
       [...this.#sends.children].forEach((k, i) => k.animate([{translate: '0 0'}, {translate: '0 2px', offset: .35}, {translate: '0 0'}],
-        {duration: paced(260), delay: paced(i * 90), easing: SPRING}));
+        {duration: cut() ? 0 : paced(260), delay: paced(i * 90), easing: SPRING}));
   }
 
   /**
@@ -1000,7 +997,7 @@ export class Box {
 
 /**
  * What the box's Agent does its work with in `repo`, through the OS's own calls: its files read, and where it was
- * handed the work (`writes`: an issue's) edited and written, by the core's rules (repos/agent-hands.ts); its commands
+ * handed the work (`writes`: an issue's) edited and written, by the core's rules (repo/agent-hands.ts); its commands
  * run at once in a Prompt of its own, shown after in the repo's as the screen plays them (play.ts).
  */
 function agentHands(repo: string, writes: boolean): Hands {

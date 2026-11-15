@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {existsSync} from 'node:fs';
 import {OWED, UNDER_RICEBOX, UNITS, check, reaches, unitOf} from './units.ts';
 
 test('every file of code is one unit\'s, or a test, a script or something made (scripts/units.ts)', () => {
@@ -11,18 +12,26 @@ test('a unit takes only from the units the table lets it, besides what is owed w
   assert.deepEqual(check().crossings.map((c) => c.join(' ')).filter((c) => !owed.has(c)), []);
 });
 
-test('muk and prompt: a terminal and what is kept are prompt\'s, and muk takes nothing of it', () => {
+test('muk and prompt: each a program and nothing of why\'s; the root in a box is ricebox\'s to run, and why only lends', () => {
   const unit = (name: string) => UNITS.find((u) => u.name === name)!;
-  assert.equal(unitOf('why/core/src/prompt/running.rs')?.name, 'prompt');
-  assert.equal(unitOf('why/core/src/prompt/writes.rs')?.name, 'prompt');
-  assert.equal(unitOf('why/app/prompt/userland.ts')?.name, 'app');
+  // The box is made by muk and its terminal held by prompt, each its own folder and no file of why's. The bundle
+  // muk is given, the root's shell, and the root run in a box (on this machine, in a page's Worker) are ricebox's;
+  // why's core says what it lends and tells, and keeps a Prompt's record.
+  assert.deepEqual(unit('muk').holds, ['module/muk']);
+  assert.deepEqual(unit('prompt').holds, ['module/prompt']);
+  for (const f of ['src/bundle.rs', 'src/run.rs', 'src/held.rs', 'src/unpack.rs', 'layers/worker.ts', 'layers/ahead.ts', 'layers/first.ts', 'layers/tree.ts']) {
+    assert.ok(existsSync(new URL(`../module/ricebox/${f}`, import.meta.url)), f);
+    assert.equal(unitOf(`module/ricebox/${f}`)?.name, 'ricebox');
+  }
+  for (const gone of ['why/prompt/launch.rs', 'why/prompt/bundle.rs', 'why/prompt/roots/unpack.rs', 'why/prompt/ahead.ts', 'why/prompt/first.ts', 'why/api/kernel.worker.ts']) {
+    assert.ok(!existsSync(new URL(`../${gone}`, import.meta.url)), `${gone} is why's no more`);
+  }
+  for (const f of ['start.rs', 'running.rs', 'writes.rs']) assert.equal(unitOf(`why/prompt/${f}`)?.name, 'app');
+  assert.equal(unitOf('why/prompt/userland.ts')?.name, 'app');
   assert.equal(unitOf('module/prompt/README.md')?.name, 'prompt');
-  // (the box itself and its filter are muk's, to be replaced by muk run)
-  assert.equal(unitOf('why/core/src/prompt/seccomp.rs')?.name, 'muk');
   assert.deepEqual(unit('prompt').takes, []);
   assert.ok(!unit('muk').takes.includes('prompt'));
   // (nothing under ricebox takes it: it is cut out without a Prompt)
-  for (const name of UNDER_RICEBOX) assert.ok(!unit(name).takes.includes('prompt'), name);
 });
 
 test('what is owed is still made: one no longer made is struck from OWED', () => {
@@ -56,11 +65,10 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   assert.equal(new Set(names).size, names.length);
   assert.equal(new Set(paths).size, paths.length);
   for (const u of UNITS) for (const t of u.takes) assert.ok(t === '*' || names.includes(t), `${u.name} takes ${t}`);
-  // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (why/core).
+  // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (why/shipto in why).
   assert.equal(unitOf('module/sods/runtime/translation/translator.ts')?.name, 'sods');
   assert.equal(unitOf('module/sods/runtime/linux/process.ts')?.name, 'sods');
   assert.equal(unitOf('module/ricebox/make/db.ts')?.name, 'ricebox');
-  assert.equal(unitOf('why/core/src/prompt/launch.rs')?.name, 'muk');
 });
 
 test('ricebox can be cut out with the units under it: none of them takes from a unit over them, by the table or by an import', () => {

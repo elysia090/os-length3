@@ -1,13 +1,12 @@
-import {currentLang, t} from '../../i18n/i18n.ts';
+import {currentLang, t} from '../../../text/i18n.ts';
 import {h} from '../../ui/dom.ts';
 import {icon, mark} from '../../ui/icons.ts';
 import {inkEdge} from '../../ui/optical.ts';
-import {onChange, onRenamed, store} from '../../repos/repos.ts';
+import {onChange, onRenamed, store} from '../../../repo/repos.ts';
 import type {Context} from '../kit/context.ts';
 import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../kit/next.ts';
 import type {Writing} from '../kit/context.ts';
-import {startIssue} from '../git/issue-form.ts';
 import {showIssue} from '../git/git.ts';
 import {Drag} from './drag.ts';
 import {takeFiles} from './files-in.ts';
@@ -15,6 +14,7 @@ import {Desk} from './desk.ts';
 import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
 import {asPath, isFile, wordAt} from './term-links.ts';
 import {deedsUnder, fileDeeds, renaming, split, untitled} from '../kit/file-deeds.ts';
+import {amidOnGrid} from '../../ui/on-grid.ts';
 
 /**
  * Forge, the place you work on one repo. Its top line is the band Home has: the terminal's key, the files' and the
@@ -106,8 +106,7 @@ class Forge {
   /** The repo worked on (the Prompt's, the desk on screen). */
   private now: {repo: string | null} = {repo: null};
   /** The band's files key (the deeds for the file in hand, out under it). */
-  private acts = h('button', {type: 'button', class: 'band-tool band-acts', 'aria-label': t('Files: New, Rename, Delete'),
-    title: t('Files: New, Rename, Delete')}, mark('new-file')) as HTMLButtonElement;
+  private acts = h('button', {type: 'button', class: 'band-tool band-acts', 'aria-label': t('Files: New, Rename, Delete')}, mark('new-file')) as HTMLButtonElement;
   /** Against the band's right end: the name of what is in hand. */
   private heldName = h('div', {class: 'band-held', 'aria-hidden': 'true'});
   /** The desk the terminal lies on now (there is one terminal: it is the repo's worked on). */
@@ -129,6 +128,7 @@ class Forge {
     this.center = h('div', {class: 'desk-room'});
     this.work = bench({strip: this.heldName, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
+      termAway: () => !!this.now.repo && this.deskOf(this.now.repo).desk.putAway(TERM),
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
       besideTerm: (repo, element) => {
         // The Agent's own terminal is a piece of the desk, laid after the one in hand.
@@ -141,8 +141,6 @@ class Forge {
         void ctx.go(to === 'todo' ? 'home' : 'git');
       }});
     this.element = this.work.element;
-    // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
-    this.work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
     const drag = new Drag(this.center);
     // The files' key among the band's tools: after >_, before the search.
     this.acts.addEventListener('click', () => this.deeds(this.acts));
@@ -271,6 +269,7 @@ class Forge {
         this.ctx.openRepo(repo, to);
       },
       removed: () => { done(); this.shut(repo, path); },
+      reverted: done,
       back: () => {}});
     // A bar dropped from under the band (forge-desk.css .band-deeds), the desk making way under it in the same move:
     // nothing on the desk is under it, and it is put back as the bar goes.
@@ -318,7 +317,8 @@ class Forge {
   }
 
   /** What is in hand on the desk on screen, said against the band's right end: a file's name, the terminal's prompt.
-   * Set by its ink against the edge, smaller where the band has no room for it at its size (`again`: the room changed). */
+   * Set by its ink against the edge, at its size or not at all where the band has no room for it whole (`again`: the
+   * room changed): a title is never made smaller to fit (DESIGN §2, the camera has one lens). */
   private tellHeld(again = false) {
     const repo = this.now.repo, d = repo ? this.desks.get(repo) : undefined, held = d?.desk.held ?? null;
     // While what the search found is down over the desk, the page's large word is what was searched for.
@@ -327,11 +327,9 @@ class Forge {
     const el = this.heldName;
     if (el.textContent === said && !again) return;
     el.textContent = said;
-    el.style.removeProperty('--fit');
     const room = el.clientWidth, wide = el.scrollWidth;
-    if (room > 0 && wide > room) el.style.setProperty('--fit', String(Math.max(.5, room / wide)));
-    // (Whole, at its size or down to half of it; where the band has not that much room, not at all: never cut.)
-    el.style.visibility = room <= 0 || wide * .5 > room ? 'hidden' : '';
+    // (Whole at its size, or not at all: never cut, never smaller.)
+    el.style.visibility = room <= 0 || wide > room ? 'hidden' : '';
     inkEdge(el, 'right');
   }
 
@@ -486,8 +484,10 @@ class Forge {
     this.acts.disabled = true;
     // With none at all, the way to the first, where the desk would be.
     const first = h('button', {type: 'button', class: 'card new forge-first'}, icon('new-repo'), h('span', {}, t('Create your first repo')),
-      h('small', {class: 'muted'}, t('A personal Git repository: compatible with Forge, Git, and Prompt.')));
+      // (Said as Git's says it: one thing, one way. What a repo is was an explanation the name already gives.)
+      h('small', {class: 'muted'}, t('No repos yet')));
     first.addEventListener('click', () => void this.ctx.go('new-repo'));
+    amidOnGrid(first);
     for (const o of this.desks.values()) o.desk.element.hidden = true;
     this.center.querySelector('.desk-none')?.remove();
     this.center.append(h('div', {class: 'desk-none'}, first));

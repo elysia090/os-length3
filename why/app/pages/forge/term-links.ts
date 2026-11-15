@@ -1,4 +1,4 @@
-import {onChange, store} from '../../repos/repos.ts';
+import {onChange, store} from '../../../repo/repos.ts';
 export {asPath} from './term-path.ts';
 
 // A terminal's output on the desk names files as a shell names them: `ls` says them, the compiler says them with where

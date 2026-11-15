@@ -14,7 +14,7 @@ import {Lazy, Listing, Made, Pointer, refuse} from './made.ts';
 import {mountinfo, mountsText} from './mount.ts';
 import {NS, byNr, fileOf, nrIn, type Kind, type Named, type PidNs} from './space.ts';
 import type {Description} from './fd.ts';
-import type {Entry, Place} from './fs.ts';
+import type {Entry, Mount, Place} from './fs.ts';
 import type {Kern, Proc} from './parts.ts';
 import {epoch, processors, steady} from '../host.ts';
 
@@ -38,15 +38,43 @@ function signalMasks(p: Proc): {ign: bigint; cgt: bigint} {
 }
 
 /**
+ * The console's name to one whose root is `root`: where its device lies in the tree that one sees. It is the first of
+ * the kernel's own terminals (/dev/pts/0, where that devpts is in sight), or where it was bound by its own name (a box
+ * lent the terminal it was started at: /dev/console); in neither, it is named as it was where it was opened.
+ */
+function consoleAt(k: Kern, root: Place): string {
+  const node = k.vfs.terminal, sb = k.terminals.sb;
+  let top = root.mnt;
+  while (top.parent) top = top.parent;
+  let bound: string | null = null;
+  const seen = (m: Mount): string | null => {
+    // (a mount with another on its root is under it whole: what a path reaches there is the one on top)
+    let over: Mount | null = null;
+    for (const c of m.children) if (c.point === m.root) over = c;
+    if (over) return seen(over);
+    if (m.sb === sb) {
+      const at = pathOf(root, m, m.root, m.rootDir, m.rootName, '\0');
+      if (!at.startsWith('\0')) {
+        if (m.root === sb.root) return `${at === '/' ? '' : at}/0`;
+        if (m.root === node) bound ??= at;
+      }
+    }
+    for (const c of m.children) { const at = seen(c); if (at) return at; }
+    return null;
+  };
+  return seen(top) ?? bound ?? '/dev/pts/0';
+}
+
+/**
  * What one of a process's descriptors points at, as /proc/PID/fd/N says it to one whose root is `root`: where it is
  * now (renamed since it was opened, its new place; removed, where it lay, "(deleted)"), not the path it was opened by.
  */
-function pointsAt(root: Place, d: Description): string {
+function pointsAt(k: Kern, root: Place, d: Description): string {
   if (d.mnt && d.node && d.kind !== 'console') return pathOf(root, d.mnt, d.node, d.dir, d.name);
   switch (d.kind) {
     case 'file': case 'dir': case 'device': return d.path || '/';
     case 'pipe-r': case 'pipe-w': case 'pipe-rw': return `pipe:[${d.pipe?.id ?? 0}]`;
-    case 'console': return '/dev/pts/0';
+    case 'console': return consoleAt(k, root);
     case 'eventfd': return 'anon_inode:[eventfd]';
     case 'epoll': return 'anon_inode:[eventpoll]';
     case 'socket': return `socket:[${d.sock?.ino ?? 0}]`;
@@ -145,7 +173,7 @@ export function procfs(kernel: Kern, space: PidNs = kernel.spaces.children): Sup
   };
   /** A link to what descriptor `d` of `p` has open: its mode what the descriptor may do (read, write), as Linux shows it. */
   const fdLink = (p: Proc, d: Description): Pointer => {
-    const link = new Pointer(() => { inspect(p); return pointsAt(rootOf(), d); }, () => { inspect(p); return d.mnt && d.node ? {mnt: d.mnt, node: d.node, held: d} : {held: d}; });
+    const link = new Pointer(() => { inspect(p); return pointsAt(kernel, rootOf(), d); }, () => { inspect(p); return d.mnt && d.node ? {mnt: d.mnt, node: d.node, held: d} : {held: d}; });
     const access = d.flags & 3;
     link.mode = 0o120000 | (access !== 1 ? 0o500 : 0) | (access !== 0 ? 0o200 : 0);
     return link;

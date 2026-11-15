@@ -1,8 +1,10 @@
 import {h} from '../../ui/dom.ts';
-import {errorText} from '../../host/errors.ts';
-import {t} from '../../i18n/i18n.ts';
+import {errorText} from '../../../api/errors.ts';
+import {t} from '../../../text/i18n.ts';
 import {icon, mark, type MarkName} from '../../ui/icons.ts';
-import {arrive, glide, pop, still, where} from '../../ui/glide.ts';
+import {arrive, glide, pop, where} from '../../ui/glide.ts';
+import {readTime} from '../../ui/law.ts';
+import {wayOut} from '../../ui/way-out.ts';
 import {purpose, RAIL, type PurposeId} from '../../host/purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
@@ -57,8 +59,11 @@ export function answers(no: Node | null, ...yes: (Node | null)[]): HTMLElement {
 export function askFoot(from: Element, box: Element): (no: Node, yes: Node) => HTMLElement {
   const a = from.getBoundingClientRect(), b = box.getBoundingClientRect();
   const left = a.width > 0 && a.left + a.width / 2 < b.left + b.width / 2;
-  return (no, yes) => h('div', {class: 'card-foot'}, ...(left ? [yes, h('span', {class: 'grow'}), no] : [no, h('span', {class: 'grow'}), yes]));
+  // (What declines is the ask's way out: Escape presses it, ui/way-out.ts.)
+  return (no, yes) => h('div', {class: 'card-foot'}, ...(left ? [yes, h('span', {class: 'grow'}), wayOutIf(no)] : [wayOutIf(no), h('span', {class: 'grow'}), yes]));
 }
+/** A button that declines, marked as the way out; anything else as it is. */
+const wayOutIf = (no: Node) => (no instanceof HTMLElement && no.tagName === 'BUTTON' ? wayOut(no) : no);
 
 /**
  * `b` does `f` when pressed, held while it runs, so a second press does
@@ -84,9 +89,9 @@ export function copying(el: HTMLElement, text: string) {
     el.dataset.copiedWord = t('Copied');
     el.dataset.copied = '';
     pop(el, .04, 260);
-    window.setTimeout(() => delete el.dataset.copied, 1200);
+    // Said for as long as it takes to read once (in Japanese, longer than in English), never less than it was.
+    window.setTimeout(() => delete el.dataset.copied, Math.max(1200, readTime(el.dataset.copiedWord)));
   });
-  el.title = t('Click to copy');
 }
 
 /**
@@ -148,18 +153,18 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
   const heard: ((k: K) => void)[] = [];
   // Heard by the name it is given (the page's, in the language spoken), never by the key it is kept under.
   const bar = h('div', {class: 'parts', role: 'tablist', ...(label ? {'aria-label': label} : {})});
-  // More parts past its right end than fit (a phone's width): the row says so there, a › over a fade into the ground,
-  // whether a part is cut at the edge or the edge falls between two (a fade alone then fades nothing, and says
+  // More parts past its right end than fit (a phone's width): the row says so there, a › on the ground at its end,
+  // whether a part is cut at the edge or the edge falls between two (a cut alone then cuts nothing, and says
   // nothing). Pressed, the row slides on to the part past it; the keyboard has the arrows, so it is the pointer's.
   const more = () => bar.classList.toggle('more', bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2);
   const on = h('button', {type: 'button', class: 'parts-on', tabindex: '-1', 'aria-hidden': 'true'}, mark('on'));
   on.addEventListener('click', () => {
     const edge = on.getBoundingClientRect().left;
     const past = [...tabs.values()].map((x) => x.tab).find((tab) => !tab.hidden && tab.getBoundingClientRect().right > edge + 1);
-    if (past) bar.scrollBy({left: past.getBoundingClientRect().right - edge, behavior: still() ? 'auto' : 'smooth'});
+    if (past) bar.scrollBy({left: past.getBoundingClientRect().right - edge}); // (at once, DESIGN §8)
   });
   bar.addEventListener('scroll', more, {passive: true});
-  // A part's width changing (its count come in after it was chosen) moves those after it: the fade is judged again,
+  // A part's width changing (its count come in after it was chosen) moves those after it: whether there is more is judged again,
   // and the one chosen kept in view.
   const sized = new ResizeObserver(() => { more(); keep(); });
   sized.observe(bar);

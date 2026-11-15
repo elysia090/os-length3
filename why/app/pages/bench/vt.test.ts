@@ -110,7 +110,10 @@ test('SGR as xterm reads it, colons and all', () => {
   assert.deepEqual(sgr(PLAIN, [[48, 5, 17]]), {fg: -1, bg: 17, flags: 0});
   assert.deepEqual(sgr(PLAIN, [[4], [7], [92]]), {fg: 10, bg: -1, flags: F.under | F.inverse});
   assert.deepEqual(sgr({fg: 3, bg: 4, flags: F.bold | F.dim}, [[22], [39]]), {fg: -1, bg: 4, flags: 0});
-  assert.equal(css(sgr(PLAIN, [[1], [32]])), 'color: var(--ansi-10); font-weight: 600');
+  assert.equal(css(sgr(PLAIN, [[1], [32]])), 'color: var(--ansi-10); font-weight: 700');
+  // Dim is bright black's words where no colour is given; never see-through.
+  assert.equal(css(sgr(PLAIN, [[2]])), 'color: var(--ansi-8)');
+  assert.equal(css(sgr(PLAIN, [[2], [31]])), 'color: var(--ansi-1)');
   assert.equal(css(PLAIN), '');
 });
 

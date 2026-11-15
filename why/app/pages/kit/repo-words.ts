@@ -1,6 +1,6 @@
 // What a repo's card says of it on Home and on Remote: its own words.
 
-import {store} from '../../repos/repos.ts';
+import {store} from '../../../repo/repos.ts';
 
 /** A repo's README's first line that is neither a heading nor empty ('' when there is none): Home's and Remote's cards. */
 export async function summaryOf(name: string): Promise<string> {

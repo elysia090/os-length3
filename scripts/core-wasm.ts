@@ -1,4 +1,4 @@
-// The core as the browser runs it (why/core/web), built with cargo when its sources are newer than the
+// The core as the browser runs it (why/api/web), built with cargo when its sources are newer than the
 // module: by the Vite plugin (vite.config.ts) at each dev-server start and build, and by wasi.test.ts.
 
 import {spawnSync} from 'node:child_process';
@@ -7,12 +7,20 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const OS = fileURLToPath(new URL('..', import.meta.url));
+/** why's parts (docs/STRUCTURE.md): each a folder of why/ holding its Rust and its TypeScript side by side. */
+export const CORE_PARTS = ['text', 'agent', 'api', 'cowboy', 'repo', 'home', 'shipto', 'prompt', 'device'];
 const TARGET = 'wasm32-wasip1';
 // Its own profile (Cargo.toml [profile.web]): the release's, built small.
 const PROFILE = 'web';
 const BUILD = ['build', '--profile', PROFILE, '-p', 'why-core-web', '--target', TARGET];
-// templates.json is compiled in (core/src/templates.rs include_str!).
-const SOURCES = ['why/core/src', 'why/core/web/src', 'why/core/Cargo.toml', 'why/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'why/shared/templates.json'].map((p) => join(OS, p));
+// The core is why's parts as Rust has them (why/lib.rs and each part's .rs; a part's TypeScript is the page's, and
+// changes nothing here), the door built for a browser (why/api/web), and ricebox's own Rust, which the core is made
+// with: the bundle a page asks it for is ricebox's to write. A part's .json is compiled in (repo/templates.rs
+// include_str!).
+const SOURCES = ['why/lib.rs', 'why/Cargo.toml', ...CORE_PARTS.map((part) => `why/${part}`), 'module/ricebox/src', 'module/ricebox/Cargo.toml', 'Cargo.toml', 'Cargo.lock']
+  .map((p) => join(OS, p));
+/** What of a part makes the core: its Rust, what Rust compiles in, a manifest. */
+const MAKES = /\.(rs|json|toml|lock)$/;
 
 /** Where cargo puts the module (CARGO_TARGET_DIR is honoured, as cargo honours it). */
 export function coreWasmPath(): string {
@@ -23,8 +31,8 @@ export function coreWasmPath(): string {
 function newest(path: string): number {
   if (!existsSync(path)) return 0;
   const s = statSync(path);
-  if (!s.isDirectory()) return s.mtimeMs;
-  return Math.max(s.mtimeMs, ...readdirSync(path).map((e) => newest(join(path, e))));
+  if (!s.isDirectory()) return MAKES.test(path) ? s.mtimeMs : 0;
+  return Math.max(0, ...readdirSync(path).map((e) => newest(join(path, e))));
 }
 
 /** Whether cargo can be run at all. */
@@ -36,7 +44,7 @@ export function hasCargo(): boolean {
 export function buildCoreWasm(options: {quiet?: boolean} = {}): string {
   const wasm = coreWasmPath();
   if (existsSync(wasm) && statSync(wasm).mtimeMs > Math.max(...SOURCES.map(newest))) return wasm;
-  if (!hasCargo()) throw new Error('why: the core (why/core/web) needs Rust to build: install it from https://rustup.rs');
+  if (!hasCargo()) throw new Error('why: the core (why/api/web) needs Rust to build: install it from https://rustup.rs');
   const targets = spawnSync('rustup', ['target', 'list', '--installed'], {encoding: 'utf8'});
   // Without rustup the toolchain is the system's; cargo says itself whether it has the target.
   if (!targets.error && !targets.stdout.split('\n').includes(TARGET)) {

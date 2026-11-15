@@ -3612,6 +3612,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ricebox"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "libc",
+ "rustix",
+ "ruzstd",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+]
+
+[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5593,10 +5606,10 @@ dependencies = [
  "libc",
  "memchr",
  "nix",
+ "ricebox",
  "rustix",
  "rustls",
  "rustls-native-certs",
- "ruzstd",
  "serde",
  "serde_json",
  "sha2 0.11.1",

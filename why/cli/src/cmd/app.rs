@@ -14,7 +14,7 @@
 use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{Error, Reply, Result};
-use why_core::{device::desktop, fs::paths, remote, tr};
+use why_core::{device::desktop, fs::paths, shipto, tr};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -25,7 +25,7 @@ const STARTING: Duration = Duration::from_secs(15);
 const CLOSING: Duration = Duration::from_secs(10);
 
 /// The desktop app's files this release pins, as the Remote serves them (/v1/desktop/<file>).
-const PINS: &str = include_str!("../../../shared/desktop-releases.json");
+const PINS: &str = include_str!("../../../shipto/desktop-releases.json");
 
 /// `why app`: the one open brought forward; else the app here started and waited for; else where to get it.
 pub fn open(_: &Ctx, _: &Call) -> Result<Reply> {
@@ -154,7 +154,7 @@ fn downloads() -> Vec<String> {
     // This release's; one that pins none (a build between releases) takes the newest pinned.
     let newest = pins.as_object().and_then(|m| m.keys().max_by_key(|v| v.split('.').map(|n| n.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>()).cloned());
     let at = if pins[release].is_object() { release.to_string() } else { newest.unwrap_or_default() };
-    let url = remote::connection().map_or_else(remote::default_url, |c| c.url);
+    let url = shipto::connection().map_or_else(shipto::default_url, |c| c.url);
     let file = |kind: &str| pins[&at][kind]["file"].as_str().map(|f| (format!("{url}/v1/desktop/{f}"), f.to_string()));
     let mut t = Vec::new();
     if let Some((link, f)) = file("deb") {

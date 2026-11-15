@@ -50,7 +50,7 @@ not the goal made smaller: all nine pairs of instruction sets are the goal.
 | x86-64 | x86-64 | linux | verified: `module/sods/test/programs/run.sh` |
 | x86-64 | x86-64 | macos | unverified: the same WebAssembly under node there (host.ts asks node, not the system); no check runs on macos |
 | x86-64 | x86-64 | windows | unverified: the same WebAssembly under node there (host.ts asks node, not the system); no check runs on windows |
-| x86-64 | x86-64 | browser, worker | verified: `tests/app/linux.spec.ts` |
+| x86-64 | x86-64 | browser, worker | verified: `why/test/app/linux.spec.ts` |
 | x86-64 | x86-64 | bare | unimplemented: a host with no system under it: host.ts answers for a page, a Worker and node |
 | x86-64 | arm64 | linux, macos, windows | unverified: the same WebAssembly under node there; no check runs on arm64 |
 | x86-64 | arm64 | browser, worker | unverified: the same WebAssembly under a browser there; no check runs on arm64 |
@@ -88,21 +88,28 @@ Linux.
 same program as on Linux) inside sods: the same Rust prompt, translated, in front of one terminal this kernel makes
 and given another, its signals read as a file (signalfd).
 
-**A box in node is made by muk.** What compares the root's programs here and on Linux (`scripts/webroot-runnable.ts`,
-`scripts/commands.ts`) runs each in one box, `muk run` of one config.json, made by the same muk on both: 554 of the
+**A box in node is made by muk.** What compares the root's programs here and on Linux (`module/ricebox/make/runnable.ts`,
+`module/ricebox/make/commands.ts`) runs each in one box, `muk run` of one config.json, made by the same muk on both: 554 of the
 root's 555 programs and every line of work say the same (the one apart says which processor it runs on).
 
-What is not so yet is where a box or a terminal is still made by something else. `node
-module/sods/runtime/targets.ts --owed` lists every line owed, these and every row above that is not verified or
-excluded, and ends 1 while there is one: a release of ricebox under its own name is held to it
-(`scripts/release.sh`), and is not made while anything is owed.
+**A box is made by muk on every host, and a terminal held by prompt or by the page that is one.** In a page's
+Worker (`module/ricebox/layers/worker.ts`) and in node, the root's programs run in a box `muk run` makes on
+this Linux, of the bundle ricebox writes for every host (`module/ricebox/src/bundle.rs`); on a Linux machine the
+same bundle is run by the same muk on its kernel (`module/ricebox/src/run.rs`), and at a person's
+terminal the box has one of its own, its other end held by `prompt attach`. In a page the terminal is the page
+itself: this kernel's console, lent to the box by its name (it is the box's /dev/console). `node
+module/sods/runtime/targets.ts --owed` lists every line owed (every row above that is not verified or excluded),
+and ends 1 while there is one: a release of ricebox under its own name is held to it (`scripts/release.sh`), and is
+not made while anything is owed.
 
-| What is made | By, today | What ends that |
-| --- | --- | --- |
-| a box in a page or a Worker | the page's Worker starts its program directly on this Linux (linux.ts linux(): why/app/host/prompt/kernel.worker.ts) | muk in the root it mounts, and the Worker starting `muk run` of a bundle it writes, as node does already (scripts/webroot-runnable.ts: every program of the root in the same box, made by the same muk, here and on Linux) |
-| a box on the desktop (Linux) | why's core makes it itself (why/core/src/prompt/launch.rs, seccomp.rs; why/core/src/compute) | the launcher runs `muk run` on a bundle it writes, and its own making of a box goes |
-| a terminal where there is no Linux | the page's own console (why/app/host/prompt/kernel.worker.ts, why/app/prompt) | the caller hands the terminal muk gives away to `prompt attach` here, which runs on this Linux (module/sods/test/prompt/run.sh: prompt's own check of it passes, the terminals this kernel's), and its own console goes |
-| a terminal on the desktop (Linux) | why's core's session (why/core/src/prompt) | the session hands the descriptor muk sends to `prompt attach` |
+No box and no terminal is made by anything but muk and prompt.
+
+**What lies past the machine is asked of whoever was given** (`linux({outside})`: `runtime/linux/sys-net.ts`). This
+Linux has its loopback and nothing else of its own. A TCP connect or a UDP datagram of the machine's own network
+to an address that is not the machine's is handed over: a stream's far end is the outside's to open, refuse, write
+to and read from, with the room a stream has; a datagram is its to answer. Who answers is not known here (cowboy
+does, `../cowboy`); a box in a network namespace of its own has none, as with the network off.
+
 
 ## Its folders
 

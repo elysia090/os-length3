@@ -1,12 +1,12 @@
-// The app's layers, in order, and every import against that order: a module of a tree (a directory under it, or the
+// why's layers, in order, and every import against that order: a module of a tree (a directory under it, or the
 // files directly in it, '.') takes from the modules before it in its tree's order and from nothing after it. A tree
-// may hold a tree of its own (pages/), ordered the same way within it. A type taken counts as much as a value: what
-// a module names of another, it depends on.
+// may hold a tree of its own (app/, and pages/ in it), ordered the same way within it. A type taken counts as much
+// as a value: what a module names of another, it depends on.
 //
 //   node scripts/layers.ts          the imports against the order, each with the file that makes it; fails if any
 //
 // Tests (*.test.ts, why/app/testing/) are left out: a test may take from any layer it puts together.
-import {readdirSync, readFileSync} from 'node:fs';
+import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -14,8 +14,11 @@ const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Each tree, its modules from the bottom up. A module not named is wrong in its tree until it is. */
 export const TREES: {root: string; order: string[]; skip?: string[]}[] = [
-  {root: 'why/app', order: ['i18n', 'agent', 'core', 'ui', 'host', 'repos', 'home', 'remote', 'prompt', 'account', 'pages', 'main', '.'],
-    skip: ['styles', 'shims', 'testing']},
+  // why's parts (docs/STRUCTURE.md), each a folder of all it is whatever it is written in, then the window: a part
+  // takes nothing from a face. cli/ and desktop/ are Rust's (below, and cargo's own), test/ drives the whole.
+  {root: 'why', order: ['text', 'agent', 'api', 'cowboy', 'repo', 'home', 'shipto', 'prompt', 'device', 'app'], skip: ['cli', 'desktop', 'test']},
+  // The window: what is drawn with (ui), what a host is asked for a page (host), the pages, and what starts them.
+  {root: 'why/app', order: ['ui', 'host', 'pages', 'main', '.'], skip: ['styles', 'shims', 'testing']},
   // The pages: what they share (kit), the bench Forge and Git work at (with its search), then each page.
   {root: 'why/app/pages', order: ['kit', 'bench', 'git', 'forge', 'file', 'remote', 'runtime', 'server', 'inbox', 'home', 'new-repo',
     'me']},
@@ -67,8 +70,8 @@ export function violations(): [string, string, string, string, string][] {
  * takes from another that takes back from it, however far round), in any of ACYCLIC. None is allowed: within a module
  * too, what a file stands on is under it.
  */
-/** Where no file may reach back to itself: the app, the Remote, these scripts, sods' runtime and ricebox's layers. */
-export const ACYCLIC = ['why/app', 'why/remote', 'scripts', 'module/sods/runtime', 'module/ricebox/layers'];
+/** Where no file may reach back to itself: why (its parts, its window, the Remote), these scripts, sods' runtime and ricebox's layers. */
+export const ACYCLIC = [...TREES[0]!.order.map((part) => `why/${part}`), 'scripts', 'module/sods/runtime', 'module/ricebox/layers'];
 
 export function cycles(): string[][] {
   const all = ACYCLIC.flatMap((root) => files(join(OS, root)));
@@ -106,29 +109,36 @@ function loops(takes: Map<string, Set<string>>): string[][] {
 
 // ---- the core (Rust) ----
 //
-// Its layers are lib.rs's `pub mod` lines, in that order, each a folder: a layer's units take from their own layer
+// Its layers are why/lib.rs's `pub mod` lines, in that order, each a folder: the part's own (why/<name>), or a
+// folder inside the part it belongs to, where lib.rs says so (#[path]). A layer's units take from their own layer
 // and the layers before it, never after (the tr! macro is the text layer's). Within a layer, no unit reaches back to
 // itself through its siblings. Tests (NAME.test.rs, beside what each tests) are left out.
 
-const CORE = join(OS, 'why/core/src');
+const WHY = join(OS, 'why');
 
-/** The core's layers, from the bottom up, as lib.rs declares them. */
-export const coreLayers = (): string[] => [...readFileSync(join(CORE, 'lib.rs'), 'utf8').matchAll(/^pub mod ([a-z_]+);/gm)].map((m) => m[1] ?? '');
+/** The core's layers, from the bottom up, as lib.rs declares them: each with the folder that holds it. */
+const coreFolders = (): {layer: string; dir: string}[] =>
+  [...readFileSync(join(WHY, 'lib.rs'), 'utf8').matchAll(/^(?:#\[path = "([^"]+)\/mod\.rs"\]\n)?(?:#\[cfg\([^\n]*\)\]\n)?pub mod ([a-z_]+);/gm)]
+    .map((m) => ({layer: m[2] ?? '', dir: join(WHY, m[1] ?? m[2] ?? '')}));
 
-/** The core's files of code (not lib.rs, not tests), each with its layer and its unit. */
+/** The core's layers, from the bottom up. */
+export const coreLayers = (): string[] => coreFolders().map((f) => f.layer);
+
+/** The core's files of code (not tests), each with its layer and its unit: a layer's folder, less the folders in it that are another layer's or a crate of their own. */
 function coreFiles(): {file: string; layer: string; unit: string}[] {
-  const out: string[] = [];
-  const walk = (dir: string) => {
-    for (const e of readdirSync(dir, {withFileTypes: true})) {
-      const p = join(dir, e.name);
-      if (e.isDirectory()) walk(p); else if (e.name.endsWith('.rs') && !e.name.endsWith('.test.rs') && p !== join(CORE, 'lib.rs')) out.push(p);
-    }
-  };
-  walk(CORE);
-  return out.map((file) => {
-    const parts = relative(CORE, file).replace(/\.rs$/, '').split(sep);
-    return {file, layer: parts[0] ?? '', unit: parts[1] ?? 'mod'};
-  });
+  const folders = coreFolders(), own = new Set(folders.map((f) => f.dir));
+  const out: {file: string; layer: string; unit: string}[] = [];
+  for (const {layer, dir} of folders) {
+    const walk = (at: string) => {
+      for (const e of readdirSync(at, {withFileTypes: true})) {
+        const p = join(at, e.name);
+        if (e.isDirectory()) { if (!own.has(p) && !existsSync(join(p, 'Cargo.toml')) && e.name !== 'tests') walk(p); }
+        else if (e.name.endsWith('.rs') && !e.name.endsWith('.test.rs')) out.push({file: p, layer, unit: relative(dir, p).replace(/\.rs$/, '').split(sep)[0] ?? 'mod'});
+      }
+    };
+    walk(dir);
+  }
+  return out;
 }
 
 /** A file's code without its comments and strings: what it names, not what it says. */

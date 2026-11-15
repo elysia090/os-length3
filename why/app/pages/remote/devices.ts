@@ -1,12 +1,14 @@
-import {ago, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import * as account from '../../remote/connection.ts';
+import {h} from '../../ui/dom.ts';
+import {ago} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import * as account from '../../../shipto/connection.ts';
 import {askFoot, SETTLE} from '../kit/common.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button, pressing} from '../kit/remote-parts.ts';
 import {joining} from './device-page.ts';
 import {mark} from '../../ui/icons.ts';
-import {every} from '../../host/runs.ts';
+import {every} from '../../../api/runs.ts';
+import {wayOut} from '../../ui/way-out.ts';
 
 // Remote's Devices part: the devices signed in to the account, signing one out, and letting another in by its code.
 
@@ -32,7 +34,7 @@ export function deviceSection(counted: (n: number) => void): HTMLElement {
   return section;
 }
 
-/** How long a device let in takes at most to come for its session: one of its asks (every 5 s, why/remote/people/auth.ts) and a little more. */
+/** How long a device let in takes at most to come for its session: one of its asks (every 5 s, why/shipto/remote/people/auth.ts) and a little more. */
 const COMES = 7000;
 
 /**
@@ -46,7 +48,7 @@ function connectRow(again: () => Promise<number>, drawn: () => number): HTMLElem
   const open = h('button', {type: 'button', class: 'row-item row-new'}, mark('plus'), h('span', {}, t('Connect device'))) as HTMLButtonElement;
   open.addEventListener('click', () => {
     const body = h('div', {class: 'remote-join'});
-    const no = button(t('Cancel'), 'small-button');
+    const no = wayOut(button(t('Cancel'), 'small-button'));
     const ask = h('div', {class: 'row-ask', role: 'group', 'aria-label': t('Connect device')}, body, h('div', {class: 'card-foot'}, no));
     no.addEventListener('click', () => { place.replaceChildren(open); open.focus(); });
     place.replaceChildren(ask);

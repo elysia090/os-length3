@@ -8,36 +8,41 @@
 /* A place that is one thing to read (Runtime, Remote, Inbox) is a sheet on the desk as any piece is, and the one in
    hand: paper, its shadow half a cell right and down; from the desk's corner (the band's row is the window's, left
    clear), as tall as what is on it, at most fifty cells wide. */
-.page:not(.page-work):not(:has(> .home-layout)):not(:has(> div > .inbox-page)) { align-self: start; box-sizing: border-box; max-width: calc(48 * var(--u)); margin: calc(2 * var(--u) - var(--outer-top)) calc(var(--u) - var(--outer)) var(--u) 0;
+.page:not(.page-work):not(:has(> .home-layout)):not(:has(> div > .inbox-page)):has(> :not(.boot-static)) { align-self: start; box-sizing: border-box; max-width: calc(48 * var(--u)); margin: calc(2 * var(--u) - var(--outer-top)) calc(var(--u) - var(--outer)) var(--u) 0;
   padding: var(--u) var(--u) calc(2 * var(--u)); background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 var(--ink); }
 .page:focus { outline: none; }
+/* (Nothing on it yet, it is no sheet: an empty sheet in the hand's white and shadow stood there before the first page.)
+   The first page the OS opens on, drawn and still reading what it shows (ui/whole.ts): not seen until it is whole, nor
+   the door at the head of its band (one bar with it). */
+.page.reading, body:has(> #page.reading) > .door { visibility: hidden; }
 /* index.html's word for a page whose scripts never run; boot.js marks the page scripted as it starts. */
 .boot-static { max-width: 34rem; margin: 15vh auto 0; }
-.boot-static h1 { font-size: 1.4rem; margin: 0 0 var(--s3); }
+.boot-static h1 { font-size: var(--t-word); margin: 0 0 var(--s3); }
 .scripted .boot-static { display: none; }
 .page > * { max-width: 1200px; }
 /* A counter's head is on the top line, its middle the band's (the line Forge's tools and Git's chips are on), and under
-   it the page starts on the rail's first row. One line at every width, so what stands under it (a page's parts, a
-   sign-in card) starts at one place on every page: the role is cut short where it runs out of room, and a phone, with
-   no room for it, has the name alone. */
+   it the page starts on the rail's first row. What is said beside the name is never cut short to fit (DESIGN §2, one
+   lens): where it has no room beside the name it goes under it, a line of a cell of its own, and a phone has the name
+   and only how it stands. */
 /* (The room under it is its own, not a margin: a margin there would run together with the next thing's.) */
-.page-head { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; box-sizing: content-box; height: var(--h-row); margin-top: calc(var(--band) - var(--top-line)); padding-bottom: var(--s3); }
+.page-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); min-width: 0; box-sizing: content-box; min-height: calc(2 * var(--u)); margin-top: 0; padding-bottom: 0; }
 .page-head .icon { align-self: center; flex: none; }
 /* A place's name is a name as any on a desk is: the display face, its capitals a cell tall. */
-.page-head h1 { font: 900 var(--t-head)/var(--h-row) var(--display); letter-spacing: -.035em; flex: none; }
-.page-head p { color: var(--sub); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-head h1 { font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; flex: none; }
+.page-head p { color: var(--sub); min-width: 0; line-height: var(--u); overflow-wrap: anywhere; }
 @media (max-width: 560px) { .page-head p:not(.standing) { display: none; } }
-.section { margin-top: var(--s6); }
+/* (Two cells between sections; a heading a line of its own, the words under it on the next: a line above, none below.) */
+.section { margin-top: calc(2 * var(--u)); }
 /* Under a page's head a section's heading is the first row's and its box starts on the second; sections are 40 apart. */
 .page-head + .section, .page-head + div > .section:first-child { margin-top: 0; }
 .page-head + .section > h2, .page-head + div > .section:first-child > h2 { height: var(--row); margin-bottom: var(--row-step); align-items: center; }
 .section > h2 {
   display: flex; justify-content: space-between; align-items: baseline;
-  font-size: var(--t-body); font-weight: 600;
-  margin-bottom: var(--s3);
+  font-size: var(--t-word); font-weight: 700; line-height: var(--u);
+  margin-bottom: 0;
 }
-.section > h2 small { font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
+.section > h2 small { font-weight: 400; color: var(--sub); font-size: var(--t-word); }
 /* Room for what is not here yet: a dashed box as wide as its words, never the width of the page around one line. */
-.empty { width: fit-content; max-width: 100%; margin-top: calc(var(--row) + var(--row-step)); padding: var(--s6) var(--s5); border: 1px dashed var(--rule); border-radius: var(--r-place); color: var(--sub); }
+.empty { width: fit-content; max-width: 100%; margin-top: calc(var(--row) + var(--row-step)); padding: calc(2 * var(--u)) var(--u); border: 1px dashed var(--rule); border-radius: var(--r-place); color: var(--sub); }
 /* Under a section's heading the heading's own gap is the space: an empty box adds none, however deep. */
 .section .empty { margin-top: 0; }

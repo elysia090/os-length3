@@ -4,7 +4,7 @@ name: CI
 # (on the merge it would make); a branch without one runs by hand.
 on:
   pull_request:
-    paths: ['why/**', 'module/**', 'scripts/**', 'tests/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
+    paths: ['why/**', 'module/**', 'scripts/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 # Read-only token. Actions are pinned to full commits (tag beside); Dependabot proposes updates.
@@ -36,7 +36,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=core-wasm-${{ hashFiles('why/core/src/**', 'why/core/web/src/**', 'why/core/Cargo.toml', 'why/core/web/Cargo.toml', 'Cargo.toml', 'Cargo.lock', 'why/shared/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=core-wasm-${{ hashFiles('why/**/*.rs', 'why/Cargo.toml', 'why/api/web/Cargo.toml', 'module/ricebox/src/**', 'module/ricebox/Cargo.toml', 'module/ricebox/build.rs', 'Cargo.toml', 'Cargo.lock', 'why/repo/templates.json', 'scripts/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'why/core/src/root/pins.rs', 'why/remote/ship/releases.ts', 'scripts/webroot.sh', 'scripts/webroot.ts', 'scripts/webroot-tree.ts', 'scripts/root-file.ts', 'scripts/webroot-parity.ts', 'module/ricebox/layers/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'why/prompt/roots/pins.rs', 'why/shipto/remote/ship/releases.ts', 'scripts/webroot.sh', 'module/ricebox/make/layers.ts', 'module/ricebox/make/tree.ts', 'scripts/root-file.ts', 'module/ricebox/make/parity.ts', 'module/ricebox/layers/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -101,7 +101,7 @@ jobs:
           npm ci
           root=$(node scripts/root-file.ts target/root)
           sh scripts/webroot.sh "$root" public/webroot
-          node scripts/webroot-parity.ts "$root" public/webroot
+          node module/ricebox/make/parity.ts "$root" public/webroot
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -130,7 +130,7 @@ jobs:
           path: public/webroot
           key: ${{ needs.webroot.outputs.key }}
           fail-on-cache-miss: true
-      # Each line's box is made by muk on both sides (scripts/webroot-runnable.ts), natively in a user namespace
+      # Each line's box is made by muk on both sides (module/ricebox/make/runnable.ts), natively in a user namespace
       # of the runner's own, which Ubuntu's AppArmor restricts by default.
       - name: Allow user namespaces
         run: if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; fi
@@ -141,7 +141,40 @@ jobs:
           npm ci
           root=$(node scripts/root-file.ts target/root)
           mkdir -p target/root-open && tar --zstd -xf "$root" -C target/root-open
-          node scripts/commands.ts public/webroot target/root-open/root --jobs 4 --check
+          node module/ricebox/make/commands.ts public/webroot target/root-open/root --jobs 4 --check
+
+  # cowboy: its Rust by itself (names answered on the device, the way to an address, a relay's one line), then as
+  # wasm with a real program: the pinned root's curl on sods' Linux in node, asking a name and reaching a server by it.
+  cowboy:
+    name: cowboy
+    needs: webroot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Restore web root
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: public/webroot
+          key: ${{ needs.webroot.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Its Rust, by itself
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo test --locked --manifest-path module/cowboy/Cargo.toml
+          cargo clippy --locked --manifest-path module/cowboy/Cargo.toml --all-targets -- -D warnings
+          cargo build --locked --release --manifest-path module/cowboy/Cargo.toml --target wasm32-unknown-unknown
+      - name: A program of the root reaches a host by its name
+        run: |
+          npm ci
+          node --test module/cowboy/test/*.test.ts
 
   typecheck:
     name: Typecheck
@@ -208,7 +241,7 @@ jobs:
           cache-on-failure: true
       # The desktop crate needs GTK and is linted where it is built (desktop job).
       - name: Clippy
-        run: cargo clippy --locked --all-targets -p why-core -p why-core-web -p why -- -D warnings
+        run: cargo clippy --locked --all-targets -p ricebox -p why-core -p why-core-web -p why -- -D warnings
       - name: Clippy (wasm32-wasip1)
         if: ${{ !cancelled() }}
         run: cargo clippy --locked -p why-core -p why-core-web --target wasm32-wasip1 -- -D warnings
@@ -235,7 +268,7 @@ jobs:
           shared-key: rust-${{ hashFiles('Cargo.toml') }}
           cache-on-failure: true
       - name: Test core and CLI
-        run: cargo test --locked -p why-core -p why
+        run: cargo test --locked -p ricebox -p why-core -p why
       - name: Test CLI end to end
         if: ${{ !cancelled() }}
         run: |
@@ -357,8 +390,8 @@ jobs:
           "target/release/why$ext" root check
           npx tauri build --bundles "$BUNDLES" --config '{"build": {"beforeBuildCommand": "npx vite build --config why/app/vite.config.ts"}, "bundle": {"externalBin": ["binaries/why"]}}'
 
-  # The .deb's AppArmor profile (why/desktop/deb) on stock Ubuntu 24.04: /usr/bin/why can make user namespaces
-  # after postinst installs it, and cannot after postrm removes it.
+  # The .deb's AppArmor profile (why/desktop/deb) on stock Ubuntu 24.04: /usr/bin/muk, beside /usr/bin/why, can make
+  # user namespaces after postinst installs it, and cannot after postrm removes it.
   apparmor:
     name: AppArmor
     runs-on: ubuntu-24.04
@@ -376,8 +409,10 @@ jobs:
           [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1 ]
           cargo build -q --locked -p why
           sudo install -m 0755 target/debug/why /usr/bin/why
+          sh module/lib/build.sh module/muk/src/muk.c "$RUNNER_TEMP/muk"
+          sudo install -m 0755 "$RUNNER_TEMP/muk" /usr/bin/muk
           native() { /usr/bin/why root check --json | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0, "utf8")).native))'; }
-          [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/why to begin with" >&2; exit 1; }
+          [ "$(native)" = false ] || { echo "user namespaces were not kept from /usr/bin/muk to begin with" >&2; exit 1; }
           /usr/bin/why root check
           sudo install -D -m 0644 why/desktop/deb/why.apparmor /usr/share/why/apparmor/why
           sudo sh why/desktop/deb/postinst configure
@@ -409,7 +444,7 @@ jobs:
         run: sh module/prompt/test/prompt.sh
 
   # The root as a release builds it (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), then used inside as a Prompt uses it and
-  # under muk. Runs only when what the root is made of changed.
+  # under muk. Runs only when what the root is made of changed (what makes its layers, beside those in make/, is not).
   root:
     name: Root
     runs-on: ubuntu-24.04
@@ -420,7 +455,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('module/ricebox/RELEASE', 'module/ricebox/make/**', 'module/ricebox/packages/**', 'module/ricebox/pins/**', 'module/ricebox/etc/**', 'module/ricebox/usr/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('module/ricebox/RELEASE', 'module/ricebox/make/build.sh', 'module/ricebox/make/lift.sh', 'module/ricebox/make/assemble.sh', 'module/ricebox/make/db.ts', 'module/ricebox/packages/**', 'module/ricebox/pins/**', 'module/ricebox/etc/**', 'module/ricebox/usr/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -622,9 +657,9 @@ jobs:
         with:
           name: selftest-${{ matrix.shard }}
           path: |
-            tests/app/.report
-            tests/app/.results
-            tests/app/.logs
+            why/test/app/.report
+            why/test/app/.results
+            why/test/app/.logs
           retention-days: 14
           include-hidden-files: true
       # Passed only on a retry: the failed attempt's trace.
@@ -633,7 +668,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: selftest-flaky-${{ matrix.shard }}
-          path: tests/app/.results
+          path: why/test/app/.results
           if-no-files-found: ignore
           retention-days: 14
           include-hidden-files: true

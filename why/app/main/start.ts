@@ -1,12 +1,12 @@
 // The page's first script (index.html, async): small, so it runs as soon as it arrives, before the page's stylesheet
 // and the app's own code (main.ts, fetched beside it: the build names it in the page to be fetched at once,
-// vite.config.ts) have. In a browser it starts the core first (core/client.ts start: its worker fetches and compiles
+// vite.config.ts) have. In a browser it starts the core first (api/client.ts start: its worker fetches and compiles
 // the core's module and opens what this browser keeps), which is the longest wait before Home can be drawn, so it
 // runs while the rest arrives rather than after it has. The app itself runs once the page is read and styled, as a
 // module script of the page's own would.
 
 import './carried.ts';
-import {start} from '../core/client.ts';
+import {start} from '../../api/client.ts';
 
 /** Which host this build is for (vite.config.ts); run from source, the page says (as app/host.ts reads it). */
 declare const __WHY_HOST__: 'native' | 'web' | undefined;

@@ -6,7 +6,6 @@
   min-height: var(--h-control); padding: 0 var(--s4); border-radius: var(--r-round);
   border: 1px solid var(--edge); background: transparent; cursor: var(--cursor-hand);
 }
-.button:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 /* Words in a button, a chip or a pill stand on its middle by their capitals: a face keeps more room over its capitals
    than under its baseline (or the other way), so a line set on a middle carries its words a pixel or two off it, high
    in one face, low in another. Trimmed to its capitals and its baseline, the line is its capitals, whatever the face.
@@ -23,9 +22,11 @@
   min-height: var(--h-control); padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
 }
-.error { font-size: var(--t-meta); }
+.error { font-size: var(--t-word); }
 .error:empty { display: none; }
 .row { display: flex; gap: var(--s2); }
 /* Declining at the left, going on at the right (common.ts answers). */
-.answers { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
+/* (A row of keys: each the frame's square in a field of two cells, DESIGN §3: a quarter cell over and under it, and
+   where the keys go onto a second row, the two quarters between.) */
+.answers { display: flex; align-items: center; flex-wrap: wrap; gap: calc(var(--u) / 2) var(--s2); min-height: calc(2 * var(--u)); padding-block: calc(var(--u) / 4); box-sizing: border-box; }
 .answers > .grow { flex: 1; }

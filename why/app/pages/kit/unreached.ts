@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {RemoteError} from '../../host/errors.ts';
-import * as account from '../../remote/connection.ts';
+import {t} from '../../../text/i18n.ts';
+import {RemoteError} from '../../../api/errors.ts';
+import * as account from '../../../shipto/connection.ts';
 import {nudge} from '../../ui/glide.ts';
 import {button} from './remote-parts.ts';
 import {signInPlace} from './sign-in.ts';

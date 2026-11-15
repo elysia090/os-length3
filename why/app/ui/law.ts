@@ -25,3 +25,17 @@ export const SPRING = typeof CSS === 'undefined' || CSS.supports?.('transition-t
 
 /** The grid the world is laid on (styles: --u): a move of the world is whole cells, so its dots stand where they stood. */
 export const CELL = 24;
+
+/**
+ * How long words shown for a moment stay, to be read whole once (DESIGN §8, words in time): half a second at the
+ * least (the shortest a subtitle stands), and a letter of a full-width writing a quarter of a second (Japanese
+ * subtitling's four a second), a letter of the Latin a seventeenth (the slower of Netflix's English rates).
+ */
+export function readTime(words: string): number {
+  let wide = 0, narrow = 0;
+  for (const ch of words.replace(/\s+/g, ' ').trim()) {
+    if (/[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/.test(ch)) wide++;
+    else narrow++;
+  }
+  return Math.max(500, Math.ceil(1000 * (wide / 4 + narrow / 17)));
+}

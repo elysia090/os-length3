@@ -8,7 +8,7 @@ use crate::words::args::{Call, owner_shaped};
 use crate::cmd::Ctx;
 use crate::say::out::{Error, Result};
 use why_core::text::names::{self, Name};
-use why_core::{remote, remote::inbox, repos::issues, text::title, tr};
+use why_core::{shipto, shipto::inbox, repo::issues, text::title, tr};
 
 /// A repo written `owner:repo[/path][#n]` is one's own, read as `repo[/path][#n]`; another's is not here.
 fn own(w: &str) -> Result<String> {
@@ -26,7 +26,7 @@ fn missing(ctx: &Ctx, repo: &str) -> Error {
     if !why_core::text::names::valid_name(repo) {
         return Error::Usage(tr!("{:?} is not a repo name (letters, digits, . _ -)", "{:?} は repo の名前になりません（英数字と . _ -）", repo));
     }
-    let there = !ctx.prompt && remote::connection().is_some() && remote::remote_repos().is_ok_and(|l| l.iter().any(|r| r.name == repo));
+    let there = !ctx.prompt && shipto::connection().is_some() && shipto::remote_repos().is_ok_and(|l| l.iter().any(|r| r.name == repo));
     Error::NotFound(if there { tr!("{} is only on the Remote (why repo open {} brings it here)", "{} は Remote にだけあります（why repo open {} でこの端末に）", repo, repo) } else { tr!("There is no repo {} here (why repo lists them)", "この端末に repo {} はありません（why repo で一覧）", repo) })
 }
 
@@ -105,7 +105,7 @@ pub fn path(ctx: &Ctx, call: &Call, i: usize) -> Result<(String, String)> {
 }
 
 /// `w` read from where `h` is: (repo, path); `..` past the repo's top reaches the repos beside it.
-fn joined(h: &why_core::repos::lines::Here, w: &str) -> (String, String) {
+fn joined(h: &why_core::repo::lines::Here, w: &str) -> (String, String) {
     let mut at: Vec<String> = if w.starts_with('/') { vec![h.repo.clone()] } else { std::iter::once(h.repo.clone()).chain(h.folder.split('/').filter(|p| !p.is_empty()).map(String::from)).collect() };
     for part in w.split('/') {
         match part { "" | "." => {} ".." => { at.pop(); } p => at.push(p.to_string()) }
@@ -202,7 +202,7 @@ pub fn issue(ctx: &Ctx, call: &Call, i: usize) -> Result<IssueRef> {
 }
 
 /// A bare number outside a repo: the one repo here that has an issue of that number.
-fn by_number(r: &why_core::repos::store::Repos, n: &str) -> Result<(String, String)> {
+fn by_number(r: &why_core::repo::store::Repos, n: &str) -> Result<(String, String)> {
     let mut found = Vec::new();
     for name in r.names()? {
         if let Ok(file) = r.issue_file(&name, n) { found.push((name, file)); }
@@ -216,7 +216,7 @@ fn by_number(r: &why_core::repos::store::Repos, n: &str) -> Result<(String, Stri
 }
 
 /// The one issue whose title the words name; several are a choice to make, not a guess.
-fn by_title(ctx: &Ctx, r: &why_core::repos::store::Repos, words: &str) -> Result<(String, String)> {
+fn by_title(ctx: &Ctx, r: &why_core::repo::store::Repos, words: &str) -> Result<(String, String)> {
     let names: Vec<String> = match &ctx.here { Some(h) => vec![h.repo.clone()], None => r.names()? };
     let mut all = Vec::new();
     for n in &names { all.extend(r.issues(n)?); }
@@ -246,7 +246,7 @@ pub fn address(word: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use why_core::repos::lines::Here;
+    use why_core::repo::lines::Here;
 
     fn here(repo: &str, folder: &str) -> Here { Here { repo: repo.into(), line: "main".into(), folder: folder.into() } }
 

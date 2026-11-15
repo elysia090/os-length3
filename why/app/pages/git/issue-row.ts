@@ -1,12 +1,16 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {after, paced, still} from '../../ui/glide.ts';
-import type {Issue} from '../../repos/issues.ts';
-import {SPRING} from '../../ui/law.ts';
+import {t} from '../../../text/i18n.ts';
+import {after, still} from '../../ui/glide.ts';
+import type {Issue} from '../../../repo/issues.ts';
+import {rowMap} from '../../ui/row-desk.ts';
 
-// Git's issues not merged yet, as large boxes side by side: one in full, its neighbours' edges showing at both
-// sides. An edge is the way to the box beside (hover lifts it; ← → and a finger's swipe do the same), and the track
-// slides there. The keyboard stays on the same part of the box as one goes along the row.
+// Git's issues not merged yet, as large boxes side by side, as every desk rests (DESIGN §2, §6): the one in full at
+// the row's edge, the next ahead of it to the right, its edge showing; those before it out of sight, said by the row's
+// map at the window's foot. Last, so too, the issue not written yet (`tail`), where a new thing in a row always is: a
+// new board at a server's row's end, a new repo after Home's repos. The next's edge is the way to it (hover lifts it; → and a finger's swipe do the same; ←
+// and the map go back), and the track slides there. The keyboard stays on the same part of the box as one goes along.
+// (Before, the box in full stood between its neighbours, the last at the row's far end: the subject pushed right, the
+// room behind it larger than the room ahead, the weight of the shot right of its middle.)
 
 /** What the row needs of the page it is in. */
 interface RowWays {
@@ -14,6 +18,10 @@ interface RowWays {
   landed(i: Issue, moved: boolean): void;
   /** What issue `x`'s slot holds: in full when it is on screen (`now`), else only its head. */
   slot(x: Issue, now: boolean): HTMLElement[];
+  /** What the last slot, the issue not written yet, holds: the issue it will be when on screen (`now`), else its edge. */
+  tail(now: boolean): HTMLElement[];
+  /** The issue not written yet came on screen; `moved`: gone to by the person. */
+  landedTail(moved: boolean): void;
   /**
    * The row slid to its `lead` (0 at the first box, 2 at the last, 1 between), `single` when there is one box;
    * `drawn` when it was drawn again rather than gone along (its edges then ease to where they are).
@@ -27,9 +35,9 @@ type Part = {kind: string; words: string};
 export class IssueRow {
   /** The row and its edges, in the issues' column. */
   readonly column: HTMLElement;
-  readonly stage: HTMLElement;
-  /** Put the keyboard on the new issue's words once it is drawn. */
-  land = false;
+  readonly stage: HTMLElement = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'});
+  /** Put the keyboard on the issue's words once it is drawn (gone to), or in its summary (just made, to go on writing). */
+  land: boolean | 'summary' = false;
   private readonly track = h('div', {class: 'issue-track'});
   private readonly prev: HTMLButtonElement;
   private readonly next: HTMLButtonElement;
@@ -40,14 +48,17 @@ export class IssueRow {
   /** The neighbours' cards are as tall as the current one, so the row reads as one line of boxes. */
   private readonly sized = new ResizeObserver(([e]) => this.track.style.setProperty('--card-h', `${(e.target as HTMLElement).offsetHeight}px`));
   private readonly ways: RowWays;
+  /** The row's map, at the window's foot: a bar an issue, the one in full in ink. */
+  readonly map = rowMap(this.stage, () => this.pieces(), () => this.turned());
 
   constructor(ways: RowWays) {
     this.ways = ways;
     // The edges over the neighbours: clear, lifted on hover like any place.
     this.prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous issue')}) as HTMLButtonElement;
     this.next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next issue')}) as HTMLButtonElement;
-    this.stage = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'}, this.track, this.prev, this.next);
-    this.column = h('div', {class: 'issue-column'}, this.stage);
+    this.stage.append(this.track, this.prev, this.next);
+    this.column = h('div', {class: 'issue-column'}, this.stage, this.map.element);
+    new ResizeObserver(() => this.map.paint()).observe(this.stage);
     this.prev.addEventListener('click', () => this.go(this.k - 1, true));
     this.next.addEventListener('click', () => this.go(this.k + 1, true));
     // A finger swiped along the row (sideways more than down, and far enough) goes to the box beside, as its edge
@@ -80,15 +91,16 @@ export class IssueRow {
     if (!slide && !this.quiet) this.settle();
     this.shown = shown;
     this.stage.hidden = false;
-    this.column.classList.toggle('single', shown.length === 1);
+    this.column.classList.toggle('single', shown.length === 0);
     // The keyboard goes back to the same part of its box, if its box is still shown. Its box gone (closed, merged),
     // it goes to the row, never to that part of another box: drawn again before the row went aside (a slow Remote),
     // the box closed under Close handed it to the next box's Close, and a second Enter closed that one too.
     const under = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.issue-slot')?.dataset.issue;
     const was = this.part();
-    const had = was && shown.some((i) => `${i.repo}/${i.file}` === under) ? was : null;
+    const had = was && (under === NEW || shown.some((i) => `${i.repo}/${i.file}` === under)) ? was : null;
     if (was && !had) this.stage.focus({preventScroll: true});
-    this.track.replaceChildren(...shown.map((i) => h('div', {class: 'issue-slot', 'data-issue': `${i.repo}/${i.file}`})));
+    this.track.replaceChildren(...shown.map((i) => h('div', {class: 'issue-slot', 'data-issue': `${i.repo}/${i.file}`})),
+      h('div', {class: 'issue-slot issue-slot-new', 'data-issue': NEW}));
     this.was = -1;
     if (!slide) { this.go(at, false, had); this.quiet = false; return; }
     // Gone to as it is drawn (an issue reopened, one just written): from the box that was in full, the row slides to
@@ -109,10 +121,11 @@ export class IssueRow {
   /** The box of `key` is going (closed): the row goes to the box beside it, the one after or else the one before. */
   aside(key: string): Promise<void> {
     const j = this.shown.findIndex((i) => `${i.repo}/${i.file}` === key);
-    if (j !== this.k || this.shown.length < 2) return Promise.resolve();
+    if (j !== this.k) return Promise.resolve();
     // The keyboard was on its Close: it goes to the row, never to the next box's Close (a second Enter would close it).
+    // (To the issue after, else the one before; to the one not written yet only when it was the last.)
     const had = this.track.children[j]?.contains(document.activeElement);
-    this.go(j + 1 < this.shown.length ? j + 1 : j - 1, true, null);
+    this.go(j + 1 < this.shown.length ? j + 1 : j > 0 ? j - 1 : j + 1, true, null);
     if (had) this.stage.focus({preventScroll: true});
     return still() ? Promise.resolve() : new Promise((done) => after(450, done));
   }
@@ -133,11 +146,24 @@ export class IssueRow {
     return i && card ? {key: `${i.repo}/${i.file}`, card, height: card.getBoundingClientRect().height} : null;
   }
 
-  /** None to show: the row stands aside. */
+  /** The issue not written yet is in the hand. */
+  get atTail() { return !this.stage.hidden && this.k === this.shown.length; }
+
+  /** The keyboard on the issue not written yet's first line, if it is in the hand. */
+  write() { if (this.atTail) this.track.lastElementChild?.querySelector<HTMLElement>('.issue-first')?.focus({preventScroll: true}); }
+
+  /**
+   * Back from the issue not written yet to the issue before it, if there is one, the keyboard back on the row that
+   * went to it (said by the piece in hand's edge, heavier: styles git-issue.css).
+   */
+  back() { if (this.atTail && this.shown.length) { this.go(this.k - 1, true, null); this.stage.focus({preventScroll: true}); } }
+
+  /** No repo to write an issue in: the row stands aside. */
   none() {
     this.shown = [];
     this.track.replaceChildren();
     this.stage.hidden = true;
+    this.map.paint();
   }
 
   /**
@@ -146,54 +172,80 @@ export class IssueRow {
    * it is there: never an empty sheet going by.
    */
   private go(n: number, moved = false, had = this.part()) {
-    if (!this.shown.length) return;
-    const k = this.k = Math.max(0, Math.min(this.shown.length - 1, n));
+    const last = this.shown.length;
+    const k = this.k = Math.max(0, Math.min(last, n));
     const was = this.was;
     this.was = k;
-    this.ways.landed(this.shown[k], moved);
+    if (k === last) this.ways.landedTail(moved); else this.ways.landed(this.shown[k], moved);
     this.track.style.setProperty('--at', `${k}`);
-    // The first box starts at the column's edge and the last ends at it; between, both neighbours show.
-    const lead = k === 0 ? 0 : k === this.shown.length - 1 ? 2 : 1;
+    // The box in full starts at the column's edge, wherever it is along the row: the next ahead of it.
+    const lead = 0;
     this.column.style.setProperty('--row-lead', `${lead}`);
-    this.ways.slid(lead, this.shown.length === 1, !moved && !this.quiet);
+    this.ways.slid(lead, last === 0, !moved && !this.quiet);
     [...this.track.children].forEach((slot, j) => {
       slot.setAttribute('aria-current', String(j === k));
-      if (moved && j === was && was !== k && !still()) { this.leave(slot as HTMLElement, this.shown[j]); return; }
+      if (moved && j === was && was !== k && !still()) { this.leave(slot as HTMLElement, j); return; }
       slot.classList.remove('leaving');
       (slot as HTMLElement).inert = false;
       slot.removeAttribute('aria-hidden');
-      slot.replaceChildren(...this.ways.slot(this.shown[j], j === k));
+      slot.replaceChildren(...this.held(j, j === k));
     });
     const card = this.track.children[k]?.querySelector<HTMLElement>('.issue-card');
     this.sized.disconnect();
     if (card) this.sized.observe(card);
     const edge = document.activeElement === this.prev || document.activeElement === this.next;
-    this.prev.hidden = k === 0;
-    this.next.hidden = k === this.shown.length - 1;
-    this.focus(this.track.children[k] as HTMLElement | undefined, had, edge);
+    // (Behind the box in full there is no edge to press: the ones before are out of sight, gone to by ← or the map.)
+    this.prev.hidden = true;
+    this.next.hidden = k === last;
+    this.focus(this.track.children[k] as HTMLElement | undefined, had, edge, moved && k === last);
+    this.map.paint();
   }
 
-  /** The box gone from: as it was while it slides out (out of the keyboard's way), its head once it is at the edge. */
-  private leave(slot: HTMLElement, x: Issue) {
+  /** What slot `j` holds: an issue, or (the last) the one not written yet; in full when on screen (`now`). */
+  private held(j: number, now: boolean) { return j === this.shown.length ? this.ways.tail(now) : this.ways.slot(this.shown[j], now); }
+
+  /** A box's width along the row and the gap after it, as drawn. */
+  private step(): {w: number; gap: number} {
+    const first = this.track.children[0] as HTMLElement | undefined;
+    return {w: first?.offsetWidth ?? 0, gap: parseFloat(getComputedStyle(this.track).columnGap) || 0};
+  }
+  /** The row as its map says it: each issue a piece, the one in full in the hand. */
+  private pieces() {
+    if (this.stage.hidden) return [];
+    const {w, gap} = this.step(), last = this.shown.length;
+    return [...this.shown.map((x, j) => ({x: j * (w + gap), w, held: j === this.k, name: x.n === null ? x.title : `#${x.n} ${x.title}`, go: () => this.go(j, true)})),
+      {x: last * (w + gap), w, held: this.k === last, name: t('New issue'), go: () => this.go(last, true)}];
+  }
+  /** How far the row is turned: to the box in full. */
+  private turned() { const {w, gap} = this.step(); return this.k * (w + gap); }
+
+  /**
+   * The box gone from: as it was while it slides out (out of the keyboard's way), its head at once once it is at the
+   * edge. (Faded at once by the cut, it went by as an empty sheet for the whole of the slide.)
+   */
+  private leave(slot: HTMLElement, j: number) {
     slot.classList.add('leaving');
     slot.inert = true;
     slot.setAttribute('aria-hidden', 'true');
-    for (const part of slot.querySelectorAll<HTMLElement>(':scope > .issue-card > *, :scope > :not(.issue-card)')) {
-      part.animate([{opacity: 1}, {opacity: 1, offset: .55}, {opacity: 0}], {duration: paced(450), fill: 'forwards'});
-    }
     after(450, () => {
       if (!slot.isConnected || slot.getAttribute('aria-current') === 'true') return;
       slot.classList.remove('leaving');
       slot.inert = false;
       slot.removeAttribute('aria-hidden');
-      slot.replaceChildren(...this.ways.slot(x, false));
-      for (const part of slot.children) part.animate([{opacity: 0}, {opacity: 1}], {duration: paced(120), easing: SPRING});
+      slot.replaceChildren(...this.held(j, false));
     });
   }
 
   /** The keyboard, after the row slid to `slot`: on a new issue's words, back on the part it was on, or on the row. */
-  private focus(slot: HTMLElement | undefined, had: Part | null, edge: boolean) {
-    if (this.land) { this.land = false; slot?.querySelector<HTMLElement>('.issue-words')?.focus({preventScroll: true}); return; }
+  private focus(slot: HTMLElement | undefined, had: Part | null, edge: boolean, writing = false) {
+    // Gone to by the person, the issue not written yet has the keyboard on its first line.
+    if (writing) { slot?.querySelector<HTMLElement>('.issue-first')?.focus({preventScroll: true}); return; }
+    if (this.land) {
+      const into = this.land === 'summary' ? '.issue-summary' : '.issue-words';
+      this.land = false;
+      slot?.querySelector<HTMLElement>(into)?.focus({preventScroll: true});
+      return;
+    }
     if (had) (sameDeed(slot, had) ?? this.stage).focus({preventScroll: true});
     // An edge pressed that is gone now (the first or last box reached): the keyboard stays on the row.
     else if (edge && (document.activeElement as HTMLElement | null)?.hidden) this.stage.focus({preventScroll: true});
@@ -209,6 +261,9 @@ export class IssueRow {
     return kind ? {kind, words: a.textContent?.trim() ?? ''} : null;
   }
 }
+
+/** The last slot's mark: the issue not written yet. */
+const NEW = '+new';
 
 const sameDeed = (slot: HTMLElement | undefined, had: Part) => {
   const all = [...(slot?.querySelectorAll<HTMLElement>(`.${had.kind}`) ?? [])];

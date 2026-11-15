@@ -1,12 +1,12 @@
-// For tests: the core a browser runs (why/core/web), in a worker thread of this process over files in memory,
-// as core/worker.ts runs it in a page. Its requests go to this thread's fetch (a test's own Remote, often
+// For tests: the core a browser runs (why/api/web), in a worker thread of this process over files in memory,
+// as api/worker.ts runs it in a page. Its requests go to this thread's fetch (a test's own Remote, often
 // in this process too): the core waits for each, as it waits for a page's XHR. Not part of the app.
 
 import {readFileSync} from 'node:fs';
 import {isMainThread, MessageChannel, parentPort, receiveMessageOnPort, Worker, workerData, type MessagePort} from 'node:worker_threads';
-import type {Answer, Ask} from '../core/client.ts';
-import {Core} from '../core/abi.ts';
-import {MemoryFS, WASI} from '../core/wasi.ts';
+import type {Answer, Ask} from '../../api/client.ts';
+import {Core} from '../../api/abi.ts';
+import {MemoryFS, WASI} from '../../api/wasi.ts';
 
 interface Asked { id: number; name: string; args: unknown }
 interface Fetch { url: string; method: string; headers: [string, string][]; body: Uint8Array | null }

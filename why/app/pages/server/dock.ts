@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {nudge} from '../../ui/glide.ts';
-import {RemoteError} from '../../host/errors.ts';
-import * as servers from '../../remote/servers.ts';
+import {RemoteError} from '../../../api/errors.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {postNow} from './talk.ts';
 import {button, type Shown} from './parts.ts';
-import {Drafts} from '../../home/drafts.ts';
-import {errorText} from '../../host/errors.ts';
+import {Drafts} from '../../../home/drafts.ts';
+import {errorText} from '../../../api/errors.ts';
 
 /**
  * A post half written stays with its board (DESIGN §1): going to another board, or to another
@@ -65,7 +65,7 @@ function writeIn(b: Shown, guest: servers.GuestHere | null, note: HTMLElement, n
   // Post at the box's bottom right, as Forge's box has Run and Inbox's Send: what sends is in sight, not only known.
   // Its keys are in its title, as Run's are, and on it in small.
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-  const post = h('button', {type: 'button', class: 'button small-button prompt-run', title: t('Post ({keys})', {keys: mac ? '⌘+Enter' : 'Ctrl+Enter'}),
+  const post = h('button', {type: 'button', class: 'button small-button prompt-run',
     'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter'}, t('Post'),
   // (Enter is a new line here: the key that sends says its keys on itself, as it comes with the words.)
   h('span', {class: 'key-said', 'aria-hidden': 'true'}, mac ? '⌘↵' : 'Ctrl+↵')) as HTMLButtonElement;

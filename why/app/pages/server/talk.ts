@@ -1,12 +1,13 @@
-import {dateFormat, h} from '../../ui/dom.ts';
-import {arrive, closeUp, paced, still} from '../../ui/glide.ts';
-import {t} from '../../i18n/i18n.ts';
-import {shown} from '../../remote/inbox.ts';
-import * as servers from '../../remote/servers.ts';
-import {coalesced, every} from '../../host/runs.ts';
-import {errorText} from '../../host/errors.ts';
+import {h} from '../../ui/dom.ts';
+import {dateFormat} from '../../../text/format.ts';
+import {arrive, closeUp, cut, paced, still} from '../../ui/glide.ts';
+import {t} from '../../../text/i18n.ts';
+import {shown} from '../../../shipto/inbox.ts';
+import * as servers from '../../../shipto/servers.ts';
+import {coalesced, every} from '../../../api/runs.ts';
+import {errorText} from '../../../api/errors.ts';
 import {personBadge} from '../kit/pane.ts';
-import {SPRING} from '../../ui/law.ts';
+import {readTime, SPRING} from '../../ui/law.ts';
 
 // A board's talk: read as a conversation is, oldest above and newest at the
 // foot, by the box one writes in. Its people write in it; so may a guest,
@@ -36,8 +37,6 @@ const face = (p: servers.Post) => {
   b.classList.add('tl-face');
   return b;
 };
-/** A time written whole, as toLocaleString writes one. */
-const WHOLE: Intl.DateTimeFormatOptions = {year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric'};
 const CLOCK: Intl.DateTimeFormatOptions = {hour: '2-digit', minute: '2-digit', hour12: false};
 const DAY_NAME: Intl.DateTimeFormatOptions = {weekday: 'short', month: 'short', day: 'numeric'};
 const clock = (ms: number) => dateFormat(CLOCK).format(ms);
@@ -99,7 +98,7 @@ function post(p: servers.Post, runs: boolean, down: (art: HTMLElement) => Promis
   // with "guest" beside it and their face dashed, so they are never taken for one of its people.
   const [name, domain] = shown(p.by).split('@');
   const where = p.guest ? t('Guest') : domain ? `@${domain}` : '';
-  const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: dateFormat(WHOLE).format(when)}, clock(p.at));
+  const time = h('time', {class: 'muted small', datetime: when.toISOString()}, clock(p.at));
   const below = h('div', {class: 'tl-foot muted small'});
   const acts = h('div', {class: 'tl-acts'});
   const main = h('div', {class: 'tl-main'},
@@ -123,7 +122,7 @@ function takeDown(act: () => Promise<void>): HTMLButtonElement {
   const down = h('button', {type: 'button', class: 'button small-button tl-act'}, t('Delete post')) as HTMLButtonElement;
   let armed = 0;
   down.addEventListener('click', async () => {
-    if (!armed) { down.textContent = t('Delete this post?'); armed = window.setTimeout(() => { armed = 0; down.textContent = t('Delete post'); }, 3000); return; }
+    if (!armed) { down.textContent = t('Delete this post?'); armed = window.setTimeout(() => { armed = 0; down.textContent = t('Delete post'); }, Math.max(3000, readTime(down.textContent ?? ''))); return; }
     clearTimeout(armed);
     down.disabled = true;
     try { await act(); } catch (e) { down.disabled = false; down.textContent = errorText(e); }
@@ -198,7 +197,7 @@ class Talk {
 
   private view() { return this.scroller.getBoundingClientRect(); }
   private atFoot() { return this.scroller.scrollHeight - this.scroller.scrollTop - this.scroller.clientHeight < 32; }
-  private toFoot(smooth = false) { this.scroller.scrollTo({top: this.scroller.scrollHeight, behavior: smooth ? 'smooth' : 'auto'}); }
+  private toFoot(_smooth = false) { this.scroller.scrollTo({top: this.scroller.scrollHeight, behavior: 'auto'}); }
 
   /** Change what is above the reader without moving what they read. */
   private steady(change: () => void) {
@@ -322,7 +321,7 @@ class Talk {
     if (fresh) arrive(s.el, fresh === 'mine' ? 1 : -1, fresh === 'mine' ? 'y' : 'x', 18, 300);
     // The talk as it opens, read in after its board was drawn (the board slid to): it comes up where it stands, not
     // all at once in one frame.
-    else if (!still()) s.el.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: SPRING});
+    else if (!still()) s.el.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(200), easing: SPRING});
   }
 
   private tell() {

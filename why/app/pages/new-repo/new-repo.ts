@@ -1,23 +1,25 @@
-import {bytes, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {connection} from '../../remote/connection.ts';
-import {plan} from '../../remote/plan.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {connection} from '../../../shipto/connection.ts';
+import {plan} from '../../../shipto/plan.ts';
 import {goToPlan} from '../kit/plan-gate.ts';
-import {remoteOnly} from '../../remote/lifecycle.ts';
-import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../repos/repos.ts';
+import {remoteOnly} from '../../../shipto/lifecycle.ts';
+import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../../repo/repos.ts';
 import {onTheGround} from '../home/home.ts';
 import type {Context} from '../kit/context.ts';
-import {triangle} from '../file/tree.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {mark} from '../../ui/icons.ts';
-import {liftLine, nudge, paced, putAway, still, textAt, unfold} from '../../ui/glide.ts';
-import {fitSize} from '../../ui/optical.ts';
-import {SPRING} from '../../ui/law.ts';
+import {menuItem} from '../kit/common.ts';
+import {deedsUnder} from '../kit/file-deeds.ts';
+import {liftLine, nudge, putAway, textAt, unfold} from '../../ui/glide.ts';
+import {wholeCells} from '../../ui/row.ts';
+import {cut as record} from '../../../repo/history.ts';
 
 /**
- * +: the repo's name on the first line; under it, in a large box, what it
- * is for, and beside that what will be made in it: the repo alone, as File
- * will show it (nothing else of the device's), from the one scaffold every
+ * +: one piece at the desk's edge, the hand's (DESIGN §10): the repo's name on
+ * its first line; under it what it is for; under a rule what will be made in
+ * it: the repo alone, as File will show it (nothing else of the device's), from the one scaffold every
  * repo starts from, and there its files are made, renamed and left out before
  * it is, as File makes, renames and deletes them. Make it, and it is gone into
  * in Forge. What it is for is the repo's own: it goes into its README, under
@@ -28,7 +30,7 @@ import {SPRING} from '../../ui/law.ts';
  */
 
 /**
- * The scaffold (why/shared/templates.json's `standard`, as `why repo new` makes
+ * The scaffold (why/repo/templates.json's `standard`, as `why repo new` makes
  * it): a README, with docs/, in no language of its own. There is no
  * choosing; what is made from it is changed here, file by file.
  */
@@ -68,22 +70,34 @@ function nest(made: readonly Made[]): Item[] {
   return root.children;
 }
 
-function row(name: string | Node[] | HTMLElement, depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; shut: boolean; tail: Node}> = {}): HTMLElement {
-  // A folder with nothing in it yet is shut, as File shows one: an open triangle over nothing says there is something.
-  const lead = dir ? h('span', {class: 'tree-toggle', 'aria-hidden': 'true', 'aria-expanded': String(!extra.shut)}) : h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
-  if (dir) lead.append(triangle());
+function row(name: string | Node[] | HTMLElement, depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; tail: Node}> = {}): HTMLElement {
+  // A folder is said as File's tree says one, its name and a slash after it (heard as its name), with nothing drawn
+  // before it: one tree, one way (DESIGN §1).
+  const lead = h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
   const named = name instanceof HTMLElement ? name : h('span', {class: 'tree-name plain'}, ...(typeof name === 'string' ? [name] : name));
+  const slash = dir ? h('span', {class: 'tree-slash', 'aria-hidden': 'true'}, '/') : null;
   return h('li', {class: extra.kind ?? (dir ? 'tree-dir' : 'tree-file')},
-    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, named,
+    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, named, slash,
       typeof extra.meta === 'string' ? h('span', {class: 'tree-meta'}, extra.meta) : extra.meta ?? null, extra.tail ?? null));
 }
 
-/** A small deed on a row, its mark alone, named for the ear and the pointer's rest. */
-const rowDeed = (m: 'pen' | 'close', said: string, act: () => void) => {
-  const b = h('button', {type: 'button', class: 'tree-deed', 'aria-label': said, title: said}, mark(m)) as HTMLButtonElement;
-  b.addEventListener('click', act);
-  return b;
-};
+/**
+ * What can be done to a row, called by its one mark at its right end (DESIGN §5: a chevron, everywhere), always there
+ * and quiet: Rename and Leave out, in a menu laid under it.
+ */
+function rowDeeds(name: string, rename: () => void, leaveOut: () => void): HTMLButtonElement {
+  const said = t('Actions for {name}', {name});
+  const more = h('button', {type: 'button', class: 'tree-more', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': said}, mark('down')) as HTMLButtonElement;
+  more.addEventListener('click', () => {
+    if (more.getAttribute('aria-expanded') === 'true') return;
+    const again = menuItem(t('Rename'), 'pen'), out = menuItem(t('Leave out {name}', {name}), 'close');
+    const pop = h('div', {class: 'pop tree-pop', role: 'menu', 'aria-label': said}, again, out);
+    const away = deedsUnder(more, pop, () => {});
+    again.addEventListener('click', () => { away(); rename(); });
+    out.addEventListener('click', () => { away(); leaveOut(); });
+  });
+  return more;
+}
 
 export function newRepo(ctx: Context): Node[] {
   // No example in it: one there reads as a name already given (and the row it would draw, as the repo to be made).
@@ -119,26 +133,24 @@ export function newRepo(ctx: Context): Node[] {
     return at(n);
   };
   /**
-   * The repo to be made, alone: its row (filled as File fills the repo in hand; nothing named yet, a quiet dashed
-   * place for its name), and what will be made in it, folders first, each to be renamed or left out where it stands.
+   * What will be made in the repo, folders first, each to be renamed or left out where it stands. The repo itself is
+   * the sheet, its name its title, said once: its row is not drawn again under it (DESIGN §10).
    */
   const showFiles = (came: string | null = null) => {
-    const n = name.value.trim(), bad = !!why(n);
-    const rows = [row(n ? marked(n) : t('Name'), 0, true, {kind: `tree-repo tree-new${bad ? ' tree-bad' : ''}${n ? '' : ' tree-unnamed'}`})];
+    const rows: HTMLElement[] = [];
     const walk = (nodes: Item[], depth: number) => {
       for (const it of nodes) {
-        const named = renaming === it.path ? field(it.path) : h('button', {type: 'button', class: 'tree-name', title: t('Rename {name}', {name: it.name})}, it.name);
+        const named = renaming === it.path ? field(it.path) : h('button', {type: 'button', class: 'tree-name'}, it.name);
         if (named instanceof HTMLButtonElement) named.addEventListener('click', () => rename(it.path));
-        const li = row(named, depth, it.dir, {kind: `${it.dir ? 'tree-dir' : 'tree-file'} tree-ours`, shut: it.dir && !it.children.length,
+        const li = row(named, depth, it.dir, {kind: `${it.dir ? 'tree-dir' : 'tree-file'} tree-ours`,
           meta: it.readme ? readmeSize : undefined,
-          tail: h('span', {class: 'tree-deeds'}, rowDeed('pen', t('Rename {name}', {name: it.name}), () => rename(it.path)),
-            rowDeed('close', t('Leave out {name}', {name: it.name}), () => leaveOut(it.path, li)))});
+          tail: rowDeeds(it.name, () => rename(it.path), () => leaveOut(it.path, li))});
         li.dataset.path = it.path;
         rows.push(li);
         if (it.dir) walk(it.children, depth + 1);
       }
     };
-    walk(nest(made), 1);
+    walk(nest(made), 0);
     preview.replaceChildren(...rows);
     const come = came ? preview.querySelector<HTMLElement>(`li[data-path="${CSS.escape(came)}"]`) : null;
     if (come) unfold(come, 200);
@@ -216,7 +228,12 @@ export function newRepo(ctx: Context): Node[] {
     h('div', {class: 'tree-makes'}, newFile, newFolder), fileError);
   // Where it will stand, said over its box as a file's place is over a box on the desk: ~/ and the name as written.
   const place = h('span', {class: 'nr-where'});
-  const placed = () => { place.textContent = name.value.trim(); };
+  // A letter no name can have is marked there, where it is, as the name will stand.
+  const placed = () => {
+    place.replaceChildren(...marked(name.value.trim()));
+    kind.hidden = false;
+    if (label.isConnected && label.scrollWidth > (label.parentElement?.clientWidth ?? Infinity)) kind.hidden = true;
+  };
   const keep = () => { draft = {name: name.value, summary: summary.value, made: made.map((m) => ({...m}))}; };
   // What it is for, under the name in the box, the words written straight in it, the box the field.
   const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000', rows: '1',
@@ -267,47 +284,35 @@ export function newRepo(ctx: Context): Node[] {
     actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Created {name}', {name: n})), h('span', {class: 'grow'}), again, open);
     open.focus({preventScroll: true});
   };
-  // One box being born where Forge will lay the repo's README: the name its first line, as large as Home's name; under
-  // it what it is for (its README's words); Create at its foot. Why a name cannot be is said over the box, after where
-  // it will stand, as a desk box says its place. Beside it, a box narrower than it, what will be made with it, as File
-  // will show it (as Home's repos stand beside its TODO).
+  // One box being born where Forge will lay the repo's README: the name its first line; under it what it is for (its
+  // README's words); Create at its foot. Why a name cannot be is said over the box, after where it will stand, as a
+  // desk box says its place.
   const box = h('div', {class: 'nr-box', 'data-empty': t('name')},
     h('label', {class: 'sr-only', for: 'repo-name'}, t('Name')), name,
     // The rule for a name is heard with the field and seen only when it is broken (said over the box).
     h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits, and . _ - (up to 64 chars)')),
+    // Why it cannot be, in the cell under the name, where it is put right: the sheet's top never moves for it.
+    error,
     h('span', {class: 'sr-only', id: 'repo-summary-label'}, t('Summary')), summaryBox, actions);
   // The page says why a name cannot be, in its own words, never the browser's bubble for a field left empty.
-  const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place), h('span', {class: 'nr-kind'}, t('New repo')), error);
-  // The files' box says over it, as the name's does, where it shows them: File's tree (heard with the tree, as its caption).
-  const filesLabel = h('div', {class: 'nr-label nr-files-label', 'aria-hidden': 'true'}, h('span', {class: 'nr-path'}, t('File')));
-  const form = h('form', {class: 'new-repo', novalidate: ''}, label, box, filesLabel, card);
-  // The name on its one line as large as the box lets it be: 64 px while it is short, smaller as it grows longer (never
-  // under 28, where it goes on past the box's edge as a field's words do), never cut at the edge before that; nothing
-  // written, the word for it the same way. A name that would stand under 44 px in the box beside the files has the
-  // column alone, the files inside its box (styles: .alone), until it would stand at 50 there again.
-  const fitted = () => {
-    const cs = getComputedStyle(name), pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 4, words = name.value || t('name');
-    // The box beside the files is as wide as Home's TODO there (styles: .new-repo's columns), wherever the box stands now.
-    const across = form.clientWidth, gap = Math.min(80, Math.max(24, .06 * across)), beside = Math.min(520, across - gap - 280);
-    const there = across >= 600 ? fitSize(name, words, beside - pad, -.04, fitted) : 0;
-    const alone = !!there && there < (form.classList.contains('alone') ? 50 : 44);
-    if (alone !== form.classList.contains('alone')) {
-      form.classList.toggle('alone', alone);
-      if (alone) box.insertBefore(card, actions); else form.append(filesLabel, card);
-      if (!still()) card.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: SPRING});
-    }
-    const fits = fitSize(name, words, name.clientWidth - pad, -.04, fitted);
-    if (fits) box.style.setProperty('--nr-name', `${Math.floor(Math.max(28, Math.min(64, fits)))}px`);
-  };
-  let across = 0;
-  new ResizeObserver(() => { if (box.clientWidth !== across) { across = box.clientWidth; fitted(); } }).observe(box);
+  // One line: ~/ and the name as written, then New repo, which gives way (whole, or not there) where the line has no
+  // room for it.
+  const kind = h('span', {class: 'nr-kind'}, t('New repo'));
+  const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place), kind);
+  // One piece, the hand's: its place over its corner, and in it the name, what it is for, what will be made (under a
+  // rule) and Create at its foot. The name stands at the size of every name (a cell's capitals), never made smaller or
+  // larger for its room: one that is longer than the line goes on past it, as a field's words do.
+  box.insertBefore(card, actions);
+  const form = h('form', {class: 'new-repo', novalidate: ''}, label, box);
+  // As tall as what is in it, to the grid's next line (as Home's note is): what is under it stays on the grid.
+  wholeCells(box);
   // Said as it is written, not only once Create is pressed: why it cannot be, under the name, and where in it.
   const judge = () => {
     const said = why(name.value.trim());
     if (error.textContent !== said) error.textContent = said;
     if (said) name.setAttribute('aria-invalid', 'true'); else name.removeAttribute('aria-invalid');
   };
-  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); placed(); fitted(); });
+  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); placed(); });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();
@@ -342,6 +347,9 @@ export function newRepo(ctx: Context): Node[] {
       error.textContent = t('Failed to write {what} ({why})', {what: `${n}/${at}`, why: errorText(e)});
       return;
     }
+    // Made is recorded: what was laid out here is the repo's first commit, so main holds no work of its own to commit
+    // (work is done on an issue) and a file put back goes back to how it was made. (Not recorded, it is still made.)
+    await record(n, null, `Feat: ${n}`, '').catch(() => {});
     // Made, it is gone into at once: what was written becomes its README, the summary's sheet growing into that box
     // in Forge, the caret in it, and its words going with it onto their line there (under the title and a line left
     // empty: readme), never a sheet gone empty on its way and the words come back after.

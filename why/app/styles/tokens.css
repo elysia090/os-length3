@@ -11,27 +11,32 @@
   /* The desk's ground and Home's: a dot every 24 px. As the camera stands back the pitch closes with what lies on the
      ground (desk.ts, ui/camera.ts), each dot kept whole, a pixel and a bit across: drawn smaller with it, a dot falls
      between the pixels and is not drawn at all. */
-  --dots: radial-gradient(circle, #96938e 1.5px, transparent 1.9px);
-  --ink: #171614;
-  --rule: #9c9995;
-  --sub: #55524e;
-  --edge: #6f6d68;
+  --dots: radial-gradient(circle, #959390 1.5px, transparent 1.9px);
+  --ink: #171615;
+  --rule: #9b9995;
+  --sub: #545250;
+  --edge: #6e6d6a;
   --raised: #e6e3de;
   /* The one surface tone besides the ground: a sheet, which is only ever what is worked on (a file, the TODO, the
      issue or board in hand, Inbox's box, what the search found; Runtime's box, read rather than worked in, stays on the ground). Everything else (the rail, the band,
      heads, the pane, figures, cards that lead somewhere) stands on the ground itself; a sheet's edge is the line. */
-  --paper: #fbfaf7;
+  --paper: #fdfaf4;
   /* What is pressed into the desk rather than laid on it (a key of the band, the search's slot, the place of the
      rail one is at): a tone under the ground, soft at the corner. Paper's corner is a sheet's (--r-sheet). */
-  --slot: #cbc7c0;
+  --slot: #cac7c3;
+  /* The frame at rest (DESIGN §4, quiet): the rail's and the band's marks and words, and their lines. A permanent mark
+     over the picture is kept faint, and the frame is that: ink only on the place one is in and on what the hand is on
+     (the pointer, the keyboard, the search being written in), as a piece is ink only in the hand. */
+  --frame: var(--sub);
+  --frame-edge: var(--edge);
   /* Words that only say how many or where: quieter than --sub, never for what is read to be acted on. */
-  --quiet: #8f8c87;
+  --quiet: #817f7c;
   /* The TODO's note, the one coloured sheet Home has. */
   --note: #f2cf52;
   /* On the note, what is not yet written (the line to write the next in). */
-  --note-quiet: #8a7a3c;
+  --note-quiet: #817133;
   /* The terminal's light: its key's mark on the band, its words on the screen. */
-  --green: #9be0bf;
+  --green: #a4eac8;
   /* The grid everything on the desk is set on: its dots stand a cell apart, one in the middle of each. */
   --u: 24px;
   /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. Each a small family, deep
@@ -39,18 +44,14 @@
      accent: the mark itself, the words in it (a step darker, to read small), and the ground of a line (a tint, not
      the mark thinned). */
   --done: #0e7c5e;
-  /* The Prompt up as a screen, its one place, made of these: its glass the ink a step deeper; its words the green's
-     tint (add-tint) lit in the green (done), and the prompt lines the shell waited at the green itself, lifted for the dark. */
-  --screen: #141311;
-  --screen-ps: color-mix(in srgb, var(--done) 45%, var(--add-tint));
   --add: #13684f;
-  --add-tint: #d6eadf;
+  --add-tint: #d7eadc;
   --marker: #ecca5f;
-  --marker-soft: #f3e5bb;
+  --marker-soft: #f4e5bb;
   /* Dark enough that `ground` words on it (a removal held, its button red) read at 4.5:1. */
   --off: #7f2b3c;
   --del: #883146;
-  --del-tint: #edd6d9;
+  --del-tint: #efd6d4;
   /* A fourth soft tint, a sky's, beside the three marks' (marker-soft, add-tint, del-tint): only for telling people
      apart by their round initial, so it means nothing else. */
   --sky-tint: #d3dce7;
@@ -59,12 +60,13 @@
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
-  /* The person's name at Home's top: Inter Display Black, the one big thing (a step smaller on a narrow window). */
-  --t-name: clamp(30px, 5.2vw, 44px); --display: 'Inter Display', 'Display JP', var(--sans);
-  --t-identity: 28px; --t-title: 24px; --t-card: 20px; --t-body: 15px; --t-meta: 13px;
-  /* What is said smallest (a key's name, a line's number, a day); a name on a desk, its capitals a cell tall (the
-     display face's are .727 of its size). */
-  --t-fine: 11px; --t-head: calc(var(--u) / .727);
+  --display: 'Inter Display', 'Display JP', var(--sans);
+  /* Three sizes, one, two and four times, and no others (DESIGN §3, after Vignelli: two on a page, heads twice the
+     text): every word, written, read or said beside, and a person's initial in their mark; a name, its capitals a
+     cell tall (the display face's are .727 of its size); the shot's one large thing, its capitals two cells. What says
+     less is said quieter (its value) or in the other weight, never smaller: a smaller size reads slower (a small
+     letter under a fifth of a degree), and a line's number set smaller does not stand on its line's baseline. */
+  --t-word: 17px; --t-head: calc(var(--u) / .727); --t-voice: calc(2 * var(--u) / .727);
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 40px;
   /* Places are rounded squares, actions are round, fields are slightly rounded; a sheet (a file's, the terminal's,
      File's tree, Home's note) has one corner between a field's and a place's; a key of the band is small and drawn in
@@ -79,9 +81,10 @@
   /* A card of rows: a row's corner plus the room between them. */
   --r-card: var(--r-sheet);
   /* Heights: a pressable thing, a row in a list, a place in the rail. */
-  --h-control: 40px; --h-row: 32px; --h-place: 48px;
+  /* (A key, wherever it is, is the frame's square, 36 px, in a field of two cells: DESIGN §3, whole cells.) */
+  --h-control: 36px; --h-row: 32px; --h-place: 48px;
   /* The prompt box's height (one line of body text, its padding and edge): the foot line the rail's person sits on. */
-  --prompt-h: calc(2 * var(--s3) + var(--t-body) * 1.6 + 2px);
+  --prompt-h: calc(2 * var(--u));
   --icon: 24px; --stroke: 1.6px;
   /* The one law every move of the OS follows (ui/law.ts, where it is derived and tested): a thing moved goes as a
      hand moves it and stops it, off at once, most of the way in the first third of its time, then settling with no
@@ -107,7 +110,7 @@
   /* Lines are 1px; the file being worked on is drawn a little heavier. */
   --line-work: 1.5px;
   /* The two lines that frame the work, the rail's and the right pane's: one weight, in ink, top line to foot. */
-  --line-frame: 2px;
+  --line-frame: 1px;
   /* A sheet's shadow on a desk: half a cell right and down, whatever the sheet (one light). */
   --shade: calc(var(--u) / 2);
   /* A page's column on a desk: a half screen's width (thirty-two cells of a 1536 px screen's sixty-four) less the
@@ -119,7 +122,13 @@
   /* Less room above than below, so the weight of everything sits a little high. */
   --outer-top: var(--outer);
   --outer-bottom: var(--outer);
-  --inner-h: calc(100vh - var(--outer-top) - var(--outer-bottom));
+  /* What of the window's height is less than a cell, under the frame's foot. The ground's dots are the world's, set
+     from the window's top; the frame's foot is set from its edge: in a window not a whole number of cells tall the
+     foot's line (the person's mark, the row's map, every sheet standing to the foot) was that much off the grid, a row
+     of dots through a map's bars or a few pixels under a sheet's edge. Left under the foot, it brings them onto the
+     grid's lines, and the window's last pixels are ground, as the frame's every edge is. */
+  --foot: mod(100vh, var(--u));
+  --inner-h: calc(100vh - var(--outer-top) - var(--outer-bottom) - var(--foot));
   /* The top line pages start on. */
   --top-line: 0px;
   /* The band's row: three cells at the window's top, the room the band's keys stand in (the desk's pieces start
@@ -144,7 +153,8 @@
      closes the rail up, and a phone's rail is closer set, rail.css; the pages keep these rows, one page as another.) */
   --band-left: var(--u);
   --body-left: var(--u);
-  --row: var(--h-place); --row-step: var(--s1);
+  /* A row of keys or a heading's row: two cells, on every window (a key's field, DESIGN §3), whatever the rail's place is. */
+  --row: calc(2 * var(--u)); --row-step: 0px;
   /* The OS's own pointers, drawn as the window is: ink, a paper edge round it with its joins round, and under it a
      soft small shadow, the one a pointer has as it stands over the window rather than in it. Each is a 27 px SVG
      (under 32, which no browser turns away), its hotspot (the arrow's tip, the finger's, the I-beam's middle), and

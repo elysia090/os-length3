@@ -1,4 +1,4 @@
-// A pack's bytes, read a range at a time (scripts/webroot.ts makes the packs): a file's bytes are fetched only when
+// A pack's bytes, read a range at a time (module/ricebox/make/layers.ts makes the packs): a file's bytes are fetched only when
 // they are first wanted, and used only once they are checked against the pack's table (table.ts). In a Worker the
 // kernel reads inside a system call, where nothing can wait, so `syncRange` fetches synchronously (a synchronous
 // Range request); `fetchStored` is the same read where one can wait. How a host fetches is not known here: whoever

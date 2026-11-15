@@ -36,29 +36,24 @@ test('motion follows the live system preference rather than a permanent off swit
   assert.equal(still(), false);
 });
 
-test('an interrupted arrival cancels its predecessor, including when motion is reduced', (t) => {
+test('what comes is there at once: an arrival is a cut, with motion asked for or not (DESIGN §8: the mind completes the way between)', (t) => {
   const preference = environment(t), {el, animations} = surface();
   arrive(el, 1, 'y');
   arrive(el, -1, 'y');
-  assert.equal(animations.length, 2);
-  assert.equal(animations[0].cancelled, true);
-  assert.equal(animations[1].frames[0].transform, 'translateY(-12px)');
+  assert.equal(animations.length, 0);
   preference(true);
   arrive(el, 1, 'y');
-  assert.equal(animations[1].cancelled, true);
-  assert.equal(animations.length, 2);
+  assert.equal(animations.length, 0);
 });
 
-test('band changes run immediately and use bounded directional motion without snapshots', (t) => {
+test('a band changed is changed at once: no pan, no snapshot, with motion asked for or not', (t) => {
   const preference = environment(t), {el, animations} = surface();
   let updates = 0;
   panAcross(el, 1, () => updates++);
   assert.equal(updates, 1);
-  assert.equal(animations[0].frames[0].transform, 'translateX(16px)');
-  assert.equal(animations[0].options.duration, 200);
+  assert.equal(animations.length, 0);
   preference(true);
   panAcross(el, -1, () => updates++);
   assert.equal(updates, 2);
-  assert.equal(animations.length, 1);
-  assert.equal(animations[0].cancelled, true);
+  assert.equal(animations.length, 0);
 });

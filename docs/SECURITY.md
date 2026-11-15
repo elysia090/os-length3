@@ -14,10 +14,10 @@ issue and, if you want, you.
 
 In scope:
 
-- the Remote at `os.length3.com` (`why/remote`);
+- the Remote at `os.length3.com` (`why/shipto/remote`);
 - the web app (`why/app`);
 - the desktop app (`why/desktop`);
-- `why` and its core (`why/cli`, `why/core`), including the Prompt's sandbox and
+- `why` and its core (`why/cli`, and why's parts: `why/lib.rs`), including the Prompt's sandbox and
   `why ssh`;
 - the release workflows (`.github/workflows`).
 
@@ -29,7 +29,7 @@ Out of scope:
   Prompt is a sandbox, so an escape from it is in scope.
 
 Never test against another person's account or data. Testing against your own
-is welcome, and so is a Remote of your own (`node why/remote/serve/dev.ts`).
+is welcome, and so is a Remote of your own (`node why/shipto/remote/serve/dev.ts`).
 
 ## Supported versions
 
@@ -46,9 +46,9 @@ The whole model is in `docs/OS.md`:
 - §6, "The canonical copy is on the Remote" and "The Remote";
 - the Prompt, under "One OS, two ways in".
 
-The Remote's checks, item by item, are in `why/remote/README.md` ("What every
+The Remote's checks, item by item, are in `why/shipto/remote/README.md` ("What every
 request passes, and the one secret") and are tested in
-`why/remote/tests/security.test.ts`.
+`why/shipto/remote/tests/security.test.ts`.
 
 - **Who someone is.** GitHub, Google or Apple say it once, and then a
   passkey does. Passkeys require user verification. A device is a session
@@ -57,7 +57,7 @@ request passes, and the one secret") and are tested in
   reads it; the Remote hands a page no token, ever), taken only from the
   app's own pages; on a device (the app, why) it is a bearer token from the
   device flow, kept apart from everything the app's page reads
-  (`why/core/src/device/vault.rs`), and the page asks the Remote through the core.
+  (`why/device/vault.rs`), and the page asks the Remote through the core.
   Either is taken only signed with the Remote's secret.
 - **Secrets on a device.** The session's bearer and the Agent's key are kept
   in the OS's keyring (the Keychain, Credential Manager without roaming, the
@@ -70,18 +70,25 @@ request passes, and the one secret") and are tested in
   that is a session's being seen and ended from any other device, and
   Prompts never seeing the folder they are kept in.
 - **What is trusted for what.** The Remote holds one secret and derives one
-  key a purpose from it (`why/remote/serve/keys.ts`). A domain's name is trusted
+  key a purpose from it (`why/shipto/remote/serve/keys.ts`). A domain's name is trusted
   while its DNS names this Remote and account. A root is trusted only by the
-  digest pinned in `why/core/src/root/pins.rs`, and so is the browser's copy of
+  digest pinned in `why/prompt/roots/pins.rs`, and so is the browser's copy of
   it: its index by the digest pinned beside it, each pack by the table of
   its files' digests that names it, each file read from a pack by its line
   of that table (`module/ricebox/layers/table.ts`), before any of it is used.
 - **What runs where.** A Prompt runs a distribution's root on the device's
   own kernel without privilege: user, mount, pid, ipc, uts and network
   namespaces, a read-only root, no_new_privs and a seccomp filter
-  (`why/core/src/prompt/seccomp.rs`). Its network is a per-device grant. The desktop
+  (muk's: `module/muk/src/filter.h`; what why lends a box is `why/prompt/start.rs`). Its network is a per-device grant. The desktop
   webview runs only the app's own files and may only listen for events and
   set its title.
+- **A link carried.** The Remote opens TCP connections for a box in a page
+  (`why/shipto/remote/links`): only for a session, asked from one of the
+  app's own pages (the handshake's Origin, never the cookie alone), only to
+  port 80, 443 or 22 at a public IPv4 address, and by the address that was
+  judged, so a name cannot be made to mean another host between the check
+  and the connection. It reads nothing of what goes over one and writes no
+  row for it.
 - **What is out of reach.**
   - The Remote's database role reads and writes rows, and can change no
     schema.
