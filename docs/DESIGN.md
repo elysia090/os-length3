@@ -17,6 +17,37 @@ only a person gives · 14 touch, and what it is for.
 why\* is a desk to work at. It is drawn by one hand and it is not like other software on purpose; it is also a
 place to spend a working day, so nothing in it is there for its own sake.
 
+**Why it is so.** The stance is the reproducible standard of what is preferred, put into words: what has been found
+good over and over, and has lasted. It takes each layer from the oldest standard of it that is still alive, because a
+form that has lasted is the one most likely to last (the longer a non-perishable thing has been around, the longer it
+can be expected to go on: Taleb's Lindy effect, *Antifragile*, 2012, p. 318):
+
+- **the screen is composed as film composes a shot**: a century of cinema's manners (one lens, eye-trace, look room,
+  one centre of interest, §2);
+- **the page is set as Swiss typography sets it**: a grid, asymmetry, few sizes, one left edge ("asymmetry is the
+  rhythmic expression of functional design", Tschichold, 1928), with a measured share of the complexity that came
+  after it, so that a screen reads composed and not schematic ("where simplicity cannot work, simpleness results ...
+  less is a bore", Venturi, *Complexity and Contradiction*, 1966): a rule yields to a place's own composition (below);
+- **what the hand does comes out as it was predicted, and that is what moves a person**: an expectation met is
+  itself rewarded (Huron's prediction response, *Sweet Anticipation*, 2006), so the surprise is in how exactly and
+  how at once, never in what happens.
+
+Classically good combinations outrank an experience that looks modern, and by far: what is preferred is the typical
+and the new together, each held back by the other ("most advanced, yet acceptable", Loewy; measured by Hekkert,
+Snelders and van Wieringen, 2003), unity the stronger and the one that lets variety be enjoyed (Post, Blijlevens and
+Hekkert, 2016), typicality explaining many times more of preference than novelty does (Martindale, Moore and West,
+1988). So the standard comes first, and anything new only where it costs the standard nothing.
+
+**Fidelity is the character.** The more faithfully a thing keeps the standards that are still alive, the better it
+is, and kept further than others keep them, the fidelity itself becomes a confident individuality. It is seldom done:
+a standard kept everywhere is costly (every rule held on every screen), and in any one screen it looks unremarkable.
+That is the reason others do not, and the reason the same idea is under the masterpieces and the lasting successes:
+Ozu's one camera height kept through a lifetime of films; Rams's Braun, "neither decorative objects nor works of art"
+but tools; a sign system or an identity kept for decades because nothing in it was in fashion. Of the tool itself,
+the oldest form of the stance: "perfection is attained not when there is nothing more to add, but when there is
+nothing more to remove", and then, in the same chapter (*Terre des hommes*, 1939; in English, "The Tool"), "precisely
+because it is perfect the machine dissembles its own existence instead of forcing itself upon our notice".
+
 **Four things it is made of, and why each.**
 
 | What it gives | Where it comes from | Why |
