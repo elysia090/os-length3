@@ -20,6 +20,7 @@ import {issueLine, type IssueLine, type Made} from './issue-form.ts';
 import {errorText} from '../../../api/errors.ts';
 import {issueStore} from '../../../repo/issue-store.ts';
 import {SPRING} from '../../ui/law.ts';
+import {wholeCells} from '../../ui/row.ts';
 
 /**
  * Git: what happens between a repo and the outside, in the issues' terms.
@@ -165,6 +166,8 @@ class GitPage {
     this.ctx = ctx;
     this.line = issueLine({made: (made) => this.written(made), back: (repo) => this.ctx.openRepo(repo)});
     this.side = h('div', {class: 'git-side none'}, this.steps, this.line.element);
+    // Whole cells tall, so the issues that go under it on a narrow window stand on the grid.
+    wholeCells(this.side);
     this.row = new IssueRow({
       landed: (i, moved) => this.landed(i, moved),
       slot: (x, now) => this.slot(x, now),

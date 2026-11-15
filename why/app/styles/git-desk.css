@@ -35,7 +35,7 @@
    the issues, a row of sheets; where the issues have not a piece's width beside main's sheet, they go under it, at
    the desk's edge. (Before: by the window's width, under 1100 px.) */
 .git-flow.git-desk { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: calc(2 * var(--u)); margin-left: 0; padding: var(--u) calc(2 * var(--u)) calc(3 * var(--u)) 0; }
-.git-desk > .git-side { flex: none; width: calc(8 * var(--u)); }
+.git-desk > .git-side { flex: none; width: calc(8 * var(--u)); padding-bottom: var(--to-grid, 0px); }
 .git-desk > .section { flex: 1 1 calc(24 * var(--u)); min-width: 0; }
 .git-desk > .git-side.none { display: none; }
 /* (It is not the piece in hand, the issue is: drawn in line on the ground, its steps a step quieter than ink, and the
@@ -60,7 +60,7 @@
 .git-side > .issues-new { display: grid; margin-top: var(--u); }
 .git-side > .git-switch:empty + .issues-new { margin-top: 0; }
 .git-side > .issues-new > .issue-where { max-width: 100%; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--sub); overflow-wrap: anywhere; }
-.git-side > .issues-new > .line-in { width: 100%; min-width: 0; }
+.git-side > .issues-new > .line-in { width: 100%; min-width: 0; height: calc(1.5 * var(--u)); }
 .git-side > .issues-new > .error:empty { display: none; }
 
 /* The row: the heading that names it is heard, not shown (the sheets say what they are). */
