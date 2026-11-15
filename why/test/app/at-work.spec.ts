@@ -150,3 +150,17 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
     await lean('running');
   });
 }
+
+test('the window made narrower and wider again: the piece in hand stays at the desk\'s edge, whole, at every width', async ({signedIn: app}) => {
+  await app.newRepo.make('hello', {template: 'C'});
+  await app.page.setViewportSize({width: 1536, height: 864});
+  await app.rail.go('forge');
+  await app.forge.editor('README.md').focus();
+  for (const size of [{width: 1024, height: 768}, {width: 390, height: 844}, {width: 1536, height: 864}]) {
+    await app.page.setViewportSize(size);
+    await expect.poll(() => app.page.evaluate(() => {
+      const h = document.querySelector<HTMLElement>('section.desk:not([hidden]) .desk-box.held')!.getBoundingClientRect();
+      return [Math.round(h.left), h.right + 12 <= innerWidth];
+    }), {message: `at ${size.width}`}).toEqual([48, true]);
+  }
+});

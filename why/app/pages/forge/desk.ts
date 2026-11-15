@@ -120,8 +120,12 @@ export class Desk {
   #pressed = false;
   /** Out of sight when last laid (another page shown): come back to, the eye is at the frame, not on the piece. */
   #away = false;
-  /** Where the desk was last turned to: scrolled anywhere else, it was turned by hand, and the eye is where it looked. */
+  /** Where the desk was last turned to: scrolled anywhere else just after the hand was on it (a wheel, a touch, a
+   * press on the desk), it was turned by hand, and the eye is where it looked. */
   #aim = 0;
+  #handAt = 0;
+  /** The width every piece had when the row was last laid. */
+  #bw = 0;
   /** The row's map at the window's foot (ui/row-desk.ts): what is out of sight, which way and how far, and the way to it by a press. */
   readonly #map: {element: HTMLElement; paint(): void};
   #turnedTo = 0;
@@ -162,7 +166,9 @@ export class Desk {
     }, true);
     // (Written in with no key: a paste, a word chosen from the input method's, a dictation.)
     this.element.addEventListener('beforeinput', (e) => writtenIn(e.target), true);
-    this.element.addEventListener('pointerdown', (e) => { this.#pressing = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key ?? null; }, true);
+    this.element.addEventListener('pointerdown', (e) => { this.#pressing = (e.target as Element).closest<HTMLElement>('.desk-box')?.dataset.key ?? null; this.#handAt = performance.now(); }, true);
+    // The hand on the desk itself: a wheel turned, a finger moved on it (the scroll after it is the hand's).
+    for (const name of ['wheel', 'touchmove'] as const) this.element.addEventListener(name, () => { this.#handAt = performance.now(); }, {capture: true, passive: true});
     for (const end of ['pointerup', 'pointercancel'] as const) addEventListener(end, () => { setTimeout(() => { this.#pressing = null; }); }, true);
     new ResizeObserver(() => this.#relay()).observe(this.element);
     this.#plane.addEventListener(WORK_AT, (e) => this.#workAt(e as CustomEvent<WorkAt | null>));
@@ -172,7 +178,7 @@ export class Desk {
       if (this.element.scrollLeft === this.#turnedTo) return;
       this.#turnedTo = this.element.scrollLeft;
       // Turned by hand (not by the desk going somewhere): what is in hand stays where the hand left it, as if pressed.
-      if (!this.#glide && Math.abs(this.#turnedTo - this.#aim) > .5) this.#pressed = true;
+      if (!this.#glide && Math.abs(this.#turnedTo - this.#aim) > .5 && performance.now() - this.#handAt < 1000) this.#pressed = true;
       this.#said();
       // The ground goes with the pieces: the dots are the desk's, not the window's (whole cells at every rest).
       ground(this.#turnedTo, GRID);
@@ -356,6 +362,8 @@ export class Desk {
     const lead = ahead(hgt);
     // Every piece fifty letters wide, or as wide as the face has room for with its shadow (a phone's: the one rule).
     const bw = Math.min(WIDTH, Math.max(10 * GRID, GRID * Math.floor((w - PAD - SHADOW) / GRID)));
+    const resized = this.#bw !== 0 && this.#bw !== bw;
+    this.#bw = bw;
     const {at, end} = row(this.#row, bw);
     for (const key of this.#row) {
       const b = this.#boxes.get(key)!, x = at.get(key)!;
@@ -366,7 +374,10 @@ export class Desk {
       b.el.style.setProperty('--ahead-top', `${lead.top}px`);
       b.el.style.setProperty('--ahead', `${lead.foot}px`);
       // A piece laid with no place yet stands in its place at once.
-      if (!b.placed) { standAt(b.el, x, TOP); b.placed = true; continue; }
+      // A piece laid with no place yet, or every piece when the row's width changed (the window made wider or
+      // narrower: not a move asked, and the browser's snapping would hold the desk to where they were on the way),
+      // stands in its place at once.
+      if (!b.placed || resized) { standAt(b.el, x, TOP); b.placed = true; continue; }
       const to = `${x}px ${TOP}px`;
       if (b.el.style.translate !== to) b.el.style.translate = to;
     }

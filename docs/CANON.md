@@ -97,6 +97,47 @@ an Eye*, Eisenstein's *Film Form* and *Film Sense*, McCloud's *Understanding Com
 | "To describe the problem is part of the solution" | §1 sources table | kept |
 | "The creative process is to be reduced to an act of selection" | §14 a new interaction is made from the repertoire | kept |
 
+## Graphic composition
+
+### Dow, *Composition* (1899; 9th edition 1913)
+
+| # | Item | Where | |
+|---|---|---|---|
+| 1 | Notan: the massing of dark and light | §5 where the eye goes, measured (ink) | kept |
+| 2 | Good colour depends on good notan, and that on good spacing | §3 value ranks, a hue says a kind; §13 | kept |
+| 3 | Five principles: opposition, transition, subordination, repetition, symmetry, all on proportion | §3 the programme; §1 master and servant | kept |
+| 6 | **Subordination**: "the parts are attached or related to a single dominating element which determines the character of the whole" | §1 master and servant | **added** |
+| 7 | It governs masses of dark and light, and hues | §1 every channel's top held by one; §5 eight times | kept |
+| 8 | Made by an axis, by radiation, by size | §5 a sheet's axis; §2 size is importance | kept |
+| 9 | Again inside each group, "down to the veinings of leaves" | §5 a sheet as a composition (one large thing at its corner); §10 Git's sheet | kept |
+| 12 | Repetition, its opposite: the same in rhythm | §6 every piece of a row one width: a row is repetition, its one in hand the accent | kept |
+| 14 | Compare and choose: many designs, the best kept | §13 looking finds a misfit | kept |
+| 15–16 | Two values, then a grey midway; a value is relative to its neighbours | §3 ink, sub, quiet; the frame quiet against the world | kept |
+| 17 | A dominating colour, in quantity | §3 the ground, then paper, then ink | kept |
+| 18 | Not a universal rule: a beauty of parts all alike | §6 the row (repetition) under §1 (one accent) | kept |
+
+### Dondis, *A Primer of Visual Literacy* (1973; quoted from the scan's text)
+
+| Item | Where | |
+|---|---|---|
+| Contrast, on a polarity with harmony; sharpening against leveling | §2 one subject; the frame leveled (quiet) | kept |
+| Ambiguity "totally undesirable": neither leveled nor sharpened | §2 weight off the middle; §1 no two things equally raised | kept |
+| **Accent: "just one thing is highlighted against a sameness of background"** | §1 master and servant; §6 a row of equal pieces, one in hand | kept |
+| **Singularity: "one separate and solitary theme"** | §2 one subject | kept |
+| Economy, understatement, restraint "that seeks maximum response" | §1 the removal test; §8 the cut | **added** |
+| Regularity, consistency | §3 the programme | kept |
+| Continuity against episodicity | §1 the test of a screen: one unbroken take | kept |
+
+### Kandinsky, *Point and Line to Plane* (1926; 1947 translation)
+
+| Item | Where | |
+|---|---|---|
+| "A composition is the inwardly-purposeful subordination ... of the individual elements" | §1 master and servant | **added** |
+| The basic plane: its upper part light, its lower heavy; its left loose and light, its right compact | §2 the lean (the weight up and left with the frame) | kept |
+| The upper left and lower right "in the greatest contrast" | §2 the lean: the weight upper left, the room lower right | kept |
+| Forms near the edge dramatic, about the centre lyrical | §4 the frame; §2 the subject at the frame's corner | kept |
+| Weights add up: 4 against 8 is drama, 6 against 6 balance | §2 `Tₓ` | kept |
+
 ## Film
 
 ### Mascelli, *The Five C's of Cinematography* (1965; through checked quotations)

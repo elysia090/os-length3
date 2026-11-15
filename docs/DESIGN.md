@@ -83,12 +83,16 @@ of the place's work, the keyboard, what is written, the sound of what is done. A
 things equally raised in it), and the same thing holds every channel's top (never the fill on one and the shadow on
 another); each servant is a step under the master in every channel at once. So what can be done is exclusive too:
 the master's act, or taking another thing up (which makes it the master and the last one a servant), or going
-elsewhere; nothing is done to a servant where it lies. The canon says it in each art: in a picture, "one center of
+elsewhere; nothing is done to a servant where it lies. The canon says it in each art: in a composition, "the parts are attached or related to a single dominating
+element which determines the character of the whole", and again inside each part, "down to the veinings of leaves"
+(Dow, *Composition*); "just one thing is highlighted against a sameness of background" (Dondis); in a film, "one
+center of
 interest. Two or more equally dominant figures ... compete with each other ... and weaken the picture's
 effectiveness" (Mascelli, *The Five C's of Cinematography*); between eye and ear, "give preponderance either to the
 sound, or to the image. If equal, they damage or kill each other" (Bresson); on a page, "stick to one or two type
-sizes at the most" (Vignelli). Here: §2's one subject in focus and one voice, §5's one piece in the hand, §7's
-nothing done from a distance, are this law in its channels; `master.spec.ts` holds it whole.
+sizes at the most" (Vignelli). Its opposite, repetition (parts all alike), is not barred: a row of pieces one width
+(§6) is repetition, and the one in hand its one accent. Here: §2's one subject in focus and one voice, §5's one piece
+in the hand, §7's nothing done from a distance, are this law in its channels; `master.spec.ts` holds it whole.
 
 **The removal test.** Anything that can be taken away without the shot losing what it says is taken away: "any
 element in the frame not required for story-telling purposes attracts unwarranted audience attention" (Mascelli);
