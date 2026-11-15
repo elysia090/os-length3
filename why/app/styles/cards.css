@@ -98,8 +98,6 @@
 .issues-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
 .issues-head > h2 { margin: 0; font-size: var(--t-body); font-weight: 600; }
 .issues-head > h2 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
-.issues-head > .issues-write { margin-block: calc((var(--t-body) * 1.5 - var(--h-row)) / 2); white-space: nowrap; }
-.issues-head.none > .issues-write { display: none; }
 /* No issue to show: a plain invitation where the first would be, as tall as an issue's card, its word and what is so. */
 .issue-new { width: 100%; min-height: 180px; gap: var(--s1); }
 .issue-new > small { font-size: var(--t-meta); }

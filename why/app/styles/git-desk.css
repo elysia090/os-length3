@@ -29,7 +29,6 @@
 .git-band > .chips { position: absolute; left: 0; top: calc(2 * var(--u) - var(--outer-top)); height: var(--u); align-items: center; gap: var(--s2); margin: 0; padding: 0; }
 .git-band > .chips .chip { min-height: 0; height: var(--u); padding: 0 var(--s2); border-radius: var(--r-key); font: 700 var(--t-meta)/var(--u) var(--mono); }
 .git-band > .chips.lone { display: none; }
-.work.band-bench:has(.issue-form:not([hidden], .issue-edit)) .git-band > .chips.lone { display: flex; }
 
 /* Git's desk: from the desk's edge, its pieces' tops a cell under the band as on any desk. Set as words are in a
    line (as Home's are): first main's own sheet, eight cells wide, where the repo's work is switched; two cells on,
@@ -55,10 +54,14 @@
 .git-switch .switch-line.next > button:focus-visible { outline-color: var(--ground); outline-offset: -4px; }
 .switch-lines > .error { margin: var(--s2) var(--u) 0; font: 400 13px/20px var(--sans); color: var(--off); text-align: left; }
 .switch-lines > .error:empty { display: none; }
-.git-side > .issues-write { display: block; margin: var(--u) 0 0; padding: 0; border: 0; background: none; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink);
-  white-space: nowrap; cursor: var(--cursor-hand); }
-.git-side > .issues-write:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
-.git-side > .issues-write:disabled { color: var(--quiet); cursor: var(--cursor-arrow); }
+/* The line a new issue is written on (issue-form.ts), a cell under main's sheet (with none, at the desk's edge where the
+   first piece would stand): where it goes said quietly in the cell over it, as a piece's name is; the line the side's
+   width. It is always there: an issue is written, never opened first. */
+.git-side > .issues-new { display: grid; margin-top: var(--u); }
+.git-side > .git-switch:empty + .issues-new { margin-top: 0; }
+.git-side > .issues-new > .issue-where { max-width: 100%; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--sub); overflow-wrap: anywhere; }
+.git-side > .issues-new > .line-in { width: 100%; min-width: 0; }
+.git-side > .issues-new > .error:empty { display: none; }
 
 /* The row: the heading that names it is heard, not shown (the sheets say what they are). */
 .git-desk .issues-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -80,7 +83,7 @@
 .git-desk .issue-box { position: relative; display: grid; grid-template-columns: calc(11.5 * var(--u)) minmax(0, 1fr); gap: 0 var(--u); align-items: start; }
 .git-desk .issue-box.no-work { grid-template-columns: minmax(0, 1fr); }
 .git-desk .issue-box.no-work > :is(.issue-summary-wrap, .agent-line, .issue-foot) { max-width: calc(24 * var(--u)); }
-.git-desk .issue-box > :is(.issue-words, .issue-form, .error) { grid-column: 1 / -1; }
+.git-desk .issue-box > :is(.issue-words, .error) { grid-column: 1 / -1; }
 .git-desk .issue-words { display: block; margin-bottom: calc(1.5 * var(--u)); }
 /* The title, its capitals a cell and a half tall on lines of two and a half, their first top on the sheet's margin;
    the number, heard in the heading, drawn large against the right margin from that same top to the second line's foot. */

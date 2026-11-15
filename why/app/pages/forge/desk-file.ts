@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {nudge} from '../../ui/glide.ts';
 import {workAt as tell} from '../../ui/camera.ts';
-import {caretIn} from '../../ui/caret.ts';
+import {caretIn, fieldCarried} from '../../ui/caret.ts';
 import {errorText} from '../../../api/errors.ts';
 import {t} from '../../../text/i18n.ts';
 import {bytes} from '../../../text/format.ts';
@@ -155,6 +155,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     const text = from + (/^[ \t]*/.exec(area.value.slice(from, to))?.[0].length ?? 0);
     area.focus({preventScroll: true});
     area.setSelectionRange(text, text);
+    lead(area);
     markLine(area, line, from, to);
   }
 
@@ -201,7 +202,12 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     });
     e.area.addEventListener('keyup', caretLeft);
     e.area.addEventListener('pointerup', caretLeft);
-    new ResizeObserver(() => grew()).observe(e.area);
+    // Written on, or gone through by the keys, the line in hand keeps the room ahead of it (lead()); a press puts the
+    // caret under the hand and turns nothing.
+    e.area.addEventListener('input', () => lead(e.area));
+    e.area.addEventListener('keydown', (k) => { if (!k.isComposing) requestAnimationFrame(() => lead(e.area)); });
+    new ResizeObserver(() => { stand(e.area); grew(); }).observe(e.area);
+    new ResizeObserver(() => stand(e.area)).observe(element);
     if (!stillAsked()) { wanted = null; endWanted = false; focusing = false; }
     if (wanted !== null) at(wanted);
     else if (endWanted) toEnd();
@@ -237,11 +243,55 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     editor.take(ch.text);
   });
 
+  /**
+   * A file whose lines pass the world's lower third stands to the window's foot, with paper under its last line up to
+   * that third: the room ahead of the line written last (DESIGN §2, look room). Shorter, it is as tall as its lines.
+   */
+  function stand(area: HTMLTextAreaElement) {
+    const foot = parseFloat(getComputedStyle(element).getPropertyValue('--ahead'));
+    element.classList.toggle('long', foot > 0 && area.offsetTop + area.offsetHeight > foot);
+  }
+  /** How wide a letter of the file is (it is set in the mono face): measured once. */
+  let letter = 0;
+  /**
+   * The line in hand kept out of the third of the world it goes towards (DESIGN §2, look room): its foot no lower than
+   * the lower third line as it is written on, its top no higher than the upper third line going back (while there is
+   * more above), by turning the sheet a whole line at a time, at once, as a typewriter's platen turns a line under the
+   * hand; and along a line that runs on past the sheet, its next fifteen letters in sight ahead of the caret (as many as
+   * it has) and four behind (what is read at a glance is some four letters before the eye and fifteen after it).
+   */
+  function lead(area: HTMLTextAreaElement) {
+    if (document.activeElement !== area) return;
+    const cs = getComputedStyle(element), foot = parseFloat(cs.getPropertyValue('--ahead')), top = parseFloat(cs.getPropertyValue('--ahead-top'));
+    if (!(foot > 0)) return;
+    const lh = lineHeight(area), at = area.selectionDirection === 'backward' ? area.selectionStart : area.selectionEnd;
+    const v = area.value, start = v.lastIndexOf('\n', at - 1) + 1, line = lineOf(v, at) - 1;
+    const y = area.offsetTop + line * lh - element.scrollTop;
+    if (y + lh > foot) element.scrollTop = area.offsetTop + (line + 1) * lh - foot;
+    else if (y < top && element.scrollTop > 0) element.scrollTop = Math.max(0, area.offsetTop + line * lh - top);
+    if (area.scrollWidth > area.clientWidth + 1) {
+      const before = v.slice(start, at);
+      let x: number;
+      // (A line of letters of one width counted; one with other writings in it laid out.)
+      if (/^[\x20-\x7e\t]*$/.test(before)) {
+        letter ||= (() => { const c = document.createElement('canvas').getContext('2d')!; c.font = getComputedStyle(area).font; return c.measureText('0').width; })();
+        let col = 0;
+        for (const ch of before) col = ch === '\t' ? (Math.floor(col / 4) + 1) * 4 : col + 1;
+        x = col * letter;
+      } else x = caretIn(area, at).x + area.scrollLeft;
+      const l = letter || parseFloat(getComputedStyle(area).fontSize) * .602, room = area.clientWidth;
+      if (x - area.scrollLeft > room - 15 * l) area.scrollLeft = x - (room - 15 * l);
+      else if (x - area.scrollLeft < 4 * l && area.scrollLeft > 0) area.scrollLeft = Math.max(0, x - 4 * l);
+    }
+    fieldCarried();
+  }
+
   function toEnd() {
     if (!editor) { endWanted = true; later(); return; }
     const {area} = editor, end = area.value.length;
     area.focus({preventScroll: true});
     area.setSelectionRange(end, end);
+    lead(area);
   }
 
   return {

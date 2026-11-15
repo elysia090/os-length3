@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {atRest, CODE, eased, GAP, GRID, LINE, next, planeWidth, row, SHADOW, tabbed, tallest, termHeight, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
+import {ahead, atRest, CODE, eased, GAP, GRID, LINE, next, planeWidth, restFor, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
 
 // The desk's places and how far it is turned (desk-layout.ts), as numbers.
 
@@ -30,9 +30,38 @@ test('a sheet is whole lines tall, its foot a cell over the face\'s', () => {
   assert.equal(tallest(804), 31 * LINE);
   // Never under four lines, however low the face.
   assert.equal(tallest(100), 5 * LINE);
-  // The terminal: eighteen lines and a cell over and under, or what a low face has room for.
+  // The terminal: eighteen lines and a cell over and under, or as many as keep its last line out of the lower third.
   assert.equal(termHeight(804), 20 * LINE);
-  assert.equal(termHeight(300), tallest(300));
+  assert.equal(termHeight(816), 20 * LINE);
+  assert.equal(termHeight(682), 18 * LINE);
+  assert.equal(termHeight(300), 8 * LINE);
+  for (const hgt of [300, 520, 682, 720, 796, 816, 1032]) {
+    const lines = termHeight(hgt) / LINE - 2;
+    assert.ok(TOP + LINE + lines * LINE <= 2 * hgt / 3 || lines === 4, `the terminal's last line out of the lower third at ${hgt}`);
+  }
+});
+
+test('the line written stands out of the third of the world it goes towards: its foot over the lower third, its top under the upper', () => {
+  // A face 816 high (a 864 window under the band): the world's thirds at 272 and 544 down it, the sheet's lines from 36.
+  assert.deepEqual(ahead(816), {top: 240, foot: 504});
+  for (const hgt of [520, 682, 720, 796, 816, 1032]) {
+    const {top, foot} = ahead(hgt), from = TOP + LINE / 2;
+    // On the sheet's lines, the foot at or over the lower third, the top at or under the upper, and lines between.
+    assert.equal(top % LINE, 0);
+    assert.equal(foot % LINE, 0);
+    assert.ok(from + foot <= 2 * hgt / 3 && from + foot + LINE > 2 * hgt / 3, `the foot at ${hgt}`);
+    assert.ok(from + top >= hgt / 3 && from + top - LINE < hgt / 3, `the top at ${hgt}`);
+    assert.ok(foot - top >= 2 * LINE, `room to write between at ${hgt}`);
+  }
+});
+
+test('a piece pressed stays under the hand; one gone to any other way comes to the desk\'s edge, where the eye is', () => {
+  const four = [...keys, 'Makefile'], {at} = row(four), starts = [...at.values()], whole = 1536 - 48;
+  // The second piece whole in sight beside the first: pressed, nothing moves; gone to by a key, it comes to the edge.
+  assert.equal(restFor(true, 0, at.get('a.c')!, WIDTH, whole, starts), 0);
+  assert.equal(restFor(false, 0, at.get('a.c')!, WIDTH, whole, starts), at.get('a.c'));
+  // The last: to its own place at the edge, the ground ahead of it.
+  assert.equal(restFor(false, 0, at.get('Makefile')!, WIDTH, whole, starts), at.get('Makefile'));
 });
 
 test('the desk rests with a piece at its edge and nowhere else; a piece whole in sight is gone to where it lies, one cut or out of sight by the nearest rest that shows it whole', () => {

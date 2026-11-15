@@ -562,23 +562,33 @@ class Git extends Part {
   issue(name: string) { return this.main.getByRole('heading', {name, exact: true, level: 2}); }
   get review() { return this.main.getByRole('region', {name: 'Review'}); }
 
-  /** Create issue in `repo`, its first line named like a TODO ("Fix: title"). */
+  /**
+   * An issue made in `repo`: its first line, named like a TODO ("Fix: title"), written on the new issue's line and
+   * Enter; then its summary written where the keyboard has gone, in the issue in full, and left (kept as it is left).
+   */
   async write(repo: string, first: string, detail = '') {
     await this.app.rail.go('git');
-    await this.main.getByRole('button', {name: 'Create issue'}).click();
-    // Where it goes is chosen in the one row of repos above the box, as the issues shown are.
-    await this.repos.getByRole('radio', {name: repo, exact: true}).click();
+    // Where it goes is chosen in the one row of repos, as the issues shown are (with one repo, it is that one): once
+    // the repos are read (the line says where it goes), the row is there if there is a choice.
+    await expect(this.firstLine).toHaveAccessibleDescription(/\S/);
+    const chip = this.repos.getByRole('radio', {name: repo, exact: true});
+    if (await chip.isVisible()) await chip.click();
     await expect(this.firstLine).toHaveAccessibleDescription(repo);
-    await this.main.getByRole('textbox', {name: 'First line: Type: Title'}).fill(first);
-    // The box written in's own Summary, not that of the issue in full under it.
-    if (detail) await this.main.getByRole('group', {name: 'Create issue'}).getByRole('textbox', {name: 'Summary'}).fill(detail);
-    await this.main.getByRole('button', {name: 'Create'}).click();
+    await this.firstLine.fill(first);
+    await this.firstLine.press('Enter');
+    await expect(this.firstLine).toHaveValue('');
+    const summary = this.main.getByRole('textbox', {name: 'Summary', exact: true});
+    await expect(summary).toBeFocused();
+    if (detail) {
+      await summary.fill(detail);
+      await summary.blur();
+    }
   }
 
   /** The one row of repos above the issues: which are shown, and, while one is written, where it goes. */
   get repos() { return this.main.getByRole('radiogroup', {name: 'repo'}); }
-  /** A new issue's first line, which says the repo it goes in (its description). */
-  get firstLine() { return this.main.getByRole('textbox', {name: 'First line: Type: Title'}); }
+  /** The new issue's line, always there under main's sheet, which says the repo it goes in (its description). */
+  get firstLine() { return this.main.locator('.issues-new').getByRole('textbox', {name: 'First line: Type: Title'}); }
 
   /** A step's button in the issue on screen (Start, Commit, Push, Merge…): only the issue on screen has them. */
   step(name: string) { return this.main.getByRole('button', {name, exact: true}); }
@@ -593,22 +603,14 @@ class Git extends Part {
   /** A commit made on main from here: its line, under the issues in Committed. */
   committed(title: string) { return this.section('Committed').getByText(title); }
 
-  /** Commit what main has not committed in `repo`, its line written as Kind: title (Enter commits it). */
+  /** Commit what main has not committed in `repo`, its line (always there in main's card) written as Kind: title. */
   async commitOnMain(repo: string, line: string) {
     await this.app.rail.go('git');
-    const card = this.mainCard(repo);
-    await card.getByRole('button', {name: 'Commit', exact: true}).click();
-    const field = card.getByRole('textbox', {name: 'Commit title format: Type: Title'});
-    await expect(field).toBeFocused();
-    await field.fill(line);
+    await this.mainCard(repo).getByRole('textbox', {name: 'Commit title format: Type: Title'}).fill(line);
     await this.commitLine(repo);
   }
 
-  /**
-   * Enter in main's card commits its line, or says under it why not. Within a moment of the ask
-   * coming it is not taken (a double press is not an answer), so it is pressed until one happens:
-   * soon again, as `answer` presses (a commit under way has its Commit disabled, which Enter presses).
-   */
+  /** Enter in main's card's line commits it, or says under it why not (a commit under way takes no second Enter). */
   async commitLine(repo: string) {
     const card = this.mainCard(repo);
     const field = card.getByRole('textbox');

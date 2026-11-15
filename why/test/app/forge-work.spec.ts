@@ -466,7 +466,7 @@ test('the band\'s >_ brings the terminal back from wherever the desk is turned: 
   await expect.poll(() => desk.evaluate((d) => d.scrollLeft)).toBe(0);
 });
 
-test('a piece whole in sight pressed is in hand where it lies, the caret where it was pressed: nothing moves; one cut by the window\'s edge is brought in by the nearest rest that shows it whole; scrolled by hand, the desk rests with the nearest piece at its edge and keeps what is in hand', async ({app}) => {
+test('a piece whole in sight pressed is in hand where it lies, the caret where it was pressed: nothing moves; one gone to by the keyboard comes to the desk\'s edge; scrolled by hand, the desk rests with the nearest piece at its edge and keeps what is in hand', async ({app}) => {
   await app.rail.go('forge');
   const box = (key: string) => app.forge.piece(key), desk = app.forge.desk, pitch = WIDTH + GAP;
   // Where each piece is in the window, and its size.
@@ -487,11 +487,11 @@ test('a piece whole in sight pressed is in hand where it lies, the caret where i
   await app.page.waitForTimeout(600);
   expect(await lie()).toEqual(before);
   expect(await desk.evaluate((d) => d.scrollLeft)).toBe(0);
-  // The last file is cut by the window's edge or past it: taken in hand, the desk turns to the nearest rest (a piece
-  // at its edge) that shows it and its shadow whole.
+  // The last file, gone to by the keyboard (not pressed): the desk turns to its own rest, the file at the desk's edge,
+  // where the eye was (DESIGN §2, eye-trace; §6), the row's ground ahead of it.
   const keys = await desk.locator('.desk-box').evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.key!));
-  const last = keys.at(-1)!, face = (await desk.evaluate((d) => d.clientWidth));
-  const rest = pitch * Math.max(0, Math.ceil(((keys.length - 1) * pitch + WIDTH + SHADOW - face) / pitch));
+  const last = keys.at(-1)!;
+  const rest = pitch * (keys.length - 1);
   await app.forge.editor(last).focus();
   await expect(box(last)).toHaveClass(/held/);
   await expect.poll(() => desk.evaluate((d) => d.scrollLeft)).toBe(rest);

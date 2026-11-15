@@ -4,7 +4,6 @@ import * as git from '../../../repo/history.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import {closedBy, numberOf, type Issue} from '../../../repo/issues.ts';
 import {kindOf} from '../../../repo/text.ts';
-import {answers, askFoot, SETTLE} from '../kit/common.ts';
 import {counted, diffFiles} from '../kit/diff-view.ts';
 import {clock, LAND, nudge, paced, putAway, still, unfold} from '../../ui/glide.ts';
 import {crossfade, justClosed, justMerged, notCommitted, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
@@ -96,10 +95,8 @@ const BRIEF = 3;
 /** Repos whose row (in All, many waiting) was opened to its files: open again when drawn again. */
 const unfolded = new Set<string>();
 
-/** The line a commit on main is being named by, per repo: kept as written until it is committed or put back with Not now. */
+/** The line a commit on main is being named by, per repo: kept as written until it is committed. */
 const naming = new Map<string, string>();
-/** Repos whose line was put away with Escape: kept, the card back to Commit until it is pressed again. */
-const folded = new Set<string>();
 
 /** Committed on main from here, newest first, a few: each stays a line under main where its card was. */
 const committed: {repo: string; cut: git.Cut}[] = [];
@@ -150,16 +147,46 @@ export function opened(part: HTMLElement) {
  */
 function mainCard(repo: string, n: number, events: IssueEvents, after: () => void, brief = false): HTMLElement {
   const card = h('div', {class: `main-card${brief ? ' brief' : ''}`, role: 'group', 'aria-label': t('Uncommitted changes on main in {repo}', {repo})});
+  // Its line is always there to be written (DESIGN §7: nothing to open first, nothing to confirm): Enter commits it, as
+  // Commit beside it does. What is half written stays, the page drawn again under it.
+  const line = h('input', {class: 'line-in main-line', placeholder: t('Fix: Description of changes'), 'aria-label': t('Commit title format: Type: Title'),
+    maxlength: '200', spellcheck: 'false', autocomplete: 'off'}) as HTMLInputElement;
+  line.value = naming.get(repo) ?? '';
+  const error = h('p', {class: 'error', role: 'alert'});
+  // What was said of the line (no title) is about the line as it was: written on, it is gone.
+  line.addEventListener('input', () => {
+    if (line.value) naming.set(repo, line.value); else naming.delete(repo);
+    if (error.textContent) error.textContent = '';
+  });
+  const commit = button(t('Commit'), 'primary');
+  let going = false;
+  const go = async () => {
+    if (going) return;
+    if (!kindOf(line.value).title.trim()) { error.textContent = t('Commit requires a title (e.g. Fix: title)'); line.focus(); nudge(line); return; }
+    going = true;
+    busy(commit, true);
+    error.textContent = '';
+    try {
+      const cut = await git.cut(repo, null, line.value, '');
+      naming.delete(repo);
+      committed.unshift({repo, cut});
+      committed.splice(KEPT);
+      // The card slides off sideways and its room closes; drawn again, its line under main lands lit.
+      await slideOff(card);
+      after();
+    } catch (e) { error.textContent = errorText(e); busy(commit, false); going = false; }
+  };
+  commit.addEventListener('click', () => void go());
+  line.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void go(); } });
   const plain = () => {
     const from = card.isConnected ? card.getBoundingClientRect().height : 0;
     const old = card.isConnected ? card.cloneNode(true) as HTMLElement : null;
-    const commit = button(t('Commit'), 'primary');
-    commit.addEventListener('click', () => ask(commit));
-    // Laid out as an issue's box is: its name at the top, the files under it on the card itself, and at its foot how
-    // many wait at the left (on main, which is said over the cards) and Commit at the right, where an issue's next step is.
+    // Laid out as an issue's box is: its name at the top, the files under it on the card itself, its line, and at its
+    // foot how many wait at the left (on main, which is said over the cards) and Commit at the right, where an issue's
+    // next step is.
     const foot = h('div', {class: 'issue-foot main-foot'},
       h('span', {class: 'muted small'}, tn('{n} file to commit', '{n} files to commit', n)), commit);
-    if (!brief) card.replaceChildren(h('h3', {class: 'main-title'}, repo), notCommitted(repo, 'main', n, events), foot);
+    if (!brief) card.replaceChildren(h('h3', {class: 'main-title'}, repo), notCommitted(repo, 'main', n, events), line, error, foot);
     else {
       // A row: its name opens its files under it (read only then), and closes them again.
       const open = unfolded.has(repo);
@@ -169,59 +196,12 @@ function mainCard(repo: string, n: number, events: IssueEvents, after: () => voi
         plain();
         card.querySelector<HTMLElement>('.main-open')?.focus();
       });
-      card.replaceChildren(h('h3', {class: 'main-title'}, name), foot, ...(open ? [notCommitted(repo, 'main', n, events)] : []));
+      card.replaceChildren(h('h3', {class: 'main-title'}, name), foot, line, error, ...(open ? [notCommitted(repo, 'main', n, events)] : []));
     }
     if (old) crossfade(old, card, from);
     resize(card, from);
-    return commit;
   };
-  const ask = (from: Element | null) => {
-    const foot = from ? askFoot(from, card) : answers;
-    const was = card.isConnected ? card.getBoundingClientRect().height : 0;
-    const old = card.isConnected ? card.cloneNode(true) as HTMLElement : null;
-    const line = h('input', {class: 'line-in', placeholder: t('Fix: Description of changes'), 'aria-label': t('Commit title format: Type: Title'), maxlength: '200', spellcheck: 'false'}) as HTMLInputElement;
-    folded.delete(repo);
-    line.value = naming.get(repo) ?? '';
-    naming.set(repo, line.value);
-    const error = h('p', {class: 'error', role: 'alert'});
-    // What was said of the line (no title) is about the line as it was: written on, it is gone.
-    line.addEventListener('input', () => { naming.set(repo, line.value); if (error.textContent) error.textContent = ''; });
-    const no = button(t('Cancel'), 'small-button');
-    const yes = button(t('Commit'), 'small-button primary');
-    no.addEventListener('click', () => { naming.delete(repo); folded.delete(repo); plain().focus(); });
-    const shown = performance.now();
-    yes.addEventListener('click', async () => {
-      if (performance.now() - shown < SETTLE) return;
-      if (!kindOf(line.value).title.trim()) { error.textContent = t('Commit requires a title (e.g. Fix: title)'); line.focus(); nudge(line); return; }
-      busy(yes, true);
-      error.textContent = '';
-      try {
-        const cut = await git.cut(repo, null, line.value, '');
-        naming.delete(repo);
-        committed.unshift({repo, cut});
-        committed.splice(KEPT);
-        // The card slides off sideways and its room closes; drawn again, its line under main lands lit.
-        await slideOff(card);
-        after();
-      } catch (e) { error.textContent = errorText(e); busy(yes, false); }
-    });
-    // One line, nothing to break: Enter commits it, as Ctrl+Enter does.
-    line.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); yes.click(); } });
-    // Escape puts it back as Not now does, but what was written waits for Commit to be pressed again.
-    line.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || e.isComposing) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (line.value.trim()) folded.add(repo); else naming.delete(repo);
-      plain().focus();
-    });
-    card.replaceChildren(h('div', {class: 'off-ask'}, h('h3', {class: 'main-title'}, repo),
-      h('p', {class: 'muted small'}, tn('{n} file to commit', '{n} files to commit', n)), line, error, foot(no, yes)));
-    if (old) crossfade(old, card, was);
-    resize(card, was);
-    line.focus({preventScroll: true});
-  };
-  if (naming.has(repo) && !folded.has(repo)) ask(null); else plain();
+  plain();
   return card;
 }
 

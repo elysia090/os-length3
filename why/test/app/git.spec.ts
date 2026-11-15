@@ -144,27 +144,17 @@ test('many repos waiting on main are a row each in All, a row\'s name opens its 
   await expect(app.git.mainCard('b').getByRole('button', {name: 'b', exact: true})).toHaveCount(0);
 });
 
-test('Escape puts away an issue being written and a commit\'s line, and they come back as they were', async ({signedIn: app}) => {
+test('a new issue\'s line and a commit\'s line are always there to be written, nothing to open or put back, and what is half written in them stays, the page left and come back to', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('git');
-  await app.main.getByRole('button', {name: 'Create issue'}).first().click();
   await app.git.firstLine.fill('Fix: Say hello louder');
-  await app.page.keyboard.press('Escape');
-  await expect(app.git.firstLine).toBeHidden();
-  await expect(app.main.getByRole('button', {name: 'Create issue'}).first()).toBeFocused();
-  await app.main.getByRole('button', {name: 'Create issue'}).first().click();
-  await expect(app.git.firstLine).toHaveValue('Fix: Say hello louder');
-  await expect(app.git.firstLine).toBeFocused();
-  await app.main.getByRole('button', {name: 'Cancel'}).click();
-
-  const card = app.git.mainCard('hello');
-  await card.getByRole('button', {name: 'Commit', exact: true}).click();
-  const line = card.getByRole('textbox', {name: 'Commit title format: Type: Title'});
+  const line = app.git.mainCard('hello').getByRole('textbox', {name: 'Commit title format: Type: Title'});
   await line.fill('Docs: Say where it runs');
-  await app.page.keyboard.press('Escape');
-  await expect(line).toBeHidden();
-  await expect(card.getByRole('button', {name: 'Commit', exact: true})).toBeFocused();
-  await card.getByRole('button', {name: 'Commit', exact: true}).click();
+  // Nothing to press first, nothing to confirm or to put back.
+  await expect(app.main.getByRole('button', {name: /^(Create|Create issue|Cancel|Save)$/})).toHaveCount(0);
+  await app.rail.go('home');
+  await app.rail.go('git');
+  await expect(app.git.firstLine).toHaveValue('Fix: Say hello louder');
   await expect(line).toHaveValue('Docs: Say where it runs');
 });
 
@@ -302,12 +292,11 @@ test('a step pressed from the keyboard keeps the keyboard in the issues, never o
 
 // The box an issue is written in, and the one row of repos above it.
 
-test('a new issue\'s repo is chosen in the one row above the box, Create at the left and Not now at the right', async ({app}) => {
+test('a new issue\'s repo is chosen in the one row of repos; Enter on its line makes it, and the keyboard goes on into its summary', async ({app}) => {
   for (const r of ['notes', 'tide-tables', 'website-redesign', 'data-pipeline', 'design-system', 'infra-terraform']) await app.newRepo.make(r);
   await app.rail.go('git');
   await app.git.repos.getByRole('radio', {name: 'All', exact: true}).click();
-  await app.main.getByRole('button', {name: 'Create issue'}).click();
-  // One row, outside the box: every chip on one line, however many there are; none inside the box.
+  // One row: every chip on one line, however many there are.
   const tops = await app.git.repos.getByRole('radio').evaluateAll((all) => all.map((c) => Math.round(c.getBoundingClientRect().top)));
   expect(new Set(tops).size).toBe(1);
   await expect(app.main.getByRole('radiogroup')).toHaveCount(1);
@@ -320,27 +309,21 @@ test('a new issue\'s repo is chosen in the one row above the box, Create at the 
   await app.git.repos.getByRole('radio', {name: 'All', exact: true}).click();
   await expect(app.git.firstLine).toHaveAccessibleDescription('tide-tables');
 
-  // Create first, then Not now; Not now makes nothing.
-  const create = await app.git.step('Create').boundingBox();
-  const notNow = await app.git.step('Cancel').boundingBox();
-  expect(create!.x).toBeLessThan(notNow!.x);
-  await app.git.firstLine.fill('Fix: Not made');
-  await app.git.step('Cancel').click();
+  // A line with no title makes nothing: said under it, the line kept.
+  await app.git.firstLine.fill('Fix:');
+  await app.git.firstLine.press('Enter');
+  await expect(app.main.locator('.issues-new').getByRole('alert')).toHaveText('Enter a title on the first line');
   await expect(app.git.issues).toContainText('No issues yet');
 
-  await app.git.write('tide-tables', 'Fix: The table wraps', 'On a phone.');
+  await app.git.firstLine.fill('Fix: The table wraps');
+  await app.git.firstLine.press('Enter');
   await expect(app.git.issue('#1 Fix：The table wraps')).toBeVisible();
-
-  // Its detail is right under the title, above Commit: written there, and saved as it is left.
-  const summary = app.main.getByRole('textbox', {name: 'Summary'});
-  await expect(summary).toHaveValue('On a phone.');
-  await expect(summary).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
-  await summary.fill('On a phone, at 320 px.');
-  await summary.press('Tab');
-  await app.page.reload();
-  await app.settled();
-  await app.rail.go('git');
-  await expect(summary).toHaveValue('On a phone, at 320 px.');
+  await expect(app.git.firstLine).toHaveValue('');
+  // Its detail is right under the title, above Commit: the keyboard there, written on, and kept as it is left.
+  const summary = app.main.getByRole('textbox', {name: 'Summary', exact: true});
+  await expect(summary).toBeFocused();
+  await app.page.keyboard.insertText('At 320 px.');
+  await expect(summary).toHaveValue('At 320 px.');
 });
 
 test('a summary written and not left yet is kept through a reload, and saved then', async ({app}) => {
@@ -385,29 +368,40 @@ test('a field drawn again under the keyboard keeps its caret and what was select
   await expect(summary).toHaveValue('At 320 px.');
 });
 
-test('Enter goes from a new issue\'s first line to its detail, and Ctrl+Enter creates it', async ({app}) => {
+test('an issue is made from the keyboard alone: its line, Enter, its summary written and left; and its title is written over where it is read, Enter keeping it and Escape putting it back', async ({app}) => {
   await app.newRepo.make('notes');
   await app.rail.go('git');
-  await app.main.getByRole('button', {name: 'Create issue'}).click();
   await app.git.firstLine.fill('Fix: Made from the keyboard');
   await app.git.firstLine.press('Enter');
-  const detail = app.main.getByRole('textbox', {name: 'Summary'});
+  const detail = app.main.getByRole('textbox', {name: 'Summary', exact: true});
   await expect(detail).toBeFocused();
   await app.page.keyboard.type('Without the pointer.');
-  await app.page.keyboard.press('Control+Enter');
+  await app.page.keyboard.press('Tab');
   await expect(app.git.issue('#1 Fix：Made from the keyboard')).toBeVisible();
-  await expect(detail).toHaveValue('Without the pointer.');
-});
-
-test('the detail of a new issue has the room the repos inside the box had', async ({app}) => {
-  await app.newRepo.make('notes');
+  await app.rail.go('home');
   await app.rail.go('git');
-  await app.main.getByRole('button', {name: 'Create issue'}).click();
-  // 96 px, and two rows of chips and the gap under them (32 + 8 + 32 + 12).
-  expect((await app.main.getByRole('textbox', {name: 'Summary'}).boundingBox())!.height).toBeGreaterThanOrEqual(180);
+  await expect(detail).toHaveValue('Without the pointer.');
+
+  // Its title pressed: written over in its place, the kind kept and the title chosen; Enter keeps what is written.
+  await app.git.issue('#1 Fix：Made from the keyboard').click();
+  const title = app.main.locator('.issue-retitle');
+  await expect(title).toBeFocused();
+  await app.page.keyboard.type('Made and named again');
+  await app.page.keyboard.press('Enter');
+  await expect(app.git.issue('#1 Fix：Made and named again')).toBeVisible();
+  // Nothing to save, nothing to confirm: no Save, no Cancel; the summary as it was.
+  await expect(app.main.getByRole('button', {name: /^(Save|Cancel)$/})).toHaveCount(0);
+  await expect(detail).toHaveValue('Without the pointer.');
+  // Written over and Escape: back as it was.
+  await app.git.issue('#1 Fix：Made and named again').click();
+  await app.page.keyboard.type('Not this');
+  await app.page.keyboard.press('Escape');
+  await expect(app.git.issue('#1 Fix：Made and named again')).toBeVisible();
 });
 
-test('an empty Issue view in Forge writes the first issue for its repo, and Not now goes back there', async ({app}) => {
+
+
+test('an empty Issue view in Forge writes the first issue for its repo, and Escape with nothing written goes back there', async ({app}) => {
   await app.newRepo.make('notes');
   await app.newRepo.make('scratch');
   // Git was last left on another repo: that is kept for Git, and is not where this one goes.
@@ -426,7 +420,8 @@ test('an empty Issue view in Forge writes the first issue for its repo, and Not 
   await expect(app.git.firstLine).toHaveAccessibleDescription('tide');
   await expect(app.git.repos.getByRole('radio', {name: 'notes', exact: true})).toBeChecked();
 
-  await app.git.step('Cancel').click();
+  // Nothing written, Escape goes back there.
+  await app.page.keyboard.press('Escape');
   await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
   await expect(app.forge.editor('README.md')).toHaveValue('# tide\n');
   await app.forge.show('Issue');

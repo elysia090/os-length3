@@ -129,12 +129,47 @@ frame, kept as rules here:
 | Eye-trace (Murch): at a cut, the new shot puts what is to be looked at where the eye already is | **The eye lands on what the place is.** After a move the eye is where the hand was: on the rail, or at the door, at the frame's top left. So what stands just past the frame's corner (a cell and a half right of the rail, two cells under the band) is what the place is: its subject, its name, or the index of what is in it. It is never ground, and never a control of something else. |
 | Title-safe: a title stands whole, inside the frame; what is in the scene may be cut by the frame's edge, which says the world goes on past it (off-screen space) | **A title is whole; a thing may be cut.** The frame's own words (a place's name, the band's name of what is in hand) are whole at their size, inside the window and clear of its 6 px. A thing on the desk may be cut by the window's edge (the next piece of a row: the row goes on), except the subject, which is whole with its shadow. |
 | One title to a shot, set at a few sizes | **One voice.** The display face is at its two sizes only (33 and 66), and what it says it says once in a frame: no two of its words alike, no number twice. |
-| Look room: the space ahead of a subject is on the side it faces or moves towards | **The row is ahead.** The desk rests with a piece at its left edge, so the subject has the row's next before it, to the right: the way the row runs, and the way a far side comes in (§6, §8). |
+| Look room: the space ahead of a subject is on the side it faces or moves towards | **The row is ahead.** The desk rests with a piece at its left edge, and the subject is that piece unless it was pressed where it lay: so it has the row's next before it, to the right, the way the row runs and the way a far side comes in (§6, §8). The line being written has the sheet's paper before it (§10, Forge at work). |
 | Negative space is part of the composition (a lone figure against an empty sky) | **The ground is the negative space.** A short piece is as tall as what is on it and is not stretched to fill the frame; the desk under it is the desk, one field with nothing set in it, as a flat lay leaves its surface bare. A frame round nothing is no way to fill one (§5). |
 | The camera moves only when something motivates it, and a move ends on a composed frame | **A move is asked, and lands on a shot.** The world moves only for what the hand asked (§8), and every move ends at a rest where each rule here holds. |
 | The 180° line: screen direction is kept from shot to shot | **Directions never reverse.** Down is further down the rail; along is a far side, or the row's next; the world never goes the other way for the same thing (§2, §8). |
 
 Each is measured at every rest of every place, at four widths (§12).
+
+### A shot, computed
+
+Film has been measured: where the eye goes across a cut, where the figures of fourteen thousand frames stand, how
+little a change must be to read as a jump. So each rule above is computed from what a rest is made of, its boxes and
+its colours, and none needs the shot to be looked at. A layout is found by working these out; a screenshot only
+checks the sum.
+
+**The terms.** The window `W × H`; the frame `F = 48` (§4); the world, the rest of the window,
+`Ω = [F, W] × [F, H]`, and its thirds down it, `y₁ = F + (H − F)/3` and `y₂ = F + 2(H − F)/3`; a degree, 47 px (§4);
+a pixel's ink (§5), and a region's weight, the sum of its ink (the ground's dots are the ground); the **subject** `S`,
+the one thing with the shadow; and `h`, **where the eye is** as a rest begins: the middle of what the hand pressed (a
+place's square, the door, a piece), or, when a key or a find moved the world, where the subject stood before it.
+
+| Law | What film found | Computed | Bound |
+|---|---|---|---|
+| **Eye-trace** | Murch counts where the eye is among a cut's six criteria. Smith's attentional theory of continuity (2012): a cut goes unseen when the eye enters the new shot where it left the last. Miller and Seale centred *Fury Road* so that in a shot of 1.8 s the eye need not move to find its subject | the distance from `h` to the nearest point of what the place is (its subject, its name or its index) | **≤ 5°** (235 px): inside the parafovea (5° either side of where the eye rests, Rayner 1998), found without a search. So a piece gone to by a key, a find, or by coming to its place comes to the desk's edge, where the last subject stood: the distance is nothing |
+| **Look room** | Thompson and Bowen's look room. Palmer, Gardner and Wickens (2008): a figure facing one way is liked off the centre with the room on the side it faces; in the same lab's later work, the way a figure moves counts over the way it faces. Short-sided, a figure reads as trapped | a piece of a row faces the row's way: ahead `W − (S.right + 12)`, behind `S.left − F`. The line being written faces the way it is written: down the sheet, and along the line | **ahead ≥ behind.** The line written is **never in the third of `Ω` it goes towards**: its foot ≤ `y₂` as it is written on, its top ≥ `y₁` going back while there is more above. Along a line that runs past the sheet, **its next 15 letters in sight** ahead of the caret (as many as it has) and 4 behind (McConkie and Rayner 1975: what is taken in at a glance is 3–4 letters before the eye and 14–15 after it) |
+| **Size is importance** | Hitchcock: the size of a thing in the frame is its importance at that moment. Galvane, Ronfard, Lino and Christie (2015) score a shot by how far its sizes depart from its importances | the order of things by weight, and of words by size | by weight the subject first, **8 times** any other piece (§5); by size the place's one large thing first (§10); the frame least of all (§4) |
+| **Weight off the middle** | Arnheim: weight away from the centre, with the room it faces, is a directed tension; at the centre it is at rest (Palmer's viewers put a thing that faces them in the middle) | `Tₓ = (Cₓ − (F + W)/2) / ((W − F)/2)`, `C` the centre of the world's weight | on a desk whose subject is at its edge, on a desk screen: **`Tₓ < 0`**, the weight left and the room ahead right. Not on a phone (its piece fills its world), nor in a place that is one sheet (the sheet is its world: a close-up, with nothing ahead of it) |
+| **No jump** | the 30° rule: a cut that changes the angle less than 30°, or the size too little, is a jump cut; Galvane's cost of a jump is greatest when neither changes | for each thing in two successive rests (a piece, its name, the band's keys, the rail): how far each of its edges went | **0, or a cell (24) or more.** A line written grows its piece by a line; a line turned turns a line |
+| **Order kept** | the 180° line: Galvane's cost of the left-to-right order is 1 whenever two figures change sides across a cut | for two things in two successive rests: which is left of the other, which over | **the same** |
+| **Thirds bound, they do not place** | Cutting (2015), 14,000 frames of 48 films from 1935 to 2010: a lone figure's eyes are within 11% of a third's crossing in 19% of shots. Palmer's viewers did not prefer the crossings either | — | nothing is set on a crossing; the thirds bound look room and nothing else |
+| **One light** | the eye takes light to come from above and a little left: 20–30° (Mamassian and Goutcher 2001); 77% of 225 paintings are lit from the left (Sun and Perona 1998) | every shadow's offset | **12 right, 12 down**: the light from the upper left (§3) |
+| **A move is caused** | Michotte: a second motion is seen as caused by the first when it starts within 50 ms of it (now and then, 100) | the time from a press going down to the first frame of the move it asks | **≤ 50 ms** (§8) |
+
+**When two cannot both hold.** Murch weighs a cut's six criteria (emotion 51%, story 23%, rhythm 10%, eye-trace 7%,
+the screen's plane 5%, the space of the action 4%) and gives up from the bottom. The same order here: what the place
+is for (§10), over the three questions of §1 (where am I, what is in my hand, what can I do next), over the times of
+§8, over eye-trace, over the plane (look room, weight, the thirds, the horizon), over the space (order, depth). So:
+
+- a piece pressed stays under the hand, though the room behind it be the larger (eye-trace over the plane);
+- a row's first sheet stands before the piece in hand where both fit, though the weight then lie right of the middle
+  (what can be done next over the plane: Server at 1024 px, `Tₓ` = +.02);
+- a place's own composition stands over a general rule (§1: emotion over all).
 
 ---
 
@@ -398,8 +433,10 @@ being worked in.
 - Its top is at y = 72, a cell under the band. Its name stands in the cell over its top-left corner: 13 px mono 700
   on a line of a cell, its folder quiet before it.
 - It is as tall as its lines, never lower than a cell over the window's foot; what is under that is scrolled to
-  inside it. A sheet has half a line of paper over and under its lines. The terminal is 18 lines and a cell over and
-  under them.
+  inside it. A sheet has half a line of paper over and under its lines. **A file whose lines pass the world's lower
+  third stands to the foot**, its paper going on under its last line as far as brings that line up to the lower third:
+  the room ahead of what is written last (§2, look room). The terminal is 18 lines and a cell over and under them, or
+  as many as keep its last line, where its work is, out of the lower third.
 - A file's numbers are 11 px, quiet, in a margin a cell and a half wide; its words start there.
 - Nothing on a desk changes size, and nothing lies askew.
 
@@ -473,15 +510,21 @@ sheet, then to the piece). The pieces then start `F + G` along, `F` the sheet's 
 `x(n)`, never between. Scrolled by hand and let go, it comes to rest at the nearest (the browser's own snapping, so
 with the hand's speed).
 
-**Going to a piece** (pressing it, or the keyboard). With the desk turned by `now`, the face `F` wide, the piece at
-`x`, the shadow `S = 12`:
+**Going to a piece by pressing it.** With the desk turned by `now`, the face `F` wide, the piece at `x`, the shadow
+`S = 12`:
 
     far = x + W + S − F
     if far ≤ now ≤ x      stay at now                 (it is whole in sight: nothing moves)
     if now > x            turn to x                   (it was before the edge: bring it to the edge)
     otherwise             turn to the least x(n) ≥ far (the nearest rest that shows it whole)
 
-The first line is a rule of its own: **what is pressed never goes from under the hand that pressed it.**
+The first line is a rule of its own: **what is pressed never goes from under the hand that pressed it.** (A desk
+turned by hand and let go is as one pressed: the eye is where it looked.)
+
+**Going to a piece any other way** (a key along the row, a find, a file opened, the place come to): **turn to `x`**,
+the piece at the desk's edge. The eye is where the last subject stood, at the edge, and the new one comes there, with
+the row ahead of it (§2: eye-trace and look room agree). Gone to by the least move instead, it stood a piece along,
+13° from the eye, with more of the row behind it than ahead.
 
 **The ground goes with the row.** Turned by `t`, the dots are drawn `t mod 24` to the left; at every rest that is 0.
 
@@ -597,6 +640,9 @@ The sheets have the same law as three times and one curve:
 
 - No sheet and no code moves a thing by another curve, or in a time written out. (What goes round for as long as it
   is there, a caret's blink, is not a move; nor is a mark that lingers a second and more.)
+- **A move starts within 50 ms of the press that asks it** (§2: past that it is not seen as the press's doing).
+- **A line turned under the caret is turned at once**, a whole line, as a typewriter's platen turns a line under the
+  hand: it answers the key, as the letter written does, and is not a move.
 - **A move never holds the hand.** The place come to is there to be used from the first frame; a move under way is
   taken over by the next from where it is.
 - Asked for less motion, nothing moves: each thing is where it ends at once.
@@ -670,6 +716,21 @@ A desk. Its row: the terminal first, then the files in the order they were opene
 with its words green; not in the hand it is line on the ground, as any piece. A program that takes the whole screen
 has its 80 columns while it runs.
 
+**At work, the shot holds** (§2, computed). Working is writing, going through a file, taking the next piece and
+running; none of it is a reason for the shot to change:
+
+| Doing | What moves | So |
+|---|---|---|
+| coming to Forge | the piece in hand is at the desk's edge | the eye, on the rail, finds it at the frame's corner |
+| a file taken by a key, a find, a link | it comes to the edge | where the last subject stood (eye-trace), the row ahead of it (look room) |
+| a piece pressed | nothing | it stays under the hand |
+| a line written | the piece grows a line from where its top stood; nothing else | no jump, nothing reversed |
+| written past the lower third | the piece stands to the foot once; then the sheet turns a line at once per line written, the line written held at the lower third with paper under it | the line written never in the third it goes towards: the room ahead is paper to write on |
+| gone back through it by the keys | the sheet turns a line at once per line gone past the upper third | the same room the other way |
+| along a line that runs past the sheet's edge | the text turns along to keep the line's next fifteen letters in sight | what is read at a glance is ahead of the eye |
+| the terminal running | its words, inside it | its last line, where its work is, out of the lower third |
+| a press in a file | the caret, to where it was pressed; nothing turns | eye-trace over the plane |
+
 ### Git: Forge's far side, the work recorded and reviewed
 
 *What a repo is to become, what it became, and what is asked to be taken into it.* It has a composition of its own,
@@ -689,9 +750,22 @@ cells on, the issues. The issue in the hand is a wide sheet, set as a poster is:
 
 The issues before and after it show a cell or three of themselves at the row's two ends, with their numbers; an end
 pressed goes to that issue. Under the sheet in the hand, its history runs down a dotted line. Which repo is a choice
-on this desk, not one of the window's instruments: it stands on the cell under the band. With no issue yet, the one
-thing to do stands where the first piece would. On a window with no room for main's sheet and an issue side by
-side, the issues go under the sheet, two cells down.
+on this desk, not one of the window's instruments: it stands on the cell under the band. On a window with no room for
+main's sheet and an issue side by side, the issues go under the sheet, two cells down.
+
+**What is written here is written where it stands** (§7: nothing to open first, nothing to confirm):
+
+- **A new issue** is its first line, written on a line that is always there, a cell under main's sheet, the repo it
+  goes in said quietly in the cell over it (chosen in the row of repos). Enter makes it, and the keyboard goes on into
+  its summary in the issue in full, written there and kept as it is left. With no issue yet the line is at the desk's
+  edge, where the first piece would be, and what is so is said quietly where the issues would be. Asked for from
+  Forge, the line has the keyboard; Escape with nothing written goes back there.
+- **A commit on main** is main's card's line, always there under its files: Enter commits it, as Commit beside it
+  does. There is no Cancel: nothing was opened.
+- **An issue's title** is written over where it is read: pressed, it is a line of its own words, its kind kept and
+  its title chosen; Enter or leaving keeps what is written, Escape puts it back.
+
+What is half written in any of them stays, going along the row or to another page and back.
 
 ### Server: where many talk
 
@@ -794,7 +868,7 @@ breaks; none is a decision to leave it.
 | inside the sheets | what is set in columns in Runtime and the Remote is not yet set by the programme's columns (14, 10, 6) | §3, the widths are one programme |
 | signing in, a Remote not answering | the same deed has two looks (Try again in ink on Server, in line on the Remote) | §1, one hand |
 | deeds that ask first | some twenty deeds ask before they are done (remove a dotfile, take a repo off, sign a device out, a server left), each in its place with Cancel beside it, whether or not they can be put back | §7, what can be put back is done and can be put back |
-| Forge, the first time | the desk is long in the building (the Prompt starts with it), and the move to it waits for that | §8, off at once |
+| Forge, the first time | the desk is long in the building (the Prompt starts with it), and the move to it waits for that: 60 to 90 ms from the press, where every other place is off within 50 | §8, a move starts within 50 ms of its press |
 | things that come | a dozen come into place grown from smaller or faded in: the person's menu, a menu of deeds, a mark of a step done, a line landed under Committed, a post said, a file's unsaved mark (their keyframes in the sheets) | §8, nothing grows into place or fades in; §2, one lens |
 | Git's issue in full | its width is the row's of its own make (the window less two neighbours' peeks), not one of the programme's | §3, the widths are one programme |
 | `PLACES.md` | speaks of the look as it was | — |
@@ -822,7 +896,10 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | The rail's order; which pages are a place's far side, where each door leads and that it leads back (§4) | `why/app/host/purposes.test.ts` |
 | What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `why/test/app/sound.spec.ts` |
 | Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
-| Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is, the band's title whole at its size, one voice (§2) | `why/test/app/composition.spec.ts` |
+| Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the band's title whole at its size, one voice (§2) | `why/test/app/composition.spec.ts` |
+| Writing in Git is direct: a new issue's line and main's commit line always there, Enter making or committing, nothing to open, confirm or put back; an issue's title written over in place; what is half written kept (§7, §10) | `why/test/app/git.spec.ts` |
+| Forge at work, frame by frame at two screens: the piece in hand at the edge or under the hand; the line written never in the third it goes towards, a long file standing to the foot; the terminal's last line out of the lower third; nothing jumping, nothing reversed; the weight left (§2, §6, §10) | `why/test/app/at-work.spec.ts` |
+| Where the line written may stand, the terminal's lines, and where the desk turns for a piece pressed and for one gone to (§2, §5, §6) | `why/app/pages/forge/desk-layout.test.ts` |
 | New repo is one piece at the desk's edge, the hand's: on the grid, a piece wide, its name at a name's size on its first line, what will be made inside it under a rule (§10) | `why/test/app/new-repo.spec.ts` |
 | Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `why/test/app/skeleton.spec.ts` |
 | A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `why/test/app/server.spec.ts` |
@@ -831,7 +908,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `why/test/app/focus.spec.ts` |
 | The window's edges are the frame's; a press just off a menu is the menu's (§7) | `why/test/app/favour.spec.ts` |
 | The frame, in every place at six screens: one degree every way, receding inside film's safe-action margin on a desk screen, one square, the same in every place, on two sides only, quiet at rest and ink only under the hand (§4) | `why/test/app/frame.spec.ts` |
-| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off at once, at rest within 420 ms (§8) | `why/test/app/motion.spec.ts` |
+| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off within 50 ms of the press, at rest within 420 ms (§8) | `why/test/app/motion.spec.ts` |
 | File comes by a press and by nothing else (§7) | `why/test/app/file.spec.ts` |
 | A phone has the same rules (§1) | `why/test/app/narrow.spec.ts` |
 

@@ -6,9 +6,9 @@
    as a full stop that was never written ("1 repo . 1 server"), and in a key as dirt. Words set on the ground stand on
    a patch of the ground's own colour exactly as large as they are, as a name on a map stands clear of its grid; a key
    on the ground has the ground's fill. */
-.identity > :is(.counts, .handle, .bio), .home-repos-sec > h2, .home-repos > .card.new, .desk-label, .issue-name, .git-side > .issues-write,
+.identity > :is(.counts, .handle, .bio), .home-repos-sec > h2, .home-repos > .card.new, .desk-label, .issue-name, .issues-new > .issue-where,
 .side-part h3, .lately > h2 { background-color: var(--ground); }
-.home-repos-sec > h2, .git-side > .issues-write { width: fit-content; }
+.home-repos-sec > h2, .issues-new > .issue-where { width: fit-content; }
 .server-chips .chip:not([aria-checked='true']), .band-add, .server-bar > .server-gear:not([aria-expanded='true']) { background-color: var(--ground); }
 
 /* A sheet is as tall as what is on it. Only the piece in the hand reaches the window's foot (it is worked in, and

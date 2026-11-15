@@ -50,6 +50,10 @@
    is under its foot is scrolled to here, what is past its right edge in its text; neither with the browser's bars
    (ui/scroll-marks.ts says where one is while it is scrolled). */
 .desk-file { position: relative; max-height: calc(var(--tallest, 100vh) - var(--line)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
+/* A file whose lines pass the world's lower third stands to the foot, its paper going on under its last line as far as
+   brings that line up to the lower third (--ahead, desk.ts): the room ahead of what is written last (DESIGN §2). */
+.desk-file.long { height: calc(var(--tallest, 100vh) - var(--line)); }
+.desk-file.long > .sheet { padding-bottom: calc(var(--tallest, 100vh) - var(--line) - var(--ahead, 0px)); }
 /* A sheet's proportions: the words 17 px on a line of a cell, their numbers smaller before them in a margin a cell and
    a half wide, half a cell after the fiftieth letter. */
 .desk-file > .sheet { display: grid; grid-template-columns: minmax(calc(26 / 24 * var(--line)), max-content) minmax(0, 1fr); column-gap: calc(10 / 24 * var(--line)); padding: 0 calc(var(--line) / 2) 0 0; }

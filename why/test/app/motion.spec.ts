@@ -342,16 +342,19 @@ test('reducing motion during a held press restores its size before pointerup and
   expect(await scale()).toBe('none');
 });
 
-test('going to another place the world goes by: the place left, the place come to and the ground move as one, a window\'s height in whole cells, off at once and at rest within 420 ms', async ({app}) => {
+test('going to another place the world goes by: the place left, the place come to and the ground move as one, a window\'s height in whole cells, off within 50 ms of the press and at rest within 420 ms', async ({app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('home');
   await still(app);
   const U = 24;
+  const been = new Set<string>();
   for (const [to, dir] of [['forge', 1], ['home', -1], ['runtime', 1], ['home', -1]] as const) {
     const far = U * Math.round((await app.page.evaluate(() => innerHeight)) / U);
     // Every frame of the move: how far the place left has gone, the place come to, and the ground's dots.
     const frames = app.page.evaluate(() => new Promise<{t: number; left: number | null; come: number | null; dots: number; place: string}[]>((done) => {
       const out: {t: number; left: number | null; come: number | null; dots: number; place: string}[] = [], t0 = performance.now();
+      // When the press went down (on the page's clock, as the frames are).
+      addEventListener('pointerdown', (e) => { out.push({t: e.timeStamp - t0, left: null, come: null, dots: 0, place: 'pressed'}); }, {capture: true, once: true});
       const y = (el: Element | null | undefined) => (el ? new DOMMatrix(getComputedStyle(el).transform).m42 : null);
       const step = () => {
         const page = document.getElementById('page')!;
@@ -362,7 +365,13 @@ test('going to another place the world goes by: the place left, the place come t
       requestAnimationFrame(step);
     }));
     await app.rail.button(to).click();
-    const all = await frames, moving = all.filter((f) => f.left !== null);
+    const got = await frames, pressed = got.find((f) => f.place === 'pressed')!.t, all = got.filter((f) => f.place !== 'pressed');
+    const moving = all.filter((f) => f.left !== null);
+    // Caused by the press (Michotte: a motion is seen as caused by another that starts it within 50 ms): the world off
+    // within 50 ms of the press going down, and a frame (what is measured is the frame it is drawn in). (Forge the
+    // first time is not yet so, §11: its desk is built first.)
+    if (!(to === 'forge' && !been.has(to))) expect(moving.find((f) => Math.abs(f.left!) > .5)!.t - pressed, `to ${to}: off within 50 ms of the press`).toBeLessThanOrEqual(50 + 1000 / 60);
+    been.add(to);
     // The place left stays in sight as the world moves, and the one come to follows it at one distance: no gap
     // opens or closes between them, and the ground's dots go as they do.
     expect(moving.length, `to ${to}`).toBeGreaterThan(5);

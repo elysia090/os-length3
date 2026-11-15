@@ -9,7 +9,7 @@ import {connection, myName} from '../../../shipto/connection.ts';
 import {changeFor, type Standing} from '../../../repo/git-state.ts';
 import {named} from '../../../repo/text.ts';
 import {diffFiles} from '../kit/diff-view.ts';
-import {beingChanged, issueEditor} from './issue-form.ts';
+import {beingChanged, retitle} from './issue-form.ts';
 import {agentLine, agentMark} from './agent-line.ts';
 import {errorText} from '../../../api/errors.ts';
 import {busy} from './held.ts';
@@ -150,9 +150,10 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   // One that will not be done is closed, at the foot's left as what goes against the box: it goes
   // under Closed, where Reopen brings it back. Whatever work the repo shows: an issue is main's.
   const leave = offered ? closeDeed(issue, error, events, after) : null;
-  // Its title is changed where it is read: pressed, the head becomes the fields it was written in. Its summary is
-  // written right under it, the work's margin note.
-  const words = h('button', {type: 'button', class: 'issue-words', title: t('Edit description')}, issueHead(issue));
+  // Its title is changed where it is read: pressed, it is written over in its place (issue-form.ts retitle). Its
+  // summary is written right under it, the work's margin note.
+  const head = issueHead(issue);
+  const words = h('button', {type: 'button', class: 'issue-words'}, head);
   // Its work, the sheet's lead, beside its words: what is not committed, or the change handed in.
   const work = workOf(issue, s, events);
   if (work) unfolding(work, issuePath(issue));
@@ -160,10 +161,11 @@ export function issueBox(issue: Issue, s: RepoState | undefined, events: IssueEv
   const name = h('p', {class: 'issue-name', 'aria-hidden': 'true'}, [issueName(issue), issue.kind].filter(Boolean).join(' '), here ? ' ' : null, here ? h('i', {}, t('under way')) : null);
   const box = h('div', {class: work ? 'issue-box' : 'issue-box no-work'},
     name, words, summary(issue, after), agentLine(issue), ...(work ? [work] : []), foot(issue, s, leave, []), error);
-  const editor = () => issueEditor(issue, (saved) => { if (saved) after(); else box.replaceWith(issueBox(issue, s, events, after)); });
-  words.addEventListener('click', () => words.replaceWith(editor()));
-  // Its words half changed when the box was left: the box opens as the fields, as they were.
-  if (beingChanged(issue)) words.replaceWith(editor());
+  // Written over with the summary as it now stands (written there and not yet left, it is what is kept).
+  const detail = () => box.querySelector<HTMLTextAreaElement>('.issue-summary')?.value ?? issue.detail;
+  words.addEventListener('click', () => retitle(issue, words, head, detail, error, after));
+  // Its title half written over when the box was left: the box opens with it so, as it was, the keyboard not taken.
+  if (beingChanged(issue)) retitle(issue, words, head, detail, error, after, false);
   return box;
 }
 

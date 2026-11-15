@@ -49,9 +49,32 @@ export function tallest(hgt: number): number {
   return (Math.max(4, Math.floor((hgt - TOP - FOOT - LINE) / LINE)) + 1) * LINE;
 }
 
-/** The terminal's height on a face `hgt` high: its lines and a cell over and under them, or as tall as a sheet may be. */
+/**
+ * Where the line being written may stand in a sheet on a face `hgt` high (DESIGN §2, look room): never in the third of
+ * the world it goes towards. Measured from the top of what scrolls in the sheet (half a line under the piece's top):
+ * `foot`, the lowest a line's foot may be (the lower third line, up to the line above it), and `top`, the highest a
+ * line's top may be while there is more above to turn back to (the upper third line, down to the next line).
+ */
+export function ahead(hgt: number): {top: number; foot: number} {
+  const from = TOP + LINE / 2;
+  return {top: LINE * Math.ceil((hgt / 3 - from) / LINE), foot: LINE * Math.floor((2 * hgt / 3 - from) / LINE)};
+}
+
+/** The terminal's height on a face `hgt` high: its lines and a cell over and under them, as many as keep its last line
+ * (where its work is) out of the lower third, at most TERM_LINES and never under four. */
 export function termHeight(hgt: number): number {
-  return Math.min((TERM_LINES + 2) * LINE, tallest(hgt));
+  const lines = Math.max(4, Math.min(TERM_LINES, Math.floor((2 * hgt / 3 - TOP - LINE) / LINE)));
+  return Math.min((lines + 2) * LINE, tallest(hgt));
+}
+
+/**
+ * Where the desk is turned for the piece at `x` (`w` wide) now in hand, with the desk turned by `now` on a face `face`
+ * wide (DESIGN §2, eye-trace before the plane): `pressed`, the eye is on it where it was pressed, and it does not go
+ * from under the hand (`turnedTo`); gone to any other way (a key, a find, the place come to), the eye is where the
+ * last subject stood, at the desk's edge, and it comes there, the row ahead of it.
+ */
+export function restFor(pressed: boolean, now: number, x: number, w: number, face: number, starts: readonly number[]): number {
+  return pressed ? turnedTo(now, x, w, face, starts) : x;
 }
 
 /**

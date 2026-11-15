@@ -58,18 +58,18 @@
   content: ''; position: absolute; left: calc(var(--s5) + 2px); top: calc(var(--s4) + var(--s1) + 7px);
   width: 10px; height: 10px; border-radius: 50%; background: var(--ink);
 }
-.main-card:not(.brief) > .main-foot, .main-card:not(.brief) > .off-ask > :is(.card-foot, .answers) { position: relative; }
-.main-card:not(.brief) > .main-foot::before, .main-card:not(.brief) > .off-ask > :is(.card-foot, .answers)::before {
+.main-card:not(.brief) > .main-foot { position: relative; }
+.main-card:not(.brief) > .main-foot::before {
   content: ''; position: absolute; left: -27px; top: 50%; width: 12px; height: 12px; margin-top: -6px; box-sizing: border-box;
   border: 2px solid var(--ink); border-radius: 50%; background: var(--paper);
 }
 .main-card:not(.brief) .diff-line { border-left-width: 0; }
 /* Its files close under its name, as what is in it (the card's gap, a step from its foot, is room between parts). */
 .main-card > .main-title + .changes { margin-top: calc(-1 * var(--s2)); }
-/* Many waiting in All (done.ts BRIEF): a row each, its name at the left and how many with Commit at the right; its name
-   pressed, its files open under it, the row's own width. Asked for a commit's line, it is the card again. */
+/* Many waiting in All (done.ts BRIEF): a row each, its name at the left and how many with Commit at the right, its line
+   under them; its name pressed, its files open under it, the row's own width. */
 .main-card.brief { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: var(--s2) var(--s3) var(--s2) var(--s5); }
-.main-card.brief:has(> .off-ask) { grid-template-columns: minmax(0, 1fr); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); }
+.main-card.brief > :is(.main-line, .error) { grid-column: 1 / -1; }
 .main-card.brief > .main-foot { margin: 0; gap: var(--s4); }
 .main-card.brief > .changes { grid-column: 1 / -1; padding-bottom: var(--s3); }
 .main-card.brief + .main-card.brief { margin-top: var(--s2); }
@@ -113,3 +113,6 @@ details[open] > summary.done-head::before { rotate: 90deg; }
 
 /* An Inbox pane with nothing chosen: a quiet line in its middle, not a box in the box. */
 .inbox-thread > .quiet { margin: 0; padding: var(--u); color: var(--sub); }
+/* Its line, always there to be written (done.ts): as wide as the card's inside, what was said of it under it. */
+.main-card > .main-line { width: 100%; min-width: 0; }
+.main-card > .error:empty { display: none; }

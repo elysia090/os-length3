@@ -16,7 +16,7 @@ import {backToMain, crossfade, issueBox, issueHead, issueSteps, knowIssues, merg
 import {IssueRow} from './issue-row.ts';
 import {paintChips} from './repo-chips.ts';
 import {laidOut} from '../../../repo/git-state.ts';
-import {issueForm, type IssueForm, type Made} from './issue-form.ts';
+import {issueLine, type IssueLine, type Made} from './issue-form.ts';
 import {errorText} from '../../../api/errors.ts';
 import {issueStore} from '../../../repo/issue-store.ts';
 import {SPRING} from '../../ui/law.ts';
@@ -130,17 +130,17 @@ class GitPage {
   readonly element: HTMLElement;
   private readonly ctx: Context;
   private readonly chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
-  private readonly write = h('button', {class: 'issues-write', type: 'button'}, t('Create issue')) as HTMLButtonElement;
   /** main's sheet, at the desk's edge: the steps of the issue in full, a line a step (issueSteps). */
   private readonly steps = h('div', {class: 'git-switch', role: 'group', 'aria-label': t('Steps')});
-  /** At the desk's edge: main's sheet and, under it, the way to write an issue. Not there while there is no issue. */
-  private readonly side = h('div', {class: 'git-side none'}, this.steps, this.write);
+  /** The line a new issue is written on, under main's sheet (issue-form.ts). */
+  private readonly line: IssueLine;
+  /** At the desk's edge: main's sheet and, under it, the line a new issue is written on. Not there while there is no repo. */
+  private readonly side: HTMLElement;
   /** The repo the desk is of, said large against the band's right end, as Forge says what is in hand (an issue's number is its sheet's own, said once). */
   private readonly held = h('div', {class: 'band-held', 'aria-hidden': 'true'});
   private readonly count = h('small', {});
   /** Where the issues would be when there are none: the empty place that writes the first, or what is so. */
   private readonly empty = h('div', {}, h('p', {class: 'muted small'}, t('Loading…')));
-  private readonly form: IssueForm;
   private readonly row: IssueRow;
   private readonly sections = new Sections();
   private readonly workbench: Bench;
@@ -158,14 +158,13 @@ class GitPage {
   private mainSettling: Animation | null = null;
   /** The issue the row goes to once it is drawn (one reopened), from the one in full before. */
   private slideTo: string | null = null;
-  /** An issue just made: the height of the box it was written in, which becomes its card as it is drawn (lay). */
-  private becoming: number | null = null;
   /** Drawn once: what is drawn after that moves from what it was (goOn); the first drawing is simply there. */
   private laid = false;
 
   constructor(ctx: Context) {
     this.ctx = ctx;
-    this.form = issueForm({done: (made, back) => this.written(made, back)});
+    this.line = issueLine({made: (made) => this.written(made), back: (repo) => this.ctx.openRepo(repo)});
+    this.side = h('div', {class: 'git-side none'}, this.steps, this.line.element);
     this.row = new IssueRow({
       landed: (i, moved) => this.landed(i, moved),
       slot: (x, now) => this.slot(x, now),
@@ -186,12 +185,6 @@ class GitPage {
       aside: (i) => this.row.aside(key(i)),
       back: (i) => { this.slideTo = key(i); },
     };
-    this.write.addEventListener('click', () => {
-      this.write.hidden = true;
-      // The dashed card that stood for it becomes the issue being written.
-      this.empty.hidden = true;
-      if (!this.form.resume(this.repos, true)) this.form.open(this.repos, filter || this.at || this.repos[0]);
-    });
     this.load();
     this.workbench = this.bench();
     this.element = this.workbench.element;
@@ -203,15 +196,13 @@ class GitPage {
   /** The page on the work bench: main's over the issues, the sections under them, its repos on its band. */
   private bench(): Bench {
     const main = h('section', {class: 'flow git-flow git-desk', tabindex: '0', 'aria-label': 'Git'},
-      // At the desk's edge, beside the row: main's sheet (the steps) and Create issue under it.
+      // At the desk's edge, beside the row: main's sheet (the steps) and the new issue's line under it.
       this.side,
       // What main has not committed comes first, over the issues: what is in hand before what is planned.
       this.sections.main,
       h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
-        // Write an issue on the heading's line at its right: one place, however tall the box in full is (not between
-        // it and its Review); with none to show, the empty place where the first would be is the way instead.
         h('div', {class: 'issues-head'}, h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', this.count))),
-        this.form.element, this.empty, this.row.column),
+        this.empty, this.row.column),
       ...this.sections.under);
     // Its repos are its band, on the top line as Forge's pills are, so the page starts where the rail's places do.
     return bench({strip: h('div', {class: 'git-band'}, this.chips, this.held), main, reveal: (path) => { if (this.at) this.ctx.openRepo(this.at, path); }, word: (a) => { openConversation(a); void this.ctx.go('inbox'); }, back: true, paneless: true,
@@ -240,7 +231,7 @@ class GitPage {
     const shown = repos.filter((r) => !filter || r === filter);
     if (!shown.every((r) => stood.has(r) && issuesRead.has(r))) return;
     this.repos = repos;
-    this.write.disabled = false;
+    this.line.enable(true);
     this.look(filter || (this.ctx.repo && repos.includes(this.ctx.repo) ? this.ctx.repo : repos[0] ?? null));
     this.paintChips();
     const issues = shown.flatMap((r) => issuesRead.get(r)!);
@@ -258,12 +249,13 @@ class GitPage {
       this.repos = r.map((x) => x.name);
       reposRead = this.repos;
       if (filter && !this.repos.includes(filter)) filter = ALL;
-      this.write.disabled = !this.repos.length;
+      this.line.enable(!!this.repos.length);
       this.look(filter || (this.ctx.repo && this.repos.includes(this.ctx.repo) ? this.ctx.repo : this.repos[0] ?? null));
       this.paintChips();
-      // An issue half written when the page was left is still being written.
-      if (this.form.resume(this.repos)) this.write.hidden = true;
-      void this.paint();
+      // Where a new issue goes: the repo shown, or the one Forge asked for it in (the line then has the keyboard, once
+      // the page is drawn and the line is there to take it).
+      const asked = this.line.arrived(filter || this.at || this.repos[0] || null);
+      void this.paint().then(() => { if (asked) this.line.focus(); });
     });
   }
 
@@ -285,7 +277,7 @@ class GitPage {
     const other = filter !== r;
     filter = r;
     this.paintChips();
-    if (r) { this.look(r, true); this.form.retarget(r); if (e.detail && !this.form.element.hidden) this.form.writeOn(); }
+    if (r) { this.look(r, true); this.line.retarget(r); if (e.detail && this.line.writing) this.line.focus(); }
     void this.paint().then(() => { if (other) arrive(this.row.stage.hidden ? this.empty : this.row.stage, 1, 'y', 10, 260); });
   }
 
@@ -338,26 +330,15 @@ class GitPage {
   }
 
   /**
-   * Written: its repo is the one looked at and worked on, and the new issue is the one shown, with the keyboard on it.
-   * The box it was written in stays as it was until the page is drawn with the issue in it, and then becomes its card
-   * where it stood (lay): one box the whole way, never the box folding away and a card coming after it.
+   * Made from its line: its repo is the one looked at and worked on, and the new issue is the one shown, the keyboard
+   * in its summary to go on writing it.
    */
-  private written(made: Made | null, back: string | null) {
-    this.write.hidden = false;
-    if (!made) this.empty.hidden = false;
-    // Asked for from Forge's reference and put back: back there, as it was.
-    if (!made && back) { this.ctx.openRepo(back); return; }
-    if (!made) { (this.write.getClientRects().length ? this.write : this.empty.querySelector<HTMLElement>('button') ?? this.write).focus({preventScroll: true}); return; }
+  private written(made: Made) {
     if (filter && filter !== made.repo) { filter = made.repo; this.paintChips(); }
     this.slideTo = `${made.repo}/${made.file}`;
     chosenIn.set(made.repo, this.slideTo);
     this.look(made.repo, true);
-    this.row.land = true;
-    const height = this.form.element.getBoundingClientRect().height;
-    this.becoming = height || null;
-    if (!height) this.form.clear();
-    // Not drawn after all (the page read again failing): the box does not stay standing in the way.
-    else setTimeout(() => { if (this.becoming === height) { this.becoming = null; this.form.clear(); this.empty.hidden = false; } }, 6000);
+    this.row.land = 'summary';
     void this.paint();
   }
 
@@ -413,23 +394,17 @@ class GitPage {
     // mergeRow): what that lands on stays where it was found.
     const moving = this.laid && !still() && !document.querySelector('.morph-box');
     this.laid = true;
-    // The box an issue was just written in: taken away as the issue's card is drawn where it stood (below).
-    const becoming = this.becoming;
-    this.becoming = null;
-    const writ = becoming ? this.form.element.cloneNode(true) as HTMLElement : null;
-    if (becoming) { this.form.clear(); this.empty.hidden = false; }
     const row = !this.row.stage.hidden, none = !!this.empty.firstElementChild;
     this.counted(laid.open.length);
     opened(this.sections.main);
     this.sections.draw(laid, filter, this.states, this.events, this.again, moving);
-    if (laid.open.length) this.drawSome(laid.open, !!becoming); else this.drawNone(issues);
+    if (laid.open.length) this.drawSome(laid.open); else this.drawNone(issues);
     const card = this.row.current();
-    if (writ && card) { crossfade(writ, card.card, becoming!); resize(card.card, becoming!); }
     if (!moving) return;
     this.goOn(before);
     // The row come into sight (an issue reopened, one come from elsewhere): its box comes in, not there at once; the
-    // dashed card that writes the first, there again once the last has gone, the same.
-    if (!row && card && !writ) arrive(card.card, 1, 'y', 10, 260);
+    // words said where the first would be, there again once the last has gone, the same.
+    if (!row && card) arrive(card.card, 1, 'y', 10, 260);
     if (!none && this.empty.firstElementChild) this.empty.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: SPRING});
   }
 
@@ -521,7 +496,7 @@ class GitPage {
    */
   private drawSome(open: Issue[], inPlace = false) {
     this.empty.replaceChildren();
-    this.write.parentElement?.classList.remove('none');
+    this.side.classList.remove('none');
     const to = this.slideTo === null ? -1 : open.findIndex((i) => key(i) === this.slideTo);
     this.slideTo = null;
     // Gone to from the one in full (one reopened), the row slides there; one just written is there at once, where the
@@ -545,14 +520,11 @@ class GitPage {
     this.steps.replaceChildren();
     this.tellHeld(filter || this.at || '');
     this.sections.main.classList.add('single');
-    // The dashed card is the way to write the first: the heading's Write stands aside meanwhile (one way, not two).
-    this.write.parentElement?.classList.add('none');
+    // No repo: nothing to write an issue in; said once, as wide as its words.
+    this.side.classList.toggle('none', !this.repos.length);
     if (!this.repos.length) { this.empty.replaceChildren(remoteOnly().length ? this.onlyThere() : this.firstRepo()); return; }
-    const first = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Create issue')),
-      h('small', {class: 'muted'}, issues.length ? t('No open issues') : t('No issues yet'))) as HTMLButtonElement;
-    first.disabled = this.write.disabled;
-    first.addEventListener('click', () => this.write.click());
-    this.empty.replaceChildren(first);
+    // The line at the desk's edge is the one thing to do: what is so is said quietly where the first issue would be.
+    this.empty.replaceChildren(h('p', {class: 'muted issues-none'}, issues.length ? t('No open issues') : t('No issues yet')));
   }
 
   /** No repo here and some on the Remote: each fetched with a press, as Runtime's are, and its issues are here. */

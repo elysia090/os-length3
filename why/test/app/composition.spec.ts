@@ -1,5 +1,6 @@
 import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
+import {across} from './weigh.ts';
 
 // Every rest a shot (DESIGN §2, the window is a camera): in every place, at four widths down to a phone, each frame is
 // held to what film knows of a frame. Measured, not looked at:
@@ -8,7 +9,10 @@ import type {App} from './app.ts';
 //   one horizon     the subject's edges on the grid
 //   one subject     one shadow cast in focus, the one light's: 12 px right and down
 //   the frame       under what is called up, the rail and the band stay over the world, in focus
-//   eye-trace       what stands just past the frame's corner is what the place is
+//   eye-trace       what stands just past the frame's corner is what the place is, within 5° of where the hand was
+//                   (the place's square on the rail, or the door): found without a search
+//   weight          on a desk screen, the weight of what is drawn lies left of the world's middle (the room ahead to
+//                   the right): never set in the middle, never leaning the way the row runs
 //   a whole title   the band's name whole at its size, inside the window, or not there
 //   one voice       the display face at its two sizes, no text and no number said twice in it
 
@@ -73,6 +77,11 @@ function frame({subject, corner}: {subject: string; corner: string}) {
   // (A cell and a half right of the rail, two cells under the band: 24 px a cell, the frame two cells each way.)
   const at = document.elementFromPoint(84, 96);
   const landed = !!at?.closest(corner);
+  // How far that is from where the hand was: the place's square on the rail, or the door to a far side.
+  const from = document.querySelector('.door:not([hidden])') ?? document.querySelector('.rail .rail-item[aria-current="page"]');
+  const fr = from?.getBoundingClientRect(), lr = at?.closest(corner)?.getBoundingClientRect();
+  const reach = fr && lr ? Math.hypot(Math.max(lr.left - (fr.left + fr.width / 2), 0, fr.left + fr.width / 2 - lr.right),
+    Math.max(lr.top - (fr.top + fr.height / 2), 0, fr.top + fr.height / 2 - lr.bottom)) : Infinity;
   // The band's name of what is in hand: whole at its size, inside the window clear of its edge, or not there.
   const held = document.querySelector<HTMLElement>('.band-held');
   const title = held && inSight(held) && held.textContent ? (() => {
@@ -84,7 +93,7 @@ function frame({subject, corner}: {subject: string; corner: string}) {
   // The frame over what is called up: the band's keys stand over the veil.
   const bar = document.querySelector<HTMLElement>('.band-tools')?.closest<HTMLElement>('.home-band, .bar') ?? null;
   const frameOver = !veil || !bar || Number(getComputedStyle(bar).zIndex) > Number(getComputedStyle(veil).zIndex);
-  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, at: at?.className.toString() ?? '', title, frameOver};
+  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver};
 }
 
 /** Each rule of a shot held at `place`'s rest. */
@@ -106,6 +115,8 @@ async function shot(app: App, place: Place, size: {width: number; height: number
         expect(Math.abs(v - U * Math.round(v / U)), `${what}: the subject's ${edge} (${v}) on a line of the grid`).toBeLessThan(1);
       }
       expect(f.landed, `${what}: the eye lands on what the place is, not ${f.at}`).toBe(true);
+      // Within the parafovea of where the hand was (5° = 235 px at 0.0213° a px): found without a search.
+      expect(f.reach, `${what}: what the place is within 5° of where the hand was`).toBeLessThanOrEqual(235);
     } else {
       expect(f.frameOver, `${what}: the band over the veil, in focus`).toBe(true);
     }
@@ -122,6 +133,13 @@ async function shot(app: App, place: Place, size: {width: number; height: number
       expect(f.title.left >= 6 && f.title.right <= f.W - 6, `${what}: the band's name inside the window`).toBe(true);
     }
   }).toPass({timeout: 5000});
+  // On a desk (not a place that is one sheet: that sheet is its world, a close-up with no ground ahead of it), on a desk
+  // screen (a phone's piece fills its world), the weight to the left of the world's middle where the subject stands
+  // at the desk's edge. (Where a row's first sheet stands before it, that sheet is what can be done next, which
+  // outranks the plane: §2, the order of sacrifice.)
+  const f = await app.page.evaluate(frame, PLACES[place]);
+  const desk = place !== 'runtime' && place !== 'remote';
+  if (!called && desk && size.width >= 1024 && f.subject && f.subject.x <= 2 * U + .5) expect(await across(app.page), `${what}: the weight left of the middle`).toBeLessThan(0);
 }
 
 test('every rest is a shot: in every place, at every width, one lens, one horizon, one subject in focus, the eye landing on what the place is, a whole title, one voice', async ({signedIn: app, another}) => {

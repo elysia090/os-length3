@@ -28,8 +28,8 @@ export class IssueRow {
   /** The row and its edges, in the issues' column. */
   readonly column: HTMLElement;
   readonly stage: HTMLElement;
-  /** Put the keyboard on the new issue's words once it is drawn. */
-  land = false;
+  /** Put the keyboard on the issue's words once it is drawn (gone to), or in its summary (just made, to go on writing). */
+  land: boolean | 'summary' = false;
   private readonly track = h('div', {class: 'issue-track'});
   private readonly prev: HTMLButtonElement;
   private readonly next: HTMLButtonElement;
@@ -193,7 +193,12 @@ export class IssueRow {
 
   /** The keyboard, after the row slid to `slot`: on a new issue's words, back on the part it was on, or on the row. */
   private focus(slot: HTMLElement | undefined, had: Part | null, edge: boolean) {
-    if (this.land) { this.land = false; slot?.querySelector<HTMLElement>('.issue-words')?.focus({preventScroll: true}); return; }
+    if (this.land) {
+      const into = this.land === 'summary' ? '.issue-summary' : '.issue-words';
+      this.land = false;
+      slot?.querySelector<HTMLElement>(into)?.focus({preventScroll: true});
+      return;
+    }
     if (had) (sameDeed(slot, had) ?? this.stage).focus({preventScroll: true});
     // An edge pressed that is gone now (the first or last box reached): the keyboard stays on the row.
     else if (edge && (document.activeElement as HTMLElement | null)?.hidden) this.stage.focus({preventScroll: true});
