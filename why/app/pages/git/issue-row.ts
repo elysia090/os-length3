@@ -152,7 +152,10 @@ export class IssueRow {
   /** The keyboard on the issue not written yet's first line, if it is in the hand. */
   write() { if (this.atTail) this.track.lastElementChild?.querySelector<HTMLElement>('.issue-first')?.focus({preventScroll: true}); }
 
-  /** Back from the issue not written yet to the issue before it, if there is one. */
+  /**
+   * Back from the issue not written yet to the issue before it, if there is one, the keyboard back on the row that
+   * went to it (said by the piece in hand's edge, heavier: styles git-issue.css).
+   */
   back() { if (this.atTail && this.shown.length) { this.go(this.k - 1, true, null); this.stage.focus({preventScroll: true}); } }
 
   /** No repo to write an issue in: the row stands aside. */

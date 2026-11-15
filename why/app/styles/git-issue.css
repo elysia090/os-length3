@@ -6,7 +6,10 @@
 .issue-no { color: var(--sub); }
 .issue-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }/* An issue's words are where they are changed: pressed, they become their fields. */
 .issue-words { display: grid; gap: var(--s3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-text); border-radius: var(--r-key); }
-.issue-words:focus-visible { outline: 2px solid var(--ink); outline-offset: var(--s1); }
+/* The keyboard on an issue's title: a ring round its words, not round the block they head (four cells, most of it
+   empty paper: a box drawn in the sheet). */
+.issue-words:focus-visible { outline: none; }
+.issue-words:focus-visible h2 { width: fit-content; outline: 2px solid var(--ink); outline-offset: var(--s1); }
 .issue-box > .work-act { margin-top: var(--s2); flex-wrap: wrap; }
 /* The box's foot: where it lives and who started it at the left, its action at the right. */
 .issue-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-top: var(--s2); }
@@ -34,7 +37,11 @@
 .issue-column.settling .issue-track, .main-part.settling > .main-card { transition: none; }
 .issue-column { --gap: var(--s3); }
 .issue-stage { position: relative; overflow-x: clip; touch-action: pan-y; } /* a sideways swipe is the row's (git/issue-row.ts), a page's scroll is the browser's */
-.issue-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-place); }
+/* The keyboard on the row (← and → go along it): the piece in hand's own edge, heavier, one line and not a ring drawn
+   round the row (which went round two sheets at once and through the names over their corners). */
+.issue-stage:focus-visible { outline: none; }
+.git-desk .issue-stage:focus-visible .issue-slot[aria-current='true'] .issue-card::after { box-shadow: inset 0 0 0 2px var(--ink); }
+.git-desk .issue-stage:focus-visible .issue-slot[aria-current='true'] .issue-card.issue-new-card::after { border: 2px dashed var(--ink); }
 .issue-track { --at: 0; display: flex; gap: var(--gap); transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--slide); }
 @media (prefers-reduced-motion: reduce) { .issue-track, .issue-slot { transition: none; } }
 /* The box gone from, while the row slides away from it: as it was (its room inside kept, its words going to the
