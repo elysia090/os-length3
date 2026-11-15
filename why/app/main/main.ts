@@ -27,6 +27,7 @@ import {depth, doorOf, isFar, placeOf, RAIL, purpose, restorePurpose, stepPurpos
 import {glide, morph, stage, stopStage, travel, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
 import {clearings} from '../ui/clearing.ts';
+import {waysOut} from '../ui/way-out.ts';
 import {prime} from '../ui/keys.ts';
 import {caret} from '../ui/caret.ts';
 import {optical} from '../ui/optical.ts';
@@ -147,6 +148,7 @@ document.body.append(fileTree.element);
 keepFocus();
 touch();
 clearings();
+waysOut();
 caret();
 optical();
 scrollbars();
@@ -238,14 +240,30 @@ document.addEventListener('pointerdown', (event) => {
 
 /** Newer navigation supersedes unresolved loading; animation never delays the destination or input. */
 let asked = 0;
-function select(id: PurposeId, quiet = false): Promise<void> {
+/** `id` gone to; `stepped`, by Back or Forward (the window's history is already there: no new step). */
+function select(id: PurposeId, quiet = false, stepped = false): Promise<void> {
   const bringing = brought(id), mine = ++asked;
-  if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet); });
+  if (bringing) return bringing.then(() => { if (mine === asked) return select(id, quiet, stepped); });
   letGo($('page'));
   stopStage($('page'));
-  draw(id, quiet);
+  draw(id, quiet, stepped);
   return Promise.resolve();
 }
+
+/**
+ * The places gone to are the window's history, as a link's are (a place in the rail is one): Back, however it is
+ * asked (the browser's, the mouse's side button, a phone's edge, Alt+← or ⌘[), goes to the place before, and Forward
+ * to the one after, with the world's move the way the rail lies, as any going there does (DESIGN §14, back). Each
+ * place gone to is one step; the place one is at, pressed, is none. Before, the places were not in the history: Back
+ * left the OS altogether, from wherever it had been gone through. The address is not changed by it: a place is not a
+ * page to send to another, and what the address carries is asked once (an invitation, a key) and taken out.
+ */
+window.addEventListener('popstate', (event) => {
+  const was = (event.state as {place?: unknown} | null)?.place;
+  if (typeof was !== 'string' || !opened) return;
+  const id = restorePurpose(was);
+  if (id !== current) void select(id, false, true);
+});
 
 /** How far down each page was read, as it was left (pages that scroll the window: Home, Runtime, Remote, Inbox). */
 const readTo = new Map<PurposeId, number>();
@@ -266,7 +284,7 @@ function readAgain(id: PurposeId) {
   grows.observe($('page'));
 }
 
-function draw(id: PurposeId, quiet: boolean) {
+function draw(id: PurposeId, quiet: boolean, stepped = false) {
   const from = current;
   // To another place: the world goes up or down to it, the way it lies along the rail (the place left kept in sight
   // as it was, from before anything of it changes).
@@ -285,6 +303,10 @@ function draw(id: PurposeId, quiet: boolean) {
   // Where the ink is: the page's own place, or the one whose tree, servers or area is out over it.
   const inkWas = where(inked(expanded()));
   current = id;
+  // A step in the window's history: the first place the OS opens on is the step it is at (read again after a reload,
+  // it is that one still); every other place gone to, a step on from it (unless Back or Forward came to it).
+  if (first) history.replaceState({...(history.state as object | null), place: id}, '');
+  else if (from !== id && !stepped) history.pushState({place: id}, '');
   for (const [tabId, tab] of tabs) {
     // (A place's far side is in that place: its icon is the one lit.)
     const selected = tabId === placeOf(id);
@@ -452,7 +474,7 @@ const entering = /(?:^#|&)enter=([^&]+)/.exec(location.hash)?.[1];
 // taken out of the address the same way, held for this tab until it is used, and its board shown.
 const invitation = inviteIn(location.hash);
 if (invitation) holdInvite(invitation.board, invitation.code);
-if (entering || invitation) history.replaceState(null, '', location.pathname + location.search);
+if (entering || invitation) history.replaceState(history.state, '', location.pathname + location.search);
 if (asking.has('device')) {
   void loadState().finally(async () => {
     await useLang(getState('lang'));
@@ -470,14 +492,14 @@ if (asking.has('device')) {
       if (await claim()) justSignedIn();
       const u = new URL(location.href);
       u.searchParams.delete('signed-in');
-      history.replaceState(null, '', u);
+      history.replaceState(history.state, '', u);
     }
     // Back from a provider without a session (cancelled there, refused, or run out): the card they began on says why.
     if (asking.has('sign-in-failed')) {
       signInFailed(asking.get('error'));
       const u = new URL(location.href);
       for (const k of ['sign-in-failed', 'error', 'error_description']) u.searchParams.delete(k);
-      history.replaceState(null, '', u);
+      history.replaceState(history.state, '', u);
       // Said on a sign-in card: Inbox's or Remote's, whichever it began on; Remote's if neither is kept.
       if (load(PURPOSE_KEY) !== 'inbox') save(PURPOSE_KEY, 'remote');
     }
@@ -489,7 +511,7 @@ if (asking.has('device')) {
       const tier = asking.get('tier');
       const u = new URL(location.href);
       for (const k of ['plan', 'tier']) u.searchParams.delete(k);
-      history.replaceState(null, '', u);
+      history.replaceState(history.state, '', u);
       if (!connection()) {
         const {checkoutBackPage} = await import('../pages/remote/stripe.ts');
         await new Promise<void>((goOn) => document.body.replaceChildren(checkoutBackPage(how, isPaidTier(tier) ? tier : null, goOn)));
@@ -506,7 +528,7 @@ if (asking.has('device')) {
     if (asked) {
       const u = new URL(location.href);
       for (const k of ['account', 'repo']) u.searchParams.delete(k);
-      history.replaceState(null, '', u);
+      history.replaceState(history.state, '', u);
       save(PURPOSE_KEY, 'remote');
       try { localStorage.setItem('why.part.remote', asked === 'sign-in' ? 'sign-in' : 'repos'); } catch { /* the part kept, then */ }
     }
@@ -541,6 +563,6 @@ window.addEventListener('hashchange', () => {
   const came = inviteIn(location.hash);
   if (!came) return;
   holdInvite(came.board, came.code);
-  history.replaceState(null, '', location.pathname + location.search);
+  history.replaceState(history.state, '', location.pathname + location.search);
   if (current === 'server') render(); else void select('server');
 });

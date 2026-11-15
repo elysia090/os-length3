@@ -5,6 +5,7 @@ import {isIssues, ISSUES, plainPart, plainPath, store} from '../../../repo/repos
 import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
 import type {MarkName} from '../../ui/icons.ts';
 import {errorText} from '../../../api/errors.ts';
+import {wayOut} from '../../ui/way-out.ts';
 
 // What can be done to a file or a folder of a repo, as one menu (the person's menu, `.pop`), wherever it is brought
 // out: File's row, and Forge's files button for the file in front. Its name over its deeds; a deed pressed becomes
@@ -89,7 +90,7 @@ export function fileDeeds(d: Deeds): HTMLElement {
     const input = h('input', {class: 'line-in mono', placeholder: label, 'aria-label': label, autocapitalize: 'off', spellcheck: 'false'}) as HTMLInputElement;
     input.value = value;
     const error = h('p', {class: 'error small', role: 'alert'});
-    const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
+    const no = wayOut(h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement);
     const yes = h('button', {type: 'button', class: 'button small-button primary'}, deed) as HTMLButtonElement;
     const make = async () => {
       const v = input.value.trim();

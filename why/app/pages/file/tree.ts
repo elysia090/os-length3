@@ -359,14 +359,11 @@ export class FileTree {
     this.folders.set(item, () => show(true));
     if (at) this.takes(row, at, () => { if (!expanded) void show(true); });
     toggle.addEventListener('click', () => void show(!expanded));
-    // The name opens and closes it. Inside a repo, opened it is also the place Forge goes to (a repo's own row
-    // too, when it is not the one Forge is at: pressed while open, it is gone to, not closed).
-    name.addEventListener('click', () => {
-      if (!at) { void show(!expanded); return; }
-      if (expanded && (!isRepo || at.repo === this.events.current())) { void show(false); return; }
-      if (!expanded) void show(true);
-      this.events.choose(at.repo, at.path, false);
-    });
+    // The name opens and shuts it, and does nothing else: a folder (a repo's own row too) is unfolded to see what is
+    // in it, and the page under the tree stays where it is. Only a file, chosen, takes Forge to it (DESIGN §14,
+    // unfold). Before, a folder opened was also where Forge went, and a repo's row shut or went by which repo Forge
+    // was at: one press, two deeds, the world moving behind the tree as a folder was looked into.
+    name.addEventListener('click', () => void show(!expanded));
     void show(expanded);
     into.append(item);
   }

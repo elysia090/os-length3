@@ -120,12 +120,13 @@
 .file-tree .tree-system > .tree-row:is(:hover, :focus-within) .tree-name { color: var(--ink); }
 .file-tree .tree-note { padding: 0 var(--s3) 0 calc(24px + (var(--depth, 0) - var(--out, 0)) * var(--u)); font: 400 var(--t-word)/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); }
 .file-tree .tree-said { margin: var(--s1) var(--u) 0; }
-/* What can be done to a row, asked for at its right end: an angle toward where its sheet comes out, there under the
-   pointer or the keyboard and while it is out; the row pressed (a slot) while it is. */
+/* What can be done to a row, asked for at its right end: ⌄, the mark of a thing's own menu wherever it is (a repo's on
+   Home), the paper's on the row chosen and ink while its sheet is out; the row pressed (a slot) while it is. Not an
+   angle toward where the sheet comes out: at a folder's right end a › says “in here”, and a folder's name is what
+   opens it (DESIGN §14, unfold). */
 .file-tree .tree-more { width: calc(1.5 * var(--u)); height: calc(1.5 * var(--u)); margin: 0; border: 0; border-radius: 0; background: none; color: var(--quiet); }
-.file-tree .tree-row:is(:hover, :focus-within) > .tree-more, .file-tree .tree-more[aria-expanded='true'] { color: var(--ink); }
 .file-tree .tree-more[aria-expanded='true'] { background: none; color: var(--ink); }
-.file-tree .tree-more .mark { width: 20px; height: 20px; stroke-width: 2; rotate: -90deg; }
+.file-tree .tree-more .mark { width: 20px; height: 20px; stroke-width: 2; }
 .file-tree > .tree-pop { display: block; width: max-content; min-width: calc(9 * var(--u)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--outer) - var(--u))); padding: calc(var(--u) / 2) 0;
   border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .file-tree > .tree-pop > .pop-head { position: absolute; left: 0; bottom: 100%; margin: 0; padding: 0; white-space: nowrap;

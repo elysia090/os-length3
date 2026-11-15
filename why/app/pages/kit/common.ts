@@ -4,6 +4,7 @@ import {t} from '../../../text/i18n.ts';
 import {icon, mark, type MarkName} from '../../ui/icons.ts';
 import {arrive, glide, pop, where} from '../../ui/glide.ts';
 import {readTime} from '../../ui/law.ts';
+import {wayOut} from '../../ui/way-out.ts';
 import {purpose, RAIL, type PurposeId} from '../../host/purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
@@ -58,8 +59,11 @@ export function answers(no: Node | null, ...yes: (Node | null)[]): HTMLElement {
 export function askFoot(from: Element, box: Element): (no: Node, yes: Node) => HTMLElement {
   const a = from.getBoundingClientRect(), b = box.getBoundingClientRect();
   const left = a.width > 0 && a.left + a.width / 2 < b.left + b.width / 2;
-  return (no, yes) => h('div', {class: 'card-foot'}, ...(left ? [yes, h('span', {class: 'grow'}), no] : [no, h('span', {class: 'grow'}), yes]));
+  // (What declines is the ask's way out: Escape presses it, ui/way-out.ts.)
+  return (no, yes) => h('div', {class: 'card-foot'}, ...(left ? [yes, h('span', {class: 'grow'}), wayOutIf(no)] : [wayOutIf(no), h('span', {class: 'grow'}), yes]));
 }
+/** A button that declines, marked as the way out; anything else as it is. */
+const wayOutIf = (no: Node) => (no instanceof HTMLElement && no.tagName === 'BUTTON' ? wayOut(no) : no);
 
 /**
  * `b` does `f` when pressed, held while it runs, so a second press does

@@ -213,7 +213,7 @@ Three sizes on it, as on any sheet: the name's, the words' (15), the small (13);
 ### File
 
 *Everything there is, as a tree.* Not a place: it is called up in front of whatever place is shown, from the rail,
-by a press and by nothing else, and it stands whole in the window beside what called it; the place behind it goes out of focus. Each row's menu is always there, quiet.
+by a press and by nothing else, and it stands whole in the window beside what called it; the place behind it goes out of focus. Each row's menu is always there, quiet. A folder's name, a repo's too, opens it and shuts it, and nothing else: the place behind stays where it is while the tree is looked into. Only a file chosen goes somewhere (Forge, at it), and the tree goes with the choice.
 
 ---
 

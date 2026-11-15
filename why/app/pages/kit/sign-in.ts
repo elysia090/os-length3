@@ -4,6 +4,7 @@ import {t} from '../../../text/i18n.ts';
 import * as account from '../../../shipto/connection.ts';
 import {errorText} from '../../../api/errors.ts';
 import {button, pressing} from './remote-parts.ts';
+import {wayOut} from '../../ui/way-out.ts';
 
 // Signing in: one card where what the Remote holds would be, and the ways in under its title. Remote's page
 // shows it signed out; Inbox, Server and the page a device's code opens show the same card in the same place.
@@ -82,7 +83,7 @@ function byCode(done: () => void, error: HTMLElement): Node[] {
 
 /** The code the browser is to approve (`s`), with Cancel (`stop`) and Open the browser again under it. */
 function codeShown(s: {code: string; url: string}, error: HTMLElement, stop: () => void): Node[] {
-  const again = button(t('Reopen browser'), 'small-button'), cancel = button(t('Cancel'), 'small-button');
+  const again = button(t('Reopen browser'), 'small-button'), cancel = wayOut(button(t('Cancel'), 'small-button'));
   again.addEventListener('click', () => void native('remote_login_reopen').catch((e: unknown) => { error.textContent = errorText(e); }));
   cancel.addEventListener('click', stop);
   return [h('p', {class: 'sign-in-step'}, t('Approve this code in the browser')),

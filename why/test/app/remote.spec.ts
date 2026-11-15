@@ -60,7 +60,7 @@ test('Share in no server yet on the free plan says making one is paid, and leads
   await expect(app.remote.part('Plan')).toHaveAttribute('aria-selected', 'true');
 });
 
-test('turning a repo off asks in its card first, for its name, and Not now leaves it on', async ({signedIn: app}) => {
+test('turning a repo off asks in its card first, for its name, and Cancel or Escape leaves it on', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('remote');
   await expect(app.remote.card('hello')).toContainText('Synced');
@@ -75,6 +75,14 @@ test('turning a repo off asks in its card first, for its name, and Not now leave
 
   await ask.getByRole('button', {name: 'Cancel'}).click();
   await expect(app.remote.power('hello')).toBeChecked();
+
+  // Escape is the way out of an ask as of everything called up: the card as it was, the keyboard on its switch.
+  await app.remote.power('hello').click();
+  await expect(ask.getByRole('textbox', {name: 'Repo name'})).toBeFocused();
+  await expect(ask.getByRole('button', {name: 'Cancel'})).toHaveAttribute('aria-keyshortcuts', 'Escape');
+  await app.page.keyboard.press('Escape');
+  await expect(app.remote.power('hello')).toBeChecked();
+  await expect(app.remote.power('hello')).toBeFocused();
 });
 
 test('a repo is turned off from its card in one ask, kept off, and its switch brings it back', async ({signedIn: app}) => {

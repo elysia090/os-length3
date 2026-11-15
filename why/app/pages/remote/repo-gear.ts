@@ -11,6 +11,7 @@ import {promptHolds, stopPrompt} from '../bench/sessions.ts';
 import {openRepoPlace} from './repos.ts';
 import {askFirst} from './repo-off.ts';
 import type {Context} from '../kit/context.ts';
+import {wayOut} from '../../ui/way-out.ts';
 
 // A repo's gear, the same in every list of repos (Home's cards, Runtime's
 // three columns): near a repo (the pointer on it, or the keyboard in it) a
@@ -158,7 +159,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     const input = h('input', {class: 'line-in mono', 'aria-label': t('New name'), placeholder: t('New name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '64'}) as HTMLInputElement;
     input.value = repo;
     const error = h('p', {class: 'error small', role: 'alert'});
-    const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
+    const no = wayOut(h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement);
     const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Rename')) as HTMLButtonElement;
     const box = h('div', {class: 'pop-field', role: 'group', 'aria-label': t('Rename {repo}', {repo})}, input, stops ? stopsFirst() : null, error, answers(no, yes));
     const refuse = (why: string) => { error.textContent = why; input.focus(); nudge(input); };

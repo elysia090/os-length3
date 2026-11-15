@@ -7,6 +7,7 @@ import {answers} from '../kit/common.ts';
 import {errorText} from '../../../api/errors.ts';
 import {button, pressing} from '../kit/remote-parts.ts';
 import {stripeTrip} from './stripe.ts';
+import {wayOut} from '../../ui/way-out.ts';
 
 // Remote's Plan part: the tier this account is on, its use, the tiers to choose from (the way to it from a place the
 // plan refused is kit/plan-gate.ts).
@@ -51,7 +52,7 @@ function tierCard(c: TierCard, press: (tier: PaidTier, b: HTMLButtonElement, err
  */
 function payingFor(tier: PaidTier, price: Price | undefined, o: {deed: string; lead: string; no(): void; go(yes: HTMLButtonElement, error: HTMLElement): void}): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
-  const no = button(t('Cancel')), yes = button(o.deed, 'primary');
+  const no = wayOut(button(t('Cancel'))), yes = button(o.deed, 'primary');
   no.addEventListener('click', o.no);
   yes.addEventListener('click', () => o.go(yes, error));
   setTimeout(() => yes.focus());

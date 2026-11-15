@@ -9,6 +9,7 @@ import {copying} from '../kit/common.ts';
 import {every} from '../../../api/runs.ts';
 import {errorText} from '../../../api/errors.ts';
 import {button, card} from './parts.ts';
+import {wayOut} from '../../ui/way-out.ts';
 
 // Runtime's SSH: who listens for it on this account's devices, and this device's own, in the app.
 
@@ -103,7 +104,7 @@ function askScope(el: HTMLElement, m: ssh.Here, said: HTMLElement, again: () => 
     });
     return b;
   };
-  const not = button(t('Cancel'), 'small-button');
+  const not = wayOut(button(t('Cancel'), 'small-button'));
   not.addEventListener('click', () => el.replaceChildren(...was));
   el.replaceChildren(h('span', {class: 'card-title'}, t('This device')),
     h('span', {class: 'muted small'}, t('Allowed connections')),

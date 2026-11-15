@@ -8,6 +8,11 @@ import {expect, test} from './fixtures.ts';
 //   press       the thing pressed answers in the frame the press goes down, sounds as it goes down, gives a few
 //               pixels and comes home on let-go, never past where it was
 //   the act     every place's subject holds the place's act: something to write in or to do
+//   write       a letter typed is there in the frame after its key, and there still when the place is come back to
+//   unfold      a folder's name opens it and shuts it again, and does nothing else: what is under it stays
+//   close       Escape is the way out of what is asked, as of what is called up (remote.spec.ts holds an ask's)
+//   switch      a part pressed is shown in the frame after, what it holds with it; the arrows go to the next
+//   back        Back goes to the place before, Forward to the one after: never out of the OS from a place gone through
 
 test.use({reducedMotion: 'no-preference'});
 const PLACES = {
@@ -165,4 +170,119 @@ test('scrolled by hand, what is scrolled stays under the hand and nothing else m
   expect(s.__s.filter((f) => f.t > first && f.t <= moved.t).length, 'in the frame after the wheel turned').toBeLessThanOrEqual(2);
   // Nothing animates while it scrolls: no easing laid on it, nothing faded in or out by it.
   expect([...new Set(s.__s.flatMap((f) => f.moving))], 'what moved besides the scrolled file').toEqual([]);
+});
+
+/** In the page: from now, for each letter keyed in the field the keyboard is in, whether it was there two frames after its key. */
+const keepWatch = (page: Page) => page.evaluate(() => {
+  const w = window as unknown as {__late: string[]; __keyed: number; __watching?: true};
+  w.__late = []; w.__keyed = 0;
+  if (w.__watching) return;
+  w.__watching = true;
+  const read = () => { const f = document.activeElement as HTMLInputElement | null; return f && 'value' in f ? String(f.value) : ''; };
+  addEventListener('keydown', (e) => {
+    if (e.key.length !== 1) return;
+    w.__keyed++;
+    const before = read();
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (read() === before) w.__late.push(e.key); }));
+  }, {capture: true});
+});
+const late = (page: Page) => page.evaluate(() => { const w = window as unknown as {__late: string[]; __keyed: number}; return {late: w.__late, keyed: w.__keyed}; });
+
+test('a letter typed is there in the frame after its key, in every field; and what was written is there still when its place is come back to', async ({signedIn: app, another}) => {
+  test.setTimeout(240_000);
+  await app.page.setViewportSize({width: 1536, height: 864});
+  await app.newRepo.make('hello', {template: 'C'});
+  await app.git.write('hello', 'Fix: Say hello louder');
+  const bo = await another('Bo');
+  await bo.inbox.named();
+  await app.inbox.named();
+  await app.inbox.writeTo(bo.handle, 'Question: are you coming?');
+  const fields = [
+    {place: 'git', field: () => app.git.firstLine, text: 'Fix: Mind the gap'},
+    {place: 'forge', field: () => app.forge.editor('README.md'), text: 'tide'},
+    {place: 'inbox', field: () => app.inbox.message, text: 'See you there'},
+  ] as const;
+  for (const f of fields) {
+    await app.rail.go(f.place);
+    await f.field().click();
+    await app.page.keyboard.press('End');
+    await keepWatch(app.page);
+    for (const ch of f.text) { await app.page.keyboard.type(ch); await app.page.waitForTimeout(30); }
+    await app.page.waitForTimeout(100);
+    const seen = await late(app.page);
+    expect(seen.keyed, `${f.place}: keyed`).toBe(f.text.length);
+    expect(seen.late, `${f.place}: letters not there in the frame after their key`).toEqual([]);
+  }
+  // Gone from and come back to, each place has what was written in it, where it was written.
+  for (const f of fields) {
+    await app.rail.go('home');
+    await app.rail.go(f.place);
+    await expect(f.field(), `${f.place}: kept`).toHaveValue(new RegExp(`${f.text}$`));
+  }
+});
+
+test('a folder in File opens by its name and shuts by it again, and does nothing else: the page under the tree stays where it is', async ({signedIn: app}) => {
+  await app.newRepo.make('hello', {template: 'C'});
+  await app.rail.go('home');
+  const src = await app.file.item('hello', 'src');
+  const name = src.getByRole('button', {name: 'src', exact: true}).first();
+  const title = await app.page.title();
+  const shown = () => src.evaluate((el) => [...el.querySelectorAll('[role=treeitem]')].filter((r) => (r as HTMLElement).getClientRects().length).length);
+  for (const open of [await src.getAttribute('aria-expanded') !== 'true', await src.getAttribute('aria-expanded') === 'true']) {
+    await name.click();
+    // At once (nothing folds on its way), and nothing else: still Home under the tree, no world's move.
+    await expect(src).toHaveAttribute('aria-expanded', String(open));
+    expect(await shown(), `what is in it, ${open ? 'open' : 'shut'}`)[open ? 'toBeGreaterThan' : 'toBe'](0);
+    expect(await app.page.title(), 'the place under the tree').toBe(title);
+    expect(await app.page.evaluate(() => document.querySelectorAll('.place-left').length), 'no world moving behind it').toBe(0);
+  }
+});
+
+test('Back goes to the place before and Forward to the one after, however many were gone through; Back never leaves the OS', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  const at = () => app.page.evaluate(() => document.title.split(' · ')[0]);
+  await app.rail.go('home');
+  await app.rail.go('runtime');
+  await app.rail.go('server');
+  // (The place one is at, pressed, is no step.)
+  await app.rail.go('server');
+  const os = app.page.url();
+  for (const [step, place] of [['back', 'Runtime'], ['back', 'Home'], ['forward', 'Runtime'], ['forward', 'Server']] as const) {
+    if (step === 'back') await app.page.goBack(); else await app.page.goForward();
+    await expect.poll(at, {message: `${step} to ${place}`}).toBe(place);
+    expect(app.page.url(), 'still the OS').toBe(os);
+    await expect(app.rail.button(place.toLowerCase() as 'home')).toHaveAttribute('aria-current', 'page');
+  }
+  // The door is a step as the rail is: there and Back again.
+  await app.rail.go('home');
+  await app.page.locator('#door').click();
+  await expect.poll(at).toBe('Remote');
+  await app.page.goBack();
+  await expect.poll(at).toBe('Home');
+});
+
+test('a page\'s part pressed is shown in the frame after, what it holds with it; the arrows go to the next and the one before', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  for (const place of ['runtime', 'remote'] as const) {
+    await app.rail.go(place);
+    const tabs = app.main.getByRole('tab');
+    const n = await tabs.count();
+    expect(n, `${place}: its parts`).toBeGreaterThan(1);
+    /** In the frame after now: which part is chosen, and whether what it holds is shown. */
+    const chosen = () => app.page.evaluate(() => new Promise<{name: string; shown: boolean}>((done) => requestAnimationFrame(() => {
+      const tab = document.querySelector<HTMLElement>('main [role=tab][aria-selected=true]');
+      const panel = tab && document.getElementById(tab.getAttribute('aria-controls') ?? '');
+      done({name: tab?.textContent?.trim() ?? '', shown: !!panel && !panel.hidden && panel.getClientRects().length > 0});
+    })));
+    await tabs.nth(1).click();
+    const second = (await tabs.nth(1).textContent())!.trim();
+    expect(await chosen(), `${place}: pressed`).toEqual({name: second, shown: true});
+    await app.page.keyboard.press('ArrowRight');
+    // (The last part's next is the first.)
+    const next = n > 2 ? 2 : 0, third = (await tabs.nth(next).textContent())!.trim();
+    expect(await chosen(), `${place}: the arrow to the next`).toEqual({name: third, shown: true});
+    await expect(tabs.nth(next)).toBeFocused();
+    await app.page.keyboard.press('ArrowLeft');
+    expect(await chosen(), `${place}: the arrow back`).toEqual({name: second, shown: true});
+  }
 });
