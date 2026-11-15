@@ -82,6 +82,13 @@ request passes, and the one secret") and are tested in
   (muk's: `module/muk/src/filter.h`; what why lends a box is `why/prompt/start.rs`). Its network is a per-device grant. The desktop
   webview runs only the app's own files and may only listen for events and
   set its title.
+- **A link carried.** The Remote opens TCP connections for a box in a page
+  (`why/shipto/remote/links`): only for a session, asked from one of the
+  app's own pages (the handshake's Origin, never the cookie alone), only to
+  port 80, 443 or 22 at a public IPv4 address, and by the address that was
+  judged, so a name cannot be made to mean another host between the check
+  and the connection. It reads nothing of what goes over one and writes no
+  row for it.
 - **What is out of reach.**
   - The Remote's database role reads and writes rows, and can change no
     schema.

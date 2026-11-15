@@ -7,6 +7,7 @@
 // --no-bucket (or WHY_NO_BUCKET=1): a Remote that holds no files, as a
 // Worker without its R2 binding is; every route that would move bytes says so.
 import {existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {resolve4} from 'node:dns/promises';
 import {createServer} from 'node:http';
 import {join} from 'node:path';
 import {PGlite} from '@electric-sql/pglite';
@@ -15,6 +16,8 @@ import {migrate} from 'drizzle-orm/pglite/migrator';
 import {createApp} from './app.ts';
 import {createAuth} from '../people/auth.ts';
 import {devBilling} from '../plan/devbilling.ts';
+import {links, tcp} from '../links/relay.node.ts';
+import {also} from '../links/where.ts';
 import {enterEmail} from '../people/enter.ts';
 import {memoryMarks} from './mark.ts';
 import {planConfig} from '../plan/plan.ts';
@@ -71,7 +74,11 @@ const app = createApp({db, auth, bucket, origins: [appOrigin, ...others], appOri
 const serve = (r: Request) => (stripe && new URL(r.url).pathname.startsWith('/dev-billing/')
   ? stripe.app.fetch(new Request(r.url.replace('/dev-billing/', '/'), r)) : app.fetch(r));
 
-createServer(async (req, res) => {
+// Links carried (links/relay.ts), as on Workers. WHY_LINK_ALSO names what a link may reach here besides the rule, each
+// `name=a.b.c.d:port`: that name has that address, and a link may go to it at that port (a test's own server on this
+// machine, which no public address is). The Worker has no such word.
+const linkAlso = (process.env.WHY_LINK_ALSO ?? '').split(/\s+/).filter(Boolean).map((word) => word.split('=') as [string, string]);
+const server = createServer(async (req, res) => {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
   const r = await serve(new Request(`${baseURL}${req.url}`, {
@@ -82,7 +89,11 @@ createServer(async (req, res) => {
   r.headers.forEach((v, k) => { headers[k] = k === 'set-cookie' ? r.headers.getSetCookie() : v; });
   res.writeHead(r.status, headers);
   res.end(Buffer.from(await r.arrayBuffer()));
-}).listen(Number(port), '127.0.0.1', () => {
+});
+links(server, baseURL, {auth, origins: [appOrigin, ...others], open: tcp,
+  resolve: async (name) => { const place = linkAlso.find(([n]) => n === name)?.[1]; return place ? [place.slice(0, place.lastIndexOf(':'))] : resolve4(name); },
+  rule: linkAlso.length ? also(linkAlso.map(([, place]) => place)) : undefined});
+server.listen(Number(port), '127.0.0.1', () => {
   console.log(`remote on ${baseURL} for ${appOrigin} (${dir}${noBucket ? ', no bucket: files are not kept' : ''})`);
   setTimeout(() => void swept(), 3000);
 });

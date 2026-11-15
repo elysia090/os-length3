@@ -18,6 +18,8 @@
 //   seen.ts     /v1/seen…, /v1/repos/:name/seen, /v1/servers/:id/repos   who sees a repo
 //   news.ts     /v1/news                               what came in, for the rail
 //   ssh.ts      /v1/ssh…                               which devices listen for SSH
+//   (links/relay.ts  /v1/link                          a link out of a box, carried: a WebSocket, answered before
+//                                                        this app by worker.ts and dev.ts, with the same session)
 // and request.ts, what every request passes through (origins, limits, refusals, what fails unforeseen), and
 // budget.ts, what R2 and the database may be asked for (counted before either is asked).
 

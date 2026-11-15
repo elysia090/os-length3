@@ -255,7 +255,7 @@ TCP to run again and no frame to parse on the way.
 | the box itself, another box on the device | the machine's own loopback (sods) | nothing |
 | a box on another device | a channel between the two devices (WebRTC), cowboy at each end: not made yet | says where each is, once (the Remote) |
 | a host that answers a page (HTTP, with CORS) | the page's own request: not made yet | nothing |
-| any other host (TCP: git, SSH, a registry) | one WebSocket to a relay that opens the connection and copies bytes; what is said over it is sealed between the box and the host (TLS, SSH), not read | copies bytes: no judgement, no state past the connection |
+| any other host (TCP: git, SSH, a registry) | one WebSocket to a relay that opens the connection and copies bytes; what is said over it is sealed between the box and the host (TLS, SSH), not read | copies bytes, and judges only who and to where (`why/shipto/remote/links`: a session; port 80, 443 or 22 at a public address); no state past the connection, no row written |
 
 ```
 module/cowboy/
@@ -270,8 +270,9 @@ module/cowboy/
 sods lends a port for it as it lends a tree: what its Linux cannot reach itself (an address that is not the
 machine's own) it asks of whoever was given at `linux({outside})`, and knows nothing of who answers; a box has it
 only where it was lent the machine's network. ricebox knows nothing of it. Made so far: cowboy itself, sods' port,
-and a real program reaching a host by its name through both, in node. Not yet: a page given it (the Worker takes
-no outside yet), and the relay, which is shipto's to serve (who may use it, to where, how much).
+a real program reaching a host by its name through both, in node, and the relay (shipto's: the Remote carries a
+link, on Workers and on this machine). Not yet: a page given it (the Worker takes no outside yet). From Workers a
+link reaches no address that is Cloudflare's own, so a host served through Cloudflare is not reached this way.
 
 ## Today, against that
 

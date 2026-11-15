@@ -16,6 +16,9 @@ import {createAuth, providers} from '../people/auth.ts';
 import {enterEmail} from '../people/enter.ts';
 import {r2Bucket, type R2Bucket} from '../bytes/bucket.ts';
 import {limitsOf} from '../plan/budget.ts';
+import {PATH as LINK} from '../links/relay.ts';
+import {link} from '../links/relay.worker.ts';
+import {overHttps} from '../links/where.ts';
 import {MarkObject, objectMarks, type MarkNamespace} from './mark.ts';
 import type {Edge} from '../repos/files.ts';
 import {planConfig, type Billing} from '../plan/plan.ts';
@@ -151,7 +154,9 @@ function make(env: Env) {
     // Stripe's keys and its price are given.
     plan: enter ? undefined : planConfig(env),
     billing: billingOf(env), marks});
-  return {app, at, bucket, marks};
+  // What a link is admitted by (links/relay.ts): the same session, pages and count at the edge as every request's.
+  const links = {auth, origins: [env.APP_ORIGIN, ...origins], limiter: env.LIMITER, sessionKept: 10_000, resolve: overHttps()};
+  return {app, at, bucket, marks, links};
 }
 
 /** How the plan is bought here: Stripe's keys and the tiers with a price; none, when either key or every price is missing. */
@@ -165,6 +170,9 @@ export function billingOf(env: Pick<Env, 'STRIPE_SECRET_KEY' | 'STRIPE_WEBHOOK_S
 export default {
   async fetch(request: Request, env: Env, ctx: Ctx) {
     const m = made ??= make(env);
+    // A link carried (links/relay.ts) is no route of the app's: what answers it is a WebSocket's other end, which
+    // nothing on the way may wrap. Its session is looked up on this request's connection, as any is.
+    if (new URL(request.url).pathname === LINK) return served(env.DATABASE_URL, m.at, () => link(request, m.links), (p) => ctx.waitUntil(p));
     // With its context, so what a request does once it is answered (the mark moving: mark.ts) is the Worker's waitUntil.
     return served(env.DATABASE_URL, m.at, async () => m.app.fetch(request, env, ctx as ExecutionCtx), (p) => ctx.waitUntil(p));
   },

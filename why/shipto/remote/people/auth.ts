@@ -366,21 +366,27 @@ export const signedIn = (auth: Auth, origins: string[], keep = 0): MiddlewareHan
   // Nothing that could name a session: refused before the database is asked anything.
   if (!cred) return c.json({error: 'not signed in'}, 401);
   if (fromElsewhere(cred, c.req.raw, origins)) return c.json({error: 'not from the app'}, 403);
-  const now = Date.now(), had = keep ? kept.get(cred.key) : undefined;
-  if (had && had.until > now) {
-    c.set('userId', had.user); c.set('sessionId', had.session); c.set('name', had.name); c.set('sessionEnds', had.ends);
-    return next();
-  }
-  const s = await auth.api.getSession({headers: cred.headers});
-  if (!s) { kept.delete(cred.key); return c.json({error: 'not signed in'}, 401); }
-  if (keep) {
-    if (kept.size >= 1000) for (const [k, v] of kept) if (v.until <= now || kept.size >= 1000) kept.delete(k);
-    kept.set(cred.key, {until: Math.min(now + keep, new Date(s.session.expiresAt).getTime()), user: s.user.id, session: s.session.id, name: s.user.name,
-      ends: new Date(s.session.expiresAt).getTime()});
-  }
-  c.set('userId', s.user.id);
-  c.set('sessionId', s.session.id);
-  c.set('name', s.user.name);
-  c.set('sessionEnds', new Date(s.session.expiresAt).getTime());
+  const s = await sessionBy(auth, cred, keep);
+  if (!s) return c.json({error: 'not signed in'}, 401);
+  c.set('userId', s.user); c.set('sessionId', s.session); c.set('name', s.name); c.set('sessionEnds', s.ends);
   await next();
 };
+
+/**
+ * The session `cred` names, or null: looked up from that one credential, and kept `keep` ms (never past its end) under
+ * what was looked up. For signedIn, and for what answers beside the app's routes with a session all the same (a link
+ * carried: links/relay.ts).
+ */
+export async function sessionBy(auth: Auth, cred: {key: string; headers: Headers}, keep = 0): Promise<{user: string; session: string; name: string; ends: number} | null> {
+  const now = Date.now(), had = keep ? kept.get(cred.key) : undefined;
+  if (had && had.until > now) return had;
+  const s = await auth.api.getSession({headers: cred.headers});
+  if (!s) { kept.delete(cred.key); return null; }
+  const found = {until: 0, user: s.user.id, session: s.session.id, name: s.user.name, ends: new Date(s.session.expiresAt).getTime()};
+  if (keep) {
+    if (kept.size >= 1000) for (const [k, v] of kept) if (v.until <= now || kept.size >= 1000) kept.delete(k);
+    found.until = Math.min(now + keep, found.ends);
+    kept.set(cred.key, found);
+  }
+  return found;
+}

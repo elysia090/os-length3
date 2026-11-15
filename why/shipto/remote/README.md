@@ -20,7 +20,7 @@ which the desktop app's commands (`desktop`) and why (`cli/`) both use.
 The folders are the parts by what each holds: `serve/` (the one HTTP app, the Worker and the Remote on this machine,
 what every request shares and the mark), `people/` (who someone is and what they are called), `repos/` (repos kept,
 who sees them, Home's settings, SSH per device, the sweep), `bytes/` (what is at rest: the bucket, file contents, trees,
-the releases' files), `talk/` (Inbox, servers, news), `plan/` (the plan, the budget, Stripe and its stand-in), `db/`
+the releases' files), `talk/` (Inbox, servers, news), `plan/` (the plan, the budget, Stripe and its stand-in), `links/` (a link out of a box carried: who, to where, how much), `db/`
 (the schema, the migrations' stages, the database as the deploy reaches it), `ship/` (the deploy and the releases
 pinned), `tests/` (the Remote as a whole, and what the tests share); `migrations/` is drizzle-kit's, as it writes it.
 
@@ -115,11 +115,35 @@ main has made it Cloudflare refuses another branch's `versions upload`.
 | News | `talk/news.ts` | `GET /v1/news` | reads `message`, `contact`, `board_post`, `board_seen` | page |
 | SSH, per device | `repos/ssh.ts` | `GET /v1/ssh`, `POST /v1/ssh/:device/off` (any session); `PUT/DELETE /v1/ssh/this`, `POST /v1/ssh/this/beat` (the device itself: refused with an Origin; with the tag its last answer gave, answered by the mark) | `ssh` (one row a session: its scope, `device` or `network`, and when; never an address, port or repo) | core (the listener), page (see, stop) |
 | What moved, without the database | `serve/mark.ts` (`MarkObject`, `serve/worker.ts` exports it) | (none of its own: it answers `GET /v1/moved`, `/v1/news`, `/v1/inbox/threads`, `/v1/boards/:id/posts`, `/v1/boards/:id/todos` and the beat, given their tags, and every other write moves it) | (none: the Durable Object's own storage, its mark and the beats it heard) | page, core |
+| A link carried | `links/relay.ts` (who is admitted, the link itself), `links/where.ts` (to where), `links/relay.worker.ts` and `links/relay.node.ts` (whose socket: the runtime's, node's) | `GET /v1/link`, a WebSocket (no route of the app's: `serve/worker.ts` and `serve/dev.ts` answer it before the app) | reads `session` and nothing else; nothing is written | page (a box's programs, through cowboy: `module/cowboy/host/relay.ts`) |
 | The sweep | `repos/sweep.ts`, `serve/worker.ts` `scheduled` | (none: once a day, and when `serve/dev.ts` starts) | every table above (Stripe's events 30 days old; each changed room counted again from its rows); the bucket's unnamed blobs; then the mark moves, and lets go of beats heard a day ago | |
 
 `GET /v1/repos/gone` is asked by no client today (a device learns a repo
 went from `GET /v1/repos/:name`'s `gone` and `PATCH draft`'s 410); the tests
 read the sweep through it.
+
+### A link carried
+
+A box in a page has no network of its own: a browser gives a page no TCP. What its programs connect to is decided
+on the device (cowboy, `module/cowboy`: a name is answered there, a link is known by the name it was meant for),
+and a link to a host that no page's own request reaches (git, SSH, anything that is not HTTP with CORS) is carried
+here: one WebSocket in, one TCP connection out, bytes copied each way. What is said over it is sealed between the
+box and the host (TLS, SSH); the Remote reads none of it and keeps none of it.
+
+| | The rule | Refused as |
+| --- | --- | --- |
+| who | a session: from one of the app's own pages (its Origin named, the cookie with it), or a device's token with no Origin | 401, 403: no WebSocket is made |
+| how often | the edge's count by address (`LIMITER`), as every request; 16 links of an account at once, in an isolate | 429; `ENOBUFS` |
+| to where | port 80, 443 or 22, at a public IPv4 address: one given as it stands, or every address a name has (asked over HTTPS, kept a minute a name). Dialled by the address that was judged, never by the name again | `EACCES`; `EHOSTUNREACH` for a name with no address |
+| how long | a first line within 10 s, the host's answer within 15 s, and a link nothing moved on for 5 minutes is let go | closed; `ETIMEDOUT` |
+
+A refusal after the WebSocket is made is its first message, one byte: why, as Linux numbers it, which is what the
+program's `connect()` returns in the box. No row is written for a link and none is read but the session's (kept
+10 s by the isolate), so a link costs the Remote one look at a session.
+
+What it does not reach: IPv6, and from Workers any address that is Cloudflare's own (the runtime opens no TCP
+connection to them: a host served through Cloudflare reads as `ENETUNREACH`). `serve/dev.ts` takes `WHY_LINK_ALSO`
+(`name=a.b.c.d:port …`) for a test's own server on this machine; the Worker has no such word.
 
 ## What native and why need that the web does not
 
