@@ -4,7 +4,7 @@ import {shownTree} from '../../../repo/repos.ts';
 import {AgentError, type Use} from '../../../agent/ask.ts';
 import {Agent, type Done, type Hands} from '../../../agent/loop.ts';
 import {boxSaid} from '../../../repo/agents.ts';
-import {LAND, paced, still} from '../../ui/glide.ts';
+import {cut, LAND, paced, still} from '../../ui/glide.ts';
 import {askChanged, asked} from './asks.ts';
 import type {Player} from './play.ts';
 
@@ -131,7 +131,7 @@ export async function atWork(flow: Flow, row: HTMLElement, repo: string, use: Us
     a.classList.remove('waiting');
     a.replaceChildren(...nodes);
     if (refused) a.classList.add('refused');
-    if (!still() && !typed) a.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}], {duration: paced(220), easing: LAND});
+    if (!still() && !typed) a.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}], {duration: cut() ? 0 : paced(220), easing: LAND});
   };
   // The pane follows the screen: each line as what it says is played (play.ts), never ahead of it.
   player.subscribe((e) => {

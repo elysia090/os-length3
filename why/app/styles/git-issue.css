@@ -93,5 +93,6 @@
 .agent-row.working .agent-dot, .agent-mark:not(.waits) { animation: agent-breath calc(900ms * var(--pace)) ease-in-out infinite alternate; }
 .agent-row.waits .agent-dot, .agent-mark.waits { background: var(--marker); box-shadow: 0 0 0 1px var(--edge) inset; }
 .agent-mark { display: inline-block; margin-inline-start: var(--s1); vertical-align: middle; }
-@keyframes agent-breath { from { opacity: .45; } to { opacity: 1; } }
+/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
+@keyframes agent-breath {}
 @media (prefers-reduced-motion: reduce) { .agent-row.working .agent-dot, .agent-mark { animation: none; } }

@@ -41,6 +41,13 @@ export const after = (ms: number, then: () => void): Animation => {
 export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 /** Motion is a user preference, never a global experiment switch. */
 export const still = reduced;
+/**
+ * What is neither one of the three moves (§8: the world, the desk, in front and back) nor the hand's own (a press's
+ * give, a no's nudge, the caret) does not move at all: what comes is there, what goes is gone, at once, and the mind
+ * completes the way between, as it does across a cut or a comic's gutter (DESIGN §8, a cut). The helpers below that
+ * made such things glide, grow, fold, pop or fade keep their names and do their deeds at once.
+ */
+export const cut = () => true;
 
 /** Changing the OS preference settles work already on screen, including pending dismissal callbacks. */
 if (typeof matchMedia !== 'undefined') matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (event) => {
@@ -67,7 +74,7 @@ export function glide(from: DOMRect | null, to: HTMLElement | null, layer: HTMLE
   // it is now, never back from the place it was going to, nor as a second ink beside the first.
   const going = gliding.get(layer);
   if (going) { from = going.at() ?? from; going.end(); }
-  if (!from || !to || still()) return;
+  if (!from || !to || still() || cut()) return;
   const at = to.getBoundingClientRect();
   if (!at.width || (Math.abs(from.left - at.left) < 1 && Math.abs(from.top - at.top) < 1)) return;
   const box = layer.getBoundingClientRect();
@@ -143,7 +150,7 @@ export function arrive(el: HTMLElement, dir: number, axis: 'x' | 'y', by = 12, m
   arrivals.get(el)?.cancel();
   arrivals.delete(el);
   ms = paced(ms);
-  if (still() || into >= ms) return;
+  if (still() || cut() || into >= ms) return;
   const d = (dir || 1) * by;
   const animation = el.animate([{transform: axis === 'x' ? `translateX(${d}px)` : `translateY(${d}px)`, opacity: 0}, {transform: 'none', opacity: 1}],
     {duration: ms, delay: -into, easing: LAND});
@@ -217,7 +224,7 @@ export function textAt(area: HTMLTextAreaElement, i: number): DOMRect {
 export type Carry = {lifted: Lifted; to(target: HTMLElement): Element | DOMRect | null; rest?: HTMLElement};
 
 export function morph(from: DOMRect, find: () => HTMLElement | null, ms = 340, round = '', patience = 40, carry?: Carry) {
-  if (still() || !from.width) return false;
+  if (still() || cut() || !from.width) return false;
   ms = paced(ms);
   // The outline stands where the thing was at once, so the eye has it while the page it goes to is drawn (a repo read
   // from the store a moment later); it goes on once its box is there, or fades where it stood if none comes.
@@ -321,7 +328,7 @@ export function nudge(el: Element | null) {
 
 /** What stood under something taken away closes up over where it was (`by` pixels), rather than being there at once. */
 export function closeUp(els: Element[], by: number, ms = 220) {
-  if (still() || !by) return;
+  if (still() || cut() || !by) return;
   for (const el of els) el.animate([{translate: `0 ${by}px`}, {translate: '0 0'}], {duration: paced(ms), easing: LAND});
 }
 
@@ -353,7 +360,7 @@ function folded(el: HTMLElement): [Keyframe, Keyframe] {
 
 export function putAway(el: HTMLElement, gone: () => void, o: {fold?: boolean; ms?: number} = {}) {
   if (goingOut.has(el)) return;
-  if (still() || el.hidden || !el.isConnected || !el.getClientRects().length) { gone(); return; }
+  if (still() || cut() || el.hidden || !el.isConnected || !el.getClientRects().length) { gone(); return; }
   const from = getComputedStyle(el).getPropertyValue('--from').trim() || '0 4px';
   const frames: Keyframe[] = o.fold
     ? folded(el)
@@ -373,7 +380,7 @@ export function putAway(el: HTMLElement, gone: () => void, o: {fold?: boolean; m
 
 /** Opened (a folder), it unfolds as a closed one folds: from nothing to its height, what stands under it making way. */
 export function unfold(el: HTMLElement, ms = 200) {
-  if (still()) return;
+  if (still() || cut()) return;
   if (!el.getBoundingClientRect().height) return;
   const [full, none] = folded(el);
   el.animate([none, full], {duration: paced(ms), easing: LAND});
@@ -393,7 +400,7 @@ export function keepOut(el: HTMLElement) {
 
 /** A thing just done is rewarded: it pops past its size and settles (a TODO's mark once done). */
 export function pop(el: Element, by = .16, ms = 380) {
-  if (still()) return;
+  if (still() || cut()) return;
   el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: SPRING});
 }
 

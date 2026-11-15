@@ -1,5 +1,5 @@
 import {fieldMoved} from '../../ui/caret.ts';
-import {LAND, msOf, paced, still} from '../../ui/glide.ts';
+import {cut, LAND, msOf, paced, still} from '../../ui/glide.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // The Prompt up as a screen over the center (docs/PLACES.md, Forge): the box at the foot, lit. Brought up, the glass of
@@ -119,7 +119,7 @@ export class Screen implements Rises {
       for (const a of grows) a.cancel();
       const r = parseFloat(getComputedStyle(p.screen).borderTopLeftRadius) || 0, from = seen + by;
       grows = [p.glass, p.slot].map((t) => t.animate([{clipPath: `inset(${from}px 0 0 0 round ${r}px)`}, {clipPath: `inset(0 0 0 0 round ${r}px)`}],
-        {duration: Math.min(320, 160 + from / 2), easing: LAND}));
+        {duration: cut() ? 0 : Math.min(320, 160 + from / 2), easing: LAND}));
     }).observe(p.term);
   }
 
@@ -174,7 +174,7 @@ export class Screen implements Rises {
     if (still()) work.classList.remove('line-lit');
     else {
       const down = timing('down');
-      const unlit = this.#unlit = glass.animate([], {duration: down.duration * down.line});
+      const unlit = this.#unlit = glass.animate([], {duration: cut() ? 0 : down.duration * down.line});
       unlit.finished.then(() => { if (this.#state !== 'up') work.classList.remove('line-lit'); }, () => {});
     }
     this.#p.changed('leaving');
@@ -231,7 +231,7 @@ export class Screen implements Rises {
     for (const t of [glass, slot]) {
       const sh = shapes(screen, from, t === slot ? slot : null);
       const a = t.animate([{clipPath: clipOf(t, screen, sh.pill), easing: UP.first}, {clipPath: clipOf(t, screen, sh.line), offset: UP.line, easing: UP.then},
-        {clipPath: clipOf(t, screen, sh.whole)}], {duration: UP.duration});
+        {clipPath: clipOf(t, screen, sh.whole)}], {duration: cut() ? 0 : UP.duration});
       // Up whole, it is the screen's own again (nothing to turn back).
       a.finished.then(() => { this.#going = this.#going.filter((g) => g !== a); }, () => {});
       this.#going.push(a);
@@ -251,7 +251,7 @@ export class Screen implements Rises {
     for (const t of [glass, slot]) {
       const sh = shapes(screen, to, t === slot ? slot : null);
       done.push(t.animate([{clipPath: clipOf(t, screen, sh.whole), easing: DOWN.first}, {clipPath: clipOf(t, screen, sh.line), offset: DOWN.line, easing: DOWN.then},
-        {clipPath: clipOf(t, screen, sh.pill)}], {duration: DOWN.duration, fill: 'forwards'}));
+        {clipPath: clipOf(t, screen, sh.pill)}], {duration: cut() ? 0 : DOWN.duration, fill: 'forwards'}));
     }
     if (this.#rested) done.push(...glide(line, this.#rested, {duration: DOWN.duration * (1 - DOWN.line), delay: DOWN.duration * DOWN.line, easing: DOWN.then}, true));
     done[0].finished.then(() => this.#home(true, done), () => this.#home(false, done));
@@ -272,7 +272,7 @@ export class Screen implements Rises {
     for (const a of [...done, ...line.flatMap((p) => p.getAnimations())]) a.cancel();
     if (still()) return;
     // Into the pane from the center's side, where it came from.
-    term.animate([{opacity: 0, transform: 'translateX(-12px)'}, {opacity: 1, transform: 'none'}], {duration: paced(220), easing: LAND});
+    term.animate([{opacity: 0, transform: 'translateX(-12px)'}, {opacity: 1, transform: 'none'}], {duration: cut() ? 0 : paced(220), easing: LAND});
     if (landed) this.#caught();
   }
 
@@ -281,8 +281,8 @@ export class Screen implements Rises {
   #caught() {
     const [lamp] = this.#p.line, pill = this.#p.chip;
     pill.animate([{scale: '1 1'}, {scale: '1.07 .8', offset: .22}, {scale: '.97 1.06', offset: .58}, {scale: '1 1'}],
-      {duration: paced(210), easing: SPRING});
+      {duration: cut() ? 0 : paced(210), easing: SPRING});
     if (pill.dataset.state === 'on') lamp.animate([{boxShadow: '0 0 0 3px color-mix(in srgb, var(--done) 30%, transparent), 0 0 12px var(--done)'}, {}],
-      {duration: paced(320), easing: SPRING});
+      {duration: cut() ? 0 : paced(320), easing: SPRING});
   }
 }

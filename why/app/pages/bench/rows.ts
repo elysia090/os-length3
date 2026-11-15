@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../../text/i18n.ts';
 import {cutWhenLonger} from '../../ui/cut.ts';
-import {still} from '../../ui/glide.ts';
+import {cut, still} from '../../ui/glide.ts';
 import type {Run} from './sessions.ts';
 import {SPRING} from '../../ui/law.ts';
 
@@ -60,7 +60,7 @@ export class Rows {
   #add(row: HTMLElement) {
     this.element.append(row);
     if (row.animate && !still())
-      row.animate([{opacity: 0, translate: '0 -4px'}, {opacity: 1, translate: '0 0'}], {duration: 360, easing: SPRING});
+      row.animate([{opacity: 0, translate: '0 -4px'}, {opacity: 1, translate: '0 0'}], {duration: cut() ? 0 : 360, easing: SPRING});
     this.element.scrollTo({top: this.element.scrollHeight});
   }
 

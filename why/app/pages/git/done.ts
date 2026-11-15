@@ -5,7 +5,7 @@ import {t, tn} from '../../../text/i18n.ts';
 import {closedBy, numberOf, type Issue} from '../../../repo/issues.ts';
 import {kindOf} from '../../../repo/text.ts';
 import {counted, diffFiles} from '../kit/diff-view.ts';
-import {clock, LAND, nudge, paced, putAway, still, unfold} from '../../ui/glide.ts';
+import {clock, cut, LAND, nudge, paced, putAway, still, unfold} from '../../ui/glide.ts';
 import {crossfade, justClosed, justMerged, notCommitted, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
 import type {Laid} from '../../../repo/git-state.ts';
 import {kindWords} from '../kit/todo-list.ts';
@@ -108,9 +108,9 @@ const committedIn = (filter: string | null) => committed.filter((c) => !filter |
  * it comes up rather than jumping. Done once it has gone (the page is drawn again after).
  */
 async function slideOff(card: HTMLElement): Promise<void> {
-  if (still() || !card.isConnected) return;
+  if (still() || cut() || !card.isConnected) return;
   card.classList.add('leaving');
-  const off = card.animate([{transform: 'none', opacity: 1}, {transform: 'translateX(96px)', opacity: 0}], {duration: paced(340), easing: LAND, fill: 'forwards'});
+  const off = card.animate([{transform: 'none', opacity: 1}, {transform: 'translateX(96px)', opacity: 0}], {duration: cut() ? 0 : paced(340), easing: LAND, fill: 'forwards'});
   // The last card waiting on main takes main's heading with it: the part closes up whole as the card goes, not leaving
   // "main" over nothing until the page is read again.
   const part = card.parentElement;
@@ -120,9 +120,9 @@ async function slideOff(card: HTMLElement): Promise<void> {
   const close = room.animate([
     {height: `${room.offsetHeight}px`, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, marginBottom: cs.marginBottom, borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth},
     {height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', marginBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px'},
-  ], {duration: paced(280), delay: paced(160), easing: LAND, fill: 'forwards'});
+  ], {duration: cut() ? 0 : paced(280), delay: paced(160), easing: LAND, fill: 'forwards'});
   room.style.overflow = 'hidden';
-  if (whole) part!.querySelector(':scope > h2')?.animate([{opacity: 1}, {opacity: 0}], {duration: paced(200), delay: paced(120), fill: 'forwards'});
+  if (whole) part!.querySelector(':scope > h2')?.animate([{opacity: 1}, {opacity: 0}], {duration: cut() ? 0 : paced(200), delay: paced(120), fill: 'forwards'});
   await Promise.all([off.finished, close.finished]).catch(() => {});
   // Closed up, it stays so until the page is drawn again without it (which takes the closing off, git.ts lay).
   if (whole) closing.add(part!);
@@ -265,7 +265,7 @@ function mergedList(list: {repo: string; change: git.Change}[], all: boolean): H
       fold.classList.add('shutting');
       fold.style.overflow = 'hidden';
       const to = head.getBoundingClientRect().height;
-      fold.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: paced(220), easing: LAND}).finished.then(() => {
+      fold.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: cut() ? 0 : paced(220), easing: LAND}).finished.then(() => {
         fold.open = false;
         fold.style.overflow = '';
         fold.classList.remove('shutting');

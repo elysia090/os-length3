@@ -36,9 +36,9 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 /* It goes as anything put away does, a few pixels toward where the pane goes, fading, quicker than the pane (never
    gone at the press while the pane is still there), and comes back with the pane's words (glide.ts paneOut); brought
    back before it had gone, it comes back from where it was. */
-.work.bench > .bar > .search-box { transition: opacity var(--move) var(--spring), translate var(--move) var(--land); }
+.work.bench > .bar > .search-box { transition: none; }
 @media (min-width: 761px) { .work.bench.pane-closed > .bar > .search-box { visibility: hidden; opacity: 0; translate: var(--s2) 0; pointer-events: none;
-  transition: opacity var(--move) var(--spring), translate var(--move) var(--spring), visibility 0s var(--move); } } /* narrow, it is the way to the pane's parts */
+  transition: none; } } /* narrow, it is the way to the pane's parts */
 /* Out or put away, the switch is the same quiet circle; its mark's pane is filled while the pane is out, the fill
    sweeping in from the right as the pane does and draining back to it as it goes. */
 .pane-toggle .mark-fill { fill: currentColor; stroke: none; transform-box: fill-box; transform-origin: right center; transform: scaleX(0);
@@ -137,7 +137,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 /* Going back, the lamp lights again as the glass comes to be the pill round it (it keeps its place before the prompt
    line all the way, so it never crosses the line's words). */
 .prompt-leaving:not(.line-lit) .screen .prompt-chip > .lamp { opacity: 1; transition-delay: calc(var(--prompt-down) * (1 - var(--prompt-down-line)) * .5); }
-.line-lit .screen .prompt-keys { opacity: 0; visibility: hidden; transition: opacity var(--motion) var(--spring), visibility 0s var(--motion); }
+.line-lit .screen .prompt-keys { opacity: 0; visibility: hidden; transition: none; }
 /* The keys that send take the glass's light with Run, as outlines on it. */
 .screen .prompt-sends > kbd { transition: color var(--motion) var(--spring), border-color var(--motion) var(--spring), background-color var(--motion) var(--spring); }
 .line-lit .screen .prompt-sends > kbd { color: color-mix(in srgb, var(--add-tint) 80%, transparent); border-color: color-mix(in srgb, var(--add-tint) 35%, transparent); background: transparent;
@@ -226,7 +226,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 /* The keys that bring the box, and the keys that send from it, one over the other in one place. */
 .prompt-caps { flex: none; display: grid; justify-items: end; align-items: center; }
 .prompt-caps > * { grid-area: 1 / 1; }
-.prompt-keys, .prompt-sends { display: inline-flex; align-items: center; gap: var(--s1); transition: opacity var(--move) var(--spring) var(--motion); }
+.prompt-keys, .prompt-sends { display: inline-flex; align-items: center; gap: var(--s1); transition: none; }
 .prompt-keys > kbd, .prompt-sends > kbd { color: var(--sub); border-color: var(--rule); }
 .prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
 .prompt-keys > kbd.tick { padding-top: 6px; font-size: 15px; } /* a backtick is drawn at the top of its letter's room */
@@ -244,8 +244,10 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .work.bench.prompting > .center > .dock::before { animation: box-goes calc(var(--prompt-up) * var(--prompt-up-line) * 1.2) var(--spring); }
 .work.bench.prompt-leaving > .center > .dock::before {
   animation: box-comes calc(var(--prompt-down) * (1 - var(--prompt-down-line))) var(--spring) calc(var(--prompt-down) * var(--prompt-down-line)) both; }
-@keyframes box-goes { from { opacity: 1; } to { opacity: 0; } }
-@keyframes box-comes { from { opacity: 0; } to { opacity: 1; } }
+/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
+@keyframes box-goes {}
+/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
+@keyframes box-comes {}
 .dock > .prompt, .screen > .prompt { min-width: 0; }
 .prompt { display: flex; align-items: flex-end; gap: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); padding: var(--s3) var(--s4); }
 /* Run at the box's bottom right, the word alone (its keys are in its title and name), a small button that does
@@ -284,7 +286,8 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 /* Up again after it was put back, the screen starts at its prompt line: what it printed before is the pane's, which
    lists the lines run, one pressed read with all it printed (output.ts fold). */
 .term-slot .term-out > .earlier { display: none; }
-@keyframes fresh { from { opacity: 0; } }
+/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
+@keyframes fresh {}
 /* What Tab could complete to, said under the box: paths, so monospace. */
 .prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }
 /* Several of them run to more than one line: a sheet's corner, not a pill's ends. */

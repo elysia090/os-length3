@@ -1,7 +1,7 @@
 import {fieldMoved} from '../../ui/caret.ts';
 import {h} from '../../ui/dom.ts';
 import {errorText} from '../../../api/errors.ts';
-import {keepOut, LAND, nudge, paced, putAway, still} from '../../ui/glide.ts';
+import {cut, keepOut, LAND, nudge, paced, putAway, still} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
 import {complete, pathWord, Recall} from '../../../prompt/recall.ts';
 import {kindOf} from '../../../repo/text.ts';
@@ -387,7 +387,7 @@ export class Box {
     const was = this.note.textContent;
     if (typeof text === 'string') this.note.textContent = text; else this.note.replaceChildren(...text);
     // Something else said in its place comes up out of a light fade, not swapped in one frame (from nothing it is at once).
-    if (was && was !== this.note.textContent && !still()) this.note.animate([{opacity: .35}, {opacity: 1}], {duration: paced(140), easing: SPRING});
+    if (was && was !== this.note.textContent && !still()) this.note.animate([{opacity: .35}, {opacity: 1}], {duration: cut() ? 0 : paced(140), easing: SPRING});
   }
   /** Not done, and why: the line under the box in ink until the box is written in again, the box shaking its head. */
   #refuse(text: string) {
@@ -442,7 +442,7 @@ export class Box {
   #numberTurns(was: string | null | undefined) {
     const b = this.#modeWords.querySelector('b');
     if (b && was && was !== '#' && b.textContent !== was && !still())
-      b.animate([{translate: '0 11px', opacity: 0}, {translate: '0 0', opacity: 1}], {duration: paced(260), easing: LAND});
+      b.animate([{translate: '0 11px', opacity: 0}, {translate: '0 0', opacity: 1}], {duration: cut() ? 0 : paced(260), easing: LAND});
   }
 
   /** Told when another Prompt is followed (the reference reads its runs again). */
@@ -805,7 +805,7 @@ export class Box {
     if (this.#p.desk && this.#mode === 'run' && event.key === 'Enter' && plain(event) && !event.isComposing) { event.preventDefault(); this.#send(); return; }
     if (event.key === 'Enter' && plain(event) && !prompt.value.includes('\n') && prompt.value.trim() && !still())
       [...this.#sends.children].forEach((k, i) => k.animate([{translate: '0 0'}, {translate: '0 2px', offset: .35}, {translate: '0 0'}],
-        {duration: paced(260), delay: paced(i * 90), easing: SPRING}));
+        {duration: cut() ? 0 : paced(260), delay: paced(i * 90), easing: SPRING}));
   }
 
   /**

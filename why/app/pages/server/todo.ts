@@ -2,7 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {errorText} from '../../../api/errors.ts';
 import {t} from '../../../text/i18n.ts';
 import {every} from '../../../api/runs.ts';
-import {paced, still} from '../../ui/glide.ts';
+import {cut, paced, still} from '../../ui/glide.ts';
 import * as servers from '../../../shipto/servers.ts';
 import type {Shown} from './parts.ts';
 import {todoList} from '../kit/todo-list.ts';
@@ -30,7 +30,7 @@ export async function boardTodo(b: Shown, holder: HTMLElement, told: {left(open:
   // How many are left is said on its part; Clear done, while some are, under the list.
   holder.replaceChildren(box.element, box.clear, status);
   // Read in after its board was drawn: it comes up where it stands, as the talk does.
-  if (!still()) holder.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: SPRING});
+  if (!still()) holder.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(200), easing: SPRING});
   let seen = JSON.stringify(list);
   // Until the box is gone; one not answered is the next one's to bring.
   every(EVERY, async () => {

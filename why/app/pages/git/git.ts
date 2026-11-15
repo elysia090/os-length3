@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {after, arrive, LAND, paced, pop, putAway, still, unfold} from '../../ui/glide.ts';
+import {after, arrive, cut, LAND, paced, pop, putAway, still, unfold} from '../../ui/glide.ts';
 import * as gitops from '../../../repo/history.ts';
 import {t} from '../../../text/i18n.ts';
 import {issuePath, number, readIssues, type Issue} from '../../../repo/issues.ts';
@@ -408,7 +408,7 @@ class GitPage {
     // The row come into sight (an issue reopened, one come from elsewhere): its box comes in, not there at once; the
     // words said where the first would be, there again once the last has gone, the same.
     if (!row && card) arrive(card.card, 1, 'y', 10, 260);
-    if (!none && this.empty.firstElementChild) this.empty.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), easing: SPRING});
+    if (!none && this.empty.firstElementChild) this.empty.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(220), easing: SPRING});
   }
 
   /** main's part and the issue in full as they stand, for the drawing after to go on from. */
@@ -472,7 +472,7 @@ class GitPage {
       // what was said in it drawn again) goes from the height it had, not there at once at its new one.
       if (c.classList.contains('issue-card')) continue;
       if (was.under.includes(c.className)) { if (c instanceof HTMLElement) resize(c, was.tall.get(c.className) ?? 0); continue; }
-      c.animate([{opacity: 0, translate: '0 8px'}, {opacity: 1, translate: '0 0'}], {duration: paced(260), delay: paced(100), easing: LAND, fill: 'backwards'});
+      c.animate([{opacity: 0, translate: '0 8px'}, {opacity: 1, translate: '0 0'}], {duration: cut() ? 0 : paced(260), delay: paced(100), easing: LAND, fill: 'backwards'});
     }
   }
 

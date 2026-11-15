@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {LAND, paced, still} from '../../ui/glide.ts';
+import {cut, LAND, paced, still} from '../../ui/glide.ts';
 import {lineOf, lineStarts, type Mark} from '../../../repo/edit.ts';
 
 // What the box's Edit shows on the file in front (edit-box.ts): marks drawn under the editor's words, in a layer of
@@ -77,7 +77,7 @@ export function drawMarks(area: HTMLTextAreaElement, marks: Mark[], layer = 'edi
   if (was && lead && before!.className === lead.className && marks[0].kind !== 'words' && !still()) {
     const r = lead.getBoundingClientRect(), dy = was.top - r.top;
     if (Math.abs(dy) > .5 && Math.abs(was.height - r.height) < .5)
-      for (const e of els) e.animate([{translate: `0 ${dy}px`}, {translate: '0 0'}], {duration: paced(140), easing: LAND});
+      for (const e of els) e.animate([{translate: `0 ${dy}px`}, {translate: '0 0'}], {duration: cut() ? 0 : paced(140), easing: LAND});
   }
   return lead;
 }

@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../../text/i18n.ts';
-import {LAND, paced, still} from '../../ui/glide.ts';
+import {cut, LAND, paced, still} from '../../ui/glide.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // How a Prompt is seen to be cut and to end (terminal.ts): a run interrupted jolts the screen; ended, the Prompt says
@@ -13,7 +13,7 @@ export function jolt(term: HTMLElement, out: HTMLElement) {
   // light of its words.
   const lit = term.closest('.screen') ? '0 0 10px var(--done), 0 0 2px var(--add-tint)' : null;
   if (!still()) out.animate([{left: '0px'}, {left: '4px', ...lit && {textShadow: lit}, offset: .12}, {left: '-3px', offset: .3},
-    {left: '1px', offset: .55}, {left: '0px'}], {duration: 280, easing: SPRING});
+    {left: '1px', offset: .55}, {left: '0px'}], {duration: cut() ? 0 : 280, easing: SPRING});
 }
 
 /**
@@ -34,10 +34,10 @@ export function endLine(said: string, why: string, restart: () => void): {line: 
 export function goDark(power: HTMLElement, out: HTMLElement) {
   // From on, its knob across and the green going from under it; the output flares as a tube does and dims to its
   // rest (styles.css .term.ended).
-  power.animate([{backgroundColor: 'var(--raised)', borderColor: 'var(--edge)'}, {}], {duration: paced(260), easing: SPRING});
+  power.animate([{backgroundColor: 'var(--raised)', borderColor: 'var(--edge)'}, {}], {duration: cut() ? 0 : paced(260), easing: SPRING});
   const travel = getComputedStyle(power).getPropertyValue('--travel').trim() || '24px';
-  power.firstElementChild!.animate([{transform: `translateX(${travel})`, backgroundColor: 'var(--done)'}, {}], {duration: paced(280), easing: LAND});
-  out.animate([{filter: 'brightness(1.8)'}, {filter: 'brightness(.5)', offset: .3}, {}], {duration: paced(460), easing: SPRING});
+  power.firstElementChild!.animate([{transform: `translateX(${travel})`, backgroundColor: 'var(--done)'}, {}], {duration: cut() ? 0 : paced(280), easing: LAND});
+  out.animate([{filter: 'brightness(1.8)'}, {filter: 'brightness(.5)', offset: .3}, {}], {duration: cut() ? 0 : paced(460), easing: SPRING});
 }
 
 /** `next` in the place of `old` (a new shell for the same repo), switched on as a tube is; `told` once it stands there. */
@@ -51,12 +51,12 @@ export function switchOver(old: HTMLElement, next: HTMLElement, told: () => void
     // Switched on, as a tube is: the box goes from the old screen's height to the new one's, and the new one opens
     // out of a bright line across its middle.
     const now = box.getBoundingClientRect().height;
-    if (Math.abs(now - was) > 1) box.animate([{height: `${was}px`}, {height: `${now}px`}], {duration: paced(300), easing: LAND});
+    if (Math.abs(now - was) > 1) box.animate([{height: `${was}px`}, {height: `${now}px`}], {duration: cut() ? 0 : paced(300), easing: LAND});
     next.animate([{scale: '1 .02', filter: 'brightness(2.6)', opacity: .85}, {scale: '1 .02', filter: 'brightness(2.6)', offset: .22},
-      {scale: '1 1', filter: 'brightness(1)', opacity: 1}], {duration: paced(300), easing: LAND});
+      {scale: '1 1', filter: 'brightness(1)', opacity: 1}], {duration: cut() ? 0 : paced(300), easing: LAND});
   };
   if (still() || !old.isConnected) { swap(); return; }
   // The old one goes first, as a tube switched off does: down to a bright line across its middle.
   old.animate([{scale: '1 1', filter: 'brightness(1)'}, {scale: '1 .02', filter: 'brightness(2.4)'}],
-    {duration: paced(140), easing: SPRING, fill: 'forwards'}).finished.then(swap, swap);
+    {duration: cut() ? 0 : paced(140), easing: SPRING, fill: 'forwards'}).finished.then(swap, swap);
 }

@@ -104,7 +104,8 @@
   background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink);
   animation: sheet-down var(--move) var(--land) both; animation-delay: calc(var(--at, 0) * 70ms); }
 .found-sec:nth-child(2) { --at: 1; } .found-sec:nth-child(3) { --at: 2; } .found-sec:nth-child(n + 4) { --at: 3; }
-@keyframes sheet-down { from { opacity: 0; translate: 0 calc(-1.5 * var(--u)); } }
+/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
+@keyframes sheet-down {}
 @media (prefers-reduced-motion: reduce) { .found-sec { animation: none; } }
 .found-sec-head { position: absolute; left: 0; bottom: 100%; margin: 0; white-space: nowrap; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 .found-sec-head > i { margin-left: 1ch; font: 400 var(--t-meta)/var(--u) var(--mono); font-style: normal; color: var(--quiet); }

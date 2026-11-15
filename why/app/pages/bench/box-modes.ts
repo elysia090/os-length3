@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../../text/i18n.ts';
-import {keepOut, paced, putAway, still} from '../../ui/glide.ts';
+import {cut, keepOut, paced, putAway, still} from '../../ui/glide.ts';
 import {onChange} from '../../../repo/repos.ts';
 import {nextIssueName, numberOf, writeIssue} from '../../../repo/issues.ts';
 import * as todo from '../../../home/todo.ts';
@@ -210,21 +210,21 @@ export function turn(chip: HTMLElement, button: HTMLElement, change: () => void)
   chip.style.overflow = 'hidden';
   const ms = paced(240);
   const done = () => { ghost.remove(); chip.style.overflow = ''; };
-  chip.animate([{width: `${was}px`}, {width: `${width}px`}], {duration: ms, easing: SPRING}).finished.then(done, done);
+  chip.animate([{width: `${was}px`}, {width: `${width}px`}], {duration: cut() ? 0 : ms, easing: SPRING}).finished.then(done, done);
   // The old words are out (up) before the new are in (from below), as a counter's figures turn, never one over the other.
-  ghost.animate([{translate: '0 0', opacity: 1}, {translate: '0 -12px', opacity: 0}], {duration: ms * .4, easing: SPRING, fill: 'forwards'});
+  ghost.animate([{translate: '0 0', opacity: 1}, {translate: '0 -12px', opacity: 0}], {duration: cut() ? 0 : ms * .4, easing: SPRING, fill: 'forwards'});
   for (const c of chip.children) {
     if (c === ghost || getComputedStyle(c).display === 'none') continue;
     c.animate([{translate: '0 12px', opacity: 0}, {translate: '0 12px', opacity: 0, offset: .38}, {translate: '0 0', opacity: 1}],
-      {duration: ms * 1.15, easing: SPRING});
+      {duration: cut() ? 0 : ms * 1.15, easing: SPRING});
   }
-  chip.animate([{scale: '1 1'}, {scale: '.96 .9', offset: .3}, {scale: '1.03 1.04', offset: .65}, {scale: '1 1'}], {duration: paced(300), easing: SPRING});
-  button.animate([{opacity: 0, translate: '0 5px'}, {opacity: 1, translate: '0 0'}], {duration: ms, easing: SPRING});
+  chip.animate([{scale: '1 1'}, {scale: '.96 .9', offset: .3}, {scale: '1.03 1.04', offset: .65}, {scale: '1 1'}], {duration: cut() ? 0 : paced(300), easing: SPRING});
+  button.animate([{opacity: 0, translate: '0 5px'}, {opacity: 1, translate: '0 0'}], {duration: cut() ? 0 : ms, easing: SPRING});
 }
 
 /** A line just come into the Prompt's flow, lit a moment as it lands (as a file landed on is: styles.css landed). */
 const lit = (row: HTMLElement) => row.animate([{backgroundColor: 'color-mix(in srgb, var(--marker) 70%, transparent)'},
-  {backgroundColor: 'color-mix(in srgb, var(--marker) 70%, transparent)', offset: .3}, {backgroundColor: 'transparent'}], {duration: paced(1200), easing: SPRING});
+  {backgroundColor: 'color-mix(in srgb, var(--marker) 70%, transparent)', offset: .3}, {backgroundColor: 'transparent'}], {duration: cut() ? 0 : paced(1200), easing: SPRING});
 /** The slip's margin round its words (styles.css .slip's padding). */
 const SLIP = {x: 6, y: 2};
 /** Whether `row` is where it can be seen: on the screen, inside the Prompt's output where it scrolls. */
@@ -261,7 +261,7 @@ function slideAway(words: HTMLElement) {
   const gone = () => words.remove();
   words.animate([{translate: '0 0', opacity: 1, easing: SPRING},
     {translate: '76px 0', opacity: 1, offset: .4, easing: SPRING}, {translate: '82px -38px', opacity: 0}],
-  {duration: paced(400)}).finished.then(gone, gone);
+  {duration: cut() ? 0 : paced(400)}).finished.then(gone, gone);
 }
 
 /**
@@ -283,6 +283,6 @@ function slideInto(words: HTMLElement, row: HTMLElement, from: {x: number; y: nu
     {translate: '28px 0', scale: '1', backgroundColor: paper, boxShadow: lift, offset: .22, easing: SPRING},
     {translate: `${dx}px ${dy}px`, scale: `${scale}`, backgroundColor: bare, boxShadow: flat, opacity: 1, offset: .9},
     {translate: `${dx}px ${dy}px`, scale: `${scale}`, backgroundColor: bare, boxShadow: flat, opacity: 0}],
-  {duration: ms}).finished.then(gone, gone);
-  row.animate([{opacity: 0}, {opacity: 0, offset: .86}, {opacity: 1}], {duration: ms}).finished.then(() => { if (row.isConnected) lit(row); }, () => {});
+  {duration: cut() ? 0 : ms}).finished.then(gone, gone);
+  row.animate([{opacity: 0}, {opacity: 0, offset: .86}, {opacity: 1}], {duration: cut() ? 0 : ms}).finished.then(() => { if (row.isConnected) lit(row); }, () => {});
 }

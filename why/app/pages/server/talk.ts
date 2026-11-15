@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {dateFormat} from '../../../text/format.ts';
-import {arrive, closeUp, paced, still} from '../../ui/glide.ts';
+import {arrive, closeUp, cut, paced, still} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
 import {shown} from '../../../shipto/inbox.ts';
 import * as servers from '../../../shipto/servers.ts';
@@ -323,7 +323,7 @@ class Talk {
     if (fresh) arrive(s.el, fresh === 'mine' ? 1 : -1, fresh === 'mine' ? 'y' : 'x', 18, 300);
     // The talk as it opens, read in after its board was drawn (the board slid to): it comes up where it stands, not
     // all at once in one frame.
-    else if (!still()) s.el.animate([{opacity: 0}, {opacity: 1}], {duration: paced(200), easing: SPRING});
+    else if (!still()) s.el.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(200), easing: SPRING});
   }
 
   private tell() {

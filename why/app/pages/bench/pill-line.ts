@@ -1,5 +1,5 @@
 import {fieldMoved} from '../../ui/caret.ts';
-import {still} from '../../ui/glide.ts';
+import {cut, still} from '../../ui/glide.ts';
 import {promptHolds, sessionIfAny, type Prompt} from './sessions.ts';
 import {SPRING} from '../../ui/law.ts';
 
@@ -73,7 +73,7 @@ export class PillLine {
       this.#speaking = window.setTimeout(() => {
         waits.textContent = now;
         fieldMoved();
-        waits.animate([{opacity: 0}, {opacity: 1}], {duration: 140, easing: SPRING});
+        waits.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : 140, easing: SPRING});
       }, s?.settlesIn() ?? 0);
     });
   }

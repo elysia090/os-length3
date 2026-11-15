@@ -19,7 +19,7 @@ import type {Context} from '../kit/context.ts';
 import {errorText} from '../../../api/errors.ts';
 import * as servers from '../../../shipto/servers.ts';
 import {remember as serverAt} from '../server/parts.ts';
-import {arrive, closeUp, keepOut, LAND, nudge, paced, putAway, still, where} from '../../ui/glide.ts';
+import {arrive, closeUp, cut, keepOut, LAND, nudge, paced, putAway, still, where} from '../../ui/glide.ts';
 import {SPRING} from '../../ui/law.ts';
 import {RowDesk} from '../../ui/row-desk.ts';
 
@@ -59,12 +59,12 @@ function took(stub: HTMLElement, from: DOMRect) {
   stub.animate([
     {transform: `translate(${from.left - at.left}px, ${from.top - at.top}px) scale(${from.width / at.width}, ${from.height / at.height})`, backgroundColor: 'var(--raised)', borderColor: 'var(--edge)'},
     {transform: 'none'},
-  ], {duration: paced(380), easing: LAND}).finished.then(back, back);
+  ], {duration: cut() ? 0 : paced(380), easing: LAND}).finished.then(back, back);
   for (const el of stub.querySelectorAll<HTMLElement>('.stub-gear')) {
-    el.animate([{opacity: 0, transform: 'translateX(-8px)'}, {opacity: 1, transform: 'none'}], {duration: paced(260), delay: paced(300), easing: LAND, fill: 'backwards'});
+    el.animate([{opacity: 0, transform: 'translateX(-8px)'}, {opacity: 1, transform: 'none'}], {duration: cut() ? 0 : paced(260), delay: paced(300), easing: LAND, fill: 'backwards'});
   }
   const under = stub.closest('.inbox-page')?.querySelector<HTMLElement>('.inbox-list');
-  under?.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: paced(300), delay: paced(160), easing: LAND, fill: 'backwards'});
+  under?.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: cut() ? 0 : paced(300), delay: paced(160), easing: LAND, fill: 'backwards'});
 }
 
 /**
@@ -185,7 +185,7 @@ function runs(messages: HTMLElement, seen = false) {
   if (!moved) return;
   for (const b of all) {
     const was = wide.get(b) ?? 0, now = b.getBoundingClientRect().width;
-    if (was && now && Math.abs(was - now) > .5) b.animate([{width: `${was}px`}, {width: `${now}px`}], {duration: paced(240), easing: LAND});
+    if (was && now && Math.abs(was - now) > .5) b.animate([{width: `${was}px`}, {width: `${now}px`}], {duration: cut() ? 0 : paced(240), easing: LAND});
   }
 }
 
@@ -555,7 +555,7 @@ export function inboxPage(ctx: Context): Node[] {
         h('div', {class: 'row write-line'}, text, sendB),
         h('p', {class: 'muted small write-hint'}, t('Prefix with Review: or Question: · specify /root/… path · Ctrl+Enter to send')), error));
     if (text.value) grow();
-    if (switching && !still()) for (const c of pane.children) c.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: SPRING});
+    if (switching && !still()) for (const c of pane.children) c.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(180), easing: SPRING});
     // The conversation gone to is whole in sight: the desk turns to it where it is not (a phone's shows one piece).
     desk?.show(pane);
     text.focus();

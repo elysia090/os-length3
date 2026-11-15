@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {pageVeil} from '../../ui/page-veil.ts';
-import {glide, LAND, paced, still, where} from '../../ui/glide.ts';
+import {cut, glide, LAND, paced, still, where} from '../../ui/glide.ts';
 import {counted} from '../kit/diff-view.ts';
 import * as gitops from '../../../repo/history.ts';
 import {issuePath, readIssues, type Issue} from '../../../repo/issues.ts';
@@ -251,7 +251,7 @@ export class Reference {
     // foot while it went (a key every 170 ms keeps it going). Taken up, it goes up over them from where it is shown:
     // nothing in it is cut.
     if (!now || !was || now - was > -2 || still() || this.search.matches('.leaving')) return;
-    const a = this.sizing = this.under.animate([{height: `${was}px`, overflow: 'hidden'}, {height: `${now}px`, overflow: 'hidden'}], {duration: paced(220), easing: LAND});
+    const a = this.sizing = this.under.animate([{height: `${was}px`, overflow: 'hidden'}, {height: `${now}px`, overflow: 'hidden'}], {duration: cut() ? 0 : paced(220), easing: LAND});
     a.finished.then(() => { if (this.sizing === a) this.sizing = null; }, () => {});
   }
 
@@ -770,7 +770,7 @@ export class Reference {
     if (fresh) this.panel.scrollTop = 0;
     // (On the band the sheet carries it down as it drops: nothing in it comes in on its own.)
     if (fresh && !this.band && !still()) said.slice(0, 8).forEach((el, i) => el.animate([{opacity: 0, translate: '0 4px'}, {opacity: 1, translate: '0 0'}],
-      {duration: paced(220), delay: paced(i * 30), easing: LAND, fill: 'backwards'}));
+      {duration: cut() ? 0 : paced(220), delay: paced(i * 30), easing: LAND, fill: 'backwards'}));
     if (focused >= 0) this.choices()[Math.min(focused, this.choices().length - 1)]?.focus();
     this.drop();
   }

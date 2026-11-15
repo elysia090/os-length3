@@ -95,7 +95,7 @@ test('pressed again before the pan has moved, the rail goes straight to the plac
   expect((await seen()).drawn.filter((d) => d !== 'purpose-runtime')).toEqual([]);
 });
 
-test('File\'s tree out and away: the rail\'s ink goes from the page\'s place to File and back, never an icon ink on ink', async ({app}) => {
+test('File\'s tree out and away: the rail\'s ink is on File at once and back on the page\'s place at once, never an icon ink on ink and never an ink going between', async ({app}) => {
   await app.rail.go('home');
   await still(app);
   // Every place on the rail, frame by frame: none drawn in ink on a fill of ink, as an icon would be gone.
@@ -114,50 +114,28 @@ test('File\'s tree out and away: the rail\'s ink goes from the page\'s place to 
     };
     requestAnimationFrame(tick);
   }));
+  // (No ink goes between two places: the place is inked where it is, at once, a cut, DESIGN §8.)
   const out = watch();
   await app.rail.button('file').click();
   await expect(app.file.tree).toBeVisible();
-  expect(await out).toEqual(['inks 1']);
+  expect(await out).toEqual(['inks 0']);
   const back = watch();
   await app.page.keyboard.press('Escape');
   await expect(app.file.tree).toBeHidden();
-  expect(await back).toEqual(['inks 1']);
+  expect(await back).toEqual(['inks 0']);
   // Out, File is the one inked place; away, the page's own again.
   await still(app);
   expect(await app.rail.button('home').evaluate((b) => getComputedStyle(b).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
 });
 
-test('the rail pressed again as its ink goes: one ink, going on from where it is', async ({app}) => {
+test('the rail pressed twice before the page has come: the place pressed last is the one inked, at once, and no ink goes between', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  // The ink, frame by frame: how many there are, and where the one there is stands.
-  const trip = app.page.evaluate(() => new Promise<{most: number; tops: number[]; landedFill: string[]}>((done) => {
-    const t0 = performance.now(), tops: number[] = [], landedFill: string[] = [];
-    let most = 0;
-    const tick = () => {
-      const inks = document.querySelectorAll<HTMLElement>('#rail-tabs .glide-ink');
-      most = Math.max(most, inks.length);
-      const remote = document.getElementById('purpose-runtime')!;
-      if (inks.length) {
-        tops.push(inks[0].getBoundingClientRect().top);
-        // The place it lands on waits with no fill of its own while the ink comes (no second box under it).
-        if (remote.hasAttribute('aria-current')) landedFill.push(getComputedStyle(remote).backgroundColor);
-      }
-      if (performance.now() - t0 < 1600) requestAnimationFrame(tick); else done({most, tops, landedFill});
-    };
-    requestAnimationFrame(tick);
-  }));
-  await app.rail.button('server').click();
-  await app.page.waitForFunction(() => {
-    const ink = document.querySelector('#rail-tabs .glide-ink'), git = document.getElementById('purpose-server')!;
-    return ink && ink.getBoundingClientRect().top > git.getBoundingClientRect().top - 60;
-  });
-  await app.rail.button('runtime').click();
-  const {most, tops, landedFill} = await trip;
-  expect(most).toBe(1);
-  // Down all the way, never back up toward where it began.
-  for (let i = 1; i < tops.length; i++) expect(tops[i]).toBeGreaterThanOrEqual(tops[i - 1] - 1);
-  expect(landedFill.every((c) => c === 'rgba(0, 0, 0, 0)')).toBe(true);
+  await app.page.evaluate(() => { document.getElementById('purpose-server')!.click(); document.getElementById('purpose-runtime')!.click(); });
+  await expect(app.rail.button('runtime')).toHaveAttribute('aria-current', 'page');
+  expect(await app.page.locator('#rail-tabs .glide-ink').count()).toBe(0);
+  await still(app);
+  await expect(app.rail.button('runtime')).toHaveAttribute('aria-current', 'page');
 });
 
 test('the caret is drawn by the OS: it follows what is written along the line, and Enter takes it to the next', async ({app}) => {
@@ -277,8 +255,9 @@ test('navigation is immediately interactive while its content arrives, without s
   expect(at.forge).toBe(true);
   expect(at.home).toBe(false);
   expect(at.panning).toBe(false);
-  expect(at.moving).toContain('glide-ink');
-  expect(at.moving.some((c) => c !== 'glide-ink')).toBe(true);
+  // The world moves (§8, the one move); nothing else goes between, the rail's ink included.
+  expect(at.moving).not.toContain('glide-ink');
+  expect(at.moving.length).toBeGreaterThan(0);
   expect(await app.page.evaluate(() => getComputedStyle(document.querySelector('#page .desk:not([hidden]) .desk-plane')!).transform)).toBe('none');
   // Redirect before arrival ends: the last page is the only one left, with no root transform.
   await app.page.evaluate(() => { document.getElementById('purpose-runtime')!.click(); document.getElementById('purpose-home')!.click(); });
@@ -298,10 +277,11 @@ test('reduced motion settles an in-flight navigation and restores motion when sw
   expect(await app.page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').length)).toBe(0);
   await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
   await app.page.emulateMedia({reducedMotion: 'no-preference'});
+  // Motion back: the world moves again to a place gone to (its pages, under the frame).
   expect(await app.page.evaluate(() => {
     document.getElementById('purpose-runtime')!.click();
-    return document.querySelectorAll('.glide-ink').length;
-  })).toBe(1);
+    return document.getAnimations().filter((a) => a.playState === 'running').length;
+  })).toBeGreaterThan(0);
   await still(app);
 });
 

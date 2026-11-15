@@ -36,7 +36,8 @@
 /* The Agent's answer as it comes, in the letters people write in; its code, what would be run, on the Prompt's own
    glass in its green. Waiting for its first words, a quiet ellipsis; refused, why, in the red. */
 .pane-answer.waiting:empty::after { content: '…'; color: var(--sub); animation: answer-waits 1.2s ease-in-out infinite alternate; }
-@keyframes answer-waits { from { opacity: .3; } }
+/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
+@keyframes answer-waits {}
 @media (prefers-reduced-motion: reduce) { .pane-answer.waiting:empty::after { animation: none; } }
 .pane-answer > .answer-p { margin: 0 0 6px; }
 .pane-answer > :last-child { margin-bottom: 0; }

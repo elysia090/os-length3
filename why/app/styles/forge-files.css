@@ -65,7 +65,8 @@
 /* Not saved yet: a dot, not a word that flickers with each key; it shows only once the writing pauses (a save comes
    0.7 s after), so steady typing is not watched over. */
 .unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle; animation: unsaved-in var(--move) var(--spring) var(--slide) both; }
-@keyframes unsaved-in { from { opacity: 0; scale: .4; } }
+/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
+@keyframes unsaved-in {}
 @media (prefers-reduced-motion: reduce) { .unsaved-dot { animation: none; } }
 .sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: var(--cursor-text); }
 .gutter, .code { margin: 0; padding: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
@@ -108,7 +109,8 @@
 .file.elsewhere { min-height: 0; border-width: 0; }
 .file.elsewhere > :not(.path) { display: none; }
 .file.elsewhere > .path { margin: 0; padding-bottom: var(--s3); border-bottom: 1px solid; border-color: inherit; border-radius: var(--r-place); color: var(--sub); }
-@keyframes landed { from, 30% { background: color-mix(in srgb, var(--marker) 70%, var(--paper)); } }
+/* Lit for its read time, then off at once: a light, not a fade (DESIGN §8, §14 done). */
+@keyframes landed { 0%, 99.9% { background: color-mix(in srgb, var(--marker) 70%, var(--paper)); } 100% { background: transparent; } }
 .flow .revealed .code-edit::selection { background: var(--marker); color: var(--ink); }
 /* Saved elsewhere while this one had unsaved edits: asked in the box, under
    its head and over the text, which stays to be read and written on. */

@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {nudge} from '../../ui/glide.ts';
+import {cut as motionless, nudge} from '../../ui/glide.ts';
 import {workAt as tell} from '../../ui/camera.ts';
 import {caretIn, fieldCarried} from '../../ui/caret.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -77,7 +77,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     const {el} = mark;
     mark = null;
     el.getAnimations().forEach((a) => a.cancel());
-    el.animate([{opacity: 0.55}, {opacity: 0}], {duration: 240, easing: SPRING}).onfinish = () => el.remove();
+    el.animate([{opacity: 0.55}, {opacity: 0}], {duration: motionless() ? 0 : 240, easing: SPRING}).onfinish = () => el.remove();
   }
   function markLine(area: HTMLTextAreaElement, line: number, from: number, to: number) {
     unmark();
@@ -88,7 +88,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     element.prepend(el);
     mark = {el, from, to};
     el.animate([{opacity: 0}, {opacity: 1, offset: 0.25}, {opacity: 1, offset: 0.8}, {opacity: 0.55}],
-      {duration: 2400, delay: 380, easing: SPRING, fill: 'both'});
+      {duration: motionless() ? 0 : 2400, delay: 380, easing: SPRING, fill: 'both'});
   }
   // Where the Agent's eye is in it (bench/play.ts): a line lit faintly across the sheet, gliding from line to line as it
   // reads; gone (faded) when the eye leaves.
@@ -101,7 +101,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     if (line === null) {
       const el = eye;
       eye = null;
-      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: 260, easing: SPRING}).onfinish = () => el.remove();
+      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: motionless() ? 0 : 260, easing: SPRING}).onfinish = () => el.remove();
       return;
     }
     const lh = lineHeight(area), top = `${area.offsetTop + (line - 1) * lh}px`;
@@ -110,7 +110,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       eye.style.top = top;
       eye.style.height = `${lh}px`;
       element.prepend(eye);
-      eye.animate([{opacity: 0}, {opacity: 1}], {duration: 200, easing: SPRING});
+      eye.animate([{opacity: 0}, {opacity: 1}], {duration: motionless() ? 0 : 200, easing: SPRING});
       return;
     }
     eye.style.top = top;
@@ -124,7 +124,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     if (at === null) {
       const el = hand;
       hand = null;
-      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: 160, easing: SPRING}).onfinish = () => el.remove();
+      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: motionless() ? 0 : 160, easing: SPRING}).onfinish = () => el.remove();
       return;
     }
     const p = caretIn(area, at);

@@ -658,6 +658,19 @@ its work is trusted more than a short one that shows nothing.
 3. **In front and back:** what is called up comes in front and the world behind it goes out of focus; put away, it
    goes and the world is in focus again.
 
+**Everything else is a cut.** What is neither one of the three moves nor the hand's own (a press's give and home, a
+no's nudge, the caret) does not move at all: what comes is there, what goes is gone, at once, and the mind completes
+the way between. Film found it first: "there's no reason to pan continuously from me to the lamp because you know
+what's in between. Your mind cut the scene" (Huston, in Murch, *In the Blink of an Eye*); "the only punctuation which
+Ozu allows himself is the simple cut" (Richie); in a comic's gutter "nothing is seen between the two panels, but
+experience tells you something must be there", and that completing is closure (McCloud); "straight cuts are always
+faster than moving shots, because they come to the point immediately" (Mascelli); "one does not create by adding,
+but by taking away" (Bresson). What was so taken away: things gliding in, growing from nothing, folding up and out,
+popping, crossfading, sliding off, the rail's ink sliding between places, and the ink's lights fading (`ui/glide.ts
+cut`; every page's own). A light that says something was done is held for its read time and goes off at once. The
+mind is not left to complete what it cannot: a cut keeps where things are (§2, eye-trace and order) and changes
+wholly or not at all (no jump, §2: "neither subtle nor total" is Murch's jump).
+
 **One law for every move** (`ui/law.ts`). A thing moved goes as a hand moves it and stops it: off at once, most of
 the way in the first third of its time, then settling, with no bounce. At `u` (0 to 1) of its time it is
 
@@ -935,7 +948,6 @@ breaks; none is a decision to leave it.
 | signing in, a Remote not answering | the same deed has two looks (Try again in ink on Server, in line on the Remote) | §1, one hand |
 | deeds that ask first | some twenty deeds ask before they are done (remove a dotfile, take a repo off, sign a device out, a server left), each in its place with Cancel beside it, whether or not they can be put back | §7, what can be put back is done and can be put back |
 | Forge, the first time | the desk is long in the building (the Prompt starts with it), and the move to it waits for that: 60 to 90 ms from the press, where every other place is off within 50 | §8, a move starts within 50 ms of its press |
-| things that come | a dozen come into place grown from smaller or faded in: the person's menu, a menu of deeds, a mark of a step done, a line landed under Committed, a post said, a file's unsaved mark (their keyframes in the sheets) | §8, nothing grows into place or fades in; §2, one lens |
 | Git's issue in full | its width is the row's of its own make (the window less two neighbours' peeks), not one of the programme's | §3, the widths are one programme |
 | `PLACES.md` | speaks of the look as it was | — |
 
@@ -976,7 +988,8 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `why/test/app/focus.spec.ts` |
 | The window's edges are the frame's; a press just off a menu is the menu's (§7) | `why/test/app/favour.spec.ts` |
 | The frame, in every place at six screens: one degree every way, receding inside film's safe-action margin on a desk screen, one square, the same in every place, on two sides only, quiet at rest and ink only under the hand (§4) | `why/test/app/frame.spec.ts` |
-| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off within 50 ms of the press, at rest within 420 ms (§8) | `why/test/app/motion.spec.ts` |
+| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off within 50 ms of the press, at rest within 420 ms; the rail's place inked at once, no ink going between (§8) | `why/test/app/motion.spec.ts` |
+| What comes is there at once: an arrival and a band changed are cuts, motion asked for or not (§8) | `why/app/ui/glide.test.ts` |
 | File comes by a press and by nothing else (§7) | `why/test/app/file.spec.ts` |
 | A phone has the same rules (§1) | `why/test/app/narrow.spec.ts` |
 

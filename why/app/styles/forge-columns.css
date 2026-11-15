@@ -42,4 +42,5 @@
   transition: left var(--move) var(--land), width var(--move) var(--land);
   animation: hint-in var(--motion) var(--spring);
 }
-@keyframes hint-in { from { opacity: 0; } }
+/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
+@keyframes hint-in {}

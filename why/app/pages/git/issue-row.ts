@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../../text/i18n.ts';
-import {after, paced, still} from '../../ui/glide.ts';
+import {after, cut, paced, still} from '../../ui/glide.ts';
 import type {Issue} from '../../../repo/issues.ts';
 import {SPRING} from '../../ui/law.ts';
 
@@ -179,7 +179,7 @@ export class IssueRow {
     slot.inert = true;
     slot.setAttribute('aria-hidden', 'true');
     for (const part of slot.querySelectorAll<HTMLElement>(':scope > .issue-card > *, :scope > :not(.issue-card)')) {
-      part.animate([{opacity: 1}, {opacity: 1, offset: .55}, {opacity: 0}], {duration: paced(450), fill: 'forwards'});
+      part.animate([{opacity: 1}, {opacity: 1, offset: .55}, {opacity: 0}], {duration: cut() ? 0 : paced(450), fill: 'forwards'});
     }
     after(450, () => {
       if (!slot.isConnected || slot.getAttribute('aria-current') === 'true') return;
@@ -187,7 +187,7 @@ export class IssueRow {
       slot.inert = false;
       slot.removeAttribute('aria-hidden');
       slot.replaceChildren(...this.ways.slot(x, false));
-      for (const part of slot.children) part.animate([{opacity: 0}, {opacity: 1}], {duration: paced(120), easing: SPRING});
+      for (const part of slot.children) part.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(120), easing: SPRING});
     });
   }
 

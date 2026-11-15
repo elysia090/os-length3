@@ -1,7 +1,7 @@
 import {kindWords} from '../kit/todo-list.ts';
 import {h} from '../../ui/dom.ts';
 import {ago, day} from '../../../text/format.ts';
-import {arrive, LAND, lift, type Lifted, morph, paced, putAway, still} from '../../ui/glide.ts';
+import {arrive, cut, LAND, lift, type Lifted, morph, paced, putAway, still} from '../../ui/glide.ts';
 import * as git from '../../../repo/history.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../../../repo/issues.ts';
@@ -302,7 +302,7 @@ function closeDeed(issue: Issue, error: HTMLElement, events: IssueEvents, after:
   leave.addEventListener('click', doing(leave, error, async () => {
     // It goes down as it is closed, toward Closed under the page, where its line lands lit; not closed, it is back.
     const going = still() ? null : (leave.closest('.issue-slot') ?? leave.closest('.issue-box'))?.animate([{transform: 'none', opacity: 1}, {transform: 'translateY(28px) scale(.97)', opacity: 0}],
-      {duration: paced(240), easing: SPRING, fill: 'forwards'});
+      {duration: cut() ? 0 : paced(240), easing: SPRING, fill: 'forwards'});
     // Said before its file is written: the page is drawn again as the file changes (git.ts watch), and the line that
     // drawing puts under Closed is the one that lands, not one there plain and then landing again.
     closedNow = {repo: issue.repo, path: issuePath(issue), until: performance.now() + 3000};
@@ -379,18 +379,18 @@ export function notCommitted(at: string, line: string, n: number, events: IssueE
  * names; an issue's box once its commit's files have gone; files read in under "Loading…"): never a jump.
  */
 export function resize(el: HTMLElement, from: number) {
-  if (still() || !from || !el.isConnected) return;
+  if (still() || cut() || !from || !el.isConnected) return;
   const box = el.getBoundingClientRect(), to = box.height;
   if (Math.abs(to - from) < 2) return;
   el.style.overflow = 'hidden';
   const back = () => { el.style.overflow = ''; };
   const ms = paced(280);
-  el.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: ms, easing: LAND}).finished.then(back, back);
+  el.animate([{height: `${from}px`}, {height: `${to}px`}], {duration: cut() ? 0 : ms, easing: LAND}).finished.then(back, back);
   // Grown: what now stands below where its edge was comes in as the edge goes down over it, never cut through mid-line.
   if (to > from) {
     for (const c of el.children) {
       if (c instanceof HTMLElement && c.getBoundingClientRect().top - box.top >= from - 4) {
-        c.animate([{opacity: 0}, {opacity: 0, offset: .3}, {opacity: 1}], {duration: ms, easing: SPRING});
+        c.animate([{opacity: 0}, {opacity: 0, offset: .3}, {opacity: 1}], {duration: cut() ? 0 : ms, easing: SPRING});
       }
     }
   }
@@ -411,7 +411,7 @@ const partsOf = (el: Element): Element[] => {
  */
 export function crossfade(old: HTMLElement, now: HTMLElement, from: number) {
   const parent = now.parentElement;
-  if (still() || old === now || !parent || !now.isConnected) return;
+  if (still() || cut() || old === now || !parent || !now.isConnected) return;
   // The parts the same in both, one for one: kept still (the old one hidden, the new one not faded).
   const was = partsOf(old), is = partsOf(now);
   const same = new Map<Element, Element>();
@@ -448,7 +448,7 @@ export function crossfade(old: HTMLElement, now: HTMLElement, from: number) {
   fading.set(now, old);
   // What went is mostly gone before what comes is much there (words over words are never read as one smear), yet the
   // two overlap, so the place is never empty a moment between them.
-  old.animate([{opacity: 1}, {opacity: 0}], {duration: paced(160), easing: 'linear', fill: 'forwards'}).finished.then(() => old.remove(), () => old.remove());
+  old.animate([{opacity: 1}, {opacity: 0}], {duration: cut() ? 0 : paced(160), easing: 'linear', fill: 'forwards'}).finished.then(() => old.remove(), () => old.remove());
   for (const p of is) if (!same.has(p)) comeIn(p);
 }
 /** What a box drawn again showed before, still fading over it (crossfade), by the box. */
@@ -461,12 +461,12 @@ function over(ghost: HTMLElement, now: HTMLElement, parent: HTMLElement, from: n
     width: `${at.width}px`, height: `${from}px`, margin: '0', borderColor: 'transparent', background: 'transparent', overflow: 'hidden',
     pointerEvents: 'none', zIndex: '1', animation: 'none'});
   parent.append(ghost);
-  ghost.animate([{height: `${from}px`}, {height: `${at.height}px`}], {duration: paced(280), easing: LAND, fill: 'forwards'});
+  ghost.animate([{height: `${from}px`}, {height: `${at.height}px`}], {duration: cut() ? 0 : paced(280), easing: LAND, fill: 'forwards'});
 }
 /** A part of a box drawn again coming in (crossfade), named so a drawing after it can go on from it. */
 const COMING = 'coming-in';
 const comeIn = (p: Element) => {
-  const a = p.animate([{opacity: 0}, {opacity: 1}], {duration: paced(220), delay: paced(40), easing: SPRING, fill: 'backwards'});
+  const a = p.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(220), delay: paced(40), easing: SPRING, fill: 'backwards'});
   a.id = COMING;
   return a;
 };
