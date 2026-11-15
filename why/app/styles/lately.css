@@ -9,7 +9,7 @@
 .lately-list { display: grid; gap: var(--s1); }
 .lately-row {
   display: grid; gap: 2px; min-width: 0; padding: var(--s2) var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
-  background: var(--paper); color: var(--ink); font: inherit; text-align: left; cursor: var(--cursor-hand); transition: border-color var(--motion);
+  background: var(--paper); color: var(--ink); font: inherit; text-align: left; cursor: var(--cursor-hand); transition: none;
 }
 .lately-row:hover { border-color: var(--edge); }
 /* A row tells, in two lines at most: its name (going on under itself where it must; its badge, its place and its slot

@@ -2,7 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {errorText} from '../../../api/errors.ts';
 import {t} from '../../../text/i18n.ts';
 import {icon, mark, type MarkName} from '../../ui/icons.ts';
-import {arrive, glide, pop, still, where} from '../../ui/glide.ts';
+import {arrive, glide, pop, where} from '../../ui/glide.ts';
 import {readTime} from '../../ui/law.ts';
 import {purpose, RAIL, type PurposeId} from '../../host/purposes.ts';
 
@@ -158,7 +158,7 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
   on.addEventListener('click', () => {
     const edge = on.getBoundingClientRect().left;
     const past = [...tabs.values()].map((x) => x.tab).find((tab) => !tab.hidden && tab.getBoundingClientRect().right > edge + 1);
-    if (past) bar.scrollBy({left: past.getBoundingClientRect().right - edge, behavior: still() ? 'auto' : 'smooth'});
+    if (past) bar.scrollBy({left: past.getBoundingClientRect().right - edge}); // (at once, DESIGN §8)
   });
   bar.addEventListener('scroll', more, {passive: true});
   // A part's width changing (its count come in after it was chosen) moves those after it: the fade is judged again,

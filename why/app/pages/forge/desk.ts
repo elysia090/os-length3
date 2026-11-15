@@ -341,7 +341,7 @@ export class Desk {
     while (s && s !== box && !(/auto|scroll/.test(getComputedStyle(s).overflowY) && s.scrollHeight > s.clientHeight + 1)) s = s.parentElement;
     if (s && s !== box) {
       const top = from.getBoundingClientRect().top - s.getBoundingClientRect().top + e.detail.top, line = e.detail.height;
-      if (top < line || top + line > s.clientHeight - 3 * line) s.scrollTo({top: s.scrollTop + top - .4 * s.clientHeight, behavior: still() ? 'auto' : 'smooth'});
+      if (top < line || top + line > s.clientHeight - 3 * line) s.scrollTo({top: s.scrollTop + top - .4 * s.clientHeight}); // (at once, DESIGN §8)
     }
     if (this.#framed?.includes(key) && !still()) this.#look(true);
   }

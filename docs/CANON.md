@@ -163,7 +163,7 @@ an Eye*, Eisenstein's *Film Form* and *Film Sense*, McCloud's *Understanding Com
 | "Hide the ideas, but so that people find them" | §13 what is out of sight is known | kept |
 | "Nothing too much, nothing deficient" | this audit | kept |
 | One wrong movement gets in the way of all the rest | §8 everything else is a cut | **added** |
-| Eye and ear do not duplicate; one of them preponderant | §1 master and servant | **open**: a press sounds and gives at once. Taken as the law asks, the press is the ear's (its sound), and the give is a servant a few pixels deep; to meet the item to the letter, the give would go |
+| Eye and ear do not duplicate; one of them preponderant; "image and sound must not support each other, but must work each in turn through a sort of relay" | §9 the ear says when, the eye says what is so; §14 press | **decided** (was open): the ear takes the instants (a key's sound down, and up), the eye the state (held down) and what the press did. At the one instant they meet they are one event, not two (Chion's synchresis); after it they relay. What told the eye an instant the ear already hears went: the spring home (up at once now) and the fill a press took |
 | Against speed and noise, slowness and silence | §9 sound only for what the hand does; silent while out of sight | kept |
 | "One does not create by adding, but by taking away" | §1 the removal test; §8 the cut | **added** |
 | "Make people diviners": a part for the whole | §8 the mind completes the way between | **added** |
@@ -182,12 +182,11 @@ an Eye*, Eisenstein's *Film Form* and *Film Sense*, McCloud's *Understanding Com
 | The cut the only punctuation; one camera height (Ozu, by Richie) | §2 one lens; §8 the cut | kept, **added** |
 | The film-maker cuts off what he does not need; rhythm in the frame (Tarkovsky) | §1 the removal test; §8 one law, three times | kept |
 
-## Open: what `DESIGN.md` does past its canon
+## What was open, and how each was decided
 
-1. **Three type sizes on a sheet** (Vignelli ≤ 2): the name, the words, the small (13), and the numbers' 11.
-2. **Half cells** (Müller-Brockmann: whole lines, never halves): a sheet's half line over and under, the frame's
-   square a cell and a half.
-3. **The head and foot of a piece standing to the foot are one cell each** (Müller-Brockmann: the foot deeper).
-4. **A press is heard and seen at once** (Bresson: one preponderant).
-
-Each is a decision of the person's, not a rule to be made true by itself.
+1. **Three type sizes on a sheet** (Vignelli ≤ 2): decided, every word at one size (Vignelli 19, above).
+2. **Half cells** (Müller-Brockmann: whole lines, never halves): decided, whole cells (Müller-Brockmann 2).
+3. **The head and foot of a piece standing to the foot are one cell each** (Müller-Brockmann: the foot deeper): open
+   still, the last.
+4. **A press is heard and seen at once** (Bresson: one preponderant): decided, the ear says when, the eye says what
+   is so (Bresson, above).

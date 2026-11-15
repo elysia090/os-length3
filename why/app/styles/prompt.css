@@ -22,7 +22,7 @@
    be shaded with it: the bench's width is measured, not queried.) */
 body::after {
   content: ''; position: fixed; inset: 0; z-index: 7; pointer-events: none;
-  background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: opacity var(--move) var(--spring);
+  background: color-mix(in srgb, var(--ink) 14%, transparent); opacity: 0; transition: none;
 }
 body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within)::after { opacity: 1; }
 /* Over the shade only while it is out: at rest it is the page's, under whatever lies over the page (Server's layer).
@@ -42,14 +42,14 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 /* Out or put away, the switch is the same quiet circle; its mark's pane is filled while the pane is out, the fill
    sweeping in from the right as the pane does and draining back to it as it goes. */
 .pane-toggle .mark-fill { fill: currentColor; stroke: none; transform-box: fill-box; transform-origin: right center; transform: scaleX(0);
-  transition: transform var(--move) var(--land); }
+  transition: none; }
 .pane-toggle[aria-expanded='true'] .mark-fill { transform: scaleX(1); }
 @media (prefers-reduced-motion: reduce) { .pane-toggle .mark-fill { transition: none; } }
 /* Under the prompt box, the ground to the center's foot: what scrolls under the box does not show below it.
    It lies behind the box (still over what scrolls), so the box's focus ring is whole. */
 .dock::after { content: ''; position: absolute; z-index: -1; top: 100%; left: -50vw; right: -50vw; height: var(--s5); background: var(--ground); }
 /* While one reads, the empty box steps back and lets what is under it be pressed (bench.ts). */
-.dock { transition: opacity var(--motion); }
+.dock { transition: none; }
 .dock.resting { opacity: 0; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
 .term-slot:empty { display: none; }
@@ -104,7 +104,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .term-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .term-head > .lamp { display: none; }
 :is(.prompting, .prompt-leaving) .screen .term-head > .lamp { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--done); box-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent); }
-:is(.prompting, .prompt-leaving) .screen .term-head > .lamp { transition: background-color var(--motion), box-shadow var(--motion); }
+:is(.prompting, .prompt-leaving) .screen .term-head > .lamp { transition: none; }
 :is(.prompting, .prompt-leaving) .screen .term-box:has(.term.ended) .term-head > .lamp { background: var(--off); box-shadow: none; }
 /* Its buttons (Interrupt, Start again; Run once the glass is under it) are lit outlines on the glass, the app's small
    buttons otherwise. */
@@ -115,8 +115,8 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
    under them): Run lit as the glass's edge comes over it (about three quarters of the way along: it slows into the
    end), the words going back to ink only as the glass, running back, leaves them at the line's start (its edge
    crosses a short line near the end of the way back: the change is quick and across that moment). */
-.screen .prompt-in { color: var(--ink); transition: color var(--move) var(--spring), text-shadow var(--move) var(--spring); }
-.screen .prompt-run { color: var(--ink); transition: color var(--motion) var(--spring), border-color var(--motion) var(--spring), background-color var(--move) var(--spring); }
+.screen .prompt-in { color: var(--ink); transition: none; }
+.screen .prompt-run { color: var(--ink); transition: none; }
 .line-lit .screen .prompt-run { transition-delay: calc(var(--prompt-up) * var(--prompt-up-line) * .72), calc(var(--prompt-up) * var(--prompt-up-line) * .72), 0s; }
 .prompt-leaving:not(.line-lit) .screen .prompt-in { transition-duration: var(--motion); transition-delay: calc(var(--prompt-down) * (1 - var(--prompt-down-line)) * .88 - 50ms); }
 :is(.prompting, .prompt-leaving) .screen :focus-visible { outline-color: var(--add-tint); }
@@ -139,7 +139,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .prompt-leaving:not(.line-lit) .screen .prompt-chip > .lamp { opacity: 1; transition-delay: calc(var(--prompt-down) * (1 - var(--prompt-down-line)) * .5); }
 .line-lit .screen .prompt-keys { opacity: 0; visibility: hidden; transition: none; }
 /* The keys that send take the glass's light with Run, as outlines on it. */
-.screen .prompt-sends > kbd { transition: color var(--motion) var(--spring), border-color var(--motion) var(--spring), background-color var(--motion) var(--spring); }
+.screen .prompt-sends > kbd { transition: none; }
 .line-lit .screen .prompt-sends > kbd { color: color-mix(in srgb, var(--add-tint) 80%, transparent); border-color: color-mix(in srgb, var(--add-tint) 35%, transparent); background: transparent;
   transition-delay: calc(var(--prompt-up) * var(--prompt-up-line) * .72); }
 
@@ -157,7 +157,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 }
 .prompt-chip:has(> .prompt-ps:empty) { display: none; }
 .prompt-chip > .lamp { position: absolute; left: var(--s3); top: calc(50% - 3px); width: 6px; height: 6px; border-radius: 50%; background: var(--done);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent); transition: opacity var(--move) var(--spring), background-color var(--motion), box-shadow var(--motion); }
+  box-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent); transition: none; }
 /* Not started yet, the lamp is dim; ended, off, as a repo off is. */
 .prompt-chip:is([data-state='none'], [data-state='starting']) > .lamp { background: color-mix(in srgb, var(--done) 35%, var(--screen)); box-shadow: none; }
 .prompt-chip[data-state='ended'] > .lamp { background: var(--off); box-shadow: none; }
@@ -165,7 +165,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 /* The pill says what the box does and is pressed to choose it (box-modes.ts): Run on the screen's glass, as above; the
    repo's next issue in ink, its number as an issue's is said; TODO's circle on paper, as Home's TODO box is. Turning
    from one to another its colours cross as its words do. */
-.prompt-chip { margin: 0; border: 0; cursor: var(--cursor-hand); transition: background-color var(--motion), color var(--motion), box-shadow var(--motion); }
+.prompt-chip { margin: 0; border: 0; cursor: var(--cursor-hand); transition: none; }
 .prompt-chip:is([data-mode='issue'], [data-mode='todo'], [data-mode='edit'], [data-mode='agent']) { gap: var(--s2); padding: 0 var(--s3); text-shadow: none; }
 .prompt-chip[data-mode='issue'] { background: var(--ink); color: var(--ground); box-shadow: none; }
 .prompt-chip[data-mode='todo'] { padding-left: var(--s2); background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
@@ -257,7 +257,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .prompt-run:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 .prompt:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 /* The keyboard coming or going, its ink edge comes in quickly and goes a little slower, as a press's light does. */
-.prompt { transition: border-color var(--move) var(--spring), box-shadow var(--move) var(--spring); }
+.prompt { transition: none; }
 .prompt:focus-within { transition-duration: var(--motion); }
 .prompt-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-word)/1.6 var(--sans); }
 .prompt-in:focus { outline: none; }
@@ -278,7 +278,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .term-out > .fresh { animation: fresh var(--move) var(--spring) backwards; }
 /* Up, the Prompt's head has its × at its right end, the lamp before it: down, there is nothing to put back. */
 .term-shut { display: none; place-items: center; width: 24px; height: 24px; margin: -4px -6px -4px 0; padding: 0; border: 0; border-radius: var(--r-round);
-  background: transparent; color: inherit; opacity: .6; cursor: var(--cursor-hand); transition: opacity var(--motion), background-color var(--motion); }
+  background: transparent; color: inherit; opacity: .6; cursor: var(--cursor-hand); transition: none; }
 .term-shut .mark { width: var(--s4); height: var(--s4); }
 .term-shut:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
 :is(.prompting, .prompt-leaving) .screen .term-head > .term-shut { display: grid; }

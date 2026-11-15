@@ -15,7 +15,7 @@
 /* The side: the reference on top, the terminal's home below. While the
    prompt is in use the terminal is away and the reference grows down. */
 /* The reference scrolls, the Prompt does not, so the Prompt starts higher (2 : 3). */
-.side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); min-height: 0; transition: grid-template-rows var(--move); }
+.side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); min-height: 0; transition: none; }
 .work.unrun .side { grid-template-rows: minmax(0, 1fr) auto; }
 .work.prompting .side { grid-template-rows: minmax(0, 2fr) minmax(0, 0fr); }
 .issue-one .row { flex-wrap: wrap; }
@@ -27,10 +27,10 @@
    its width (from the pane's inner left to its inner right); only what opens under it reaches into the
    center, 2 W wide from the box's right end, so that a diff's lines or a run's output are not cut off. With
    nothing searched the pane is straight. The pane's switch is just left of the box; put away, the box stays. */
-.work.bench { grid-template-columns: minmax(0, 1fr) max(280px, 25%); transition: grid-template-columns var(--move) var(--land); }
+.work.bench { grid-template-columns: minmax(0, 1fr) max(280px, 25%); transition: none; }
 /* Brought out, its edge lands a touch past where it stops and settles back, as a thing pushed out does (glide.ts
    paneOut brings what it holds in after it); put away, it goes straight. */
-.work.bench:not(.pane-closed) { transition: grid-template-columns var(--slide) var(--spring); }
+.work.bench:not(.pane-closed) { transition: none; }
 .work.bench > .bar {
   --pane-w: max(280px, calc(var(--bench-w, 1200px) / 4));
   --search-w: calc(var(--pane-w) - 2 * var(--s5) - var(--h-row) - var(--s3));

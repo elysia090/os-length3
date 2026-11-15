@@ -86,7 +86,7 @@
   display: flex; min-height: 240px; border: 1px solid var(--rule); border-radius: var(--r-place);
   background: var(--paper); padding: var(--s4); cursor: var(--cursor-text);
 }
-.summary-box { transition: border-color var(--motion); }
+.summary-box { transition: none; }
 .summary-box:focus-within { border-color: var(--ink); }
 .summary-box > .todo-detail { flex: 1; width: 100%; margin: 0; overflow-y: auto; }
 .summary-box > .todo-detail::placeholder { color: var(--sub); }

@@ -245,13 +245,19 @@ test('navigation is immediately interactive while its content arrives, without s
   await app.newRepo.make('hello', {template: 'C'});
   await app.rail.go('home');
   await still(app);
-  const at = await app.page.evaluate(() => {
+  const at = await app.page.evaluate(() => new Promise<{moving: string[]; forge: boolean; home: boolean; panning: boolean}>((done) => {
     document.getElementById('purpose-forge')!.click();
-    const moving = document.getAnimations().filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
-      .map((a) => ((a.effect as KeyframeEffect).target as Element | null)?.className ?? '');
-    return {moving, forge: !!document.querySelector('#page .desk:not([hidden])'), home: !!document.querySelector('#page .home-layout'),
+    const now = {forge: !!document.querySelector('#page .desk:not([hidden])'), home: !!document.querySelector('#page .home-layout'),
       panning: document.documentElement.matches('.panning, :active-view-transition')};
-  });
+    // What runs in the frames after the press: the world's one move, as soon as the page come to is drawn.
+    const moving = new Set<string>();
+    let n = 0;
+    const step = () => {
+      for (const a of document.getAnimations()) if (a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity) moving.add(((a.effect as KeyframeEffect).target as Element | null)?.className.toString() || 'body');
+      if (++n < 12) requestAnimationFrame(step); else done({...now, moving: [...moving]});
+    };
+    requestAnimationFrame(step);
+  }));
   expect(at.forge).toBe(true);
   expect(at.home).toBe(false);
   expect(at.panning).toBe(false);
@@ -278,14 +284,16 @@ test('reduced motion settles an in-flight navigation and restores motion when sw
   await expect(app.rail.button('home')).toHaveAttribute('aria-current', 'page');
   await app.page.emulateMedia({reducedMotion: 'no-preference'});
   // Motion back: the world moves again to a place gone to (its pages, under the frame).
-  expect(await app.page.evaluate(() => {
+  expect(await app.page.evaluate(() => new Promise<number>((done) => {
     document.getElementById('purpose-runtime')!.click();
-    return document.getAnimations().filter((a) => a.playState === 'running').length;
-  })).toBeGreaterThan(0);
+    let most = 0, n = 0;
+    const step = () => { most = Math.max(most, document.getAnimations().filter((a) => a.playState === 'running').length); if (++n < 12) requestAnimationFrame(step); else done(most); };
+    requestAnimationFrame(step);
+  }))).toBeGreaterThan(0);
   await still(app);
 });
 
-test('press feedback releases on pointer cancellation and respects a live reduced-motion change', async ({app}) => {
+test('a press is let go when the pointer is cancelled, and being held is shown with less motion asked for too (a state, not a move)', async ({app}) => {
   await app.rail.go('home');
   await still(app);
   const toggle = app.main.getByRole('button', {name: 'Files: New, Rename, Delete'});
@@ -296,21 +304,22 @@ test('press feedback releases on pointer cancellation and respects a live reduce
   expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
   await app.page.emulateMedia({reducedMotion: 'reduce'});
   await toggle.dispatchEvent('pointerdown', {button: 0});
-  expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
+  expect(Number(await toggle.evaluate((el) => getComputedStyle(el).scale))).toBeLessThan(1);
   await toggle.dispatchEvent('pointerup', {button: 0});
+  expect(await toggle.evaluate((el) => getComputedStyle(el).scale)).toBe('none');
 });
 
 
-test('reducing motion during a held press restores its size before pointerup and does not replay on release', async ({app}) => {
+test('less motion asked for during a held press keeps it held; let go, it is up at once and nothing is replayed', async ({app}) => {
   await app.rail.go('home');
   await still(app);
   const toggle = app.main.getByRole('button', {name: 'Files: New, Rename, Delete'});
   const scale = () => toggle.evaluate((el) => getComputedStyle(el).scale);
   await toggle.dispatchEvent('pointerdown', {button: 0});
   await expect.poll(async () => Number(await scale())).toBeLessThan(1);
-  // Do not release first: a finished forwards-filled press used to stay shrunk here.
+  // Held is a state, not a move: less motion asked for keeps it held, and let go it is up at once.
   await app.page.emulateMedia({reducedMotion: 'reduce'});
-  await expect.poll(scale).toBe('none');
+  expect(Number(await scale())).toBeLessThan(1);
   await app.page.emulateMedia({reducedMotion: 'no-preference'});
   await toggle.dispatchEvent('pointerup', {button: 0});
   expect(await scale()).toBe('none');

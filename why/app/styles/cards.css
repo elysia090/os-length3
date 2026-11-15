@@ -25,7 +25,7 @@
 .repo-gear-button {
   display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0;
   border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--quiet); cursor: var(--cursor-hand);
-  transition: color var(--motion);
+  transition: none;
 }
 .repo-gear-button .mark { width: 18px; height: 18px; }
 /* (There always, quiet: what can be done with a thing does not wait on a pointer over it, so it is the one thing with

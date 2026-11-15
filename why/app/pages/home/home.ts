@@ -21,7 +21,7 @@ import {mark, type MarkName} from '../../ui/icons.ts';
 import {fitSize, inkEdge} from '../../ui/optical.ts';
 import {wholeCells} from '../../ui/row.ts';
 import {errorText} from '../../../api/errors.ts';
-import {nudge, still} from '../../ui/glide.ts';
+import {nudge} from '../../ui/glide.ts';
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
@@ -196,7 +196,7 @@ function toSection(count: HTMLElement, title: string): HTMLElement {
   b.addEventListener('click', () => {
     const head = document.getElementById(title);
     if (!head) return;
-    head.closest('section')?.scrollIntoView({behavior: still() ? 'auto' : 'smooth', block: 'start'});
+    head.closest('section')?.scrollIntoView({block: 'start'}); // (at once, DESIGN §8)
     head.classList.remove('landed'); void head.offsetWidth; head.classList.add('landed');
   });
   return b;

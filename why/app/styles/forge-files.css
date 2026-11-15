@@ -46,7 +46,7 @@
   display: flex; flex-direction: column; margin-bottom: var(--s6);
   min-height: var(--file-min);
   border: 1px solid var(--rule); border-top-width: 0; border-radius: var(--r-place); background: var(--paper);
-  transition: border-color var(--motion);
+  transition: none;
 }
 /* Off the screen, a file is neither styled nor laid out until it comes near (content-visibility), standing at the
    size it last had once it has been seen (auto), at a file's least before: Forge brought back over a big repo lays

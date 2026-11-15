@@ -199,7 +199,7 @@ class Talk {
 
   private view() { return this.scroller.getBoundingClientRect(); }
   private atFoot() { return this.scroller.scrollHeight - this.scroller.scrollTop - this.scroller.clientHeight < 32; }
-  private toFoot(smooth = false) { this.scroller.scrollTo({top: this.scroller.scrollHeight, behavior: smooth ? 'smooth' : 'auto'}); }
+  private toFoot(_smooth = false) { this.scroller.scrollTo({top: this.scroller.scrollHeight, behavior: 'auto'}); }
 
   /** Change what is above the reader without moving what they read. */
   private steady(change: () => void) {

@@ -51,7 +51,7 @@
 .tree-system > .tree-row > .tree-meta { color: var(--sub); }
 .tree-toggle, .tree-spacer { flex: none; width: var(--s5); height: var(--h-row); }
 .tree-toggle { display: grid; place-items: center; border: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); }
-.tree-toggle .icon { width: var(--s3); height: var(--s3); transition: transform var(--motion); }
+.tree-toggle .icon { width: var(--s3); height: var(--s3); transition: none; }
 .tree-toggle[aria-expanded='false'] .icon { transform: rotate(-90deg); }
 .tree-note { padding: var(--s1) var(--s2) var(--s1) calc(var(--depth, 0) * var(--s4) + var(--s5) + var(--s1)); font-size: var(--t-word); }
 /* What can be done to a row inside a repo, at its right end: round, as a

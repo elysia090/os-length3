@@ -2,7 +2,7 @@
 
 /* Home: TODO — one tall box to write in; items are a first line and detail lines */
 .todo-box {
-  border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: border-color var(--motion);
+  border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: none;
   min-height: max(360px, 55vh); display: grid; grid-template-rows: 1fr auto;
 }
 /* A sheet: written in, its edge is ink, as a file's is; under the pointer, a step toward it (the edge a field has),
@@ -70,7 +70,7 @@ span.todo-title { min-height: 0; }
    (todo-list.ts measures it to the words); read, not written, it is the words' own. */
 .todo-item.done .todo-head :is(.todo-title, .todo-kind) { color: var(--sub); }
 .todo-item.done .todo-head:not(:has(.todo-strike)) :is(.todo-title, .todo-kind) { text-decoration: line-through; }
-.todo-head :is(.todo-title, .todo-kind) { transition: color var(--move) var(--spring); }
+.todo-head :is(.todo-title, .todo-kind) { transition: none; }
 .todo-head > .todo-strike { grid-column: 2 / 4; grid-row: 1; justify-self: start; align-self: center; height: 1px; margin-top: 2px; background: var(--sub);
   pointer-events: none; scale: 0 1; transform-origin: left; transition: none; }
 .todo-item.done .todo-head > .todo-strike { scale: 1 1; }

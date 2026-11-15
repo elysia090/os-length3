@@ -73,7 +73,7 @@
 /* Where a piece is scrolled to (ui/scroll-marks.ts): bars cut
    square, ink (the terminal's its own green), four px thick, four in from the edge they run along; there while it is
    scrolled and a moment after, nothing at rest. */
-.scroll-mark { position: absolute; z-index: 3; background: var(--ink); opacity: 0; pointer-events: none; transition: opacity var(--move) var(--spring); }
+.scroll-mark { position: absolute; z-index: 3; background: var(--ink); opacity: 0; pointer-events: none; }
 .scroll-mark.down { top: 0; right: 4px; width: 4px; }
 .scroll-mark.across { left: 0; bottom: 4px; height: 4px; }
 /* (How far the desk is turned along its row is said by the row's map, at the window's foot: shared.css .row-map.) */
@@ -86,7 +86,7 @@
 /* Where the Agent's eye is as it reads (desk-file.ts gaze): a line lit faintly across the sheet, an ink bar at its
    left edge, gliding from line to line. */
 .desk-gaze { position: absolute; left: 0; right: 0; pointer-events: none; background: color-mix(in srgb, var(--ink) 6%, transparent);
-  box-shadow: inset 3px 0 0 var(--ink); transition: top var(--motion) var(--land); }
+  box-shadow: inset 3px 0 0 var(--ink); transition: none; }
 /* Resting on a line (the Agent thinking over it), the eye breathes: slow, faint, so it is seen at work, not stopped. */
 .desk-gaze.resting { animation: gaze-rest calc(1400ms * var(--pace)) ease-in-out infinite alternate; }
 /* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
@@ -99,7 +99,7 @@
 .desk-file > .sheet > .gutter { position: relative; }
 /* The band's files tool out (forge.ts deeds): the desk moved down by the bar's room, gliding as the bar drops, and back
    as it goes; moved, not laid out again. */
-.desk-room > .desk { translate: 0 var(--push, 0px); transition: translate var(--move) var(--land); }
+.desk-room > .desk { translate: 0 var(--push, 0px); transition: none; }
 /* The band's files tool's deeds, as a bar dropped from under it (dmenu's): ink, square, a band's row high, its left edge
    the tool's, a band's gap under it; its path quiet at its head, the deed chosen (the keyboard's, or under the pointer)
    in the paper's colours, as a selection is, the whole height of the bar. A name asked for, or a Delete to be sure of,

@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {mark} from '../../ui/icons.ts';
-import {glide, still, where} from '../../ui/glide.ts';
+import {glide, where} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
 import {shown as named} from '../../../shipto/inbox.ts';
 import * as servers from '../../../shipto/servers.ts';
@@ -84,9 +84,6 @@ export class Band {
     requestAnimationFrame(() => this.inView());
   }
 
-  /** The band drawn before: from then on, the row slides to what comes into view rather than jumping. */
-  private drawn = false;
-
   /** The chip being named, or else the one chosen, slid into view, clear of the fading ends; wider than the row, its start. */
   private inView() {
     const row = this.chips;
@@ -95,9 +92,8 @@ export class Band {
     if (on && row.scrollWidth > row.clientWidth) {
       const left = on.offsetLeft - fade, right = on.offsetLeft + on.offsetWidth + fade, at = row.scrollLeft;
       const to = left < at || right - left > row.clientWidth ? left : right > at + row.clientWidth ? right - row.clientWidth : at;
-      if (to !== at) row.scrollTo({left: to, behavior: this.drawn && !still() ? 'smooth' : 'auto'});
+      if (to !== at) row.scrollTo({left: to}); // (at once: not one of the three moves, DESIGN §8)
     }
-    if (on) this.drawn = true;
     this.ends();
   }
 

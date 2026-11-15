@@ -36,7 +36,7 @@
    from here under the cards, on those edges too (its --row-peek and --row-lead are the row's: see .issue-column). */
 .main-part > .main-card {
   width: calc(100% - 2 * var(--peek)); margin-left: calc(var(--lead) * var(--peek));
-  transition: margin-left var(--slide), width var(--slide); /* as the track goes */
+  transition: none; /* as the track goes */
 }
 /* As an issue's box: the same padding, the files under its name, and its foot (how many wait at the left, Commit at
    the right) where an issue's next step is. Its name is only which repo (main is said over it): a label at the size of
@@ -74,7 +74,7 @@
 .main-card.brief > .changes { grid-column: 1 / -1; padding-bottom: var(--s3); }
 .main-card.brief + .main-card.brief { margin-top: var(--s2); }
 .main-open { display: inline-flex; align-items: center; gap: var(--s2); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: var(--cursor-hand); }
-.main-open::before { content: ''; width: 0; height: 0; border-block: 4px solid transparent; border-left: 6px solid currentColor; transition: rotate var(--motion); }
+.main-open::before { content: ''; width: 0; height: 0; border-block: 4px solid transparent; border-left: 6px solid currentColor; transition: none; }
 .main-open[aria-expanded='true']::before { rotate: 90deg; }
 /* main's card: the repo, how many files wait and Commit on one line; the files under it on the card itself, no box
    inside the box. */
@@ -87,7 +87,7 @@ details.diff-file > summary.diff-head { list-style: none; }
 details.diff-file > summary.diff-head::-webkit-details-marker { display: none; }
 details.diff-file > summary.diff-head::before {
   content: ''; flex: none; align-self: baseline; translate: 0 -.5px; width: 0; height: 0; margin-right: calc(-1 * var(--s1));
-  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: rotate var(--motion);
+  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: none;
 }
 details.diff-file[open] > summary.diff-head::before { rotate: 90deg; }
 /* What waits of a long file, under its lines where they stop, quiet until pressed. */
@@ -103,7 +103,7 @@ summary.done-head:hover { background: var(--paper); }
 summary.done-head::-webkit-details-marker { display: none; }
 summary.done-head::before {
   content: ''; flex: none; align-self: center; width: 0; height: 0; margin-right: calc(-1 * var(--s1));
-  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: rotate var(--motion);
+  border-left: 5px solid var(--sub); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: none;
 }
 details[open] > summary.done-head::before { rotate: 90deg; }
 .done-head > .grow { flex: 1; }

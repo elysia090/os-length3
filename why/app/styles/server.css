@@ -93,7 +93,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
    it, the mark and its ground were one grey midway and the gear was gone for a frame); pressed either way it turns an
    eighth, a tooth's step, so it comes to rest looking as it did. */
 .server-bar > .server-gear[aria-expanded='true'] { border-color: var(--ink); background: var(--ink); color: var(--ground); }
-.server-gear svg { width: 18px; height: 18px; transition: rotate var(--move) var(--land); }
+.server-gear svg { width: 18px; height: 18px; transition: none; }
 /* (Its mark is the one every thing's menu is called by, pointing down; out, it points back up.) */
 .server-gear[aria-expanded='true'] svg { rotate: 180deg; }
 @media (max-width: 760px) { .server-top { padding-right: calc(var(--s5) + var(--h-row)); } }
@@ -224,7 +224,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* Someone else is a conversation with them (server/side.ts): the row pressed, a raised fill under the pointer. */
 .person-go { width: calc(100% + 2 * var(--s2)); margin: 0 calc(-1 * var(--s2));
   padding: 0 var(--s2); border: 0; border-radius: var(--r-key); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
-  transition: background-color var(--move) var(--spring); }
+  transition: none; }
 .person-go:hover { background: var(--paper); transition-duration: var(--motion); }
 .person-go > .lately-badge { align-self: center; }
 .person-go > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }

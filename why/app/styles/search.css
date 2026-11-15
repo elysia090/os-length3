@@ -144,7 +144,7 @@
 .search-in, .line-in {
   width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
-  transition: background-color var(--move) var(--spring), border-color var(--move) var(--spring);
+  transition: none;
 }
 :is(.search-in, .line-in):focus { transition-duration: var(--motion); }
 .search-in:disabled { opacity: .5; }

@@ -1,20 +1,20 @@
-// Touch: what is pressed gives under the finger, and comes home once let go, as a key does: never past where it was
-// (DESIGN §8: nothing overshoots; a press has no momentum to carry it on, and a flourish on every press is noise, the
-// strong answer kept for what is done, §14). The give is the same few pixels on anything, so a chip sinks more than a
-// card does; it is the `scale` property, so it never fights a thing's own transform, and a press that becomes a drag
-// is let go at once. Asked for less motion, nothing gives.
+// Touch: what is pressed is down while it is held, and up the moment it is let go, as a key is (DESIGN §14). The ear
+// says when (a key's two sounds: as it goes down, as it comes up, keys.ts); the eye says what is so: that this thing
+// is held down, for as long as it is (a press can still be taken back by moving off it), and then what it did. Neither
+// says what the other does (Bresson: image and sound "must not support each other, but must work each in turn"): so
+// the eye is told no instant the ear already hears. Down and up are cuts, never drawn going (a pointer's press has no
+// travel the screen could follow, and a spring home told the eye the let-go the ear hears, moving while what the press
+// did was the thing to see). Being held is a state, not a move: it is shown with less motion asked for too. The give
+// is the same few pixels on anything, so a chip sinks more than a card does; it is the `scale` property, so it never
+// fights a thing's own transform, and a press that becomes a drag is let go at once.
 
-import {paced, still} from './glide.ts';
 import {lift, press, strike, wake, type Key} from './keys.ts';
-import {SPRING} from './law.ts';
 
 const WHOLE = '.card.repo, .card.new, .issue-card, .board-card';
 const ONE = 'button, [role="button"], [role="radio"], [role="tab"], .chip';
 const AWAY = '#rail-tabs, input, textarea, select, [contenteditable], .power, .stage-hit, .slide-stage, .tree-row';
 
-let held: {el: HTMLElement; s: number; press: Animation} | null = null;
-/** The spring of the last press let go, while it goes. */
-let spring: {el: HTMLElement; a: Animation} | null = null;
+let held: {el: HTMLElement; press: Animation} | null = null;
 
 /** The thing that gives: a card as a whole when its body is pressed, a button in it (×, the gear) alone. */
 function pressable(at: EventTarget | null): HTMLElement | null {
@@ -31,37 +31,21 @@ function give(el: HTMLElement): number {
   return Math.min(.99, Math.max(.92, 1 - 6 / Math.max(r.width, r.height, 1)));
 }
 
+/** Held down: in the first frame drawn after the press, as the hand is. */
 function down(el: HTMLElement) {
-  if (still()) return;
-  spring?.a.cancel();
-  spring = null;
-  const s = give(el);
   held?.press.cancel();
-  // Down at once: a pointer's press has no travel the screen could follow (the hand has already gone down when it is
-  // told), so the thing is down in the first frame drawn after it, as the hand is; drawn going down, its foot came
-  // a few frames after the hand's.
-  held = {el, s, press: el.animate([{scale: s}], {duration: 0, fill: 'forwards'})};
+  held = {el, press: el.animate([{scale: give(el)}], {duration: 0, fill: 'forwards'})};
 }
 
+/** Let go: up at once. */
 function up() {
-  if (!held) return;
-  const {el, s, press} = held;
+  held?.press.cancel();
   held = null;
-  press.cancel();
-  if (still()) return;
-  // Home, by the law's curve: off at once, settling, no bounce.
-  const a = el.animate([{scale: s}, {scale: 1}], {duration: paced(250), easing: SPRING});
-  spring = {el, a};
 }
 
-/**
- * A press on what is about to be left (the page the camera pans away from, kept as it is at that moment) is let
- * go at once, so the page leaves with it at rest, not still sunk; one elsewhere (the rail, which stays) springs on.
- */
+/** A press on what is about to be left (the page the camera pans away from) is let go at once, so it leaves at rest. */
 export function letGo(within: Element) {
   if (held && within.contains(held.el)) up();
-  if (spring && within.contains(spring.el)) spring.a.finish();
-  spring = null;
 }
 
 /** The control a trusted press or click sounds on: none for one disabled, inert, or a field written in. */
@@ -101,15 +85,6 @@ export function touch() {
     if (e instanceof MouseEvent && e.detail === 0 && performance.now() - enterTyped < 60) return;
     strike('enter');
   }, true);
-  // A held press ends below full size with forwards fill. Finishing it preserves that size;
-  // the owner must cancel it when motion is reduced, without waiting for pointerup or adding a spring.
-  matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (event) => {
-    if (!event.matches) return;
-    held?.press.cancel();
-    held = null;
-    spring?.a.cancel();
-    spring = null;
-  });
   document.addEventListener('pointerdown', (e) => {
     // The person's first act opens the sound's output, before a stroke is asked of it.
     if (e.isTrusted) wake();

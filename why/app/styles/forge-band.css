@@ -31,7 +31,7 @@
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools:focus-within { outline-color: var(--ink); }
 .band-tool {
   flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--ink);
-  border-radius: var(--r-key); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: background var(--motion);
+  border-radius: var(--r-key); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: none;
 }
 .band-tool:hover { background: var(--paper); }
 .band-tool .mark { width: 18px; height: 18px; }

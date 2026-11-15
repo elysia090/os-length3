@@ -91,7 +91,7 @@ export function bring(el: HTMLElement, area: HTMLTextAreaElement, clear: number)
   if (!flow) return;
   const r = el.getBoundingClientRect(), f = flow.getBoundingClientRect(), bottom = Math.min(f.bottom, clear) - 12;
   if (r.top < f.top + 12 || r.bottom > bottom)
-    flow.scrollTo({top: flow.scrollTop + r.top - f.top - (bottom - f.top) / 3, behavior: still() ? 'auto' : 'smooth'});
+    flow.scrollTo({top: flow.scrollTop + r.top - f.top - (bottom - f.top) / 3}); // (at once, DESIGN §8)
   // The caret or a word far along a long line: the editor scrolls along to it (its marks with it). A line's mark starts
   // left of its words, so it asks for none; told only when it did scroll, so the marks drawn again for it (show, on its
   // scroll) do not ask again.

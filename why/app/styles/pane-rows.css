@@ -3,7 +3,7 @@
 .pane-rows { display: grid; align-content: start; gap: var(--s1); overflow-y: auto; scrollbar-width: none; min-height: 0; padding: var(--s2) 0 var(--s5); }
 .pane-row { display: grid; grid-template-columns: 6px minmax(0, 1fr); grid-template-areas: "bar line" "bar at"; gap: 4px 14px; align-items: center;
   text-align: left; padding: 10px 10px 10px 12px; margin: 0 -10px; border: 0; border-radius: var(--r-key); background: none; color: var(--ink);
-  font: inherit; cursor: var(--cursor-hand); transition: background var(--motion); }
+  font: inherit; cursor: var(--cursor-hand); transition: none; }
 .pane-row.lit { background: var(--raised); }
 .pane-row:hover { background: var(--paper); }
 /* The bar as tall as the words beside it are: from the first line's capitals to the last line's baseline, not the line

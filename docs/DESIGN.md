@@ -34,8 +34,7 @@ else is held back. It never has:
 - a thing that is there only while a pointer is over it;
 - a layout set in the middle of the window, or one mirrored left and right;
 - blur or transparency as decoration (blur is depth: what is behind what was called up in front, what a change is
-  seen against in Git's work, and a talk read back where it passes under the box one writes in, 2 px over half a
-  cell; nothing else);
+  seen against, and what passes under a box one writes in, 2 px over a cell; nothing else);
 - a picture of a material (paper's grain, leather). A material is shown by how it behaves, not by how it looks;
 - a second way to do a thing for a narrow window or a finger. A phone has the same rules with a smaller number.
 - two things equally raised: two fills, two shadows, two large names, a sound and a flash for one deed (master and
@@ -53,7 +52,7 @@ do, and each is a rule here with a number:
 | The source says | Here |
 |---|---|
 | A grid drawn from the line spacing (Vignelli, *Canon*: "one can draw a grid based on the leading size") | the cell is the line: 24 px (§3) |
-| "Stick to one or two type sizes", the large about twice the small, white between them (*Canon*) | on one sheet: its name, its words, and one small size beside them (§3) |
+| "Stick to one or two type sizes", the large about twice the small, white between them (*Canon*) | three sizes in all, one, two and four times; on one sheet two, its words and its name (§3) |
 | A subhead is the text's size in bold, "a line space above and none below" (*Canon*) | who speaks, over what they said (§10, a transcript) |
 | Flush left; centred only for what is lapidary (*Canon*; Bringhurst 2.1.3) | one left edge; nothing is set in the middle (§1) |
 | Vertical space is added in whole intervals of the leading (Bringhurst 2.2.2) | every gap is whole cells (§3, whole cells) |
@@ -111,8 +110,11 @@ made the place its own went with them. A rule is laid on what has no answer of i
 in my hand*, *what can I do next*. The size of words answers by rank, movement by where things are, material by
 state. What answers none of the three is decoration, and on a desk decoration only takes the eye from the work.
 
-**The test of a screen.** A film of it being used must be one unbroken take: every change is one of the three moves
-of §8. A screen that needs a cut, or a fourth kind of move, is a screen whose use is not plain.
+**The test of a screen.** A film of it being used is one unbroken take: the camera never cuts away. The window goes
+from place to place by moving over one world (§8's three moves), so where things are is never lost (Bazin: where it
+matters that two things share one space, that space is shown whole, not cut between). Inside the take, what changes
+is a change of state, and it changes at once (§8): the camera holds, the thing is so. A screen that needs the camera
+to jump, or a fourth kind of move, is a screen whose use is not plain.
 
 **What a person is and what a person sees.** What a person wants comes one thing at a time (go there, open that);
 what a person sees never jumps. So the state of the window is whole numbers (which place, which piece is at the
@@ -736,8 +738,8 @@ its work is trusted more than a short one that shows nothing.
 3. **In front and back:** what is called up comes in front and the world behind it goes out of focus; put away, it
    goes and the world is in focus again.
 
-**Everything else is a cut.** What is neither one of the three moves nor the hand's own (a press's give and home, a
-no's nudge, the caret) does not move at all: what comes is there, what goes is gone, at once, and the mind completes
+**Everything else is at once.** What is neither one of the three moves nor the hand's own (a no's nudge, the caret)
+does not move at all (a press's being held down and let go are states, at once both ways, §14): what comes is there, what goes is gone, at once, and the mind completes
 the way between. Film found it first: "there's no reason to pan continuously from me to the lamp because you know
 what's in between. Your mind cut the scene" (Huston, in Murch, *In the Blink of an Eye*); "the only punctuation which
 Ozu allows himself is the simple cut" (Richie); in a comic's gutter "nothing is seen between the two panels, but
@@ -796,7 +798,9 @@ come to was long in the building.
 
 ## 9. Sound
 
-A key's sound, recorded, for two things the hand does: **a control pressed** and **a key typed**.
+A key's sound, recorded, for two things the hand does: **a control pressed** and **a key typed**. **The ear says when;
+the eye says what is so** (§14, press): a sound marks an instant (down, up, a stroke), never a state, and nothing
+the eye is shown is said again to the ear.
 
 - A control pressed with a mouse or a pen sounds as it goes down and again, quieter, as it is let go; pressed with a
   finger or from the keyboard, once at its click.
@@ -914,8 +918,9 @@ research has one, measured on every control of every place from the top right, h
 
 | Touch | The principle | Its number | From | Measured |
 |---|---|---|---|---|
-| **Hover** | quiet to ink, or paper under it; nothing comes, nothing goes (no line is drawn under words: paper under them). On paper, where paper is not seen, a key's line and words go to ink. In a list called up (a menu, File's tree), the row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's, as a selection is | no other fill | §3, §7 | 26 controls took a raised fill, two an ink one, the ink key a lighter ink: all now paper or nothing |
-| **Press** | answers at the thing pressed in the frame it goes down, **down at once** (a pointer's press has no travel to draw: the hand is down when the screen is told); sounds as it goes down; gives a few pixels and comes **home, never past**; what it does, it does on the let-go | its answer in the first frame drawn after the press or the next (counted in frames, which a busy machine cannot stretch), its sound ≤ 1 frame, its give ≥ .92 of itself, never over 1 | a highlight on touching down and nothing confirmed until the touch goes up (Apple, *Designing Fluid Interfaces*, 2018); 50 ms is felt as instant, 200 ms as sluggish (Swink, *Game Feel*); a press's visual answer feels one with it within 30 to 85 ms, its sound within 20 to 70 (Kaaresoja 2016); no overshoot without momentum (Apple) | its own answer 16 ms (one frame), at most 24; its sound 0 to 1 ms after; its give .92; it sprang 2.3% past itself on 52 presses: now it comes home; drawn going down over 70 ms, its foot came three frames after the hand's (and on a loaded machine past 50 ms): now it is down at once |
+| **Hover** | quiet to ink, or paper under it, **at once** (no fade in or out: the same colour in every frame from the first); nothing comes, nothing goes (no line is drawn under words: paper under them). On paper, where paper is not seen, a key's line and words go to ink. In a list called up (a menu, a tree), the row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's, as a selection is | one frame, no other fill | §3, §7 | measured in every place: one colour in every frame (`touch.spec.ts`) |
+| **Press** (a click, a tap) | **held down at once and up at once**: a pointer's press has no travel to draw (the hand is down when the screen is told), and being held is a state, not a move, shown with less motion asked for too. The ear says when (a key's sound as it goes down, again as it comes up), the eye says what is so (held down, a few pixels; then what the press did): a sound and an image at one instant are one event to the senses (Chion's synchresis), and across time they work in turn (Bresson's relay), so neither tells what the other tells. Pressed, nothing is filled. **Going is on the down, doing on the let-go**: a press that goes somewhere (a place, a far side, a piece) changes nothing and is undone by going back, so it takes the earliest moment, the down (a tab of a browser is chosen so); a press that does something (makes, sends, changes, removes) does it at the let-go, and moved off before the let-go it does nothing. A press begun on what is pressed and moved off never selects the page's words | its give in the first frame drawn after the press or the next; up in the frame after the let-go, never drawn coming home; its give ≥ .92 of itself | Jota et al. 2013 (a tap's lag unseen under 24 ms); Apple, *Designing Fluid Interfaces* (2018): "everything needs to respond instantly"; a press confirmed on its let-go; Chion, *Audio-Vision* (1990); Bresson, *Notes* | measured: given in one frame, home in the next, never past (`touch.spec.ts`) |
+| **Look along** (scroll) | **the window's own scrolling, and nothing laid on it**: what is scrolled stays under the hand, in the frame after the wheel or the finger; its rate and its coasting are the platform's (a thrown thing coasts to a stop where its speed takes it), never altered; nothing comes, goes, fades or moves as it is scrolled; at its end it stops by the platform's own soft edge and never carries on into what is behind it; what is read never shifts when something changes out of sight (scroll anchoring); a row of whole pieces comes to rest at a piece by the platform's own snapping, with the hand's speed. The OS never scrolls by itself except as one of the three moves, and then by the law's curve: everything it scrolls otherwise (bringing a thing into view) is at once | in the frame after the wheel; nothing else animating while it scrolls | Deber et al. 2015 (a drag's lag seen at 11 ms on a screen); NN/g, *Scrolljacking 101* (altered rate and duration worst where text is read); Apple 2018 (project momentum; soft edges; redirectable); W3C, *CSS Scroll Anchoring* | measured: scrolled in the next frame, nothing else running (`touch.spec.ts`) |
 | **Key typed** | the letter drawn in the frame it is struck, its sound as it is struck, the caret going with it (§9) | one frame | a slow keyboard (200 ms) costs effort and correcting, not copying speed (Schmid et al. 2023); "the lower, the better" (Fatin) | `sound.spec.ts`, `motion.spec.ts` |
 | **Carry** (a drag, the desk by hand) | it stays under the hand, moved by the window's own scrolling or the drag's own frame; no easing laid on what the hand moves | lag ≤ 1 frame | "not imposed upon objects when they are being explicitly moved by the user" (Chang and Ungar 1993); a drag's lag is noticed at 11 ms on a screen, 55 ms through a pad (Deber et al. 2015) | §7 |
 | **Called up** (a menu, the finds, File) | by a press, laid where it was asked (its first deed under the press), away at once by a press outside or Escape | in the press's frame; its first deed within 5° of the press (§2) | a panel opened by the hand opens quickly and closes fast (Lewis); things leave the way they came (Chang and Ungar; Apple) | §7, `favour.spec.ts` |
