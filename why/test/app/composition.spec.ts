@@ -1,6 +1,6 @@
 import {expect, test} from './fixtures.ts';
 import type {App} from './app.ts';
-import {across} from './weigh.ts';
+import {across, emptiness, emptyIn, fields} from './weigh.ts';
 
 // Every rest a shot (DESIGN §2, the window is a camera): in every place, at four widths down to a phone, each frame is
 // held to what film knows of a frame. Measured, not looked at:
@@ -13,6 +13,10 @@ import {across} from './weigh.ts';
 //                   (the place's square on the rail, or the door): found without a search
 //   weight          on a desk screen, the weight of what is drawn lies left of the world's middle (the room ahead to
 //                   the right): never set in the middle, never leaning the way the row runs
+//   the lean        the empty part of the world lies to its lower right, the frame's open sides: that quarter at least
+//                   as empty as the upper left, where the frame and the subject are
+//   the field       the bare ground is one field, reaching the window's right or foot, with nothing of it trapped
+//                   between things
 //   a whole title   the band's name whole at its size, inside the window, or not there
 //   one voice       the display face at its two sizes, no text and no number said twice in it
 
@@ -139,7 +143,19 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   // outranks the plane: §2, the order of sacrifice.)
   const f = await app.page.evaluate(frame, PLACES[place]);
   const desk = place !== 'runtime' && place !== 'remote';
-  if (!called && desk && size.width >= 1024 && f.subject && f.subject.x <= 2 * U + .5) expect(await across(app.page), `${what}: the weight left of the middle`).toBeLessThan(0);
+  const atEdge = !called && size.width >= 1024 && !!f.subject && f.subject.x <= 2 * U + .5;
+  if (atEdge && desk) expect(await across(app.page), `${what}: the weight left of the middle`).toBeLessThan(0);
+  if (!atEdge) return;
+  const rows = await emptiness(app.page), R = rows.length, C = rows[0]!.length;
+  // The lean: the room ahead lies down and to the right, the open sides; the weight with the frame, up and left.
+  const ul = emptyIn(rows, 0, R >> 1, 0, C >> 1), lr = emptyIn(rows, R >> 1, R, C >> 1, C);
+  expect(lr, `${what}: the lower right (${lr.toFixed(2)} empty) at least as empty as the upper left (${ul.toFixed(2)})`).toBeGreaterThanOrEqual(ul);
+  if (!desk) return;
+  // The field: the bare ground one body, open to the right or the foot, nothing of it shut in between things.
+  const all = fields(rows), bare = all.reduce((n, c) => n + c.n, 0);
+  expect(all[0]!.n / bare, `${what}: the bare ground one field`).toBeGreaterThanOrEqual(.95);
+  expect(all[0]!.open, `${what}: the field open to the window's right or foot`).toBe(true);
+  expect(all.filter((c) => !c.edge).reduce((n, c) => n + c.n, 0) / bare, `${what}: no ground trapped between things`).toBeLessThan(.01);
 }
 
 test('every rest is a shot: in every place, at every width, one lens, one horizon, one subject in focus, the eye landing on what the place is, a whole title, one voice', async ({signedIn: app, another}) => {

@@ -1,5 +1,5 @@
 import {expect, test} from './fixtures.ts';
-import {across} from './weigh.ts';
+import {across, emptiness, emptyIn} from './weigh.ts';
 
 // Forge at work (DESIGN §2, a shot computed; §10, Forge): the work itself never breaks the shot. Measured frame by
 // frame while a file is written, gone through, pressed, left for the next by a key, and while the terminal runs:
@@ -11,7 +11,8 @@ import {across} from './weigh.ts';
 //                 work is, out of the lower third
 //   no jump       from one rest to the next a thing stands where it stood or has gone at least a cell
 //   order kept    what is left of what is not reversed
-//   weight        the weight of what is drawn lies left of the world's middle, the room ahead to the right
+//   weight        the weight of what is drawn lies left of the world's middle, the room ahead to the right, and the
+//                 lower right of the world at least as empty as its upper left
 
 const U = 24, F = 2 * U;
 type Box = [number, number, number, number];
@@ -108,6 +109,11 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
     expect(r.pieces['README.md']![1] + r.pieces['README.md']![3], 'a long file stands to the foot').toBe(size.height - U);
     expect(r.lower - r.caret!.foot, 'the last line written at the lower third').toBeLessThan(U);
     expect(await across(page), 'written: the weight left of the middle').toBeLessThan(0);
+    const lean = async (when: string) => {
+      const rows = await emptiness(page), R = rows.length, C = rows[0]!.length;
+      expect(emptyIn(rows, R >> 1, R, C >> 1, C), `${when}: the lower right at least as empty as the upper left`).toBeGreaterThanOrEqual(emptyIn(rows, 0, R >> 1, 0, C >> 1));
+    };
+    await lean('written');
     // Gone back through it by the keys: its top under the upper third while there is more above.
     for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowUp');
     r = await at('gone back up');
@@ -141,5 +147,6 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
     expect(term[0], 'the terminal at the edge').toBe(F);
     expect(term[1] + term[3] - U, 'the terminal\'s last line out of the lower third').toBeLessThanOrEqual(r.lower + .5);
     expect(await across(page), 'running: the weight left of the middle').toBeLessThan(0);
+    await lean('running');
   });
 }
