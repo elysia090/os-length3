@@ -58,11 +58,11 @@
 /* Small, on the line the title's words stand on (its line is the title's: the number alone set small in it). */
 .issue-big-head.peek .issue-no { font-size: var(--t-word); }
 .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
-/* Under the pointer, the neighbour its edge is the way to takes paper under it, its words in ink, at once: nothing is
-   drawn there only while the pointer is over it, and nothing moves (DESIGN §1, §14). (Before, it lifted 4 px, went the
-   raised grey and a chevron came on its edge: a mark there only under the pointer, and the footing moving.) */
+/* Under the pointer, the neighbour its edge is the way to has its words in ink, at once, as a board beside the one in
+   the hand does: nothing is drawn there only while the pointer is over it, nothing moves, and it does not go white (a
+   white sheet is the hand's, with its shadow: under the pointer it read as taken up before it was). */
 .issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
-.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { color: var(--ink); background: var(--paper); }
+.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { color: var(--ink); }
 .issue-big-head.peek { transition: none; }
 .stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: var(--cursor-hand); }
 .stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }

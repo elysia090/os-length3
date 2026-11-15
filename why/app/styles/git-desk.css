@@ -58,8 +58,12 @@
 .git-switch .switch-line > button { cursor: var(--cursor-hand); }
 .git-switch .switch-line > button:is(:disabled, [aria-disabled='true']) { cursor: var(--cursor-arrow); opacity: 1; }
 .git-switch .switch-line.next > :is(button, span) { font-weight: 700; color: var(--ground); }
-.git-switch .switch-line > button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
-.git-switch .switch-line.next > button:focus-visible { outline-color: var(--ground); outline-offset: -4px; }
+/* The keyboard on a step: a ring round its whole line, a cell tall and the sheet's width inside its edge, its edges on
+   the grid's lines (on the step under way, the ground's colour inside its band of ink). A ring round the word alone
+   stood half a cell over and under it, across the lines beside, the band of ink among them. */
+.git-switch .switch-line > button:focus-visible { outline: none; }
+.git-switch .switch-line:has(> button:focus-visible)::after { content: ''; position: absolute; inset: 0 1px; box-shadow: inset 0 0 0 2px var(--ink); pointer-events: none; }
+.git-switch .switch-line.next:has(> button:focus-visible)::after { box-shadow: inset 0 0 0 2px var(--ground); }
 .switch-lines > .error { margin: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--sans); color: var(--off); text-align: left; }
 .switch-lines > .error:empty { display: none; }
 /* main's sheet's name over its corner, as a piece's is (§5), level with the issue's beside it: the repo whose main it
