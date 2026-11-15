@@ -153,7 +153,7 @@ place's square, the door, a piece), or, when a key or a find moved the world, wh
 | Law | What film found | Computed | Bound |
 |---|---|---|---|
 | **Eye-trace** | Murch counts where the eye is among a cut's six criteria. Smith's attentional theory of continuity (2012): a cut goes unseen when the eye enters the new shot where it left the last. Miller and Seale centred *Fury Road* so that in a shot of 1.8 s the eye need not move to find its subject | the distance from `h` to the nearest point of what the place is (its subject, its name or its index) | **≤ 5°** (235 px): inside the parafovea (5° either side of where the eye rests, Rayner 1998), found without a search. So a piece gone to by a key, a find, or by coming to its place comes to the desk's edge, where the last subject stood: the distance is nothing |
-| **Look room** | Thompson and Bowen's look room. Palmer, Gardner and Wickens (2008): a figure facing one way is liked off the centre with the room on the side it faces; in the same lab's later work, the way a figure moves counts over the way it faces. Short-sided, a figure reads as trapped | a piece of a row faces the row's way: ahead `W − (S.right + 12)`, behind `S.left − F`. The line being written faces the way it is written: down the sheet, and along the line | **ahead ≥ behind.** The line written is **never in the third of `Ω` it goes towards**: its foot ≤ `y₂` as it is written on, its top ≥ `y₁` going back while there is more above. Along a line that runs past the sheet, **its next 15 letters in sight** ahead of the caret (as many as it has) and 4 behind (McConkie and Rayner 1975: what is taken in at a glance is 3–4 letters before the eye and 14–15 after it) |
+| **Look room** | Thompson and Bowen's look room. Palmer, Gardner and Wickens (2008): a figure facing one way is liked off the centre with the room on the side it faces; in the same lab's later work, the way a figure moves counts over the way it faces. Short-sided, a figure reads as trapped | a piece of a row faces the row's way (artists leave 8 to 10% of the width more in front of a figure than behind it: Bertamini et al. 2011): ahead `W − (S.right + 12)`, behind `S.left − F`. The line being written faces the way it is written: down the sheet, and along the line | **ahead ≥ behind.** The line written is **never in the third of `Ω` it goes towards**: its foot ≤ `y₂` as it is written on, its top ≥ `y₁` going back while there is more above. Along a line that runs past the sheet, **its next 15 letters in sight** ahead of the caret (as many as it has) and 4 behind (McConkie and Rayner 1975: what is taken in at a glance is 3–4 letters before the eye and 14–15 after it) |
 | **Size is importance** | Hitchcock: the size of a thing in the frame is its importance at that moment. Galvane, Ronfard, Lino and Christie (2015) score a shot by how far its sizes depart from its importances | the order of things by weight, and of words by size | by weight the subject first, **8 times** any other piece (§5); by size the place's one large thing first (§10); the frame least of all (§4) |
 | **Weight off the middle** | Arnheim: weight away from the centre, with the room it faces, is a directed tension; at the centre it is at rest (Palmer's viewers put a thing that faces them in the middle) | `Tₓ = (Cₓ − (F + W)/2) / ((W − F)/2)`, `C` the centre of the world's weight | on a desk whose subject is at its edge, on a desk screen: **`Tₓ < 0`**, the weight left and the room ahead right. Not on a phone (its piece fills its world), nor in a place that is one sheet (the sheet is its world: a close-up, with nothing ahead of it) |
 | **No jump** | the 30° rule: a cut that changes the angle less than 30°, or the size too little, is a jump cut; Galvane's cost of a jump is greatest when neither changes | for each thing in two successive rests (a piece, its name, the band's keys, the rail): how far each of its edges went | **0, or a cell (24) or more.** A line written grows its piece by a line; a line turned turns a line |
@@ -184,6 +184,25 @@ each **bare ground** (its colour and its dot only), **bare paper**, or **marked*
 | **One field** | Trapped white, space "not allowed to connect to other space", is space wasted (Bradley); a small enclosed gap is seen as a figure, a hole, where a large field reaching the edge is seen as ground (figure-ground cues: smallness, enclosure, convexity; Wagemans et al. 2012) | the bare ground's fields, joined cells of it | the largest holds **≥ 95%** of the bare ground; it reaches the window's **right or foot**; what is shut in between things **< 1%** (a counter inside one sheet is that sheet's) |
 | **How much is marked** | The book's canon sets its type area at 4/9 of the page (Van de Graaf, Tschichold); a type area of about half reads quiet and fine (上品・落ち着き), of four fifths busy (にぎやか); white space is read as prestige, quality and trust (Pracejus, Olsen and O'Guinn 2006). Its amount alone predicts little (r = −.15 with judged beauty; figure-ground contrast, +.51: Miniukovich and De Angeli 2015): where it lies matters more than how much | the share of the world's cells marked | on a desk, **at most a third** (measured: 9 to 27%) |
 | **The lean** | Margins of one size "create an impression of indecision and dullness"; a type area set high floats, set low falls (Müller-Brockmann). The reading order weighs the upper left first and the lower right last (Ngo, Teo and Byrne's sequence) | the weight's centre, `Tₓ` (above); and how empty each quarter of the world is | `Tₓ < 0`, and the **lower right at least as empty as the upper left**: the weight with the frame, the room with the open sides (§4) |
+
+**The lean, and how well it is known.** The left of a frame is where a left-to-right reader's eye goes first and
+where a subject is put; how strongly is measured, and mostly small:
+
+| Found | How strong |
+|---|---|
+| The first look at a picture goes left: 62% of first fixations (Ossandón et al. 2014), replicated (Foulsham et al. 2018) | firm |
+| Who acts is drawn on the left, the action going right: 78 to 79% in 14 left-to-right languages (Suitner et al. 2021); weaker, not reversed, in right-to-left readers | firm, and learnt from writing |
+| The same film sequence going left to right is felt as more positive and more active (Egizii et al. 2018, η² = .07) | small |
+| Artists leave 8 to 10% of the width more room in front of a figure than behind it (Bertamini, Bennett and Bode 2011) | firm |
+| Art photographs' weight is off their centre by .044 of the frame on average, and viewers do not prefer it centred (McManus, Stöver and Kim 2011) | firm |
+| Salient things are better liked on the right (Levy 1976); a "glance curve" from lower left to upper right (Gaffron) | not borne out by eye-tracking; not used here |
+| The eye's rest is the centre, with no shift up or down (Tatler 2007; Clarke and Tatler 2014) | firm: the lean up is print's (Müller-Brockmann), not the eye's |
+
+So the subject stands where the eye goes first, at the left, with the room it faces to its right; the lean down and
+right of the empty part is the sequence's, and Ngo's other measure, equilibrium, which counts any lean against a
+layout, is not a goal here (an asymmetric balance is: Arnheim's "an unbalanced composition looks accidental"; here
+the field ahead balances the subject). The lean is a poster's, not a photograph's: `Tₓ` from −.03 to −.59 on the
+desks, where the photographs' .044 of a frame is −.09 in these units.
 
 So the negative space of a shot is one thing: the ground ahead of the subject, open to where the world goes on. It is
 never between things. Measured in every place at 1536 and 1024: the largest field holds 97 to 100% of the bare
@@ -861,12 +880,27 @@ are the one thing with weight (20 px 700), everything else is said in 13 and 15.
 ### New repo (+)
 
 *One question: what is it called.* On Home's ground: one piece at the desk's edge, and it is the hand's (paper, its
-ink edge, its shadow: the one on the desk). Its place in the cell over its corner, as a piece's name is (`~/` and the
-name as written, then New repo; why a name cannot be after them). In it, a cell of paper each side: the name on its
-first line in the display face, its capitals a cell tall as every name's (a name longer than the line goes on past it
-as a field's words do: never made smaller for its room); a cell; what the repo is for, on lines of a cell; a cell;
-under a rule, what will be made with it as File will show it; a cell; Create. As wide as a piece, as tall as what is
-in it to the grid's next line.
+ink edge, its shadow: the one on the desk). Its place in the cell over its corner, as a piece's name is, on one line
+and on a patch of the ground its own size: `~/` and the name as written, a letter no name can have marked where it
+is; then New repo, quiet, which gives way where the line has no room for it whole. In it, a cell of paper each side:
+
+1. the name on its first line in the display face, its capitals a cell tall as every name's (a name longer than the
+   line goes on past it as a field's words do: never made smaller for its room); nothing written, the word for what
+   goes there, quiet;
+2. a cell; why the name cannot be, where there is a reason, in the small size on lines of a cell (what is under it
+   comes down by the cells it takes; the sheet's top never moves);
+3. what the repo is for, on lines of a cell;
+4. a cell; a rule; half a cell; **what will be made in it**, a line a cell tall each, folders first, a folder's depth a
+   cell in; New file and New folder their last line; half a cell;
+5. a cell; Create, a key the frame's square tall.
+
+As wide as a piece, as tall as what is in it to the grid's next line, every line of it on a half cell.
+
+The repo itself is the sheet, its name the sheet's title: said once, large, and not drawn again as a row of the
+list under it (it was, filled with ink as File fills the repo in hand: a second fill on the sheet, and the name said
+twice). A row's name pressed is written over in its place; what else can be done to it (Rename, Leave out) is its one
+mark's menu, the chevron at its right end, always there and quiet (§5). Nothing on it is coloured by the pointer.
+Three sizes on it, as on any sheet: the name's, the words' (15), the small (13); and the key's own name.
 
 ### File
 
@@ -929,7 +963,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Writing in Git is direct: a new issue's line and main's commit line always there, Enter making or committing, nothing to open, confirm or put back; an issue's title written over in place; what is half written kept (§7, §10) | `why/test/app/git.spec.ts` |
 | Forge at work, frame by frame at two screens: the piece in hand at the edge or under the hand; the line written never in the third it goes towards, a long file standing to the foot; the terminal's last line out of the lower third; nothing jumping, nothing reversed; the weight left (§2, §6, §10) | `why/test/app/at-work.spec.ts` |
 | Where the line written may stand, the terminal's lines, and where the desk turns for a piece pressed and for one gone to (§2, §5, §6) | `why/app/pages/forge/desk-layout.test.ts` |
-| New repo is one piece at the desk's edge, the hand's: on the grid, a piece wide, its name at a name's size on its first line, what will be made inside it under a rule (§10) | `why/test/app/new-repo.spec.ts` |
+| New repo is one piece at the desk's edge, the hand's: on the grid, a piece wide, its name at a name's size on its first line, what will be made inside it under a rule, every line of it on a half cell, three sizes, nothing filled but its key, its place over its corner on a patch of the ground, each row's deeds one chevron; why a name cannot be said under it with the sheet's top still (§10) | `why/test/app/new-repo.spec.ts` |
 | Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `why/test/app/skeleton.spec.ts` |
 | A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `why/test/app/server.spec.ts` |
 | Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone; Home as a shot: a long name keeps its size over lines on the grid with the eyeline at its first, and the note's edge is whole (§10) | `why/test/app/home.spec.ts` |

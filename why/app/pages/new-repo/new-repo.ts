@@ -11,6 +11,8 @@ import type {Context} from '../kit/context.ts';
 import {triangle} from '../file/tree.ts';
 import {errorText} from '../../../api/errors.ts';
 import {mark} from '../../ui/icons.ts';
+import {menuItem} from '../kit/common.ts';
+import {deedsUnder} from '../kit/file-deeds.ts';
 import {liftLine, nudge, putAway, textAt, unfold} from '../../ui/glide.ts';
 import {wholeCells} from '../../ui/row.ts';
 
@@ -78,12 +80,23 @@ function row(name: string | Node[] | HTMLElement, depth: number, dir: boolean, e
       typeof extra.meta === 'string' ? h('span', {class: 'tree-meta'}, extra.meta) : extra.meta ?? null, extra.tail ?? null));
 }
 
-/** A small deed on a row, its mark alone, named for the ear and the pointer's rest. */
-const rowDeed = (m: 'pen' | 'close', said: string, act: () => void) => {
-  const b = h('button', {type: 'button', class: 'tree-deed', 'aria-label': said, title: said}, mark(m)) as HTMLButtonElement;
-  b.addEventListener('click', act);
-  return b;
-};
+/**
+ * What can be done to a row, called by its one mark at its right end (DESIGN §5: a chevron, everywhere), always there
+ * and quiet: Rename and Leave out, in a menu laid under it.
+ */
+function rowDeeds(name: string, rename: () => void, leaveOut: () => void): HTMLButtonElement {
+  const said = t('Actions for {name}', {name});
+  const more = h('button', {type: 'button', class: 'tree-more', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': said}, mark('down')) as HTMLButtonElement;
+  more.addEventListener('click', () => {
+    if (more.getAttribute('aria-expanded') === 'true') return;
+    const again = menuItem(t('Rename'), 'pen'), out = menuItem(t('Leave out {name}', {name}), 'close');
+    const pop = h('div', {class: 'pop tree-pop', role: 'menu', 'aria-label': said}, again, out);
+    const away = deedsUnder(more, pop, () => {});
+    again.addEventListener('click', () => { away(); rename(); });
+    out.addEventListener('click', () => { away(); leaveOut(); });
+  });
+  return more;
+}
 
 export function newRepo(ctx: Context): Node[] {
   // No example in it: one there reads as a name already given (and the row it would draw, as the repo to be made).
@@ -119,26 +132,24 @@ export function newRepo(ctx: Context): Node[] {
     return at(n);
   };
   /**
-   * The repo to be made, alone: its row (filled as File fills the repo in hand; nothing named yet, a quiet dashed
-   * place for its name), and what will be made in it, folders first, each to be renamed or left out where it stands.
+   * What will be made in the repo, folders first, each to be renamed or left out where it stands. The repo itself is
+   * the sheet, its name its title, said once: its row is not drawn again under it (DESIGN §10).
    */
   const showFiles = (came: string | null = null) => {
-    const n = name.value.trim(), bad = !!why(n);
-    const rows = [row(n ? marked(n) : t('Name'), 0, true, {kind: `tree-repo tree-new${bad ? ' tree-bad' : ''}${n ? '' : ' tree-unnamed'}`})];
+    const rows: HTMLElement[] = [];
     const walk = (nodes: Item[], depth: number) => {
       for (const it of nodes) {
         const named = renaming === it.path ? field(it.path) : h('button', {type: 'button', class: 'tree-name', title: t('Rename {name}', {name: it.name})}, it.name);
         if (named instanceof HTMLButtonElement) named.addEventListener('click', () => rename(it.path));
         const li = row(named, depth, it.dir, {kind: `${it.dir ? 'tree-dir' : 'tree-file'} tree-ours`, shut: it.dir && !it.children.length,
           meta: it.readme ? readmeSize : undefined,
-          tail: h('span', {class: 'tree-deeds'}, rowDeed('pen', t('Rename {name}', {name: it.name}), () => rename(it.path)),
-            rowDeed('close', t('Leave out {name}', {name: it.name}), () => leaveOut(it.path, li)))});
+          tail: rowDeeds(it.name, () => rename(it.path), () => leaveOut(it.path, li))});
         li.dataset.path = it.path;
         rows.push(li);
         if (it.dir) walk(it.children, depth + 1);
       }
     };
-    walk(nest(made), 1);
+    walk(nest(made), 0);
     preview.replaceChildren(...rows);
     const come = came ? preview.querySelector<HTMLElement>(`li[data-path="${CSS.escape(came)}"]`) : null;
     if (come) unfold(come, 200);
@@ -216,7 +227,12 @@ export function newRepo(ctx: Context): Node[] {
     h('div', {class: 'tree-makes'}, newFile, newFolder), fileError);
   // Where it will stand, said over its box as a file's place is over a box on the desk: ~/ and the name as written.
   const place = h('span', {class: 'nr-where'});
-  const placed = () => { place.textContent = name.value.trim(); };
+  // A letter no name can have is marked there, where it is, as the name will stand.
+  const placed = () => {
+    place.replaceChildren(...marked(name.value.trim()));
+    kind.hidden = false;
+    if (label.isConnected && label.scrollWidth > (label.parentElement?.clientWidth ?? Infinity)) kind.hidden = true;
+  };
   const keep = () => { draft = {name: name.value, summary: summary.value, made: made.map((m) => ({...m}))}; };
   // What it is for, under the name in the box, the words written straight in it, the box the field.
   const summary = h('textarea', {id: 'repo-summary', class: 'todo-detail', maxlength: '2000', rows: '1',
@@ -274,9 +290,14 @@ export function newRepo(ctx: Context): Node[] {
     h('label', {class: 'sr-only', for: 'repo-name'}, t('Name')), name,
     // The rule for a name is heard with the field and seen only when it is broken (said over the box).
     h('span', {id: 'repo-name-rule', class: 'sr-only'}, t('Letters, digits, and . _ - (up to 64 chars)')),
+    // Why it cannot be, in the cell under the name, where it is put right: the sheet's top never moves for it.
+    error,
     h('span', {class: 'sr-only', id: 'repo-summary-label'}, t('Summary')), summaryBox, actions);
   // The page says why a name cannot be, in its own words, never the browser's bubble for a field left empty.
-  const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place), h('span', {class: 'nr-kind'}, t('New repo')), error);
+  // One line: ~/ and the name as written, then New repo, which gives way (whole, or not there) where the line has no
+  // room for it.
+  const kind = h('span', {class: 'nr-kind'}, t('New repo'));
+  const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place), kind);
   // One piece, the hand's: its place over its corner, and in it the name, what it is for, what will be made (under a
   // rule) and Create at its foot. The name stands at the size of every name (a cell's capitals), never made smaller or
   // larger for its room: one that is longer than the line goes on past it, as a field's words do.

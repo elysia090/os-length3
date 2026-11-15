@@ -32,8 +32,8 @@ test('what will be made is the new repo alone, as File will show it, its files m
   await expect(app.main.getByRole('radiogroup')).toHaveCount(0);
   const card = app.main.locator('.tree-still');
   await app.newRepo.name.fill('harbour');
-  // The repo to be made and what will be in it, nothing else of the device's (no /root, no tide).
-  await expect(card.locator('.tree-row')).toHaveText([/^harbour/, /^docs/, /^README\.md/]);
+  // What will be in it, nothing else of the device's (no /root, no tide); the repo itself is the sheet, named once.
+  await expect(card.locator('.tree-row')).toHaveText([/^docs/, /^README\.md/]);
   // New file: a row named as nothing is yet, its name a field to write over (its ending kept); New folder, a path.
   await card.getByRole('button', {name: 'New file'}).click();
   const field = card.getByRole('textbox', {name: 'New name'});
@@ -52,11 +52,11 @@ test('what will be made is the new repo alone, as File will show it, its files m
   await card.getByRole('textbox', {name: 'New name'}).fill('notes');
   await card.getByRole('textbox', {name: 'New name'}).press('Enter');
   await expect(card.locator('p.error')).toHaveText('');
-  // Left out: it goes from the card, and will not be made.
-  await card.locator('li[data-path="notes"] > .tree-row').hover();
-  await card.getByRole('button', {name: 'Leave out notes'}).click();
+  // Left out, from its one mark's menu: it goes from the card, and will not be made.
+  await card.getByRole('button', {name: 'Actions for notes'}).click();
+  await app.page.getByRole('menuitem', {name: 'Leave out notes'}).click();
   await expect(card.locator('li[data-path="notes"]')).toHaveCount(0);
-  await expect(card.locator('.tree-row')).toHaveText([/^harbour/, /^charts/, /^2031/, /^README\.md/, /^tides\.md/]);
+  await expect(card.locator('.tree-row')).toHaveText([/^charts/, /^2031/, /^README\.md/, /^tides\.md/]);
   // Made as laid out: the README what it is for, the new file empty, the folders there, docs not.
   await app.newRepo.summary.fill('Moorings.');
   await app.newRepo.create.click();
@@ -98,6 +98,35 @@ test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a pie
     const files = box.locator('.tree-still');
     await expect(files).toBeVisible();
     expect(await files.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe('1px');
+    // Its inside on the grid (DESIGN §3): from the rule down, every line of it on a half cell, a cell tall; the key
+    // under them on a half cell too. Three sizes on it (the name's, the words', the small), and the key's own name.
+    const sheet = await box.evaluate((b) => {
+      const top = b.getBoundingClientRect().top;
+      const lines = [...b.querySelectorAll('.tree-still, .tree-row, .tree-makes, .answers .button')].map((e) => {
+        const r = e.getBoundingClientRect();
+        return {what: e.className.toString(), top: r.top - top, height: r.height};
+      });
+      const sizes = new Set<string>();
+      const walk = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const el = n.parentElement!;
+        if (n.textContent!.trim() && el.getBoundingClientRect().width && !el.closest('.sr-only, kbd')) sizes.add(getComputedStyle(el).fontSize);
+      }
+      // Nothing in it filled but its key, and nothing on it coloured by the pointer there.
+      const filled = [...b.querySelectorAll('*')].filter((e) => !e.closest('.answers') && getComputedStyle(e).backgroundColor === 'rgb(23, 22, 20)').length;
+      return {lines, sizes: [...sizes].sort(), filled};
+    });
+    for (const l of sheet.lines) {
+      expect(l.top % (U / 2), `${l.what} at ${l.top}, on a half cell`).toBe(0);
+      expect(l.height % (U / 2), `${l.what} ${l.height} tall, whole half cells`).toBe(0);
+    }
+    expect(sheet.sizes, 'the words on it at the words\' size and the small one').toEqual(['13px', '15px']);
+    expect(sheet.filled, 'nothing filled in it but its key').toBe(0);
+    // Its place over its corner stands on a patch of the ground, no dot of the grid under its words.
+    expect(await label.evaluate((e) => [getComputedStyle(e).backgroundColor, e.getBoundingClientRect().width <= e.scrollWidth + 1])).toEqual(['rgb(220, 217, 212)', true]);
+    // Each row's deeds are one mark, a chevron, always there.
+    await expect(files.locator('li[data-path="README.md"] button[aria-haspopup="menu"]')).toHaveCount(1);
+    await expect(files.locator('li[data-path="README.md"] button:not([aria-haspopup]):not(.tree-name)')).toHaveCount(0);
   }
 });
 
@@ -119,35 +148,27 @@ test('what is written before Create stays while another page is seen, and goes o
   await expect(app.newRepo.summary).toHaveValue('');
 });
 
-test('nothing named yet, the new row is a quiet place for the name, and Create asks for one first', async ({app}) => {
+test('nothing named yet, the name\'s place says so quietly and Create asks for one first; a letter no name can have is marked where the name stands over the corner', async ({app}) => {
   await app.rail.go('new-repo');
-  // The field holds no example to be taken for a name; the row it would be is dashed, saying what goes there.
+  // The field holds no example to be taken for a name: the word for what goes there, quiet, where the name will stand.
   await expect(app.newRepo.name).toHaveValue('');
   await expect(app.newRepo.name).not.toHaveAttribute('placeholder');
-  const slot = app.main.locator('.tree-still .tree-new');
-  await expect(slot).toHaveClass(/tree-unnamed/);
-  await expect(slot.locator('.tree-name')).toHaveText('Name');
+  await expect(app.main.locator('.nr-box')).toHaveAttribute('data-empty', 'name');
   await expect(app.newRepo.problem).toBeHidden();
   await app.newRepo.create.click();
   await expect(app.newRepo.problem).toHaveText('Please enter a name first');
   await expect(app.newRepo.name).toBeFocused();
-  // Written, it is the repo to be made, filled as File fills it.
-  await app.newRepo.name.pressSequentially('tide');
+  // Written, it stands over the corner as it is written; a space in it is no letter of a name, marked there.
+  await app.newRepo.name.pressSequentially('tide tables');
+  const where = app.main.locator('.nr-where');
+  await expect(where).toHaveText('tide␣tables');
+  await expect(where.locator('mark.bad-char')).toHaveText('␣');
+  // Why it cannot be is said under the name, in the sheet, the sheet's top where it stood (a cell under the band).
+  await expect(app.main.locator('.nr-box').getByRole('alert')).toHaveText('Use letters, digits, and . _ - (cannot start with .)');
+  expect((await app.main.locator('.nr-box').boundingBox())!.y).toBe(72);
+  expect((await app.main.locator('.nr-label').boundingBox())!.height).toBe(24);
+  await app.newRepo.name.fill('tide');
   await expect(app.newRepo.problem).toBeHidden();
-  await expect(slot).not.toHaveClass(/tree-unnamed/);
-  await expect(slot.locator('.tree-name')).toHaveText('tide');
-});
-
-test('a name already taken is said under the name, and the name keeps the keyboard', async ({signedIn: app}) => {
-  await app.newRepo.make('notes');
-  await app.rail.go('new-repo');
-  await expect(app.newRepo.name).toHaveValue('');
-
-  await app.newRepo.fill('notes');
-  await expect(app.newRepo.problem).toHaveText('A repo named "notes" already exists');
-  await expect(app.newRepo.name).toBeFocused();
-  await expect(app.newRepo.name).toHaveValue('notes');
-  // Typing in it again clears what was said.
-  await app.newRepo.name.pressSequentially('-2');
-  await expect(app.newRepo.problem).toBeHidden();
+  await expect(where).toHaveText('tide');
+  await expect(where.locator('mark')).toHaveCount(0);
 });
