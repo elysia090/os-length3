@@ -119,3 +119,27 @@ test('a text grown past what Forge saves says so in its box, and is kept whole w
   await expect(app.forge.fileState('big.txt')).toHaveText('First 262 KB only (total 300 KB) · Read-only');
   await expect(app.forge.editor('big.txt')).toHaveCount(0);
 });
+
+test('the band\'s keys put away what they bring out by the same press: the files key\'s menu (and the pointer gone off it), and the terminal', async ({signedIn: app}) => {
+  await app.newRepo.make('keys', {template: 'C'});
+  await app.rail.go('forge');
+  const acts = app.main.locator('.band-acts');
+  await acts.click();
+  await expect(acts).toHaveAttribute('aria-expanded', 'true');
+  await acts.click();
+  await expect(acts).toHaveAttribute('aria-expanded', 'false');
+  await expect(app.page.locator('.band-deeds')).toHaveCount(0);
+  await acts.click();
+  await expect(acts).toHaveAttribute('aria-expanded', 'true');
+  await app.page.mouse.move(900, 600);
+  await expect(acts).toHaveAttribute('aria-expanded', 'false');
+  // The terminal out, and put away again: the piece that was in the hand is taken up again.
+  const was = await app.main.locator('section.desk:not([hidden]) .desk-box.held').getAttribute('data-key');
+  expect(was).not.toBe('term');
+  const term = app.page.getByRole('button', {name: 'Terminal', exact: true}).first();
+  await term.click();
+  await expect(app.forge.piece('term')).toHaveClass(/held/);
+  await term.click();
+  await expect(app.forge.piece(was!)).toHaveClass(/held/);
+  await expect(app.forge.piece('term')).not.toHaveClass(/held/);
+});

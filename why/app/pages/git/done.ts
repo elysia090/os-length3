@@ -9,7 +9,7 @@ import {justClosed, justMerged, reopenIssue, resize, type IssueEvents, type Repo
 import type {Laid} from '../../../repo/git-state.ts';
 import {kindWords} from '../kit/todo-list.ts';
 import {errorText} from '../../../api/errors.ts';
-import {busy} from './held.ts';
+import {busy, held} from './held.ts';
 
 // What Git shows round the issues: over them, what main has not committed
 // (with its Commit, named by its line as why commit names it); under them,
@@ -166,6 +166,7 @@ function closedList(list: {issue: Issue; reopen: boolean}[], all: boolean, event
       act = button(t('Reopen'), 'small-button');
       act.setAttribute('aria-label', t('Reopen {issue}', {issue: i.n === null ? i.title : `#${i.n}`}));
       act.addEventListener('click', async () => {
+        if (held(act!)) return;
         busy(act!, true);
         try { await reopenIssue(i); events.back?.(i); after(); } catch (e) { error.textContent = errorText(e); busy(act!, false); }
       });

@@ -304,3 +304,29 @@ test('Git is read and pressed: its box at the foot stands back until asked for, 
   await app.page.keyboard.press('Escape');
   await expect(dock).toHaveCSS('opacity', '0');
 });
+
+test('main\'s four steps are gone along by ↑ and ↓, and Enter takes the one the keyboard is on at once, the page where it was; one not to be taken now says no where it is', async ({signedIn: app}) => {
+  await app.newRepo.make('hello');
+  await app.git.write('hello', 'Fix: Say hello louder');
+  const steps = app.main.locator('.git-switch [data-step] > button');
+  await expect(steps).toHaveText(['Start', 'Commit', 'Submit', 'Merge']);
+  await steps.first().focus();
+  await app.page.keyboard.press('ArrowDown');
+  await expect(steps.nth(1)).toBeFocused();
+  await app.page.keyboard.press('End');
+  await expect(steps.nth(3)).toBeFocused();
+  // Merge cannot be taken yet: pressed, it is answered where it is, and nothing else happens.
+  await expect(steps.nth(3)).toBeDisabled();
+  await app.page.keyboard.press('Enter');
+  await expect(steps.nth(3)).toBeFocused();
+  await expect(app.main.locator('.git-switch .switch-line.next')).toHaveText('Start');
+  await app.page.keyboard.press('Home');
+  await expect(steps.first()).toBeFocused();
+  const at = () => app.page.evaluate(() => [scrollY, document.querySelector('.page')?.scrollTop ?? 0]);
+  const before = await at();
+  await app.page.keyboard.press('Enter');
+  await expect(app.main.locator('.git-switch .switch-line.next')).toHaveText('Commit');
+  // Drawn again, the keyboard is on the same line and the page has not moved.
+  await expect(app.main.locator('.git-switch [data-step="start"] > button')).toBeFocused();
+  expect(await at()).toEqual(before);
+});

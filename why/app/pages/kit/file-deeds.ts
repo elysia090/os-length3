@@ -216,11 +216,14 @@ export function fileDeeds(d: Deeds): HTMLElement {
   return pop;
 }
 
+/** How long the pointer may be off the key and its menu (crossing the gap between them) before the menu goes. */
+const OFF = 300;
+
 /**
  * `pop` laid under `at`, its left edge on `at`'s (over it where there is no room under it), out over what is there so
- * nothing moves under the pointer; Escape, a press outside it, or `at` pressed again put it away, and the keyboard goes
- * back to `at`. `gone` is told as it goes. Returned: the way to put it away (a deed done): gone at once then, in the
- * press's frame, so what the deed did is seen with nothing fading over it.
+ * nothing moves under the pointer; Escape, a press outside it, `at` pressed again, or the pointer gone off both of them
+ * put it away, and the keyboard goes back to `at`. `gone` is told as it goes. Returned: the way to put it away (a deed
+ * done): gone at once then, in the press's frame, so what the deed did is seen with nothing fading over it.
  */
 export function deedsUnder(at: HTMLElement, pop: HTMLElement, gone: () => void): () => void {
   pop.classList.add('deeds-under');
@@ -236,6 +239,9 @@ export function deedsUnder(at: HTMLElement, pop: HTMLElement, gone: () => void):
     if (!out) return;
     out = false;
     document.removeEventListener('pointerdown', outside, true);
+    clearTimeout(leaving);
+    at.removeEventListener('pointerleave', off);
+    at.removeEventListener('pointerenter', on);
     at.setAttribute('aria-expanded', 'false');
     if (now) pop.remove(); else putAway(pop, () => pop.remove());
     gone();
@@ -243,11 +249,23 @@ export function deedsUnder(at: HTMLElement, pop: HTMLElement, gone: () => void):
   const outside = (event: PointerEvent) => {
     const on = event.target as Node;
     if (pop.contains(on)) return;
-    // Pressed again, it goes as the press's own (the button would bring it out again otherwise).
-    if (at.contains(on)) event.preventDefault();
+    // Pressed again, it goes, and that is the press's whole answer: the click the press ends in is the key's no more
+    // (it brought the menu straight out again, so a second press seemed to do nothing).
+    if (at.contains(on)) {
+      event.preventDefault();
+      at.addEventListener('click', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, {capture: true, once: true});
+    }
     away();
   };
   document.addEventListener('pointerdown', outside, true);
+  // The pointer gone off the key and its menu, it goes: out with the pointer, away with it. (Crossing the gap between
+  // them is not going off: the pointer back on either within OFF keeps it.)
+  let leaving = 0;
+  // (Never while a name is being written in it: what is written is not lost to the pointer's going.)
+  const writing = () => pop.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement!.tagName);
+  const off = () => { clearTimeout(leaving); leaving = window.setTimeout(() => { if (out && !writing()) away(); }, OFF); };
+  const on = () => clearTimeout(leaving);
+  for (const el of [at, pop]) { el.addEventListener('pointerleave', off); el.addEventListener('pointerenter', on); }
   pop.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
     event.preventDefault();

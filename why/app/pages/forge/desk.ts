@@ -103,6 +103,8 @@ export class Desk {
   #held: string | null = null;
   /** The piece put down while the desk turns away from it: as it was in the hand till the desk is at rest. */
   #leaving: HTMLElement | null = null;
+  /** The piece in the hand before the one in it now: where a piece called out (the terminal) is put away to. */
+  #before: string | null = null;
   /** The desk turning (its next frame; none at rest), and how far it is going: laid again on its way, it goes on to
    * where it is now to go rather than starting again. */
   #moving = 0;
@@ -318,6 +320,7 @@ export class Desk {
     const b = this.#boxes.get(key);
     if (!b) return;
     const was = this.#held === null ? undefined : this.#boxes.get(this.#held);
+    if (this.#held !== null && this.#held !== key) this.#before = this.#held;
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
     this.#held = key;
     this.#pressed = pressed;
@@ -331,6 +334,16 @@ export class Desk {
     this.#said();
     if (focus) b.laid.focus();
     this.#changed();
+  }
+
+  /**
+   * `key` (in the hand) put away: the piece in the hand before it taken up again, the desk turning back to it. False
+   * when `key` is not in the hand or there was none before it.
+   */
+  putAway(key: string): boolean {
+    if (this.#held !== key || this.#before === null || !this.#boxes.has(this.#before)) return false;
+    this.take(this.#before);
+    return true;
   }
 
   /** The piece the desk turned away from, put down now. */

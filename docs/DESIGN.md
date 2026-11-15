@@ -69,7 +69,8 @@ ink, with fill and shadow for the one thing in the hand; a name in heavy black c
 else is held back. It never has:
 
 - a colour, a shadow or an angle that means nothing;
-- a thing that is there only while a pointer is over it;
+- a thing that is there only while a pointer is over it (but one: a key's menu, brought out by its press, goes once
+  the pointer has gone off it and its key; brought out by the hand, put away by the hand going);
 - a layout set in the middle of the window, or one mirrored left and right (but one: a place with nothing in it yet,
   whose one first move stands alone in the middle of the empty desk, small, with no frame round it, its words set on
   their middle; a lone thing in a wide field, the field its tension);
@@ -767,7 +768,7 @@ Five things, each done one way, the same with a finger, a mouse and the keyboard
 |---|---|---|
 | **Go** to a place or a piece | press it; **back** to the place before by Back, however it is asked (§14) | along the rail: ↑ ↓, Home, End. On a desk, out of any text: ← → or Tab to the next piece, Enter or a letter to go into it. Back: Alt+← (⌘[ on a Mac) |
 | **Write** | type where the caret is. What is written is kept as it is written: nothing to save, nothing to confirm | — |
-| **Put away** | the hand's piece's close; for what was called up in front: press outside it, press what called it, or Escape; for what is asked, its Cancel, or Escape | Escape (from a text it first leaves the text for the desk; in an ask it is the ask's Cancel) |
+| **Put away** | the hand's piece's close; for what was called up in front: press outside it, press what called it, or Escape (a key's menu also once the pointer has gone off it and its key); what a key brings out, the same key, pressed again, puts away, so a press's cause is plain both ways; for what is asked, its Cancel, or Escape | Escape (from a text it first leaves the text for the desk; in an ask it is the ask's Cancel) |
 | **Do to it** (new, rename, delete) | the thing's own menu | the menu key, Shift+F10 |
 | **Look along** | scroll, as anything is scrolled | — |
 

@@ -56,7 +56,7 @@
 .git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: var(--u); text-box: normal; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
 .git-switch .switch-line > button { cursor: var(--cursor-hand); }
-.git-switch .switch-line > button:disabled { cursor: var(--cursor-arrow); opacity: 1; }
+.git-switch .switch-line > button:is(:disabled, [aria-disabled='true']) { cursor: var(--cursor-arrow); opacity: 1; }
 .git-switch .switch-line.next > :is(button, span) { font-weight: 700; color: var(--ground); }
 .git-switch .switch-line > button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
 .git-switch .switch-line.next > button:focus-visible { outline-color: var(--ground); outline-offset: -4px; }

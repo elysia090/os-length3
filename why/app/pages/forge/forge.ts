@@ -128,6 +128,7 @@ class Forge {
     this.center = h('div', {class: 'desk-room'});
     this.work = bench({strip: this.heldName, main: this.center, desk: true, reveal: (path, line, write) => this.revealAt(path, line, write),
       place: (path) => this.place(path), frame: (keys) => { if (this.now.repo) this.deskOf(this.now.repo).desk.frame(keys); },
+      termAway: () => !!this.now.repo && this.deskOf(this.now.repo).desk.putAway(TERM),
       word: (a) => { openConversation(a); void ctx.go('inbox'); },
       besideTerm: (repo, element) => {
         // The Agent's own terminal is a piece of the desk, laid after the one in hand.

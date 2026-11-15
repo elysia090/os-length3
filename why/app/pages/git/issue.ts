@@ -1,7 +1,7 @@
 import {kindWords} from '../kit/todo-list.ts';
 import {h} from '../../ui/dom.ts';
 import {ago, day} from '../../../text/format.ts';
-import {arrive, cut, LAND, lift, type Lifted, morph, paced, putAway, still} from '../../ui/glide.ts';
+import {arrive, cut, LAND, lift, type Lifted, morph, nudge, paced, putAway, still} from '../../ui/glide.ts';
 import * as git from '../../../repo/history.ts';
 import {t, tn} from '../../../text/i18n.ts';
 import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../../../repo/issues.ts';
@@ -12,7 +12,7 @@ import {diffFiles} from '../kit/diff-view.ts';
 import {beingChanged, retitle} from './issue-form.ts';
 import {agentLine, agentMark} from './agent-line.ts';
 import {errorText} from '../../../api/errors.ts';
-import {busy} from './held.ts';
+import {busy, held} from './held.ts';
 import {issueStore} from '../../../repo/issue-store.ts';
 import {SPRING} from '../../ui/law.ts';
 
@@ -91,6 +91,7 @@ const STATE = (s: git.Change['state']) => ({open: t('Pending'), merged: t('Merge
 
 /** Run `f` with `b` held down (busy), then `after`; a failure is said in `error`, and `b` can be pressed again. */
 const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknown>, after: () => void) => async () => {
+  if (held(b)) return;
   busy(b, true);
   error.textContent = '';
   try { await f(); justDone = {word: b.textContent ?? '', until: performance.now() + 3000}; after(); } catch (e) { error.textContent = errorText(e); busy(b, false); }
@@ -180,7 +181,8 @@ export function issueSteps(issue: Issue, s: RepoState | undefined, events: Issue
   const change = connection() ? changeFor(s, issue) : null;
   const open = change?.state === 'open';
   const offered = connection() && !s?.error && !here && !open;
-  const said = (word: string) => h('span', {class: 'switch-word'}, word);
+  // A step not to be taken now is still a line the keyboard goes to (↑ ↓), and pressed it says no at once, where it is.
+  const said = (word: string) => h('button', {type: 'button', class: 'switch-word', 'aria-disabled': 'true'}, word) as HTMLButtonElement;
   const lines: {done: boolean; el: HTMLElement}[] = [];
   // Start (Resume here, where it was started before).
   lines.push(offered ? {done: false, el: startDeed(issue, s, error, events, after)} : {done: here || open, el: said(t('Start'))});
@@ -188,7 +190,7 @@ export function issueSteps(issue: Issue, s: RepoState | undefined, events: Issue
   const dirty = w ? s?.uncommitted ?? 0 : 0;
   if (w && !(!dirty && w.commits > 0)) {
     const commit = button(t('Commit'));
-    commit.disabled = !dirty;
+    if (!dirty) commit.setAttribute('aria-disabled', 'true');
     commit.addEventListener('click', doing(commit, error, () => git.cut(at, null, '', ''), after));
     lines.push({done: false, el: commit});
   } else lines.push({done: !!w || open, el: said(t('Commit'))});
@@ -196,18 +198,41 @@ export function issueSteps(issue: Issue, s: RepoState | undefined, events: Issue
   if (w && w.commits > 0 && !(w.change?.state === 'merged' && !w.unpushed)) {
     const inNow = !w.unpushed && w.change?.state === 'open';
     const power = h('button', {type: 'button', class: 'switch-power', role: 'switch', 'aria-checked': String(inNow), 'aria-label': t('Submitted')}, t('Submit')) as HTMLButtonElement;
-    power.disabled = !inNow && dirty > 0;
+    if (!inNow && dirty > 0) power.setAttribute('aria-disabled', 'true');
     const was = String(inNow);
     const turn = doing(power, error, () => (inNow ? git.reset(at) : git.push(at).then(() => git.submit(at)))
       .catch((e: unknown) => { power.setAttribute('aria-checked', was); throw e; }), after);
-    power.addEventListener('click', () => { power.setAttribute('aria-checked', String(!inNow)); void turn(); });
+    power.addEventListener('click', () => { if (held(power)) return; power.setAttribute('aria-checked', String(!inNow)); void turn(); });
     lines.push({done: inNow, el: power});
   } else lines.push({done: open, el: said(t('Submit'))});
   // Merge: once the version is approved.
   lines.push(open && change ? {done: false, el: mergeDeed(issue, s, change, error, events, after)} : {done: false, el: said(t('Merge'))});
   const next = lines.findIndex((l) => !l.done);
-  return h('div', {class: 'switch-lines'},
-    ...lines.map((l, k) => h('div', {class: l.done ? 'switch-line done' : k === next ? 'switch-line next' : 'switch-line'}, l.el)), error);
+  const names = ['start', 'commit', 'submit', 'merge'];
+  const keys = lines.map((l) => l.el);
+  // One of them is where Tab comes in: the step to take next (or the first).
+  keys.forEach((k, j) => k.tabIndex = j === Math.max(0, next) ? 0 : -1);
+  const element = h('div', {class: 'switch-lines', role: 'group', 'aria-label': t('Steps')},
+    ...lines.map((l, k) => h('div', {class: l.done ? 'switch-line done' : k === next ? 'switch-line next' : 'switch-line', 'data-step': names[k]}, l.el)), error);
+  // ↑ ↓ go along the four, Home and End to the first and the last; Enter or a press takes the step, at once, and a
+  // step that cannot be taken now says no where it is (the nudge), so every press is answered in its own frame.
+  element.addEventListener('keydown', (event) => {
+    const j = keys.indexOf(document.activeElement as HTMLButtonElement);
+    if (j < 0) return;
+    const to = event.key === 'ArrowDown' ? Math.min(keys.length - 1, j + 1) : event.key === 'ArrowUp' ? Math.max(0, j - 1)
+      : event.key === 'Home' ? 0 : event.key === 'End' ? keys.length - 1 : -1;
+    if (to < 0) return;
+    event.preventDefault();
+    keys[to]!.focus({preventScroll: true});
+  });
+  element.addEventListener('click', (event) => {
+    const b = (event.target as Element).closest<HTMLButtonElement>('button');
+    if (!b || !held(b) || b.getAttribute('aria-busy') === 'true') return;
+    event.preventDefault();
+    event.stopPropagation();
+    nudge(b.closest('.switch-line'));
+  }, true);
+  return element;
 }
 
 /** Each change's diff as last read (by repo, change and version), and each copy's not committed: see diffsRead, uncommittedRead. */
@@ -496,7 +521,7 @@ function mergeDeed(issue: Issue, s: RepoState | undefined, change: git.Change, e
   const here = hereOf(s, issue);
   const approvals = change.reviews.filter((r) => r.version === change.version && r.verdict === 'approve');
   const merge = button(t('Merge'), approvals.length > 0);
-  merge.disabled = !approvals.length;
+  if (!approvals.length) merge.setAttribute('aria-disabled', 'true');
   // Merged, the work is done: the repo shows main again.
   // Merged, the issue's box goes down into its line under Merged, which lands lit: the issue is done.
   let from: DOMRect | null = null;

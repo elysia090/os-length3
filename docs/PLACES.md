@@ -158,7 +158,11 @@ main's sheet and an issue side by side, the issues go under the sheet, two cells
   it is in the hand, main's sheet beside it has the steps it will have, each waiting. (Before, a line always there
   under main's steps: a second thing on that sheet, read as part of its Start.)
 - Main's steps start at the sheet's top edge: the step under way, the one line of ink, lies on the horizon, level
-  with the issue's top.
+  with the issue's top. **↑ ↓ go along the four** (Home and End to the first and the last), and Enter takes the one
+  the keyboard is on at once; one not to be taken now (done, or waiting on another) is answered where it is, with no.
+  Drawn again after a step, the keyboard is on the same line and the page has not moved: what the step did is read by
+  scrolling down Git (its work, its Review, Merged). The model under them: an issue is where a branch would be; what
+  goes to main goes as an issue, its commits through it, and is merged; what does not is kept in step on its own.
 - **Along the row, what moves is seen from the press**: the issue the row slides away from stays as it was in the
   hand (paper, ink edge, shadow, its words) until it is out at the edge, and the one gone to is in the hand from the
   first frame, the new issue paper and its shadow too (white is the hand's, and has the shadow). (Put down at the press, the only paper was the piece gone to, mostly out of
@@ -987,7 +991,11 @@ with it (as a terminal flushes its output on ^C), so ^C stands at the foot where
 it was cut. Exited or stopped there (or its close
 pressed), it is seen ended a beat, then its box goes as a terminal's window
 closes; the band's >_ lays it again at the top of the first column with a new
-shell in it, the keyboard in it (failing to start, it stays, to be read). Ended
+shell in it, the keyboard in it (failing to start, it stays, to be read). The band's
+>_ takes the terminal out and puts it away: pressed with the terminal in the hand,
+the piece in the hand before it is taken up again. The band's files key does the
+same with its menu: pressed again, the menu goes, as it does when the pointer has
+gone off it and the key. Ended
 (exit, stopped), its switch comes in
 going over from on to off and its output flares and dims as a tube switched
 off does, staying dim to be read; switched on again, the old screen goes down

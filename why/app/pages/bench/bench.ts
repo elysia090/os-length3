@@ -194,6 +194,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   /** A desk (Forge's): the box at the center's foot is the Prompt's own last line, and what the Prompt printed
    * stands on it while it is up (`terminal`: one box, a line tall at rest), over the desk's foot. */
   desk?: boolean;
+  /** On a desk: the terminal put away, back to the piece in the hand before it; false if it is not in the hand. */
+  termAway?(): boolean;
   /** On a desk: a file's box laid without taking the person's hand; the camera over these boxes (none: the one in hand). */
   place?(path: string): boolean;
   frame?(keys: string[]): void;
@@ -252,8 +254,11 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   // On a desk the box lies on a moving plane: what opens out of its pill (fixed to the window) lies on the page instead.
   if (!shown) for (const pop of box.dock.querySelectorAll<HTMLElement>(':scope > .box-modes')) work.append(pop);
   const screen = shown?.screen ?? null;
+  // The band's >_ takes the terminal out and puts it away: pressed with the terminal in the hand, the piece in the hand
+  // before it is taken up again (a key that only ever brought it out left a second press with nothing to answer it).
   const toPrompt = () => {
     if (!box.repo) return;
+    if (parts.termAway?.()) return;
     const s = sessionIfAny(box.repo);
     if (s?.ended) s.restart();
     box.summon();

@@ -330,7 +330,10 @@ class GitPage {
     const st = this.states.get(x.repo);
     // The issue in full: its steps are main's sheet's lines. The band names the repo the desk is of: the issue's number
     // is its sheet's own large thing, and a word is said once large in a frame (DESIGN §2).
+    // (A step taken from the keyboard: drawn again, the keyboard is on the same line, the page not moved.)
+    const on = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.git-switch [data-step]')?.dataset.step;
     this.steps.replaceChildren(issueSteps(x, st, this.events, this.again));
+    if (on) this.steps.querySelector<HTMLElement>(`[data-step="${on}"] > button`)?.focus({preventScroll: true});
     this.sideName.textContent = x.repo;
     this.tellHeld(x.repo);
     // Under the current box, out of it: Back to main at its left, for the issue the repo shows.
