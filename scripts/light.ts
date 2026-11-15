@@ -194,7 +194,7 @@ export function sixteen(s: {normal: string[]; bright: string[]}, black: string, 
 const FILES = {tokens: join(STYLES, 'tokens.css'), terminal: join(STYLES, 'terminal.css'), desk: join(STYLES, 'forge-desk.css')};
 /** The sixteen's rule in each sheet: on paper (terminal.css :root), on the screen (forge-desk.css, the terminal in hand). */
 const PAPER_SET = /(:root \{\n {2})--ansi-0:[^}]*?(\n\})/;
-const SCREEN_SET = /(\.desk-box\[data-kind\]\.held \{[^\n]*\n {2})--ansi-0:[^}]*?( \})/;
+const SCREEN_SET = /(\.desk-box\[data-kind\]:is\(\.held, \.leaving\) \{[^\n]*\n {2})--ansi-0:[^}]*?( \})/;
 
 /** The sheets as they are to be. */
 export function written() {

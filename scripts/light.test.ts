@@ -39,7 +39,7 @@ function set_(css: string, rule: RegExp) {
 
 for (const [where, css, rule, set] of [
   ['on paper', sheet('terminal.css'), /:root \{\n {2}--ansi-0:[^}]*\}/, SETS.paper],
-  ['on the screen', sheet('forge-desk.css'), /\.desk-box\[data-kind\]\.held \{[^}]*\}/, SETS.screen],
+  ['on the screen', sheet('forge-desk.css'), /\.desk-box\[data-kind\]:is\(\.held, \.leaving\) \{[^}]*\}/, SETS.screen],
 ] as const) {
   test(`the terminal's sixteen ${where}: six hues round the wheel at one contrast and one chroma from the light's neutral, mixing to it; bright a step past; black and white the OS's greys`, () => {
     const all = set_(css, rule), on = value(tokens, set.on)!;

@@ -101,7 +101,7 @@ test('no colour is written outside the light\'s own sheets (scripts/light.ts)', 
   // The light's: the tokens, and the terminal's sixteen as light.ts writes them. A mask's black is no colour (it says
   // only what is kept), and a picture's (a cursor's) is its own.
   const own = (s: Said) => s.at === 'tokens.css' || (s.at === 'terminal.css' && s.selector === ':root')
-    || (s.at === 'forge-desk.css' && s.selector === '.desk-box[data-kind].held');
+    || (s.at === 'forge-desk.css' && s.selector === '.desk-box[data-kind]:is(.held, .leaving)');
   const wrong = ALL.filter((s) => !own(s) && !/^(-webkit-)?mask/.test(s.prop) && !/url\(/.test(s.value)
     && /#[0-9a-fA-F]{3,8}\b|\b(rgb|hsl|hwb|lab|lch|oklab|oklch)\(/.test(s.value));
   assert.deepEqual(wrong.map(named), []);
