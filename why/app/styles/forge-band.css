@@ -33,7 +33,7 @@
   flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--ink);
   border-radius: var(--r-field); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: background var(--motion);
 }
-.band-tool:hover { background: var(--raised); }
+.band-tool:hover { background: var(--paper); }
 .band-tool .mark { width: 18px; height: 18px; }
 .band-tools > .search-box { flex: none; width: 220px; }
 .band-tools form.search > .mark { position: absolute; left: 10px; top: calc((var(--h-row) - 16px) / 2); width: 16px; height: 16px; color: var(--ink); pointer-events: none; z-index: 1; }

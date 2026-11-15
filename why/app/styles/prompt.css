@@ -251,7 +251,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 /* Run at the box's bottom right, the word alone (its keys are in its title and name), a small button that does
    not make the box taller; inside the raised box its hover is a step back to the ground. */
 .prompt-run { flex: none; margin-block: calc((var(--t-body) * 1.6 - var(--h-row)) / 2); }
-.prompt-run:hover:not(:disabled) { background: var(--ground); }
+.prompt-run:hover:not(:disabled) { background: var(--paper); }
 .prompt-run:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 .prompt:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 /* The keyboard coming or going, its ink edge comes in quickly and goes a little slower, as a press's light does. */

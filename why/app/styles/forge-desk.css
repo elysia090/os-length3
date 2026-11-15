@@ -43,7 +43,7 @@
 .desk-close > .icon { width: 16px; height: 16px; stroke-width: 2; }
 /* (What can be done with a piece is shown on the one in hand, and on no other: nothing waits on a pointer over it.) */
 .desk-box:not(.held) > .desk-close { display: none; }
-.desk-close:hover { background: var(--ink); color: var(--paper); }
+.desk-close:hover { background: var(--paper); color: var(--ink); }
 .desk-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 /* A file's sheet: whole lines, half a line of paper over and under them (the piece's own padding, never scrolled);
    its numbers quiet against the right of their margin (a cell and a tenth), its words from a cell and a half in. What

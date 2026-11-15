@@ -7,8 +7,9 @@
 .power:hover:not(:disabled) { border-color: var(--ink); }
 /* Waiting (the Remote not answering): there, but not to be pressed now. */
 .power:disabled { opacity: .45; cursor: var(--cursor-arrow); }
-/* 廃棄: quiet beside 空ける until the pointer is on it, then filled as the deed it is. */
-.button.discard:hover:not(:disabled), .button.discard:focus-visible { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+/* 廃棄: quiet beside 空ける until the hand is on it, then in ink (paper under it, an ink edge): not filled, which is a
+   chosen thing's look (DESIGN §3: hover adds no colour). */
+.button.discard:hover:not(:disabled), .button.discard:focus-visible { background: var(--paper); color: var(--ink); border-color: var(--ink); }
 /* A switch with its word, inside a card's lines (a Prompt's network). */
 .net-row { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
 .power:active:not(:disabled) .knob { width: calc(var(--knob) + var(--grow)); }

@@ -29,7 +29,7 @@
 }
 .part small { display: inline-block; margin-left: var(--s2); font-weight: 400; font-size: var(--t-meta); }
 .part small:empty { display: none; }
-.part:hover { background: var(--raised); color: var(--ink); }
+.part:hover { background: var(--paper); color: var(--ink); }
 .part[aria-selected='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .part[aria-selected='true'] small { color: inherit; opacity: .8; }
 .part-panel { margin-top: var(--row-step); }

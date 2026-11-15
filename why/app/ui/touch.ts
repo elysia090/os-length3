@@ -1,7 +1,8 @@
-// Touch: what is pressed gives under the finger, and comes back with a little spring once let go, as a key does.
-// The give is the same few pixels on anything, so a chip sinks more than a card does; it is the `scale` property, so
-// it never fights a thing's own transform, and a press that becomes a drag is let go at once. Asked for less motion,
-// nothing gives.
+// Touch: what is pressed gives under the finger, and comes home once let go, as a key does: never past where it was
+// (DESIGN §8: nothing overshoots; a press has no momentum to carry it on, and a flourish on every press is noise, the
+// strong answer kept for what is done, §14). The give is the same few pixels on anything, so a chip sinks more than a
+// card does; it is the `scale` property, so it never fights a thing's own transform, and a press that becomes a drag
+// is let go at once. Asked for less motion, nothing gives.
 
 import {paced, still} from './glide.ts';
 import {lift, press, strike, wake, type Key} from './keys.ts';
@@ -45,8 +46,8 @@ function up() {
   held = null;
   press.cancel();
   if (still()) return;
-  // Past where it was by a third of the give, then home: the spring.
-  const a = el.animate([{scale: s}, {scale: 1 + (1 - s) / 3, offset: .45}, {scale: 1}], {duration: paced(300), easing: SPRING});
+  // Home, by the law's curve: off at once, settling, no bounce.
+  const a = el.animate([{scale: s}, {scale: 1}], {duration: paced(250), easing: SPRING});
   spring = {el, a};
 }
 

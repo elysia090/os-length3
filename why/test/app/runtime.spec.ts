@@ -71,8 +71,9 @@ test('Runtime is in parts as Remote is: the one chosen shows, the others blend i
     await expect(app.runtime.part(p)).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(app.runtime.part(p)).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
   }
+  // Under the pointer it takes paper under it (DESIGN §3: hover adds no colour).
   await app.runtime.part('Dotfiles').hover();
-  await expect(app.runtime.part('Dotfiles')).toHaveCSS('background-color', 'rgb(230, 227, 222)');
+  await expect(app.runtime.part('Dotfiles')).toHaveCSS('background-color', 'rgb(251, 250, 247)');
   // A dotfile half written stays while another part is shown.
   await app.runtime.part('Dotfiles').click();
   await app.runtime.dotfiles.getByRole('button', {name: /New dotfile/}).click();

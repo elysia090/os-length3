@@ -42,7 +42,7 @@
 .work.bench > .bar > .pane-toggle { grid-column: 3; }
 .work.bench > .bar > .search-box { grid-column: 2; }
 .pane-toggle { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
-.pane-toggle:hover { background: var(--raised); }
+.pane-toggle:hover { background: var(--paper); }
 .pane-toggle .mark { width: var(--s4); height: var(--s4); }
 .work.bench > .center { grid-row: 2; display: flex; flex-direction: column; border-right: 0; }
 /* No band (Git): the center reaches up to the top line, so the page's head stands on it as every page's does; the

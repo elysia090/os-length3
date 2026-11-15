@@ -8,7 +8,7 @@ What the OS is under its places is `OS.md`; what each place does is `PLACES.md`.
 
 Contents: 1 the stance · 2 the world · 3 measures · 4 the frame · 5 pieces and the hand · 6 the row · 7 what one
 does · 8 motion · 9 sound · 10 each place · 11 what is not yet so · 12 how it is checked · 13 its words, and what
-only a person gives.
+only a person gives · 14 touch, and what it is for.
 
 ---
 
@@ -964,6 +964,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `why/test/app/sound.spec.ts` |
 | Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
 | Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the lean (the lower right at least as empty as the upper left), the bare ground one open field with nothing trapped and at most a third of the world marked, the band's title whole at its size, one voice (§2) | `why/test/app/composition.spec.ts` |
+| Touch, with motion on: under the pointer a thing takes paper or nothing; a press answers in its own frame, sounds as it goes down, gives at most 8% and comes home never past; every place's subject holds its act (§14) | `why/test/app/touch.spec.ts` |
 | Writing in Git is direct: a new issue's line and main's commit line always there, Enter making or committing, nothing to open, confirm or put back; an issue's title written over in place; what is half written kept (§7, §10) | `why/test/app/git.spec.ts` |
 | Forge at work, frame by frame at two screens: the piece in hand at the edge or under the hand; the line written never in the third it goes towards, a long file standing to the foot; the terminal's last line out of the lower third; nothing jumping, nothing reversed; the weight left (§2, §6, §10) | `why/test/app/at-work.spec.ts` |
 | Where the line written may stand, the terminal's lines, and where the desk turns for a piece pressed and for one gone to (§2, §5, §6) | `why/app/pages/forge/desk-layout.test.ts` |
@@ -1033,7 +1034,8 @@ four ways:
 
 ### What only a person gives
 
-Everything above that is measured or rendered is computed from four things a person gives, and from nothing else:
+Everything above that is measured or rendered is computed from four things a person gives, and from nothing else
+(and over the four, one more: why a person would be moved to do what a place is for, §14):
 
 1. **What each place is for** (§10, one sentence each): its character. Murch's first criterion, "emotion", weighs more
    than the other five together, and no measure reaches it: a title "sets mood ... in some metaphorical way" (Saul
@@ -1055,3 +1057,81 @@ of it on average, about half of it (Reinecke et al. 2013; Miniukovich and De Ang
 far less (r ≈ .3 to .5); what a measure does not know of (a grouping by meaning, a word cut short, an empty field that
 reads as missing) shows only to an eye. So the eye is used for one thing: to find a misfit. Found, it is named in §11,
 given a number here and a test in §12, and only then fixed. Looking finds; numbers hold.
+
+---
+
+## 14. Touch, and what it is for
+
+### Over everything: the motive
+
+Over the givens of §13 there is one more, and it comes first: **why a person would be moved to do what a place is
+for**. A place is not a set of things to look at; it is an act a person comes to do, and the act, done, gives
+something. Games are made in this order: the experience wanted first, then what makes it (Hunicke, LeBlanc and
+Zubek's MDA, 2004: mechanics serve dynamics serve the aesthetic; Nintendo tested how a big jumping Mario would feel,
+"どんな手ごたえになるのか", before the written specification). So each place names its motive, "one does X, and Y comes
+of it", and the rest is derived from it:
+
+- the subject is where X is done: **a screen is for its act**, and every place's subject holds it (something to
+  write in or to do), at every rest (§12, `touch.spec.ts`);
+- what matters most is ranked by its part in X;
+- the words name X's things and deeds;
+- friction is kept only where it makes Y.
+
+### The givens, as they were left implicit
+
+Read from §1, §7, §10 and `PLACES.md`, where each was said in passing; the person who gives them changes them here.
+
+| Place | One does … and … comes of it | Its kind of pleasure (MDA) | What matters most: subject › large thing › the rest | Its words | Friction kept |
+|---|---|---|---|---|---|
+| Home | writes what is one's own to do, and the day is one's own | expression | the note › one's name › the repos, what waits | a TODO, Next TODO, repos | none |
+| New repo | names a thing, and it is there | expression | the sheet › the name being written › what will be made | name, what it is for, Create | none: Create makes it at once |
+| Forge | writes and runs, and sees it work | challenge, mastered | the piece in hand › its name on the band › the row | a file's name, the Prompt, Run | one piece in hand at a time (§7) |
+| Git | judges the work and records it, and it is done | narrative: written, started, handed in, merged | the issue in hand › its number › main's sheet, the neighbours | issue, Start, Commit, Merge | a far side is a step away (§7) |
+| Server | talks with many, and is among them | fellowship | the board in hand › its name › the room's index | board, post, TODO | Enter is a new line; sending is its own key (§7) |
+| Inbox | writes to one, and is answered | fellowship | the conversation › who › who wrote | conversation, Send | the same |
+| Runtime | sees what the machine holds, and frees it | care | the sheet › its figures | what is here, on the Remote, can be freed | a deed that cannot be put back asks (§11) |
+| The Remote | keeps one's things elsewhere, and they are safe | trust | the sheet › its repos › devices | on, off, devices | turning a repo off asks for its name |
+| File | looks for anything, and finds it | discovery | the tree › `/` › its rows | its rows, their menus | it comes by a press only (§7) |
+
+### One winning principle a kind of touch
+
+Touch is not one law. Each kind of touch has its own principle, the one that wins there, said as a number where the
+research has one, measured on every control of every place from the top right, hovered and pressed with motion on
+(216 presses):
+
+| Touch | The principle | Its number | From | Measured |
+|---|---|---|---|---|
+| **Hover** | quiet to ink, or paper under it; nothing comes, nothing goes | no other fill | §3, §7 | 26 controls took a raised fill, two an ink one, the ink key a lighter ink: all now paper or nothing |
+| **Press** | answers at the thing pressed in the frame it goes down; sounds as it goes down; gives a few pixels and comes **home, never past**; what it does, it does on the let-go | its answer ≤ 50 ms, its sound ≤ 1 frame, its give ≥ .92 of itself, never over 1 | a highlight on touching down and nothing confirmed until the touch goes up (Apple, *Designing Fluid Interfaces*, 2018); 50 ms is felt as instant, 200 ms as sluggish (Swink, *Game Feel*); a press's visual answer feels one with it within 30 to 85 ms, its sound within 20 to 70 (Kaaresoja 2016); no overshoot without momentum (Apple) | its own answer 16 ms (one frame), at most 24; its sound 0 to 1 ms after; its give .92; it sprang 2.3% past itself on 52 presses: now it comes home |
+| **Key typed** | the letter drawn in the frame it is struck, its sound as it is struck, the caret going with it (§9) | one frame | a slow keyboard (200 ms) costs effort and correcting, not copying speed (Schmid et al. 2023); "the lower, the better" (Fatin) | `sound.spec.ts`, `motion.spec.ts` |
+| **Carry** (a drag, the desk by hand) | it stays under the hand, moved by the window's own scrolling or the drag's own frame; no easing laid on what the hand moves | lag ≤ 1 frame | "not imposed upon objects when they are being explicitly moved by the user" (Chang and Ungar 1993); a drag's lag is noticed at 11 ms on a screen, 55 ms through a pad (Deber et al. 2015) | §7 |
+| **Called up** (a menu, the finds, File) | by a press, laid where it was asked (its first deed under the press), away at once by a press outside or Escape | in the press's frame; its first deed within 5° of the press (§2) | a panel opened by the hand opens quickly and closes fast (Lewis); things leave the way they came (Chang and Ungar; Apple) | §7, `favour.spec.ts` |
+| **Comes, goes** | there at once and explained after, never grown from nothing or faded over what it replaces (§8) | — | an animated transition makes one wait; show the result, then an afterglow where it changed (Baudisch et al., *Phosphor*, 2006) | a dozen still grow or fade (§11) |
+| **Refused** | said once the field is left, where it is put right, and in words; the thing nudged the way that means no, short | the nudge ≤ a cell, ≤ 300 ms | inline validation after leaving a field: 22% more success, 22% fewer errors (Wroblewski 2009); a shake in a meaningful direction, not a random one (Pichlmair and Johansen) | New repo, Git's lines |
+| **Done** | **the one strong answer**: what was done lands, lit, where its result is (a line under Committed, a step's mark), and nowhere else | lit ≥ its read time (§8) | amplified feedback on success raised competence and enjoyment; on mere action it lowered them (Kao et al. 2024, n = 1,699); Sakurai: the stop that marks a hit is for what counts | Git's Committed and steps |
+| **Waits** | nothing said under a second; past it, what is being done in words where its result will be; past ten, how far, and a way to stop | 1 s, 10 s | Nielsen's three limits; showing the work raises its worth (Buell and Norton 2011) | §7 |
+
+### Its repertoire, and what it never does
+
+What the OS touches with is a short list, each its own: **the give** and **home** of a press; **the sound** of a key
+and of a press going down; **ink** and **paper** under the hand; **the move** by one law and **the turn** of the
+desk; **the platen** and **the lead** of the line written; **the landing** of what was done, lit; **the nudge** of a
+no; **read time**; and **grace**, the hand read in its favour (§7: a cell either way, the window's edges, 16 px round
+a menu).
+
+What it never does, on purpose: shake (but the nudge of a no), particles, a bounce, anything past where it goes,
+anything that grows into place or fades over what it replaces, a sound under the pointer, and **a flourish on a mere
+press**. More is not better: of four levels of "juice" in one game, none and the most both made play worse than the
+middle two (Kao 2020, n = 3,018); juice that hides what caused what, or makes every result look alike, is "too much of
+a good thing" (Kao et al. 2024).
+
+### Ordinary parts, more than expected
+
+A touch that feels better than expected is not one large effect. It is ordinary parts that agree, every time, with
+one material: a press is a key's (it answers going down, sounds going down, gives, comes home); writing is a
+typewriter's (the strike, the caret, the platen turning a line); going is a camera's (one law, the dots with the
+world). Each part is ordinary; that they agree with each other and with the thing they are is what is felt (Swink
+counts "metaphor" among the six parts of game feel; Miyamoto: the D-pad is the same hardware in every game, and how
+a press feels differs, "そこの部分が大事"). So a new interaction is made from the repertoire, its material named, and
+nothing is added to it that its material would not do.
+

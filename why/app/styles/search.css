@@ -61,18 +61,18 @@
 .found-here > .found-what { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .found-here > .found-kind, .found-here > .found-at { flex: none; }
 .found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
-.found-step:hover:not(:disabled) { background: var(--raised); }
+.found-step:hover:not(:disabled) { background: var(--paper); }
 .found-step:disabled { opacity: .35; cursor: var(--cursor-arrow); }
 /* × at the strip's end, quiet: everything under the box put away, what stays out beside the file too. */
 .found-shut { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); margin-right: calc(-1 * var(--s2)); padding: 0; border: 0; border-radius: var(--r-round);
   background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
-.found-shut:hover { background: var(--raised); color: var(--ink); }
+.found-shut:hover { background: var(--paper); color: var(--ink); }
 .found-shut .mark { width: var(--s4); height: var(--s4); }
 .found-at { font: var(--t-meta) var(--mono); color: var(--sub); }
 .work.bench .search-results { max-height: var(--search-room, none); }
 .found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
 .found-item { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: var(--h-row); padding: var(--s1); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; cursor: var(--cursor-hand); }
-.found-item:hover { background: var(--raised); }
+.found-item:hover { background: var(--paper); }
 .found-kind { flex: none; font-size: var(--t-meta); color: var(--sub); }
 .found-what { min-width: 0; overflow-wrap: anywhere; }
 .found-what.mono { font: var(--t-meta) var(--mono); }
@@ -88,7 +88,7 @@
    the count of what was found: pressed, its diff. */
 .hit-diff { flex: none; display: inline-flex; align-items: baseline; gap: var(--s2); margin-left: auto; min-height: var(--h-row); padding: 0 var(--s1); border: 0; border-radius: var(--r-field);
   background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: var(--cursor-hand); align-self: center; line-height: var(--h-row); }
-.hit-diff:hover { background: var(--raised); color: var(--ink); }
+.hit-diff:hover { background: var(--paper); color: var(--ink); }
 /* What Enter takes from the box, while the box has the keyboard: lit as under the pointer, its key at its end. */
 .found-body .choice > .enter-cap { display: none; color: var(--sub); border-color: var(--rule); }
 .search-box:has(.search-in:focus) .found-body .choice.first { background: var(--raised); }
@@ -107,7 +107,7 @@
 .pane-head { padding: 0 var(--pad); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub);
   font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
 .pane-head:hover, .pane-head[aria-pressed='true'] { color: var(--ink); }
-.pane-head:hover { background: var(--raised); }
+.pane-head:hover { background: var(--paper); }
 .pane-head-n { margin-left: var(--s1); font-weight: 400; font-variant-numeric: tabular-nums; }
 .pane-head-n:empty { display: none; }
 /* Narrow (after the wide rules above, which it changes): the search at the top line's right, the right pane
@@ -160,7 +160,7 @@ form.search { position: relative; }
 .hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: var(--cursor-hand); border-radius: var(--r-field); }
 .hit-file { min-height: var(--h-row); font: 600 var(--t-meta) var(--mono); }
 .hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-meta)/1.6 var(--mono); }
-.hit-file:hover, .hit:hover { background: var(--raised); }
+.hit-file:hover, .hit:hover { background: var(--paper); }
 /* The Prompt's status line says something only when something is missing. */
 .term > p:empty { display: none; }
 /* 実行結果: the line as typed, then what came out, quiet. */
