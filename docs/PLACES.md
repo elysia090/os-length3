@@ -148,8 +148,8 @@ main's sheet and an issue side by side, the issues go under the sheet, two cells
 **What is written here is written where it stands** (§7: nothing to open first, nothing to confirm):
 
 - **A new issue** is the row's last piece, where a new thing in a row always is (a new board at a server's row's end):
-  beside the one in full, its edge with its + and its name; in the hand, the issue it will be, not a sheet yet (a
-  dashed line on the ground, no shadow), "New issue" quiet over its corner, its first line written in its head in an
+  beside the one in full, its edge with its + and its name, a dashed line on the ground; in the hand, the issue it
+  will be, paper with its edge dashed (not made yet) and the hand's shadow, "New issue" quiet over its corner, its first line written in its head in an
   issue title's letters ("Fix: Title" quiet while it is empty, as the note's first line says it), the repo it goes in
   said quietly at its foot as a card says its repo (chosen in the row of repos). Gone to, its first line has the
   keyboard; Enter makes it, there at once where it was written, and the keyboard goes on into its summary in the issue
@@ -161,7 +161,7 @@ main's sheet and an issue side by side, the issues go under the sheet, two cells
   with the issue's top.
 - **Along the row, what moves is seen from the press**: the issue the row slides away from stays as it was in the
   hand (paper, ink edge, shadow, its words) until it is out at the edge, and the one gone to is in the hand from the
-  first frame, the new issue paper too. (Put down at the press, the only paper was the piece gone to, mostly out of
+  first frame, the new issue paper and its shadow too (white is the hand's, and has the shadow). (Put down at the press, the only paper was the piece gone to, mostly out of
   sight: for the first frames nothing white was there to see moving.)
 - **A commit on main** is main's card's line, always there under its files: Enter commits it, as Commit beside it
   does. There is no Cancel: nothing was opened.

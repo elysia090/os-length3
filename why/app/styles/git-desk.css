@@ -68,12 +68,13 @@
   white-space: nowrap; }
 .git-side > .side-name:empty { display: none; }
 /* The issue not written yet (issue-form.ts newIssue), the row's last piece, where a new thing in a row is: its edge
-   dashed (not made yet) and no shadow; beside the one in full drawn in line on the ground as every piece not in the
-   hand is, its edge with its + and its name, quiet; in the hand paper, as the piece in hand is (from the first frame
-   of the move to it: what the row moves to is seen as it moves), its first line written in its head in an issue
-   title's letters, what it says empty quiet, and the repo it goes in at its foot, as a card says its repo. */
+   dashed (not made yet); beside the one in full drawn in line on the ground as every piece not in the hand is, its
+   edge with its + and its name, quiet; in the hand paper and its shadow, as the piece in hand is (white is the hand's,
+   and has the shadow: from the first frame of the move to it, what the row moves to is seen as it moves), its first
+   line written in its head in an issue title's letters, what it says empty quiet, and the repo it goes in at its foot,
+   as a card says its repo. */
 .git-desk .issue-card.issue-new-card { background: var(--ground); color: var(--sub); box-shadow: none; }
-.git-desk .issue-slot[aria-current='true'] .issue-card.issue-new-card { background: var(--paper); color: var(--sub); box-shadow: none; }
+.git-desk .issue-slot[aria-current='true'] .issue-card.issue-new-card { background: var(--paper); color: var(--sub); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .git-desk .issue-card.issue-new-card::after, .git-desk .issue-slot[aria-current='true'] .issue-card.issue-new-card::after { box-shadow: none; border: 1px dashed var(--edge); }
 .git-desk .issue-new-card .issue-big-head.peek :is(h2, .issue-no), .git-desk .issue-new-card .issue-name { color: var(--sub); }
 .git-desk .issue-new-card .issue-name { font-weight: 400; }
@@ -106,7 +107,7 @@
    gone to, mostly out of sight: for the first frames of the move nothing white was there to see moving. */
 .git-desk .issue-slot.leaving .issue-card { padding: var(--u); background: var(--paper); color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .git-desk .issue-slot.leaving .issue-card::after { box-shadow: inset 0 0 0 1px var(--ink); }
-.git-desk .issue-slot.leaving .issue-card.issue-new-card { background: var(--paper); box-shadow: none; }
+.git-desk .issue-slot.leaving .issue-card.issue-new-card { background: var(--paper); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .git-desk .issue-slot.leaving .issue-card.issue-new-card::after { box-shadow: none; border: 1px dashed var(--edge); }
 .git-desk .issue-slot > :not(.issue-card) { margin-top: calc(2 * var(--u)); }
 /* Its name over its corner: its number and kind, and how it stands. */
