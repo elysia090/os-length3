@@ -70,10 +70,11 @@ ricebox    module/ricebox    the distribution, 0.6.4 (RELEASE): pins/, packages/
              module/otter    help, and what each thing is
              module/everyday the look and feel, changed by the one who uses it: what a face is drawn through
                              (ricebox has no window of its own, and this layer for one); it knows no product
-why      why/            the product, 0.0.1 (VERSION): app/, desktop/, cli/, core/, remote/
+why      why/            the product, 0.0.1 (VERSION): its parts (repo/, home/, prompt/, agent/, device/, shipto/,
+                             cowboy/, text/, api/), its faces (app/, cli/, desktop/), and test/
 under all  module/lib        what the C stands on: system calls, words, output. On no release: it is in each
                              program made of it
-beside     scripts/ tests/ docs/    what makes and checks the rest
+beside     scripts/ docs/    what makes and checks the rest
 ```
 
 What is not each one's: muk holds no package and no rule of a service, and nothing why puts in a box (a repo,
@@ -95,11 +96,11 @@ inside out, so that nothing of a product is left further in than the product.
 | src, the OS | was `src/` | the product | `why/`: done |
 | xlat | was sods' crate, its program and its wasm, `XLAT_*`, the jobs' names; 338 mentions | sods, and where it meant what runs a box, muk | `sods`, `SODS_*`; `MUK_*`: done |
 | length3, Length³ OS, os-length3, OS Length3 Linux, l3 | the crates (`length3-core`, `length3-os`), `LENGTH3_*`, `/etc/length3` and the hostname in ricebox, the releases' names; 1,111 mentions | why where it is the product; ricebox where it is the root; nothing where it is muk's | `why-*`, `WHY_*`; `/etc/ricebox`; `ricebox-0.6.4-…`, `why-0.0.1-…` |
-| the core | `why/core`, 15,687 lines, fourteen parts that take from each other in rings | what why says of a repo, its history, Home, a device; with a box run (muk's) and the Remote's client (shipto's) in it | a folder of why to each part; `prompt` the bundle why writes for muk; `compute` gone |
+| the core | was `why/core`, 15,687 lines, fourteen parts that take from each other in rings | what why says of a repo, its history, Home, a device; with a box run (muk's) and the Remote's client (shipto's) in it | a folder of why to each part (`why/<part>`, the crate's root `why/lib.rs`); the bundle is ricebox's to write; `compute` gone: done |
 | the web root | was `scripts/webroot*.ts`; `public/webroot`, `…-l3-web.tar` | ricebox as layers | ricebox's layers: read by `module/ricebox/layers`, made by `module/ricebox/make`: done |
-| the Remote, remote, shipto | `why/remote`, the core's `remote`, the command's `remote`, `sync`, `git` | what a service wants | `why/shipto`, one folder |
+| the Remote, remote, shipto | was `why/remote`, the core's `remote`, the page's `app/remote`; the command's `remote`, `sync`, `git` | what a service wants | `why/shipto`, one folder (the Remote in it, `why/shipto/remote`): done, but for the command's three files |
 | scripts | `scripts/`, 4,798 lines of every unit's making and checking | each unit's own | in the unit it makes; what checks the whole stays |
-| tests | `tests/` | why's, driven as a person drives it | `why/test` |
+| tests | was `tests/` | why's, driven as a person drives it | `why/test`: done |
 | runtime, src, test, tests | each unit's folders, named four ways | what runs in a page; the unit itself; its checks | one name each, the same in every unit |
 | unit, module | `module/`, `scripts/units.ts` | one thing | module |
 
@@ -134,7 +135,7 @@ who                 root of a user namespace of its own, mapped onto the one who
 calls               muk's filter: no box asks less
 ```
 
-**What a Prompt adds** is what why lends and tells (`why/core/src/prompt`), and nothing else:
+**What a Prompt adds** is what why lends and tells (`why/prompt`), and nothing else:
 
 ```
 /root               the Prompt's home: a directory of its own, the person's dotfiles written in it, gone with it
@@ -149,7 +150,7 @@ told                which repo it is and where repos are, the person's language,
 
 **What the core's launcher did, and whose each is now.** Nothing is kept beside.
 
-| The launcher (`why/core/src/prompt/launch.rs`, `seccomp.rs`, 962 lines) | Now |
+| The launcher (was `why/core/src/prompt/launch.rs`, `seccomp.rs`, 962 lines) | Now |
 | --- | --- |
 | namespaces, mounts, pivot_root, /dev, terminals, the filter | muk's, all of it |
 | the box's layout, its shell and what it runs with, the resolver's file | ricebox's (`src/bundle.rs`, `src/run.rs`) |
@@ -186,38 +187,57 @@ What stays why's, because it is a product's choice or its words:
 
 | It is | Where |
 | --- | --- |
-| which roots it trusts (ricebox's releases by their pins, Ubuntu, Debian), where one is fetched from, another distribution's root made ready for a box of one user | `why/core/src/root` (`pins.rs`, `fetch.rs`, `mod.rs`) |
-| what it lends a box and tells it (the repo, a home with the dotfiles, the caches, `WHY_*`), the repo's environment asked by `.packages` and `.setup`, a Prompt's record | `why/core/src/prompt` (`start.rs`, `mod.rs`, `running.rs`, `writes.rs`) |
-| where its root is served from, the names its page keeps things by, its words for what a download says | `why/app/prompt/userland.ts`, `webroot-fetch.ts` |
-| the repos under /root in the tree a page shows | `why/app/prompt/system.ts` |
+| which roots it trusts (ricebox's releases by their pins, Ubuntu, Debian), where one is fetched from, another distribution's root made ready for a box of one user | `why/prompt/roots` (`pins.rs`, `fetch.rs`, `mod.rs`) |
+| what it lends a box and tells it (the repo, a home with the dotfiles, the caches, `WHY_*`), the repo's environment asked by `.packages` and `.setup`, a Prompt's record | `why/prompt` (`start.rs`, `mod.rs`, `running.rs`, `writes.rs`) |
+| where its root is served from, the names its page keeps things by, its words for what a download says | `why/prompt/userland.ts`, `webroot-fetch.ts` |
+| the repos under /root in the tree a page shows | `why/prompt/system.ts` |
 | the web root made of the root it pins, taken from the release it pins | `scripts/webroot.sh`, `root-file.ts`, `pin-root.ts`, `prompt-files.ts` |
 
 Still ricebox's to take, and not taken yet: the root carries why's own command (`make/assemble.sh` puts it at
 /usr/bin/why) and its settings read why's variables by the names before (`/etc/length3/shrc`, `LENGTH3_*`): both
 change with a root released from this tree, which the pin (0.6.4) is not.
 
-why, inside, is then its parts and its faces. A part is one responsibility, a folder of why holding all of it
-whatever it is written in; a face holds no judgement, only how a part is shown and asked.
+why, inside, is its parts and its faces. A part is one responsibility, a folder of why holding all of it whatever
+it is written in: what the core does of it (Rust) and what a page does of it (TypeScript) are side by side, so
+nothing of a part is looked for in two trees. A face holds no judgement, only how a part is shown and asked.
 
 ```
 why/
-  repo/       what a repo is, and what was done in it      store, issues, lines, measure; commits, review, work
-  home/       what a person keeps on a device              todo, profile, band, dotfiles, grants, the Agent's key
-  prompt/     a repo lent to a box of the root             what is lent and told, its record, what it writes
-  agent/      work handed over                             tasks, activity, hands, spec (a run's words and ledger)
-  device/     the machine under it                         files, the vault, room and what frees it
-  shipto/     what a service wants                         the client (the core's remote, the command's remote,
-                                                           sync, git) and the Remote itself (why/remote)
-  cowboy/     links out of a box and between boxes         below
-  text/       why's words, in its two languages            tr!, a title's kind, a name's rule, a diff
-  api/        the one door a face asks through             call, answer; the core as wasm
+  text/       why's words, in its two languages            tr! and t(), the catalog, a title's kind, a name's rule,
+                                                           a diff; a size and a time as a person reads them
+  agent/      work handed over                             tasks, activity, hands, spec (a run's words and ledger);
+                                                           the loop a page runs one by
+  api/        the one door a face asks through             call, answer; the core as wasm (api/web) and the page's
+                                                           end of it (host.ts, the Worker, the desktop's commands)
+  cowboy/     links into this device                       its SSH: the listener, the keys let in, where it is reached
+  repo/       what a repo is, and what was done in it      store, issues, lines, measure, templates; history/
+                                                           (commits, changes, review, work)
+  home/       what a person keeps                          todo, profile, band, dotfiles, what was agreed
+  shipto/     what a service wants                         the client (session, sync, inbox, servers, plan) and the
+                                                           Remote itself (shipto/remote)
+  prompt/     a repo lent to a box of the root             what is lent and told, its record, what it writes;
+                                                           roots/ (which roots why trusts, where one comes from)
+  device/     the machine under it                         fs/ (files), the vault and the keys, the network as a
+                                                           host reaches it; storage/ (room, and what frees it)
   app/        a face: the window                           pages/, ui/, styles/, main/
   cli/        a face: the words                            words/ (the one table), say/, cmd/
   desktop/    a face: the window on a desktop
-  test/       why driven as a person drives it             tests/
+  test/       why driven as a person drives it             app/ (a browser), cli/ (the command), prod/
+  lib.rs, Cargo.toml                                       the parts as one crate (why-core), in the order below
 ```
 
-That layout is not made yet: the parts are still `why/core/src/<part>` and `why/app/<part>`.
+A page's code takes in the list's order, from the top: a part takes from the parts over it in this list and from
+none under it, and no part takes from a face (`scripts/layers.ts` holds it, and that no file reaches back to
+itself). The core's order is `lib.rs`'s own, and is held the same way: its door is over every part, where the
+page's end of the door is under them; and a part is more than one layer of it where its halves stand at different
+heights. Files are under everything and what frees room is over nearly everything, yet both are the device's; a
+repo's history knows what was sent, yet it is the repo's. So `lib.rs` names the layers in their order and says
+where each one's folder is (`device/fs`, `device/storage`, `repo/history`, `prompt/roots`), and the folders stay by
+responsibility.
+
+What the folders show, now that each holds all of one thing: the half of shipto and of cowboy that is in why takes
+from why's own parts (its door, its words, a home), which the units they are to be may not. `scripts/units.ts`
+lists each as owed, with the step that ends it, where before they were counted as the app's and not seen.
 
 ## cowboy
 
@@ -268,8 +288,8 @@ no outside yet), and the relay, which is shipto's to serve (who may use it, to w
   the box's terminal and gives its other end away. It does not make a filter of config.json's own, or set a
   cgroup's limits itself (they are the lender's, on the cgroup lent).
 - **What makes ricebox's layers is ricebox's** (`module/ricebox/make`), with what reads them.
-- **shipto is in five places**: `why/remote` (8,403 lines), `why/core/src/remote` (2,479), and three of the
-  command's files (1,095).
+- **shipto is in two places**: `why/shipto` (the Remote in it, 8,403 lines; the client, the core's 2,479 and the
+  page's) and three of the command's files (1,095).
 
 ## How far each is from its bound
 
@@ -302,7 +322,8 @@ own for the same work.
 Names first, from the inside out, since a wrong name is paid at every reading; then the furthest from its bound.
 
 1. **The names**, as the table above: length3 in ricebox, then everywhere; the core's parts as why's
-   folders; the web root; shipto; each unit's scripts and tests in it.
+   folders (done); the web root (done); shipto (one folder; the command's files are left); each unit's scripts and
+   tests in it.
 2. **sods' Linux, in a browser.** The largest, the least thin, and paid on every call. It is one thread's objects behind a
    channel: a call from another Worker is a round trip (1.9 µs), each makes an array and an object and carries its
    arguments as BigInts. To be: its state laid out in one shared memory, each call answered on the thread that makes

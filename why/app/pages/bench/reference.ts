@@ -2,19 +2,19 @@ import {h} from '../../ui/dom.ts';
 import {pageVeil} from '../../ui/page-veil.ts';
 import {glide, LAND, paced, still, where} from '../../ui/glide.ts';
 import {counted} from '../kit/diff-view.ts';
-import * as gitops from '../../repos/history.ts';
-import {issuePath, readIssues, type Issue} from '../../repos/issues.ts';
-import {t} from '../../i18n/i18n.ts';
-import {onChange, onRenamed, rekey, store} from '../../repos/repos.ts';
-import {stillAt} from '../../repos/search.ts';
+import * as gitops from '../../../repo/history.ts';
+import {issuePath, readIssues, type Issue} from '../../../repo/issues.ts';
+import {t} from '../../../text/i18n.ts';
+import {onChange, onRenamed, rekey, store} from '../../../repo/repos.ts';
+import {stillAt} from '../../../repo/search.ts';
 import type {Run} from './sessions.ts';
 import {sessionIfAny} from './sessions.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {askButton, askView, diffButton, issueButton, issueLabel, issueOne, KINDS, markedDiff, openIssues, runButton, runView, type Kind} from './kinds.ts';
 import {asksIn, watchAsks, type Ask} from './asks.ts';
 import {foundView, patched, readAll, search, type Files} from './found.ts';
 import {drawLine, remember, seenButton, seenIn, seenKey, seenKind, seenLabel, type Seen, type Slot} from './seen.ts';
-import {issueStore} from '../../repos/issue-store.ts';
+import {issueStore} from '../../../repo/issue-store.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // The way to what the center refers to: the search box over the right pane,

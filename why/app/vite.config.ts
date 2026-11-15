@@ -6,19 +6,19 @@ import {defineConfig, type Plugin} from 'vite';
 import {bootScript} from '../../scripts/boot.ts';
 import {buildCoreWasm, coreWasmPath} from '../../scripts/core-wasm.ts';
 import {putMuk} from '../../module/ricebox/make/muk.ts';
-import {DEFAULT_REMOTE, headersOf, webPolicy} from './host/policy.ts';
-import {shipped} from '../remote/ship/releases.ts';
+import {DEFAULT_REMOTE, headersOf, webPolicy} from '../shipto/policy.ts';
+import {shipped} from '../shipto/remote/ship/releases.ts';
 
 // Tauri serves the built files from dist/ and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
 // lives in module/sods (the translator, and the Linux its programs ask for) and module/ricebox (the root's layers).
 
-// The web build's policy is why/app/host/policy.ts's: its own origin and the Remote. Tauri applies its own
+// The web build's policy is why/shipto/policy.ts's: its own origin and the Remote. Tauri applies its own
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
 // The Remote (remote/) is the one other origin it may reach: where the
 // canonical copy lives. VITE_LENGTH3_REMOTE points a build at another one;
 // '' is this page's own origin, which in development WHY_DEV_REMOTE
-// (a `node why/remote/serve/dev.ts`) answers through the dev server.
+// (a `node why/shipto/remote/serve/dev.ts`) answers through the dev server.
 const REMOTE_URL = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
 const REMOTE = REMOTE_URL ? new URL(REMOTE_URL).origin : '';
 const DEV_REMOTE = process.env.WHY_DEV_REMOTE;
@@ -28,8 +28,8 @@ const DEV_REMOTE = process.env.WHY_DEV_REMOTE;
 const WRANGLER = readFileSync(new URL('../../wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
-// The release this tree ships (why/remote/ship/releases.ts shipped, the newest pinned; not module/ricebox/RELEASE, which names the one being
-// made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (why/remote/bytes/mirror.ts).
+// The release this tree ships (why/shipto/remote/ship/releases.ts shipped, the newest pinned; not module/ricebox/RELEASE, which names the one being
+// made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (why/shipto/remote/bytes/mirror.ts).
 process.env.VITE_LENGTH3_RELEASE ??= shipped();
 const WEB_POLICY = webPolicy(REMOTE);
 
@@ -72,7 +72,7 @@ const buildStamp = (): Plugin => ({
 });
 
 /**
- * The core the app runs, built for the browser (why/core/web) when its sources changed, once per dev-server start
+ * The core the app runs, built for the browser (why/api/web) when its sources changed, once per dev-server start
  * and per build; `virtual:why-core.wasm?url` is the module's URL (a hashed asset in a build), from any
  * bundle, the core's worker's included, as an alias reaches them all.
  */
@@ -107,11 +107,11 @@ const muk = (): Plugin => ({
  * runs its own core, the root installed on the machine and signs in through the browser; `X.web.ts` for the
  * app's (Tauri's API), which a browser never has.
  */
-const ONLY = {web: ['core/spawn', 'remote/passkeys'], native: ['app/tauri']};
+const ONLY = {web: ['api/spawn', 'shipto/passkeys'], native: ['api/tauri']};
 const hostOnly = (): Plugin => {
   const other = HOST === 'native' ? ONLY.web : ONLY.native;
   const suffix = HOST === 'native' ? '.desktop.ts' : '.web.ts';
-  const named = new RegExp(`/app/(${other.join('|')})\\.ts$`);
+  const named = new RegExp(`/why/(${other.join('|')})\\.ts$`);
   let out = '';
   return {
     name: 'why-host',

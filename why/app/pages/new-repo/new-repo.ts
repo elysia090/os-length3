@@ -1,14 +1,15 @@
-import {bytes, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {connection} from '../../remote/connection.ts';
-import {plan} from '../../remote/plan.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {connection} from '../../../shipto/connection.ts';
+import {plan} from '../../../shipto/plan.ts';
 import {goToPlan} from '../kit/plan-gate.ts';
-import {remoteOnly} from '../../remote/lifecycle.ts';
-import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../repos/repos.ts';
+import {remoteOnly} from '../../../shipto/lifecycle.ts';
+import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../../repo/repos.ts';
 import {onTheGround} from '../home/home.ts';
 import type {Context} from '../kit/context.ts';
 import {triangle} from '../file/tree.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {mark} from '../../ui/icons.ts';
 import {liftLine, nudge, paced, putAway, still, textAt, unfold} from '../../ui/glide.ts';
 import {fitSize} from '../../ui/optical.ts';
@@ -28,7 +29,7 @@ import {SPRING} from '../../ui/law.ts';
  */
 
 /**
- * The scaffold (why/shared/templates.json's `standard`, as `why repo new` makes
+ * The scaffold (why/repo/templates.json's `standard`, as `why repo new` makes
  * it): a README, with docs/, in no language of its own. There is no
  * choosing; what is made from it is changed here, file by file.
  */

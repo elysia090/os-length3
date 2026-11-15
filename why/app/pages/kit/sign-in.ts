@@ -1,8 +1,8 @@
 import {h} from '../../ui/dom.ts';
-import {isNative, native} from '../../host/host.ts';
-import {t} from '../../i18n/i18n.ts';
-import * as account from '../../remote/connection.ts';
-import {errorText} from '../../host/errors.ts';
+import {isNative, native} from '../../../api/host.ts';
+import {t} from '../../../text/i18n.ts';
+import * as account from '../../../shipto/connection.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button, pressing} from './remote-parts.ts';
 
 // Signing in: one card where what the Remote holds would be, and the ways in under its title. Remote's page

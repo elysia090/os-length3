@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {saveIssue, writeIssue, type Issue} from '../../repos/issues.ts';
-import {kindOf, named} from '../../repos/text.ts';
+import {t} from '../../../text/i18n.ts';
+import {saveIssue, writeIssue, type Issue} from '../../../repo/issues.ts';
+import {kindOf, named} from '../../../repo/text.ts';
 import {answers} from '../kit/common.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {keepOut, putAway, still, unfold} from '../../ui/glide.ts';
 import {busy} from './held.ts';
-import {issueStore} from '../../repos/issue-store.ts';
+import {issueStore} from '../../../repo/issue-store.ts';
 
 // Writing an issue: its first line named like a TODO item ("Fix：件名"),
 // the repo it goes in said quietly before it, then the detail. The repo is

@@ -590,7 +590,7 @@ pub fn schema(f: &Form) -> serde_json::Value {
     }).collect();
     let flags: Vec<serde_json::Value> = f.flags.iter().map(|fl| match fl {
         Flag::Note(w) => json!({"flag": "-m", "value": w}),
-        Flag::Template => json!({"flag": "-t", "value": "template", "choices": why_core::repos::templates::all().iter().map(|t| t.id.clone()).collect::<Vec<_>>()}),
+        Flag::Template => json!({"flag": "-t", "value": "template", "choices": why_core::repo::templates::all().iter().map(|t| t.id.clone()).collect::<Vec<_>>()}),
         Flag::Network => json!({"flag": "--network"}),
         Flag::Todo => json!({"flag": "--todo"}),
         Flag::Empty => json!({"flag": "--empty"}),
@@ -626,7 +626,7 @@ pub fn usage(c: &Command, f: &Form) -> String {
         s += " ";
         s += &match fl {
             Flag::Note(w) => format!("[-m {}]", placeholder(w)),
-            Flag::Template => format!("[-t {}]", why_core::repos::templates::all().iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join("|")),
+            Flag::Template => format!("[-t {}]", why_core::repo::templates::all().iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join("|")),
             Flag::Network => "[--network]".to_string(),
             Flag::Todo => "[--todo]".to_string(),
             Flag::Empty => "[--empty]".to_string(),

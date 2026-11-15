@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {LAND, paced, still} from '../../ui/glide.ts';
 import {SPRING} from '../../ui/law.ts';
 

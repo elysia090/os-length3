@@ -1,8 +1,8 @@
 import {h} from '../../ui/dom.ts';
-import {isNative} from '../../host/host.ts';
-import {t} from '../../i18n/i18n.ts';
-import {flush} from '../../remote/lifecycle.ts';
-import {changedWords, leftFor, openPlan, takeLeft, takeStripeReturn, tierName, type Back, type Left, type PaidTier, type Plan} from '../../remote/plan.ts';
+import {isNative} from '../../../api/host.ts';
+import {t} from '../../../text/i18n.ts';
+import {flush} from '../../../shipto/lifecycle.ts';
+import {changedWords, leftFor, openPlan, takeLeft, takeStripeReturn, tierName, type Back, type Left, type PaidTier, type Plan} from '../../../shipto/plan.ts';
 import {answers} from '../kit/common.ts';
 import {button} from '../kit/remote-parts.ts';
 

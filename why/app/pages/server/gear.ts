@@ -1,12 +1,13 @@
-import {day, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {lookup, send, shown as named, shownAs, threads} from '../../remote/inbox.ts';
-import * as servers from '../../remote/servers.ts';
+import {h} from '../../ui/dom.ts';
+import {day} from '../../../text/format.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {lookup, send, shown as named, shownAs, threads} from '../../../shipto/inbox.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {deed, parts, type Parts} from '../kit/common.ts';
-import {every} from '../../host/runs.ts';
+import {every} from '../../../api/runs.ts';
 import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard, type GearWays} from './parts.ts';
 import {guestsCard} from './guests.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {personBadge} from '../kit/pane.ts';
 
 // Behind the gear: what changes the server for everyone. In parts, as

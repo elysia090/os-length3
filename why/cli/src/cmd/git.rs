@@ -11,7 +11,7 @@ use crate::words::spec::{Fact, On};
 use crate::words::target::{self, IssueRef};
 use why_core::history::{self, state_word, Change};
 use why_core::history::work::Work;
-use why_core::repos::issues::{number, Issue};
+use why_core::repo::issues::{number, Issue};
 use why_core::{history::work, text::i18n::ja, text::title, tr};
 use serde_json::{json, Value};
 
@@ -20,21 +20,21 @@ use serde_json::{json, Value};
 struct Stand {
     known: bool,
     work: Option<Work>,
-    lines: Vec<why_core::remote::Line>,
+    lines: Vec<why_core::shipto::Line>,
     changes: Vec<Change>,
     merged: Vec<String>,
     uncommitted: usize,
 }
 
-fn stand(ctx: &Ctx, r: &why_core::repos::store::Repos, repo: &str) -> Stand {
+fn stand(ctx: &Ctx, r: &why_core::repo::store::Repos, repo: &str) -> Stand {
     let merged = history::merged_seen(repo);
     let empty = |known, merged| Stand { known, work: None, lines: Vec::new(), changes: Vec::new(), merged, uncommitted: 0 };
     // On no Remote there is no work to know of; one out of reach knows only the merges seen before.
     if !ctx.connected() { return empty(true, merged); }
     let Ok(changes) = history::changes_of_repo(repo) else { return empty(false, merged) };
     let w = why_core::history::work::state(r, repo).ok();
-    let uncommitted = if w.as_ref().is_some_and(|w| w.line != why_core::repos::lines::MAIN) { history::changes(r, repo).map(|c| c.files).unwrap_or(0) } else { 0 };
-    Stand { known: true, work: w, lines: why_core::remote::lines(repo).unwrap_or_default(), merged: history::merged_seen(repo), changes, uncommitted }
+    let uncommitted = if w.as_ref().is_some_and(|w| w.line != why_core::repo::lines::MAIN) { history::changes(r, repo).map(|c| c.files).unwrap_or(0) } else { 0 };
+    Stand { known: true, work: w, lines: why_core::shipto::lines(repo).unwrap_or_default(), merged: history::merged_seen(repo), changes, uncommitted }
 }
 
 fn path_of(i: &Issue) -> String { format!("issue/{}", i.file) }
@@ -54,7 +54,7 @@ pub fn line_called(line: &str) -> String {
 /// copy, where issues are, whatever work the repo shows; one a work or a change
 /// refers to keeps its name. Renamed, they are committed on main by themselves,
 /// as every issue's file is. What was renamed, (old, new).
-fn number_loose(ctx: &Ctx, r: &why_core::repos::store::Repos, repo: &str, s: &Stand) -> Vec<(String, String)> {
+fn number_loose(ctx: &Ctx, r: &why_core::repo::store::Repos, repo: &str, s: &Stand) -> Vec<(String, String)> {
     if ctx.prompt || !ctx.connected() || !s.known { return Vec::new(); }
     let in_use: Vec<String> = s.lines.iter().map(|l| l.issue.clone()).chain(s.changes.iter().map(|c| c.issue.clone())).collect();
     let done = r.on_main().number_issues(repo, &in_use).unwrap_or_default();
@@ -66,7 +66,7 @@ impl Stand {
     fn change(&self, i: &Issue) -> Option<&Change> { self.changes.iter().find(|c| c.issue == path_of(i)) }
     /// Being worked on here, now.
     fn here(&self, i: &Issue) -> bool {
-        self.work.as_ref().is_some_and(|w| w.line != why_core::repos::lines::MAIN && w.issue.as_deref() == Some(path_of(i).as_str()))
+        self.work.as_ref().is_some_and(|w| w.line != why_core::repo::lines::MAIN && w.issue.as_deref() == Some(path_of(i).as_str()))
     }
     fn merged(&self, i: &Issue) -> bool {
         self.change(i).is_some_and(|c| c.state == "merged") || self.merged.contains(&path_of(i))
@@ -185,10 +185,10 @@ fn subject(ctx: &Ctx, s: &Stand, i: &Issue, facts: Vec<Fact>) -> crate::say::men
 }
 
 /// The issue as a thing on the page, for the menu: its card's head and foot, and its facts.
-fn seen(ctx: &Ctx, r: &why_core::repos::store::Repos, s: &Stand, i: &Issue) {
+fn seen(ctx: &Ctx, r: &why_core::repo::store::Repos, s: &Stand, i: &Issue) {
     crate::say::menu::see(|| {
         let mut f = facts(ctx, s, i);
-        if r.line(&i.repo) != why_core::repos::lines::MAIN { f.push(Fact::OnWork); }
+        if r.line(&i.repo) != why_core::repo::lines::MAIN { f.push(Fact::OnWork); }
         subject(ctx, s, i, f)
     });
 }
@@ -276,7 +276,7 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
         // Issues are main's, whatever work the repo shows.
         let mut list = r.on_main().issues(n)?;
         if list.iter().any(|i| i.n.is_none()) && !number_loose(ctx, &r, n, &s).is_empty() { list = r.on_main().issues(n)?; }
-        why_core::repos::issues::sort_oldest_first(&mut list);
+        why_core::repo::issues::sort_oldest_first(&mut list);
         offline |= ctx.connected() && !s.known;
         let done = list.iter().filter(|i| s.merged(i)).count();
         if done > 0 { merged.push((n.clone(), done)); }
@@ -302,7 +302,7 @@ pub fn page(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 fn read_issue(ctx: &Ctx, at: &IssueRef) -> Result<Issue> {
     let c = ctx.repos()?.on_main().read(&at.repo, &at.path(), 256 * 1024)?;
-    Ok(why_core::repos::issues::parse(&at.repo, &at.file, &c.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?))
+    Ok(why_core::repo::issues::parse(&at.repo, &at.file, &c.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?))
 }
 
 /// `why issue REPO#N`: one box in full, then its Diff, Review and Reply.
@@ -360,9 +360,9 @@ pub fn issue_show(ctx: &Ctx, call: &Call) -> Result<Reply> {
 
 /// The issue's deeds, and Sign in first while this device is on no Remote (where it stands is not known
 /// without one, and nothing but closing it can be done).
-fn deeds_here(ctx: &Ctx, r: &why_core::repos::store::Repos, s: &Stand, i: &Issue) -> Vec<(&'static str, String)> {
+fn deeds_here(ctx: &Ctx, r: &why_core::repo::store::Repos, s: &Stand, i: &Issue) -> Vec<(&'static str, String)> {
     if s.merged(i) { return Vec::new(); }
-    let mut list = deeds(ctx, s, i, r.line(&i.repo) != why_core::repos::lines::MAIN);
+    let mut list = deeds(ctx, s, i, r.line(&i.repo) != why_core::repo::lines::MAIN);
     if !ctx.connected() && i.closed.is_none() {
         let sign_in = crate::say::menu::offered_here(ctx, crate::words::spec::Group::Git, On::Page, &[]).into_iter().find(|o| o.command.name == "login");
         if let Some(o) = sign_in { list.insert(0, (o.label(), "why login".to_string())); }
@@ -403,22 +403,22 @@ fn set_closed(ctx: &Ctx, call: &Call, close: bool) -> Result<Reply> {
     // The issue is main's, whatever work the repo shows: closed or reopened there, and committed there by itself.
     let main = r.on_main();
     let text = main.read(&at.repo, &at.path(), 256 * 1024)?.text.ok_or_else(|| Error::Refused(tr!("{} is binary", "{} はバイナリです", at.name())))?;
-    let i = why_core::repos::issues::parse(&at.repo, &at.file, &text);
+    let i = why_core::repo::issues::parse(&at.repo, &at.file, &text);
     let s = stand(ctx, &r, &at.repo);
     if s.merged(&i) { return Err(Error::Refused(tr!("{} is merged already", "{} はもう Merge 済みです", at.name()))); }
     // Undecided, it is main's to take or not first, as the app's card offers no Close then.
     if close && s.change(&i).is_some_and(|c| c.state == "open") {
         return Err(Error::Refused(tr!("{0} has an undecided change; decide it first (why reject {0})", "{0} には未決の Change があります。先に決めてください（why reject {0}）", at.name())));
     }
-    let data = |changed: bool| json!({"repo": at.repo, "n": why_core::repos::issues::number_of(&at.file), "file": at.file, "closed": close, "changed": changed});
+    let data = |changed: bool| json!({"repo": at.repo, "n": why_core::repo::issues::number_of(&at.file), "file": at.file, "closed": close, "changed": changed});
     if close == i.closed.is_some() {
         let said = if close { tr!("{} is closed already", "{} はもう閉じています", at.name()) } else { tr!("{} is open", "{} は開いています", at.name()) };
         return Ok(Reply::done(said, data(false)));
     }
     let new = if close {
-        let who = if ctx.connected() { why_core::remote::account().ok().flatten().map(|a| a.name).unwrap_or_default() } else { String::new() };
-        why_core::repos::issues::close_text(&text, format!("{} {who}", out::day(out::now_ms())).trim())
-    } else { why_core::repos::issues::reopen_text(&text) };
+        let who = if ctx.connected() { why_core::shipto::account().ok().flatten().map(|a| a.name).unwrap_or_default() } else { String::new() };
+        why_core::repo::issues::close_text(&text, format!("{} {who}", out::day(out::now_ms())).trim())
+    } else { why_core::repo::issues::reopen_text(&text) };
     main.write(&at.repo, &at.path(), &new, 256 * 1024)?;
     if !ctx.prompt { let _ = history::commit_issue(&r, &at.repo, &at.file, if close { "close" } else { "reopen" }); }
     Ok(Reply::done(if close { tr!("Closed {0}; it will not be done (back with: why issue reopen {0})", "{0} を閉じました。やらないものです（戻すには why issue reopen {0}）", at.name()) }
@@ -432,7 +432,7 @@ pub fn start(ctx: &Ctx, call: &Call) -> Result<Reply> {
         return Err(Error::Refused(tr!("{0} is closed; open it again first (why issue reopen {0})", "{0} は閉じています。先にもう一度開いてください（why issue reopen {0}）", at.name())));
     }
     // One without a number takes its number first, so its work is named by it (as Git would have done).
-    if why_core::repos::issues::number_of(&at.file).is_none() {
+    if why_core::repo::issues::number_of(&at.file).is_none() {
         let s = stand(ctx, &r, &at.repo);
         if let Some((_, new)) = number_loose(ctx, &r, &at.repo, &s).into_iter().find(|(old, _)| *old == at.file) { at.file = new; }
     }
@@ -440,19 +440,19 @@ pub fn start(ctx: &Ctx, call: &Call) -> Result<Reply> {
     // Then the way on, and the way back (bug: only the way back was said, and the card's next was leaving).
     Ok(Reply::done(tr!("Working on {0} — {1} shows its copy now\n  edit in it (why prompt {1}, or why file write), then why commit {1} · back to main: why main {1}",
         "{0} を始めました。{1} はその写しを見せています\n  中で編集して（why prompt {1} か why file write）、why commit {1} · main に戻るには why main {1}", at.shown(), at.repo),
-        json!({"repo": at.repo, "n": why_core::repos::issues::number_of(&at.file), "title": at.title, "file": at.file, "line": l})))
+        json!({"repo": at.repo, "n": why_core::repo::issues::number_of(&at.file), "title": at.title, "file": at.file, "line": l})))
 }
 
 pub fn main(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
     let r = ctx.repos()?;
     let was = r.line(&repo);
-    if was == why_core::repos::lines::MAIN { return Ok(Reply::done(tr!("{} shows main already", "{} はもう main を見せています", repo), json!({"repo": repo, "line": why_core::repos::lines::MAIN, "changed": false}))); }
-    work::switch(&r, &repo, why_core::repos::lines::MAIN)?;
+    if was == why_core::repo::lines::MAIN { return Ok(Reply::done(tr!("{} shows main already", "{} はもう main を見せています", repo), json!({"repo": repo, "line": why_core::repo::lines::MAIN, "changed": false}))); }
+    work::switch(&r, &repo, why_core::repo::lines::MAIN)?;
     let called = line_called(&was);
     let again = if called.starts_with('#') { format!("why start {repo}{called}") } else { format!("why start {called}") };
     Ok(Reply::done(tr!("{} shows main now (the work on {} waits: {})", "{} は main を見せています（{} の作業はそのまま：{}）", repo, called, again),
-        json!({"repo": repo, "line": why_core::repos::lines::MAIN, "was": was, "changed": true})))
+        json!({"repo": repo, "line": why_core::repo::lines::MAIN, "was": was, "changed": true})))
 }
 
 pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
@@ -461,7 +461,7 @@ pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let title = call.word(1).unwrap_or_default().trim().to_string();
     let on = r.line(&repo);
     // Work on an issue commits under its name, as the app does; words given go in as its note.
-    let folded = on != why_core::repos::lines::MAIN && !title.is_empty();
+    let folded = on != why_core::repo::lines::MAIN && !title.is_empty();
     let (line, note) = if folded {
         (String::new(), if call.note().is_empty() { title.clone() } else { format!("{title}\n\n{}", call.note()) })
     } else {
@@ -469,7 +469,7 @@ pub fn commit(ctx: &Ctx, call: &Call) -> Result<Reply> {
         let (first, note) = split_line(&title, call.note());
         (first.trim().to_string(), note)
     };
-    if on == why_core::repos::lines::MAIN && title::kind_of(&line).1.trim().is_empty() {
+    if on == why_core::repo::lines::MAIN && title::kind_of(&line).1.trim().is_empty() {
         return Err(Error::Usage(tr!("On main a commit needs its subject, Kind：subject: why commit [REPO] \"Fix：title\" (on an issue it is named after the issue, and words given are its note: why start REPO#N)", "main では Commit の件名（種別：件名）が要ります：why commit [REPO] \"Fix：件名\"（Issue の作業では Issue の名前で、書いた言葉はメモに：why start REPO#N）")));
     }
     // Nothing changed: said of the repo it looked at (bug: "Nothing to commit", and no more).
@@ -609,7 +609,7 @@ fn counts(binary: bool, added: usize, removed: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use why_core::repos::issues::parse;
+    use why_core::repo::issues::parse;
 
     #[test]
     fn a_line_is_named_by_its_first_line_and_the_rest_is_its_note() {

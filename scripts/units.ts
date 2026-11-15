@@ -55,19 +55,18 @@ export const UNITS: Unit[] = [
     holds: ['module/everyday'], takes: []},
   {name: 'you', says: 'the tools a person reaches for, each a unit of C on lib made to its bound: you (the places one has been, zoxide\'s) and rg (a tree searched, ripgrep\'s), on regular expressions of its own', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',
-    holds: ['module/otter', 'why/core/src/storage'],
+    holds: ['module/otter', 'why/device/storage'],
     takes: ['lib', 'ricebox', 'muk', 'sods']},
   {name: 'cowboy', says: 'what is on its way: links out of a box and between boxes (HTTP, TCP, DNS, WebSocket, SSH)',
-    holds: ['module/cowboy', 'why/core/src/ssh', 'why/cli/src/cmd/ssh.rs', 'why/cli/src/cmd/address.rs'],
+    holds: ['module/cowboy', 'why/cowboy', 'why/cli/src/cmd/ssh.rs', 'why/cli/src/cmd/address.rs'],
     takes: ['sods', 'ricebox']},
   {name: 'shipto', says: 'what a service wants, all of it and nowhere else: who one is, what one may use, deliveries (commits, reviews, merges, messages, releases), the Remote that receives them, and its own deploy',
-    holds: ['why/remote', 'why/core/src/remote', 'why/cli/src/cmd/sync.rs', 'why/cli/src/cmd/git.rs', 'why/cli/src/cmd/remote.rs',
-      'why/shared/desktop-releases.json'],
+    holds: ['why/shipto', 'why/cli/src/cmd/sync.rs', 'why/cli/src/cmd/git.rs', 'why/cli/src/cmd/remote.rs'],
     takes: ['ricebox', 'muk', 'cowboy']},
   {name: 'm8', says: 'where and how many boxes run: a state wanted, and one loop that makes it so (none yet: it is made when boxes run on more than one machine)',
     holds: [], takes: ['ricebox', 'muk', 'shipto']},
-  {name: 'app', says: 'a face: the pages, the window and what the core says to them; no judgement of its own',
-    holds: ['why/app', 'why/desktop', 'why/core', 'why/shared'], takes: ['*']},
+  {name: 'app', says: "why's own parts (what a repo, a home, a Prompt, an Agent's work and a device are to it, its words, its one door) and the faces that show them: the pages and the window, which hold no judgement of their own",
+    holds: ['why'], takes: ['*']},
   {name: 'why', says: "a face: why's words, read against its one table, and what it prints; no judgement of its own",
     holds: ['why/cli'], takes: ['*']},
 ];
@@ -76,8 +75,8 @@ export const UNITS: Unit[] = [
 export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'everyday', 'ricebox'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
-export const NOT_UNITS = ['scripts', 'tests', 'module/sods/test', 'module/muk/test', 'module/sods/examples', 'module/otter/test', 'module/cowboy/test', 'module/cowboy/target',
-  'why/core/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/prompt/target', 'research_notes', 'reports',
+export const NOT_UNITS = ['scripts', 'why/test', 'module/sods/test', 'module/muk/test', 'module/sods/examples', 'module/otter/test', 'module/cowboy/test', 'module/cowboy/target',
+  'why/api/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'module/sods/target', 'module/prompt/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 
@@ -86,6 +85,12 @@ const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\
  * Units: 2 sods out, 3 ricebox, 4 otter's hooks, 6 muk, 7 shipto, 8 cowboy). [from, to, file].
  */
 export const OWED: [string, string, string][] = [
+  // The half of shipto and of cowboy that is in why (why/shipto, why/cowboy: what a page and the core ask of a
+  // service, and this device's SSH) still asks through why's one door and says why's words. Each folder holds all of
+  // its responsibility now, so what it takes of why is seen here; 7 and 8 take it away.
+  ...['connection', 'inbox', 'lifecycle', 'news', 'passkeys.desktop', 'plan', 'policy', 'servers', 'settings']
+    .map((name): [string, string, string] => ['shipto', 'app', `why/shipto/${name}.ts`]),
+  ['cowboy', 'app', 'why/cowboy/ssh.ts'],
 ];
 
 /** The unit of a file (a path from the root): the unit holding the longest path that holds it, or null. */

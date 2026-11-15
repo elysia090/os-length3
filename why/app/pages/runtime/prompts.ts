@@ -1,9 +1,10 @@
-import {grant, granted} from '../../home/network.ts';
-import {bytes, h} from '../../ui/dom.ts';
-import type {Stopped} from '../../host/host.ts';
-import {t, tn} from '../../i18n/i18n.ts';
+import {grant, granted} from '../../../home/network.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import type {Stopped} from '../../../api/host.ts';
+import {t, tn} from '../../../text/i18n.ts';
 import {allSessions, type Prompt} from '../bench/sessions.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button, card} from './parts.ts';
 
 // Runtime's Prompts running, each a small card: where it runs, the memory it holds, and Stop. Shown only when one

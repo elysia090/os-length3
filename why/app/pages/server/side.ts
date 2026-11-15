@@ -1,11 +1,11 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {shown as named, shownAs} from '../../remote/inbox.ts';
-import * as servers from '../../remote/servers.ts';
-import {boardNew} from '../../remote/news.ts';
+import {t} from '../../../text/i18n.ts';
+import {shown as named, shownAs} from '../../../shipto/inbox.ts';
+import * as servers from '../../../shipto/servers.ts';
+import {boardNew} from '../../../shipto/news.ts';
 import {personBadge} from '../kit/pane.ts';
-import {errorText} from '../../host/errors.ts';
-import {every} from '../../host/runs.ts';
+import {errorText} from '../../../api/errors.ts';
+import {every} from '../../../api/runs.ts';
 import {paced, still} from '../../ui/glide.ts';
 import {SPRING} from '../../ui/law.ts';
 

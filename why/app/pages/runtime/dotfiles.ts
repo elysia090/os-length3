@@ -1,10 +1,11 @@
-import {bytes, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import * as dotfiles from '../../home/dotfiles.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import * as dotfiles from '../../../home/dotfiles.ts';
 import {askFoot, SETTLE} from '../kit/common.ts';
 import {allSessions, type Prompt} from '../bench/sessions.ts';
-import {errorText} from '../../host/errors.ts';
-import {onState} from '../../home/state.ts';
+import {errorText} from '../../../api/errors.ts';
+import {onState} from '../../../home/state.ts';
 import {unfold} from '../../ui/glide.ts';
 import {button} from './parts.ts';
 

@@ -23,11 +23,11 @@ test('muk and prompt: each a program and nothing of why\'s; the root in a box is
     assert.ok(existsSync(new URL(`../module/ricebox/${f}`, import.meta.url)), f);
     assert.equal(unitOf(`module/ricebox/${f}`)?.name, 'ricebox');
   }
-  for (const gone of ['why/core/src/prompt/launch.rs', 'why/core/src/prompt/bundle.rs', 'why/core/src/root/unpack.rs', 'why/app/host/prompt/kernel.worker.ts', 'why/app/prompt/ahead.ts']) {
+  for (const gone of ['why/prompt/launch.rs', 'why/prompt/bundle.rs', 'why/prompt/roots/unpack.rs', 'why/prompt/ahead.ts', 'why/prompt/first.ts', 'why/api/kernel.worker.ts']) {
     assert.ok(!existsSync(new URL(`../${gone}`, import.meta.url)), `${gone} is why's no more`);
   }
-  for (const f of ['start.rs', 'running.rs', 'writes.rs']) assert.equal(unitOf(`why/core/src/prompt/${f}`)?.name, 'app');
-  assert.equal(unitOf('why/app/prompt/userland.ts')?.name, 'app');
+  for (const f of ['start.rs', 'running.rs', 'writes.rs']) assert.equal(unitOf(`why/prompt/${f}`)?.name, 'app');
+  assert.equal(unitOf('why/prompt/userland.ts')?.name, 'app');
   assert.equal(unitOf('module/prompt/README.md')?.name, 'prompt');
   assert.deepEqual(unit('prompt').takes, []);
   assert.ok(!unit('muk').takes.includes('prompt'));
@@ -65,7 +65,7 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   assert.equal(new Set(names).size, names.length);
   assert.equal(new Set(paths).size, paths.length);
   for (const u of UNITS) for (const t of u.takes) assert.ok(t === '*' || names.includes(t), `${u.name} takes ${t}`);
-  // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (why/core).
+  // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (why/shipto in why).
   assert.equal(unitOf('module/sods/runtime/translation/translator.ts')?.name, 'sods');
   assert.equal(unitOf('module/sods/runtime/linux/process.ts')?.name, 'sods');
   assert.equal(unitOf('module/ricebox/make/db.ts')?.name, 'ricebox');

@@ -1,4 +1,4 @@
-import {indentOf, leading, lineEnd, lineOf, lineStarts, type Mark} from '../../repos/edit.ts';
+import {indentOf, leading, lineEnd, lineOf, lineStarts, type Mark} from '../../../repo/edit.ts';
 import {keep, type Writes} from './edit-apply.ts';
 import {bringLead, drawMarks} from './edit-marks.ts';
 

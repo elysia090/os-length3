@@ -1,5 +1,5 @@
 #!/bin/sh
-# The web root this tree's app is built with (public/webroot): the root why pins newest (why/core/src/root/pins.rs,
+# The web root this tree's app is built with (public/webroot): the root why pins newest (why/prompt/roots/pins.rs,
 # fetched by scripts/root-file.ts when it is not given), made into layers by ricebox itself
 # (module/ricebox/make/layers.sh: its index, packs and blobs, and the box's maker beside them).
 #

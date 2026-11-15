@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {moveTime} from '../../ui/law.ts';
 import {RowDesk} from '../../ui/row-desk.ts';
 

@@ -1,10 +1,11 @@
-import {dateFormat, h} from '../../ui/dom.ts';
+import {h} from '../../ui/dom.ts';
+import {dateFormat} from '../../../text/format.ts';
 import {arrive, closeUp, paced, still} from '../../ui/glide.ts';
-import {t} from '../../i18n/i18n.ts';
-import {shown} from '../../remote/inbox.ts';
-import * as servers from '../../remote/servers.ts';
-import {coalesced, every} from '../../host/runs.ts';
-import {errorText} from '../../host/errors.ts';
+import {t} from '../../../text/i18n.ts';
+import {shown} from '../../../shipto/inbox.ts';
+import * as servers from '../../../shipto/servers.ts';
+import {coalesced, every} from '../../../api/runs.ts';
+import {errorText} from '../../../api/errors.ts';
 import {personBadge} from '../kit/pane.ts';
 import {SPRING} from '../../ui/law.ts';
 

@@ -720,17 +720,17 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | A piece's place is its number; where the desk rests; going to a piece, every case; a phone by the same rule (§6) | `why/app/pages/forge/desk-layout.test.ts` |
 | A piece's width at every window; a row whose first sheet is narrower than its pieces (§3, §6) | `why/app/ui/row.test.ts` |
 | The rail's order; which pages are a place's far side, where each door leads and that it leads back (§4) | `why/app/host/purposes.test.ts` |
-| What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `tests/app/sound.spec.ts` |
-| Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `tests/app/skeleton.spec.ts` |
-| Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `tests/app/skeleton.spec.ts` |
-| A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `tests/app/server.spec.ts` |
-| Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone (§10) | `tests/app/home.spec.ts` |
-| Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `tests/app/forge-work.spec.ts` |
-| Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `tests/app/focus.spec.ts` |
-| The window's edges are the frame's; a press just off a menu is the menu's (§7) | `tests/app/favour.spec.ts` |
-| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off at once, at rest within 420 ms (§8) | `tests/app/motion.spec.ts` |
-| File comes by a press and by nothing else (§7) | `tests/app/file.spec.ts` |
-| A phone has the same rules (§1) | `tests/app/narrow.spec.ts` |
+| What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `why/test/app/sound.spec.ts` |
+| Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
+| Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `why/test/app/skeleton.spec.ts` |
+| A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `why/test/app/server.spec.ts` |
+| Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone (§10) | `why/test/app/home.spec.ts` |
+| Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `why/test/app/forge-work.spec.ts` |
+| Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `why/test/app/focus.spec.ts` |
+| The window's edges are the frame's; a press just off a menu is the menu's (§7) | `why/test/app/favour.spec.ts` |
+| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off at once, at rest within 420 ms (§8) | `why/test/app/motion.spec.ts` |
+| File comes by a press and by nothing else (§7) | `why/test/app/file.spec.ts` |
+| A phone has the same rules (§1) | `why/test/app/narrow.spec.ts` |
 
 `npm test` runs the first five; `npm run selftest` the rest, in a browser against a real Remote.
 

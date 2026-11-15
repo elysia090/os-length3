@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {connection} from '../../remote/connection.ts';
-import {me, type Me} from '../../remote/inbox.ts';
-import * as servers from '../../remote/servers.ts';
-import {boardNew, onNews} from '../../remote/news.ts';
+import {t} from '../../../text/i18n.ts';
+import {connection} from '../../../shipto/connection.ts';
+import {me, type Me} from '../../../shipto/inbox.ts';
+import * as servers from '../../../shipto/servers.ts';
+import {boardNew, onNews} from '../../../shipto/news.ts';
 import {openNext} from '../kit/next.ts';
 import {arrive, panAcross, paced, pop, stage} from '../../ui/glide.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {pageHead} from '../kit/common.ts';
 import type {Context} from '../kit/context.ts';
 import {goToPlan} from '../kit/plan-gate.ts';

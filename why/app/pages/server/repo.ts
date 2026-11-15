@@ -1,9 +1,10 @@
-import {ago, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {shown as named, shownAs} from '../../remote/inbox.ts';
-import * as servers from '../../remote/servers.ts';
+import {h} from '../../ui/dom.ts';
+import {ago} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import {shown as named, shownAs} from '../../../shipto/inbox.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {button} from './parts.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 
 /** Past this, a file shown is cut short. */
 const SHOW_BYTES = 256 * 1024;

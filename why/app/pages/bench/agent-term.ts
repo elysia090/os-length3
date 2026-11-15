@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {still} from '../../ui/glide.ts';
 import {workAt} from '../../ui/camera.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import type {Flow} from './agent.ts';
 
 // The Agent's own terminal, born on the desk beside the person's when it is asked from there (`agent ...` run in the

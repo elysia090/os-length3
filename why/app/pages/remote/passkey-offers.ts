@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import * as account from '../../remote/connection.ts';
+import {t} from '../../../text/i18n.ts';
+import * as account from '../../../shipto/connection.ts';
 import {putAway} from '../../ui/glide.ts';
 import {answers} from '../kit/common.ts';
 import {atSignIn, button, pressing} from '../kit/remote-parts.ts';

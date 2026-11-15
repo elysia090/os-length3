@@ -2,8 +2,8 @@
 // happens to the work, and a button to the Plan (pages/remote/plan.ts is the Plan itself).
 
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {planRefusal, refusalWords, type PlanRefusal} from '../../remote/plan.ts';
+import {t} from '../../../text/i18n.ts';
+import {planRefusal, refusalWords, type PlanRefusal} from '../../../shipto/plan.ts';
 import {choosePart} from './common.ts';
 import type {Context} from './context.ts';
 

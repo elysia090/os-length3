@@ -1,14 +1,14 @@
 import {h} from '../../ui/dom.ts';
-import * as gitops from '../../repos/history.ts';
-import {issueName, issuePath, readIssues, type Issue} from '../../repos/issues.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {onRenamed, rekey} from '../../repos/repos.ts';
+import * as gitops from '../../../repo/history.ts';
+import {issueName, issuePath, readIssues, type Issue} from '../../../repo/issues.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {onRenamed, rekey} from '../../../repo/repos.ts';
 import type {Run} from './sessions.ts';
 import {answers} from '../kit/common.ts';
-import {connection} from '../../remote/connection.ts';
+import {connection} from '../../../shipto/connection.ts';
 import {kindWords} from '../kit/todo-list.ts';
 import {diffFiles, fileName} from '../kit/diff-view.ts';
-import {issueStore} from '../../repos/issue-store.ts';
+import {issueStore} from '../../../repo/issue-store.ts';
 import type {Ask} from './asks.ts';
 import {answerNodes} from './agent.ts';
 

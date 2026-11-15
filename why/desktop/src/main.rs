@@ -31,7 +31,7 @@ mod shells {
     impl Shells { pub fn open_repos(&self) -> Vec<String> { Vec::new() } }
 }
 
-// Every command a page sends goes to the core's one dispatcher (why/core/src/api/), the same one a browser runs
+// Every command a page sends goes to the core's one dispatcher (why/api/), the same one a browser runs
 // built for the web: the app adds only what a host does around it. A command without `async` runs on the
 // window's own thread (Tauri 2), and the window draws nothing until it returns, so only writes run there,
 // which keeps two writes in the order the page sent them; the rest (walks of the disk, the network) run off it.
@@ -115,13 +115,13 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-// ---- SSH into this device's Prompts (why/core/src/ssh/; the listener is why's) ----
+// ---- SSH into this device's Prompts (why/cowboy/; the listener is why's) ----
 
 /// This device's SSH as its card shows it (core ssh::Here): whether it listens, who may connect, where each repo is
 /// reached, its host key and how many keys are let in. Worked out here; none of it goes to the Remote.
 #[cfg(unix)]
 fn ssh_now() -> serde_json::Value {
-    serde_json::to_value(why_core::ssh::here(&paths::data_dir())).unwrap_or_default()
+    serde_json::to_value(why_core::cowboy::here(&paths::data_dir())).unwrap_or_default()
 }
 
 #[cfg(not(unix))]
@@ -155,7 +155,7 @@ async fn ssh_set(on: bool, scope: Option<String>) -> Result<serde_json::Value, S
     }).await
 }
 
-// ---- one app on a device, and why app (why/core/src/device/desktop.rs) ----
+// ---- one app on a device, and why app (why/device/desktop.rs) ----
 
 /// What the app answers why on its socket: it is here; its window forward; its window closed, as its close
 /// button closes it (the last window closed, the app ends as it always does).

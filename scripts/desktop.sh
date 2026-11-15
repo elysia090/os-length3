@@ -2,8 +2,8 @@
 # The desktop app as it ships, a .deb and an AppImage, each with why beside the app: /usr/bin/why from the .deb
 # (on the PATH, beside /usr/bin/why-desktop), usr/bin/why inside the AppImage. why is the command line (`why app`
 # opens the window; `why prompt`, `why address`), and it is what the app itself runs for a Prompt and for SSH
-# (core/src/prompt/running.rs why_path: the why beside the app), so an app without it opens neither. Beside why,
-# the two programs it starts a box with (core/src/prompt/start.rs): muk, which makes it (module/muk), and prompt,
+# (why/prompt/running.rs why_path: the why beside the app), so an app without it opens neither. Beside why,
+# the two programs it starts a box with (why/prompt/start.rs): muk, which makes it (module/muk), and prompt,
 # which holds the other end of its terminal (module/prompt).
 #
 #   sh scripts/desktop.sh [VERSION]
@@ -44,9 +44,9 @@ gles=$(readlink -f "$gles")
 # What is said over why/desktop/tauri.conf.json: this version, why beside the app, libGLESv2 in the AppImage, the
 # .deb's profile and its scripts (and that it takes the place of length3-os, the package it was up to 0.6.4), and the
 # webview's policy for the Remote the page is built for (VITE_LENGTH3_REMOTE, as vite.config.ts reads it), from
-# why/app/host/policy.ts.
+# why/shipto/policy.ts.
 config=$(VERSION="$version" GLES="$gles" node --input-type=module -e '
-import {DEFAULT_REMOTE, desktopPolicy} from "./why/app/host/policy.ts";
+import {DEFAULT_REMOTE, desktopPolicy} from "./why/shipto/policy.ts";
 const remote = process.env.VITE_LENGTH3_REMOTE ?? DEFAULT_REMOTE;
 console.log(JSON.stringify({version: process.env.VERSION, build: {beforeBuildCommand: "npx vite build --config why/app/vite.config.ts"},
   bundle: {externalBin: ["binaries/why", "binaries/muk", "binaries/prompt"], linux: {appimage: {files: {"/usr/lib/libGLESv2.so.2": process.env.GLES}},

@@ -5,7 +5,7 @@ export type {Segment};
 export interface Blob { path: string; sha256: string; size: number; bytes: number }
 export interface About {
   name: string; version: string;
-  /** The root this why was made from, by the digest why/core/src/root pins: the same as the app's. */
+  /** The root this why was made from, by the digest why/prompt/roots pins: the same as the app's. */
   sha256: string; bytes: number; file: string;
   root: {name: string; profile: string};
   index: {path: string; sha256: string; size: number};

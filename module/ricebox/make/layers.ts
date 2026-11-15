@@ -10,7 +10,7 @@
 // (module/ricebox/make/tree.ts). OUT (public/webroot) receives:
 //
 //   webroot.json               what why this is: {name: 'why', version, sha256 and bytes
-//                         of the root (the digest why/core/src/root/pins.rs pins), file,
+//                         of the root (the digest why/prompt/roots/pins.rs pins), file,
 //                         root: {name, profile}, index: {path, sha256, size},
 //                         translator: {name, version}}. The one name that is not a
 //                         digest; everything it names is.
@@ -20,7 +20,7 @@
 //                         the translations made ahead of time ({path, sha256 of the
 //                         program, elf, wasm}, each a blob: {path, sha256, size,
 //                         bytes}); its digest is what a
-//                         release pins for the web (why/core/src/root/pins.rs, `web`)
+//                         release pins for the web (why/prompt/roots/pins.rs, `web`)
 //   packs/<sha256>.pack   one per package of the root (lib/apk/db/installed says
 //                         which owns a file; what none owns is one more, `local`):
 //                         its table (the SHA-256 of each file it stores), then its

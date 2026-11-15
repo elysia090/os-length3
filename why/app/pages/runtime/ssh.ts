@@ -1,11 +1,13 @@
-import {ago, h} from '../../ui/dom.ts';
-import {isNative} from '../../host/host.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {connection, deviceWord} from '../../remote/connection.ts';
-import * as ssh from '../../prompt/ssh.ts';
+import {h} from '../../ui/dom.ts';
+import {ago} from '../../../text/format.ts';
+import {isNative} from '../../../api/host.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {connection, deviceWord} from '../../../shipto/connection.ts';
+import * as ssh from '../../../cowboy/ssh.ts';
+import * as told from '../../../shipto/ssh.ts';
 import {copying} from '../kit/common.ts';
-import {every} from '../../host/runs.ts';
-import {errorText} from '../../host/errors.ts';
+import {every} from '../../../api/runs.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button, card} from './parts.ts';
 
 // Runtime's SSH: who listens for it on this account's devices, and this device's own, in the app.
@@ -31,7 +33,7 @@ export function sshSection(): HTMLElement {
     if (!section.isConnected && section.dataset.drawn) return;
     section.dataset.drawn = '1';
     if (!connection()) { section.hidden = true; return; }
-    const [list, here] = await Promise.all([ssh.listening().catch(() => null), ssh.here().catch(() => null)]);
+    const [list, here] = await Promise.all([told.listening().catch(() => null), ssh.here().catch(() => null)]);
     if (!list) return;
     // This device's own is the app's card, from what it has here; the Remote's row for it says no more.
     const others = list.filter((l) => !(isNative && l.current));
@@ -45,7 +47,7 @@ export function sshSection(): HTMLElement {
   };
   // Drawn again now and then while it is on screen, not while the page or app is hidden, slower while nobody is at it,
   // and not at all once nobody has been for ten minutes (when each device was last heard is the database's to say,
-  // not the mark's: why/remote/serve/mark.ts), until someone is back, when it is drawn at once.
+  // not the mark's: why/shipto/remote/serve/mark.ts), until someone is back, when it is drawn at once.
   void paint().then(() => every(15_000, paint, {alive: () => section.isConnected, restsWhenAway: true}));
   return section;
 }
@@ -67,11 +69,11 @@ function power(on: boolean, label: string, act: () => Promise<unknown> | void, s
 const whom = (s: ssh.Scope) => (s === 'network' ? t('Listening for SSH from local network devices') : t('Listening for SSH from this device only'));
 
 /** Another device of the account that listens: its name and to whom, and its switch, which turns it off there. */
-function otherCard(l: ssh.Listening, again: () => void): HTMLElement {
+function otherCard(l: told.Listening, again: () => void): HTMLElement {
   const said = h('p', {class: 'error small', role: 'alert'});
   const name = deviceWord(l.agent);
-  const lines: (string | Node)[] = [whom(l.scope), ssh.quiet(l) ? t('No signal since {when}', {when: ago(l.seen)}) : t('Active since {when}', {when: ago(l.since)}), said];
-  return card(name, lines, power(true, t('Disable SSH on {device}', {device: name}), () => ssh.turnOff(l.device), said, again), 'ssh-card');
+  const lines: (string | Node)[] = [whom(l.scope), told.quiet(l) ? t('No signal since {when}', {when: ago(l.seen)}) : t('Active since {when}', {when: ago(l.since)}), said];
+  return card(name, lines, power(true, t('Disable SSH on {device}', {device: name}), () => told.turnOff(l.device), said, again), 'ssh-card');
 }
 
 /** This device's card, in the app: what it is, plainly, worked out here (core ssh::Here). */

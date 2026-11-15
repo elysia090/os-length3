@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {nudge} from '../../ui/glide.ts';
-import {RemoteError} from '../../host/errors.ts';
-import * as servers from '../../remote/servers.ts';
+import {RemoteError} from '../../../api/errors.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {postNow} from './talk.ts';
 import {button, type Shown} from './parts.ts';
-import {Drafts} from '../../home/drafts.ts';
-import {errorText} from '../../host/errors.ts';
+import {Drafts} from '../../../home/drafts.ts';
+import {errorText} from '../../../api/errors.ts';
 
 /**
  * A post half written stays with its board (DESIGN §1): going to another board, or to another

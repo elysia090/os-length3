@@ -5,7 +5,7 @@ use crate::words::args::Call;
 use crate::say::out::{bytes, Error, files, Reply, Result};
 use crate::words::spec::{Fact, On};
 use crate::words::target;
-use why_core::{home, remote, tr};
+use why_core::{home, shipto, tr};
 use serde_json::json;
 
 /// `why repo`: each repo here and where it stands, then those only on the Remote.
@@ -13,13 +13,13 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
     let r = ctx.repos()?;
     let here = r.list(false)?;
     let connected = ctx.connected();
-    let there = if connected { remote::remote_repos().unwrap_or_default() } else { Vec::new() };
-    let only_there: Vec<&remote::RemoteRepo> = there.iter().filter(|t| !here.iter().any(|h| h.name == t.name)).collect();
+    let there = if connected { shipto::remote_repos().unwrap_or_default() } else { Vec::new() };
+    let only_there: Vec<&shipto::RemoteRepo> = there.iter().filter(|t| !here.iter().any(|h| h.name == t.name)).collect();
     let mut rows = Vec::new();
     let mut t = Vec::new();
     for s in &here {
-        let line = if ctx.prompt { why_core::repos::lines::MAIN.to_string() } else { r.line(&s.name) };
-        let st = if ctx.prompt { None } else { remote::status_of(&r, &s.name).ok() };
+        let line = if ctx.prompt { why_core::repo::lines::MAIN.to_string() } else { r.line(&s.name) };
+        let st = if ctx.prompt { None } else { shipto::status_of(&r, &s.name).ok() };
         // Where it stands with the Remote, as a word for data and words for a person.
         let (state, said) = match &st {
             None => ("unknown", String::new()),
@@ -28,7 +28,7 @@ pub fn repo_list(ctx: &Ctx, _: &Call) -> Result<Reply> {
             Some(st) if st.changed > 0 => ("changed", tr!(" · {} not sent", " · {}件未送信", st.changed)),
             Some(_) => ("inStep", tr!(" · in step", " · Remote と同じ")),
         };
-        let working = if line != why_core::repos::lines::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
+        let working = if line != why_core::repo::lines::MAIN { tr!(" · working on {}", " · {} の作業中", super::git::line_called(&line)) } else { String::new() };
         crate::say::menu::see(|| crate::say::menu::Subject { on: On::Repo, word: s.name.clone(), repo: Some(s.name.clone()), label: s.name.clone(),
             detail: format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes)), facts: Vec::new() });
         t.push((s.name.clone(), format!("{} · {}{working}{said}", files(s.files as usize), bytes(s.bytes))));
@@ -51,8 +51,8 @@ pub fn repo_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
     }
     let template = call.flags.template.as_deref().unwrap_or("standard");
     // One of the words -t shows, like any choice: another is not how it is written (2).
-    if why_core::repos::templates::find(template).is_none() {
-        let ids: Vec<String> = why_core::repos::templates::all().into_iter().map(|t| t.id).collect();
+    if why_core::repo::templates::find(template).is_none() {
+        let ids: Vec<String> = why_core::repo::templates::all().into_iter().map(|t| t.id).collect();
         return Err(Error::Usage(tr!("No template {} ({})", "テンプレート {} はありません（{}）", template, ids.join(", "))));
     }
     let s = ctx.repos()?.create(name, template)?;
@@ -64,7 +64,7 @@ pub fn repo_new(ctx: &Ctx, call: &Call) -> Result<Reply> {
 pub fn repo_mv(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
     let to = call.word(1).unwrap_or_default();
-    remote::rename_repo(&ctx.repos()?, &repo, to, &[])?;
+    shipto::rename_repo(&ctx.repos()?, &repo, to, &[])?;
     Ok(Reply::done(tr!("Renamed {} to {}", "{} の名前を {} に変えました", repo, to), json!({"repo": to, "was": repo})))
 }
 
@@ -73,12 +73,12 @@ pub fn repo_mv(ctx: &Ctx, call: &Call) -> Result<Reply> {
 /// from here, and why says where it is.
 pub fn repo_rm(ctx: &Ctx, call: &Call) -> Result<Reply> {
     let repo = target::repo(ctx, call, 0)?;
-    if remote::agreed(&repo) {
+    if shipto::agreed(&repo) {
         return Err(Error::Refused(tr!(
             "{} is on the Remote: turn it off there first (in the app, its gear's Delete), which asks for your passkey",
             "{} は Remote にあります。先にそちらで止めてください（アプリでは歯車の「削除」。パスキーを求められます）", repo)));
     }
-    remote::delete_repo(&ctx.repos()?, &repo, &[])?;
+    shipto::delete_repo(&ctx.repos()?, &repo, &[])?;
     Ok(Reply::done(tr!("Deleted {} from this device", "{} をこの端末から消しました", repo), json!({"repo": repo})))
 }
 
@@ -147,12 +147,12 @@ pub fn prompt(ctx: &Ctx, call: &Call) -> Result<Reply> {
         crate::say::out::note(&tr!("exit (or Ctrl-D) comes back to the menu; Ctrl-C goes to what runs in the Prompt", "exit（か Ctrl-D）でメニューに戻ります。Ctrl-C は Prompt の中で動くものに届きます"));
     }
     // Recorded from the start, by the process that runs it, so `why prompt ls` (and Runtime) see it, `why prompt stop`
-    // can end it, and nothing it holds is freed (storage/): first being prepared, as what .packages and .setup ask for
+    // can end it, and nothing it holds is freed (device/storage/): first being prepared, as what .packages and .setup ask for
     // is set up (once, while they and the root stay as they are), then running. The box is muk's, a process of its
     // own: this one keeps its own namespaces, and runs another after it as it ran this.
     let code = (|| -> std::io::Result<i32> {
         let mut recorded = running::record(data, &repo, s.network, &s.root)?;
-        // Recorded, what it holds stays; room is made round it if the device is short (storage/free.rs make_room).
+        // Recorded, what it holds stays; room is made round it if the device is short (device/storage/free.rs make_room).
         why_core::storage::make_room(data, paths::repos_dir(), PROMPT_ROOM);
         s.set_up()?;
         recorded.ready()?;

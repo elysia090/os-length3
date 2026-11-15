@@ -20,7 +20,7 @@ const PAYLOAD: usize = 4 * 1024 * 1024;
 
 /// A session as a line: the harness, where (repo, and the issue as #N), what it does, how long ago.
 fn said(s: &activity::Session) -> (String, String) {
-    let at = if s.line == why_core::repos::lines::MAIN { s.repo.clone() } else { format!("{} {}", s.repo, super::git::line_called(&s.line)) };
+    let at = if s.line == why_core::repo::lines::MAIN { s.repo.clone() } else { format!("{} {}", s.repo, super::git::line_called(&s.line)) };
     let state = match s.state.as_str() {
         "working" => tr!("working", "作業中"),
         "waits" => tr!("waits for you", "あなたを待っています"),
@@ -32,7 +32,7 @@ fn said(s: &activity::Session) -> (String, String) {
 
 /// Where a task is, as a person calls it: the repo, and its issue as #N.
 fn task_at(k: &tasks::Task) -> String {
-    if k.issue.is_empty() { k.repo.clone() } else { format!("{} {}", k.repo, why_core::repos::issues::number(&k.issue)) }
+    if k.issue.is_empty() { k.repo.clone() } else { format!("{} {}", k.repo, why_core::repo::issues::number(&k.issue)) }
 }
 
 /// A task as a line: what it is for, and the deed that goes on with it.
@@ -283,8 +283,8 @@ pub fn run(ctx: &Ctx, _: &Call) -> Result<Reply> {
         }
         drop(hold);
         // One set off while this let go is left to this one: nothing waiting is ever left without a runner.
-        let shown = why_core::repos::lines::current(&repo);
-        if !tasks::all().iter().any(|k| k.repo == repo && k.state == tasks::State::Waiting && (!k.deed.writes() || shown == why_core::repos::lines::MAIN || shown == k.line)) {
+        let shown = why_core::repo::lines::current(&repo);
+        if !tasks::all().iter().any(|k| k.repo == repo && k.state == tasks::State::Waiting && (!k.deed.writes() || shown == why_core::repo::lines::MAIN || shown == k.line)) {
             return Ok(Reply::Nothing);
         }
     }
@@ -306,12 +306,12 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     let name = harness.as_deref().map(tasks::agent_name).unwrap_or_default();
     // What writes runs on the issue's own copy, shown as the work the person would have started; what reads, on the
     // copy it is about.
-    if k.deed.writes() && why_core::repos::lines::current(repo) != line {
-        let at = if why_core::repos::lines::worktree(repo, line).is_dir() { work::switch(&repos, repo, line) } else { work::start(&repos, repo, &k.issue).map(|_| ()) };
+    if k.deed.writes() && why_core::repo::lines::current(repo) != line {
+        let at = if why_core::repo::lines::worktree(repo, line).is_dir() { work::switch(&repos, repo, line) } else { work::start(&repos, repo, &k.issue).map(|_| ()) };
         if let Err(why) = at { return stopped(why, if ctx.connected() { String::new() } else { "why login".into() }); }
     }
-    let copy = why_core::repos::lines::worktree(repo, line);
-    let dir = if why_core::repos::lines::current(repo) == line || line == why_core::repos::lines::MAIN || !copy.is_dir() { repos.dir(repo) } else { Ok(copy) };
+    let copy = why_core::repo::lines::worktree(repo, line);
+    let dir = if why_core::repo::lines::current(repo) == line || line == why_core::repo::lines::MAIN || !copy.is_dir() { repos.dir(repo) } else { Ok(copy) };
     let Ok(dir) = dir else { return stopped(tr!("{} is not here", "{} はここにありません", repo), String::new()) };
     let command = match &harness {
         None => match tasks::tests_command(&dir) { Some(c) => c, None => return stopped(String::new(), String::new()) },
@@ -325,7 +325,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     }
     // The issue's words, and for a review the change's files, weighed: the order it reads in.
     let issue = (!k.issue.is_empty()).then(|| repos.on_main().read(repo, &k.issue, 64 * 1024).ok().and_then(|c| c.text)
-        .map(|t| why_core::repos::issues::parse(repo, k.issue.trim_start_matches("issue/"), &t))).flatten();
+        .map(|t| why_core::repo::issues::parse(repo, k.issue.trim_start_matches("issue/"), &t))).flatten();
     let number = issue.as_ref().and_then(|i| i.n).map(|n| format!("#{n}")).unwrap_or_else(|| line.to_string());
     let detail = issue.as_ref().map(|i| i.detail.clone()).unwrap_or_default();
     let (parts, files) = if k.deed == tasks::Deed::Review {
@@ -454,7 +454,7 @@ fn watched(pid: u32, budget: &spec::Budget, ended: &std::sync::atomic::AtomicBoo
 /// Ends with its command's code.
 #[cfg(target_os = "linux")]
 pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use why_core::{home, prompt::running, prompt::start, root};
+    use why_core::{home, prompt::running, prompt::start, roots};
     let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (WHY_REPO)", "どの repo ですか（WHY_REPO）")))?;
     task_id(call)?;
     let spec: spec::Spec = serde_json::from_str(&std::env::var("WHY_SPEC").unwrap_or_default())
@@ -464,12 +464,12 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
         return Err(Error::Refused(tr!("{} has no network here (why network on {0})", "{} にはここでネットワークがありません（why network on {0}）", repo)));
     }
     let data = paths::data_dir();
-    let held = root::held(data).into_iter().map(|(a, _)| a).find(|a| a.sha256 == spec.root)
+    let held = roots::held(data).into_iter().map(|(a, _)| a).find(|a| a.sha256 == spec.root)
         .ok_or_else(|| Error::NotFound(tr!("The root it runs on is not here (why root fetch)", "実行する root がここにありません（why root fetch）")))?;
-    let root = root::system_dir(data).join(&spec.root).join("root");
+    let root = roots::system_dir(data).join(&spec.root).join("root");
     let repos = ctx.repos()?;
-    let copy = why_core::repos::lines::worktree(&repo, &spec.line);
-    let dir = if spec.line == why_core::repos::lines::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
+    let copy = why_core::repo::lines::worktree(&repo, &spec.line);
+    let dir = if spec.line == why_core::repo::lines::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
     let s = start::Prompt { root, other: held.distro.is_some(), repo: dir, name: repo.clone(), cmd: spec.argv.clone(), network: spec.network,
         dotfiles: start::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: [spec.env.clone(), why_core::device::agent_key::env()].concat() };
     // Recorded as any Prompt is: why prompt ls and Runtime see it, why prompt stop ends it.

@@ -46,7 +46,7 @@ export function createRoot(config: RootConfig) {
 const threadsApart = canRunApart;
 
 // why, the one thing the Prompt depends on: the release root the desktop app
-// installs (why/core/src/root pins it, one entry for both), read here as the
+// installs (why/prompt/roots pins it, one entry for both), read here as the
 // browser reads it (module/ricebox/make/layers.ts). webroot.json says which why it is (its
 // version, and the sha256 of the root it was made from) and names its index
 // by digest; everything else is named by its digest too:

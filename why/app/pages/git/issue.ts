@@ -1,18 +1,19 @@
 import {kindWords} from '../kit/todo-list.ts';
-import {ago, day, h} from '../../ui/dom.ts';
+import {h} from '../../ui/dom.ts';
+import {ago, day} from '../../../text/format.ts';
 import {arrive, LAND, lift, type Lifted, morph, paced, putAway, still} from '../../ui/glide.ts';
-import * as git from '../../repos/history.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../../repos/issues.ts';
-import {connection, myName} from '../../remote/connection.ts';
-import {changeFor, type Standing} from '../../repos/git-state.ts';
-import {named} from '../../repos/text.ts';
+import * as git from '../../../repo/history.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {closeMark, issueName, issuePath, saveIssue, setClosed, type Issue} from '../../../repo/issues.ts';
+import {connection, myName} from '../../../shipto/connection.ts';
+import {changeFor, type Standing} from '../../../repo/git-state.ts';
+import {named} from '../../../repo/text.ts';
 import {diffFiles} from '../kit/diff-view.ts';
 import {beingChanged, issueEditor} from './issue-form.ts';
 import {agentLine, agentMark} from './agent-line.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {busy} from './held.ts';
-import {issueStore} from '../../repos/issue-store.ts';
+import {issueStore} from '../../../repo/issue-store.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // An issue on the Git page, as one large box (issue #17). Its branch and
@@ -356,7 +357,7 @@ export function notCommitted(at: string, line: string, n: number, events: IssueE
   // an issue's own file (written, its words changed, closed) shut to its line, "#3 Fix：title".
   const copy = `${at}\0${line}`;
   // On main, an issue's own file is not the person's to commit: it is committed by itself as it is written
-  // (repos/issue-store.ts), so one on its way there is not shown waiting here.
+  // (repo/issue-store.ts), so one on its way there is not shown waiting here.
   const theirs = (list: git.FileDiff[]) => (line === 'main' ? list.filter((f) => !f.path.startsWith('issue/')) : list);
   const files = (list: git.FileDiff[]) => diffFiles(theirs(list), {reveal: (p) => events.open(at, p), cut: 30, kept: copy,
     issue: (p) => aboutIssue.get(`${at}\0${p}`) ?? null});

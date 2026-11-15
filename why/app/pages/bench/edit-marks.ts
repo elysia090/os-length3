@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {LAND, paced, still} from '../../ui/glide.ts';
-import {lineOf, lineStarts, type Mark} from '../../repos/edit.ts';
+import {lineOf, lineStarts, type Mark} from '../../../repo/edit.ts';
 
 // What the box's Edit shows on the file in front (edit-box.ts): marks drawn under the editor's words, in a layer of
 // their own laid over it, where its letters are: the line held, what is chosen in it and the box's caret, as the box

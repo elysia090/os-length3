@@ -1,11 +1,12 @@
-import {day, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {RemoteError} from '../../host/errors.ts';
-import * as servers from '../../remote/servers.ts';
+import {h} from '../../ui/dom.ts';
+import {day} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import {RemoteError} from '../../../api/errors.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {nudge} from '../../ui/glide.ts';
 import {deed} from '../kit/common.ts';
 import {planRefused} from '../kit/plan-gate.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button, fitting, type Here} from './parts.ts';
 import {ghostBody} from './board.ts';
 
@@ -125,7 +126,7 @@ function fields(say: string, sayAt: string) {
 function refused(e: unknown, ask: HTMLElement, here: Here, reveal: () => void, ways: MakingWays) {
   const plan = planRefused(e, () => ways.plan());
   if (plan) ask.replaceChildren(plan);
-  // Told apart by what the Remote said in its own words (why/remote/talk/servers.ts), not by the words shown here.
+  // Told apart by what the Remote said in its own words (why/shipto/remote/talk/servers.ts), not by the words shown here.
   else if (e instanceof RemoteError && (e.status === 409 || e.status === 400 && /^(Its name|Only on a domain)/.test(String(e.detail.error)))) {
     // The name on this Remote is someone else's (or held for them), or one it cannot be (a name in other
     // letters follows to nothing): the address shows, to be written otherwise.

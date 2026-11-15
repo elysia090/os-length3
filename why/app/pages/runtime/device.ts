@@ -1,13 +1,14 @@
-import {bytes, h} from '../../ui/dom.ts';
-import {isNative, rootFetch, rootHere, rootStatus, type Certainty, type Freed, type RootStatus, type Space} from '../../host/host.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {bring, remoteOnly, repoState} from '../../remote/lifecycle.ts';
-import {connection} from '../../remote/connection.ts';
-import {free} from '../../account/space.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import {isNative, rootFetch, rootHere, rootStatus, type Certainty, type Freed, type RootStatus, type Space} from '../../../api/host.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {bring, remoteOnly, repoState} from '../../../shipto/lifecycle.ts';
+import {connection} from '../../../shipto/connection.ts';
+import {free} from '../../../device/space.ts';
 import type {Context} from '../kit/context.ts';
 import {syncWord} from '../remote/repo-card.ts';
 import {repoGear} from '../remote/repo-gear.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button} from './parts.ts';
 
 // Runtime's This device (This browser, on the web): what the OS holds here.

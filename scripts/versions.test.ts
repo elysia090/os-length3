@@ -12,7 +12,7 @@ test("why's version is why/VERSION's in each of its manifests", () => {
   assert.match(version, /^\d+\.\d+\.\d+$/);
   assert.equal(JSON.parse(read('package.json')).version, version);
   assert.equal(JSON.parse(read('why/desktop/tauri.conf.json')).version, version);
-  for (const crate of ['why/core', 'why/core/web', 'why/cli', 'why/desktop']) {
+  for (const crate of ['why', 'why/api/web', 'why/cli', 'why/desktop']) {
     assert.equal(/^version = "([^"]+)"/m.exec(read(`${crate}/Cargo.toml`))?.[1], version, crate);
   }
 });

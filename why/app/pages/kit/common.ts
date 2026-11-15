@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
-import {errorText} from '../../host/errors.ts';
-import {t} from '../../i18n/i18n.ts';
+import {errorText} from '../../../api/errors.ts';
+import {t} from '../../../text/i18n.ts';
 import {icon, mark, type MarkName} from '../../ui/icons.ts';
 import {arrive, glide, pop, still, where} from '../../ui/glide.ts';
 import {purpose, RAIL, type PurposeId} from '../../host/purposes.ts';

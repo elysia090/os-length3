@@ -1,9 +1,9 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {fileName} from '../kit/diff-view.ts';
 import {firstLine} from './kinds.ts';
-import {onRenamed, rekey} from '../../repos/repos.ts';
+import {onRenamed, rekey} from '../../../repo/repos.ts';
 
 // What was searched and read under the search box lines up sideways, in the order it came: the one in hand fills
 // the large box, the ones beside it hidden past its edges but for a sliver, pressed (or ← →) to move to them.

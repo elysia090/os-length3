@@ -1,11 +1,11 @@
 import {cutWhenLonger} from '../../ui/cut.ts';
 import {h} from '../../ui/dom.ts';
 import {after, arrive, closeUp, paneIn, paneOut} from '../../ui/glide.ts';
-import {t} from '../../i18n/i18n.ts';
-import * as inbox from '../../remote/inbox.ts';
-import {news, onNews} from '../../remote/news.ts';
+import {t} from '../../../text/i18n.ts';
+import * as inbox from '../../../shipto/inbox.ts';
+import {news, onNews} from '../../../shipto/news.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen, slots} from '../../host/plugins.ts';
-import {connection} from '../../remote/connection.ts';
+import {connection} from '../../../shipto/connection.ts';
 import {kindWords} from './todo-list.ts';
 
 // The right pane beside the center (Forge's, Git's, Home's): what the center refers to, the plugin area at its top,

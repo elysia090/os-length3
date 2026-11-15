@@ -34,7 +34,7 @@ export type State =
   | {is: 'excluded'; why: string};
 
 /** The checks that run translated programs: a file each, of this repository. */
-const NODE = 'module/sods/test/programs/run.sh', PAGE = 'tests/app/linux.spec.ts';
+const NODE = 'module/sods/test/programs/run.sh', PAGE = 'why/test/app/linux.spec.ts';
 
 /** How far a program for `input` is from running on a machine of `runs`, on `where`. */
 export function target(input: Isa, runs: Isa, where: Where): State {

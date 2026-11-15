@@ -1,8 +1,9 @@
-import {bytes, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {REMOTE_URL} from '../../remote/connection.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import {REMOTE_URL} from '../../../shipto/connection.ts';
 import {mark} from '../../ui/icons.ts';
-import desktopPins from '../../../shared/desktop-releases.json' with {type: 'json'};
+import desktopPins from '../../../shipto/desktop-releases.json' with {type: 'json'};
 
 // Runtime's desktop app, offered on the web beside the environments: the app itself is it.
 

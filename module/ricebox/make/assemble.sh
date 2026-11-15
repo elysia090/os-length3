@@ -89,7 +89,7 @@ node "$here/make/db.ts" "$root" "$work/list"
   echo "version=$version"
   sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\) \([^ ]*\)$/package.\1=\2 \3 \4/' "$root/usr/share/length3/packages"
   echo "why.sha256=$(sha256sum "$why" | cut -d' ' -f1)"
-  echo "why.source=$(git -C "$os" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$os" status --porcelain -- why/core why/cli why/shared 2>/dev/null | grep -q . && echo +changed)"
+  echo "why.source=$(git -C "$os" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$os" status --porcelain -- why ':!why/app' ':!why/desktop' ':!why/test' ':!why/shipto/remote' 2>/dev/null | grep -q . && echo +changed)"
   echo "assembler.sha256=$(cat "$here/make/assemble.sh" "$here/make/db.ts" "$here/etc/os-release" | sha256sum | cut -d' ' -f1)"
 } > "$work/tree/manifest"
 

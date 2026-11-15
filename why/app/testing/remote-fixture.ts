@@ -1,12 +1,12 @@
 // For client tests: a browser on one Remote, all in this process. Its storage
-// is a map, and every fetch goes to the service itself (why/remote/serve/app.ts), so a
+// is a map, and every fetch goes to the service itself (why/shipto/remote/serve/app.ts), so a
 // client module is tested against the Remote it really talks to.
 
-import {createApp} from '../../remote/serve/app.ts';
-import {createAuth} from '../../remote/people/auth.ts';
-import {memoryBucket} from '../../remote/bytes/bucket.ts';
-import * as schema from '../../remote/db/schema.ts';
-import {bearerOf, fileDb} from '../../remote/tests/testing.ts';
+import {createApp} from '../../shipto/remote/serve/app.ts';
+import {createAuth} from '../../shipto/remote/people/auth.ts';
+import {memoryBucket} from '../../shipto/remote/bytes/bucket.ts';
+import * as schema from '../../shipto/remote/db/schema.ts';
+import {bearerOf, fileDb} from '../../shipto/remote/tests/testing.ts';
 import {cookieJar} from './cookies.ts';
 
 export const REMOTE = 'http://remote.test';
@@ -63,9 +63,9 @@ export async function inProcessRemote() {
   /** This browser in as `token`'s session, as a sign-in leaves it: the session's cookie, and the core told which it is. */
   const browserAs = async (token: string, url = REMOTE) => {
     jar.session(token);
-    const {core} = await import('../host/host.ts');
+    const {core} = await import('../../api/host.ts');
     await core('remote_connect', {url});
-    await (await import('../home/state.ts')).loadState(['remote']);
+    await (await import('../../home/state.ts')).loadState(['remote']);
   };
 
   return {db, signIn, answers, prove, repo, browserAs};

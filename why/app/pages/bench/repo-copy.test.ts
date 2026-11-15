@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import type {Change} from '../../repos/repos.ts';
+import type {Change} from '../../../repo/repos.ts';
 import {mirror} from './repo-copy.ts';
 import type {Source} from './repo-copy.ts';
 

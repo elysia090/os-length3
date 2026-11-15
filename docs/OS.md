@@ -193,12 +193,12 @@ nobody else can take it and be taken for its owner:
 | a repo shown in a server | its owner, lent to the server | its Remote | taken off, or its owner leaves the server: at once |
 | a repo's public name (`face:name`) | its owner, under a face | the face (the server, or the owner's address) | taken down, or the face goes: 30 days no one else's repo answers to it |
 | a board, its talk and TODO | its server | its Remote | removed by its owner: 30 days, back at once until then, then gone; or with its server |
-| a copy on a device | the device | the digests | taken back whenever room is wanted (why/core/src/prompt/writes.rs) |
+| a copy on a device | the device | the digests | taken back whenever room is wanted (why/prompt/writes.rs) |
 | a session, a code | the person | sign-in | a lease: days for a session, minutes for a code |
 | a guest's invitation | the one of its people who made it, lent to whoever they hand it | its Remote, and its digest | used, revoked, its maker leaves the server, or a week (at most 30 days) |
 | a guest | the board, by an invitation | its token's digest | a lease of 30 days; removed (their posts with them), or the board stops taking guests: at once |
 
-What goes, goes in one place, once a day (`why/remote/repos/sweep.ts`): nothing a
+What goes, goes in one place, once a day (`why/shipto/remote/repos/sweep.ts`): nothing a
 person asks for purges anything on the way, and a file no tree names any
 more goes with the rest.
 
@@ -240,7 +240,7 @@ the same thing for the desktop app and for the web.
   (the version in `module/ricebox/RELEASE`).
 - **Digest.** Its identity is the sha256 of its root,
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
-  `why/core/src/root/pins.rs` RELEASES pins it, for both ways in: `sha256` and
+  `why/prompt/roots/pins.rs` RELEASES pins it, for both ways in: `sha256` and
   `bytes`, the root; `web`, the sha256 of the index the browser reads the
   same root by. The release writes that entry (`scripts/pin-root.ts`) and
   it is committed; nothing else pins why.
@@ -378,7 +378,7 @@ the person meets none of the machinery that keeps them:
 A task goes offered → waiting → working → ready, or asking (its reply sends
 it on), done (looked at, or its issue merged), dropped (later), stopped (it
 could not run: why, and the one fix, such as `why network on REPO`). Those
-are the core's words (`why/core/src/agent/tasks.rs`, `<data>/tasks/tasks.json`, never
+are the core's words (`why/agent/tasks.rs`, `<data>/tasks/tasks.json`, never
 sent). The person sees an offer to hand over, the work going on in its
 issue's box, a question with a field to answer it, something to look at,
 or what could not go on: no stage, queue, session or hook.
@@ -417,7 +417,7 @@ Lately).
 
 What a person runs (a Prompt, a task handed to an agent, a repo's tests) is
 compute, and the OS treats it as one thing whatever runs it: a **Spec**
-says what a run is made of, never where (`why/core/src/agent/spec.rs`): the root
+says what a run is made of, never where (`why/agent/spec.rs`): the root
 by its sha256, the environment by the key of what set it up (the root's
 sha256, `.packages`, `.setup`: `prompt::start::environment_key`), the repo and
 its line, what runs and what it is told, whether it asks for the network,
@@ -538,7 +538,7 @@ close` closes it as its window's close button does, and nothing else: what
 it saved stays, and what why runs (SSH, a Prompt in a terminal) goes on.
 Opening it turns nothing on: no network listening, no SSH, no Remote. It is
 reached through a socket in its own owner-only folder of the data
-directory (`why/core/src/device/desktop.rs`).
+directory (`why/device/desktop.rs`).
 
 ### The command line without learning it first
 
@@ -738,14 +738,14 @@ Linux).md"), so neither is lost and the name says whose it is on every
 device.
 Files that cannot travel (a link, a file over 16 MB, a repo's own `.git`)
 are named and never sent; a repo holding them is never let go. Nor does a
-file that holds a secret (why/core/src/device/secrets.rs): a model maker's API key, a
+file that holds a secret (why/device/secrets.rs): a model maker's API key, a
 Stripe live key, a GitHub token, or this device's own sign-in. A Prompt has
 the Agent's key in its environment, so whatever runs there could write it
 into a file; read before it goes, as a push is read by GitHub's push
 protection, that file stays here unsent, said as `secret sk-ant-…a9AA`, and
 Commit says which until it is taken out. Home's
 settings (profile, TODO, dotfiles) are kept there too, by the app and why
-alike (why/app/remote/settings.ts, why/core/src/home/: one protocol, one record of what was
+alike (why/shipto/settings.ts, why/home/: one protocol, one record of what was
 agreed), each changed only from the version it was read at: unchanged
 here, the Remote's is taken; changed on both sides, two TODO lists are
 joined item by item, and any other setting is the Remote's. The band, the
@@ -783,7 +783,7 @@ in the app itself, and adding a passkey, linking a provider and setting
 the code (Add, Link, Set in the browser) open the Remote's own page there
 at Sign-in; a repo's switch and Discard ask in its card as on the web, and
 Continue in the browser opens that repo's card there with its ask already
-open (`why/core/src/remote/account.rs` app_page names only that page, of the Remote's
+open (`why/shipto/account.rs` app_page names only that page, of the Remote's
 own app, the way a sign-in's page is checked). Done there, the page says
 to go back; the app reads again what changed when its window comes back.
 Every device is a session, listed on the Remote page and ended
@@ -791,10 +791,10 @@ from any other. What proves a session is held where no page reads it. In a
 browser it is the session's cookie (`__Host-`: Secure, HttpOnly,
 SameSite=Lax), which the browser sends and no script reads, so a script
 that should not be on the page cannot carry the session off: the Remote
-hands a page no token, ever (`why/remote/people/auth.ts`), and the browser's core
+hands a page no token, ever (`why/shipto/remote/people/auth.ts`), and the browser's core
 sends the cookie with its own requests. A device (the app, why) holds a
 bearer from the device flow, kept apart from everything a page reads
-(`why/core/src/device/vault.rs`, never in Home's state, which a page reads and which
+(`why/device/vault.rs`, never in Home's state, which a page reads and which
 is synced): in the OS's own keyring (the Keychain, Credential Manager on
 this computer alone, the Secret Service over D-Bus from Rust alone, so the
 static why reaches it as the app does), encrypted at rest with what the
@@ -835,12 +835,12 @@ What leaves this system is kept to what is said here:
   machine (connection.ts leaveFor); the desktop opens only Stripe's or the
   Remote's own (account.rs). The Remote answers only the app's origins. From the host (the app
   and why: the Remote, a release, a distribution's root) it goes one way
-  (why/core/src/device/net.rs), taking of the host only what the machine already
+  (why/device/net.rs), taking of the host only what the machine already
   decided: its proxy (HTTPS_PROXY, minus NO_PROXY, never for the machine
   itself) and the certificates it trusts (its store or SSL_CERT_FILE,
   beside the bundled ones).
 - **The root.** In the app a Prompt is the distribution's root in a box
-  muk makes (`why prompt` says what it lends, why/core/src/prompt/start.rs;
+  muk makes (`why prompt` says what it lends, why/prompt/start.rs;
   ricebox writes the bundle and runs `muk run` on it, module/ricebox/src; module/muk), by this machine's
   kernel without privilege: a user namespace makes the user root inside
   it only; its own mount, pid, ipc, uts and network namespaces (no
@@ -868,8 +868,8 @@ What leaves this system is kept to what is said here:
   checked by digest before it is read, unpacked refusing anything that
   would land outside, go through a link or be a device. It is fetched from
   the Remote this device uses, then the publisher's Remote, which each of
-  its deploys fills with every root pinned in `why/core/src/root/pins.rs`
-  (`why/remote/bytes/mirror.ts`), and last from the GitHub release, which answers
+  its deploys fills with every root pinned in `why/prompt/roots/pins.rs`
+  (`why/shipto/remote/bytes/mirror.ts`), and last from the GitHub release, which answers
   only while the repository is public; when none has it, the error says
   what each said.
 - **Host.** The app starts no host program for a repo: history is the
@@ -892,12 +892,12 @@ apart: Postgres holds everything said here, the bucket only file contents,
 and a Remote without a bucket does all the rest and says plainly that it
 cannot hold files now, so a device keeps its work until it can. Each part,
 its routes and tables, and what the app and why need of it that a page does
-not: `why/remote/README.md`.
+not: `why/shipto/remote/README.md`.
 
 ### The plan: the Remote decides what an account may do
 
 Billing lives on the Remote. The Remote alone decides what an account may
-do (`why/remote/plan/plan.ts`); every client, the web app, the desktop app and why,
+do (`why/shipto/remote/plan/plan.ts`); every client, the web app, the desktop app and why,
 only shows what it says (Remote → Plan, `why remote plan`) and asks. No
 client counts, guesses or greys out on its own.
 
@@ -962,7 +962,7 @@ allowance still holds, and the Remote says paid features cannot be bought
 here yet. A Remote given no plan (a Remote of one's own, development unless
 asked, a Remote for research) has no allowance at all.
 
-**Stripe's stand-in** (`why/remote/plan/devbilling.ts`), on a Remote of one's own
+**Stripe's stand-in** (`why/shipto/remote/plan/devbilling.ts`), on a Remote of one's own
 asked for the plan (`WHY_PLAN=1`) and the selftest's, looks and does as
 Stripe's pages do in test mode, so the way from the Plan to paying and back
 is the one people meet; it is Stripe's look, not this language's, and says
@@ -979,7 +979,7 @@ credited), the card (the same form and test cards), the invoices, cancelling
 at the period's end and Renew plan to keep it, and, marked as not Stripe's,
 test controls (a payment fails, a payment goes through, it ends now). Each
 step sends the Remote the events Stripe would, signed, before the page goes
-on. The development sign-in provider (`why/remote/people/devoauth.ts`) asks as a real
+on. The development sign-in provider (`why/shipto/remote/people/devoauth.ts`) asks as a real
 one does: a name, then what why asks of it (your name and email), Allow
 or Cancel; Cancel comes back with the error a provider sends then.
 

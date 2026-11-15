@@ -4,7 +4,7 @@ import {still} from '../../ui/glide.ts';
 import {ownCamera, WORK_AT, type WorkAt} from '../../ui/camera.ts';
 import {fieldCarried} from '../../ui/caret.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {ground} from '../../ui/row.ts';
 import {rowMap} from '../../ui/row-desk.ts';

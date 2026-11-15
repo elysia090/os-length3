@@ -1,9 +1,9 @@
 import {h} from '../../ui/dom.ts';
-import type {DiffLine, FileDiff} from '../../repos/history.ts';
-import {t, tn} from '../../i18n/i18n.ts';
+import type {DiffLine, FileDiff} from '../../../repo/history.ts';
+import {t, tn} from '../../../text/i18n.ts';
 import {askFoot, SETTLE} from './common.ts';
-import {errorText} from '../../host/errors.ts';
-import {shownPath} from '../../repos/issues.ts';
+import {errorText} from '../../../api/errors.ts';
+import {shownPath} from '../../../repo/issues.ts';
 import {kindLine} from './todo-list.ts';
 
 /**

@@ -1,15 +1,16 @@
-import {ago, day, h} from '../../ui/dom.ts';
-import * as git from '../../repos/history.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {closedBy, numberOf, type Issue} from '../../repos/issues.ts';
-import {kindOf} from '../../repos/text.ts';
+import {h} from '../../ui/dom.ts';
+import {ago, day} from '../../../text/format.ts';
+import * as git from '../../../repo/history.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {closedBy, numberOf, type Issue} from '../../../repo/issues.ts';
+import {kindOf} from '../../../repo/text.ts';
 import {answers, askFoot, SETTLE} from '../kit/common.ts';
 import {counted, diffFiles} from '../kit/diff-view.ts';
 import {clock, LAND, nudge, paced, putAway, still, unfold} from '../../ui/glide.ts';
 import {crossfade, justClosed, justMerged, notCommitted, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
-import type {Laid} from '../../repos/git-state.ts';
+import type {Laid} from '../../../repo/git-state.ts';
 import {kindWords} from '../kit/todo-list.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {busy} from './held.ts';
 
 // What Git shows round the issues: over them, what main has not committed

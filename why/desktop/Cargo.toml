@@ -9,7 +9,7 @@ publish = false
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-why-core = { path = "../core" }
+why-core = { path = ".." }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libc = "0.2"

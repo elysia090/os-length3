@@ -135,7 +135,7 @@ pub fn command(c: &Command) -> String {
         s += &format!("\n\n{}", if ja() { "ISSUE：repo の中なら N か #N、外なら REPO#N、または件名の言葉（「再起動」など。ひとつに決まらなければ番号で）" } else { "ISSUE: N or #N in its repo, REPO#N elsewhere, or words of its title (\"restart\"; by its number when the words fit more than one)" });
     }
     if c.name == "repo" {
-        let t: Vec<String> = why_core::repos::templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
+        let t: Vec<String> = why_core::repo::templates::all().into_iter().map(|t| format!("{} ({})", t.id, t.label)).collect();
         s += &format!("\n\n{}{}", if ja() { "テンプレート：" } else { "Templates: " }, t.join(", "));
     }
     s

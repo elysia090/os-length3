@@ -1,16 +1,16 @@
 import {openNext} from '../kit/next.ts';
 import {agentCards} from '../kit/agent-cards.ts';
 import {arrowKeys, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {LIMITS, normalize, parse, type Profile} from '../../home/profile.ts';
-import {connection, myName, rename} from '../../remote/connection.ts';
-import {getState, onState, setState, settingName, unreadable} from '../../home/state.ts';
-import * as servers from '../../remote/servers.ts';
-import * as inbox from '../../remote/inbox.ts';
-import {news, onNews} from '../../remote/news.ts';
-import {onRenamed, store, type RepoSummary} from '../../repos/repos.ts';
-import {homeIsHeld} from '../../remote/lifecycle.ts';
-import {shownName} from '../../repos/issues.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {LIMITS, normalize, parse, type Profile} from '../../../home/profile.ts';
+import {connection, myName, rename} from '../../../shipto/connection.ts';
+import {getState, onState, setState, settingName, unreadable} from '../../../home/state.ts';
+import * as servers from '../../../shipto/servers.ts';
+import * as inbox from '../../../shipto/inbox.ts';
+import {news, onNews} from '../../../shipto/news.ts';
+import {onRenamed, store, type RepoSummary} from '../../../repo/repos.ts';
+import {homeIsHeld} from '../../../shipto/lifecycle.ts';
+import {shownName} from '../../../repo/issues.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from '../kit/todo-list.ts';
 import {remember} from '../server/parts.ts';
@@ -19,7 +19,7 @@ import type {Context} from '../kit/context.ts';
 import {latelyRow, pluginArea, waiting, wordLine} from '../kit/pane.ts';
 import {mark, type MarkName} from '../../ui/icons.ts';
 import {fitSize, inkEdge} from '../../ui/optical.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {nudge, still} from '../../ui/glide.ts';
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */

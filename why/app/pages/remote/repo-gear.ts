@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
-import {errorText} from '../../host/errors.ts';
-import {t} from '../../i18n/i18n.ts';
+import {errorText} from '../../../api/errors.ts';
+import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from '../kit/common.ts';
 import {keepOut, nudge, putAway} from '../../ui/glide.ts';
-import {store, validName} from '../../repos/repos.ts';
-import {forget, remoteAll, remoteOnly, repoState} from '../../remote/lifecycle.ts';
-import {connection} from '../../remote/connection.ts';
+import {store, validName} from '../../../repo/repos.ts';
+import {forget, remoteAll, remoteOnly, repoState} from '../../../shipto/lifecycle.ts';
+import {connection} from '../../../shipto/connection.ts';
 import {promptHolds, stopPrompt} from '../bench/sessions.ts';
 import {openRepoPlace} from './repos.ts';
 import {askFirst} from './repo-off.ts';

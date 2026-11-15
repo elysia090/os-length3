@@ -1,15 +1,16 @@
 import {summaryOf} from '../kit/repo-words.ts';
-import {ago, arrowKeys, bytes, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {arrowKeys, h} from '../../ui/dom.ts';
+import {ago, bytes} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
 import {icon} from '../../ui/icons.ts';
-import {store, type RepoSummary} from '../../repos/repos.ts';
-import {bring, onSync, remoteOnly, repoState} from '../../remote/lifecycle.ts';
-import {free, readSpace} from '../../account/space.ts';
+import {store, type RepoSummary} from '../../../repo/repos.ts';
+import {bring, onSync, remoteOnly, repoState} from '../../../shipto/lifecycle.ts';
+import {free, readSpace} from '../../../device/space.ts';
 import {syncWord} from '../remote/repo-card.ts';
 import {repoGear} from '../remote/repo-gear.ts';
 import {allSessions} from '../bench/sessions.ts';
 import type {Context} from '../kit/context.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 
 // The repos as large cards, about three across: on Home, and under the New
 // repo form so a repo just made is seen joining the others.

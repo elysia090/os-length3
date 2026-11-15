@@ -1,9 +1,9 @@
 import {h} from '../../ui/dom.ts';
-import {errorText} from '../../host/errors.ts';
-import {t} from '../../i18n/i18n.ts';
-import {every} from '../../host/runs.ts';
+import {errorText} from '../../../api/errors.ts';
+import {t} from '../../../text/i18n.ts';
+import {every} from '../../../api/runs.ts';
 import {paced, still} from '../../ui/glide.ts';
-import * as servers from '../../remote/servers.ts';
+import * as servers from '../../../shipto/servers.ts';
 import type {Shown} from './parts.ts';
 import {todoList} from '../kit/todo-list.ts';
 import {SPRING} from '../../ui/law.ts';

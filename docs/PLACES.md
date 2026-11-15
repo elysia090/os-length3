@@ -1126,7 +1126,7 @@ or goes).
   to. When room is wanted (a Prompt prepared, a root fetched, a repo
   brought here) and the host has less free than that and a reserve (a
   twentieth of the disk, between 512 MB and 4 GB; `WHY_RESERVE` says
-  another), what comes back goes by itself until there is enough (why/core/src/storage/
+  another), what comes back goes by itself until there is enough (why/device/storage/
   make_room): this OS's leftovers and old roots, caches, what is derived in
   repos, the root before the current one, then copies of repos in step with
   the Remote untouched for a week, the oldest first. Never what only this
@@ -1165,7 +1165,7 @@ or goes).
   as here. In a browser there is no switch: a Prompt's programs have no
   sockets at all.
   Every Prompt on the root is an `why prompt` process that records
-  itself (why/core/src/prompt/running.rs) from the moment it starts being prepared
+  itself (why/prompt/running.rs) from the moment it starts being prepared
   (`.packages`, `.setup`) until it ends, with its repo and the root it runs
   on, so `why prompt ls` lists the app's and a terminal's alike (one being
   prepared says 用意中, as its card here does), `why prompt stop REPO` stops
@@ -1192,7 +1192,7 @@ or goes).
   each is, and at its right what can be done. In the app each other one has Use at its
   right: fetched if it is not here (Ubuntu's base and Debian's official
   root, from their makers or the Remote, taken only at the digest pinned
-  in why/core/src/root/pins.rs), then the one Prompts run on, each with its own
+  in why/prompt/roots/pins.rs), then the one Prompts run on, each with its own
   environment per repo. In a browser they say In the app only: their
   programs are linked as they run, which muk does not do. Custom is not
   yet.
@@ -1326,10 +1326,10 @@ or goes).
   model, and a key of no form of its own, refused), and the model is the
   newest the key opens that answers, read from the maker's own list when the
   key is given (Trying the key…), never written into the OS. It is kept as
-  the device's session is (`why/core/src/device/vault.rs`: the OS's keyring, else a file
+  the device's session is (`why/device/vault.rs`: the OS's keyring, else a file
   only the person reads). In a browser, whose keeping is its profile's files,
   it is sealed by the person's passkey where there is one with PRF
-  (`why/app/account/seal.ts`: AES-256-GCM under a key HKDF derives from what the
+  (`why/device/seal.ts`: AES-256-GCM under a key HKDF derives from what the
   passkey's PRF gives, after it verifies the person), opened the first time
   the Agent is asked in a session, and the key itself never reaches the
   core; where none can seal it, it is kept as given, and Runtime says which.
@@ -1352,9 +1352,9 @@ or goes).
   the left because it leaves the page for this computer, as Forge does on
   Remote's card. It gives the .deb, which Debian and Ubuntu install, or the
   AppImage when the Remote has no .deb (the release still has both). They are
-  the files `why/shared/desktop-releases.json` pins for that version, served by
+  the files `why/shipto/desktop-releases.json` pins for that version, served by
   the Remote (`/v1/desktop/<file>`, to anyone, by range), where each deploy
-  puts them from the release (`why/remote/bytes/mirror.ts`). It is offered only once
+  puts them from the release (`why/shipto/remote/bytes/mirror.ts`). It is offered only once
   the Remote says it has it; with neither there, the section is not shown,
   never a button that cannot act.
 
@@ -2095,7 +2095,7 @@ into its README.md under its title, and the box grows with them, a line to
 begin with. In the box beside it, what will be made with it (作成され
 るもの), as File will show it: the repo's own row, its name again in ink
 (dashed where nothing is named), and the one scaffold every repo starts from
-(nothing to choose: why/shared/templates.json's `standard`, as `why repo new`
+(nothing to choose: why/repo/templates.json's `standard`, as `why repo new`
 makes it: README.md with docs/ and issue/, no language of its own; C's files
 are `why repo new -t c`'s), each row renamed or left out where it stands,
 New file and New folder at its foot, README.md's size at its row's end as

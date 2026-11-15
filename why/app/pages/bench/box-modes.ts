@@ -1,15 +1,15 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {keepOut, paced, putAway, still} from '../../ui/glide.ts';
-import {onChange} from '../../repos/repos.ts';
-import {nextIssueName, numberOf, writeIssue} from '../../repos/issues.ts';
-import * as todo from '../../home/todo.ts';
-import {getState, setState} from '../../home/state.ts';
-import {kindOf} from '../../repos/text.ts';
+import {onChange} from '../../../repo/repos.ts';
+import {nextIssueName, numberOf, writeIssue} from '../../../repo/issues.ts';
+import * as todo from '../../../home/todo.ts';
+import {getState, setState} from '../../../home/state.ts';
+import {kindOf} from '../../../repo/text.ts';
 import {mark} from '../../ui/icons.ts';
 import {mark as todoMark} from '../kit/todo-list.ts';
-import {issueStore} from '../../repos/issue-store.ts';
-import {hasAgentKey, onAgentKey} from '../../account/agent-key.ts';
+import {issueStore} from '../../../repo/issue-store.ts';
+import {hasAgentKey, onAgentKey} from '../../../device/agent-key.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // The box at the foot does one of a few things with what is written in it, and its pill, at its left, says which:

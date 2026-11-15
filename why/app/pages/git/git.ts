@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
 import {after, arrive, LAND, paced, pop, putAway, still, unfold} from '../../ui/glide.ts';
-import * as gitops from '../../repos/history.ts';
-import {t} from '../../i18n/i18n.ts';
-import {issueName, issuePath, number, readIssues, type Issue} from '../../repos/issues.ts';
+import * as gitops from '../../../repo/history.ts';
+import {t} from '../../../text/i18n.ts';
+import {issueName, issuePath, number, readIssues, type Issue} from '../../../repo/issues.ts';
 import {inkEdge} from '../../ui/optical.ts';
-import {bring, remoteOnly} from '../../remote/lifecycle.ts';
-import {connection} from '../../remote/connection.ts';
-import {onChange, onRenamed, rekey, store} from '../../repos/repos.ts';
+import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
+import {connection} from '../../../shipto/connection.ts';
+import {onChange, onRenamed, rekey, store} from '../../../repo/repos.ts';
 import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../kit/next.ts';
 import {icon} from '../../ui/icons.ts';
@@ -15,10 +15,10 @@ import {foldAway, opened, Sections} from './done.ts';
 import {backToMain, crossfade, issueBox, issueHead, issueSteps, knowIssues, mergeRow, resize, reviewBox, type IssueEvents, type RepoState} from './issue.ts';
 import {IssueRow} from './issue-row.ts';
 import {paintChips} from './repo-chips.ts';
-import {laidOut} from '../../repos/git-state.ts';
+import {laidOut} from '../../../repo/git-state.ts';
 import {issueForm, type IssueForm, type Made} from './issue-form.ts';
-import {errorText} from '../../host/errors.ts';
-import {issueStore} from '../../repos/issue-store.ts';
+import {errorText} from '../../../api/errors.ts';
+import {issueStore} from '../../../repo/issue-store.ts';
 import {SPRING} from '../../ui/law.ts';
 
 /**
@@ -92,7 +92,7 @@ async function standings(repos: readonly string[], fresh: Map<string, RepoState>
         work = await gitops.work(r);
       }
       let changed = await gitops.changes(r);
-      // An issue's own file is history by itself as it is written (repos/issue-store.ts): one still waiting (written
+      // An issue's own file is history by itself as it is written (repo/issue-store.ts): one still waiting (written
       // signed out, renumbered, one whose commit did not go) is committed now, and never counted as the person's.
       const issueFolder = (f: {folder: string}) => f.folder === 'issue' || f.folder.startsWith('issue/');
       if (work.line === 'main' && changed.folders.some(issueFolder) && await issueStore.settle(r)) changed = await gitops.changes(r);
@@ -111,7 +111,7 @@ async function standings(repos: readonly string[], fresh: Map<string, RepoState>
 function renumber(issues: readonly Issue[], states: ReadonlyMap<string, RepoState>): Promise<unknown[]> {
   return Promise.all([...new Set(issues.filter((i) => i.n === null).map((i) => i.repo))].map((r) => {
     const st = states.get(r);
-    // Issues are main's whatever work the repo shows (repos/issue-store.ts): renumbered there, and committed.
+    // Issues are main's whatever work the repo shows (repo/issue-store.ts): renumbered there, and committed.
     if (!st || st.error) return false;
     const inUse = new Set([...st.lines.map((l) => l.issue), ...st.changes.map((c) => c.issue)]);
     return number(issueStore, r, issues.filter((i) => i.repo === r), inUse);

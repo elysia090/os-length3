@@ -1,5 +1,5 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {cutWhenLonger} from '../../ui/cut.ts';
 import {still} from '../../ui/glide.ts';
 import type {Run} from './sessions.ts';

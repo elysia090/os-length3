@@ -1,11 +1,11 @@
 import {fieldMoved} from '../../ui/caret.ts';
 import {h} from '../../ui/dom.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {keepOut, LAND, nudge, paced, putAway, still} from '../../ui/glide.ts';
-import {t} from '../../i18n/i18n.ts';
-import {complete, pathWord, Recall} from '../../prompt/recall.ts';
-import {kindOf} from '../../repos/text.ts';
-import {onChange, onRenamed, shownTree, store, type Entry} from '../../repos/repos.ts';
+import {t} from '../../../text/i18n.ts';
+import {complete, pathWord, Recall} from '../../../prompt/recall.ts';
+import {kindOf} from '../../../repo/text.ts';
+import {onChange, onRenamed, shownTree, store, type Entry} from '../../../repo/repos.ts';
 import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Rises, ScreenState} from './screen.ts';
 import {agentSessionFor, Session, sessionFor, terminalFor} from './terminal.ts';
@@ -13,13 +13,13 @@ import {type AgentTerm, agentTermFor} from './agent-term.ts';
 import {sessionIfAny} from './sessions.ts';
 import {PillLine} from './pill-line.ts';
 import {EditLine} from './edit-box.ts';
-import {agentKey, agentUse} from '../../account/agent-key.ts';
+import {agentKey, agentUse} from '../../../device/agent-key.ts';
 import {setRightPane} from '../kit/pane.ts';
 import {atWork, told, type Flow} from './agent.ts';
 import {Player, type Stage} from './play.ts';
-import type {Hands} from '../../agent/loop.ts';
-import {fileHands, tail} from '../../repos/agent-hands.ts';
-import {work as workOf} from '../../repos/history.ts';
+import type {Hands} from '../../../agent/loop.ts';
+import {fileHands, tail} from '../../../repo/agent-hands.ts';
+import {work as workOf} from '../../../repo/history.ts';
 import {SPRING} from '../../ui/law.ts';
 
 // The box at the foot of a work page's center (docs/PLACES.md, Forge, The box at the foot): one field, and at its left a
@@ -1000,7 +1000,7 @@ export class Box {
 
 /**
  * What the box's Agent does its work with in `repo`, through the OS's own calls: its files read, and where it was
- * handed the work (`writes`: an issue's) edited and written, by the core's rules (repos/agent-hands.ts); its commands
+ * handed the work (`writes`: an issue's) edited and written, by the core's rules (repo/agent-hands.ts); its commands
  * run at once in a Prompt of its own, shown after in the repo's as the screen plays them (play.ts).
  */
 function agentHands(repo: string, writes: boolean): Hands {

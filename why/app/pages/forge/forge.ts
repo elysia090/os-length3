@@ -1,8 +1,8 @@
-import {currentLang, t} from '../../i18n/i18n.ts';
+import {currentLang, t} from '../../../text/i18n.ts';
 import {h} from '../../ui/dom.ts';
 import {icon, mark} from '../../ui/icons.ts';
 import {inkEdge} from '../../ui/optical.ts';
-import {onChange, onRenamed, store} from '../../repos/repos.ts';
+import {onChange, onRenamed, store} from '../../../repo/repos.ts';
 import type {Context} from '../kit/context.ts';
 import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../kit/next.ts';
