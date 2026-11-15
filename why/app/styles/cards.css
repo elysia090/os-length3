@@ -7,7 +7,7 @@
   display: grid; align-content: start; gap: var(--s2); background: transparent; text-align: left; color: var(--ink);
 }
 .card.repo { cursor: var(--cursor-hand); }
-.card-title { font-size: var(--t-card); font-weight: 600; overflow-wrap: anywhere; }
+.card-title { font-size: var(--t-word); font-weight: 700; overflow-wrap: anywhere; }
 .card.new { border-style: dashed; place-content: center start; justify-items: start; cursor: var(--cursor-hand); color: var(--sub); }
 .card.new:hover { color: var(--ink); }
 .note { grid-column: 1 / -1; }
@@ -48,13 +48,13 @@
    stands where the desktop app stood, the desktop app one to its right; SSH under the two. A version is set apart
    from its name in the mono face (the desktop app's too). Narrower than two cards it takes the width it has, and
    wraps rather than cutting a word off. */
-.version { font: 400 var(--t-meta) var(--mono); color: var(--sub); }
+.version { font: 400 var(--t-word) var(--mono); color: var(--sub); }
 .env-card { gap: var(--s1); }
 .section-row .small-card.env-card { width: calc(2 * 270px + var(--s4)); }
-.env-sha { font: var(--t-meta) var(--mono); overflow-wrap: anywhere; }
+.env-sha { font: var(--t-word) var(--mono); overflow-wrap: anywhere; }
 .env-rows { display: grid; margin-top: var(--s3); }
 .env-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--s3); min-height: var(--h-control); padding: var(--s1) 0; }
-.env-name { color: var(--sub); font-weight: 600; overflow-wrap: anywhere; }
+.env-name { color: var(--sub); font-weight: 700; overflow-wrap: anywhere; }
 .env-note { grid-column: 1; overflow-wrap: anywhere; }
 .env-row > :last-child:not(.env-note):not(.env-name) { grid-column: 2; grid-row: 1 / span 2; }
 /* A narrow Home: Cancel and Save on a row of their own under the name written, rather than squeezing it. */
@@ -80,7 +80,7 @@
 .work.bench.prompting .flow.git-flow { padding-bottom: 160px; scroll-padding-bottom: calc(var(--s5) + 80px); }
 .issue-kind { font-weight: 700; }
 /* Where an issue is (its repo) is a name: the sans, as every name is. */
-.issue-where { font: var(--t-meta)/1.6 var(--sans); color: var(--sub); }
+.issue-where { font: var(--t-word)/1.6 var(--sans); color: var(--sub); }
 /* Git stands in Forge's frame: its repos the band on the top line, and under it, from the rail's first place, the
    page on the band's edges, the boxes as wide as Forge's and the prompt box a step outside them. The first part
    shown starts at the page's top, wherever parts before it are hidden. */
@@ -97,11 +97,11 @@
 /* The issues' heading line: the heading as every section's, Write an issue at its right on the same line, not
    making it any taller; with none to show it stands aside (the empty place is the way then). */
 .issues-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
-.issues-head > h2 { margin: 0; font-size: var(--t-body); font-weight: 600; }
-.issues-head > h2 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
+.issues-head > h2 { margin: 0; font-size: var(--t-word); font-weight: 700; }
+.issues-head > h2 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-word); }
 /* No issue to show: a plain invitation where the first would be, as tall as an issue's card, its word and what is so. */
 .issue-new { width: 100%; min-height: 180px; gap: var(--s1); }
-.issue-new > small { font-size: var(--t-meta); }
+.issue-new > small { font-size: var(--t-word); }
 .issue-new:disabled { cursor: var(--cursor-arrow); opacity: .6; }
 .issue-new:not([hidden]) + div { display: none; }
 /* The prompt box as Forge's: its left end a step (s3) left of the boxes behind it, its right end theirs, so it
@@ -113,13 +113,13 @@
 .rows { display: grid; padding: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-card); }
 .row-item {
   display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s3) var(--s1) calc(var(--s3) + var(--depth, 0) * var(--s4));
-  border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; font-size: var(--t-meta); line-height: calc(var(--h-row) - 2 * var(--s1));
+  border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; font-size: var(--t-word); line-height: calc(var(--h-row) - 2 * var(--s1));
 }
 button.row-item { cursor: var(--cursor-hand); width: 100%; }
 button.row-item:hover:not(:disabled) { background: var(--paper); }
 button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-meta { flex: none; color: var(--sub); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
+.row-meta { flex: none; color: var(--sub); font-size: var(--t-word); font-variant-numeric: tabular-nums; }
 /* Room for the next at a list's foot, and the way to it (Remote's Devices: Connect a device): a dashed edge and a
    quiet word in its middle, as the dashed card is. Pressed, its steps take its place. */
 .row-item.row-new { justify-content: flex-start; align-items: center; gap: var(--s2); margin-top: var(--s1); border: 1px dashed var(--rule); color: var(--sub); }
@@ -135,7 +135,7 @@ button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 
 /* Empty Issues and Forge are invitations, not outlined placeholders. Their generous hit areas and focus rings remain. */
 .card.new:is(.issue-new, .forge-first) { border-color: transparent; border-style: solid; }
-.card.new:is(.issue-new, .forge-first) > span { color: var(--ink); font-weight: 600; }
+.card.new:is(.issue-new, .forge-first) > span { color: var(--ink); font-weight: 700; }
 
 /* Issues has no search field or pane-close control on its band. Keep the reader anchored above the pane,
    without reserving an extra control column or squeezing the repo names. */

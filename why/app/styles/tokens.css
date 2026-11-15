@@ -64,12 +64,13 @@
 
   --sans: system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', 'Hiragino Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', Consolas, 'Noto Sans Mono', monospace;
-  /* The person's name at Home's top: Inter Display Black, the one big thing (a step smaller on a narrow window). */
-  --t-name: clamp(30px, 5.2vw, 44px); --display: 'Inter Display', 'Display JP', var(--sans);
-  --t-identity: 28px; --t-title: 24px; --t-card: 20px; --t-body: 15px; --t-meta: 13px;
-  /* What is said smallest (a key's name, a line's number, a day); a name on a desk, its capitals a cell tall (the
-     display face's are .727 of its size). */
-  --t-fine: 11px; --t-head: calc(var(--u) / .727);
+  --display: 'Inter Display', 'Display JP', var(--sans);
+  /* Three sizes, one, two and four times, and no others (DESIGN §3, after Vignelli: two on a page, heads twice the
+     text): every word, written, read or said beside, and a person's initial in their mark; a name, its capitals a
+     cell tall (the display face's are .727 of its size); the shot's one large thing, its capitals two cells. What says
+     less is said quieter (its value) or in the other weight, never smaller: a smaller size reads slower (a small
+     letter under a fifth of a degree), and a line's number set smaller does not stand on its line's baseline. */
+  --t-word: 17px; --t-head: calc(var(--u) / .727); --t-voice: calc(2 * var(--u) / .727);
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 40px;
   /* Places are rounded squares, actions are round, fields are slightly rounded; a sheet (a file's, the terminal's,
      File's tree, Home's note) has one corner between a field's and a place's; a key of the band is small and drawn in
@@ -86,7 +87,7 @@
   /* Heights: a pressable thing, a row in a list, a place in the rail. */
   --h-control: 40px; --h-row: 32px; --h-place: 48px;
   /* The prompt box's height (one line of body text, its padding and edge): the foot line the rail's person sits on. */
-  --prompt-h: calc(2 * var(--s3) + var(--t-body) * 1.6 + 2px);
+  --prompt-h: calc(2 * var(--s3) + var(--t-word) * 1.6 + 2px);
   --icon: 24px; --stroke: 1.6px;
   /* The one law every move of the OS follows (ui/law.ts, where it is derived and tested): a thing moved goes as a
      hand moves it and stops it, off at once, most of the way in the first third of its time, then settling with no

@@ -34,7 +34,7 @@ body {
      the band (which are the window's, and stand over it). Going to another place it goes by, whole cells at a time. */
   background: var(--ground) var(--dots) 0 0 / var(--u) var(--u);
   color: var(--ink);
-  font: var(--t-body)/1.6 var(--sans);
+  font: var(--t-word)/1.6 var(--sans);
 }
 /* The place left, kept in sight as it was while the world goes to another (ui/glide.ts travel): over the page, under
    the rail and the band, and nothing to press. */
@@ -84,7 +84,10 @@ a { color: var(--ink); }
 [tabindex].kept:focus-visible { outline: none; }
 ::selection { background: var(--ink); color: var(--ground); }
 .muted { color: var(--sub); }
-.small { font-size: var(--t-meta); }
+/* (No element is set smaller or larger by the browser's own sheet: a heading or a small is its words' size until a rule
+   here says one of the three, DESIGN §3.) */
+:is(h1, h2, h3, h4, h5, h6, small, big) { font-size: inherit; }
+.small { font-size: var(--t-word); }
 .icon {
   width: var(--icon); height: var(--icon); flex: none;
   fill: none; stroke: currentColor; stroke-width: var(--stroke); stroke-linecap: round; stroke-linejoin: round;

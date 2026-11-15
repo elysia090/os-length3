@@ -28,7 +28,7 @@
   position: relative; box-sizing: border-box; width: 100%; margin: var(--u) 0 0; min-height: calc(4 * var(--u)); padding: var(--outer) 0 calc(var(--outer) + var(--to-grid, 0px));
   background: var(--note); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 var(--ink);
 }
-.home-own > .section > h2 { position: absolute; top: var(--outer); right: var(--s3); z-index: 1; margin: 0; display: block; font: 700 var(--t-meta)/var(--key) var(--mono); }
+.home-own > .section > h2 { position: absolute; top: var(--outer); right: var(--s3); z-index: 1; margin: 0; display: block; font: 700 var(--t-word)/var(--key) var(--mono); }
 .home-own > .section > h2 > #todo-title, .home-own .todo-left > small { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .home-own .todo-clear { padding: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-transform: lowercase; }
 .home-own .todo-clear:hover { background: none; text-decoration: underline 2px; text-underline-offset: 3px; }
@@ -47,7 +47,7 @@
 .home-own .todo-mark:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); }
 .home-own .todo-mark:disabled { opacity: 1; color: var(--note-quiet); }
 .home-own .todo-item.done .todo-mark { color: var(--ink); }
-.home-own :is(.todo-title, .todo-kind) { font: 700 var(--t-body)/var(--key) var(--sans); }
+.home-own :is(.todo-title, .todo-kind) { font: 700 var(--t-word)/var(--key) var(--sans); }
 .home-own .todo-title { min-height: var(--key); height: var(--key); }
 /* (The kind is a row's height and no taller, whatever its colon's box is, and a word space before the title: "Fix: The
    title" on one line, both on the row's middle.) */
@@ -55,9 +55,9 @@
 .home-own .todo-title::placeholder { color: var(--note-quiet); font-weight: 400; }
 .home-own .todo-item.done .todo-head :is(.todo-title, .todo-kind), .home-own .todo-item.done .todo-detail { color: var(--note-quiet); }
 .home-own .todo-head > .todo-strike { height: 2px; margin-top: 1px; background: var(--note-quiet); }
-.home-own .todo-detail { width: calc(100% - 2 * var(--key)); margin: 0 0 var(--s1) var(--key); font: 400 var(--t-meta)/20px var(--sans); }
+.home-own .todo-detail { width: calc(100% - 2 * var(--key)); margin: 0 0 var(--s1) var(--key); font: 400 var(--t-word)/20px var(--sans); }
 .home-own .todo-detail::placeholder, .home-own :is(.todo-meta, .todo-created) { color: var(--note-quiet); opacity: 1; }
-.home-own :is(.todo-meta, .todo-created) { font: 400 var(--t-fine)/16px var(--mono); }
+.home-own :is(.todo-meta, .todo-created) { font: 400 var(--t-word)/16px var(--mono); }
 .home-own .todo-dates-detail .todo-created { margin: 0 0 var(--s2) var(--key); }
 /* An item's ×, at the row's right end inside the note's ink edge (never over it: the subject's edge is whole, §2). */
 .home-own .todo-head > .todo-away { position: absolute; right: 1px; top: 0; width: var(--key); height: var(--key); border-radius: var(--r-field); background: var(--note); color: var(--note-quiet); }
@@ -65,7 +65,7 @@
 .home-own .todo-away .mark { width: 16px; height: 16px; stroke-width: 2; }
 .home-own .todo-head > .todo-away:hover { background: color-mix(in srgb, var(--ink) 10%, var(--note)); }
 /* What the keys do, while one writes: at the note's foot, over nothing that moves. */
-.home-own .todo-box .todo-hint { position: absolute; left: 0; right: 0; bottom: var(--outer); padding: 0 var(--s3) 0 var(--key); color: var(--note-quiet); font: 400 var(--t-fine)/var(--u) var(--mono); }
+.home-own .todo-box .todo-hint { position: absolute; left: 0; right: 0; bottom: var(--outer); padding: 0 var(--s3) 0 var(--key); color: var(--note-quiet); font: 400 var(--t-word)/var(--u) var(--mono); }
 .home-own .todo-hint kbd { border-color: var(--note-quiet); background: none; color: var(--note-quiet); }
 .home-own > .section > .error:empty { display: none; }
 .home-own > .section > .error { margin: var(--s2) var(--s3) 0 var(--key); }
@@ -73,7 +73,7 @@
 /* ---- The repos by name: said what they are on a line of a cell, then a name every two cells, its capitals a cell
    tall with their feet on the grid; then, a cell under them, the way to a new one, in the words' own size. ---- */
 .home-repos-sec { max-width: 100%; margin: 0; }
-.home-repos-sec > h2 { display: block; height: var(--u); margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
+.home-repos-sec > h2 { display: block; height: var(--u); margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
 .grid.home-repos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; justify-items: start; }
 .grid.repo-grid.home-repos > .card { min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; }
 .home-repos > .card.repo.gear-card { position: relative; display: flex; justify-content: flex-start; align-items: flex-end; height: calc(2 * var(--u)); max-width: 100%; }
@@ -83,7 +83,7 @@
 .home-repos > .gear-card > .card-open > :is(.card-summary, .muted) { display: none; }
 /* Where it stands, said after its name only while that is something to know (not here yet, being brought). */
 .home-repos > .gear-card:is(.away, [aria-busy='true']) > .card-open > .card-sync { display: block; position: absolute; left: calc(100% + var(--u)); bottom: -8px;
-  font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--quiet); white-space: nowrap; }
+  font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); white-space: nowrap; }
 .home-repos > .card.repo.away > .card-open > .card-title { color: var(--quiet); }
 .home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { text-decoration: underline 3px; text-underline-offset: 4px; }
 .home-repos > .card.repo.revealed > .card-open > .card-title { text-decoration: underline 3px; text-underline-offset: 4px; }
@@ -96,11 +96,11 @@
 .home-repos > .gear-card > .repo-gear > button .mark { width: 14px; height: 14px; }
 .home-repos > .gear-card > .repo-gear-pop { top: calc(100% + var(--s1)); left: 0; right: auto; width: max(100%, 280px); text-align: left; }
 .home-repos > .card.new { display: flex; align-items: center; gap: 0; height: var(--u); margin: var(--u) 0 0; padding: 0; color: var(--ink);
-  font: 700 var(--t-meta)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
+  font: 700 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
 .home-repos > .card.new > .icon { display: none; }
 .home-repos > .card.new::before { content: '+ '; white-space: pre; }
 .home-repos > .card.new:hover { background: none; text-decoration: underline 2px; text-underline-offset: 3px; }
-.home-repos > p { margin: 0; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--quiet); }
+.home-repos > p { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
 /* ---- What waits, a cell under the repos: a slip fourteen cells wide, drawn in line on the ground (it is not the
    piece in hand). Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a
    cell; the file, its capitals a cell tall on the next two; then what it says and where, a line each. ---- */
@@ -109,19 +109,19 @@
   /* (Home's piece in hand is the note, the one thing written in: the slip is line on the ground, as a piece not in
      hand is on any desk.) */
   background: var(--ground); border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; text-align: left; }
-.home-waits > .lately > h2 { margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); letter-spacing: 0; text-transform: lowercase; }
+.home-waits > .lately > h2 { margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); letter-spacing: 0; text-transform: lowercase; }
 .home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
 .home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; text-align: left; }
 .home-waits .pane-row > .pane-bar { display: none; }
 .home-waits .pane-row > :is(.pane-line, .pane-said, .pane-at) { display: block; overflow: visible; mask: none; white-space: nowrap; }
-.home-waits .pane-row:first-child > .pane-line { margin: var(--u) 0 0; font: 700 var(--t-body)/var(--u) var(--sans); letter-spacing: 0; }
-.home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
-.home-waits .pane-row > .pane-at { font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
+.home-waits .pane-row:first-child > .pane-line { margin: var(--u) 0 0; font: 700 var(--t-word)/var(--u) var(--sans); letter-spacing: 0; }
+.home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
+.home-waits .pane-row > .pane-at { font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 .home-waits .pane-row:is(:hover, :focus-visible) > .pane-line { text-decoration: underline 3px; text-underline-offset: 4px; }
 /* What else waits, after the first: a line each, its name and what was said. */
 .home-waits .pane-row + .pane-row { margin-top: var(--s3); }
-.home-waits .pane-row + .pane-row > .pane-line { font: 700 var(--t-meta)/var(--u) var(--mono); letter-spacing: 0; }
+.home-waits .pane-row + .pane-row > .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; }
 .home-waits .pane-row + .pane-row > .pane-at, .home-waits .pane-row:nth-child(n + 5) { display: none; }
-.home-waits .lately-none { margin: 0; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--quiet); }
+.home-waits .lately-none { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
 .home-waits > .plugins { width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; }
 .home-waits > .agent-cards { width: calc(12 * var(--u)); max-width: 100%; }

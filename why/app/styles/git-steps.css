@@ -4,7 +4,7 @@
 .steps { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: start; gap: var(--s3) var(--s3); margin-top: 0; padding: 0 0 var(--s4); }
 .step-act { display: flex; align-items: center; justify-content: flex-end; min-height: var(--h-control); }
 .step-act .button { min-width: 96px; justify-content: center; }
-.step-done { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 600; white-space: nowrap; }
+.step-done { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 700; white-space: nowrap; }
 .step-about { min-width: 0; min-height: var(--h-control); padding-top: calc((var(--h-control) - 1.5em) / 2); }
 .step-about p { margin: 0; }
 .steps > .error { grid-column: 1 / -1; }
@@ -16,7 +16,7 @@
 .issue-summary {
   min-height: calc(1.6em + 2 * var(--s2) + 2px); padding: var(--s2) var(--s3); margin-left: calc(-1 * var(--s3)); field-sizing: content;
   width: calc(100% + 2 * var(--s3)); border: 1px solid transparent; border-radius: var(--r-field); background: transparent;
-  color: var(--ink); font: var(--t-body)/1.6 var(--sans); resize: none; cursor: var(--cursor-text);
+  color: var(--ink); font: var(--t-word)/1.6 var(--sans); resize: none; cursor: var(--cursor-text);
 }
 /* Where a field cannot be as tall as its words, it keeps room for a few lines, as it did. */
 @supports not (field-sizing: content) { .issue-summary { min-height: calc(4 * 1.6em + 2 * var(--s2)); } }
@@ -42,7 +42,7 @@
    the right) where an issue's next step is. Its name is only which repo (main is said over it): a label at the size of
    the file named under it, not a title as large as an issue's, which is a sentence. */
 .main-card { display: grid; gap: var(--s3); padding: calc(var(--s4) + var(--s1)) var(--s5) var(--s5); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); }
-.main-title { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.main-title { margin: 0; font-size: var(--t-word); font-weight: 700; }
 .main-card + .main-card { margin-top: var(--s3); }
 /* Each card drawn as a history draws its line: the repo's main where it stands (a dot at its name), what waits on it
    down a dashed line (not yet), and at its foot the ring of the commit Commit makes. The line is the files' edge, so
@@ -91,7 +91,7 @@ details.diff-file > summary.diff-head::before {
 }
 details.diff-file[open] > summary.diff-head::before { rotate: 90deg; }
 /* What waits of a long file, under its lines where they stop, quiet until pressed. */
-.diff-more { justify-self: start; margin-top: var(--s1); padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); font: var(--t-meta) var(--mono); }
+.diff-more { justify-self: start; margin-top: var(--s1); padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); font: var(--t-word) var(--mono); }
 button.diff-more { cursor: var(--cursor-hand); }
 button.diff-more:hover { color: var(--ink); background: var(--paper); }
 /* What is done with (merged, closed): rows, space between them; a merged one opens to its diff. */
@@ -107,7 +107,7 @@ summary.done-head::before {
 }
 details[open] > summary.done-head::before { rotate: 90deg; }
 .done-head > .grow { flex: 1; }
-.done-name { font-weight: 600; overflow-wrap: anywhere; }
+.done-name { font-weight: 700; overflow-wrap: anywhere; }
 .done-head > .error { flex-basis: 100%; }
 .done-diff { max-height: 56vh; overflow: auto; padding: var(--s2) var(--s2) var(--s3) var(--s4); }
 

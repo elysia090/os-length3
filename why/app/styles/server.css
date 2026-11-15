@@ -43,10 +43,10 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .chip.server-naming { display: inline-flex; align-items: center; gap: var(--s2); border-style: dashed; cursor: var(--cursor-text); }
 .chip.server-naming.named, .chip.server-naming:focus-within { border-style: solid; border-color: var(--ink); }
 .server-name-in, .server-handle-in { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; }
-.server-name-in { font-weight: 600; }
+.server-name-in { font-weight: 700; }
 .server-handle-in { color: var(--sub); font-family: var(--mono); }
 .server-name-in:focus, .server-handle-in:focus { outline: none; }
-.server-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); color: var(--sub); font-size: var(--t-meta); }
+.server-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); color: var(--sub); font-size: var(--t-word); }
 .server-ask:empty { display: none; }
 /* The quiet @ at the chip's end: the address it follows unseen, to be written otherwise; shown, the @ stays where it
    was, as the address's first letter. */
@@ -75,13 +75,13 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
   align-items: center; column-gap: var(--s2); border-bottom: 1px dashed var(--rule); }
 .board-new > .board-head > .button { margin-left: var(--s1); }
 .board-naming { display: flex; min-width: 0; cursor: var(--cursor-text); }
-.board-name-in { min-width: 4ch; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--ink); font: 700 var(--t-card)/calc(2 * var(--u)) var(--sans); text-overflow: ellipsis; }
+.board-name-in { min-width: 4ch; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--ink); font: 700 var(--t-word)/calc(2 * var(--u)) var(--sans); text-overflow: ellipsis; }
 .board-name-in:focus { outline: none; }
 .board-name-in::placeholder { color: var(--sub); font-weight: 400; }
 .board-new > .board-head > .error { grid-column: 1 / -1; padding-bottom: var(--s1); }
 .board-new > .board-head > .error:empty { display: none; }
 .board-new > .board-lead { grid-column: 1; grid-row: 2; align-self: start; padding: var(--s3) var(--u); }
-.prompt.ghost-dock { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); font: var(--t-body)/1.6 var(--sans); }
+.prompt.ghost-dock { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); font: var(--t-word)/1.6 var(--sans); }
 .side-ghost { opacity: .45; }
 /* A gear with nothing chosen keeps its place, so nothing beside it moves. */
 .server-gear.unseen { visibility: hidden; }
@@ -130,7 +130,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .slide > .dock::after { content: none; }
 /* Its key comes with the words (server/dock.ts): empty, the box says whom it writes to, whole, at every width. */
 .slide > .dock > .prompt:not(.has-words) > .prompt-run { display: none; }
-.prompt-run > .key-said { margin-left: var(--s2); font: var(--t-fine)/1 var(--mono); color: var(--sub); }
+.prompt-run > .key-said { margin-left: var(--s2); font: var(--t-word)/1 var(--mono); color: var(--sub); }
 /* No line between a board's talk and the box one writes in: read back, what passes under the box's edge goes a little
    out of focus (depth, §1), in the half cell the talk keeps empty at its foot, so at rest on the latest nothing is. */
 .slide > .board-card:has(> .board-talk, > .part-panel) + .dock { position: relative; }
@@ -142,7 +142,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
    it, as words do. */
 .board-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s2); box-sizing: border-box; min-height: calc(2 * var(--u)); padding: 0 var(--u); }
 .board-head h2 { flex: 0 1 auto; min-width: 0; margin: 0; font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.board-head > .board-mark { font: 700 var(--t-meta)/calc(2 * var(--u)) var(--mono); }
+.board-head > .board-mark { font: 700 var(--t-word)/calc(2 * var(--u)) var(--mono); }
 .board-head .grow { flex: 1; }
 .board-head > .mono, .board-head > .small { flex-shrink: 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-head > .button { flex: none; }
@@ -154,7 +154,8 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
    is under it, unseen, so the talk is where it was read to when it comes back. */
 .board-card:not(.board-said, .ghost-next) { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 .board-card > .board-head { grid-column: 1; }
-.board-head > .parts { flex: none; flex-wrap: nowrap; min-height: calc(2 * var(--u)); align-items: center; margin-left: var(--s2); }
+/* (Beside the name, the head's gap from it; where the name leaves no room, on a line of their own under it, from its left.) */
+.board-head > .parts { flex: none; flex-wrap: nowrap; min-height: calc(2 * var(--u)); align-items: center; }
 .board-head .part { height: var(--h-row); padding-inline: var(--s3); }
 .slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel)) { box-shadow: 0 1px 0 var(--rule); }
 .board-card > .board-talk, .board-card > .part-panel { grid-column: 1; grid-row: 2; min-height: 0; margin: 0; }
@@ -190,9 +191,9 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .side-index > h3 { padding: 0 var(--u); }
 .side-boards { display: grid; margin: 0; padding: 0; list-style: none; }
 .side-board { position: relative; display: flex; align-items: baseline; gap: var(--s2); box-sizing: border-box; width: 100%; height: var(--key); padding: 0 var(--u); border: 0; border-radius: 0;
-  background: none; color: var(--sub); font: var(--t-body)/var(--key) var(--sans); text-align: left; cursor: var(--cursor-hand); }
+  background: none; color: var(--sub); font: var(--t-word)/var(--key) var(--sans); text-align: left; cursor: var(--cursor-hand); }
 .side-board > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-board > .board-mark { font: 700 var(--t-meta)/var(--key) var(--mono); }
+.side-board > .board-mark { font: 700 var(--t-word)/var(--key) var(--mono); }
 .side-board[aria-current='true'] { background: var(--ink); color: var(--ground); font-weight: 700; }
 .side-board:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
 .side-board[aria-current='true']:focus-visible { outline-color: var(--ground); }
@@ -200,7 +201,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* A heading over its list as a section's is over its content. */
 .side-part { display: grid; gap: var(--s3); }
 /* (A label on a desk: 13 px mono, lowercase, as Home's are.) */
-.server-side .side-part h3 { margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); letter-spacing: 0; text-transform: lowercase; }
+.server-side .side-part h3 { margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; text-transform: lowercase; }
 .server-side .empty { margin-top: 0; padding: var(--s5) var(--s4); }
 .people, .side-repos { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
 /* Words of two sizes in a row share a baseline; the face sits centred by them. */
@@ -236,7 +237,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* Its name the first row's, its parts the second's, and what the part chosen holds from the third. */
 .sheet-head { display: flex; align-items: center; gap: var(--s3); min-width: 0; min-height: var(--row); }
 .sheet-title { display: flex; align-items: baseline; gap: var(--s1) var(--s3); min-width: 0; }
-.sheet-title h2 { min-width: 0; font-size: var(--t-title); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-title h2 { min-width: 0; font-size: var(--t-word); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet-title p { flex-shrink: 4; min-width: 0; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet-head .grow { flex: 1; }
 .sheet-head > .button { flex: none; }
@@ -296,7 +297,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .seen-file { display: block; width: 100%; padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: var(--cursor-hand); }
 .seen-file[aria-current='true'] { background: var(--raised); color: var(--ink); }
 .seen-file:hover { background: var(--paper); color: var(--ink); }
-.seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-meta)/1.55 var(--mono); }
+.seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-word)/1.55 var(--mono); }
 @media (max-width: 760px) { .seen-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .seen-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--rule); } }
 .home-servers { display: flex; flex-wrap: wrap; gap: var(--s2); }
 

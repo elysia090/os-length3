@@ -9,7 +9,7 @@
    and of its size, is the one that reads as a field (raised, its edge seen). Each part lifts under the pointer. */
 .stub:has(> .stub-text) { border-color: var(--rule); background: transparent; }
 .stub-text:hover { background: var(--paper); }
-.stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 600 var(--t-body)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 700 var(--t-word)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stub-text { cursor: var(--cursor-copy); }
 /* The code beside the name: six digits to be found by, copied by a press. */
 .stub-in:focus { outline: none; }
@@ -32,14 +32,14 @@
 .stub-record { display: grid; gap: var(--s1); }
 .stub-record p { margin: 0 0 var(--s1); }
 .record-row { display: grid; grid-template-columns: 4em minmax(0, 1fr); align-items: center; gap: var(--s2); }
-.record-value { min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); font: var(--t-meta)/1.4 var(--mono); text-align: left; overflow-wrap: anywhere; cursor: var(--cursor-copy); }
+.record-value { min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); font: var(--t-word)/1.4 var(--mono); text-align: left; overflow-wrap: anywhere; cursor: var(--cursor-copy); }
 .record-value:hover { background: var(--paper); }
 .record-found { margin-top: var(--s2) !important; color: var(--sub); }
 /* Words are ink: `done` is the mark's green (3.6:1 on ground), too light for words. */
-.record-found.found { color: var(--ink); font-weight: 600; }
+.record-found.found { color: var(--ink); font-weight: 700; }
 /* Copied: the text gives way to the word for a moment, in the same place. */
 [data-copied] { position: relative; color: transparent !important; }
-[data-copied]::after { content: attr(data-copied-word); position: absolute; inset: 0; display: flex; align-items: center; padding: inherit; color: var(--ink); font-family: var(--sans); font-weight: 600; }
+[data-copied]::after { content: attr(data-copied-word); position: absolute; inset: 0; display: flex; align-items: center; padding: inherit; color: var(--ink); font-family: var(--sans); font-weight: 700; }
 /* What is not committed, beside Commit: its diff in a box of its own, scrolling in it when long, its top level
    with Commit's (the step that sets words on the button's middle sets no box there). */
 .step-about:has(> .changes) { padding-top: 0; }
@@ -47,5 +47,5 @@
 .step-line { display: flex; align-items: center; gap: var(--s3); margin-top: calc((1.5em - var(--h-control)) / 2); }
 .step-line > p { flex: 1; min-width: 0; }
 /* Inside a box on `raised`, an added line is drawn on `ground` with a rule at its left, so it still stands out. */
-.review-chat .step-done { font-size: var(--t-meta); }
+.review-chat .step-done { font-size: var(--t-word); }
 .review-chat .done-mark { margin: 1px 0; }

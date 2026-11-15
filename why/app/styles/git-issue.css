@@ -2,7 +2,7 @@
 
 /* An issue opened large: its words first, then what can be done, then its parts. */
 .issue-big-head { display: grid; gap: var(--s1); }
-.issue-big-head h2 { margin: 0; font-size: var(--t-card); font-weight: 600; }
+.issue-big-head h2 { margin: 0; font-size: var(--t-word); font-weight: 700; }
 .issue-no { color: var(--sub); }
 .issue-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); } /* nothing in it wider than the box (a narrow box held wide by its foot) */
 .issue-box > .issue-body, .issue-words > .issue-body { margin: 0; max-width: 72ch; }
@@ -17,8 +17,8 @@
    is no room: a quiet line, not a block that holds the foot two lines tall. */
 .issue-about { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); min-width: 0; }
 .issue-about > .issue-where + .muted::before { content: '·' / ''; margin-right: var(--s2); }
-.issue-about .issue-where { font-size: var(--t-meta); }
-.issue-big-head .issue-where { font-size: var(--t-meta); }
+.issue-about .issue-where { font-size: var(--t-word); }
+.issue-big-head .issue-where { font-size: var(--t-word); }
 
 /* Issues as large boxes side by side: one in full, its neighbours' edges
    showing at both sides; the track slides to the one chosen. An edge is a
@@ -52,7 +52,7 @@
 .issue-slot[aria-current='false'] .issue-card { padding-inline: var(--s2); }
 .issue-big-head.peek h2 { white-space: nowrap; }
 /* Small, on the line the title's words stand on (its line is the title's: the number alone set small in it). */
-.issue-big-head.peek .issue-no { font-size: var(--t-body); }
+.issue-big-head.peek .issue-no { font-size: var(--t-word); }
 .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
 /* Hovered, the neighbour lifts (raised, its edge and number in ink, the number a step toward the box it would become)
    and its edge shows which way it goes, a chevron there: where the pointer is is a way along, said before it is
@@ -80,13 +80,13 @@
 .slide-stage::after, .issue-stage::after { right: 0; background: linear-gradient(to right, transparent, var(--ground)); }
 .slide-stage:has(.slide[aria-current='true'] + .slide)::after, .slide-stage:has(.slide + .slide[aria-current='true'])::before,
 .issue-stage:has(.issue-slot[aria-current='true'] + .issue-slot)::after, .issue-stage:has(.issue-slot + .issue-slot[aria-current='true'])::before { opacity: 1; }
-.space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-meta); }
+.space-col > h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-word); }
 
 /* An agent at work on the issue (git/agent-line.ts): its dot breathes while it works, beats at each tool, and holds
    still in the marker's yellow while it waits for the person. */
-.agent-line { display: grid; gap: var(--s1); font-size: var(--t-meta); }
+.agent-line { display: grid; gap: var(--s1); font-size: var(--t-word); }
 .agent-row { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; color: var(--sub); }
-.agent-who { color: var(--ink); font-weight: 600; flex: none; }
+.agent-who { color: var(--ink); font-weight: 700; flex: none; }
 .agent-doing { font-family: var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-waits { flex: none; background: var(--marker-soft); color: var(--ink); border-radius: var(--r-round); padding: 0 var(--s2); }
 .agent-dot { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--done); align-self: center; }

@@ -24,7 +24,7 @@
   /* (The board in the hand; one beside it is its name at its own edge.) */
   .slide[aria-current='true'] .board-head { position: relative; padding-left: calc(9 * var(--u)); }
   /* (Its # hangs in the gutter, close against the name: a mark before a word, not a thing of its own in the margin.) */
-  .slide[aria-current='true'] .board-head > .board-mark { position: absolute; left: var(--u); width: calc(8 * var(--u) - var(--s1)); text-align: right; }
+  .slide[aria-current='true'] .board-head > .board-mark { position: absolute; left: var(--u); top: 0; width: calc(8 * var(--u) - var(--s1)); text-align: right; }
   .slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel)) { box-shadow: none; }
   .slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel))::after {
     content: ''; position: absolute; left: calc(9 * var(--u)); right: 0; bottom: 0; height: 1px; background: var(--rule); }

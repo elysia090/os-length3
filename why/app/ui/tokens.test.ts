@@ -40,3 +40,30 @@ test('a hue says a kind and nothing else: each clearly a hue, each kind its own'
     assert.ok(apart > 30, `${a} and ${b} are told apart by hue (${apart.toFixed(0)}°)`);
   }
 });
+
+// Three sizes, one, two and four times (DESIGN §3, after Vignelli): every word at one size, a name at twice it, the
+// shot's one large thing at four; what says less is said quieter or in the other weight, never smaller. One bold.
+test('every size of type is one of three, and every weight one of three', async () => {
+  const {readdirSync} = await import('node:fs');
+  const dir = new URL('../styles/', import.meta.url);
+  const sheets = readdirSync(dir).filter((f) => f.endsWith('.css')).map((f) => [f, readFileSync(new URL(f, dir), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')] as const);
+  const SIZES = /^(var\(--t-(word|head|voice)\)|var\(--size\)|inherit|0)$/;
+  for (const [f, s] of sheets) {
+    for (const m of s.matchAll(/font-size:\s*([^;}]+)/g)) assert.match(m[1]!.trim(), SIZES, `${f}: font-size ${m[1]}`);
+    for (const m of s.matchAll(/(?<![-\w])font:\s*([^;}]+)/g)) {
+      const v = m[1]!.trim();
+      if (v === 'inherit') continue;
+      const t = /^(?:(?:italic|normal)\s+)?(?:(\d{3})\s+)?(\S+?)(?:\/\S+)?\s/.exec(`${v} `);
+      assert.ok(t, `${f}: font ${v}`);
+      assert.match(t[2]!, SIZES, `${f}: font ${v}`);
+      if (t[1]) assert.ok(['400', '700', '900'].includes(t[1]), `${f}: font ${v}`);
+    }
+    for (const m of s.matchAll(/font-weight:\s*([^;}]+)/g)) assert.ok(['400', '700', '900', 'inherit'].includes(m[1]!.trim()), `${f}: font-weight ${m[1]}`);
+    // (A size of its own, kept in a property: a name's, one cell or two of capitals.)
+    for (const m of s.matchAll(/--size:\s*([^;}]+)/g)) assert.match(m[1]!.trim(), /^var\(--t-(head|voice)\)$|^calc\(var\(--cap\) \* var\(--u\) \/ \.727\)$/, `${f}: --size ${m[1]}`);
+  }
+  // 17, 33 and 66: the words by the angle a small letter needs, the name by its capitals' cell, and twice that.
+  assert.match(css, /--t-word:\s*17px/);
+  assert.match(css, /--t-head:\s*calc\(var\(--u\) \/ \.727\)/);
+  assert.match(css, /--t-voice:\s*calc\(2 \* var\(--u\) \/ \.727\)/);
+});

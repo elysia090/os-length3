@@ -10,7 +10,7 @@
 .new-repo-main { --nr-in: var(--u); padding: 0 0 calc(2 * var(--u)); }
 .new-repo { --piece: min(calc(24 * var(--u)), round(down, 100% - var(--shade), var(--u))); display: grid; width: var(--piece); }
 .nr-label { display: flex; flex-wrap: nowrap; align-items: baseline; gap: 0 var(--s2); width: fit-content; max-width: 100%; min-height: var(--u); margin: 0; padding: 0;
-  font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
+  font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 /* (Its words on a patch of the ground exactly their size: no dot of the grid under them, read as a full stop.) */
 .nr-label { background: var(--ground); }
 .nr-kind { font-weight: 400; color: var(--sub); }
@@ -18,7 +18,7 @@
 .nr-label > .nr-path { min-width: 0; overflow-wrap: anywhere; }
 /* Why the name cannot be: in the cell under it, the words' small size on lines of a cell, an off dot before them. The
    description comes down by the cells it takes; the sheet's top stays on the horizon. */
-.nr-box > .error { margin: var(--u) var(--nr-in) 0; font: 400 var(--t-meta)/var(--u) var(--sans); }
+.nr-box > .error { margin: var(--u) var(--nr-in) 0; font: 400 var(--t-word)/var(--u) var(--sans); }
 .nr-box > .error:empty { display: none; }
 .nr-box { position: relative; display: flex; flex-direction: column; min-width: 0; padding: var(--u) 0 calc(var(--u) + var(--to-grid, 0px));
   background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
@@ -33,30 +33,30 @@
   pointer-events: none; font: 900 var(--t-head)/1 var(--display); letter-spacing: -.035em; color: var(--rule); }
 /* What it is for, a line under the name: the words written straight in it, on lines of a cell; the box grows with them. */
 .nr-box > .summary-box { flex: none; min-height: 0; margin: var(--u) 0 0; padding: 0 var(--nr-in); border: 0; border-radius: 0; background: transparent; }
-.nr-box > .summary-box > .todo-detail { min-height: var(--u); font: var(--t-body)/var(--u) var(--sans); overflow: hidden; }
+.nr-box > .summary-box > .todo-detail { min-height: var(--u); font: var(--t-word)/var(--u) var(--sans); overflow: hidden; }
 /* What will be made with it, under a rule: its folders and files as File names them, a line a cell tall each, half a
    cell of paper under the rule (the rule's own pixel in it) and under them (as a sheet has over and under its lines), New file
    and New folder their last line. On the grid from the rule down: so the key under them is too. A folder's depth is a
    cell in, its mark in that cell, the names of one depth in one column. */
 .nr-box > .tree.tree-still { margin: var(--u) var(--nr-in) 0; padding: calc(var(--u) / 2 - 1px) 0 calc(var(--u) / 2); border: 0; border-top: 1px solid var(--rule);
-  border-radius: 0; background: transparent; box-shadow: none; font: var(--t-body)/var(--u) var(--sans); }
+  border-radius: 0; background: transparent; box-shadow: none; font: var(--t-word)/var(--u) var(--sans); }
 .nr-box .tree-still .tree-row { min-height: var(--u); height: var(--u); padding-left: calc(var(--depth, 0) * var(--u)); border-radius: 0; background: none; }
 .nr-box .tree-still :is(.tree-toggle, .tree-spacer) { width: var(--u); height: var(--u); }
 .nr-box .tree-still .tree-name { min-height: var(--u); padding: 0; font: inherit; line-height: var(--u); }
-.nr-box .tree-still .tree-meta { font: var(--t-meta)/var(--u) var(--sans); color: var(--sub); }
+.nr-box .tree-still .tree-meta { font: var(--t-word)/var(--u) var(--sans); color: var(--sub); }
 /* Its deeds' one mark, quiet, ink under the hand (nothing comes or goes, and nothing is coloured under a pointer). */
 .nr-box .tree-still .tree-more { display: grid; place-items: center; flex: none; width: var(--u); height: var(--u); padding: 0; border: 0; border-radius: 0;
   background: none; color: var(--sub); cursor: var(--cursor-hand); }
 .nr-box .tree-still .tree-more .mark { width: 16px; height: 16px; }
-.nr-box .tree-still > .error:not(:empty) { margin: 0; font: var(--t-meta)/var(--u) var(--sans); }
+.nr-box .tree-still > .error:not(:empty) { margin: 0; font: var(--t-word)/var(--u) var(--sans); }
 .nr-box .tree-still .tree-more:is(:hover, :focus-visible, [aria-expanded='true']) { color: var(--ink); outline: none; }
 /* Its foot: the plan's word if any, Create, the key that makes it beside its word: a key the frame's square tall. */
 .nr-box > .answers { margin: var(--u) 0 0; padding: 0 var(--nr-in); }
 .nr-box > .answers > .button { height: calc(1.5 * var(--u)); min-height: 0; }
 .nr-box > .answers > .button.primary { display: inline-flex; align-items: center; gap: var(--s2); }
-.nr-box > .answers > .button.primary > kbd { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: inherit; opacity: .7; font: 600 var(--t-fine) var(--mono); }
+.nr-box > .answers > .button.primary > kbd { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: inherit; opacity: .7; font: 700 var(--t-word) var(--mono); }
 .field { display: grid; gap: var(--s2); }
-.field-label { font-size: var(--t-meta); color: var(--sub); }
+.field-label { font-size: var(--t-word); color: var(--sub); }
 .tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; clip-path: none; width: auto; max-height: none; transition: none; }
 .tree-still .tree-name.plain { color: var(--ink); }
 .bad-char { background: none; color: var(--off); text-decoration: underline 2px var(--off); text-underline-offset: 3px; }
@@ -77,7 +77,7 @@
    mark in the cell a folder's mark stands in, its words in the names' column; quiet, ink under the hand. */
 .tree-makes { display: flex; flex-wrap: wrap; gap: 0 var(--u); }
 .tree-make { display: inline-flex; align-items: center; gap: 0; height: var(--u); padding: 0; border: 0; border-radius: 0; background: none;
-  color: var(--sub); font: var(--t-body)/var(--u) var(--sans); cursor: var(--cursor-hand); }
+  color: var(--sub); font: var(--t-word)/var(--u) var(--sans); cursor: var(--cursor-hand); }
 .tree-make .mark { width: 16px; height: 16px; margin: 0 4px; }
 .tree-make > span { margin-left: 0; }
 .tree-make:hover, .tree-make:focus-visible { color: var(--ink); outline: none; }
@@ -94,5 +94,5 @@
 .summary-box > .todo-detail::placeholder { color: var(--sub); }
 .summary-box > .todo-detail:disabled { opacity: .5; }
 .new-repo .row { align-items: center; flex-wrap: wrap; }
-.made { margin-right: var(--s2); font-weight: 600; }
+.made { margin-right: var(--s2); font-weight: 700; }
 .chip:disabled, .line-in:disabled { opacity: .5; cursor: var(--cursor-arrow); }

@@ -12,16 +12,16 @@
 .plan-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: var(--s4); margin: 0 0 var(--s3); }
 .plan-head > h3 { margin: 0; }
 .plan-now-line { margin: 0; }
-.plan-now-line > b { color: var(--ink); font-weight: 600; }
+.plan-now-line > b { color: var(--ink); font-weight: 700; }
 .tier-card { min-height: 168px; gap: var(--s1); }
 .tier-card > .card-title { margin-bottom: var(--s1); }
-.tier-price { font-size: var(--t-card); font-weight: 600; }
-.tier-keeps { margin: var(--s1) 0 0; padding: 0; list-style: none; font-size: var(--t-meta); }
+.tier-price { font-size: var(--t-word); font-weight: 700; }
+.tier-keeps { margin: var(--s1) 0 0; padding: 0; list-style: none; font-size: var(--t-word); }
 .tier-keeps li + li { margin-top: var(--s1); }
 .tier-card > p.muted { margin: var(--s2) 0 0; }
 .tier-card > .card-foot { padding-top: var(--s3); }
 .plan-part > .plan-confirm { margin-top: var(--s5); }
-.plan-title { margin: 0; font-size: var(--t-card); font-weight: 600; }
+.plan-title { margin: 0; font-size: var(--t-word); font-weight: 700; }
 .plan-now p { margin: var(--s1) 0 0; }
 /* Each meter in the same columns: what it measures, its track, its figures (right-aligned). */
 .plan-meter { display: grid; grid-template-columns: minmax(0, 1fr) min(40%, 240px) 18ch; align-items: center; }
@@ -31,7 +31,7 @@
 .plan-part > .answers { margin-top: var(--s5); }
 /* Before payment: what is bought, how it is billed and ends, and the one step into it. */
 .plan-confirm { padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); }
-.plan-price { margin: 0 0 var(--s2); font-size: var(--t-card); font-weight: 600; }
+.plan-price { margin: 0 0 var(--s2); font-size: var(--t-word); font-weight: 700; }
 .plan-terms { margin: 0 0 var(--s3); padding-left: var(--s4); }
 .plan-terms li + li { margin-top: var(--s1); }
 .plan-confirm > .answers { margin-top: var(--s4); }
@@ -46,7 +46,7 @@
 /* The meter: a round track, `raised` inside an `edge` line, filled `ink` as far as the use goes. */
 .meter { height: var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--raised); overflow: hidden; }
 .meter > span { display: block; height: 100%; width: calc(var(--share, 0) * 100%); background: var(--ink); }
-.plan-meter.over .row-meta { color: var(--ink); font-weight: 600; }
+.plan-meter.over .row-meta { color: var(--ink); font-weight: 700; }
 /* A refusal of the plan's, said in place: the words, then the way to the Plan beside them. */
 /* Narrow (a phone, a tall window): what is measured, its track as wide as the row, its figures; one under another. */
 @media (max-width: 760px) {

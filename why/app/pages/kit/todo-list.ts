@@ -424,7 +424,7 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
   const keys = (caps: string[], word: string) => h('span', {class: 'key-hint'}, ...caps.map((c) => h('kbd', {}, c)), h('span', {}, word));
   const hint = o.readOnly ? null : h('p', {class: 'todo-hint', 'aria-hidden': 'true'},
-    keys(['Enter'], t('Details')), keys(['Enter'], t('Empty line starts next item')), keys([mod, 'Enter'], t('Done')));
+    keys(['Enter'], t('Details')), keys(['Enter', 'Enter'], t('Next')), keys([mod, 'Enter'], t('Done')));
   const element = h('div', {class: `todo-box${dateInDetail ? ' todo-dates-detail' : ''}`}, list, hint);
   // Pressed on its paper below the items, the line at its foot takes the caret, as a page written on does: the
   // empty sheet is where the next is written, not a thing to aim at.

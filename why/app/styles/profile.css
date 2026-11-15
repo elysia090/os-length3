@@ -1,11 +1,11 @@
 /* Home's profile: the face, the name, the handle and the line about the person, the counts, and the profile written
    in. */
 .grid.repo-grid .card { min-height: 152px; }
-.grid.repo-grid .card-title { font-size: var(--t-body); }
+.grid.repo-grid .card-title { font-size: var(--t-word); }
 /* What the repo is, under its name: its own words, two lines at most. */
 .card-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink); }
 .card-summary:empty { display: none; }
-.card-summary ~ .muted { font-size: var(--t-meta); }
+.card-summary ~ .muted { font-size: var(--t-word); }
 
 /* Home: profile, written where it is read (home.ts profileHeader): no sheet comes round it, no Cancel and no Save.
    A cell of the desk over it; then the name, Home's title (DESIGN §10): its capitals --name-cap cells tall, two at any
@@ -23,7 +23,7 @@
 .identity h1 { --cap: var(--name-cap, 2); --size: calc(var(--cap) * var(--u) / .727); --pitch: calc((var(--cap) + 1) * var(--u)); max-width: 100%;
   margin: calc(2 * var(--u) - (var(--pitch) + var(--size)) / 2 + .1245 * var(--size)) 0 calc(-1 * ((var(--pitch) - var(--size)) / 2 + .1245 * var(--size))) var(--ink-left, 0px);
   font: 900 var(--size)/var(--pitch) var(--display); letter-spacing: -.055em; white-space: normal; text-wrap: balance; overflow-wrap: anywhere; }
-.identity > :is(.counts, .handle, .bio, .bio-ask, .error) { margin: 0; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
+.identity > :is(.counts, .handle, .bio, .bio-ask, .error) { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 .identity > .counts { order: 1; margin-top: var(--u); display: flex; flex-wrap: wrap; gap: 0 3ch; max-width: 100%; white-space: nowrap; }
 .identity > .handle { order: 2; }
 .identity > .bio { order: 3; max-width: min(60ch, 100%); max-height: calc(2 * var(--u)); overflow: hidden; white-space: pre-wrap; font-family: var(--sans); color: var(--sub); }

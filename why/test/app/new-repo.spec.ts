@@ -120,7 +120,7 @@ test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a pie
       expect(l.top % (U / 2), `${l.what} at ${l.top}, on a half cell`).toBe(0);
       expect(l.height % (U / 2), `${l.what} ${l.height} tall, whole half cells`).toBe(0);
     }
-    expect(sheet.sizes, 'the words on it at the words\' size and the small one').toEqual(['13px', '15px']);
+    expect(sheet.sizes, 'the words on it at the words\' size, one size (DESIGN §3)').toEqual(['17px']);
     expect(sheet.filled, 'nothing filled in it but its key').toBe(0);
     // Its place over its corner stands on a patch of the ground, no dot of the grid under its words.
     expect(await label.evaluate((e) => [getComputedStyle(e).backgroundColor, e.getBoundingClientRect().width <= e.scrollWidth + 1])).toEqual(['rgb(220, 217, 212)', true]);

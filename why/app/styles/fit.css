@@ -36,7 +36,7 @@
 .server-center .slide[aria-current='false'] > .board-card > :not(.board-head) { display: none; }
 .server-center .slide[aria-current='false'] .board-head h2 { flex: none; overflow: visible; color: var(--sub); }
 .server-center .slide[aria-current='false']:is(:hover, :focus-visible) h2 { color: var(--ink); }
-.side-board.side-new { font-family: var(--mono); font-size: var(--t-meta); font-weight: 700; text-transform: lowercase; }
+.side-board.side-new { font-family: var(--mono); font-size: var(--t-word); font-weight: 700; text-transform: lowercase; }
 
 /* The room's sheet is packed as Inbox's first sheet is: nothing round its lines but the sheet's own edge, every line
    a cell tall, half a cell in from the edge; a label, its lines, half a cell, the next label. It was a cell of

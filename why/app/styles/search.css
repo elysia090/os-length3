@@ -59,7 +59,7 @@
 .found-nav:has(> .found-steps) { padding-left: 0; }
 .found-steps { display: flex; gap: var(--s1); flex: none; }
 .found-here { flex: 0 1 auto; min-width: 0; margin: 0; display: flex; align-items: baseline; gap: var(--s2); }
-.found-here > .found-what { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.found-here > .found-what { min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .found-here > .found-kind, .found-here > .found-at { flex: none; }
 .found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
 .found-step:hover:not(:disabled) { background: var(--paper); }
@@ -69,14 +69,14 @@
   background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .found-shut:hover { background: var(--paper); color: var(--ink); }
 .found-shut .mark { width: var(--s4); height: var(--s4); }
-.found-at { font: var(--t-meta) var(--mono); color: var(--sub); }
+.found-at { font: var(--t-word) var(--mono); color: var(--sub); }
 .work.bench .search-results { max-height: var(--search-room, none); }
 .found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
 .found-item { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: var(--h-row); padding: var(--s1); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; cursor: var(--cursor-hand); }
 .found-item:hover { background: var(--paper); }
-.found-kind { flex: none; font-size: var(--t-meta); color: var(--sub); }
+.found-kind { flex: none; font-size: var(--t-word); color: var(--sub); }
 .found-what { min-width: 0; overflow-wrap: anywhere; }
-.found-what.mono { font: var(--t-meta) var(--mono); }
+.found-what.mono { font: var(--t-word) var(--mono); }
 .found-item > .diff-count, .found-item > .row-meta { margin-left: auto; flex: none; }
 /* Put back at the foot of a file's lines, its right end; asking, the foot says what will happen. */
 .diff-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2); padding: var(--s2) 0; }
@@ -84,11 +84,11 @@
 .hit-head { display: flex; align-items: center; gap: var(--s2); }
 .hit-head > .hit-file { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
 /* How many of its lines were found, in words beside its name, quiet. */
-.hit-count { flex: none; color: var(--sub); font-size: var(--t-meta); white-space: nowrap; }
+.hit-count { flex: none; color: var(--sub); font-size: var(--t-word); white-space: nowrap; }
 /* A found file's changes at the head's other end, said as a diff is everywhere (diff +3 and its squares), away from
    the count of what was found: pressed, its diff. */
 .hit-diff { flex: none; display: inline-flex; align-items: baseline; gap: var(--s2); margin-left: auto; min-height: var(--h-row); padding: 0 var(--s1); border: 0; border-radius: var(--r-field);
-  background: transparent; color: var(--sub); font-size: var(--t-meta); cursor: var(--cursor-hand); align-self: center; line-height: var(--h-row); }
+  background: transparent; color: var(--sub); font-size: var(--t-word); cursor: var(--cursor-hand); align-self: center; line-height: var(--h-row); }
 .hit-diff:hover { background: var(--paper); color: var(--ink); }
 /* What Enter takes from the box, while the box has the keyboard: lit as under the pointer, its key at its end. */
 .found-body .choice > .enter-cap { display: none; color: var(--sub); border-color: var(--rule); }
@@ -96,7 +96,7 @@
 .search-box:has(.search-in:focus) .found-body .choice.first > .enter-cap { display: inline-grid; }
 .hit.first { grid-template-columns: 4ch minmax(0, 1fr) auto; }
 .hit-file > .enter-cap { margin-left: var(--s2); }
-.hit-kind { margin: 0 var(--s1) var(--s1); font-size: var(--t-meta); font-weight: 600; color: var(--sub); }
+.hit-kind { margin: 0 var(--s1) var(--s1); font-size: var(--t-word); font-weight: 700; color: var(--sub); }
 /* The plugin area at the top of the center: plain (nothing) until it is opened from the rail's plug. */
 .plugins { padding: 0 var(--s5) var(--s3); }
 .plugins .empty { margin-top: 0; padding: var(--s4) var(--s5); }
@@ -106,7 +106,7 @@
    beside the file until it is put away (reference.ts). */
 .pane-heads { --pad: 5px; display: flex; justify-content: flex-end; margin: var(--s4) calc(-1 * var(--pad)) var(--s1) 0; }
 .pane-head { padding: 0 var(--pad); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub);
-  font: 600 var(--t-meta)/calc(var(--t-body) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
+  font: 700 var(--t-word)/calc(var(--t-word) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
 .pane-head:hover, .pane-head[aria-pressed='true'] { color: var(--ink); }
 .pane-head:hover { background: var(--paper); }
 .pane-head-n { margin-left: var(--s1); font-weight: 400; font-variant-numeric: tabular-nums; }
@@ -159,8 +159,8 @@ form.search { position: relative; }
 .search-count { margin-bottom: var(--s2); padding-left: var(--s1); }
 .hit-group { display: grid; margin-bottom: var(--s3); }
 .hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: var(--cursor-hand); border-radius: var(--r-field); }
-.hit-file { min-height: var(--h-row); font: 600 var(--t-meta) var(--mono); }
-.hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-meta)/1.6 var(--mono); }
+.hit-file { min-height: var(--h-row); font: 700 var(--t-word) var(--mono); }
+.hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-word)/1.6 var(--mono); }
 .hit-file:hover, .hit:hover { background: var(--paper); }
 /* The Prompt's status line says something only when something is missing. */
 .term > p:empty { display: none; }
@@ -168,15 +168,15 @@ form.search { position: relative; }
 .run-head { display: flex; justify-content: space-between; gap: var(--s2); min-height: var(--h-row); align-items: center; }
 /* A question asked of the Agent, read whole: the question as written, each step quiet in the Prompt's letters, its
    words as the pane's answers read (prompt-pane.css), its code on the Prompt's glass. */
-.ask-question { margin: 0 0 var(--s3); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
-.ask-step { margin: 0 0 var(--s1); font: var(--t-meta) var(--mono); color: var(--sub); white-space: pre-wrap; overflow-wrap: anywhere; }
-.ask-words { margin: var(--s2) 0 var(--s3); font: 400 var(--t-meta)/1.65 var(--sans); overflow-wrap: anywhere; }
+.ask-question { margin: 0 0 var(--s3); font-weight: 700; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ask-step { margin: 0 0 var(--s1); font: var(--t-word) var(--mono); color: var(--sub); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ask-words { margin: var(--s2) 0 var(--s3); font: 400 var(--t-word)/1.65 var(--sans); overflow-wrap: anywhere; }
 .ask-words > .answer-p { margin: 0 0 6px; white-space: pre-wrap; }
 .ask-words > .answer-code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--screen); color: var(--add-tint);
-  font: var(--t-meta)/1.5 var(--mono); white-space: pre; overflow-x: auto; }
+  font: var(--t-word)/1.5 var(--mono); white-space: pre; overflow-x: auto; }
 /* Its lines as they were written, several sent at once each on its own (never run together into one). */
-.run-line { font: 600 var(--t-meta) var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; text-align: start; }
+.run-line { font: 700 var(--t-word) var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; text-align: start; }
 .run-head:has(> .run-line) { align-items: flex-start; }
 /* Pressed, the line is back in the prompt box: its hover fill reaches out past the text, which stays over the output. */
 button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
-.run-out { margin: 0; color: var(--sub); font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-out { margin: 0; color: var(--sub); font: var(--t-word)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }

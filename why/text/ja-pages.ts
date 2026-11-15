@@ -25,7 +25,6 @@ export default {
   'Clear completed': '完了済みを削除',
   'First line: Type: Title': '1行目：種別：タイトル',
   'Details': '詳細',
-  'Empty line starts next item': '空行で次の項目へ',
   'Done': '完了',
 
   // New repo

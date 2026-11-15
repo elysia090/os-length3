@@ -2,7 +2,7 @@
 
 /* A step's head (the review inside the issue's box). */
 .stage-head { display: flex; align-items: center; gap: var(--s3); }
-.stage-head h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.stage-head h3 { margin: 0; font-size: var(--t-word); font-weight: 700; }
 /* Done: a circle with a check in it. */
 .done-mark { width: 22px; height: 22px; border-radius: 50%; background: var(--done); position: relative; flex: none; }
 .done-mark::after { content: ''; position: absolute; left: 7px; top: 4px; width: 6px; height: 10px; border: solid var(--ground); border-width: 0 2px 2px 0; transform: rotate(45deg); }
@@ -28,7 +28,7 @@
 .done-row.just-cut { animation: line-open var(--move) var(--land) both, line-lit 1600ms var(--spring) both; border-radius: var(--r-field); overflow: hidden; }
 /* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
 @keyframes line-open {}
-.done-head > .diff-count { font-size: var(--t-meta); }
+.done-head > .diff-count { font-size: var(--t-word); }
 /* A Prompt stopped from its card: what it gave back is lit a moment (runtime/prompts.ts). */
 /* A row of the tree a deed made or renamed lands lit where it now is. */
 .tree-row.landing { animation: line-land var(--slide) var(--land) both, line-lit 1200ms var(--spring); }
@@ -46,7 +46,7 @@
    a comment being written). */
 .review-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); margin-top: var(--s6); padding: var(--s5) var(--s5) var(--s6); border: 1px solid var(--rule); border-radius: var(--r-place); background: var(--paper); transition: border-color var(--motion); }
 .review-box:focus-within, .review-box:has(.marking) { border-color: var(--ink); }
-.review-box > .stage-head h3 { font-size: var(--t-card); }
+.review-box > .stage-head h3 { font-size: var(--t-word); }
 /* On raised, an added line is drawn on ground, so it still stands out. */
 .review-chat { display: grid; gap: var(--s3); justify-items: start; padding: var(--s2) 0; }
 .review-chat .bubble { max-width: min(560px, 85%); background: var(--raised); } /* said on the review's paper as one's own is in the Inbox */
@@ -72,4 +72,4 @@
    a pass across the lines leaves a short trail rather than blinking. */
 .diff-line.markable .diff-words { transition: background-color var(--move) var(--spring); }
 .diff-line.markable:hover .diff-words { transition-duration: var(--motion); }
-.diff-line.marked .diff-no, .diff-line.marking .diff-no { color: var(--ink); font-weight: 600; }
+.diff-line.marked .diff-no, .diff-line.marking .diff-no { color: var(--ink); font-weight: 700; }

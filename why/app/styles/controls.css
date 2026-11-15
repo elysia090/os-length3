@@ -23,7 +23,7 @@
   min-height: var(--h-control); padding: var(--s2) var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
 }
-.error { font-size: var(--t-meta); }
+.error { font-size: var(--t-word); }
 .error:empty { display: none; }
 .row { display: flex; gap: var(--s2); }
 /* Declining at the left, going on at the right (common.ts answers). */

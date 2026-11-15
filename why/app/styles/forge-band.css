@@ -6,7 +6,7 @@
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
   flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
-  background: transparent; cursor: var(--cursor-hand); white-space: nowrap; font-size: var(--t-meta);
+  background: transparent; cursor: var(--cursor-hand); white-space: nowrap; font-size: var(--t-word);
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .center { grid-column: 1; position: relative; min-height: 0; border-right: var(--line-frame) solid var(--ink); overflow: clip; }
@@ -37,7 +37,7 @@
 .band-tool .mark { width: 18px; height: 18px; }
 .band-tools > .search-box { flex: none; width: 220px; }
 .band-tools form.search > .mark { position: absolute; left: 10px; top: calc((var(--h-row) - 16px) / 2); width: 16px; height: 16px; color: var(--ink); pointer-events: none; z-index: 1; }
-.band-tools .search-in { padding-left: 34px; border-color: var(--ink); background: transparent; font-size: var(--t-body); }
+.band-tools .search-in { padding-left: 34px; border-color: var(--ink); background: transparent; font-size: var(--t-word); }
 .band-tools .search-in::placeholder { color: var(--sub); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { width: calc(2 * var(--u)); height: auto; border: 0; border-radius: 0; background: transparent; color: var(--frame); box-shadow: inset -1px 0 0 var(--frame-edge); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools:focus-within .band-tool { box-shadow: inset -1px 0 0 var(--ink); }
@@ -50,14 +50,14 @@
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search > .mark { left: 10px; top: calc(50% - 8px); width: 16px; height: 16px; stroke-width: 2; color: var(--frame); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) form.search:focus-within > .mark { color: var(--ink); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in { height: 100%; padding: 0 var(--s3) 1px 34px; border: 0; border-radius: 0; background: transparent;
-  box-shadow: none; font: 400 var(--t-meta)/1 var(--sans); }
+  box-shadow: none; font: 400 var(--t-word)/1 var(--sans); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in::placeholder { color: var(--sub); }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .search-in:is(:focus, :focus-visible) { background: var(--paper); box-shadow: none; outline: none; }
 /* The name of what is in hand (on Git, of the repo the desk is of): against the right edge by its ink (ui/optical.ts
    inkEdge), a cell in from the page's edge as Home's repos are, its capitals a cell tall and in the middle of the keys'
    row; where the band has no room for it whole at that size, not there at all (forge.ts, git.ts): a title is never
    made smaller to fit, nor cut. Said by the piece itself, so not said twice to those who hear the page. */
-.band-held { --size: calc(var(--u) / .727); flex: 1 1 0; min-width: 0; align-self: flex-start; overflow: hidden; white-space: nowrap; text-align: right;
+.band-held { --size: var(--t-head); flex: 1 1 0; min-width: 0; align-self: flex-start; overflow: hidden; white-space: nowrap; text-align: right;
   margin: calc(1.5 * var(--u) - .8755 * var(--size)) calc(var(--u) - var(--ink-right, 0px)) 0 0; height: var(--size);
   font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; color: var(--frame); pointer-events: none; user-select: none; }
 /* What the band's search finds lies on the desk as sheets of its own, a kind a sheet, in a row from the desk's edge
@@ -91,7 +91,7 @@
 .band-tools .search-results:not([data-q='']) .search-pills:not(:has([aria-pressed='true'])) { display: none; }
 .band-tools .search-pills { gap: var(--u); margin: calc(-31px) 0 7px; }
 .band-tools .search-pills > .chip { height: var(--u); min-height: 0; padding: 0; border: 0; background: none; box-shadow: none;
-  font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--sub); }
+  font: 700 var(--t-word)/var(--u) var(--mono); color: var(--sub); }
 .band-tools .search-pills > .chip:hover { color: var(--ink); }
 .band-tools .search-pills > .chip[aria-pressed='true'] { color: var(--ink); text-decoration: underline 3px; text-underline-offset: 5px; }
 /* Where in the line of what was searched and read one is: only once there is more than the one in hand. */
@@ -107,14 +107,14 @@
 /* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
 @keyframes sheet-down {}
 @media (prefers-reduced-motion: reduce) { .found-sec { animation: none; } }
-.found-sec-head { position: absolute; left: 0; bottom: 100%; margin: 0; white-space: nowrap; font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
-.found-sec-head > i { margin-left: 1ch; font: 400 var(--t-meta)/var(--u) var(--mono); font-style: normal; color: var(--quiet); }
+.found-sec-head { position: absolute; left: 0; bottom: 100%; margin: 0; white-space: nowrap; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
+.found-sec-head > i { margin-left: 1ch; font: 400 var(--t-word)/var(--u) var(--mono); font-style: normal; color: var(--quiet); }
 .found-sec-rows { display: grid; min-width: 0; max-height: calc(100vh - 10 * var(--u)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
 /* A row: a cell and a half tall in the code face, a step in from the sheet's sides, soft at the corner where it is
    pressed or pointed at; whatever kind it is (a line found, an issue, a changed file, what the Agent was asked). */
 .found-sec .choice { display: flex; align-items: center; gap: var(--u); min-width: 0; min-height: calc(1.5 * var(--u)); height: auto; margin: 0 6px; padding: 0 18px;
   border: 0; border-radius: var(--r-field); background: none; box-shadow: none; text-align: left; white-space: nowrap;
-  font: 400 var(--t-meta)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+  font: 400 var(--t-word)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
 .found-sec .choice:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); outline: none; }
 .found-sec .choice:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 .band-tools .search-box:has(.search-in:focus) .found-secs .choice.first { background: var(--slot); }

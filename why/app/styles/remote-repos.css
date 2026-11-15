@@ -8,7 +8,7 @@
 .repo-cards .card > .card-foot { align-self: stretch; margin-top: auto; }
 /* The size of Home's cards, its name as Home's says it: one repo reads the same on both pages. */
 .grid.repo-cards .card { min-height: 152px; }
-.grid.repo-cards .card-title { font-size: var(--t-body); }
+.grid.repo-cards .card-title { font-size: var(--t-word); }
 /* Remote's parts are 760 wide (the passkey's offer above them, the plan's): its cards two to a row in that width,
    so their edges are the offer's. */
 .grid.repo-cards { max-width: 760px; }

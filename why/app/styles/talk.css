@@ -19,19 +19,19 @@
 .board-card.fits .tl-start.tl-all { visibility: hidden; }
 .tl-pages { overflow-anchor: none; }
 /* A day's name: on a line of its own, small, at the same edge. */
-.tl-day { margin: var(--u) 0 0; color: var(--sub); font: var(--t-meta)/var(--u) var(--mono); }
+.tl-day { margin: var(--u) 0 0; color: var(--sub); font: var(--t-word)/var(--u) var(--mono); }
 .tl-day + .tl-post { margin-top: 0; }
 .tl-post { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s2); margin: var(--u) calc(-1 * var(--s2)) 0; padding: 0 var(--s2);
-  border-radius: var(--r-field); font: var(--t-body)/var(--u) var(--sans); transition: background-color var(--motion); }
+  border-radius: var(--r-field); font: var(--t-word)/var(--u) var(--sans); transition: background-color var(--motion); }
 .tl-post.tl-runs { margin-top: calc(var(--u) / 2); }
 .tl-post.held, .tl-post:focus-within { background: var(--raised); }
 .tl-main { display: contents; }
-.tl-face { display: grid; place-items: center; width: var(--u); height: var(--u); border-radius: var(--r-mark); font: 700 var(--t-fine) var(--sans); }
+.tl-face { display: grid; place-items: center; width: var(--u); height: var(--u); border-radius: var(--r-mark); font: 900 var(--t-word)/1 var(--display); }
 /* A guest's face is no tint of theirs, only a dashed ring, beside the word guest: never taken for one of its people's. */
 .tl-guest > .tl-face { border: 1px dashed var(--edge); background: transparent; }
 .tl-who { grid-column: 2; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); min-width: 0; }
 .tl-who { height: var(--u); overflow: hidden; }
-.tl-who > time, .tl-acts > time { font: var(--t-meta)/1 var(--mono); color: var(--sub); }
+.tl-who > time, .tl-acts > time { font: var(--t-word)/1 var(--mono); color: var(--sub); }
 .tl-body { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s1); }
 .tl-foot:empty { display: none; }
@@ -47,5 +47,5 @@
 .tl-foot-mark { height: 1px; }
 /* The mark for what came floats just above the box (its holder has no height), so showing it moves nothing. */
 .tl-new-at { position: sticky; bottom: var(--s3); z-index: 3; height: 0; display: flex; justify-content: flex-start; align-items: flex-end; }
-.tl-new { flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 0; border-radius: var(--r-round); background: var(--ink); color: var(--ground); font: 600 var(--t-meta) var(--sans); cursor: var(--cursor-hand); }
+.tl-new { flex: none; min-height: var(--h-row); padding: 0 var(--s4); border: 0; border-radius: var(--r-round); background: var(--ink); color: var(--ground); font: 700 var(--t-word) var(--sans); cursor: var(--cursor-hand); }
 .tl-new[hidden] { display: none; }

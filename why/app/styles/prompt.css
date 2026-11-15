@@ -85,7 +85,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
    the line has no prompt: nothing comes in above the line and goes, so the screen does not move as a run starts and
    ends. */
 :is(.prompting, .prompt-leaving) .screen .term-activity { position: absolute; z-index: 3; right: calc(var(--s4) + 1px + var(--run-w, 52px) + var(--s3));
-  bottom: calc(var(--s4) + 1px + (var(--t-meta) * 1.6 - var(--h-row)) / 2); padding: 0; }
+  bottom: calc(var(--s4) + 1px + (var(--t-word) * 1.6 - var(--h-row)) / 2); padding: 0; }
 /* Up it is as tall as what it holds, up to that: before anything is run only its head and the box's line, so it does
    not cover what one reads to write the first line; it grows with the output. Its words start where the box's line
    does, past the box's edge (kept, unseen, so the line does not move as the screen comes). */
@@ -125,7 +125,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
    the line and Run stay (within a pixel or two) where they were in the box as the screen comes. */
 :is(.prompting, .prompt-leaving) .screen .prompt { position: relative; z-index: 2; align-items: flex-end; min-height: 0; background: transparent; border-color: transparent; border-top-width: 0; box-shadow: none; padding: 0 var(--s4) var(--s4); }
 :is(.prompting, .prompt-leaving) .screen .prompt:focus-within { border-color: transparent; box-shadow: none; }
-:is(.prompting, .prompt-leaving) .screen .prompt-run { margin-block: calc((var(--t-meta) * 1.6 - var(--h-row)) / 2); }
+:is(.prompting, .prompt-leaving) .screen .prompt-run { margin-block: calc((var(--t-word) * 1.6 - var(--h-row)) / 2); }
 :is(.prompting, .prompt-leaving) .screen .prompt-in { --caret: block; }
 .line-lit .screen .prompt-in { color: var(--add-tint); --cell: color-mix(in srgb, var(--add-tint) 70%, transparent);
   text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent); }
@@ -152,7 +152,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .prompt-chip {
   flex: none; position: relative; display: inline-flex; align-items: center; height: calc(var(--prompt-h) - 2 * var(--pill-in) - 2px);
   padding: 0 var(--s3) 0 calc(var(--s3) + 6px + var(--s2)); border-radius: var(--r-round); background: var(--screen); color: var(--add-tint);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); font: var(--t-meta)/1.6 var(--mono); cursor: var(--cursor-text);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); font: var(--t-word)/1.6 var(--mono); cursor: var(--cursor-text);
   text-shadow: 0 0 6px color-mix(in srgb, var(--done) 70%, transparent), 0 0 1px color-mix(in srgb, var(--add-tint) 80%, transparent);
 }
 .prompt-chip:has(> .prompt-ps:empty) { display: none; }
@@ -172,7 +172,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .prompt-chip:not([data-mode='run']) > :is(.lamp, .prompt-ps) { display: none; }
 .prompt-mode { display: inline-flex; align-items: center; gap: var(--s2); white-space: pre; }
 .prompt-mode:empty { display: none; }
-.prompt-mode > b { font-weight: 600; }
+.prompt-mode > b { font-weight: 700; }
 .prompt-chip[data-mode='issue'] .prompt-mode { gap: 0; }
 .prompt-chip[data-mode='issue'] .prompt-mode-repo { opacity: .66; }
 .prompt-chip[data-mode='todo'] .prompt-mode > .icon { width: 15px; height: 15px; color: var(--done); }
@@ -207,9 +207,9 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .box-mode-word { flex: 1; }
 .box-mode-keys { display: inline-flex; gap: var(--s1); }
 .box-mode-keys > kbd { color: var(--sub); border-color: var(--rule); }
-.box-mode[aria-checked='true'] > .box-mode-word { font-weight: 600; }
+.box-mode[aria-checked='true'] > .box-mode-word { font-weight: 700; }
 .box-mode[aria-checked='true'] > .box-mode-word::after { content: ''; display: inline-block; width: 14px; height: 14px; margin-left: var(--s2); vertical-align: -2px; background: var(--ink); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
-.screen .prompt-in { --cell: var(--ink); font: var(--t-meta)/1.6 var(--mono); }
+.screen .prompt-in { --cell: var(--ink); font: var(--t-word)/1.6 var(--mono); }
 .screen .prompt-in::placeholder { color: transparent; text-shadow: none; }
 /* With no repo to run in, the box is not to be written in: it says why where the words would be, no cell drawn. */
 .screen .prompt-in:disabled::placeholder { color: var(--sub); }
@@ -228,8 +228,8 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .prompt-caps > * { grid-area: 1 / 1; }
 .prompt-keys, .prompt-sends { display: inline-flex; align-items: center; gap: var(--s1); transition: none; }
 .prompt-keys > kbd, .prompt-sends > kbd { color: var(--sub); border-color: var(--rule); }
-.prompt-keys > kbd:last-child { font: 600 13px/1 var(--mono); }
-.prompt-keys > kbd.tick { padding-top: 6px; font-size: 15px; } /* a backtick is drawn at the top of its letter's room */
+.prompt-keys > kbd:last-child { font: 700 var(--t-word)/1 var(--mono); }
+.prompt-keys > kbd.tick { padding-top: 6px; font-size: var(--t-word); } /* a backtick is drawn at the top of its letter's room */
 .prompt:is([data-mode='issue'], [data-mode='todo'], [data-mode='agent']) .prompt-keys { visibility: hidden; } /* Ctrl+` brings the box running */
 /* Written in, the keys that send what is in it stand in their place, beside Run (Create, Add): Enter alone is a new
    line. Edit sends nothing (what is typed is in the file already): its Ctrl G stays. */
@@ -252,14 +252,14 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 .prompt { display: flex; align-items: flex-end; gap: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); padding: var(--s3) var(--s4); }
 /* Run at the box's bottom right, the word alone (its keys are in its title and name), a small button that does
    not make the box taller; inside the raised box its hover is a step back to the ground. */
-.prompt-run { flex: none; margin-block: calc((var(--t-body) * 1.6 - var(--h-row)) / 2); }
+.prompt-run { flex: none; margin-block: calc((var(--t-word) * 1.6 - var(--h-row)) / 2); }
 .prompt-run:hover:not(:disabled) { background: var(--paper); }
 .prompt-run:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 .prompt:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 /* The keyboard coming or going, its ink edge comes in quickly and goes a little slower, as a press's light does. */
 .prompt { transition: border-color var(--move) var(--spring), box-shadow var(--move) var(--spring); }
 .prompt:focus-within { transition-duration: var(--motion); }
-.prompt-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-body)/1.6 var(--sans); }
+.prompt-in { flex: 1; min-width: 0; max-height: 30vh; border: 0; padding: 0; background: transparent; resize: none; font: var(--t-word)/1.6 var(--sans); }
 .prompt-in:focus { outline: none; }
 /* While a line runs there is no prompt line (pill-line.ts), and the caret, between where the line was written and
    where the next will be, waits unseen for what it prints (caret.ts): a run over at once brings the prompt line and the

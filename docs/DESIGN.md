@@ -276,24 +276,34 @@ Three faces: **sans** (the system's), **mono** (the system's), **display** (Inte
 names only; its capitals are .727 of its size, and in a line as tall as its size their feet stand .1245 of the size
 above the line's foot).
 
-Seven sizes and no others:
+**Three sizes, one, two and four times, and no others** (Vignelli: "no more than two type sizes" on a page, heads
+twice the text; "single, double, three or four times ... not an odd size in between"):
 
 | Size | Face | On a line of | For |
 |---|---|---|---|
-| 11 | mono | 16 or 24 | a line's number, a key's name |
-| 13 | mono 700 (lowercase) or sans | 24 | what is said beside: a label over a piece, a count, a time, a day, what the band and a menu say |
-| 15 | sans | 24 (in the note, 36) | what is read on a sheet; an item of the note (700) |
-| 17 | mono | 24 | what is written: a file's text, the terminal |
-| 20 | sans 700 | 24 | a title inside a sheet |
-| 33.01 (= u / .727) | display | — | a name: a repo, a file in the hand, a place. Its capitals are one cell tall |
-| 66.02 (= 2u / .727) | display | — | the person's name. Its capitals are two cells tall |
+| **17** | mono or sans, 400 or 700 | 24 | **every word**: what is written (a file, the terminal), what is read on a sheet, what is said beside (a label over a piece, a count, a time, a day, a hint, the band's search, a menu), a line's number, a key's name, a title inside a sheet (700) |
+| **33.01** (= u / .727) | display | — | a name: a repo, a file in the hand, a place, a board, a person on their sheet. Its capitals are one cell tall: about twice the words |
+| **66.02** (= 2u / .727) | display | — | the shot's one large thing: the person's name at Home, an issue's number. Its capitals are two cells tall |
 
-**On one sheet, three.** Its name (33), its words (15, or 17 where they are written), and one small size (13) for
-what stands beside them: a time, a day, a label, a hint. 11 is for a line's number and a key's name only, 20 for a
-title inside a sheet that has parts, 66 for the person's name alone.
+**On one sheet, two**: its words and its name. The one large thing stands alone in its shot (§2).
 
-Why 17 for what is written: on an ordinary screen at a desk's distance one px is about .023°, and reading stops
-slowing when a small letter is about a fifth of a degree tall. A small letter of 17 px mono is .21°; of 14 px, .17°.
+**What says less is said quieter, never smaller.** Its value (`sub`, `quiet`, §3 Colour), or the other weight; the
+face says what kind of words they are (mono for what is written and what the machine names: a file, a handle, a
+time; sans for what is read). Two weights, 400 and 700, and the display face's 900 for names. Why not smaller:
+
+- **A smaller size reads slower.** Reading stops slowing when a small letter is about a fifth of a degree tall
+  (Legge's critical print size). One CSS px is .0213° (§4), and the faces' small letters are about .53 of their
+  size: at 17 px a small letter is .19°; at 15, .17°; at 13, .15°; at 11, .12°. Nothing here is set where it is read
+  slower than it could be, to look quieter: quieter is what value is for.
+- **A line's number set smaller does not stand on its line.** Two sizes on one line of a cell sit on two baselines;
+  the number and its line are one line of type, as in every editor that sets them alike.
+- **Size and value would rank twice.** A servant is a step under its master in every channel (§1), but a step is
+  enough: the master holds the size (a name, the large thing), the servants are told apart by value. Two channels
+  saying the same rank among servants is two violins (Bresson).
+- 17 is also the body size both platforms read at (Apple's Body, 17 pt).
+
+A person's initial in their mark (on the rail, beside what they said) is a mark, not words: the display face at the
+words' size, its capitals half a cell.
 
 **A name in Japanese** is a cell tall too. A kanji's face fills .92 of its square where a capital of the display face
 is .727 of its size, so at the name's size it would stand 30 px tall beside capitals of 24 (measured). It is set in
@@ -453,7 +463,7 @@ hand where it was.
 
 On a desk (Home, New repo, Forge, Git). **One bar** from the desk's edge: x = 48, y = 6, 36 tall, as wide as a
 piece (§3). Ground under it, a 1 px outline of the quiet line (ink while its search is written in), corner 4. Its keys are parts of it **two cells wide**, edge to
-edge, a 1 px line between them; the search is the rest, its words 13 px. Every edge of the bar is on a line of the
+edge, a 1 px line between them; the search is the rest, its words the words' size. Every edge of the bar is on a line of the
 grid, so no dot is cut by it.
 
 - Home and Forge: the door, the terminal's key, the files' key, the search. Git: the door, the terminal's key, the
@@ -519,7 +529,7 @@ read on it is given):
 3. **White that is part of it.** The smaller side is mostly paper, and is one unbroken column of it.
 4. **One side where the margin is broken.** What is on the larger side runs out to the sheet's edge; the other side
    keeps its margin.
-5. **Sizes that jump.** Each at least twice the one under it (13, 33, 66), with none between.
+5. **Sizes that jump.** Each about twice the one under it (17, 33, 66), with none between.
 6. **Large things at corners, across from one another,** and the middle left to the paper.
 
 A sheet where everything starts at the left edge, runs the whole measure and keeps the same margin both sides has
@@ -777,11 +787,11 @@ A desk of two short pieces (§6):
 1. **The person's own.** A cell of desk; **the name**, Home's title: its capitals two cells tall, the first line's
    from y = 72 to 120, at any length. A name longer than the piece breaks over lines at that size, balanced, a line
    every three cells, so every line's capitals stand on the grid; only a word longer than the piece at two cells takes
-   one cell (the programme's next size down, §2). A cell; the counts, 13 px mono, a cell under the last line's feet
+   one cell (the programme's next size down, §2). A cell; the counts, mono, a cell under the last line's feet
    (from 144 with a name of one line); then the handle and the line about the person, a cell each, while there are
    any; a cell; **the note**. The note is Home's piece in the hand: its yellow, as wide as the piece.
    Its rows are the frame's square: an item's mark is a 16 px box with a 2 px line in a 36 px square at the note's
-   edge, its words 15 px 700 on a 36 px line. It is as tall as what is written on it and the line of what the keys
+   edge, its words 700 on a 36 px line. It is as tall as what is written on it and the line of what the keys
    do, brought up to the next line of the grid, never under four cells.
 2. **The repos and what waits.** "repos" on the cell under the band (y = 48); a name every two cells, capitals a
    cell tall, **the first standing on the line the person's name's first line stands on** (y = 120); a cell; "+ new repo" in the
@@ -905,7 +915,7 @@ on two sides.
   foot, so at rest on the latest nothing is).
 - **The box one writes in** stands in the words' column, under them. Its key (Post, Send) comes with the words, and
   says its keys on itself; Enter is a new line.
-- **On the grid.** Words are 15 px on lines of a cell. A run of one person's posts a few minutes apart says who
+- **On the grid.** Words are on lines of a cell. A run of one person's posts a few minutes apart says who
   once, and the margin beside the rest of the run is paper; half a line between two posts of a run, a line before
   another speaker. A day's name is a small line of its own in the margin.
 - **A sheet with no room for 6 | 2 | 14** (a phone's piece is 13 cells, 264 px inside, 36 letters) has who speaks
@@ -918,7 +928,7 @@ on two sides.
 ### Runtime: this device
 
 *The machine one is at: what it holds, what runs on it, how it is set.* A sheet. A place of figures: the figures
-are the one thing with weight (20 px 700), everything else is said in 13 and 15.
+are the one thing with weight (700), everything else is said at 400, the quieter in `sub`.
 
 ### The Remote: Home's far side, where the repos are kept
 

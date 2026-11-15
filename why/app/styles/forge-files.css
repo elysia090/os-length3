@@ -23,7 +23,7 @@
   display: flex; align-items: center; gap: var(--s2); justify-content: space-between;
   margin: 0; padding: var(--s3) var(--s4) var(--s2);
   background: var(--ground); border-radius: var(--r-place) var(--r-place) 0 0;
-  font: 600 var(--t-meta) var(--mono);
+  font: 700 var(--t-word) var(--mono);
 }
 .path span { font-weight: 400; }
 /* Beside: at the head's right end, the window cut in two; pressed (or the head with Ctrl), the file opens in a box
@@ -69,7 +69,7 @@
 @keyframes unsaved-in {}
 @media (prefers-reduced-motion: reduce) { .unsaved-dot { animation: none; } }
 .sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: var(--cursor-text); }
-.gutter, .code { margin: 0; padding: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre; tab-size: 4; }
+.gutter, .code { margin: 0; padding: 0; font: var(--t-word)/1.6 var(--mono); white-space: pre; tab-size: 4; }
 .gutter { color: var(--sub); text-align: right; user-select: none; min-width: 2ch; font-variant-numeric: tabular-nums; }
 .code { overflow-x: auto; }
 /* The text itself is the field: no box, the caret is the only sign. */
@@ -99,7 +99,7 @@
 .path-rename { min-width: 0; max-width: 100%; margin: -2px -4px; padding: 1px 3px; border: 1px solid var(--ink); border-radius: var(--r-field); outline: 0; background: var(--paper); color: var(--ink); font: inherit; }
 .path-rename:disabled { opacity: .6; }
 .path-error { margin-left: var(--s3); font-family: var(--sans); }
-.sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-meta); }
+.sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-word); }
 /* Landed on from a search, File or Git: its head lit with the marker for a moment, then fading back, so the eye is
    led to where it landed without anything staying lit. The line asked for is selected in the marker too. */
 .flow .revealed > .path { animation: landed 1200ms var(--spring); }

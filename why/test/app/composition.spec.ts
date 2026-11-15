@@ -65,18 +65,27 @@ function frame({subject, corner}: {subject: string; corner: string}) {
     return [{name: el.className.toString().slice(0, 60), x: Number(m[1]), y: Number(m[2]), blur: Number(m[3]), focus: over, box: [r.left, r.top, r.width, r.height]}];
   });
   const s = document.querySelector(subject)?.getBoundingClientRect() ?? null;
-  // The display face's words in sight, each text as it is set, with its size (the rail's seal is a mark, not words).
+  // The display face's words in sight, each text as it is set, with its size (a person's initial in their mark, on the
+  // rail or beside what they said, is a mark, not words).
   const display = [...(function* () {
     const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
       const el = n.parentElement!, text = n.textContent!.trim();
-      if (!text || el.closest('.rail, [aria-hidden="true"] .sr-only') || !/Display/.test(getComputedStyle(el).fontFamily)) continue;
+      if (!text || el.closest('.rail, .tl-face, [aria-hidden="true"] .sr-only') || !/Display/.test(getComputedStyle(el).fontFamily)) continue;
       const range = document.createRange();
       range.selectNodeContents(n);
       const r = [...range.getClientRects()].filter((b) => b.width > 0 && b.height > 0 && b.right > 0 && b.left < W && b.bottom > 0 && b.top < H);
       if (r.length && inSight(el)) yield {text, size: parseFloat(getComputedStyle(el).fontSize)};
     }
   })()];
+  // Every size of type in sight, of words and of fields alike (DESIGN §3: three, one, two and four times).
+  const sizes = new Set<number>();
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    const el = n.parentElement!;
+    if (n.textContent!.trim() && !el.closest('.sr-only, script, style') && inSight(el)) sizes.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
+  }
+  for (const el of document.querySelectorAll('input, textarea, [contenteditable]')) if (inSight(el)) sizes.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
   // What stands just past the frame's corner, where the eye is after a move.
   // (A cell and a half right of the rail, two cells under the band: 24 px a cell, the frame two cells each way.)
   const at = document.elementFromPoint(84, 96);
@@ -97,7 +106,7 @@ function frame({subject, corner}: {subject: string; corner: string}) {
   // The frame over what is called up: the band's keys stand over the veil.
   const bar = document.querySelector<HTMLElement>('.band-tools')?.closest<HTMLElement>('.home-band, .bar') ?? null;
   const frameOver = !veil || !bar || Number(getComputedStyle(bar).zIndex) > Number(getComputedStyle(veil).zIndex);
-  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver};
+  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes]};
 }
 
 /** Each rule of a shot held at `place`'s rest. */
@@ -124,6 +133,8 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     } else {
       expect(f.frameOver, `${what}: the band over the veil, in focus`).toBe(true);
     }
+    // Three sizes and no others: the words', a name's, the one large thing's (DESIGN §3).
+    for (const size of f.sizes) expect([17, NAME, PERSON].some((s) => Math.abs(size - s) < .01), `${what}: type at ${size}px, not one of the three sizes`).toBe(true);
     // One voice: two sizes, no text twice, no number twice.
     for (const d of f.display) expect([NAME, PERSON].some((s) => Math.abs(d.size - s) < .01), `${what}: "${d.text}" at ${d.size}px, not a display size`).toBe(true);
     const texts = f.display.map((d) => d.text);
@@ -161,7 +172,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   expect(marked, `${what}: ${Math.round(marked * 100)}% of the world marked`).toBeLessThanOrEqual(1 / 3);
 }
 
-test('every rest is a shot: in every place, at every width, one lens, one horizon, one subject in focus, the eye landing on what the place is, a whole title, one voice', async ({signedIn: app, another}) => {
+test('every rest is a shot: in every place, at every width, one lens, one horizon, one subject in focus, the eye landing on what the place is, a whole title, one voice, three sizes of type', async ({signedIn: app, another}) => {
   test.setTimeout(300_000);
   // Something in each place: a TODO, two repos, an issue under way with its work, a server's board with talk, a
   // conversation.

@@ -35,9 +35,9 @@ an Eye*, Eisenstein's *Film Form* and *Film Sense*, McCloud's *Understanding Com
 | 16 | The content decides the container; gutters a line of type | §3 the programme; between pieces two cells, within a sheet a cell | kept |
 | 17 | Half a dozen typefaces at most | §3 three faces | kept |
 | 18 | Flush left; centred only for the lapidary | §1 one left edge, nothing centred | kept |
-| 19 | No more than two type sizes on a page; heads twice the text, or the text's size in bold, a line above and none below | §3 on one sheet three (the name, the words, one small) and a line's number at 11 | **open**: a sheet carries three sizes and the numbers' fourth, where the canon allows two. To meet it, the small size (13) would become the words' size in another weight or colour, and the numbers stay as a key's name |
+| 19 | No more than two type sizes on a page; heads twice the text, or the text's size in bold, a line above and none below | §3 three sizes, one, two and four times; on one sheet two (its words, its name); a title inside a sheet the words' size in bold | **decided** (was open): the small size, the numbers' and the read words' are the words' size, told apart by value and weight. Reasons: a smaller size reads slower (a small letter under .2°), a smaller number does not stand on its line's baseline, and size and value ranking servants twice is two violins |
 | 20 | Type hangs from the rule | §5 what is ruled on a sheet; the transcript's line under its name | kept |
-| 21 | One or two sizes; weight for function, not colour; "it is really the white that makes the black sing" | §3; §2 negative space | kept (sizes: see 19) |
+| 21 | One or two sizes; weight for function, not colour; "it is really the white that makes the black sing" | §3 two weights (400, 700); what says less is quieter; §2 negative space | kept |
 | 22 | Scale: the right size in its context | §2 size is importance | kept |
 | 23 | Texture: light is the master of form | — | not ours (no material shown by its picture, §1) |
 | 24 | A limited palette; colour as signifier | §3 colour is material or state; §13 value ranks, a hue says a kind | kept |
@@ -46,7 +46,7 @@ an Eye*, Eisenstein's *Film Form* and *Film Sense*, McCloud's *Understanding Com
 | 27 | Binding | — | not ours |
 | 28 | Identity and diversity: neither redundancy nor fragmentation | §10 each place adds only what it adds | kept |
 | 29 | White space more important than the black; tight margins tension, wide serenity | §2 negative space | kept |
-| 30 | Sizes as single, double, three or four times: "not an odd size in between" | §3 the widths 8, 12, 24, 48 cells | kept |
+| 30 | Sizes as single, double, three or four times: "not an odd size in between" | §3 the widths 8, 12, 24, 48 cells; the type 17, 33, 66 | kept |
 | 31 | "I love systems and despise happenstance" | the whole document | kept |
 
 ### Müller-Brockmann, *Grid Systems in Graphic Design* (1981)

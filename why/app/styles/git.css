@@ -2,7 +2,7 @@
 .work-act { margin-top: var(--s3); }
 .work-act .line-in { flex: 1; }
 .issue-one { display: grid; gap: var(--s2); }
-.issue-one h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.issue-one h3 { margin: 0; font-size: var(--t-word); font-weight: 700; }
 .issue-body { white-space: pre-wrap; }
 /* An issue's title written over where it is read (issue-form.ts retitle): a line of ink under it, as a name written
    over is underlined, and nothing else drawn. */
