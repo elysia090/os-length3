@@ -404,8 +404,10 @@ export function pop(el: Element, by = .16, ms = 380) {
   el.animate([{scale: 1 - by * 2}, {scale: 1 + by, offset: .5}, {scale: 1}], {duration: paced(ms), easing: SPRING});
 }
 
-/** What stays where it is while a page comes and goes: the band and the panes, the window's own instruments. */
-const FRAME = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle)';
+/** What stays where it is while a page comes and goes: the band and the panes, the window's own instruments, and a
+ * row's map at the window's foot, which is the frame's as the rail is (DESIGN §6). (Left out, the map came in with the
+ * world, from under the window's foot, and stood still only once the place had.) */
+const FRAME = ':is(.home-band, .home-pane, .work > .bar, .work > .side, .work > .pane-toggle, .row-map)';
 
 /** `el` as it is seen now, as a thing of its own that nothing happens to: a copy with what is written in its fields
  * and drawn on its canvases (`settle`, once it is in the document, puts each part where it was scrolled to). */

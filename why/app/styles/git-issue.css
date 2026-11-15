@@ -52,21 +52,12 @@
 /* Small, on the line the title's words stand on (its line is the title's: the number alone set small in it). */
 .issue-big-head.peek .issue-no { font-size: var(--t-word); }
 .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { text-align: right; }
-/* Hovered, the neighbour lifts (raised, its edge and number in ink, the number a step toward the box it would become)
-   and its edge shows which way it goes, a chevron there: where the pointer is is a way along, said before it is
-   pressed. */
+/* Under the pointer, the neighbour its edge is the way to takes paper under it, its words in ink, at once: nothing is
+   drawn there only while the pointer is over it, and nothing moves (DESIGN §1, §14). (Before, it lifted 4 px, went the
+   raised grey and a chevron came on its edge: a mark there only under the pointer, and the footing moving.) */
 .issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-card,
-.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { border-color: var(--edge); color: var(--ink); background: var(--raised); }
+.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-card { color: var(--ink); background: var(--paper); }
 .issue-big-head.peek { transition: none; }
-.issue-stage:has(.stage-hit.next:hover) .issue-slot[aria-current='true'] + .issue-slot .issue-big-head.peek { translate: 4px 0; }
-.issue-stage:has(.stage-hit.prev:hover) .issue-slot:has(+ .issue-slot[aria-current='true']) .issue-big-head.peek { translate: -4px 0; }
-.issue-stage > .stage-hit::after {
-  content: ''; position: absolute; top: 50%; left: 50%; width: 9px; height: 9px; border: solid var(--ink); border-width: 0 2px 2px 0;
-  opacity: 0; transition: none;
-}
-.issue-stage > .stage-hit.next::after { margin: -5px 0 0 -7px; rotate: -45deg; translate: -3px 0; }
-.issue-stage > .stage-hit.prev::after { margin: -5px 0 0 -2px; rotate: 135deg; translate: 3px 0; }
-.issue-stage > .stage-hit:is(:hover, :focus-visible)::after { opacity: 1; translate: 0 0; }
 .stage-hit { position: absolute; top: 0; bottom: 0; z-index: 1; width: var(--peek); padding: 0; border: 0; border-radius: var(--r-place); background: transparent; cursor: var(--cursor-hand); }
 .stage-hit.prev { left: 0; width: calc(var(--lead) * var(--peek)); }
 .stage-hit.next { right: 0; width: calc((2 - var(--lead)) * var(--peek)); }

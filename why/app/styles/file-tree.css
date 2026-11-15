@@ -8,17 +8,13 @@
   width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
   padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card);
-  /* It comes out of the rail it was opened from: a few pixels from the left, drawn out from its left edge as a drawer
-     is, whole the while (never faded over the page, the page's words through its own); it goes back the same way.
-     (Moved by its left edge, not a transform, which would make it the frame its row menus are placed in.) Put away,
-     it goes back in a fraction of its coming, gathering speed to the rail's line and never under it (tokens.css
-     --leave): settling slowly there, its last few pixels stood beside the line as a sliver the line seemed to shake
-     with, while the page panned away (File, then Home). */
-  visibility: hidden; clip-path: inset(-2px 100% -2px -2px round var(--r-card));
-  transition: clip-path var(--leave) var(--spring), left var(--leave) var(--spring), visibility 0s var(--leave);
+  /* Called up, it is there at once where it rests, and put away it is gone at once (DESIGN §8: what comes is there,
+     what goes is gone; the world behind it going out of focus and back is the move). Before, it was drawn out of the
+     rail from its left edge as a drawer is, and went back in: a thing growing from nothing, beside a person's menu
+     that is simply there. */
+  visibility: hidden; transition: none;
 }
-.tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; clip-path: inset(-2px -2px -2px -2px round var(--r-card));
-  transition: clip-path var(--move) var(--land), left var(--move) var(--land), visibility 0s; }
+.tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; }
 /* Out, it cuts nothing (tree.ts): a row's menu stands beside it. */
 .tree.open.settled { clip-path: none; }
 .tree ul { list-style: none; margin: 0; padding: 0; }
@@ -86,9 +82,8 @@
   left: calc(var(--corner) - var(--s2)); top: var(--tree-top, calc(5 * var(--u)));
   width: min(calc(13 * var(--u)), calc(100vw - var(--corner) - var(--outer) - var(--u))); max-height: none; overflow: visible;
   padding: var(--u) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink);
-  clip-path: inset(-40px 100% -32px -2px);
 }
-.file-tree.open { left: var(--corner); clip-path: inset(-40px -32px -32px -2px); }
+.file-tree.open { left: var(--corner); }
 @media (max-width: 760px) { .file-tree { --corner: calc(var(--outer) + var(--rail)); } }
 .file-tree::before { content: '/'; position: absolute; left: 0; bottom: 100%; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 /* More rows than the window is tall: scrolled inside the sheet (its foot never lower than two cells over the

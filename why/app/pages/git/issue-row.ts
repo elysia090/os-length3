@@ -1,8 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../../text/i18n.ts';
-import {after, cut, paced, still} from '../../ui/glide.ts';
+import {after, still} from '../../ui/glide.ts';
 import type {Issue} from '../../../repo/issues.ts';
-import {SPRING} from '../../ui/law.ts';
 import {rowMap} from '../../ui/row-desk.ts';
 
 // Git's issues not merged yet, as large boxes side by side, as every desk rests (DESIGN §2, §6): the one in full at
@@ -217,21 +216,20 @@ export class IssueRow {
   /** How far the row is turned: to the box in full. */
   private turned() { const {w, gap} = this.step(); return this.k * (w + gap); }
 
-  /** The box gone from: as it was while it slides out (out of the keyboard's way), its head once it is at the edge. */
+  /**
+   * The box gone from: as it was while it slides out (out of the keyboard's way), its head at once once it is at the
+   * edge. (Faded at once by the cut, it went by as an empty sheet for the whole of the slide.)
+   */
   private leave(slot: HTMLElement, j: number) {
     slot.classList.add('leaving');
     slot.inert = true;
     slot.setAttribute('aria-hidden', 'true');
-    for (const part of slot.querySelectorAll<HTMLElement>(':scope > .issue-card > *, :scope > :not(.issue-card)')) {
-      part.animate([{opacity: 1}, {opacity: 1, offset: .55}, {opacity: 0}], {duration: cut() ? 0 : paced(450), fill: 'forwards'});
-    }
     after(450, () => {
       if (!slot.isConnected || slot.getAttribute('aria-current') === 'true') return;
       slot.classList.remove('leaving');
       slot.inert = false;
       slot.removeAttribute('aria-hidden');
       slot.replaceChildren(...this.held(j, false));
-      for (const part of slot.children) part.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(120), easing: SPRING});
     });
   }
 

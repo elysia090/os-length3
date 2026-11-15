@@ -1,7 +1,7 @@
 import {keepNear} from '../../ui/near.ts';
 import {h} from '../../ui/dom.ts';
 import {bytes} from '../../../text/format.ts';
-import {closeUp, keepOut, putAway, still, unfold} from '../../ui/glide.ts';
+import {closeUp, keepOut, putAway, unfold} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
@@ -130,7 +130,10 @@ export class FileTree {
     });
   }
 
-  get isOpen() { return this.element.classList.contains('open'); }
+  /** Called up and being read for the first time: out as soon as what it holds is read. */
+  private coming = false;
+
+  get isOpen() { return this.coming || this.element.classList.contains('open'); }
 
   /** File's button: pressed, the tree is out in front (the keyboard in it if a key pressed it); pressed again, it goes. */
   attach(button: HTMLElement) {
@@ -157,19 +160,31 @@ export class FileTree {
         // (And never so low that it is cut by the window's foot: at least twelve cells of it are in the window.)
         this.element.style.setProperty('--tree-top', `${Math.max(2 * cell, Math.min(cell * Math.round((at.top + cell) / cell), cell * Math.floor((innerHeight - 12 * cell) / cell)))}px`);
       }
-      this.build(focus);
+      const built = this.build();
+      // The keyboard on its first row once it is out: a repo's, once /root is read (its own row is not shown, and
+      // until then the only row there is System's).
+      if (focus) void built.then(() => queueMicrotask(() => { if (this.isOpen) [...this.root.querySelectorAll<HTMLElement>('.tree-name')].find((b) => b.getClientRects().length > 0)?.focus(); }));
+      // There whole where it rests, as every thing called up in front is (DESIGN §8: what comes is there), the world
+      // behind going out of focus from the press (the move). The first time, once what it holds is read: shown at once,
+      // it was a sheet with nothing in it, its rows coming a moment later. (Before, it was drawn out of the rail as a
+      // drawer is, a wipe from its left edge: a thing growing from nothing.)
+      this.veil.out(true);
+      this.trigger?.setAttribute('aria-expanded', 'true');
+      if (!this.root.querySelector('.tree-name')) {
+        this.coming = true;
+        void built.then(() => { if (!this.coming) return; this.coming = false; this.element.classList.add('open', 'settled'); });
+        return;
+      }
     }
     this.veil.out(true);
-    this.element.classList.add('open');
-    if (still()) this.element.classList.add('settled');
+    this.element.classList.add('open', 'settled');
     this.trigger?.setAttribute('aria-expanded', 'true');
   }
 
   close() {
     this.unpop();
-    // Its edge again first, to go back in from where it stands.
-    if (this.element.classList.contains('settled')) { this.element.classList.remove('settled'); void getComputedStyle(this.element).clipPath; }
-    this.element.classList.remove('open');
+    this.coming = false;
+    this.element.classList.remove('open', 'settled');
     this.veil.out(false);
     this.trigger?.setAttribute('aria-expanded', 'false');
   }
@@ -215,19 +230,21 @@ export class FileTree {
    * in it; the rest of / (the kernel's, the distribution's, what is empty here), wanted now and then, put away under
    * one quiet row at its foot, System, opened as a folder is and kept open once it is.
    */
-  private build(focus: boolean) {
+  /**
+   * What / holds read and drawn as rows, put in the tree whole once the folders being read are (the repos' among
+   * them): the rows it had stay till then. (Drawn into the tree as they were read, the repos' rows went to “…” and
+   * came back a moment later every time it came out.)
+   */
+  private build(): Promise<void> {
     this.said.textContent = '';
-    void list('/').then((top) => {
-      this.root.replaceChildren();
+    return list('/').then(async (top) => {
+      const rows = document.createElement('ul');
       const rest = top.filter((e) => e.origin !== 'repos');
-      for (const e of top) if (e.origin === 'repos') this.add(e, this.root, 0);
-      if (rest.length) this.root.append(this.system(rest));
-      if (!focus) return;
-      // The keyboard on its first row: a repo's, once /root is read (its own row is not shown, and until then the
-      // only row there is System's).
-      const first = () => { if (this.isOpen) [...this.root.querySelectorAll<HTMLElement>('.tree-name')].find((b) => b.getClientRects().length > 0)?.focus(); };
-      if (this.reading) this.read.push(first); else first();
-    });
+      for (const e of top) if (e.origin === 'repos') this.add(e, rows, 0);
+      if (rest.length) rows.append(this.system(rest));
+      if (this.reading) await new Promise<void>((done) => this.read.push(done));
+      this.root.replaceChildren(...rows.childNodes);
+    }, () => {});
   }
 
   /** The rest of /, under System: a folder of its own that holds what / holds besides /root. */
