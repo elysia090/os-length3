@@ -39,10 +39,12 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   await app.rail.go('git');
   await expect(app.main.getByRole('region', {name: '1 uncommitted file'})).toContainText('HELLO.');
   await app.git.step('Commit').click();
-  // Committed, it is on one's own Remote, and on one's own repo that hands it in by itself: Commit is done (its mark,
-  // no button), there is no Push (a push is to a server or another's Remote), the Submitted switch is on, and the
-  // change waits for review, said by the Review under the box (not by a version beside the steps).
-  await expect(app.git.step('Commit')).toBeHidden();
+  // Committed, it is on one's own Remote, and on one's own repo that hands it in by itself: Commit is done (its line
+  // held, the keyboard can go along it and pressed it says no), there is no Push (a push is to a server or another's
+  // Remote), the Submitted switch is on, and the change waits for review, said by the Review under the box (not by a
+  // version beside the steps).
+  await expect(app.main.locator('.git-switch [data-step="commit"]')).toHaveClass(/done/);
+  await expect(app.git.step('Commit')).toBeDisabled();
   // (The steps are the lines of main's sheet at the desk's edge: Start, Commit and Submit done, Merge the one next.)
   await expect(app.main.locator('.git-switch .switch-line.done')).toHaveCount(3);
   await expect(app.main.locator('.git-switch .switch-line.next')).toHaveText('Merge');

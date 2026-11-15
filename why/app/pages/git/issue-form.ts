@@ -25,6 +25,10 @@ export interface Made { repo: string; file: string }
 /** The new issue's first line as it was left. */
 let draft = '';
 
+/** What was said of the line as it was last put right (a title missing, a failure), kept as the line is: the row
+ * drawn again under it (a repo chosen just before) took the words away the moment they were said. */
+let said = '';
+
 /** Something is written on the new issue's first line. */
 export const drafted = () => !!draft.trim();
 
@@ -39,19 +43,21 @@ export function newIssue(now: boolean, repo: string | null, none: string, ways: 
   const line = h('input', {class: 'issue-first', placeholder: t('Fix: Title'), 'aria-label': t('First line: Type: Title'),
     'aria-describedby': 'issue-target', maxlength: '200', spellcheck: 'false', autocomplete: 'off'}) as HTMLInputElement;
   line.value = draft;
-  const error = h('p', {class: 'error', role: 'alert'});
-  line.addEventListener('input', () => { draft = line.value; if (error.textContent) error.textContent = ''; });
+  const error = h('p', {class: 'error', role: 'alert'}, said);
+  const say = (words: string) => { said = words; error.textContent = words; };
+  line.addEventListener('input', () => { draft = line.value; if (said) say(''); });
   let making = false;
   const make = async () => {
     if (making || !repo) return;
     const {kind, title} = kindOf(line.value);
-    if (!title.trim()) { error.textContent = t('Enter a title on the first line'); nudge(line); return; }
+    if (!title.trim()) { say(t('Enter a title on the first line')); nudge(line); return; }
     making = true;
     try {
       const file = await writeIssue(issueStore, repo, kind, title, '');
       draft = '';
+      said = '';
       ways.made({repo, file});
-    } catch (e) { error.textContent = t('Failed to create: {message}', {message: errorText(e)}); } finally { making = false; }
+    } catch (e) { say(t('Failed to create: {message}', {message: errorText(e)})); } finally { making = false; }
   };
   line.addEventListener('keydown', (e) => {
     if (e.isComposing) return;
