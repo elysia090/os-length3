@@ -46,7 +46,7 @@ export interface IssueLine {
 /** The line a new issue is written on; `made` hears what was made, `back` the repo to go back to when put away. */
 export function issueLine(events: {made(m: Made): void; back(repo: string): void}): IssueLine {
   const where = h('span', {class: 'issue-where', id: 'issue-target'});
-  const line = h('input', {class: 'line-in issues-line', placeholder: t('Fix: Title wraps on mobile'), 'aria-label': t('First line: Type: Title'),
+  const line = h('input', {class: 'line-in issues-line', placeholder: t('Fix: Title'), 'aria-label': t('First line: Type: Title'),
     'aria-describedby': 'issue-target', maxlength: '200', spellcheck: 'false', autocomplete: 'off'}) as HTMLInputElement;
   const error = h('p', {class: 'error', role: 'alert'});
   const element = h('div', {class: 'issues-new'}, where, line, error);

@@ -18,7 +18,6 @@ export default {
   'Mark as done': '完了にする',
   'Not done': '未完了',
   'Task description': 'タスク内容',
-  'Fix: Title wraps on mobile': 'Fix: スマホでタイトルが折り返される',
   'Fix: Task description': 'Fix: やること',
   'Next TODO': '次のタスク',
   'Delete {item}': '{item}を削除',

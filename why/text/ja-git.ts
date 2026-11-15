@@ -74,6 +74,7 @@ export default {
   '{n} file to commit': '{n}ファイルをコミット',
   '{n} files to commit': '{n}ファイルをコミット',
   'Fix: Description of changes': 'Fix: 変更点',
+  'Fix: Title': 'Fix: 件名',
   'Commit title format: Type: Title': 'コミットメッセージ形式（種別：タイトル）',
   '{who} · merged {when}': '{who} · {when}にマージ',
   '{who} · closed {day}': '{who} · {day}にクローズ',
