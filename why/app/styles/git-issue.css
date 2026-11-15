@@ -41,7 +41,7 @@
    round the row (which went round two sheets at once and through the names over their corners). */
 .issue-stage:focus-visible { outline: none; }
 .git-desk .issue-stage:focus-visible .issue-slot[aria-current='true'] .issue-card::after { box-shadow: inset 0 0 0 2px var(--ink); }
-.git-desk .issue-stage:focus-visible .issue-slot[aria-current='true'] .issue-card.issue-new-card::after { border: 2px dashed var(--ink); }
+.git-desk .issue-stage:focus-visible .issue-slot[aria-current='true'] .issue-card.issue-new-card::after { border: 0; box-shadow: inset 0 0 0 2px var(--ink); }
 .issue-track { --at: 0; display: flex; gap: var(--gap); transform: translateX(calc(var(--lead) * var(--peek) - var(--at) * (100% - 2 * var(--peek) + var(--gap)))); transition: transform var(--slide); }
 @media (prefers-reduced-motion: reduce) { .issue-track, .issue-slot { transition: none; } }
 /* The box gone from, while the row slides away from it: as it was (its room inside kept, its words going to the

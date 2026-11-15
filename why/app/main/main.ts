@@ -30,6 +30,7 @@ import {clearings} from '../ui/clearing.ts';
 import {menusOnGrid} from '../ui/on-grid.ts';
 import {waysOut} from '../ui/way-out.ts';
 import {prime} from '../ui/keys.ts';
+import {drawing} from '../ui/whole.ts';
 import {caret} from '../ui/caret.ts';
 import {optical} from '../ui/optical.ts';
 import {scrollbars} from '../ui/scrollbars.ts';
@@ -73,7 +74,7 @@ const BRING: Partial<Record<PurposeId, () => Promise<Drawn>>> = {
   'runtime': () => import('../pages/runtime/runtime.ts').then((m) => m.runtime),
   'remote': () => import('../pages/remote/remote.ts').then((m) => m.remote),
   'inbox': () => import('../pages/inbox/inbox.ts').then((m) => m.inboxPage),
-  'server': () => import('../pages/server/page.ts').then((m) => (c: Context) => m.serverPage(c, () => { if (current === 'server') render(); })),
+  'server': () => import('../pages/server/page.ts').then((m) => (c: Context) => m.serverPage(c, () => { if (current === 'server') void render(); })),
 };
 const pages: Partial<Record<PurposeId, Drawn>> = {home};
 const bringing = new Map<PurposeId, Promise<void>>();
@@ -127,7 +128,7 @@ const ctx: Context = {
       return was && typeof was.repo === 'string' && typeof was.path === 'string' ? {repo: was.repo, path: was.path, at: typeof was.at === 'number' ? was.at : null} : null;
     } catch { return null; }
   },
-  rerender: () => render(),
+  rerender: () => { void render(); },
 };
 
 // A repo renamed: the repo worked on and where one left off follow it (each page's own holds follow it there).
@@ -317,13 +318,13 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   if (isFar(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
   else { $('page').removeAttribute('aria-label'); $('page').setAttribute('aria-labelledby', `purpose-${id}`); }
   named();
-  render();
+  const shown = render();
   hang();
   if (from !== id) readAgain(id);
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
-  // The first content surface arrives without delaying the frame or staggering its data.
-  if (first && !quiet) { stage($('page'), 1); return; }
+  // The first content surface arrives whole, once it is (render): without delaying the frame or staggering its data.
+  if (first && !quiet) { void shown.then(() => stage($('page'), 1)); return; }
   if (from !== id) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
     const tab = tabs.get(placeOf(id));
@@ -344,13 +345,18 @@ const named = () => {
 
 /** Asked to draw while its page is still being brought: drawn once it is here. */
 let toDraw = false;
+/** When the page asked for while its page was being brought is drawn and seen. */
+let drawnLater: Promise<void> = Promise.resolve();
+/** The page drawn last (its count), and whether a page has been seen yet: the first is held until it is whole. */
+let drawnAs = 0, seen = false;
 
-function render() {
+/** The current place's page drawn; seen (the promise) once it is whole, the first page only then (ui/whole.ts). */
+function render(): Promise<void> {
   const bringing = brought(current);
   if (bringing) {
-    if (!toDraw) void bringing.then(() => { toDraw = false; render(); });
+    if (!toDraw) drawnLater = bringing.then(() => { toDraw = false; return render(); });
     toDraw = true;
-    return;
+    return drawnLater;
   }
   const page = $('page');
   page.classList.toggle('page-work', current === 'forge' || current === 'git' || current === 'server');
@@ -359,7 +365,7 @@ function render() {
   fileTree.mark(current === 'forge' ? openRepo : null);
   fileTree.markFile(current === 'forge' ? openRepo : null, current === 'forge' ? readingPath : null);
   const drawn = pages[current];
-  const nodes = drawn ? drawn(ctx) : placeholder(current);
+  const [nodes, read] = drawing(() => drawn ? drawn(ctx) : placeholder(current));
   // Forge, once made, stays in the document, hidden while another page shows: a text box taken out
   // of the document loses its Undo, so what was written there can still be taken back on return.
   const kept = forgeOf?.keptForge() ?? null;
@@ -368,6 +374,16 @@ function render() {
   page.append(...nodes.filter((n) => n !== kept));
   if (kept) kept.hidden = current !== 'forge';
   me.paint();
+  // The first page the OS opens on is not seen until what it reads is in: the frame alone until then, then the page
+  // whole at once, never a piece at a time (a name standing in for another, "Loading…", a box with nothing in it yet).
+  const mine = ++drawnAs;
+  if (seen) return Promise.resolve();
+  page.classList.add('reading');
+  return read.then(() => {
+    if (mine !== drawnAs) return;
+    seen = true;
+    page.classList.remove('reading');
+  });
 }
 
 const me = new Me(ctx, currentProfile, {editProfile: () => startEditing(ctx)});
@@ -451,7 +467,7 @@ onConnection(() => {
   void look();
   const now = whoIsIn(), same = now !== null && now === wasIn && !!connection()?.user;
   wasIn = now;
-  if (current === 'remote') me.paint(); else if (opened && !same) render();
+  if (current === 'remote') me.paint(); else if (opened && !same) void render();
 });
 // Changing the language redraws the page and the rail's names in place.
 onLang(() => {
@@ -459,7 +475,7 @@ onLang(() => {
   document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
   named();
   // The language taken up as the OS starts comes before its first page, which is drawn in it once chosen.
-  if (opened) render();
+  if (opened) void render();
 });
 // Home's state is read before the first page, and again when the window
 // comes back, so what why changed meanwhile is what the page shows.
@@ -541,7 +557,7 @@ if (asking.has('device')) {
     // What an earlier build kept of why goes; why now keeps its own copies, by digest, and lets them go itself (userland.ts).
     void forgetExcept(new Set());
     // What the shell of a page reloaded mid-write left to write back, written before the repos are read (repo-copy.ts).
-    void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => { if (connection()) render(); }).finally(() => {
+    void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => { if (connection()) return render(); }).finally(() => {
       $('page').removeAttribute('aria-busy');
       // The other places' pages, brought while the person reads the first: a place pressed later is drawn at once.
       // (And the key sounds, fetched and decoded before the first of them is asked for: keys.ts.)
@@ -554,7 +570,7 @@ if (asking.has('device')) {
 }
 window.addEventListener('focus', () => {
   // Not before the first page is drawn (the window comes back focused from a provider before it is chosen).
-  void loadState().then(() => { void useLang(getState('lang')); if (!opened) return; if (current === 'home') render(); else me.paint(); });
+  void loadState().then(() => { void useLang(getState('lang')); if (!opened) return; if (current === 'home') void render(); else me.paint(); });
 });
 // An invitation's link opened in a tab already showing the app (pasted into its address) changes only
 // the fragment: it is taken the same way, and Server's page opens afresh at its board.
@@ -563,5 +579,5 @@ window.addEventListener('hashchange', () => {
   if (!came) return;
   holdInvite(came.board, came.code);
   history.replaceState(history.state, '', location.pathname + location.search);
-  if (current === 'server') render(); else void select('server');
+  if (current === 'server') void render(); else void select('server');
 });

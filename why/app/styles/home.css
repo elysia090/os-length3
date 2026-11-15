@@ -118,7 +118,7 @@
 .home-waits > .lately > h2 { margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); color: inherit; letter-spacing: 0; text-transform: lowercase; }
 /* With nothing waiting there is no slip: a frame round "nothing new" says nothing a bare desk does not (DESIGN §1, the
    removal test; §5, a frame round nothing). */
-.home-waits > .lately:has(.lately-none) { display: none; }
+.home-waits > .lately:is(:has(.lately-none), :has(> .lately-list:empty)) { display: none; }
 .home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
 .home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; color: inherit; text-align: left; }
 .home-waits .pane-row > .pane-bar { display: none; }

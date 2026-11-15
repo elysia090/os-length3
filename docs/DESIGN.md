@@ -853,6 +853,14 @@ popping, crossfading, sliding off, the rail's ink sliding between places, and th
 mind is not left to complete what it cannot: a cut keeps where things are (§2, eye-trace and order) and changes
 wholly or not at all (no jump, §2: "neither subtle nor total" is Murch's jump).
 
+**What is read comes whole.** A page that reads what it shows (a name, its lists, what waits) is not seen until what
+it reads is in, and then all at once: the frame (the rail, the ground) stands alone until then. Never a piece at a time
+(a word standing in for another, "Loading…", a box with nothing in it, a line that comes and pushes what is under it
+down, an empty sheet before the page is on it): each is a cut of its own, the page changing wholly many times in its
+first moments, and the eye told of states that were never the page. Held back half a second at most, past it what is
+late comes in where it is. A page drawn again where it stands is drawn from what it last read, the same page at once,
+and only what has changed since changes.
+
 **One law for every move**. A thing moved goes as a hand moves it and stops it: off at once, most of
 the way in the first third of its time, then settling, with no bounce. At `u` (0 to 1) of its time it is
 

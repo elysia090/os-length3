@@ -22,6 +22,7 @@ import {fitSize, inkEdge} from '../../ui/optical.ts';
 import {wholeCells} from '../../ui/row.ts';
 import {errorText} from '../../../api/errors.ts';
 import {nudge} from '../../ui/glide.ts';
+import {whole} from '../../ui/whole.ts';
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
@@ -39,7 +40,8 @@ export function home(ctx: Context): Node[] {
   const owner = true;
   const count = h('span', {});
   const list = repoList(ctx, {newCard: true, brief: true, counted: (n) => counting(count, n, 'repo', 'repos')});
-  const listed = list.refresh();
+  // (Home is not seen before its repos are drawn: ui/whole.ts.)
+  const listed = whole(list.refresh());
   const grid = list.element;
   // A column of names (home.css), Home's own: New repo's list and other grids stay cards.
   grid.classList.add('home-repos');
@@ -127,8 +129,12 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
  * and the boards they write in as a guest.
  * With nothing new it says so, quietly: the pane out is never a line with nothing beside it.
  */
+/** What waited when Home was last drawn: drawn again at once with it (a redraw is the same page, not a box empty a
+ * moment), then as it is now. */
+let latelyWas: HTMLElement[] = [];
+
 function lately(ctx: Context): HTMLElement {
-  const list = h('div', {class: 'lately-list'});
+  const list = h('div', {class: 'lately-list'}, ...latelyWas);
   arrowKeys(list, '.pane-row');
   const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Recent activity')), list);
   let asked = 0;
@@ -180,9 +186,11 @@ function lately(ctx: Context): HTMLElement {
       rows.push(latelyRow(here.name, t('{server} · Joined as guest', {server: here.server}), {go: there}));
     }
     if (mine !== asked) return;
-    list.replaceChildren(...(rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))]));
+    latelyWas = rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))];
+    list.replaceChildren(...latelyWas);
   };
-  void paint();
+  // (Home is not seen before what waits is read: ui/whole.ts.)
+  void whole(paint());
   list.addEventListener('look-closed', () => void paint());
   const off = onNews(() => { if (!box.isConnected) { off(); return; } void paint(); });
   // A repo renamed: where one left off says it under its new name.
@@ -209,10 +217,13 @@ function toServer(count: HTMLElement, ctx: Context): HTMLElement {
   return b;
 }
 
+/** How many servers there were when they were last counted: a redraw says it at once, then as it is now. */
+let serversWere = 0;
 const servers0 = () => {
   const el = h('span', {id: 'server-count'});
-  counting(el, 0, 'server', 'servers');
-  if (connection()) void servers.servers().then((list) => counting(el, list.length, 'server', 'servers'), () => {});
+  if (!connection()) serversWere = 0;
+  counting(el, serversWere, 'server', 'servers');
+  if (connection()) void whole(servers.servers()).then((list) => { serversWere = list.length; counting(el, list.length, 'server', 'servers'); }, () => {});
   return el;
 };
 
@@ -281,6 +292,25 @@ function written(el: HTMLElement, o: {most: number; lines?: boolean; begun?: () 
   });
 }
 
+/** Where the account's name and username are kept as last heard, for the session they were heard in. */
+const ACCOUNT_KEY = 'why.account';
+const accountOf = () => { const c = connection(); return c ? c.user || c.session : ''; };
+
+/** The account's name and username as last heard for this session: Home drawn again, or the OS opened again, says
+ * them at once, never a moment of the handle or "Your name" standing in for the name. */
+function knownAccount(): {name: string; user: string} {
+  const who = accountOf();
+  try {
+    const k = JSON.parse(localStorage.getItem(ACCOUNT_KEY) ?? 'null') as {who?: string; name?: string; user?: string} | null;
+    if (who && k?.who === who) return {name: String(k.name ?? ''), user: String(k.user ?? '')};
+  } catch { /* none kept */ }
+  return {name: '', user: ''};
+}
+function keepAccount(a: {name: string; user: string}) {
+  const who = accountOf();
+  try { if (who) localStorage.setItem(ACCOUNT_KEY, JSON.stringify({who, ...a})); } catch { /* said again next time */ }
+}
+
 /**
  * The profile at Home's top, written where it is read. The name is the line it is written on, where it stands and as
  * large: pressed, the caret is in it; there is no sheet, no Cancel and no Save. Signed in, the handle after it is
@@ -301,8 +331,8 @@ function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLEl
   const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toServer(servers0(), ctx));
   const identity = h('div', {class: 'identity'}, name, handle, bio, owner ? bioAsk : null, counts, said);
   const header = h('section', {class: 'profile'}, identity);
-  /** The name the person signed in with and their username there, once known ('' signed out, or not yet). */
-  let account = {name: '', user: ''};
+  /** The name the person signed in with and their username there, as last known ('' signed out, or not yet). */
+  let account = knownAccount();
   /** What stands in for a name where none is written: the handle. Pressed, the line is empty to write a name on. */
   let standsIn = false;
   const writing = () => identity.contains(document.activeElement);
@@ -319,8 +349,11 @@ function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLEl
   paint();
   // Signed in, one person, one name: none written here yet, it is the one signed in with (the Remote's); and the
   // handle is their username there, the one name others find them by, kept on the profile too as it changes.
-  void Promise.all([myName().catch(() => ''), inbox.myUsername().catch(() => '')]).then(([called, user]) => {
-    account = {name: called, user};
+  // (Home is not seen before they are known, ui/whole.ts; known before, they are said at once.)
+  void whole(Promise.all([myName().catch(() => ''), inbox.myUsername().catch(() => '')])).then(([called, user]) => {
+    // (Not heard, they are as last known: the Remote away does not take the name off the page.)
+    account = {name: called || account.name, user: user || account.user};
+    keepAccount(account);
     if (!writing()) paint();
     // Onto the profile as it is now, not as it was drawn (it may have come in from the Remote meanwhile, and was
     // written over), signed in still, and not while it is being taken off this device (it came back then, after Remove
@@ -345,13 +378,14 @@ function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLEl
       if (next.handle !== undefined && connection()) {
         if (!result.profile.handle) result.profile.handle = account.user;
         else if (result.profile.handle !== account.user) {
-          try { result.profile.handle = account.user = await inbox.changeUsername(result.profile.handle); } catch (e) { refused(errorText(e)); return; }
+          try { result.profile.handle = account.user = await inbox.changeUsername(result.profile.handle); keepAccount(account); } catch (e) { refused(errorText(e)); return; }
         }
       }
       try { await setState('profile', JSON.stringify(result.profile)); } catch (e) { said.textContent = t('Failed to save: {message}', {message: errorText(e)}); return; }
       // Signed in, the name is the account's too: what is started, committed and reviewed from here says it.
       if (next.name !== undefined && result.profile.name) {
         account.name = result.profile.name;
+        keepAccount(account);
         try { await rename(result.profile.name); } catch (e) { said.textContent = t('Saved locally; Remote name unchanged ({message})', {message: errorText(e)}); return; }
       }
       if (!writing()) paint();

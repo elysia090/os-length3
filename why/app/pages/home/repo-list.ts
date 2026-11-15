@@ -89,21 +89,19 @@ interface RepoList {
   refresh(light?: string | null): Promise<RepoSummary[] | null>;
 }
 
+/** The repos as last read: a list drawn again (Home come back to, or drawn again where it is) is drawn from them at
+ * once, the same cards, never "Loading…" a moment; then from the store as it is now. */
+let reposWere: RepoSummary[] | null = null;
+
 export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n: number) => void; brief?: boolean}): RepoList {
   // The same cards wherever the list is (Home, New repo): one size, one title; Home's say only when each changed.
   const said = options.brief ? whenOnly : sizeAndWhen;
-  const grid = h('div', {class: 'grid repo-grid'}, h('p', {class: 'muted'}, t('Loading…')));
+  // (Nothing in it before the repos are read: a page is not seen before its lists are, ui/whole.ts.)
+  const grid = h('div', {class: 'grid repo-grid'});
   arrowKeys(grid, '.card-open, .card.new');
-  const refresh = async (light?: string | null): Promise<RepoSummary[] | null> => {
-    let repos;
-    try { repos = await store.list(); } catch (e) {
-      grid.replaceChildren(h('p', {class: 'muted'}, t('Failed to load repos: {why}', {why: errorText(e)})));
-      return null;
-    }
+  /** The cards for `repos` drawn. */
+  const draw = (repos: RepoSummary[]) => {
     options.counted?.(repos.length + remoteOnly().length);
-    const again = async () => { await refresh(); };
-    // A repo's gear list out is not drawn away under the pointer: the cards are drawn once it is put away.
-    if (grid.isConnected && grid.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => void refresh(light), 1000); return repos; }
     // What is drawn of the Remote is what a change is told from (signed out, its cards go at the next look).
     known = remoteOnly().map((r) => r.name).join('\n');
     grid.replaceChildren(...repos.map((r) => repoCard(ctx, r.name, r.bytes, r.modified, again, said)),
@@ -111,6 +109,18 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
       ...(options.newCard ? [newRepoCard(ctx)] : []));
     if (!repos.length && !remoteOnly().length && !options.newCard) grid.replaceChildren(h('div', {class: 'empty'}, t('No repos yet')));
     marks();
+  };
+  const again = async () => { await refresh(); };
+  const refresh = async (light?: string | null): Promise<RepoSummary[] | null> => {
+    let repos;
+    try { repos = await store.list(); } catch (e) {
+      grid.replaceChildren(h('p', {class: 'muted'}, t('Failed to load repos: {why}', {why: errorText(e)})));
+      return null;
+    }
+    reposWere = repos;
+    // A repo's gear list out is not drawn away under the pointer: the cards are drawn once it is put away.
+    if (grid.isConnected && grid.querySelector('.repo-gear-pop:not([hidden])')) { options.counted?.(repos.length + remoteOnly().length); setTimeout(() => void refresh(light), 1000); return repos; }
+    draw(repos);
     // Drawn from what the core last counted; counted again now, a card whose size or time moved says it again.
     if (repos.some((r) => r.kept)) {
       void store.list(true).then((now) => {
@@ -141,6 +151,7 @@ export function repoList(ctx: Context, options: {newCard: boolean; counted?: (n:
     }
   };
   let known = '';
+  if (reposWere) draw(reposWere);
   const stop = onSync(() => {
     if (!grid.isConnected) { stop(); return; }
     // A repo that came or went from the Remote redraws the grid; otherwise only the words move.

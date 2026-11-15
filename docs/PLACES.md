@@ -149,7 +149,7 @@ main's sheet and an issue side by side, the issues go under the sheet, two cells
 
 - **A new issue** is the row's last piece, where a new thing in a row always is (a new board at a server's row's end):
   beside the one in full, its edge with its + and its name, a dashed line on the ground; in the hand, the issue it
-  will be, paper with its edge dashed (not made yet) and the hand's shadow, "New issue" quiet over its corner, its first line written in its head in an
+  will be, paper with the hand's ink edge and shadow as any piece in the hand (its edge dashed there read as no edge), "New issue" quiet over its corner, its first line written in its head in an
   issue title's letters ("Fix: Title" quiet while it is empty, as the note's first line says it), the repo it goes in
   said quietly at its foot as a card says its repo (chosen in the row of repos). Gone to, its first line has the
   keyboard; Enter makes it, there at once where it was written, and the keyboard goes on into its summary in the issue
