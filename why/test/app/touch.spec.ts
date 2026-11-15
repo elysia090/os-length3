@@ -83,9 +83,12 @@ test('a press answers in its own frame, sounds as it goes down, gives a few pixe
     const t = await app.page.evaluate(() => (window as unknown as {__t: {down: number; sound: number; frames: {t: number; s: number}[]}}).__t);
     const first = t.frames.find((f) => f.s < 1);
     expect(first, `${name}: it gives`).toBeTruthy();
-    // In the frame it goes down: felt as one with the press within 85 ms (Kaaresoja), as instant at 50 (Swink); here
-    // a frame or two, and a busy machine's frames are long. Heard as it goes down.
-    expect(first!.t - t.down, `${name}: its own answer`).toBeLessThanOrEqual(85);
+    // In the frame it goes down: felt as instant at 50 ms (Swink), as one with the press within 85 (Kaaresoja), and
+    // a screen's frame is 17. So it is counted in frames, not in a time a busy machine stretches: the first frame
+    // drawn after the press, or the one after it (the press can come as a frame is already being drawn).
+    // Heard as it goes down.
+    const after = t.frames.filter((f) => f.t >= t.down);
+    expect(after.indexOf(first!), `${name}: its own answer, in the frames after the press`).toBeLessThanOrEqual(1);
     expect(t.sound - t.down, `${name}: its sound`).toBeLessThanOrEqual(17);
     // A few pixels: never under .92 of itself; home, never past.
     expect(Math.min(...t.frames.map((f) => f.s)), `${name}: its give`).toBeGreaterThanOrEqual(.92);

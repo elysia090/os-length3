@@ -37,7 +37,10 @@ function down(el: HTMLElement) {
   spring = null;
   const s = give(el);
   held?.press.cancel();
-  held = {el, s, press: el.animate([{scale: s}], {duration: 70, easing: SPRING, fill: 'forwards'})};
+  // Down at once: a pointer's press has no travel the screen could follow (the hand has already gone down when it is
+  // told), so the thing is down in the first frame drawn after it, as the hand is; drawn going down, its foot came
+  // a few frames after the hand's.
+  held = {el, s, press: el.animate([{scale: s}], {duration: 0, fill: 'forwards'})};
 }
 
 function up() {
