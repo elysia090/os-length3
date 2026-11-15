@@ -21,6 +21,7 @@ import {errorText} from '../../../api/errors.ts';
 import {issueStore} from '../../../repo/issue-store.ts';
 import {SPRING} from '../../ui/law.ts';
 import {wholeCells} from '../../ui/row.ts';
+import {amidOnGrid} from '../../ui/on-grid.ts';
 
 /**
  * Git: what happens between a repo and the outside, in the issues' terms.
@@ -480,6 +481,7 @@ class GitPage {
     const b = h('button', {type: 'button', class: 'card new issue-new'}, icon('new-repo'), h('span', {}, t('Create your first repo')),
       h('small', {class: 'muted'}, t('No repos yet'))) as HTMLButtonElement;
     b.addEventListener('click', () => void this.ctx.go('new-repo'));
+    amidOnGrid(b);
     return b;
   }
 

@@ -136,7 +136,6 @@ export default {
   'Hourly post limit reached': 'この1時間の投稿数が上限を超えました',
   'Only existing contacts can be invited': '追加できるのは連絡先に登録されているユーザーのみです',
   'Create your first repo': '最初の repo を作成',
-  'A personal Git repository: compatible with Forge, Git, and Prompt.': 'git と同様にバージョン管理される専用フォルダーです。Forge、Git、Prompt はその中で動作します。',
   // A server's name, in the namespace people's addresses are in.
   'Invite code': 'コード',
   'Restore {name}': '{name}を復元',

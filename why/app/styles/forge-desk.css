@@ -124,7 +124,17 @@
 /* A file named in a terminal's output, under the pointer: underlined, to be pressed (forge.ts termLinks). */
 ::highlight(term-file) { text-decoration: underline 1px currentColor; text-underline-offset: 3px; }
 .term-linking .term-out { cursor: var(--cursor-hand); }
+/* No repo at all: the way to the first alone in the middle of the empty desk, with no frame round it and its words set
+   on their middle, as Git's is (one way for one thing; DESIGN §1, the one shot set in the middle). Its lines a cell
+   each, the ground's own patch under them taking the dots of whole cells, its edges on the grid's lines nearest the
+   world's middle (ui/on-grid.ts amidOnGrid): words with no frame stand clear of the grid as a name on a map does. */
 .desk-none { display: grid; place-items: center; height: 100%; color: var(--sub); }
+.desk-none > .card.new.forge-first { position: fixed; left: calc(50vw - 3 * var(--u)); top: calc(50vh - var(--u)); z-index: 1;
+  box-sizing: border-box; width: max-content; max-width: calc(100vw - 4 * var(--u)); min-height: 0; padding: 0; gap: 0; grid-auto-rows: var(--u);
+  place-content: center; place-items: center; text-align: center; background: var(--ground); border: 0 solid transparent; outline: 0; }
+.desk-none > .card.new.forge-first > span { font: 700 var(--t-word)/var(--u) var(--sans); }
+.desk-none > .card.new.forge-first > small { font: 400 var(--t-word)/var(--u) var(--sans); }
+.desk-none > .card.new.forge-first > svg { width: 18px; height: 18px; }
 /* The terminal (bench.ts standOf): the row's first piece, as wide as any and eighteen lines tall. In hand it is a
    sheet of ink, its words its own green and what it prints in the terminal's sixteen under the one light (lighter, to
    be read on its glass: scripts/light.ts), its shadow green; at rest it is

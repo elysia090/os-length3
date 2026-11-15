@@ -122,7 +122,13 @@
   /* Less room above than below, so the weight of everything sits a little high. */
   --outer-top: var(--outer);
   --outer-bottom: var(--outer);
-  --inner-h: calc(100vh - var(--outer-top) - var(--outer-bottom));
+  /* What of the window's height is less than a cell, under the frame's foot. The ground's dots are the world's, set
+     from the window's top; the frame's foot is set from its edge: in a window not a whole number of cells tall the
+     foot's line (the person's mark, the row's map, every sheet standing to the foot) was that much off the grid, a row
+     of dots through a map's bars or a few pixels under a sheet's edge. Left under the foot, it brings them onto the
+     grid's lines, and the window's last pixels are ground, as the frame's every edge is. */
+  --foot: mod(100vh, var(--u));
+  --inner-h: calc(100vh - var(--outer-top) - var(--outer-bottom) - var(--foot));
   /* The top line pages start on. */
   --top-line: 0px;
   /* The band's row: three cells at the window's top, the room the band's keys stand in (the desk's pieces start

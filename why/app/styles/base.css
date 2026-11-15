@@ -27,7 +27,7 @@ html { height: 100%; }
 body { min-height: 100%; box-sizing: border-box; }
 body {
   margin: 0;
-  padding: var(--outer-top) var(--outer) var(--outer-bottom);
+  padding: var(--outer-top) var(--outer) calc(var(--outer-bottom) + var(--foot));
   display: grid;
   grid-template-columns: var(--rail) minmax(0, 1fr);
   /* The ground is the desk's, everywhere: one world, its dots a cell apart, under every place and under the rail and

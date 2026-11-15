@@ -70,7 +70,9 @@ else is held back. It never has:
 
 - a colour, a shadow or an angle that means nothing;
 - a thing that is there only while a pointer is over it;
-- a layout set in the middle of the window, or one mirrored left and right;
+- a layout set in the middle of the window, or one mirrored left and right (but one: a place with nothing in it yet,
+  whose one first move stands alone in the middle of the empty desk, small, with no frame round it, its words set on
+  their middle; a lone thing in a wide field, the field its tension);
 - blur or transparency as decoration (blur is depth: what is behind what was called up in front, what a change is
   seen against, and what passes under a box one writes in, 2 px over a cell; nothing else);
 - a picture of a material (paper's grain, leather). A material is shown by how it behaves, not by how it looks;
@@ -174,7 +176,8 @@ One world, and the window looks at it.
 - **In front: what is called up from the frame.** A search's finds, the tree of everything, the person's menu: they come in front
   of the world, and the world behind them goes out of focus (blurred) until they are put away. A thing's own menu (a
   thing's chevron, a row's deeds) is not in front of the world: it is a sheet laid on the thing that called it (paper, an
-  ink edge, its shadow), and nothing behind it changes.
+  ink edge, its shadow), and nothing behind it changes. Its shadow falls on the piece it is laid on, and that piece
+  keeps its own: the menu is over it, not beside it, so the two are not equally raised (§1).
 - **Fixed to the window: the frame.** The rail and the band (§4) are the window's instruments. They do not move; the
   world goes by under them.
 
@@ -293,7 +296,11 @@ ground at 1536, measured).
 ## 3. Measures
 
 All lengths are CSS px. The grid's cell is **u = 24**. Everything on a desk has its edges on lines of the grid
-(multiples of 24 from the window's top left) unless a rule here says otherwise.
+(multiples of 24 from the window's top left) unless a rule here says otherwise. **The window's foot is a line of the
+grid too**: what of its height is less than a cell is left under the frame's foot, ground, so what is set from the
+foot (the person's mark, the row's map, a sheet standing to the foot) is on the grid in a window of any height, as
+what is set from the top is. (Set from the window's edge, they were that part of a cell off it: a row of dots
+through a map's bars, a sheet's foot a few pixels short of a line.)
 
 ### Colour
 
@@ -379,7 +386,7 @@ twice the text; "single, double, three or four times ... not an odd size in betw
 |---|---|---|---|
 | **17** | mono or sans, 400 or 700 | 24 | **every word**: what is written (a file, the terminal), what is read on a sheet, what is said beside (a label over a piece, a count, a time, a day, a hint, the band's search, a menu), a line's number, a key's name, a title inside a sheet (700) |
 | **33.01** (= u / .727) | display | — | a name: a work, a file in the hand, a place, a board, a person on their sheet. Its capitals are one cell tall: about twice the words |
-| **66.02** (= 2u / .727) | display | — | the shot's one large thing: a person's name on their own page, a numbered thing's number. Its capitals are two cells tall |
+| **66.02** (= 2u / .727) | display | — | the shot's one large thing: a person's name on their own page, a numbered thing's number, the board in a room's hand. Its capitals are two cells tall |
 
 **On one sheet, two**: its words and its name. The one large thing stands alone in its shot (§2).
 
@@ -641,6 +648,9 @@ being worked in.
   third stands to the foot**, its paper going on under its last line as far as brings that line up to the lower third:
   the room ahead of what is written last (§2, look room). The terminal is 18 lines and a cell over and under them, or
   as many as keep its last line, where its work is, out of the lower third.
+- **A talk in the hand** (a board, a conversation) stands to the foot from the first thing said: it stands on the box
+  one writes in, the latest at its foot and the paper above it the room for what is to come. It is the place's own
+  composition, and the one sheet stretched past what is on it (§2, negative space).
 - A file's numbers are the words' size, quiet, on their lines, in the two cells before the words, a letter clear of
   them; its words start on the grid's line two cells in.
 - Nothing on a desk changes size, and nothing lies askew.
@@ -671,7 +681,9 @@ foot; a board beside it is its name, the row's first sheet its lines, and neithe
 
 **Nothing read or pressed has the ground's dots under it.** Words set on the ground stand on a patch of the ground's
 colour exactly their own size, as a name on a map stands clear of its grid; a key on the ground has the ground's
-fill. A dot in a line of small words reads as a full stop nobody wrote.
+fill. A dot in a line of small words reads as a full stop nobody wrote. A name in the display face is not such words: it is written
+large on the squared paper and the dots go on under it, as ink over a ruled page (a patch the size of a name was a
+plain block on the ground, §2); a dot is never a stop inside capitals a cell tall.
 
 **A thing's menu is called by one mark,** a chevron pointing down, everywhere (a file's row, a work, one's own name,
 a room); out, it points back up. A mark is a few strokes of one weight, as the rail's are. There is no gear: it is
@@ -736,7 +748,7 @@ the row ahead of it (§2: eye-trace and look room agree). Gone to by the least m
 down: what is under a piece's foot is inside the piece.
 
 **The row's map.** While some of a row is out of sight, its map stands at the window's foot from the desk's edge, on
-the frame's foot line (the line through the middle of the person's mark, half a cell over the window's edge: the
+the frame's foot line (the line through the middle of the person's mark, half a cell over the window's foot: the
 frame's own, clear of the edge as the frame's every square is, and between two rows of the ground's dots, so it cuts
 none): the row twelve times smaller (a piece of 24 cells is a bar 48 px long, two cells between are 4 px), each piece
 a bar 4 px thick on the line, the one in the hand in ink and the rest in the quiet line's colour, and a 2 px line of

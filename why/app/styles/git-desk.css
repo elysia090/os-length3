@@ -36,15 +36,22 @@
    the desk's edge. (Before: by the window's width, under 1100 px.) */
 .git-flow.git-desk { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: calc(2 * var(--u)); margin-left: 0; padding: var(--u) calc(2 * var(--u)) calc(3 * var(--u)) 0; }
 .git-desk > .git-side { flex: none; width: calc(8 * var(--u)); padding-bottom: var(--to-grid, 0px); }
+/* Main's sheet is one sheet, drawn in line on the ground (the issue is the piece in hand): a cell of paper round its
+   lines (DESIGN §3), its steps, the one under way the one line of ink, inside the sheet's edge, never over it; then,
+   under a quiet rule, the field a new issue is written in. Its name, the repo, in the cell over its corner, as a
+   piece's is (§5) and level with the issue's beside it: the cell over it is never left empty while the issue's has
+   its name. Nothing of it floats on the ground beside it. */
+.git-desk > .git-side:not(.none) { position: relative; display: grid; align-content: start; align-self: flex-start; box-sizing: border-box; padding: var(--u) 0;
+  border-radius: var(--r-sheet); background: var(--ground); outline: 1px solid var(--edge); outline-offset: -1px; }
 .git-desk > .section { flex: 1 1 calc(24 * var(--u)); min-width: 0; }
 .git-desk > .git-side.none { display: none; }
 /* (It is not the piece in hand, the issue is: drawn in line on the ground, its steps a step quieter than ink, and the
    step that is next the one row of ink on it.) */
-.git-switch { padding: var(--u) 0; border-radius: var(--r-sheet); background: var(--ground); outline: 1px solid var(--edge); outline-offset: -1px; }
+.git-switch { padding: 0; }
 .git-switch:empty { display: none; }
 .switch-lines { display: grid; }
 .switch-line { position: relative; display: flex; justify-content: flex-start; align-items: center; height: var(--u); padding: 0 var(--u); }
-.switch-line.next::before { content: ''; position: absolute; inset: 0; background: var(--ink); }
+.switch-line.next::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); }
 /* (A step is a line pressed: a cell tall, its words not trimmed to their capitals, which left a target of 12 px.) */
 .git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: var(--u); text-box: normal; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
@@ -55,13 +62,20 @@
 .git-switch .switch-line.next > button:focus-visible { outline-color: var(--ground); outline-offset: -4px; }
 .switch-lines > .error { margin: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--sans); color: var(--off); text-align: left; }
 .switch-lines > .error:empty { display: none; }
-/* The line a new issue is written on (issue-form.ts), a cell under main's sheet (with none, at the desk's edge where the
-   first piece would stand): where it goes said quietly in the cell over it, as a piece's name is; the line the side's
-   width. It is always there: an issue is written, never opened first. */
-.git-side > .issues-new { display: grid; margin-top: var(--u); }
-.git-side > .git-switch:empty + .issues-new { margin-top: 0; }
-.git-side > .issues-new > .issue-where { max-width: 100%; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--sub); overflow-wrap: anywhere; }
-.git-side > .issues-new > .line-in { width: 100%; min-width: 0; height: calc(1.5 * var(--u)); margin-block: calc(var(--u) / 4); } /* (a field, as a key: in two cells) */
+/* Where a new issue is written (issue-form.ts), at main's sheet's foot (with no steps, its first lines): a quiet rule on
+   the grid's line a cell under the steps, a cell of paper, then the line it is written on, a line of the sheet as the
+   note's next item is, nothing drawn round it (DESIGN §1, paper and ink; PLACES, never a box). What it says empty is
+   the line's form, quiet, as the note's first line says it. It is always there: an issue is written, never opened
+   first. The repo it goes in is said quietly over the sheet's corner, where a sheet's name stands. */
+.git-side > .issues-new { display: grid; margin: 0; padding: 0 var(--u); }
+.git-side > .git-switch:not(:empty) + .issues-new { margin-top: var(--u); box-shadow: inset 0 1px 0 var(--rule); }
+.git-side > .issues-new > .issue-where { position: absolute; left: 0; top: calc(-1 * var(--u)); max-width: 100%; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub);
+  white-space: nowrap; }
+.git-side > .issues-new > .line-in, .git-side > .issues-new > .line-in:is(:focus, :focus-visible) { width: 100%; min-width: 0; height: var(--u); min-height: var(--u); margin: 0; padding: 0;
+  border: 0; border-radius: 0; outline: 0; background: none; font: 700 var(--t-word)/var(--u) var(--sans); color: var(--ink); }
+.git-side > .git-switch:not(:empty) + .issues-new > .line-in { margin-top: var(--u); }
+.git-side > .issues-new > .line-in::placeholder { color: var(--sub); font-weight: 400; opacity: 1; }
+.git-side > .issues-new > .error { margin: 0; }
 .git-side > .issues-new > .error:empty { display: none; }
 
 /* The row: the heading that names it is heard, not shown (the sheets say what they are). */
@@ -72,7 +86,7 @@
    it the side and its gap (240): ahead the larger at every width (DESIGN §2, look room). */
 .git-desk .issue-column { --row-peek: calc(4 * var(--u)); --gap: calc(2 * var(--u)); }
 /* The row's map at the window's foot, from the desk's edge, as every row's is (shared.css .row-map). */
-.git-desk .issue-column > .row-map { position: fixed; left: calc(2 * var(--u)); bottom: calc(var(--u) / 2); }
+.git-desk .issue-column > .row-map { position: fixed; left: calc(2 * var(--u)); bottom: calc(var(--u) / 2 + var(--foot)); }
 .git-desk .issue-stage::before, .git-desk .issue-stage::after { display: none; }
 /* (A sheet's shadow lies a cell past it: the row is not cut before that.) */
 .git-desk .issue-stage { margin-right: calc(-1 * var(--u)); padding-right: var(--u); }
@@ -134,12 +148,12 @@
 .work-sum { position: absolute; left: 0; bottom: 0; display: flex; gap: .25em; margin: 0; font: 900 var(--t-head)/.727 var(--display); letter-spacing: -.035em; }
 .git-desk .issue-box:has(.work-sum) { padding-bottom: calc(3 * var(--u)); }
 .git-desk .issue-box:has(.work-sum) > .issue-work { margin-bottom: calc(-3 * var(--u)); }
-/* No issue yet: nothing to switch and no sheet; the one thing to do stands where the first piece would, at the
-   desk's edge a cell under the band, drawn in line on the ground as a piece not yet in hand is. (Before: in the
-   window's middle, wherever that was.) */
-.git-desk .card.new.issue-new { position: absolute; left: 0; top: var(--u); translate: none; box-sizing: border-box;
-  width: min(calc(14 * var(--u)), 100%); min-height: 0; padding: var(--u); gap: var(--s2); place-items: start; place-content: start; align-items: flex-start; text-align: left;
-  background: var(--ground); border: 0 solid transparent; border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; }
+/* No repo yet: the one thing to do alone in the middle of the empty desk, with no frame round it and its words set on
+   their middle: a small thing in a wide field, the field the tension (DESIGN §1, the one shot set in the middle). As
+   Forge's with no repo: one way for one thing. On whole cells, the ground's patch under its words (as Forge's). */
+.git-desk .card.new.issue-new { position: fixed; left: calc(50vw - 3 * var(--u)); top: calc(50vh - var(--u)); z-index: 1;
+  box-sizing: border-box; width: max-content; min-height: 0; padding: 0; gap: 0; grid-auto-rows: var(--u); place-content: center; place-items: center; text-align: center;
+  background: var(--ground); border: 0 solid transparent; outline: 0; }
 .git-desk .card.new.issue-new > span { font: 700 var(--t-word)/var(--u) var(--sans); }
 .git-desk .card.new.issue-new > small { font: 400 var(--t-word)/var(--u) var(--sans); }
 .git-desk .card.new.issue-new > svg { width: 18px; height: 18px; }
@@ -226,7 +240,7 @@
 /* Word from someone, come while one is here: a slip at the page's foot, against its right edge. It is not the piece
    in the hand (the issue is): drawn in line on the ground as a piece at rest is, no shadow, its words a step quieter,
    who wrote at the words' size (one large name a shot, §1: master and servant); pressed, its conversation. */
-.work.band-bench > .pane-word { position: fixed; left: auto; right: calc(2 * var(--u)); bottom: calc(2 * var(--u)); z-index: 6; width: min(calc(14 * var(--u)), calc(100vw - 4 * var(--u))); }
+.work.band-bench > .pane-word { position: fixed; left: auto; right: calc(2 * var(--u)); bottom: calc(2 * var(--u) + var(--foot)); z-index: 6; width: min(calc(14 * var(--u)), calc(100vw - 4 * var(--u))); }
 .work.band-bench > .pane-word > .pane-row { padding: var(--u); border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px; box-shadow: none; }
 .work.band-bench > .pane-word > .pane-row:hover { background: var(--paper); color: var(--ink); outline-color: var(--ink); }
 .work.band-bench > .pane-word .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; color: var(--ink); }

@@ -45,4 +45,6 @@
 .sign-in-step.done { color: var(--done); }
 .section.offer { margin-top: var(--s5); padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-place); }
 /* Git: the work on an issue, and changes handed in */
-.state-chip { flex: none; font-size: var(--t-word); padding: 0 var(--s2); border: 1px solid var(--edge); border-radius: var(--r-round); }
+/* What kind a message is (a question, a review asked for): a word, the other weight, before what was said. Not boxed:
+   a box round words is a key's, and this is not pressed (DESIGN §1, nothing that means nothing). */
+.state-chip { flex: none; font-size: var(--t-word); font-weight: 700; }

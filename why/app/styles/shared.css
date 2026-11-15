@@ -100,6 +100,8 @@ body.has-door :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) >
    menu: an edge cannot be overshot. Drawn, they are as they were. */
 .rail-item::before, .me::before { content: ''; position: absolute; inset: calc(-1 * var(--outer)); }
 .me { position: relative; }
+/* (Under the person's mark, the part of a cell left under the frame's foot is its too: the corner is still on it.) */
+.me::before { bottom: calc(-1 * (var(--outer) + var(--foot))); }
 .door::before, :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool::before { content: ''; position: absolute; inset: calc(-1 * var(--outer)) 0; }
 :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) .band-tool { position: relative; }
 /* (A press that just misses what was called up is still its own: told by where the press was, ui/near.ts, so

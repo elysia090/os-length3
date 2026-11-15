@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {laid} from './on-grid.ts';
+import {amid, laid} from './on-grid.ts';
 
 test('a menu is laid on the grid lines nearest where it was asked, as wide as whole cells', () => {
   // The person's menu, as it was: left 54, top 546, 280 wide, 312 tall, in 1536 × 864.
@@ -24,4 +24,15 @@ test('a menu the window would cut, with its shadow, is laid along by whole cells
 test('never laid past the frame\'s corner to fit', () => {
   const at = laid({left: 60, top: 60, width: 600, height: 900}, 390, 844);
   assert.ok(60 + at.dx >= 48 && 60 + at.dy >= 48);
+});
+
+test('the first move of an empty place is whole cells, its middle nearest the world\'s on the grid', () => {
+  // Create your first repo, 177 × 72, in 1536 × 864: eight cells by three, half a cell up where it must choose.
+  assert.deepEqual(amid(177, 72, 1536, 864), {left: 696, top: 408, width: 192, height: 72});
+  // On a phone: the world 342 wide; 192 in it leaves 150, three cells and a bit each side.
+  const p = amid(177, 72, 390, 844);
+  assert.equal(p.left % 24, 0);
+  assert.ok(Math.abs(p.left + 96 - (48 + 390) / 2) <= 12);
+  // Never past the frame's corner, however small the window.
+  assert.deepEqual(amid(300, 100, 200, 100), {left: 48, top: 48, width: 312, height: 120});
 });

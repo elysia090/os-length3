@@ -14,6 +14,7 @@ import {Desk} from './desk.ts';
 import {deskFile, renameIn, type DeskFile} from './desk-file.ts';
 import {asPath, isFile, wordAt} from './term-links.ts';
 import {deedsUnder, fileDeeds, renaming, split, untitled} from '../kit/file-deeds.ts';
+import {amidOnGrid} from '../../ui/on-grid.ts';
 
 /**
  * Forge, the place you work on one repo. Its top line is the band Home has: the terminal's key, the files' and the
@@ -482,8 +483,10 @@ class Forge {
     this.acts.disabled = true;
     // With none at all, the way to the first, where the desk would be.
     const first = h('button', {type: 'button', class: 'card new forge-first'}, icon('new-repo'), h('span', {}, t('Create your first repo')),
-      h('small', {class: 'muted'}, t('A personal Git repository: compatible with Forge, Git, and Prompt.')));
+      // (Said as Git's says it: one thing, one way. What a repo is was an explanation the name already gives.)
+      h('small', {class: 'muted'}, t('No repos yet')));
     first.addEventListener('click', () => void this.ctx.go('new-repo'));
+    amidOnGrid(first);
     for (const o of this.desks.values()) o.desk.element.hidden = true;
     this.center.querySelector('.desk-none')?.remove();
     this.center.append(h('div', {class: 'desk-none'}, first));

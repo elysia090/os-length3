@@ -147,8 +147,10 @@ main's sheet and an issue side by side, the issues go under the sheet, two cells
 
 **What is written here is written where it stands** (§7: nothing to open first, nothing to confirm):
 
-- **A new issue** is its first line, written on a line that is always there, a cell under main's sheet, the repo it
-  goes in said quietly in the cell over it (chosen in the row of repos). Enter makes it, and the keyboard goes on into
+- **A new issue** is its first line, written on a line that is always there, at main's sheet's foot under a quiet
+  rule (a line of the sheet, as the note's next item is, never a box on the ground beside it), the repo it goes in
+  said quietly over it (chosen in the row of repos). Main's steps start at the sheet's top edge: the step under way, the
+  one line of ink, lies on the horizon, level with the issue's top. Enter makes it, and the keyboard goes on into
   its summary in the issue in full, written there and kept as it is left. With no issue yet the line is at the desk's
   edge, where the first piece would be, and what is so is said quietly where the issues would be. Asked for from
   Forge, the line has the keyboard; Escape with nothing written goes back there.
@@ -162,7 +164,7 @@ What is half written in any of them stays, going along the row or to another pag
 ### Server: where many talk
 
 *A room: boards of talk, each with a shared list, and the people in it.* Its one large thing is the name of the board
-in the hand.
+in the hand, its capitals two cells tall over the boards beside it, whose names are a cell.
 
 A desk with a row (§6). First, the room's own sheet, eight cells, as Inbox's first sheet is (a cell of paper round
 its lines, a line a cell tall): its boards by name (the one in the hand in ink,
@@ -204,8 +206,10 @@ on two sides.
   the talk and the box one writes in there is no line: the box is in front of the talk, and what passes under its
   edge as the talk is read back goes a little out of focus (2 px, over the cell the talk keeps empty at its
   foot, so at rest on the latest nothing is).
-- **The box one writes in** stands in the words' column, under them. Its key (Post, Send) comes with the words, and
-  says its keys on itself; Enter is a new line.
+- **The box one writes in** stands in the words' column, under them: the sheet's next line, its words where the
+  talk's start, whom it writes to said quietly in it while it is empty, and nothing drawn round it (a box with a fill
+  and an edge of its own in the sheet was a sheet in a sheet, and the input every program has). Its key (Post, Send)
+  comes with the words, and says its keys on itself; Enter is a new line.
 - **On the grid.** Words are on lines of a cell. A run of one person's posts a few minutes apart says who
   once, and the margin beside the rest of the run is paper; the next post of a run on the next line, a line before
   another speaker. A day's name is a small line of its own in the margin.

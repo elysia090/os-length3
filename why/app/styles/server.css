@@ -128,17 +128,18 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* One read ahead (row.ts) is its name only to look at until it is in the hand, what it holds there unseen. */
 .slide.full[aria-current='false']:not(.leaving) .board-card > :not(.board-head) { visibility: hidden; }
 /* The box that writes in a board stands at that board's foot, inside its sheet under a quiet rule. */
-.slide > .dock { position: static; flex: none; max-width: none; margin: 0; padding: 0 var(--u) var(--u); transform: none; }
+.slide > .dock { position: static; inset: auto; flex: none; max-width: none; margin: 0; padding: 0 var(--u) var(--u); transform: none; }
 .slide > .dock:empty { display: none; }
 .slide > .dock::after { content: none; }
 /* Its key comes with the words (server/dock.ts): empty, the box says whom it writes to, whole, at every width. */
 .slide > .dock > .prompt:not(.has-words) > .prompt-run { display: none; }
 .prompt-run > .key-said { margin-left: var(--s2); font: var(--t-word)/1 var(--mono); color: var(--sub); }
 /* No line between a board's talk and the box one writes in: read back, what passes under the box's edge goes a little
-   out of focus (depth, §1), in the cell the talk keeps empty at its foot, so at rest on the latest nothing is. */
+   out of focus (depth, §1), in the cell the talk keeps empty at its foot, so at rest on the latest nothing is. Inside
+   the sheet's edge: blurred, its pixel of ink was a smudge at both ends of the cell (nothing over a sheet's edge, §3). */
 .slide > .board-card:has(> .board-talk, > .part-panel) + .dock { position: relative; }
 .slide > .board-card:has(> .board-talk, > .part-panel) + .dock::before, .inbox-write::before {
-  content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--u); pointer-events: none;
+  content: ''; position: absolute; left: 1px; right: 1px; bottom: 100%; height: var(--u); pointer-events: none;
   -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); mask-image: linear-gradient(to top, #000, transparent); }
 /* A board's head: its name in the display face, its capitals a cell tall on the second line of the sheet (a sheet's
    name, §5), a cell of paper before it; after the name its two parts, which go under it where they do not fit beside
@@ -146,6 +147,16 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .board-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s2); box-sizing: border-box; min-height: calc(2 * var(--u)); padding: 0 var(--u); }
 .board-head h2 { flex: 0 1 auto; min-width: 0; margin: 0; font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board-head > .board-mark { font: 700 var(--t-word)/calc(2 * var(--u)) var(--mono); }
+/* The board in the hand: its name is the place's one large thing (PLACES, Server), two cells of capitals on the sheet's
+   second and third lines (DESIGN §3: a name c cells tall in a box of its own size, its margins −.2043·c·u and
+   −.1713·c·u), over the boards beside it, whose names are a cell (master and servant: one top to the size). Its # and
+   its parts stand on the name's foot, the parts in their field of two cells. */
+.slide[aria-current='true'] .board-card:not(.board-new) > .board-head { align-items: flex-end; min-height: calc(3 * var(--u)); padding-top: var(--u); }
+/* (A name longer than the sheet breaks over lines at that size, balanced, a line every three cells, as the person's
+   name does on Home: never cut short.) */
+.slide[aria-current='true'] .board-card:not(.board-new) > .board-head h2 { font-size: var(--t-voice); line-height: calc(3 * var(--u)); white-space: normal; overflow: visible; text-overflow: clip; text-wrap: balance; overflow-wrap: anywhere;
+  margin: calc(2 * var(--u) - (3 * var(--u) + var(--t-voice)) / 2 + .1245 * var(--t-voice)) 0 calc(-1 * ((3 * var(--u) - var(--t-voice)) / 2 + .1245 * var(--t-voice))); letter-spacing: -.055em; }
+.slide[aria-current='true'] .board-card:not(.board-new) > .board-head > .board-mark { line-height: var(--u); }
 .board-head .grow { flex: 1; }
 .board-head > .mono, .board-head > .small { flex-shrink: 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-head > .button { flex: none; }
@@ -176,10 +187,14 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .todo-read { white-space: pre-wrap; }
 /* (Whole cells, DESIGN §3: a cell of paper over its first line and under its last, the cell the box's blur is in.) */
 .board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--u); overscroll-behavior: contain; }
-/* The box one writes in, in a board or a conversation: its lines the talk's (a cell each), itself whole cells, its
-   words in the middle of its field as a key's are (a cell and its half less the edge, over and under them); its key,
-   come with the words, standing in a line's room. */
-:is(.slide > .dock > .prompt, .inbox-write .write-line) { min-height: calc(2 * var(--u)); padding-block: calc(var(--u) / 2 - 1px); }
+/* Where one writes, in a board or a conversation: the next line of the sheet, as the note's next item is, and nothing
+   drawn round it (DESIGN §1: paper and ink. A box with a fill and an edge of its own in the sheet was a sheet in a
+   sheet, §3, a second fill in the hand's piece, and the input every program has). Its lines are the talk's, a cell
+   each, its words starting where the talk's words do; what it says empty (whom it writes to) is quiet; its key, come
+   with the words, stands in a line's room. Written in, the caret says so. */
+:is(.slide > .dock > .prompt, .inbox-write .write-line), :is(.slide > .dock > .prompt, .inbox-write .write-line):focus-within {
+  min-height: var(--u); padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+:is(.slide > .dock .prompt-in, .inbox-write .bubble-in)::placeholder { color: var(--sub); opacity: 1; }
 :is(.slide > .dock .prompt-in, .inbox-write .bubble-in) { line-height: var(--u); }
 :is(.slide > .dock, .inbox-write) .prompt-run { margin-block: calc((var(--u) - var(--h-control)) / 2); }
 .board-talk:focus-visible { outline-offset: -2px; }

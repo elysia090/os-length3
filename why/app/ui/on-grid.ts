@@ -59,3 +59,30 @@ export function menusOnGrid(): void {
     {subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'class', 'aria-expanded']});
   addEventListener('resize', () => { for (const el of document.querySelectorAll<HTMLElement>('.pop')) if (shown(el)) place(el); });
 }
+
+/**
+ * Where the first move of an empty place stands (DESIGN §1: centred, with no frame), `w` × `h` as it is drawn, in a
+ * window `W` × `H` whose world starts past the frame's corner (48, 48): whole cells wide and tall, so the patch of ground
+ * under its words takes the dots of whole cells and cuts none (DESIGN §3), and its edges on the grid lines that bring
+ * its middle nearest the world's. Where two are as near, the one half a cell up and left: the eye takes a thing's
+ * middle a little above where it is measured.
+ */
+export function amid(w: number, h: number, W: number, H: number): {left: number; top: number; width: number; height: number} {
+  const width = Math.ceil(w / U) * U, height = Math.ceil(h / U) * U;
+  const near = (room: number, size: number) => 2 * U + Math.max(0, Math.ceil((room - 2 * U - size) / 2 / U - .5)) * U;
+  return {left: near(W, width), top: near(H, height), width, height};
+}
+
+/** `el` kept where `amid` lays it, as its words or the window change. */
+export function amidOnGrid(el: HTMLElement): void {
+  const lay = () => {
+    el.style.minWidth = el.style.minHeight = '';
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const at = amid(r.width, r.height, innerWidth, innerHeight);
+    Object.assign(el.style, {left: `${at.left}px`, top: `${at.top}px`, minWidth: `${at.width}px`, minHeight: `${at.height}px`});
+  };
+  new ResizeObserver(lay).observe(el);
+  const gone = new AbortController();
+  addEventListener('resize', () => el.isConnected ? lay() : gone.abort(), {signal: gone.signal});
+}

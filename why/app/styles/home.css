@@ -115,13 +115,18 @@
   /* (Home's piece in hand is the note, the one thing written in: the slip is line on the ground, as a piece not in
      hand is on any desk.) */
   background: var(--ground); border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; text-align: left; }
-.home-waits > .lately > h2 { margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); letter-spacing: 0; text-transform: lowercase; }
+/* (A piece not in the hand: its words a step quieter than ink, DESIGN §5; the note is the hand's.) */
+.home-waits > .lately { color: var(--sub); }
+.home-waits > .lately > h2 { margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); color: inherit; letter-spacing: 0; text-transform: lowercase; }
+/* With nothing waiting there is no slip: a frame round "nothing new" says nothing a bare desk does not (DESIGN §1, the
+   removal test; §5, a frame round nothing). */
+.home-waits > .lately:has(.lately-none) { display: none; }
 .home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
-.home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; text-align: left; }
+.home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; color: inherit; text-align: left; }
 .home-waits .pane-row > .pane-bar { display: none; }
 .home-waits .pane-row > :is(.pane-line, .pane-said, .pane-at) { display: block; overflow: visible; white-space: nowrap; }
 .home-waits .pane-row:first-child > .pane-line { margin: var(--u) 0 0; font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; }
-.home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
+.home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 var(--t-word)/var(--u) var(--mono); color: inherit; }
 /* Where it is, the file's servant: a step quieter and the other weight (said as the file's name was, it read as a second
    thing waiting). */
 .home-waits .pane-row > .pane-at { font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); }

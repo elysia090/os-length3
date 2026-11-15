@@ -19,7 +19,9 @@ export function passkeyNext(done: () => void, later: () => void): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
   void account.passkeys().then((list) => {
     if (list.length) { account.passkeyOfferDone(); return; }
-    const no = button(t('Later')), add = button(t('Add passkey'), 'primary');
+    // (An offer, the place's servant: its key drawn as a key, not filled. The one fill on the Remote's sheet is its part
+    // chosen: two inks of one weight would be two masters, DESIGN §1.)
+    const no = button(t('Later')), add = button(t('Add passkey'));
     // Put off: gone from the top; the offer under the repos stays until there is a passkey.
     no.addEventListener('click', () => { account.passkeyOfferDone(); putAway(box, () => { box.hidden = true; }, {fold: true}); later(); });
     add.addEventListener('click', () => void pressing(add, error, async () => {
