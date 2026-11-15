@@ -8,21 +8,21 @@
 .card-summary ~ .muted { font-size: var(--t-meta); }
 
 /* Home: profile, written where it is read (home.ts profileHeader): no sheet comes round it, no Cancel and no Save.
-   A cell of the desk over it; then the name, its capitals --name-cap cells tall (two; one where the name is longer
-   than the column at two: home.ts fits it), standing on the foot of the second cell either way, its ink on the
-   column's edge (--ink-left); a cell under it, quiet, the counts; then the handle and the line about the person while
-   there are any, a cell each. In a line as tall as its size the face sets its capitals' feet .1245 of the size above
-   the line's foot and their tops .2043 of their own height under its top: the margins take both off, so the name is
-   as tall in the column as its capitals are. */
+   A cell of the desk over it; then the name, Home's title (DESIGN §10): its capitals --name-cap cells tall, two at any
+   length (one only where a word of it is longer than the column at two: home.ts), its first line's feet on the foot of
+   the second cell (the line the repos' first name stands on beside it), its ink on the column's edge (--ink-left). A
+   name longer than the column breaks over lines at that size, balanced, a line every --name-cap + 1 cells, so every
+   line's capitals stand on the grid; a cell under its last line, quiet, the counts; then the handle and the line about
+   the person while there are any, a cell each. In a line --pitch tall the face sets its capitals' feet half the line's
+   room and .1245 of the size above the line's foot: the margins take what is over the first line's capitals and under
+   the last's feet off, so the name is as tall in the column as its lines of capitals are. */
 .profile { padding-top: var(--u); }
 .identity { position: relative; display: grid; justify-items: start; }
 .identity > * { pointer-events: auto; }
 .identity :is(h1, .handle, .bio) { overflow-wrap: anywhere; }
-.identity h1 { --cap: var(--name-cap, 2); --size: calc(var(--cap) * var(--u) / .727); max-width: none;
-  margin: calc((2 - 1.2043 * var(--cap)) * var(--u)) 0 calc(-.1713 * var(--cap) * var(--u)) var(--ink-left, 0px);
-  font: 900 var(--size)/1 var(--display); letter-spacing: -.055em; white-space: nowrap; }
-/* A name longer than the column even a cell tall: it breaks over lines, balanced, a cell and a half each. */
-.identity h1.long { max-width: 100%; margin: 0; line-height: calc(1.5 * var(--u)); white-space: normal; text-wrap: balance; }
+.identity h1 { --cap: var(--name-cap, 2); --size: calc(var(--cap) * var(--u) / .727); --pitch: calc((var(--cap) + 1) * var(--u)); max-width: 100%;
+  margin: calc(2 * var(--u) - (var(--pitch) + var(--size)) / 2 + .1245 * var(--size)) 0 calc(-1 * ((var(--pitch) - var(--size)) / 2 + .1245 * var(--size))) var(--ink-left, 0px);
+  font: 900 var(--size)/var(--pitch) var(--display); letter-spacing: -.055em; white-space: normal; text-wrap: balance; overflow-wrap: anywhere; }
 .identity > :is(.counts, .handle, .bio, .bio-ask, .error) { margin: 0; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 .identity > .counts { order: 1; margin-top: var(--u); display: flex; flex-wrap: wrap; gap: 0 3ch; max-width: 100%; white-space: nowrap; }
 .identity > .handle { order: 2; }

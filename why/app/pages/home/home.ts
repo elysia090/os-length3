@@ -225,18 +225,19 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
 const U = 24, CAP = .727;
 
 /**
- * The name on its line: its capitals two cells tall, one where the name is longer than the column at two; longer than
- * the column at one, it breaks over lines. Its ink, not its box, stands on the left edge.
+ * The name, Home's title: its capitals two cells tall at any length, over as many lines as it takes; one cell only
+ * where a word of it is longer than the column at two (the programme's next size down, never a size between). Its ink,
+ * not its box, stands on the left edge.
  */
 function fitName(header: HTMLElement) {
   const name = header.querySelector<HTMLElement>('.identity > h1'), layout = header.closest<HTMLElement>('.home-layout');
   if (!name || !layout) return;
-  // (With no name written, what stands in its place is measured: the placeholder.)
-  const fits = fitSize(name, name.textContent || name.dataset.placeholder || '', header.clientWidth, -.055, () => fitName(header));
-  if (!fits) return;
-  const cells = Math.floor((fits * CAP) / U);
+  // (With no name written, what stands in its place is measured: the placeholder.) Each word, as a line holds it whole.
+  const words = (name.textContent || name.dataset.placeholder || '').split(/\s+/).filter(Boolean);
+  const each = words.map((word) => fitSize(name, word, header.clientWidth, -.055, () => fitName(header)));
+  if (!each.length || each.some((fits) => !fits)) return;
+  const cells = Math.floor((Math.min(...each) * CAP) / U);
   name.style.setProperty('--name-cap', String(Math.max(1, Math.min(2, cells))));
-  name.classList.toggle('long', cells < 1);
   inkEdge(name, 'left');
 }
 

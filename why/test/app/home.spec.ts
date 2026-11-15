@@ -211,8 +211,13 @@ test("Home's pieces are set as words are on the desk's grid: the person's own (n
   await expect(names).toHaveCount(3);
   const at = async (l: Locator) => (await l.boundingBox())!;
   const U = 24, CAP = .727, FOOT = .1245, PIECE = 24 * U;
-  /** Where a name's capitals stand: their top and their feet (the display face sets them so in a line of its size). */
-  const caps = (l: Locator) => l.evaluate((el, [cap, foot]) => { const r = el.getBoundingClientRect(), size = parseFloat(getComputedStyle(el).fontSize); const feet = r.bottom - foot * size; return {top: feet - cap * size, feet, x: r.x}; }, [CAP, FOOT]);
+  /** Where a name's (first line's) capitals stand: their top and their feet (the display face sets them so in a line
+   * of its size, and half the line's room over that where its line is taller). */
+  const caps = (l: Locator) => l.evaluate((el, [cap, foot]) => {
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el), size = parseFloat(cs.fontSize), line = cs.lineHeight === 'normal' ? size : parseFloat(cs.lineHeight);
+    const feet = r.top + (line + size) / 2 - foot * size;
+    return {top: feet - cap * size, feet, x: r.x};
+  }, [CAP, FOOT]);
   await expect(async () => {
     // The person's name: its capitals two cells tall, a cell under the band, from the desk's edge.
     const name = await caps(app.page.locator('#profile-name'));
@@ -443,4 +448,58 @@ test('Home come back to is where it was read to, and the page between starts at 
   await expect.poll(read).toBe(0);
   await app.rail.go('home');
   await expect.poll(read).toBe(30);
+});
+
+test('Home is a shot: its title keeps its size at any length, over lines on the grid with the eyeline at its first; the note, its subject, has its edge whole', async ({signedIn: app}) => {
+  for (const name of ['trip', 'garden']) await app.newRepo.make(name);
+  await app.rail.go('home');
+  for (const line of ['Fix: The tent leaks', 'Idea: Lighter pans']) {
+    const item = app.home.items.nth((await app.home.items.count()) - 1);
+    await app.home.title(item).focus();
+    await app.home.title(item).pressSequentially(line);
+    await app.home.title(item).press('Enter');
+    await app.page.keyboard.press('Escape');
+  }
+  const U = 24, NAME = 2 * U / .727;
+  const title = app.page.locator('#profile-name');
+  await title.click();
+  await app.page.keyboard.press('Control+a');
+  await app.page.keyboard.type('Augusta Ada King Lovelace');
+  await app.page.keyboard.press('Enter');
+  /** The title's lines: its size, how many, each line's capitals' feet, and where the counts stand under it. */
+  const lines = () => title.evaluate((el) => {
+    const cs = getComputedStyle(el), size = parseFloat(cs.fontSize), pitch = parseFloat(cs.lineHeight);
+    const range = document.createRange(); range.selectNodeContents(el);
+    const n = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+    const first = el.getBoundingClientRect().top + (pitch + size) / 2 - .1245 * size;
+    return {size, pitch, n, feet: Array.from({length: n}, (_, i) => first + i * pitch), counts: document.querySelector('.identity > .counts')!.getBoundingClientRect().top};
+  });
+  for (const size of [{width: 1440, height: 900}, {width: 390, height: 844}]) {
+    await app.page.setViewportSize(size);
+    await expect(async () => {
+      const t = await lines();
+      // Two cells' capitals however long the name is; more than one line; each line's feet on the grid, the first on
+      // the second cell's foot; the counts a cell under the last.
+      expect(Math.abs(t.size - NAME), `the title at two cells at ${size.width}`).toBeLessThan(.01);
+      expect(t.n).toBeGreaterThan(1);
+      expect(t.pitch).toBe(3 * U);
+      for (const f of t.feet) expect(Math.abs(f - U * Math.round(f / U)), `a line's feet (${f}) on the grid`).toBeLessThan(1.5);
+      expect(Math.abs(t.feet[0]! - 5 * U)).toBeLessThan(1.5);
+      expect(Math.abs(t.counts - (t.feet.at(-1)! + U))).toBeLessThan(1.5);
+    }).toPass();
+  }
+  // The eyeline: beside it, the first repo's name stands on the line the title's first line stands on, at half its size.
+  await app.page.setViewportSize({width: 1440, height: 900});
+  const repo = app.main.getByRole('region', {name: 'Repos'}).getByRole('group').first().locator('.card-title');
+  await expect(async () => {
+    const r = await repo.evaluate((el) => { const b = el.getBoundingClientRect(), s = parseFloat(getComputedStyle(el).fontSize); return {feet: b.bottom - .1245 * s, size: s}; });
+    expect(Math.abs(r.feet - 5 * U)).toBeLessThan(1.5);
+    expect(Math.abs(r.size * 2 - NAME)).toBeLessThan(.01);
+  }).toPass();
+  // The subject's edge is whole: nothing on the note stands over its edge (an item's × inside it).
+  const note = (await app.home.todo.boundingBox())!;
+  for (const away of await app.home.todo.getByRole('button', {name: /^Delete /}).all()) {
+    const b = (await away.boundingBox())!;
+    expect(b.x + b.width, 'an item\'s × inside the note\'s edge').toBeLessThanOrEqual(note.x + note.width - 1);
+  }
 });

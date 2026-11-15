@@ -122,7 +122,7 @@ frame, kept as rules here:
 
 | The film-maker says | Here |
 |---|---|
-| One lens and one camera height for a whole film (Ozu kept his camera low and level in every shot), so that a cut is a graphic match | **One lens, straight down.** The world is drawn at one scale: a cell is 24 px in every place and at every width. Nothing at rest is drawn larger or smaller than it is: a name with no room at its size is not shown, or breaks over lines; it is never fitted to its room. Nothing is turned or seen in perspective but a mark that points. The window looks straight down at a desk, as a flat lay is shot: what lies there is square to the frame, on its grid, at one spacing. |
+| One lens and one camera height for a whole film (Ozu kept his camera low and level in every shot), so that a cut is a graphic match | **One lens, straight down.** The world is drawn at one scale: a cell is 24 px in every place and at every width. Nothing at rest is drawn at a size the programme does not have (§3): a name with no room at its size breaks over lines, takes the programme's next size down, or is not shown; it is never fitted to its room. Nothing is turned or seen in perspective but a mark that points. The window looks straight down at a desk, as a flat lay is shot: what lies there is square to the frame, on its grid, at one spacing. |
 | A horizon kept at one height from shot to shot | **One horizon.** Every place hangs from the frame's lines: the world's first row at y = 48 (a sheet's top, a piece's name), a piece's top at 72, every edge on a line of the grid (§3). So going down the rail the frame's architecture does not move; only what is on it changes. |
 | Separation: one subject, picked out from what is behind it by light and focus, everything else graded down (Barr's "gradation of emphasis", written of CinemaScope) | **One subject in focus.** At every rest one thing casts the shadow and is in focus: the hand's piece, a place's sheet, or what was called up in front, behind which the world is out of focus, its shadow with it. The shadow is the one light's: 12 px right and down (§3). The rest is graded by fill, ink and size (§5). |
 | The frame belongs to the camera, not to the scene | **The frame is never in the scene.** The rail and the band are the camera's instruments: never out of focus, never under what is called up, never moved (§2). |
@@ -202,7 +202,8 @@ Its ink, not its box, stands on the left edge.
 
 ### Lines, corners, shadow
 
-- A line is 1 px. A piece's edge is an outline of 1 px inside its box.
+- A line is 1 px. A piece's edge is an outline of 1 px inside its box, whole along its length: nothing on a sheet is
+  painted over its edge or its shadow (a key at a row's end stands inside it).
 - Corners: a key 4, a field 8, a sheet 10. Nothing else. **What is pressed is a key**, in the band and in a sheet
   alike (a button, a chosen part, a chip). Round is a person's mark, which is their seal (a ring of ink round their
   initial), and a dot. There is no pill: it is the shape a button has everywhere else, and it said nothing here.
@@ -582,17 +583,29 @@ the OS.
 
 A desk of two short pieces (§6):
 
-1. **The person's own.** A cell of desk; the name, capitals two cells tall, from y = 72 to 120 (one cell tall if it
-   is longer than the piece at two; longer than that, it breaks over lines); a cell; the counts, 13 px mono, on the
-   cell from 144; then the handle and the line about the person, a cell each, while there are any; a cell; **the
-   note**, from y = 192 with only the counts. The note is Home's piece in the hand: its yellow, as wide as the piece.
+1. **The person's own.** A cell of desk; **the name**, Home's title: its capitals two cells tall, the first line's
+   from y = 72 to 120, at any length. A name longer than the piece breaks over lines at that size, balanced, a line
+   every three cells, so every line's capitals stand on the grid; only a word longer than the piece at two cells takes
+   one cell (the programme's next size down, §2). A cell; the counts, 13 px mono, a cell under the last line's feet
+   (from 144 with a name of one line); then the handle and the line about the person, a cell each, while there are
+   any; a cell; **the note**. The note is Home's piece in the hand: its yellow, as wide as the piece.
    Its rows are the frame's square: an item's mark is a 16 px box with a 2 px line in a 36 px square at the note's
    edge, its words 15 px 700 on a 36 px line. It is as tall as what is written on it and the line of what the keys
    do, brought up to the next line of the grid, never under four cells.
 2. **The repos and what waits.** "repos" on the cell under the band (y = 48); a name every two cells, capitals a
-   cell tall, **the first standing on the line the person's name stands on** (y = 120); a cell; "+ new repo" in the
+   cell tall, **the first standing on the line the person's name's first line stands on** (y = 120); a cell; "+ new repo" in the
    words' own size; a cell; what waits, a slip 12 cells wide drawn in line on the ground (it is not in the hand), its
    lines in the words' sizes (what waits is read; the display face is for names, §2).
+
+**Home as a shot.** Home is a portrait, and each of its parts has a part in the shot (§2):
+
+| In a shot | On Home | So |
+|---|---|---|
+| the title, read first and above all that qualifies it | the person's name, at the frame's corner where the eye lands | it keeps its scale at any length: a long name is more lines, never a smaller name; under it, small, what qualifies it (the counts, the handle) |
+| the subject | the note, the piece in the hand: its fill, its ink edge, its shadow | the heaviest body (§5), its silhouette whole: nothing on it breaks its edge |
+| the eyeline across the frame | the line the name's first line stands on (y = 120), continued by the first repo's name beside it | the two pieces read as one frame, not two lists |
+| the supporting cast, graded down | the repos, a cell's capitals each (half the name's), what waits a slip in line on the ground | never larger than the title, never filled, never shadowed |
+| the space ahead | the ground to the right of the two pieces and under them | one field, nothing set in it: the lead room of a portrait that faces the way the row runs |
 
 ### Forge: the work, written and run
 
@@ -759,7 +772,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | New repo is one piece at the desk's edge, the hand's: on the grid, a piece wide, its name at a name's size on its first line, what will be made inside it under a rule (§10) | `why/test/app/new-repo.spec.ts` |
 | Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `why/test/app/skeleton.spec.ts` |
 | A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `why/test/app/server.spec.ts` |
-| Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone (§10) | `why/test/app/home.spec.ts` |
+| Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone; Home as a shot: a long name keeps its size over lines on the grid with the eyeline at its first, and the note's edge is whole (§10) | `why/test/app/home.spec.ts` |
 | Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `why/test/app/forge-work.spec.ts` |
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `why/test/app/focus.spec.ts` |
 | The window's edges are the frame's; a press just off a menu is the menu's (§7) | `why/test/app/favour.spec.ts` |

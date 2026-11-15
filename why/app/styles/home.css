@@ -59,7 +59,8 @@
 .home-own .todo-detail::placeholder, .home-own :is(.todo-meta, .todo-created) { color: var(--note-quiet); opacity: 1; }
 .home-own :is(.todo-meta, .todo-created) { font: 400 var(--t-fine)/16px var(--mono); }
 .home-own .todo-dates-detail .todo-created { margin: 0 0 var(--s2) var(--key); }
-.home-own .todo-head > .todo-away { position: absolute; right: 0; top: 0; width: var(--key); height: var(--key); border-radius: var(--r-field); background: var(--note); color: var(--note-quiet); }
+/* An item's ×, at the row's right end inside the note's ink edge (never over it: the subject's edge is whole, §2). */
+.home-own .todo-head > .todo-away { position: absolute; right: 1px; top: 0; width: var(--key); height: var(--key); border-radius: var(--r-field); background: var(--note); color: var(--note-quiet); }
 .home-own .todo-item:is(:hover, :focus-within) .todo-head > .todo-away { color: var(--ink); }
 .home-own .todo-away .mark { width: 16px; height: 16px; stroke-width: 2; }
 .home-own .todo-head > .todo-away:hover { background: color-mix(in srgb, var(--ink) 10%, var(--note)); }
