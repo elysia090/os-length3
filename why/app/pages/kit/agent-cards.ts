@@ -27,7 +27,10 @@ function button(text: string, primary: boolean, act: () => Promise<unknown>): HT
   b.addEventListener('click', async (e) => {
     e.stopPropagation();
     b.disabled = true;
-    try { await act(); } catch (err) { b.disabled = false; b.title = errorText(err); }
+    // Pressed again after it failed, it is the deed again (its word back), as kit/common.ts deed's is.
+    b.textContent = text;
+    // Failed, it says why in its own place (as every deed does, kit/common.ts deed), never in a tooltip.
+    try { await act(); } catch (err) { b.disabled = false; b.textContent = errorText(err); }
   });
   return b;
 }

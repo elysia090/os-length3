@@ -3,16 +3,25 @@
 
 /* The three states, the same everywhere: under the pointer a thing takes paper under it (DESIGN §3: hover adds no
    colour), the current or chosen thing is an ink fill, focus is a 2px ink ring. */
-.rail-item:hover, .button:hover, .chip:hover, .band-add:hover:not(:disabled), .me:hover, .pop-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover, .card.repo:hover, .card.new:hover { background: var(--paper); }
+.rail-item:hover, .button:hover, .chip:hover, .band-add:hover:not(:disabled), .me:hover, .pop-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover, .card.repo:hover, .card.new:hover { background: var(--paper); --under: var(--paper); }
 /* (On paper, paper under it is not seen: a key there says the pointer is on it as the band's do, its line going from
    the quiet one to ink, and its words with it.) */
 :is(.button, .chip, .pill, .part):not(.primary, [aria-current], [aria-checked='true'], [aria-pressed='true'], [aria-selected='true']):hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
 .button.primary,
 .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .tree-row:has(> [aria-current='page']) { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+/* What cannot be pressed now (DESIGN §3, colour): its words, its mark and its line quiet, nothing under it. Never made
+   see-through: that is a grey the light has not, and it changes with whatever lies behind. One chosen keeps its fill,
+   quiet. A deed under way (aria-busy) is not this: it is the deed, being done. */
+:is(.button, .chip, .band-add, .found-step, .approve-mark, .issue-new, .prompt-run):disabled:not([aria-busy='true']) {
+  background: transparent; color: var(--quiet); border-color: var(--quiet); cursor: var(--cursor-arrow); }
+:is(.button, .chip):is([aria-current], [aria-checked='true'], [aria-pressed='true']):disabled:not([aria-busy='true']) { background: var(--quiet); color: var(--paper); }
+:is(.line-in, .search-in, .todo-detail):disabled { color: var(--quiet); border-color: var(--quiet); cursor: var(--cursor-arrow); }
+/* (On ink the least a word is read at is rule, Lc 46: quiet there is 34.) */
+:is(.desk-box[data-kind].held, .work.bench:is(.prompting, .prompt-leaving) .screen) :is(.button, .prompt-run):disabled:not([aria-busy='true']) { color: var(--rule); border-color: var(--rule); }
 /* The rail's place, and what is out from the rail (File's tree, the person's menu): paper ringed in ink, its icon in
    ink, not an ink fill: the rail beside every page stays light, and the place is still the one thing ringed there. */
-.rail-item[aria-current='page'] { background: var(--slot); color: var(--ink); }
-.rail-item:is(:hover, :focus-visible, :active, [aria-expanded='true']), .me:is(:hover, :focus-visible, :active) { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+.rail-item[aria-current='page'] { background: var(--slot); color: var(--ink); --under: var(--slot); }
+.rail-item:is(:hover, :focus-visible, :active, [aria-expanded='true']), .me:is(:hover, :focus-visible, :active) { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); --under: var(--paper); }
 .me[aria-expanded='true'] { background: var(--slot); color: var(--ink); }
 /* The touch, in light: the give under the finger (touch.ts) is a few pixels, too little to be seen alone, so the
    surface also takes the finger's shadow the moment it is pressed: an outlined thing a step toward ink, an inked one
@@ -31,11 +40,12 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
    (pressed, a step further). Before, only the outlined ones did, and the one deed that matters most said nothing. */
 /* (A key in ink is the strongest thing already: under the pointer it stays as it is, no lighter ink mixed for it,
    which is a colour the design does not have.) */
-/* The box's pill (what the box does) brings out the four when pressed: under the pointer its glass catches a little
-   more light, so it is seen to be pressable. Up as the screen it is the line's start, and says nothing. */
+/* The box's pill (what the box does) brings out the four when pressed: under the pointer, on its glass, its line goes to
+   the glass's ink, the green, as a key's line goes to ink on paper. Up as the screen it is the line's start, and says
+   nothing. */
 .work:not(.prompting, .prompt-leaving) .prompt-chip { transition: none; }
-.work:not(.prompting, .prompt-leaving) .prompt-chip:hover { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .28); filter: brightness(1.18); }
-.work:not(.prompting, .prompt-leaving) .prompt-chip:is([data-mode='todo'], [data-mode='edit']):hover { filter: none; background: var(--paper); }
+.work:not(.prompting, .prompt-leaving) .prompt-chip[data-mode='run']:hover { box-shadow: inset 0 0 0 1px var(--term-line, var(--green)); }
+.work:not(.prompting, .prompt-leaving) .prompt-chip:is([data-mode='todo'], [data-mode='edit']):hover { background: var(--paper); }
 
 /* ---- 1. Rail ---- */
 /* The icons keep a little more room on the side of the line than on the
@@ -46,7 +56,8 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
    grid, the next two cells down: four dots stand round every icon alike. */
 .rail-tabs { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: flex-start; gap: calc(2 * var(--u) - var(--rail-place)); flex: 1; min-height: 0; }
 /* The door (main.ts): the way from a place to its far side and, in the same spot, back. A key of the band's own make
-   (two cells wide, as tall as a place of the rail, ground under its mark, ink round it) at the desk's corner on the
+   (two cells wide, as tall as a place of the rail, ground under its mark, the quiet line round it, ink under the hand)
+   at the desk's corner on the
    band's row, fixed to the window. Where the page has a band of its own the band goes on from it, the two one bar as
    wide as a piece: the door has no edge of its own on that side. What waits where it leads is a dot on it, as on a
    place of the rail. */
@@ -54,9 +65,11 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
   border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--frame); box-shadow: inset 0 0 0 1px var(--frame-edge); cursor: var(--cursor-hand); }
 .door[hidden] { display: none; }
 .door > .icon { width: 18px; height: 18px; stroke-width: 2; }
-.door:is(:hover, :focus-visible) { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); outline: none; }
+.door:is(:hover, :focus-visible) { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); outline: none; --under: var(--paper); }
 .door:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
-.door.with-bar { border-radius: var(--r-key) 0 0 var(--r-key); box-shadow: inset 1px 0 0 var(--ink), inset 0 1px 0 var(--ink), inset 0 -1px 0 var(--ink); }
+.door.with-bar { border-radius: var(--r-key) 0 0 var(--r-key); box-shadow: inset 1px 0 0 var(--frame-edge), inset 0 1px 0 var(--frame-edge), inset 0 -1px 0 var(--frame-edge); }
+.door.with-bar:hover { box-shadow: inset 0 0 0 1px var(--ink); }
+.door.with-bar:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
 .door.away::after, .door.news::after { content: ''; position: absolute; top: 6px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
 .door.news::after { background: var(--ink); }
 body.has-door :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { margin-left: calc(2 * var(--u)); width: min(calc(22 * var(--u)), round(down, 100% - 2 * var(--u), var(--u))); border-radius: 0 var(--r-key) var(--r-key) 0; }
@@ -74,7 +87,7 @@ body.has-door :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) >
 .row-map[hidden] { display: none; }
 .row-piece { position: absolute; top: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; cursor: var(--cursor-hand); }
 .row-piece::before { content: ''; position: absolute; left: 0; right: 0; top: calc(50% - 2px); height: 4px; background: var(--edge); }
-.row-piece[aria-current='true']::before { background: var(--ink); }
+.row-piece[aria-current='true']::before, .row-piece:is(:hover, :focus-visible)::before { background: var(--ink); }
 .row-piece:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .row-sight { position: absolute; top: calc(50% + 5px); height: 2px; background: var(--ink); pointer-events: none; }
 

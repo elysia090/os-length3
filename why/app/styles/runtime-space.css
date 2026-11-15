@@ -17,7 +17,7 @@
 .space-name { padding-right: calc(4 * var(--u)); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-row:has(> .repo-gear-button) .space-name { padding-right: calc(6 * var(--u)); }
 .space-row > .repo-gear-button { position: absolute; right: calc(3 * var(--u)); top: 0; }
-.space-row > button:not(.repo-gear-button) { margin-left: auto; margin-block: calc((2 * var(--u) - var(--h-row)) / 2); } /* (a key in a field of two cells) */
+.space-row > button:not(.repo-gear-button) { margin-left: auto; margin-block: calc((2 * var(--u) - var(--h-control)) / 2); } /* (a key in a field of two cells) */
 .space-what .small { overflow-wrap: anywhere; } /* what a row is, and why, read whole */
 .space-size { position: absolute; right: 0; top: 0; font-size: var(--t-word); line-height: var(--u); font-variant-numeric: tabular-nums; color: var(--sub); }
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--u); }

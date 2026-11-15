@@ -68,16 +68,15 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   const stillAsked = () => { const a = document.activeElement; return !a || a === document.body || a === askedFrom || element.contains(a); };
 
   // The line chosen (from the search, a link) washed in the marker's soft yellow under its text, the eye led to it:
-  // it comes up as the camera arrives, holds, then stays quieter while the caret is on that line; it goes once the
-  // caret leaves the line, or a line comes or goes above it. Where the line lies in the text is kept (its start and
+  // there at once, whole (never see-through: DESIGN §1), while the caret is on that line; it goes once the caret
+  // leaves the line, or a line comes or goes above it. Where the line lies in the text is kept (its start and
   // end), so following the caret costs a comparison, not a count of the lines.
   let mark: {el: HTMLElement; from: number; to: number} | null = null;
   function unmark() {
     if (!mark) return;
     const {el} = mark;
     mark = null;
-    el.getAnimations().forEach((a) => a.cancel());
-    el.animate([{opacity: 0.55}, {opacity: 0}], {duration: motionless() ? 0 : 240, easing: SPRING}).onfinish = () => el.remove();
+    el.remove();
   }
   function markLine(area: HTMLTextAreaElement, line: number, from: number, to: number) {
     unmark();
@@ -87,17 +86,11 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     el.style.height = `${lh}px`;
     element.prepend(el);
     mark = {el, from, to};
-    el.animate([{opacity: 0}, {opacity: 1, offset: 0.25}, {opacity: 1, offset: 0.8}, {opacity: 0.55}],
-      {duration: motionless() ? 0 : 2400, delay: 380, easing: SPRING, fill: 'both'});
   }
-  // Where the Agent's eye is in it (bench/play.ts): a line lit faintly across the sheet, gliding from line to line as it
-  // reads; gone (faded) when the eye leaves.
-  let eye: HTMLElement | null = null, resting = 0;
+  // Where the Agent's eye is in it (bench/play.ts): a line lit across the sheet, going from line to line as it reads;
+  // gone when the eye leaves.
+  let eye: HTMLElement | null = null;
   function gaze(area: HTMLTextAreaElement, line: number | null) {
-    // Still on a line a moment, it breathes (forge-desk.css): resting on it, not stopped.
-    clearTimeout(resting);
-    eye?.classList.remove('resting');
-    if (line !== null) resting = window.setTimeout(() => eye?.classList.add('resting'), 600);
     if (line === null) {
       const el = eye;
       eye = null;

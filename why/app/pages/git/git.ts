@@ -471,7 +471,7 @@ class GitPage {
       // what was said in it drawn again) goes from the height it had, not there at once at its new one.
       if (c.classList.contains('issue-card')) continue;
       if (was.under.includes(c.className)) { if (c instanceof HTMLElement) resize(c, was.tall.get(c.className) ?? 0); continue; }
-      c.animate([{opacity: 0, translate: '0 8px'}, {opacity: 1, translate: '0 0'}], {duration: cut() ? 0 : paced(260), delay: paced(100), easing: LAND, fill: 'backwards'});
+      c.animate([{opacity: 0, translate: '0 8px'}, {opacity: 1, translate: '0 0'}], {duration: cut() ? 0 : paced(260), delay: cut() ? 0 : paced(100), easing: LAND, fill: 'backwards'});
     }
   }
 

@@ -8,7 +8,6 @@ import {remoteOnly} from '../../../shipto/lifecycle.ts';
 import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../../repo/repos.ts';
 import {onTheGround} from '../home/home.ts';
 import type {Context} from '../kit/context.ts';
-import {triangle} from '../file/tree.ts';
 import {errorText} from '../../../api/errors.ts';
 import {mark} from '../../ui/icons.ts';
 import {menuItem} from '../kit/common.ts';
@@ -71,13 +70,14 @@ function nest(made: readonly Made[]): Item[] {
   return root.children;
 }
 
-function row(name: string | Node[] | HTMLElement, depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; shut: boolean; tail: Node}> = {}): HTMLElement {
-  // A folder with nothing in it yet is shut, as File shows one: an open triangle over nothing says there is something.
-  const lead = dir ? h('span', {class: 'tree-toggle', 'aria-hidden': 'true', 'aria-expanded': String(!extra.shut)}) : h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
-  if (dir) lead.append(triangle());
+function row(name: string | Node[] | HTMLElement, depth: number, dir: boolean, extra: Partial<{meta: Node | string; kind: string; tail: Node}> = {}): HTMLElement {
+  // A folder is said as File's tree says one, its name and a slash after it (heard as its name), with nothing drawn
+  // before it: one tree, one way (DESIGN §1).
+  const lead = h('span', {class: 'tree-spacer', 'aria-hidden': 'true'});
   const named = name instanceof HTMLElement ? name : h('span', {class: 'tree-name plain'}, ...(typeof name === 'string' ? [name] : name));
+  const slash = dir ? h('span', {class: 'tree-slash', 'aria-hidden': 'true'}, '/') : null;
   return h('li', {class: extra.kind ?? (dir ? 'tree-dir' : 'tree-file')},
-    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, named,
+    h('div', {class: 'tree-row', style: `--depth:${depth}`}, lead, named, slash,
       typeof extra.meta === 'string' ? h('span', {class: 'tree-meta'}, extra.meta) : extra.meta ?? null, extra.tail ?? null));
 }
 
@@ -140,9 +140,9 @@ export function newRepo(ctx: Context): Node[] {
     const rows: HTMLElement[] = [];
     const walk = (nodes: Item[], depth: number) => {
       for (const it of nodes) {
-        const named = renaming === it.path ? field(it.path) : h('button', {type: 'button', class: 'tree-name', title: t('Rename {name}', {name: it.name})}, it.name);
+        const named = renaming === it.path ? field(it.path) : h('button', {type: 'button', class: 'tree-name'}, it.name);
         if (named instanceof HTMLButtonElement) named.addEventListener('click', () => rename(it.path));
-        const li = row(named, depth, it.dir, {kind: `${it.dir ? 'tree-dir' : 'tree-file'} tree-ours`, shut: it.dir && !it.children.length,
+        const li = row(named, depth, it.dir, {kind: `${it.dir ? 'tree-dir' : 'tree-file'} tree-ours`,
           meta: it.readme ? readmeSize : undefined,
           tail: rowDeeds(it.name, () => rename(it.path), () => leaveOut(it.path, li))});
         li.dataset.path = it.path;

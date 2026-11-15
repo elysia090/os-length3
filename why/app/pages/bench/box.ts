@@ -6,7 +6,7 @@ import {t} from '../../../text/i18n.ts';
 import {complete, pathWord, Recall} from '../../../prompt/recall.ts';
 import {kindOf} from '../../../repo/text.ts';
 import {onChange, onRenamed, shownTree, store, type Entry} from '../../../repo/repos.ts';
-import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendTitle, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
+import {boxMode, modeHint, modeMenu, modesNow, nextIssue, onBoxMode, pillWords, sendAs, sendInto, sendWord, setBoxMode, turn, type Mode} from './box-modes.ts';
 import type {Rises, ScreenState} from './screen.ts';
 import {agentSessionFor, Session, sessionFor, terminalFor} from './terminal.ts';
 import {type AgentTerm, agentTermFor} from './agent-term.ts';
@@ -127,7 +127,6 @@ export class Box {
   #landing: Promise<void> = Promise.resolve();
   /** An `agent` line on its way to being asked (its key being opened): asked once, however many Enters. */
   #asking = false;
-  readonly #keys: string;
   readonly #menu: ReturnType<typeof modeMenu>;
   /** Run: the repo's Prompt followed, and the prompt line its shell waits at, in the pill. */
   readonly #pillLine: PillLine;
@@ -142,7 +141,6 @@ export class Box {
     // Run: Ctrl+Enter (⌘+Enter) is how it is done from the box, said in its title, not beside the word. Never Enter
     // alone: Enter is what confirms a Japanese conversion, and a line must not run because a word was chosen.
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-    this.#keys = mac ? '⌘+Enter' : 'Ctrl+Enter';
     this.runIt = h('button', {type: 'submit', class: 'button small-button prompt-run', 'aria-keyshortcuts': mac ? 'Meta+Enter' : 'Control+Enter'}) as HTMLButtonElement;
     const lamp = h('span', {class: 'lamp'});
     this.chip = h('button', {type: 'button', class: 'prompt-chip', tabindex: '-1', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'data-mode': 'run'},
@@ -425,7 +423,7 @@ export class Box {
     if (mode === 'issue') this.#numberTurns(was);
   }
 
-  /** What the box does said where it is pressed: the pill's mode and name, the keys that bring it, Run's word and title. */
+  /** What the box does said where it is pressed: the pill's mode and name, the keys that bring it, Run's word. */
   #keysSay(mode: Mode) {
     this.chip.dataset.mode = mode;
     this.form.dataset.mode = mode;
@@ -433,7 +431,6 @@ export class Box {
     this.#summonKey.classList.toggle('tick', mode !== 'edit');
     this.chip.setAttribute('aria-label', t('Input box action: {what}', {what: sendWord(mode)}));
     this.runIt.textContent = sendWord(mode);
-    this.runIt.title = sendTitle(mode, this.#keys);
     // Edit has nothing to send: what is typed is in the file already.
     this.runIt.hidden = mode === 'edit';
   }

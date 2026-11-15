@@ -27,6 +27,7 @@ import {depth, doorOf, isFar, placeOf, RAIL, purpose, restorePurpose, stepPurpos
 import {glide, morph, stage, stopStage, travel, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
 import {clearings} from '../ui/clearing.ts';
+import {menusOnGrid} from '../ui/on-grid.ts';
 import {waysOut} from '../ui/way-out.ts';
 import {prime} from '../ui/keys.ts';
 import {caret} from '../ui/caret.ts';
@@ -148,6 +149,7 @@ document.body.append(fileTree.element);
 keepFocus();
 touch();
 clearings();
+menusOnGrid();
 waysOut();
 caret();
 optical();
@@ -162,7 +164,6 @@ function railButton(id: PurposeId): HTMLButtonElement {
   button.id = `purpose-${id}`;
   button.className = id === 'new-repo' ? 'rail-item rail-new' : 'rail-item';
   button.setAttribute('aria-label', t(p.label));
-  button.title = t(p.label);
   button.append(icon(id), h('span', {class: 'rail-tag', 'aria-hidden': 'true'}, t(p.label)));
   if (id === 'file') {
     fileTree.attach(button);
@@ -225,7 +226,6 @@ function hang() {
   door.classList.toggle('away', away);
   door.classList.toggle('news', unread);
   door.setAttribute('aria-label', away ? t('Cannot connect to Remote') : unread ? t('Unread messages in Inbox') : t(purpose(to).label));
-  door.title = t(purpose(to).label);
   // (A page with a band of its own: the band goes on from the door, the two one bar.)
   door.classList.toggle('with-bar', !![...document.querySelectorAll('#page .band-tools')].some((b) => b.getClientRects().length));
 }
@@ -429,7 +429,6 @@ const mark = (id: PurposeId) => {
   b.classList.toggle('news', id === 'server' && (marks(news()).inbox || marks(news()).server));
   const label = railName(id);
   b.setAttribute('aria-label', label);
-  b.title = label;
   const tag = b.querySelector('.rail-tag');
   if (tag) tag.textContent = label;
   hang();

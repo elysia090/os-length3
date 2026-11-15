@@ -61,10 +61,10 @@ function took(stub: HTMLElement, from: DOMRect) {
     {transform: 'none'},
   ], {duration: cut() ? 0 : paced(380), easing: LAND}).finished.then(back, back);
   for (const el of stub.querySelectorAll<HTMLElement>('.stub-gear')) {
-    el.animate([{opacity: 0, transform: 'translateX(-8px)'}, {opacity: 1, transform: 'none'}], {duration: cut() ? 0 : paced(260), delay: paced(300), easing: LAND, fill: 'backwards'});
+    el.animate([{opacity: 0, transform: 'translateX(-8px)'}, {opacity: 1, transform: 'none'}], {duration: cut() ? 0 : paced(260), delay: cut() ? 0 : paced(300), easing: LAND, fill: 'backwards'});
   }
   const under = stub.closest('.inbox-page')?.querySelector<HTMLElement>('.inbox-list');
-  under?.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: cut() ? 0 : paced(300), delay: paced(160), easing: LAND, fill: 'backwards'});
+  under?.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: cut() ? 0 : paced(300), delay: cut() ? 0 : paced(160), easing: LAND, fill: 'backwards'});
 }
 
 /**
@@ -194,7 +194,7 @@ function runs(messages: HTMLElement, seen = false) {
  * (asked and not in yet, nothing to press). Pressed, Server's page opens at it.
  */
 function serverLink(id: string, ctx: Context): HTMLElement {
-  const go = h('button', {type: 'button', class: 'link', title: t('Open in Server'), hidden: ''});
+  const go = h('button', {type: 'button', class: 'link', hidden: ''});
   void servers.servers().then((list) => {
     const s = list.find((x) => x.id === id);
     if (!s) return;
@@ -216,7 +216,7 @@ function noticeLine(words: string, m: inbox.Message, ctx: Context): HTMLElement 
   if (typeof id !== 'string') return line;
   void servers.servers().then((list) => {
     if (!list.some((x) => x.id === id) || !line.isConnected) return;
-    const go = h('button', {type: 'button', class: 'link inbox-notice-words', title: t('Open in Server')}, words);
+    const go = h('button', {type: 'button', class: 'link inbox-notice-words'}, words);
     go.addEventListener('click', () => { serverAt({server: id}); ctx.go('server'); });
     line.querySelector('.inbox-notice-words')?.replaceWith(go);
   }, () => {});

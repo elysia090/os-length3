@@ -19,15 +19,15 @@
    Free from this device in a popover (repo-gear.ts). Showing it does nothing. */
 .card.repo.gear-card { position: relative; padding: 0; align-content: stretch; }
 .gear-card > .card-open { display: grid; align-content: start; gap: 0; width: 100%; padding: calc(var(--u) - 1px) var(--u); border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
-.gear-card > .card-open > .card-title { padding-right: calc(var(--h-row) + var(--s2)); }
+.gear-card > .card-open > .card-title { padding-right: calc(var(--h-control) + var(--s2)); }
 .gear-card > .repo-gear { position: absolute; top: var(--s3); right: var(--s3); }
 .gear-card[aria-busy='true'] > .card-open { cursor: var(--cursor-progress); }
 .repo-gear-button {
-  display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0;
+  display: grid; place-items: center; flex: none; width: var(--h-control); height: var(--h-control); padding: 0;
   border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--quiet); cursor: var(--cursor-hand);
   transition: none;
 }
-.repo-gear-button .mark { width: 18px; height: 18px; }
+.repo-gear-button .mark { width: 18px; height: 18px; stroke-width: 2; }
 /* (There always, quiet: what can be done with a thing does not wait on a pointer over it, so it is the one thing with
    a finger, a mouse and the keyboard. Inked while it is used.) */
 .gear-card:is(:hover, :focus-within) .repo-gear-button, .space-row:is(:hover, :focus-within) .repo-gear-button, .repo-gear-button[aria-expanded='true'] { color: var(--ink); }
@@ -35,7 +35,7 @@
 .repo-gear-button:hover { background: var(--paper); color: var(--ink); border-color: var(--ink); }
 /* On a card, the list comes down from its gear as wide as the card, over what is under it: never past the card's own
    edges, so a card at the column's left does not reach under the rail with a field or an ask in its list. */
-.gear-card > .repo-gear-pop { position: absolute; top: calc(var(--s3) + var(--h-row) + var(--s1)); left: 0; right: 0; z-index: 5; }
+.gear-card > .repo-gear-pop { position: absolute; top: calc(var(--s3) + var(--h-control) + var(--s1)); left: 0; right: 0; z-index: 5; }
 /* In a row of a column that scrolls, the list opens under the row, in its own place. */
 .space-row { flex-wrap: wrap; }
 .space-row > .repo-gear-pop { flex-basis: 100%; margin-top: var(--s1); }
@@ -102,7 +102,6 @@
 /* No issue to show: a plain invitation where the first would be, as tall as an issue's card, its word and what is so. */
 .issue-new { width: 100%; min-height: 180px; gap: var(--s1); }
 .issue-new > small { font-size: var(--t-word); }
-.issue-new:disabled { cursor: var(--cursor-arrow); opacity: .6; }
 .issue-new:not([hidden]) + div { display: none; }
 /* The prompt box as Forge's: its left end a step (s3) left of the boxes behind it, its right end theirs, so it
    reads as its own surface, not the foot of the card under it. */

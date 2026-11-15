@@ -37,8 +37,6 @@ const face = (p: servers.Post) => {
   b.classList.add('tl-face');
   return b;
 };
-/** A time written whole, as toLocaleString writes one. */
-const WHOLE: Intl.DateTimeFormatOptions = {year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric'};
 const CLOCK: Intl.DateTimeFormatOptions = {hour: '2-digit', minute: '2-digit', hour12: false};
 const DAY_NAME: Intl.DateTimeFormatOptions = {weekday: 'short', month: 'short', day: 'numeric'};
 const clock = (ms: number) => dateFormat(CLOCK).format(ms);
@@ -100,7 +98,7 @@ function post(p: servers.Post, runs: boolean, down: (art: HTMLElement) => Promis
   // with "guest" beside it and their face dashed, so they are never taken for one of its people.
   const [name, domain] = shown(p.by).split('@');
   const where = p.guest ? t('Guest') : domain ? `@${domain}` : '';
-  const time = h('time', {class: 'muted small', datetime: when.toISOString(), title: dateFormat(WHOLE).format(when)}, clock(p.at));
+  const time = h('time', {class: 'muted small', datetime: when.toISOString()}, clock(p.at));
   const below = h('div', {class: 'tl-foot muted small'});
   const acts = h('div', {class: 'tl-acts'});
   const main = h('div', {class: 'tl-main'},

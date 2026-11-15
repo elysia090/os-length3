@@ -303,7 +303,7 @@ by one: they are worked out from the ground by the rules below, and held to them
 **One light.** A scene is shot in one light, and the camera is balanced to it: what is grey in the scene is grey on
 the screen, and a source of another colour in the frame (daylight through a window in a lamp-lit room) reads as a
 cast, so it is gelled to match or kept out of shot. Here the light is the ground's: the ground's colour says what it
-is, and **every grey is that light at its own lightness**, from the screen's glass and the ink up to the paper. In
+is, and **every grey is that light at its own lightness**, from the ink (the terminal's glass too) up to the paper. In
 OKLab a grey under a tinted light is the neutral grey with the eye's three responses each scaled by the light (von
 Kries), which scales L, a and b alike; so every grey of the OS has the ground's a/L and b/L, and white is the light
 itself, never a white of another light laid beside the ground (as the paper was, a cooler white than the ground it lay
@@ -347,6 +347,24 @@ hold at their contrast, crisp rather than pastel, none of them a saturated yello
 
 Fill, shadow and colour belong to the piece in the hand (§5). Hover adds no colour: a thing under a pointer goes from
 quiet to ink, or takes paper under it.
+
+**Less is said by value, and only by value.** Every colour on the screen is one of the table's, whole: nothing is
+made see-through and nothing is mixed for the occasion. A thing laid over another at a share of its colour is a grey
+the light does not have, and it changes with whatever lies behind it, so it says nothing the same way twice.
+
+- On ink (the terminal, a key filled, a bar of deeds) the steps go the other way: words paper or ground, a step
+  quieter `slot` (Lc 72), the least a word is read at `rule` (Lc 46, as `quiet` is on the ground, 45), a line
+  `rule`. A program's dim words are its bright black, the same step.
+- **What cannot be pressed now** is said in `quiet` (on ink, `rule`), its words, its mark and its line, with nothing
+  under it; one chosen keeps its fill, in `quiet`. A deed under way is not this: it is the deed, being done.
+- A gone thing chosen in a list (Delete, under the pointer) is filled as any row chosen is, in its own red.
+- **The terminal is one thing wherever it is**: ink, its words green, its quiet words `slot`. Nothing is drawn on it
+  to look like a screen (a raster, a falloff, a glare, a glow): a material is shown by how it behaves (§1).
+- Depth is the one thing seen through: the world going out of focus under what is called up (§2, in front).
+
+Held: `scripts/design.test.ts` reads every sheet and the app's code (no share of a colour, no blur but depth's, no soft
+shadow and none on words, two weights and the display's, the four corners, no colour written outside the light's own
+sheets, no tooltip), and the browser suite measures every element in every place as it is drawn.
 
 ### Words
 
@@ -990,7 +1008,7 @@ research has one, measured on every control of every place from the top right, h
 | **Look along** (scroll) | **the window's own scrolling, and nothing laid on it**: what is scrolled stays under the hand, in the frame after the wheel or the finger; its rate and its coasting are the platform's (a thrown thing coasts to a stop where its speed takes it), never altered; nothing comes, goes, fades or moves as it is scrolled; at its end it stops by the platform's own soft edge and never carries on into what is behind it; what is read never shifts when something changes out of sight (scroll anchoring); a row of whole pieces comes to rest at a piece by the platform's own snapping, with the hand's speed. The OS never scrolls by itself except as one of the three moves, and then by the law's curve: everything it scrolls otherwise (bringing a thing into view) is at once | in the frame after the wheel; nothing else animating while it scrolls | Deber et al. 2015 (a drag's lag seen at 11 ms on a screen); NN/g, *Scrolljacking 101* (altered rate and duration worst where text is read); Apple 2018 (project momentum; soft edges; redirectable); W3C, *CSS Scroll Anchoring* | measured: scrolled in the next frame, nothing else running |
 | **Write** (a key typed) | the letter drawn in the frame after it is struck, its sound as it is struck, the caret going with it (§9); **what was written stays where it was written**, however its place is left and come back to: a place is never drawn anew under what is half written. A shortcut that makes what is typed a thing (a kind's colon) takes its own key and the space after it, and nothing else | in the frame after the key; kept on return | a slow keyboard (200 ms) costs effort and correcting, not copying speed (Schmid et al. 2023); "the lower, the better" (Fatin) | measured: every field, each letter there two frames after its key, kept on return (measured; measured) |
 | **Carry** (a drag, the desk by hand) | it stays under the hand, moved by the window's own scrolling or the drag's own frame; no easing laid on what the hand moves | lag ≤ 1 frame | "not imposed upon objects when they are being explicitly moved by the user" (Chang and Ungar 1993); a drag's lag is noticed at 11 ms on a screen, 55 ms through a pad (Deber et al. 2015) | §7 |
-| **Called up** (a menu, the finds, the tree) | by a press, laid where it was asked (its first deed under the press), away at once by a press outside or Escape, the keyboard back on what called it | in the press's frame; its first deed within 5° of the press (§2) | a panel opened by the hand opens quickly and closes fast (Lewis); things leave the way they came (Chang and Ungar; Apple) | §7, measured |
+| **Called up** (a menu, the finds, the tree) | by a press, laid where it was asked (its first deed under the press), on the grid's lines nearest that, whole in the window with its shadow (along by whole cells where the window would cut it), away at once by a press outside or Escape, the keyboard back on what called it | in the press's frame; its first deed within 5° of the press (§2) | a panel opened by the hand opens quickly and closes fast (Lewis); things leave the way they came (Chang and Ungar; Apple) | §7, measured |
 | **Unfold** (a folder, a line's detail) | **its name opens it, and opens nothing else**: pressed again it shuts; at once, nothing folding on its way; what is under it and round it stays where it is (the place, the page under a tree). One press, one deed, whatever else is so: a press whose deed hangs on something not in sight (which work another place is at) is a mode, and is not made. From the keyboard a tree opens with → and shuts with ←, a line's next line opens with Enter at its end | in the press's frame; nothing else moves | Raskin, *The Humane Interface* (2000): modelessness, the same gesture the same result; W3C WAI-ARIA APG, tree view and disclosure patterns | measured: a folder opened and shut with the place under it unmoved |
 | **Ask** (a yes to say, a name to write out) | in the place it was pressed, its deed under the press, Cancel on the other side (§7); **Escape is its Cancel** with the keyboard anywhere in it, heard before whatever stands round it (the desk, the page); answered either way, the thing as it was and the keyboard on it. A switch that asks stays as it was until the ask is answered | in the key's frame | Escape as a dialog's Cancel since IBM's CUA and the Macintosh; W3C WAI-ARIA APG, dialog pattern | measured: an off asked and let go by Escape, the switch on and the keyboard on it |
 | **Switch** (a page's parts, an on and off) | the one chosen is shown in the press's frame with what it holds; the arrows go to the next and show it as they go, for what it holds is at hand (no part waits to be read); an on and off is a switch, round, and turned by a press or Space | in the press's frame | W3C WAI-ARIA APG, tabs: activated as they are focused only where their panels show at once; switch pattern | measured: parts chosen at once, the arrows to the next (measured) |

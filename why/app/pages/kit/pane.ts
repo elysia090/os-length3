@@ -1,4 +1,3 @@
-import {cutWhenLonger} from '../../ui/cut.ts';
 import {h} from '../../ui/dom.ts';
 import {after, arrive, closeUp, paneIn, paneOut} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
@@ -166,8 +165,6 @@ export function latelyRow(what: string, line: Node[] | string, o: {fresh?: boole
     o.quote || o.heard ? h('span', {class: 'sr-only'}, ...words) : null) as HTMLButtonElement;
   b.addEventListener('click', () => o.go());
   // Cut at two lines, the second fading out, when what it says is longer.
-  cutWhenLonger(b.querySelector<HTMLElement>('.pane-line')!);
-  if (said) cutWhenLonger(said);
   return b;
 }
 

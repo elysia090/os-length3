@@ -12,7 +12,6 @@ export default {
   'Question': '質問',
   'Execution failed': '実行失敗',
   'Copied': 'コピーしました',
-  'Click to copy': 'クリックしてコピー',
   'Add this DNS record to your domain': 'このレコードをドメインの DNS に設定してください',
   'Type': 'レコードタイプ',
   'Value': '値',

@@ -1,11 +1,10 @@
 /* What a band begins something with (Server's: make a server): round, outlined, a row tall. */
-.band-add { flex: none; display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--frame-edge); border-radius: var(--r-round); color: var(--frame); background: transparent; cursor: var(--cursor-hand); }
+.band-add { flex: none; display: grid; place-items: center; width: var(--h-control); height: var(--h-control); padding: 0; border: 1px solid var(--frame-edge); border-radius: var(--r-round); color: var(--frame); background: transparent; cursor: var(--cursor-hand); }
 .band-add:is(:hover, :focus-visible):not(:disabled) { color: var(--ink); }
-.band-add:disabled { opacity: .5; cursor: var(--cursor-arrow); background: transparent; }
 .band-add .mark { width: var(--s4); height: var(--s4); }
 /* A chip picks one of several, like the template choice: round, outlined. */
 .chip {
-  flex: none; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
+  flex: none; min-height: var(--h-control); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-round);
   background: transparent; cursor: var(--cursor-hand); white-space: nowrap; font-size: var(--t-word);
 }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
@@ -96,21 +95,24 @@
    wide as what it holds and no wider than a line read across (31 cells), no taller than the window leaves it (its rows
    scrolled inside it). They come down a little onto the desk, one after another. */
 .found-secs { display: flex; flex-wrap: wrap; align-items: flex-start; gap: calc(3 * var(--u)); }
-.found-sec { position: relative; flex: 0 1 auto; min-width: calc(9 * var(--u)); max-width: min(calc(31 * var(--u)), 100%); margin: 0; padding: calc(var(--u) / 2) 0;
+.found-sec { position: relative; flex: 0 1 auto; min-width: calc(9 * var(--u)); max-width: min(calc(31 * var(--u)), 100%); margin: 0; padding: var(--u) 0;
   background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .found-sec:nth-child(2) { --at: 1; } .found-sec:nth-child(3) { --at: 2; } .found-sec:nth-child(n + 4) { --at: 3; }
 @media (prefers-reduced-motion: reduce) { .found-sec { animation: none; } }
 .found-sec-head { position: absolute; left: 0; bottom: 100%; margin: 0; white-space: nowrap; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 .found-sec-head > i { margin-left: 1ch; font: 400 var(--t-word)/var(--u) var(--mono); font-style: normal; color: var(--quiet); }
 .found-sec-rows { display: grid; min-width: 0; max-height: calc(100vh - 10 * var(--u)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
-/* A row: a cell and a half tall in the code face, a step in from the sheet's sides, soft at the corner where it is
-   pressed or pointed at; whatever kind it is (a line found, an issue, a changed file, what the Agent was asked). */
-.found-sec .choice { display: flex; align-items: center; gap: var(--u); min-width: 0; min-height: calc(1.5 * var(--u)); height: auto; margin: 0 6px; padding: 0 18px;
+/* A row: a line pressed, a cell tall in the code face (DESIGN §3), a step in from the sheet's sides. In a list called
+   up, the row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's (§14, hover),
+   as a menu's and the tree's are. */
+.found-sec .choice { display: flex; align-items: center; gap: var(--u); min-width: 0; min-height: var(--u); height: auto; margin: 0 6px; padding: 0 18px;
   border: 0; border-radius: var(--r-key); background: none; box-shadow: none; text-align: left; white-space: nowrap;
-  font: 400 var(--t-word)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
-.found-sec .choice:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); outline: none; }
+  font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+.found-sec .choice:is(:hover, :focus-visible) { background: var(--ink); color: var(--ground); outline: none; }
+.found-sec .choice:is(:hover, :focus-visible) :is(.sheet-file, .sheet-line, .sheet-text) { color: inherit; }
 .found-sec .choice:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
-.band-tools .search-box:has(.search-in:focus) .found-secs .choice.first { background: var(--slot); }
+.band-tools .search-box:has(.search-in:focus) .found-secs .choice.first { background: var(--ink); color: var(--ground); }
+.band-tools .search-box:has(.search-in:focus) .found-secs .choice.first :is(.sheet-file, .sheet-line, .sheet-text) { color: inherit; }
 .found-sec .choice > .enter-cap, .found-sec .hit-count, .found-sec .diff-bar { display: none; }
 .found-sec .hit-group { margin: 0; }
 /* The files found: a file's name, the line's number and its words, their columns lined up down the sheet (subgrid).

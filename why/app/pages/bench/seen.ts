@@ -58,7 +58,7 @@ function edge(to: Slot | undefined, by: -1 | 1): HTMLButtonElement {
 
 /** Under the box, ← or → (`by`) to the one beside, `to`: the same moves as the slivers, where a hand finds them. */
 function step(to: Slot | undefined, by: -1 | 1): HTMLButtonElement {
-  const b = h('button', {type: 'button', class: `found-step ${by < 0 ? 'prev' : 'next'}`, 'aria-label': to ? `${to.kind} ${to.label}`.trim() : '', title: to ? `${to.kind} ${to.label}`.trim() : ''}, by < 0 ? '←' : '→') as HTMLButtonElement;
+  const b = h('button', {type: 'button', class: `found-step ${by < 0 ? 'prev' : 'next'}`, 'aria-label': to ? `${to.kind} ${to.label}`.trim() : ''}, by < 0 ? '←' : '→') as HTMLButtonElement;
   b.disabled = !to;
   b.addEventListener('click', () => to?.go());
   return b;
@@ -70,7 +70,7 @@ function step(to: Slot | undefined, by: -1 | 1): HTMLButtonElement {
  */
 function nav(slots: Slot[], k: number, shut: () => void): HTMLElement {
   const here = slots[k];
-  const x = h('button', {type: 'button', class: 'found-shut', 'aria-label': t('Close'), title: t('Close')}, mark('close'));
+  const x = h('button', {type: 'button', class: 'found-shut', 'aria-label': t('Close')}, mark('close'));
   // Pressed, the keyboard stays where it is (the file written beside it), as the Prompt's × keeps it.
   x.addEventListener('pointerdown', (event) => event.preventDefault());
   x.addEventListener('click', shut);

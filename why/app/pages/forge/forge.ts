@@ -105,8 +105,7 @@ class Forge {
   /** The repo worked on (the Prompt's, the desk on screen). */
   private now: {repo: string | null} = {repo: null};
   /** The band's files key (the deeds for the file in hand, out under it). */
-  private acts = h('button', {type: 'button', class: 'band-tool band-acts', 'aria-label': t('Files: New, Rename, Delete'),
-    title: t('Files: New, Rename, Delete')}, mark('new-file')) as HTMLButtonElement;
+  private acts = h('button', {type: 'button', class: 'band-tool band-acts', 'aria-label': t('Files: New, Rename, Delete')}, mark('new-file')) as HTMLButtonElement;
   /** Against the band's right end: the name of what is in hand. */
   private heldName = h('div', {class: 'band-held', 'aria-hidden': 'true'});
   /** The desk the terminal lies on now (there is one terminal: it is the repo's worked on). */

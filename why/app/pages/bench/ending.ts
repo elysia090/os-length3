@@ -26,7 +26,8 @@ export function endLine(said: string, why: string, restart: () => void): {line: 
   const power = h('button', {class: 'power plain', type: 'button', role: 'switch', 'aria-checked': 'false', 'aria-label': t('Restart')}, h('span', {class: 'knob'}));
   power.addEventListener('click', restart);
   // The last thing on its thread, under what it printed last: the switch, and how it ended beside it.
-  const line = h('div', {class: 'term-end'}, power, h('span', why ? {title: why} : {}, said));
+  // (Why it did not start is said after how it ended, in words: not in a tooltip, DESIGN §7.)
+  const line = h('div', {class: 'term-end'}, power, h('span', {}, said), why ? h('span', {class: 'muted'}, why) : null);
   return {line, power};
 }
 

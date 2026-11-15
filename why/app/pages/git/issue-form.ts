@@ -45,7 +45,7 @@ export function issueLine(events: {made(m: Made): void}): IssueLine {
   const element = h('div', {class: 'issues-new'}, where, line, error);
   line.value = draft.text;
   let target: string | null = draft.repo;
-  const say = () => { where.textContent = target ?? ''; where.title = target ?? ''; };
+  const say = () => { where.textContent = target ?? ''; };
   say();
   line.addEventListener('input', () => { draft.text = line.value; if (error.textContent) error.textContent = ''; });
   let making = false;

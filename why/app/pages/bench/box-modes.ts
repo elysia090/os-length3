@@ -51,9 +51,6 @@ const modeWord = (m: Mode): string => (m === 'run' ? t('Run in Prompt') : m === 
 /** The word on the box's own button. */
 export const sendWord = (m: Mode): string =>
   (m === 'run' ? t('Run') : m === 'issue' ? t('Create') : m === 'todo' ? t('Add') : m === 'agent' ? t('Ask') : t('Edit'));
-/** Its title, with the keys that do it from the box (Edit has none: what is typed is in the file as it is typed). */
-export const sendTitle = (m: Mode, keys: string): string => (m === 'run' ? t('Run ({keys})', {keys}) : m === 'issue' ? t('Create ({keys})', {keys})
-  : m === 'todo' ? t('Add ({keys})', {keys}) : m === 'agent' ? t('Ask ({keys})', {keys}) : t('Edit'));
 /** What the empty box says goes there (for Edit, with the file in front, `file`: the line held is an empty one). A
  * terminal says nothing after its prompt: the cursor waiting there is all it says, as any terminal's (its hint is a
  * width of nothing, so the line is known to be empty: forge-desk.css draws the cursor then). */

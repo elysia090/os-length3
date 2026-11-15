@@ -413,8 +413,8 @@ test('the Prompt is a real terminal: colours as programs give them, a line rewri
   await box.fill(`printf '\\033[1;31mred\\033[0m plain\\n'; for i in 1 2 3; do printf '\\rstep %s' $i; done; echo`);
   await box.press('Enter');
   await expect(out).toContainText('step 3', {timeout: 120_000});
-  // Red, bold, as the page's own red; the counter counted in place, one line.
-  await expect(out.locator('span', {hasText: /^red$/})).toHaveCSS('font-weight', '600');
+  // Red, bold (the OS's other weight, DESIGN §3), as the page's own red; the counter counted in place, one line.
+  await expect(out.locator('span', {hasText: /^red$/})).toHaveCSS('font-weight', '700');
   expect(await out.innerText()).not.toMatch(/step 1|step 2/);
   // vi on the whole screen: keys are its, Tab and Escape too (not the desk's), and what it writes is the file.
   await box.fill('vi README.md');

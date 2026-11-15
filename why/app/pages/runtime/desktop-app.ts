@@ -30,7 +30,7 @@ export function desktopApp(): HTMLElement {
     const first = deb ?? (pins.appimage && (await there(pins.appimage.file)) ? pins.appimage : null);
     if (!first) return;
     const what = first === deb ? t('x86-64 Linux · .deb · {size}', {size: bytes(first.bytes)}) : t('x86-64 Linux · AppImage · {size}', {size: bytes(first.bytes)});
-    const get = h('a', {class: 'button primary small-button download', href: url(first.file), download: first.file, title: `${first.file} · ${bytes(first.bytes)}`},
+    const get = h('a', {class: 'button primary small-button download', href: url(first.file), download: first.file},
       mark('download'), h('span', {}, t('Download')));
     // Beside the environments, the same small card: what it is, which file and its size, and Download at its bottom left.
     section.replaceChildren(h('h2', {id: 'app-title'}, t('Desktop App')),

@@ -17,15 +17,15 @@
 .scripted .boot-static { display: none; }
 .page > * { max-width: 1200px; }
 /* A counter's head is on the top line, its middle the band's (the line Forge's tools and Git's chips are on), and under
-   it the page starts on the rail's first row. One line at every width, so what stands under it (a page's parts, a
-   sign-in card) starts at one place on every page: the role is cut short where it runs out of room, and a phone, with
-   no room for it, has the name alone. */
+   it the page starts on the rail's first row. What is said beside the name is never cut short to fit (DESIGN §2, one
+   lens): where it has no room beside the name it goes under it, a line of a cell of its own, and a phone has the name
+   and only how it stands. */
 /* (The room under it is its own, not a margin: a margin there would run together with the next thing's.) */
-.page-head { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; box-sizing: content-box; height: calc(2 * var(--u)); margin-top: 0; padding-bottom: 0; }
+.page-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); min-width: 0; box-sizing: content-box; min-height: calc(2 * var(--u)); margin-top: 0; padding-bottom: 0; }
 .page-head .icon { align-self: center; flex: none; }
 /* A place's name is a name as any on a desk is: the display face, its capitals a cell tall. */
 .page-head h1 { font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; flex: none; }
-.page-head p { color: var(--sub); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-head p { color: var(--sub); min-width: 0; line-height: var(--u); overflow-wrap: anywhere; }
 @media (max-width: 560px) { .page-head p:not(.standing) { display: none; } }
 /* (Two cells between sections; a heading a line of its own, the words under it on the next: a line above, none below.) */
 .section { margin-top: calc(2 * var(--u)); }

@@ -128,13 +128,13 @@ export function most(light: [number, number], L: number): number {
   return Math.round(C * 1000) / 1000;
 }
 
-/** The greys of the OS (tokens.css) by their lightness (OKLab L), each made the ground's light at it: from the screen's
- * glass and the ink up to the paper. Their steps are the design's (§3, colour); only their light is made one here. */
-export const GREY_L = {screen: 0.187, ink: 0.201, sub: 0.44, edge: 0.535, quiet: 0.598, dot: 0.664, rule: 0.684, slot: 0.831,
+/** The greys of the OS (tokens.css) by their lightness (OKLab L), each made the ground's light at it: from the ink (the
+ * terminal's glass too) up to the paper. Their steps are the design's (§3, colour); only their light is made one here. */
+export const GREY_L = {ink: 0.201, sub: 0.44, edge: 0.535, quiet: 0.598, dot: 0.664, rule: 0.684, slot: 0.831,
   raised: 0.917, paper: 0.985} as const;
 /** (The quiet grey is the least a word is read at on the ground, Lc 45: lighter, a count or a line's number on the ground
  * was a word to make out.) */
-export const GREYS = ['ink', 'screen', 'sub', 'edge', 'quiet', 'rule', 'slot', 'raised', 'paper'] as const;
+export const GREYS = ['ink', 'sub', 'edge', 'quiet', 'rule', 'slot', 'raised', 'paper'] as const;
 
 /** A mark's tint (the ground of a line it marks, a highlighter's stroke) is the mark seen in the light's white: its
  * hue under the light, at the tint's own lightness and chroma. Made against another white, a tint drifts from its

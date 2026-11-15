@@ -16,7 +16,7 @@
 .legend b { font-size: var(--t-word); font-weight: 700; display: block; }
 /* Runtime: each repo's share, what can be given back, Prompts running */
 .usage-prompt { align-items: center; }
-.usage-prompt .button { min-height: var(--h-row); padding-block: 0; }
+.usage-prompt .button { min-height: var(--h-control); padding-block: 0; }
 .reclaimed { display: grid; gap: 0; margin-bottom: var(--u); }
 .work-act .grow { flex: 1; }
 .legend + .reclaimed { margin-top: var(--u); }

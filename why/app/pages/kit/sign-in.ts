@@ -87,7 +87,7 @@ function codeShown(s: {code: string; url: string}, error: HTMLElement, stop: () 
   again.addEventListener('click', () => void native('remote_login_reopen').catch((e: unknown) => { error.textContent = errorText(e); }));
   cancel.addEventListener('click', stop);
   return [h('p', {class: 'sign-in-step'}, t('Approve this code in the browser')),
-    h('p', {class: 'device-code mono', title: s.url}, s.code),
+    h('p', {class: 'device-code mono'}, s.code),
     h('div', {class: 'row sign-in-row'}, cancel, again)];
 }
 

@@ -133,7 +133,7 @@ function diffRow(f: FileDiff, l: DiffLine, k: number, o: DiffOptions): HTMLEleme
 /** The head of `f`'s fold: its name (pressed, the file opens, unless it was removed) and what its change comes to. */
 function diffHead(f: FileDiff, o: DiffOptions): HTMLElement {
   const add = f.lines.filter((l) => l.kind === 'add').length, del = f.lines.filter((l) => l.kind === 'del').length;
-  const name = h('span', {class: 'diff-name', title: f.path}, fileName(f.path));
+  const name = h('span', {class: 'diff-name'}, fileName(f.path));
   if (o.reveal && f.status !== 'removed') {
     const go = o.reveal;
     name.classList.add('link');

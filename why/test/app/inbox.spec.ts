@@ -94,8 +94,8 @@ test('your names open with their heading at the top, and no name is let go from 
   await expect(ada.main.getByRole('button', {name: 'Add domain'})).toBeVisible();
   // Adding one stays; letting a name go is not offered in Inbox.
   await expect(ada.main.getByRole('button', {name: /^Let .* go$/})).toHaveCount(0);
-  // The heading sits on the box's own room (8) and its own (8), with no group's step before it.
+  // The heading is the menu's first line, a cell of paper over it (DESIGN §3, whole cells), with no group's step before it.
   const box = (await names.locator('xpath=..').boundingBox())!;
   const head = (await names.getByText('Your usernames', {exact: true}).boundingBox())!;
-  expect(head.y - box.y).toBeLessThanOrEqual(17);
+  expect(head.y - box.y).toBeLessThanOrEqual(24);
 });

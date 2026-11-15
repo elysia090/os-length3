@@ -2,7 +2,6 @@ import {h} from '../../ui/dom.ts';
 import {mark} from '../../ui/icons.ts';
 import {glide, where} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
-import {shown as named} from '../../../shipto/inbox.ts';
 import * as servers from '../../../shipto/servers.ts';
 import {serverNew} from '../../../shipto/news.ts';
 import type {Here, Shown} from './parts.ts';
@@ -14,7 +13,7 @@ import type {Here, Shown} from './parts.ts';
 // unpressable. What came in a server and was not seen yet is a dot on its chip.
 //
 // However many servers, the chips are one row that slides sideways, as Git's repos are, never more rows pushing the
-// boards down (a phone's width took six); its ends fade where there is more along it, and the one chosen, or being
+// boards down (a phone's width took six); its ends cut what goes on past them, and the one chosen, or being
 // named, is slid into view. What the Remote says no to, naming one, is a line of its own under the band, where the
 // row cannot slide it out of sight.
 
@@ -44,12 +43,11 @@ export class Band {
     this.here = here;
     this.ways = ways;
     this.chips = h('div', {class: 'chips server-chips', role: 'radiogroup', 'aria-label': 'Server'});
-    this.gear = h('button', {type: 'button', class: 'server-gear unseen', 'aria-label': t('Manage members, boards, and repos'), title: t('Manage members, boards, and repos'), 'aria-expanded': 'false', disabled: ''}, mark('down')) as HTMLButtonElement;
-    this.plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Create server'), title: t('Create server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
+    this.gear = h('button', {type: 'button', class: 'server-gear unseen', 'aria-label': t('Manage members, boards, and repos'), 'aria-expanded': 'false', disabled: ''}, mark('down')) as HTMLButtonElement;
+    this.plus = h('button', {type: 'button', class: 'band-add', 'aria-label': t('Create server'), hidden: ''}, mark('plus')) as HTMLButtonElement;
     this.plus.addEventListener('click', () => ways.make());
     this.gear.addEventListener('click', () => ways.gear());
     this.element = h('div', {class: 'server-top'}, this.plus, this.chips, this.said);
-    this.chips.addEventListener('scroll', () => this.ends(), {passive: true});
     // Narrowed (a window, a phone turned), the one chosen stays in view.
     new ResizeObserver(() => this.inView()).observe(this.chips);
   }
@@ -69,7 +67,7 @@ export class Band {
     this.said.replaceChildren(...(this.here.naming && this.asked ? [this.asked] : []));
     if (!signedIn) { this.chips.replaceChildren(h('span', {class: 'muted'}, t('Public boards'))); return; }
     const each = this.here.list.map((s) => {
-      const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), title: `${named(s.address)} · ${s.code}`, 'data-server': s.id}, s.name);
+      const b = h('button', {type: 'button', class: 'chip', role: 'radio', 'aria-checked': String(s.id === serverId), 'data-server': s.id}, s.name);
       markChip(b, this.here.list);
       b.addEventListener('click', () => this.ways.show(s.id));
       return b;
@@ -84,32 +82,23 @@ export class Band {
     requestAnimationFrame(() => this.inView());
   }
 
-  /** The chip being named, or else the one chosen, slid into view, clear of the fading ends; wider than the row, its start. */
+  /** The chip being named, or else the one chosen, slid into view, clear of the row's ends; wider than the row, its start. */
   private inView() {
     const row = this.chips;
     const on = this.here.naming?.isConnected ? this.here.naming : row.querySelector<HTMLElement>('[aria-checked="true"]');
-    const fade = parseFloat(getComputedStyle(row).getPropertyValue('--fade')) || 0;
+    const clear = parseFloat(getComputedStyle(row).getPropertyValue('--clear')) || 0;
     if (on && row.scrollWidth > row.clientWidth) {
-      const left = on.offsetLeft - fade, right = on.offsetLeft + on.offsetWidth + fade, at = row.scrollLeft;
+      const left = on.offsetLeft - clear, right = on.offsetLeft + on.offsetWidth + clear, at = row.scrollLeft;
       const to = left < at || right - left > row.clientWidth ? left : right > at + row.clientWidth ? right - row.clientWidth : at;
       if (to !== at) row.scrollTo({left: to}); // (at once: not one of the three moves, DESIGN §8)
     }
-    this.ends();
-  }
-
-  /** The row's ends fade where there is more along it. */
-  private ends() {
-    const row = this.chips;
-    row.classList.toggle('more-before', row.scrollLeft > 1);
-    row.classList.toggle('more-after', row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
   }
 
   /** The boards one writes in as a guest, after one's servers: each alone, said to be a guest's. */
   private guesting(): HTMLElement[] {
     const ours = new Set(this.here.list.flatMap((s) => s.boards.map((b) => b.id)));
     return servers.guestBoards().filter(({id}) => !ours.has(id)).map(({id, here}) => {
-      const b = h('button', {type: 'button', class: 'chip guest-chip', role: 'radio', 'aria-checked': String(id === this.here.alone),
-        title: t('#{board} ({server}) · Guest', {board: here.name, server: here.server})}, `#${here.name}`, h('span', {class: 'muted small'}, t('Guest')));
+      const b = h('button', {type: 'button', class: 'chip guest-chip', role: 'radio', 'aria-checked': String(id === this.here.alone)}, `#${here.name}`, h('span', {class: 'muted small'}, t('Guest')));
       b.addEventListener('click', () => this.ways.showAlone({id, name: here.name, member: false, guests: true, server: here.server}));
       return b;
     });

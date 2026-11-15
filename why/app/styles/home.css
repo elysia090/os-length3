@@ -96,13 +96,16 @@
 .home-repos > .gear-card > .repo-gear { position: absolute; left: calc(100% + var(--s1)); right: auto; top: var(--s3); width: var(--u); height: var(--u); display: grid; place-items: center;
   }
 .home-repos > .gear-card > .repo-gear > button { width: var(--u); height: var(--u); border: 0; border-radius: var(--r-key); background: none; }
-.home-repos > .gear-card > .repo-gear > button .mark { width: 14px; height: 14px; }
-.home-repos > .gear-card > .repo-gear-pop { top: calc(100% + var(--s1)); left: 0; right: auto; width: max(100%, 280px); text-align: left; }
-.home-repos > .card.new { display: flex; align-items: center; gap: 0; height: var(--u); margin: var(--u) 0 0; padding: 0; color: var(--ink);
+.home-repos > .gear-card > .repo-gear > button .mark { width: 18px; height: 18px; stroke-width: 2; }
+.home-repos > .gear-card > .repo-gear-pop { top: calc(100% + var(--s1)); left: 0; right: auto; width: max-content; min-width: max(100%, 280px); max-width: calc(100vw - 2 * var(--u)); text-align: left; }
+/* (Words on the ground: its patch of the ground and its room to the grid's next line, fit.css .clearing, kept against
+   the cards' own "no fill" above.) */
+.grid.repo-grid.home-repos > .card.new { display: flex; align-items: center; gap: 0; height: var(--u); margin: var(--u) calc(-1 * var(--to-cell, 0px)) 0 0;
+  padding: 0 var(--to-cell, 0px) 0 0; background: var(--ground); color: var(--ink);
   font: 700 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
 .home-repos > .card.new > .icon { display: none; }
 .home-repos > .card.new::before { content: '+ '; white-space: pre; }
-.home-repos > .card.new:hover { background: var(--paper); }
+.grid.repo-grid.home-repos > .card.new:hover { background: var(--paper); }
 .home-repos > p { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
 /* ---- What waits, a cell under the repos: a slip fourteen cells wide, drawn in line on the ground (it is not the
    piece in hand). Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a
@@ -116,10 +119,12 @@
 .home-waits .lately-list { display: flex; flex-direction: column; flex: 1; }
 .home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; text-align: left; }
 .home-waits .pane-row > .pane-bar { display: none; }
-.home-waits .pane-row > :is(.pane-line, .pane-said, .pane-at) { display: block; overflow: visible; mask: none; white-space: nowrap; }
-.home-waits .pane-row:first-child > .pane-line { margin: var(--u) 0 0; font: 700 var(--t-word)/var(--u) var(--sans); letter-spacing: 0; }
+.home-waits .pane-row > :is(.pane-line, .pane-said, .pane-at) { display: block; overflow: visible; white-space: nowrap; }
+.home-waits .pane-row:first-child > .pane-line { margin: var(--u) 0 0; font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; }
 .home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
-.home-waits .pane-row > .pane-at { font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
+/* Where it is, the file's servant: a step quieter and the other weight (said as the file's name was, it read as a second
+   thing waiting). */
+.home-waits .pane-row > .pane-at { font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); }
 /* What else waits, after the first: a line each, its name and what was said. */
 .home-waits .pane-row + .pane-row { margin-top: var(--u); }
 .home-waits .pane-row + .pane-row > .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; }

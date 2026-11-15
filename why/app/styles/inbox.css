@@ -83,7 +83,9 @@
 .bubble.inbox-notice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); margin-top: var(--u); color: var(--sub); font-size: var(--t-word); }
 .inbox-notice > .link { padding-block: 2px; font-size: inherit; color: var(--ink); }
 /* Someone who wrote first: over the field, who, what Accept and Block do (and that writing back accepts), the two. */
-.inbox-ask { display: grid; gap: var(--s2); margin: 0 var(--u) var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
+/* (A box on a sheet is ruled, as a form is: the quiet rule round it, no fill of its own, a cell of paper inside; a fill
+   would make it a sheet on a sheet, which there is not: DESIGN §5, what is ruled on a sheet.) */
+.inbox-ask { display: grid; gap: 0; margin: 0 var(--u) var(--u); padding: calc(var(--u) - 1px) var(--u); border: 1px solid var(--rule); border-radius: var(--r-card); background: none; }
 .inbox-ask p { margin: 0; }
 .inbox-ask-acts { display: flex; gap: var(--s2); }
 .bubble .state-chip { margin-right: var(--s2); }

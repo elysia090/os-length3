@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {t} from '../../../text/i18n.ts';
-import {shown as named, shownAs} from '../../../shipto/inbox.ts';
+import {shown as named} from '../../../shipto/inbox.ts';
 import * as servers from '../../../shipto/servers.ts';
 import {boardNew} from '../../../shipto/news.ts';
 import {personBadge} from '../kit/pane.ts';
@@ -118,7 +118,7 @@ export class Side {
     // Someone else pressed is a conversation with them, in the Inbox: who they are is who one writes to.
     void this.ways.isMe(p.address).then((me) => {
       if (me || !li.isConnected) return;
-      const b = h('button', {type: 'button', class: 'person-go', title: t('Message {name}', {name: named(p.address)})}, ...li.childNodes);
+      const b = h('button', {type: 'button', class: 'person-go', 'aria-label': t('Message {name}', {name: named(p.address)})}, ...li.childNodes);
       b.addEventListener('click', () => this.ways.write(p.address));
       li.replaceChildren(b);
     });
@@ -127,8 +127,7 @@ export class Side {
 
   /** A repo shown in it: whose, and said when everyone sees it; lit while it is the one in the boards' place. */
   private repo(r: servers.ShownRepo): HTMLElement {
-    const b = h('button', {type: 'button', class: 'side-repo', 'data-repo': `${r.owner}:${r.name}`,
-      title: r.as ? t('Publicly visible as "{name}"', {name: shownAs(r.as)}) : `${named(r.owner)}:${r.name}`},
+    const b = h('button', {type: 'button', class: 'side-repo', 'data-repo': `${r.owner}:${r.name}`},
     h('span', {}, r.name), h('span', {class: 'muted small'}, named(r.owner)), r.as ? h('span', {class: 'seen-mark muted small'}, t('Public')) : null);
     if (b.dataset.repo === this.seeing) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => this.ways.seeRepo(r));

@@ -8,21 +8,23 @@
    boards' place: a step away from them. */
 /* On the skeleton every page has (tokens.css): its chips on the top line a step from the rail's line, and its boards,
    what is behind its gear and the box at its foot a place further in, where every page's own things start. */
-.server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: var(--band) 0 0; }
+.server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: 0; }
 /* The band's row, and under it the board's top on the rail's first row: its head is that row, and what it holds
    starts on the second. Under the band's row, while one is named, what the Remote said no to (server/band.ts). */
-/* (Under it the row's top is a cell under the band: y = 72.) */
-.server-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s1) var(--s2); margin: 0 var(--s5) calc(3 * var(--u) - var(--outer-top) - var(--band) - var(--h-row)) var(--band-left); }
+/* (Its keys are the band's, 36 from the window's 6, as the door is; under it the row's top is a cell under the band:
+   y = 72.) */
+.server-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s1) var(--s2); margin: 0 var(--s5) calc(3 * var(--u) - var(--outer-top) - var(--h-control)) var(--band-left); }
 /* (Its top line is on the band's row: it goes on from the door to Inbox, a step after it.) */
 body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(--band-left)); }
 /* Server's page: the view the whole page's, its edges the bench's. */
 /* (Its row goes to the window's right edge and foot, past the page's own: nothing of it is cut at the page's.) */
 .page.page-work[data-place='server'] { overflow: visible; }
 .page.page-work[data-place='server'] > .work { position: relative; height: 100%; grid-template-columns: minmax(0, 1fr); }
-.server-bar { position: absolute; top: var(--band); right: var(--s5); display: flex; }
-/* One row that slides sideways however many servers there are, as Git's repos are, a ring kept clear of its edge; an
-   end fades where there is more along it (--fade, which the row keeps a chip slid into view clear of). */
-.server-chips { --fade: var(--s5); position: relative; isolation: isolate; flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+.server-bar { position: absolute; top: 0; right: var(--s5); display: flex; }
+/* One row that slides sideways however many servers there are, as Git's repos are, a ring kept clear of its edge; where
+   there is more along it its end cuts what goes on past it, as the frame's edge does the world's (no fade: DESIGN §1),
+   and a chip slid into view is kept --clear of the ends. */
+.server-chips { --clear: var(--s5); position: relative; isolation: isolate; flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
   margin: calc(-1 * var(--s1)); padding: var(--s1); }
 .server-chips::-webkit-scrollbar { display: none; }
 .server-chips > * { flex: none; }
@@ -31,9 +33,6 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .server-chips .chip { color: var(--frame); }
 .server-chips .chip[aria-checked='true'] { background: var(--slot); color: var(--ink); border-color: var(--frame-edge); }
 .server-chips .chip:is(:hover, :focus-visible) { color: var(--ink); }
-.server-chips.more-after { mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent); }
-.server-chips.more-before { mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent); }
-.server-chips.more-before.more-after { mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); }
 .server-said { flex-basis: 100%; padding-left: calc(var(--h-row) + var(--s2)); }
 .server-said:empty, .server-said:has(> .server-ask:empty) { display: none; }
 /* A server being named: its chip is the field, where it will stand once made, dashed until it has a name, and says
@@ -58,11 +57,11 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
    line, its talk's foot in their own words, not a box in a box nor bars that read as loading), and the box at the foot
    it will write in, saying its people by the name as it is written; nothing in it to press. Made, it stands there whole. */
 /* (A board to be made is not a sheet yet: its piece is a dashed line on the ground, in the hand or not.) */
-.server-center .slide:has(> :is(.board-ghost, .board-new)) { background: transparent; color: var(--sub); outline-style: dashed; outline-color: var(--edge); box-shadow: none; }
+.server-center .slide:has(> :is(.board-ghost, .board-new)), .server-center .slide[aria-current='true']:has(> :is(.board-ghost, .board-new)) { background: var(--ground); color: var(--sub); outline-style: dashed; outline-color: var(--edge); box-shadow: none; }
 .board-ghost .board-head h2 { color: var(--sub); }
 /* What a board will hold, faint (server/board.ts ghostBody): a server's first board while it is named, a new board. */
 .board-faint { color: var(--sub); }
-.board-faint .todo-box { border-color: color-mix(in srgb, var(--rule) 55%, transparent); background: transparent; }
+.board-faint .todo-box { border-color: var(--rule); background: transparent; }
 .board-faint .todo-mark { cursor: var(--cursor-arrow); }
 .board-faint .todo-title { display: flex; align-items: center; color: var(--sub); font-weight: 400; }
 .board-talk.board-faint { display: flex; flex-direction: column; overflow: hidden; }
@@ -82,10 +81,12 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .board-new > .board-head > .error:empty { display: none; }
 .board-new > .board-lead { grid-column: 1; grid-row: 2; align-self: start; padding: var(--s3) var(--u); }
 .prompt.ghost-dock { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); font: var(--t-word)/var(--u) var(--sans); }
-.side-ghost { opacity: .45; }
+/* What the side will hold, quiet (never see-through): its words and lines the quiet ones. */
+.side-ghost { color: var(--quiet); }
+.side-ghost * { color: inherit; border-color: var(--rule); }
 /* A gear with nothing chosen keeps its place, so nothing beside it moves. */
 .server-gear.unseen { visibility: hidden; }
-.server-gear { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
+.server-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: var(--h-control); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
 .server-bar > .server-gear { border-color: var(--frame-edge); color: var(--frame); } /* at the corner, the switch's quiet circle */
 .server-bar > .server-gear:hover { background: var(--paper); color: var(--ink); }
@@ -99,7 +100,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 @media (max-width: 760px) { .server-top { padding-right: calc(var(--s5) + var(--h-row)); } }
 /* Signed out, with nothing open to read: Server's head and the card signing in where a page has them (page.css):
    the center's padding is a step narrower than a page's at the left and a step deeper at the top, given back here. */
-.server-signed-out { margin: calc(var(--top-line) - var(--band)) var(--s5) 0 var(--body-left); }
+.server-signed-out { margin: var(--top-line) var(--s5) 0 var(--body-left); }
 /* The boards are the row of a desk (DESIGN §6, server/row.ts): from the desk's edge, a cell under the band, to the
    window's right edge and a cell over its foot; pieces one width (--piece, as many whole cells as there is room for,
    24 at most), two cells apart; the desk rests only with a piece at its edge. First in the row the room's own sheet,
@@ -158,7 +159,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .board-card > .board-head { grid-column: 1; }
 /* (Beside the name, the head's gap from it; where the name leaves no room, on a line of their own under it, from its left.) */
 .board-head > .parts { flex: none; flex-wrap: nowrap; min-height: calc(2 * var(--u)); align-items: center; }
-.board-head .part { height: var(--h-row); padding-inline: var(--s3); }
+.board-head .part { height: var(--h-control); padding-inline: var(--s3); }
 .slide[aria-current='true'] .board-card:not(.board-new) > .board-head:has(~ :is(.board-talk, .part-panel)) { box-shadow: 0 1px 0 var(--rule); }
 .board-card > .board-talk, .board-card > .part-panel { grid-column: 1; grid-row: 2; min-height: 0; margin: 0; }
 .board-card > .part-panel { display: grid; grid-template-rows: minmax(0, 1fr); }
@@ -168,7 +169,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .board-todo .todo-items { padding: 0; }
 .board-todo .todo-hint { padding-inline: var(--s2); }
 .board-todo .error:empty { display: none; }
-.board-todo > .todo-clear { justify-self: start; height: var(--h-row); }
+.board-todo > .todo-clear { justify-self: start; height: var(--h-control); }
 /* The TODO in front, the box at the foot is the talk's and goes, the board taking its room. */
 /* (Its TODO's panel told by its id, panel-board-…-todo: a :has() holds no other.) */
 .slide:has(> .board-card > .part-panel[id$='-todo']:not([hidden])) > .dock { display: none; }
@@ -180,7 +181,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
    come with the words, standing in a line's room. */
 :is(.slide > .dock > .prompt, .inbox-write .write-line) { min-height: calc(2 * var(--u)); padding-block: calc(var(--u) / 2 - 1px); }
 :is(.slide > .dock .prompt-in, .inbox-write .bubble-in) { line-height: var(--u); }
-:is(.slide > .dock, .inbox-write) .prompt-run { margin-block: calc((var(--u) - var(--h-row)) / 2); }
+:is(.slide > .dock, .inbox-write) .prompt-run { margin-block: calc((var(--u) - var(--h-control)) / 2); }
 .board-talk:focus-visible { outline-offset: -2px; }
 .board-body { display: grid; gap: var(--s3); align-content: start; padding: var(--s2) var(--s5) var(--s5); max-width: 560px; }
 .server-back { display: flex; flex-wrap: wrap; gap: var(--s2); }
@@ -272,20 +273,20 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .guest-link:empty { display: none; }
 .guest-link-text { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }
 .guest-chip { display: inline-flex; align-items: center; gap: var(--s1); }
-.guest-chip[aria-checked='true'] .muted { color: inherit; opacity: .75; }
+.guest-chip[aria-checked='true'] .muted { color: inherit; }
 .small-card > .small-button { align-self: flex-start; }
 .small-card.new { justify-content: center; align-items: flex-start; }
 /* Add someone you know: its word where its neighbours' names start, at the card's own padding. */
 .small-card.new.add-someone { justify-content: flex-start; align-items: flex-start; text-align: left; }
 .grid > .empty { grid-column: 1 / -1; margin-top: 0; }
-/* The parts' › (common.ts parts): held at the row's end as it slides, over a fade into the ground; shown only while
-   there is more along (below). */
+/* The parts' › (common.ts parts): held at the row's end as it slides, on the sheet's paper, cutting what goes on under it;
+   shown only while there is more along (below). */
 .parts-on {
   display: none; position: sticky; right: 0; z-index: 1; flex: none; place-items: center end;
   width: calc(var(--s6) + var(--s2)); margin-left: calc(-1 * (var(--s6) + var(--s2))); padding: 0; border: 0;
-  background: linear-gradient(to right, transparent, var(--ground) 55%); color: var(--sub); cursor: var(--cursor-hand);
+  background: var(--paper); color: var(--sub); cursor: var(--cursor-hand);
 }
-.parts-on .mark { box-sizing: content-box; width: var(--s4); height: var(--s4); padding: var(--s1); border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--ground); }
+.parts-on .mark { box-sizing: content-box; width: var(--s4); height: var(--s4); padding: var(--s1); border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--paper); }
 .parts-on:hover .mark { background: var(--paper); color: var(--ink); }
 /* Narrow: the parts slide rather than stack, and the server's name and code are left to its own part. */
 @media (max-width: 760px) {

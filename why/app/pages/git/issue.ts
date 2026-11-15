@@ -189,15 +189,13 @@ export function issueSteps(issue: Issue, s: RepoState | undefined, events: Issue
   if (w && !(!dirty && w.commits > 0)) {
     const commit = button(t('Commit'));
     commit.disabled = !dirty;
-    commit.title = named(issue.kind, issue.title);
     commit.addEventListener('click', doing(commit, error, () => git.cut(at, null, '', ''), after));
     lines.push({done: false, el: commit});
   } else lines.push({done: !!w || open, el: said(t('Commit'))});
   // Submit: a commit hands itself in on one's own repo; the switch says whether the change is in, and takes it back.
   if (w && w.commits > 0 && !(w.change?.state === 'merged' && !w.unpushed)) {
     const inNow = !w.unpushed && w.change?.state === 'open';
-    const power = h('button', {type: 'button', class: 'switch-power', role: 'switch', 'aria-checked': String(inNow), 'aria-label': t('Submitted'),
-      title: inNow ? t('Disabling withdraws this Change') : t('Submit the commits as this Change')}, t('Submit')) as HTMLButtonElement;
+    const power = h('button', {type: 'button', class: 'switch-power', role: 'switch', 'aria-checked': String(inNow), 'aria-label': t('Submitted')}, t('Submit')) as HTMLButtonElement;
     power.disabled = !inNow && dirty > 0;
     const was = String(inNow);
     const turn = doing(power, error, () => (inNow ? git.reset(at) : git.push(at).then(() => git.submit(at)))
@@ -296,7 +294,6 @@ function startDeed(issue: Issue, s: RepoState | undefined, error: HTMLElement, e
  */
 function closeDeed(issue: Issue, error: HTMLElement, events: IssueEvents, after: () => void): HTMLButtonElement {
   const leave = button(t('Close'));
-  leave.title = t('Won\'t fix: moves to Closed (can be reopened later)');
   leave.addEventListener('click', doing(leave, error, async () => {
     // It goes down as it is closed, toward Closed under the page, where its line lands lit; not closed, it is back.
     const going = still() ? null : (leave.closest('.issue-slot') ?? leave.closest('.issue-box'))?.animate([{transform: 'none', opacity: 1}, {transform: 'translateY(28px) scale(.97)', opacity: 0}],
@@ -464,7 +461,7 @@ function over(ghost: HTMLElement, now: HTMLElement, parent: HTMLElement, from: n
 /** A part of a box drawn again coming in (crossfade), named so a drawing after it can go on from it. */
 const COMING = 'coming-in';
 const comeIn = (p: Element) => {
-  const a = p.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(220), delay: paced(40), easing: SPRING, fill: 'backwards'});
+  const a = p.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(220), delay: cut() ? 0 : paced(40), easing: SPRING, fill: 'backwards'});
   a.id = COMING;
   return a;
 };
@@ -538,7 +535,6 @@ export function mergeRow(issue: Issue, s: RepoState | undefined, after: () => vo
   const at = issue.repo;
   const error = h('p', {class: 'error', role: 'alert'});
   const reject = button(t('Reject'));
-  reject.title = t('Do not merge into main (issue remains open)');
   reject.addEventListener('click', doing(reject, error, () => git.reject(at, change), after));
   return h('div', {class: 'steps merge-row'}, reject, error);
 }

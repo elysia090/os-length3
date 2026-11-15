@@ -50,7 +50,6 @@ export default {
   'You added {who} to {server}.': '{who}を{server}に追加しました。',
   '{who} added you to {server}.': '{who}があなたを{server}に追加しました。',
   'Post in #{board}': '#{board}に投稿',
-  'Post ({keys})': '投稿（{keys}）',
   'To members of {server}': '{server}のメンバーへ',
   'As guest ({name})': 'ゲストの{name}として',
   'Restricted to server members.': 'このサーバーのメンバーのみ投稿できます。',
@@ -61,7 +60,6 @@ export default {
   'Display name': 'ここでの表示名',
   'Your name will appear with a "guest" badge.': '名前の横に「ゲスト」と添えて表示されます。',
   'Guest posting privileges have ended.': 'ゲストとしての投稿権限が終了しました。',
-  '#{board} ({server}) · Guest': '{server}の #{board}（ゲスト参加）',
   'Invalid invite link. Request a new invite from the server owner.': 'この招待リンクは有効なゲスト向けボードを開けません。招待元に新しいリンクの発行を依頼してください。',
   // A board's TODO, pinned at the top of it (Home's list, kept together).
   'Shared TODO': '共有 TODO',
@@ -129,7 +127,6 @@ export default {
   'Manage members, boards, and repos': 'メンバー・ボード・repo の設定',
   'Add contact': '連絡先メンバーを追加',
   'Export local copy': 'ローカルに保存',
-  'Data is backed up on Remote. Export local text copies whenever needed.': 'すべてのデータは Remote に保存されます。手元にテキストとして控えを取りたい場合にダウンロードしてください。',
   'Members only': 'メンバー限定',
   'Allow guests': 'ゲストを受け入れる',
   'This server': 'このサーバー',
@@ -141,7 +138,6 @@ export default {
   'Create your first repo': '最初の repo を作成',
   'A personal Git repository: compatible with Forge, Git, and Prompt.': 'git と同様にバージョン管理される専用フォルダーです。Forge、Git、Prompt はその中で動作します。',
   // A server's name, in the namespace people's addresses are in.
-  'First-come, first-served: reserved exclusively while active on this server.': 'ユーザー名と同様に先着順で取得され、サーバーが保持している間は他の誰にも取得されません。',
   'Invite code': 'コード',
   'Restore {name}': '{name}を復元',
   'Reserved until {date}': '{date}まで予約保護',

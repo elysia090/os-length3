@@ -44,10 +44,6 @@
      accent: the mark itself, the words in it (a step darker, to read small), and the ground of a line (a tint, not
      the mark thinned). */
   --done: #0e7c5e;
-  /* The Prompt up as a screen, its one place, made of these: its glass the ink a step deeper; its words the green's
-     tint (add-tint) lit in the green (done), and the prompt lines the shell waited at the green itself, lifted for the dark. */
-  --screen: #131312;
-  --screen-ps: color-mix(in srgb, var(--done) 45%, var(--add-tint));
   --add: #13684f;
   --add-tint: #d7eadc;
   --marker: #ecca5f;
@@ -88,7 +84,7 @@
   /* (A key, wherever it is, is the frame's square, 36 px, in a field of two cells: DESIGN §3, whole cells.) */
   --h-control: 36px; --h-row: 32px; --h-place: 48px;
   /* The prompt box's height (one line of body text, its padding and edge): the foot line the rail's person sits on. */
-  --prompt-h: calc(2 * var(--s3) + var(--t-word) * 1.6 + 2px);
+  --prompt-h: calc(2 * var(--u));
   --icon: 24px; --stroke: 1.6px;
   /* The one law every move of the OS follows (ui/law.ts, where it is derived and tested): a thing moved goes as a
      hand moves it and stops it, off at once, most of the way in the first third of its time, then settling with no
@@ -114,7 +110,7 @@
   /* Lines are 1px; the file being worked on is drawn a little heavier. */
   --line-work: 1.5px;
   /* The two lines that frame the work, the rail's and the right pane's: one weight, in ink, top line to foot. */
-  --line-frame: 2px;
+  --line-frame: 1px;
   /* A sheet's shadow on a desk: half a cell right and down, whatever the sheet (one light). */
   --shade: calc(var(--u) / 2);
   /* A page's column on a desk: a half screen's width (thirty-two cells of a 1536 px screen's sixty-four) less the

@@ -45,7 +45,8 @@
 .switch-lines { display: grid; }
 .switch-line { position: relative; display: flex; justify-content: flex-start; align-items: center; height: var(--u); padding: 0 var(--u); }
 .switch-line.next::before { content: ''; position: absolute; inset: 0; background: var(--ink); }
-.git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: auto; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+/* (A step is a line pressed: a cell tall, its words not trimmed to their capitals, which left a target of 12 px.) */
+.git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: var(--u); text-box: normal; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
 .git-switch .switch-line > button { cursor: var(--cursor-hand); }
 .git-switch .switch-line > button:disabled { cursor: var(--cursor-arrow); opacity: 1; }
@@ -104,11 +105,12 @@
 .git-desk .issue-summary:focus { background: none; color: var(--ink); outline: none; }
 .git-desk .issue-box > .agent-line { grid-column: 1; margin-top: var(--u); justify-items: end; }
 .git-desk .issue-foot { grid-column: 1; margin-top: var(--u); justify-content: flex-end; font-size: var(--t-word); }
-.git-desk .issue-box.no-work .issue-foot { justify-content: flex-start; }
+/* (Close at its left and the repo opposite it, as on every issue: side by side they read as one deed, "Close hello".) */
+.git-desk .issue-box.no-work .issue-foot { justify-content: space-between; }
 .git-desk .issue-box.no-work .issue-foot > .issue-about { justify-content: flex-start; }
 .git-desk .issue-foot > .issue-about { flex: 0 1 auto; justify-content: flex-end; }
 /* What is done to the sheet itself (Close, Back to main, Reject): words, not boxes. */
-.git-desk :is(.issue-foot, .issue-leave, .merge-row) .button { min-width: 0; min-height: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+.git-desk :is(.issue-foot, .issue-leave, .merge-row) .button { min-width: 0; min-height: 0; height: var(--u); text-box: normal; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
 .git-desk :is(.issue-foot, .issue-leave, .merge-row) .button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
 .git-desk .issue-foot .button { font-size: var(--t-word); }
@@ -125,8 +127,8 @@
 .work-line { display: flex; min-height: var(--u); padding: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .work-line > .work-sign { flex: none; width: 2ch; }
 .work-line > .work-text { min-width: 0; }
-.work-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
-.work-line.del { background: color-mix(in srgb, var(--del) 14%, var(--paper)); }
+.work-line.add { background: var(--add-tint); font-weight: 700; }
+.work-line.del { background: var(--del-tint); }
 .work-line.far { height: var(--u); overflow: hidden; white-space: pre; color: var(--sub); filter: blur(.8px); }
 /* How much the work is, where the sheet turns: at its foot's left, as large as the title. */
 .work-sum { position: absolute; left: 0; bottom: 0; display: flex; gap: .25em; margin: 0; font: 900 var(--t-head)/.727 var(--display); letter-spacing: -.035em; }
@@ -183,8 +185,8 @@
 .git-desk .review-diff > .diff-file > summary :is(.diff-add, .diff-del, .diff-count) { font: 400 var(--t-word)/var(--u) var(--mono); background: none; }
 .git-desk .review-diff > .diff-file > .diff { margin: 0; padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; overflow: hidden; }
 .git-desk .review-diff .diff-line { min-height: var(--u); font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); background: none; }
-.git-desk .review-diff .diff-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
-.git-desk .review-diff .diff-line.del { background: color-mix(in srgb, var(--del) 14%, var(--paper)); }
+.git-desk .review-diff .diff-line.add { background: var(--add-tint); font-weight: 700; }
+.git-desk .review-diff .diff-line.del { background: var(--del-tint); }
 .git-desk .review-diff .diff-line:is(.marked, .marking) { background: var(--note); }
 .git-desk .review-diff .diff-no { font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
 .git-desk .review-sheet { position: relative; margin-top: calc(3 * var(--u) + 31px); padding: calc(1.5 * var(--u)); border-radius: var(--r-sheet); background: var(--paper); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }

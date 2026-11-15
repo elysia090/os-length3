@@ -135,7 +135,6 @@ function freeColumn(u: Space, repo: RepoParts, go: (ids: string[], held: HTMLBut
   const buttons: HTMLButtonElement[] = [];
   const going = freeable.map((i) => {
     const b = button(t('Free space'));
-    b.title = i.why;
     buttons.push(b);
     b.addEventListener('click', () => go([i.id], [b]));
     const isRepo = i.id.startsWith('repo:');

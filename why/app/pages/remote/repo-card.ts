@@ -95,7 +95,6 @@ function forgeButton(name: string, here: Here | null, there: RemoteRepo | null, 
   forge.disabled = gone && !here;
   if (off) {
     forge.hidden = !here;
-    forge.title = t('Kept on Remote until {date}; local copy will be removed', {date: day(there!.until!)});
     forge.addEventListener('click', () => void pressing(forge, error, async () => { await freeOff(name); await w.paint(); }));
   } else forge.addEventListener('click', () => void pressing(forge, error, async () => { if (!here) await bring(name); w.forge(name); }));
   return forge;

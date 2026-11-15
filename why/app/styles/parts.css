@@ -20,7 +20,9 @@
 @media (max-width: 760px) { .standing-who { display: none; } }
 .standing-reach.away { color: var(--off); }
 /* Just back from a provider: a passkey for next time, in a card of its own above the parts. */
-.passkey-next { margin-bottom: var(--u); padding: calc(var(--u) - 1px) var(--u); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); max-width: 760px; }
+/* (A box on a sheet is ruled, as a form is: the quiet rule round it, no fill of its own, a cell of paper inside; a fill
+   would make it a sheet on a sheet, which there is not: DESIGN §5, what is ruled on a sheet.) */
+.passkey-next { margin-bottom: var(--u); padding: calc(var(--u) - 1px) var(--u); border: 1px solid var(--rule); border-radius: var(--r-card); background: none; max-width: 760px; }
 .passkey-next p { margin: 0; }
 .offer-holder.held { display: none; }
 .part {
@@ -31,7 +33,7 @@
 .part small:empty { display: none; }
 .part:hover { background: var(--paper); color: var(--ink); }
 .part[aria-selected='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
-.part[aria-selected='true'] small { color: inherit; opacity: .8; }
+.part[aria-selected='true'] small { color: inherit; }
 .part-panel { margin-top: var(--row-step); }
 /* What a part holds starts on that line, a section or not. */
 .part-panel > .section:first-child, .part-panel > div > .section:first-child { margin-top: 0; }

@@ -87,7 +87,7 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
   // Forge's band, tool for tool, so the frame is one frame between the two: >_ to the terminal of the repo last worked
   // in, the files button to its file deeds there (New, Rename, Delete), then the search.
   const tool = (name: MarkName, label: string, press: () => void) => {
-    const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label, title: label}, mark(name));
+    const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label}, mark(name));
     b.addEventListener('click', press);
     return b;
   };

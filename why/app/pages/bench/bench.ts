@@ -173,7 +173,7 @@ function measured(work: HTMLElement, side: HTMLElement, screen: HTMLElement, box
 /** A bench put together round `main`, a page's content (Forge's, Git's): its box, the Prompt, the right pane, the keys. */
 /** A square tool on the band: its mark, its name said and shown on a rest. */
 function toolButton(name: MarkName, label: string, press: () => void): HTMLButtonElement {
-  const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label, title: label}, mark(name)) as HTMLButtonElement;
+  const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label}, mark(name)) as HTMLButtonElement;
   b.addEventListener('click', press);
   return b;
 }

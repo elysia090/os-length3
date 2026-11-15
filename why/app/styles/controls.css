@@ -6,7 +6,6 @@
   min-height: var(--h-control); padding: 0 var(--s4); border-radius: var(--r-round);
   border: 1px solid var(--edge); background: transparent; cursor: var(--cursor-hand);
 }
-.button:disabled { opacity: .5; cursor: var(--cursor-arrow); }
 /* Words in a button, a chip or a pill stand on its middle by their capitals: a face keeps more room over its capitals
    than under its baseline (or the other way), so a line set on a middle carries its words a pixel or two off it, high
    in one face, low in another. Trimmed to its capitals and its baseline, the line is its capitals, whatever the face.

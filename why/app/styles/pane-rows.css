@@ -24,9 +24,8 @@
 .pane-said { grid-area: said; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
   font: 400 var(--t-word)/var(--u) var(--sans); }
 .pane-said.quote { color: var(--sub); font: var(--t-word)/var(--u) var(--mono); white-space: pre-wrap; }
-/* Cut: the lines before the last whole, the last fading out from a third of the way along. */
-.pane-line.cut, .pane-said.cut, .pane-answer.cut:not(.whole) {
-  mask: linear-gradient(#000 0 0) top / 100% calc(100% - 1lh) no-repeat, linear-gradient(to right, #000 30%, transparent 75%) bottom / 100% 1lh no-repeat; }
+/* (Cut where it runs on past its lines, the last ends in …, the clamp's own: never faded out, which is transparency
+   saying what a sign says plainly.) */
 .pane-at { grid-area: at; font: var(--t-word)/var(--u) var(--mono); color: var(--sub); }
 .pane-exit { color: var(--del); font-weight: 700; margin-right: 8px; }
 .pane-answer { margin: 0 0 var(--s2) 20px; font: var(--t-word)/var(--u) var(--sans); color: var(--ink); display: -webkit-box; -webkit-box-orient: vertical;
@@ -38,7 +37,7 @@
 @media (prefers-reduced-motion: reduce) { .pane-answer.waiting:empty::after { animation: none; } }
 .pane-answer > .answer-p { margin: 0 0 6px; }
 .pane-answer > :last-child { margin-bottom: 0; }
-.pane-answer > .answer-code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--screen); color: var(--add-tint);
+.pane-answer > .answer-code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--ink); color: var(--green);
   font: var(--t-word)/var(--u) var(--mono); white-space: pre; overflow-x: auto; }
 .answer-refused { display: block; color: var(--off); }
 /* Where the Prompt's flow stood in the pane (its second row), the rows stand. */

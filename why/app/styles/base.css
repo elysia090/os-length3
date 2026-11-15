@@ -94,5 +94,6 @@ a { color: var(--ink); }
   width: var(--icon); height: var(--icon); flex: none;
   fill: none; stroke: currentColor; stroke-width: var(--stroke); stroke-linecap: round; stroke-linejoin: round;
 }
-/* What a place's icon encloses is the ground's, nearly: the desk's dots do not show through it as a part of it. */
-.icon > .icon-in { stroke: none; fill: var(--ground); fill-opacity: .85; }
+/* What a place's icon encloses is what lies under its key (--under: the ground, the slot of the place one is in, paper
+   under the hand), whole: the desk's dots do not show through it as a part of it, and no grey is made between. */
+.icon > .icon-in { stroke: none; fill: var(--under, var(--ground)); }

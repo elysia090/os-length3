@@ -26,7 +26,7 @@
 .todo-box .todo-mark:hover { color: var(--ink); background: var(--paper); }
 /* A line with nothing in it yet is room for an item, not one: its mark dashed and faint, as room for what is not here
    yet is, and not a thing to press (a press there goes to the line). */
-.todo-mark:disabled { opacity: .45; pointer-events: none; }
+.todo-mark:disabled { color: var(--quiet); pointer-events: none; }
 .todo-mark:disabled path { stroke-dasharray: 2.2 2.4; }
 /* An item's ×, quiet at its line's end, there always (it waits on no pointer), inked while the item is used. */
 .todo-away { display: grid; place-items: center; width: var(--s5); height: var(--s5); padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--quiet); cursor: var(--cursor-hand); }
@@ -76,7 +76,7 @@ span.todo-title { min-height: 0; }
 .todo-item.done .todo-head > .todo-strike { scale: 1 1; }
 /* Its detail goes quiet with it, still there to read. */
 .todo-item.done .todo-detail { color: var(--sub); }
-.todo-detail::placeholder { color: var(--sub); opacity: .7; }
+.todo-detail::placeholder { color: var(--quiet); }
 .todo-item.done .todo-mark { color: var(--done); }
 .todo-hint { display: flex; flex-wrap: wrap; gap: 0 var(--u); margin: 0; padding: 0 var(--u); color: var(--sub); font: 400 var(--t-word)/var(--u) var(--mono); }
 /* Said only while the box is written in, where it always stands, so nothing moves; unseen, it is not there to the hand

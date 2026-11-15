@@ -286,7 +286,7 @@ breaks; none is a decision to leave it.
 | Git | under 1100 px wide the sheet's work goes under its words and its number into its title's line: by the window's width | §1, a narrow window has the same rules |
 | Server | a board not in the hand is its name only: what it holds is read when it is taken up | §5, a piece not in the hand is read, a step quieter |
 | Server | behind its gear and a repo shown: a page of the old make (its title 24 px, its parts on a sliding line) | §3, §5 |
-| Server's chips, a sheet's parts | a line of them longer than its room slides, its end faded into the ground, a › over the fade | §1, no transparency as decoration; §6, what does not fit goes under |
+| Server's chips, a sheet's parts | a line of them longer than its room slides, cut at its end (the parts' › standing there) | §6, what does not fit goes under |
 | the search's finds | the find beside the one read lights under a pointer | §7, nothing waits on a pointer |
 | the band | Home, Forge and Git each build their own (the door alone is the window's); Runtime, the Remote, Server and Inbox have no search, so the band's row is not the same in every place: Server's is a round +, its servers as pills and a chevron at the row's far end; Inbox's and the Remote's the door alone; Runtime's nothing | §2, the frame is the window's; §4, the frame the same in every place (held of the rail, not yet of the band's row) |
 | Forge | the desk still turns by itself to where the Agent is working | §8, the world moves only for what was asked |
@@ -515,8 +515,8 @@ there); pressed under a file's last line, on its paper, the caret goes to
 its end. Server's people are each a
 conversation: someone else pressed opens the Inbox to them, an arrow at the
 row's end under the pointer. Every pressable thing answers
-the pointer coming, a primary button too (its ink a step toward the ground)
-and the box's pill (its glass catching a little more light). The keyboard
+the pointer coming (a key's line and words to ink; a key in ink stays as it is)
+and the box's pill (its line going to the glass's green). The keyboard
 is never left on nothing: letters typed with it on the rail or the page in
 Forge or Git go into the box (on Forge, the terminal's line); the box's four
 put away with Escape give it back to the box. The arrow keys go along any
@@ -905,10 +905,10 @@ Enter as in a terminal finds the keys that run it beside Run, and on a line of
 one, Enter pressed, they give one after the other as keys pressed together;
 Run. While the prompt is in use the box
 becomes a screen and the terminal comes up in it over the center, the one thing
-in the app that is a thing of its own: a terminal's screen, dark glass in the
-app's ink with its words lit in the app's green (§3), the page behind it only a
-blur in its top where glass catches the light, a fine raster and a falloff to
-its edges, its corner a card's (16). It is the box at the foot, lit, not a layer
+in the app that is a thing of its own: the terminal as it is in the hand
+anywhere, the app's ink with its words in the app's green and its quiet words
+slot (§3), nothing drawn on it to look like a screen (no raster, falloff,
+glare or glow), its corner a sheet's. It is the box at the foot, lit, not a layer
 over the page: no shadow under it, no shade over the window. The pill's glass
 runs along the box's line, slowing into its end, the box's light going from
 under it, then rises into the screen (460 ms, about two fifths of it along,
@@ -919,7 +919,7 @@ frame and gathering, and runs on into the pill at that speed, braking hard
 there (420 ms, two fifths sinking), the box's light coming back under it, the
 words taking their ink again as the glass leaves them; the pill gives under the
 glass it catches (flattened and wider, back past round, settled) and its lamp
-lights with a glow, and the terminal comes into the pane from the center's
+lights, and the terminal comes into the pane from the center's
 side. Put back on its way up, or brought up on its way down, it turns where it
 is and goes back the way it came, the line's parts with it, from that frame on:
 never first up whole, or back in the pill, and then on. Its lines are a

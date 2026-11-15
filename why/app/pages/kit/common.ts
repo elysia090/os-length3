@@ -92,7 +92,6 @@ export function copying(el: HTMLElement, text: string) {
     // Said for as long as it takes to read once (in Japanese, longer than in English), never less than it was.
     window.setTimeout(() => delete el.dataset.copied, Math.max(1200, readTime(el.dataset.copiedWord)));
   });
-  el.title = t('Click to copy');
 }
 
 /**
@@ -154,8 +153,8 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
   const heard: ((k: K) => void)[] = [];
   // Heard by the name it is given (the page's, in the language spoken), never by the key it is kept under.
   const bar = h('div', {class: 'parts', role: 'tablist', ...(label ? {'aria-label': label} : {})});
-  // More parts past its right end than fit (a phone's width): the row says so there, a › over a fade into the ground,
-  // whether a part is cut at the edge or the edge falls between two (a fade alone then fades nothing, and says
+  // More parts past its right end than fit (a phone's width): the row says so there, a › on the ground at its end,
+  // whether a part is cut at the edge or the edge falls between two (a cut alone then cuts nothing, and says
   // nothing). Pressed, the row slides on to the part past it; the keyboard has the arrows, so it is the pointer's.
   const more = () => bar.classList.toggle('more', bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2);
   const on = h('button', {type: 'button', class: 'parts-on', tabindex: '-1', 'aria-hidden': 'true'}, mark('on'));
@@ -165,7 +164,7 @@ export function parts<K extends string>(page: string, list: readonly {id: K; lab
     if (past) bar.scrollBy({left: past.getBoundingClientRect().right - edge}); // (at once, DESIGN §8)
   });
   bar.addEventListener('scroll', more, {passive: true});
-  // A part's width changing (its count come in after it was chosen) moves those after it: the fade is judged again,
+  // A part's width changing (its count come in after it was chosen) moves those after it: whether there is more is judged again,
   // and the one chosen kept in view.
   const sized = new ResizeObserver(() => { more(); keep(); });
   sized.observe(bar);

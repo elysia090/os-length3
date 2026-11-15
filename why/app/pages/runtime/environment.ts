@@ -39,7 +39,7 @@ const version = (v: string) => (v ? h('span', {class: 'version'}, v) : null);
 /** The one in effect: the card's head. */
 const top = (name: string, v: string, note: string, sha: string) => [
   h('span', {class: 'card-title'}, name, ' ', version(v)), h('span', {class: 'muted small'}, note),
-  ...(sha ? [h('code', {class: 'muted small env-sha', title: sha}, sha.slice(0, 12))] : [])];
+  ...(sha ? [h('code', {class: 'muted small env-sha'}, sha.slice(0, 12))] : [])];
 
 /** Another: its name and version, what it is (or its state), and at its right what can be done (or nothing). */
 const other = (name: string, v: string, note: string | Node, end: Node | null) =>

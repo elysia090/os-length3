@@ -149,12 +149,13 @@ export class FileTree {
 
   open(focus = false) {
     if (!this.isOpen) {
-      // Its top a cell under the File icon's: its name, over its corner, starts level with the icon's place.
+      // Its top a cell under the File icon's: its name, over its corner, starts level with the icon's place; on the
+      // grid line nearest that, as every sheet's edge is (DESIGN §3, whole cells: the places stand at 6 + 48n).
       const at = this.trigger?.getBoundingClientRect();
       if (at) {
         const cell = parseFloat(getComputedStyle(this.element).getPropertyValue('--u')) || 24;
         // (And never so low that it is cut by the window's foot: at least twelve cells of it are in the window.)
-        this.element.style.setProperty('--tree-top', `${Math.max(2 * cell, Math.min(at.top + cell, cell * Math.floor((innerHeight - 12 * cell) / cell)))}px`);
+        this.element.style.setProperty('--tree-top', `${Math.max(2 * cell, Math.min(cell * Math.round((at.top + cell) / cell), cell * Math.floor((innerHeight - 12 * cell) / cell)))}px`);
       }
       this.build(focus);
     }

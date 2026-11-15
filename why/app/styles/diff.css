@@ -51,7 +51,6 @@ button.diff-no:hover { color: var(--ink); background: var(--paper); border-radiu
    marked while reading). */
 .diff-line.add { background: var(--add-tint); border-left-color: var(--done); }
 .diff-line.del { background: var(--del-tint); border-left-color: var(--off); }
-.diff-line.del .diff-words { color: color-mix(in srgb, var(--ink) 75%, var(--del)); }
 .diff-line.same { color: var(--sub); }
 /* Between two parts of a file, a dashed break with a quiet "…". */
 .diff-line.hunk { color: var(--sub); margin-top: var(--s2); padding-top: var(--s1); border-top: 1px dashed var(--rule); }

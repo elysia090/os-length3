@@ -38,6 +38,7 @@
 .card.off { border-style: dashed; }
 /* What was turned off, pressed again to bring it back: red, as a repo turned off is. */
 .button.off { background: var(--off); border-color: var(--off); color: var(--ground); }
-/* Hovered, a step toward ink rather than toward the ground, so its words keep their contrast. */
-.button.off:hover:not(:disabled) { background: color-mix(in srgb, var(--off) 85%, var(--ink)); filter: none; }
+/* (Under the pointer it stays as it is, as a key in ink does: it is the strongest thing already, and a darker red mixed
+   for it is a colour the design has not.) */
+.button.off:hover:not(:disabled) { background: var(--off); border-color: var(--off); color: var(--ground); }
 .card.off .card-title, .card.off > .muted { color: var(--sub); }

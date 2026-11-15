@@ -57,7 +57,6 @@
 .found-here > .found-kind, .found-here > .found-at { flex: none; }
 .found-step { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
 .found-step:hover:not(:disabled) { background: var(--paper); }
-.found-step:disabled { opacity: .35; cursor: var(--cursor-arrow); }
 /* × at the strip's end, quiet: everything under the box put away, what stays out beside the file too. */
 .found-shut { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); margin-right: calc(-1 * var(--s2)); padding: 0; border: 0; border-radius: var(--r-round);
   background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
@@ -118,20 +117,22 @@
    once, and back as it is left, more slowly: a box of many lines left for a button under it went grey in one frame,
    a flash larger than the press. */
 .search-in, .line-in {
-  width: 100%; min-height: var(--h-row); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
+  width: 100%; min-height: var(--h-control); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field);
   background: var(--raised); color: var(--ink);
   transition: none;
 }
 :is(.search-in, .line-in):focus { transition-duration: var(--motion); }
-.search-in:disabled { opacity: .5; }
 form.search { position: relative; }
 /* In use, the box's own line turns ink and a little heavier: one line, not a ring drawn round a border. */
 .search-in:focus-visible, .search-in:focus { outline: 1px solid var(--ink); outline-offset: -1px; border-color: var(--ink); background: var(--paper); }
 /* Every line typed in does the same (a file's name in File's menu, a repo's): a box ringed round its own border was
    two boxes. Where a line is written in its own place without a box (an issue's first line), that place says so. */
 :where(.line-in):focus, :where(.line-in):focus-visible { outline: 1px solid var(--ink); outline-offset: -1px; border-color: var(--ink); background: var(--paper); }
-/* The search box's own clear mark, in the page's ink, not the browser's blue. */
-.search-in::-webkit-search-cancel-button { filter: grayscale(1) brightness(.4); cursor: var(--cursor-hand); }
+/* The search box's own clear mark: a × of the marks' stroke in the page's ink, not the browser's blue picture of one. */
+.search-in::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; width: 12px; height: 12px; background: var(--ink);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 2.5l7 7M9.5 2.5l-7 7' stroke='black' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 2.5l7 7M9.5 2.5l-7 7' stroke='black' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  cursor: var(--cursor-hand); }
 .search-count { margin-bottom: var(--s2); padding-left: var(--s1); }
 .hit-group { display: grid; margin-bottom: var(--s3); }
 .hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: var(--cursor-hand); border-radius: var(--r-key); }

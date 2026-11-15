@@ -11,8 +11,9 @@
    box's, a sheet to act on (paper), who and the first line of what they said, the newest come in from the window's
    edge. Pressed, Inbox at that conversation. */
 .pane-word { position: absolute; left: var(--s5); right: var(--s5); bottom: var(--s5); z-index: 2; display: grid; gap: var(--s2); }
-/* What came, over the pane's rows: a card lifted a little off them, as something arrived. */
-.pane-word > .pane-row { margin: 0; background: var(--paper); box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--ink) 30%, transparent); }
+/* What came, over the pane's rows: a card of paper with an edge, as a piece not in the hand (no shadow: the hand's is
+   the only one, DESIGN §3). */
+.pane-word > .pane-row { margin: 0; background: var(--paper); box-shadow: inset 0 0 0 1px var(--edge); }
 .pane-word:empty { display: none; }
 
 /* The row slides as one. A box opened comes in at its own width where it stands, fading in as the row brings it, and
@@ -36,8 +37,8 @@
    gliding from place to place as the pointer moves, so where it lands is seen before it is let go. */
 .drop-hint {
   position: absolute; top: var(--s2); bottom: var(--s5); z-index: 2; pointer-events: none;
-  display: grid; place-items: center; border: var(--line-work) dashed var(--ink); border-radius: var(--r-place);
-  background: color-mix(in srgb, var(--paper) 70%, transparent); color: var(--ink); font-size: var(--t-word); font-weight: 700;
+  display: grid; place-items: center; border: 1px dashed var(--ink); border-radius: var(--r-place);
+  background: var(--paper); color: var(--ink); font-size: var(--t-word); font-weight: 700;
   transition: none;
   
 }
