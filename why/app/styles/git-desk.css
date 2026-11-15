@@ -37,8 +37,8 @@
 .git-flow.git-desk { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: calc(2 * var(--u)); margin-left: 0; padding: var(--u) calc(2 * var(--u)) calc(3 * var(--u)) 0; }
 .git-desk > .git-side { flex: none; width: calc(8 * var(--u)); padding-bottom: var(--to-grid, 0px); }
 /* Main's sheet is one sheet, drawn in line on the ground (the issue is the piece in hand): a cell of paper round its
-   lines (DESIGN §3), its steps, the one under way the one line of ink, inside the sheet's edge, never over it; then,
-   under a quiet rule, the field a new issue is written in. Its name, the repo, in the cell over its corner, as a
+   lines (DESIGN §3), its steps, the one under way the one line of ink, inside the sheet's edge, never over it; and
+   nothing else (a new issue is the row's last piece). Its name, the repo, in the cell over its corner, as a
    piece's is (§5) and level with the issue's beside it: the cell over it is never left empty while the issue's has
    its name. Nothing of it floats on the ground beside it. */
 .git-desk > .git-side:not(.none) { position: relative; display: grid; align-content: start; align-self: flex-start; box-sizing: border-box; padding: var(--u) 0;
@@ -62,21 +62,24 @@
 .git-switch .switch-line.next > button:focus-visible { outline-color: var(--ground); outline-offset: -4px; }
 .switch-lines > .error { margin: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--sans); color: var(--off); text-align: left; }
 .switch-lines > .error:empty { display: none; }
-/* Where a new issue is written (issue-form.ts), at main's sheet's foot (with no steps, its first lines): a quiet rule on
-   the grid's line a cell under the steps, a cell of paper, then the line it is written on, a line of the sheet as the
-   note's next item is, nothing drawn round it (DESIGN §1, paper and ink; PLACES, never a box). What it says empty is
-   the line's form, quiet, as the note's first line says it. It is always there: an issue is written, never opened
-   first. The repo it goes in is said quietly over the sheet's corner, where a sheet's name stands. */
-.git-side > .issues-new { display: grid; margin: 0; padding: 0 var(--u); }
-.git-side > .git-switch:not(:empty) + .issues-new { margin-top: var(--u); box-shadow: inset 0 1px 0 var(--rule); }
-.git-side > .issues-new > .issue-where { position: absolute; left: 0; top: calc(-1 * var(--u)); max-width: 100%; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub);
+/* main's sheet's name over its corner, as a piece's is (§5), level with the issue's beside it: the repo whose main it
+   is, quiet (the issue in hand is the master; the band says the repo large). */
+.git-side > .side-name { position: absolute; left: 0; top: calc(-1 * var(--u)); max-width: 100%; margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub);
   white-space: nowrap; }
-.git-side > .issues-new > .line-in, .git-side > .issues-new > .line-in:is(:focus, :focus-visible) { width: 100%; min-width: 0; height: var(--u); min-height: var(--u); margin: 0; padding: 0;
-  border: 0; border-radius: 0; outline: 0; background: none; font: 700 var(--t-word)/var(--u) var(--sans); color: var(--ink); }
-.git-side > .git-switch:not(:empty) + .issues-new > .line-in { margin-top: var(--u); }
-.git-side > .issues-new > .line-in::placeholder { color: var(--sub); font-weight: 400; opacity: 1; }
-.git-side > .issues-new > .error { margin: 0; }
-.git-side > .issues-new > .error:empty { display: none; }
+.git-side > .side-name:empty { display: none; }
+/* The issue not written yet (issue-form.ts newIssue), the row's last piece, where a new thing in a row is: not a sheet
+   yet, so a dashed line on the ground, in the hand or not, and no shadow (as a board not made yet, server.css). Beside
+   the one in full, its edge with its + and its name, quiet; in the hand, its first line written in its head in an issue
+   title's letters, what it says empty quiet, and the repo it goes in at its foot, as a card says its repo. */
+.git-desk .issue-card.issue-new-card, .git-desk .issue-slot[aria-current='true'] .issue-card.issue-new-card { background: var(--ground); color: var(--sub); box-shadow: none; }
+.git-desk .issue-card.issue-new-card::after, .git-desk .issue-slot[aria-current='true'] .issue-card.issue-new-card::after { box-shadow: none; border: 1px dashed var(--edge); }
+.git-desk .issue-new-card .issue-big-head.peek :is(h2, .issue-no), .git-desk .issue-new-card .issue-name { color: var(--sub); }
+.git-desk .issue-new-card .issue-name { font-weight: 400; }
+.git-desk .issue-new-card .issue-words { display: block; cursor: var(--cursor-text); }
+.git-desk .issue-first, .git-desk .issue-first:is(:focus, :focus-visible) { display: block; width: 100%; min-width: 0; height: calc(2 * var(--u)); margin: 0; padding: 0; border: 0; border-radius: 0;
+  outline: 0; background: none; font: inherit; letter-spacing: inherit; color: var(--ink); text-overflow: ellipsis; }
+.git-desk .issue-first::placeholder { color: var(--sub); opacity: 1; }
+.git-desk .issue-new-card .issue-box > .error:empty { display: none; }
 
 /* The row: the heading that names it is heard, not shown (the sheets say what they are). */
 .git-desk .issues-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

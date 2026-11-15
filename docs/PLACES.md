@@ -147,13 +147,18 @@ main's sheet and an issue side by side, the issues go under the sheet, two cells
 
 **What is written here is written where it stands** (§7: nothing to open first, nothing to confirm):
 
-- **A new issue** is its first line, written on a line that is always there, at main's sheet's foot under a quiet
-  rule (a line of the sheet, as the note's next item is, never a box on the ground beside it), the repo it goes in
-  said quietly over it (chosen in the row of repos). Main's steps start at the sheet's top edge: the step under way, the
-  one line of ink, lies on the horizon, level with the issue's top. Enter makes it, and the keyboard goes on into
-  its summary in the issue in full, written there and kept as it is left. With no issue yet the line is at the desk's
-  edge, where the first piece would be, and what is so is said quietly where the issues would be. Asked for from
-  Forge, the line has the keyboard; Escape with nothing written goes back there.
+- **A new issue** is the row's last piece, where a new thing in a row always is (a new board at a server's row's end):
+  beside the one in full, its edge with its + and its name; in the hand, the issue it will be, not a sheet yet (a
+  dashed line on the ground, no shadow), "New issue" quiet over its corner, its first line written in its head in an
+  issue title's letters ("Fix: Title" quiet while it is empty, as the note's first line says it), the repo it goes in
+  said quietly at its foot as a card says its repo (chosen in the row of repos). Gone to, its first line has the
+  keyboard; Enter makes it, there at once where it was written, and the keyboard goes on into its summary in the issue
+  in full, written there and kept as it is left; Escape with nothing written goes back to the issue before. With no
+  issue yet it is alone in the row, in the hand at the desk's edge, and what is so is said quietly at its foot. While
+  it is in the hand, main's sheet beside it has the steps it will have, each waiting. (Before, a line always there
+  under main's steps: a second thing on that sheet, read as part of its Start.)
+- Main's steps start at the sheet's top edge: the step under way, the one line of ink, lies on the horizon, level
+  with the issue's top.
 - **A commit on main** is main's card's line, always there under its files: Enter commits it, as Commit beside it
   does. There is no Cancel: nothing was opened.
 - **An issue's title** is written over where it is read: pressed, it is a line of its own words, its kind kept and
@@ -332,7 +337,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the lean (the lower right at least as empty as the upper left), the bare ground one open field with nothing trapped and at most a third of the world marked, the band's title whole at its size, one voice (§2); every size of type one of three, and every line of words on a cell of the grid (§3) | `why/test/app/composition.spec.ts` |
 | Touch, with motion on: under the pointer a thing takes paper or nothing; a press answers in its own frame, sounds as it goes down, gives at most 8% and comes home never past; every place's subject holds its act (§14) | `why/test/app/touch.spec.ts` |
 | Master and servant: on a desk one piece holds the fill, the ink edge, the shadow and the keyboard, and what is typed goes to it alone (§1) | `why/test/app/master.spec.ts` |
-| Writing in Git is direct: a new issue's line and main's commit line always there, Enter making or committing, nothing to open, confirm or put back; an issue's title written over in place; what is half written kept (§7, §10) | `why/test/app/git.spec.ts` |
+| Writing in Git is direct: a new issue written on the row's last piece and main's commit line always there, Enter making or committing, nothing to confirm or put back; an issue's title written over in place; what is half written kept (§7, §10) | `why/test/app/git.spec.ts` |
 | Forge at work, frame by frame at two screens: the piece in hand at the edge or under the hand; the line written never in the third it goes towards, a long file standing to the foot; the terminal's last line out of the lower third; nothing jumping, nothing reversed; the weight left (§2, §6, §10) | `why/test/app/at-work.spec.ts` |
 | Where the line written may stand, the terminal's lines, and where the desk turns for a piece pressed and for one gone to (§2, §5, §6) | `why/app/pages/forge/desk-layout.test.ts` |
 | New repo is one piece at the desk's edge, the hand's: on the grid, a piece wide, its name at a name's size on its first line, what will be made inside it under a rule, every line of it on a cell, one size of words, nothing filled but its key, its place over its corner on a patch of the ground, each row's deeds one chevron; why a name cannot be said under it with the sheet's top still (§10) | `why/test/app/new-repo.spec.ts` |

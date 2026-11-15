@@ -7,11 +7,14 @@ import {nudge} from '../../ui/glide.ts';
 import {issueStore} from '../../../repo/issue-store.ts';
 
 // Writing an issue is writing its first line where it stands (DESIGN §7: what is written is kept as it is written,
-// nothing to open first, nothing to confirm). A line under main's sheet is always there, named as a TODO item is
-// ("Fix: Title"), the repo it goes in said quietly over it: chosen in Git's one row of repos (All only widens what is
-// shown, and leaves where it goes as it was). Enter makes it, and the keyboard goes on into its summary in the issue in
-// full, where it is written on and kept as it is left. What is half written stays in the line, going along the row or
-// to another page and back.
+// nothing to confirm). The issue not written yet is the last piece of Git's row, where a new thing in a row always is
+// (a new board at a server's row's end): beside the one in full only its edge, its + and its name; in the hand, the
+// issue it will be, its first line written in its head in an issue title's letters, named as a TODO item is ("Fix:
+// Title"), the repo it goes in said quietly at its foot, as a card says its repo (chosen in Git's one row of repos; All
+// only widens what is shown, and leaves where it goes as it was). Enter makes it, and the keyboard goes on into its
+// summary in the issue in full, where it is written on and kept as it is left; Escape with nothing written goes back to
+// the issue before it. What is half written stays, going along the row or to another page and back. (Before, it was a
+// line always there under main's steps: a second thing on that sheet, read as part of its Start.)
 //
 // Its title is changed where it is read, the same way: pressed, it is written over in its place, its kind kept and
 // its words chosen; Enter or leaving keeps what is written, Escape puts it back.
@@ -19,65 +22,47 @@ import {issueStore} from '../../../repo/issue-store.ts';
 /** An issue just made: its repo and its file. */
 export interface Made { repo: string; file: string }
 
-/** The new issue's line as it was left: what is written, and where it goes. */
-let draft: {text: string; repo: string | null} = {text: '', repo: null};
+/** The new issue's first line as it was left. */
+let draft = '';
 
-export interface IssueLine {
-  element: HTMLElement;
-  /** Write in `repo` from now on (chosen in the row above), what is written kept. */
-  retarget(repo: string): void;
-  /** Whether there is anywhere to write it (a repo). */
-  enable(on: boolean): void;
-  /** The repos read: where it goes (`to`, the repo shown). */
-  arrived(to: string | null): void;
-  /** Something is written in it. */
-  readonly writing: boolean;
-  /** The keyboard back in it, at the end of what is written. */
-  focus(): void;
-}
+/** Something is written on the new issue's first line. */
+export const drafted = () => !!draft.trim();
 
-/** The line a new issue is written on; `made` hears what was made. */
-export function issueLine(events: {made(m: Made): void}): IssueLine {
-  const where = h('span', {class: 'issue-where', id: 'issue-target'});
-  const line = h('input', {class: 'line-in issues-line', placeholder: t('Fix: Title'), 'aria-label': t('First line: Type: Title'),
+/**
+ * The issue not written yet, as the row's last slot holds it: in the hand (`now`) the issue it will be, going into
+ * `repo`, with what is so said quietly at its foot (`none`: no issue yet); else its edge. `made` hears what was made;
+ * `back` goes to the issue before it.
+ */
+export function newIssue(now: boolean, repo: string | null, none: string, ways: {made(m: Made): void; back(): void}): HTMLElement {
+  const head = (...words: (Node | string)[]) => h('div', {class: 'issue-card issue-new-card'}, ...words);
+  if (!now) return head(h('div', {class: 'issue-big-head peek'}, h('h2', {}, h('span', {class: 'issue-no'}, '+'), ' ', t('New issue'))));
+  const line = h('input', {class: 'issue-first', placeholder: t('Fix: Title'), 'aria-label': t('First line: Type: Title'),
     'aria-describedby': 'issue-target', maxlength: '200', spellcheck: 'false', autocomplete: 'off'}) as HTMLInputElement;
+  line.value = draft;
   const error = h('p', {class: 'error', role: 'alert'});
-  const element = h('div', {class: 'issues-new'}, where, line, error);
-  line.value = draft.text;
-  let target: string | null = draft.repo;
-  const say = () => { where.textContent = target ?? ''; };
-  say();
-  line.addEventListener('input', () => { draft.text = line.value; if (error.textContent) error.textContent = ''; });
+  line.addEventListener('input', () => { draft = line.value; if (error.textContent) error.textContent = ''; });
   let making = false;
   const make = async () => {
-    if (making || !target) return;
+    if (making || !repo) return;
     const {kind, title} = kindOf(line.value);
     if (!title.trim()) { error.textContent = t('Enter a title on the first line'); nudge(line); return; }
     making = true;
-    const repo = target;
     try {
       const file = await writeIssue(issueStore, repo, kind, title, '');
-      line.value = '';
-      draft = {text: '', repo};
-      events.made({repo, file});
+      draft = '';
+      ways.made({repo, file});
     } catch (e) { error.textContent = t('Failed to create: {message}', {message: errorText(e)}); } finally { making = false; }
   };
   line.addEventListener('keydown', (e) => {
     if (e.isComposing) return;
     if (e.key === 'Enter') { e.preventDefault(); void make(); }
+    if (e.key === 'Escape' && !line.value.trim()) { e.preventDefault(); ways.back(); }
   });
-  return {
-    element,
-    retarget: (repo) => { target = repo; draft.repo = repo; say(); },
-    enable: (on) => { line.disabled = !on; },
-    arrived: (to) => {
-      target = to;
-      draft.repo = to;
-      say();
-    },
-    get writing() { return !!line.value.trim(); },
-    focus: () => { line.focus({preventScroll: true}); line.setSelectionRange(line.value.length, line.value.length); },
-  };
+  // Its name over its corner, as every piece has one (quiet: it is not an issue yet).
+  return head(h('div', {class: 'issue-box no-work'}, h('p', {class: 'issue-name', 'aria-hidden': 'true'}, t('New issue')),
+    h('label', {class: 'issue-words issue-big-head'}, h('h2', {}, line)), error,
+    h('div', {class: 'issue-foot'}, h('div', {class: 'issue-about'}, h('span', {class: 'issue-where', id: 'issue-target'}, repo ?? ''),
+      none ? h('span', {class: 'muted small'}, none) : null))));
 }
 
 /** An issue's title being written over, by repo/file: kept while the page is drawn again under it. */

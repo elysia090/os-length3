@@ -53,6 +53,7 @@ export default {
   'Steps': '手順',
   'under way': '作業中',
   'Previous issue': '前の Issue',
+  'New issue': '新しい Issue',
   'Next issue': '次の Issue',
   '{n} uncommitted file': '未コミット：{n}ファイル',
   '{n} uncommitted files': '未コミット：{n}ファイル',

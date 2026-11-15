@@ -16,7 +16,7 @@ import {backToMain, crossfade, issueBox, issueHead, issueSteps, knowIssues, merg
 import {IssueRow} from './issue-row.ts';
 import {paintChips} from './repo-chips.ts';
 import {laidOut} from '../../../repo/git-state.ts';
-import {issueLine, type IssueLine, type Made} from './issue-form.ts';
+import {drafted, newIssue, type Made} from './issue-form.ts';
 import {errorText} from '../../../api/errors.ts';
 import {issueStore} from '../../../repo/issue-store.ts';
 import {SPRING} from '../../ui/law.ts';
@@ -120,6 +120,13 @@ function renumber(issues: readonly Issue[], states: ReadonlyMap<string, RepoStat
   }));
 }
 
+/** The row's last slot as `chosen` says it: the issue not written yet. */
+const NEW = '+new';
+
+/** main's sheet while the issue not written yet is in the hand: the steps it will have, each waiting. */
+const waiting = () => h('div', {class: 'switch-lines'},
+  ...[t('Start'), t('Commit'), t('Submit'), t('Merge')].map((w) => h('div', {class: 'switch-line'}, h('span', {class: 'switch-word'}, w))));
+
 /** Where each repo stood when Git last read it: drawn at once when the page is come back to, then read again. */
 const stood = new Map<string, RepoState>();
 /** The repos and each one's issues as Git last read them: with `stood`, the page come back to is drawn from its first
@@ -134,10 +141,12 @@ class GitPage {
   private readonly chips = h('div', {class: 'chips', role: 'radiogroup', 'aria-label': 'repo'});
   /** main's sheet, at the desk's edge: the steps of the issue in full, a line a step (issueSteps). */
   private readonly steps = h('div', {class: 'git-switch', role: 'group', 'aria-label': t('Steps')});
-  /** The line a new issue is written on, under main's sheet (issue-form.ts). */
-  private readonly line: IssueLine;
-  /** At the desk's edge: main's sheet and, under it, the line a new issue is written on. Not there while there is no repo. */
+  /** main's sheet's name over its corner: the repo whose main it is. */
+  private readonly sideName = h('p', {class: 'side-name', 'aria-hidden': 'true'});
+  /** At the desk's edge: main's sheet. Not there while there is no repo. */
   private readonly side: HTMLElement;
+  /** What is so, said at the foot of the issue not written yet while there is no open issue. */
+  private noneSaid = '';
   /** The repo the desk is of, said large against the band's right end, as Forge says what is in hand (an issue's number is its sheet's own, said once). */
   private readonly held = h('div', {class: 'band-held', 'aria-hidden': 'true'});
   private readonly count = h('small', {});
@@ -165,15 +174,16 @@ class GitPage {
 
   constructor(ctx: Context) {
     this.ctx = ctx;
-    this.line = issueLine({made: (made) => this.written(made)});
-    // main's sheet at the desk's edge: the steps, and the new issue's line. (What main has not committed is not shown
-    // here: work is done on an issue, and the place's subject is the issue in hand.)
-    this.side = h('div', {class: 'git-side none'}, this.steps, this.line.element);
+    // main's sheet at the desk's edge: the steps of the issue in hand, its name the repo. (What main has not committed
+    // is not shown here: work is done on an issue, and the place's subject is the issue in hand.)
+    this.side = h('div', {class: 'git-side none'}, this.sideName, this.steps);
     // Whole cells tall, so the issues that go under it on a narrow window stand on the grid.
     wholeCells(this.side);
     this.row = new IssueRow({
       landed: (i, moved) => this.landed(i, moved),
       slot: (x, now) => this.slot(x, now),
+      tail: (now) => this.tail(now),
+      landedTail: () => { chosen = NEW; },
       // main's cards stand in the same column as the issue in full, and go with it along the row.
       slid: (lead, single, drawn) => {
         const main = this.sections.main;
@@ -202,7 +212,7 @@ class GitPage {
   /** The page on the work bench: main's over the issues, the sections under them, its repos on its band. */
   private bench(): Bench {
     const main = h('section', {class: 'flow git-flow git-desk', tabindex: '0', 'aria-label': 'Git'},
-      // At the desk's edge, beside the row: main's sheet (the steps, what it has not committed) and the new issue's line.
+      // At the desk's edge, beside the row: main's sheet, the steps of the issue in hand.
       this.side,
       h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
         h('div', {class: 'issues-head'}, h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', this.count))),
@@ -235,7 +245,6 @@ class GitPage {
     const shown = repos.filter((r) => !filter || r === filter);
     if (!shown.every((r) => stood.has(r) && issuesRead.has(r))) return;
     this.repos = repos;
-    this.line.enable(true);
     this.look(filter || (this.ctx.repo && repos.includes(this.ctx.repo) ? this.ctx.repo : repos[0] ?? null));
     this.paintChips();
     const issues = shown.flatMap((r) => issuesRead.get(r)!);
@@ -253,11 +262,8 @@ class GitPage {
       this.repos = r.map((x) => x.name);
       reposRead = this.repos;
       if (filter && !this.repos.includes(filter)) filter = ALL;
-      this.line.enable(!!this.repos.length);
       this.look(filter || (this.ctx.repo && this.repos.includes(this.ctx.repo) ? this.ctx.repo : this.repos[0] ?? null));
       this.paintChips();
-      // Where a new issue goes: the repo shown.
-      this.line.arrived(filter || this.at || this.repos[0] || null);
       void this.paint();
     });
   }
@@ -280,8 +286,12 @@ class GitPage {
     const other = filter !== r;
     filter = r;
     this.paintChips();
-    if (r) { this.look(r, true); this.line.retarget(r); if (e.detail && this.line.writing) this.line.focus(); }
-    void this.paint().then(() => { if (other) arrive(this.row.stage.hidden ? this.empty : this.row.stage, 1, 'y', 10, 260); });
+    if (r) this.look(r, true);
+    void this.paint().then(() => {
+      if (other) arrive(this.row.stage.hidden ? this.empty : this.row.stage, 1, 'y', 10, 260);
+      // (While an issue is written, a chip pressed with the pointer only says where it goes: the words take the keyboard back.)
+      if (e.detail && drafted()) this.row.write();
+    });
   }
 
   /** `said`, large against the band's right end by its ink; not at all where the band has no room for it whole. */
@@ -321,6 +331,7 @@ class GitPage {
     // The issue in full: its steps are main's sheet's lines. The band names the repo the desk is of: the issue's number
     // is its sheet's own large thing, and a word is said once large in a frame (DESIGN §2).
     this.steps.replaceChildren(issueSteps(x, st, this.events, this.again));
+    this.sideName.textContent = x.repo;
     this.tellHeld(x.repo);
     // Under the current box, out of it: Back to main at its left, for the issue the repo shows.
     const leave = backToMain(x, st, this.events, this.again);
@@ -333,8 +344,22 @@ class GitPage {
   }
 
   /**
-   * Made from its line: its repo is the one looked at and worked on, and the new issue is the one shown, the keyboard
-   * in its summary to go on writing it.
+   * The row's last slot: the issue not written yet, going into the repo looked at. In the hand, main's sheet beside it
+   * has the steps it will have, every one waiting: the sheet stays where it stands as the row goes along.
+   */
+  private tail(now: boolean): HTMLElement[] {
+    const repo = filter || this.at || this.repos[0] || null;
+    if (now) {
+      this.steps.replaceChildren(waiting());
+      this.sideName.textContent = repo ?? '';
+      this.tellHeld(repo ?? '');
+    }
+    return [newIssue(now, repo, this.noneSaid, {made: (made) => this.written(made), back: () => this.row.back()})];
+  }
+
+  /**
+   * Made at the row's end: its repo is the one looked at and worked on, and the new issue is the one shown, there at
+   * once where it was written, the keyboard in its summary to go on writing it.
    */
   private written(made: Made) {
     if (filter && filter !== made.repo) { filter = made.repo; this.paintChips(); }
@@ -500,6 +525,7 @@ class GitPage {
    */
   private drawSome(open: Issue[], inPlace = false) {
     this.empty.replaceChildren();
+    this.noneSaid = '';
     this.side.classList.remove('none');
     const to = this.slideTo === null ? -1 : open.findIndex((i) => key(i) === this.slideTo);
     this.slideTo = null;
@@ -507,8 +533,9 @@ class GitPage {
     // box it was written in stood (`inPlace`).
     if (to >= 0) { this.row.fill(open, to, inPlace ? -1 : open.findIndex((i) => key(i) === chosen)); return; }
     const repo = this.ctx.repo;
-    const mine = repo && open.some((i) => i.repo === repo) && !chosen?.startsWith(`${repo}/`) ? chosenIn.get(repo) : chosen;
-    let was = open.findIndex((i) => key(i) === mine);
+    const mine = chosen !== NEW && repo && open.some((i) => i.repo === repo) && !chosen?.startsWith(`${repo}/`) ? chosenIn.get(repo) : chosen;
+    // (On the issue not written yet, the row stays there.)
+    let was = mine === NEW ? open.length : open.findIndex((i) => key(i) === mine);
     const work = repo ? this.states.get(repo)?.work : null;
     if (was < 0 && work && work.line !== 'main') was = open.findIndex((i) => i.repo === repo && issuePath(i) === work.issue);
     if (was < 0 && repo) was = open.findIndex((i) => i.repo === repo);
@@ -516,19 +543,22 @@ class GitPage {
   }
 
   /**
-   * None to show: where the first would be, the empty place that writes it (pressed, it becomes the issue being
-   * written), with what is so said quietly under its word. No repo: said once, as wide as its words.
+   * None open: the issue not written yet alone in the row, in the hand at the desk's edge where the first would be,
+   * what is so said quietly at its foot. No repo: nothing to write an issue in; the first repo made, said once.
    */
   private drawNone(issues: Issue[]) {
-    this.row.none();
-    this.steps.replaceChildren();
-    this.tellHeld(filter || this.at || '');
     this.sections.main.classList.add('single');
-    // No repo: nothing to write an issue in; said once, as wide as its words.
     this.side.classList.toggle('none', !this.repos.length);
-    if (!this.repos.length) { this.empty.replaceChildren(remoteOnly().length ? this.onlyThere() : this.firstRepo()); return; }
-    // The line at the desk's edge is the one thing to do: what is so is said quietly where the first issue would be.
-    this.empty.replaceChildren(h('p', {class: 'muted issues-none'}, issues.length ? t('No open issues') : t('No issues yet')));
+    if (!this.repos.length) {
+      this.row.none();
+      this.steps.replaceChildren();
+      this.tellHeld(filter || this.at || '');
+      this.empty.replaceChildren(remoteOnly().length ? this.onlyThere() : this.firstRepo());
+      return;
+    }
+    this.empty.replaceChildren();
+    this.noneSaid = issues.length ? t('No open issues') : t('No issues yet');
+    this.row.fill([], 0);
   }
 
   /** No repo here and some on the Remote: each fetched with a press, as Runtime's are, and its issues are here. */
