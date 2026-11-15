@@ -199,7 +199,7 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
    only as wide as its words, which takes its paper as it leaves the box and gives it up as it lands. */
 .sent-off.slip { width: max-content; padding: 2px 6px; border-radius: var(--r-field); white-space: nowrap; text-overflow: ellipsis; }
 /* The three, out of the pill: each with the pill it gives, its word, its keys. */
-.box-modes { position: fixed; z-index: 7; min-width: 280px; --from: 0 6px; transform-origin: left bottom; animation: menu-in var(--move) var(--pop-in) both; }
+.box-modes { position: fixed; z-index: 7; min-width: 280px; --from: 0 6px; transform-origin: left bottom;  }
 @media (prefers-reduced-motion: reduce) { .box-modes { animation: none; } }
 .box-mode { justify-content: flex-start; }
 .box-mode > .box-mode-pill { position: relative; flex: none; display: inline-flex; height: 24px; cursor: inherit; }
@@ -241,13 +241,6 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
   box-sizing: border-box; border: 1px solid var(--edge); border-radius: var(--r-place); background: var(--raised); opacity: 0; }
 /* Going, the light fades as the glass runs over it (it is gone once the glass reaches the box's ends); coming back, it
    comes as the glass runs back from it into the pill. */
-.work.bench.prompting > .center > .dock::before { animation: box-goes calc(var(--prompt-up) * var(--prompt-up-line) * 1.2) var(--spring); }
-.work.bench.prompt-leaving > .center > .dock::before {
-  animation: box-comes calc(var(--prompt-down) * (1 - var(--prompt-down-line))) var(--spring) calc(var(--prompt-down) * var(--prompt-down-line)) both; }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes box-goes {}
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes box-comes {}
 .dock > .prompt, .screen > .prompt { min-width: 0; }
 .prompt { display: flex; align-items: flex-end; gap: var(--s3); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); padding: var(--s3) var(--s4); }
 /* Run at the box's bottom right, the word alone (its keys are in its title and name), a small button that does
@@ -275,7 +268,6 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
   border-radius: var(--r-round); background: var(--ground);
 }
 /* What a run prints comes in at the foot a line after another (output.ts), not all at once. */
-.term-out > .fresh { animation: fresh var(--move) var(--spring) backwards; }
 /* Up, the Prompt's head has its × at its right end, the lamp before it: down, there is nothing to put back. */
 .term-shut { display: none; place-items: center; width: 24px; height: 24px; margin: -4px -6px -4px 0; padding: 0; border: 0; border-radius: var(--r-round);
   background: transparent; color: inherit; opacity: .6; cursor: var(--cursor-hand); transition: none; }
@@ -286,8 +278,6 @@ body:has(> .page > .work.bench:not([hidden]) > .bar > .search-box:focus-within):
 /* Up again after it was put back, the screen starts at its prompt line: what it printed before is the pane's, which
    lists the lines run, one pressed read with all it printed (output.ts fold). */
 .term-slot .term-out > .earlier { display: none; }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes fresh {}
 /* What Tab could complete to, said under the box: paths, so monospace. */
 .prompt-note.paths { font-family: var(--mono); white-space: pre-wrap; }
 /* Several of them run to more than one line: a sheet's corner, not a pill's ends. */

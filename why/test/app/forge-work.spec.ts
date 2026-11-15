@@ -204,13 +204,13 @@ test('Enter in the search opens the first line found, washed, the caret on it; a
   await expect.poll(() => app.forge.lineChosen('README.md')).toBe('Written in Forge.');
 });
 
-test('Forge has no pane: Issue, diff and Output are the search\'s, on the band before the name in hand, and what one opens goes back up once the keyboard is in the file', async ({app}) => {
+test('Forge has no pane: the search is on the band before the name in hand, and what it finds goes back up once the keyboard is in the file', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nA line written in Forge, long enough to run on past the middle of its box.\n');
   // The page is the desk: nothing stands beside it, and nothing puts a pane away or brings one back.
   await expect(app.main.getByRole('complementary')).toHaveCount(0);
   await expect(app.main.getByRole('button', {name: 'Right pane', exact: true})).toHaveCount(0);
-  await app.forge.show('diff');
-  await expect(app.forge.results.getByRole('button', {name: /^README\.md/})).toBeVisible();
+  await app.forge.find('written');
+  await expect(app.forge.results.getByRole('button', {name: /^README\.md/}).first()).toBeVisible();
   // The search lies on the band, after its keys; the name of what is in hand is against the band's other end.
   const search = (await app.forge.search.boundingBox())!, held = (await app.main.locator('.band-held').boundingBox())!;
   expect(search.x + search.width).toBeLessThan(held.x + 1);
@@ -221,62 +221,44 @@ test('Forge has no pane: Issue, diff and Output are the search\'s, on the band b
   await app.page.keyboard.type('x');
   await expect(app.forge.results).toBeHidden();
   await expect(editor).toBeFocused();
-  // A file's diff read from there goes the same way.
-  await app.forge.show('diff');
-  await app.forge.results.getByRole('button', {name: /^README\.md/}).click();
-  await expect(app.forge.results.locator('.slide[aria-current="true"] > .found-card')).toBeVisible();
-  await editor.focus();
-  await expect(app.forge.results).toBeHidden();
-  await expect(editor).toBeFocused();
 });
 
-test('a narrow window reaches the issues, the diff and the output from the search box, and Escape puts them away', async ({app}) => {
+test('a narrow window searches from the box as a wide one does, and Escape puts what it found away', async ({app}) => {
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
   await app.page.setViewportSize({width: 552, height: 800});
   await expect(app.forge.results).toBeHidden();
-  // Pressed, nothing drops yet (nothing is typed); ↓ lets down the kinds.
+  // Pressed, nothing drops yet (nothing is typed); typed, what is found comes down.
   await app.forge.search.click();
   await expect(app.forge.results).toBeHidden();
-  await app.forge.search.press('ArrowDown');
-  for (const part of ['Issue', 'diff', 'Output'] as const) await expect(app.forge.kind(part)).toBeVisible();
-  await app.forge.openDiff('README.md');
-  await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
-  await app.forge.reference.getByRole('button', {name: /Revert README/}).focus();
-  // Escape: from what is read back to the box, then everything under it away.
+  await app.forge.search.fill('Written');
+  await expect(app.forge.results.getByRole('button', {name: /^README\.md/}).first()).toBeVisible();
+  // Escape: what is typed goes, then everything under the box goes away.
   await app.page.keyboard.press('Escape');
+  await expect(app.forge.search).toHaveValue('');
   await expect(app.forge.search).toBeFocused();
   await app.page.keyboard.press('Escape');
   await expect(app.forge.results).toBeHidden();
-  // The search reaches a changed file's diff as well (diff still pressed: what is found is the changed files).
-  await app.forge.search.click();
-  await app.forge.search.fill('README');
-  await app.forge.results.getByRole('button', {name: /^README\.md/}).click();
-  await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
 });
 
-test('what is searched and read lines up sideways: the one in hand fills the box, its neighbours a sliver past its edges, pressed to move to them', async ({app}) => {
-  await app.git.write('hello', 'Fix: the first written');
-  await app.rail.go('forge');
+test('what is searched lines up sideways: the one in hand fills the box, the search before it a sliver past its edge, pressed to move to it', async ({app}) => {
+  await app.forge.editFile('README.md', '# hello\n\nthe first written\n');
   await app.forge.find('written');
-  await app.forge.results.getByRole('button', {name: '#1 Fix：the first written', exact: true}).click();
-  const issue = app.forge.reference.getByRole('heading', {name: /the first written/});
-  await expect(issue).toBeVisible();
-  // The search it came from is at its left, a sliver, and ← under the box: pressed, the search is in hand again, as typed.
-  await expect(app.forge.results.locator('.found-here')).toHaveText(/^Issue\s*#1.*2 \/ 2$/);
+  const first = app.forge.results.getByRole('button', {name: /the first written/}).first();
+  await expect(first).toBeVisible();
+  // Taken (Enter: the first found), the file opens at its line, and the search is kept in the line.
+  await app.forge.search.press('Enter');
+  await expect.poll(() => app.forge.lineChosen('README.md')).toBe('the first written');
+  await app.forge.search.click();
+  await app.forge.find('hello');
+  // The search before is at its left, a sliver: pressed, it is in hand again, as typed.
   await app.forge.results.getByRole('button', {name: 'Search history written', exact: true}).click();
-  const found = app.forge.results.getByRole('button', {name: '#1 Fix：the first written', exact: true});
-  await expect(found).toBeVisible();
   await expect(app.forge.search).toHaveValue('written');
-  await app.forge.results.getByRole('button', {name: /^Issue #1/}).click();
-  await expect(issue).toBeVisible();
-  // ← → along the line from the keyboard.
-  await app.page.keyboard.press('ArrowLeft');
-  await expect(found).toBeVisible();
-  // Asked for with nothing typed (↓): what was searched and read, newest first.
+  await expect(first).toBeVisible();
+  // Asked for with nothing typed (↓): what was searched and opened, newest first.
   await app.forge.search.fill('');
   await app.forge.search.click();
   await app.forge.search.press('ArrowDown');
-  await expect(app.forge.results.locator('.found-item')).toHaveText([/^Issue\s*#1/, /^Search history\s*written$/]);
+  await expect(app.forge.results.locator('.found-item')).toHaveText([/^File\s*README\.md$/, /^Search history\s*written$/]);
 });
 
 test('the plug opens a plain plugin area on Home, over what waits there, and closes it; Forge is all desk and has none, so from there it goes to Home with it out', async ({app}) => {

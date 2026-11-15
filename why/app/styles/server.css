@@ -308,12 +308,11 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .seen-file:hover { background: var(--paper); color: var(--ink); }
 .seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-word)/var(--u) var(--mono); }
 @media (max-width: 760px) { .seen-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .seen-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--rule); } }
-.home-servers { display: flex; flex-wrap: wrap; gap: var(--s2); }
 
 /* What scrolls inside the page keeps its own turning: past its end, the page behind it does not go on in its place. */
-.home-side, .flow, .term-out, .inbox-messages, .board-talk, .inbox-rows, .tree { overscroll-behavior: contain; }
+ .flow, .term-out, .inbox-messages, .board-talk, .inbox-rows, .tree { overscroll-behavior: contain; }
 
 /* Asked for less motion, nothing travels or fades: each thing is where it ends at once. */
 @media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; transition-delay: 0s !important; }
+  *, ::before, ::after { animation-duration: 0s !important; transition-duration: 0s !important; transition-delay: 0s !important; }
 }

@@ -11,7 +11,6 @@ import {Screen, type Rises} from './screen.ts';
 import {sessionIfAny} from './sessions.ts';
 import {sessionFor} from './terminal.ts';
 import {Rows} from './rows.ts';
-import type {Run} from './sessions.ts';
 
 // The workbench Forge and Git share, put together from its parts. On Git: the page's own content in the large center
 // (3/4) and the narrow right pane (1/4, pane.ts) with the plugin area at its top, what the center refers to
@@ -87,20 +86,6 @@ function editorKey(event: KeyboardEvent, box: Box, pane: Pane | null, reference:
   if (event.key === '`' && box.summon()) { event.preventDefault(); return; }
   if (k === 'g' && !event.shiftKey && box.edit()) { event.preventDefault(); return; }
   if (pane && k === 'b' && !event.shiftKey) { event.preventDefault(); pane.set(!pane.shown); }
-}
-
-/**
- * The run a line pressed in the pane stands for (its prompt line's pill, or its words): of the runs of those words,
- * the one as many from the last as there are lines of the same words run after it, the screen and the runs both
- * keeping the last ones in the order they ran. None when the runs kept no longer go back that far.
- */
-function runPressed(line: HTMLElement, runs: readonly Run[]): Run | undefined {
-  const cmd = line.classList.contains('cmd') ? line : line.nextElementSibling?.classList.contains('cmd') ? line.nextElementSibling : null;
-  if (!cmd) return undefined;
-  const words = (cmd.textContent ?? '').trimEnd();
-  let after = 0;
-  for (let n = cmd.nextElementSibling; n; n = n.nextElementSibling) if (n.classList.contains('cmd') && (n.textContent ?? '').trimEnd() === words) after++;
-  return runs.filter((r) => r.line === words).at(-1 - after);
 }
 
 /** The Prompt's own box, its head, and where it is kept while it is not up (out of sight: the pane has its rows). */
@@ -217,11 +202,8 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const {termHead, term, termHome} = promptBox();
   const center = h('div', {class: 'center'}, parts.main);
   const sideId = `side-${++benches}`;
-  // The pane is what was done in the repo, a big row each (rows.ts): a run pressed is read under the search box with
-  // all it printed (the Prompt being up only while in use).
-  const openRun = (run: Run) => reference.showRun(run);
   const none = h('div', {class: 'pane-rows'});
-  // The pane's room: the reference's heads (Issue, diff, Output, Agent) over the rows.
+  // The pane's room: the rows.
   const room = h('div', {class: 'pane-room'}, none);
   /** The repo whose rows this pane holds. */
   let rowsOfRepo: string | null = null;
@@ -229,7 +211,6 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   const showRows = (name: string | null) => {
     rowsOfRepo = name;
     const r = name ? rowsOf(name) : null;
-    if (r) r.open = openRun;
     const next = r?.element ?? none;
     // (A desk has no pane: its rows are left to the page that shows them.)
     if (parts.desk || parts.paneless || next.parentElement === room) return;
@@ -277,21 +258,9 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
     if (s?.ended) s.restart();
     box.summon();
   };
-  const reference = new Reference({reveal: parts.reveal, recall: (line) => box.recall(line)}, {keeps: true, band: !!parts.desk || !!parts.paneless, searchable: !parts.plainBand});
-  // A line run, pressed in the Prompt's box on a desk: read under the search box, with all it printed, as from Output.
-  // Taken as the press begins, before the box takes it as a press to put the keyboard in it.
-  terminal?.addEventListener('pointerdown', (event) => {
-    const line = (event.target as Element).closest<HTMLElement>('.term-out > :is(.cmd, .ps:not(.waits))');
-    const run = box.repo && line ? runPressed(line, sessionIfAny(box.repo)?.runs ?? []) : undefined;
-    if (!run) return;
-    event.preventDefault();
-    event.stopPropagation();
-    reference.showRun(run);
-  }, true);
-  box.onFollow = () => reference.runsAgain();
-  // At rest the pane says what else the search shows, over its rows; on a desk the pane is the runs alone, and what
-  // else there is to see is the search's, on the band.
-  if (!parts.desk && !parts.paneless) room.prepend(reference.heads);
+  // (A run is read where it ran: the terminal's own output. Before, a line run pressed there was read again under the
+  // search box, and the pane said Issue, diff, Output and Agent over its rows: each is in its own place now.)
+  const reference = new Reference({reveal: parts.reveal}, {band: !!parts.desk || !!parts.paneless, searchable: !parts.plainBand});
   // On a desk the band's tools are the top line's: >_ for the terminal, the file deeds (the page puts its own
   // between), the search; after them, the page's own (Forge: the name of what is in hand, against the right edge).
   // (Git is Forge's far side: its door, at the band's head, is the way to Forge and its terminal; a key of its own

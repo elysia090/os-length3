@@ -515,6 +515,7 @@ export class FileTree {
         this.landed(abs(made));
       },
       move: (to) => this.moved(at.repo, at.path, to),
+      reverted: () => this.unpop(),
       removed: async () => {
         for (const p of [...expandedPaths]) if (p === e.path || p.startsWith(`${e.path}/`)) expandedPaths.delete(p);
         // The rows under it come up into its place, from where they stood.

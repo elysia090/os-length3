@@ -7,36 +7,19 @@
 .done-mark { width: 22px; height: 22px; border-radius: 50%; background: var(--done); position: relative; flex: none; }
 .done-mark::after { content: ''; position: absolute; left: 7px; top: 4px; width: 6px; height: 10px; border: solid var(--ground); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 /* Just done here (git/issue.ts), the mark lands: in from small, a touch past its size, settling; its tick drawn after. */
-.done-mark.fresh { animation: done-land var(--slide) var(--spring) both; }
-.done-mark.fresh::after { animation: tick-in var(--move) var(--move) var(--spring) both; }
-/* Done by the same deed as the step before it (a commit hands itself in): it lands once that one has, in the order the
-   work goes. */
-.done-mark.fresh.then { animation-delay: calc(260ms * var(--pace)); }
-.done-mark.fresh.then::after { animation-delay: calc(460ms * var(--pace)); }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes done-land {}
 /* An issue closed from its box lands as its line under Closed: in from above, lit with the marker a moment. */
-.done-row.landing { animation: line-land var(--slide) var(--land) both, line-lit 1200ms var(--spring); border-radius: var(--r-key); }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes line-land {}
+.done-row.landing { animation: line-lit 1200ms var(--spring); border-radius: var(--r-key); }
 /* Lit for its read time, then off at once: a light, not a fade (DESIGN §8, §14 done). */
 @keyframes line-lit { 0%, 99.9% { background: var(--marker-soft); } 100% { background: transparent; } } /* solid, not the marker thinned: on the ground a thinned yellow goes olive */
 @media (prefers-reduced-motion: reduce) { .done-row.landing { animation: none; } }
 /* Committed on main just now: the card's sheet lands on its line (git/done.ts), which is lit as it does. */
-/* The line a commit just made opens where its card went, the issues under it coming down that far rather than at
-   once, and is lit as it lands. */
-.done-row.just-cut { animation: line-open var(--move) var(--land) both, line-lit 1600ms var(--spring) both; border-radius: var(--r-key); overflow: hidden; }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes line-open {}
 .done-head > .diff-count { font-size: var(--t-word); }
 /* A Prompt stopped from its card: what it gave back is lit a moment (runtime/prompts.ts). */
 /* A row of the tree a deed made or renamed lands lit where it now is. */
-.tree-row.landing { animation: line-land var(--slide) var(--land) both, line-lit 1200ms var(--spring); }
+.tree-row.landing { animation: line-lit 1200ms var(--spring); }
 @media (prefers-reduced-motion: reduce) { .tree-row.landing { animation: none; } }
 .card.just-stopped > .muted.small { border-radius: var(--r-field); animation: line-lit 1400ms var(--spring); }
 @media (prefers-reduced-motion: reduce) { .card.just-stopped > .muted.small { animation: none; } }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes tick-in {}
 @media (prefers-reduced-motion: reduce) { .done-mark.fresh, .done-mark.fresh::after { animation: none; } }
 /* Review, inside the issue's box: its diff scrolling in place, marked lines as with a highlighter,
    and what was said as a conversation in the middle. */
@@ -51,9 +34,6 @@
 .review-chat { display: grid; gap: var(--s3); justify-items: start; padding: var(--s2) 0; }
 .review-chat .bubble { max-width: min(560px, 85%); background: var(--raised); } /* said on the review's paper as one's own is in the Inbox */
 /* Said just now: it comes down out of the field under it into the conversation (issue.ts reviewBox), the field left empty. */
-.review-chat .bubble.fresh { animation: said-land var(--move) var(--land) both; }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes said-land {}
 @media (prefers-reduced-motion: reduce) { .review-chat .bubble.fresh { animation: none; } }
 .review-chat .state-chip { justify-self: start; }
 .review-diff { max-height: 56vh; overflow: auto; padding-right: var(--s2); }

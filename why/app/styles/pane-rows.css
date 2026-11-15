@@ -4,7 +4,6 @@
 .pane-row { display: grid; grid-template-columns: 6px minmax(0, 1fr); grid-template-areas: "bar line" "bar at"; gap: 4px 14px; align-items: center;
   text-align: left; padding: 10px 10px 10px 12px; margin: 0 -10px; border: 0; border-radius: var(--r-key); background: none; color: var(--ink);
   font: inherit; cursor: var(--cursor-hand); transition: none; }
-.pane-row.lit { background: var(--raised); }
 .pane-row:hover { background: var(--paper); }
 /* The bar as tall as the words beside it are: from the first line's capitals to the last line's baseline, not the line
    boxes' room above and under them (which would stand it a few pixels proud of the words, and of the rail's icons). */
@@ -35,9 +34,7 @@
 .pane-answer.whole { display: block; }
 /* The Agent's answer as it comes, in the letters people write in; its code, what would be run, on the Prompt's own
    glass in its green. Waiting for its first words, a quiet ellipsis; refused, why, in the red. */
-.pane-answer.waiting:empty::after { content: '…'; color: var(--sub); animation: answer-waits 1.2s ease-in-out infinite alternate; }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes answer-waits {}
+.pane-answer.waiting:empty::after { content: '…'; color: var(--sub);  }
 @media (prefers-reduced-motion: reduce) { .pane-answer.waiting:empty::after { animation: none; } }
 .pane-answer > .answer-p { margin: 0 0 6px; }
 .pane-answer > :last-child { margin-bottom: 0; }

@@ -67,8 +67,8 @@ test('a new folder takes a file of its own, and Forge shows the file under it', 
 
   await expect(app.forge.editor('plans/trip.md')).toBeFocused();
   await app.forge.editFile('plans/trip.md', '# Trip\n');
-  await app.forge.show('diff');
-  await expect(app.forge.reference.getByText('plans/trip.md', {exact: true})).toBeVisible();
+  // New since the last commit: its own menu offers to put it back (take it away again).
+  expect(await app.file.revertable('hello', 'plans/trip.md')).toBe(true);
 });
 
 test('New file asks nothing: made at once, untitled as nothing there is yet, and named in its own head', async ({signedIn: app}) => {

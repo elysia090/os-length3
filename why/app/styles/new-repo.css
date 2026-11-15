@@ -54,7 +54,6 @@
 .nr-box > .answers > .button.primary { display: inline-flex; align-items: center; gap: var(--s2); }
 .nr-box > .answers > .button.primary > kbd { min-width: 0; height: auto; padding: 0; border: 0; background: none; color: inherit; opacity: .7; font: 700 var(--t-word) var(--mono); }
 .field { display: grid; gap: var(--s2); }
-.field-label { font-size: var(--t-word); color: var(--sub); }
 .tree.tree-still { position: static; z-index: auto; visibility: visible; opacity: 1; clip-path: none; width: auto; max-height: none; transition: none; }
 .tree-still .tree-name.plain { color: var(--ink); }
 .bad-char { background: none; color: var(--off); text-decoration: underline 2px var(--off); text-underline-offset: 3px; }

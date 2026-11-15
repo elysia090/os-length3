@@ -164,7 +164,7 @@ class GitPage {
 
   constructor(ctx: Context) {
     this.ctx = ctx;
-    this.line = issueLine({made: (made) => this.written(made), back: (repo) => this.ctx.openRepo(repo)});
+    this.line = issueLine({made: (made) => this.written(made)});
     // main's sheet at the desk's edge: the steps, and the new issue's line. (What main has not committed is not shown
     // here: work is done on an issue, and the place's subject is the issue in hand.)
     this.side = h('div', {class: 'git-side none'}, this.steps, this.line.element);
@@ -255,10 +255,9 @@ class GitPage {
       this.line.enable(!!this.repos.length);
       this.look(filter || (this.ctx.repo && this.repos.includes(this.ctx.repo) ? this.ctx.repo : this.repos[0] ?? null));
       this.paintChips();
-      // Where a new issue goes: the repo shown, or the one Forge asked for it in (the line then has the keyboard, once
-      // the page is drawn and the line is there to take it).
-      const asked = this.line.arrived(filter || this.at || this.repos[0] || null);
-      void this.paint().then(() => { if (asked) this.line.focus(); });
+      // Where a new issue goes: the repo shown.
+      this.line.arrived(filter || this.at || this.repos[0] || null);
+      void this.paint();
     });
   }
 

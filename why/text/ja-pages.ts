@@ -87,11 +87,9 @@ export default {
   // Forge and Git: the workbench and its reference
   'Prompt input': 'プロンプト入力欄',
   'Plugins and Prompt': 'プラグインと Prompt',
-  'Search target': '検索対象',
   'Search and history': '検索と閲覧履歴',
   'Search history': '検索履歴',
   'File': 'File',
-  'Run output no longer available': 'その実行結果はもう残っていません',
   'Searched and viewed items appear here': '検索・閲覧した項目がここに表示されます',
   'Starting up…': '起動中…',
   'Issue': 'Issue',
@@ -113,12 +111,8 @@ export default {
   'Search failed: {message}': '検索できませんでした：{message}',
   'No results found for "{query}"': '「{query}」に一致する結果は見つかりませんでした',
   '{n} lines (first preview)': '{n}行（先頭プレビュー）',
-  'No runs yet': '実行結果はまだありません',
-  'Nothing asked of the Agent yet': 'Agent にはまだ何も質問していません',
-  'At work': '作業中',
   'No changes': '変更はありません',
   'Running': '実行中',
-  'Send back to prompt': 'プロンプト入力欄に戻す',
   'Run': '実行',
   'Run ({keys})': '実行（{keys}）',
   'Run in Prompt': 'Prompt で実行',
@@ -144,7 +138,6 @@ export default {
   'Files in {name}': '{name}のファイル一覧',
   'Move to {where}': '{where}に追加',
   'Search results': '検索結果',
-  'Diff of {path}': '{path}の diff',
   'Plugins': 'プラグイン',
 
   // Writing an issue

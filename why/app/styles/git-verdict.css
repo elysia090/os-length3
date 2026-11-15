@@ -33,18 +33,12 @@
 @supports not (field-sizing: content) { .review-in { min-height: 8em; resize: vertical; } }
 /* The change's switch, its word before it: on while it is handed in. Pressed, it goes off at once (git/issue.ts), not
    greyed while the Remote takes it back. */
-.power-line { display: inline-flex; align-items: center; gap: var(--s2); flex: none; }
 .power[aria-busy='true']:disabled { opacity: 1; cursor: var(--cursor-progress); }
 /* Merge under the Review: a step row of its own, no rule above it. */
 .merge-row { border-top: 0; padding: var(--s4) 0 0; margin-top: 0; }
 /* The words on the buttons under a box (Back to main, Write an issue, Reject, Merge) stay one line: a round button
    two lines tall is a pill broken. */
-.issue-under .button, .merge-row .button, .review-verdict .button { white-space: nowrap; }
-.step-changes:empty { display: none; }
-/* Each step's words at the left and its button (or done mark) at the right, row by row, whether or not a diff stands
-   over them: with none (committed), what is said of Push stays on Push's row, never beside Commit's. */
-.issue-steps > .step-about { grid-column: 1; }
-.issue-steps > .step-act { grid-column: 2; }
+ .merge-row .button, .review-verdict .button { white-space: nowrap; }
 /* A phone: the box in full takes the row, its neighbours a sliver at its edges (their numbers would not fit beside
    it; the sliver says there are more, and a swipe goes to them: git/issue-row.ts), less room inside the sheets, and
    what is beside a step's button where it fits goes over it where it does not (a diff, a quiet line). */
@@ -53,16 +47,9 @@
   .issue-slot[aria-current='false'] .issue-big-head.peek { visibility: hidden; }
   .issue-slot[aria-current='false'] .issue-card { padding-inline: 0; }
   .issue-card, .review-box { padding: var(--s4) var(--s4) var(--s5); }
-  .issue-steps > .step-about { grid-column: 1; }
-  .issue-steps > .step-act { grid-column: 2; }
-  .issue-steps > .step-changes { grid-column: 1 / -1; }
-  .issue-foot, .issue-under, .review-verdict { flex-wrap: wrap; }
+  .issue-foot, .review-verdict { flex-wrap: wrap; }
   /* The switch under its line (whose words would go one to a line beside it), at the right; Approve over the two
      answers in words, which keep together at the right. */
-  .issue-foot:has(> .power-line) > .issue-about { flex-basis: 100%; }
-  .issue-foot > .power-line { margin-left: auto; }
   .review-verdict > .grow { flex-basis: 100%; height: 0; }
   .review-verdict > .grow + .button { margin-left: auto; }
-  .merge-row > .step-about { grid-column: 1 / -1; }
-  .merge-row > .step-act { grid-column: 2; }
 }

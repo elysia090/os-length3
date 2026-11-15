@@ -4,9 +4,7 @@
 .issue-big-head { display: grid; gap: var(--s1); }
 .issue-big-head h2 { margin: 0; font-size: var(--t-word); font-weight: 700; }
 .issue-no { color: var(--sub); }
-.issue-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); } /* nothing in it wider than the box (a narrow box held wide by its foot) */
-.issue-box > .issue-body, .issue-words > .issue-body { margin: 0; max-width: 72ch; }
-/* An issue's words are where they are changed: pressed, they become their fields. */
+.issue-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }/* An issue's words are where they are changed: pressed, they become their fields. */
 .issue-words { display: grid; gap: var(--s3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-text); border-radius: var(--r-key); }
 .issue-words:focus-visible { outline: 2px solid var(--ink); outline-offset: var(--s1); }
 .issue-box > .work-act { margin-top: var(--s2); flex-wrap: wrap; }
@@ -90,9 +88,6 @@
 .agent-doing { font-family: var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-waits { flex: none; background: var(--marker-soft); color: var(--ink); border-radius: var(--r-round); padding: 0 var(--s2); }
 .agent-dot { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--done); align-self: center; }
-.agent-row.working .agent-dot, .agent-mark:not(.waits) { animation: agent-breath calc(900ms * var(--pace)) ease-in-out infinite alternate; }
 .agent-row.waits .agent-dot, .agent-mark.waits { background: var(--marker); box-shadow: 0 0 0 1px var(--edge) inset; }
 .agent-mark { display: inline-block; margin-inline-start: var(--s1); vertical-align: middle; }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes agent-breath {}
 @media (prefers-reduced-motion: reduce) { .agent-row.working .agent-dot, .agent-mark { animation: none; } }

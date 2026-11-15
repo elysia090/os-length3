@@ -88,9 +88,6 @@
 .desk-gaze { position: absolute; left: 0; right: 0; pointer-events: none; background: color-mix(in srgb, var(--ink) 6%, transparent);
   box-shadow: inset 3px 0 0 var(--ink); transition: none; }
 /* Resting on a line (the Agent thinking over it), the eye breathes: slow, faint, so it is seen at work, not stopped. */
-.desk-gaze.resting { animation: gaze-rest calc(1400ms * var(--pace)) ease-in-out infinite alternate; }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes gaze-rest {}
 @media (prefers-reduced-motion: reduce) { .desk-gaze.resting { animation: none; } }
 /* Where the Agent's hand is as it writes in a file (desk-file.ts hand): its caret, the stroke of ink the OS draws the
    person's with, after what it just typed; solid while it writes, blinking once it rests. */
@@ -106,9 +103,7 @@
    is asked in its place on the bar, in the same letters. */
 .deeds-under.band-deeds { display: flex; align-items: stretch; flex-wrap: wrap; width: max-content; max-width: calc(100vw - 32px);
   min-height: var(--h-row); box-sizing: border-box; padding: 0; border: 0; border-radius: 0; background: var(--ink); color: var(--paper);
-  box-shadow: none; --from: 0 -8px; animation: deeds-drop var(--move) var(--land); }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes deeds-drop {}
+  box-shadow: none; --from: 0 -8px;  }
 .band-deeds .pop-icon, .band-deeds .pop-rule { display: none; }
 .band-deeds .pop-head { display: flex; align-items: center; padding: 0 14px 0 12px; font: 400 var(--t-word)/1 var(--mono); color: color-mix(in srgb, var(--paper) 55%, transparent); }
 .band-deeds :is(.pop-item, .button) { display: flex; align-items: center; width: auto; min-height: var(--h-row); height: auto; margin: 0; padding: 0 12px;

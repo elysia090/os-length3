@@ -64,9 +64,7 @@
 .file-state { font-weight: 400; color: var(--sub); white-space: nowrap; }
 /* Not saved yet: a dot, not a word that flickers with each key; it shows only once the writing pauses (a save comes
    0.7 s after), so steady typing is not watched over. */
-.unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle; animation: unsaved-in var(--move) var(--spring) var(--slide) both; }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes unsaved-in {}
+.unsaved-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sub); vertical-align: middle;  }
 @media (prefers-reduced-motion: reduce) { .unsaved-dot { animation: none; } }
 .sheet { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: var(--s4); padding: var(--s2) var(--s4) var(--s4); cursor: var(--cursor-text); }
 .gutter, .code { margin: 0; padding: 0; font: var(--t-word)/var(--u) var(--mono); white-space: pre; tab-size: 4; }
@@ -82,7 +80,6 @@
 .sheet { position: relative; }
 .code.code-edit { position: relative; }
 .edit-layer { position: absolute; pointer-events: none; clip-path: inset(-4px 0 -4px calc(-1 * var(--s3))); }
-.edit-marks { animation: fresh var(--motion) var(--spring); }
 .edit-mark { position: absolute; left: 0; right: 0; border-radius: 0; }
 .edit-mark.lines { left: calc(-1 * var(--s2)); background: color-mix(in srgb, var(--marker-soft) 75%, transparent); }
 .edit-mark.held { left: calc(-1 * var(--s2)); right: auto; background: color-mix(in srgb, var(--marker) 60%, transparent); }
@@ -96,8 +93,6 @@
 .file:focus-within > .path { color: var(--ink); }
 /* Its name, pressed, is written over where it stands (reader.ts renameIn): under the pointer a faint box round it, as
    a name to write in; written in, the box is ink and the name as wide as what is written (its size, in a mono font). */
-.path-rename { min-width: 0; max-width: 100%; margin: -2px -4px; padding: 1px 3px; border: 1px solid var(--ink); border-radius: var(--r-field); outline: 0; background: var(--paper); color: var(--ink); font: inherit; }
-.path-rename:disabled { opacity: .6; }
 .path-error { margin-left: var(--s3); font-family: var(--sans); }
 .sheet-note { padding: var(--s2) var(--s4) var(--s4); font-size: var(--t-word); }
 /* Landed on from a search, File or Git: its head lit with the marker for a moment, then fading back, so the eye is

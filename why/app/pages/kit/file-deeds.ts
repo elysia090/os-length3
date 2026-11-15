@@ -6,6 +6,7 @@ import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
 import type {MarkName} from '../../ui/icons.ts';
 import {errorText} from '../../../api/errors.ts';
 import {wayOut} from '../../ui/way-out.ts';
+import {changes, putBack} from '../../../repo/history.ts';
 
 // What can be done to a file or a folder of a repo, as one menu (the person's menu, `.pop`), wherever it is brought
 // out: File's row, and Forge's files button for the file in front. Its name over its deeds; a deed pressed becomes
@@ -68,6 +69,8 @@ interface Deeds {
   move(to: string): Promise<void>;
   /** Deleted from the store. */
   removed(): Promise<void> | void;
+  /** Put back as it was at the last commit (Revert): the menu's work is done. */
+  reverted(): void;
   /** Not now: put back as it was; the keyboard goes back to what had it. */
   back(): void;
 }
@@ -169,6 +172,37 @@ export function fileDeeds(d: Deeds): HTMLElement {
     }, true));
   }
   pop.append(h('div', {class: 'pop-head muted small'}, d.head ?? d.name), ...rows);
+  // A file changed since the repo's last commit can be put back as it was there: Revert, last, after the deeds that
+  // cannot be undone (it takes what was written since), asked in its place as Delete is. Read as the menu comes out,
+  // and laid at its end, so nothing above it moves under the pointer. (Before, it was the diff's, under the search.)
+  // (Busy while it is read: the menu is not whole until then.)
+  if (!d.dir && path) pop.setAttribute('aria-busy', 'true');
+  if (!d.dir && path) void changes(repo).finally(() => pop.removeAttribute('aria-busy')).then((c) => {
+    // (Signed out there is no last commit to go back to: commits are kept on the Remote.)
+    const f = c.connected ? c.folders.flatMap((x) => x.files).find((x) => x.path === path) : undefined;
+    if (!f || f.status === 'removed' || !pop.isConnected) return;
+    pop.append(entry(t('Revert'), 'putBack', (b) => {
+      const foot = askFoot(b, pop);
+      const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
+      const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Revert')) as HTMLButtonElement;
+      const error = h('p', {class: 'error small', role: 'alert'});
+      const said = f.status === 'added' ? [t('Not present in latest commit; removing')] : [t('Reverted to state at latest commit.'), t('Local modifications discarded.')];
+      const ask = h('div', {class: 'pop-ask', role: 'group', 'aria-label': t('Revert {path}', {path: d.name})},
+        ...said.map((line) => h('p', {class: 'muted small'}, line)), error, foot(no, yes));
+      no.addEventListener('click', () => { ask.replaceWith(b); b.focus(); d.back(); });
+      const shown = performance.now();
+      yes.addEventListener('click', async () => {
+        if (performance.now() - shown < SETTLE) return;
+        yes.disabled = true;
+        try {
+          await putBack(repo, path);
+          if (f.status === 'added') await d.removed(); else d.reverted();
+        } catch (err) { yes.disabled = false; error.textContent = errorText(err); }
+      });
+      b.replaceWith(ask);
+      yes.focus();
+    }, true));
+  }, () => {});
   // ↑ ↓ go along its rows (← → too, along a bar's).
   pop.addEventListener('keydown', (event) => {
     if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;

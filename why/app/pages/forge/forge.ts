@@ -7,7 +7,6 @@ import type {Context} from '../kit/context.ts';
 import {bench, type Bench} from '../bench/bench.ts';
 import {openNext as openConversation} from '../kit/next.ts';
 import type {Writing} from '../kit/context.ts';
-import {startIssue} from '../git/issue-form.ts';
 import {showIssue} from '../git/git.ts';
 import {Drag} from './drag.ts';
 import {takeFiles} from './files-in.ts';
@@ -141,8 +140,6 @@ class Forge {
         void ctx.go(to === 'todo' ? 'home' : 'git');
       }});
     this.element = this.work.element;
-    // The Issue view with none open begins one for this repo on Git; Not now there comes back here.
-    this.work.reference.writeIssue = (r) => { startIssue(r); ctx.go('git'); };
     const drag = new Drag(this.center);
     // The files' key among the band's tools: after >_, before the search.
     this.acts.addEventListener('click', () => this.deeds(this.acts));
@@ -271,6 +268,7 @@ class Forge {
         this.ctx.openRepo(repo, to);
       },
       removed: () => { done(); this.shut(repo, path); },
+      reverted: done,
       back: () => {}});
     // A bar dropped from under the band (forge-desk.css .band-deeds), the desk making way under it in the same move:
     // nothing on the desk is under it, and it is put back as the bar goes.

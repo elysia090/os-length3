@@ -39,7 +39,5 @@
   display: grid; place-items: center; border: var(--line-work) dashed var(--ink); border-radius: var(--r-place);
   background: color-mix(in srgb, var(--paper) 70%, transparent); color: var(--ink); font-size: var(--t-word); font-weight: 700;
   transition: none;
-  animation: hint-in var(--motion) var(--spring);
+  
 }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes hint-in {}

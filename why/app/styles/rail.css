@@ -33,31 +33,17 @@
 /* (In a menu, the deed under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's.) */
 .pop .pop-item:is(:hover, :focus-visible):not(:disabled) { background: var(--ink); color: var(--ground); }
 .pop { display: grid; padding: var(--s2); background: var(--paper); border: 0; border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
-/* A menu out of a row, a card or a gear comes out of it as it shows: grown from the corner it opens at, a few pixels
-   from that side, landing a touch past its size, as the person's menu rises from the face (not there at once, as if
-   it had always been). */
-.tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: menu-in var(--move) var(--pop-in) both; }
-.repo-gear-pop, .stub-panel { --from: 0 -4px; transform-origin: right top; }
-.stub-panel { transform-origin: top; }
-.share-pop { --from: 0 4px; transform-origin: bottom; }
-/* File's beside the tree, at the row's height: out of the tree, to its right. */
-.tree-pop { --from: -6px 0; transform-origin: left top; }
-/* The same deeds out of a button (Forge's files button), under it: down out of it. */
-.tree-pop.deeds-under { --from: 0 -4px; }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes menu-in {}
-@media (prefers-reduced-motion: reduce) { .tree-pop, .repo-gear-pop, .stub-panel, .share-pop { animation: none; } }
+/* (A menu is there at once where it was asked, and gone at once: DESIGN §8. Before, it grew from the corner it
+   opened at and went back into it.) */
 .me-pop {
   position: absolute; left: calc(100% + var(--s3)); bottom: 0; z-index: 6;
   /* As wide as it needs, but never past the window's own gutter (a 320 px phone has 194 px beside the rail). */
   min-width: min(280px, calc(100vw - 2 * var(--outer) - var(--rail-place) - var(--s3)));
   max-width: calc(100vw - 2 * var(--outer) - var(--rail-place) - var(--s3));
-  visibility: hidden; opacity: 0; translate: 0 6px; scale: .92; transform-origin: left bottom;
-  transition: none;
+  visibility: hidden;
 }
-/* Out, it rises the last few pixels up from the face it came from as it shows. */
-.me-wrap.open .me-pop { visibility: visible; opacity: 1; translate: 0 0; scale: 1; transition: none; }
-@media (prefers-reduced-motion: reduce) { .me-pop, .me-wrap.open .me-pop { translate: none; scale: none; } }
+/* Out, it is there at once, over the face it came from. */
+.me-wrap.open .me-pop { visibility: visible; }
 .me-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3) var(--s3); }
 /* The face again, the size of the button, beside the name. */
 .me-who > :first-child { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--r-mark); font: 700 var(--t-word) var(--sans); }

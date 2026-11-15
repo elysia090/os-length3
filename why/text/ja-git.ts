@@ -67,7 +67,6 @@ export default {
   '{n} commits not submitted': '未提出のコミット：{n}件',
   'Approved by {who}': '{who}が承認',
   'Not approved yet': 'まだ承認されていません',
-  'Edit description': '文面を修正',
   // main's commit, what is done with (merged, closed), and putting a file back
   'Fix: Title': 'Fix: 件名',
   '{who} · merged {when}': '{who} · {when}にマージ',

@@ -1,8 +1,7 @@
 import {expect, test} from './fixtures.ts';
 
-// Forge: each file a plain text editor that saves on its own; the diff
-// follows every save and its lines can be marked as with a highlighter; the
-// search finds a line and opens the center there with the line selected.
+// Forge: each file a plain text editor that saves on its own, put back as it was at the last commit from its own
+// menu; the search finds a line and opens the center there with the line selected.
 
 // Each test opens the app on 'hello', made from C's files and left open in Forge (fixtures.ts, helloC: made once for
 // the worker, as making it is new-repo.spec.ts's and file.spec.ts's to see), signed in: the repo goes to the Remote
@@ -13,25 +12,14 @@ test.beforeEach(async ({signedIn: app}) => {
   await app.newRepo.openInForge();
 });
 
-test('a file edited is saved, and what changed shows in the diff', async ({signedIn: app}) => {
+test('a file edited is saved, and its own menu offers to put it back as it was at the last commit', async ({signedIn: app}) => {
+  expect(await app.file.revertable('hello', 'README.md'), 'as committed: nothing to put back').toBe(false);
   await app.forge.editFile('README.md', '# hello\n\nWritten in Forge.\n');
-
-  await app.forge.show('diff');
-  await expect(app.forge.reference.getByText('README.md', {exact: true})).toBeVisible();
-  await app.forge.openDiff('README.md');
-  await expect(app.forge.diffLine('Written in Forge.')).toBeVisible();
-});
-
-test('a diff line pressed is marked, and pressed again is not', async ({signedIn: app}) => {
-  await app.forge.editFile('README.md', '# hello\n\nMark this line.\n');
-  await app.forge.openDiff('README.md');
-
-  const line = app.forge.diffLine('Mark this line.');
-  await expect(line).toHaveAttribute('aria-pressed', 'false');
-  await line.click();
-  await expect(line).toHaveAttribute('aria-pressed', 'true');
-  await line.click();
-  await expect(line).toHaveAttribute('aria-pressed', 'false');
+  // Gone from and come back to, it is as it was written.
+  await app.rail.go('home');
+  await app.rail.go('forge');
+  await expect(app.forge.editor('README.md')).toHaveValue('# hello\n\nWritten in Forge.\n');
+  expect(await app.file.revertable('hello', 'README.md'), 'changed: put back').toBe(true);
 });
 
 test('the search finds a line and opens the file there, the line washed and the caret on it', async ({signedIn: app}) => {
@@ -45,24 +33,22 @@ test('the search finds a line and opens the file there, the line washed and the 
   await expect.poll(() => app.forge.lineChosen('src/main.c')).toBe('    puts("hello");');
 });
 
-test('a file put back from the diff is as it was at the last commit, and leaves the diff', async ({signedIn: app}) => {
+test('a file put back from its own menu is as it was at the last commit, and its menu offers it no more', async ({signedIn: app}) => {
   await app.rail.go('forge');
   const was = await app.forge.editor('README.md').inputValue();
   await app.forge.editFile('README.md', '# hello\n\nNot wanted.\n');
 
-  await app.forge.putBack('README.md', 'Local modifications discarded.');
+  await app.file.revert('hello', 'README.md', 'Local modifications discarded.');
 
   await expect(app.forge.editor('README.md')).toHaveValue(was);
-  // Pressed with nothing typed, the box shows what is changed now: not README.md.
-  await app.forge.show('diff');
-  await expect(app.forge.reference.getByText('README.md', {exact: true})).toBeHidden();
+  expect(await app.file.revertable('hello', 'README.md')).toBe(false);
 });
 
 test('a file added since the last commit goes when it is put back', async ({signedIn: app}) => {
   await app.file.named('hello', '', 'New file', 'scratch.txt');
   await app.forge.editFile('scratch.txt', 'for now\n');
 
-  await app.forge.putBack('scratch.txt', 'Not present in latest commit; removing');
+  await app.file.revert('hello', 'scratch.txt', 'Not present in latest commit; removing');
 
   await expect(app.forge.editor('scratch.txt')).toHaveCount(0);
   await app.file.openTree();

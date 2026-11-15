@@ -8,10 +8,8 @@
   position: absolute; z-index: 4; top: calc(100% + var(--s3)); right: calc(-1 * (2 * var(--s3) + var(--h-row))); width: calc(2 * var(--pane-w) + 2 * var(--s3));
   padding: var(--s3);
   /* It comes down out of the box it was typed in: a few pixels and a fade, never a jump. */
-  animation: from-box var(--move) var(--land);
+  
 }
-/* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
-@keyframes from-box {}
 /* Under the box, while it has the keyboard or something chosen is read there: Issue, diff and Output side by
    side, and under them the large box. In it what was searched and read lines up sideways, the one in hand
    filling it, its neighbours a sliver past its edges (pressed to move to them), as Git's issues and Server's
@@ -20,11 +18,7 @@
 /* Let go, it goes back up into the box before it is gone (reference.ts), and nothing in it is pressed meanwhile. */
 .search-box.leaving > .search-results { animation: none; pointer-events: none; }
 .search-results { display: flex; flex-direction: column; gap: var(--s3); max-height: none; overflow: visible; }
-/* Issue, diff and Output at the large box's left end, standing on it: their foot a hair (s1) over its top, up
-   beside the search box rather than level with it, so the three and the box they switch read as one. */
-.search-pills { display: flex; gap: var(--s2); isolation: isolate; position: absolute; left: var(--s3); bottom: calc(100% - var(--s3) + var(--s1)); }
 /* Over the shade they stand on the ground, as they do on the page. */
-.search-pills > .chip:not([aria-pressed='true']) { background: var(--ground); }
 .search-panel { min-width: 0; }
 /* No slivers: ← and → under the box move along. What comes next shows as the edge of a card behind, past the
    box's right end, without narrowing it; what came before is ←'s to say. */
@@ -85,11 +79,6 @@
 .hit-head > .hit-file { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
 /* How many of its lines were found, in words beside its name, quiet. */
 .hit-count { flex: none; color: var(--sub); font-size: var(--t-word); white-space: nowrap; }
-/* A found file's changes at the head's other end, said as a diff is everywhere (diff +3 and its squares), away from
-   the count of what was found: pressed, its diff. */
-.hit-diff { flex: none; display: inline-flex; align-items: baseline; gap: var(--s2); margin-left: auto; min-height: var(--h-row); padding: 0 var(--s1); border: 0; border-radius: var(--r-key);
-  background: transparent; color: var(--sub); font-size: var(--t-word); cursor: var(--cursor-hand); align-self: center; line-height: var(--h-row); }
-.hit-diff:hover { background: var(--paper); color: var(--ink); }
 /* What Enter takes from the box, while the box has the keyboard: lit as under the pointer, its key at its end. */
 .found-body .choice > .enter-cap { display: none; color: var(--sub); border-color: var(--rule); }
 .search-box:has(.search-in:focus) .found-body .choice.first { background: var(--raised); }
@@ -101,16 +90,6 @@
 .plugins { padding: 0 var(--s5) var(--s3); }
 .plugins .empty { margin-top: 0; padding: var(--s4) var(--s5); }
 .plugins .slide { height: auto; }
-/* At rest, on their own line over the pane's rows at its right end, what else the search shows: Issue, diff with how
-   many files are changed, Output, Agent; quiet heads, pressed to open that view under the search box, which stays out
-   beside the file until it is put away (reference.ts). */
-.pane-heads { --pad: 5px; display: flex; justify-content: flex-end; margin: var(--s4) calc(-1 * var(--pad)) var(--s1) 0; }
-.pane-head { padding: 0 var(--pad); border: 0; border-radius: var(--r-key); background: transparent; color: var(--sub);
-  font: 700 var(--t-word)/calc(var(--t-word) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
-.pane-head:hover, .pane-head[aria-pressed='true'] { color: var(--ink); }
-.pane-head:hover { background: var(--paper); }
-.pane-head-n { margin-left: var(--s1); font-weight: 400; font-variant-numeric: tabular-nums; }
-.pane-head-n:empty { display: none; }
 /* Narrow (after the wide rules above, which it changes): the search at the top line's right, the right pane
    folded away and, brought out with its switch, laid over the center under the top line. */
 @media (max-width: 760px) {
@@ -129,14 +108,11 @@
   .work.bench.pane-out > .side > .pane-room { display: none; }
   .work.bench.pane-out > .side { grid-template-columns: minmax(0, 1fr); }
   .work.bench:not(.desk-bench) .search-results { left: auto; right: 0; width: min(360px, calc(100vw - var(--rail) - 2 * var(--s4))); }
-  /* No room on the top line here: Issue, diff and Output at the top of what opens. */
-  .search-pills { position: relative; }
 }
 /* A phone: the repo's pill before the search's width (a pill cut to three letters says nothing; the search's field says
    what it is in a word), and the band's buttons a little closer, so a short name and its × stand whole. */
 @media (max-width: 560px) {
   .work.bench > .bar { grid-template-columns: minmax(0, 1fr) minmax(80px, 28%) auto; }
-  .work.bench > .bar > .repo-strip { gap: var(--s1); }
 }
 /* One line to type in, the same everywhere: the search box, a repo's name. Its ground turns paper as it is pressed, at
    once, and back as it is left, more slowly: a box of many lines left for a button under it went grey in one frame,
@@ -164,19 +140,3 @@ form.search { position: relative; }
 .hit-file:hover, .hit:hover { background: var(--paper); }
 /* The Prompt's status line says something only when something is missing. */
 .term > p:empty { display: none; }
-/* 実行結果: the line as typed, then what came out, quiet. */
-.run-head { display: flex; justify-content: space-between; gap: var(--s2); min-height: var(--h-row); align-items: center; }
-/* A question asked of the Agent, read whole: the question as written, each step quiet in the Prompt's letters, its
-   words as the pane's answers read (prompt-pane.css), its code on the Prompt's glass. */
-.ask-question { margin: 0 0 var(--s3); font-weight: 700; white-space: pre-wrap; overflow-wrap: anywhere; }
-.ask-step { margin: 0 0 var(--s1); font: var(--t-word) var(--mono); color: var(--sub); white-space: pre-wrap; overflow-wrap: anywhere; }
-.ask-words { margin: var(--s2) 0 var(--s3); font: 400 var(--t-word)/var(--u) var(--sans); overflow-wrap: anywhere; }
-.ask-words > .answer-p { margin: 0 0 6px; white-space: pre-wrap; }
-.ask-words > .answer-code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--screen); color: var(--add-tint);
-  font: var(--t-word)/var(--u) var(--mono); white-space: pre; overflow-x: auto; }
-/* Its lines as they were written, several sent at once each on its own (never run together into one). */
-.run-line { font: 700 var(--t-word) var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; text-align: start; }
-.run-head:has(> .run-line) { align-items: flex-start; }
-/* Pressed, the line is back in the prompt box: its hover fill reaches out past the text, which stays over the output. */
-button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
-.run-out { margin: 0; color: var(--sub); font: var(--t-word)/var(--u) var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }

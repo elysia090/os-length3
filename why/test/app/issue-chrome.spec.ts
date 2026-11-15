@@ -17,17 +17,18 @@ test('Issues has a desk\'s band (>_ and the search) and its first action open, a
   await expect(app.main.locator('.desk-bench .pane-toggle')).toHaveCount(0);
 });
 
-test('Issues\' reference is its band\'s search: what it shows comes down under the band and goes with Escape, come to from Forge too', async ({signedIn: app}) => {
+test('Git\'s band has the search Forge has: what it finds comes down under the band and goes with Escape, and is not left down for Forge', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.newRepo.openInForge();
   await expect(app.main.locator('.desk-bench > .side')).toHaveCount(0);
   await app.rail.go('git');
-  await app.forge.show('Issue');
-  await expect(app.forge.results).toContainText('No issues yet');
+  await app.forge.find('hello');
+  await expect(app.forge.results).toBeVisible();
+  await app.page.keyboard.press('Escape');
   await app.page.keyboard.press('Escape');
   await expect(app.forge.results).toBeHidden();
   // Left with it down, it is not there in Forge.
-  await app.forge.show('Issue');
+  await app.forge.find('hello');
   await expect(app.forge.results).toBeVisible();
   await app.rail.go('forge');
   await expect(app.forge.results).toBeHidden();

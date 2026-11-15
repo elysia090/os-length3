@@ -9,14 +9,12 @@
    and of its size, is the one that reads as a field (raised, its edge seen). Each part lifts under the pointer. */
 .stub:has(> .stub-text) { border-color: var(--rule); background: transparent; }
 .stub-text:hover { background: var(--paper); }
-.stub-text, .stub-in { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 700 var(--t-word)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stub-text { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 700 var(--t-word)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stub-text { cursor: var(--cursor-copy); }
 /* The code beside the name: six digits to be found by, copied by a press. */
-.stub-in:focus { outline: none; }
 .sign-in-card .stub { width: 100%; }
 .sign-in-card .stub-holder { display: grid; gap: var(--s2); justify-items: stretch; margin: 0; }
 .sign-in-card .stub-holder > .stub { min-width: 0; }
-.stub:has(.stub-in:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
 .stub-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: calc(var(--h-control) - 2px); padding: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .stub-gear[aria-expanded='true'] { background: var(--raised); color: var(--ink); }
 .stub-gear:hover { background: var(--paper); color: var(--ink); }
@@ -40,12 +38,6 @@
 /* Copied: the text gives way to the word for a moment, in the same place. */
 [data-copied] { position: relative; color: transparent !important; }
 [data-copied]::after { content: attr(data-copied-word); position: absolute; inset: 0; display: flex; align-items: center; padding: inherit; color: var(--ink); font-family: var(--sans); font-weight: 700; }
-/* What is not committed, beside Commit: its diff in a box of its own, scrolling in it when long, its top level
-   with Commit's (the step that sets words on the button's middle sets no box there). */
-.step-about:has(> .changes) { padding-top: 0; }
-/* A step's line with its quiet second action at the right end (Reset, Reject). */
-.step-line { display: flex; align-items: center; gap: var(--s3); margin-top: calc((1.5em - var(--h-control)) / 2); }
-.step-line > p { flex: 1; min-width: 0; }
 /* Inside a box on `raised`, an added line is drawn on `ground` with a rule at its left, so it still stands out. */
 .review-chat .step-done { font-size: var(--t-word); }
 .review-chat .done-mark { margin: 1px 0; }

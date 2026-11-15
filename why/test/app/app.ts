@@ -291,7 +291,6 @@ class Forge extends Part {
   /** What the center refers to: under the search box (issues, the diff, what was run). */
   get reference() { return this.results; }
   /** Issue, diff or Output, side by side under the box. */
-  kind(view: 'Issue' | 'diff' | 'Output') { return this.results.getByRole('group', {name: 'Search target'}).getByRole('button', {name: view, exact: true}); }
   /** A file's text, which is where it is edited. */
   editor(path: string) { return this.main.getByRole('textbox', {name: `Edit ${path}`, exact: true}); }
   /** A file's name in its head (its path in the repo), pressed to write it over. */
@@ -362,28 +361,6 @@ class Forge extends Part {
     });
   }
 
-  /** 'Issue', 'diff' or 'Output' pressed under the search box (pressed with nothing typed: what there is of it). */
-  async show(view: 'Issue' | 'diff' | 'Output') {
-    await this.search.click();
-    // With nothing typed, what there is comes down from the band's search once asked for: ↓.
-    if (!(await this.search.inputValue()) && !(await this.results.isVisible())) await this.search.press('ArrowDown');
-    const b = this.kind(view);
-    if (await b.getAttribute('aria-pressed') !== 'true') await b.click();
-    await expect(b).toHaveAttribute('aria-pressed', 'true');
-  }
-
-  /** A changed file's diff, read in the box under the search (from diff's list). */
-  async openDiff(path: string) {
-    await this.show('diff');
-    await this.results.getByRole('button', {name: new RegExp(`^${escape(path)}( |$)`)}).click();
-  }
-
-  /** A run read in the box under the search (from Output's list), by its line. */
-  async readRun(line: string) {
-    await this.show('Output');
-    await this.results.getByRole('button', {name: new RegExp(`^${escape(line)} `)}).first().click();
-  }
-
   /** The line one types at in the terminal on the desk, and the Prompt (the repo's sh) it writes to. */
   get promptBox() { return this.main.getByRole('textbox', {name: 'Prompt input', exact: true}); }
   get prompt() { return this.main.getByRole('region', {name: 'Prompt', exact: true}); }
@@ -408,9 +385,6 @@ class Forge extends Part {
     await this.promptBox.press('Control+Enter');
     await expect(this.promptBox).toHaveValue('');
   }
-
-  /** A run read under the search box (`readRun`), its line: pressed, it is put back in the prompt box. */
-  ran(line: string) { return this.reference.getByRole('button', {name: line, exact: true}); }
 
   /**
    * Write `text` as the whole of `path` and go on writing: it stays unsaved for as long as the
@@ -443,19 +417,6 @@ class Forge extends Part {
   /** What Forge asks when a file open here with unsaved words was saved elsewhere. */
   get changedElsewhere() { return this.main.getByRole('group', {name: 'Modified externally'}); }
 
-  /**
-   * Put `path` back as it was at the last commit, from its head in the diff: it asks in the head
-   * (what will happen, Not now, Put back), which is answered. `says` is what it should say it does.
-   */
-  async putBack(path: string, says: string) {
-    await this.openDiff(path);
-    await this.reference.getByRole('button', {name: `Revert ${path}`, exact: true}).click();
-    await expect(this.reference.getByText(says)).toBeVisible();
-    await this.app.answer(this.reference.getByRole('button', {name: 'Revert', exact: true}), this.reference.getByRole('button', {name: 'Cancel'}));
-  }
-
-  /** A line of the diff, by what it says: pressed, it is marked as with a highlighter. */
-  diffLine(text: string) { return this.reference.getByRole('button', {name: text, exact: true}); }
 }
 
 /** File: the tree of "/" over the page. */
@@ -546,6 +507,26 @@ class FileTree extends Part {
     const field = menu.getByRole('textbox');
     await field.fill(name);
     await field.press('Enter');
+  }
+
+  /**
+   * Put `path` back as it was at the repo's last commit, from its own menu: Revert, last in it once the menu has read
+   * what changed; it asks in its place, saying `says`, and is answered.
+   */
+  async revert(repo: string, path: string, says: string) {
+    const menu = await this.deeds(repo, path);
+    await menu.getByRole('menuitem', {name: 'Revert'}).click();
+    await expect(menu).toContainText(says);
+    await this.app.answer(menu.getByRole('button', {name: 'Revert', exact: true}), menu.getByRole('button', {name: 'Cancel'}));
+  }
+
+  /** Whether `path`'s own menu offers to put it back (it changed since the last commit), as the menu says once read. */
+  async revertable(repo: string, path: string): Promise<boolean> {
+    const menu = await this.deeds(repo, path);
+    await expect(menu).not.toHaveAttribute('aria-busy', 'true');
+    const n = await menu.getByRole('menuitem', {name: 'Revert'}).count();
+    await this.page.keyboard.press('Escape');
+    return n > 0;
   }
 
   /** Delete a row from its menu, answering its ask (what it says is the caller's to check first, if wanted). */

@@ -46,23 +46,16 @@ for (const width of [390, 500, 760, 1024, 1400]) {
 }
 
 for (const width of [500, 1400, 1900]) {
-  test(`long paths and late matches remain readable with several search kinds at ${width}px`, async ({app}) => {
+  test(`long paths and late matches remain readable at ${width}px`, async ({app}) => {
     await app.newRepo.openInForge();
     const path = 'searchable-' + 'long-file-name-'.repeat(7) + '.md';
     await app.forge.rename('README.md', path);
     const line = 'Context before the match. '.repeat(12) + 'searchable target at the end.';
     await app.forge.editFile(path, '\n'.repeat(122) + line + '\n');
-    const box = app.forge.promptBox;
-    await box.focus();
-    await box.press('Alt+ArrowDown');
-    await app.main.getByRole('menuitemradio', {name: /Create issue/}).click();
-    await box.fill('Fix: searchable companion issue');
-    await box.press('Control+Enter');
-    await expect(app.main.locator('.box-said')).toHaveText('Created as #1 in hello');
     await app.page.setViewportSize({width, height: 900});
     await app.forge.find('searchable');
-    // A matching issue shares the paper with Files rather than testing only its one-kind case.
-    await expect(app.forge.results.locator('.found-sec')).toHaveCount(2);
+    // What the search finds is the repo's files and their lines: one section of them.
+    await expect(app.forge.results.locator('.found-sec')).toHaveCount(1);
     const row = app.forge.results.locator('.sheet-hit:not(.sheet-name)').filter({hasText: 'target at the end'});
     await expect(row.locator('.sheet-line')).toHaveText('123');
     // (The paper is drawn again as each kind's matches come: measured once it has come to rest, a row not there for a

@@ -11,8 +11,7 @@ import {issueStore} from '../../../repo/issue-store.ts';
 // ("Fix: Title"), the repo it goes in said quietly over it: chosen in Git's one row of repos (All only widens what is
 // shown, and leaves where it goes as it was). Enter makes it, and the keyboard goes on into its summary in the issue in
 // full, where it is written on and kept as it is left. What is half written stays in the line, going along the row or
-// to another page and back. Asked for from Forge, the line has the keyboard, writing in that repo; Escape with nothing
-// written goes back there.
+// to another page and back.
 //
 // Its title is changed where it is read, the same way: pressed, it is written over in its place, its kind kept and
 // its words chosen; Enter or leaving keeps what is written, Escape puts it back.
@@ -20,13 +19,8 @@ import {issueStore} from '../../../repo/issue-store.ts';
 /** An issue just made: its repo and its file. */
 export interface Made { repo: string; file: string }
 
-/** The new issue's line as it was left: what is written, where it goes, and the repo whose Forge asked for it. */
-let draft: {text: string; repo: string | null; back: string | null; asked: boolean} = {text: '', repo: null, back: null, asked: false};
-
-/** Begin a new issue in `repo`, asked for from Forge's reference: Git opens with its line ready, writing in `repo`. */
-export function startIssue(repo: string) {
-  draft = {text: draft.text, repo, back: repo, asked: true};
-}
+/** The new issue's line as it was left: what is written, and where it goes. */
+let draft: {text: string; repo: string | null} = {text: '', repo: null};
 
 export interface IssueLine {
   element: HTMLElement;
@@ -34,17 +28,16 @@ export interface IssueLine {
   retarget(repo: string): void;
   /** Whether there is anywhere to write it (a repo). */
   enable(on: boolean): void;
-  /** The repos read: where it goes unless Forge asked (`fallback`, the repo shown). True when Forge asked: the line is
-   * to have the keyboard once the page is drawn (focus). */
-  arrived(fallback: string | null): boolean;
+  /** The repos read: where it goes (`to`, the repo shown). */
+  arrived(to: string | null): void;
   /** Something is written in it. */
   readonly writing: boolean;
   /** The keyboard back in it, at the end of what is written. */
   focus(): void;
 }
 
-/** The line a new issue is written on; `made` hears what was made, `back` the repo to go back to when put away. */
-export function issueLine(events: {made(m: Made): void; back(repo: string): void}): IssueLine {
+/** The line a new issue is written on; `made` hears what was made. */
+export function issueLine(events: {made(m: Made): void}): IssueLine {
   const where = h('span', {class: 'issue-where', id: 'issue-target'});
   const line = h('input', {class: 'line-in issues-line', placeholder: t('Fix: Title'), 'aria-label': t('First line: Type: Title'),
     'aria-describedby': 'issue-target', maxlength: '200', spellcheck: 'false', autocomplete: 'off'}) as HTMLInputElement;
@@ -65,37 +58,22 @@ export function issueLine(events: {made(m: Made): void; back(repo: string): void
     try {
       const file = await writeIssue(issueStore, repo, kind, title, '');
       line.value = '';
-      draft = {text: '', repo, back: null, asked: false};
+      draft = {text: '', repo};
       events.made({repo, file});
     } catch (e) { error.textContent = t('Failed to create: {message}', {message: errorText(e)}); } finally { making = false; }
   };
   line.addEventListener('keydown', (e) => {
     if (e.isComposing) return;
-    if (e.key === 'Enter') { e.preventDefault(); void make(); return; }
-    // Asked for from Forge and nothing written: Escape goes back there, as it came.
-    if (e.key === 'Escape' && draft.back && !line.value.trim()) {
-      e.preventDefault();
-      e.stopPropagation();
-      const back = draft.back;
-      draft = {...draft, back: null, asked: false};
-      events.back(back);
-    }
+    if (e.key === 'Enter') { e.preventDefault(); void make(); }
   });
   return {
     element,
     retarget: (repo) => { target = repo; draft.repo = repo; say(); },
     enable: (on) => { line.disabled = !on; },
-    arrived: (fallback) => {
-      if (draft.asked && draft.repo) {
-        target = draft.repo;
-        draft.asked = false;
-        say();
-        return true;
-      }
-      target = fallback;
-      draft.repo = fallback;
+    arrived: (to) => {
+      target = to;
+      draft.repo = to;
       say();
-      return false;
     },
     get writing() { return !!line.value.trim(); },
     focus: () => { line.focus({preventScroll: true}); line.setSelectionRange(line.value.length, line.value.length); },

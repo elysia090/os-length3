@@ -97,8 +97,6 @@ const doing = (b: HTMLButtonElement, error: HTMLElement, f: () => Promise<unknow
 };
 /** The step just done here, for a moment: its done mark, drawn next, lands rather than being there (slot). */
 let justDone: {word: string; until: number} | null = null;
-/** What was just said in a change's Review here, for a moment: drawn next, it lands in the conversation (reviewBox). */
-let justSaid: {change: string; until: number} | null = null;
 /** The issue closed here just now, for a moment: its line under Closed lands rather than being there (git/done.ts). */
 let closedNow: {repo: string; path: string; until: number} | null = null;
 export const justClosed = (i: Issue): boolean =>
@@ -606,20 +604,16 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
   }, (e) => diff.replaceChildren(h('p', {class: 'error'}, errorText(e))));
   // What was said of the version shown, the newest first: a verdict with its note, or a comment alone. An approval
   // is said over the sheet's corner, not in the conversation (its note, if any, still shows).
-  // Said here just now: the newest comes down into the conversation from the field it was written in, not there at once.
-  const landing = justSaid?.change === change.id && performance.now() < justSaid.until;
-  if (landing) justSaid = null;
   const said = h('div', {class: 'review-chat'});
-  const drawSaid = (fresh: boolean) => {
+  const drawSaid = () => {
     const told = change.reviews.filter((r) => r.version === shown && (r.verdict !== 'approve' || r.note));
-    said.replaceChildren(...told.slice().reverse().map((r, k) => h('div', {class: fresh && k === 0 ? 'bubble fresh' : 'bubble'},
+    said.replaceChildren(...told.slice().reverse().map((r) => h('div', {class: 'bubble'},
       h('span', {class: 'muted small'}, `${r.by} · ${ago(r.time)}`),
       r.verdict === 'changes' ? h('span', {class: 'step-done'}, t('Changes requested')) : null,
       r.note ? h('p', {class: 'bubble-text'}, r.note) : null)));
     said.hidden = !told.length;
-    said.firstElementChild?.addEventListener('animationend', (e) => (e.currentTarget as HTMLElement).classList.remove('fresh'), {once: true});
   };
-  drawSaid(landing);
+  drawSaid();
   const body: Node[] = [said];
   /** What is written with (the field, its keys): only of the version the change stands at. */
   const writes: HTMLElement[] = [];
@@ -632,7 +626,6 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
     const send = (verdict: git.Review['verdict'], b: HTMLButtonElement) => doing(b, error, async () => {
       if (!text.value.trim() && !pending!.size) { text.focus(); throw new Error(verdict === 'changes' ? t('Specify requested changes or select target lines') : ''); }
       await git.review(at, change, verdict, text.value, [...pending!]);
-      justSaid = {change: change.id, until: performance.now() + 3000};
     }, after);
     // Approve is a ○: pressed, it turns green (the done mark) and stays so.
     let approve: HTMLElement;
@@ -642,7 +635,6 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
       // What is written and marked goes with it; only a written note shows in the conversation.
       b.addEventListener('click', doing(b, error, async () => {
         await git.review(at, change, 'approve', text.value, [...pending!]);
-        if (text.value.trim()) justSaid = {change: change.id, until: performance.now() + 3000};
       }, after));
       approve = b;
     }
@@ -668,7 +660,7 @@ export function reviewBox(issue: Issue, s: RepoState | undefined, after: () => v
       shown = v;
       for (const o of history.querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
       drawDiff();
-      drawSaid(false);
+      drawSaid();
       for (const el of writes) el.hidden = v !== change.version;
     });
     return h('li', {}, b);

@@ -2,11 +2,7 @@
 
 /* A step's row: what it stands at at the left, its button at the right (its done mark in its place once done). */
 .steps { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: start; gap: var(--s3) var(--s3); margin-top: 0; padding: 0 0 var(--s4); }
-.step-act { display: flex; align-items: center; justify-content: flex-end; min-height: var(--h-control); }
-.step-act .button { min-width: 96px; justify-content: center; }
 .step-done { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 700; white-space: nowrap; }
-.step-about { min-width: 0; min-height: var(--h-control); padding-top: calc((var(--h-control) - 1.5em) / 2); }
-.step-about p { margin: 0; }
 .steps > .error { grid-column: 1 / -1; }
 /* In the issue's box: Commit over Push, their buttons down the box's right edge, where Start was and Merge is under
    the Review, what each stands at at the left (git/issue.ts steps). */
@@ -24,7 +20,6 @@
 .issue-summary:hover { border-color: var(--rule); }
 .issue-summary:focus { border-color: var(--edge); background: var(--raised); }
 /* Under the current issue's box, out of it: Back to main at the left, Write an issue at the right. */
-.issue-under { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); margin-top: var(--s3); }
 .issue-leave { display: grid; gap: var(--s1); justify-items: start; }
 /* main said as Home says the person's name (Inter Display Black, --t-name): the line every repo's work comes back to,
    one word over its cards, close over them, its m set on their edge (the face's own side bearing taken back). */
@@ -58,11 +53,6 @@
   content: ''; position: absolute; left: calc(var(--s5) + 2px); top: calc(var(--s4) + var(--s1) + 7px);
   width: 10px; height: 10px; border-radius: 50%; background: var(--ink);
 }
-.main-card:not(.brief) > .main-foot { position: relative; }
-.main-card:not(.brief) > .main-foot::before {
-  content: ''; position: absolute; left: -27px; top: 50%; width: 12px; height: 12px; margin-top: -6px; box-sizing: border-box;
-  border: 2px solid var(--ink); border-radius: 50%; background: var(--paper);
-}
 .main-card:not(.brief) .diff-line { border-left-width: 0; }
 /* Its files close under its name, as what is in it (the card's gap, a step from its foot, is room between parts). */
 .main-card > .main-title + .changes { margin-top: calc(-1 * var(--s2)); }
@@ -70,12 +60,8 @@
    under them; its name pressed, its files open under it, the row's own width. */
 .main-card.brief { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: var(--s2) var(--s3) var(--s2) var(--s5); }
 .main-card.brief > :is(.main-line, .error) { grid-column: 1 / -1; }
-.main-card.brief > .main-foot { margin: 0; gap: var(--s4); }
 .main-card.brief > .changes { grid-column: 1 / -1; padding-bottom: var(--s3); }
 .main-card.brief + .main-card.brief { margin-top: var(--s2); }
-.main-open { display: inline-flex; align-items: center; gap: var(--s2); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: var(--cursor-hand); }
-.main-open::before { content: ''; width: 0; height: 0; border-block: 4px solid transparent; border-left: 6px solid currentColor; transition: none; }
-.main-open[aria-expanded='true']::before { rotate: 90deg; }
 /* main's card: the repo, how many files wait and Commit on one line; the files under it on the card itself, no box
    inside the box. */
 .changes { display: grid; gap: var(--s1); min-width: 0; }
@@ -114,5 +100,4 @@ details[open] > summary.done-head::before { rotate: 90deg; }
 /* An Inbox pane with nothing chosen: a quiet line in its middle, not a box in the box. */
 .inbox-thread > .quiet { margin: 0; padding: var(--u); color: var(--sub); }
 /* Its line, always there to be written (done.ts): as wide as the card's inside, what was said of it under it. */
-.main-card > .main-line { width: 100%; min-width: 0; }
 .main-card > .error:empty { display: none; }

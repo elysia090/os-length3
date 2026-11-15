@@ -335,35 +335,6 @@ test('an issue is made from the keyboard alone: its line, Enter, its summary wri
   await expect(app.git.issue('#1 Fix：Made and named again')).toBeVisible();
 });
 
-
-
-test('an empty Issue view in Forge writes the first issue for its repo, and Escape with nothing written goes back there', async ({app}) => {
-  await app.newRepo.make('notes');
-  await app.newRepo.make('scratch');
-  // Git was last left on another repo: that is kept for Git, and is not where this one goes.
-  // (The row of repos is on Git's band once there is more than one to choose from.)
-  await app.rail.go('git');
-  await app.git.repos.getByRole('radio', {name: 'notes', exact: true}).click();
-  await app.newRepo.make('tide');
-  await app.newRepo.openInForge();
-  await app.forge.show('Issue');
-  await expect(app.forge.reference).toContainText('No issues yet');
-  await app.forge.reference.getByRole('button', {name: 'Create issue'}).click();
-
-  await expect(app.page.locator('#page')).toHaveAttribute('data-place', 'git');
-  await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
-  await expect(app.git.firstLine).toBeFocused();
-  await expect(app.git.firstLine).toHaveAccessibleDescription('tide');
-  await expect(app.git.repos.getByRole('radio', {name: 'notes', exact: true})).toBeChecked();
-
-  // Nothing written, Escape goes back there.
-  await app.page.keyboard.press('Escape');
-  await expect(app.rail.button('forge')).toHaveAttribute('aria-current', 'page');
-  await expect(app.forge.editor('README.md')).toHaveValue('# tide\n');
-  await app.forge.show('Issue');
-  await expect(app.forge.reference).toContainText('No issues yet');
-});
-
 test('the issue in full stands at the row\'s edge with the next ahead of it, its number at the edge that shows; the ones before are on the row\'s map, and a bar goes to its issue', async ({app}) => {
   await app.newRepo.make('notes');
   for (const title of ['Fix: One', 'Feat: Two', 'Docs: Three']) await app.git.write('notes', title);

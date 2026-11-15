@@ -56,7 +56,14 @@ the name of what is in the hand, at the band's end.
 
 A desk. Its row: the terminal first, then the files in the order they were opened. The terminal in the hand is ink
 with its words green; not in the hand it is line on the ground, as any piece. A program that takes the whole screen
-has its 80 columns while it runs.
+has its 80 columns while it runs; what it ran is its own output, and ↑ in its line brings a line back.
+
+On the band, after its keys, the search: written in, it is paper inside and a pixel of ink round it, and what it finds
+in the repo's files drops as a sheet over the desk (a file by its name, a line by its words); a file or a line pressed
+opens on the desk. A file changed since the repo's last commit offers Revert at the end of its own menu (the band's
+files key, File's row), asked in its place. Nothing else lives under the search: an issue is Git's, a change is the
+issue's sheet, a run is the terminal's. (Before, a switch under the box, Issue, diff, Output and Agent, listed and read
+each; it is gone.)
 
 **At work, the shot holds** (§2, computed). Working is writing, going through a file, taking the next piece and
 running; none of it is a reason for the shot to change:
