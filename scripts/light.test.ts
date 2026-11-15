@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {GREYS, HUES, lightOf, oklab, TINTS, under, written} from './light.ts';
+import {ANSI_ORDER, GREYS, HUES, lc, lightOf, NOTE_QUIET, oklab, PHOSPHOR, SETS, TINTS, under, written} from './light.ts';
 
 // One light (DESIGN §3, colour), held on what the sheets carry, whoever wrote them.
 
@@ -11,12 +11,6 @@ const ground = /--ground: (#[0-9a-f]{6})/.exec(tokens)![1]!;
 const light = lightOf(ground);
 const value = (css: string, name: string) => new RegExp(`--${name}: (#[0-9a-f]{6})`).exec(css)?.[1];
 
-/** Relative luminance, for contrast (WCAG 2). */
-const lum = (hex: string) => {
-  const [r, g, b] = [1, 3, 5].map((i) => { const c = parseInt(hex.slice(i, i + 2), 16) / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
-  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-};
-const contrast = (a: string, b: string) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x! + 0.05) / (y! + 0.05); };
 
 test('every grey, ink to paper and the dots, is the ground\'s light at its own lightness: one white, as a scene is balanced to one', () => {
   const dot = /--dots: radial-gradient\(circle, (#[0-9a-f]{6})/.exec(tokens)![1]!;
@@ -34,7 +28,7 @@ test('a mark\'s tint is the mark seen in the light\'s white: its hue under the l
 });
 
 /** A set of sixteen as a sheet carries it, each named colour resolved (the greys by their token). */
-function set(css: string, rule: RegExp) {
+function set_(css: string, rule: RegExp) {
   const body = rule.exec(css)![0];
   return Array.from({length: 16}, (_, i) => {
     const v = new RegExp(`--ansi-${i}: ([^;]+);`).exec(body)![1]!.trim();
@@ -43,39 +37,49 @@ function set(css: string, rule: RegExp) {
   });
 }
 
-for (const [where, css, rule, on, bright] of [
-  ['on paper', sheet('terminal.css'), /:root \{\n {2}--ansi-0:[^}]*\}/, value(tokens, 'paper')!, -1],
-  ['on the screen', sheet('forge-desk.css'), /\.desk-box\[data-kind\]\.held \{[^}]*\}/, value(tokens, 'ink')!, 1],
+for (const [where, css, rule, set] of [
+  ['on paper', sheet('terminal.css'), /:root \{\n {2}--ansi-0:[^}]*\}/, SETS.paper],
+  ['on the screen', sheet('forge-desk.css'), /\.desk-box\[data-kind\]\.held \{[^}]*\}/, SETS.screen],
 ] as const) {
-  test(`the terminal's sixteen ${where}: six hues round the wheel at one lightness and one chroma from the light's neutral, mixing to it; bright a step more ink; black and white the OS's greys`, () => {
-    const all = set(css, rule);
-    for (const [first, label] of [[1, 'normal'], [9, 'bright']] as const) {
-      const six = all.slice(first, first + 6).map((h) => under(light, h));
-      const Ls = six.map((c) => c.L), Cs = six.map((c) => c.C);
-      // One lightness, one chroma (as far as a screen's steps let them be one): none louder than another.
-      assert.ok(Math.max(...Ls) - Math.min(...Ls) <= 0.01, `${label}: lightness ${Ls.map((x) => x.toFixed(3))}`);
+  test(`the terminal's sixteen ${where}: six hues round the wheel at one contrast and one chroma from the light's neutral, mixing to it; bright a step past; black and white the OS's greys`, () => {
+    const all = set_(css, rule), on = value(tokens, set.on)!;
+    for (const [first, label, target] of [[1, 'normal', set.lc], [9, 'bright', set.bright]] as const) {
+      const six = all.slice(first, first + 6);
+      // One contrast on what they are read on (APCA), one chroma: none louder than another.
+      for (const h of six) assert.ok(Math.abs(lc(h, on) - target) <= 1.5, `${label} ${h}: Lc ${lc(h, on).toFixed(1)}, wanted ${target}`);
+      const Cs = six.map((h) => under(light, h).C);
       assert.ok(Math.max(...Cs) - Math.min(...Cs) <= 0.01, `${label}: chroma ${Cs.map((x) => x.toFixed(3))}`);
-      // At equal steps round the wheel (ANSI's order red, green, yellow, blue, magenta, cyan: the wheel's 0, 2, 1, 4, 5, 3).
-      [0, 2, 1, 4, 5, 3].forEach((k, i) => {
-        const d = Math.abs(((six[i]!.h - HUES[k]! + 540) % 360) - 180);
-        assert.ok(d <= 3, `${label} ${i + 1}: hue ${six[i]!.h.toFixed(1)}, wanted ${HUES[k]!.toFixed(1)}`);
+      // At equal steps round the wheel.
+      ANSI_ORDER.forEach((k, i) => {
+        const d = Math.abs(((under(light, six[i]!).h - HUES[k]! + 540) % 360) - 180);
+        assert.ok(d <= 3, `${label} ${i + 1}: hue ${under(light, six[i]!).h.toFixed(1)}, wanted ${HUES[k]!.toFixed(1)}`);
       });
       // Together they mix to the light's neutral (Itten, Munsell): what is left of their mean is a trace.
-      const lab = all.slice(first, first + 6).map(oklab);
+      const lab = six.map(oklab);
       const mean = [0, 1, 2].map((j) => lab.reduce((s, c) => s + c[j]!, 0) / 6);
       const left = Math.hypot(mean[1]! - light[0] * mean[0]!, mean[2]! - light[1] * mean[0]!);
-      assert.ok(left <= 0.004, `${label}: they mix to ${left.toFixed(4)} off the neutral`);
-      // Read where they are drawn.
-      for (const h of all.slice(first, first + 6)) assert.ok(contrast(h, on) >= 4.5, `${label} ${h} on ${on}: ${contrast(h, on).toFixed(2)}`);
+      assert.ok(left <= 0.006, `${label}: they mix to ${left.toFixed(4)} off the neutral`);
     }
-    // Bright is a step more ink: further from what it is read on.
-    const L = (i: number) => oklab(all[i]!)[0];
-    for (let i = 1; i <= 6; i++) assert.ok(bright * (L(i + 8) - L(i)) > 0.05, `bright ${i + 8} a step more ink than ${i}`);
-    // Black and white, bright and not, are the OS's own greys, each under the one light.
+    // Bright a step past (more contrast); black and white the OS's own greys under the one light.
+    assert.ok(Math.abs(set.bright) - Math.abs(set.lc) >= 6, 'bright a step past');
     for (const i of [0, 7, 8, 15]) assert.ok(under(light, all[i]!).C <= 0.0015, `${i}: ${all[i]} a grey of the light`);
-    for (const i of [7, 15]) assert.ok(contrast(all[i]!, on) >= 4.5, `white ${i} read ${where}`);
+    // White, bright white and bright black are read (Lc 45 and more); on the glass nothing past its ceiling, Lc 90.
+    for (const i of [7, 8, 15]) assert.ok(Math.abs(lc(all[i]!, on)) >= 45, `${i} read ${where}: Lc ${lc(all[i]!, on).toFixed(1)}`);
+    if (set.on === 'ink') for (const h of all) assert.ok(lc(h, on) >= -90, `${h} on the glass: Lc ${lc(h, on).toFixed(1)}, past its ceiling`);
   });
 }
+
+test('words are crisp and never tiring: read at length at Lc 75 and more, no word under Lc 45, nothing on the glass past Lc 90', () => {
+  const v = (n: string) => value(tokens, n)!;
+  assert.ok(lc(v('ink'), v('paper')) >= 90, 'ink on paper');
+  assert.ok(lc(v('sub'), v('paper')) >= 75, 'sub on paper');
+  assert.ok(lc(v('ink'), v('ground')) >= 75, 'ink on the ground');
+  assert.ok(lc(v('sub'), v('ground')) >= 60, 'sub on the ground');
+  for (const bg of ['ground', 'paper']) assert.ok(lc(v('quiet'), v(bg)) >= 45, `quiet on ${bg}: Lc ${lc(v('quiet'), v(bg)).toFixed(1)}`);
+  assert.ok(lc(v('note-quiet'), v('note')) >= NOTE_QUIET - 1, 'the note\'s quiet words');
+  const g = lc(v('green'), v('ink'));
+  assert.ok(g <= PHOSPHOR + 1.5 && g >= -90, `the terminal's words on its glass: Lc ${g.toFixed(1)}`);
+});
 
 test('the sheets carry what scripts/light.ts writes (node scripts/light.ts)', () => {
   const now = written();

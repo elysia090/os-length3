@@ -142,9 +142,9 @@
   --ansi-6: var(--sub); --ansi-7: var(--sub); --ansi-8: var(--quiet); --ansi-9: var(--sub); --ansi-10: var(--sub); --ansi-11: var(--sub);
   --ansi-12: var(--sub); --ansi-13: var(--sub); --ansi-14: var(--sub); --ansi-15: var(--sub); }
 .desk-box[data-kind].held { --term-fg: var(--green); --term-bg: var(--ink); background: var(--term-bg); box-shadow: var(--shade) var(--shade) 0 0 var(--green);
-  --ansi-0: var(--edge); --ansi-1: #e3a69a; --ansi-2: #9cc49a; --ansi-3: #ccb57e; --ansi-4: #a7b6e1; --ansi-5: #d3a8ca;
-  --ansi-6: #84c4cb; --ansi-7: var(--ground); --ansi-8: var(--quiet); --ansi-9: #fec0b2; --ansi-10: #b6deb2; --ansi-11: #e7cf97;
-  --ansi-12: #c0d0fb; --ansi-13: #edc1e4; --ansi-14: #9ddee4; --ansi-15: var(--paper); }
+  --ansi-0: var(--edge); --ansi-1: #ffb5a6; --ansi-2: #a2d4a0; --ansi-3: #e1c481; --ansi-4: #b3c7fc; --ansi-5: #ecb7e2;
+  --ansi-6: #82d4dd; --ansi-7: var(--slot); --ansi-8: var(--rule); --ansi-9: #ffc8bc; --ansi-10: #bcdeb7; --ansi-11: #e8d3a2;
+  --ansi-12: #c7d5f9; --ansi-13: #f0cae6; --ansi-14: #a8dee3; --ansi-15: var(--raised); }
 .desk-box[data-kind='term'] { padding: 0; }
 .desk-box[data-kind='agent'] { padding: var(--line); }
 .desk-box[data-kind='agent'] > .desk-label { color: var(--ink); }

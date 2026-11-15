@@ -308,7 +308,17 @@ neutral grey: Itten, *The Art of Color*, 1961; a design balances when its colour
 the middle grey: Munsell, *A Grammar of Color*, 1921), and none is louder than another: what a program colours is told
 apart, never ranked. Their bright ones are a step more ink, further from what they are read on, the same hue and
 chroma; black and white are the OS's own greys ("white" on paper the edge's grey, so it is seen). One set is read on
-paper, one on the screen's glass.
+paper, one on the screen's glass; each six at one contrast, not one lightness (a blue and a yellow of one lightness are
+not one contrast).
+
+**Crisp, and never tiring.** Contrast is weighed as the eye weighs it (APCA, the measure WCAG 3 drafts with: a word's
+lightness against its ground's, light on dark not the same as dark on light). Words read at length stand at Lc 75 and
+more, at 90 where the ground allows (ink on paper is 100, a book's); a program's colours, spans among those words, a
+step under them and over Lc 60, the content text's least; **no word anywhere under Lc 45**, so a count or a line's
+number is never a thing to make out. And nothing on the screen's dark glass passes **Lc 90**: on a dark ground the
+pupil is wider and a brighter word blooms (halation), which tires; so the terminal's bright white is the raised grey
+(Lc 89), not the paper's white (104), and its words are the green at Lc 84. Its colours are the most chroma all six
+hold at their contrast, crisp rather than pastel, none of them a saturated yellow glowing on the dark.
 
 | Name | Value | What it is |
 |---|---|---|
@@ -318,13 +328,13 @@ paper, one on the screen's glass.
 | ink | `#171615` | words; an edge in the hand; a shadow; the terminal in the hand |
 | sub | `#545250` | words a step quieter: a piece not in the hand, what is said beside a thing |
 | edge | `#6e6d6a` | the line round a piece not in the hand |
-| quiet | `#8e8c89` | a line's number; a control at rest |
+| quiet | `#817f7c` | a line's number; a control at rest; the least a word is read at (Lc 45 on the ground) |
 | rule | `#9b9995` | a line inside a sheet |
-| note | `#f2cf52` (its quiet words `#8a7a3c`) | Home's note: what is one's own to do |
-| green | `#9be0bf` | the machine speaking: the terminal's words and its shadow, in the hand only. The screen is a light in the scene of its own (a practical, as a lamp in shot is), and its words are its colour |
+| note | `#f2cf52` (its quiet words `#817133`) | Home's note: what is one's own to do |
+| green | `#a4eac8` | the machine speaking: the terminal's words and its shadow, in the hand only. The screen is a light in the scene of its own (a practical, as a lamp in shot is), and its words are its colour |
 | off | `#7f2b3c` | not answering, removed, refused |
 | done | `#0e7c5e` | a step done |
-| the terminal's sixteen | on paper L .52 (bright .44), on the glass L .78 (bright .86); chroma the most all six hold | what a program colours, told apart and not ranked |
+| the terminal's sixteen | on paper Lc 80 (bright 90), on the glass Lc −72 (bright −80); at each, the most chroma all six hold | what a program colours, told apart and not ranked |
 
 Fill, shadow and colour belong to the piece in the hand (§5). Hover adds no colour: a thing under a pointer goes from
 quiet to ink, or takes paper under it.

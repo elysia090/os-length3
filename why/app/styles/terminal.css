@@ -35,9 +35,9 @@
    the OS's own greys ("white" the edge's, so it is seen). The rest of xterm's 256, and colours given as red, green and
    blue, as they are. */
 :root {
-  --ansi-0: var(--ink); --ansi-1: #90574d; --ansi-2: #4c754d; --ansi-3: #7c662e; --ansi-4: #586792; --ansi-5: #82597c;
-  --ansi-6: #2b757d; --ansi-7: var(--edge); --ansi-8: var(--quiet); --ansi-9: #774138; --ansi-10: #355e38; --ansi-11: #654f16;
-  --ansi-12: #42517a; --ansi-13: #6a4365; --ansi-14: #095e66; --ansi-15: var(--sub);
+  --ansi-0: var(--ink); --ansi-1: #874b42; --ansi-2: #3a663d; --ansi-3: #71591b; --ansi-4: #4b5b88; --ansi-5: #784e73;
+  --ansi-6: #07656f; --ansi-7: var(--edge); --ansi-8: var(--quiet); --ansi-9: #64362e; --ansi-10: #294a2b; --ansi-11: #524110;
+  --ansi-12: #364265; --ansi-13: #593855; --ansi-14: #014a51; --ansi-15: var(--sub);
 }
 /* The line under way, drawn again as it changes (output.ts). */
 .term-live { white-space: pre-wrap; }

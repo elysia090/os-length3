@@ -30,13 +30,13 @@
   --frame: var(--sub);
   --frame-edge: var(--edge);
   /* Words that only say how many or where: quieter than --sub, never for what is read to be acted on. */
-  --quiet: #8e8c89;
+  --quiet: #817f7c;
   /* The TODO's note, the one coloured sheet Home has. */
   --note: #f2cf52;
   /* On the note, what is not yet written (the line to write the next in). */
-  --note-quiet: #8a7a3c;
+  --note-quiet: #817133;
   /* The terminal's light: its key's mark on the band, its words on the screen. */
-  --green: #9be0bf;
+  --green: #a4eac8;
   /* The grid everything on the desk is set on: its dots stand a cell apart, one in the middle of each. */
   --u: 24px;
   /* Three marks that say one thing each: a step done, a line marked in a diff, a repo off. Each a small family, deep
