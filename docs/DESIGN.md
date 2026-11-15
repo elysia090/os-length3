@@ -7,7 +7,8 @@ checked, and §12 names the check. A rule with no check is a wish; a value that 
 What the OS is under its places is `OS.md`; what each place does is `PLACES.md`.
 
 Contents: 1 the stance · 2 the world · 3 measures · 4 the frame · 5 pieces and the hand · 6 the row · 7 what one
-does · 8 motion · 9 sound · 10 each place · 11 what is not yet so · 12 how it is checked.
+does · 8 motion · 9 sound · 10 each place · 11 what is not yet so · 12 how it is checked · 13 its words, and what
+only a person gives.
 
 ---
 
@@ -170,6 +171,25 @@ is for (§10), over the three questions of §1 (where am I, what is in my hand, 
 - a row's first sheet stands before the piece in hand where both fit, though the weight then lie right of the middle
   (what can be done next over the plane: Server at 1024 px, `Tₓ` = +.02);
 - a place's own composition stands over a general rule (§1: emotion over all).
+
+### Negative space, and the lean
+
+What is not drawn is half the shot. Print has said so for a century ("the relationship between the printed and the
+unprinted area must be one of tension", Ruder, *Typographie*, 1967; "an unpainted space should not be seen as an
+information-free area", Hara, *White*), and has numbers for it. Here they are rendered: the world in cells of 24 px,
+each **bare ground** (its colour and its dot only), **bare paper**, or **marked**.
+
+| Law | What print and perception found | Computed | Bound |
+|---|---|---|---|
+| **One field** | Trapped white, space "not allowed to connect to other space", is space wasted (Bradley); a small enclosed gap is seen as a figure, a hole, where a large field reaching the edge is seen as ground (figure-ground cues: smallness, enclosure, convexity; Wagemans et al. 2012) | the bare ground's fields, joined cells of it | the largest holds **≥ 95%** of the bare ground; it reaches the window's **right or foot**; what is shut in between things **< 1%** (a counter inside one sheet is that sheet's) |
+| **How much is marked** | The book's canon sets its type area at 4/9 of the page (Van de Graaf, Tschichold); a type area of about half reads quiet and fine (上品・落ち着き), of four fifths busy (にぎやか); white space is read as prestige, quality and trust (Pracejus, Olsen and O'Guinn 2006). Its amount alone predicts little (r = −.15 with judged beauty; figure-ground contrast, +.51: Miniukovich and De Angeli 2015): where it lies matters more than how much | the share of the world's cells marked | on a desk, **at most a third** (measured: 9 to 27%) |
+| **The lean** | Margins of one size "create an impression of indecision and dullness"; a type area set high floats, set low falls (Müller-Brockmann). The reading order weighs the upper left first and the lower right last (Ngo, Teo and Byrne's sequence) | the weight's centre, `Tₓ` (above); and how empty each quarter of the world is | `Tₓ < 0`, and the **lower right at least as empty as the upper left**: the weight with the frame, the room with the open sides (§4) |
+
+So the negative space of a shot is one thing: the ground ahead of the subject, open to where the world goes on. It is
+never between things. Measured in every place at 1536 and 1024: the largest field holds 97 to 100% of the bare
+ground; nothing is trapped but a counter in Inbox's first sheet; the lower right is the emptier quarter wherever the
+subject is at the desk's edge. A place that is one sheet is a close-up and has its white inside it (Runtime 30%, the
+Remote 47% bare ground at 1536).
 
 ---
 
@@ -641,6 +661,14 @@ The sheets have the same law as three times and one curve:
 - No sheet and no code moves a thing by another curve, or in a time written out. (What goes round for as long as it
   is there, a caret's blink, is not a move; nor is a mark that lingers a second and more.)
 - **A move starts within 50 ms of the press that asks it** (§2: past that it is not seen as the press's doing).
+- **Words are read at rest.** Sight is sharp on a thing moving up to 2.5° a second (Westheimer and McKee 1975); a move
+  here goes tens of degrees a second, so nothing is to be read while it moves, and every move ends at a rest within
+  420 ms. Letters never move against one another or change their shape: what is written moves only with its sheet or
+  the world, as a scroll does (Brownie's "global" motion; her "fluid" letters "cease to be legible").
+- **Words shown for a moment stay long enough to be read once**: `max(500 ms, wide/4 + narrow/17 s)`, a full-width
+  letter a quarter of a second (Japanese subtitling's four a second; up to six are read without strain, Toyokura and
+  Yamada 2017), a Latin letter a seventeenth (Netflix's slower English rate), half a second at the least (the
+  shortest a subtitle stands). `ui/law.ts readTime`. ("Copied" stood 1.2 s, and コピーしました needs 1.75.)
 - **A line turned under the caret is turned at once**, a whole line, as a typewriter's platen turns a line under the
   hand: it answers the key, as the letter written does, and is not a move.
 - **A move never holds the hand.** The place come to is there to be used from the first frame; a move under way is
@@ -890,13 +918,14 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 
 | Rule | Held by |
 |---|---|
-| The law of motion: its shape, its time; the sheets' curve is the code's; no sheet moves by another curve or a written-out time (§8) | `why/app/ui/law.test.ts` |
+| The law of motion: its shape, its time; the sheets' curve is the code's; no sheet moves by another curve or a written-out time; how long words shown for a moment stay (§8) | `why/app/ui/law.test.ts` |
+| What a colour may say: the greys from ink to paper each lighter than the last and none a hue; each hue a kind of its own (§13) | `why/app/ui/tokens.test.ts` |
 | A piece's place is its number; where the desk rests; going to a piece, every case; a phone by the same rule (§6) | `why/app/pages/forge/desk-layout.test.ts` |
 | A piece's width at every window; a row whose first sheet is narrower than its pieces (§3, §6) | `why/app/ui/row.test.ts` |
 | The rail's order; which pages are a place's far side, where each door leads and that it leads back (§4) | `why/app/host/purposes.test.ts` |
 | What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `why/test/app/sound.spec.ts` |
 | Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
-| Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the band's title whole at its size, one voice (§2) | `why/test/app/composition.spec.ts` |
+| Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the lean (the lower right at least as empty as the upper left), the bare ground one open field with nothing trapped and at most a third of the world marked, the band's title whole at its size, one voice (§2) | `why/test/app/composition.spec.ts` |
 | Writing in Git is direct: a new issue's line and main's commit line always there, Enter making or committing, nothing to open, confirm or put back; an issue's title written over in place; what is half written kept (§7, §10) | `why/test/app/git.spec.ts` |
 | Forge at work, frame by frame at two screens: the piece in hand at the edge or under the hand; the line written never in the third it goes towards, a long file standing to the foot; the terminal's last line out of the lower third; nothing jumping, nothing reversed; the weight left (§2, §6, §10) | `why/test/app/at-work.spec.ts` |
 | Where the line written may stand, the terminal's lines, and where the desk turns for a piece pressed and for one gone to (§2, §5, §6) | `why/app/pages/forge/desk-layout.test.ts` |
@@ -912,7 +941,79 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | File comes by a press and by nothing else (§7) | `why/test/app/file.spec.ts` |
 | A phone has the same rules (§1) | `why/test/app/narrow.spec.ts` |
 
-`npm test` runs the first five; `npm run selftest` the rest, in a browser against a real Remote.
+`npm test` runs the `.test.ts` files; `npm run selftest` the `.spec.ts` files, in a browser against a real Remote.
 
 To add a rule: write it here as a number or a sentence that can be false, then write the test that would find it
 false, then make it true. To change one: change it here first.
+
+---
+
+## 13. Its words
+
+The words this design is made of, as it uses them, each said so that a test can find the thing. Each is known one of
+four ways:
+
+- **given**: decided by a person and written here. Nothing computes it, and the rest is computed from it;
+- **measured**: computed from the page's boxes and times;
+- **rendered**: computed from the pixels as drawn, with no eye (a screenshot and §5's ink);
+- **looked**: known only by looking. Each is a misfit not yet named (§1, Alexander), and the list under the table is
+  all there is of them.
+
+| Word | What it is | From | Known |
+|---|---|---|---|
+| **world** | the plane under the frame, `[48, W] × [48, H]`: the desk, the places down it, their far sides along | film's field | measured |
+| **ground** | the world's colour with a dot a cell: what is not anything | squared paper | rendered |
+| **frame** | the rail's column and the band's row, 48 each, the camera's own: quiet, fixed, never in the scene | film's frame line; safe action | measured |
+| **place**, **far side** | what the rail goes to, down; its other page, along through the door | — | given |
+| **piece**, **sheet** | a thing with something in it lying on a desk, its edges on the grid; a piece of paper (paper, corner 10) | stationery | measured |
+| **row** | pieces along from the desk's edge, `x(n) = n(W + G)`; a piece's place is its number | a line of words | measured |
+| **rest** | the world still, a piece at the desk's edge: a shot | film's composed frame | measured |
+| **move** | one of three (the world down or along, the desk along, in front and back), by one law | the camera move | measured |
+| **cut** | the subject changing with nothing moving (a piece taken where it lies; the band's name another) | the cut | measured |
+| **take**, **in hand** | the act that makes a piece the subject (a press, a key, a find); the one piece being worked in | picking up | measured |
+| **subject** | the one thing with the shadow at a rest, eight times any other's weight | film's subject in focus | rendered |
+| **in front**, **out of focus** | what is called up by a press comes over the world; the world behind is blurred | depth of field | measured |
+| **ink**, **weight** | a pixel's distance from the ground, `ΔE/50`; a region's sum of it | Arnheim's weight | rendered |
+| **quiet** | the step under ink (`sub`, `edge`): at rest, not in hand, the frame | the broadcaster's dim mark | rendered |
+| **value**, **hue** | what is ranked is said by value, the greys from ink to paper; a hue says a kind (the machine, one's own, done, refused) and ranks nothing | Bertin's visual variables (1967): value is ordered, hue is not | measured (tokens) |
+| **voice**, **the large thing** | the display face at its two sizes, one thing said large in a shot; which thing it is | the poster | measured; which, given |
+| **title** | the frame's words: whole at their size, or not there | title safe | measured |
+| **horizon**, **eyeline** | the line every place's first row stands on (48, 72); the line a place's first name stands on, carried across | the horizon line; the portrait's eyeline | measured |
+| **lens** | one scale: nothing scaled, zoomed or seen in perspective; a name too long breaks or steps down a size | Ozu's one lens | measured |
+| **eye-trace** | where the eye is as a rest begins; what the place is lies within 5° of it | Murch; Smith | measured |
+| **look room**, **lead**, **platen** | the room on the side a subject faces or goes; the line written kept out of the third it goes towards; a line turned at once under the caret | Thompson and Bowen; the camera leading a mover; the typewriter | measured |
+| **jump**, **order** | a change of 1 to 23 px, forbidden; which is left of which, never reversed | the 30° rule; the 180° line | measured |
+| **one light** | every shadow 12 right and 12 down: the light from the upper left | the light-from-above prior | measured |
+| **field**, **trapped** | the bare ground as one body, open to the right or the foot; ground shut in between things | Ruder; Bradley; figure and ground | rendered |
+| **lean** | the weight up and left with the frame, the room down and right with the open sides | Müller-Brockmann; the reading order | rendered |
+| **read time** | how long words shown for a moment stay: `max(500 ms, wide/4 + narrow/17 s)` | subtitling | measured |
+| **cell**, **programme** | 24 px, the line, every gap a cell or half; the widths 8, 12, 24 and 48 cells (`inside + 2 = n(c + 2)`) | Vignelli's grid from the leading; Gerstner | measured |
+| **character** | what a place is for, in one sentence (§10); its one large thing | Murch's emotion | given |
+| **importance** | which thing in a place matters most, then next: the subject's kind, the large thing, the cast | Hitchcock's rule | given |
+| **friction** | a cost kept because it says what a place is (§7) | — | given |
+| **misfit** | a named place where a rule is broken (§11) | Alexander | given, then measured |
+
+### What only a person gives
+
+Everything above that is measured or rendered is computed from four things a person gives, and from nothing else:
+
+1. **What each place is for** (§10, one sentence each): its character. Murch's first criterion, "emotion", weighs more
+   than the other five together, and no measure reaches it: a title "sets mood ... in some metaphorical way" (Saul
+   Bass), and motion "cannot normally replace or override strong emotive content intrinsic to the meaning" (Lee,
+   Forlizzi and Hudson 2002).
+2. **What matters most in it, and next** (the subject's kind, the one large thing, the cast). Hitchcock's rule scores
+   size against importance, and the importance is the author's: in the systems that compute it, how to evaluate it
+   "remains largely unresolved" and it is written in by hand (Galvane and Ronfard 2017); a layout system takes the
+   designer's "desired importance" as given, "not estimated" (O'Donovan, Agarwala and Hertzmann 2014). Where the eye
+   goes in a scene follows its meaning more than its brightness and edges (meaning explains 53% of where people look,
+   salience 38%, and alone 19% against 4%: Henderson and Hayes 2017), and meaning is mapped by people, not by
+   pixels.
+3. **The words**: what a thing is called, what a place says. How long they take to read is computed (§8); whether
+   they say the thing is not.
+4. **What is kept as friction** (§7).
+
+And one thing only looking finds: **that something is wrong**. Measures of a screen predict what a crowd will judge
+of it on average, about half of it (Reinecke et al. 2013; Miniukovich and De Angeli 2015), and one person's judgment
+far less (r ≈ .3 to .5); what a measure does not know of (a grouping by meaning, a word cut short, an empty field that
+reads as missing) shows only to an eye. So the eye is used for one thing: to find a misfit. Found, it is named in §11,
+given a number here and a test in §12, and only then fixed. Looking finds; numbers hold.

@@ -16,7 +16,7 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //   the lean        the empty part of the world lies to its lower right, the frame's open sides: that quarter at least
 //                   as empty as the upper left, where the frame and the subject are
 //   the field       the bare ground is one field, reaching the window's right or foot, with nothing of it trapped
-//                   between things
+//                   between things; at most a third of the world's cells carry a mark
 //   a whole title   the band's name whole at its size, inside the window, or not there
 //   one voice       the display face at its two sizes, no text and no number said twice in it
 
@@ -156,6 +156,9 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   expect(all[0]!.n / bare, `${what}: the bare ground one field`).toBeGreaterThanOrEqual(.95);
   expect(all[0]!.open, `${what}: the field open to the window's right or foot`).toBe(true);
   expect(all.filter((c) => !c.edge).reduce((n, c) => n + c.n, 0) / bare, `${what}: no ground trapped between things`).toBeLessThan(.01);
+  // How much is marked: at most a third of the world's cells (a type area under half a page is the quiet one).
+  const marked = 1 - emptyIn(rows, 0, R, 0, C);
+  expect(marked, `${what}: ${Math.round(marked * 100)}% of the world marked`).toBeLessThanOrEqual(1 / 3);
 }
 
 test('every rest is a shot: in every place, at every width, one lens, one horizon, one subject in focus, the eye landing on what the place is, a whole title, one voice', async ({signedIn: app, another}) => {

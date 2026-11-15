@@ -7,7 +7,7 @@ import * as servers from '../../../shipto/servers.ts';
 import {coalesced, every} from '../../../api/runs.ts';
 import {errorText} from '../../../api/errors.ts';
 import {personBadge} from '../kit/pane.ts';
-import {SPRING} from '../../ui/law.ts';
+import {readTime, SPRING} from '../../ui/law.ts';
 
 // A board's talk: read as a conversation is, oldest above and newest at the
 // foot, by the box one writes in. Its people write in it; so may a guest,
@@ -124,7 +124,7 @@ function takeDown(act: () => Promise<void>): HTMLButtonElement {
   const down = h('button', {type: 'button', class: 'button small-button tl-act'}, t('Delete post')) as HTMLButtonElement;
   let armed = 0;
   down.addEventListener('click', async () => {
-    if (!armed) { down.textContent = t('Delete this post?'); armed = window.setTimeout(() => { armed = 0; down.textContent = t('Delete post'); }, 3000); return; }
+    if (!armed) { down.textContent = t('Delete this post?'); armed = window.setTimeout(() => { armed = 0; down.textContent = t('Delete post'); }, Math.max(3000, readTime(down.textContent ?? ''))); return; }
     clearTimeout(armed);
     down.disabled = true;
     try { await act(); } catch (e) { down.disabled = false; down.textContent = errorText(e); }

@@ -3,6 +3,7 @@ import {errorText} from '../../../api/errors.ts';
 import {t} from '../../../text/i18n.ts';
 import {icon, mark, type MarkName} from '../../ui/icons.ts';
 import {arrive, glide, pop, still, where} from '../../ui/glide.ts';
+import {readTime} from '../../ui/law.ts';
 import {purpose, RAIL, type PurposeId} from '../../host/purposes.ts';
 
 export function pageHead(id: PurposeId): HTMLElement {
@@ -84,7 +85,8 @@ export function copying(el: HTMLElement, text: string) {
     el.dataset.copiedWord = t('Copied');
     el.dataset.copied = '';
     pop(el, .04, 260);
-    window.setTimeout(() => delete el.dataset.copied, 1200);
+    // Said for as long as it takes to read once (in Japanese, longer than in English), never less than it was.
+    window.setTimeout(() => delete el.dataset.copied, Math.max(1200, readTime(el.dataset.copiedWord)));
   });
   el.title = t('Click to copy');
 }
