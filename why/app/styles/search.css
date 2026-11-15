@@ -72,7 +72,7 @@
 .found-at { font: var(--t-word) var(--mono); color: var(--sub); }
 .work.bench .search-results { max-height: var(--search-room, none); }
 .found-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
-.found-item { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: var(--h-row); padding: var(--s1); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; cursor: var(--cursor-hand); }
+.found-item { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: var(--h-row); padding: var(--s1); border: 0; border-radius: var(--r-key); background: transparent; color: var(--ink); text-align: left; cursor: var(--cursor-hand); }
 .found-item:hover { background: var(--paper); }
 .found-kind { flex: none; font-size: var(--t-word); color: var(--sub); }
 .found-what { min-width: 0; overflow-wrap: anywhere; }
@@ -87,7 +87,7 @@
 .hit-count { flex: none; color: var(--sub); font-size: var(--t-word); white-space: nowrap; }
 /* A found file's changes at the head's other end, said as a diff is everywhere (diff +3 and its squares), away from
    the count of what was found: pressed, its diff. */
-.hit-diff { flex: none; display: inline-flex; align-items: baseline; gap: var(--s2); margin-left: auto; min-height: var(--h-row); padding: 0 var(--s1); border: 0; border-radius: var(--r-field);
+.hit-diff { flex: none; display: inline-flex; align-items: baseline; gap: var(--s2); margin-left: auto; min-height: var(--h-row); padding: 0 var(--s1); border: 0; border-radius: var(--r-key);
   background: transparent; color: var(--sub); font-size: var(--t-word); cursor: var(--cursor-hand); align-self: center; line-height: var(--h-row); }
 .hit-diff:hover { background: var(--paper); color: var(--ink); }
 /* What Enter takes from the box, while the box has the keyboard: lit as under the pointer, its key at its end. */
@@ -105,7 +105,7 @@
    many files are changed, Output, Agent; quiet heads, pressed to open that view under the search box, which stays out
    beside the file until it is put away (reference.ts). */
 .pane-heads { --pad: 5px; display: flex; justify-content: flex-end; margin: var(--s4) calc(-1 * var(--pad)) var(--s1) 0; }
-.pane-head { padding: 0 var(--pad); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub);
+.pane-head { padding: 0 var(--pad); border: 0; border-radius: var(--r-key); background: transparent; color: var(--sub);
   font: 700 var(--t-word)/calc(var(--t-word) * 1.6) var(--sans); letter-spacing: .02em; cursor: var(--cursor-hand); }
 .pane-head:hover, .pane-head[aria-pressed='true'] { color: var(--ink); }
 .pane-head:hover { background: var(--paper); }
@@ -158,7 +158,7 @@ form.search { position: relative; }
 .search-in::-webkit-search-cancel-button { filter: grayscale(1) brightness(.4); cursor: var(--cursor-hand); }
 .search-count { margin-bottom: var(--s2); padding-left: var(--s1); }
 .hit-group { display: grid; margin-bottom: var(--s3); }
-.hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: var(--cursor-hand); border-radius: var(--r-field); }
+.hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: var(--cursor-hand); border-radius: var(--r-key); }
 .hit-file { min-height: var(--h-row); font: 700 var(--t-word) var(--mono); }
 .hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-word)/var(--u) var(--mono); }
 .hit-file:hover, .hit:hover { background: var(--paper); }

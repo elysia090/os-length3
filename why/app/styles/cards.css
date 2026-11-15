@@ -113,7 +113,7 @@
 .rows { display: grid; padding: var(--s2); border: 1px solid var(--rule); border-radius: var(--r-card); }
 .row-item {
   display: flex; align-items: baseline; gap: var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s3) var(--s1) calc(var(--s3) + var(--depth, 0) * var(--s4));
-  border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); text-align: left; font-size: var(--t-word); line-height: calc(var(--h-row) - 2 * var(--s1));
+  border: 0; border-radius: var(--r-key); background: transparent; color: var(--ink); text-align: left; font-size: var(--t-word); line-height: calc(var(--h-row) - 2 * var(--s1));
 }
 button.row-item { cursor: var(--cursor-hand); width: 100%; }
 button.row-item:hover:not(:disabled) { background: var(--paper); }

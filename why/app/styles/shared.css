@@ -4,6 +4,9 @@
 /* The three states, the same everywhere: under the pointer a thing takes paper under it (DESIGN §3: hover adds no
    colour), the current or chosen thing is an ink fill, focus is a 2px ink ring. */
 .rail-item:hover, .button:hover, .chip:hover, .pill:hover, .band-add:hover:not(:disabled), .me:hover, .pop-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover, .card.repo:hover, .card.new:hover { background: var(--paper); }
+/* (On paper, paper under it is not seen: a key there says the pointer is on it as the band's do, its line going from
+   the quiet one to ink, and its words with it.) */
+:is(.button, .chip, .pill, .part):not(.primary, [aria-current], [aria-checked='true'], [aria-pressed='true'], [aria-selected='true']):hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
 .button.primary,
 .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current], .tree-row:has(> [aria-current='page']) { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 /* The rail's place, and what is out from the rail (File's tree, the person's menu): paper ringed in ink, its icon in
@@ -24,10 +27,7 @@
 :is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row, .pane-row,
 .inbox-row, .pane-toggle, .pill-close, .approve-mark, .tree-row, .hit, .hit-file, .found-item, .seen-file, .link,
 button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head):hover { transition-duration: var(--motion); }
-:is(.rail-item, .button, .chip, .pill, .band-add, .me, .pop-item, .todo-mark, .card.repo, .card.new, .lately-row, .pane-row,
-.inbox-row, .pane-toggle, .pill-close, .approve-mark, .tree-row, .dot-row, .pane-head, .hit-diff, .found-shut):active:not(:disabled) {
-  background-color: color-mix(in srgb, var(--ink) 13%, var(--raised)); transition-duration: var(--motion);
-}
+/* (Pressed, nothing is filled: being held down is the give's to say, DESIGN §14; a fill as well said it twice.) */
 /* A primary button answers the pointer too: its ink a step toward the ground under it, as quickly as a fill comes
    (pressed, a step further). Before, only the outlined ones did, and the one deed that matters most said nothing. */
 /* (A key in ink is the strongest thing already: under the pointer it stays as it is, no lighter ink mixed for it,
@@ -37,9 +37,6 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
 .work:not(.prompting, .prompt-leaving) .prompt-chip { transition: box-shadow var(--move) var(--spring), filter var(--move) var(--spring); }
 .work:not(.prompting, .prompt-leaving) .prompt-chip:hover { box-shadow: inset 0 0 0 1px rgb(255 255 255 / .28); filter: brightness(1.18); }
 .work:not(.prompting, .prompt-leaving) .prompt-chip:is([data-mode='todo'], [data-mode='edit']):hover { filter: none; background: var(--paper); }
-:is(.button.primary, .chip[aria-current], .chip[aria-checked='true'], .chip[aria-pressed='true'], .pill[aria-current]):active:not(:disabled) {
-  background-color: color-mix(in srgb, var(--ink) 80%, var(--ground)); border-color: color-mix(in srgb, var(--ink) 80%, var(--ground));
-}
 
 /* ---- 1. Rail ---- */
 /* The icons keep a little more room on the side of the line than on the
@@ -61,7 +58,7 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
 .door:is(:hover, :focus-visible) { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); outline: none; }
 .door:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
 .door.with-bar { border-radius: var(--r-key) 0 0 var(--r-key); box-shadow: inset 1px 0 0 var(--ink), inset 0 1px 0 var(--ink), inset 0 -1px 0 var(--ink); }
-.door.away::after, .door.news::after { content: ''; position: absolute; top: 6px; right: 10px; width: 8px; height: 8px; border-radius: 2px; background: var(--off); }
+.door.away::after, .door.news::after { content: ''; position: absolute; top: 6px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
 .door.news::after { background: var(--ink); }
 body.has-door :is(.home-band, .work.bench:is(.desk-bench, .band-bench) > .bar) > .band-tools { margin-left: calc(2 * var(--u)); width: min(calc(22 * var(--u)), round(down, 100% - 2 * var(--u), var(--u))); border-radius: 0 var(--r-key) var(--r-key) 0; }
 

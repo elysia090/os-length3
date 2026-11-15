@@ -217,9 +217,14 @@
   .issue-history { position: static; width: auto; margin: 31px 0 calc(2 * var(--u)); }
   .history-at { text-align: left; }
 }
-/* Word from someone, come while one is here: a sheet at the page's foot, against its right edge. */
+/* Word from someone, come while one is here: a slip at the page's foot, against its right edge. It is not the piece
+   in the hand (the issue is): drawn in line on the ground as a piece at rest is, no shadow, its words a step quieter,
+   who wrote at the words' size (one large name a shot, §1: master and servant); pressed, its conversation. */
 .work.band-bench > .pane-word { position: fixed; left: auto; right: calc(2 * var(--u)); bottom: calc(2 * var(--u)); z-index: 6; width: min(calc(14 * var(--u)), calc(100vw - 4 * var(--u))); }
-.work.band-bench > .pane-word > .pane-row { border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
+.work.band-bench > .pane-word > .pane-row { padding: var(--u); border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px; box-shadow: none; }
+.work.band-bench > .pane-word > .pane-row:hover { background: var(--paper); color: var(--ink); outline-color: var(--ink); }
+.work.band-bench > .pane-word .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; color: var(--ink); }
+.work.band-bench > .pane-word .pane-bar { display: none; }
 /* A narrow window: the keys start where the page does (the rail is close set), main's sheet lies straight over the
    row, and the sheet in full takes the row: a neighbour shows a cell, the title at the size of every name, over as
    many lines as it takes (never a size of its own for a narrow line: the camera has one lens, DESIGN §2). */

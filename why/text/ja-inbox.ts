@@ -41,7 +41,6 @@ export default {
   'Sent as request: recipient will see it once accepted.': 'リクエストとして送信しました。相手が承認するとメッセージが表示されます。',
   'Send to username': 'ユーザー名宛てに送信',
   'New messages': '新着メッセージ',
-  'Prefix with Review: or Question: · specify /root/… path · Ctrl+Enter to send': '先頭に Review: または Question: を指定 · /root/… で対象を指定 · Ctrl+Enter で送信',
   // Names: letting one go, a domain that lapsed.
   'Username released; reserved for previous owner until {date}': 'その名前は手放されました。元の所有者のため{date}まで保護されています。',
   // Names: on this Remote, first come, theirs as long as they keep it; a code to be found by; a domain's beside.

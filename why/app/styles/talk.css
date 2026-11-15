@@ -22,7 +22,7 @@
 .tl-day { margin: var(--u) 0 0; color: var(--sub); font: var(--t-word)/var(--u) var(--mono); }
 .tl-day + .tl-post { margin-top: 0; }
 .tl-post { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--s2); margin: var(--u) calc(-1 * var(--s2)) 0; padding: 0 var(--s2);
-  border-radius: var(--r-field); font: var(--t-word)/var(--u) var(--sans); transition: background-color var(--motion); }
+  border-radius: var(--r-key); font: var(--t-word)/var(--u) var(--sans); transition: background-color var(--motion); }
 .tl-post.tl-runs { margin-top: 0; }
 .tl-post.held, .tl-post:focus-within { background: var(--raised); }
 .tl-main { display: contents; }

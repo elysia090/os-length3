@@ -97,5 +97,4 @@
 /* (Its key comes with the words, as a board's does.) */
 .inbox-write .write-line:has(> .bubble-in:placeholder-shown) > .prompt-run { display: none; }
 .inbox-write .write-line:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
-.write-hint { margin: 0; line-height: var(--u); }
 .at { color: var(--sub); }

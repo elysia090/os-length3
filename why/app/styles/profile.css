@@ -38,10 +38,10 @@
 .bio-ask { display: none; padding: 0; border: 0; background: none; cursor: var(--cursor-hand); }
 .identity:has(> h1:focus):not(.bio-open) > .bio:empty ~ .bio-ask, .identity:not(.bio-open) > .bio:empty ~ .bio-ask:focus { display: block; color: var(--quiet); }
 .bio-ask:hover { color: var(--sub); }
-.bio-ask:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 2px; }
+.bio-ask:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-key); }
 .identity > .error:empty { display: none; }
 .counts b { color: inherit; font-weight: 400; }
-.count-go { margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field);
+.count-go { margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-key);
   background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
-.count-go:is(:hover, :focus-visible) { text-decoration: underline 3px; text-underline-offset: 4px; }
-.section > h2.landed { animation: landed 1200ms var(--spring); border-radius: var(--r-field); }
+.count-go:is(:hover, :focus-visible) { background: var(--paper); }
+.section > h2.landed { animation: landed 1200ms var(--spring); border-radius: var(--r-key); }

@@ -223,7 +223,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .people li > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }
 /* Someone else is a conversation with them (server/side.ts): the row pressed, a raised fill under the pointer. */
 .person-go { width: calc(100% + 2 * var(--s2)); margin: 0 calc(-1 * var(--s2));
-  padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
+  padding: 0 var(--s2); border: 0; border-radius: var(--r-key); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
   transition: background-color var(--move) var(--spring); }
 .person-go:hover { background: var(--paper); transition-duration: var(--motion); }
 .person-go > .lately-badge { align-self: center; }
@@ -231,7 +231,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* It goes to the Inbox: an arrow at its end says so, always there and quiet (§7). */
 .person-go::after { content: '→'; grid-column: 3; grid-row: 1; color: var(--quiet); }
 .person-go:is(:hover, :focus-visible)::after { color: var(--ink); }
-.side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: 0 var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
+.side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: 0 var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-key); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
 .side-repo[aria-current='true'] { background: var(--raised); }
 .side-repo:hover { background: var(--paper); }
 .side-repo > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -303,7 +303,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 }
 .seen-body { min-height: 0; margin-top: var(--s4); display: grid; grid-template-columns: minmax(10em, 1fr) minmax(0, 3fr); border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
 .seen-files { margin: 0; padding: var(--s2); list-style: none; overflow-y: auto; border-right: 1px solid var(--rule); }
-.seen-file { display: block; width: 100%; padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: var(--cursor-hand); }
+.seen-file { display: block; width: 100%; padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-key); background: transparent; color: var(--sub); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: var(--cursor-hand); }
 .seen-file[aria-current='true'] { background: var(--raised); color: var(--ink); }
 .seen-file:hover { background: var(--paper); color: var(--ink); }
 .seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-word)/var(--u) var(--mono); }

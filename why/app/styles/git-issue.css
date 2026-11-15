@@ -7,7 +7,7 @@
 .issue-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); } /* nothing in it wider than the box (a narrow box held wide by its foot) */
 .issue-box > .issue-body, .issue-words > .issue-body { margin: 0; max-width: 72ch; }
 /* An issue's words are where they are changed: pressed, they become their fields. */
-.issue-words { display: grid; gap: var(--s3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-text); border-radius: var(--r-field); }
+.issue-words { display: grid; gap: var(--s3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-text); border-radius: var(--r-key); }
 .issue-words:focus-visible { outline: 2px solid var(--ink); outline-offset: var(--s1); }
 .issue-box > .work-act { margin-top: var(--s2); flex-wrap: wrap; }
 /* The box's foot: where it lives and who started it at the left, its action at the right. */

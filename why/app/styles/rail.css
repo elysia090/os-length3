@@ -24,12 +24,14 @@
 .rail-me { display: grid; }
 .me-wrap { position: relative; }
 .me {
-  display: grid; place-items: center; width: var(--rail-place); height: var(--rail-place); border: 0; border-radius: var(--r-field);
+  display: grid; place-items: center; width: var(--rail-place); height: var(--rail-place); border: 0; border-radius: var(--r-key);
   background: transparent; color: var(--frame); cursor: var(--cursor-hand); font: 900 var(--t-word)/1 var(--display);
 }
 .me .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
 /* A menu is a sheet laid over what called it: paper, an ink edge, its shadow (DESIGN §5), as File's tree is. */
+/* (In a menu, the deed under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's.) */
+.pop .pop-item:is(:hover, :focus-visible):not(:disabled) { background: var(--ink); color: var(--ground); }
 .pop { display: grid; padding: var(--s2); background: var(--paper); border: 0; border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 /* A menu out of a row, a card or a gear comes out of it as it shows: grown from the corner it opens at, a few pixels
    from that side, landing a touch past its size, as the person's menu rises from the face (not there at once, as if
@@ -67,7 +69,7 @@
 .pop-mark { width: 18px; height: 18px; flex: none; color: var(--sub); }
 .pop-item {
   display: flex; justify-content: space-between; align-items: center; gap: var(--s3);
-  min-height: var(--h-row); padding: 0 var(--s3); border: 0; border-radius: var(--r-field); background: transparent; cursor: var(--cursor-hand); text-align: left;
+  min-height: var(--h-row); padding: 0 var(--s3); border: 0; border-radius: var(--r-key); background: transparent; cursor: var(--cursor-hand); text-align: left;
 }
 .pop-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 /* A deed's mark at its left (common.ts menuItem): the row reads from it, as a context menu's does; the mark quiet
@@ -84,7 +86,7 @@
 .rail { --rail-icon: 18px; }
 .rail-item {
   position: relative; display: grid; place-items: center; flex: 0 1 var(--rail-place); min-height: 32px;
-  width: var(--rail-place); border: 0; border-radius: var(--r-field);
+  width: var(--rail-place); border: 0; border-radius: var(--r-key);
   background: transparent; color: var(--frame); cursor: var(--cursor-hand);
 }
 .rail-item > .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
@@ -94,7 +96,7 @@
 @media (max-height: 560px) { .rail-tabs { gap: 0; padding-bottom: var(--s2); } }
 .rail-tag {
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
-  padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;
+  padding: 0 var(--s2); border-radius: var(--r-key); white-space: nowrap;
   background: var(--ink); color: var(--ground); font-size: var(--t-word); line-height: var(--key);
   opacity: 0; translate: -6px 0; pointer-events: none; transition: none;
 }
@@ -108,7 +110,7 @@
 /* The Remote not answering: a dot on its place, the one place it is said. */
 .rail-item.away::after, .rail-item.news::after {
   content: ''; position: absolute; top: 18%; right: 18%;
-  width: 8px; height: 8px; border-radius: 2px; background: var(--off);
+  width: 8px; height: 8px; border-radius: 50%; background: var(--off);
 }
 /* Something came in, not seen yet (Inbox, Server; Server's chips and boards): the same dot in the
    colour of what it is on, ink, or ground on what is current; no colour of its own. */

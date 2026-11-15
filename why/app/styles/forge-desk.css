@@ -94,7 +94,7 @@
 @media (prefers-reduced-motion: reduce) { .desk-gaze.resting { animation: none; } }
 /* Where the Agent's hand is as it writes in a file (desk-file.ts hand): its caret, the stroke of ink the OS draws the
    person's with, after what it just typed; solid while it writes, blinking once it rests. */
-.desk-caret { position: absolute; left: 0; top: 0; width: 1.5px; border-radius: 1px; background: var(--ink); pointer-events: none; }
+.desk-caret { position: absolute; left: 0; top: 0; width: 1.5px; border-radius: 0; background: var(--ink); pointer-events: none; }
 .desk-caret.resting { animation: caret-blink 1.06s steps(1) infinite; }
 .desk-file > .sheet > .gutter { position: relative; }
 /* The band's files tool out (forge.ts deeds): the desk moved down by the bar's room, gliding as the bar drops, and back
@@ -183,7 +183,7 @@
 .stand > .dock .prompt { position: relative; align-items: baseline; gap: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .stand > .dock .prompt-chip { position: static; align-self: baseline; height: auto; min-height: 0; margin: 0 1ch 0 0; padding: 0; border-radius: 0; background: none; box-shadow: none;
   text-shadow: none; color: var(--term-fg); font: 700 var(--t-word)/var(--line) var(--mono); cursor: var(--cursor-hand); }
-.stand > .dock .prompt-chip:hover { text-decoration: underline 1.5px; text-underline-offset: 4px; }
+.stand > .dock .prompt-chip:hover { background: var(--paper); }
 .stand > .dock .prompt-chip .prompt-mode { align-items: baseline; font: inherit; color: inherit; }
 .stand > .dock .prompt-chip .prompt-mode > .icon { align-self: center; }
 .stand > .dock .prompt-chip > .prompt-ps { color: inherit; height: auto; }
@@ -232,7 +232,7 @@
 .agent-asked { position: relative; font-weight: 700; margin-bottom: .4em; }
 .agent-asked::before { content: '›'; position: absolute; right: calc(100% + 1ch); color: var(--sub); font-weight: 400; }
 .agent-step { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: var(--sub); text-align: left; cursor: var(--cursor-hand); }
-.agent-step:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.agent-step:hover { color: var(--ink); background: var(--paper); }
 /* The pointer at rest while the desk goes by under it (the camera's glide, desk.ts): what passes under it, or stops
    there, was not pointed at and does not light up as if it were, until the pointer moves again. (Before: a row of the
    Agent's lit and underlined as the camera carried it under a pointer left where the person last pressed.) */

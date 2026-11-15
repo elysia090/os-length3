@@ -10,6 +10,8 @@ import {wholeCells} from './row.ts';
 export const GROUND_WORDS = [
   '.identity > :is(.counts, .handle, .bio)', '.home-repos-sec > h2', '.home-repos > .card.new', '.lately > h2',
   '.desk-label', '.issue-name', '.issues-new > .issue-where', '.side-part h3', '.nr-label',
+  // (A name on the ground too: the person's, a repo's, main's; its capitals stand clear of the dots as words do.)
+  '.identity h1', '.home-repos > .gear-card > .card-open > .card-title', '.section.main-part > h2',
 ].join(', ');
 
 const taken = new WeakSet<Element>();

@@ -15,7 +15,7 @@
 .button[aria-busy='true']:disabled, .approve-mark[aria-busy='true']:disabled { opacity: 1; cursor: var(--cursor-progress); }
 .button[aria-busy='true'] { position: relative; overflow: hidden; }
 .button[aria-busy='true']::after {
-  content: ''; position: absolute; left: 0; bottom: 5px; width: 34%; height: 2px; border-radius: 2px; background: currentColor; opacity: .75;
+  content: ''; position: absolute; left: 0; bottom: 5px; width: 34%; height: 2px; border-radius: 0; background: currentColor; opacity: .75;
   translate: -110% 0; animation: busy-line calc(560ms * var(--pace)) cubic-bezier(.45, 0, .55, 1) calc(-200ms * var(--pace)) infinite;
 }
 @keyframes busy-line { to { translate: 310% 0; } }

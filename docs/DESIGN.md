@@ -321,7 +321,9 @@ Its ink, not its box, stands on the left edge.
   painted over its edge or its shadow (a key at a row's end stands inside it).
 - Corners: a key 4, a field 8, a sheet 10. Nothing else. **What is pressed is a key**, in the band and in a sheet
   alike (a button, a chosen part, a chip). Round is a person's mark, which is their seal (a ring of ink round their
-  initial), and a dot. There is no pill: it is the shape a button has everywhere else, and it said nothing here.
+  initial), a dot, and **a switch**: a dot and the way it slides, its track the dot's sweep, round at its ends as the
+  dot is (a track with a key's corner was a key with a dot in it, and said nothing of sliding). There is no pill: it
+  is the shape a button has everywhere else, and it said nothing here.
 - **A shadow is hard, ink (the terminal's: green), 12 px right and 12 px down (u/2), and only the piece in the hand
   has one.** One light, the same on every desk.
 
@@ -886,8 +888,18 @@ cells on, the issues. The issue in the hand is a wide sheet, set as a poster is:
 - at its foot, left, **the sum of the work**, large;
 - its number and kind, small, in the cell over its corner.
 
-The issues before and after it show a cell or three of themselves at the row's two ends, with their numbers; an end
-pressed goes to that issue. Under the sheet in the hand, its history runs down a dotted line. Which repo is a choice
+The issues before and after it show two cells of themselves at the row's two ends, with their numbers; an end
+pressed goes to that issue.
+
+**What main has not committed is main's sheet's**, at the desk's edge under its steps: "main" over its corner as a
+piece's name is, then for each repo a sheet in line on the ground, its files a line each (a name and how much it comes
+to; pressed, it opens in Forge, where its lines are read), the line that commits them and Commit. It is never a second
+wide sheet laid over the row: the place's subject stays the issue in hand. (Before: "main" said large over a sheet as
+wide as the issue's, its diff in full, pushing the issue in hand down the window.)
+
+**Word from someone, come while one works here**, is a slip at the page's foot against its right edge, drawn in line
+on the ground as a piece at rest is, who wrote at the words' size: a servant of the issue in hand, never a second
+shadow or a second large name. Pressed, its conversation in Inbox. Under the sheet in the hand, its history runs down a dotted line. Which repo is a choice
 on this desk, not one of the window's instruments: it stands on the cell under the band. On a window with no room for
 main's sheet and an issue side by side, the issues go under the sheet, two cells down.
 
@@ -1192,7 +1204,7 @@ research has one, measured on every control of every place from the top right, h
 
 | Touch | The principle | Its number | From | Measured |
 |---|---|---|---|---|
-| **Hover** | quiet to ink, or paper under it; nothing comes, nothing goes | no other fill | §3, §7 | 26 controls took a raised fill, two an ink one, the ink key a lighter ink: all now paper or nothing |
+| **Hover** | quiet to ink, or paper under it; nothing comes, nothing goes (no line is drawn under words: paper under them). On paper, where paper is not seen, a key's line and words go to ink. In a list called up (a menu, File's tree), the row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's, as a selection is | no other fill | §3, §7 | 26 controls took a raised fill, two an ink one, the ink key a lighter ink: all now paper or nothing |
 | **Press** | answers at the thing pressed in the frame it goes down, **down at once** (a pointer's press has no travel to draw: the hand is down when the screen is told); sounds as it goes down; gives a few pixels and comes **home, never past**; what it does, it does on the let-go | its answer in the first frame drawn after the press or the next (counted in frames, which a busy machine cannot stretch), its sound ≤ 1 frame, its give ≥ .92 of itself, never over 1 | a highlight on touching down and nothing confirmed until the touch goes up (Apple, *Designing Fluid Interfaces*, 2018); 50 ms is felt as instant, 200 ms as sluggish (Swink, *Game Feel*); a press's visual answer feels one with it within 30 to 85 ms, its sound within 20 to 70 (Kaaresoja 2016); no overshoot without momentum (Apple) | its own answer 16 ms (one frame), at most 24; its sound 0 to 1 ms after; its give .92; it sprang 2.3% past itself on 52 presses: now it comes home; drawn going down over 70 ms, its foot came three frames after the hand's (and on a loaded machine past 50 ms): now it is down at once |
 | **Key typed** | the letter drawn in the frame it is struck, its sound as it is struck, the caret going with it (§9) | one frame | a slow keyboard (200 ms) costs effort and correcting, not copying speed (Schmid et al. 2023); "the lower, the better" (Fatin) | `sound.spec.ts`, `motion.spec.ts` |
 | **Carry** (a drag, the desk by hand) | it stays under the hand, moved by the window's own scrolling or the drag's own frame; no easing laid on what the hand moves | lag ≤ 1 frame | "not imposed upon objects when they are being explicitly moved by the user" (Chang and Ungar 1993); a drag's lag is noticed at 11 ms on a screen, 55 ms through a pad (Deber et al. 2015) | §7 |

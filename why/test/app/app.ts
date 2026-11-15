@@ -597,30 +597,7 @@ class Git extends Part {
   get issues() { return this.main.getByRole('region', {name: /^Issues/}); }
 
   /** One of the sections under the issues, by its heading: main (what main has not committed), Merged, Closed. */
-  section(name: 'main' | 'Committed' | 'Merged' | 'Closed') { return this.main.getByRole('region', {name: new RegExp(`^${name}( \\d+)?$`)}); }
-  /** main's card for `repo`, while something there is not committed. */
-  mainCard(repo: string) { return this.section('main').getByRole('group', {name: `Uncommitted changes on main in ${repo}`}); }
-  /** A commit made on main from here: its line, under the issues in Committed. */
-  committed(title: string) { return this.section('Committed').getByText(title); }
-
-  /** Commit what main has not committed in `repo`, its line (always there in main's card) written as Kind: title. */
-  async commitOnMain(repo: string, line: string) {
-    await this.app.rail.go('git');
-    await this.mainCard(repo).getByRole('textbox', {name: 'Commit title format: Type: Title'}).fill(line);
-    await this.commitLine(repo);
-  }
-
-  /** Enter in main's card's line commits it, or says under it why not (a commit under way takes no second Enter). */
-  async commitLine(repo: string) {
-    const card = this.mainCard(repo);
-    const field = card.getByRole('textbox');
-    const said = card.getByRole('alert');
-    await expect(async () => {
-      if (await field.isVisible()) await field.press('Enter', {timeout: 1000});
-      expect(!(await card.isVisible()) || !!(await said.textContent({timeout: 1000}))?.trim()).toBe(true);
-    }).toPass({intervals: [100]});
-  }
-
+  section(name: 'Merged' | 'Closed') { return this.main.getByRole('region', {name: new RegExp(`^${name}( \\d+)?$`)}); }
   /** Start the issue on screen, make the change in Forge, then Commit it: it hands itself in for review. */
   async handIn(edit: {path: string; text: string}) {
     await this.step('Start').click();

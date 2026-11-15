@@ -16,7 +16,7 @@
 /* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
 @keyframes done-land {}
 /* An issue closed from its box lands as its line under Closed: in from above, lit with the marker a moment. */
-.done-row.landing { animation: line-land var(--slide) var(--land) both, line-lit 1200ms var(--spring); border-radius: var(--r-field); }
+.done-row.landing { animation: line-land var(--slide) var(--land) both, line-lit 1200ms var(--spring); border-radius: var(--r-key); }
 /* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
 @keyframes line-land {}
 /* Lit for its read time, then off at once: a light, not a fade (DESIGN §8, §14 done). */
@@ -25,7 +25,7 @@
 /* Committed on main just now: the card's sheet lands on its line (git/done.ts), which is lit as it does. */
 /* The line a commit just made opens where its card went, the issues under it coming down that far rather than at
    once, and is lit as it lands. */
-.done-row.just-cut { animation: line-open var(--move) var(--land) both, line-lit 1600ms var(--spring) both; border-radius: var(--r-field); overflow: hidden; }
+.done-row.just-cut { animation: line-open var(--move) var(--land) both, line-lit 1600ms var(--spring) both; border-radius: var(--r-key); overflow: hidden; }
 /* (Stripped: there at once, or gone at once; the mind completes the way between, DESIGN §8.) */
 @keyframes line-open {}
 .done-head > .diff-count { font-size: var(--t-word); }
@@ -63,7 +63,7 @@
 .diff-line.markable { cursor: var(--cursor-hand); }
 .diff-line.marked .diff-words, .diff-line.marking .diff-words,
 .diff-line.markable:hover .diff-words {
-  padding: 1px 3px; margin: 0 -3px; border-radius: 3px;
+  padding: 1px 3px; margin: 0 -3px; border-radius: 0;
   -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
 .diff-line.marked .diff-words, .diff-line.marking .diff-words { background: var(--marker); color: var(--ink); }

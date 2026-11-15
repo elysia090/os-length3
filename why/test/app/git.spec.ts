@@ -74,43 +74,12 @@ test('an issue goes from written to merged, and is listed under Merged', async (
   await expect(merged.getByText('HELLO.')).toBeVisible();
 });
 
-test('a change on main is committed from main\'s card, named by its line', async ({signedIn: app}) => {
+test('every issue stays in the row while one is worked on', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
-  await app.newRepo.openInForge();
-  await app.forge.editFile('README.md', '# hello\n\nOn main.\n');
-
-  await app.rail.go('git');
-  // A repo nobody has committed yet: the scaffold's README is not committed either.
-  await expect(app.git.mainCard('hello').getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
-  // A line without a title is not a commit: said under it, the keyboard kept there.
-  await app.git.commitOnMain('hello', 'Docs:');
-  await expect(app.git.mainCard('hello').getByRole('alert')).toHaveText('Commit requires a title (e.g. Fix: title)');
-
-  await app.git.mainCard('hello').getByRole('textbox').fill('Docs: Say where it runs');
-  await app.git.commitLine('hello');
-  await expect(app.git.mainCard('hello')).toBeHidden();
-  await expect(app.git.committed('Say where it runs')).toBeVisible();
-
-  // Committed, Forge's diff has nothing left against the last commit.
-  await app.rail.go('forge');
-  await app.forge.show('diff');
-  await expect(app.forge.reference.getByText('README.md', {exact: true})).toBeHidden();
-});
-
-test('an issue is history on main by itself: main\'s card holds only one\'s own files, and every issue stays in the row while one is worked on', async ({signedIn: app}) => {
-  await app.newRepo.make('hello');
-  await app.git.commitOnMain('hello', 'Docs: The first');
-  await app.rail.go('forge');
-  await app.forge.editFile('README.md', '# hello\n\nMine.\n');
   await app.git.write('hello', 'Fix: Say hello louder', 'People at the back cannot hear it.');
   await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
-  // main's card: the person's own change, and not the issue (committed on main by itself as it was written).
-  const card = app.git.mainCard('hello');
-  await expect(card.getByRole('region', {name: '1 uncommitted file'})).toContainText('Mine.');
-  await expect(card.getByText('Fix：Say hello louder')).toHaveCount(0);
   await app.git.write('hello', 'Fix: Say it twice', 'Once is not enough.');
   await expect(app.git.issue('#2 Fix：Say it twice')).toBeVisible();
-  await expect(card.getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
   // Worked on, #2 still has #1 beside it (it is main's, not left out of the work's copy), and #1 is closed from there.
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
@@ -120,42 +89,19 @@ test('an issue is history on main by itself: main\'s card holds only one\'s own 
   await app.git.step('Close').click();
   await expect(app.git.section('Closed')).toContainText('#1 Fix：Say hello louder');
   await expect(app.git.issue('#2 Fix：Say it twice')).toBeVisible();
-  // Back on main, its card still holds the person's own file alone.
   await app.git.step('Back to main').click();
   await expect(app.git.step('Resume here')).toBeVisible();
-  await expect(card.getByRole('region', {name: '1 uncommitted file'})).toContainText('Mine.');
 });
 
-test('many repos waiting on main are a row each in All, a row\'s name opens its files, and one repo shown is its card', async ({signedIn: app}) => {
-  for (const name of ['a', 'b', 'c', 'd']) await app.newRepo.make(name);
-  await app.rail.go('git');
-  await app.git.repos.getByRole('radio', {name: 'All'}).click();
-  const row = app.git.mainCard('a'), open = row.getByRole('button', {name: 'a', exact: true});
-  // Four waiting: rows, their files folded until asked for.
-  await expect(open).toHaveAttribute('aria-expanded', 'false');
-  await expect(row.getByRole('region', {name: '1 uncommitted file'})).toHaveCount(0);
-  await expect(row.getByRole('button', {name: 'Commit'})).toBeVisible();
-  await open.click();
-  await expect(row.getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
-  await expect(open).toBeFocused();
-  // One repo shown: its card, the files on it.
-  await app.git.repos.getByRole('radio', {name: 'b', exact: true}).click();
-  await expect(app.git.mainCard('b').getByRole('region', {name: '1 uncommitted file'})).toBeVisible();
-  await expect(app.git.mainCard('b').getByRole('button', {name: 'b', exact: true})).toHaveCount(0);
-});
-
-test('a new issue\'s line and a commit\'s line are always there to be written, nothing to open or put back, and what is half written in them stays, the page left and come back to', async ({signedIn: app}) => {
+test('a new issue\'s line is always there to be written, nothing to open or put back, and what is half written in it stays, the page left and come back to', async ({signedIn: app}) => {
   await app.newRepo.make('hello');
   await app.rail.go('git');
   await app.git.firstLine.fill('Fix: Say hello louder');
-  const line = app.git.mainCard('hello').getByRole('textbox', {name: 'Commit title format: Type: Title'});
-  await line.fill('Docs: Say where it runs');
   // Nothing to press first, nothing to confirm or to put back.
   await expect(app.main.getByRole('button', {name: /^(Create|Create issue|Cancel|Save)$/})).toHaveCount(0);
   await app.rail.go('home');
   await app.rail.go('git');
   await expect(app.git.firstLine).toHaveValue('Fix: Say hello louder');
-  await expect(line).toHaveValue('Docs: Say where it runs');
 });
 
 test('an issue that will not be done is closed, listed under Closed, and Reopen brings it back', async ({signedIn: app}) => {
@@ -169,22 +115,11 @@ test('an issue that will not be done is closed, listed under Closed, and Reopen 
   await expect(issue).toBeHidden();
   const closed = app.git.section('Closed');
   await expect(closed).toContainText('#1 Idea：Say it in French');
-  // Closed, its file is committed on main by itself: nothing of it waits on main's card.
-  await expect(app.git.mainCard('hello').getByText('Idea：Say it in French')).toHaveCount(0);
   await closed.getByRole('button', {name: 'Reopen #1'}).click();
 
   await expect(issue).toBeVisible();
   await expect(closed).toBeHidden();
   await expect(app.git.step('Start')).toBeVisible();
-});
-
-test('a line that starts with a kind reads in a diff as an issue reads everywhere (Idea: …), the written colon kept', async ({signedIn: app}) => {
-  await app.newRepo.make('hello');
-  await app.newRepo.openInForge();
-  await app.forge.editFile('README.md', '# hello\n\nIdea：Say it in French\n');
-  await app.rail.go('git');
-  const words = app.git.mainCard('hello').locator('.diff-words');
-  await expect(words.filter({hasText: 'Idea：Say it in French'}).locator('.kind-colon')).toHaveCount(1);
 });
 
 test('closed, the row goes on to the issue beside it, never to its Close; reopened, back to it', async ({signedIn: app}) => {

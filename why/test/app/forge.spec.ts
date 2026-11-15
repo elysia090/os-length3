@@ -46,9 +46,6 @@ test('the search finds a line and opens the file there, the line washed and the 
 });
 
 test('a file put back from the diff is as it was at the last commit, and leaves the diff', async ({signedIn: app}) => {
-  await app.git.commitOnMain('hello', 'Docs: The first');
-  await expect(app.git.mainCard('hello')).toBeHidden();
-  await expect(app.git.committed('The first')).toBeVisible();
   await app.rail.go('forge');
   const was = await app.forge.editor('README.md').inputValue();
   await app.forge.editFile('README.md', '# hello\n\nNot wanted.\n');
@@ -62,9 +59,6 @@ test('a file put back from the diff is as it was at the last commit, and leaves 
 });
 
 test('a file added since the last commit goes when it is put back', async ({signedIn: app}) => {
-  await app.git.commitOnMain('hello', 'Docs: The first');
-  await expect(app.git.mainCard('hello')).toBeHidden();
-  await expect(app.git.committed('The first')).toBeVisible();
   await app.file.named('hello', '', 'New file', 'scratch.txt');
   await app.forge.editFile('scratch.txt', 'for now\n');
 

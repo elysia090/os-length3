@@ -510,7 +510,11 @@ export function inboxPage(ctx: Context): Node[] {
     text.value = drafts.get(address);
     const grow = () => { text.style.height = 'auto'; text.style.height = `${Math.min(text.scrollHeight, 200)}px`; };
     text.addEventListener('input', () => { drafts.set(address, text.value); grow(); });
+    // (Its keys said on it as it comes with the words, as a board's Post says them: one deed, one look.)
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
     const sendB = button(t('Send'), 'small-button prompt-run');
+    sendB.setAttribute('aria-keyshortcuts', mac ? 'Meta+Enter' : 'Control+Enter');
+    sendB.append(h('span', {class: 'key-said', 'aria-hidden': 'true'}, mac ? '⌘↵' : 'Ctrl+↵'));
     const go = async () => {
       if (sendB.disabled) return;
       if (!text.value.trim()) { text.focus(); nudge(text); return; }
@@ -552,8 +556,8 @@ export function inboxPage(ctx: Context): Node[] {
       messages,
       ...(ask ? [ask] : []),
       h('div', {class: 'inbox-write'},
-        h('div', {class: 'row write-line'}, text, sendB),
-        h('p', {class: 'muted small write-hint'}, t('Prefix with Review: or Question: · specify /root/… path · Ctrl+Enter to send')), error));
+        // (No line under it explaining it, DESIGN §1: its key says its keys as the words come, as a board's does.)
+        h('div', {class: 'row write-line'}, text, sendB), error));
     if (text.value) grow();
     if (switching && !still()) for (const c of pane.children) c.animate([{opacity: 0}, {opacity: 1}], {duration: cut() ? 0 : paced(180), easing: SPRING});
     // The conversation gone to is whole in sight: the desk turns to it where it is not (a phone's shows one piece).

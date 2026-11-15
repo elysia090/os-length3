@@ -165,6 +165,8 @@ class GitPage {
   constructor(ctx: Context) {
     this.ctx = ctx;
     this.line = issueLine({made: (made) => this.written(made), back: (repo) => this.ctx.openRepo(repo)});
+    // main's sheet at the desk's edge: the steps, and the new issue's line. (What main has not committed is not shown
+    // here: work is done on an issue, and the place's subject is the issue in hand.)
     this.side = h('div', {class: 'git-side none'}, this.steps, this.line.element);
     // Whole cells tall, so the issues that go under it on a narrow window stand on the grid.
     wholeCells(this.side);
@@ -199,10 +201,8 @@ class GitPage {
   /** The page on the work bench: main's over the issues, the sections under them, its repos on its band. */
   private bench(): Bench {
     const main = h('section', {class: 'flow git-flow git-desk', tabindex: '0', 'aria-label': 'Git'},
-      // At the desk's edge, beside the row: main's sheet (the steps) and the new issue's line under it.
+      // At the desk's edge, beside the row: main's sheet (the steps, what it has not committed) and the new issue's line.
       this.side,
-      // What main has not committed comes first, over the issues: what is in hand before what is planned.
-      this.sections.main,
       h('section', {class: 'section', 'aria-labelledby': 'issues-title'},
         h('div', {class: 'issues-head'}, h('h2', {id: 'issues-title'}, h('span', {}, t('Issues'), ' ', this.count))),
         this.empty, this.row.column),

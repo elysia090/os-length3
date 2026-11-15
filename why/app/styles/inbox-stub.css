@@ -4,7 +4,7 @@
    the right end. A place (rounded square), not a pill; pressing the address
    copies it, and it says so for a moment. */
 .stub-holder { position: relative; display: grid; gap: var(--s2); justify-items: start; margin: var(--s5) 0 var(--s4); }
-.stub { display: flex; align-items: center; width: min(100%, 400px); min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
+.stub { display: flex; align-items: center; width: min(100%, 400px); min-height: var(--h-control); border: 1px solid var(--edge); border-radius: var(--r-key); background: var(--raised); }
 /* Taken, it is a name, not a field: on the ground with a place's line, so the field to write to someone, under it
    and of its size, is the one that reads as a field (raised, its edge seen). Each part lifts under the pointer. */
 .stub:has(> .stub-text) { border-color: var(--rule); background: transparent; }

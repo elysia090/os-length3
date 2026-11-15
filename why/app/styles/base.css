@@ -56,7 +56,7 @@ html { cursor: var(--cursor-arrow); }
 /* A line too long for its field (a TODO's title on a phone, a placeholder) ends in … while it is not written in, not
    cut through a letter; written in, it scrolls as a field does. */
 input:not([type='checkbox'], [type='radio'], [type='range']) { text-overflow: ellipsis; }
-input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: transparent; cursor: var(--cursor-hand); transition: background var(--motion), border-color var(--motion); }
+input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: var(--r-key); background: transparent; cursor: var(--cursor-hand); transition: background var(--motion), border-color var(--motion); }
 input[type='checkbox']::after { content: ''; width: 9px; height: 5px; margin-top: -2px; border: 2px solid var(--ground); border-top: 0; border-right: 0; transform: rotate(-45deg); opacity: 0; }
 input[type='checkbox']:hover { border-color: var(--ink); }
 input[type='checkbox']:checked { background: var(--done); border-color: var(--done); }
@@ -75,7 +75,7 @@ a { color: var(--ink); }
 @supports not (scrollbar-color: auto) {
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: transparent padding-box; }
+  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--r-key); background: transparent padding-box; }
   .scrolling::-webkit-scrollbar-thumb { background: var(--edge) padding-box; }
 }
 @media (forced-colors: active) { * { scrollbar-width: auto; scrollbar-color: auto; } }

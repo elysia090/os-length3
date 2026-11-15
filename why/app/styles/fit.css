@@ -29,7 +29,7 @@
    the name, pressed to take it up. No sheet stands empty between the room's own sheet and the board worked in, and
    the row is packed close: the room's sheet, the names before, the board in the hand, the names after. Each name is
    brought up to whole cells (server/row.ts), so what follows it stands on the grid (DESIGN §3). */
-.server-center .slide[aria-current='false'] { width: auto; padding-right: var(--to-cell, 0px); background: none; outline: 0; border-radius: 0; cursor: var(--cursor-hand); }
+.server-center .slide[aria-current='false'] { width: auto; padding-right: var(--to-cell, 0px); background: var(--ground); outline: 0; border-radius: 0; cursor: var(--cursor-hand); }
 .server-center .slide[aria-current='false'] .board-head { padding: 0; min-height: calc(2 * var(--u)); flex-wrap: nowrap; }
 .server-center .slide[aria-current='false'] .board-head > :not(.board-mark, h2) { display: none; }
 .server-center .slide[aria-current='false']:has(> :is(.board-ghost, .board-new)) { outline: 0; }
@@ -50,5 +50,11 @@
 .slide-track > .server-side :is(.people, .side-repos) { gap: 0; }
 .slide-track > .server-side .people li:not(:has(> .person-go)), .slide-track > .server-side .person-go { padding: 0 var(--u); line-height: var(--u); }
 .slide-track > .server-side .person-go { width: 100%; margin: 0; border-radius: 0; }
-.slide-track > .server-side .people .lately-badge { width: 20px; height: 20px; align-self: center; }
+/* (Who is in the room by name alone: a mark beside a name says nothing the name does not, and it broke the name in
+   two in a sheet eight cells wide.) */
+.slide-track > .server-side .people .lately-badge { display: none; }
+.slide-track > .server-side .people :is(li, .person-go) { grid-template-columns: minmax(0, 1fr) auto; }
+.slide-track > .server-side .people :is(li, .person-go) > .muted { grid-column: 1; }
+/* A board's name under the pointer goes from quiet to ink (§14). */
+.slide-track > .server-side .side-board:not([aria-current='true']):hover { color: var(--ink); }
 .slide-track > .server-side .side-repo { margin: 0; padding: 0 var(--u); border-radius: 0; line-height: var(--u); }

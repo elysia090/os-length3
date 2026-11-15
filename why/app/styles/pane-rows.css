@@ -2,13 +2,13 @@
    line in the display face; at most two lines said, the second fading out partway along. */
 .pane-rows { display: grid; align-content: start; gap: var(--s1); overflow-y: auto; scrollbar-width: none; min-height: 0; padding: var(--s2) 0 var(--s5); }
 .pane-row { display: grid; grid-template-columns: 6px minmax(0, 1fr); grid-template-areas: "bar line" "bar at"; gap: 4px 14px; align-items: center;
-  text-align: left; padding: 10px 10px 10px 12px; margin: 0 -10px; border: 0; border-radius: var(--r-field); background: none; color: var(--ink);
+  text-align: left; padding: 10px 10px 10px 12px; margin: 0 -10px; border: 0; border-radius: var(--r-key); background: none; color: var(--ink);
   font: inherit; cursor: var(--cursor-hand); transition: background var(--motion); }
 .pane-row.lit { background: var(--raised); }
 .pane-row:hover { background: var(--paper); }
 /* The bar as tall as the words beside it are: from the first line's capitals to the last line's baseline, not the line
    boxes' room above and under them (which would stand it a few pixels proud of the words, and of the rail's icons). */
-.pane-bar { grid-area: bar; align-self: stretch; width: 6px; margin-block: var(--bar-cap, 4.5px) var(--bar-foot, 3.5px); border-radius: 3px; background: var(--ink); }
+.pane-bar { grid-area: bar; align-self: stretch; width: 6px; margin-block: var(--bar-cap, 4.5px) var(--bar-foot, 3.5px); border-radius: 0; background: var(--ink); }
 .pane-row[data-state='done'] .pane-bar { background: var(--add); }
 .pane-row[data-state='failed'] .pane-bar { background: var(--del); }
 .pane-line { grid-area: line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;

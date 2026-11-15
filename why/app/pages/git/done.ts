@@ -1,12 +1,11 @@
 import {h} from '../../ui/dom.ts';
 import {ago, day} from '../../../text/format.ts';
 import * as git from '../../../repo/history.ts';
-import {t, tn} from '../../../text/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {closedBy, numberOf, type Issue} from '../../../repo/issues.ts';
-import {kindOf} from '../../../repo/text.ts';
-import {counted, diffFiles} from '../kit/diff-view.ts';
-import {clock, cut, LAND, nudge, paced, putAway, still, unfold} from '../../ui/glide.ts';
-import {crossfade, justClosed, justMerged, notCommitted, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
+import {diffFiles} from '../kit/diff-view.ts';
+import {clock, cut, LAND, paced, putAway, still, unfold} from '../../ui/glide.ts';
+import {justClosed, justMerged, reopenIssue, resize, type IssueEvents, type RepoState} from './issue.ts';
 import type {Laid} from '../../../repo/git-state.ts';
 import {kindWords} from '../kit/todo-list.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -25,12 +24,10 @@ const heading = (id: string, text: string, n = 0) => h('h2', {id}, h('span', {},
 /** The sections round the issues: main's over them, and under them what is done with, each its own section. */
 export class Sections {
   readonly main = h('section', {class: 'section main-part', 'aria-labelledby': 'main-title', hidden: ''});
-  // What was committed on main from here is done with: under the issues, with what was merged and closed.
-  private readonly committed = h('section', {class: 'section', 'aria-labelledby': 'committed-title', hidden: ''});
   private readonly merged = h('section', {class: 'section', 'aria-labelledby': 'merged-title', hidden: ''});
   private readonly closed = h('section', {class: 'section', 'aria-labelledby': 'closed-title', hidden: ''});
   /** Those under the issues, in their order. */
-  readonly under = [this.committed, this.merged, this.closed];
+  readonly under = [this.merged, this.closed];
 
   /**
    * Drawn again for what is `laid` out, of the repo `filter` (all, when ''). `moving`: drawn again while the page is
@@ -38,14 +35,10 @@ export class Sections {
    */
   draw({dirty, merged, closed}: Laid, filter: string, states: ReadonlyMap<string, RepoState>, events: IssueEvents, again: () => void, moving = false) {
     const was = this.under.map((s) => (s.hidden ? null : [...s.children]));
-    // main: what it has not committed, each a card. What was committed on it from here is under the issues.
-    const cuts = committedIn(filter || null);
-    this.main.hidden = !dirty.length;
-    // Many waiting in All: a row each, so the issues are not a long way down; one repo shown, its card.
-    const brief = !filter && dirty.length > BRIEF;
-    this.main.replaceChildren(heading('main-title', 'main'), ...dirty.map((r) => mainCard(r, states.get(r)!.uncommitted, events, again, brief)));
-    this.committed.hidden = !cuts.length;
-    this.committed.replaceChildren(heading('committed-title', t('Committed')), committedList(cuts, !filter));
+    // (What main has not committed is not drawn: work is done on an issue.)
+    void dirty; void states;
+    this.main.hidden = true;
+    this.main.replaceChildren();
     this.merged.hidden = !merged.length;
     this.merged.replaceChildren(heading('merged-title', t('Merged'), merged.length), mergedList(merged, !filter));
     this.closed.hidden = !closed.length;
@@ -90,137 +83,12 @@ function landing(row: HTMLElement, key: string, fresh: boolean, kind = 'landing'
   if (into) row.style.animationDelay = `${-into}ms`;
 }
 
-/** More repos than this waiting to be committed, in All: each a row (its name, how many, Commit), its files folded. */
-const BRIEF = 3;
-/** Repos whose row (in All, many waiting) was opened to its files: open again when drawn again. */
-const unfolded = new Set<string>();
-
-/** The line a commit on main is being named by, per repo: kept as written until it is committed. */
-const naming = new Map<string, string>();
-
-/** Committed on main from here, newest first, a few: each stays a line under main where its card was. */
-const committed: {repo: string; cut: git.Cut}[] = [];
-const KEPT = 3;
-const committedIn = (filter: string | null) => committed.filter((c) => !filter || c.repo === filter);
-
-/**
- * Committed, the card goes: it slides off sideways as it fades, and the room it took closes after it, so what is under
- * it comes up rather than jumping. Done once it has gone (the page is drawn again after).
- */
-async function slideOff(card: HTMLElement): Promise<void> {
-  if (still() || cut() || !card.isConnected) return;
-  card.classList.add('leaving');
-  const off = card.animate([{transform: 'none', opacity: 1}, {transform: 'translateX(96px)', opacity: 0}], {duration: cut() ? 0 : paced(340), easing: LAND, fill: 'forwards'});
-  // The last card waiting on main takes main's heading with it: the part closes up whole as the card goes, not leaving
-  // "main" over nothing until the page is read again.
-  const part = card.parentElement;
-  const whole = !!part && part.querySelectorAll(':scope > .main-card').length === 1;
-  const room = whole ? part! : card;
-  const cs = getComputedStyle(room);
-  const close = room.animate([
-    {height: `${room.offsetHeight}px`, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, marginBottom: cs.marginBottom, borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth},
-    {height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', marginBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px'},
-  ], {duration: cut() ? 0 : paced(280), delay: paced(160), easing: LAND, fill: 'forwards'});
-  room.style.overflow = 'hidden';
-  if (whole) part!.querySelector(':scope > h2')?.animate([{opacity: 1}, {opacity: 0}], {duration: cut() ? 0 : paced(200), delay: paced(120), fill: 'forwards'});
-  await Promise.all([off.finished, close.finished]).catch(() => {});
-  // Closed up, it stays so until the page is drawn again without it (which takes the closing off, git.ts lay).
-  if (whole) closing.add(part!);
-}
-
-/** main's part closed up with its last card (slideOff), until the page drawn again hides it. */
-const closing = new WeakSet<HTMLElement>();
-/** main's part drawn again: what closed it up is taken off (hidden now, or shown again with what waits). */
-export function opened(part: HTMLElement) {
-  if (!closing.has(part)) return;
-  closing.delete(part);
-  part.style.overflow = '';
-  for (const a of part.getAnimations()) a.cancel();
-  for (const a of part.querySelector(':scope > h2')?.getAnimations() ?? []) a.cancel();
-}
-
-/**
- * main's card for a repo with something not committed: its files (▸ 2 files,
- * their diff over what is under it) and Commit. Commit asks in the card for
- * its line ("Fix：title", as `why commit REPO "Fix：title"` takes it), Not now
- * at the left and Commit at the right, under the pointer.
- */
-function mainCard(repo: string, n: number, events: IssueEvents, after: () => void, brief = false): HTMLElement {
-  const card = h('div', {class: `main-card${brief ? ' brief' : ''}`, role: 'group', 'aria-label': t('Uncommitted changes on main in {repo}', {repo})});
-  // Its line is always there to be written (DESIGN §7: nothing to open first, nothing to confirm): Enter commits it, as
-  // Commit beside it does. What is half written stays, the page drawn again under it.
-  const line = h('input', {class: 'line-in main-line', placeholder: t('Fix: Description of changes'), 'aria-label': t('Commit title format: Type: Title'),
-    maxlength: '200', spellcheck: 'false', autocomplete: 'off'}) as HTMLInputElement;
-  line.value = naming.get(repo) ?? '';
-  const error = h('p', {class: 'error', role: 'alert'});
-  // What was said of the line (no title) is about the line as it was: written on, it is gone.
-  line.addEventListener('input', () => {
-    if (line.value) naming.set(repo, line.value); else naming.delete(repo);
-    if (error.textContent) error.textContent = '';
-  });
-  const commit = button(t('Commit'), 'primary');
-  let going = false;
-  const go = async () => {
-    if (going) return;
-    if (!kindOf(line.value).title.trim()) { error.textContent = t('Commit requires a title (e.g. Fix: title)'); line.focus(); nudge(line); return; }
-    going = true;
-    busy(commit, true);
-    error.textContent = '';
-    try {
-      const cut = await git.cut(repo, null, line.value, '');
-      naming.delete(repo);
-      committed.unshift({repo, cut});
-      committed.splice(KEPT);
-      // The card slides off sideways and its room closes; drawn again, its line under main lands lit.
-      await slideOff(card);
-      after();
-    } catch (e) { error.textContent = errorText(e); busy(commit, false); going = false; }
-  };
-  commit.addEventListener('click', () => void go());
-  line.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void go(); } });
-  const plain = () => {
-    const from = card.isConnected ? card.getBoundingClientRect().height : 0;
-    const old = card.isConnected ? card.cloneNode(true) as HTMLElement : null;
-    // Laid out as an issue's box is: its name at the top, the files under it on the card itself, its line, and at its
-    // foot how many wait at the left (on main, which is said over the cards) and Commit at the right, where an issue's
-    // next step is.
-    const foot = h('div', {class: 'issue-foot main-foot'},
-      h('span', {class: 'muted small'}, tn('{n} file to commit', '{n} files to commit', n)), commit);
-    if (!brief) card.replaceChildren(h('h3', {class: 'main-title'}, repo), notCommitted(repo, 'main', n, events), line, error, foot);
-    else {
-      // A row: its name opens its files under it (read only then), and closes them again.
-      const open = unfolded.has(repo);
-      const name = h('button', {type: 'button', class: 'main-open', 'aria-expanded': String(open)}, repo);
-      name.addEventListener('click', () => {
-        if (open) unfolded.delete(repo); else unfolded.add(repo);
-        plain();
-        card.querySelector<HTMLElement>('.main-open')?.focus();
-      });
-      card.replaceChildren(h('h3', {class: 'main-title'}, name), foot, line, error, ...(open ? [notCommitted(repo, 'main', n, events)] : []));
-    }
-    if (old) crossfade(old, card, from);
-    resize(card, from);
-  };
-  plain();
-  return card;
-}
+/** main's part drawn again: nothing is drawn there now (what main has not committed is not shown). */
+export function opened(_part: HTMLElement) {}
 
 /** "#3 Fix：title", the number quiet, as an issue's head writes it. */
 const named = (n: number | null, kind: string | null, title: string) => h('span', {class: 'done-name'},
   n === null ? null : h('span', {class: 'issue-no'}, `#${n} `), kind ? h('span', {class: 'issue-kind'}, ...kindWords(kind)) : null, title);
-
-/** What was committed on main from here: its line, how much it changed, and when; the newest lit as it lands. */
-function committedList(list: {repo: string; cut: git.Cut}[], all: boolean): HTMLElement {
-  const newest = committed[0]?.cut.id;
-  return h('div', {class: 'done-list'}, ...list.map(({repo, cut}) => {
-    const meta = t('Committed {when}', {when: ago(cut.time || Date.now())});
-    const row = h('div', {class: 'done-row done-head', 'data-cut': cut.id}, named(null, cut.kind, cut.title),
-      cut.added || cut.removed ? counted(cut.added, cut.removed) : null, h('span', {class: 'grow'}),
-      h('span', {class: 'muted small'}, all ? `${repo} · ${meta}` : meta));
-    landing(row, `cut\0${cut.id}`, cut.id === newest && Date.now() - (cut.time || 0) < 4000, 'just-cut');
-    return row;
-  }));
-}
 
 /** The merged ones opened, by change: the page drawn again (anything saved in the repo does it) keeps them open. */
 const unfurled = new Set<string>();

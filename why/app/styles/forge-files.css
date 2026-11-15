@@ -83,11 +83,11 @@
 .code.code-edit { position: relative; }
 .edit-layer { position: absolute; pointer-events: none; clip-path: inset(-4px 0 -4px calc(-1 * var(--s3))); }
 .edit-marks { animation: fresh var(--motion) var(--spring); }
-.edit-mark { position: absolute; left: 0; right: 0; border-radius: 4px; }
+.edit-mark { position: absolute; left: 0; right: 0; border-radius: 0; }
 .edit-mark.lines { left: calc(-1 * var(--s2)); background: color-mix(in srgb, var(--marker-soft) 75%, transparent); }
 .edit-mark.held { left: calc(-1 * var(--s2)); right: auto; background: color-mix(in srgb, var(--marker) 60%, transparent); }
 .edit-mark.words { right: auto; background: var(--marker); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 28%, transparent); }
-.edit-mark.caret { right: auto; width: 2px; border-radius: 1px; background: var(--ink); }
+.edit-mark.caret { right: auto; width: 2px; border-radius: 0; background: var(--ink); }
 /* While the box edits and has the keyboard, a line of a file is pressed to take it into the box: the hand says so,
    and the line under it is ringed (the one taken is lit in the marker's yellow, as a line gone to is). */
 .edit-pointing section.file :is(.sheet, .code-edit) { cursor: var(--cursor-hand); }

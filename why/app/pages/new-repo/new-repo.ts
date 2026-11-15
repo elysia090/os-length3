@@ -15,6 +15,7 @@ import {menuItem} from '../kit/common.ts';
 import {deedsUnder} from '../kit/file-deeds.ts';
 import {liftLine, nudge, putAway, textAt, unfold} from '../../ui/glide.ts';
 import {wholeCells} from '../../ui/row.ts';
+import {cut as record} from '../../../repo/history.ts';
 
 /**
  * +: one piece at the desk's edge, the hand's (DESIGN §10): the repo's name on
@@ -346,6 +347,9 @@ export function newRepo(ctx: Context): Node[] {
       error.textContent = t('Failed to write {what} ({why})', {what: `${n}/${at}`, why: errorText(e)});
       return;
     }
+    // Made is recorded: what was laid out here is the repo's first commit, so main holds no work of its own to commit
+    // (work is done on an issue) and a file put back goes back to how it was made. (Not recorded, it is still made.)
+    await record(n, null, `Feat: ${n}`, '').catch(() => {});
     // Made, it is gone into at once: what was written becomes its README, the summary's sheet growing into that box
     // in Forge, the caret in it, and its words going with it onto their line there (under the title and a line left
     // empty: readme), never a sheet gone empty on its way and the words come back after.

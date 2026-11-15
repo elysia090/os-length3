@@ -22,7 +22,7 @@
 /* Out, it cuts nothing (tree.ts): a row's menu stands beside it. */
 .tree.open.settled { clip-path: none; }
 .tree ul { list-style: none; margin: 0; padding: 0; }
-.tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-field); }
+.tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-key); }
 .tree-name {
   flex: 1; min-width: 0; min-height: var(--h-row); padding: 0 var(--s1); text-align: left; border: 0; background: transparent; color: inherit; cursor: var(--cursor-hand);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -95,11 +95,14 @@
 .file-tree > .tree-children { max-height: calc(100vh - var(--tree-top, calc(5 * var(--u))) - 3 * var(--u)); overflow: hidden auto; scrollbar-width: none; }
 .file-tree .tree-home { --out: 1; }
 .file-tree .tree-home > .tree-row { display: none; }
-.file-tree .tree-row { --in: calc(18px + (var(--depth, 0) - var(--out, 0)) * var(--u)); min-height: calc(1.5 * var(--u)); margin: 0 6px; padding-left: var(--in); border-radius: 8px; }
-.file-tree .tree-row:is(:hover, :focus-within) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); }
+.file-tree .tree-row { --in: calc(18px + (var(--depth, 0) - var(--out, 0)) * var(--u)); min-height: var(--u); margin: 0 6px; padding-left: var(--in); border-radius: var(--r-key); }
+/* (Called up, a list's row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's, as a
+   selection is, DESIGN §14; on paper, paper under it was not seen, and a grey mixed for it is a colour the design has not.) */
+.file-tree .tree-row:is(:hover, :focus-within) { background: var(--ink); color: var(--ground); }
+.file-tree .tree-row:is(:hover, :focus-within) :is(button, span, .icon, .mark) { color: inherit; }
 /* (The repo Forge is at is not inked here: the file it reads is marked, and that says where one is.) */
 .file-tree .tree-row:has(> [aria-current='page']) { background: none; color: var(--ink); }
-.file-tree .tree-row:has(> [aria-current='page']):is(:hover, :focus-within) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); }
+.file-tree .tree-row:has(> [aria-current='page']):is(:hover, :focus-within) { background: var(--ink); color: var(--ground); }
 .file-tree .tree-row:has(> .tree-more[aria-expanded='true']) { background: var(--slot); }
 .file-tree .tree-row:has(> .tree-name:focus-visible) { outline: 2px solid var(--ink); outline-offset: -2px; }
 .file-tree .tree-row.settled:has(> .tree-name:focus-visible) { outline: none; }
@@ -129,7 +132,7 @@
   font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 .file-tree > .tree-pop :is(.pop-icon, .pop-rule) { display: none; }
 .file-tree > .tree-pop .pop-item { display: flex; align-items: center; width: calc(100% - 12px); min-height: calc(1.5 * var(--u)); height: auto; margin: 0 6px; padding: 0 18px;
-  border: 0; border-radius: 8px; background: none; font: 400 var(--t-word)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); text-align: left; white-space: nowrap; cursor: var(--cursor-hand); }
+  border: 0; border-radius: var(--r-key); background: none; font: 400 var(--t-word)/calc(1.5 * var(--u)) var(--mono); color: var(--ink); text-align: left; white-space: nowrap; cursor: var(--cursor-hand); }
 .file-tree > .tree-pop .pop-item:first-of-type { font-weight: 700; }
 .file-tree > .tree-pop .pop-item:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); outline: none; }
 .file-tree > .tree-pop .pop-item:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }

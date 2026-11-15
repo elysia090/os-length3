@@ -32,20 +32,20 @@
 .home-own > .section > h2 { position: absolute; top: var(--u); right: calc(2 * var(--u)); z-index: 1; margin: 0; display: block; font: 700 var(--t-word)/var(--u) var(--mono); }
 .home-own > .section > h2 > #todo-title, .home-own .todo-left > small { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .home-own .todo-clear { padding: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-transform: lowercase; }
-.home-own .todo-clear:hover { background: none; text-decoration: underline 2px; text-underline-offset: 3px; }
+.home-own .todo-clear:hover { background: var(--paper); }
 .home-own .todo-box { display: block; min-height: 0; border: 0; border-radius: 0; background: none; }
 .home-own .todo-items { padding: 0; }
 .home-own .todo-item { padding: 0; }
 .home-own .todo-head { position: relative; grid-template-columns: calc(2 * var(--u)) auto minmax(0, 1fr) auto; column-gap: 0; min-height: var(--u); padding-right: calc(2 * var(--u)); }
 .home-own .todo-dates-detail .todo-head { grid-template-columns: calc(2 * var(--u)) auto minmax(0, 1fr); }
 /* An item's mark: a box drawn as heavy as the words, soft at the corner; ticked, filled. */
-.home-own .todo-mark { position: relative; justify-self: stretch; width: auto; height: var(--u); border-radius: var(--r-field); color: var(--ink); }
+.home-own .todo-mark { position: relative; justify-self: stretch; width: auto; height: var(--u); border-radius: var(--r-key); color: var(--ink); }
 .home-own .todo-mark > .icon { display: none; }
-.home-own .todo-mark::before { content: ''; box-sizing: border-box; width: 16px; height: 16px; border: 2px solid currentColor; border-radius: 4px; }
+.home-own .todo-mark::before { content: ''; box-sizing: border-box; width: 16px; height: 16px; border: 2px solid currentColor; border-radius: var(--r-key); }
 .home-own .todo-item.done .todo-mark::before { background: currentColor; }
 .home-own .todo-item.done .todo-mark::after { content: ''; position: absolute; left: calc(50% - 4.5px); top: calc(50% - 4px); width: 9px; height: 5px; box-sizing: border-box;
   border: 2px solid var(--note); border-top: 0; border-right: 0; rotate: -45deg; }
-.home-own .todo-mark:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); }
+.home-own .todo-mark:hover { background: var(--paper); color: var(--ink); }
 .home-own .todo-mark:disabled { opacity: 1; color: var(--note-quiet); }
 .home-own .todo-item.done .todo-mark { color: var(--ink); }
 .home-own :is(.todo-title, .todo-kind) { font: 700 var(--t-word)/var(--u) var(--sans); }
@@ -61,10 +61,10 @@
 .home-own :is(.todo-meta, .todo-created) { font: 400 var(--t-word)/var(--u) var(--mono); }
 .home-own .todo-dates-detail .todo-created { margin: 0 0 0 calc(2 * var(--u)); }
 /* An item's ×, at the row's right end inside the note's ink edge (never over it: the subject's edge is whole, §2). */
-.home-own .todo-head > .todo-away { position: absolute; right: 1px; top: 0; width: calc(2 * var(--u) - 1px); height: var(--u); border-radius: var(--r-field); background: var(--note); color: var(--note-quiet); }
+.home-own .todo-head > .todo-away { position: absolute; right: 1px; top: 0; width: calc(2 * var(--u) - 1px); height: var(--u); border-radius: var(--r-key); background: var(--note); color: var(--note-quiet); }
 .home-own .todo-item:is(:hover, :focus-within) .todo-head > .todo-away { color: var(--ink); }
 .home-own .todo-away .mark { width: 16px; height: 16px; stroke-width: 2; }
-.home-own .todo-head > .todo-away:hover { background: color-mix(in srgb, var(--ink) 10%, var(--note)); }
+.home-own .todo-head > .todo-away:hover { background: var(--paper); }
 /* What the keys do, while one writes: the note's last line, its room always kept, so nothing moves as it is said.
    One line: as many of the keys as it holds whole, the first first; what does not fit is not said, never cut. */
 .home-own .todo-box .todo-hint { height: var(--u); overflow: hidden; gap: 0 var(--u); padding: 0 calc(2 * var(--u)); color: var(--note-quiet); font: 400 var(--t-word)/var(--u) var(--mono); }
@@ -87,21 +87,22 @@
 .home-repos > .gear-card:is(.away, [aria-busy='true']) > .card-open > .card-sync { display: block; position: absolute; left: calc(100% + var(--u)); bottom: -8px;
   font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); white-space: nowrap; }
 .home-repos > .card.repo.away > .card-open > .card-title { color: var(--quiet); }
-.home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { text-decoration: underline 3px; text-underline-offset: 4px; }
-.home-repos > .card.repo.revealed > .card-open > .card-title { text-decoration: underline 3px; text-underline-offset: 4px; }
+/* (Under the pointer a name takes paper under it, as anything pressed does: nothing comes, no line is drawn, §14.) */
+.home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { background: var(--paper); }
+.home-repos > .card.repo.revealed > .card-open > .card-title { background: var(--paper); }
 .home-repos > .card.repo.held > .card-open > .card-title { color: var(--sub); }
 /* Its gear: after the name, small and quiet, its middle on the capitals' top; there always (it waits on no pointer).
    No ring round it. */
 .home-repos > .gear-card > .repo-gear { position: absolute; left: calc(100% + var(--s1)); right: auto; top: var(--s3); width: var(--u); height: var(--u); display: grid; place-items: center;
   }
-.home-repos > .gear-card > .repo-gear > button { width: var(--u); height: var(--u); border: 0; border-radius: var(--r-field); background: none; }
+.home-repos > .gear-card > .repo-gear > button { width: var(--u); height: var(--u); border: 0; border-radius: var(--r-key); background: none; }
 .home-repos > .gear-card > .repo-gear > button .mark { width: 14px; height: 14px; }
 .home-repos > .gear-card > .repo-gear-pop { top: calc(100% + var(--s1)); left: 0; right: auto; width: max(100%, 280px); text-align: left; }
 .home-repos > .card.new { display: flex; align-items: center; gap: 0; height: var(--u); margin: var(--u) 0 0; padding: 0; color: var(--ink);
   font: 700 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
 .home-repos > .card.new > .icon { display: none; }
 .home-repos > .card.new::before { content: '+ '; white-space: pre; }
-.home-repos > .card.new:hover { background: none; text-decoration: underline 2px; text-underline-offset: 3px; }
+.home-repos > .card.new:hover { background: var(--paper); }
 .home-repos > p { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
 /* ---- What waits, a cell under the repos: a slip fourteen cells wide, drawn in line on the ground (it is not the
    piece in hand). Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a
@@ -119,7 +120,6 @@
 .home-waits .pane-row:first-child > .pane-line { margin: var(--u) 0 0; font: 700 var(--t-word)/var(--u) var(--sans); letter-spacing: 0; }
 .home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 .home-waits .pane-row > .pane-at { font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
-.home-waits .pane-row:is(:hover, :focus-visible) > .pane-line { text-decoration: underline 3px; text-underline-offset: 4px; }
 /* What else waits, after the first: a line each, its name and what was said. */
 .home-waits .pane-row + .pane-row { margin-top: var(--u); }
 .home-waits .pane-row + .pane-row > .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; }
