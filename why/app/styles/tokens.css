@@ -24,6 +24,11 @@
   /* What is pressed into the desk rather than laid on it (a key of the band, the search's slot, the place of the
      rail one is at): a tone under the ground, soft at the corner. Paper's corner is a sheet's (--r-sheet). */
   --slot: #cbc7c0;
+  /* The frame at rest (DESIGN §4, quiet): the rail's and the band's marks and words, and their lines. A permanent mark
+     over the picture is kept faint, and the frame is that: ink only on the place one is in and on what the hand is on
+     (the pointer, the keyboard, the search being written in), as a piece is ink only in the hand. */
+  --frame: var(--sub);
+  --frame-edge: var(--edge);
   /* Words that only say how many or where: quieter than --sub, never for what is read to be acted on. */
   --quiet: #8f8c87;
   /* The TODO's note, the one coloured sheet Home has. */

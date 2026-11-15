@@ -74,7 +74,8 @@
 .git-desk .issue-slot[aria-current='true'] .issue-card::after { box-shadow: inset 0 0 0 1px var(--ink); }
 .git-desk .issue-slot > :not(.issue-card) { margin-top: calc(2 * var(--u)); }
 /* Its name over its corner: its number and kind, and how it stands. */
-.issue-name { position: absolute; left: calc(-1.5 * var(--u)); bottom: calc(100% + 1.5 * var(--u) + 7px); margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); white-space: nowrap; color: var(--ink); }
+/* (Its line is the cell over the sheet's corner, 48 to 72 from the window's top: the world's, never in the band's row.) */
+.issue-name { position: absolute; left: calc(-1.5 * var(--u)); bottom: calc(100% + 1.5 * var(--u)); margin: 0; font: 700 var(--t-meta)/var(--u) var(--mono); white-space: nowrap; color: var(--ink); }
 .issue-name > i { font-style: normal; color: var(--quiet); }
 .git-desk .issue-box { position: relative; display: grid; grid-template-columns: calc(11.5 * var(--u)) minmax(0, 1fr); gap: 0 var(--u); align-items: start; }
 .git-desk .issue-box.no-work { grid-template-columns: minmax(0, 1fr); }
@@ -227,7 +228,7 @@
   .git-desk .issue-column { --row-peek: var(--u); --gap: calc(var(--u) / 2); }
   .git-desk .issue-slot[aria-current='true'] .issue-card { padding: var(--u); box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
   /* (Its name over its corner starts at the sheet's edge here too: the sheet's margin is a cell on a narrow window.) */
-  .issue-name { left: calc(-1 * var(--u)); bottom: calc(100% + var(--u) + 7px); }
+  .issue-name { left: calc(-1 * var(--u)); bottom: calc(100% + var(--u)); }
   .git-desk .issue-words { margin-bottom: var(--u); }
   .git-desk .issue-big-head:not(.peek) { min-height: 0; }
   .git-desk .issue-big-head:not(.peek) h2 { margin: 0; overflow-wrap: anywhere; }

@@ -25,7 +25,7 @@
 .me-wrap { position: relative; }
 .me {
   display: grid; place-items: center; width: var(--rail-place); height: var(--rail-place); border: 0; border-radius: var(--r-field);
-  background: transparent; cursor: var(--cursor-hand); font: 900 15px/1 var(--display);
+  background: transparent; color: var(--frame); cursor: var(--cursor-hand); font: 900 15px/1 var(--display);
 }
 .me .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
 /* A popover (the person's menu, Inbox's names): one box, a head over each group, a row per item. */
@@ -84,7 +84,7 @@
 .rail-item {
   position: relative; display: grid; place-items: center; flex: 0 1 var(--rail-place); min-height: 32px;
   width: var(--rail-place); border: 0; border-radius: var(--r-field);
-  background: transparent; color: var(--ink); cursor: var(--cursor-hand);
+  background: transparent; color: var(--frame); cursor: var(--cursor-hand);
 }
 .rail-item > .icon { width: var(--rail-icon); height: var(--rail-icon); stroke-width: 2; }
 /* The places stand one after another, two cells apart, in the order of how far they are from the person
@@ -111,7 +111,7 @@
 }
 /* Something came in, not seen yet (Inbox, Server; Server's chips and boards): the same dot in the
    colour of what it is on, ink, or ground on what is current; no colour of its own. */
-.rail-item.news::after { background: currentColor; }
+.rail-item.news::after { background: var(--ink); }
 .chip.news::after, .board-head.news > .board-mark::after {
   content: ''; display: inline-block; width: 7px; height: 7px; margin-left: var(--s2); vertical-align: middle;
   border-radius: var(--r-mark); background: currentColor;

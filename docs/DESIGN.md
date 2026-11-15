@@ -244,13 +244,67 @@ corner, **(48, 48)**, and its first dot is at (60, 60).
 **One square for both.** A place of the rail and the band's bar are **36 px** tall with an **18 px** mark,
 **6 px** from the window: 6 + 36 + 6 = 48.
 
+### Its measure, derived
+
+The frame is on every screen of every place, so its measure is the one most often seen, and it is not taken from
+taste. A CSS pixel is an angle: the W3C defines the reference pixel as one pixel of a 96 dpi screen at arm's length,
+**0.0213°** (CSS Values 4). So every length here is how large a thing is in the eye, and the frame can be measured
+against what film and the hand ask of a frame in the same terms.
+
+| Constant | px | In the eye | From |
+|---|---|---|---|
+| a desk screen | 1366 to 1920 wide | 29° to 41° | a cinema seat: SMPTE EG-18 puts the least a screen should fill at 30° across (smaller, "the image will appear small"), THX its back row at 36°. A laptop or a desk screen at arm's length is a good seat, so a frame of film's is the right model for it, at its own size |
+| the cell, `u` | 24 | 0.51° | the line of what is read (§3) |
+| **the frame, `F = 2u`** | **48** | **1.02°** | twice over. Film: the margin kept clear of action is 3.5% of each side (SMPTE ST 2046-1, safe action 93%); on the least screen a cinema allows, 30° = 1408 px, that is 49 px. The hand: the least target both platforms call sure is 48 (Material) and 44 (Apple; WCAG's AAA, 44). The grid's nearest is two cells: 48. On a 1366 screen it is the safe-action margin to the pixel |
+| a square of the frame | 36 | 0.77° | the frame less a quarter cell each side; those 6 px, to the window's edge, are the square's too (§7): an edge cannot be overshot (Fitts), so a square at the edge is as deep as the hand's throw |
+| its mark | 18, drawn at 2 | 0.38° | Material's square keyline in its 24 grid (18), half the square, one stroke weight |
+| a piece | 576 | 12.3° | fifty letters of what is written (§3); two side by side, 25.6°, fill a cinema's least screen |
+
+**The frame is held as an angle, not as a share of the screen.** Film's margins are shares because a television
+crops a share; a window crops nothing, and what the eye and the hand need at the edge is an angle. So on a larger
+screen the frame stays one degree and gives the rest to the world.
+
+| Screen | Across | The frame's share | Against film's margins |
+|---|---|---|---|
+| 1920 × 1080 | 40.9° | 6.8% | inside safe action's (13.5%) |
+| 1536 × 864 | 32.7° | 8.5% | inside |
+| 1366 × 768 | 29.1° | 9.5% | inside; the rail is the safe-action margin exactly |
+| 1024 × 768 | 21.8° | 10.6% | inside |
+| 390 × 844 | 8.3° | 17.3% | the finger rules: inside title safe's (19%) |
+| 320 × 568 | 6.8° | 22.2% | the finger rules: a little over |
+
+### Its laws
+
+The frame is the camera's own (§2): it is how the window is held, not something in the shot.
+
+- **One degree, every way.** The rail's column and the band's row are both `F` on every screen (Eisenstein's
+  *Dynamic Square*: the vertical has the horizontal's power). So the world's corner stands on the window's diagonal
+  from its corner whatever the screen's proportion: the frame is the one part of a composition that does not change
+  with the aspect.
+- **Receding.** On every desk screen the frame takes less of the screen than film's safe-action margin does
+  (13.5%); on a phone the finger's target rules it, and it takes at most a little over title safe's (22% at 320 px).
+- **Two sides only.** The frame stands at the top and the left, where the eye starts and where the world goes out
+  when it moves; the right and the foot are the world's open sides (off-screen space, the row's way and the page's
+  way, §2). Nothing of the world is seen in the frame's strips, and nothing of the frame is set in the world.
+- **One square.** Every place of the rail is a 36 px square at a 48 px pitch from (6, 6), its mark 18 px drawn at
+  2 px; the door and the band's keys are the same square two cells wide.
+- **The same in every place**, to the pixel. A camera's frame does not change from scene to scene.
+- **Quiet.** What is always on the screen is kept faint: broadcasters keep their station's mark grey and dim, screens
+  dim a still mark of their own accord against burn-in, and the navigation rails and tab bars of both platforms set
+  the places one is not in quieter than the one one is in. So at rest the frame's marks and words are the frame's
+  quiet colour (`sub`) and its lines the quiet line (`edge`); nothing in it is filled with ink. Ink is for the place
+  one is in (on the slot colour), what is chosen in it (a server on the band: the slot colour under it), and what
+  the hand is on: a place under the pointer or the keyboard, and the band while its search is written in, as a piece
+  is ink only in the hand (§5). Measured, the frame's ink is a median 3% of the world's, at most 13% on a desk with
+  only short files on it.
+
 ### The rail
 
 - A place is a 36 px square about a corner of the grid: the first has its middle at (24, 24), the next 48 px down,
   and so every one, at one pitch from first to last. So four dots stand round every icon alike. Its icon is 18 px,
   drawn with a 2 px stroke of its 24 px box.
-- The place one is in has the slot colour under it; a place under the pointer or the keyboard, paper and a 2 px ink
-  ring. At a place's far side its place is the one lit. A place's name stands out beside it while the keyboard is on
+- Its marks are the frame's quiet colour; the place one is in has the slot colour under it and its mark in ink; a
+  place under the pointer or the keyboard, paper, a 2 px ink ring and its mark in ink. At a place's far side its place is the one lit. A place's name stands out beside it while the keyboard is on
   it; a pointer over it brings nothing out (§7).
 - **An icon stands on the rail only for what the day goes to from anywhere.** In order, nearest the person first:
 
@@ -281,7 +335,7 @@ The way from a place to its far side, and **in the same spot** the way back: the
 hand where it was.
 
 - One key of the band's own make: x = 48 to 96, y = 6 to 42 (two cells wide, as tall as a place of the rail),
-  ground under an 18 px mark, 1 px of ink round it. Its mark is the icon of where it leads. It is the window's,
+  ground under an 18 px mark, 1 px of the quiet line round it (ink under the hand). Its mark is the icon of where it leads. It is the window's,
   fixed, and there on a far side that has no band of its own.
 - It is the first key of the band: nearest the rail, where the hand was when it came to the place. Where the page
   has a band, the band goes on from the door and the two are one bar as wide as a piece (the door has no edge of its
@@ -293,7 +347,7 @@ hand where it was.
 ### The band
 
 On a desk (Home, New repo, Forge, Git). **One bar** from the desk's edge: x = 48, y = 6, 36 tall, as wide as a
-piece (§3). Ground under it, a 1 px ink outline, corner 4. Its keys are parts of it **two cells wide**, edge to
+piece (§3). Ground under it, a 1 px outline of the quiet line (ink while its search is written in), corner 4. Its keys are parts of it **two cells wide**, edge to
 edge, a 1 px line between them; the search is the rest, its words 13 px. Every edge of the bar is on a line of the
 grid, so no dot is cut by it.
 
@@ -732,7 +786,7 @@ breaks; none is a decision to leave it.
 | Server | behind its gear and a repo shown: a page of the old make (its title 24 px, its parts on a sliding line) | §3, §5 |
 | Server's chips, a sheet's parts | a line of them longer than its room slides, its end faded into the ground, a › over the fade | §1, no transparency as decoration; §6, what does not fit goes under |
 | the search's finds | the find beside the one read lights under a pointer | §7, nothing waits on a pointer |
-| the band | Home, Forge and Git each build their own (the door alone is the window's); Runtime, the Remote, Server and Inbox have no search | §2, the frame is the window's |
+| the band | Home, Forge and Git each build their own (the door alone is the window's); Runtime, the Remote, Server and Inbox have no search, so the band's row is not the same in every place: Server's is a round +, its servers as pills and a chevron at the row's far end; Inbox's and the Remote's the door alone; Runtime's nothing | §2, the frame is the window's; §4, the frame the same in every place (held of the rail, not yet of the band's row) |
 | Forge | the desk still turns by itself to where the Agent is working | §8, the world moves only for what was asked |
 | moves in code | their lengths are still written where they are made (their curve is the law's) | §8 |
 | the sheets (Runtime, the Remote) | what is in them is laid by the window's width in places (27 rules that ask the window how wide it is remain in the sheets, most of them here) | §1, a narrow window has the same rules |
@@ -776,6 +830,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `why/test/app/forge-work.spec.ts` |
 | Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `why/test/app/focus.spec.ts` |
 | The window's edges are the frame's; a press just off a menu is the menu's (§7) | `why/test/app/favour.spec.ts` |
+| The frame, in every place at six screens: one degree every way, receding inside film's safe-action margin on a desk screen, one square, the same in every place, on two sides only, quiet at rest and ink only under the hand (§4) | `why/test/app/frame.spec.ts` |
 | Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off at once, at rest within 420 ms (§8) | `why/test/app/motion.spec.ts` |
 | File comes by a press and by nothing else (§7) | `why/test/app/file.spec.ts` |
 | A phone has the same rules (§1) | `why/test/app/narrow.spec.ts` |

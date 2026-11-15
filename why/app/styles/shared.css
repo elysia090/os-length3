@@ -10,7 +10,7 @@
 /* The rail's place, and what is out from the rail (File's tree, the person's menu): paper ringed in ink, its icon in
    ink, not an ink fill: the rail beside every page stays light, and the place is still the one thing ringed there. */
 .rail-item[aria-current='page'] { background: var(--slot); color: var(--ink); }
-.rail-item:is(:hover, :focus-visible, :active, [aria-expanded='true']), .me:is(:hover, :focus-visible, :active) { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); }
+.rail-item:is(:hover, :focus-visible, :active, [aria-expanded='true']), .me:is(:hover, :focus-visible, :active) { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
 .me[aria-expanded='true'] { background: var(--slot); color: var(--ink); }
 /* The touch, in light: the give under the finger (touch.ts) is a few pixels, too little to be seen alone, so the
    surface also takes the finger's shadow the moment it is pressed: an outlined thing a step toward ink, an inked one
@@ -55,10 +55,10 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
    wide as a piece: the door has no edge of its own on that side. What waits where it leads is a dot on it, as on a
    place of the rail. */
 .door { position: fixed; left: calc(2 * var(--u)); top: var(--outer-top); z-index: 8; display: grid; place-items: center; width: calc(2 * var(--u)); height: var(--key); padding: 0;
-  border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); cursor: var(--cursor-hand); }
+  border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--frame); box-shadow: inset 0 0 0 1px var(--frame-edge); cursor: var(--cursor-hand); }
 .door[hidden] { display: none; }
 .door > .icon { width: 18px; height: 18px; stroke-width: 2; }
-.door:is(:hover, :focus-visible) { background: var(--paper); outline: none; }
+.door:is(:hover, :focus-visible) { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); outline: none; }
 .door:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
 .door.with-bar { border-radius: var(--r-key) 0 0 var(--r-key); box-shadow: inset 1px 0 0 var(--ink), inset 0 1px 0 var(--ink), inset 0 -1px 0 var(--ink); }
 .door.away::after, .door.news::after { content: ''; position: absolute; top: 6px; right: 10px; width: 8px; height: 8px; border-radius: 2px; background: var(--off); }

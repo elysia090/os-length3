@@ -20,7 +20,8 @@ const NAME = 33.0124, PERSON = 66.0248;
 const PLACES = {
   home: {subject: '.home-own > .section', corner: '.home-own'},
   'new-repo': {subject: '.nr-box', corner: '.new-repo'},
-  forge: {subject: '.desk-box.held', corner: '.desk-box.held'},
+  // (Forge's desk may rest with the terminal, the row's first piece, at its edge while a file is in the hand (§6).)
+  forge: {subject: '.desk-box.held', corner: '.desk-box'},
   git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card'},
   // (Server's desk may rest with a board before the one in hand at its edge (§6): a board of the room is what it is.)
   server: {subject: '.slide.full', corner: '.side-boards, .slide'},

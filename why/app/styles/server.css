@@ -26,6 +26,11 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
   margin: calc(-1 * var(--s1)); padding: var(--s1); }
 .server-chips::-webkit-scrollbar { display: none; }
 .server-chips > * { flex: none; }
+/* The servers on the band's row are the frame's (DESIGN §4): quiet at rest, and the one on screen is chosen as the
+   rail's place one is in is, with the slot colour under it, not filled with ink. */
+.server-chips .chip { color: var(--frame); }
+.server-chips .chip[aria-checked='true'] { background: var(--slot); color: var(--ink); border-color: var(--frame-edge); }
+.server-chips .chip:is(:hover, :focus-visible) { color: var(--ink); }
 .server-chips.more-after { mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent); }
 .server-chips.more-before { mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent); }
 .server-chips.more-before.more-after { mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); }
@@ -82,8 +87,8 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .server-gear.unseen { visibility: hidden; }
 .server-gear { display: grid; place-items: center; flex: none; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
-.server-bar > .server-gear { border-color: var(--edge); color: var(--ink); } /* at the corner, the switch's quiet circle */
-.server-bar > .server-gear:hover { background: var(--raised); }
+.server-bar > .server-gear { border-color: var(--frame-edge); color: var(--frame); } /* at the corner, the switch's quiet circle */
+.server-bar > .server-gear:hover { background: var(--raised); color: var(--ink); }
 /* Behind it, it is in ink, as a chip chosen is: what is in the boards' place is its. The ink comes at once (fading
    it, the mark and its ground were one grey midway and the gear was gone for a frame); pressed either way it turns an
    eighth, a tooth's step, so it comes to rest looking as it did. */
