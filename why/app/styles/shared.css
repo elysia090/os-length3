@@ -1,9 +1,10 @@
 /* Rules about many parts at once: the three states every pressable thing has and its touch, a pane's heads, what
    scrolls in its own turn. */
 
-/* The three states, the same everywhere: under the pointer a thing takes paper under it (DESIGN §3: hover adds no
-   colour), the current or chosen thing is an ink fill, focus is a 2px ink ring. */
-.rail-item:hover, .button:hover, .chip:hover, .band-add:hover:not(:disabled), .me:hover, .pop-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover, .card.repo:hover, .card.new:hover { background: var(--paper); --under: var(--paper); }
+/* The three states, the same everywhere: under the pointer (and pressed) a thing's words, mark and line go to ink and
+   nothing goes white (DESIGN §3: white is the hand's, with its shadow; a key that went white under the finger was a
+   sheet lifted with nothing under it), the current or chosen thing is an ink fill, focus is a 2px ink ring. */
+.rail-item:hover, .button:hover, .chip:hover, .band-add:hover:not(:disabled), .me:hover, .pop-item:hover:not(:disabled), .tree-row:hover, .todo-mark:hover, .card.repo:hover, .card.new:hover { color: var(--ink); }
 /* (On paper, paper under it is not seen: a key there says the pointer is on it as the band's do, its line going from
    the quiet one to ink, and its words with it.) */
 :is(.button, .chip, .pill, .part):not(.primary, [aria-current], [aria-checked='true'], [aria-pressed='true'], [aria-selected='true']):hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
@@ -21,7 +22,7 @@
 /* The rail's place, and what is out from the rail (File's tree, the person's menu): paper ringed in ink, its icon in
    ink, not an ink fill: the rail beside every page stays light, and the place is still the one thing ringed there. */
 .rail-item[aria-current='page'] { background: var(--slot); color: var(--ink); --under: var(--slot); }
-.rail-item:is(:hover, :focus-visible, :active, [aria-expanded='true']), .me:is(:hover, :focus-visible, :active) { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); --under: var(--paper); }
+.rail-item:is(:hover, :focus-visible, :active, [aria-expanded='true']), .me:is(:hover, :focus-visible, :active) { color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
 .me[aria-expanded='true'] { background: var(--slot); color: var(--ink); }
 /* The touch, in light: the give under the finger (touch.ts) is a few pixels, too little to be seen alone, so the
    surface also takes the finger's shadow the moment it is pressed: an outlined thing a step toward ink, an inked one
@@ -45,7 +46,7 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
    nothing. */
 .work:not(.prompting, .prompt-leaving) .prompt-chip { transition: none; }
 .work:not(.prompting, .prompt-leaving) .prompt-chip[data-mode='run']:hover { box-shadow: inset 0 0 0 1px var(--term-line, var(--green)); }
-.work:not(.prompting, .prompt-leaving) .prompt-chip:is([data-mode='todo'], [data-mode='edit']):hover { background: var(--paper); }
+.work:not(.prompting, .prompt-leaving) .prompt-chip:is([data-mode='todo'], [data-mode='edit']):hover { color: var(--ink); }
 
 /* ---- 1. Rail ---- */
 /* The icons keep a little more room on the side of the line than on the
@@ -65,7 +66,7 @@ button.row-item, .part, .dot-row, .pane-head, .hit-diff, .found-shut, .diff-head
   border: 0; border-radius: var(--r-key); background: var(--ground); color: var(--frame); box-shadow: inset 0 0 0 1px var(--frame-edge); cursor: var(--cursor-hand); }
 .door[hidden] { display: none; }
 .door > .icon { width: 18px; height: 18px; stroke-width: 2; }
-.door:is(:hover, :focus-visible) { background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); outline: none; --under: var(--paper); }
+.door:is(:hover, :focus-visible) { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); outline: none; }
 .door:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
 .door.with-bar { border-radius: var(--r-key) 0 0 var(--r-key); box-shadow: inset 1px 0 0 var(--frame-edge), inset 0 1px 0 var(--frame-edge), inset 0 -1px 0 var(--frame-edge); }
 .door.with-bar:hover { box-shadow: inset 0 0 0 1px var(--ink); }

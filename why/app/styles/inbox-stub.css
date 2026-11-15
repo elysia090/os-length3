@@ -8,7 +8,7 @@
 /* Taken, it is a name, not a field: on the ground with a place's line, so the field to write to someone, under it
    and of its size, is the one that reads as a field (raised, its edge seen). Each part lifts under the pointer. */
 .stub:has(> .stub-text) { border-color: var(--rule); background: transparent; }
-.stub-text:hover { background: var(--paper); }
+.stub-text:hover { color: var(--ink); }
 .stub-text { flex: 1; min-width: 0; height: calc(var(--h-control) - 2px); padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; color: var(--ink); font: 700 var(--t-word)/1 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stub-text { cursor: var(--cursor-copy); }
 /* The code beside the name: six digits to be found by, copied by a press. */
@@ -17,7 +17,7 @@
 .sign-in-card .stub-holder > .stub { min-width: 0; }
 .stub-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: calc(var(--h-control) - 2px); padding: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .stub-gear[aria-expanded='true'] { background: var(--raised); color: var(--ink); }
-.stub-gear:hover { background: var(--paper); color: var(--ink); }
+.stub-gear:hover { color: var(--ink); }
 .stub-gear svg { width: 20px; height: 20px; }
 .stub-panel { position: absolute; top: calc(100% + var(--s1)); left: 0; z-index: 4; width: min(100%, 400px); }
 /* A row of the panel as the menu's rows are: its padding, the field or the ask in a row's place. */
@@ -31,7 +31,7 @@
 .stub-record p { margin: 0 0 var(--s1); }
 .record-row { display: grid; grid-template-columns: 4em minmax(0, 1fr); align-items: center; gap: var(--s2); }
 .record-value { min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); font: var(--t-word)/var(--u) var(--mono); text-align: left; overflow-wrap: anywhere; cursor: var(--cursor-copy); }
-.record-value:hover { background: var(--paper); }
+.record-value:hover { color: var(--ink); }
 .record-found { margin-top: var(--s2) !important; color: var(--sub); }
 /* Words are ink: `done` is the mark's green (3.6:1 on ground), too light for words. */
 .record-found.found { color: var(--ink); font-weight: 700; }

@@ -3,7 +3,7 @@
 .review-verdict { display: flex; align-items: center; gap: var(--s2); }
 /* Approve: a ○ and its word; pressed, the ○ turns into the done mark. */
 .approve-mark { display: inline-flex; align-items: center; gap: var(--s2); min-height: var(--h-control); padding: 0 var(--s3) 0 var(--s1); border: 0; border-radius: var(--r-round); background: transparent; color: var(--ink); font: 700 var(--t-word) var(--sans); cursor: var(--cursor-hand); }
-.approve-mark:hover { background: var(--paper); }
+.approve-mark:hover { color: var(--ink); }
 .approve-mark .ring { width: 22px; height: 22px; flex: none; border: 2px solid var(--edge); border-radius: 50%; }
 .approve-mark:hover .ring { border-color: var(--done); }
 /* A deed under way (git/held.ts busy): the button pressed keeps its look and its word, not greyed as one that cannot be

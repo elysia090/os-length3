@@ -43,5 +43,5 @@
 .counts b { color: inherit; font-weight: 400; }
 .count-go { margin: 0 calc(-1 * var(--s2)); padding: 0 var(--s2); height: var(--u); border: 0; border-radius: var(--r-key);
   background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
-.count-go:is(:hover, :focus-visible) { background: var(--paper); }
+.count-go:is(:hover, :focus-visible) { color: var(--ink); }
 .section > h2.landed { animation: landed 1200ms var(--spring); border-radius: var(--r-key); }

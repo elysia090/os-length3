@@ -44,7 +44,7 @@
 .desk-close > .icon { width: 16px; height: 16px; stroke-width: 2; }
 /* (What can be done with a piece is shown on the one in hand, and on no other: nothing waits on a pointer over it.) */
 .desk-box:not(.held) > .desk-close { display: none; }
-.desk-close:hover { background: var(--paper); color: var(--ink); }
+.desk-close:hover { color: var(--ink); }
 .desk-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 /* A file's sheet: whole lines, a cell of paper over and under them (the piece's own padding, never scrolled); its
    numbers quiet, a letter clear of its words, in the two cells before them; its words from the grid's line two cells
@@ -188,7 +188,7 @@
 .stand > .dock .prompt { position: relative; align-items: baseline; gap: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .stand > .dock .prompt-chip { position: static; align-self: baseline; height: auto; min-height: 0; margin: 0 1ch 0 0; padding: 0; border-radius: 0; background: none; box-shadow: none;
   text-shadow: none; color: var(--term-fg); font: 700 var(--t-word)/var(--line) var(--mono); cursor: var(--cursor-hand); }
-.stand > .dock .prompt-chip:hover { background: var(--paper); }
+.stand > .dock .prompt-chip:hover { color: var(--ink); }
 .desk-box[data-kind].held .stand > .dock .prompt-chip:hover { background: none; }
 .stand > .dock .prompt-chip .prompt-mode { align-items: baseline; font: inherit; color: inherit; }
 .stand > .dock .prompt-chip .prompt-mode > .icon { align-self: center; }
@@ -238,7 +238,7 @@
 .agent-asked { position: relative; font-weight: 700; margin-bottom: .4em; }
 .agent-asked::before { content: '›'; position: absolute; right: calc(100% + 1ch); color: var(--sub); font-weight: 400; }
 .agent-step { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: var(--sub); text-align: left; cursor: var(--cursor-hand); }
-.agent-step:hover { color: var(--ink); background: var(--paper); }
+.agent-step:hover { color: var(--ink); }
 /* The pointer at rest while the desk goes by under it (the camera's glide, desk.ts): what passes under it, or stops
    there, was not pointed at and does not light up as if it were, until the pointer moves again. (Before: a row of the
    Agent's lit and underlined as the camera carried it under a pointer left where the person last pressed.) */

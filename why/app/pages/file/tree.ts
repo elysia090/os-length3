@@ -7,7 +7,7 @@ import {mark} from '../../ui/icons.ts';
 import {scrollMarks} from '../../ui/scroll-marks.ts';
 import {pageVeil} from '../../ui/page-veil.ts';
 import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
-import {store} from '../../../repo/repos.ts';
+import {onChange, store} from '../../../repo/repos.ts';
 import {shownName} from '../../../repo/issues.ts';
 import {inRepo, list, ORIGIN_LABEL, type SystemEntry} from '../../../prompt/system.ts';
 import {fileDeeds, joined, split} from '../kit/file-deeds.ts';
@@ -98,9 +98,17 @@ export class FileTree {
     // rows are what is in "/", scrolled inside it where they are more than the window is tall.
     this.element = h('nav', {class: 'tree file-tree', id: 'file-tree', 'aria-label': 'File（/）'}, this.root, this.said);
     scrollMarks(this.element);
-    // Drawn out (styles.css .tree), it is cut by nothing: a row's menu stands beside it, out of its edge.
-    this.element.addEventListener('transitionend', (e) => {
-      if (e.target === this.element && e.propertyName === 'clip-path' && this.isOpen) this.element.classList.add('settled');
+    // What it holds is read while nothing else is being done, so the first press brings it out whole at once (read
+    // then, it came a fifth of a second after the press, the world already going out of focus behind nothing).
+    const early = () => { if (!this.root.querySelector('.tree-name')) void this.build(); };
+    if ('requestIdleCallback' in window) requestIdleCallback(early, {timeout: 4000}); else setTimeout(early, 1500);
+    // And read again while it is put away whenever a repo comes or goes, so it comes out as things are (not as they
+    // were, a row coming in a moment after it is out).
+    let again = 0;
+    onChange((c) => {
+      if (c.what !== 'repo' || this.isOpen) return;
+      clearTimeout(again);
+      again = window.setTimeout(() => { if (!this.isOpen) void this.build(); }, 400);
     });
     // Escape closes it from anywhere while it is out, before what has the keyboard
     // hears it (so the text being written keeps its caret); the keyboard goes back

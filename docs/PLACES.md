@@ -158,8 +158,8 @@ main's sheet and an issue side by side, the issues go under the sheet, two cells
   it is in the hand, main's sheet beside it has the steps it will have, each waiting. (Before, a line always there
   under main's steps: a second thing on that sheet, read as part of its Start.)
 - Main's steps start at the sheet's top edge: the step under way, the one line of ink, lies on the horizon, level
-  with the issue's top. **↑ ↓ go along the four** (Home and End to the first and the last), and Enter takes the one
-  the keyboard is on at once; one not to be taken now (done, or waiting on another) is answered where it is, with no.
+  with the issue's top. **↑ ↓ take the band of ink along the four** (Home and End to the first and the last), as a
+  menu's chosen row goes, and Enter takes the step under it at once; one not to be taken now (done, or waiting on another) is answered where it is, with no.
   Drawn again after a step, the keyboard is on the same line and the page has not moved: what the step did is read by
   scrolling down Git (its work, its Review, Merged). The model under them: an issue is where a branch would be; what
   goes to main goes as an issue, its commits through it, and is merged; what does not is kept in step on its own.

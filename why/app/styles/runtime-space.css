@@ -23,5 +23,5 @@
 .space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--u); }
 .space-foot .grow { flex: 1; }
 .link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 700; color: inherit; text-align: left; cursor: var(--cursor-hand); }
-.link-name:hover { background: var(--paper); border-radius: var(--r-key); }
+.link-name:hover { border-radius: var(--r-key); color: var(--ink); }
 @media (max-width: 900px) { .space-box { grid-template-columns: 1fr; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }

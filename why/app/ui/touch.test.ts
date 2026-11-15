@@ -51,5 +51,8 @@ test('a stroke typed is a key as any other, Enter and Backspace too, and Space t
   for (const key of ['ArrowLeft', 'Escape', 'Shift', 'F5', 'Home']) assert.equal(typedKey(k(key), true), null, key);
   assert.equal(typedKey(k('a', {repeat: true}), true), null);
   for (const mod of ['ctrlKey', 'metaKey', 'altKey'] as const) assert.equal(typedKey(k('a', {[mod]: true}), true), null, mod);
+  // Enter with Ctrl or the command key sends what was written: its last stroke, heard; with Alt, a command.
+  for (const mod of ['ctrlKey', 'metaKey'] as const) assert.equal(typedKey(k('Enter', {[mod]: true}), true), 'key', mod);
+  assert.equal(typedKey(k('Enter', {altKey: true}), true), null);
   assert.equal(typedKey(k('a'), false), null);
 });

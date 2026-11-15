@@ -32,7 +32,7 @@
    a finger, a mouse and the keyboard. Inked while it is used.) */
 .gear-card:is(:hover, :focus-within) .repo-gear-button, .space-row:is(:hover, :focus-within) .repo-gear-button, .repo-gear-button[aria-expanded='true'] { color: var(--ink); }
 .repo-gear-button[aria-expanded='true'] { background: var(--raised); color: var(--ink); border-color: var(--ink); }
-.repo-gear-button:hover { background: var(--paper); color: var(--ink); border-color: var(--ink); }
+.repo-gear-button:hover { color: var(--ink); border-color: var(--ink); }
 /* On a card, the list comes down from its gear as wide as the card, over what is under it: never past the card's own
    edges, so a card at the column's left does not reach under the rail with a field or an ask in its list. */
 .gear-card > .repo-gear-pop { position: absolute; top: calc(var(--s3) + var(--h-control) + var(--s1)); left: 0; right: 0; z-index: 5; }
@@ -115,7 +115,7 @@
   border: 0; border-radius: var(--r-key); background: transparent; color: var(--ink); text-align: left; font-size: var(--t-word); line-height: calc(var(--h-row) - 2 * var(--s1));
 }
 button.row-item { cursor: var(--cursor-hand); width: 100%; }
-button.row-item:hover:not(:disabled) { background: var(--paper); }
+button.row-item:hover:not(:disabled) { color: var(--ink); }
 button.row-item:disabled { cursor: var(--cursor-arrow); color: var(--sub); }
 .row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-meta { flex: none; color: var(--sub); font-size: var(--t-word); font-variant-numeric: tabular-nums; }

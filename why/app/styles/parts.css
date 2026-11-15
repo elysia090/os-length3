@@ -31,7 +31,7 @@
 }
 .part small { display: inline-block; margin-left: var(--s2); font-weight: 400; font-size: var(--t-word); }
 .part small:empty { display: none; }
-.part:hover { background: var(--paper); color: var(--ink); }
+.part:hover { color: var(--ink); }
 .part[aria-selected='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .part[aria-selected='true'] small { color: inherit; }
 .part-panel { margin-top: var(--row-step); }

@@ -62,16 +62,24 @@ let sounded: Element | null = null;
  * heard as it is struck, as a control pressed is. A letter, a figure, Backspace, Delete, Tab and Enter are keys as
  * any other (Enter and Backspace have no sound of their own: typing is one sound, however it goes on); Space is the
  * space bar. A key held sounds once (it is struck once), and one struck with Ctrl, Alt or the command key is a
- * command, not typing: silent here (what it does sounds, if it presses something).
+ * command, not typing: silent here (what it does sounds, if it presses something), but for Ctrl or the command key's
+ * Enter, which sends what was written and is the last stroke of it.
  */
 export function typedKey(e: {key: string; repeat: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean; isComposing?: boolean}, inText: boolean): Key | null {
-  if (!inText || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return null;
+  if (!inText || e.repeat) return null;
+  // (Enter with Ctrl or the command key sends what was written: the stroke that ends it is heard as Enter alone is.)
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.altKey) return 'key';
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
   if (e.key === ' ') return 'space';
   // (A stroke taken by an input method is a stroke: its key is not said, the hand struck one all the same.)
   return e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Tab' || e.key === 'Process' || !!e.isComposing ? 'key' : null;
 }
 /** When Enter typed in a field last sounded (ms): the click it gives a form's button is that same stroke, not another. */
 let enterTyped = -Infinity;
+/** Enter or Space gone down on a control, and when (ms): it is let go as the key comes up. */
+let keyed: {key: string; at: number} | null = null;
+/** The least a control pressed from the keyboard is shown held (ms): a key let go sooner is still seen to go down. */
+const SEEN = 70;
 
 export function touch() {
   // A completed activation only: pointer and native Enter/Space each yield one click. A drag, focus, hover,
@@ -102,8 +110,10 @@ export function touch() {
     // (The click, if one comes, comes before the control pressed is forgotten.)
     addEventListener(name, () => { lift(); setTimeout(() => { sounded = null; }, 0); }, true);
   }
-  addEventListener('blur', (e) => { if (e.target === window) up(); });
-  // From the keys too: Enter or Space on a button is a press let go at once.
+  addEventListener('blur', (e) => { if (e.target === window) { up(); keyed = null; } });
+  // From the keys too: Enter or Space on a control is a press, down as the key goes down and up as it comes up, heard
+  // so: at its click, Space's press was heard as it was let go (a key's click comes as it comes up), late by as long
+  // as it was held.
   document.addEventListener('keydown', (e) => {
     if (e.isTrusted) wake();
     // What is typed is heard as it is struck.
@@ -113,9 +123,18 @@ export function touch() {
       if (key) { if (e.key === 'Enter') enterTyped = performance.now(); strike(key); }
     }
     if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat || e.isComposing) return;
+    const control = sounding(e);
+    if (control) { sounded = control; press('enter'); }
     const el = pressable(e.target);
-    if (!el || !(e.target as Element).matches(ONE)) return;
-    down(el);
-    setTimeout(up, 70);
+    if (el && (e.target as Element).matches(ONE)) down(el);
+    if (control || held) keyed = {key: e.key, at: performance.now()};
+  }, true);
+  document.addEventListener('keyup', (e) => {
+    if (!keyed || e.key !== keyed.key) return;
+    setTimeout(up, Math.max(0, SEEN - (performance.now() - keyed.at)));
+    keyed = null;
+    lift();
+    // (Space's click, if one comes, comes as the key comes up: before the control pressed is forgotten.)
+    setTimeout(() => { sounded = null; }, 0);
   }, true);
 }

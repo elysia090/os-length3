@@ -353,8 +353,9 @@ hold at their contrast, crisp rather than pastel, none of them a saturated yello
 | done | `#0e7c5e` | a step done |
 | the terminal's sixteen | on paper Lc 80 (bright 90), on the glass Lc −72 (bright −80); at each, the most chroma all six hold | what a program colours, told apart and not ranked |
 
-Fill, shadow and colour belong to the piece in the hand (§5). Hover adds no colour: a thing under a pointer goes from
-quiet to ink, or takes paper under it.
+Fill, shadow and colour belong to the piece in the hand (§5). Hover adds no colour: a thing under a pointer, or
+pressed, goes from quiet to ink, its words, its mark and its line. It never goes white: white is the hand's, with its
+shadow, and a key that went white under the finger was a sheet lifted with nothing under it.
 
 **Less is said by value, and only by value.** Every colour on the screen is one of the table's, whole: nothing is
 made see-through and nothing is mixed for the occasion. A thing laid over another at a share of its colour is a grey
@@ -903,13 +904,13 @@ A key's sound, recorded, for two things the hand does: **a control pressed** and
 the eye says what is so** (§14, press): a sound marks an instant (down, up, a stroke), never a state, and nothing
 the eye is shown is said again to the ear.
 
-- A control pressed with a mouse or a pen sounds as it goes down and again, quieter, as it is let go; pressed with a
-  finger or from the keyboard, once at its click.
+- A control pressed with a mouse, a pen or a key (Enter, Space) sounds as it goes down and again, quieter, as it is
+  let go; pressed with a finger, once at its click (a finger going down may be a scroll beginning).
 - A key typed in a field, a text or the terminal's line sounds as it is struck. Every key that writes is one key and
   one sound: a letter, a figure, Tab, Delete, **Backspace and Enter as any other**. Only Space is the space bar. (A
   control pressed has Enter's own, heavier sound: that is a press, not typing.) A key held sounds once. A key struck
-  with Ctrl, Alt or the command key is a command, not typing, and is silent. Enter that presses a form's button is
-  one stroke, not two.
+  with Ctrl, Alt or the command key is a command, not typing, and is silent, but for Ctrl's or the command key's
+  Enter, which sends what was written: its last stroke. Enter that presses a form's button is one stroke, not two.
 - No two strokes are alike (each a little higher or lower, softer or harder). Silent while the window is out of
   sight. Sound that cannot be had never holds up what the key or the control does.
 
@@ -1019,7 +1020,7 @@ research has one, measured on every control of every place from the top right, h
 
 | Touch | The principle | Its number | From | Measured |
 |---|---|---|---|---|
-| **Hover** | quiet to ink, or paper under it, **at once** (no fade in or out: the same colour in every frame from the first); nothing comes, nothing goes (no line is drawn under words: paper under them). On paper, where paper is not seen, a key's line and words go to ink. In a list called up (a menu, a tree), the row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's, as a selection is | one frame, no other fill | §3, §7 | measured in every place: one colour in every frame |
+| **Hover** | quiet to ink (its words, its mark, its line), **at once** (no fade in or out: the same colour in every frame from the first); nothing comes, nothing goes, and nothing goes white (white is the hand's, with its shadow). In a list called up (a menu, a tree), the row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's, as a selection is | one frame, no other fill | §3, §7 | measured in every place: one colour in every frame |
 | **Press** (a click, a tap) | **held down at once and up at once**: a pointer's press has no travel to draw (the hand is down when the screen is told), and being held is a state, not a move, shown with less motion asked for too. The ear says when (a key's sound as it goes down, again as it comes up), the eye says what is so (held down, a few pixels; then what the press did): a sound and an image at one instant are one event to the senses (Chion's synchresis), and across time they work in turn (Bresson's relay), so neither tells what the other tells. Pressed, nothing is filled. **Going is on the down, doing on the let-go**: a press that goes somewhere (a place, a far side, a piece) changes nothing and is undone by going back, so it takes the earliest moment, the down (a tab of a browser is chosen so); a press that does something (makes, sends, changes, removes) does it at the let-go, and moved off before the let-go it does nothing. A press begun on what is pressed and moved off never selects the page's words | its give in the first frame drawn after the press or the next; up in the frame after the let-go, never drawn coming home; its give ≥ .92 of itself | Jota et al. 2013 (a tap's lag unseen under 24 ms); Apple, *Designing Fluid Interfaces* (2018): "everything needs to respond instantly"; a press confirmed on its let-go; Chion, *Audio-Vision* (1990); Bresson, *Notes* | measured: given in one frame, home in the next, never past |
 | **Look along** (scroll) | **the window's own scrolling, and nothing laid on it**: what is scrolled stays under the hand, in the frame after the wheel or the finger; its rate and its coasting are the platform's (a thrown thing coasts to a stop where its speed takes it), never altered; nothing comes, goes, fades or moves as it is scrolled; at its end it stops by the platform's own soft edge and never carries on into what is behind it; what is read never shifts when something changes out of sight (scroll anchoring); a row of whole pieces comes to rest at a piece by the platform's own snapping, with the hand's speed. The OS never scrolls by itself except as one of the three moves, and then by the law's curve: everything it scrolls otherwise (bringing a thing into view) is at once | in the frame after the wheel; nothing else animating while it scrolls | Deber et al. 2015 (a drag's lag seen at 11 ms on a screen); NN/g, *Scrolljacking 101* (altered rate and duration worst where text is read); Apple 2018 (project momentum; soft edges; redirectable); W3C, *CSS Scroll Anchoring* | measured: scrolled in the next frame, nothing else running |
 | **Write** (a key typed) | the letter drawn in the frame after it is struck, its sound as it is struck, the caret going with it (§9); **what was written stays where it was written**, however its place is left and come back to: a place is never drawn anew under what is half written. A shortcut that makes what is typed a thing (a kind's colon) takes its own key and the space after it, and nothing else | in the frame after the key; kept on return | a slow keyboard (200 ms) costs effort and correcting, not copying speed (Schmid et al. 2023); "the lower, the better" (Fatin) | measured: every field, each letter there two frames after its key, kept on return (measured; measured) |

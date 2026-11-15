@@ -23,7 +23,7 @@
 .todo-head > .todo-away { grid-column: 5; }
 .todo-mark { display: grid; place-items: center; width: var(--h-control); height: var(--h-control); border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 /* Inside the raised box, hover is a step back to the ground. */
-.todo-box .todo-mark:hover { color: var(--ink); background: var(--paper); }
+.todo-box .todo-mark:hover { color: var(--ink); }
 /* A line with nothing in it yet is room for an item, not one: its mark dashed and faint, as room for what is not here
    yet is, and not a thing to press (a press there goes to the line). */
 .todo-mark:disabled { color: var(--quiet); pointer-events: none; }
@@ -32,11 +32,11 @@
 .todo-away { display: grid; place-items: center; width: var(--s5); height: var(--s5); padding: 0; border: 0; border-radius: var(--r-round); background: transparent; color: var(--quiet); cursor: var(--cursor-hand); }
 .todo-away .mark { width: var(--s4); height: var(--s4); }
 .todo-item:hover .todo-away, .todo-item:focus-within .todo-away { color: var(--ink); }
-.todo-box .todo-away:hover { color: var(--ink); background: var(--paper); }
+.todo-box .todo-away:hover { color: var(--ink); }
 /* Clear done beside what is left, a word as quiet as the count it stands by. */
 .todo-left { display: inline-flex; align-items: baseline; gap: var(--s2); }
 .todo-clear { padding: 0 var(--s2); border: 0; border-radius: var(--r-round); background: transparent; color: var(--sub); font: inherit; font-size: var(--t-word); font-weight: 700; cursor: var(--cursor-hand); }
-.todo-clear:hover { background: var(--paper); color: var(--ink); }
+.todo-clear:hover { color: var(--ink); }
 /* The kind is a word, not a button: bold, no outline. */
 .todo-kind { font-weight: 700; }
 /* The kind's colon is the issue's own (Fix：), a full-width one; seen, it is the face's own colon against the word

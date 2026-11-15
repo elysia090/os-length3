@@ -222,7 +222,7 @@
 /* Run at the box's bottom right, the word alone (its keys are in its name, aria-keyshortcuts), a small button that does
    not make the box taller; inside the raised box its hover is a step back to the ground. */
 .prompt-run { flex: none; margin-block: calc((var(--u) - var(--h-control)) / 2); }
-.prompt-run:hover:not(:disabled) { background: var(--paper); }
+.prompt-run:hover:not(:disabled) { color: var(--ink); }
 /* Written in, a field in the hand as the band's search is (DESIGN §4): paper in it and its own pixel of ink round it. */
 .prompt:focus-within { border-color: var(--ink); background: var(--paper); box-shadow: none; }
 /* The keyboard coming or going, its ink edge comes in quickly and goes a little slower, as a press's light does. */

@@ -36,7 +36,7 @@
 .inbox-new .line-in { flex: 1; min-width: 0; min-height: 0; height: auto; padding: 0 var(--s3); border: 0; border-radius: var(--r-field) 0 0 var(--r-field); background: transparent; }
 .inbox-new .line-in:focus, .inbox-new .line-in:focus-visible { outline: none; }
 .inbox-new > .small-button { min-height: 0; border: 0; border-left: 1px solid var(--rule); border-radius: 0 var(--r-field) var(--r-field) 0; background: transparent; }
-.inbox-new > .small-button:hover { background: var(--paper); }
+.inbox-new > .small-button:hover { color: var(--ink); }
 /* The rows, drawn again as they come, lie in the list as if it held them itself. */
 .inbox-rows { display: contents; }
 .inbox-head { margin: var(--s3) 0 0; font-size: var(--t-word); color: var(--sub); }

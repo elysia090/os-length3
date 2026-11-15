@@ -32,7 +32,7 @@
 .home-own > .section > h2 { position: absolute; top: var(--u); right: calc(2 * var(--u)); z-index: 1; margin: 0; display: block; font: 700 var(--t-word)/var(--u) var(--mono); }
 .home-own > .section > h2 > #todo-title, .home-own .todo-left > small { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .home-own .todo-clear { padding: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-transform: lowercase; }
-.home-own .todo-clear:hover { background: var(--paper); }
+.home-own .todo-clear:hover { color: var(--ink); }
 .home-own .todo-box { display: block; min-height: 0; border: 0; border-radius: 0; background: none; }
 .home-own .todo-items { padding: 0; }
 .home-own .todo-item { padding: 0; }
@@ -45,7 +45,7 @@
 .home-own .todo-item.done .todo-mark::before { background: currentColor; }
 .home-own .todo-item.done .todo-mark::after { content: ''; position: absolute; left: calc(50% - 4.5px); top: calc(50% - 4px); width: 9px; height: 5px; box-sizing: border-box;
   border: 2px solid var(--note); border-top: 0; border-right: 0; rotate: -45deg; }
-.home-own .todo-mark:hover { background: var(--paper); color: var(--ink); }
+.home-own .todo-mark:hover { color: var(--ink); }
 .home-own .todo-mark:disabled { opacity: 1; color: var(--note-quiet); }
 .home-own .todo-item.done .todo-mark { color: var(--ink); }
 .home-own :is(.todo-title, .todo-kind) { font: 700 var(--t-word)/var(--u) var(--sans); }
@@ -64,7 +64,7 @@
 .home-own .todo-head > .todo-away { position: absolute; right: 1px; top: 0; width: calc(2 * var(--u) - 1px); height: var(--u); border-radius: var(--r-key); background: var(--note); color: var(--note-quiet); }
 .home-own .todo-item:is(:hover, :focus-within) .todo-head > .todo-away { color: var(--ink); }
 .home-own .todo-away .mark { width: 16px; height: 16px; stroke-width: 2; }
-.home-own .todo-head > .todo-away:hover { background: var(--paper); }
+.home-own .todo-head > .todo-away:hover { color: var(--ink); }
 /* What the keys do, while one writes: the note's last line, its room always kept, so nothing moves as it is said.
    One line: as many of the keys as it holds whole, the first first; what does not fit is not said, never cut. */
 .home-own > .section > .error:empty { display: none; }
@@ -86,7 +86,7 @@
   font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); white-space: nowrap; }
 .home-repos > .card.repo.away > .card-open > .card-title { color: var(--quiet); }
 /* (Under the pointer a name takes paper under it, as anything pressed does: nothing comes, no line is drawn, §14.) */
-.home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { background: var(--paper); }
+.home-repos > .gear-card > .card-open:is(:hover, :focus-visible) > .card-title { color: var(--ink); }
 .home-repos > .card.repo.revealed > .card-open > .card-title { background: var(--paper); }
 .home-repos > .card.repo.held > .card-open > .card-title { color: var(--sub); }
 /* Its gear: after the name, small and quiet, its middle on the capitals' top; there always (it waits on no pointer).
@@ -103,7 +103,7 @@
   font: 700 var(--t-word)/var(--u) var(--mono); text-transform: lowercase; white-space: nowrap; }
 .home-repos > .card.new > .icon { display: none; }
 .home-repos > .card.new::before { content: '+ '; white-space: pre; }
-.grid.repo-grid.home-repos > .card.new:hover { background: var(--paper); }
+.grid.repo-grid.home-repos > .card.new:hover { color: var(--ink); }
 .home-repos > p { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
 /* ---- What waits, a cell under the repos: a slip fourteen cells wide, drawn in line on the ground (it is not the
    piece in hand). Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a

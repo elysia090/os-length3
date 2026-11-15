@@ -89,7 +89,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .server-gear { display: grid; place-items: center; flex: none; width: var(--h-control); height: var(--h-control); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--sub); cursor: var(--cursor-hand); }
 .server-gear:hover, .server-gear[aria-expanded='true'] { border-color: var(--edge); color: var(--ink); }
 .server-bar > .server-gear { border-color: var(--frame-edge); color: var(--frame); } /* at the corner, the switch's quiet circle */
-.server-bar > .server-gear:hover { background: var(--paper); color: var(--ink); }
+.server-bar > .server-gear:hover { color: var(--ink); }
 /* Behind it, it is in ink, as a chip chosen is: what is in the boards' place is its. The ink comes at once (fading
    it, the mark and its ground were one grey midway and the gear was gone for a frame); pressed either way it turns an
    eighth, a tooth's step, so it comes to rest looking as it did. */
@@ -240,7 +240,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .person-go { width: calc(100% + 2 * var(--s2)); margin: 0 calc(-1 * var(--s2));
   padding: 0 var(--s2); border: 0; border-radius: var(--r-key); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
   transition: none; }
-.person-go:hover { background: var(--paper); transition-duration: var(--motion); }
+.person-go:hover { transition-duration: var(--motion); color: var(--ink); }
 .person-go > .lately-badge { align-self: center; }
 .person-go > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }
 /* It goes to the Inbox: an arrow at its end says so, always there and quiet (§7). */
@@ -248,7 +248,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .person-go:is(:hover, :focus-visible)::after { color: var(--ink); }
 .side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: 0 var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-key); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
 .side-repo[aria-current='true'] { background: var(--raised); }
-.side-repo:hover { background: var(--paper); }
+.side-repo:hover { color: var(--ink); }
 .side-repo > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-repo > .small:not(.seen-mark) { grid-column: 1; }
 .side-repo .seen-mark { grid-column: 2; grid-row: 1; }
@@ -301,7 +301,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
   background: var(--paper); color: var(--sub); cursor: var(--cursor-hand);
 }
 .parts-on .mark { box-sizing: content-box; width: var(--s4); height: var(--s4); padding: var(--s1); border: 1px solid var(--edge); border-radius: var(--r-round); background: var(--paper); }
-.parts-on:hover .mark { background: var(--paper); color: var(--ink); }
+.parts-on:hover .mark { color: var(--ink); }
 /* Narrow: the parts slide rather than stack, and the server's name and code are left to its own part. */
 @media (max-width: 760px) {
   /* Every page's parts (Remote's too, not only the gear's): room round them so a focus ring is not cut by the slide. */
@@ -320,7 +320,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .seen-files { margin: 0; padding: var(--s2); list-style: none; overflow-y: auto; border-right: 1px solid var(--rule); }
 .seen-file { display: block; width: 100%; padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-key); background: transparent; color: var(--sub); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: var(--cursor-hand); }
 .seen-file[aria-current='true'] { background: var(--raised); color: var(--ink); }
-.seen-file:hover { background: var(--paper); color: var(--ink); }
+.seen-file:hover { color: var(--ink); }
 .seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-word)/var(--u) var(--mono); }
 @media (max-width: 760px) { .seen-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .seen-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--rule); } }
 

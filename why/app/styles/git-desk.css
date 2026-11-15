@@ -58,12 +58,14 @@
 .git-switch .switch-line > button { cursor: var(--cursor-hand); }
 .git-switch .switch-line > button:is(:disabled, [aria-disabled='true']) { cursor: var(--cursor-arrow); opacity: 1; }
 .git-switch .switch-line.next > :is(button, span) { font-weight: 700; color: var(--ground); }
-/* The keyboard on a step: a ring round its whole line, a cell tall and the sheet's width inside its edge, its edges on
-   the grid's lines (on the step under way, the ground's colour inside its band of ink). A ring round the word alone
-   stood half a cell over and under it, across the lines beside, the band of ink among them. */
+/* The keyboard on a step: the band of ink is where it is, as the chosen row of a menu is. ↑ and ↓ take the band along
+   the four, Enter takes the step under it; with the keyboard elsewhere, the band rests on the step under way. (A ring
+   drawn round the keyboard's line beside a band that stayed put said two places at once, and ↑ ↓ moved neither.) */
 .git-switch .switch-line > button:focus-visible { outline: none; }
-.git-switch .switch-line:has(> button:focus-visible)::after { content: ''; position: absolute; inset: 0 1px; box-shadow: inset 0 0 0 2px var(--ink); pointer-events: none; }
-.git-switch .switch-line.next:has(> button:focus-visible)::after { box-shadow: inset 0 0 0 2px var(--ground); }
+.git-switch .switch-lines:focus-within .switch-line.next:not(:has(> button:focus))::before { display: none; }
+.git-switch .switch-lines:focus-within .switch-line.next:not(:has(> button:focus)) > :is(button, span) { font-weight: 400; color: var(--sub); }
+.git-switch .switch-line:has(> button:focus)::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); }
+.git-switch .switch-line:has(> button:focus) > button { font-weight: 700; color: var(--ground); }
 .switch-lines > .error { margin: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--sans); color: var(--off); text-align: left; }
 .switch-lines > .error:empty { display: none; }
 /* main's sheet's name over its corner, as a piece's is (§5), level with the issue's beside it: the repo whose main it
@@ -259,7 +261,7 @@
    who wrote at the words' size (one large name a shot, §1: master and servant); pressed, its conversation. */
 .work.band-bench > .pane-word { position: fixed; left: auto; right: calc(2 * var(--u)); bottom: calc(2 * var(--u) + var(--foot)); z-index: 6; width: min(calc(14 * var(--u)), calc(100vw - 4 * var(--u))); }
 .work.band-bench > .pane-word > .pane-row { padding: var(--u); border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px; box-shadow: none; }
-.work.band-bench > .pane-word > .pane-row:hover { background: var(--paper); color: var(--ink); outline-color: var(--ink); }
+.work.band-bench > .pane-word > .pane-row:hover { color: var(--ink); outline-color: var(--ink); }
 .work.band-bench > .pane-word .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; color: var(--ink); }
 .work.band-bench > .pane-word .pane-bar { display: none; }
 /* A narrow window: the keys start where the page does (the rail is close set), main's sheet lies straight over the

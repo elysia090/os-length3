@@ -79,12 +79,12 @@ details.diff-file[open] > summary.diff-head::before { rotate: 90deg; }
 /* What waits of a long file, under its lines where they stop, quiet until pressed. */
 .diff-more { justify-self: start; margin-top: var(--s1); padding: 0 var(--s2); border: 0; border-radius: var(--r-key); background: transparent; color: var(--sub); font: var(--t-word) var(--mono); }
 button.diff-more { cursor: var(--cursor-hand); }
-button.diff-more:hover { color: var(--ink); background: var(--paper); }
+button.diff-more:hover { color: var(--ink); }
 /* What is done with (merged, closed): rows, space between them; a merged one opens to its diff. */
 .done-list { display: grid; gap: var(--s1); margin-inline: calc(-1 * var(--s2)); } /* its words on its heading's edge, past each row's own s2 */
 .done-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: var(--h-row); padding: var(--s1) var(--s2); border-radius: var(--r-key); }
 summary.done-head { cursor: var(--cursor-hand); list-style: none; }
-summary.done-head:hover { background: var(--paper); }
+summary.done-head:hover { color: var(--ink); }
 /* A merged one opens to its change: the small triangle every fold has says so before it is pressed, turned down open. */
 summary.done-head::-webkit-details-marker { display: none; }
 summary.done-head::before {
