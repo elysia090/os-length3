@@ -1,21 +1,27 @@
 # Design
 
-How why\* looks, where its things lie, how they move and how they sound: written so that someone who has never seen
-it could make it again and arrive at the same one. Every rule here is a number, a formula or a sentence that can be
-checked, and §12 names the check. A rule with no check is a wish; a value that is not here is not part of the design.
+A design language: how a thing made in it looks, where its things lie, how they move, how they sound and how they
+answer the hand, written so that someone who has never seen it could make it again and arrive at the same one. It
+names no product. Every rule is a number, a formula or a sentence that can be checked; a rule with no check is a
+wish, and a value that is not here is not part of the language.
 
-What the OS is under its places is `OS.md`; what each place does is `PLACES.md`.
+Its core is the stance (§1): the standards that have lasted, kept faithfully, so far that the fidelity is the
+character. Everything after it is that stance worked out, layer by layer: the light (§3), the shot (§2), the page's
+grid (§3), the frame (§4), the material and the hand (§5 to §7), motion and sound (§8, §9), words (§13) and touch (§14).
 
-Contents: 1 the stance · 2 the world · 3 measures · 4 the frame · 5 pieces and the hand · 6 the row · 7 what one
-does · 8 motion · 9 sound · 10 each place · 11 what is not yet so · 12 how it is checked · 13 its words, and what
-only a person gives · 14 touch, and what it is for.
+How why\* applies it, place by place, what is not yet so and how each rule is checked, is `PLACES.md`; what the OS is
+under its places, `OS.md`; where each rule comes from, `CANON.md`.
+
+Contents: 1 the stance · 2 the world · 3 measures (the light, words, lines, whole cells, widths) · 4 the frame ·
+5 pieces and the hand · 6 the row · 7 what one does · 8 motion · 9 sound · 13 its words, and what only a person gives
+· 14 touch, and what it is for.
 
 ---
 
 ## 1. The stance
 
-why\* is a desk to work at. It is drawn by one hand and it is not like other software on purpose; it is also a
-place to spend a working day, so nothing in it is there for its own sake.
+What is made in this language is a desk to work at. It is drawn by one hand and it is not like other software on
+purpose; it is also a place to spend a working day, so nothing in it is there for its own sake.
 
 **Why it is so.** The stance is the reproducible standard of what is preferred, put into words: what has been found
 good over and over, and has lasted. It takes each layer from the oldest standard of it that is still alive, because a
@@ -48,10 +54,11 @@ the oldest form of the stance: "perfection is attained not when there is nothing
 nothing more to remove", and then, in the same chapter (*Terre des hommes*, 1939; in English, "The Tool"), "precisely
 because it is perfect the machine dissembles its own existence instead of forcing itself upon our notice".
 
-**Four things it is made of, and why each.**
+**Five things it is made of, and why each.**
 
 | What it gives | Where it comes from | Why |
 |---|---|---|
+| The light | Film: one key light, and the camera balanced to it | Everything is seen under one light: every grey is its white at a lightness, every colour balanced on it, one shadow's direction (§3). A frame lit by two lights reads as a cast before it reads as anything. |
 | The skeleton | Swiss typography: a grid that is law, asymmetry, few sizes, one left edge | A workplace has to be predictable. A grid is the one thing that lets what is out of sight be known from what is in sight. |
 | The material | Stationery: squared paper, a sheet, ink, a note. A shadow means "in the hand" and nothing else | This is where it is its own. Most software is panes of glass; this has a material world, and the material behaves honestly. |
 | The voice | The poster and the page of a magazine: one large thing a screen, and the large thing is words | Where it moves a person. It works because there is only one. |
@@ -84,10 +91,10 @@ do, and each is a rule here with a number:
 |---|---|
 | A grid drawn from the line spacing (Vignelli, *Canon*: "one can draw a grid based on the leading size") | the cell is the line: 24 px (§3) |
 | "Stick to one or two type sizes", the large about twice the small, white between them (*Canon*) | three sizes in all, one, two and four times; on one sheet two, its words and its name (§3) |
-| A subhead is the text's size in bold, "a line space above and none below" (*Canon*) | who speaks, over what they said (§10, a transcript) |
+| A subhead is the text's size in bold, "a line space above and none below" (*Canon*) | who speaks, over what they said (a transcript: `PLACES.md`) |
 | Flush left; centred only for what is lapidary (*Canon*; Bringhurst 2.1.3) | one left edge; nothing is set in the middle (§1) |
 | Vertical space is added in whole intervals of the leading (Bringhurst 2.2.2) | every gap is whole cells (§3, whole cells) |
-| A comfortable measure (Bringhurst 2.1.2); read fastest long, preferred at 45 to 72 letters, slow under 35 | a line of what is said is 36 to 72 letters at every width (§10) |
+| A comfortable measure (Bringhurst 2.1.2); read fastest long, preferred at 45 to 72 letters, slow under 35 | a line of what is said is 36 to 72 letters at every width |
 | Outside margins small, for tension between the edge and what is on the page (*Canon*) | 6 px from the window (§4) |
 
 **Not a likeness.** It would be easy to look like the things it comes from: squared paper, a heavy grotesque, a
@@ -102,7 +109,7 @@ part, and each has already changed something:
 | Morrison and Fukasawa, *Super Normal* | special things "demand attention for the wrong reasons"; "a certain lack of noticeability has become a requirement"; a thing earns its worth in daily use | inside a sheet, is anything asking to be looked at? | one voice a screen (a name) and the rest quiet: the hand's piece is the only fill |
 | Hara, for MUJI | not "this is what I want" but "this will do": acceptance, not appetite; emptiness is "a possibility of being filled" | is the desk a vessel for the work, or a show of itself? | the ground is empty and the same everywhere; a place with nothing in it says the one thing to do and nothing else |
 | Giampietro, *Default Systems* | "the center is a default position"; "the system makes assumptions that, unchallenged, become truths" | which shapes are here because every interface has them? | the pill went (a key is a key, §3); a person's mark is their seal, not a tinted face; nothing is centred |
-| Alexander, *Notes on the Synthesis of Form* | good fit cannot be described, but each misfit can be named, and fit is their absence | can what is wrong be named and counted? | §11 is a list of named misfits, each with the rule it breaks, and §12 the tests that find them |
+| Alexander, *Notes on the Synthesis of Form* | good fit cannot be described, but each misfit can be named, and fit is their absence | can what is wrong be named and counted? | what is not yet so is a list of named misfits, each with the rule it breaks, and the tests that find them (`PLACES.md`, C and D) |
 | Chimero, *The Web's Grain* | a material has a grain; the web's is edgeless; build up from parts, then frame | does it fit a window, or go on past it? | rows run past the window's edge and the window looks along them; there is no layout for a size, only pieces that are set as words are |
 | Playdate's own guide | "measure cap height, not total font height"; hold it against a printed book | is a size a number, or what the eye gets? | a name is sized by its capitals (and a kanji's face, §3); the words written are sized by the angle they subtend |
 | the OP-1's tape | lift, drop, split, join: the verbs of the thing it stands for, and no others | are the verbs the material's own? | take up, put away, put back, go; a thing is never "selected" or "activated" |
@@ -122,7 +129,7 @@ effectiveness" (Mascelli, *The Five C's of Cinematography*); between eye and ear
 sound, or to the image. If equal, they damage or kill each other" (Bresson); on a page, "stick to one or two type
 sizes at the most" (Vignelli). Its opposite, repetition (parts all alike), is not barred: a row of pieces one width
 (§6) is repetition, and the one in hand its one accent. Here: §2's one subject in focus and one voice, §5's one piece
-in the hand, §7's nothing done from a distance, are this law in its channels; `master.spec.ts` holds it whole.
+in the hand, §7's nothing done from a distance, are this law in its channels; it is measured whole at every rest.
 
 **The removal test.** Anything that can be taken away without the shot losing what it says is taken away: "any
 element in the frame not required for story-telling purposes attracts unwarranted audience attention" (Mascelli);
@@ -130,9 +137,9 @@ element in the frame not required for story-telling purposes attracts unwarrante
 only by answering one of the three questions (above) or doing the place's act (§14).
 
 **A rule yields to a composition.** The rules here are general answers. Where a place already has a composition
-that is the specific answer to what it is for, the composition stands and the rule is not laid over it: Git's sheet
-(a number two cells tall at its top right, its title at the left, its work a column running to the sheet's right
-edge, the sum of the work large at its foot) and Runtime's ruled account are such. Twice they were flattened by
+that is the specific answer to what it is for, the composition stands and the rule is not laid over it: a sheet set
+as a poster (a number two cells tall at its top right, its title at the left, its work a column running to the
+sheet's right edge, the sum of the work large at its foot) and a ruled account are such. Twice they were flattened by
 rules that were true in general ("a number is said once", "one left edge", "no frame in a sheet"), and twice what
 made the place its own went with them. A rule is laid on what has no answer of its own yet; what is specific is kept
 ("appropriateness is the search for the specific of any given problem").
@@ -159,13 +166,14 @@ One world, and the window looks at it.
 
 - **Down: the places.** The places lie one under another in the order of the rail (§4). To go to a place further
   down the rail is to go down.
-- **Along, past the row: a place's far side.** Three pages are not places of their own but the far side of one: Git
-  of Forge, the Remote of Home, Inbox of Server. A far side is a whole screen, a step along from its place, reached
+- **Along, past the row: a place's far side.** Some pages are not places of their own but the far side of one: the
+  same thing seen from its other side (a work written, then recorded; what is one's own here, then where it is kept;
+  where many talk, then what was said to one). A far side is a whole screen, a step along from its place, reached
   through the door (§4) and left through it.
 - **Along: the pieces.** What is in a place lies in a row from the desk's left edge, left to right (§6).
-- **In front: what is called up from the frame.** A search's finds, File's tree, the person's menu: they come in front
+- **In front: what is called up from the frame.** A search's finds, the tree of everything, the person's menu: they come in front
   of the world, and the world behind them goes out of focus (blurred) until they are put away. A thing's own menu (a
-  repo's gear, a row's deeds) is not in front of the world: it is a sheet laid on the thing that called it (paper, an
+  thing's chevron, a row's deeds) is not in front of the world: it is a sheet laid on the thing that called it (paper, an
   ink edge, its shadow), and nothing behind it changes.
 - **Fixed to the window: the frame.** The rail and the band (§4) are the window's instruments. They do not move; the
   world goes by under them.
@@ -200,7 +208,7 @@ frame, kept as rules here:
 | The camera moves only when something motivates it, and a move ends on a composed frame | **A move is asked, and lands on a shot.** The world moves only for what the hand asked (§8), and every move ends at a rest where each rule here holds. |
 | The 180° line: screen direction is kept from shot to shot | **Directions never reverse.** Down is further down the rail; along is a far side, or the row's next; the world never goes the other way for the same thing (§2, §8). |
 
-Each is measured at every rest of every place, at four widths (§12).
+Each is measured at every rest of every place, at four widths (`PLACES.md`, D).
 
 ### A shot, computed
 
@@ -229,16 +237,17 @@ place's square, the door, a piece), or, when a key or a find moved the world, wh
 
 **When two cannot both hold.** Murch weighs a cut's six criteria (emotion 51%, story 23%, rhythm 10%, eye-trace 7%,
 the screen's plane 5%, the space of the action 4%) and gives up from the bottom. The same order here: what the place
-is for (§10), over the three questions of §1 (where am I, what is in my hand, what can I do next), over the times of
+is for (each place's, `PLACES.md`), over the three questions of §1 (where am I, what is in my hand, what can I do next), over the times of
 §8, over eye-trace, over the plane (look room, weight, the thirds, the horizon), over the space (order, depth). So:
 
 - a piece pressed stays under the hand, though the room behind it be the larger (eye-trace over the plane);
 - a row's first sheet stands before the piece in hand where both fit, though the weight then lie right of the middle
-  (what can be done next over the plane: Server at 1024 px, `Tₓ` = +.02);
+  (what can be done next over the plane: at 1024 px, `Tₓ` = +.02);
 - a place's index stands beside the piece in hand where both fit, though the room ahead of it is then the shadow's
-  (what can be done next over the plane: Inbox's who-wrote beside the conversation at 1024 px, ahead 52, behind 336).
-  Nothing else gives the room ahead away: Git's issue in full stands at the row's edge with the next ahead of it, the
-  ones before out of sight on the map, and look room is measured in every place at every desk width (`composition.spec.ts`);
+  (what can be done next over the plane: who wrote, beside the conversation, at 1024 px: ahead 52, behind 336).
+  Nothing else gives the room ahead away: a row whose piece in full is wide stands it at the row's edge with the next
+  ahead of it, the ones before out of sight on the row's map, and look room is measured in every place at every desk
+  width;
 - a place's own composition stands over a general rule (§1: emotion over all).
 
 ### Negative space, and the lean
@@ -275,9 +284,9 @@ desks, where the photographs' .044 of a frame is −.09 in these units.
 
 So the negative space of a shot is one thing: the ground ahead of the subject, open to where the world goes on. It is
 never between things. Measured in every place at 1536 and 1024: the largest field holds 97 to 100% of the bare
-ground; nothing is trapped but a counter in Inbox's first sheet; the lower right is the emptier quarter wherever the
-subject is at the desk's edge. A place that is one sheet is a close-up and has its white inside it (Runtime 30%, the
-Remote 47% bare ground at 1536).
+ground; nothing is trapped but a counter in one index sheet; the lower right is the emptier quarter wherever the
+subject is at the desk's edge. A place that is one sheet is a close-up and has its white inside it (30% and 47% bare
+ground at 1536, measured).
 
 ---
 
@@ -288,8 +297,8 @@ All lengths are CSS px. The grid's cell is **u = 24**. Everything on a desk has 
 
 ### Colour
 
-Colour is material or state, never ornament. `styles/tokens.css` holds the values; `scripts/light.ts` writes the
-greys and the terminal's sixteen from the ground, and `scripts/light.test.ts` holds what follows.
+Colour is material or state, never ornament. The greys, the marks' tints and a program's sixteen are not chosen one
+by one: they are worked out from the ground by the rules below, and held to them by a test.
 
 **One light.** A scene is shot in one light, and the camera is balanced to it: what is grey in the scene is grey on
 the screen, and a source of another colour in the frame (daylight through a window in a lamp-lit room) reads as a
@@ -330,7 +339,7 @@ hold at their contrast, crisp rather than pastel, none of them a saturated yello
 | edge | `#6e6d6a` | the line round a piece not in the hand |
 | quiet | `#817f7c` | a line's number; a control at rest; the least a word is read at (Lc 45 on the ground) |
 | rule | `#9b9995` | a line inside a sheet |
-| note | `#f2cf52` (its quiet words `#817133`) | Home's note: what is one's own to do |
+| note | `#f2cf52` (its quiet words `#817133`) | the note: what is one's own to do |
 | green | `#a4eac8` | the machine speaking: the terminal's words and its shadow, in the hand only. The screen is a light in the scene of its own (a practical, as a lamp in shot is), and its words are its colour |
 | off | `#7f2b3c` | not answering, removed, refused |
 | done | `#0e7c5e` | a step done |
@@ -351,8 +360,8 @@ twice the text; "single, double, three or four times ... not an odd size in betw
 | Size | Face | On a line of | For |
 |---|---|---|---|
 | **17** | mono or sans, 400 or 700 | 24 | **every word**: what is written (a file, the terminal), what is read on a sheet, what is said beside (a label over a piece, a count, a time, a day, a hint, the band's search, a menu), a line's number, a key's name, a title inside a sheet (700) |
-| **33.01** (= u / .727) | display | — | a name: a repo, a file in the hand, a place, a board, a person on their sheet. Its capitals are one cell tall: about twice the words |
-| **66.02** (= 2u / .727) | display | — | the shot's one large thing: the person's name at Home, an issue's number. Its capitals are two cells tall |
+| **33.01** (= u / .727) | display | — | a name: a work, a file in the hand, a place, a board, a person on their sheet. Its capitals are one cell tall: about twice the words |
+| **66.02** (= 2u / .727) | display | — | the shot's one large thing: a person's name on their own page, a numbered thing's number. Its capitals are two cells tall |
 
 **On one sheet, two**: its words and its name. The one large thing stands alone in its shot (§2).
 
@@ -376,7 +385,7 @@ words' size, its capitals half a cell.
 
 **A name in Japanese** is a cell tall too. A kanji's face fills .92 of its square where a capital of the display face
 is .727 of its size, so at the name's size it would stand 30 px tall beside capitals of 24 (measured). It is set in
-the heaviest gothic the system has at 80 % of the size (`Display JP`, `styles/base.css`): its face is then 24 px.
+the heaviest gothic the system has at 80 % of the size: its face is then 24 px.
 A name of both writings is one height. (What a screen says must hold when it is said in another language: the
 letters get longer or taller, the room does not.)
 
@@ -409,9 +418,9 @@ on a sheet and a line on the ground beside it are one line.) From that one rule:
   with a line above it and none under it (Vignelli); the next of a run of posts is the next line, another speaker a
   line on.
 - **Words on the ground take the whole cells they stand in**: the dots of those cells are under them (a patch of the
-  ground's colour brought up to the grid's next line, `ui/clearing.ts`), so no dot is nearer a word than half a
-  cell, none is cut by the patch, and none reads as a stop that was never written ("1 repo · 1 server·", measured
-  before: a dot a pixel after a word, another cut in half).
+  ground's colour brought up to the grid's next line), so no dot is nearer a word than half a cell, none is cut by
+  the patch, and none reads as a stop that was never written ("3 items · 1 board·", measured before: a dot a pixel
+  after a word, another cut in half).
 - **A sheet that stands to the foot is as tall as the whole cells there are room for**, so its lines, counted from its
   foot up (a talk standing on the box one writes in), are on the grid on a window of any height.
 - **A name stands on its capitals**, a cell tall (or two), on lines of the grid; a name of more than one line, a line
@@ -428,19 +437,18 @@ on a sheet and a line on the ground beside it are one line.) From that one rule:
 - **the shadow**, half a cell right and down: it is the light's, not a space;
 - **the dots' own place**, a cell's middle: so that an edge on a line of the grid cuts none.
 
-Held: in every place at four widths every line of words in the world has its middle on a row of the dots
-(`composition.spec.ts`).
+Held: in every place at four widths every line of words in the world has its middle on a row of the dots.
 
 ### Widths
 
 | Thing | Width |
 |---|---|
-| a piece on a desk (a file, the terminal, Home's pieces, the band's bar) | **24 cells** = 576: two cells for the numbers before its words (three figures and a letter's room), forty-nine letters of 17 px mono (49 × 17 × .602), a cell of paper after, up to the grid |
+| a piece on a desk (a file, the terminal, a note, the band's bar) | **24 cells** = 576: two cells for the numbers before its words (three figures and a letter's room), forty-nine letters of 17 px mono (49 × 17 × .602), a cell of paper after, up to the grid |
 | between two pieces | **2 cells** |
-| a place that is one sheet (Runtime, the Remote) | to a cell from the window's right edge, at most **48 cells** (two pieces' insides and what is between them) |
-| Home's slip | 12 cells |
-| a row's first sheet (§6): Git's own, Server's | **8 cells**: a whole screen then shows it and two pieces whole (48 + 192 + 48 + 576 + 48 + 576 + 12 = 1500 ≤ 1536; 9 cells is the most that does) |
-| Inbox's first sheet | 12 cells: one piece follows it, and it holds a name and what was last said on a line |
+| a place that is one sheet | to a cell from the window's right edge, at most **48 cells** (two pieces' insides and what is between them) |
+| a slip | 12 cells |
+| a row's first sheet (§6) | **8 cells**: a whole screen then shows it and two pieces whole (48 + 192 + 48 + 576 + 48 + 576 + 12 = 1500 ≤ 1536; 9 cells is the most that does) |
+| an index sheet (who wrote, beside a conversation) | 12 cells: one piece follows it, and it holds a name and what was last said on a line |
 | a window narrower than a piece and its shadow | a piece is `24 · max(10, ⌊(W − 48 − 12) / 24⌋)` px: as many whole cells as there is room for |
 
 **The widths are one programme.** A sheet has a cell of paper each side, and what is set in it in columns has two
@@ -514,7 +522,7 @@ The frame is the camera's own (§2): it is how the window is held, not something
   dim a still mark of their own accord against burn-in, and the navigation rails and tab bars of both platforms set
   the places one is not in quieter than the one one is in. So at rest the frame's marks and words are the frame's
   quiet colour (`sub`) and its lines the quiet line (`edge`); nothing in it is filled with ink. Ink is for the place
-  one is in (on the slot colour), what is chosen in it (a server on the band: the slot colour under it), and what
+  one is in (on the slot colour), what is chosen in it (on the band: the slot colour under it), and what
   the hand is on: a place under the pointer or the keyboard, and the band while its search is written in, as a piece
   is ink only in the hand (§5). Measured, the frame's ink is a median 3% of the world's, at most 13% on a desk with
   only short files on it.
@@ -527,27 +535,16 @@ The frame is the camera's own (§2): it is how the window is held, not something
 - Its marks are the frame's quiet colour; the place one is in has the slot colour under it and its mark in ink; a
   place under the pointer or the keyboard, paper, a 2 px ink ring and its mark in ink. At a place's far side its place is the one lit. A place's name stands out beside it while the keyboard is on
   it; a pointer over it brings nothing out (§7).
-- **An icon stands on the rail only for what the day goes to from anywhere.** In order, nearest the person first:
+- **An icon stands on the rail only for what the day goes to from anywhere**, in order, nearest the person first:
+  what is one's own; the work; the people; the machine. Then what is not a place: what is called up in front of
+  whatever place is shown (the tree of everything, the plug) and the key that makes a new thing. At the rail's foot,
+  the person's own menu. (Which icon is which: `PLACES.md`.)
+- **What is gone to from one place has no icon: it is that place's far side, and its door is there.** An icon costs
+  the screen a square for ever and saves a press only when its page is gone to from somewhere not its place; a page
+  gone to from one place is seldom the next thing from anywhere else.
 
-  | | Icon | What it is |
-  |---|---|---|
-  | mine | Home | who one is, what is one's own to do |
-  | the work | Forge | a repo written and run |
-  | people | Server | where many talk |
-  | the machine | Runtime | this device |
-  | not places | File, the plug, + | File and the plug are called up in front of whatever place is shown; + makes a repo |
-
-  At the rail's foot, the person's own menu.
-- **What is gone to from one place has no icon: it is that place's far side, and its door is there.**
-
-  | Far side | Of | Why it is its far side |
-  |---|---|---|
-  | Git | Forge | the repo written, then the repo recorded and reviewed |
-  | the Remote | Home | what is mine here, then where it is kept |
-  | Inbox | Server | where many talk, then what was said to one |
-
-  What is to be seen at a far side is said on its place's icon, the place's own name first: a red dot on Home while
-  the Remote does not answer; an ink dot on Server while something in Inbox is unread.
+  What is to be seen at a far side is said on its place's icon, the place's own name first: a red dot while what it
+  reaches does not answer; an ink dot while something there is unread.
 - A window too short for the rail (under 560 px) closes the places up, and they scroll inside the rail.
 
 ### The door
@@ -563,21 +560,24 @@ hand where it was.
   own on that side).
 - What waits where it leads is a dot on it, as on a place of the rail.
 - Going through it the world goes **along** (§8), the far side coming in from the right; back, from the left.
-- Only these six pages have a door. Runtime, File, the plug and + lead nowhere further.
+- Only a place with a far side, and that far side, have a door; what is called up, and the key that makes a new
+  thing, lead nowhere further.
 
 ### The band
 
-On a desk (Home, New repo, Forge, Git). **One bar** from the desk's edge: x = 48, y = 6, 36 tall, as wide as a
+On a desk. **One bar** from the desk's edge: x = 48, y = 6, 36 tall, as wide as a
 piece (§3). Ground under it, a 1 px outline of the quiet line (ink while its search is written in), corner 4. Its keys are parts of it **two cells wide**, edge to
 edge, a 1 px line between them; the search is the rest, its words the words' size. Every edge of the bar is on a line of the
 grid, so no dot is cut by it.
 
-- Home and Forge: the door, the terminal's key, the files' key, the search. Git: the door, the terminal's key, the
-  search. New repo: the terminal's key, the files' key, the search (it has no far side).
+- Its keys, in order: the door (where the place has a far side), the terminal's key, the files' key, then the search.
+  A desk has the keys its work needs and no others (which: `PLACES.md`).
+- The search, written in, is a field in the hand: paper inside and its own pixel of ink round it (one pixel where it
+  meets the key before it). What it finds is the desk's files and the lines in them, and nothing else lives under it.
 - At the band's right end, against the window's edge by its ink, in the display face with its capitals a cell tall
-  about the row's middle: on Forge the name of what is in the hand; on Git the repo the desk is of (an issue's number
-  is its own sheet's large thing, and is said once, §2). Where the band has no room for it whole at that size it is
-  not there at all: it is never made smaller to fit, and never cut.
+  about the row's middle: the name of what is in the hand; where the desk is of one thing, that thing's name (a
+  numbered thing's number is its own sheet's large thing, and is said once, §2). Where the band has no room for it
+  whole at that size it is not there at all: it is never made smaller to fit, and never cut.
 - What the search finds comes in front: sheets in a row from the desk's edge, their tops a cell under the band
   (y = 72), to a cell from the window's right edge.
 
@@ -585,8 +585,8 @@ grid, so no dot is cut by it.
 
 ## 5. Pieces and the hand
 
-A **piece** is a thing with something in it that lies on a desk: a file's sheet, the terminal, Home's note, a slip,
-an issue's card.
+A **piece** is a thing with something in it that lies on a desk: a file's sheet, the terminal, a note, a slip, a
+numbered card.
 
 **One piece is in the hand.** It is the one being worked in (pressed last, or holding the keyboard). The hand's piece
 and no other:
@@ -609,7 +609,7 @@ being worked in.
   any other piece whole in sight, whichever piece is in the hand.
 - The words of a piece not in the hand are a step quieter than ink, and still read: a file beside the one written
   in is looked at. (Making them quieter still would reach 8 times for the words too, and nobody could read them.)
-- Home's note weighs at least 8 times what waits beside it.
+- On a desk of short pieces, the note weighs at least 8 times what waits beside it.
 - A whole screen has **one** body of ink holding 5 % or more of the screen's ink. (Measured in cells of 24 px,
   bodies being joined cells with more than .15 ink. Screens that hold the eye have one body many times the next;
   screens that scatter it have two or three near equal.)
@@ -627,8 +627,8 @@ being worked in.
   them; its words start on the grid's line two cells in.
 - Nothing on a desk changes size, and nothing lies askew.
 
-**What makes a sheet a composition** (said of Git's, without looking at it; it is what a sheet with something to
-read on it is given):
+**What makes a sheet a composition** (said of a sheet set as a poster, without looking at it; it is what a sheet with
+something to read on it is given):
 
 1. **An axis that is not the sheet's left edge.** Things hang on both sides of it: right-aligned against it at the
    left, left-aligned from it at the right. One line inside the sheet, not two margins.
@@ -644,7 +644,7 @@ none of these, however correct each of its parts is.
 
 **What is ruled on a sheet.** A sheet may be ruled, as a form or a ledger is: lines of the quiet `rule`, 1 px, with
 no fill and no shadow, and never of ink (ink is words, and the edge of what is in the hand). An account that is read
-across (Runtime's: what is here, what is on the Remote, what can be freed) is one frame of columns of one height,
+across (what is here, what is kept elsewhere, what can be freed) is one frame of columns of one height,
 its figures at each column's right edge: the frame and the height are what make three lists one account. This is not
 a sheet in a sheet. A sheet in a sheet has a fill or a shadow of its own, and there are none.
 
@@ -655,12 +655,12 @@ foot; a board beside it is its name, the row's first sheet its lines, and neithe
 colour exactly their own size, as a name on a map stands clear of its grid; a key on the ground has the ground's
 fill. A dot in a line of small words reads as a full stop nobody wrote.
 
-**A thing's menu is called by one mark,** a chevron pointing down, everywhere (a file's row, a repo, one's own name,
-a server); out, it points back up. A mark is a few strokes of one weight, as the rail's are. There is no gear: it is
+**A thing's menu is called by one mark,** a chevron pointing down, everywhere (a file's row, a work, one's own name,
+a room); out, it points back up. A mark is a few strokes of one weight, as the rail's are. There is no gear: it is
 a picture of a machine's part, too fine to be drawn at a mark's size, and it says "settings" where what opens is what
 can be done with the thing.
 
-**A place that is one sheet** (Runtime, the Remote) is that sheet in the hand: paper from the desk's corner
+**A place that is one sheet** is that sheet in the hand: paper from the desk's corner
 (48, 48), a cell of paper round what is on it, its shadow, its name in the display face.
 
 ---
@@ -670,24 +670,23 @@ can be done with the thing.
 Pieces are set as words are in a line: along from the desk's edge, and **a piece that does not fit beside the last
 goes under it, at the desk's edge again, two cells down.**
 
-- **A desk of short pieces (Home) is set so and nothing more:** nothing of it is ever out of sight sideways. A whole
+- **A desk of short pieces is set so and nothing more:** nothing of it is ever out of sight sideways. A whole
   screen has its pieces side by side; half a screen and a phone, one under the other.
-- **A desk whose pieces are as tall as the window has one line only**, and is looked along: Forge's files, Server's
-  boards, Inbox's conversation. The rest of this section is that line (`ui/row.ts`, `ui/row-desk.ts`). (Git's issues
-  are a row of their own make, §10.)
+- **A desk whose pieces are as tall as the window has one line only**, and is looked along: files, a room's boards,
+  a conversation, numbered cards. The rest of this section is that line.
 
 Decided by the window's width and nothing else (never by what the device is), and when pieces do not fit side by side
 one is shown whole and the rest are a step along, in order: what the split views of the systems people know do when
 a window narrows.
 
-**Where a piece is.** The pieces are in the order they were opened (on Forge the terminal first; on Server the
-boards' own order). All are one width `W` (§3), `G = 48` apart. The n-th (from 0) starts at
+**Where a piece is.** The pieces are in the order they were opened (the terminal, where there is one, first), or in
+their own order where they have one (a room's boards). All are one width `W` (§3), `G = 48` apart. The n-th (from 0) starts at
 
     x(n) = n · (W + G)
 
 from the desk's edge. A piece's place is its number and nothing else.
 
-**The row's first sheet.** A row that has things of one kind to choose among (Server's boards, the people who wrote
+**The row's first sheet.** A row that has things of one kind to choose among (a room's boards, the people who wrote
 to one) starts with a sheet that is its index: narrower than a piece (§3), not in the hand, at the desk's edge. Its
 lines are the frame's square tall across it; the one whose piece is in the hand is in ink; a line pressed goes to its
 piece. So any piece is one press away while the sheet is in sight (a whole screen), and two from anywhere (to the
@@ -723,7 +722,7 @@ the frame's foot line (the line through the middle of the person's mark, half a 
 frame's own, clear of the edge as the frame's every square is, and between two rows of the ground's dots, so it cuts
 none): the row twelve times smaller (a piece of 24 cells is a bar 48 px long, two cells between are 4 px), each piece
 a bar 4 px thick on the line, the one in the hand in ink and the rest in the quiet line's colour, and a 2 px line of
-ink just under the part that is in sight. Every row has it, Git's issues too. A row longer than the window's
+ink just under the part that is in sight. Every row has it. A row longer than the window's
 width times twelve is drawn smaller, to fit. It answers what the window cannot show: how many pieces, which way, how
 far. **A bar pressed goes to its piece**, so nothing on a row is reached by scrolling alone. With the whole row in
 sight there is no map.
@@ -745,11 +744,11 @@ Five things, each done one way, the same with a finger, a mouse and the keyboard
 Rules that follow, each of them absolute:
 
 - **Nothing waits on a pointer.** What can be done with a thing is on the thing in the hand, or always there and
-  quiet (a repo's gear, a note's item's ×, a row's menu), inked while the thing is used. A pointer over a thing
+  quiet (a thing's chevron, a note's item's ×, a row's menu), inked while the thing is used. A pointer over a thing
   never brings anything out and never puts anything away.
 - **A press means one thing.** Pressing a thing goes to it. Pressing twice chooses a word in a text and is otherwise
   a press.
-- **What is called up comes by a press and by nothing else** (File's tree, the search's finds, a menu), and stays
+- **What is called up comes by a press and by nothing else** (the tree of everything, the search's finds, a menu), and stays
   until it is put away.
 - **A key is a quicker way to something that can be pressed,** never the only way to it.
 - **The pointer and the caret are the OS's own,** ink on a paper edge.
@@ -783,12 +782,12 @@ still be the right one, when ease was not its aim. Three are kept on purpose:
 - **In a board and a conversation Enter is a new line, and sending is a key of its own** (Ctrl+Enter, or the key that
   comes with the words). What is said there is a whole thought that will be read later, not a line in a chat.
 - **One piece is in the hand.** To work in another it is taken up; nothing is done to a piece from a distance.
-- **A far side is a step away** (the door), not a pane beside its place: Git is where the work is judged, not where
-  it is done.
+- **A far side is a step away** (the door), not a pane beside its place: where the work is judged is not where it is
+  done.
 
 And one kind is not friction but noise: **being asked "are you sure".** Asked every time, it is answered without
 being read. A deed that can be put back is done at once and can be put back; only what cannot be put back is asked,
-and then by something that cannot be answered by habit (§11).
+and then by something that cannot be answered by habit (a name written out, as a repository's is before it goes).
 
 **While something takes time, what is being done is said**, in words, where its result will be: a wait that shows
 its work is trusted more than a short one that shows nothing.
@@ -815,12 +814,11 @@ Ozu allows himself is the simple cut" (Richie); in a comic's gutter "nothing is 
 experience tells you something must be there", and that completing is closure (McCloud); "straight cuts are always
 faster than moving shots, because they come to the point immediately" (Mascelli); "one does not create by adding,
 but by taking away" (Bresson). What was so taken away: things gliding in, growing from nothing, folding up and out,
-popping, crossfading, sliding off, the rail's ink sliding between places, and the ink's lights fading (`ui/glide.ts
-cut`; every page's own). A light that says something was done is held for its read time and goes off at once. The
+popping, crossfading, sliding off, the rail's ink sliding between places, and the ink's lights fading (every page's own). A light that says something was done is held for its read time and goes off at once. The
 mind is not left to complete what it cannot: a cut keeps where things are (§2, eye-trace and order) and changes
 wholly or not at all (no jump, §2: "neither subtle nor total" is Murch's jump).
 
-**One law for every move** (`ui/law.ts`). A thing moved goes as a hand moves it and stops it: off at once, most of
+**One law for every move**. A thing moved goes as a hand moves it and stops it: off at once, most of
 the way in the first third of its time, then settling, with no bounce. At `u` (0 to 1) of its time it is
 
     eased(u) = (1 − (1 + 8u) · e^(−8u)) / (1 − 9 · e^(−8))
@@ -850,7 +848,7 @@ The sheets have the same law as three times and one curve:
 - **Words shown for a moment stay long enough to be read once**: `max(500 ms, wide/4 + narrow/17 s)`, a full-width
   letter a quarter of a second (Japanese subtitling's four a second; up to six are read without strain, Toyokura and
   Yamada 2017), a Latin letter a seventeenth (Netflix's slower English rate), half a second at the least (the
-  shortest a subtitle stands). `ui/law.ts readTime`. ("Copied" stood 1.2 s, and コピーしました needs 1.75.)
+  shortest a subtitle stands). ("Copied" stood 1.2 s, and コピーしました needs 1.75.)
 - **A line turned under the caret is turned at once**, a whole line, as a typewriter's platen turns a line under the
   hand: it answers the key, as the letter written does, and is not a move.
 - **A move never holds the hand.** The place come to is there to be used from the first frame; a move under way is
@@ -860,7 +858,7 @@ The sheets have the same law as three times and one curve:
 
 **One world, one move.** Going to another place, the place left, the place come to and the ground set off at the same
 instant, in the frame after the place come to is built: each is made held where it starts and all are let go
-together (`ui/glide.ts travel`). Set off as each is made, the ground ran ahead of the sheets on it whenever the place
+together. Set off as each is made, the ground ran ahead of the sheets on it whenever the place
 come to was long in the building.
 
 ---
@@ -929,17 +927,17 @@ four ways:
 | **lean** | the weight up and left with the frame, the room down and right with the open sides | Müller-Brockmann; the reading order | rendered |
 | **read time** | how long words shown for a moment stay: `max(500 ms, wide/4 + narrow/17 s)` | subtitling | measured |
 | **cell**, **programme** | 24 px, the line, every gap a cell or half; the widths 8, 12, 24 and 48 cells (`inside + 2 = n(c + 2)`) | Vignelli's grid from the leading; Gerstner | measured |
-| **character** | what a place is for, in one sentence (§10); its one large thing | Murch's emotion | given |
+| **character** | what a place is for, in one sentence (`PLACES.md`); its one large thing | Murch's emotion | given |
 | **importance** | which thing in a place matters most, then next: the subject's kind, the large thing, the cast | Hitchcock's rule | given |
 | **friction** | a cost kept because it says what a place is (§7) | — | given |
-| **misfit** | a named place where a rule is broken (§11) | Alexander | given, then measured |
+| **misfit** | a named place where a rule is broken (`PLACES.md`, C) | Alexander | given, then measured |
 
 ### What only a person gives
 
 Everything above that is measured or rendered is computed from four things a person gives, and from nothing else
 (and over the four, one more: why a person would be moved to do what a place is for, §14):
 
-1. **What each place is for** (§10, one sentence each): its character. Murch's first criterion, "emotion", weighs more
+1. **What each place is for** (`PLACES.md`, one sentence each): its character. Murch's first criterion, "emotion", weighs more
    than the other five together, and no measure reaches it: a title "sets mood ... in some metaphorical way" (Saul
    Bass), and motion "cannot normally replace or override strong emotive content intrinsic to the meaning" (Lee,
    Forlizzi and Hudson 2002).
@@ -957,8 +955,8 @@ Everything above that is measured or rendered is computed from four things a per
 And one thing only looking finds: **that something is wrong**. Measures of a screen predict what a crowd will judge
 of it on average, about half of it (Reinecke et al. 2013; Miniukovich and De Angeli 2015), and one person's judgment
 far less (r ≈ .3 to .5); what a measure does not know of (a grouping by meaning, a word cut short, an empty field that
-reads as missing) shows only to an eye. So the eye is used for one thing: to find a misfit. Found, it is named in §11,
-given a number here and a test in §12, and only then fixed. Looking finds; numbers hold.
+reads as missing) shows only to an eye. So the eye is used for one thing: to find a misfit. Found, it is named (`PLACES.md`, C),
+given a number here and a test (`PLACES.md`, D), and only then fixed. Looking finds; numbers hold.
 
 ---
 
@@ -974,7 +972,7 @@ Zubek's MDA, 2004: mechanics serve dynamics serve the aesthetic; Nintendo tested
 of it", and the rest is derived from it:
 
 - the subject is where X is done: **a screen is for its act**, and every place's subject holds it (something to
-  write in or to do), at every rest (§12, `touch.spec.ts`);
+  write in or to do), at every rest (measured);
 - what matters most is ranked by its part in X;
 - the words name X's things and deeds;
 - friction is kept only where it makes Y.
@@ -987,19 +985,19 @@ research has one, measured on every control of every place from the top right, h
 
 | Touch | The principle | Its number | From | Measured |
 |---|---|---|---|---|
-| **Hover** | quiet to ink, or paper under it, **at once** (no fade in or out: the same colour in every frame from the first); nothing comes, nothing goes (no line is drawn under words: paper under them). On paper, where paper is not seen, a key's line and words go to ink. In a list called up (a menu, a tree), the row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's, as a selection is | one frame, no other fill | §3, §7 | measured in every place: one colour in every frame (`touch.spec.ts`) |
-| **Press** (a click, a tap) | **held down at once and up at once**: a pointer's press has no travel to draw (the hand is down when the screen is told), and being held is a state, not a move, shown with less motion asked for too. The ear says when (a key's sound as it goes down, again as it comes up), the eye says what is so (held down, a few pixels; then what the press did): a sound and an image at one instant are one event to the senses (Chion's synchresis), and across time they work in turn (Bresson's relay), so neither tells what the other tells. Pressed, nothing is filled. **Going is on the down, doing on the let-go**: a press that goes somewhere (a place, a far side, a piece) changes nothing and is undone by going back, so it takes the earliest moment, the down (a tab of a browser is chosen so); a press that does something (makes, sends, changes, removes) does it at the let-go, and moved off before the let-go it does nothing. A press begun on what is pressed and moved off never selects the page's words | its give in the first frame drawn after the press or the next; up in the frame after the let-go, never drawn coming home; its give ≥ .92 of itself | Jota et al. 2013 (a tap's lag unseen under 24 ms); Apple, *Designing Fluid Interfaces* (2018): "everything needs to respond instantly"; a press confirmed on its let-go; Chion, *Audio-Vision* (1990); Bresson, *Notes* | measured: given in one frame, home in the next, never past (`touch.spec.ts`) |
-| **Look along** (scroll) | **the window's own scrolling, and nothing laid on it**: what is scrolled stays under the hand, in the frame after the wheel or the finger; its rate and its coasting are the platform's (a thrown thing coasts to a stop where its speed takes it), never altered; nothing comes, goes, fades or moves as it is scrolled; at its end it stops by the platform's own soft edge and never carries on into what is behind it; what is read never shifts when something changes out of sight (scroll anchoring); a row of whole pieces comes to rest at a piece by the platform's own snapping, with the hand's speed. The OS never scrolls by itself except as one of the three moves, and then by the law's curve: everything it scrolls otherwise (bringing a thing into view) is at once | in the frame after the wheel; nothing else animating while it scrolls | Deber et al. 2015 (a drag's lag seen at 11 ms on a screen); NN/g, *Scrolljacking 101* (altered rate and duration worst where text is read); Apple 2018 (project momentum; soft edges; redirectable); W3C, *CSS Scroll Anchoring* | measured: scrolled in the next frame, nothing else running (`touch.spec.ts`) |
-| **Write** (a key typed) | the letter drawn in the frame after it is struck, its sound as it is struck, the caret going with it (§9); **what was written stays where it was written**, however its place is left and come back to: a place is never drawn anew under what is half written. A shortcut that makes what is typed a thing (a kind's colon) takes its own key and the space after it, and nothing else | in the frame after the key; kept on return | a slow keyboard (200 ms) costs effort and correcting, not copying speed (Schmid et al. 2023); "the lower, the better" (Fatin) | measured: every field, each letter there two frames after its key, kept on return (`touch.spec.ts`; `sound.spec.ts`, `motion.spec.ts`) |
+| **Hover** | quiet to ink, or paper under it, **at once** (no fade in or out: the same colour in every frame from the first); nothing comes, nothing goes (no line is drawn under words: paper under them). On paper, where paper is not seen, a key's line and words go to ink. In a list called up (a menu, a tree), the row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's, as a selection is | one frame, no other fill | §3, §7 | measured in every place: one colour in every frame |
+| **Press** (a click, a tap) | **held down at once and up at once**: a pointer's press has no travel to draw (the hand is down when the screen is told), and being held is a state, not a move, shown with less motion asked for too. The ear says when (a key's sound as it goes down, again as it comes up), the eye says what is so (held down, a few pixels; then what the press did): a sound and an image at one instant are one event to the senses (Chion's synchresis), and across time they work in turn (Bresson's relay), so neither tells what the other tells. Pressed, nothing is filled. **Going is on the down, doing on the let-go**: a press that goes somewhere (a place, a far side, a piece) changes nothing and is undone by going back, so it takes the earliest moment, the down (a tab of a browser is chosen so); a press that does something (makes, sends, changes, removes) does it at the let-go, and moved off before the let-go it does nothing. A press begun on what is pressed and moved off never selects the page's words | its give in the first frame drawn after the press or the next; up in the frame after the let-go, never drawn coming home; its give ≥ .92 of itself | Jota et al. 2013 (a tap's lag unseen under 24 ms); Apple, *Designing Fluid Interfaces* (2018): "everything needs to respond instantly"; a press confirmed on its let-go; Chion, *Audio-Vision* (1990); Bresson, *Notes* | measured: given in one frame, home in the next, never past |
+| **Look along** (scroll) | **the window's own scrolling, and nothing laid on it**: what is scrolled stays under the hand, in the frame after the wheel or the finger; its rate and its coasting are the platform's (a thrown thing coasts to a stop where its speed takes it), never altered; nothing comes, goes, fades or moves as it is scrolled; at its end it stops by the platform's own soft edge and never carries on into what is behind it; what is read never shifts when something changes out of sight (scroll anchoring); a row of whole pieces comes to rest at a piece by the platform's own snapping, with the hand's speed. The OS never scrolls by itself except as one of the three moves, and then by the law's curve: everything it scrolls otherwise (bringing a thing into view) is at once | in the frame after the wheel; nothing else animating while it scrolls | Deber et al. 2015 (a drag's lag seen at 11 ms on a screen); NN/g, *Scrolljacking 101* (altered rate and duration worst where text is read); Apple 2018 (project momentum; soft edges; redirectable); W3C, *CSS Scroll Anchoring* | measured: scrolled in the next frame, nothing else running |
+| **Write** (a key typed) | the letter drawn in the frame after it is struck, its sound as it is struck, the caret going with it (§9); **what was written stays where it was written**, however its place is left and come back to: a place is never drawn anew under what is half written. A shortcut that makes what is typed a thing (a kind's colon) takes its own key and the space after it, and nothing else | in the frame after the key; kept on return | a slow keyboard (200 ms) costs effort and correcting, not copying speed (Schmid et al. 2023); "the lower, the better" (Fatin) | measured: every field, each letter there two frames after its key, kept on return (measured; measured) |
 | **Carry** (a drag, the desk by hand) | it stays under the hand, moved by the window's own scrolling or the drag's own frame; no easing laid on what the hand moves | lag ≤ 1 frame | "not imposed upon objects when they are being explicitly moved by the user" (Chang and Ungar 1993); a drag's lag is noticed at 11 ms on a screen, 55 ms through a pad (Deber et al. 2015) | §7 |
-| **Called up** (a menu, the finds, File) | by a press, laid where it was asked (its first deed under the press), away at once by a press outside or Escape, the keyboard back on what called it | in the press's frame; its first deed within 5° of the press (§2) | a panel opened by the hand opens quickly and closes fast (Lewis); things leave the way they came (Chang and Ungar; Apple) | §7, `favour.spec.ts` |
-| **Unfold** (a folder, a line's detail) | **its name opens it, and opens nothing else**: pressed again it shuts; at once, nothing folding on its way; what is under it and round it stays where it is (the place, the page under a tree). One press, one deed, whatever else is so: a press whose deed hangs on something not in sight (which repo another place is at) is a mode, and is not made. From the keyboard a tree opens with → and shuts with ←, a line's next line opens with Enter at its end | in the press's frame; nothing else moves | Raskin, *The Humane Interface* (2000): modelessness, the same gesture the same result; W3C WAI-ARIA APG, tree view and disclosure patterns | measured: a folder opened and shut with the place under it unmoved (`touch.spec.ts`) |
-| **Ask** (a yes to say, a name to write out) | in the place it was pressed, its deed under the press, Cancel on the other side (§7); **Escape is its Cancel** with the keyboard anywhere in it, heard before whatever stands round it (the desk, the page); answered either way, the thing as it was and the keyboard on it. A switch that asks stays as it was until the ask is answered | in the key's frame | Escape as a dialog's Cancel since IBM's CUA and the Macintosh; W3C WAI-ARIA APG, dialog pattern | measured: the Remote's off asked and let go by Escape, the switch on and the keyboard on it (`remote.spec.ts`) |
-| **Switch** (a page's parts, an on and off) | the one chosen is shown in the press's frame with what it holds; the arrows go to the next and show it as they go, for what it holds is at hand (no part waits to be read); an on and off is a switch, round, and turned by a press or Space | in the press's frame | W3C WAI-ARIA APG, tabs: activated as they are focused only where their panels show at once; switch pattern | measured: parts chosen at once, the arrows to the next (`runtime.spec.ts`, `remote.spec.ts`) |
-| **Back** | **Back goes to the place before, Forward to the one after**, however it is asked (the browser's, a mouse's side button, a phone's edge, Alt+← or ⌘[), with the world's move the way the rail lies (§8); each place gone to is a step, the place one is at pressed is none; never out of the OS from a place gone through; the place come back to is as it was left (read to where it was, the piece in hand, what was half written) | one step a place | Back was 41% of what people did in a browser, second only to links (Catledge and Pitkow 1995), and still one of its first ways in 2006 though less than half that (Weinreich et al.); breaking it is the web's first mistake (Nielsen 1999) | measured: Back and Forward through the places and the door, the address the OS's throughout (`touch.spec.ts`) |
+| **Called up** (a menu, the finds, the tree) | by a press, laid where it was asked (its first deed under the press), away at once by a press outside or Escape, the keyboard back on what called it | in the press's frame; its first deed within 5° of the press (§2) | a panel opened by the hand opens quickly and closes fast (Lewis); things leave the way they came (Chang and Ungar; Apple) | §7, measured |
+| **Unfold** (a folder, a line's detail) | **its name opens it, and opens nothing else**: pressed again it shuts; at once, nothing folding on its way; what is under it and round it stays where it is (the place, the page under a tree). One press, one deed, whatever else is so: a press whose deed hangs on something not in sight (which work another place is at) is a mode, and is not made. From the keyboard a tree opens with → and shuts with ←, a line's next line opens with Enter at its end | in the press's frame; nothing else moves | Raskin, *The Humane Interface* (2000): modelessness, the same gesture the same result; W3C WAI-ARIA APG, tree view and disclosure patterns | measured: a folder opened and shut with the place under it unmoved |
+| **Ask** (a yes to say, a name to write out) | in the place it was pressed, its deed under the press, Cancel on the other side (§7); **Escape is its Cancel** with the keyboard anywhere in it, heard before whatever stands round it (the desk, the page); answered either way, the thing as it was and the keyboard on it. A switch that asks stays as it was until the ask is answered | in the key's frame | Escape as a dialog's Cancel since IBM's CUA and the Macintosh; W3C WAI-ARIA APG, dialog pattern | measured: an off asked and let go by Escape, the switch on and the keyboard on it |
+| **Switch** (a page's parts, an on and off) | the one chosen is shown in the press's frame with what it holds; the arrows go to the next and show it as they go, for what it holds is at hand (no part waits to be read); an on and off is a switch, round, and turned by a press or Space | in the press's frame | W3C WAI-ARIA APG, tabs: activated as they are focused only where their panels show at once; switch pattern | measured: parts chosen at once, the arrows to the next (measured) |
+| **Back** | **Back goes to the place before, Forward to the one after**, however it is asked (the browser's, a mouse's side button, a phone's edge, Alt+← or ⌘[), with the world's move the way the rail lies (§8); each place gone to is a step, the place one is at pressed is none; never out of the OS from a place gone through; the place come back to is as it was left (read to where it was, the piece in hand, what was half written) | one step a place | Back was 41% of what people did in a browser, second only to links (Catledge and Pitkow 1995), and still one of its first ways in 2006 though less than half that (Weinreich et al.); breaking it is the web's first mistake (Nielsen 1999) | measured: Back and Forward through the places and the door, the address the OS's throughout |
 | **Comes, goes** | there at once and explained after, never grown from nothing or faded over what it replaces (§8) | — | an animated transition makes one wait; show the result, then an afterglow where it changed (Baudisch et al., *Phosphor*, 2006) | a dozen still grow or fade (§11) |
 | **Refused** | said once the field is left, where it is put right, and in words; the thing nudged the way that means no, short | the nudge ≤ a cell, ≤ 300 ms | inline validation after leaving a field: 22% more success, 22% fewer errors (Wroblewski 2009); a shake in a meaningful direction, not a random one (Pichlmair and Johansen) | New repo, Git's lines |
-| **Done** | **the one strong answer**: what was done lands, lit, where its result is (a line under Committed, a step's mark), and nowhere else | lit ≥ its read time (§8) | amplified feedback on success raised competence and enjoyment; on mere action it lowered them (Kao et al. 2024, n = 1,699); Sakurai: the stop that marks a hit is for what counts | Git's Committed and steps |
+| **Done** | **the one strong answer**: what was done lands, lit, where its result is (a line under what is done, a step's mark), and nowhere else | lit ≥ its read time (§8) | amplified feedback on success raised competence and enjoyment; on mere action it lowered them (Kao et al. 2024, n = 1,699); Sakurai: the stop that marks a hit is for what counts | Git's Committed and steps |
 | **Waits** | nothing said under a second; past it, what is being done in words where its result will be; past ten, how far, and a way to stop | 1 s, 10 s | Nielsen's three limits; showing the work raises its worth (Buell and Norton 2011) | §7 |
 
 ### Its repertoire, and what it never does

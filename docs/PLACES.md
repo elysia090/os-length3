@@ -17,6 +17,36 @@ no feature; everything here is an application of it, and where the two differ, `
 What each place is for in one sentence (its character), and where its things lie. All of it is §2–§9 applied; what
 is written here is only what a place adds.
 
+### The frame, in this product
+
+The rail (DESIGN §4), nearest the person first, and what is not a place:
+
+| | Icon | What it is |
+|---|---|---|
+| mine | Home | who one is, what is one's own to do |
+| the work | Forge | a repo written and run |
+| people | Server | where many talk |
+| the machine | Runtime | this device |
+| not places | File, the plug, + | File (the tree of "/") and the plug are called up in front of whatever place is shown; + makes a repo |
+
+Each far side, and its door:
+
+| Far side | Of | Why it is its far side |
+|---|---|---|
+| Git | Forge | the repo written, then the repo recorded and reviewed |
+| the Remote | Home | what is mine here, then where it is kept |
+| Inbox | Server | where many talk, then what was said to one |
+
+A red dot on Home while the Remote does not answer; an ink dot on Server while something in Inbox is unread. Only
+these six pages have a door; Runtime, File, the plug and + lead nowhere further.
+
+The band's keys: Home and Forge, the door, the terminal's key, the files' key, the search; Git, the door, the
+terminal's key, the search; New repo, the terminal's key, the files' key, the search (it has no far side). At its
+right end: on Forge the name of what is in the hand; on Git the repo the desk is of.
+
+The widths of DESIGN §3, here: Home's slip 12 cells; the row's first sheet 8 (Git's own, Server's); Inbox's first
+sheet, who wrote, 12; a place that is one sheet, Runtime and the Remote.
+
 ### Home: mine
 
 *Who one is and what is one's own to do: the one place with a voice.* The person's name is the one large thing in
@@ -614,8 +644,8 @@ box could be put beside the desk as a second screen.)
 
 What the pane and the pills held is not on the page any more. The repos are
 gone to from Home (a repo's name) and from File; a run is read in the
-terminal it ran in, and found again by the search (Output); an issue, a diff
-and what the Agent did are the search's kinds; a note the box makes (an
+terminal it ran in (↑ in its line brings a line back); an issue is Git's, a
+change the issue's sheet, what the Agent did its own piece's; a note the box makes (an
 issue, a TODO) is said in the terminal as a line of its own. The plug's
 area is Home's and Git's.
 
@@ -712,8 +742,7 @@ band as a sheet across the desk, inked and shadowed as a box is, only once
 something is typed and what is found for it is ready: it comes down with it
 already in it, never let down empty and filled a frame later, and what is in it
 stays until what is found for the next key is ready (pressed with nothing
-typed, nothing drops; ↓ lets down the
-kinds, Issue, diff and Output, and what was searched and read): the words
+typed, nothing drops; ↓ lets down what was searched and read): the words
 searched for large at its head, then what was found a kind at a time, two
 kinds to a row, each its name and how many rows at its left and its rows at
 its right, as the mock has them: a row a thing found, read across, a file's
@@ -1258,38 +1287,9 @@ by side, one at a time (none yet). With none it stays plain, nothing put
 there to fill it (issue #45): opened, the pane's top is that empty area and
 the Prompt moves down under it, level with the foot of the rail's Inbox, as
 it does under plugins; the plug, which says it is out, is the way back.
-The right pane has no switch of its own. At rest it says, on a line of their
-own over its rows at its right end, quiet, Issue, diff (with how many files
-are changed since the last commit, diff 2), 実行結果 and Agent, what the search
-box switches between, so a pane with no rows yet still shows what else is
-there: a head pressed opens its view under the
-search box, as its pill there does, and the view stays out beside the file as
-the keyboard goes back to it, until it is put away. Beside the file it stands in
-the pane's own width, a step in from the pane's line, over the pane and never
-over the file, which keeps its whole width (one box or several side by side),
-the shade lifted; pressed, or the search box in use, it opens out over the
-center to be read and draws in again as the keyboard goes back to the file
-(its left edge sliding, `--move` on `--land`). It is put away by
-Escape in the box, the × at the end of the strip under the view, or its pill
-pressed again; while it is drawn in, its switch (Issue, diff, Output) waits
-for it to open out. The views: Issue (the repo's open issues, as Git shows them: one merged or
-closed is not among them; one line each as #3 Fix：件名, pressed to read one in full), diff (the changes not yet
-cut, file by file: added lines in ink with no fill, the lines kept quiet,
-removed lines quiet and struck, following every save; a file's name opens
-it in the center, a line's number opens it at that line, selected, to
-write in, and a removed line's the line that took its place; pressing a
-line elsewhere marks it with the `marker`, as a review does, to come back
-to, and again unmarks it, the mark staying on its line while the app is
-open; at the right end of a file's head, Put back, which asks in the head
-first (Not now, Put back under the pointer) what will happen, its lines
-still under it, then makes the file what the last commit held: its text
-again, a removed one written back, one added since gone; a binary file only
-by going. A part of a file is not put back on its own) and 実行結果 (each line sent
-from the prompt box, newest first: the line, how long it took or that it
-is still running, and what came out until the prompt returned; the Prompt
-itself scrolls on, this keeps the record). A line pressed there is back in
-the prompt box, the caret at its end, to be changed or sent again; it is
-not run. The Prompt's own status line is
+(The right pane, its heads and the search's switch with its views, Issue, diff and 実行結果, are gone: what the
+search finds is the repo's files, a file goes back to its last commit from its own menu, and a run is read in the
+terminal it ran in. See A, Forge.) The Prompt's own status line is
 empty while it simply runs; it speaks only when something is missing (large
 files and binaries not copied in, what could not be written back). Once it
 has ended, how (Exited (0), Stopped) and Start again, its power switch off,
