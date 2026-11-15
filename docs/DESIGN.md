@@ -38,6 +38,14 @@ else is held back. It never has:
   cell; nothing else);
 - a picture of a material (paper's grain, leather). A material is shown by how it behaves, not by how it looks;
 - a second way to do a thing for a narrow window or a finger. A phone has the same rules with a smaller number.
+- two things equally raised: two fills, two shadows, two large names, a sound and a flash for one deed (master and
+  servant, below);
+- a movement that is not one of the three moves or the hand's own: nothing glides in, grows, folds, pops, bounces or
+  fades over what it replaces (§8: the cut, and the mind completes the way between);
+- anything that passes the removal test (below): a thing kept though nothing is lost without it;
+- an explanation of itself: a tooltip, a tour, a word that says what a name would.
+
+What it comes from, item by item, and where it does more than its sources ask, is `CANON.md`.
 
 **What its sources ask, kept as rules.** The skeleton is not a taste; it is what the Swiss school's own manuals say to
 do, and each is a rule here with a number:
@@ -68,6 +76,24 @@ part, and each has already changed something:
 | Chimero, *The Web's Grain* | a material has a grain; the web's is edgeless; build up from parts, then frame | does it fit a window, or go on past it? | rows run past the window's edge and the window looks along them; there is no layout for a size, only pieces that are set as words are |
 | Playdate's own guide | "measure cap height, not total font height"; hold it against a printed book | is a size a number, or what the eye gets? | a name is sized by its capitals (and a kanji's face, §3); the words written are sized by the angle they subtend |
 | the OP-1's tape | lift, drop, split, join: the verbs of the thing it stands for, and no others | are the verbs the material's own? | take up, put away, put back, go; a thing is never "selected" or "activated" |
+
+**Master and servant.** At every rest one thing is the master and everything else is its servant, and the master
+alone holds the top of every channel a thing can be raised by: the fill, the ink edge, the shadow, the largest words
+of the place's work, the keyboard, what is written, the sound of what is done. A channel has one top (never two
+things equally raised in it), and the same thing holds every channel's top (never the fill on one and the shadow on
+another); each servant is a step under the master in every channel at once. So what can be done is exclusive too:
+the master's act, or taking another thing up (which makes it the master and the last one a servant), or going
+elsewhere; nothing is done to a servant where it lies. The canon says it in each art: in a picture, "one center of
+interest. Two or more equally dominant figures ... compete with each other ... and weaken the picture's
+effectiveness" (Mascelli, *The Five C's of Cinematography*); between eye and ear, "give preponderance either to the
+sound, or to the image. If equal, they damage or kill each other" (Bresson); on a page, "stick to one or two type
+sizes at the most" (Vignelli). Here: §2's one subject in focus and one voice, §5's one piece in the hand, §7's
+nothing done from a distance, are this law in its channels; `master.spec.ts` holds it whole.
+
+**The removal test.** Anything that can be taken away without the shot losing what it says is taken away: "any
+element in the frame not required for story-telling purposes attracts unwarranted audience attention" (Mascelli);
+"one does not create by adding, but by taking away" (Bresson); "as little design as possible" (Rams). A thing stays
+only by answering one of the three questions (above) or doing the place's act (§14).
 
 **A rule yields to a composition.** The rules here are general answers. Where a place already has a composition
 that is the specific answer to what it is for, the composition stands and the rule is not laid over it: Git's sheet
@@ -977,6 +1003,7 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
 | Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the lean (the lower right at least as empty as the upper left), the bare ground one open field with nothing trapped and at most a third of the world marked, the band's title whole at its size, one voice (§2) | `why/test/app/composition.spec.ts` |
 | Touch, with motion on: under the pointer a thing takes paper or nothing; a press answers in its own frame, sounds as it goes down, gives at most 8% and comes home never past; every place's subject holds its act (§14) | `why/test/app/touch.spec.ts` |
+| Master and servant: on a desk one piece holds the fill, the ink edge, the shadow and the keyboard, and what is typed goes to it alone (§1) | `why/test/app/master.spec.ts` |
 | Writing in Git is direct: a new issue's line and main's commit line always there, Enter making or committing, nothing to open, confirm or put back; an issue's title written over in place; what is half written kept (§7, §10) | `why/test/app/git.spec.ts` |
 | Forge at work, frame by frame at two screens: the piece in hand at the edge or under the hand; the line written never in the third it goes towards, a long file standing to the foot; the terminal's last line out of the lower third; nothing jumping, nothing reversed; the weight left (§2, §6, §10) | `why/test/app/at-work.spec.ts` |
 | Where the line written may stand, the terminal's lines, and where the desk turns for a piece pressed and for one gone to (§2, §5, §6) | `why/app/pages/forge/desk-layout.test.ts` |
