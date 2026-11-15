@@ -89,7 +89,7 @@
 .bubble .state-chip { margin-right: var(--s2); }
 .bubble > .link, .bubble > .muted { margin-right: var(--s2); }
 .bubble-text { display: inline; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.inbox-write { display: grid; gap: var(--s2); padding: var(--s3) var(--u) var(--u); border-top: 1px solid var(--rule); }
+.inbox-write { position: relative; display: grid; gap: var(--s2); padding: var(--s3) var(--u) var(--u); }
 /* The box one writes in is the one a board's is (prompt.css .prompt): one deed, one look. */
 .bubble-in { flex: 1; min-width: 0; resize: none; min-height: 0; height: auto; max-height: 200px; padding: 0; border: 0; border-radius: 0; background: transparent; font: var(--t-body)/1.6 var(--sans); }
 .bubble-in:focus, .bubble-in:focus-visible { outline: none; }

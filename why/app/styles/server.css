@@ -131,7 +131,12 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* Its key comes with the words (server/dock.ts): empty, the box says whom it writes to, whole, at every width. */
 .slide > .dock > .prompt:not(.has-words) > .prompt-run { display: none; }
 .prompt-run > .key-said { margin-left: var(--s2); font: var(--t-fine)/1 var(--mono); color: var(--sub); }
-.slide > .board-card:has(> .board-talk, > .part-panel) + .dock { border-top: 1px solid var(--rule); }
+/* No line between a board's talk and the box one writes in: read back, what passes under the box's edge goes a little
+   out of focus (depth, §1), in the half cell the talk keeps empty at its foot, so at rest on the latest nothing is. */
+.slide > .board-card:has(> .board-talk, > .part-panel) + .dock { position: relative; }
+.slide > .board-card:has(> .board-talk, > .part-panel) + .dock::before, .inbox-write::before {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--s3); pointer-events: none;
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); mask-image: linear-gradient(to top, #000, transparent); }
 /* A board's head: its name in the display face, its capitals a cell tall on the second line of the sheet (a sheet's
    name, §5), a cell of paper before it; after the name its two parts, which go under it where they do not fit beside
    it, as words do. */

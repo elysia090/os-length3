@@ -38,8 +38,6 @@
   .tl-day { width: calc(6 * var(--u)); text-align: right; }
   .tl-start { padding-left: calc(8 * var(--u)); }
   .slide > .dock { position: relative; inset: auto; padding-left: calc(9 * var(--u)); }
-  .slide > .board-card:has(> .board-talk, > .part-panel) + .dock { border-top: 0; }
-  .slide > .board-card:has(> .board-talk, > .part-panel) + .dock::before { content: ''; position: absolute; left: calc(9 * var(--u)); right: 0; top: 0; height: 1px; background: var(--rule); }
   .board-todo { padding-left: calc(9 * var(--u)); }
 
   /* -- a conversation -- */
@@ -51,6 +49,5 @@
   .bubble:not(.run-in, .inbox-notice)::before { position: absolute; left: 0; top: 0; width: calc(6 * var(--u)); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bubble.inbox-notice, .inbox-messages > .inbox-empty { margin-left: calc(8 * var(--u)); }
   .inbox-ask { margin-left: calc(9 * var(--u)); }
-  .inbox-write { position: relative; padding-left: calc(9 * var(--u)); border-top: 0; }
-  .inbox-write::before { content: ''; position: absolute; left: calc(9 * var(--u)); right: 0; top: 0; height: 1px; background: var(--rule); }
+  .inbox-write { padding-left: calc(9 * var(--u)); }
 }

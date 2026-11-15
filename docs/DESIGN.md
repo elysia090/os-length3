@@ -33,8 +33,9 @@ else is held back. It never has:
 - a colour, a shadow or an angle that means nothing;
 - a thing that is there only while a pointer is over it;
 - a layout set in the middle of the window, or one mirrored left and right;
-- blur or transparency as decoration (blur is depth: what is behind what was called up in front, and what a change
-  is seen against in Git's work; nothing else);
+- blur or transparency as decoration (blur is depth: what is behind what was called up in front, what a change is
+  seen against in Git's work, and a talk read back where it passes under the box one writes in, 2 px over half a
+  cell; nothing else);
 - a picture of a material (paper's grain, leather). A material is shown by how it behaves, not by how it looks;
 - a second way to do a thing for a narrow window or a finger. A phone has the same rules with a smaller number.
 
@@ -854,8 +855,11 @@ on two sides.
 - **The measure.** 14 cells are 336 px, about 46 letters to a line: in the middle of what is read with ease (45 to
   72), where the whole inside (72 letters) was at its far end.
 - **The sheet's name stands at the axis** too, with what is said of it small in the margin beside it (a board's #,
-  how a conversation reaches the other). The sheet's lines (under its name, over the box one writes in) start at the
-  axis and run out to the sheet's right edge: the margin is one column of paper from the sheet's top to its foot.
+  how a conversation reaches the other). The sheet's line under its name starts at the axis
+  and runs out to the sheet's right edge: the margin is one column of paper from the sheet's top to its foot. Between
+  the talk and the box one writes in there is no line: the box is in front of the talk, and what passes under its
+  edge as the talk is read back goes a little out of focus (2 px, over the half cell the talk keeps empty at its
+  foot, so at rest on the latest nothing is).
 - **The box one writes in** stands in the words' column, under them. Its key (Post, Send) comes with the words, and
   says its keys on itself; Enter is a new line.
 - **On the grid.** Words are 15 px on lines of a cell. A run of one person's posts a few minutes apart says who
