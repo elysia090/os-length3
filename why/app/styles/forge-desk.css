@@ -31,7 +31,8 @@
   position: absolute; left: 0; top: 0; box-sizing: border-box; padding: var(--line) 0; border-radius: var(--r-sheet);
   background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px;
   transition: translate var(--slide) var(--spring); }
-.desk-box.held { background: var(--paper); color: var(--ink); outline-color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
+/* (The piece the desk turns away from keeps the hand's look till the desk is at rest, .leaving: desk.ts take.) */
+.desk-box:is(.held, .leaving) { background: var(--paper); color: var(--ink); outline-color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 @media (prefers-reduced-motion: reduce) { .desk-box { transition: none; } }
 /* Its name over its top-left corner, in the letters the desk's small words are set in, on the cell over the sheet (the
    one under the band); its close at the other end of that line, there for the piece under the pointer and for the keyboard. */
@@ -144,7 +145,7 @@
   --ansi-0: var(--quiet); --ansi-1: var(--sub); --ansi-2: var(--sub); --ansi-3: var(--sub); --ansi-4: var(--sub); --ansi-5: var(--sub);
   --ansi-6: var(--sub); --ansi-7: var(--sub); --ansi-8: var(--quiet); --ansi-9: var(--sub); --ansi-10: var(--sub); --ansi-11: var(--sub);
   --ansi-12: var(--sub); --ansi-13: var(--sub); --ansi-14: var(--sub); --ansi-15: var(--sub); }
-.desk-box[data-kind].held { --term-fg: var(--green); --term-bg: var(--ink); --term-quiet: var(--slot); --term-rule: var(--edge); --term-line: var(--green); background: var(--term-bg); box-shadow: var(--shade) var(--shade) 0 0 var(--green);
+.desk-box[data-kind]:is(.held, .leaving) { --term-fg: var(--green); --term-bg: var(--ink); --term-quiet: var(--slot); --term-rule: var(--edge); --term-line: var(--green); background: var(--term-bg); box-shadow: var(--shade) var(--shade) 0 0 var(--green);
   --ansi-0: var(--edge); --ansi-1: #ffb5a6; --ansi-2: #a2d4a0; --ansi-3: #e1c481; --ansi-4: #b3c7fc; --ansi-5: #ecb7e2;
   --ansi-6: #82d4dd; --ansi-7: var(--slot); --ansi-8: var(--rule); --ansi-9: #ffc8bc; --ansi-10: #bcdeb7; --ansi-11: #e8d3a2;
   --ansi-12: #c7d5f9; --ansi-13: #f0cae6; --ansi-14: #a8dee3; --ansi-15: var(--raised); }

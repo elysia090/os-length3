@@ -101,6 +101,8 @@ export class Desk {
   readonly #boxes = new Map<string, Box>();
   #row: string[] = [];
   #held: string | null = null;
+  /** The piece put down while the desk turns away from it: as it was in the hand till the desk is at rest. */
+  #leaving: HTMLElement | null = null;
   /** The desk turning (its next frame; none at rest), and how far it is going: laid again on its way, it goes on to
    * where it is now to go rather than starting again. */
   #moving = 0;
@@ -315,14 +317,26 @@ export class Desk {
   take(key: string, focus = true, glide = true, pressed = false) {
     const b = this.#boxes.get(key);
     if (!b) return;
+    const was = this.#held === null ? undefined : this.#boxes.get(this.#held);
     for (const o of this.#boxes.values()) o.el.classList.toggle('held', o === b);
     this.#held = key;
     this.#pressed = pressed;
     this.#framed = null;
     this.#look(glide);
+    // The piece put down stays as it was in the hand while the desk turns away from it, and is put down once the desk
+    // is at rest: what moves is seen from the press (DESIGN §8). Put down at the press, the only piece in the hand's
+    // light was the one gone to, often out of sight: for the first frames of the turn nothing lit was there moving.
+    this.#putDown();
+    if (was && was !== b && this.#glide) { was.el.classList.add('leaving'); this.#leaving = was.el; }
     this.#said();
     if (focus) b.laid.focus();
     this.#changed();
+  }
+
+  /** The piece the desk turned away from, put down now. */
+  #putDown() {
+    this.#leaving?.classList.remove('leaving');
+    this.#leaving = null;
   }
 
   /** The desk turned to `keys` (each a piece at work): to the one last at work; none, back to the piece in hand. */
@@ -415,6 +429,7 @@ export class Desk {
     cancelAnimationFrame(this.#moving);
     this.#moving = 0;
     this.#glide = null;
+    this.#putDown();
     el.style.scrollSnapType = '';
     const from = el.scrollLeft;
     if (!moving || Math.abs(to - from) < .5) { if (Math.abs(to - from) >= .5) el.scrollLeft = to; return; }
@@ -436,7 +451,7 @@ export class Desk {
       fieldCarried();
       veil.follow(this.#pointerAt);
       if (k < 1) this.#moving = requestAnimationFrame(step);
-      else { this.#moving = 0; this.#glide = null; el.style.scrollSnapType = ''; }
+      else { this.#moving = 0; this.#glide = null; el.style.scrollSnapType = ''; this.#putDown(); }
     };
     this.#moving = requestAnimationFrame(step);
   }

@@ -832,7 +832,10 @@ its work is trusted more than a short one that shows nothing.
    and back along from it. The page left stays in sight as it was and goes out the way the world went by; the page
    come to follows it at one distance; the dots go with them. The way is the window's height in whole cells,
    `24 · round(H / 24)`, or along, its width, `24 · round(W / 24)`. The frame stays.
-2. **The desk along its row:** to another piece (§6).
+2. **The desk along its row:** to another piece (§6). The piece left stays as it was in the hand (its fill, its
+   edge, its shadow, its words) until the desk is at rest, and the piece gone to is in the hand from the press: what
+   moves is seen from the first frame. (Put down at the press, the one piece in the hand's light was the one gone to,
+   often still out of sight, and for the first frames of the move nothing lit was there to follow.)
 3. **In front and back:** what is called up comes in front and the world behind it goes out of focus; put away, it
    goes and the world is in focus again.
 

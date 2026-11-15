@@ -46,7 +46,6 @@
 @media (prefers-reduced-motion: reduce) { .issue-track, .issue-slot { transition: none; } }
 /* The box gone from, while the row slides away from it: as it was (its room inside kept, its words going to the
    neighbour's grey), until it is at the edge and becomes its head. */
-.issue-slot.leaving[aria-current='false'] .issue-card { padding-inline: var(--s5); }
 /* A slot is an issue's column: its card, then its Review and Merge. */
 .issue-slot { flex: 0 0 calc(100% - 2 * var(--peek)); min-width: 0; align-self: start; }
 /* Less room above than below, so the card's weight sits a little high. */

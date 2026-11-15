@@ -159,10 +159,10 @@ main's sheet and an issue side by side, the issues go under the sheet, two cells
   under main's steps: a second thing on that sheet, read as part of its Start.)
 - Main's steps start at the sheet's top edge: the step under way, the one line of ink, lies on the horizon, level
   with the issue's top.
-- **In Git every sheet is paper**: main's sheet, the issues beside the one in full (and the one the row slides away
-  from), the new issue. The one in full is told by its ink edge and its shadow alone; the others have the quiet edge
-  and no shadow, the new issue's dashed. (A choice for this place, against DESIGN §1's fill held by the hand's piece
-  alone: drawn in the ground's grey, those sheets read as holes, or as greyed out, between sheets of paper.)
+- **Along the row, what moves is seen from the press**: the issue the row slides away from stays as it was in the
+  hand (paper, ink edge, shadow, its words) until it is out at the edge, and the one gone to is in the hand from the
+  first frame, the new issue paper too. (Put down at the press, the only paper was the piece gone to, mostly out of
+  sight: for the first frames nothing white was there to see moving.)
 - **A commit on main** is main's card's line, always there under its files: Enter commits it, as Commit beside it
   does. There is no Cancel: nothing was opened.
 - **An issue's title** is written over where it is read: pressed, it is a line of its own words, its kind kept and
