@@ -84,8 +84,13 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
   let repo = ctx.repo;
   const reference = new Reference({reveal: (path, line, write) => { if (repo) ctx.openRepo(repo, path, write ?? false, undefined, line ?? 0); }}, {band: true});
   reference.search.querySelector('form')?.prepend(mark('search'));
-  const aim = (name: string | null) => { repo = name; reference.setRepo(name); reference.named(name); };
-  aim(repo);
+  /** The band's tools that work in the repo last worked in: held while there is none, as a step not to be taken now
+   * is, and pressed they say no where they are (pressed, they had done nothing at all). */
+  const inRepo: HTMLElement[] = [];
+  const aim = (name: string | null) => {
+    repo = name; reference.setRepo(name); reference.named(name);
+    for (const b of inRepo) { if (name) b.removeAttribute('aria-disabled'); else b.setAttribute('aria-disabled', 'true'); }
+  };
   // Forge's band, tool for tool, so the frame is one frame between the two: >_ to the terminal of the repo last worked
   // in, the files button to its file deeds there (New, Rename, Delete), then the search.
   const tool = (name: MarkName, label: string, press: () => void) => {
@@ -93,12 +98,16 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
     b.addEventListener('click', press);
     return b;
   };
-  const inForge = (ask: 'termNext' | 'deedsNext') => () => {
+  const inForge = (ask: 'termNext' | 'deedsNext') => (b: HTMLElement) => {
     const at = repo;
-    if (at) void import('../forge/forge.ts').then((f) => { f[ask](); ctx.openRepo(at); });
+    if (!at) { nudge(b); return; }
+    void import('../forge/forge.ts').then((f) => { f[ask](); ctx.openRepo(at); });
   };
-  const band = h('div', {class: 'home-band'}, h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')},
-    tool('term', t('Terminal'), inForge('termNext')), tool('new-file', t('Files: New, Rename, Delete'), inForge('deedsNext')), reference.search));
+  const term = tool('term', t('Terminal'), () => inForge('termNext')(term));
+  const deeds = tool('new-file', t('Files: New, Rename, Delete'), () => inForge('deedsNext')(deeds));
+  inRepo.push(term, deeds);
+  aim(repo);
+  const band = h('div', {class: 'home-band'}, h('div', {class: 'band-tools', role: 'group', 'aria-label': t('Tools')}, term, deeds, reference.search));
   const layout = h('div', {class: 'home-layout'}, band, main);
   // None worked in yet (or it is gone): the one changed last (the first of the cards' list, read once for both), so the
   // box is never there to be pressed for nothing.

@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
 import {pageVeil} from '../../ui/page-veil.ts';
-import {cut, LAND, paced, still} from '../../ui/glide.ts';
+import {cut, LAND, nudge, paced, still} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
 import {onChange, onRenamed, rekey, store} from '../../../repo/repos.ts';
 import {stillAt} from '../../../repo/search.ts';
@@ -39,7 +39,7 @@ export class Reference {
   readonly search: HTMLElement;
   private query: HTMLInputElement;
   /** The box gets the keyboard, what is written in it selected (Ctrl+K, Ctrl+P: writing replaces it). */
-  findNow() { if (!this.searchable) return; this.query.focus(); this.query.select(); }
+  findNow() { if (!this.searchable) return; this.query.focus(); this.query.select(); if (!this.repo) nudge(this.search); }
   private readonly searchable: boolean;
   /** Without a search field, what is under it takes the keyboard itself instead of an invisible input. */
   private focusReader(options?: FocusOptions) {
@@ -130,6 +130,9 @@ export class Reference {
       if (!from || !this.search.contains(from)) this.before = from;
     });
     this.query.addEventListener('keydown', (event) => this.queryKey(event));
+    // Held (no repo to search in): a press on it, or a letter written in it, says no where it is.
+    this.query.addEventListener('pointerdown', () => { if (!this.repo) nudge(this.search); });
+    this.query.addEventListener('keydown', (event) => { if (!this.repo && event.key.length === 1 && !event.ctrlKey && !event.metaKey) nudge(this.search); });
     // Along what is there with ↑ ↓; Escape goes back up to the box (from something read: back to what it was chosen from).
     this.panel.addEventListener('keydown', (event) => this.alongList(event));
     // Ctrl+K (⌘+K) comes to it from anywhere; the box does not say so on itself, as an editor's would.
@@ -215,7 +218,8 @@ export class Reference {
 
   /** What the box says where the words would be, and is heard as; on the band, where it is short, only Search. */
   private say(words: string) {
-    this.query.placeholder = this.band && this.repo ? t('Search') : words;
+    // (With no repo it says Search as any box does, never an explanation of itself; why is heard only.)
+    this.query.placeholder = (this.band && this.repo) || !this.repo ? t('Search') : words;
     this.query.setAttribute('aria-label', words);
   }
 
@@ -377,8 +381,10 @@ export class Reference {
     this.repo = repo;
     this.files = null;
     this.lastWords = '';
-    this.query.disabled = !repo;
-    // With no repo it cannot be searched in, and says so where the words would be.
+    // With no repo it cannot be searched in: held, as a step not to be taken now is, and a press or a key on it says
+    // no where it is (a box that took the press and did nothing told nothing). Why is heard: "No repo to search".
+    this.query.readOnly = !repo;
+    if (repo) this.query.removeAttribute('aria-disabled'); else this.query.setAttribute('aria-disabled', 'true');
     this.say(repo ? t('Search this repo') : t('No repo to search'));
     this.query.value = repo ? queries.get(repo) ?? '' : '';
     void this.draw();

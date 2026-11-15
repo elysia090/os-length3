@@ -33,6 +33,8 @@
   border-radius: var(--r-key); background: transparent; color: var(--ink); cursor: var(--cursor-hand); transition: none;
 }
 .band-tool:hover { color: var(--ink); }
+/* Held (Home with no repo to work in): the pointer on it promises nothing; pressed, it says no (home.ts). */
+.band-tool[aria-disabled='true'], .band-tool[aria-disabled='true']:hover { color: var(--frame); cursor: var(--cursor-arrow); }
 .band-tool .mark { width: 18px; height: 18px; }
 .band-tools > .search-box { flex: none; width: 220px; }
 .band-tools form.search > .mark { position: absolute; left: 10px; top: calc((var(--h-row) - 16px) / 2); width: 16px; height: 16px; color: var(--ink); pointer-events: none; z-index: 1; }

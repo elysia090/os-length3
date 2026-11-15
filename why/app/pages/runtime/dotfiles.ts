@@ -108,6 +108,8 @@ function editBox(name: string, text: string, fresh: boolean, saved: boolean, w: 
   const acts = h('div', {class: 'row work-act'}, remove, h('span', {class: 'grow'}), close, save);
   const box = h('div', {class: 'dot-editor'}, h('div', {class: 'row dot-head'}, h('span', {class: 'muted mono'}, '/root/'), title), body, error, acts);
   remove.addEventListener('click', () => askRemove(name, box, acts, remove, error, w));
+  // Escape is Close, as everywhere a thing opened to be written in is put back by it (it did nothing here).
+  box.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.isComposing && !box.querySelector('.dot-ask')) { e.preventDefault(); e.stopPropagation(); w.paint(); } });
   // Saved while Prompts run: they have what they started with until they start again. Under the box, so Save stays put.
   const now = saved ? running() : [];
   if (now.length) box.append(startAgain(now, w));

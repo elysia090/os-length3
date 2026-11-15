@@ -77,7 +77,7 @@ interface NewBoardWays {
 /**
  * The last box: a new board in the server chosen (in `here` as it is when Make is pressed), made where it will stand,
  * as a server is (new-server.ts): the box is the board it will be, dashed, its name written in its head in the letters
- * a board's name has, Make beside it, what a board is said quietly where its talk will be, and its TODO's first line
+ * a board's name has, Make beside it, and its TODO's first line
  * and its talk's foot faint, each where it will stand. Made, the same shapes stand there whole. Beside the one on
  * screen, only its edge and its +.
  */
@@ -114,11 +114,10 @@ export function newBoard(now: boolean, here: Here, ways: NewBoardWays): HTMLElem
   make.addEventListener('click', () => void done());
   name.addEventListener('input', () => { error.textContent = ''; named(); if (name.value) drafts.set(kept, name.value); else drafts.delete(kept); });
   name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void done(); } });
+  // (No word on what a board is where its talk will be: the board it will be says it, its name written in its head and
+  // its talk's foot faint where it will stand.)
   return h('div', {class: 'board-card board-new'},
-    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), field, make, error), ghostBody(),
-    // At the top of where its talk will be (styles.css), broken where the sentence is: what a board is, then what one
-    // may be about.
-    h('p', {class: 'board-lead muted small'}, t('A board groups discussions and shared tasks around a topic:'), h('br'), t('e.g. trips, releases, or study groups.')));
+    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark', 'aria-hidden': 'true'}, '#'), field, make, error), ghostBody());
 }
 
 /**

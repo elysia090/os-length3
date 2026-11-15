@@ -350,7 +350,7 @@ test('the files tool on the band brings out the deeds for what is read now, unde
   await expect(app.file.tree).toBeHidden();
 });
 
-test('the terminal is the desk\'s first piece, a piece as any other: line on the ground at rest, a sheet of ink in hand; a line is run with Enter, a note sent by the word at its end; pressed anywhere on it the caret is in its line, Escape puts the keyboard out on the desk, and the band\'s >_ takes its line', async ({app}) => {
+test('the terminal is the desk\'s first piece, a piece as any other: line on the ground at rest, a sheet of ink in hand; a line is run with Enter, a note sent by the word at its end; pressed anywhere on it the caret is in its line, Escape puts the keyboard out on the desk, and the band\'s >_ puts it away even so, and pressed again brings it back with its line', async ({app}) => {
   await app.rail.go('forge');
   const term = app.forge.piece('term'), stand = app.page.locator('.desk-term.stand'), own = app.forge.editor('README.md');
   const tool = app.forge.tools.getByRole('button', {name: 'Terminal', exact: true});
@@ -392,10 +392,14 @@ test('the terminal is the desk\'s first piece, a piece as any other: line on the
   await app.page.keyboard.press('Escape');
   await expect(app.forge.desk).toBeFocused();
   await expect(term).toHaveClass(/held/);
-  // The band's >_ takes its line, the keyboard in it.
+  // The band's >_ puts it away all the same (in the hand, it is out: a press that only gave it the caret was not seen
+  // to do anything), the file before it taken up again; pressed again, it is back, the keyboard in its line.
   await tool.click();
-  await expect(app.forge.promptBox).toBeFocused();
+  await expect(term).not.toHaveClass(/held/);
+  await expect(app.forge.piece('README.md')).toHaveClass(/held/);
+  await tool.click();
   await expect(term).toHaveClass(/held/);
+  await expect(app.forge.promptBox).toBeFocused();
 });
 
 test('the terminal in hand: its words its own green on ink, at the size one writes at on whole lines; as wide as any piece, in hand or not; no lamp, its prompt quieter until a shell is there; a line it printed breaks at its last column; nothing in it puts it away', async ({app}) => {

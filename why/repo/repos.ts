@@ -86,6 +86,12 @@ export function isGitName(part: string): boolean {
 export function plainPart(name: string): boolean {
   return !!name && !name.startsWith('.') && !name.includes('/') && !name.includes('\\') && !isGitName(name);
 }
+/** `written` over a name whose stem was chosen and its ending kept (`was`): a name written whole, its ending with it,
+ * is not given the ending twice (notes.md written over untitled.md's stem was notes.md.md). */
+export function onceEnded(written: string, was: string): string {
+  const end = /\.[^./]+$/.exec(was)?.[0];
+  return end && written.endsWith(end + end) ? written.slice(0, -end.length) : written;
+}
 /** `path` with its last part named `name`. */
 export const renamed = (path: string, name: string) => (path.includes('/') ? `${path.slice(0, path.lastIndexOf('/'))}/${name}` : name);
 

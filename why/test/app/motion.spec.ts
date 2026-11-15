@@ -296,7 +296,8 @@ test('reduced motion settles an in-flight navigation and restores motion when sw
 test('a press is let go when the pointer is cancelled, and being held is shown with less motion asked for too (a state, not a move)', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.main.getByRole('button', {name: 'Files: New, Rename, Delete'});
+  // (Home's New repo: a control pressed anywhere, always there; the band's tools are held while there is no repo.)
+  const toggle = app.main.locator('.card.new');
   await toggle.dispatchEvent('pointerdown', {button: 0});
   await expect.poll(() => toggle.evaluate((el) => Number(getComputedStyle(el).scale))).toBeLessThan(1);
   await toggle.dispatchEvent('pointercancel');
@@ -313,7 +314,8 @@ test('a press is let go when the pointer is cancelled, and being held is shown w
 test('less motion asked for during a held press keeps it held; let go, it is up at once and nothing is replayed', async ({app}) => {
   await app.rail.go('home');
   await still(app);
-  const toggle = app.main.getByRole('button', {name: 'Files: New, Rename, Delete'});
+  // (Home's New repo: a control pressed anywhere, always there; the band's tools are held while there is no repo.)
+  const toggle = app.main.locator('.card.new');
   const scale = () => toggle.evaluate((el) => getComputedStyle(el).scale);
   await toggle.dispatchEvent('pointerdown', {button: 0});
   await expect.poll(async () => Number(await scale())).toBeLessThan(1);

@@ -134,7 +134,9 @@ export function touch() {
     setTimeout(up, Math.max(0, SEEN - (performance.now() - keyed.at)));
     keyed = null;
     lift();
-    // (Space's click, if one comes, comes as the key comes up: before the control pressed is forgotten.)
-    setTimeout(() => { sounded = null; }, 0);
+    // (Space's click, if one comes, comes as the key comes up, but not always in the same task as its keyup: the
+    // control pressed is remembered a moment, so its click is known as the same press. A press after it sets its own.)
+    const was = sounded;
+    setTimeout(() => { if (sounded === was) sounded = null; }, 300);
   }, true);
 }

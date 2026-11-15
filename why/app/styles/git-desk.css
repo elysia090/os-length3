@@ -66,6 +66,10 @@
 .git-switch .switch-lines:focus-within .switch-line.next:not(:has(> button:focus)) > :is(button, span) { font-weight: 400; color: var(--sub); }
 .git-switch .switch-line:has(> button:focus)::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); }
 .git-switch .switch-line:has(> button:focus) > button { font-weight: 700; color: var(--ground); }
+/* (Its word stays the ground's under the pointer too: a press on a step that is not to be taken now has the pointer
+   still on it, and the pointer's ink on the band's ink left the band with no word. shared.css's hover is more
+   particular than the band, so the band's word says so again here.) */
+.git-switch .switch-line:is(.next, :has(> button:focus)) > button:hover { color: var(--ground); }
 .switch-lines > .error { margin: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--sans); color: var(--off); text-align: left; }
 .switch-lines > .error:empty { display: none; }
 /* main's sheet's name over its corner, as a piece's is (§5), level with the issue's beside it: the repo whose main it

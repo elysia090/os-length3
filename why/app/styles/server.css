@@ -56,8 +56,10 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* The server it will be, faint under its chip: its first board dashed on the ground as it will open (its TODO's first
    line, its talk's foot in their own words, not a box in a box nor bars that read as loading), and the box at the foot
    it will write in, saying its people by the name as it is written; nothing in it to press. Made, it stands there whole. */
-/* (A board to be made is not a sheet yet: its piece is a dashed line on the ground, in the hand or not.) */
-.server-center .slide:has(> :is(.board-ghost, .board-new)), .server-center .slide[aria-current='true']:has(> :is(.board-ghost, .board-new)) { background: var(--ground); color: var(--sub); outline-style: dashed; outline-color: var(--edge); box-shadow: none; }
+/* (A board to be made is a dashed line on the ground beside the one in the hand; in the hand it is the piece in the
+   hand as any is, paper, its ink edge and its shadow, as the issue not written yet is in Git's row: on the ground in the
+   hand it read as nothing taken up. A server's first board, faint while the server is named, is not in the hand.) */
+.server-center .slide:has(> :is(.board-ghost, .board-new)):not([aria-current='true']), .server-center .slide[aria-current='true']:has(> .board-ghost) { background: var(--ground); color: var(--sub); outline-style: dashed; outline-color: var(--edge); box-shadow: none; }
 .board-ghost .board-head h2 { color: var(--sub); }
 /* What a board will hold, faint (server/board.ts ghostBody): a server's first board while it is named, a new board. */
 .board-faint { color: var(--sub); }
@@ -79,7 +81,6 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .board-name-in::placeholder { color: var(--sub); font-weight: 400; }
 .board-new > .board-head > .error { grid-column: 1 / -1; padding-bottom: var(--s1); }
 .board-new > .board-head > .error:empty { display: none; }
-.board-new > .board-lead { grid-column: 1; grid-row: 2; align-self: start; padding: var(--s3) var(--u); }
 .prompt.ghost-dock { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); font: var(--t-word)/var(--u) var(--sans); }
 /* What the side will hold, quiet (never see-through): its words and lines the quiet ones. */
 .side-ghost { color: var(--quiet); }

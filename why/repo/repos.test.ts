@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import shared from './templates.json' with {type: 'json'};
-import {isIssues, plainPart, renamed, shownEntries, templateFiles, validName, type Template} from './repos.ts';
+import {isIssues, onceEnded, plainPart, renamed, shownEntries, templateFiles, validName, type Template} from './repos.ts';
 
 test('repo names match the native rule', () => {
   assert.ok(validName('my-repo_1.0'));
@@ -13,6 +13,16 @@ test('a new or renamed file or folder is one plain part, as core\'s add takes it
   for (const bad of ['', '.env', '..', 'a/b', 'a\\b', '.git', 'GIT~1', '.git. ']) assert.ok(!plainPart(bad), bad);
   assert.equal(renamed('src/main.c', 'hello.c'), 'src/hello.c');
   assert.equal(renamed('README.md', 'READ.md'), 'READ.md');
+});
+
+test('a name written whole over a stem whose ending was kept is not given the ending twice', () => {
+  assert.equal(onceEnded('notes.md.md', 'untitled.md'), 'notes.md');
+  assert.equal(onceEnded('docs/notes.md.md', 'untitled.md'), 'docs/notes.md');
+  // Its stem only, or another ending: as written.
+  assert.equal(onceEnded('notes.md', 'untitled.md'), 'notes.md');
+  assert.equal(onceEnded('notes.txt.md', 'untitled.md'), 'notes.txt.md');
+  // A name with no ending had none to keep.
+  assert.equal(onceEnded('Makefile.md.md', 'Makefile'), 'Makefile.md.md');
 });
 
 test('templates hold the repo\'s own files, never inbox or TODO', () => {

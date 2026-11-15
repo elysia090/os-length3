@@ -15,8 +15,6 @@ export default {
   'A board named "{name}" already exists': '「{name}」という名前のボードは既に存在します',
   'Topic / Description': 'ボードのトピック・概要',
   // The same, broken where the sentence is.
-  'A board groups discussions and shared tasks around a topic:': 'ボードは1つのテーマに関する対話と共有 TODO をまとめる場所です：',
-  'e.g. trips, releases, or study groups.': '旅行計画、リリース作業、読書会など。',
   'Public boards': '公開ボード',
   'Create server': 'サーバーを作成',
   // Share with no server to show a repo in: the way to make one.

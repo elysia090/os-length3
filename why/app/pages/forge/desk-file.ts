@@ -5,7 +5,7 @@ import {caretIn, fieldCarried} from '../../ui/caret.ts';
 import {errorText} from '../../../api/errors.ts';
 import {t} from '../../../text/i18n.ts';
 import {bytes} from '../../../text/format.ts';
-import {EDIT_LIMIT, onChange, store} from '../../../repo/repos.ts';
+import {EDIT_LIMIT, onChange, onceEnded, store} from '../../../repo/repos.ts';
 import {shownPath} from '../../../repo/issues.ts';
 import {AGENT} from '../../../repo/agent-hands.ts';
 import {editorOn, holdBack, openingWith} from '../bench/play.ts';
@@ -338,7 +338,7 @@ export function renameIn(name: HTMLElement, path: string, rename: (path: string,
   };
   const go = async (leaving: boolean) => {
     if (over || going) return;
-    const typed = (name.textContent ?? '').trim();
+    const typed = onceEnded((name.textContent ?? '').trim(), was);
     if (!typed || typed === was) { back(); if (!leaving) onward?.(); return; }
     going = true;
     try {

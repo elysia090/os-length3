@@ -371,11 +371,14 @@ test('an empty board says so at its talk\'s foot, by the box one writes in; a ta
   const [e, tk] = [await box(empty), await box(talk)];
   expect(tk.y + tk.height - (e.y + e.height)).toBeLessThan(40);
 
-  // New board's line breaks where its sentence does.
+  // The new board, in the hand, is the piece in the hand as any is (paper, its ink edge, its shadow), and says nothing of
+  // what a board is: the board it will be says it.
   await app.server.newBoard();
-  const about = app.server.view.getByText(/^A board groups discussions/);
-  await expect(about.locator('br')).toHaveCount(1);
-  await expect(about).toHaveText('A board groups discussions and shared tasks around a topic:e.g. trips, releases, or study groups.');
+  await expect(app.server.view.getByText(/^A board groups discussions/)).toHaveCount(0);
+  const piece = app.server.view.locator('.slide[aria-current="true"]:has(> .board-new)');
+  await expect(piece).toHaveCSS('background-color', 'rgb(253, 250, 244)');
+  await expect(piece).not.toHaveCSS('box-shadow', 'none');
+  await expect(piece).toHaveCSS('outline-style', 'solid');
 
   // A talk longer than its board scrolls inside it, over the box one writes in at the sheet's foot.
   await app.server.goBoard('general');

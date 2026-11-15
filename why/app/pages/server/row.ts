@@ -45,7 +45,9 @@ export class Row {
     const stage = this.stage = h('div', {class: 'slide-stage', tabindex: '0', 'aria-label': t('Boards'), 'aria-roledescription': 'carousel'}, this.track);
     this.element = h('div', {class: 'slides'}, stage);
     stage.addEventListener('keydown', (e) => {
-      if ((e.target as HTMLElement).closest('input, textarea, [contenteditable]')) return;
+      // (An arrow a thing on the board took itself, its parts' tabs going to the next part, goes no further: on a tab,
+      // → moved the row to the next board and the tab with it.)
+      if (e.defaultPrevented || (e.target as HTMLElement).closest('input, textarea, [contenteditable]')) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); this.go(this.k - 1); }
       if (e.key === 'ArrowRight') { e.preventDefault(); this.go(this.k + 1); }
     });

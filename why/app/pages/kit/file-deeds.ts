@@ -1,7 +1,7 @@
 import {h} from '../../ui/dom.ts';
 import {nudge, putAway} from '../../ui/glide.ts';
 import {t} from '../../../text/i18n.ts';
-import {isIssues, ISSUES, plainPart, plainPath, store} from '../../../repo/repos.ts';
+import {isIssues, ISSUES, onceEnded, plainPart, plainPath, store} from '../../../repo/repos.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from './common.ts';
 import type {MarkName} from '../../ui/icons.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -25,11 +25,35 @@ const taken = (child: string) => new Error(t('"{name}" already exists', {name: c
 const kept = (to: string) => (isIssues(to) ? new Error(t('"{name}" is where the repo\'s issues are kept', {name: ISSUES})) : null);
 
 /**
+ * The keys struck between a press and the field it opens having the keyboard: held in a box of their own, out of
+ * sight, and written into whatever has the keyboard once it is there (`give`), as if it had had it all along. Struck
+ * fast after New file, the first letters of the name went nowhere.
+ */
+export function heldKeys(): {give(): void} {
+  const box = h('input', {'aria-hidden': 'true', tabindex: '-1', autocomplete: 'off',
+    style: 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0'}) as HTMLInputElement;
+  document.body.append(box);
+  box.focus({preventScroll: true});
+  return {
+    give() {
+      const text = box.value;
+      const at = document.activeElement;
+      box.remove();
+      if (!text || !at || at === document.body) return;
+      if (at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement) {
+        at.setRangeText(text, at.selectionStart ?? at.value.length, at.selectionEnd ?? at.value.length, 'end');
+        at.dispatchEvent(new Event('input', {bubbles: true}));
+      } else if ((at as HTMLElement).isContentEditable) document.execCommand('insertText', false, text);
+    },
+  };
+}
+
+/**
  * `written` as the path `path` of `repo` goes to (a name, or a path that moves it: notes/plan.md), put plainly; thrown
  * if it is no path or something is there already.
  */
 export async function renaming(repo: string, path: string, written: string): Promise<string> {
-  const to = written.replace(/^\/+|\/+$/g, '');
+  const to = onceEnded(written.replace(/^\/+|\/+$/g, ''), path);
   if (!plainPath(to)) throw new Error(t('Paths joined by "/", segments cannot start with "."'));
   const [inside, name] = split(to);
   const theirs = kept(to);
@@ -131,10 +155,13 @@ export function fileDeeds(d: Deeds): HTMLElement {
   const make = async (b: HTMLButtonElement) => {
     if (b.disabled) return;
     b.disabled = true;
+    // What is written before its name has the keyboard (the file is made first) is held, and written there then.
+    const held = heldKeys();
     try {
       d.opening?.(into);
       await d.made(await untitled(repo, into, d.dir ? d.like : d.name), true);
     } catch (err) { b.disabled = false; error.textContent = errorText(err); b.after(error); }
+    finally { held.give(); }
   };
   rows.push(entry(t('New file'), 'new-file', (b) => void make(b)));
   rows.push(entry(t('New folder'), 'new-folder', (b) => field(b, t('Folder name'), '', t('Create'), async (n) => {

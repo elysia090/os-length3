@@ -133,5 +133,8 @@
 .home-waits .pane-row + .pane-row > .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; }
 .home-waits .pane-row + .pane-row > .pane-at, .home-waits .pane-row:nth-child(n + 5) { display: none; }
 .home-waits .lately-none { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
-.home-waits > .plugins { width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; }
+/* The plug's area, called up in front (the rail's plug): in the hand, so paper, its ink edge and the hand's shadow (white
+   with no shadow read as a sheet lying on the desk, not one called up). */
+.home-waits > .plugins { width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: 0; background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px;
+  box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .home-waits > .agent-cards { width: calc(12 * var(--u)); max-width: 100%; }

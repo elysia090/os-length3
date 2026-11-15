@@ -41,7 +41,7 @@ const figure = (value: string, word: string, note = '') =>
 function column(id: string, title: string, total: number | null, rows: Node[], empty: string, foot: Node[] = []): HTMLElement {
   return h('section', {class: 'space-col', 'aria-labelledby': id},
     h('h3', {id}, h('span', {}, title), total === null ? null : h('b', {}, bytes(total))),
-    h('div', {class: 'space-list'}, ...(rows.length ? rows : [h('p', {class: 'muted small space-empty'}, empty)])),
+    h('div', {class: 'space-list'}, ...(rows.length || !empty ? rows : [h('p', {class: 'muted small space-empty'}, empty)])),
     ...(foot.length ? [h('div', {class: 'space-foot'}, ...foot)] : []));
 }
 
@@ -121,8 +121,9 @@ function hereRows(u: Space, repo: RepoParts): HTMLElement[] {
     const repoNote = isRepo ? syncWord(repoState(i.what)) : '';
     // why is a command's name, written as code is (in the sans face its l reads as a capital I).
     const name = isRepo ? repo.name(i.what) : i.id === 'why' ? h('code', {class: 'mono'}, i.what) : i.what;
-    return thing(name, i.allocated, [i.detail, repoNote].filter(Boolean).join(' · '), null,
-      i.room === 'Keep' ? i.why : '', isRepo ? repo.gear(i.what, i.room === 'Keep' ? i.why : null) : undefined);
+    // (Its name, its size and how a repo stands: not what it is or why it stays, said under each, the page explaining
+    // itself. Why a repo stays is its gear's to say, asked.)
+    return thing(name, i.allocated, repoNote, null, '', isRepo ? repo.gear(i.what, i.room === 'Keep' ? i.why : null) : undefined);
   });
 }
 
@@ -142,9 +143,8 @@ function freeColumn(u: Space, repo: RepoParts, go: (ids: string[], held: HTMLBut
   });
   const all = h('button', {class: 'button', type: 'button'}, t('Free all')) as HTMLButtonElement;
   all.addEventListener('click', () => go(freeable.map((i) => i.id), [all, ...buttons]));
-  // Nothing to free, the reason is each one's own (not on the Remote yet, a Prompt in it): said on its row.
-  return column('free-col', t('Reclaimable space'), u.freeable, going, t('No reclaimable space; items indicate retention reasons'),
-    freeable.length > 1 ? [h('span', {class: 'muted small grow'}, t('Repos remain on Remote and redownload when opened.')), all] : []);
+  // Nothing to free: the column is empty under its 0 B (a sentence saying so, and why, explained the page to itself).
+  return column('free-col', t('Reclaimable space'), u.freeable, going, '', freeable.length > 1 ? [all] : []);
 }
 
 /** On the Remote: what can come here, each with Fetch; in the app, the release root too when it is not installed. */
@@ -155,7 +155,7 @@ function remoteColumn(repo: RepoParts, again: (r: Freed | null) => void, error: 
       b.disabled = true;
       try { await bring(r.name); again(null); } catch (e) { error.textContent = errorText(e); b.disabled = false; }
     });
-    return thing(repo.name(r.name), r.bytes, t('repo · downloads then opens'), b, '', repo.gear(r.name, t('Remote-only: no local storage to free'), true));
+    return thing(repo.name(r.name), r.bytes, '', b, '', repo.gear(r.name, t('Remote-only: no local storage to free'), true));
   });
   // What is only there, not all it holds: its size is what would come here.
   const col = column('remote-col', t('Remote only'), remoteOnly().reduce((n, r) => n + r.bytes, 0), coming,

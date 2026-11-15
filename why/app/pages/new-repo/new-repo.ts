@@ -5,7 +5,7 @@ import {connection} from '../../../shipto/connection.ts';
 import {plan} from '../../../shipto/plan.ts';
 import {goToPlan} from '../kit/plan-gate.ts';
 import {remoteOnly} from '../../../shipto/lifecycle.ts';
-import {isIssues, ISSUES, plainPath, store, templateFiles, validName, type Template} from '../../../repo/repos.ts';
+import {isIssues, ISSUES, onceEnded, plainPath, store, templateFiles, validName, type Template} from '../../../repo/repos.ts';
 import {onTheGround} from '../home/home.ts';
 import type {Context} from '../kit/context.ts';
 import {errorText} from '../../../api/errors.ts';
@@ -190,7 +190,7 @@ export function newRepo(ctx: Context): Node[] {
    * and all in it with it; '' when done, else why it cannot be.
    */
   const moved = (path: string, written: string): string => {
-    const to = written.trim().replace(/^\/+|\/+$/g, '');
+    const to = onceEnded(written.trim().replace(/^\/+|\/+$/g, ''), baseOf(path));
     if (!to || to === baseOf(path)) return '';
     const dir = parentOf(path), full = dir ? `${dir}/${to}` : to;
     if (!plainPath(full)) return t('Paths joined by "/", segments cannot start with "."');

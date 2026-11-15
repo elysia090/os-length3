@@ -254,14 +254,15 @@ export function bench(parts: {strip?: HTMLElement; main: HTMLElement; reveal(pat
   // On a desk the box lies on a moving plane: what opens out of its pill (fixed to the window) lies on the page instead.
   if (!shown) for (const pop of box.dock.querySelectorAll<HTMLElement>(':scope > .box-modes')) work.append(pop);
   const screen = shown?.screen ?? null;
-  // The band's >_ takes the terminal out and puts it away: pressed with the terminal in the hand and the keyboard in its
-  // line, the piece in the hand before it is taken up again (a key that only ever brought it out left a second press
-  // with nothing to answer it). Its shell ended, or the keyboard out of it, the press is what brings it back: a new
-  // shell, or its line.
+  // The band's >_ takes the terminal out and puts it away: pressed with the terminal in the hand, the piece in the hand
+  // before it is taken up again, wherever the keyboard is (a key that only ever brought it out left a second press with
+  // nothing to answer it; and with the keyboard out on the desk, a press that only gave its line the caret was not seen
+  // to do anything). Its shell ended, the press is what brings it back, a new shell; the terminal's line is taken by a
+  // press on the terminal itself.
   const toPrompt = () => {
     if (!box.repo) return;
     const s = sessionIfAny(box.repo);
-    if (!s?.ended && box.prompt === document.activeElement && parts.termAway?.()) return;
+    if (!s?.ended && parts.termAway?.()) return;
     if (s?.ended) s.restart();
     box.summon();
   };

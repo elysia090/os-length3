@@ -73,7 +73,8 @@ export class IssueRow {
       if (Math.abs(dx) > 48 && Math.abs(dx) > 1.5 * Math.abs(dy)) this.go(this.k + (dx < 0 ? 1 : -1), true);
     });
     this.stage.addEventListener('keydown', (e) => {
-      if ((e.target as HTMLElement).closest('input, textarea')) return;
+      // (An arrow a thing in the row took itself goes no further: Server's row moved under its board's tabs so.)
+      if (e.defaultPrevented || (e.target as HTMLElement).closest('input, textarea')) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); this.go(this.k - 1, true); }
       if (e.key === 'ArrowRight') { e.preventDefault(); this.go(this.k + 1, true); }
     });
