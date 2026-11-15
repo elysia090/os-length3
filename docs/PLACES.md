@@ -5,6 +5,317 @@ How a place looks, where its things lie and how they move is `DESIGN.md`, writte
 **where the two differ on look, layout or motion, `DESIGN.md` is right and this is not yet rewritten** (it still
 speaks of a pane, of sheets lying askew, of sizes that are gone). What the OS is under the places is `OS.md`.
 
+
+# The language applied
+
+How this product applies the design language of `DESIGN.md`, place by place: what each place is for, its
+composition, what it holds, the misfits not yet put right, and the tests that hold it. `DESIGN.md` names no place and
+no feature; everything here is an application of it, and where the two differ, `DESIGN.md` is right.
+
+## A. Each place
+
+What each place is for in one sentence (its character), and where its things lie. All of it is §2–§9 applied; what
+is written here is only what a place adds.
+
+### Home: mine
+
+*Who one is and what is one's own to do: the one place with a voice.* The person's name is the one large thing in
+the OS.
+
+A desk of two short pieces (§6):
+
+1. **The person's own.** A cell of desk; **the name**, Home's title: its capitals two cells tall, the first line's
+   from y = 72 to 120, at any length. A name longer than the piece breaks over lines at that size, balanced, a line
+   every three cells, so every line's capitals stand on the grid; only a word longer than the piece at two cells takes
+   one cell (the programme's next size down, §2). A cell; the counts, mono, a cell under the last line's feet
+   (from 144 with a name of one line); then the handle and the line about the person, a cell each, while there are
+   any; a cell; **the note**. The note is Home's piece in the hand: its yellow, as wide as the piece.
+   Its lines are cells: an item's mark is a 16 px box with a 2 px line in the two cells before its words (as a file's
+   numbers are), its words 700 on a line of a cell, its detail and its day the lines under it, its × in the two
+   cells after; a cell of paper over and under. It is as tall as what is written on it and the line of what the keys
+   do, brought up to the next line of the grid, never under four cells.
+2. **The repos and what waits.** "repos" on the cell under the band (y = 48); a name every two cells, capitals a
+   cell tall, **the first standing on the line the person's name's first line stands on** (y = 120); a cell; "+ new repo" in the
+   words' own size; a cell; what waits, a slip 12 cells wide drawn in line on the ground (it is not in the hand), its
+   lines in the words' sizes (what waits is read; the display face is for names, §2).
+
+**Home as a shot.** Home is a portrait, and each of its parts has a part in the shot (§2):
+
+| In a shot | On Home | So |
+|---|---|---|
+| the title, read first and above all that qualifies it | the person's name, at the frame's corner where the eye lands | it keeps its scale at any length: a long name is more lines, never a smaller name; under it, small, what qualifies it (the counts, the handle) |
+| the subject | the note, the piece in the hand: its fill, its ink edge, its shadow | the heaviest body (§5), its silhouette whole: nothing on it breaks its edge |
+| the eyeline across the frame | the line the name's first line stands on (y = 120), continued by the first repo's name beside it | the two pieces read as one frame, not two lists |
+| the supporting cast, graded down | the repos, a cell's capitals each (half the name's), what waits a slip in line on the ground | never larger than the title, never filled, never shadowed |
+| the space ahead | the ground to the right of the two pieces and under them | one field, nothing set in it: the lead room of a portrait that faces the way the row runs |
+
+### Forge: the work, written and run
+
+*A repo open on the desk: the terminal and its files, side by side, to write in and run.* Its one large thing is
+the name of what is in the hand, at the band's end.
+
+A desk. Its row: the terminal first, then the files in the order they were opened. The terminal in the hand is ink
+with its words green; not in the hand it is line on the ground, as any piece. A program that takes the whole screen
+has its 80 columns while it runs.
+
+**At work, the shot holds** (§2, computed). Working is writing, going through a file, taking the next piece and
+running; none of it is a reason for the shot to change:
+
+| Doing | What moves | So |
+|---|---|---|
+| coming to Forge | the piece in hand is at the desk's edge | the eye, on the rail, finds it at the frame's corner |
+| a file taken by a key, a find, a link | it comes to the edge | where the last subject stood (eye-trace), the row ahead of it (look room) |
+| a piece pressed | nothing | it stays under the hand |
+| a line written | the piece grows a line from where its top stood; nothing else | no jump, nothing reversed |
+| written past the lower third | the piece stands to the foot once; then the sheet turns a line at once per line written, the line written held at the lower third with paper under it | the line written never in the third it goes towards: the room ahead is paper to write on |
+| gone back through it by the keys | the sheet turns a line at once per line gone past the upper third | the same room the other way |
+| along a line that runs past the sheet's edge | the text turns along to keep the line's next fifteen letters in sight | what is read at a glance is ahead of the eye |
+| the terminal running | its words, inside it | its last line, where its work is, out of the lower third |
+| a press in a file | the caret, to where it was pressed; nothing turns | eye-trace over the plane |
+
+### Git: Forge's far side, the work recorded and reviewed
+
+*What a repo is to become, what it became, and what is asked to be taken into it.* It has a composition of its own,
+and it is kept (§1).
+
+A desk. At the desk's edge main's own sheet, eight cells wide (ink: it is where the repo's work is switched); two
+cells on, the issues. The issue in the hand is a wide sheet, set as a poster is:
+
+- its **number** at its top right, two cells tall in the display face: the place's large thing;
+- its **title** at its top left, capitals a cell tall on lines of two cells;
+- under them, at the left, what is said of it (its summary, whose it is), set against the work's edge; at the right
+  **the work**, a column that runs to the sheet's right edge: each file's name and count, the lines that changed on
+  a band of the change's colour across the column, the lines beside them out of focus (they are what the change is
+  seen against, behind it);
+- at its foot, left, **the sum of the work**, large;
+- its number and kind, small, in the cell over its corner.
+
+The issues before and after it show two cells of themselves at the row's two ends, with their numbers; an end
+pressed goes to that issue.
+
+**What main has not committed is main's sheet's**, at the desk's edge under its steps: "main" over its corner as a
+piece's name is, then for each repo a sheet in line on the ground, its files a line each (a name and how much it comes
+to; pressed, it opens in Forge, where its lines are read), the line that commits them and Commit. It is never a second
+wide sheet laid over the row: the place's subject stays the issue in hand. (Before: "main" said large over a sheet as
+wide as the issue's, its diff in full, pushing the issue in hand down the window.)
+
+**Word from someone, come while one works here**, is a slip at the page's foot against its right edge, drawn in line
+on the ground as a piece at rest is, who wrote at the words' size: a servant of the issue in hand, never a second
+shadow or a second large name. Pressed, its conversation in Inbox. Under the sheet in the hand, its history runs down a dotted line. Which repo is a choice
+on this desk, not one of the window's instruments: it stands on the cell under the band. On a window with no room for
+main's sheet and an issue side by side, the issues go under the sheet, two cells down.
+
+**What is written here is written where it stands** (§7: nothing to open first, nothing to confirm):
+
+- **A new issue** is its first line, written on a line that is always there, a cell under main's sheet, the repo it
+  goes in said quietly in the cell over it (chosen in the row of repos). Enter makes it, and the keyboard goes on into
+  its summary in the issue in full, written there and kept as it is left. With no issue yet the line is at the desk's
+  edge, where the first piece would be, and what is so is said quietly where the issues would be. Asked for from
+  Forge, the line has the keyboard; Escape with nothing written goes back there.
+- **A commit on main** is main's card's line, always there under its files: Enter commits it, as Commit beside it
+  does. There is no Cancel: nothing was opened.
+- **An issue's title** is written over where it is read: pressed, it is a line of its own words, its kind kept and
+  its title chosen; Enter or leaving keeps what is written, Escape puts it back.
+
+What is half written in any of them stays, going along the row or to another page and back.
+
+### Server: where many talk
+
+*A room: boards of talk, each with a shared list, and the people in it.* Its one large thing is the name of the board
+in the hand.
+
+A desk with a row (§6). First, the room's own sheet, eight cells, as Inbox's first sheet is (a cell of paper round
+its lines, a line a cell tall): its boards by name (the one in the hand in ink,
+a dot on one with something not seen), the way to a new one, who is in it, the repos they show. Then its boards in
+their order: the one in the hand a sheet as wide as any piece; **one not in the hand is its name on the ground and
+nothing round it**, as wide as the name, as a repo's is on Home; pressed, it is taken up. Last, so too, the board
+not made yet. The board in the hand is a sheet: its name in the display
+face on its second line, its two parts after the name (its talk, its list; they go under the name where they do not
+fit beside it), the part chosen under a quiet rule, and at its foot the box one writes in, part of the sheet. Its
+servers are chips on the band's row after the door; the chip of the server on screen, pressed, turns the desk to the
+row's start.
+
+### Inbox: Server's far side, what was said to one
+
+*Letters: who wrote, and the conversation with them.* Its one large thing is the name of who the conversation is
+with.
+
+The same instrument as Server (so it is learnt once). First, the sheet of who wrote, twelve cells: one's own name
+(pressed, it is copied; its gear at its end), the field that writes to someone new, then each conversation on two
+lines of a cell, the name with the address quiet after it and under it the last thing said; the one open in ink.
+Then the conversation open, a piece in the hand. One is found by one's name: there is no number beside it. With no
+conversation open the first sheet stands alone. Signed out, or with no name yet, it is a sheet with the one thing
+to do, as the Remote's is.
+
+### What is said: a transcript on an axis
+
+A board's talk and a conversation are set the same way, as a transcript is, on the sheet's axis (§5); not as bubbles
+on two sides.
+
+- **The axis.** The sheet's inside is 22 cells, set **6 | 2 | 14**. The first six are the margin: who speaks (their
+  name in bold) and when, right-aligned against the axis, and paper. The words start at the axis and have 14 cells.
+  This is a letter's sheet as the *Canon* sets one: three columns, "leaving the left one blank", the text "flush
+  left from the second column toward the right margin".
+- **The measure.** 14 cells are 336 px, about 46 letters to a line: in the middle of what is read with ease (45 to
+  72), where the whole inside (72 letters) was at its far end.
+- **The sheet's name stands at the axis** too, with what is said of it small in the margin beside it (a board's #,
+  how a conversation reaches the other). The sheet's line under its name starts at the axis
+  and runs out to the sheet's right edge: the margin is one column of paper from the sheet's top to its foot. Between
+  the talk and the box one writes in there is no line: the box is in front of the talk, and what passes under its
+  edge as the talk is read back goes a little out of focus (2 px, over the cell the talk keeps empty at its
+  foot, so at rest on the latest nothing is).
+- **The box one writes in** stands in the words' column, under them. Its key (Post, Send) comes with the words, and
+  says its keys on itself; Enter is a new line.
+- **On the grid.** Words are on lines of a cell. A run of one person's posts a few minutes apart says who
+  once, and the margin beside the rest of the run is paper; the next post of a run on the next line, a line before
+  another speaker. A day's name is a small line of its own in the margin.
+- **A sheet with no room for 6 | 2 | 14** (a phone's piece is 13 cells, 264 px inside, 36 letters) has who speaks
+  over the words, as what does not fit beside goes under (§6). By the sheet's own width, never the window's.
+- **Standing on its foot.** The latest is just over the box one answers in; a talk longer than its sheet scrolls
+  inside it, and the box stays in sight.
+- **What can be done with a post** (its time in a run, taking it down) is on the post in the hand: pressed, or with
+  the keyboard in it.
+
+### Runtime: this device
+
+*The machine one is at: what it holds, what runs on it, how it is set.* A sheet. A place of figures: the figures
+are the one thing with weight (700), everything else is said at 400, the quieter in `sub`.
+
+### The Remote: Home's far side, where the repos are kept
+
+*The other machine: an account, its devices, what it keeps.* A sheet.
+
+### New repo (+)
+
+*One question: what is it called.* On Home's ground: one piece at the desk's edge, and it is the hand's (paper, its
+ink edge, its shadow: the one on the desk). Its place in the cell over its corner, as a piece's name is, on one line
+and on a patch of the ground its own size: `~/` and the name as written, a letter no name can have marked where it
+is; then New repo, quiet, which gives way where the line has no room for it whole. In it, a cell of paper each side:
+
+1. the name on its first line in the display face, its capitals a cell tall as every name's (a name longer than the
+   line goes on past it as a field's words do: never made smaller for its room); nothing written, the word for what
+   goes there, quiet;
+2. a cell; why the name cannot be, where there is a reason, in the small size on lines of a cell (what is under it
+   comes down by the cells it takes; the sheet's top never moves);
+3. what the repo is for, on lines of a cell;
+4. a cell; a rule; a cell; **what will be made in it**, a line a cell tall each, folders first, a folder's depth a
+   cell in; New file and New folder their last line;
+5. a cell; Create, a key the frame's square tall.
+
+As wide as a piece, as tall as what is in it to the grid's next line, every line of it on a cell.
+
+The repo itself is the sheet, its name the sheet's title: said once, large, and not drawn again as a row of the
+list under it (it was, filled with ink as File fills the repo in hand: a second fill on the sheet, and the name said
+twice). A row's name pressed is written over in its place; what else can be done to it (Rename, Leave out) is its one
+mark's menu, the chevron at its right end, always there and quiet (§5). Nothing on it is coloured by the pointer.
+Three sizes on it, as on any sheet: the name's, the words' (15), the small (13); and the key's own name.
+
+### File
+
+*Everything there is, as a tree.* Not a place: it is called up in front of whatever place is shown, from the rail,
+by a press and by nothing else, and it stands whole in the window beside what called it; the place behind it goes out of focus. Each row's menu is always there, quiet.
+
+---
+
+
+## B. The givens, place by place
+
+Read from §1, §7, §10 and `PLACES.md`, where each was said in passing; the person who gives them changes them here.
+
+| Place | One does … and … comes of it | Its kind of pleasure (MDA) | What matters most: subject › large thing › the rest | Its words | Friction kept |
+|---|---|---|---|---|---|
+| Home | writes what is one's own to do, and the day is one's own | expression | the note › one's name › the repos, what waits | a TODO, Next TODO, repos | none |
+| New repo | names a thing, and it is there | expression | the sheet › the name being written › what will be made | name, what it is for, Create | none: Create makes it at once |
+| Forge | writes and runs, and sees it work | challenge, mastered | the piece in hand › its name on the band › the row | a file's name, the Prompt, Run | one piece in hand at a time (§7) |
+| Git | judges the work and records it, and it is done | narrative: written, started, handed in, merged | the issue in hand › its number › main's sheet, the neighbours | issue, Start, Commit, Merge | a far side is a step away (§7) |
+| Server | talks with many, and is among them | fellowship | the board in hand › its name › the room's index | board, post, TODO | Enter is a new line; sending is its own key (§7) |
+| Inbox | writes to one, and is answered | fellowship | the conversation › who › who wrote | conversation, Send | the same |
+| Runtime | sees what the machine holds, and frees it | care | the sheet › its figures | what is here, on the Remote, can be freed | a deed that cannot be put back asks (§11) |
+| The Remote | keeps one's things elsewhere, and they are safe | trust | the sheet › its repos › devices | on, off, devices | turning a repo off asks for its name |
+| File | looks for anything, and finds it | discovery | the tree › `/` › its rows | its rows, their menus | it comes by a press only (§7) |
+
+
+## C. What is not yet so
+
+The design above is what the code does, except here. Each is a rule of this document that a part of the OS still
+breaks; none is a decision to leave it.
+
+| Where | What it still does | The rule it breaks |
+|---|---|---|
+| Git | its row is slid by code of its own (a finger's swipe is read by it), not turned as a desk is, so it does not follow the hand; the issue beside lights under a pointer | §6, a row is looked along as anything is scrolled; §7, nothing waits on a pointer |
+| Git | under 1100 px wide the sheet's work goes under its words and its number into its title's line: by the window's width | §1, a narrow window has the same rules |
+| Server | a board not in the hand is its name only: what it holds is read when it is taken up | §5, a piece not in the hand is read, a step quieter |
+| Server | behind its gear and a repo shown: a page of the old make (its title 24 px, its parts on a sliding line) | §3, §5 |
+| Server's chips, a sheet's parts | a line of them longer than its room slides, its end faded into the ground, a › over the fade | §1, no transparency as decoration; §6, what does not fit goes under |
+| the search's finds | the find beside the one read lights under a pointer | §7, nothing waits on a pointer |
+| the band | Home, Forge and Git each build their own (the door alone is the window's); Runtime, the Remote, Server and Inbox have no search, so the band's row is not the same in every place: Server's is a round +, its servers as pills and a chevron at the row's far end; Inbox's and the Remote's the door alone; Runtime's nothing | §2, the frame is the window's; §4, the frame the same in every place (held of the rail, not yet of the band's row) |
+| Forge | the desk still turns by itself to where the Agent is working | §8, the world moves only for what was asked |
+| moves in code | their lengths are still written where they are made (their curve is the law's) | §8 |
+| the sheets (Runtime, the Remote) | what is in them is laid by the window's width in places (27 rules that ask the window how wide it is remain in the sheets, most of them here) | §1, a narrow window has the same rules |
+| the Remote's repos | a repo on or off the Remote is a switch drawn as a phone's is (a knob in a slot) | §1, no shape taken unasked |
+| inside the sheets | what is set in columns in Runtime and the Remote is not yet set by the programme's columns (14, 10, 6) | §3, the widths are one programme |
+| signing in, a Remote not answering | the same deed has two looks (Try again in ink on Server, in line on the Remote) | §1, one hand |
+| deeds that ask first | some twenty deeds ask before they are done (remove a dotfile, take a repo off, sign a device out, a server left), each in its place with Cancel beside it, whether or not they can be put back | §7, what can be put back is done and can be put back |
+| Forge, the first time | the desk is long in the building (the Prompt starts with it), and the move to it waits for that: 60 to 90 ms from the press, where every other place is off within 50 | §8, a move starts within 50 ms of its press |
+| Git's issue in full | its width is the row's of its own make (the window less two neighbours' peeks), not one of the programme's | §3, the widths are one programme |
+| `PLACES.md` | speaks of the look as it was | — |
+
+**Which icons the rail needs.** Counted in presses, for a rail of n icons. An icon costs the screen a square for
+ever and saves one press each time its page is gone to from somewhere that is not its place. Git is gone to from
+Forge, the Remote from Home, Inbox from Server (and from what waits on Home, which leads into a conversation
+itself); from anywhere else each is seldom the next thing. So taking their three icons off costs one press on a
+seldom road and nothing on the daily one, and the daily one (Forge and Git, there and back) costs no travel of the
+hand at all, where it was the length of two icons. The rail is not what should go: a place gone to from anywhere
+needs its one press from anywhere. What is still open is the plug, whose press does different things in different
+places, and File, which is called up as the band's things are and stands on the rail.
+
+---
+
+
+## D. How it is checked
+
+Nothing here rests on how a screen looks to someone. Each rule is held by a test that measures.
+
+| Rule | Held by |
+|---|---|
+| The law of motion: its shape, its time; the sheets' curve is the code's; no sheet moves by another curve or a written-out time; how long words shown for a moment stay (§8) | `why/app/ui/law.test.ts` |
+| What a colour may say: the greys from ink to paper each lighter than the last and none a hue; each hue a kind of its own (§13) | `why/app/ui/tokens.test.ts` |
+| A piece's place is its number; where the desk rests; going to a piece, every case; a phone by the same rule (§6) | `why/app/pages/forge/desk-layout.test.ts` |
+| A piece's width at every window; a row whose first sheet is narrower than its pieces (§3, §6) | `why/app/ui/row.test.ts` |
+| The rail's order; which pages are a place's far side, where each door leads and that it leads back (§4) | `why/app/host/purposes.test.ts` |
+| What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `why/test/app/sound.spec.ts` |
+| Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
+| Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the lean (the lower right at least as empty as the upper left), the bare ground one open field with nothing trapped and at most a third of the world marked, the band's title whole at its size, one voice (§2); every size of type one of three, and every line of words on a cell of the grid (§3) | `why/test/app/composition.spec.ts` |
+| Touch, with motion on: under the pointer a thing takes paper or nothing; a press answers in its own frame, sounds as it goes down, gives at most 8% and comes home never past; every place's subject holds its act (§14) | `why/test/app/touch.spec.ts` |
+| Master and servant: on a desk one piece holds the fill, the ink edge, the shadow and the keyboard, and what is typed goes to it alone (§1) | `why/test/app/master.spec.ts` |
+| Writing in Git is direct: a new issue's line and main's commit line always there, Enter making or committing, nothing to open, confirm or put back; an issue's title written over in place; what is half written kept (§7, §10) | `why/test/app/git.spec.ts` |
+| Forge at work, frame by frame at two screens: the piece in hand at the edge or under the hand; the line written never in the third it goes towards, a long file standing to the foot; the terminal's last line out of the lower third; nothing jumping, nothing reversed; the weight left (§2, §6, §10) | `why/test/app/at-work.spec.ts` |
+| Where the line written may stand, the terminal's lines, and where the desk turns for a piece pressed and for one gone to (§2, §5, §6) | `why/app/pages/forge/desk-layout.test.ts` |
+| New repo is one piece at the desk's edge, the hand's: on the grid, a piece wide, its name at a name's size on its first line, what will be made inside it under a rule, every line of it on a cell, one size of words, nothing filled but its key, its place over its corner on a patch of the ground, each row's deeds one chevron; why a name cannot be said under it with the sheet's top still (§10) | `why/test/app/new-repo.spec.ts` |
+| Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `why/test/app/skeleton.spec.ts` |
+| A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `why/test/app/server.spec.ts` |
+| Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone; Home as a shot: a long name keeps its size over lines on the grid with the eyeline at its first, and the note's edge is whole (§10) | `why/test/app/home.spec.ts` |
+| Forge's row; the hand's piece alone filled; nothing changes size; what is pressed does not move; the desk rests at a piece (§5, §6) | `why/test/app/forge-work.spec.ts` |
+| Where the ink is: 8 times, on Forge whichever piece is in the hand, and on Home (§5) | `why/test/app/focus.spec.ts` |
+| The window's edges are the frame's; a press just off a menu is the menu's (§7) | `why/test/app/favour.spec.ts` |
+| The frame, in every place at six screens: one degree every way, receding inside film's safe-action margin on a desk screen, one square, the same in every place, on two sides only, quiet at rest and ink only under the hand (§4) | `why/test/app/frame.spec.ts` |
+| Going to another place: the two pages and the dots move as one in every frame (set off at one instant), one way, off within 50 ms of the press, at rest within 420 ms; the rail's place inked at once, no ink going between (§8) | `why/test/app/motion.spec.ts` |
+| What comes is there at once: an arrival and a band changed are cuts, motion asked for or not (§8) | `why/app/ui/glide.test.ts` |
+| File comes by a press and by nothing else (§7) | `why/test/app/file.spec.ts` |
+| A phone has the same rules (§1) | `why/test/app/narrow.spec.ts` |
+
+`npm test` runs the `.test.ts` files; `npm run selftest` the `.spec.ts` files, in a browser against a real Remote.
+
+To add a rule: write it here as a number or a sentence that can be false, then write the test that would find it
+false, then make it true. To change one: change it here first.
+
+---
+
+
+---
+
+# The behaviour, as it was built
+
 ## 7. The rail
 
 - Icons only, top to bottom, the order of one's own work: **Home** (who
