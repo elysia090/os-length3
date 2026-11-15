@@ -50,7 +50,7 @@ not the goal made smaller: all nine pairs of instruction sets are the goal.
 | x86-64 | x86-64 | linux | verified: `module/sods/test/programs/run.sh` |
 | x86-64 | x86-64 | macos | unverified: the same WebAssembly under node there (host.ts asks node, not the system); no check runs on macos |
 | x86-64 | x86-64 | windows | unverified: the same WebAssembly under node there (host.ts asks node, not the system); no check runs on windows |
-| x86-64 | x86-64 | browser, worker | verified: `tests/app/linux.spec.ts` |
+| x86-64 | x86-64 | browser, worker | verified: `why/test/app/linux.spec.ts` |
 | x86-64 | x86-64 | bare | unimplemented: a host with no system under it: host.ts answers for a page, a Worker and node |
 | x86-64 | arm64 | linux, macos, windows | unverified: the same WebAssembly under node there; no check runs on arm64 |
 | x86-64 | arm64 | browser, worker | unverified: the same WebAssembly under a browser there; no check runs on arm64 |
