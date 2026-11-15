@@ -65,44 +65,40 @@ test('what will be made is the new repo alone, as File will show it, its files m
   await expect((await app.file.item('harbour', '', {open: true})).getByRole('treeitem', {name: 'docs', exact: true})).toHaveCount(0);
 });
 
-test("what will be made stands beside the name's box at a laptop's width, as Home's repos beside its TODO; a long name has the box alone; the name fits its line", async ({app}) => {
-  await app.page.setViewportSize({width: 1400, height: 900});
-  await app.rail.go('new-repo');
-  const box = app.main.locator('.nr-box'), files = app.main.locator('.tree-still');
-  await app.newRepo.name.fill('count');
-  const at = async (l: typeof box) => (await l.boundingBox())!;
-  await expect(async () => {
-    const b = await at(box), f = await at(files);
-    expect(f.x).toBeGreaterThan(b.x + b.width);
-    expect(Math.abs(f.y - b.y)).toBeLessThan(1);
-    expect(f.width).toBeLessThan(b.width * .7);
-  }).toPass();
-  // A short name as large as the box gives it.
-  const size = () => app.newRepo.name.evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
-  expect(await size()).toBe(64);
-  // Set to the box's top left corner: its first letter a step in from the left edge, its capitals as far from the top.
-  const corner = await app.newRepo.name.evaluate((e: HTMLInputElement) => {
-    const b = e.closest('.nr-box')!.getBoundingClientRect(), n = e.getBoundingClientRect(), cs = getComputedStyle(e);
-    return {left: n.left + parseFloat(cs.paddingLeft) - b.left, top: n.top + parseFloat(cs.paddingTop) - b.top, align: cs.textAlign};
-  });
-  expect(corner.left).toBeLessThan(32);
-  expect(corner.top).toBeLessThan(20);
-  expect(['start', 'left']).toContain(corner.align);
-  // One too long to stand large beside the files has the column alone, what will be made inside its box; on its one
-  // line, not cut at the box's edge. Short again, the files stand beside it again.
-  const inside = box.locator('.tree-still');
-  await app.newRepo.name.fill('length3-blobs-mirror-of-main');
-  await expect(inside).toBeVisible();
-  expect(await size()).toBeGreaterThan(44);
-  expect(await app.newRepo.name.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
-  await app.newRepo.name.fill('count');
-  await expect(inside).toHaveCount(0);
-  await expect(files).toBeVisible();
-  await app.page.setViewportSize({width: 390, height: 844});
-  await expect(async () => {
-    const b = await at(box), f = await at(files);
-    expect(f.y).toBeGreaterThan(b.y + b.height);
-  }).toPass();
+test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a piece wide, its name at a name\'s size on its first line, what will be made inside it under a rule', async ({app}) => {
+  const U = 24, NAME = 24 / .727;
+  for (const size of [{width: 1400, height: 900}, {width: 390, height: 844}]) {
+    await app.page.setViewportSize(size);
+    await app.rail.go('new-repo');
+    const box = app.main.locator('.nr-box'), label = app.main.locator('.nr-label');
+    await app.newRepo.name.fill('count');
+    // A piece wide (24 cells, or as many whole cells as the window has room for with its shadow), its place in the
+    // cell over its corner, its top a cell under the band, its foot on a line of the grid.
+    const wide = U * Math.min(24, Math.max(10, Math.floor((size.width - 2 * U - U / 2) / U)));
+    await expect(async () => {
+      const b = (await box.boundingBox())!, l = (await label.boundingBox())!;
+      expect([b.x, b.y, b.width], `the piece at ${size.width}`).toEqual([2 * U, 3 * U, wide]);
+      expect(b.height % U).toBe(0);
+      expect([l.x, l.y, l.height]).toEqual([2 * U, 2 * U, U]);
+    }).toPass();
+    // The hand's: paper, the one light's shadow; and the only shadow on the desk.
+    expect(await box.evaluate((e) => getComputedStyle(e).boxShadow)).toBe('rgb(23, 22, 20) 12px 12px 0px 0px');
+    expect(await app.main.evaluate((m) => [...m.querySelectorAll('*')].filter((e) => getComputedStyle(e).boxShadow.includes('12px 12px')).length)).toBe(1);
+    // The name at a name's size, never fitted to its room, its capitals on the box's first line of the grid, a cell in.
+    const name = await app.newRepo.name.evaluate((e: HTMLInputElement) => {
+      const b = e.closest('.nr-box')!.getBoundingClientRect(), n = e.getBoundingClientRect(), cs = getComputedStyle(e);
+      return {size: parseFloat(cs.fontSize), left: n.left + parseFloat(cs.paddingLeft) - b.left, top: n.top - b.top};
+    });
+    expect(Math.abs(name.size - NAME)).toBeLessThan(.01);
+    expect(name.left).toBe(U);
+    expect(Math.abs(name.top - (U - .2043 * U))).toBeLessThan(1);
+    await app.newRepo.name.fill('length3-blobs-mirror-of-main-and-more');
+    expect(Math.abs(await app.newRepo.name.evaluate((e) => parseFloat(getComputedStyle(e).fontSize)) - NAME)).toBeLessThan(.01);
+    // What will be made is inside it, under a rule, under what it is for.
+    const files = box.locator('.tree-still');
+    await expect(files).toBeVisible();
+    expect(await files.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe('1px');
+  }
 });
 
 test('what is written before Create stays while another page is seen, and goes once made', async ({app}) => {

@@ -217,7 +217,7 @@ export class Reference {
   }
 
   /** The page out of focus under what the band's search found. */
-  private veil = pageVeil('band');
+  private veil = pageVeil('deep');
 
   /**
    * On the band, whether what is under the box is down over the desk (the box has the keyboard, or something is read

@@ -19,6 +19,7 @@ import type {Context} from '../kit/context.ts';
 import {latelyRow, pluginArea, waiting, wordLine} from '../kit/pane.ts';
 import {mark, type MarkName} from '../../ui/icons.ts';
 import {fitSize, inkEdge} from '../../ui/optical.ts';
+import {wholeCells} from '../../ui/row.ts';
 import {errorText} from '../../../api/errors.ts';
 import {nudge, still} from '../../ui/glide.ts';
 
@@ -61,7 +62,7 @@ export function home(ctx: Context): Node[] {
   // The names' ink stands on the column's left edge (not their boxes), and the person's name is as large as the column
   // has room for: measured as the repos are drawn, and as what waits is.
   const edges = () => {
-    for (const el of beside.querySelectorAll<HTMLElement>('.home-repos .card-title, .lately-list > .pane-row:first-child > .pane-line')) inkEdge(el, 'left');
+    for (const el of beside.querySelectorAll<HTMLElement>('.home-repos .card-title')) inkEdge(el, 'left');
     fitName(header);
   };
   new MutationObserver(edges).observe(beside, {childList: true, subtree: true, characterData: true});
@@ -222,18 +223,6 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
 
 /** The grid's cell (styles: --u), and how tall the display face's capitals are, of its size. */
 const U = 24, CAP = .727;
-
-/**
- * `el` kept whole cells tall: as its own height changes, the room at its foot (--to-grid, which its styles add under
- * what is in it) is what brings it to the next line of the grid.
- */
-function wholeCells(el: HTMLElement) {
-  new ResizeObserver(() => {
-    const had = parseFloat(el.style.getPropertyValue('--to-grid')) || 0;
-    const needs = (U - ((el.offsetHeight - had) % U)) % U;
-    if (needs !== had) el.style.setProperty('--to-grid', `${needs}px`);
-  }).observe(el);
-}
 
 /**
  * The name on its line: its capitals two cells tall, one where the name is longer than the column at two; longer than

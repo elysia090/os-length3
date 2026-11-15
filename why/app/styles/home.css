@@ -113,7 +113,7 @@
 .home-waits .pane-row { display: block; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; text-align: left; }
 .home-waits .pane-row > .pane-bar { display: none; }
 .home-waits .pane-row > :is(.pane-line, .pane-said, .pane-at) { display: block; overflow: visible; mask: none; white-space: nowrap; }
-.home-waits .pane-row:first-child > .pane-line { --size: var(--t-head); margin: calc(.7957 * var(--u)) 0 calc(-.1713 * var(--u)) var(--ink-left, 0px); font: 900 var(--size)/1 var(--display); letter-spacing: -.035em; }
+.home-waits .pane-row:first-child > .pane-line { margin: var(--u) 0 0; font: 700 var(--t-body)/var(--u) var(--sans); letter-spacing: 0; }
 .home-waits .pane-row > .pane-said { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow: hidden; font: 400 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 .home-waits .pane-row > .pane-at { font: 700 var(--t-meta)/var(--u) var(--mono); color: var(--ink); }
 .home-waits .pane-row:is(:hover, :focus-visible) > .pane-line { text-decoration: underline 3px; text-underline-offset: 4px; }

@@ -318,7 +318,8 @@ class Forge {
   }
 
   /** What is in hand on the desk on screen, said against the band's right end: a file's name, the terminal's prompt.
-   * Set by its ink against the edge, smaller where the band has no room for it at its size (`again`: the room changed). */
+   * Set by its ink against the edge, at its size or not at all where the band has no room for it whole (`again`: the
+   * room changed): a title is never made smaller to fit (DESIGN §2, the camera has one lens). */
   private tellHeld(again = false) {
     const repo = this.now.repo, d = repo ? this.desks.get(repo) : undefined, held = d?.desk.held ?? null;
     // While what the search found is down over the desk, the page's large word is what was searched for.
@@ -327,11 +328,9 @@ class Forge {
     const el = this.heldName;
     if (el.textContent === said && !again) return;
     el.textContent = said;
-    el.style.removeProperty('--fit');
     const room = el.clientWidth, wide = el.scrollWidth;
-    if (room > 0 && wide > room) el.style.setProperty('--fit', String(Math.max(.5, room / wide)));
-    // (Whole, at its size or down to half of it; where the band has not that much room, not at all: never cut.)
-    el.style.visibility = room <= 0 || wide * .5 > room ? 'hidden' : '';
+    // (Whole at its size, or not at all: never cut, never smaller.)
+    el.style.visibility = room <= 0 || wide > room ? 'hidden' : '';
     inkEdge(el, 'right');
   }
 

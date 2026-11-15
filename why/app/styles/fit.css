@@ -27,8 +27,9 @@
 
 /* A board not in the hand is its name and nothing round it: a name on the ground, as a repo's is on Home, as wide as
    the name, pressed to take it up. No sheet stands empty between the room's own sheet and the board worked in, and
-   the row is packed close: the room's sheet, the names before, the board in the hand, the names after. */
-.server-center .slide[aria-current='false'] { width: auto; background: none; outline: 0; border-radius: 0; cursor: var(--cursor-hand); }
+   the row is packed close: the room's sheet, the names before, the board in the hand, the names after. Each name is
+   brought up to whole cells (server/row.ts), so what follows it stands on the grid (DESIGN §3). */
+.server-center .slide[aria-current='false'] { width: auto; padding-right: var(--to-cell, 0px); background: none; outline: 0; border-radius: 0; cursor: var(--cursor-hand); }
 .server-center .slide[aria-current='false'] .board-head { padding: 0; min-height: calc(2 * var(--u)); flex-wrap: nowrap; }
 .server-center .slide[aria-current='false'] .board-head > :not(.board-mark, h2) { display: none; }
 .server-center .slide[aria-current='false']:has(> :is(.board-ghost, .board-new)) { outline: 0; }

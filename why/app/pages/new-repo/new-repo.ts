@@ -11,14 +11,13 @@ import type {Context} from '../kit/context.ts';
 import {triangle} from '../file/tree.ts';
 import {errorText} from '../../../api/errors.ts';
 import {mark} from '../../ui/icons.ts';
-import {liftLine, nudge, paced, putAway, still, textAt, unfold} from '../../ui/glide.ts';
-import {fitSize} from '../../ui/optical.ts';
-import {SPRING} from '../../ui/law.ts';
+import {liftLine, nudge, putAway, textAt, unfold} from '../../ui/glide.ts';
+import {wholeCells} from '../../ui/row.ts';
 
 /**
- * +: the repo's name on the first line; under it, in a large box, what it
- * is for, and beside that what will be made in it: the repo alone, as File
- * will show it (nothing else of the device's), from the one scaffold every
+ * +: one piece at the desk's edge, the hand's (DESIGN §10): the repo's name on
+ * its first line; under it what it is for; under a rule what will be made in
+ * it: the repo alone, as File will show it (nothing else of the device's), from the one scaffold every
  * repo starts from, and there its files are made, renamed and left out before
  * it is, as File makes, renames and deletes them. Make it, and it is gone into
  * in Forge. What it is for is the repo's own: it goes into its README, under
@@ -268,10 +267,9 @@ export function newRepo(ctx: Context): Node[] {
     actions.replaceChildren(h('p', {class: 'made', role: 'status'}, t('Created {name}', {name: n})), h('span', {class: 'grow'}), again, open);
     open.focus({preventScroll: true});
   };
-  // One box being born where Forge will lay the repo's README: the name its first line, as large as Home's name; under
-  // it what it is for (its README's words); Create at its foot. Why a name cannot be is said over the box, after where
-  // it will stand, as a desk box says its place. Beside it, a box narrower than it, what will be made with it, as File
-  // will show it (as Home's repos stand beside its TODO).
+  // One box being born where Forge will lay the repo's README: the name its first line; under it what it is for (its
+  // README's words); Create at its foot. Why a name cannot be is said over the box, after where it will stand, as a
+  // desk box says its place.
   const box = h('div', {class: 'nr-box', 'data-empty': t('name')},
     h('label', {class: 'sr-only', for: 'repo-name'}, t('Name')), name,
     // The rule for a name is heard with the field and seen only when it is broken (said over the box).
@@ -279,36 +277,20 @@ export function newRepo(ctx: Context): Node[] {
     h('span', {class: 'sr-only', id: 'repo-summary-label'}, t('Summary')), summaryBox, actions);
   // The page says why a name cannot be, in its own words, never the browser's bubble for a field left empty.
   const label = h('div', {class: 'nr-label'}, h('span', {class: 'nr-path'}, '~/', place), h('span', {class: 'nr-kind'}, t('New repo')), error);
-  // The files' box says over it, as the name's does, where it shows them: File's tree (heard with the tree, as its caption).
-  const filesLabel = h('div', {class: 'nr-label nr-files-label', 'aria-hidden': 'true'}, h('span', {class: 'nr-path'}, t('File')));
-  const form = h('form', {class: 'new-repo', novalidate: ''}, label, box, filesLabel, card);
-  // The name on its one line as large as the box lets it be: 64 px while it is short, smaller as it grows longer (never
-  // under 28, where it goes on past the box's edge as a field's words do), never cut at the edge before that; nothing
-  // written, the word for it the same way. A name that would stand under 44 px in the box beside the files has the
-  // column alone, the files inside its box (styles: .alone), until it would stand at 50 there again.
-  const fitted = () => {
-    const cs = getComputedStyle(name), pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 4, words = name.value || t('name');
-    // The box beside the files is as wide as Home's TODO there (styles: .new-repo's columns), wherever the box stands now.
-    const across = form.clientWidth, gap = Math.min(80, Math.max(24, .06 * across)), beside = Math.min(520, across - gap - 280);
-    const there = across >= 600 ? fitSize(name, words, beside - pad, -.04, fitted) : 0;
-    const alone = !!there && there < (form.classList.contains('alone') ? 50 : 44);
-    if (alone !== form.classList.contains('alone')) {
-      form.classList.toggle('alone', alone);
-      if (alone) box.insertBefore(card, actions); else form.append(filesLabel, card);
-      if (!still()) card.animate([{opacity: 0}, {opacity: 1}], {duration: paced(180), easing: SPRING});
-    }
-    const fits = fitSize(name, words, name.clientWidth - pad, -.04, fitted);
-    if (fits) box.style.setProperty('--nr-name', `${Math.floor(Math.max(28, Math.min(64, fits)))}px`);
-  };
-  let across = 0;
-  new ResizeObserver(() => { if (box.clientWidth !== across) { across = box.clientWidth; fitted(); } }).observe(box);
+  // One piece, the hand's: its place over its corner, and in it the name, what it is for, what will be made (under a
+  // rule) and Create at its foot. The name stands at the size of every name (a cell's capitals), never made smaller or
+  // larger for its room: one that is longer than the line goes on past it, as a field's words do.
+  box.insertBefore(card, actions);
+  const form = h('form', {class: 'new-repo', novalidate: ''}, label, box);
+  // As tall as what is in it, to the grid's next line (as Home's note is): what is under it stays on the grid.
+  wholeCells(box);
   // Said as it is written, not only once Create is pressed: why it cannot be, under the name, and where in it.
   const judge = () => {
     const said = why(name.value.trim());
     if (error.textContent !== said) error.textContent = said;
     if (said) name.setAttribute('aria-invalid', 'true'); else name.removeAttribute('aria-invalid');
   };
-  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); placed(); fitted(); });
+  name.addEventListener('input', () => { keep(); showFiles(); sized(); judge(); placed(); });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const n = name.value.trim();

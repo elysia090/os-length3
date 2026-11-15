@@ -195,7 +195,7 @@ export class Me {
   }
 
   /** The page under the menu, out of focus while it is out, as under File's tree (ui/page-veil.ts): it is called up from the rail, in front of the world. */
-  private readonly veil = pageVeil('all');
+  private readonly veil = pageVeil('thin');
 
   private open(focus: boolean) {
     this.veil.out(true);

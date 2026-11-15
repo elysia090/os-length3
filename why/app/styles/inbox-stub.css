@@ -47,4 +47,4 @@
 .step-line > p { flex: 1; min-width: 0; }
 /* Inside a box on `raised`, an added line is drawn on `ground` with a rule at its left, so it still stands out. */
 .review-chat .step-done { font-size: var(--t-meta); }
-.review-chat .done-mark { transform: scale(.75); margin: -3px; }
+.review-chat .done-mark { margin: 1px 0; }

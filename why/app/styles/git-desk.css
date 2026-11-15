@@ -1,5 +1,5 @@
 /* Git, all desk as Forge is (no pane beside it). Its band has a desk's keys (>_ and the search), then its repos, and
-   against the right edge the issue in full, said large (its repo and its number).
+   against the right edge the repo the desk is of, said large (the issue's number is its sheet's own, said once).
 
    At the desk's edge, main's sheet: a sheet of ink lying askew as Forge's terminal does, its shadow the line's green,
    eight cells wide and as tall as its four lines. It holds the switch and nothing else: the steps of the issue in
@@ -216,7 +216,8 @@
 .work.band-bench > .pane-word { position: fixed; left: auto; right: calc(2 * var(--u)); bottom: calc(2 * var(--u)); z-index: 6; width: min(calc(14 * var(--u)), calc(100vw - 4 * var(--u))); }
 .work.band-bench > .pane-word > .pane-row { border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
 /* A narrow window: the keys start where the page does (the rail is close set), main's sheet lies straight over the
-   row, and the sheet in full takes the row: a neighbour shows a cell, the title a size a phone's line holds. */
+   row, and the sheet in full takes the row: a neighbour shows a cell, the title at the size of every name, over as
+   many lines as it takes (never a size of its own for a narrow line: the camera has one lens, DESIGN §2). */
 @media (max-width: 760px) {
   .work.bench.band-bench > .bar { margin-left: 0; }
   /* (Nothing starts left of the page here, and the Prompt at the foot, wider than a phone, is cut at the page's edge.) */
@@ -229,7 +230,7 @@
   .issue-name { left: calc(-1 * var(--u)); bottom: calc(100% + var(--u) + 7px); }
   .git-desk .issue-words { margin-bottom: var(--u); }
   .git-desk .issue-big-head:not(.peek) { min-height: 0; }
-  .git-desk .issue-big-head:not(.peek) h2 { margin: 0; font: 900 var(--t-card)/var(--u) var(--display); overflow-wrap: anywhere; }
+  .git-desk .issue-big-head:not(.peek) h2 { margin: 0; overflow-wrap: anywhere; }
   .git-desk .issue-work { margin-right: calc(-1 * var(--u)); }
   .git-desk .work-line { font-size: 13px; line-height: var(--u); }
 }

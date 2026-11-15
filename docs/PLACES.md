@@ -2066,33 +2066,22 @@ by their range of ids when they come back near.
 
 ### New repo (+)
 
-One box being born on the desk's ground, with Home's and Forge's band and
-pane round it (the rail goes between the three as a camera over one desk):
-paper, an ink edge, its shadow, as a box on the desk is, and over it, as a
-desk box's label says its place, ~/ and the name as written, then New repo.
-It is set on the rail's rows as Home is: its label on the first, on the line
-Home's name stands on; the box from the second, where Home's TODO is and as
-tall at the least, so the box does not move between the two pages.
-Beside it a box of what will be made with it, File said over it, in Home's two
-columns: the name's box where Home's TODO stands (up to 520 px), the files
-where its repos do (280 px at the least); on a narrow column the files' box
-goes under the name's. A name too long to stand large beside the files (under
-44 px there) has the column alone, as the box had before the files stood
-beside it (up to 760 px), what will be made inside it under what the repo is
-for, a rule over it; shortened again (to stand at 50 px beside them), the
-files go back beside it.
-In the box, its first line, the name, set to the box's top left corner (its
-first letter a step in from the left edge, its capitals as far from the top;
-not large in the box's middle with the box's room round it), in the display
-face as large as the
-box lets the name written be: 64 px while it is short, smaller as it grows
-longer so it is never cut at the box's edge (never under 28 px, past which it
-runs on as a field's words do); nothing written yet, the word name
-stands there in the ground's rule colour (the field itself holds no
-example: one there reads as a name given, and its row as the repo to be
-made). Under it, a sentence's size, what the repo is for (概要): the words go
+One piece being born at the desk's edge, with Home's and Forge's band round
+it (the rail goes between the three as a camera over one desk), and it is the
+hand's: paper, an ink edge, its shadow, the one shadow on the desk. Over its
+corner, in the cell a piece's name stands in, ~/ and the name as written,
+then New repo; its top a cell under the band, as every piece's is. It is a
+piece wide (24 cells, or as many as the window has room for), and as tall as
+what is in it to the grid's next line.
+In it, a cell of paper each side. Its first line, the name, in the display
+face at the size of every name (its capitals a cell tall), never made larger
+or smaller for its room: a name longer than the line runs on past it as a
+field's words do. Nothing written yet, the word name stands there in the
+rule's colour (the field itself holds no example: one there reads as a name
+given, and its row as the repo to be made).
+Under it, a sentence's size, what the repo is for (概要): the words go
 into its README.md under its title, and the box grows with them, a line to
-begin with. In the box beside it, what will be made with it (作成され
+begin with. Under a rule under that, what will be made with it (作成され
 るもの), as File will show it: the repo's own row, its name again in ink
 (dashed where nothing is named), and the one scaffold every repo starts from
 (nothing to choose: why/repo/templates.json's `standard`, as `why repo new`

@@ -114,6 +114,28 @@ cells).
 the rail's order, what is past any edge of the window follows from what is in it: the next piece starts a piece's
 width and two cells along; the place below is the next one down the rail.
 
+### The window is a camera
+
+The window is a camera over the desk, and every rest of it is a shot. A film of the OS in use is one take (§1); this
+says what each frame of that take is, as a cinematographer would hold a film to one look. What film knows about a
+frame, kept as rules here:
+
+| The film-maker says | Here |
+|---|---|
+| One lens and one camera height for a whole film (Ozu kept his camera low and level in every shot), so that a cut is a graphic match | **One lens, straight down.** The world is drawn at one scale: a cell is 24 px in every place and at every width. Nothing at rest is drawn larger or smaller than it is: a name with no room at its size is not shown, or breaks over lines; it is never fitted to its room. Nothing is turned or seen in perspective but a mark that points. The window looks straight down at a desk, as a flat lay is shot: what lies there is square to the frame, on its grid, at one spacing. |
+| A horizon kept at one height from shot to shot | **One horizon.** Every place hangs from the frame's lines: the world's first row at y = 48 (a sheet's top, a piece's name), a piece's top at 72, every edge on a line of the grid (§3). So going down the rail the frame's architecture does not move; only what is on it changes. |
+| Separation: one subject, picked out from what is behind it by light and focus, everything else graded down (Barr's "gradation of emphasis", written of CinemaScope) | **One subject in focus.** At every rest one thing casts the shadow and is in focus: the hand's piece, a place's sheet, or what was called up in front, behind which the world is out of focus, its shadow with it. The shadow is the one light's: 12 px right and down (§3). The rest is graded by fill, ink and size (§5). |
+| The frame belongs to the camera, not to the scene | **The frame is never in the scene.** The rail and the band are the camera's instruments: never out of focus, never under what is called up, never moved (§2). |
+| Eye-trace (Murch): at a cut, the new shot puts what is to be looked at where the eye already is | **The eye lands on what the place is.** After a move the eye is where the hand was: on the rail, or at the door, at the frame's top left. So what stands just past the frame's corner (a cell and a half right of the rail, two cells under the band) is what the place is: its subject, its name, or the index of what is in it. It is never ground, and never a control of something else. |
+| Title-safe: a title stands whole, inside the frame; what is in the scene may be cut by the frame's edge, which says the world goes on past it (off-screen space) | **A title is whole; a thing may be cut.** The frame's own words (a place's name, the band's name of what is in hand) are whole at their size, inside the window and clear of its 6 px. A thing on the desk may be cut by the window's edge (the next piece of a row: the row goes on), except the subject, which is whole with its shadow. |
+| One title to a shot, set at a few sizes | **One voice.** The display face is at its two sizes only (33 and 66), and what it says it says once in a frame: no two of its words alike, no number twice. |
+| Look room: the space ahead of a subject is on the side it faces or moves towards | **The row is ahead.** The desk rests with a piece at its left edge, so the subject has the row's next before it, to the right: the way the row runs, and the way a far side comes in (§6, §8). |
+| Negative space is part of the composition (a lone figure against an empty sky) | **The ground is the negative space.** A short piece is as tall as what is on it and is not stretched to fill the frame; the desk under it is the desk, one field with nothing set in it, as a flat lay leaves its surface bare. A frame round nothing is no way to fill one (§5). |
+| The camera moves only when something motivates it, and a move ends on a composed frame | **A move is asked, and lands on a shot.** The world moves only for what the hand asked (§8), and every move ends at a rest where each rule here holds. |
+| The 180° line: screen direction is kept from shot to shot | **Directions never reverse.** Down is further down the rail; along is a far side, or the row's next; the world never goes the other way for the same thing (§2, §8). |
+
+Each is measured at every rest of every place, at four widths (§12).
+
 ---
 
 ## 3. Measures
@@ -276,8 +298,10 @@ grid, so no dot is cut by it.
 
 - Home and Forge: the door, the terminal's key, the files' key, the search. Git: the door, the terminal's key, the
   search. New repo: the terminal's key, the files' key, the search (it has no far side).
-- On Forge and Git the name of what is in the hand stands at the band's right end, in the display face, its
-  capitals a cell tall about the row's middle.
+- At the band's right end, against the window's edge by its ink, in the display face with its capitals a cell tall
+  about the row's middle: on Forge the name of what is in the hand; on Git the repo the desk is of (an issue's number
+  is its own sheet's large thing, and is said once, §2). Where the band has no room for it whole at that size it is
+  not there at all: it is never made smaller to fit, and never cut.
 - What the search finds comes in front: sheets in a row from the desk's edge, their tops a cell under the band
   (y = 72), to a cell from the window's right edge.
 
@@ -567,7 +591,8 @@ A desk of two short pieces (§6):
    do, brought up to the next line of the grid, never under four cells.
 2. **The repos and what waits.** "repos" on the cell under the band (y = 48); a name every two cells, capitals a
    cell tall, **the first standing on the line the person's name stands on** (y = 120); a cell; "+ new repo" in the
-   words' own size; a cell; what waits, a slip 14 cells wide drawn in line on the ground (it is not in the hand).
+   words' own size; a cell; what waits, a slip 12 cells wide drawn in line on the ground (it is not in the hand), its
+   lines in the words' sizes (what waits is read; the display face is for names, §2).
 
 ### Forge: the work, written and run
 
@@ -666,7 +691,13 @@ are the one thing with weight (20 px 700), everything else is said in 13 and 15.
 
 ### New repo (+)
 
-*One question: what is it called.* On Home's ground: one piece at the desk's edge.
+*One question: what is it called.* On Home's ground: one piece at the desk's edge, and it is the hand's (paper, its
+ink edge, its shadow: the one on the desk). Its place in the cell over its corner, as a piece's name is (`~/` and the
+name as written, then New repo; why a name cannot be after them). In it, a cell of paper each side: the name on its
+first line in the display face, its capitals a cell tall as every name's (a name longer than the line goes on past it
+as a field's words do: never made smaller for its room); a cell; what the repo is for, on lines of a cell; a cell;
+under a rule, what will be made with it as File will show it; a cell; Create. As wide as a piece, as tall as what is
+in it to the grid's next line.
 
 ### File
 
@@ -697,6 +728,8 @@ breaks; none is a decision to leave it.
 | signing in, a Remote not answering | the same deed has two looks (Try again in ink on Server, in line on the Remote) | §1, one hand |
 | deeds that ask first | some twenty deeds ask before they are done (remove a dotfile, take a repo off, sign a device out, a server left), each in its place with Cancel beside it, whether or not they can be put back | §7, what can be put back is done and can be put back |
 | Forge, the first time | the desk is long in the building (the Prompt starts with it), and the move to it waits for that | §8, off at once |
+| things that come | a dozen come into place grown from smaller or faded in: the person's menu, a menu of deeds, a mark of a step done, a line landed under Committed, a post said, a file's unsaved mark (their keyframes in the sheets) | §8, nothing grows into place or fades in; §2, one lens |
+| Git's issue in full | its width is the row's of its own make (the window less two neighbours' peeks), not one of the programme's | §3, the widths are one programme |
 | `PLACES.md` | speaks of the look as it was | — |
 
 **Which icons the rail needs.** Counted in presses, for a rail of n icons. An icon costs the screen a square for
@@ -722,6 +755,8 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | The rail's order; which pages are a place's far side, where each door leads and that it leads back (§4) | `why/app/host/purposes.test.ts` |
 | What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `why/test/app/sound.spec.ts` |
 | Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
+| Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is, the band's title whole at its size, one voice (§2) | `why/test/app/composition.spec.ts` |
+| New repo is one piece at the desk's edge, the hand's: on the grid, a piece wide, its name at a name's size on its first line, what will be made inside it under a rule (§10) | `why/test/app/new-repo.spec.ts` |
 | Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `why/test/app/skeleton.spec.ts` |
 | A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `why/test/app/server.spec.ts` |
 | Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone (§10) | `why/test/app/home.spec.ts` |

@@ -86,7 +86,7 @@ export class FileTree {
   /** What a move by the pointer could not do, said at the tree's foot until it comes out again. */
   private said = h('p', {class: 'error small tree-said', role: 'alert'});
   /** The page under the tree, out of focus while it is out (ui/page-veil.ts). */
-  private veil = pageVeil('all');
+  private veil = pageVeil('thin');
   /** Folders being read now, and who waits until none is. */
   private reading = 0;
   private read: (() => void)[] = [];

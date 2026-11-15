@@ -2,7 +2,7 @@ import {h} from '../../ui/dom.ts';
 import {after, arrive, LAND, paced, pop, putAway, still, unfold} from '../../ui/glide.ts';
 import * as gitops from '../../../repo/history.ts';
 import {t} from '../../../text/i18n.ts';
-import {issueName, issuePath, number, readIssues, type Issue} from '../../../repo/issues.ts';
+import {issuePath, number, readIssues, type Issue} from '../../../repo/issues.ts';
 import {inkEdge} from '../../ui/optical.ts';
 import {bring, remoteOnly} from '../../../shipto/lifecycle.ts';
 import {connection} from '../../../shipto/connection.ts';
@@ -135,7 +135,7 @@ class GitPage {
   private readonly steps = h('div', {class: 'git-switch', role: 'group', 'aria-label': t('Steps')});
   /** At the desk's edge: main's sheet and, under it, the way to write an issue. Not there while there is no issue. */
   private readonly side = h('div', {class: 'git-side none'}, this.steps, this.write);
-  /** The issue in full, said large against the band's right end (its repo and its number), as Forge says what is in hand. */
+  /** The repo the desk is of, said large against the band's right end, as Forge says what is in hand (an issue's number is its sheet's own, said once). */
   private readonly held = h('div', {class: 'band-held', 'aria-hidden': 'true'});
   private readonly count = h('small', {});
   /** Where the issues would be when there are none: the empty place that writes the first, or what is so. */
@@ -289,7 +289,7 @@ class GitPage {
     void this.paint().then(() => { if (other) arrive(this.row.stage.hidden ? this.empty : this.row.stage, 1, 'y', 10, 260); });
   }
 
-  /** `said`, large against the band's right end by its ink; smaller where the band has no room for it at its size. */
+  /** `said`, large against the band's right end by its ink; not at all where the band has no room for it whole. */
   private tellHeld(said: string) {
     const el = this.held;
     // (Fitted again as the band's room changes: a window made narrower never cuts it.)
@@ -301,11 +301,9 @@ class GitPage {
   private heldRoom: ResizeObserver | null = null;
   private fitHeld() {
     const el = this.held;
-    el.style.removeProperty('--fit');
     const room = el.clientWidth, wide = el.scrollWidth;
-    if (room > 0 && wide > room) el.style.setProperty('--fit', String(Math.max(.5, room / wide)));
-    // (Whole, at its size or down to half of it; where the band has not that much room, not at all: never cut.)
-    el.style.visibility = room <= 0 || wide * .5 > room ? 'hidden' : '';
+    // (Whole at its size, or not at all: never cut, never smaller.)
+    el.style.visibility = room <= 0 || wide > room ? 'hidden' : '';
     inkEdge(el, 'right');
   }
 
@@ -325,9 +323,10 @@ class GitPage {
   private slot(x: Issue, now: boolean): HTMLElement[] {
     if (!now) return [h('div', {class: 'issue-card'}, issueHead(x, true))];
     const st = this.states.get(x.repo);
-    // The issue in full: its steps are main's sheet's lines, and it is the one the band names.
+    // The issue in full: its steps are main's sheet's lines. The band names the repo the desk is of: the issue's number
+    // is its sheet's own large thing, and a word is said once large in a frame (DESIGN §2).
     this.steps.replaceChildren(issueSteps(x, st, this.events, this.again));
-    this.tellHeld(`${x.repo} ${issueName(x)}`);
+    this.tellHeld(x.repo);
     // Under the current box, out of it: Back to main at its left, for the issue the repo shows.
     const leave = backToMain(x, st, this.events, this.again);
     // Under the sheet, read down a dotted line from its foot: the change's Review (its history at the line, what it
