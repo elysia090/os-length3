@@ -77,7 +77,7 @@
 .scroll-mark.down { top: 0; right: 4px; width: 4px; }
 .scroll-mark.across { left: 0; bottom: 4px; height: 4px; }
 /* (How far the desk is turned along its row is said by the row's map, at the window's foot: shared.css .row-map.) */
-.desk ~ .row-map { bottom: calc(-1 * var(--outer-bottom)); }
+.desk ~ .row-map { bottom: calc(var(--u) / 2 - var(--outer-bottom)); }
 .scroll-mark.shown { opacity: 1; transition-duration: 0s; }
 .desk-box[data-kind] > .scroll-mark { background: var(--green); }
 @media (prefers-reduced-motion: reduce) { .scroll-mark { transition: none; } }
@@ -133,7 +133,8 @@
 .term-linking .term-out { cursor: var(--cursor-hand); }
 .desk-none { display: grid; place-items: center; height: 100%; color: var(--sub); }
 /* The terminal (bench.ts standOf): the row's first piece, as wide as any and eighteen lines tall. In hand it is a
-   sheet of ink, its words its own green and what it prints in a terminal's colours, its shadow green; at rest it is
+   sheet of ink, its words its own green and what it prints in the terminal's sixteen under the one light (lighter, to
+   be read on its glass: scripts/light.ts), its shadow green; at rest it is
    drawn in line on the ground as every piece at rest is, its words a step quieter (--term-fg on --term-bg, either way). What it
    printed scrolls inside it, the line one types at following with nothing between. */
 .desk-box[data-kind] { --term-fg: var(--sub); --term-bg: var(--ground); background: var(--term-bg); color: var(--term-fg); caret-color: var(--term-fg);
@@ -141,9 +142,9 @@
   --ansi-6: var(--sub); --ansi-7: var(--sub); --ansi-8: var(--quiet); --ansi-9: var(--sub); --ansi-10: var(--sub); --ansi-11: var(--sub);
   --ansi-12: var(--sub); --ansi-13: var(--sub); --ansi-14: var(--sub); --ansi-15: var(--sub); }
 .desk-box[data-kind].held { --term-fg: var(--green); --term-bg: var(--ink); background: var(--term-bg); box-shadow: var(--shade) var(--shade) 0 0 var(--green);
-  --ansi-0: #6b6863; --ansi-1: #f08a9b; --ansi-2: var(--green); --ansi-3: var(--note); --ansi-4: #9cc0f2; --ansi-5: #d8a6e2;
-  --ansi-6: #93d9e2; --ansi-7: var(--ground); --ansi-8: var(--quiet); --ansi-9: #f7a9b6; --ansi-10: #c2f0da; --ansi-11: #f7df85;
-  --ansi-12: #bdd6f7; --ansi-13: #e6c3ed; --ansi-14: #b9e8ee; --ansi-15: var(--paper); }
+  --ansi-0: var(--edge); --ansi-1: #e3a69a; --ansi-2: #9cc49a; --ansi-3: #ccb57e; --ansi-4: #a7b6e1; --ansi-5: #d3a8ca;
+  --ansi-6: #84c4cb; --ansi-7: var(--ground); --ansi-8: var(--quiet); --ansi-9: #fec0b2; --ansi-10: #b6deb2; --ansi-11: #e7cf97;
+  --ansi-12: #c0d0fb; --ansi-13: #edc1e4; --ansi-14: #9ddee4; --ansi-15: var(--paper); }
 .desk-box[data-kind='term'] { padding: 0; }
 .desk-box[data-kind='agent'] { padding: var(--line); }
 .desk-box[data-kind='agent'] > .desk-label { color: var(--ink); }

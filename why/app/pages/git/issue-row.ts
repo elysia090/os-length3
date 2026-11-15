@@ -3,10 +3,14 @@ import {t} from '../../../text/i18n.ts';
 import {after, cut, paced, still} from '../../ui/glide.ts';
 import type {Issue} from '../../../repo/issues.ts';
 import {SPRING} from '../../ui/law.ts';
+import {rowMap} from '../../ui/row-desk.ts';
 
-// Git's issues not merged yet, as large boxes side by side: one in full, its neighbours' edges showing at both
-// sides. An edge is the way to the box beside (hover lifts it; ← → and a finger's swipe do the same), and the track
-// slides there. The keyboard stays on the same part of the box as one goes along the row.
+// Git's issues not merged yet, as large boxes side by side, as every desk rests (DESIGN §2, §6): the one in full at
+// the row's edge, the next ahead of it to the right, its edge showing; those before it out of sight, said by the row's
+// map at the window's foot. The next's edge is the way to it (hover lifts it; → and a finger's swipe do the same; ←
+// and the map go back), and the track slides there. The keyboard stays on the same part of the box as one goes along.
+// (Before, the box in full stood between its neighbours, the last at the row's far end: the subject pushed right, the
+// room behind it larger than the room ahead, the weight of the shot right of its middle.)
 
 /** What the row needs of the page it is in. */
 interface RowWays {
@@ -27,7 +31,7 @@ type Part = {kind: string; words: string};
 export class IssueRow {
   /** The row and its edges, in the issues' column. */
   readonly column: HTMLElement;
-  readonly stage: HTMLElement;
+  readonly stage: HTMLElement = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'});
   /** Put the keyboard on the issue's words once it is drawn (gone to), or in its summary (just made, to go on writing). */
   land: boolean | 'summary' = false;
   private readonly track = h('div', {class: 'issue-track'});
@@ -40,14 +44,17 @@ export class IssueRow {
   /** The neighbours' cards are as tall as the current one, so the row reads as one line of boxes. */
   private readonly sized = new ResizeObserver(([e]) => this.track.style.setProperty('--card-h', `${(e.target as HTMLElement).offsetHeight}px`));
   private readonly ways: RowWays;
+  /** The row's map, at the window's foot: a bar an issue, the one in full in ink. */
+  readonly map = rowMap(this.stage, () => this.pieces(), () => this.turned());
 
   constructor(ways: RowWays) {
     this.ways = ways;
     // The edges over the neighbours: clear, lifted on hover like any place.
     this.prev = h('button', {type: 'button', class: 'stage-hit prev', 'aria-label': t('Previous issue')}) as HTMLButtonElement;
     this.next = h('button', {type: 'button', class: 'stage-hit next', 'aria-label': t('Next issue')}) as HTMLButtonElement;
-    this.stage = h('div', {class: 'issue-stage', tabindex: '0', 'aria-label': t('Issues'), 'aria-roledescription': 'carousel'}, this.track, this.prev, this.next);
-    this.column = h('div', {class: 'issue-column'}, this.stage);
+    this.stage.append(this.track, this.prev, this.next);
+    this.column = h('div', {class: 'issue-column'}, this.stage, this.map.element);
+    new ResizeObserver(() => this.map.paint()).observe(this.stage);
     this.prev.addEventListener('click', () => this.go(this.k - 1, true));
     this.next.addEventListener('click', () => this.go(this.k + 1, true));
     // A finger swiped along the row (sideways more than down, and far enough) goes to the box beside, as its edge
@@ -138,6 +145,7 @@ export class IssueRow {
     this.shown = [];
     this.track.replaceChildren();
     this.stage.hidden = true;
+    this.map.paint();
   }
 
   /**
@@ -152,8 +160,8 @@ export class IssueRow {
     this.was = k;
     this.ways.landed(this.shown[k], moved);
     this.track.style.setProperty('--at', `${k}`);
-    // The first box starts at the column's edge and the last ends at it; between, both neighbours show.
-    const lead = k === 0 ? 0 : k === this.shown.length - 1 ? 2 : 1;
+    // The box in full starts at the column's edge, wherever it is along the row: the next ahead of it.
+    const lead = 0;
     this.column.style.setProperty('--row-lead', `${lead}`);
     this.ways.slid(lead, this.shown.length === 1, !moved && !this.quiet);
     [...this.track.children].forEach((slot, j) => {
@@ -168,10 +176,26 @@ export class IssueRow {
     this.sized.disconnect();
     if (card) this.sized.observe(card);
     const edge = document.activeElement === this.prev || document.activeElement === this.next;
-    this.prev.hidden = k === 0;
+    // (Behind the box in full there is no edge to press: the ones before are out of sight, gone to by ← or the map.)
+    this.prev.hidden = true;
     this.next.hidden = k === this.shown.length - 1;
     this.focus(this.track.children[k] as HTMLElement | undefined, had, edge);
+    this.map.paint();
   }
+
+  /** A box's width along the row and the gap after it, as drawn. */
+  private step(): {w: number; gap: number} {
+    const first = this.track.children[0] as HTMLElement | undefined;
+    return {w: first?.offsetWidth ?? 0, gap: parseFloat(getComputedStyle(this.track).columnGap) || 0};
+  }
+  /** The row as its map says it: each issue a piece, the one in full in the hand. */
+  private pieces() {
+    if (this.stage.hidden) return [];
+    const {w, gap} = this.step();
+    return this.shown.map((x, j) => ({x: j * (w + gap), w, held: j === this.k, name: x.n === null ? x.title : `#${x.n} ${x.title}`, go: () => this.go(j, true)}));
+  }
+  /** How far the row is turned: to the box in full. */
+  private turned() { const {w, gap} = this.step(); return this.k * (w + gap); }
 
   /** The box gone from: as it was while it slides out (out of the keyboard's way), its head once it is at the edge. */
   private leave(slot: HTMLElement, x: Issue) {

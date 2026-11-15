@@ -82,7 +82,7 @@ test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a pie
       expect([l.x, l.y, l.height]).toEqual([2 * U, 2 * U, U]);
     }).toPass();
     // The hand's: paper, the one light's shadow; and the only shadow on the desk.
-    expect(await box.evaluate((e) => getComputedStyle(e).boxShadow)).toBe('rgb(23, 22, 20) 12px 12px 0px 0px');
+    expect(await box.evaluate((e) => getComputedStyle(e).boxShadow)).toBe('rgb(23, 22, 21) 12px 12px 0px 0px');
     expect(await app.main.evaluate((m) => [...m.querySelectorAll('*')].filter((e) => getComputedStyle(e).boxShadow.includes('12px 12px')).length)).toBe(1);
     // The name at a name's size, never fitted to its room, its capitals on the box's first line of the grid, a cell in.
     const name = await app.newRepo.name.evaluate((e: HTMLInputElement) => {
@@ -113,7 +113,7 @@ test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a pie
         if (n.textContent!.trim() && el.getBoundingClientRect().width && !el.closest('.sr-only, kbd')) sizes.add(getComputedStyle(el).fontSize);
       }
       // Nothing in it filled but its key, and nothing on it coloured by the pointer there.
-      const filled = [...b.querySelectorAll('*')].filter((e) => !e.closest('.answers') && getComputedStyle(e).backgroundColor === 'rgb(23, 22, 20)').length;
+      const filled = [...b.querySelectorAll('*')].filter((e) => !e.closest('.answers') && getComputedStyle(e).backgroundColor === 'rgb(23, 22, 21)').length;
       return {lines, sizes: [...sizes].sort(), filled};
     });
     for (const l of sheet.lines) {

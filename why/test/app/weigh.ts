@@ -25,7 +25,7 @@ export async function across(page: Page): Promise<number> {
     };
     const ground = getComputedStyle(document.body).backgroundColor.match(/\d+/g)!.slice(0, 3).map(Number), G = lab(ground[0], ground[1], ground[2]);
     // (The ground's dots are the ground: a pixel of the dot's colour is not ink.)
-    const D = lab(0x96, 0x93, 0x8e);
+    const D = lab(0x95, 0x93, 0x90);
     let sum = 0, sx = 0;
     for (let y = 48; y < H; y += 2) for (let x = 48; x < W; x += 2) {
       const i = 4 * (y * W + x), L = lab(d[i], d[i + 1], d[i + 2]);
@@ -60,7 +60,7 @@ export async function emptiness(page: Page): Promise<string[]> {
     };
     const tone = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
-    const G = lab(...rgb(tone('--ground'))), D = lab(...rgb(tone('--dot') || '#96938e')), P = lab(...rgb(tone('--paper')));
+    const G = lab(...rgb(tone('--ground'))), D = lab(...rgb(tone('--dot') || '#959390')), P = lab(...rgb(tone('--paper')));
     const far = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
     const rows: string[] = [];
     for (let j = 0; j < Math.floor((H - 48) / U); j++) {

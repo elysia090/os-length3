@@ -14,12 +14,12 @@ import {expect, test} from './fixtures.ts';
 const U = 24, F = 2 * U;
 const SIZES = [{width: 1920, height: 1080}, {width: 1536, height: 864}, {width: 1366, height: 768}, {width: 1024, height: 768}, {width: 390, height: 844}, {width: 320, height: 568}];
 const PLACES = ['home', 'new-repo', 'forge', 'git', 'server', 'inbox', 'runtime', 'remote'] as const;
-const INK = 'rgb(23, 22, 20)', FRAME = 'rgb(85, 82, 78)', FRAME_EDGE = 'rgb(111, 109, 104)';
+const INK = 'rgb(23, 22, 21)', FRAME = 'rgb(84, 82, 80)', FRAME_EDGE = 'rgb(110, 109, 106)';
 
 /** The frame as it stands now: run in the page. */
 function framed() {
   // (In the page: the frame's two cells, and ink.)
-  const W = innerWidth, H = innerHeight, F = 48, INK = 'rgb(23, 22, 20)';
+  const W = innerWidth, H = innerHeight, F = 48, INK = 'rgb(23, 22, 21)';
   const box = (el: Element) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map((n) => Math.round(n * 10) / 10); };
   const shown = (el: Element) => { const r = el.getBoundingClientRect(), c = getComputedStyle(el); return r.width > 0 && r.height > 0 && c.visibility !== 'hidden' && c.display !== 'none' && Number(c.opacity) > 0; };
   const places = [...document.querySelectorAll('.rail .rail-item')].filter(shown).map((b) => {

@@ -11,6 +11,8 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //   the frame       under what is called up, the rail and the band stay over the world, in focus
 //   eye-trace       what stands just past the frame's corner is what the place is, within 5° of where the hand was
 //                   (the place's square on the rail, or the door): found without a search
+//   look room       on a desk screen, the room ahead of the subject (to its right, the way the row runs) at least the
+//                   room behind it, wherever it stands
 //   weight          on a desk screen, the weight of what is drawn lies left of the world's middle (the room ahead to
 //                   the right): never set in the middle, never leaning the way the row runs
 //   the lean        the empty part of the world lies to its lower right, the frame's open sides: that quarter at least
@@ -179,7 +181,20 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   // outranks the plane: §2, the order of sacrifice.)
   const f = await app.page.evaluate(frame, PLACES[place]);
   const desk = place !== 'runtime' && place !== 'remote';
-  const atEdge = !called && size.width >= 1024 && !!f.subject && f.subject.x <= 2 * U + .5;
+  // What stands before the subject, when it is not at the desk's edge: the place's own side (Git's steps and new line),
+  // a row's first sheet (Server's first board), or the place's index (Inbox's who wrote).
+  const before = !called && f.subject && f.subject.x > 2 * U + .5 ? await app.page.evaluate(() => {
+    const seen = (sel: string) => [...document.querySelectorAll(sel)].some((e) => e.getClientRects().length > 0);
+    return seen('.inbox-index') ? 'index' : seen('.git-side:not(.none)') ? 'side' : 'sheet';
+  }) : null;
+  // Look room (Thompson and Bowen; Palmer, Gardner and Wickens 2008): ahead at least behind, wherever the subject
+  // stands. (Where the place's index stands before it, what can be done next outranks the plane, §2, the order of
+  // sacrifice: Inbox's who-wrote beside the conversation where both fit.)
+  if (desk && !called && size.width >= 1024 && f.subject && before !== 'index') {
+    const ahead = f.W - (f.subject.x + f.subject.w + U / 2), behind = f.subject.x - 2 * U;
+    expect(ahead, `${what}: the room ahead of the subject (${ahead}) at least the room behind it (${behind})`).toBeGreaterThanOrEqual(behind);
+  }
+  const atEdge = !called && size.width >= 1024 && !!f.subject && (f.subject.x <= 2 * U + .5 || before === 'side');
   if (atEdge && desk) expect(await across(app.page), `${what}: the weight left of the middle`).toBeLessThan(0);
   if (!atEdge) return;
   const rows = await emptiness(app.page), R = rows.length, C = rows[0]!.length;
@@ -207,6 +222,8 @@ test('every rest is a shot: in every place, at every width, one lens, one horizo
   await app.newRepo.make('garden');
   await app.git.write('hello', 'Fix: Say hello louder', 'It whispers; it should say it out loud.');
   await app.git.step('Start').click();
+  // (And a second, written after it, in hand: a row, the box in full the last of it.)
+  await app.git.write('hello', 'Feat: A second greeting');
   await app.rail.go('forge');
   await app.forge.editFile('README.md', '# hello\n\nHELLO.\n');
   await app.server.make('Trip', `${app.handle}-trip`);

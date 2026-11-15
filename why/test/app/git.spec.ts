@@ -80,11 +80,12 @@ test('every issue stays in the row while one is worked on', async ({signedIn: ap
   await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
   await app.git.write('hello', 'Fix: Say it twice', 'Once is not enough.');
   await expect(app.git.issue('#2 Fix：Say it twice')).toBeVisible();
-  // Worked on, #2 still has #1 beside it (it is main's, not left out of the work's copy), and #1 is closed from there.
+  // Worked on, #2 still has #1 in its row (it is main's, not left out of the work's copy): before it, on the row's
+  // map, and gone to and closed from there.
   await app.git.step('Start').click();
   await expect(app.git.step('Back to main')).toBeVisible();
-  await expect(app.git.issue('#1')).toBeInViewport();
-  await app.git.issues.getByRole('button', {name: 'Previous issue'}).click();
+  await expect(app.git.bar(1)).toBeVisible();
+  await app.git.bar(1).click();
   await expect(app.git.issue('#1 Fix：Say hello louder')).toBeVisible();
   await app.git.step('Close').click();
   await expect(app.git.section('Closed')).toContainText('#1 Fix：Say hello louder');
@@ -128,7 +129,7 @@ test('closed, the row goes on to the issue beside it, never to its Close; reopen
     await app.git.write('hello', title);
     await expect(app.git.issue(`#${n} ${title.replace(': ', '：')}`)).toBeVisible();
   }
-  await app.git.issues.getByRole('button', {name: 'Previous issue'}).click();
+  await app.git.bar(2).click();
   await expect(app.git.issue('#2 Idea：Say it in French')).toBeVisible();
 
   await app.git.step('Close').focus();
@@ -363,18 +364,28 @@ test('an empty Issue view in Forge writes the first issue for its repo, and Esca
   await expect(app.forge.reference).toContainText('No issues yet');
 });
 
-test('an issue\'s neighbours show their numbers at the edges that show, and the edges go to them', async ({app}) => {
+test('the issue in full stands at the row\'s edge with the next ahead of it, its number at the edge that shows; the ones before are on the row\'s map, and a bar goes to its issue', async ({app}) => {
   await app.newRepo.make('notes');
   for (const title of ['Fix: One', 'Feat: Two', 'Docs: Three']) await app.git.write('notes', title);
-  // The last one written is the one on screen (pressed while the box still moved to it, Previous went from #2).
+  // The last one written is the one on screen, at the row's edge: nothing behind it in sight (DESIGN §2, look room).
   await expect(app.git.issue('#3 Docs：Three')).toBeVisible();
-  await app.git.issues.getByRole('button', {name: 'Previous issue'}).click();
+  await expect(app.git.issue('#2')).not.toBeInViewport();
+  // The ones before are on the map, a bar each, the one in full in ink.
+  await expect(app.git.bar(3)).toHaveAttribute('aria-current', 'true');
+  await app.git.bar(2).click();
   await expect(app.git.issue('#2 Feat：Two')).toBeVisible();
-  await expect(app.git.issue('#1')).toBeInViewport();
+  const edge = await app.git.issue('#2 Feat：Two').evaluate((h) => h.closest('.issue-card')!.getBoundingClientRect().left);
+  const row = await app.git.issues.locator('.issue-stage').evaluate((e) => e.getBoundingClientRect().left);
+  expect(Math.abs(edge - row), 'the issue in full at the row\'s edge').toBeLessThan(1);
+  // Ahead of it, the next, its number in sight; behind it, nothing.
   await expect(app.git.issue('#3')).toBeInViewport();
+  await expect(app.git.issue('#1')).not.toBeInViewport();
   await app.git.issues.getByRole('button', {name: 'Next issue'}).click();
   await expect(app.git.issue('#3 Docs：Three')).toBeVisible();
-  await expect(app.git.issue('#2')).toBeInViewport();
+  // ← goes back along the row as the map does.
+  await app.git.issues.locator('.issue-stage').focus();
+  await app.page.keyboard.press('ArrowLeft');
+  await expect(app.git.issue('#2 Feat：Two')).toBeVisible();
 });
 
 test('on a phone the issue in full takes the row, nothing in it wider than it, and a swipe goes along', async ({signedIn: app}) => {
@@ -382,7 +393,7 @@ test('on a phone the issue in full takes the row, nothing in it wider than it, a
   await app.newRepo.make('notes');
   for (const title of ['Fix: One', 'Feat: A second greeting for the evening', 'Docs: Three']) await app.git.write('notes', title);
   await expect(app.git.issue('#3 Docs：Three')).toBeVisible();
-  await app.git.issues.getByRole('button', {name: 'Previous issue'}).click();
+  await app.git.bar(2).click();
   const head = app.git.issue('#2 Feat：A second greeting for the evening');
   await expect(head).toBeVisible();
   // Its own deeds, measured with it at the same moment (the row may still be sliding to it, the one left giving its

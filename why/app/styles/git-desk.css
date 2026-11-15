@@ -66,8 +66,12 @@
 /* The row: the heading that names it is heard, not shown (the sheets say what they are). */
 .git-desk .issues-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .git-desk > .section, .git-desk > .main-part + .section { margin-top: 0; }
-/* A neighbour shows two cells of itself, two cells off: room for its number at the words' size (#123). */
+/* The next shows two cells of itself, two cells off: room for its number at the words' size (#123). With the box in
+   full at the row's edge, the room ahead of it is the two peeks and the shadow's cell (52 + 2 × peek), the room behind
+   it the side and its gap (240): ahead the larger at every width (DESIGN §2, look room). */
 .git-desk .issue-column { --row-peek: calc(4 * var(--u)); --gap: calc(2 * var(--u)); }
+/* The row's map at the window's foot, from the desk's edge, as every row's is (shared.css .row-map). */
+.git-desk .issue-column > .row-map { position: fixed; left: calc(2 * var(--u)); bottom: calc(var(--u) / 2); }
 .git-desk .issue-stage::before, .git-desk .issue-stage::after { display: none; }
 /* (A sheet's shadow lies a cell past it: the row is not cut before that.) */
 .git-desk .issue-stage { margin-right: calc(-1 * var(--u)); padding-right: var(--u); }

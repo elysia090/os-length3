@@ -193,6 +193,7 @@ frame, kept as rules here:
 | The frame belongs to the camera, not to the scene | **The frame is never in the scene.** The rail and the band are the camera's instruments: never out of focus, never under what is called up, never moved (§2). |
 | Eye-trace (Murch): at a cut, the new shot puts what is to be looked at where the eye already is | **The eye lands on what the place is.** After a move the eye is where the hand was: on the rail, or at the door, at the frame's top left. So what stands just past the frame's corner (a cell and a half right of the rail, two cells under the band) is what the place is: its subject, its name, or the index of what is in it. It is never ground, and never a control of something else. |
 | Title-safe: a title stands whole, inside the frame; what is in the scene may be cut by the frame's edge, which says the world goes on past it (off-screen space) | **A title is whole; a thing may be cut.** The frame's own words (a place's name, the band's name of what is in hand) are whole at their size, inside the window and clear of its 6 px. A thing on the desk may be cut by the window's edge (the next piece of a row: the row goes on), except the subject, which is whole with its shadow. |
+| One colour temperature to a frame: the camera balanced to the scene's light, a window of another light gelled to match it | **One light, one white.** Every grey is the ground's light at its lightness, and white is that light; what is coloured is seen under it and balanced on it, mixing to its grey (§3, colour). Nothing in the frame is lit by another white. |
 | One title to a shot, set at a few sizes | **One voice.** The display face is at its two sizes only (33 and 66), and what it says it says once in a frame: no two of its words alike, no number twice. |
 | Look room: the space ahead of a subject is on the side it faces or moves towards | **The row is ahead.** The desk rests with a piece at its left edge, and the subject is that piece unless it was pressed where it lay: so it has the row's next before it, to the right, the way the row runs and the way a far side comes in (§6, §8). The line being written has the sheet's paper before it (§10, Forge at work). |
 | Negative space is part of the composition (a lone figure against an empty sky) | **The ground is the negative space.** A short piece is as tall as what is on it and is not stretched to fill the frame; the desk under it is the desk, one field with nothing set in it, as a flat lay leaves its surface bare. A frame round nothing is no way to fill one (§5). |
@@ -234,6 +235,10 @@ is for (§10), over the three questions of §1 (where am I, what is in my hand, 
 - a piece pressed stays under the hand, though the room behind it be the larger (eye-trace over the plane);
 - a row's first sheet stands before the piece in hand where both fit, though the weight then lie right of the middle
   (what can be done next over the plane: Server at 1024 px, `Tₓ` = +.02);
+- a place's index stands beside the piece in hand where both fit, though the room ahead of it is then the shadow's
+  (what can be done next over the plane: Inbox's who-wrote beside the conversation at 1024 px, ahead 52, behind 336).
+  Nothing else gives the room ahead away: Git's issue in full stands at the row's edge with the next ahead of it, the
+  ones before out of sight on the map, and look room is measured in every place at every desk width (`composition.spec.ts`);
 - a place's own composition stands over a general rule (§1: emotion over all).
 
 ### Negative space, and the lean
@@ -283,22 +288,43 @@ All lengths are CSS px. The grid's cell is **u = 24**. Everything on a desk has 
 
 ### Colour
 
-Colour is material or state, never ornament. `styles/tokens.css` holds the values.
+Colour is material or state, never ornament. `styles/tokens.css` holds the values; `scripts/light.ts` writes the
+greys and the terminal's sixteen from the ground, and `scripts/light.test.ts` holds what follows.
+
+**One light.** A scene is shot in one light, and the camera is balanced to it: what is grey in the scene is grey on
+the screen, and a source of another colour in the frame (daylight through a window in a lamp-lit room) reads as a
+cast, so it is gelled to match or kept out of shot. Here the light is the ground's: the ground's colour says what it
+is, and **every grey is that light at its own lightness**, from the screen's glass and the ink up to the paper. In
+OKLab a grey under a tinted light is the neutral grey with the eye's three responses each scaled by the light (von
+Kries), which scales L, a and b alike; so every grey of the OS has the ground's a/L and b/L, and white is the light
+itself, never a white of another light laid beside the ground (as the paper was, a cooler white than the ground it lay
+on). A mark's tint, the ground of a line it marks, is the mark seen in that white: its hue under the light.
+
+**Balanced on the light.** The colours that are not marks of the OS but a program's (the terminal's sixteen, as
+programs name them) are seen under the same light, and balanced on it: the six hues at equal steps round the wheel,
+turned to stand nearest the six a terminal means (red, yellow, green, cyan, blue, magenta), each at one lightness and
+one chroma from the light's neutral, so that together they mix to it (colours are in harmony when their mixture is a
+neutral grey: Itten, *The Art of Color*, 1961; a design balances when its colours, weighed by area and chroma, mix to
+the middle grey: Munsell, *A Grammar of Color*, 1921), and none is louder than another: what a program colours is told
+apart, never ranked. Their bright ones are a step more ink, further from what they are read on, the same hue and
+chroma; black and white are the OS's own greys ("white" on paper the edge's grey, so it is seen). One set is read on
+paper, one on the screen's glass.
 
 | Name | Value | What it is |
 |---|---|---|
-| ground | `#dcd9d4` | the desk |
-| dot | `#96938e`, radius 1.5 | the grid's dots, one a cell |
-| paper | `#fbfaf7` | a sheet in the hand; a place that is one sheet |
-| ink | `#171614` | words; an edge in the hand; a shadow; the terminal in the hand |
-| sub | `#55524e` | words a step quieter: a piece not in the hand, what is said beside a thing |
-| edge | `#6f6d68` | the line round a piece not in the hand |
-| quiet | `#8f8c87` | a line's number; a control at rest |
-| rule | `#9c9995` | a line inside a sheet |
+| ground | `#dcd9d4` | the desk; its colour is the light |
+| dot | `#959390`, radius 1.5 | the grid's dots, one a cell |
+| paper | `#fdfaf4` | a sheet in the hand; a place that is one sheet: the light's white |
+| ink | `#171615` | words; an edge in the hand; a shadow; the terminal in the hand |
+| sub | `#545250` | words a step quieter: a piece not in the hand, what is said beside a thing |
+| edge | `#6e6d6a` | the line round a piece not in the hand |
+| quiet | `#8e8c89` | a line's number; a control at rest |
+| rule | `#9b9995` | a line inside a sheet |
 | note | `#f2cf52` (its quiet words `#8a7a3c`) | Home's note: what is one's own to do |
-| green | `#9be0bf` | the machine speaking: the terminal's words and its shadow, in the hand only |
+| green | `#9be0bf` | the machine speaking: the terminal's words and its shadow, in the hand only. The screen is a light in the scene of its own (a practical, as a lamp in shot is), and its words are its colour |
 | off | `#7f2b3c` | not answering, removed, refused |
 | done | `#0e7c5e` | a step done |
+| the terminal's sixteen | on paper L .52 (bright .44), on the glass L .78 (bright .86); chroma the most all six hold | what a program colours, told apart and not ranked |
 
 Fill, shadow and colour belong to the piece in the hand (§5). Hover adds no colour: a thing under a pointer goes from
 quiet to ink, or takes paper under it.
@@ -682,10 +708,12 @@ the row ahead of it (§2: eye-trace and look room agree). Gone to by the least m
 **The row's end.** The desk turns as far as brings its last piece to the edge and no further. It is never turned
 down: what is under a piece's foot is inside the piece.
 
-**The row's map.** While some of a row is out of sight, its map stands at the window's foot from the desk's edge, in
-the lower half of the foot's cell (under a piece's shadow): the row twelve times smaller (a piece of 24 cells is a
-bar 48 px long, two cells between are 4 px), each piece a bar 4 px thick, the one in the hand in ink and the rest in
-the quiet line's colour, and a 2 px line of ink under the part that is in sight. A row longer than the window's
+**The row's map.** While some of a row is out of sight, its map stands at the window's foot from the desk's edge, on
+the frame's foot line (the line through the middle of the person's mark, half a cell over the window's edge: the
+frame's own, clear of the edge as the frame's every square is, and between two rows of the ground's dots, so it cuts
+none): the row twelve times smaller (a piece of 24 cells is a bar 48 px long, two cells between are 4 px), each piece
+a bar 4 px thick on the line, the one in the hand in ink and the rest in the quiet line's colour, and a 2 px line of
+ink just under the part that is in sight. Every row has it, Git's issues too. A row longer than the window's
 width times twelve is drawn smaller, to fit. It answers what the window cannot show: how many pieces, which way, how
 far. **A bar pressed goes to its piece**, so nothing on a row is reached by scrolling alone. With the whole row in
 sight there is no map.

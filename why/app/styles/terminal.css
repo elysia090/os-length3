@@ -29,12 +29,15 @@
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
-/* The terminal's sixteen colours, as programs name them, in the page's own: deep and a little muted, read on paper
-   ("white" a grey, so it is seen). The rest of xterm's 256, and colours given as red, green and blue, as they are. */
+/* The terminal's sixteen colours, as programs name them, under the one light (DESIGN §3, colour; scripts/light.ts
+   writes them): the six hues at equal steps round the wheel, at one lightness and one chroma from the light's neutral,
+   so they mix to it and none is louder than another; read on paper, the bright ones a step more ink; black and white
+   the OS's own greys ("white" the edge's, so it is seen). The rest of xterm's 256, and colours given as red, green and
+   blue, as they are. */
 :root {
-  --ansi-0: var(--ink); --ansi-1: var(--del); --ansi-2: var(--add); --ansi-3: #86650f; --ansi-4: var(--agent); --ansi-5: #763a74;
-  --ansi-6: #1b6670; --ansi-7: #85827d; --ansi-8: var(--rule); --ansi-9: #ad3d57; --ansi-10: var(--done); --ansi-11: #a17a10;
-  --ansi-12: #2d5a96; --ansi-13: #964a93; --ansi-14: #217d88; --ansi-15: var(--ink);
+  --ansi-0: var(--ink); --ansi-1: #90574d; --ansi-2: #4c754d; --ansi-3: #7c662e; --ansi-4: #586792; --ansi-5: #82597c;
+  --ansi-6: #2b757d; --ansi-7: var(--edge); --ansi-8: var(--quiet); --ansi-9: #774138; --ansi-10: #355e38; --ansi-11: #654f16;
+  --ansi-12: #42517a; --ansi-13: #6a4365; --ansi-14: #095e66; --ansi-15: var(--sub);
 }
 /* The line under way, drawn again as it changes (output.ts). */
 .term-live { white-space: pre-wrap; }

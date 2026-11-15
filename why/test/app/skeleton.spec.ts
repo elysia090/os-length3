@@ -39,7 +39,7 @@ async function sheet(app: App, what: string, door: boolean) {
     const page = await at(app.main);
     expect(Math.abs(page.x - 2 * U), `${what}: its left edge`).toBeLessThan(1);
     expect(Math.abs(page.y - 2 * U), `${what}: its top`).toBeLessThan(1);
-    expect(await app.main.evaluate((el) => getComputedStyle(el).backgroundColor), `${what}: paper`).toBe('rgb(251, 250, 247)');
+    expect(await app.main.evaluate((el) => getComputedStyle(el).backgroundColor), `${what}: paper`).toBe('rgb(253, 250, 244)');
   }).toPass({timeout: 4000});
 }
 /** The ground is the desk's dots, under every place. */
@@ -84,7 +84,7 @@ async function row(what: string, size: {width: number; height: number}, first: L
     const foot = size.height - (p.y + p.height);
     expect(foot >= U - 1 && foot < 2 * U && Math.round(p.height) % U === 0, `${what}: its piece whole cells tall, its foot a cell over the window's (${foot})`).toBe(true);
     const look = await held.evaluate((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.boxShadow !== 'none']; });
-    expect(look, `${what}: its piece in the hand is paper with its shadow`).toEqual(['rgb(251, 250, 247)', true]);
+    expect(look, `${what}: its piece in the hand is paper with its shadow`).toEqual(['rgb(253, 250, 244)', true]);
     const f = await first.boundingBox();
     // The desk at the row's start (a window with room for both): the first sheet at the desk's edge.
     if (f && f.x >= 0) {

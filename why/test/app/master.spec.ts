@@ -8,7 +8,7 @@ import {expect, test} from './fixtures.ts';
 
 /** In the page: of the pieces of a desk in sight, which hold each channel's top. */
 function channels(sel: string) {
-  const INK = 'rgb(23, 22, 20)', GROUND = getComputedStyle(document.body).backgroundColor;
+  const INK = 'rgb(23, 22, 21)', GROUND = getComputedStyle(document.body).backgroundColor;
   const pieces = [...document.querySelectorAll<HTMLElement>(sel)].filter((p) => { const r = p.getBoundingClientRect(); return r.width && r.right > 48 && r.left < innerWidth; });
   const name = (p: HTMLElement) => p.dataset.key ?? p.getAttribute('aria-label') ?? p.className.toString().slice(0, 30);
   const has = (p: HTMLElement, what: (c: CSSStyleDeclaration) => boolean) => what(getComputedStyle(p));

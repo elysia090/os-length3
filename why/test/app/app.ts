@@ -595,6 +595,8 @@ class Git extends Part {
 
   /** The issues not done with yet (each a box, one on screen), or what is said in their place. */
   get issues() { return this.main.getByRole('region', {name: /^Issues/}); }
+  /** Issue `n`'s bar on the row's map at the window's foot (the ones before the issue in full are out of sight, there). */
+  bar(n: number) { return this.main.locator('.issue-column > .row-map').getByRole('button', {name: new RegExp(`^#${n} `)}); }
 
   /** One of the sections under the issues, by its heading: main (what main has not committed), Merged, Closed. */
   section(name: 'Merged' | 'Closed') { return this.main.getByRole('region', {name: new RegExp(`^${name}( \\d+)?$`)}); }

@@ -79,7 +79,10 @@ running; none of it is a reason for the shot to change:
 and it is kept (§1).
 
 A desk. At the desk's edge main's own sheet, eight cells wide (ink: it is where the repo's work is switched); two
-cells on, the issues. The issue in the hand is a wide sheet, set as a poster is:
+cells on, the issues, a row: the issue in the hand at the row's edge, wherever it is along it, the next ahead of it
+to the right with two cells of its edge showing, the ones before out of sight and on the row's map at the window's
+foot (§2, look room: the room ahead the two edges and the shadow's cell, the room behind main's sheet and its gap,
+ahead the larger at every width). The issue in the hand is a wide sheet, set as a poster is:
 
 - its **number** at its top right, two cells tall in the display face: the place's large thing;
 - its **title** at its top left, capitals a cell tall on lines of two cells;
@@ -257,7 +260,7 @@ breaks; none is a decision to leave it.
 | signing in, a Remote not answering | the same deed has two looks (Try again in ink on Server, in line on the Remote) | §1, one hand |
 | deeds that ask first | some twenty deeds ask before they are done (remove a dotfile, take a repo off, sign a device out, a server left), each in its place with Cancel beside it, whether or not they can be put back | §7, what can be put back is done and can be put back |
 | Forge, the first time | the desk is long in the building (the Prompt starts with it), and the move to it waits for that: 60 to 90 ms from the press, where every other place is off within 50 | §8, a move starts within 50 ms of its press |
-| Git's issue in full | its width is the row's of its own make (the window less two neighbours' peeks), not one of the programme's | §3, the widths are one programme |
+| Git's issue in full | its width is the row's of its own make (the window less the next's two peeks), not one of the programme's | §3, the widths are one programme |
 | `PLACES.md` | speaks of the look as it was | — |
 
 **Which icons the rail needs.** Counted in presses, for a rail of n icons. An icon costs the screen a square for

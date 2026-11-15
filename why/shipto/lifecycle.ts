@@ -12,6 +12,7 @@
 // Nothing the Remote does not have yet is let go: it stays, and is shown.
 
 import * as draft from '../repo/sync.ts';
+import {cut, log} from '../repo/history.ts';
 import * as settings from './settings.ts';
 import {core, isNative} from '../api/host.ts';
 import {connection, mayAsk, onConnection, onReach, remoteAway, retryAfter} from './connection.ts';
@@ -97,12 +98,29 @@ function schedule(repo: string, ms = SOON) {
   timers.set(repo, setTimeout(() => void run(repo), ms));
 }
 
+/**
+ * A repo made is its first commit (new-repo.ts records it as it is made). Made signed out, nothing could be recorded
+ * (commits are kept on the Remote): once it is there, what it holds is recorded then, so that a file put back goes back
+ * to how the repo was made, and never out of it (a file the last commit lacks is one Revert takes away). Asked once a
+ * repo a session; a repo with a commit already is left as it is.
+ */
+const recorded = new Set<string>();
+async function firstCommit(repo: string) {
+  if (recorded.has(repo)) return;
+  recorded.add(repo);
+  try {
+    if ((await log(repo)).length) return;
+    await cut(repo, null, `Feat: ${repo}`, '');
+  } catch { /* not recorded: the repo is as it is, and is asked again next session */ }
+}
+
 async function run(repo: string) {
   timers.delete(repo);
   try {
     const r = await draft.sync(repo);
     retry.delete(repo);
     states.set(repo, {where: 'synced', changed: 0, both: r.both, unsynced: r.unsynced, elsewhere: states.get(repo)?.elsewhere, agreed: true});
+    await firstCommit(repo);
   } catch (e) {
     // Turned off on the Remote: nothing more is sent until it is on again.
     if ((e as {status?: number}).status === 410) {

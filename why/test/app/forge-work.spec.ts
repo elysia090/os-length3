@@ -2,7 +2,7 @@ import {expect, test} from './fixtures.ts';
 import {GAP, GRID, PAD, SHADOW, TOP, WIDTH} from '../../app/pages/forge/desk-layout.ts';
 
 /** The colours a piece is drawn in (styles/tokens.css): the desk's ground, paper, ink, and the terminal's green. */
-const GROUND = 'rgb(220, 217, 212)', PAPER = 'rgb(251, 250, 247)', INK = 'rgb(23, 22, 20)', GREEN = 'rgb(155, 224, 191)';
+const GROUND = 'rgb(220, 217, 212)', PAPER = 'rgb(253, 250, 244)', INK = 'rgb(23, 22, 21)', GREEN = 'rgb(155, 224, 191)';
 
 // Working in Forge without losing anything (issue #20): Tab or Ctrl+] moves lines in
 // and Undo takes it back, a press on a line's number is that line, Undo

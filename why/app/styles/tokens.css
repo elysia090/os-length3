@@ -11,26 +11,26 @@
   /* The desk's ground and Home's: a dot every 24 px. As the camera stands back the pitch closes with what lies on the
      ground (desk.ts, ui/camera.ts), each dot kept whole, a pixel and a bit across: drawn smaller with it, a dot falls
      between the pixels and is not drawn at all. */
-  --dots: radial-gradient(circle, #96938e 1.5px, transparent 1.9px);
-  --ink: #171614;
-  --rule: #9c9995;
-  --sub: #55524e;
-  --edge: #6f6d68;
+  --dots: radial-gradient(circle, #959390 1.5px, transparent 1.9px);
+  --ink: #171615;
+  --rule: #9b9995;
+  --sub: #545250;
+  --edge: #6e6d6a;
   --raised: #e6e3de;
   /* The one surface tone besides the ground: a sheet, which is only ever what is worked on (a file, the TODO, the
      issue or board in hand, Inbox's box, what the search found; Runtime's box, read rather than worked in, stays on the ground). Everything else (the rail, the band,
      heads, the pane, figures, cards that lead somewhere) stands on the ground itself; a sheet's edge is the line. */
-  --paper: #fbfaf7;
+  --paper: #fdfaf4;
   /* What is pressed into the desk rather than laid on it (a key of the band, the search's slot, the place of the
      rail one is at): a tone under the ground, soft at the corner. Paper's corner is a sheet's (--r-sheet). */
-  --slot: #cbc7c0;
+  --slot: #cac7c3;
   /* The frame at rest (DESIGN §4, quiet): the rail's and the band's marks and words, and their lines. A permanent mark
      over the picture is kept faint, and the frame is that: ink only on the place one is in and on what the hand is on
      (the pointer, the keyboard, the search being written in), as a piece is ink only in the hand. */
   --frame: var(--sub);
   --frame-edge: var(--edge);
   /* Words that only say how many or where: quieter than --sub, never for what is read to be acted on. */
-  --quiet: #8f8c87;
+  --quiet: #8e8c89;
   /* The TODO's note, the one coloured sheet Home has. */
   --note: #f2cf52;
   /* On the note, what is not yet written (the line to write the next in). */
@@ -46,16 +46,16 @@
   --done: #0e7c5e;
   /* The Prompt up as a screen, its one place, made of these: its glass the ink a step deeper; its words the green's
      tint (add-tint) lit in the green (done), and the prompt lines the shell waited at the green itself, lifted for the dark. */
-  --screen: #141311;
+  --screen: #131312;
   --screen-ps: color-mix(in srgb, var(--done) 45%, var(--add-tint));
   --add: #13684f;
-  --add-tint: #d6eadf;
+  --add-tint: #d7eadc;
   --marker: #ecca5f;
-  --marker-soft: #f3e5bb;
+  --marker-soft: #f4e5bb;
   /* Dark enough that `ground` words on it (a removal held, its button red) read at 4.5:1. */
   --off: #7f2b3c;
   --del: #883146;
-  --del-tint: #edd6d9;
+  --del-tint: #efd6d4;
   /* A fourth soft tint, a sky's, beside the three marks' (marker-soft, add-tint, del-tint): only for telling people
      apart by their round initial, so it means nothing else. */
   --sky-tint: #d3dce7;

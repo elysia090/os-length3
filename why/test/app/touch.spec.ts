@@ -59,7 +59,7 @@ test('under the pointer, a thing takes paper under it or nothing, at once: never
       // At once (DESIGN §14: what answers the hand is there in the frame, not on its way): one colour in every frame.
       expect(new Set(frames).size, `${place}: "${c.name}" under the pointer went ${frames.join(' → ')}`).toBe(1);
       const now = frames[0]!;
-      const paper = /^rgb\(251, 250, 247\)$/.test(now);
+      const paper = /^rgb\(253, 250, 244\)$/.test(now);
       expect(paper || now === c.bg || now === 'rgba(0, 0, 0, 0)', `${place}: "${c.name}" under the pointer is ${now}, from ${c.bg}`).toBe(true);
     }
   }
