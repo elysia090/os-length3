@@ -67,8 +67,6 @@
 .home-own .todo-head > .todo-away:hover { background: var(--paper); }
 /* What the keys do, while one writes: the note's last line, its room always kept, so nothing moves as it is said.
    One line: as many of the keys as it holds whole, the first first; what does not fit is not said, never cut. */
-.home-own .todo-box .todo-hint { height: var(--u); overflow: hidden; gap: 0 var(--u); padding: 0 calc(2 * var(--u)); color: var(--note-quiet); font: 400 var(--t-word)/var(--u) var(--mono); }
-.home-own .todo-hint kbd { border-color: var(--note-quiet); background: none; color: var(--note-quiet); }
 .home-own > .section > .error:empty { display: none; }
 .home-own > .section > .error { margin: 0 calc(2 * var(--u)); line-height: var(--u); }
 .home-own > .error { margin-top: var(--s2); }

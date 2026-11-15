@@ -265,7 +265,9 @@ function workOf(issue: Issue, s: RepoState | undefined, events: IssueEvents): HT
     return fill(h('div', {class: 'issue-work', role: 'region', 'aria-label': t('Diff')}), diffsRead.get(read), git.changeDiff(at, change),
       (list) => { diffsRead.set(read, list); return list; });
   }
-  if (w) return h('div', {class: 'issue-work none'}, quiet(t('Edits in File, Forge, or Prompt appear here.')));
+  // Before the first edit there is no work, and nothing stands for it: a line saying where edits would appear was the
+  // sheet explaining itself (DESIGN §1), and the column it took moved the summary just written across the sheet the
+  // moment Start was pressed. The work comes in when there is some.
   return null;
 }
 

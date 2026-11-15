@@ -144,7 +144,6 @@
 .git-desk .issue-foot .button { font-size: var(--t-word); }
 /* Its work. */
 .git-desk .issue-work { grid-column: 2; grid-row: 2 / span 4; margin-right: calc(-1 * var(--u)); min-width: 0; }
-.git-desk .issue-work.none { margin-right: 0; padding-left: var(--u); }
 .work-file + .work-file { margin-top: var(--u); }
 .work-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--u); height: calc(2 * var(--u)); padding: 0 var(--u); }
 .work-name { min-width: 0; padding: 0; border: 0; background: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }

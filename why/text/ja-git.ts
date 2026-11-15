@@ -58,7 +58,6 @@ export default {
   '{n} uncommitted file': '未コミット：{n}ファイル',
   '{n} uncommitted files': '未コミット：{n}ファイル',
   'Diff': '差分 (Diff)',
-  'Edits in File, Forge, or Prompt appear here.': 'File、Forge、Prompt で編集すると、ここに差分が表示されます。',
   'Changes requested': '変更要求あり',
   'Add a comment…': 'コメントを入力…',
   '{n} commit not submitted': '未提出のコミット：{n}件',

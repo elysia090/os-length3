@@ -178,7 +178,6 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .board-todo { display: grid; align-content: start; gap: var(--s2); min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--s4) var(--u); }
 .board-todo .todo-box { min-height: 0; max-width: 720px; margin-inline: calc(-1 * var(--s2)); border: 0; background: transparent; }
 .board-todo .todo-items { padding: 0; }
-.board-todo .todo-hint { padding-inline: var(--s2); }
 .board-todo .error:empty { display: none; }
 .board-todo > .todo-clear { justify-self: start; height: var(--h-control); }
 /* The TODO in front, the box at the foot is the talk's and goes, the board taking its room. */

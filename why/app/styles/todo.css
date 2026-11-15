@@ -78,17 +78,9 @@ span.todo-title { min-height: 0; }
 .todo-item.done .todo-detail { color: var(--sub); }
 .todo-detail::placeholder { color: var(--quiet); }
 .todo-item.done .todo-mark { color: var(--done); }
-.todo-hint { display: flex; flex-wrap: wrap; gap: 0 var(--u); margin: 0; padding: 0 var(--u); color: var(--sub); font: 400 var(--t-word)/var(--u) var(--mono); }
-/* Said only while the box is written in, where it always stands, so nothing moves; unseen, it is not there to the hand
-   either (an unseen line over what is under it took the press meant for that). */
-.todo-box .todo-hint { visibility: hidden; }
-.todo-box:focus-within .todo-hint { visibility: visible; }
 /* A key, as the key itself: its name on a small cap, the cap's foot a little heavier, as a key stands on a board. */
-.key-hint { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-.key-hint > kbd { flex: none; }
 kbd {
   display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 5px;
   border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: var(--r-key); background: var(--paper);
   color: var(--ink); font: 700 var(--t-word)/1 var(--sans);
 }
-.key-hint > span { margin-left: 2px; }
