@@ -40,9 +40,11 @@
    lines (DESIGN §3), its steps, the one under way the one line of ink, inside the sheet's edge, never over it; and
    nothing else (a new issue is the row's last piece). Its name, the repo, in the cell over its corner, as a
    piece's is (§5) and level with the issue's beside it: the cell over it is never left empty while the issue's has
-   its name. Nothing of it floats on the ground beside it. */
+   its name. Nothing of it floats on the ground beside it. In Git every sheet is paper (the person's choice, for this
+   place: a sheet the ground's grey read as a hole, or as greyed out, between sheets of paper); it is not in the hand,
+   so its edge is the quiet line's and it has no shadow. */
 .git-desk > .git-side:not(.none) { position: relative; display: grid; align-content: start; align-self: flex-start; box-sizing: border-box; padding: var(--u) 0;
-  border-radius: var(--r-sheet); background: var(--ground); outline: 1px solid var(--edge); outline-offset: -1px; }
+  border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--edge); outline-offset: -1px; }
 .git-desk > .section { flex: 1 1 calc(24 * var(--u)); min-width: 0; }
 .git-desk > .git-side.none { display: none; }
 /* (It is not the piece in hand, the issue is: drawn in line on the ground, its steps a step quieter than ink, and the
@@ -67,11 +69,11 @@
 .git-side > .side-name { position: absolute; left: 0; top: calc(-1 * var(--u)); max-width: 100%; margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub);
   white-space: nowrap; }
 .git-side > .side-name:empty { display: none; }
-/* The issue not written yet (issue-form.ts newIssue), the row's last piece, where a new thing in a row is: not a sheet
-   yet, so a dashed line on the ground, in the hand or not, and no shadow (as a board not made yet, server.css). Beside
-   the one in full, its edge with its + and its name, quiet; in the hand, its first line written in its head in an issue
-   title's letters, what it says empty quiet, and the repo it goes in at its foot, as a card says its repo. */
-.git-desk .issue-card.issue-new-card, .git-desk .issue-slot[aria-current='true'] .issue-card.issue-new-card { background: var(--ground); color: var(--sub); box-shadow: none; }
+/* The issue not written yet (issue-form.ts newIssue), the row's last piece, where a new thing in a row is: paper as
+   every sheet in Git is, its edge dashed (not made yet), in the hand or not, and no shadow. Beside the one in full, its
+   edge with its + and its name, quiet; in the hand, its first line written in its head in an issue title's letters,
+   what it says empty quiet, and the repo it goes in at its foot, as a card says its repo. */
+.git-desk .issue-card.issue-new-card, .git-desk .issue-slot[aria-current='true'] .issue-card.issue-new-card { background: var(--paper); color: var(--sub); box-shadow: none; }
 .git-desk .issue-card.issue-new-card::after, .git-desk .issue-slot[aria-current='true'] .issue-card.issue-new-card::after { box-shadow: none; border: 1px dashed var(--edge); }
 .git-desk .issue-new-card .issue-big-head.peek :is(h2, .issue-no), .git-desk .issue-new-card .issue-name { color: var(--sub); }
 .git-desk .issue-new-card .issue-name { font-weight: 400; }
@@ -93,7 +95,9 @@
 .git-desk .issue-stage::before, .git-desk .issue-stage::after { display: none; }
 /* (A sheet's shadow lies a cell past it: the row is not cut before that.) */
 .git-desk .issue-stage { margin-right: calc(-1 * var(--u)); padding-right: var(--u); }
-.git-desk .issue-card { position: relative; padding: var(--u); border: 0; border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); }
+/* (The issues beside the one in full, and the one the row slides away from, are paper too: told from it by their
+   quiet edge and words and no shadow.) */
+.git-desk .issue-card { position: relative; padding: var(--u); border: 0; border-radius: var(--r-sheet); background: var(--paper); color: var(--sub); }
 .git-desk .issue-slot[aria-current='true'] .issue-card { padding: var(--u); background: var(--paper); color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 /* A sheet's edge: one pixel of ink round it, over what it holds (the work's bands run to it). */
 .git-desk .issue-card::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--edge); pointer-events: none; }
