@@ -10,7 +10,7 @@ test('a piece\'s place is its number in the row: all one width, two cells apart,
   const {at, end} = row(keys);
   keys.forEach((key, n) => assert.equal(at.get(key), n * (WIDTH + GAP)));
   assert.equal(end, at.get('README.md')! + WIDTH + SHADOW + GRID);
-  // Fifty letters of 17 px, the numbers' margin before them and half a cell after, up to the grid.
+  // Two cells for the numbers, forty-nine letters of 17 px, a cell of paper: every column whole cells.
   assert.equal(CODE, 17);
   assert.equal(WIDTH, 24 * GRID);
   for (const x of at.values()) assert.equal(x % GRID, 0);
@@ -26,10 +26,10 @@ test('a window half a screen wide shows one piece and the edge of the next; a wh
 });
 
 test('a sheet is whole lines tall, its foot a cell over the face\'s', () => {
-  // A face 804 high: 30 lines and half a line over and under them.
+  // A face 804 high: 29 lines and a cell of paper over and under them.
   assert.equal(tallest(804), 31 * LINE);
   // Never under four lines, however low the face.
-  assert.equal(tallest(100), 5 * LINE);
+  assert.equal(tallest(100), 6 * LINE);
   // The terminal: eighteen lines and a cell over and under, or as many as keep its last line out of the lower third.
   assert.equal(termHeight(804), 20 * LINE);
   assert.equal(termHeight(816), 20 * LINE);
@@ -42,10 +42,10 @@ test('a sheet is whole lines tall, its foot a cell over the face\'s', () => {
 });
 
 test('the line written stands out of the third of the world it goes towards: its foot over the lower third, its top under the upper', () => {
-  // A face 816 high (a 864 window under the band): the world's thirds at 272 and 544 down it, the sheet's lines from 36.
-  assert.deepEqual(ahead(816), {top: 240, foot: 504});
+  // A face 816 high (a 864 window under the band): the world's thirds at 272 and 544 down it, the sheet's lines from 48.
+  assert.deepEqual(ahead(816), {top: 240, foot: 480});
   for (const hgt of [520, 682, 720, 796, 816, 1032]) {
-    const {top, foot} = ahead(hgt), from = TOP + LINE / 2;
+    const {top, foot} = ahead(hgt), from = TOP + LINE;
     // On the sheet's lines, the foot at or over the lower third, the top at or under the upper, and lines between.
     assert.equal(top % LINE, 0);
     assert.equal(foot % LINE, 0);

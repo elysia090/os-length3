@@ -32,7 +32,7 @@ const PLACES = {
   forge: {subject: '.desk-box.held', corner: '.desk-box'},
   git: {subject: '.issue-slot[aria-current="true"] .issue-card', corner: '.git-switch, .issue-card'},
   // (Server's desk may rest with a board before the one in hand at its edge (§6): a board of the room is what it is.)
-  server: {subject: '.slide.full', corner: '.side-boards, .slide'},
+  server: {subject: '.slide.full', corner: '.server-side, .slide'},
   inbox: {subject: '.inbox-thread', corner: '.inbox-index, .inbox-thread'},
   runtime: {subject: 'main#page', corner: '.page-head'},
   remote: {subject: 'main#page', corner: '.page-head'},
@@ -86,6 +86,29 @@ function frame({subject, corner}: {subject: string; corner: string}) {
     if (n.textContent!.trim() && !el.closest('.sr-only, script, style') && inSight(el)) sizes.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
   }
   for (const el of document.querySelectorAll('input, textarea, [contenteditable]')) if (inSight(el)) sizes.add(Math.round(parseFloat(getComputedStyle(el).fontSize) * 100) / 100);
+  // Every line of words in the world, where its middle falls against the grid (DESIGN §3, whole cells: a line of type
+  // is a cell of the grid, its middle on a row of the dots). Not a key's or a field's words (a thing's, centred in its
+  // field), nor words on a name's line (they stand on its baseline: its servants), nor the frame's.
+  const offGrid: string[] = [];
+  const lines = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = lines.nextNode(); n; n = lines.nextNode()) {
+    const el = n.parentElement!;
+    if (!n.textContent!.trim() || !inSight(el) || el.closest('.sr-only, button, [role=button], [role=tab], [role=menuitem], kbd, input, textarea, [contenteditable], .rail, .band, .home-band, .bar, .chip, .state-chip, .lately-badge, .tl-face, .prompt, .screen')) continue;
+    const c = getComputedStyle(el);
+    if (Math.abs(parseFloat(c.fontSize) - 17) > .01 || Number(c.opacity) === 0) continue;
+    let heard = false;
+    for (let a: Element | null = el; a && a !== document.body; a = a.parentElement) if (getComputedStyle(a).clipPath.startsWith('inset')) heard = true;
+    if (heard) continue;
+    const head = el.closest('.page-head, .board-head, .inbox-top, .issue-big-head');
+    if (head && [...head.querySelectorAll('*')].some((k) => /Display/.test(getComputedStyle(k).fontFamily))) continue;
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    for (const b of range.getClientRects()) {
+      if (b.width < 2 || b.top < 48 || b.left < 48 || b.bottom > H || b.right > W) continue;
+      const off = (((b.top + b.height / 2) % 24) + 24) % 24 - 12;
+      if (Math.abs(off) > 1) offGrid.push(`"${n.textContent!.trim().slice(0, 24)}" ${off > 0 ? '+' : ''}${off.toFixed(1)}`);
+    }
+  }
   // What stands just past the frame's corner, where the eye is after a move.
   // (A cell and a half right of the rail, two cells under the band: 24 px a cell, the frame two cells each way.)
   const at = document.elementFromPoint(84, 96);
@@ -106,7 +129,7 @@ function frame({subject, corner}: {subject: string; corner: string}) {
   // The frame over what is called up: the band's keys stand over the veil.
   const bar = document.querySelector<HTMLElement>('.band-tools')?.closest<HTMLElement>('.home-band, .bar') ?? null;
   const frameOver = !veil || !bar || Number(getComputedStyle(bar).zIndex) > Number(getComputedStyle(veil).zIndex);
-  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes]};
+  return {W, H, scaled, cast, subject: s && {x: s.left, y: s.top, w: s.width, h: s.height}, display, landed, reach, at: at?.className.toString() ?? '', title, frameOver, sizes: [...sizes], offGrid};
 }
 
 /** Each rule of a shot held at `place`'s rest. */
@@ -133,6 +156,8 @@ async function shot(app: App, place: Place, size: {width: number; height: number
     } else {
       expect(f.frameOver, `${what}: the band over the veil, in focus`).toBe(true);
     }
+    // Every line of words on a cell of the grid (DESIGN §3, whole cells).
+    expect(f.offGrid, `${what}: lines of words off the grid`).toEqual([]);
     // Three sizes and no others: the words', a name's, the one large thing's (DESIGN §3).
     for (const size of f.sizes) expect([17, NAME, PERSON].some((s) => Math.abs(size - s) < .01), `${what}: type at ${size}px, not one of the three sizes`).toBe(true);
     // One voice: two sizes, no text twice, no number twice.
@@ -172,7 +197,7 @@ async function shot(app: App, place: Place, size: {width: number; height: number
   expect(marked, `${what}: ${Math.round(marked * 100)}% of the world marked`).toBeLessThanOrEqual(1 / 3);
 }
 
-test('every rest is a shot: in every place, at every width, one lens, one horizon, one subject in focus, the eye landing on what the place is, a whole title, one voice, three sizes of type', async ({signedIn: app, another}) => {
+test('every rest is a shot: in every place, at every width, one lens, one horizon, one subject in focus, the eye landing on what the place is, a whole title, one voice, three sizes of type, every line on the grid', async ({signedIn: app, another}) => {
   test.setTimeout(300_000);
   // Something in each place: a TODO, two repos, an issue under way with its work, a server's board with talk, a
   // conversation.

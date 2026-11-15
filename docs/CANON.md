@@ -54,7 +54,7 @@ an Eye*, Eisenstein's *Film Form* and *Film Sense*, McCloud's *Understanding Com
 | # | Item | Where | |
 |---|---|---|---|
 | 1 | Objectivity over subjectivity | §13 what only a person gives; the rest computed | kept |
-| 2 | A field's depth whole lines; space between fields one, two or more lines | §3 every gap a cell or half | **open**: half a cell is allowed here (half a line of paper over and under a sheet's lines; a key the frame's square, a cell and a half), where the grid allows "only whole empty lines (never halves)" |
+| 2 | A field's depth whole lines; space between fields one, two or more lines | §3 whole cells: every line of type a cell, every edge a line of the grid, a sheet's paper a cell round its lines | **decided** (was open): whole cells everywhere type is. A sheet's half line of paper became a cell; the half between posts of a run, the note's rows of a cell and a half, the title's lines of a cell and a half, Runtime's lines of 27 px and Server's sheet half a cell in are gone, and every line of words in every place, at four widths, is in register. The half is kept only where nothing is type: a key's field (the frame's square in two cells), the shadow, the dots' place |
 | 3 | Pictures in few sizes; size follows importance; "the fewer the differences in size, the quieter" | §3 the programme; §2 size is importance | kept |
 | 4 | Paper sizes | — | not ours |
 | 5 | Medium type reads easiest; 8 to 12 point for text | §3 17 px for what is written, by the angle it subtends | kept |

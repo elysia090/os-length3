@@ -48,7 +48,7 @@ export const THINGS: readonly Thing[] = [
   {name: "r-key", kind: "length", usual: "4px", least: 2, most: 8, says: ''},
   {name: "r-field", kind: "length", usual: "8px", least: 4, most: 16, says: ''},
   {name: "r-sheet", kind: "length", usual: "10px", least: 5, most: 20, says: ''},
-  {name: "h-control", kind: "length", usual: "40px", least: 20, most: 80, says: ''},
+  {name: "h-control", kind: "length", usual: "36px", least: 18, most: 72, says: ''},
   {name: "h-row", kind: "length", usual: "32px", least: 16, most: 64, says: ''},
   {name: "icon", kind: "length", usual: "24px", least: 12, most: 48, says: ''},
   {name: "stroke", kind: "length", usual: "1.6px", least: 0.8, most: 3.2, says: ''},

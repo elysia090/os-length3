@@ -14,13 +14,13 @@
 .lately-row:hover { border-color: var(--edge); }
 /* A row tells, in two lines at most: its name (going on under itself where it must; its badge, its place and its slot
    on its first line) and one line of what came, cut where it runs out of room: the rest is where the row goes. */
-.lately-what { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; font-weight: 700; line-height: 22px; }
+.lately-what { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; font-weight: 700; line-height: var(--u); }
 .lately-what > .lately-badge { align-self: flex-start; margin-top: -1px; }
 .lately-name { min-width: 0; overflow-wrap: break-word; }
 /* Where it is (its repo), quiet, at the right of its name. */
 .lately-place { flex: none; max-width: 40%; margin-left: auto; color: var(--sub); font: 400 var(--t-word) var(--sans); overflow-wrap: anywhere; text-align: right; }
 /* The line it was left at, as written there: mono, as in Forge, its second line. */
-.lately-quote { color: var(--sub); font: var(--t-word)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.lately-quote { color: var(--sub); font: var(--t-word)/var(--u) var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* What a row is, at its head (pane.ts): who wrote, their initial on one of four soft tints (the same for the same name:
    the marker's, a step done's, a removal's, the sky's), round; a file or a board, its mark alone, quiet, as File's.
    The lines under it start where its name does. */

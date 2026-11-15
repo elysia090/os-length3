@@ -268,6 +268,6 @@ export function foundView(found: Found, query: string, changed: FileChange[], wa
   }
   const first = said.map((el) => el.querySelector<HTMLElement>('.choice')).find((b) => b);
   first?.classList.add('first');
-  if (!o.sections) first?.append(h('kbd', {class: 'enter-cap', 'aria-hidden': 'true'}, 'Enter'));
+  if (!o.sections) first?.append(h('kbd', {class: 'enter-cap', 'aria-hidden': 'true'}, '↵'));
   return said;
 }

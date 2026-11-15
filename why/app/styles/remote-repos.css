@@ -7,13 +7,14 @@
 .repo-cards .card { cursor: var(--cursor-arrow); display: flex; flex-direction: column; }
 .repo-cards .card > .card-foot { align-self: stretch; margin-top: auto; }
 /* The size of Home's cards, its name as Home's says it: one repo reads the same on both pages. */
-.grid.repo-cards .card { min-height: 152px; }
+.grid.repo-cards .card { min-height: calc(6 * var(--u)); }
 .grid.repo-cards .card-title { font-size: var(--t-word); }
 /* Remote's parts are 760 wide (the passkey's offer above them, the plan's): its cards two to a row in that width,
    so their edges are the offer's. */
 .grid.repo-cards { max-width: 760px; }
 .repo-cards .card:hover { background: transparent; }
-.card-foot { display: flex; align-items: center; gap: var(--s2); align-self: end; }
+/* (Its keys, the frame's square, each in a field of two cells.) */
+.card-foot { display: flex; align-items: center; gap: var(--s2); align-self: end; min-height: calc(2 * var(--u)); }
 .card-foot .grow { flex: 1; }
 /* Share, and once pressed the servers beside it, each pressed in where the repo is shown. */
 /* Share opens as the language does: a list over the card, from the button's left edge upward, so nothing

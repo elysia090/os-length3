@@ -98,8 +98,8 @@ test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a pie
     const files = box.locator('.tree-still');
     await expect(files).toBeVisible();
     expect(await files.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe('1px');
-    // Its inside on the grid (DESIGN §3): from the rule down, every line of it on a half cell, a cell tall; the key
-    // under them on a half cell too. Three sizes on it (the name's, the words', the small), and the key's own name.
+    // Its inside on the grid (DESIGN §3, whole cells): from the rule down, every line of it on a cell, a cell tall;
+    // the key under them the frame's square in a field of two cells. One size of words on it, and the name's.
     const sheet = await box.evaluate((b) => {
       const top = b.getBoundingClientRect().top;
       const lines = [...b.querySelectorAll('.tree-still, .tree-row, .tree-makes, .answers .button')].map((e) => {
@@ -117,8 +117,9 @@ test('New repo is one piece at the desk\'s edge, the hand\'s: on the grid, a pie
       return {lines, sizes: [...sizes].sort(), filled};
     });
     for (const l of sheet.lines) {
-      expect(l.top % (U / 2), `${l.what} at ${l.top}, on a half cell`).toBe(0);
-      expect(l.height % (U / 2), `${l.what} ${l.height} tall, whole half cells`).toBe(0);
+      const key = /button/.test(l.what);
+      expect((l.top - (key ? U / 4 : 0)) % U, `${l.what} at ${l.top}, on a cell${key ? ' (a key: a quarter cell into its field)' : ''}`).toBe(0);
+      expect(key ? l.height : l.height % U, `${l.what} ${l.height} tall`).toBe(key ? 1.5 * U : 0);
     }
     expect(sheet.sizes, 'the words on it at the words\' size, one size (DESIGN §3)').toEqual(['17px']);
     expect(sheet.filled, 'nothing filled in it but its key').toBe(0);

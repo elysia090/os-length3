@@ -16,7 +16,7 @@
 .issue-summary {
   min-height: calc(1.6em + 2 * var(--s2) + 2px); padding: var(--s2) var(--s3); margin-left: calc(-1 * var(--s3)); field-sizing: content;
   width: calc(100% + 2 * var(--s3)); border: 1px solid transparent; border-radius: var(--r-field); background: transparent;
-  color: var(--ink); font: var(--t-word)/1.6 var(--sans); resize: none; cursor: var(--cursor-text);
+  color: var(--ink); font: var(--t-word)/var(--u) var(--sans); resize: none; cursor: var(--cursor-text);
 }
 /* Where a field cannot be as tall as its words, it keeps room for a few lines, as it did. */
 @supports not (field-sizing: content) { .issue-summary { min-height: calc(4 * 1.6em + 2 * var(--s2)); } }
@@ -48,7 +48,7 @@
    down a dashed line (not yet), and at its foot the ring of the commit Commit makes. The line is the files' edge, so
    the diff's own green edge gives way to it. A row of many (brief) is one line across, not down: none there. */
 .main-card:not(.brief) { position: relative; padding-left: calc(var(--s5) + 28px); }
-.main-card:not(.brief) .main-title { line-height: 24px; }
+.main-card:not(.brief) .main-title { line-height: var(--u); }
 .main-card:not(.brief)::before {
   content: ''; position: absolute; left: calc(var(--s5) + 6px); width: 2px;
   top: calc(var(--s4) + var(--s1) + 12px); bottom: calc(var(--s5) + var(--h-control) / 2);

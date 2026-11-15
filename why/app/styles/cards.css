@@ -3,8 +3,8 @@
 /* Cards: places, so rounded squares */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: var(--s5); }
 .card {
-  min-height: 240px; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--r-place);
-  display: grid; align-content: start; gap: var(--s2); background: transparent; text-align: left; color: var(--ink);
+  min-height: calc(10 * var(--u)); padding: calc(var(--u) - 1px) var(--u); border: 1px solid var(--rule); border-radius: var(--r-place);
+  display: grid; align-content: start; gap: 0; background: transparent; text-align: left; color: var(--ink);
 }
 .card.repo { cursor: var(--cursor-hand); }
 .card-title { font-size: var(--t-word); font-weight: 700; overflow-wrap: anywhere; }
@@ -18,7 +18,7 @@
    and round, shows near it (the pointer on it, the keyboard in it; always on a touch screen) and offers Forge or
    Free from this device in a popover (repo-gear.ts). Showing it does nothing. */
 .card.repo.gear-card { position: relative; padding: 0; align-content: stretch; }
-.gear-card > .card-open { display: grid; align-content: start; gap: var(--s2); width: 100%; padding: var(--s4); border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
+.gear-card > .card-open { display: grid; align-content: start; gap: 0; width: 100%; padding: calc(var(--u) - 1px) var(--u); border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand); }
 .gear-card > .card-open > .card-title { padding-right: calc(var(--h-row) + var(--s2)); }
 .gear-card > .repo-gear { position: absolute; top: var(--s3); right: var(--s3); }
 .gear-card[aria-busy='true'] > .card-open { cursor: var(--cursor-progress); }
@@ -80,7 +80,7 @@
 .work.bench.prompting .flow.git-flow { padding-bottom: 160px; scroll-padding-bottom: calc(var(--s5) + 80px); }
 .issue-kind { font-weight: 700; }
 /* Where an issue is (its repo) is a name: the sans, as every name is. */
-.issue-where { font: var(--t-word)/1.6 var(--sans); color: var(--sub); }
+.issue-where { font: var(--t-word)/var(--u) var(--sans); color: var(--sub); }
 /* Git stands in Forge's frame: its repos the band on the top line, and under it, from the rail's first place, the
    page on the band's edges, the boxes as wide as Forge's and the prompt box a step outside them. The first part
    shown starts at the page's top, wherever parts before it are hidden. */

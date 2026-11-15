@@ -85,7 +85,8 @@
   /* A card of rows: a row's corner plus the room between them. */
   --r-card: var(--r-sheet);
   /* Heights: a pressable thing, a row in a list, a place in the rail. */
-  --h-control: 40px; --h-row: 32px; --h-place: 48px;
+  /* (A key, wherever it is, is the frame's square, 36 px, in a field of two cells: DESIGN §3, whole cells.) */
+  --h-control: 36px; --h-row: 32px; --h-place: 48px;
   /* The prompt box's height (one line of body text, its padding and edge): the foot line the rail's person sits on. */
   --prompt-h: calc(2 * var(--s3) + var(--t-word) * 1.6 + 2px);
   --icon: 24px; --stroke: 1.6px;
@@ -150,7 +151,8 @@
      closes the rail up, and a phone's rail is closer set, rail.css; the pages keep these rows, one page as another.) */
   --band-left: var(--u);
   --body-left: var(--u);
-  --row: var(--h-place); --row-step: var(--s1);
+  /* A row of keys or a heading's row: two cells, on every window (a key's field, DESIGN §3), whatever the rail's place is. */
+  --row: calc(2 * var(--u)); --row-step: 0px;
   /* The OS's own pointers, drawn as the window is: ink, a paper edge round it with its joins round, and under it a
      soft small shadow, the one a pointer has as it stands over the window rather than in it. Each is a 27 px SVG
      (under 32, which no browser turns away), its hotspot (the arrow's tip, the finger's, the I-beam's middle), and

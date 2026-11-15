@@ -34,7 +34,7 @@ body {
      the band (which are the window's, and stand over it). Going to another place it goes by, whole cells at a time. */
   background: var(--ground) var(--dots) 0 0 / var(--u) var(--u);
   color: var(--ink);
-  font: var(--t-word)/1.6 var(--sans);
+  font: var(--t-word)/var(--u) var(--sans);
 }
 /* The place left, kept in sight as it was while the world goes to another (ui/glide.ts travel): over the page, under
    the rail and the band, and nothing to press. */

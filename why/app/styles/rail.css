@@ -95,7 +95,7 @@
 .rail-tag {
   position: absolute; left: calc(100% + var(--s3)); top: 50%; transform: translateY(-50%); z-index: 4;
   padding: 0 var(--s2); border-radius: var(--r-field); white-space: nowrap;
-  background: var(--ink); color: var(--ground); font-size: var(--t-word); line-height: 1.8;
+  background: var(--ink); color: var(--ground); font-size: var(--t-word); line-height: var(--key);
   opacity: 0; translate: -6px 0; pointer-events: none; transition: none;
 }
 /* A place's name stands out from it while the keyboard is on it, saying where the keyboard is. A pointer over it

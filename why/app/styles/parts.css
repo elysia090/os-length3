@@ -20,8 +20,8 @@
 @media (max-width: 760px) { .standing-who { display: none; } }
 .standing-reach.away { color: var(--off); }
 /* Just back from a provider: a passkey for next time, in a card of its own above the parts. */
-.passkey-next { margin-bottom: var(--s5); padding: var(--s4); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); max-width: 760px; }
-.passkey-next p { margin: 0 0 var(--s2); }
+.passkey-next { margin-bottom: var(--u); padding: calc(var(--u) - 1px) var(--u); border: 1px solid var(--edge); border-radius: var(--r-card); background: var(--raised); max-width: 760px; }
+.passkey-next p { margin: 0; }
 .offer-holder.held { display: none; }
 .part {
   height: var(--h-control); padding: 0 var(--s4); border: 1px solid transparent; border-radius: var(--r-round);
@@ -37,5 +37,5 @@
 .part-panel > .section:first-child, .part-panel > div > .section:first-child { margin-top: 0; }
 
 .sub-part + .sub-part { margin-top: var(--s5); }
-.sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 var(--s3); font-size: var(--t-word); font-weight: 700; }
+.sub-part h3 { display: flex; justify-content: space-between; align-items: center; margin: 0; font-size: var(--t-word); font-weight: 700; line-height: var(--u); }
 .sub-part h3 small { margin-left: var(--s2); font-weight: 400; color: var(--sub); font-size: var(--t-word); }

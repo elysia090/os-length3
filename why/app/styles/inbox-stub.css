@@ -32,7 +32,7 @@
 .stub-record { display: grid; gap: var(--s1); }
 .stub-record p { margin: 0 0 var(--s1); }
 .record-row { display: grid; grid-template-columns: 4em minmax(0, 1fr); align-items: center; gap: var(--s2); }
-.record-value { min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); font: var(--t-word)/1.4 var(--mono); text-align: left; overflow-wrap: anywhere; cursor: var(--cursor-copy); }
+.record-value { min-height: var(--h-row); padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--ink); font: var(--t-word)/var(--u) var(--mono); text-align: left; overflow-wrap: anywhere; cursor: var(--cursor-copy); }
 .record-value:hover { background: var(--paper); }
 .record-found { margin-top: var(--s2) !important; color: var(--sub); }
 /* Words are ink: `done` is the mark's green (3.6:1 on ground), too light for words. */

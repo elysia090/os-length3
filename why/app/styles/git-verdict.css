@@ -28,7 +28,7 @@
 .review-verdict .grow { flex: 1; }
 /* A comment more is written on the Review's paper as the issue's words are on its card: an edge only (no grey
    field over the sheet), room for three lines, as tall as its words beyond that; in hand, its edge is ink. */
-.review-in { min-height: calc(3 * 1.6em + 2 * var(--s3)); field-sizing: content; resize: none; padding: var(--s3); border-color: var(--rule); background: transparent; font: var(--t-word)/1.6 var(--sans); }
+.review-in { min-height: calc(3 * 1.6em + 2 * var(--s3)); field-sizing: content; resize: none; padding: var(--s3); border-color: var(--rule); background: transparent; font: var(--t-word)/var(--u) var(--sans); }
 .review-in:focus { border-color: var(--ink); background: transparent; }
 @supports not (field-sizing: content) { .review-in { min-height: 8em; resize: vertical; } }
 /* The change's switch, its word before it: on while it is handed in. Pressed, it goes off at once (git/issue.ts), not

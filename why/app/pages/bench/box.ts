@@ -150,7 +150,7 @@ export class Box {
     // The keys that bring it up from anywhere, said at rest as keys are; while it is written in, in their place the
     // keys that send (Run says them in its title too): Enter is a new line here, as in every box one writes in. One
     // over the other in one place, so nothing on the line moves as the keyboard comes and goes.
-    this.#sends = h('span', {class: 'prompt-sends'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), h('kbd', {}, 'Enter'));
+    this.#sends = h('span', {class: 'prompt-sends'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), h('kbd', {}, '↵'));
     const caps = h('span', {class: 'prompt-caps', 'aria-hidden': 'true'},
       h('span', {class: 'prompt-keys'}, h('kbd', {}, mac ? '⌘' : 'Ctrl'), this.#summonKey), this.#sends);
     this.form = h('form', {class: 'prompt'}, this.chip, this.prompt, caps, this.runIt) as HTMLFormElement;

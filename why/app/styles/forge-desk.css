@@ -28,7 +28,7 @@
 .desk::-webkit-scrollbar { display: none; }
 .desk-plane { position: absolute; left: 0; top: 0; width: 1px; height: 1px; }
 .desk-box { --line: var(--u); scroll-snap-align: start;
-  position: absolute; left: 0; top: 0; box-sizing: border-box; padding: calc(var(--line) / 2) 0; border-radius: var(--r-sheet);
+  position: absolute; left: 0; top: 0; box-sizing: border-box; padding: var(--line) 0; border-radius: var(--r-sheet);
   background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px;
   transition: translate var(--slide) var(--spring); }
 .desk-box.held { background: var(--paper); color: var(--ink); outline-color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
@@ -45,20 +45,22 @@
 .desk-box:not(.held) > .desk-close { display: none; }
 .desk-close:hover { background: var(--paper); color: var(--ink); }
 .desk-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
-/* A file's sheet: whole lines, half a line of paper over and under them (the piece's own padding, never scrolled);
-   its numbers quiet against the right of their margin (a cell and a tenth), its words from a cell and a half in. What
-   is under its foot is scrolled to here, what is past its right edge in its text; neither with the browser's bars
-   (ui/scroll-marks.ts says where one is while it is scrolled). */
-.desk-file { position: relative; max-height: calc(var(--tallest, 100vh) - var(--line)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
+/* A file's sheet: whole lines, a cell of paper over and under them (the piece's own padding, never scrolled); its
+   numbers quiet, a letter clear of its words, in the two cells before them; its words from the grid's line two cells
+   in, a cell of paper after them. What is under its foot is scrolled to here, what is past its right edge in its text;
+   neither with the browser's bars (ui/scroll-marks.ts says where one is while it is scrolled). */
+.desk-file { position: relative; max-height: calc(var(--tallest, 100vh) - 2 * var(--line)); overflow: hidden auto; scrollbar-width: none; overscroll-behavior: contain; }
 /* A file whose lines pass the world's lower third stands to the foot, its paper going on under its last line as far as
    brings that line up to the lower third (--ahead, desk.ts): the room ahead of what is written last (DESIGN §2). */
-.desk-file.long { height: calc(var(--tallest, 100vh) - var(--line)); }
-.desk-file.long > .sheet { padding-bottom: calc(var(--tallest, 100vh) - var(--line) - var(--ahead, 0px)); }
-/* A sheet's proportions: the words 17 px on a line of a cell, their numbers smaller before them in a margin a cell and
-   a half wide, half a cell after the fiftieth letter. */
-.desk-file > .sheet { display: grid; grid-template-columns: minmax(calc(26 / 24 * var(--line)), max-content) minmax(0, 1fr); column-gap: calc(10 / 24 * var(--line)); padding: 0 calc(var(--line) / 2) 0 0; }
+.desk-file.long { height: calc(var(--tallest, 100vh) - 2 * var(--line)); }
+.desk-file.long > .sheet { padding-bottom: calc(var(--tallest, 100vh) - 2 * var(--line) - var(--ahead, 0px)); }
+/* A sheet's proportions, whole cells (DESIGN §3): its numbers in two cells, at the words' size on their lines, a
+   letter clear of them; forty-nine letters; a cell of paper. (A file of a thousand lines and more puts its words a
+   figure further in.) */
+.desk-file > .sheet { display: grid; grid-template-columns: minmax(calc(2 * var(--line) - 1ch), max-content) minmax(0, 1fr); column-gap: 1ch; padding: 0 var(--line) 0 0;
+  font: var(--t-word)/var(--line) var(--mono); }
 .desk :is(.gutter, .code) { font: var(--t-word)/var(--line) var(--mono); }
-.desk .gutter { color: var(--quiet); min-width: 0; font-size: var(--t-word); }
+.desk .gutter { color: var(--quiet); min-width: 0; text-align: right; }
 .desk .code { scrollbar-width: none; overscroll-behavior-x: contain; }
 .desk-file > .sheet-note, .desk-file > .sheet > .sheet-note { padding: 0 var(--line); font: var(--t-word)/var(--line) var(--mono); }
 /* What a file says of itself (it could not be saved, it is read in part): at its top right, held there as the sheet
@@ -148,7 +150,7 @@
 /* (Its own rules are written for paper: on ink, what they call ink is the terminal's green, and so on.) */
 .desk-box[data-kind='agent'] > .agent-term { --ink: var(--term-fg); --sub: color-mix(in srgb, var(--term-fg) 65%, var(--term-bg)); --add: var(--term-fg); --del: var(--ansi-1);
   --rule: color-mix(in srgb, var(--term-fg) 40%, var(--term-bg)); }
-.desk-term.stand { --t-body: var(--t-word); display: flex; flex-direction: column; box-sizing: border-box; height: var(--tallest); padding: var(--line); }
+.desk-term.stand { display: flex; flex-direction: column; box-sizing: border-box; height: var(--tallest); padding: var(--line); }
 /* With no repo there is nothing to run in and nothing to note against. */
 .desk-term.stand:has(.prompt-in:disabled) > .dock { visibility: hidden; }
 .desk-term.stand > .term-box { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; padding: 0; }
@@ -210,7 +212,7 @@
 .stand > .dock :is(.note, .prompt-note, [role='status']) { font: var(--t-word)/var(--line) var(--mono); color: color-mix(in srgb, var(--term-fg) 70%, var(--term-bg)); }
 /* What comes out of its start at Alt+↓ says each as the line will say it: the same letters, no pill round them. */
 .desk-bench .box-mode > .box-mode-pill { height: auto; padding: 0; border-radius: 0; background: none; box-shadow: none; text-shadow: none; color: var(--ink);
-  font: 700 var(--t-word)/1.6 var(--mono); }
+  font: 700 var(--t-word)/var(--u) var(--mono); }
 .desk-bench .box-mode > .box-mode-pill[data-mode='run'] { color: var(--add); }
 .desk-bench .box-mode > .box-mode-pill > .lamp { display: none; }
 .desk-bench .box-mode > .box-mode-pill :is(.prompt-ps, .prompt-mode, .prompt-mode > b) { font: inherit; color: inherit; height: auto; }

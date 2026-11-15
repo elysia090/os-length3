@@ -2,10 +2,13 @@
 
 /* Storage: this OS's part the darker share of the bar (not an ink fill, which means current), never too thin to see;
    everything else's the lighter. */
-.space-meter { display: flex; }
+/* (The bar is a line of its own, a cell, the bar in its middle: what is under it stays on the grid. Its room under
+   it is the legend's, so the two do not run together.) */
+.space-meter { display: flex; margin-top: calc((var(--u) - var(--s2)) / 2); }
+.space-meter + .legend { margin-top: calc(var(--u) + (var(--u) - var(--s2)) / 2); }
 .space-meter > span { flex: none; background: var(--edge); }
 .space-meter > span.app { min-width: 3px; background: var(--sub); }
-.legend { margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s5); }
+.legend { margin-top: var(--u); display: flex; flex-wrap: wrap; gap: 0 var(--s5); }
 /* Over the box of three columns, the three figures stand over the three columns (each from its column's own left
    margin), not bunched at the box's left. (The meter stays on the line every page's first box starts on.) */
 .device-part > .legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 0 calc(var(--s4) + 1px); }
@@ -14,9 +17,9 @@
 /* Runtime: each repo's share, what can be given back, Prompts running */
 .usage-prompt { align-items: center; }
 .usage-prompt .button { min-height: var(--h-row); padding-block: 0; }
-.reclaimed { display: grid; gap: var(--s1); margin-bottom: var(--s3); }
+.reclaimed { display: grid; gap: 0; margin-bottom: var(--u); }
 .work-act .grow { flex: 1; }
-.legend + .reclaimed { margin-top: var(--s4); }
+.legend + .reclaimed { margin-top: var(--u); }
 .row-item[data-room='Keep'] .row-name { color: var(--sub); }
 .remote-join { display: grid; gap: var(--s3); max-width: 560px; }
 .remote-join .line-in { flex: 1; }

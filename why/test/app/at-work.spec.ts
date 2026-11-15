@@ -120,7 +120,8 @@ for (const size of [{width: 1536, height: 864}, {width: 1024, height: 768}]) {
     expect(r.caret!.top, 'going back: the line out of the upper third').toBeGreaterThanOrEqual(r.upper - .5);
     await page.keyboard.press('Control+Home');
     r = await at('to the top');
-    expect(r.caret!.top, 'at the top: its first line').toBe(3 * U + U / 2);
+    // (A cell of paper over its first line, DESIGN §3: whole cells.)
+    expect(r.caret!.top, 'at the top: its first line').toBe(4 * U);
     // The next piece pressed where it lies: it stays under the hand. (Only where it is whole in sight beside README.)
     const next = Object.entries(r.pieces).find(([k, b]) => k !== 'README.md' && b[0] > F && b[0] + b[2] + U / 2 <= size.width);
     if (next) {

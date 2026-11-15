@@ -17,10 +17,11 @@ export const LINE = GRID;
 /** What is read and written on the desk: 17 px on a line of a cell. (A small letter of it is a fifth of a degree
  * tall at a desk's distance on an ordinary screen, where reading stops slowing; 14 px is a sixth.) */
 export const CODE = 17;
-/** A piece's width, a file's or a terminal's: fifty letters (.602 of their size each), the numbers' margin before them
- * (a cell and a half) and half a cell after, up to the grid: twenty-four cells. A window half a screen wide (29 cells
- * of desk) shows one and the edge of the next; a whole screen (61), two and the edge of the third. */
-export const WIDTH = up(1.5 * GRID + 50 * CODE * .602 + GRID / 2);
+/** A piece's width, a file's or a terminal's: the numbers' two cells before its words (three figures and a letter's
+ * room), forty-nine letters (.602 of their size each), and a cell of paper after, up to the grid: twenty-four cells.
+ * Every column of it whole cells (DESIGN §3). A window half a screen wide (29 cells of desk) shows one and the edge of
+ * the next; a whole screen (61), two and the edge of the third. */
+export const WIDTH = up(2 * GRID + 49 * CODE * .602 + GRID);
 /** How many lines of the terminal are in sight. */
 export const TERM_LINES = 18;
 /** Between two pieces: the shadow of the one in hand, and a cell and a half clear of it. */
@@ -43,20 +44,20 @@ export function row(keys: readonly string[], width = WIDTH): {at: Map<string, nu
   return {at, end: keys.length ? PAD + (keys.length - 1) * (width + GAP) + width + SHADOW + GRID : PAD};
 }
 
-/** The tallest a sheet stands on a face `hgt` high: whole lines, half a line over and under them, its foot no lower
+/** The tallest a sheet stands on a face `hgt` high: whole lines, a cell of paper over and under them, its foot no lower
  * than FOOT over the face's; never under four lines. */
 export function tallest(hgt: number): number {
-  return (Math.max(4, Math.floor((hgt - TOP - FOOT - LINE) / LINE)) + 1) * LINE;
+  return (Math.max(4, Math.floor((hgt - TOP - FOOT - 2 * LINE) / LINE)) + 2) * LINE;
 }
 
 /**
  * Where the line being written may stand in a sheet on a face `hgt` high (DESIGN §2, look room): never in the third of
- * the world it goes towards. Measured from the top of what scrolls in the sheet (half a line under the piece's top):
+ * the world it goes towards. Measured from the top of what scrolls in the sheet (a cell under the piece's top):
  * `foot`, the lowest a line's foot may be (the lower third line, up to the line above it), and `top`, the highest a
  * line's top may be while there is more above to turn back to (the upper third line, down to the next line).
  */
 export function ahead(hgt: number): {top: number; foot: number} {
-  const from = TOP + LINE / 2;
+  const from = TOP + LINE;
   return {top: LINE * Math.ceil((hgt / 3 - from) / LINE), foot: LINE * Math.floor((2 * hgt / 3 - from) / LINE)};
 }
 

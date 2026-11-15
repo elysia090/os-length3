@@ -56,7 +56,7 @@ do, and each is a rule here with a number:
 | "Stick to one or two type sizes", the large about twice the small, white between them (*Canon*) | on one sheet: its name, its words, and one small size beside them (§3) |
 | A subhead is the text's size in bold, "a line space above and none below" (*Canon*) | who speaks, over what they said (§10, a transcript) |
 | Flush left; centred only for what is lapidary (*Canon*; Bringhurst 2.1.3) | one left edge; nothing is set in the middle (§1) |
-| Vertical space is added in whole intervals of the leading (Bringhurst 2.2.2) | every gap is a cell or half a cell |
+| Vertical space is added in whole intervals of the leading (Bringhurst 2.2.2) | every gap is whole cells (§3, whole cells) |
 | A comfortable measure (Bringhurst 2.1.2); read fastest long, preferred at 45 to 72 letters, slow under 35 | a line of what is said is 36 to 72 letters at every width (§10) |
 | Outside margins small, for tension between the edge and what is on the page (*Canon*) | 6 px from the window (§4) |
 
@@ -325,11 +325,46 @@ Its ink, not its box, stands on the left edge.
 - **A shadow is hard, ink (the terminal's: green), 12 px right and 12 px down (u/2), and only the piece in the hand
   has one.** One light, the same on every desk.
 
+### Whole cells
+
+**Every line of type is a cell of the grid, its middle on a row of the dots; every edge is a line of the grid,
+between two rows, so it cuts no dot.** (Müller-Brockmann: a field's depth whole lines, the space between fields whole
+lines, "only whole empty lines (never halves)"; so every line on a page is in register with every other, and a line
+on a sheet and a line on the ground beside it are one line.) From that one rule:
+
+- **A sheet's paper round its lines is a cell**: each side, over and under (a box drawn with an edge has the edge's
+  pixel in it). A file's numbers stand in the two cells before its words, as an item's mark does on the note.
+- **The space between things is whole cells**, and so is the space between lines: a heading is a line of its own
+  with a line above it and none under it (Vignelli); the next of a run of posts is the next line, another speaker a
+  line on.
+- **Words on the ground take the whole cells they stand in**: the dots of those cells are under them (a patch of the
+  ground's colour brought up to the grid's next line, `ui/clearing.ts`), so no dot is nearer a word than half a
+  cell, none is cut by the patch, and none reads as a stop that was never written ("1 repo · 1 server·", measured
+  before: a dot a pixel after a word, another cut in half).
+- **A sheet that stands to the foot is as tall as the whole cells there are room for**, so its lines, counted from its
+  foot up (a talk standing on the box one writes in), are on the grid on a window of any height.
+- **A name stands on its capitals**, a cell tall (or two), on lines of the grid; a name of more than one line, a line
+  of two cells each. Words on a name's line stand on its baseline: they are its servants, and are not lines of their
+  own.
+- **A line that is pressed** (a step, a board, a menu's item, a row of a list) is a cell tall: the least target WCAG
+  asks (24 × 24, AA).
+
+**Half a cell is left only where nothing is type**, and each says why:
+
+- **a key and a field** are the frame's square, 36 px, in a field of two cells, a quarter cell over and under (§4: a
+  target the hand is sure of, 48 Material, 44 Apple); their words stand in the middle of them. A key is a thing in
+  the page, as a picture is, and its field is whole: keys that go onto a second row stand two cells apart;
+- **the shadow**, half a cell right and down: it is the light's, not a space;
+- **the dots' own place**, a cell's middle: so that an edge on a line of the grid cuts none.
+
+Held: in every place at four widths every line of words in the world has its middle on a row of the dots
+(`composition.spec.ts`).
+
 ### Widths
 
 | Thing | Width |
 |---|---|
-| a piece on a desk (a file, the terminal, Home's pieces, the band's bar) | **24 cells** = 576: fifty letters of 17 px mono (50 × 17 × .602), a margin of a cell and a half for the numbers before them and half a cell after, up to the grid |
+| a piece on a desk (a file, the terminal, Home's pieces, the band's bar) | **24 cells** = 576: two cells for the numbers before its words (three figures and a letter's room), forty-nine letters of 17 px mono (49 × 17 × .602), a cell of paper after, up to the grid |
 | between two pieces | **2 cells** |
 | a place that is one sheet (Runtime, the Remote) | to a cell from the window's right edge, at most **48 cells** (two pieces' insides and what is between them) |
 | Home's slip | 12 cells |
@@ -510,14 +545,15 @@ being worked in.
 
 **A piece's proportions on a desk.**
 
-- Its top is at y = 72, a cell under the band. Its name stands in the cell over its top-left corner: 13 px mono 700
-  on a line of a cell, its folder quiet before it.
+- Its top is at y = 72, a cell under the band. Its name stands in the cell over its top-left corner: mono 700 on a
+  line of a cell, its folder quiet before it, the dots of the cells it takes under it.
 - It is as tall as its lines, never lower than a cell over the window's foot; what is under that is scrolled to
-  inside it. A sheet has half a line of paper over and under its lines. **A file whose lines pass the world's lower
+  inside it. A sheet has a cell of paper over and under its lines. **A file whose lines pass the world's lower
   third stands to the foot**, its paper going on under its last line as far as brings that line up to the lower third:
   the room ahead of what is written last (§2, look room). The terminal is 18 lines and a cell over and under them, or
   as many as keep its last line, where its work is, out of the lower third.
-- A file's numbers are 11 px, quiet, in a margin a cell and a half wide; its words start there.
+- A file's numbers are the words' size, quiet, on their lines, in the two cells before the words, a letter clear of
+  them; its words start on the grid's line two cells in.
 - Nothing on a desk changes size, and nothing lies askew.
 
 **What makes a sheet a composition** (said of Git's, without looking at it; it is what a sheet with something to
@@ -790,8 +826,9 @@ A desk of two short pieces (§6):
    one cell (the programme's next size down, §2). A cell; the counts, mono, a cell under the last line's feet
    (from 144 with a name of one line); then the handle and the line about the person, a cell each, while there are
    any; a cell; **the note**. The note is Home's piece in the hand: its yellow, as wide as the piece.
-   Its rows are the frame's square: an item's mark is a 16 px box with a 2 px line in a 36 px square at the note's
-   edge, its words 700 on a 36 px line. It is as tall as what is written on it and the line of what the keys
+   Its lines are cells: an item's mark is a 16 px box with a 2 px line in the two cells before its words (as a file's
+   numbers are), its words 700 on a line of a cell, its detail and its day the lines under it, its × in the two
+   cells after; a cell of paper over and under. It is as tall as what is written on it and the line of what the keys
    do, brought up to the next line of the grid, never under four cells.
 2. **The repos and what waits.** "repos" on the cell under the band (y = 48); a name every two cells, capitals a
    cell tall, **the first standing on the line the person's name's first line stands on** (y = 120); a cell; "+ new repo" in the
@@ -841,7 +878,7 @@ A desk. At the desk's edge main's own sheet, eight cells wide (ink: it is where 
 cells on, the issues. The issue in the hand is a wide sheet, set as a poster is:
 
 - its **number** at its top right, two cells tall in the display face: the place's large thing;
-- its **title** at its top left, capitals a cell tall on lines of a cell and a half;
+- its **title** at its top left, capitals a cell tall on lines of two cells;
 - under them, at the left, what is said of it (its summary, whose it is), set against the work's edge; at the right
   **the work**, a column that runs to the sheet's right edge: each file's name and count, the lines that changed on
   a band of the change's colour across the column, the lines beside them out of focus (they are what the change is
@@ -873,8 +910,8 @@ What is half written in any of them stays, going along the row or to another pag
 *A room: boards of talk, each with a shared list, and the people in it.* Its one large thing is the name of the board
 in the hand.
 
-A desk with a row (§6). First, the room's own sheet, eight cells, packed as Inbox's first sheet is (nothing round
-its lines but the sheet's edge, a line a cell tall, half a cell in): its boards by name (the one in the hand in ink,
+A desk with a row (§6). First, the room's own sheet, eight cells, as Inbox's first sheet is (a cell of paper round
+its lines, a line a cell tall): its boards by name (the one in the hand in ink,
 a dot on one with something not seen), the way to a new one, who is in it, the repos they show. Then its boards in
 their order: the one in the hand a sheet as wide as any piece; **one not in the hand is its name on the ground and
 nothing round it**, as wide as the name, as a repo's is on Home; pressed, it is taken up. Last, so too, the board
@@ -911,12 +948,12 @@ on two sides.
   how a conversation reaches the other). The sheet's line under its name starts at the axis
   and runs out to the sheet's right edge: the margin is one column of paper from the sheet's top to its foot. Between
   the talk and the box one writes in there is no line: the box is in front of the talk, and what passes under its
-  edge as the talk is read back goes a little out of focus (2 px, over the half cell the talk keeps empty at its
+  edge as the talk is read back goes a little out of focus (2 px, over the cell the talk keeps empty at its
   foot, so at rest on the latest nothing is).
 - **The box one writes in** stands in the words' column, under them. Its key (Post, Send) comes with the words, and
   says its keys on itself; Enter is a new line.
 - **On the grid.** Words are on lines of a cell. A run of one person's posts a few minutes apart says who
-  once, and the margin beside the rest of the run is paper; half a line between two posts of a run, a line before
+  once, and the margin beside the rest of the run is paper; the next post of a run on the next line, a line before
   another speaker. A day's name is a small line of its own in the margin.
 - **A sheet with no room for 6 | 2 | 14** (a phone's piece is 13 cells, 264 px inside, 36 letters) has who speaks
   over the words, as what does not fit beside goes under (§6). By the sheet's own width, never the window's.
@@ -947,11 +984,11 @@ is; then New repo, quiet, which gives way where the line has no room for it whol
 2. a cell; why the name cannot be, where there is a reason, in the small size on lines of a cell (what is under it
    comes down by the cells it takes; the sheet's top never moves);
 3. what the repo is for, on lines of a cell;
-4. a cell; a rule; half a cell; **what will be made in it**, a line a cell tall each, folders first, a folder's depth a
-   cell in; New file and New folder their last line; half a cell;
+4. a cell; a rule; a cell; **what will be made in it**, a line a cell tall each, folders first, a folder's depth a
+   cell in; New file and New folder their last line;
 5. a cell; Create, a key the frame's square tall.
 
-As wide as a piece, as tall as what is in it to the grid's next line, every line of it on a half cell.
+As wide as a piece, as tall as what is in it to the grid's next line, every line of it on a cell.
 
 The repo itself is the sheet, its name the sheet's title: said once, large, and not drawn again as a row of the
 list under it (it was, filled with ink as File fills the repo in hand: a second fill on the sheet, and the name said
@@ -1015,13 +1052,13 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | The rail's order; which pages are a place's far side, where each door leads and that it leads back (§4) | `why/app/host/purposes.test.ts` |
 | What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `why/test/app/sound.spec.ts` |
 | Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
-| Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the lean (the lower right at least as empty as the upper left), the bare ground one open field with nothing trapped and at most a third of the world marked, the band's title whole at its size, one voice (§2) | `why/test/app/composition.spec.ts` |
+| Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the lean (the lower right at least as empty as the upper left), the bare ground one open field with nothing trapped and at most a third of the world marked, the band's title whole at its size, one voice (§2); every size of type one of three, and every line of words on a cell of the grid (§3) | `why/test/app/composition.spec.ts` |
 | Touch, with motion on: under the pointer a thing takes paper or nothing; a press answers in its own frame, sounds as it goes down, gives at most 8% and comes home never past; every place's subject holds its act (§14) | `why/test/app/touch.spec.ts` |
 | Master and servant: on a desk one piece holds the fill, the ink edge, the shadow and the keyboard, and what is typed goes to it alone (§1) | `why/test/app/master.spec.ts` |
 | Writing in Git is direct: a new issue's line and main's commit line always there, Enter making or committing, nothing to open, confirm or put back; an issue's title written over in place; what is half written kept (§7, §10) | `why/test/app/git.spec.ts` |
 | Forge at work, frame by frame at two screens: the piece in hand at the edge or under the hand; the line written never in the third it goes towards, a long file standing to the foot; the terminal's last line out of the lower third; nothing jumping, nothing reversed; the weight left (§2, §6, §10) | `why/test/app/at-work.spec.ts` |
 | Where the line written may stand, the terminal's lines, and where the desk turns for a piece pressed and for one gone to (§2, §5, §6) | `why/app/pages/forge/desk-layout.test.ts` |
-| New repo is one piece at the desk's edge, the hand's: on the grid, a piece wide, its name at a name's size on its first line, what will be made inside it under a rule, every line of it on a half cell, three sizes, nothing filled but its key, its place over its corner on a patch of the ground, each row's deeds one chevron; why a name cannot be said under it with the sheet's top still (§10) | `why/test/app/new-repo.spec.ts` |
+| New repo is one piece at the desk's edge, the hand's: on the grid, a piece wide, its name at a name's size on its first line, what will be made inside it under a rule, every line of it on a cell, one size of words, nothing filled but its key, its place over its corner on a patch of the ground, each row's deeds one chevron; why a name cannot be said under it with the sheet's top still (§10) | `why/test/app/new-repo.spec.ts` |
 | Server's and Inbox's rows: the first sheet at the desk's edge, the piece in the hand whole in the window, a cell under the band to a cell over the foot, paper with its shadow, at four widths (§5, §6) | `why/test/app/skeleton.spec.ts` |
 | A board's box: its key comes with the words at every width; it stays in sight under a long talk (§10) | `why/test/app/server.spec.ts` |
 | Home's row, the name, the note, the repos, the slip; half a screen, a whole one, a phone; Home as a shot: a long name keeps its size over lines on the grid with the eyeline at its first, and the note's edge is whole (§10) | `why/test/app/home.spec.ts` |

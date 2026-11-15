@@ -14,7 +14,7 @@
 .inbox-page { box-sizing: border-box; height: 100%; padding-bottom: var(--u); overflow: auto hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .inbox-page::-webkit-scrollbar { display: none; }
 .inbox-box { display: flex; gap: calc(2 * var(--u)); box-sizing: border-box; width: max-content; min-width: 100%; height: 100%; padding-right: calc(100% - var(--piece, 100%)); }
-.inbox-index, .inbox-page .inbox-thread { flex: none; box-sizing: border-box; height: 100%; scroll-snap-align: start; border-radius: var(--r-sheet); outline-offset: -1px; overflow: hidden; }
+.inbox-index, .inbox-page .inbox-thread { flex: none; box-sizing: border-box; height: round(down, 100%, var(--u)); scroll-snap-align: start; border-radius: var(--r-sheet); outline-offset: -1px; overflow: hidden; }
 .inbox-index { display: flex; flex-direction: column; width: min(calc(12 * var(--u)), var(--piece, 100%)); background: var(--ground); outline: 1px solid var(--edge); overflow: visible; }
 .inbox-page .inbox-thread { width: var(--piece, 100%); background: var(--paper); outline: 1px solid var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); overflow: visible; }
 .inbox-box.none > .inbox-thread { display: none; }
@@ -62,16 +62,16 @@
 .inbox-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); min-height: calc(2 * var(--u)); padding: 0 var(--u); box-shadow: 0 1px 0 var(--rule); }
 .inbox-top > h2 { min-width: 0; margin: 0; font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inbox-top .grow { flex: 1; }
-.inbox-messages { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--u) var(--u) var(--s3); overflow-y: auto; }
+.inbox-messages { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--u); overflow-y: auto; }
 /* A conversation stands on its foot, by the field it is answered in, as it is read: the last thing said just over
    where the answer is written, never a sheet's height of nothing between them. */
 .inbox-messages > :first-child:first-child { margin-top: auto; }
 /* None said yet: said where the first words will come, at the sheet's edge. */
 .inbox-messages > .inbox-empty { margin: auto 0 0; align-self: flex-start; }
 /* What was said, as a transcript (talk.css): one left edge, for both who speak. Who says it on a line of its own where
-   a run starts (the other's name in ink, one's own a step quieter), then the words under it on lines of a cell; half
-   a line between two of a run, a line before the other speaks. The time, small, after a run's last words. */
-.bubble { display: block; margin-top: calc(var(--u) / 2); font: var(--t-word)/var(--u) var(--sans); }
+   a run starts (the other's name in ink, one's own a step quieter), then the words under it on lines of a cell; the
+   next of a run on the next line, a line before the other speaks. The time, quiet, after a run's last words. */
+.bubble { display: block; margin-top: 0; font: var(--t-word)/var(--u) var(--sans); }
 .bubble:not(.run-in, .inbox-notice) { margin-top: var(--u); }
 .bubble:not(.run-in, .inbox-notice)::before { content: attr(data-who); display: block; font-weight: 700; }
 .bubble[data-mine='true']::before { color: var(--sub); }
@@ -89,13 +89,13 @@
 .bubble .state-chip { margin-right: var(--s2); }
 .bubble > .link, .bubble > .muted { margin-right: var(--s2); }
 .bubble-text { display: inline; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.inbox-write { position: relative; display: grid; gap: var(--s2); padding: var(--s3) var(--u) var(--u); }
+.inbox-write { position: relative; display: grid; gap: 0; padding: 0 var(--u) var(--u); }
 /* The box one writes in is the one a board's is (prompt.css .prompt): one deed, one look. */
-.bubble-in { flex: 1; min-width: 0; resize: none; min-height: 0; height: auto; max-height: 200px; padding: 0; border: 0; border-radius: 0; background: transparent; font: var(--t-word)/1.6 var(--sans); }
+.bubble-in { flex: 1; min-width: 0; resize: none; min-height: 0; height: auto; max-height: 200px; padding: 0; border: 0; border-radius: 0; background: transparent; font: var(--t-word)/var(--u) var(--sans); }
 .bubble-in:focus, .bubble-in:focus-visible { outline: none; }
 .inbox-write .write-line { align-items: flex-end; gap: var(--s3); margin: 0; padding: var(--s3) var(--s4); border: 1px solid var(--edge); border-radius: var(--r-field); background: var(--raised); }
 /* (Its key comes with the words, as a board's does.) */
 .inbox-write .write-line:has(> .bubble-in:placeholder-shown) > .prompt-run { display: none; }
 .inbox-write .write-line:focus-within { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
-.write-hint { margin: 0; }
+.write-hint { margin: 0; line-height: var(--u); }
 .at { color: var(--sub); }

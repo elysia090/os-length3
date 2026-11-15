@@ -11,8 +11,6 @@
 .new-repo { --piece: min(calc(24 * var(--u)), round(down, 100% - var(--shade), var(--u))); display: grid; width: var(--piece); }
 .nr-label { display: flex; flex-wrap: nowrap; align-items: baseline; gap: 0 var(--s2); width: fit-content; max-width: 100%; min-height: var(--u); margin: 0; padding: 0;
   font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
-/* (Its words on a patch of the ground exactly their size: no dot of the grid under them, read as a full stop.) */
-.nr-label { background: var(--ground); }
 .nr-kind { font-weight: 400; color: var(--sub); }
 .nr-kind::before { content: '·'; content: '·' / ''; margin-right: var(--s2); }
 .nr-label > .nr-path { min-width: 0; overflow-wrap: anywhere; }
@@ -38,7 +36,7 @@
    cell of paper under the rule (the rule's own pixel in it) and under them (as a sheet has over and under its lines), New file
    and New folder their last line. On the grid from the rule down: so the key under them is too. A folder's depth is a
    cell in, its mark in that cell, the names of one depth in one column. */
-.nr-box > .tree.tree-still { margin: var(--u) var(--nr-in) 0; padding: calc(var(--u) / 2 - 1px) 0 calc(var(--u) / 2); border: 0; border-top: 1px solid var(--rule);
+.nr-box > .tree.tree-still { margin: var(--u) var(--nr-in) 0; padding: calc(var(--u) - 1px) 0 0; border: 0; border-top: 1px solid var(--rule);
   border-radius: 0; background: transparent; box-shadow: none; font: var(--t-word)/var(--u) var(--sans); }
 .nr-box .tree-still .tree-row { min-height: var(--u); height: var(--u); padding-left: calc(var(--depth, 0) * var(--u)); border-radius: 0; background: none; }
 .nr-box .tree-still :is(.tree-toggle, .tree-spacer) { width: var(--u); height: var(--u); }

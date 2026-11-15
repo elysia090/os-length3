@@ -1,7 +1,7 @@
 /* A diff: a file's lines added and removed, its head, its counts. */
 /* A file's lines in a rounded body of their own; each changed line has its colour as a bar at its left and a light
    ground, so a run of them reads as one block and a lone one still shows. */
-.diff { display: grid; font: var(--t-word)/1.65 var(--mono); border-radius: calc(var(--r-field) / 2); overflow: hidden; }
+.diff { display: grid; font: var(--t-word)/var(--u) var(--mono); border-radius: calc(var(--r-field) / 2); overflow: hidden; }
 .diff-line { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); gap: var(--s2); padding: 0 var(--s2) 0 var(--s1); border-left: 2px solid transparent; }
 /* Git's diffs: the file's name and +n −n at the left, its lines beside them from the same row. */
 .diff-file.beside { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--s4); align-items: start; }

@@ -22,7 +22,7 @@ a.button { display: inline-flex; align-items: center; justify-content: center; c
 .dot-ask p, .dot-note { margin: 0; }
 .dot-note { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
 .dot-name { max-width: 20em; }
-.dot-text { min-height: 16em; resize: vertical; padding: var(--s2) var(--s3); font: var(--t-word)/1.6 var(--mono); }
+.dot-text { min-height: 16em; resize: vertical; padding: var(--s2) var(--s3); font: var(--t-word)/var(--u) var(--mono); }
 /* Remote's Sign-in and Devices: rows of a readable width, not the page's. */
 #panel-remote-sign-in, #panel-remote-devices { max-width: 720px; }
 /* The Agent's key, beside the dotfiles and apart from them (agent-part.ts): one row in a box as theirs are, the key

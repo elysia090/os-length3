@@ -26,6 +26,7 @@ import {onLang, t, useLang} from '../../text/i18n.ts';
 import {depth, doorOf, isFar, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
 import {glide, morph, stage, stopStage, travel, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
+import {clearings} from '../ui/clearing.ts';
 import {prime} from '../ui/keys.ts';
 import {caret} from '../ui/caret.ts';
 import {optical} from '../ui/optical.ts';
@@ -145,6 +146,7 @@ document.body.append(fileTree.element);
 // A control drawn again or held while its deed runs gives the keyboard back, never to the body (focus.ts).
 keepFocus();
 touch();
+clearings();
 caret();
 optical();
 scrollbars();

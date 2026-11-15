@@ -21,23 +21,24 @@
    sign-in card) starts at one place on every page: the role is cut short where it runs out of room, and a phone, with
    no room for it, has the name alone. */
 /* (The room under it is its own, not a margin: a margin there would run together with the next thing's.) */
-.page-head { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; box-sizing: content-box; height: var(--h-row); margin-top: calc(var(--band) - var(--top-line)); padding-bottom: var(--s3); }
+.page-head { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; box-sizing: content-box; height: calc(2 * var(--u)); margin-top: 0; padding-bottom: 0; }
 .page-head .icon { align-self: center; flex: none; }
 /* A place's name is a name as any on a desk is: the display face, its capitals a cell tall. */
-.page-head h1 { font: 900 var(--t-head)/var(--h-row) var(--display); letter-spacing: -.035em; flex: none; }
+.page-head h1 { font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; flex: none; }
 .page-head p { color: var(--sub); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 560px) { .page-head p:not(.standing) { display: none; } }
-.section { margin-top: var(--s6); }
+/* (Two cells between sections; a heading a line of its own, the words under it on the next: a line above, none below.) */
+.section { margin-top: calc(2 * var(--u)); }
 /* Under a page's head a section's heading is the first row's and its box starts on the second; sections are 40 apart. */
 .page-head + .section, .page-head + div > .section:first-child { margin-top: 0; }
 .page-head + .section > h2, .page-head + div > .section:first-child > h2 { height: var(--row); margin-bottom: var(--row-step); align-items: center; }
 .section > h2 {
   display: flex; justify-content: space-between; align-items: baseline;
-  font-size: var(--t-word); font-weight: 700;
-  margin-bottom: var(--s3);
+  font-size: var(--t-word); font-weight: 700; line-height: var(--u);
+  margin-bottom: 0;
 }
 .section > h2 small { font-weight: 400; color: var(--sub); font-size: var(--t-word); }
 /* Room for what is not here yet: a dashed box as wide as its words, never the width of the page around one line. */
-.empty { width: fit-content; max-width: 100%; margin-top: calc(var(--row) + var(--row-step)); padding: var(--s6) var(--s5); border: 1px dashed var(--rule); border-radius: var(--r-place); color: var(--sub); }
+.empty { width: fit-content; max-width: 100%; margin-top: calc(var(--row) + var(--row-step)); padding: calc(2 * var(--u)) var(--u); border: 1px dashed var(--rule); border-radius: var(--r-place); color: var(--sub); }
 /* Under a section's heading the heading's own gap is the space: an empty box adds none, however deep. */
 .section .empty { margin-top: 0; }

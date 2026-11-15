@@ -80,7 +80,9 @@ async function row(what: string, size: {width: number; height: number}, first: L
     expect(p.x, `${what}: its piece's left edge in the window`).toBeGreaterThanOrEqual(2 * U - 1);
     expect(p.x + p.width + U / 2, `${what}: its piece and its shadow in the window`).toBeLessThanOrEqual(size.width);
     expect(Math.abs(p.y - 3 * U), `${what}: its piece's top a cell under the band`).toBeLessThan(1);
-    expect(Math.abs(p.y + p.height - (size.height - U)), `${what}: its piece's foot a cell over the window's`).toBeLessThan(1);
+    // Its foot a cell over the window's, or as near as whole cells allow (DESIGN §3: it is whole cells tall).
+    const foot = size.height - (p.y + p.height);
+    expect(foot >= U - 1 && foot < 2 * U && Math.round(p.height) % U === 0, `${what}: its piece whole cells tall, its foot a cell over the window's (${foot})`).toBe(true);
     const look = await held.evaluate((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.boxShadow !== 'none']; });
     expect(look, `${what}: its piece in the hand is paper with its shadow`).toEqual(['rgb(251, 250, 247)', true]);
     const f = await first.boundingBox();

@@ -27,5 +27,7 @@
 .error:empty { display: none; }
 .row { display: flex; gap: var(--s2); }
 /* Declining at the left, going on at the right (common.ts answers). */
-.answers { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
+/* (A row of keys: each the frame's square in a field of two cells, DESIGN §3: a quarter cell over and under it, and
+   where the keys go onto a second row, the two quarters between.) */
+.answers { display: flex; align-items: center; flex-wrap: wrap; gap: calc(var(--u) / 2) var(--s2); min-height: calc(2 * var(--u)); padding-block: calc(var(--u) / 4); box-sizing: border-box; }
 .answers > .grow { flex: 1; }

@@ -259,7 +259,11 @@ test("behind the gear, Done is at the sheet's bottom right, under its parts, and
   const name = people.getByText(app.handle, {exact: true}).first();
   const card = people.locator('.small-card').first();
   // Where the words themselves start in each card, from its own corner.
-  const words = (l: Locator) => l.evaluate((el) => { const r = document.createRange(); r.selectNodeContents(el); const b = r.getBoundingClientRect(); return {x: b.x, y: b.y}; });
+  // (Its words, not its mark: the last of its text.)
+  const words = (l: Locator) => l.evaluate((el) => {
+    const t = [...el.childNodes].reverse().find((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim()) ?? el;
+    const r = document.createRange(); r.selectNodeContents(t); const b = r.getBoundingClientRect(); return {x: b.x, y: b.y};
+  });
   const [a, c, w, n] = [await box(add), await box(card), await words(add), await words(name)];
   expect(Math.abs((w.x - a.x) - (n.x - c.x))).toBeLessThan(1);
   expect(Math.abs((w.y - a.y) - (n.y - c.y))).toBeLessThan(1);

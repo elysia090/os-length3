@@ -160,7 +160,7 @@ form.search { position: relative; }
 .hit-group { display: grid; margin-bottom: var(--s3); }
 .hit-file, .hit { border: 0; padding: 0 var(--s1); background: transparent; text-align: left; cursor: var(--cursor-hand); border-radius: var(--r-field); }
 .hit-file { min-height: var(--h-row); font: 700 var(--t-word) var(--mono); }
-.hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-word)/1.6 var(--mono); }
+.hit { display: grid; grid-template-columns: 4ch minmax(0, 1fr); gap: var(--s2); font: var(--t-word)/var(--u) var(--mono); }
 .hit-file:hover, .hit:hover { background: var(--paper); }
 /* The Prompt's status line says something only when something is missing. */
 .term > p:empty { display: none; }
@@ -170,13 +170,13 @@ form.search { position: relative; }
    words as the pane's answers read (prompt-pane.css), its code on the Prompt's glass. */
 .ask-question { margin: 0 0 var(--s3); font-weight: 700; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ask-step { margin: 0 0 var(--s1); font: var(--t-word) var(--mono); color: var(--sub); white-space: pre-wrap; overflow-wrap: anywhere; }
-.ask-words { margin: var(--s2) 0 var(--s3); font: 400 var(--t-word)/1.65 var(--sans); overflow-wrap: anywhere; }
+.ask-words { margin: var(--s2) 0 var(--s3); font: 400 var(--t-word)/var(--u) var(--sans); overflow-wrap: anywhere; }
 .ask-words > .answer-p { margin: 0 0 6px; white-space: pre-wrap; }
 .ask-words > .answer-code { display: block; margin: 6px 0; padding: 8px 10px; border-radius: var(--r-field); background: var(--screen); color: var(--add-tint);
-  font: var(--t-word)/1.5 var(--mono); white-space: pre; overflow-x: auto; }
+  font: var(--t-word)/var(--u) var(--mono); white-space: pre; overflow-x: auto; }
 /* Its lines as they were written, several sent at once each on its own (never run together into one). */
 .run-line { font: 700 var(--t-word) var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; text-align: start; }
 .run-head:has(> .run-line) { align-items: flex-start; }
 /* Pressed, the line is back in the prompt box: its hover fill reaches out past the text, which stays over the output. */
 button.run-line { margin-inline-start: calc(-1 * var(--s1)); min-width: 0; }
-.run-out { margin: 0; color: var(--sub); font: var(--t-word)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-out { margin: 0; color: var(--sub); font: var(--t-word)/var(--u) var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }

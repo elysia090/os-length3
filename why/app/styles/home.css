@@ -21,24 +21,25 @@
 .home-row > * { flex: none; box-sizing: border-box; width: var(--piece); min-width: 0; }
 .home-beside { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: start; }
 /* ---- The TODO: a note, as wide as the column, a cell under the profile; its shadow half a cell right and down, as
-   every sheet's on a desk is (one light). Its rows are the frame's own square (36 px): an item's mark in a square, its
-   words on the square's line. As tall as what is written on it and the line of what the keys do, up to the grid's next
-   line (home.ts: --to-grid); never under four cells. ---- */
+   every sheet's on a desk is (one light). Whole cells (DESIGN §3): a cell of paper over and under; each line of it a
+   cell, an item's first line and its detail alike; an item's mark in the two cells before its words, as a file's
+   numbers are, and its × in the two after. As tall as what is written on it and the line of what the keys do, up to
+   the grid's next line (home.ts: --to-grid); never under four cells. ---- */
 .home-own > .section {
-  position: relative; box-sizing: border-box; width: 100%; margin: var(--u) 0 0; min-height: calc(4 * var(--u)); padding: var(--outer) 0 calc(var(--outer) + var(--to-grid, 0px));
+  position: relative; box-sizing: border-box; width: 100%; margin: var(--u) 0 0; min-height: calc(4 * var(--u)); padding: var(--u) 0 calc(var(--u) + var(--to-grid, 0px));
   background: var(--note); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 var(--ink);
 }
-.home-own > .section > h2 { position: absolute; top: var(--outer); right: var(--s3); z-index: 1; margin: 0; display: block; font: 700 var(--t-word)/var(--key) var(--mono); }
+.home-own > .section > h2 { position: absolute; top: var(--u); right: calc(2 * var(--u)); z-index: 1; margin: 0; display: block; font: 700 var(--t-word)/var(--u) var(--mono); }
 .home-own > .section > h2 > #todo-title, .home-own .todo-left > small { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .home-own .todo-clear { padding: 0; border-radius: 0; background: none; color: var(--ink); font: inherit; text-transform: lowercase; }
 .home-own .todo-clear:hover { background: none; text-decoration: underline 2px; text-underline-offset: 3px; }
 .home-own .todo-box { display: block; min-height: 0; border: 0; border-radius: 0; background: none; }
 .home-own .todo-items { padding: 0; }
 .home-own .todo-item { padding: 0; }
-.home-own .todo-head { position: relative; grid-template-columns: var(--key) auto minmax(0, 1fr) auto; column-gap: 0; min-height: var(--key); padding-right: var(--key); }
-.home-own .todo-dates-detail .todo-head { grid-template-columns: var(--key) auto minmax(0, 1fr); }
+.home-own .todo-head { position: relative; grid-template-columns: calc(2 * var(--u)) auto minmax(0, 1fr) auto; column-gap: 0; min-height: var(--u); padding-right: calc(2 * var(--u)); }
+.home-own .todo-dates-detail .todo-head { grid-template-columns: calc(2 * var(--u)) auto minmax(0, 1fr); }
 /* An item's mark: a box drawn as heavy as the words, soft at the corner; ticked, filled. */
-.home-own .todo-mark { position: relative; justify-self: center; width: var(--key); height: var(--key); border-radius: var(--r-field); color: var(--ink); }
+.home-own .todo-mark { position: relative; justify-self: stretch; width: auto; height: var(--u); border-radius: var(--r-field); color: var(--ink); }
 .home-own .todo-mark > .icon { display: none; }
 .home-own .todo-mark::before { content: ''; box-sizing: border-box; width: 16px; height: 16px; border: 2px solid currentColor; border-radius: 4px; }
 .home-own .todo-item.done .todo-mark::before { background: currentColor; }
@@ -47,28 +48,29 @@
 .home-own .todo-mark:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); }
 .home-own .todo-mark:disabled { opacity: 1; color: var(--note-quiet); }
 .home-own .todo-item.done .todo-mark { color: var(--ink); }
-.home-own :is(.todo-title, .todo-kind) { font: 700 var(--t-word)/var(--key) var(--sans); }
-.home-own .todo-title { min-height: var(--key); height: var(--key); }
+.home-own :is(.todo-title, .todo-kind) { font: 700 var(--t-word)/var(--u) var(--sans); }
+.home-own .todo-title { min-height: var(--u); height: var(--u); }
 /* (The kind is a row's height and no taller, whatever its colon's box is, and a word space before the title: "Fix: The
    title" on one line, both on the row's middle.) */
-.home-own .todo-kind:not([hidden]) { display: flex; align-items: center; height: var(--key); margin-right: .25em; white-space: nowrap; }
+.home-own .todo-kind:not([hidden]) { display: flex; align-items: center; height: var(--u); margin-right: .25em; white-space: nowrap; }
 .home-own .todo-title::placeholder { color: var(--note-quiet); font-weight: 400; }
 .home-own .todo-item.done .todo-head :is(.todo-title, .todo-kind), .home-own .todo-item.done .todo-detail { color: var(--note-quiet); }
 .home-own .todo-head > .todo-strike { height: 2px; margin-top: 1px; background: var(--note-quiet); }
-.home-own .todo-detail { width: calc(100% - 2 * var(--key)); margin: 0 0 var(--s1) var(--key); font: 400 var(--t-word)/20px var(--sans); }
+.home-own .todo-detail { width: calc(100% - 4 * var(--u)); margin: 0 0 0 calc(2 * var(--u)); font: 400 var(--t-word)/var(--u) var(--sans); }
 .home-own .todo-detail::placeholder, .home-own :is(.todo-meta, .todo-created) { color: var(--note-quiet); opacity: 1; }
-.home-own :is(.todo-meta, .todo-created) { font: 400 var(--t-word)/16px var(--mono); }
-.home-own .todo-dates-detail .todo-created { margin: 0 0 var(--s2) var(--key); }
+.home-own :is(.todo-meta, .todo-created) { font: 400 var(--t-word)/var(--u) var(--mono); }
+.home-own .todo-dates-detail .todo-created { margin: 0 0 0 calc(2 * var(--u)); }
 /* An item's ×, at the row's right end inside the note's ink edge (never over it: the subject's edge is whole, §2). */
-.home-own .todo-head > .todo-away { position: absolute; right: 1px; top: 0; width: var(--key); height: var(--key); border-radius: var(--r-field); background: var(--note); color: var(--note-quiet); }
+.home-own .todo-head > .todo-away { position: absolute; right: 1px; top: 0; width: calc(2 * var(--u) - 1px); height: var(--u); border-radius: var(--r-field); background: var(--note); color: var(--note-quiet); }
 .home-own .todo-item:is(:hover, :focus-within) .todo-head > .todo-away { color: var(--ink); }
 .home-own .todo-away .mark { width: 16px; height: 16px; stroke-width: 2; }
 .home-own .todo-head > .todo-away:hover { background: color-mix(in srgb, var(--ink) 10%, var(--note)); }
-/* What the keys do, while one writes: at the note's foot, over nothing that moves. */
-.home-own .todo-box .todo-hint { position: absolute; left: 0; right: 0; bottom: var(--outer); padding: 0 var(--s3) 0 var(--key); color: var(--note-quiet); font: 400 var(--t-word)/var(--u) var(--mono); }
+/* What the keys do, while one writes: the note's last line, its room always kept, so nothing moves as it is said.
+   One line: as many of the keys as it holds whole, the first first; what does not fit is not said, never cut. */
+.home-own .todo-box .todo-hint { height: var(--u); overflow: hidden; gap: 0 var(--u); padding: 0 calc(2 * var(--u)); color: var(--note-quiet); font: 400 var(--t-word)/var(--u) var(--mono); }
 .home-own .todo-hint kbd { border-color: var(--note-quiet); background: none; color: var(--note-quiet); }
 .home-own > .section > .error:empty { display: none; }
-.home-own > .section > .error { margin: var(--s2) var(--s3) 0 var(--key); }
+.home-own > .section > .error { margin: 0 calc(2 * var(--u)); line-height: var(--u); }
 .home-own > .error { margin-top: var(--s2); }
 /* ---- The repos by name: said what they are on a line of a cell, then a name every two cells, its capitals a cell
    tall with their feet on the grid; then, a cell under them, the way to a new one, in the words' own size. ---- */
@@ -105,7 +107,7 @@
    piece in hand). Over it, while there is any, the plug's area and what an agent asks. What it is, on a line of a
    cell; the file, its capitals a cell tall on the next two; then what it says and where, a line each. ---- */
 .home-waits { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--u); width: 100%; margin-top: var(--u); }
-.home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: var(--s3) var(--u) calc(var(--s3) + var(--to-grid, 0px));
+.home-waits > .lately { display: flex; flex-direction: column; gap: 0; box-sizing: border-box; width: calc(12 * var(--u)); max-width: 100%; min-height: calc(4 * var(--u)); padding: var(--u) var(--u) calc(var(--u) + var(--to-grid, 0px));
   /* (Home's piece in hand is the note, the one thing written in: the slip is line on the ground, as a piece not in
      hand is on any desk.) */
   background: var(--ground); border-radius: var(--r-sheet); outline: 1px solid var(--edge); outline-offset: -1px; text-align: left; }
@@ -119,7 +121,7 @@
 .home-waits .pane-row > .pane-at { font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 .home-waits .pane-row:is(:hover, :focus-visible) > .pane-line { text-decoration: underline 3px; text-underline-offset: 4px; }
 /* What else waits, after the first: a line each, its name and what was said. */
-.home-waits .pane-row + .pane-row { margin-top: var(--s3); }
+.home-waits .pane-row + .pane-row { margin-top: var(--u); }
 .home-waits .pane-row + .pane-row > .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; }
 .home-waits .pane-row + .pane-row > .pane-at, .home-waits .pane-row:nth-child(n + 5) { display: none; }
 .home-waits .lately-none { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }

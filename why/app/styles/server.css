@@ -81,7 +81,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .board-new > .board-head > .error { grid-column: 1 / -1; padding-bottom: var(--s1); }
 .board-new > .board-head > .error:empty { display: none; }
 .board-new > .board-lead { grid-column: 1; grid-row: 2; align-self: start; padding: var(--s3) var(--u); }
-.prompt.ghost-dock { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); font: var(--t-word)/1.6 var(--sans); }
+.prompt.ghost-dock { border-style: dashed; border-color: var(--rule); background: transparent; color: var(--sub); font: var(--t-word)/var(--u) var(--sans); }
 .side-ghost { opacity: .45; }
 /* A gear with nothing chosen keeps its place, so nothing beside it moves. */
 .server-gear.unseen { visibility: hidden; }
@@ -114,7 +114,9 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .server-center .slide-track { display: flex; gap: calc(2 * var(--u)); box-sizing: border-box; width: max-content; min-width: 100%; height: 100%;
   padding-right: calc(100% - var(--piece, 100%)); }
 /* A piece: not in the hand, the ground's own colour inside a quiet line, its words a step quieter. */
-.server-center .slide, .slide-track > .server-side { position: relative; flex: none; box-sizing: border-box; height: 100%; scroll-snap-align: start;
+/* (Standing to the foot, a sheet is as tall as the whole cells there are room for: its lines, counted from its foot
+   up, stay on the grid on a window of any height.) */
+.server-center .slide, .slide-track > .server-side { position: relative; flex: none; box-sizing: border-box; height: round(down, 100%, var(--u)); scroll-snap-align: start;
   border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px; }
 .server-center .slide { display: flex; flex-direction: column; width: var(--piece, 100%); min-width: 0; }
 /* In the hand: paper, an ink edge, its shadow (§5); the box that writes in it at its foot, part of the sheet. */
@@ -125,17 +127,17 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* One read ahead (row.ts) is its name only to look at until it is in the hand, what it holds there unseen. */
 .slide.full[aria-current='false']:not(.leaving) .board-card > :not(.board-head) { visibility: hidden; }
 /* The box that writes in a board stands at that board's foot, inside its sheet under a quiet rule. */
-.slide > .dock { position: static; flex: none; max-width: none; margin: 0; padding: var(--s3) var(--u) var(--u); transform: none; }
+.slide > .dock { position: static; flex: none; max-width: none; margin: 0; padding: 0 var(--u) var(--u); transform: none; }
 .slide > .dock:empty { display: none; }
 .slide > .dock::after { content: none; }
 /* Its key comes with the words (server/dock.ts): empty, the box says whom it writes to, whole, at every width. */
 .slide > .dock > .prompt:not(.has-words) > .prompt-run { display: none; }
 .prompt-run > .key-said { margin-left: var(--s2); font: var(--t-word)/1 var(--mono); color: var(--sub); }
 /* No line between a board's talk and the box one writes in: read back, what passes under the box's edge goes a little
-   out of focus (depth, §1), in the half cell the talk keeps empty at its foot, so at rest on the latest nothing is. */
+   out of focus (depth, §1), in the cell the talk keeps empty at its foot, so at rest on the latest nothing is. */
 .slide > .board-card:has(> .board-talk, > .part-panel) + .dock { position: relative; }
 .slide > .board-card:has(> .board-talk, > .part-panel) + .dock::before, .inbox-write::before {
-  content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--s3); pointer-events: none;
+  content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--u); pointer-events: none;
   -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); mask-image: linear-gradient(to top, #000, transparent); }
 /* A board's head: its name in the display face, its capitals a cell tall on the second line of the sheet (a sheet's
    name, §5), a cell of paper before it; after the name its two parts, which go under it where they do not fit beside
@@ -171,7 +173,14 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* (Its TODO's panel told by its id, panel-board-…-todo: a :has() holds no other.) */
 .slide:has(> .board-card > .part-panel[id$='-todo']:not([hidden])) > .dock { display: none; }
 .todo-read { white-space: pre-wrap; }
-.board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s3) var(--u); overscroll-behavior: contain; }
+/* (Whole cells, DESIGN §3: a cell of paper over its first line and under its last, the cell the box's blur is in.) */
+.board-talk { flex: 1; min-height: 0; overflow-y: auto; padding: var(--u); overscroll-behavior: contain; }
+/* The box one writes in, in a board or a conversation: its lines the talk's (a cell each), itself whole cells, its
+   words in the middle of its field as a key's are (a cell and its half less the edge, over and under them); its key,
+   come with the words, standing in a line's room. */
+:is(.slide > .dock > .prompt, .inbox-write .write-line) { min-height: calc(2 * var(--u)); padding-block: calc(var(--u) / 2 - 1px); }
+:is(.slide > .dock .prompt-in, .inbox-write .bubble-in) { line-height: var(--u); }
+:is(.slide > .dock, .inbox-write) .prompt-run { margin-block: calc((var(--u) - var(--h-row)) / 2); }
 .board-talk:focus-visible { outline-offset: -2px; }
 .board-body { display: grid; gap: var(--s3); align-content: start; padding: var(--s2) var(--s5) var(--s5); max-width: 560px; }
 .server-back { display: flex; flex-wrap: wrap; gap: var(--s2); }
@@ -190,20 +199,20 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .side-index:empty { display: none; }
 .side-index > h3 { padding: 0 var(--u); }
 .side-boards { display: grid; margin: 0; padding: 0; list-style: none; }
-.side-board { position: relative; display: flex; align-items: baseline; gap: var(--s2); box-sizing: border-box; width: 100%; height: var(--key); padding: 0 var(--u); border: 0; border-radius: 0;
-  background: none; color: var(--sub); font: var(--t-word)/var(--key) var(--sans); text-align: left; cursor: var(--cursor-hand); }
+.side-board { position: relative; display: flex; align-items: baseline; gap: var(--s2); box-sizing: border-box; width: 100%; height: var(--u); padding: 0 var(--u); border: 0; border-radius: 0;
+  background: none; color: var(--sub); font: var(--t-word)/var(--u) var(--sans); text-align: left; cursor: var(--cursor-hand); }
 .side-board > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-board > .board-mark { font: 700 var(--t-word)/var(--key) var(--mono); }
+.side-board > .board-mark { font: 700 var(--t-word)/var(--u) var(--mono); }
 .side-board[aria-current='true'] { background: var(--ink); color: var(--ground); font-weight: 700; }
 .side-board:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
 .side-board[aria-current='true']:focus-visible { outline-color: var(--ground); }
 .side-board.news::after { content: ''; align-self: center; flex: none; width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: currentColor; }
 /* A heading over its list as a section's is over its content. */
-.side-part { display: grid; gap: var(--s3); }
+.side-part { display: grid; gap: 0; }
 /* (A label on a desk: 13 px mono, lowercase, as Home's are.) */
 .server-side .side-part h3 { margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; text-transform: lowercase; }
 .server-side .empty { margin-top: 0; padding: var(--s5) var(--s4); }
-.people, .side-repos { display: grid; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
+.people, .side-repos { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 /* Words of two sizes in a row share a baseline; the face sits centred by them. */
 /* (What is said of them, owner, on a line of its own under the name: the sheet is eight cells wide.) */
 .people li, .person-go { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 0 var(--s2); min-width: 0; }
@@ -214,7 +223,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .people li > :not(.lately-badge) { min-width: 0; overflow-wrap: anywhere; }
 /* Someone else is a conversation with them (server/side.ts): the row pressed, a raised fill under the pointer. */
 .person-go { width: calc(100% + 2 * var(--s2)); margin: 0 calc(-1 * var(--s2));
-  padding: 2px var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
+  padding: 0 var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; font: inherit; text-align: left; cursor: var(--cursor-hand);
   transition: background-color var(--move) var(--spring); }
 .person-go:hover { background: var(--paper); transition-duration: var(--motion); }
 .person-go > .lately-badge { align-self: center; }
@@ -222,7 +231,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 /* It goes to the Inbox: an arrow at its end says so, always there and quiet (§7). */
 .person-go::after { content: '→'; grid-column: 3; grid-row: 1; color: var(--quiet); }
 .person-go:is(:hover, :focus-visible)::after { color: var(--ink); }
-.side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
+.side-repo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s2); width: 100%; padding: 0 var(--s2); margin: 0 calc(-1 * var(--s2)); border: 0; border-radius: var(--r-field); background: transparent; color: inherit; text-align: left; font: inherit; cursor: var(--cursor-hand); }
 .side-repo[aria-current='true'] { background: var(--raised); }
 .side-repo:hover { background: var(--paper); }
 .side-repo > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -297,7 +306,7 @@ body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(
 .seen-file { display: block; width: 100%; padding: var(--s1) var(--s2); border: 0; border-radius: var(--r-field); background: transparent; color: var(--sub); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: var(--cursor-hand); }
 .seen-file[aria-current='true'] { background: var(--raised); color: var(--ink); }
 .seen-file:hover { background: var(--paper); color: var(--ink); }
-.seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-word)/1.55 var(--mono); }
+.seen-text { margin: 0; padding: var(--s3) var(--s4); overflow: auto; white-space: pre; font: var(--t-word)/var(--u) var(--mono); }
 @media (max-width: 760px) { .seen-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .seen-files { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--rule); } }
 .home-servers { display: flex; flex-wrap: wrap; gap: var(--s2); }
 
