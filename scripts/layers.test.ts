@@ -20,11 +20,11 @@ test('no unit of a core layer reaches back to itself through its siblings (scrip
   assert.deepEqual(coreCycles(), []);
 });
 
-test('why is its parts and its faces and nothing between: every folder of it is a part in the order, or a face', () => {
+test('why is its parts, faces, tests and release composition: every folder has one responsibility', () => {
   const why = new URL('../why/', import.meta.url);
   const folders = readdirSync(why, {withFileTypes: true}).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name).sort();
   const tree = TREES.find((t) => t.root === 'why')!;
-  assert.deepEqual(folders, [...tree.order, ...tree.skip ?? []].sort());
+  assert.deepEqual(folders, [...tree.order, ...tree.skip ?? [], ...tree.build ?? []].sort());
   // A part is what the core is made of as well (a face is not), whichever layers of lib.rs are in it.
   const parts = tree.order.filter((p) => p !== 'app');
   assert.deepEqual([...CORE_PARTS].sort(), [...parts].sort());
