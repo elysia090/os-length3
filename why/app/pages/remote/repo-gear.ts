@@ -1,16 +1,17 @@
 import {h} from '../../ui/dom.ts';
-import {errorText} from '../../host/errors.ts';
-import {t} from '../../i18n/i18n.ts';
+import {errorText} from '../../../api/errors.ts';
+import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {answers, askFoot, menuItem, menuRule, SETTLE} from '../kit/common.ts';
 import {keepOut, nudge, putAway} from '../../ui/glide.ts';
-import {store, validName} from '../../repos/repos.ts';
-import {forget, remoteAll, remoteOnly, repoState} from '../../remote/lifecycle.ts';
-import {connection} from '../../remote/connection.ts';
+import {store, validName} from '../../../repo/repos.ts';
+import {forget, remoteAll, remoteOnly, repoState} from '../../../shipto/lifecycle.ts';
+import {connection} from '../../../shipto/connection.ts';
 import {promptHolds, stopPrompt} from '../bench/sessions.ts';
 import {openRepoPlace} from './repos.ts';
 import {askFirst} from './repo-off.ts';
 import type {Context} from '../kit/context.ts';
+import {wayOut} from '../../ui/way-out.ts';
 
 // A repo's gear, the same in every list of repos (Home's cards, Runtime's
 // three columns): near a repo (the pointer on it, or the keyboard in it) a
@@ -58,7 +59,7 @@ const stopsFirst = () => h('p', {class: 'muted small'}, t('Prompt is stopped; re
  */
 export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): {gear: HTMLButtonElement; list: HTMLElement} {
   const gear = h('button', {type: 'button', class: 'repo-gear-button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-    'aria-label': t('Actions for {name}', {name: repo}), title: t('Actions for {name}', {name: repo})}, mark('gear')) as HTMLButtonElement;
+    'aria-label': t('Actions for {name}', {name: repo})}, mark('down')) as HTMLButtonElement;
   const list = h('div', {class: 'pop repo-gear-pop', role: 'menu', 'aria-label': t('Actions for {name}', {name: repo}), hidden: ''});
 
   const away = (e: Event) => {
@@ -158,7 +159,7 @@ export function repoGear(ctx: Context, repo: string, w: GearWays, here = true): 
     const input = h('input', {class: 'line-in mono', 'aria-label': t('New name'), placeholder: t('New name'), autocapitalize: 'off', spellcheck: 'false', maxlength: '64'}) as HTMLInputElement;
     input.value = repo;
     const error = h('p', {class: 'error small', role: 'alert'});
-    const no = h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement;
+    const no = wayOut(h('button', {type: 'button', class: 'button small-button'}, t('Cancel')) as HTMLButtonElement);
     const yes = h('button', {type: 'button', class: 'button small-button primary'}, t('Rename')) as HTMLButtonElement;
     const box = h('div', {class: 'pop-field', role: 'group', 'aria-label': t('Rename {repo}', {repo})}, input, stops ? stopsFirst() : null, error, answers(no, yes));
     const refuse = (why: string) => { error.textContent = why; input.focus(); nudge(input); };

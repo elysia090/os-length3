@@ -1,11 +1,11 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {arrive} from '../../ui/glide.ts';
-import {agentNow, harnessName, onAgents, onTask, tasksNow, type Task} from '../../repos/agents.ts';
-import {issueName} from '../../repos/issues.ts';
+import {agentNow, harnessName, onAgents, onTask, tasksNow, type Task} from '../../../repo/agents.ts';
+import {issueName} from '../../../repo/issues.ts';
 import {personBadge} from './pane.ts';
-import {errorText} from '../../host/errors.ts';
-import {grant} from '../../home/network.ts';
+import {errorText} from '../../../api/errors.ts';
+import {grant} from '../../../home/network.ts';
 
 // What the agent brings to the person, in the right pane, as word from someone comes there (pane.ts paneWord): what
 // it can take, what it asks, what it has to look at (the heaviest first), what it could not do and the one thing
@@ -27,7 +27,10 @@ function button(text: string, primary: boolean, act: () => Promise<unknown>): HT
   b.addEventListener('click', async (e) => {
     e.stopPropagation();
     b.disabled = true;
-    try { await act(); } catch (err) { b.disabled = false; b.title = errorText(err); }
+    // Pressed again after it failed, it is the deed again (its word back), as kit/common.ts deed's is.
+    b.textContent = text;
+    // Failed, it says why in its own place (as every deed does, kit/common.ts deed), never in a tooltip.
+    try { await act(); } catch (err) { b.disabled = false; b.textContent = errorText(err); }
   });
   return b;
 }

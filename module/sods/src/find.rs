@@ -71,7 +71,7 @@ pub fn discover_from(elf: &Elf, seeds: &[u64], known: &BTreeSet<u64>) -> Program
 /// How many instructions code reached later is walked to, past its seeds' own functions, before what they call is
 /// left to be reached: following everything a running program's first jump could call translated six times what
 /// ran (cc1 compiling a line).
-pub const BUDGET: usize = 1000;
+pub const BUDGET: usize = crate::identity::DEFAULT_DISCOVERY_BUDGET as usize;
 
 /// Functions reached from `seeds` for a program already running: code at `known` addresses is translated already, so
 /// a walk stops there and a call to it goes through the dispatcher; past `budget` instructions walked, a call or jump

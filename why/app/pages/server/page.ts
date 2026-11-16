@@ -2,8 +2,7 @@ import type {Context} from '../kit/context.ts';
 import {ServerView} from './view.ts';
 import {seenNow} from './talk.ts';
 
-// Server as a place, gone to by pressing it on the rail (or a server in the servers a rest on its icon brings out,
-// switcher.ts): its servers on its top line, its boards side by side, the box at its foot, its people at the right.
+// Server as a place, gone to by pressing it on the rail: its servers on its top line, its boards side by side, the box at its foot, its people at the right.
 
 /** The Server page, built for who is here now; `again` draws it anew (the Remote answered, one signed in). */
 export function serverPage(ctx: Context, again: () => void): Node[] {

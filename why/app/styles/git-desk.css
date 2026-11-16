@@ -1,5 +1,5 @@
 /* Git, all desk as Forge is (no pane beside it). Its band has a desk's keys (>_ and the search), then its repos, and
-   against the right edge the issue in full, said large (its repo and its number).
+   against the right edge the repo the desk is of, said large (the issue's number is its sheet's own, said once).
 
    At the desk's edge, main's sheet: a sheet of ink lying askew as Forge's terminal does, its shadow the line's green,
    eight cells wide and as tall as its four lines. It holds the switch and nothing else: the steps of the issue in
@@ -16,115 +16,176 @@
    (Before: a column of bordered cards under a row of repo pills, the steps as buttons down the card's right edge,
    and a pane of what was run beside the page.) */
 /* (The desk's dotted ground, and nothing of the page cut at the rail's edge: its keys and main's sheet start left of it.) */
-body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots); background-size: var(--u) var(--u); }
 .page.page-work[data-place='git'] { overflow: visible; }
 .work.band-bench { position: relative; grid-template-columns: minmax(0, 1fr); }
-.work.bench.band-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: calc(-2 * var(--u)); }
+.work.bench.band-bench > .bar { display: flex; align-items: flex-start; gap: var(--u); padding: 0; margin-left: 0; }
 .work.bench.band-bench > .center { overflow: visible; }
+/* (The Prompt's box hides nothing under it here: the desk's ground is the window's own, to its foot. Its strip of
+   plain ground, half a window to either side, made the page that much wider than the window.) */
+.work.band-bench .dock::after { display: none; }
 .git-band { flex: 1 1 0; min-width: 0; align-items: flex-start; gap: var(--u); }
-.git-band > .chips { flex: 0 1 auto; height: var(--key); align-items: center; margin: 0; padding: 0; }
+/* Which repo: not one of the window's instruments but a choice on this desk, so it stands on the desk, on the cell
+   under the band where a piece's name stands, and the band is the bar it is everywhere. */
+.git-band > .chips { position: absolute; left: 0; top: calc(2 * var(--u) - var(--outer-top)); height: var(--u); align-items: center; gap: var(--s2); margin: 0; padding: 0; }
+.git-band > .chips .chip { min-height: 0; height: var(--u); padding: 0 var(--s2); border-radius: var(--r-key); font: 700 var(--t-word)/var(--u) var(--mono); }
 .git-band > .chips.lone { display: none; }
-.work.band-bench:has(.issue-form:not([hidden], .issue-edit)) .git-band > .chips.lone { display: flex; }
 
-.git-flow.git-desk { position: relative; margin-left: calc(-2 * var(--u)); padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(3 * var(--u)) calc(11 * var(--u)); }
-.git-desk > .git-side { position: absolute; left: 0; top: calc(2 * var(--u)); width: calc(8 * var(--u)); transform-origin: 0 0; rotate: -4deg; }
+/* Git's desk: from the desk's edge, its pieces' tops a cell under the band as on any desk. Set as words are in a
+   line (as Home's are): first main's own sheet, eight cells wide, where the repo's work is switched; two cells on,
+   the issues, a row of sheets; where the issues have not a piece's width beside main's sheet, they go under it, at
+   the desk's edge. (Before: by the window's width, under 1100 px.) */
+.git-flow.git-desk { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: calc(2 * var(--u)); margin-left: 0; padding: var(--u) calc(2 * var(--u)) calc(3 * var(--u)) 0; }
+.git-desk > .git-side { flex: none; width: calc(8 * var(--u)); padding-bottom: var(--to-grid, 0px); }
+/* Main's sheet is one sheet, drawn in line on the ground (the issue is the piece in hand): a cell of paper round its
+   lines (DESIGN §3), its steps, the one under way the one line of ink, inside the sheet's edge, never over it; and
+   nothing else (a new issue is the row's last piece). Its name, the repo, in the cell over its corner, as a
+   piece's is (§5) and level with the issue's beside it: the cell over it is never left empty while the issue's has
+   its name. Nothing of it floats on the ground beside it. */
+.git-desk > .git-side:not(.none) { position: relative; display: grid; align-content: start; align-self: flex-start; box-sizing: border-box; padding: var(--u) 0;
+  border-radius: var(--r-sheet); background: var(--ground); outline: 1px solid var(--edge); outline-offset: -1px; }
+.git-desk > .section { flex: 1 1 calc(24 * var(--u)); min-width: 0; }
 .git-desk > .git-side.none { display: none; }
-.git-switch { padding: calc(1.5 * var(--u)) 0; border-radius: var(--r-sheet); background: var(--ink); box-shadow: var(--u) var(--u) 0 0 var(--green); }
+/* (It is not the piece in hand, the issue is: drawn in line on the ground, its steps a step quieter than ink, and the
+   step that is next the one row of ink on it.) */
+.git-switch { padding: 0; }
 .git-switch:empty { display: none; }
 .switch-lines { display: grid; }
-.switch-line { position: relative; display: flex; justify-content: flex-end; align-items: center; height: 42px; padding: 0 calc(1.5 * var(--u)); }
-.switch-line.next::before { content: ''; position: absolute; inset: 4px 0; background: var(--green); }
-.git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: auto; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
-  font: 400 28px/42px var(--mono); color: var(--green); white-space: nowrap; }
+.switch-line { position: relative; display: flex; justify-content: flex-start; align-items: center; height: var(--u); padding: 0 var(--u); }
+.switch-line.next::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); }
+/* (A step is a line pressed: a cell tall, its words not trimmed to their capitals, which left a target of 12 px.) */
+.git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: var(--u); text-box: normal; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
 .git-switch .switch-line > button { cursor: var(--cursor-hand); }
-.git-switch .switch-line > button:disabled { cursor: var(--cursor-arrow); opacity: 1; }
-.git-switch .switch-line.next > :is(button, span) { font-weight: 700; color: var(--ink); }
-.git-switch .switch-line > button:focus-visible { outline: 2px solid var(--paper); outline-offset: 4px; }
-.git-switch .switch-line.next > button:focus-visible { outline-color: var(--ink); }
-.switch-lines > .error { margin: var(--u) calc(1.5 * var(--u)) 0; font: 400 13px/20px var(--sans); color: var(--paper); text-align: right; }
+.git-switch .switch-line > button:is(:disabled, [aria-disabled='true']) { cursor: var(--cursor-arrow); opacity: 1; }
+.git-switch .switch-line.next > :is(button, span) { font-weight: 700; color: var(--ground); }
+/* The keyboard on a step: the band of ink is where it is, as the chosen row of a menu is. ↑ and ↓ take the band along
+   the four, Enter takes the step under it; with the keyboard elsewhere, the band rests on the step under way. (A ring
+   drawn round the keyboard's line beside a band that stayed put said two places at once, and ↑ ↓ moved neither.) */
+.git-switch .switch-line > button:focus-visible { outline: none; }
+.git-switch .switch-lines:focus-within .switch-line.next:not(:has(> button:focus))::before { display: none; }
+.git-switch .switch-lines:focus-within .switch-line.next:not(:has(> button:focus)) > :is(button, span) { font-weight: 400; color: var(--sub); }
+.git-switch .switch-line:has(> button:focus)::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); }
+.git-switch .switch-line:has(> button:focus) > button { font-weight: 700; color: var(--ground); }
+.switch-lines > .error { margin: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--sans); color: var(--off); text-align: left; }
 .switch-lines > .error:empty { display: none; }
-.git-side > .issues-write { display: block; margin: calc(1.5 * var(--u)) 0 0 auto; padding: 0; border: 0; background: none; font: 700 20px/var(--u) var(--mono); color: var(--ink);
-  white-space: nowrap; cursor: var(--cursor-hand); }
-.git-side > .issues-write:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
-.git-side > .issues-write:disabled { color: var(--quiet); cursor: var(--cursor-arrow); }
+/* main's sheet's name over its corner, as a piece's is (§5), level with the issue's beside it: the repo whose main it
+   is, quiet (the issue in hand is the master; the band says the repo large). */
+.git-side > .side-name { position: absolute; left: 0; top: calc(-1 * var(--u)); max-width: 100%; margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub);
+  white-space: nowrap; }
+.git-side > .side-name:empty { display: none; }
+/* The issue not written yet (issue-form.ts newIssue), the row's last piece, where a new thing in a row is: its edge
+   dashed (not made yet); beside the one in full drawn in line on the ground as every piece not in the hand is, its
+   edge with its + and its name, quiet; in the hand paper, its ink edge and its shadow, as the piece in hand is (a sheet
+   in the hand with its edge dashed read as one with no edge: what is in the hand is whole, made or not; white is the hand's,
+   and has the shadow: from the first frame of the move to it, what the row moves to is seen as it moves), its first
+   line written in its head in an issue title's letters, what it says empty quiet, and the repo it goes in at its foot,
+   as a card says its repo. */
+.git-desk .issue-card.issue-new-card { background: var(--ground); color: var(--sub); box-shadow: none; }
+.git-desk .issue-slot[aria-current='true'] .issue-card.issue-new-card { background: var(--paper); color: var(--sub); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
+.git-desk .issue-card.issue-new-card::after { box-shadow: none; border: 1px dashed var(--edge); }
+.git-desk .issue-slot:is([aria-current='true'], .leaving) .issue-card.issue-new-card::after { border: 0; box-shadow: inset 0 0 0 1px var(--ink); }
+.git-desk .issue-new-card .issue-big-head.peek :is(h2, .issue-no), .git-desk .issue-new-card .issue-name { color: var(--sub); }
+.git-desk .issue-new-card .issue-name { font-weight: 400; }
+.git-desk .issue-new-card .issue-words { display: block; cursor: var(--cursor-text); }
+.git-desk .issue-first, .git-desk .issue-first:is(:focus, :focus-visible) { display: block; width: 100%; min-width: 0; height: calc(2 * var(--u)); margin: 0; padding: 0; border: 0; border-radius: 0;
+  outline: 0; background: none; font: inherit; letter-spacing: inherit; color: var(--ink); text-overflow: ellipsis; }
+.git-desk .issue-first::placeholder { color: var(--sub); opacity: 1; }
+.git-desk .issue-new-card .issue-box > .error:empty { display: none; }
 
 /* The row: the heading that names it is heard, not shown (the sheets say what they are). */
 .git-desk .issues-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .git-desk > .section, .git-desk > .main-part + .section { margin-top: 0; }
-.git-desk .issue-column { --row-peek: calc(3 * var(--u)); --gap: calc(2 * var(--u)); }
+/* The next shows two cells of itself, two cells off: room for its number at the words' size (#123). With the box in
+   full at the row's edge, the room ahead of it is the two peeks and the shadow's cell (52 + 2 × peek), the room behind
+   it the side and its gap (240): ahead the larger at every width (DESIGN §2, look room). */
+.git-desk .issue-column { --row-peek: calc(4 * var(--u)); --gap: calc(2 * var(--u)); }
+/* The row's map at the window's foot, from the desk's edge, as every row's is (shared.css .row-map). */
+.git-desk .issue-column > .row-map { position: fixed; left: calc(2 * var(--u)); bottom: calc(var(--u) / 2 + var(--foot)); }
 .git-desk .issue-stage::before, .git-desk .issue-stage::after { display: none; }
 /* (A sheet's shadow lies a cell past it: the row is not cut before that.) */
 .git-desk .issue-stage { margin-right: calc(-1 * var(--u)); padding-right: var(--u); }
-.git-desk .issue-card { position: relative; padding: var(--u); border: 0; border-radius: var(--r-sheet); background: var(--paper); }
-.git-desk .issue-slot[aria-current='true'] .issue-card { padding: calc(1.5 * var(--u)); background: var(--paper); box-shadow: var(--u) var(--u) 0 0 var(--ink); }
+.git-desk .issue-card { position: relative; padding: var(--u); border: 0; border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); }
+.git-desk .issue-slot[aria-current='true'] .issue-card { padding: var(--u); background: var(--paper); color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 /* A sheet's edge: one pixel of ink round it, over what it holds (the work's bands run to it). */
-.git-desk .issue-card::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--ink); pointer-events: none; }
+.git-desk .issue-card::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--edge); pointer-events: none; }
+.git-desk .issue-slot[aria-current='true'] .issue-card::after { box-shadow: inset 0 0 0 1px var(--ink); }
+/* The piece the row slides away from stays as it was in the hand (paper, its ink edge, its shadow, its words) until it
+   is out at the row's edge, and is drawn in line on the ground there at once (issue-row.ts leave), as the place left
+   stays as it was while the world goes (DESIGN §8). Put down at the press, the row's only paper was the piece being
+   gone to, mostly out of sight: for the first frames of the move nothing white was there to see moving. */
+.git-desk .issue-slot.leaving .issue-card { padding: var(--u); background: var(--paper); color: var(--ink); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
+.git-desk .issue-slot.leaving .issue-card::after { box-shadow: inset 0 0 0 1px var(--ink); }
+.git-desk .issue-slot.leaving .issue-card.issue-new-card { background: var(--paper); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .git-desk .issue-slot > :not(.issue-card) { margin-top: calc(2 * var(--u)); }
 /* Its name over its corner: its number and kind, and how it stands. */
-.issue-name { position: absolute; left: calc(-1.5 * var(--u)); bottom: calc(100% + 1.5 * var(--u) + 7px); margin: 0; font: 700 20px/var(--u) var(--mono); white-space: nowrap; color: var(--ink); }
+/* (Its line is the cell over the sheet's corner, 48 to 72 from the window's top: the world's, never in the band's row.) */
+.issue-name { position: absolute; left: calc(-1 * var(--u)); bottom: calc(100% + var(--u)); margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); white-space: nowrap; color: var(--ink); }
 .issue-name > i { font-style: normal; color: var(--quiet); }
-.git-desk .issue-box { position: relative; display: grid; grid-template-columns: calc(11.5 * var(--u)) minmax(0, 1fr); gap: 0 var(--u); align-items: start; }
+.git-desk .issue-box { position: relative; display: grid; grid-template-columns: calc(12 * var(--u)) minmax(0, 1fr); gap: 0 var(--u); align-items: start; }
 .git-desk .issue-box.no-work { grid-template-columns: minmax(0, 1fr); }
 .git-desk .issue-box.no-work > :is(.issue-summary-wrap, .agent-line, .issue-foot) { max-width: calc(24 * var(--u)); }
-.git-desk .issue-box > :is(.issue-words, .issue-form, .error) { grid-column: 1 / -1; }
-.git-desk .issue-words { display: block; margin-bottom: calc(1.5 * var(--u)); }
+.git-desk .issue-box > :is(.issue-words, .error) { grid-column: 1 / -1; }
+.git-desk .issue-words { display: block; margin-bottom: var(--u); }
 /* The title, its capitals a cell and a half tall on lines of two and a half, their first top on the sheet's margin;
    the number, heard in the heading, drawn large against the right margin from that same top to the second line's foot. */
 .git-desk .issue-big-head:not(.peek) { display: block; min-height: calc(4 * var(--u)); padding-right: calc(8 * var(--u)); }
-.git-desk .issue-big-head:not(.peek) h2 { margin: -12px 0 0; font: 900 calc(1.5 * var(--u) / .7344)/calc(2.5 * var(--u)) var(--display); letter-spacing: -.035em; color: var(--ink); }
-.git-desk .issue-big-head:not(.peek) .issue-no { position: absolute; right: 0; top: -17px; font: 900 calc(4 * var(--u) / .7344)/1 var(--display); letter-spacing: -.05em; color: var(--ink); }
-.git-desk .issue-big-head:not(.peek) .issue-kind { font-size: 0; }
-.git-desk .issue-big-head.peek .issue-no { font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.git-desk .issue-big-head:not(.peek) h2 { margin: 0; font: 900 var(--t-head)/calc(2 * var(--u)) var(--display); letter-spacing: -.035em; color: var(--ink); }
+.git-desk .issue-big-head:not(.peek) .issue-no { position: absolute; right: 0; top: -6px; font: 900 var(--t-voice)/1 var(--display); letter-spacing: -.05em; color: var(--ink); }
+.git-desk .issue-big-head:not(.peek) .issue-kind { font-size: 0; line-height: 0; } /* (heard, not seen: it takes no room on the line) */
+.git-desk .issue-big-head.peek .issue-no { font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 /* Its words: the work's margin note. */
 .git-desk .issue-summary-wrap { grid-column: 1; margin: 0; }
-.git-desk .issue-summary { width: 100%; min-height: 20px; margin: 0; padding: 0; border: 0 solid transparent; border-radius: 0; background: none; font: 400 13px/20px var(--sans); color: var(--sub); text-align: right; }
+.git-desk .issue-summary { width: 100%; min-height: var(--u); margin: 0; padding: 0; border: 0 solid transparent; border-radius: 0; background: none; font: 400 var(--t-word)/var(--u) var(--sans); color: var(--sub); text-align: right; }
 .git-desk .issue-box.no-work .issue-summary { text-align: left; }
 .git-desk .issue-summary:focus { background: none; color: var(--ink); outline: none; }
 .git-desk .issue-box > .agent-line { grid-column: 1; margin-top: var(--u); justify-items: end; }
-.git-desk .issue-foot { grid-column: 1; margin-top: var(--u); justify-content: flex-end; font-size: 13px; }
-.git-desk .issue-box.no-work .issue-foot { justify-content: flex-start; }
+.git-desk .issue-foot { grid-column: 1; margin-top: var(--u); justify-content: flex-end; font-size: var(--t-word); }
+/* (Close at its left and the repo opposite it, as on every issue: side by side they read as one deed, "Close hello".) */
+.git-desk .issue-box.no-work .issue-foot { justify-content: space-between; }
 .git-desk .issue-box.no-work .issue-foot > .issue-about { justify-content: flex-start; }
 .git-desk .issue-foot > .issue-about { flex: 0 1 auto; justify-content: flex-end; }
 /* What is done to the sheet itself (Close, Back to main, Reject): words, not boxes. */
-.git-desk :is(.issue-foot, .issue-leave, .merge-row) .button { min-width: 0; min-height: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
-  font: 700 16.5px/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+.git-desk :is(.issue-foot, .issue-leave, .merge-row) .button { min-width: 0; min-height: 0; height: var(--u); text-box: normal; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
 .git-desk :is(.issue-foot, .issue-leave, .merge-row) .button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
-.git-desk .issue-foot .button { font-size: 13px; }
+.git-desk .issue-foot .button { font-size: var(--t-word); }
 /* Its work. */
-.git-desk .issue-work { grid-column: 2; grid-row: 2 / span 4; margin-right: calc(-1.5 * var(--u)); min-width: 0; }
-.git-desk .issue-work.none { margin-right: 0; padding-left: 12px; }
-.work-file + .work-file { margin-top: calc(1.5 * var(--u)); }
-.work-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--u); height: calc(2 * var(--u)); padding: 0 calc(1.5 * var(--u)) 0 12px; }
-.work-name { min-width: 0; padding: 0; border: 0; background: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 20px/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
+.git-desk .issue-work { grid-column: 2; grid-row: 2 / span 4; margin-right: calc(-1 * var(--u)); min-width: 0; }
+.work-file + .work-file { margin-top: var(--u); }
+.work-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--u); height: calc(2 * var(--u)); padding: 0 var(--u); }
+.work-name { min-width: 0; padding: 0; border: 0; background: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); cursor: var(--cursor-hand); }
 .work-name:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.work-count { flex: none; display: flex; gap: 1ch; font: 400 20px/var(--u) var(--mono); }
+.work-count { flex: none; display: flex; gap: 1ch; font: 400 var(--t-word)/var(--u) var(--mono); }
 .work-count > .diff-add, .work-sum > .diff-add { color: var(--add); }
 .work-count > .diff-del, .work-sum > .diff-del { color: var(--del); }
-.work-line { display: flex; min-height: calc(1.5 * var(--u)); padding: 0 calc(.5 * var(--u)) 0 12px; font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.work-line { display: flex; min-height: var(--u); padding: 0 var(--u); font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .work-line > .work-sign { flex: none; width: 2ch; }
 .work-line > .work-text { min-width: 0; }
-.work-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
-.work-line.del { background: color-mix(in srgb, var(--del) 14%, var(--paper)); }
-.work-line.far { height: calc(1.5 * var(--u)); overflow: hidden; white-space: pre; color: var(--sub); filter: blur(.8px); }
+.work-line.add { background: var(--add-tint); font-weight: 700; }
+.work-line.del { background: var(--del-tint); }
+.work-line.far { height: var(--u); overflow: hidden; white-space: pre; color: var(--sub); filter: blur(.8px); }
 /* How much the work is, where the sheet turns: at its foot's left, as large as the title. */
-.work-sum { position: absolute; left: 0; bottom: 0; display: flex; gap: .25em; margin: 0; font: 900 calc(1.5 * var(--u) / .7344)/.7344 var(--display); letter-spacing: -.035em; }
+.work-sum { position: absolute; left: 0; bottom: 0; display: flex; gap: .25em; margin: 0; font: 900 var(--t-head)/.727 var(--display); letter-spacing: -.035em; }
 .git-desk .issue-box:has(.work-sum) { padding-bottom: calc(3 * var(--u)); }
 .git-desk .issue-box:has(.work-sum) > .issue-work { margin-bottom: calc(-3 * var(--u)); }
-/* No issue yet: nothing to switch and no sheet; the one thing to do, in the page's own middle. */
-.git-desk .card.new.issue-new { position: absolute; left: calc(50vw - var(--outer) - var(--rail) + 2 * var(--u)); top: calc(50vh - var(--outer-top) - var(--keys)); translate: -50% -50%;
-  width: auto; min-height: 0; padding: var(--u); gap: var(--u); background: none; }
-.git-desk .card.new.issue-new > span { font: 700 28px/36px var(--sans); }
-.git-desk .card.new.issue-new > small { font: 400 16.5px/var(--u) var(--sans); }
-.git-desk .card.new.issue-new > svg { width: 36px; height: 36px; }
+/* No repo yet: the one thing to do alone in the middle of the empty desk, with no frame round it and its words set on
+   their middle: a small thing in a wide field, the field the tension (DESIGN §1, the one shot set in the middle). As
+   Forge's with no repo: one way for one thing. On whole cells, the ground's patch under its words (as Forge's). */
+.git-desk .card.new.issue-new { position: fixed; left: calc(50vw - 3 * var(--u)); top: calc(50vh - var(--u)); z-index: 1;
+  box-sizing: border-box; width: max-content; min-height: 0; padding: 0; gap: 0; grid-auto-rows: var(--u); place-content: center; place-items: center; text-align: center;
+  background: var(--ground); border: 0 solid transparent; outline: 0; }
+.git-desk .card.new.issue-new > span { font: 700 var(--t-word)/var(--u) var(--sans); }
+.git-desk .card.new.issue-new > small { font: 400 var(--t-word)/var(--u) var(--sans); }
+.git-desk .card.new.issue-new > svg { width: 18px; height: 18px; }
 @media (max-width: 1100px) {
-  .git-flow.git-desk { margin-left: 0; padding-left: 0; }
-  .git-desk > .git-side { position: static; rotate: none; margin-bottom: calc(3 * var(--u)); }
   .git-desk .issue-box { grid-template-columns: minmax(0, 1fr); }
   .git-desk .issue-work { grid-column: 1; grid-row: auto; margin-top: var(--u); }
+  /* (Under one another, nothing is pulled up over the work: what is said of the issue stands under it, at its edge.) */
+  .git-desk .issue-box:has(.work-sum) > .issue-work { margin-bottom: 0; }
+  .git-desk .issue-foot, .git-desk .issue-foot > .issue-about { justify-content: flex-start; }
   .git-desk .issue-summary { text-align: left; }
   .git-desk .issue-big-head:not(.peek) { padding-right: 0; }
-  .git-desk .issue-big-head:not(.peek) .issue-no { position: static; font-size: inherit; }
-  .git-desk .card.new.issue-new { position: static; translate: none; }
+  .git-desk .issue-big-head:not(.peek) .issue-no { position: static; font-size: inherit; line-height: inherit; }
 }
 /* Under the sheet, read down as the page is scrolled: a dotted line goes on from the foot of the sheet's left margin
    (the title's and the total's edge), its dots squares half a cell wide, a cell apart. At the line, the change's
@@ -144,63 +205,69 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
 .history-at { display: block; width: 100%; margin: 0; padding: 0; border: 0; background: none; color: var(--quiet); text-align: right; cursor: var(--cursor-hand); }
 .history-at[aria-pressed='true'] { color: var(--ink); }
 .history-at:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
-.history-at > time { display: block; margin-top: -8px; font: 900 calc(2 * var(--u) / .7344)/1 var(--display); letter-spacing: -.05em; white-space: nowrap; }
-.history-at > span { display: block; margin-top: 3px; font: 400 13px/20px var(--sans); color: var(--sub); overflow-wrap: anywhere; }
+.history-at > time { display: block; margin-top: -4px; font: 900 var(--t-head)/1 var(--display); letter-spacing: -.05em; white-space: nowrap; }
+.history-at > span { display: block; margin-top: 0; font: 400 var(--t-word)/var(--u) var(--sans); color: var(--sub); overflow-wrap: anywhere; }
 .history-at:not([aria-pressed='true']) > span { color: var(--quiet); }
 .git-desk .review-diff { display: grid; gap: calc(3 * var(--u) - 31px); margin: 0; padding: 0; border: 0; background: none; max-height: none; overflow: visible; }
 .git-desk .review-diff > .diff-file { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
 .git-desk .review-diff > .diff-file > summary { display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); min-height: var(--u); margin: 0 0 7px; padding: 0; border: 0; background: none;
-  font: 700 20px/var(--u) var(--mono); color: var(--ink); list-style: none; cursor: var(--cursor-hand); }
+  font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); list-style: none; cursor: var(--cursor-hand); }
 .git-desk .review-diff > .diff-file > summary::-webkit-details-marker { display: none; }
 .git-desk .review-diff > .diff-file > summary::before, .git-desk .review-diff > .diff-file > summary::after { display: none; }
 .git-desk .review-diff > .diff-file > summary .diff-name { font: inherit; color: inherit; }
 .git-desk .review-diff > .diff-file > summary .diff-bar { display: none; }
-.git-desk .review-diff > .diff-file > summary :is(.diff-add, .diff-del, .diff-count) { font: 400 20px/var(--u) var(--mono); background: none; }
+.git-desk .review-diff > .diff-file > summary :is(.diff-add, .diff-del, .diff-count) { font: 400 var(--t-word)/var(--u) var(--mono); background: none; }
 .git-desk .review-diff > .diff-file > .diff { margin: 0; padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; overflow: hidden; }
-.git-desk .review-diff .diff-line { min-height: var(--u); font: 400 14px/var(--u) var(--mono); color: var(--ink); background: none; }
-.git-desk .review-diff .diff-line.add { background: color-mix(in srgb, var(--green) 60%, var(--paper)); font-weight: 700; }
-.git-desk .review-diff .diff-line.del { background: color-mix(in srgb, var(--del) 14%, var(--paper)); }
+.git-desk .review-diff .diff-line { min-height: var(--u); font: 400 var(--t-word)/var(--u) var(--mono); color: var(--ink); background: none; }
+.git-desk .review-diff .diff-line.add { background: var(--add-tint); font-weight: 700; }
+.git-desk .review-diff .diff-line.del { background: var(--del-tint); }
 .git-desk .review-diff .diff-line:is(.marked, .marking) { background: var(--note); }
-.git-desk .review-diff .diff-no { font: 400 11px/var(--u) var(--mono); color: var(--quiet); }
-.git-desk .review-sheet { position: relative; margin-top: calc(3 * var(--u) + 31px); padding: calc(1.5 * var(--u)); border-radius: var(--r-sheet); background: var(--paper); box-shadow: var(--u) var(--u) 0 0 var(--ink); }
+.git-desk .review-diff .diff-no { font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
+.git-desk .review-sheet { position: relative; margin-top: calc(3 * var(--u) + 31px); padding: calc(1.5 * var(--u)); border-radius: var(--r-sheet); background: var(--paper); box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
 .git-desk .review-sheet::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--ink); pointer-events: none; }
-.git-desk .review-sheet > .stage-head { position: absolute; left: 0; right: 0; bottom: calc(100% + 7px); display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); margin: 0; padding: 0; border: 0; }
-.git-desk .review-sheet > .stage-head > h3 { margin: 0; font: 700 20px/var(--u) var(--mono); letter-spacing: 0; text-transform: none; color: var(--ink); }
-.git-desk .review-sheet > .stage-head > .muted { margin: 0; font: 400 20px/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
+.git-desk .review-sheet > .stage-head { position: absolute; left: 0; right: 0; bottom: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: var(--u); margin: 0; padding: 0; border: 0; }
+.git-desk .review-sheet > .stage-head > h3 { margin: 0; font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; text-transform: none; color: var(--ink); }
+.git-desk .review-sheet > .stage-head > .muted { margin: 0; font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
 .git-desk .review-chat { display: grid; gap: var(--u); margin: 0 0 var(--u); padding: 0; border: 0; background: none; max-height: none; }
 .git-desk .review-chat[hidden] { display: none; }
 .git-desk .review-chat .bubble { display: block; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
-.git-desk .review-chat .bubble > .muted { display: block; font: 400 13px/20px var(--sans); color: var(--sub); }
-.git-desk .review-chat .bubble > .step-done { display: block; font: 700 13px/20px var(--mono); color: var(--del); }
-.git-desk .review-chat .bubble-text { margin: 0; font: 400 16.5px/var(--u) var(--sans); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.git-desk .review-chat .bubble > .muted { display: block; font: 400 var(--t-word)/var(--u) var(--sans); color: var(--sub); }
+.git-desk .review-chat .bubble > .step-done { display: block; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--del); }
+.git-desk .review-chat .bubble-text { margin: 0; font: 400 var(--t-word)/var(--u) var(--sans); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .git-desk .review-in { display: block; width: 100%; min-height: calc(4 * var(--u)); margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; resize: none;
-  font: 400 16.5px/var(--u) var(--sans); color: var(--ink); }
+  font: 400 var(--t-word)/var(--u) var(--sans); color: var(--ink); }
 .git-desk .review-in:is(:focus, :focus-visible) { outline: none; }
 .git-desk .review-in[hidden], .git-desk .review-verdict[hidden] { display: none; }
 .git-desk .review-verdict { display: flex; align-items: center; justify-content: flex-end; gap: calc(1.5 * var(--u)); margin: var(--u) 0 0; padding: 0; border: 0; }
 .git-desk .review-verdict > .grow { display: none; }
 .git-desk .review-verdict > :is(.button, .approve-mark, .step-done) { order: 0; min-width: 0; min-height: 0; height: calc(2 * var(--u)); margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
-  font: 700 16.5px/calc(2 * var(--u)) var(--mono); color: var(--ink); white-space: nowrap; }
+  font: 700 var(--t-word)/calc(2 * var(--u)) var(--mono); color: var(--ink); white-space: nowrap; }
 .git-desk .review-verdict > .button:last-child { order: -1; }
 .git-desk .review-verdict > :is(.approve-mark, .step-done) { order: 1; display: inline-grid; place-items: center; padding: 0 var(--u); border-radius: var(--r-key); background: var(--ink); color: var(--green); }
 .git-desk .review-verdict > .approve-mark { cursor: var(--cursor-hand); }
 .git-desk .review-verdict :is(.ring, .done-mark) { display: none; }
 .git-desk .review-verdict > :is(.button, .approve-mark):focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
 .git-desk .review-sheet > .error:empty { display: none; }
-.git-desk .issue-end { display: grid; justify-items: start; gap: calc(var(--u) / 2); margin: calc(2 * var(--u)) 0 0 calc(1.5 * var(--u)); }
+.git-desk .issue-end { display: grid; justify-items: start; gap: 0; margin: calc(2 * var(--u)) 0 0 var(--u); }
 .git-desk .issue-end :is(.issue-leave, .merge-row) { display: block; margin: 0; padding: 0; border: 0; background: none; }
-.git-desk .issue-end :is(.issue-leave, .merge-row) .button { font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.git-desk .issue-end :is(.issue-leave, .merge-row) .button { font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 .git-desk .issue-end .merge-row .button { color: var(--del); }
 @media (max-width: 1100px) {
   .git-desk .issue-run { padding-left: calc(3 * var(--u)); }
   .issue-history { position: static; width: auto; margin: 31px 0 calc(2 * var(--u)); }
   .history-at { text-align: left; }
 }
-/* Word from someone, come while one is here: a sheet at the page's foot, against its right edge. */
-.work.band-bench > .pane-word { position: fixed; left: auto; right: calc(2 * var(--u)); bottom: calc(2 * var(--u)); z-index: 6; width: min(calc(14 * var(--u)), calc(100vw - 4 * var(--u))); }
-.work.band-bench > .pane-word > .pane-row { border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
+/* Word from someone, come while one is here: a slip at the page's foot, against its right edge. It is not the piece
+   in the hand (the issue is): drawn in line on the ground as a piece at rest is, no shadow, its words a step quieter,
+   who wrote at the words' size (one large name a shot, §1: master and servant); pressed, its conversation. */
+.work.band-bench > .pane-word { position: fixed; left: auto; right: calc(2 * var(--u)); bottom: calc(2 * var(--u) + var(--foot)); z-index: 6; width: min(calc(14 * var(--u)), calc(100vw - 4 * var(--u))); }
+.work.band-bench > .pane-word > .pane-row { padding: var(--u); border-radius: var(--r-sheet); background: var(--ground); color: var(--sub); outline: 1px solid var(--edge); outline-offset: -1px; box-shadow: none; }
+.work.band-bench > .pane-word > .pane-row:hover { color: var(--ink); outline-color: var(--ink); }
+.work.band-bench > .pane-word .pane-line { font: 700 var(--t-word)/var(--u) var(--mono); letter-spacing: 0; color: var(--ink); }
+.work.band-bench > .pane-word .pane-bar { display: none; }
 /* A narrow window: the keys start where the page does (the rail is close set), main's sheet lies straight over the
-   row, and the sheet in full takes the row: a neighbour shows a cell, the title a size a phone's line holds. */
+   row, and the sheet in full takes the row: a neighbour shows a cell, the title at the size of every name, over as
+   many lines as it takes (never a size of its own for a narrow line: the camera has one lens, DESIGN §2). */
 @media (max-width: 760px) {
   .work.bench.band-bench > .bar { margin-left: 0; }
   /* (Nothing starts left of the page here, and the Prompt at the foot, wider than a phone, is cut at the page's edge.) */
@@ -209,9 +276,11 @@ body:has(> .page[data-place='git'] > .band-bench) { background-image: var(--dots
   .git-desk > .git-side { width: auto; max-width: calc(8 * var(--u)); margin-right: var(--u); }
   .git-desk .issue-column { --row-peek: var(--u); --gap: calc(var(--u) / 2); }
   .git-desk .issue-slot[aria-current='true'] .issue-card { padding: var(--u); box-shadow: calc(var(--u) / 2) calc(var(--u) / 2) 0 0 var(--ink); }
+  /* (Its name over its corner starts at the sheet's edge here too: the sheet's margin is a cell on a narrow window.) */
+  .issue-name { left: calc(-1 * var(--u)); bottom: calc(100% + var(--u)); }
   .git-desk .issue-words { margin-bottom: var(--u); }
   .git-desk .issue-big-head:not(.peek) { min-height: 0; }
-  .git-desk .issue-big-head:not(.peek) h2 { margin: 0; font: 900 28px/36px var(--display); overflow-wrap: anywhere; }
+  .git-desk .issue-big-head:not(.peek) h2 { margin: 0; overflow-wrap: anywhere; }
   .git-desk .issue-work { margin-right: calc(-1 * var(--u)); }
-  .git-desk .work-line { font-size: 13px; line-height: var(--u); }
+  .git-desk .work-line { font-size: var(--t-word); line-height: var(--u); }
 }

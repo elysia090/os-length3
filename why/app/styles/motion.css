@@ -12,22 +12,21 @@
 #rail-tabs .under-ink, #rail-tabs .under-ink:hover { color: var(--ink) !important; }
 /* A repo opened from its card or its row, on its way to its box in Forge (glide.ts morph). */
 /* The sheet a thing opened becomes on its way to its box: the box's own paper and line, so it reads as that box. */
-.morph-box { position: fixed; z-index: 9; pointer-events: none; border: var(--line-work) solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
+.morph-box { position: fixed; z-index: 9; pointer-events: none; border: 1px solid var(--ink); border-radius: var(--r-place); background: var(--paper); }
 /* The words a morph carries: a copy of them as they were drawn, going with the box onto the words they become. */
 .morph-words { position: fixed; z-index: 10; margin: 0; white-space: nowrap; overflow: visible; transform-origin: 0 0; pointer-events: none; }
 /* The OS's caret (caret.ts), a 1.5 px stroke of ink gliding from where it was to where it is; the browser's own is
    hidden in the field it stands for. Solid while it moves, blinking once it rests. */
 .os-caret-field { caret-color: transparent; }
 .os-caret {
-  position: fixed; left: 0; top: 0; z-index: 9; width: 1.5px; border-radius: 1px; background: var(--ink); pointer-events: none; opacity: 0;
-  transition: transform 70ms cubic-bezier(.2, .9, .25, 1), height 70ms;
+  position: fixed; left: 0; top: 0; z-index: 9; width: 1.5px; border-radius: 0; background: var(--ink); pointer-events: none; opacity: 0;
+  transition: transform var(--motion) var(--spring), height var(--motion);
 }
 .os-caret.on { opacity: 1; }
 .os-caret.jump { transition: none; }
 /* A terminal's line's (the Prompt up as a screen): a cell lit as its words are; the letter under it in the glass's
    dark, as a terminal draws it. */
-.os-caret.block { border-radius: 1px; background: var(--add-tint); color: var(--screen); text-align: center; white-space: pre; overflow: hidden;
-  box-shadow: 0 0 7px color-mix(in srgb, var(--done) 90%, transparent); }
+.os-caret.block { border-radius: 0; background: var(--green); color: var(--ink); text-align: center; white-space: pre; overflow: hidden; }
 .os-caret.on.resting { animation: caret-blink 1.06s steps(1) infinite; }
 @keyframes caret-blink { 50% { opacity: 0; } }
 .caret-copy { position: absolute; left: -9999px; top: 0; visibility: hidden; overflow: hidden; }

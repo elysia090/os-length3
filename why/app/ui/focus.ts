@@ -1,4 +1,4 @@
-// The keyboard is never dropped (DESIGN.md §1, What one was doing stays).
+// The keyboard is never dropped (docs/DESIGN.md §7: what one was doing stays).
 // A control pressed is often held while its deed runs (disabled) or drawn
 // again once it is done, and either takes the keyboard away: the browser
 // leaves it on the page's body, and the next Tab starts over at the top.

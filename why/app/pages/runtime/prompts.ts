@@ -1,10 +1,12 @@
-import {grant, granted} from '../../home/network.ts';
-import {bytes, h} from '../../ui/dom.ts';
-import type {Stopped} from '../../host/host.ts';
-import {t, tn} from '../../i18n/i18n.ts';
+import {grant, granted} from '../../../home/network.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import type {Stopped} from '../../../api/host.ts';
+import {t, tn} from '../../../text/i18n.ts';
 import {allSessions, type Prompt} from '../bench/sessions.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button, card} from './parts.ts';
+import {wayOut} from '../../ui/way-out.ts';
 
 // Runtime's Prompts running, each a small card: where it runs, the memory it holds, and Stop. Shown only when one
 // runs (or one stopped here says what it gave back).
@@ -28,7 +30,7 @@ function networkSwitch(repo: string, s: Prompt, card: () => HTMLElement): HTMLEl
     if (on) { void grant(repo, false).then(() => s.stop(), (e) => { error.textContent = errorText(e); }); return; }
     sw.setAttribute('aria-checked', 'true');
     const was = [...el.childNodes];
-    const no = button(t('Cancel'), 'small-button'), yes = button(t('Grant access'), 'small-button primary');
+    const no = wayOut(button(t('Cancel'), 'small-button')), yes = button(t('Grant access'), 'small-button primary');
     no.addEventListener('click', () => el.replaceChildren(...was, error));
     yes.addEventListener('click', () => void grant(repo, true).then(() => s.stop(), (e) => { el.replaceChildren(...was, error); error.textContent = errorText(e); }));
     el.replaceChildren(h('span', {class: 'card-title'}, repo),

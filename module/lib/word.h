@@ -31,13 +31,13 @@ static inline u64 zeros(u64 x) {
 }
 /* A string's length, a word at a time: words read where they are aligned, so none crosses into a page past the
  * string's (the bytes of the first before the string made not zero). */
-static u64 slen(const char *s) {
+static inline u64 slen(const char *s) {
   const u8 *p = (const u8 *)((u64)s & ~7ul);
   u64 z = zeros(ld64(p) | ((1ull << (8 * ((u64)s & 7))) - 1));
   while (!z) p += 8, z = zeros(ld64(p));
   return (u64)(p - (const u8 *)s) + (u64)(__builtin_ctzll(z) >> 3);
 }
-static int same(const char *a, const char *b) {
+static inline int same(const char *a, const char *b) {
   while (*a && *a == *b) a++, b++;
   return *a == *b;
 }

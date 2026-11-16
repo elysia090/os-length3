@@ -1,6 +1,6 @@
-import {t} from '../../i18n/i18n.ts';
-import {base64, inPieces, onChange, store, unbase64, walkRepo} from '../../repos/repos.ts';
-import type {Change} from '../../repos/repos.ts';
+import {t} from '../../../text/i18n.ts';
+import {base64, inPieces, onChange, store, unbase64, walkRepo} from '../../../repo/repos.ts';
+import type {Change} from '../../../repo/repos.ts';
 
 // The repo in a browser's Prompt is the repo (terminal.ts): copied in for the shell as it starts, what the shell
 // changes under /root/<repo> written back through the store, and what is saved elsewhere (Forge, Git, why on the host…

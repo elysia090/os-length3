@@ -1,11 +1,12 @@
-import {h, shortDay} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {getState, onState, setState} from '../../home/state.ts';
-import * as todo from '../../home/todo.ts';
-import {errorText} from '../../host/errors.ts';
+import {h} from '../../ui/dom.ts';
+import {shortDay} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import {getState, onState, setState} from '../../../home/state.ts';
+import * as todo from '../../../home/todo.ts';
+import {errorText} from '../../../api/errors.ts';
 import {arrive, closeUp, pop} from '../../ui/glide.ts';
 import {mark as glyph} from '../../ui/icons.ts';
-import {KIND_WORD, named} from '../../repos/text.ts';
+import {KIND_WORD, named} from '../../../repo/text.ts';
 import {SETTLE} from './common.ts';
 
 // The TODO box, Home's and each server board's: the same list, kept in
@@ -418,18 +419,15 @@ export function todoList(start: todo.Todo[], keep: (kept: todo.Todo[]) => Promis
   // Drawn, not changed: nothing is kept until something is written (Home's TODO
   // was written back, and agreed with the Remote, each time Home was drawn).
   count(todo.persisted(items));
-  // The keys, as keys, while the box is written in (and only then): a word beside each, not a sentence. The first
-  // line's form (Kind: title) is the placeholder's to show.
-  const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
-  const keys = (caps: string[], word: string) => h('span', {class: 'key-hint'}, ...caps.map((c) => h('kbd', {}, c)), h('span', {}, word));
-  const hint = o.readOnly ? null : h('p', {class: 'todo-hint', 'aria-hidden': 'true'},
-    keys(['Enter'], t('Details')), keys(['Enter'], t('Empty line starts next item')), keys([mod, 'Enter'], t('Done')));
-  const element = h('div', {class: `todo-box${dateInDetail ? ' todo-dates-detail' : ''}`}, list, hint);
+  // (No line of the keys under it: Enter shows what it does where it does it, the next line is there to be written,
+  // and an item is done by its mark. A legend there only while the box was written in was the note explaining
+  // itself, DESIGN §1, and a cell of empty paper at its foot the rest of the time. The first line's form, Kind: title,
+  // is the placeholder's to show.)
+  const element = h('div', {class: `todo-box${dateInDetail ? ' todo-dates-detail' : ''}`}, list);
   // Pressed on its paper below the items, the line at its foot takes the caret, as a page written on does: the
   // empty sheet is where the next is written, not a thing to aim at.
   if (!o.readOnly) element.addEventListener('pointerdown', (event) => {
-    // (Its key hints' line, there unseen until the box is written in, is the sheet too.)
-    if (event.button !== 0 || !(event.target === element || event.target === list || (hint && hint.contains(event.target as Node)))) return;
+    if (event.button !== 0 || !(event.target === element || event.target === list)) return;
     const last = items.at(-1), row = last && rows.get(last.id);
     if (!row || event.clientY < row.title.getBoundingClientRect().top) return;
     event.preventDefault();

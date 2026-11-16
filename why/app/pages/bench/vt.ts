@@ -688,8 +688,11 @@ export function css(s: Style): string {
     if (fg !== -1) parts.push(`color: ${colour(fg)}`);
     if (bg !== -1) parts.push(`background: ${colour(bg)}`);
   }
-  if (s.flags & F.bold) parts.push('font-weight: 600');
-  if (s.flags & F.dim) parts.push('opacity: .62');
+  // The OS's two weights (DESIGN §3): bold is the other one.
+  if (s.flags & F.bold) parts.push('font-weight: 700');
+  // Dim is what programs mean by bright black, the least a word is read at (scripts/light.ts), never see-through (a grey
+  // the light has not); a colour given keeps its colour.
+  if (s.flags & F.dim && !(s.flags & F.inverse) && fg === -1) parts.push('color: var(--ansi-8)');
   if (s.flags & F.italic) parts.push('font-style: italic');
   const lines = [s.flags & F.under ? 'underline' : '', s.flags & F.strike ? 'line-through' : ''].filter(Boolean);
   if (lines.length) parts.push(`text-decoration: ${lines.join(' ')}`);

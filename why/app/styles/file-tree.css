@@ -8,21 +8,17 @@
   width: min(clamp(260px, 20vw, 340px), calc(100vw - 2 * var(--outer) - var(--rail) - var(--s2))); max-height: calc(100vh - var(--tree-top, var(--outer-top)) - var(--outer-bottom)); overflow: auto;
   /* Concentric with its rows: the card's corner is the row's corner plus the padding between them. */
   padding: var(--s2); background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-card);
-  /* It comes out of the rail it was opened from: a few pixels from the left, drawn out from its left edge as a drawer
-     is, whole the while (never faded over the page, the page's words through its own); it goes back the same way.
-     (Moved by its left edge, not a transform, which would make it the frame its row menus are placed in.) Put away,
-     it goes back in a fraction of its coming, gathering speed to the rail's line and never under it (tokens.css
-     --leave): settling slowly there, its last few pixels stood beside the line as a sliver the line seemed to shake
-     with, while the page panned away (File, then Home). */
-  visibility: hidden; clip-path: inset(-2px 100% -2px -2px round var(--r-card));
-  transition: clip-path var(--leave) cubic-bezier(.7, 0, 1, 1), left var(--leave) cubic-bezier(.7, 0, 1, 1), visibility 0s var(--leave);
+  /* Called up, it is there at once where it rests, and put away it is gone at once (DESIGN §8: what comes is there,
+     what goes is gone; the world behind it going out of focus and back is the move). Before, it was drawn out of the
+     rail from its left edge as a drawer is, and went back in: a thing growing from nothing, beside a person's menu
+     that is simply there. */
+  visibility: hidden; transition: none;
 }
-.tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; clip-path: inset(-2px -2px -2px -2px round var(--r-card));
-  transition: clip-path calc(220ms * var(--pace)) var(--land), left calc(220ms * var(--pace)) var(--land), visibility 0s; }
+.tree.open { left: calc(var(--outer) + var(--rail) + var(--s2)); visibility: visible; }
 /* Out, it cuts nothing (tree.ts): a row's menu stands beside it. */
 .tree.open.settled { clip-path: none; }
 .tree ul { list-style: none; margin: 0; padding: 0; }
-.tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-field); }
+.tree-row { display: flex; align-items: center; min-height: var(--h-row); padding-left: calc(var(--depth, 0) * var(--s4)); border-radius: var(--r-key); }
 .tree-name {
   flex: 1; min-width: 0; min-height: var(--h-row); padding: 0 var(--s1); text-align: left; border: 0; background: transparent; color: inherit; cursor: var(--cursor-hand);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -31,14 +27,14 @@
 /* The keyboard on a row: the row is ringed, round as the row is, not the name in a square of its own. The row a deed
    just made or renamed has the keyboard without the ring (it is lit for that), until a key is pressed there. */
 .tree-name:focus-visible { outline: none; }
-.tree-row:has(> .tree-name:focus-visible) { outline: 1.5px solid var(--ink); outline-offset: -1.5px; }
+.tree-row:has(> .tree-name:focus-visible) { outline: 2px solid var(--ink); outline-offset: -2px; }
 .tree-row.settled:has(> .tree-name:focus-visible) { outline: none; }
-.tree-repo > .tree-row .tree-name { font-weight: 600; }
+.tree-repo > .tree-row .tree-name { font-weight: 700; }
 /* The file Forge is reading: a short straight line at its row's left, kept apart from the pointer's raised row. */
 .tree-row { position: relative; }
 .tree-row:has(> [aria-current='location'])::before { content: ''; position: absolute; left: 0; top: 25%; bottom: 25%; width: var(--line-work); background: var(--ink); }
-.tree-name[aria-current='location'] { font-weight: 600; }
-.tree-meta { flex: none; padding: 0 var(--s2); font-size: var(--t-meta); opacity: .8; }
+.tree-name[aria-current='location'] { font-weight: 700; }
+.tree-meta { flex: none; padding: 0 var(--s2); font-size: var(--t-word); color: var(--sub); }
 /* A row with nothing to do to it (/, System) keeps its words where the others' end, before their ⋯. */
 .tree-row:not(:has(> .tree-more)) > .tree-meta { margin-right: calc(var(--s5) + var(--s1)); }
 /* Only on the Remote: quiet, as a card of one is dashed. */
@@ -47,28 +43,29 @@
    are what the eye finds first; under the pointer or the keyboard a row is in ink again. */
 .tree-sys .tree-row:not(:hover, :focus-within, :has(> [aria-current='page'])) :is(.tree-name, .tree-toggle) { color: var(--sub); }
 /* The rest of / under one quiet row at the tree's foot, a step apart from the repos above it. */
-.tree-system { margin-top: var(--s2); }
+.tree-system { margin-top: var(--u); }
 .tree-system > .tree-row > .tree-meta { color: var(--sub); }
 .tree-toggle, .tree-spacer { flex: none; width: var(--s5); height: var(--h-row); }
 .tree-toggle { display: grid; place-items: center; border: 0; background: transparent; color: inherit; cursor: var(--cursor-hand); }
-.tree-toggle .icon { width: var(--s3); height: var(--s3); transition: transform var(--motion); }
+.tree-toggle .icon { width: var(--s3); height: var(--s3); transition: none; }
 .tree-toggle[aria-expanded='false'] .icon { transform: rotate(-90deg); }
-.tree-note { padding: var(--s1) var(--s2) var(--s1) calc(var(--depth, 0) * var(--s4) + var(--s5) + var(--s1)); font-size: var(--t-meta); }
-/* What can be done to a row inside a repo, at its right end: round, as a
-   thing pressed is, shown on the row under the pointer or the keyboard, and
+.tree-note { padding: var(--s1) var(--s2) var(--s1) calc(var(--depth, 0) * var(--s4) + var(--s5) + var(--s1)); font-size: var(--t-word); }
+/* What can be done to a row inside a repo, at its right end: a key's corner, as a
+   thing pressed has, shown on the row under the pointer or the keyboard, and
    kept while its menu is out. It keeps its room either way, so nothing moves,
    and is there to be heard while unseen. */
-.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: inherit; cursor: var(--cursor-hand); opacity: 0; }
+.tree-more { flex: none; display: grid; place-items: center; width: var(--s5); height: var(--s5); margin-right: var(--s1); padding: 0; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--quiet); cursor: var(--cursor-hand); opacity: 1; }
 .tree-more .mark { width: var(--s4); height: var(--s4); }
-.tree-row:hover > .tree-more, .tree-row:focus-within > .tree-more, .tree-more[aria-expanded='true'] { opacity: 1; }
+.tree-row:hover > .tree-more, .tree-row:focus-within > .tree-more, .tree-more[aria-expanded='true'] { color: var(--ink); }
 .tree-more[aria-expanded='true'] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .tree-row:has(> [aria-current='page']) > .tree-more { border-color: currentColor; }
 /* Its menu, beside the tree at the row's height: out in the free space. */
 .tree-pop { position: fixed; z-index: 6; width: 260px; }
-/* A row carried by the pointer stays where it was, faded; the folder it would go into under it is raised and ringed in
+/* A row carried by the pointer stays where it was, quiet; the folder it would go into under it is raised and ringed in
    ink, as the keyboard's row is. What a move could not do is said at the tree's foot. */
-.tree-row.carried { opacity: .4; }
-.tree-row.taking { background: var(--raised); outline: 1.5px solid var(--ink); outline-offset: -1.5px; }
+.tree-row.carried { color: var(--quiet); }
+.tree-row.carried :is(button, span, .icon, .mark) { color: inherit; }
+.tree-row.taking { background: var(--raised); outline: 2px solid var(--ink); outline-offset: -2px; }
 .tree-said:empty { display: none; }
 .tree-said { margin: var(--s1) var(--s2) 0; }
 
@@ -81,71 +78,75 @@
    name opens and closes what it names. (Before: a soft-cornered card with a hairline, 15 px rows with triangles and
    sizes, a round ⋯ at each row's end, its menu a card beside it.) ---- */
 .file-tree {
-  --corner: calc(var(--outer) + var(--rail) - 2 * var(--u));
+  --corner: calc(var(--outer) + var(--rail));
   left: calc(var(--corner) - var(--s2)); top: var(--tree-top, calc(5 * var(--u)));
   width: min(calc(13 * var(--u)), calc(100vw - var(--corner) - var(--outer) - var(--u))); max-height: none; overflow: visible;
-  padding: calc(var(--u) / 2) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink);
-  clip-path: inset(-40px 100% -32px -2px);
+  padding: var(--u) 0; border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink);
 }
-.file-tree.open { left: var(--corner); clip-path: inset(-40px -32px -32px -2px); }
+.file-tree.open { left: var(--corner); }
 @media (max-width: 760px) { .file-tree { --corner: calc(var(--outer) + var(--rail)); } }
-.file-tree::before { content: '/'; position: absolute; left: 0; bottom: calc(100% + 7px); font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.file-tree::before { content: '/'; position: absolute; left: 0; bottom: 100%; font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 /* More rows than the window is tall: scrolled inside the sheet (its foot never lower than two cells over the
    window's), where it is scrolled to said while it is (ui/scroll-marks.ts), as a sheet on the desk says it. */
 .file-tree > .tree-children { max-height: calc(100vh - var(--tree-top, calc(5 * var(--u))) - 3 * var(--u)); overflow: hidden auto; scrollbar-width: none; }
 .file-tree .tree-home { --out: 1; }
 .file-tree .tree-home > .tree-row { display: none; }
-.file-tree .tree-row { --in: calc(18px + (var(--depth, 0) - var(--out, 0)) * var(--u)); min-height: calc(1.5 * var(--u)); margin: 0 6px; padding-left: var(--in); border-radius: 8px; }
-.file-tree .tree-row:is(:hover, :focus-within) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); }
+.file-tree .tree-row { --in: calc(18px + (var(--depth, 0) - var(--out, 0)) * var(--u)); min-height: var(--u); margin: 0 6px; padding-left: var(--in); border-radius: var(--r-key); }
+/* (Called up, a list's row under the pointer or the keyboard is the one chosen: an ink fill, its words the paper's, as a
+   selection is, DESIGN §14; on paper, paper under it was not seen, and a grey mixed for it is a colour the design has not.) */
+.file-tree .tree-row:is(:hover, :focus-within) { background: var(--ink); color: var(--ground); }
+.file-tree .tree-row:is(:hover, :focus-within) :is(button, span, .icon, .mark) { color: inherit; }
 /* (The repo Forge is at is not inked here: the file it reads is marked, and that says where one is.) */
 .file-tree .tree-row:has(> [aria-current='page']) { background: none; color: var(--ink); }
-.file-tree .tree-row:has(> [aria-current='page']):is(:hover, :focus-within) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); }
-.file-tree .tree-row:has(> .tree-more[aria-expanded='true']) { background: var(--slot); }
+.file-tree .tree-row:has(> [aria-current='page']):is(:hover, :focus-within) { background: var(--ink); color: var(--ground); }
+.file-tree .tree-row:has(> .tree-more[aria-expanded='true']) { background: var(--slot); color: var(--ink); }
 .file-tree .tree-row:has(> .tree-name:focus-visible) { outline: 2px solid var(--ink); outline-offset: -2px; }
 .file-tree .tree-row.settled:has(> .tree-name:focus-visible) { outline: none; }
 /* (The triangle is there to be pressed and heard, over the row's indent, and not drawn.) */
 .file-tree .tree-toggle { position: absolute; left: 0; top: 0; width: var(--in); height: 100%; opacity: 0; }
 .file-tree .tree-spacer { display: none; }
-.file-tree .tree-name { min-height: calc(1.5 * var(--u)); padding: 0; font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); }
-.file-tree .tree-repo > .tree-row .tree-name { font: 700 20px/calc(1.5 * var(--u)) var(--mono); }
+.file-tree .tree-name { min-height: var(--u); padding: 0; font: 400 var(--t-word)/var(--u) var(--mono); }
+.file-tree .tree-repo > .tree-row .tree-name { font: 700 var(--t-word)/var(--u) var(--mono); }
 .file-tree .tree-name[aria-current='location'] { font-weight: 700; }
 .file-tree .tree-row:has(> [aria-current='location'])::before { left: -6px; top: 6px; bottom: 6px; width: 6px; }
 .file-tree .tree-meta { display: none; }
-.file-tree .tree-away > .tree-row > .tree-meta { display: block; padding: 0 var(--s3) 0 var(--s2); font: 400 14px/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); opacity: 1; }
+.file-tree .tree-away > .tree-row > .tree-meta { display: block; padding: 0 var(--s3) 0 var(--s2); font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); opacity: 1; }
 .file-tree .tree-system { margin-top: calc(var(--u) / 2); }
 .file-tree .tree-system > .tree-row .tree-name { color: var(--quiet); }
 .file-tree .tree-system > .tree-row:is(:hover, :focus-within) .tree-name { color: var(--ink); }
-.file-tree .tree-note { padding: 0 var(--s3) 0 calc(24px + (var(--depth, 0) - var(--out, 0)) * var(--u)); font: 400 16.5px/calc(1.5 * var(--u)) var(--mono); color: var(--quiet); }
+.file-tree .tree-note { padding: 0 var(--s3) 0 calc(24px + (var(--depth, 0) - var(--out, 0)) * var(--u)); font: 400 var(--t-word)/var(--u) var(--mono); color: var(--quiet); }
 .file-tree .tree-said { margin: var(--s1) var(--u) 0; }
-/* What can be done to a row, asked for at its right end: an angle toward where its sheet comes out, there under the
-   pointer or the keyboard and while it is out; the row pressed (a slot) while it is. */
-.file-tree .tree-more { width: calc(1.5 * var(--u)); height: calc(1.5 * var(--u)); margin: 0; border: 0; border-radius: 0; background: none; color: var(--ink); }
+/* What can be done to a row, asked for at its right end: ⌄, the mark of a thing's own menu wherever it is (a repo's on
+   Home), the paper's on the row chosen and ink while its sheet is out; the row pressed (a slot) while it is. Not an
+   angle toward where the sheet comes out: at a folder's right end a › says “in here”, and a folder's name is what
+   opens it (DESIGN §14, unfold). */
+.file-tree .tree-more { width: var(--u); height: var(--u); margin: 0; border: 0; border-radius: 0; background: none; color: var(--quiet); }
 .file-tree .tree-more[aria-expanded='true'] { background: none; color: var(--ink); }
-.file-tree .tree-more .mark { width: 20px; height: 20px; stroke-width: 2; rotate: -90deg; }
-.file-tree > .tree-pop { display: block; width: max-content; min-width: calc(9 * var(--u)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--outer) - var(--u))); padding: calc(var(--u) / 2) 0;
-  border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--u) var(--u) 0 0 var(--ink); }
-.file-tree > .tree-pop > .pop-head { position: absolute; left: 0; bottom: calc(100% + 7px); margin: 0; padding: 0; white-space: nowrap;
-  font: 700 20px/var(--u) var(--mono); color: var(--ink); }
+.file-tree .tree-more .mark { width: 18px; height: 18px; stroke-width: 2; }
+.file-tree > .tree-pop { display: block; width: max-content; min-width: calc(9 * var(--u)); max-width: min(calc(14 * var(--u)), calc(100vw - 2 * var(--outer) - var(--u))); padding: var(--u) 0;
+  border: 0; border-radius: var(--r-sheet); background: var(--paper); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 0 var(--ink); }
+.file-tree > .tree-pop > .pop-head { position: absolute; left: 0; bottom: 100%; margin: 0; padding: 0; white-space: nowrap;
+  font: 700 var(--t-word)/var(--u) var(--mono); color: var(--ink); }
 .file-tree > .tree-pop :is(.pop-icon, .pop-rule) { display: none; }
-.file-tree > .tree-pop .pop-item { display: flex; align-items: center; width: calc(100% - 12px); min-height: calc(1.5 * var(--u)); height: auto; margin: 0 6px; padding: 0 18px;
-  border: 0; border-radius: 8px; background: none; font: 400 20px/calc(1.5 * var(--u)) var(--mono); color: var(--ink); text-align: left; white-space: nowrap; cursor: var(--cursor-hand); }
+.file-tree > .tree-pop .pop-item { display: flex; align-items: center; width: calc(100% - 12px); min-height: var(--u); height: auto; margin: 0 6px; padding: 0 18px;
+  border: 0; border-radius: var(--r-key); background: none; font: 400 var(--t-word)/var(--u) var(--sans); color: var(--ink); text-align: left; white-space: nowrap; cursor: var(--cursor-hand); }
 .file-tree > .tree-pop .pop-item:first-of-type { font-weight: 700; }
-.file-tree > .tree-pop .pop-item:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--slot) 45%, var(--paper)); outline: none; }
-.file-tree > .tree-pop .pop-item:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
-.file-tree > .tree-pop .pop-item.pop-gone:is(:hover, :focus-visible) { color: var(--del); }
-.file-tree > .tree-pop :is(.pop-field, .pop-ask) { padding: var(--s2) var(--u); }
-/* The page stepping back out of focus under what is laid over it (ui/page-veil.ts): File's tree, and what the band's
-   search found. The rail does not (it is what the tree came out of), nor, under what the search found, the band's
-   keys. The same blur over all of it and a thin wash of the ground, and only in a strip at the window's top and at its
+/* (The row chosen, under the pointer or the keyboard, is an ink fill, its words the paper's, as in every menu: rail.css .pop.) */
+.file-tree > .tree-pop .pop-item:is(:hover, :focus-visible):not(:disabled) { background: var(--ink); color: var(--paper); outline: none; }
+.file-tree > .tree-pop .pop-item.pop-gone:is(:hover, :focus-visible):not(:disabled) { background: var(--off); color: var(--paper); }
+.file-tree > .tree-pop :is(.pop-field, .pop-ask) { padding: 0 var(--u); }
+/* The world stepping back out of focus under what is laid over it (ui/page-veil.ts): File's tree, the person's menu,
+   what the band's search found. The frame does not: the rail and the band are the camera's, never the world's
+   (DESIGN §2), so they stand over it in focus whatever is laid over the world. The same blur over all of it and a thin wash of the ground, and only in a strip at the window's top and at its
    foot, lower than a place's icon is tall, deeper, as a lens tilted over it leaves its far edges. So what is dark on
    the page (the terminal, a sheet's shadow) is not a hard shape in the steps of a sheet's own shadow. Three layers,
    each blurring what is under it (not one in another: a blurred thing's children see only itself). */
 /* (How much of the ground comes over the page: a thin wash under File's tree, which is small and at the window's
    edge; more under what the search found, which is read across the page: there the page's own contrasts, its ink
    and its paper, are brought most of the way to the ground, so only the sheets found are read.) */
-.page-veil { --wash: 35%; position: fixed; inset: 0; z-index: 8; pointer-events: none; }
-.page-veil.under-band { --wash: 65%; z-index: 6; }
-.page-veil > i { position: absolute; inset: 0; transition: backdrop-filter 180ms ease-out, background-color 180ms ease-out; }
+.page-veil { --wash: 35%; position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+.page-veil.deep { --wash: 65%; }
+.page-veil > i { position: absolute; inset: 0; transition: backdrop-filter var(--move) var(--spring), background-color var(--move) var(--spring); }
 .page-veil > i:nth-child(2) { mask-image: linear-gradient(to bottom, #000 0, #000 11px, transparent 36px, transparent calc(100% - 36px), #000 calc(100% - 11px), #000 100%); }
 .page-veil > i:nth-child(3) { mask-image: linear-gradient(to bottom, #000 0, transparent 22px, transparent calc(100% - 22px), #000 100%); }
 .page-veil.out > i:nth-child(1) { backdrop-filter: blur(6px); background-color: color-mix(in srgb, var(--ground) var(--wash), transparent); }

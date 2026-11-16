@@ -1,12 +1,13 @@
 import {h} from '../../ui/dom.ts';
-import {isNative} from '../../host/host.ts';
-import {currentLang, t} from '../../i18n/i18n.ts';
+import {isNative} from '../../../api/host.ts';
+import {currentLang, t} from '../../../text/i18n.ts';
 import {plan as readPlan, planView, priceWords, TERMS, tierName,
-  type Meter, type PaidTier, type Plan, type PlanView, type Price, type TierCard} from '../../remote/plan.ts';
+  type Meter, type PaidTier, type Plan, type PlanView, type Price, type TierCard} from '../../../shipto/plan.ts';
 import {answers} from '../kit/common.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button, pressing} from '../kit/remote-parts.ts';
 import {stripeTrip} from './stripe.ts';
+import {wayOut} from '../../ui/way-out.ts';
 
 // Remote's Plan part: the tier this account is on, its use, the tiers to choose from (the way to it from a place the
 // plan refused is kit/plan-gate.ts).
@@ -51,7 +52,7 @@ function tierCard(c: TierCard, press: (tier: PaidTier, b: HTMLButtonElement, err
  */
 function payingFor(tier: PaidTier, price: Price | undefined, o: {deed: string; lead: string; no(): void; go(yes: HTMLButtonElement, error: HTMLElement): void}): HTMLElement {
   const error = h('p', {class: 'error', role: 'alert'});
-  const no = button(t('Cancel')), yes = button(o.deed, 'primary');
+  const no = wayOut(button(t('Cancel'))), yes = button(o.deed, 'primary');
   no.addEventListener('click', o.no);
   yes.addEventListener('click', () => o.go(yes, error));
   setTimeout(() => yes.focus());
@@ -97,7 +98,7 @@ const planTiers = (v: PlanView, press: (tier: PaidTier, b: HTMLButtonElement, er
  * the tiers, what is bought, with Not now and Continue to payment. Upgrade and Downgrade go to Stripe's portal at
  * the step that changes the tier, where Stripe says what it costs now and asks. Back from Stripe, how it went is
  * said once, above the plan (stripe.ts). What went wrong is said where it was pressed. The Remote decides all of
- * it (why/remote/plan/plan.ts); this shows it. `offered` says whether this Remote has a plan at all.
+ * it (why/shipto/remote/plan/plan.ts); this shows it. `offered` says whether this Remote has a plan at all.
  */
 export function planSection(offered: (on: boolean) => void): {el: HTMLElement; paint(): Promise<void>} {
   const el = h('div', {class: 'plan-part'});

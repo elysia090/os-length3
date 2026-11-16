@@ -2,7 +2,7 @@
 // rows and gear, the reference, Me, Runtime. Apart from the terminal itself, so a page that only asks does not bring
 // the Prompt's whole screen (and why's machine) with it.
 
-import type {Stopped} from '../../host/host.ts';
+import type {Stopped} from '../../../api/host.ts';
 
 /** One line sent from the prompt box and what came out until the prompt returned. */
 export interface Run {

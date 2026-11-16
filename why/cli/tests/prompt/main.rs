@@ -156,7 +156,7 @@ fn a_prompt_interrupted_or_lost_while_prepared_leaves_no_record_or_process() {
 fn a_prompt_keeps_its_root_when_another_is_made_current() {
     let home = Home::new("prompt-root-switch");
     home.repo("os-web", &[("README", "web\n")]);
-    let (old, ours) = ("5".repeat(64), why_core::root::RELEASES[0].sha256);
+    let (old, ours) = ("5".repeat(64), why_core::roots::RELEASES[0].sha256);
     if !home.root_of(&old, "Ubuntu", &["sleep", "touch"]) || !home.root_of(ours, "OS Length3 Linux", &[]) { eprintln!("skipped: no programs to lend a root"); return; }
     home.use_root(&old);
     let mut why = start(&home, "os-web", "touch up; while [ ! -e go ]; do sleep 0.05; done; touch after");

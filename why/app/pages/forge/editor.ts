@@ -1,14 +1,15 @@
 import {nativeOptionArrow} from '../../ui/text-keys.ts';
-import {differs, Held} from '../../repos/conflict.ts';
-import {bytes, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {lineCount} from '../../repos/reading.ts';
-import {EDIT_LIMIT, store} from '../../repos/repos.ts';
+import {differs, Held} from '../../../repo/conflict.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import {lineCount} from '../../../repo/reading.ts';
+import {EDIT_LIMIT, store} from '../../../repo/repos.ts';
 import {answers} from '../kit/common.ts';
 import {keepOut, putAway} from '../../ui/glide.ts';
 import {diffFiles} from '../kit/diff-view.ts';
-import {shownPath} from '../../repos/issues.ts';
-import {errorText} from '../../host/errors.ts';
+import {shownPath} from '../../../repo/issues.ts';
+import {errorText} from '../../../api/errors.ts';
 
 // A file in Forge's center is a plain text editor in its own box (reader.ts reads the page they make). Typing saves
 // on its own, on leaving the file, or with Ctrl+S. A text saved elsewhere while this one has unsaved edits is asked

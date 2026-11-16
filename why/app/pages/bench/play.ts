@@ -1,4 +1,4 @@
-import type {AgentEvent, Done} from '../../agent/loop.ts';
+import type {AgentEvent, Done} from '../../../agent/loop.ts';
 import {gap, keyOf, leadIn} from '../../ui/cadence.ts';
 import {still} from '../../ui/glide.ts';
 import {strike} from '../../ui/keys.ts';

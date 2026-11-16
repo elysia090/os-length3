@@ -1,16 +1,17 @@
 import {h} from '../../ui/dom.ts';
-import {nudge} from '../../ui/glide.ts';
+import {cut as motionless, nudge} from '../../ui/glide.ts';
 import {workAt as tell} from '../../ui/camera.ts';
-import {caretIn} from '../../ui/caret.ts';
-import {errorText} from '../../host/errors.ts';
-import {t} from '../../i18n/i18n.ts';
-import {bytes} from '../../ui/dom.ts';
-import {EDIT_LIMIT, onChange, store} from '../../repos/repos.ts';
-import {shownPath} from '../../repos/issues.ts';
-import {AGENT} from '../../repos/agent-hands.ts';
+import {caretIn, fieldCarried} from '../../ui/caret.ts';
+import {errorText} from '../../../api/errors.ts';
+import {t} from '../../../text/i18n.ts';
+import {bytes} from '../../../text/format.ts';
+import {EDIT_LIMIT, onChange, store} from '../../../repo/repos.ts';
+import {shownPath} from '../../../repo/issues.ts';
+import {AGENT} from '../../../repo/agent-hands.ts';
 import {editorOn, holdBack, openingWith} from '../bench/play.ts';
 import {Editor, fileState, lineHeight, lineStart, numbering} from './editor.ts';
 import type {Laid} from './desk.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // A file as it lies on the desk (desk.ts): its text in a box of its own, written in where it is, its line numbers
 // beside it, saved as Forge's editor saves (editor.ts). Its name is said over the box, its folder quiet before it.
@@ -67,16 +68,15 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
   const stillAsked = () => { const a = document.activeElement; return !a || a === document.body || a === askedFrom || element.contains(a); };
 
   // The line chosen (from the search, a link) washed in the marker's soft yellow under its text, the eye led to it:
-  // it comes up as the camera arrives, holds, then stays quieter while the caret is on that line; it goes once the
-  // caret leaves the line, or a line comes or goes above it. Where the line lies in the text is kept (its start and
+  // there at once, whole (never see-through: DESIGN §1), while the caret is on that line; it goes once the caret
+  // leaves the line, or a line comes or goes above it. Where the line lies in the text is kept (its start and
   // end), so following the caret costs a comparison, not a count of the lines.
   let mark: {el: HTMLElement; from: number; to: number} | null = null;
   function unmark() {
     if (!mark) return;
     const {el} = mark;
     mark = null;
-    el.getAnimations().forEach((a) => a.cancel());
-    el.animate([{opacity: 0.55}, {opacity: 0}], {duration: 240, easing: 'ease-out'}).onfinish = () => el.remove();
+    el.remove();
   }
   function markLine(area: HTMLTextAreaElement, line: number, from: number, to: number) {
     unmark();
@@ -86,21 +86,15 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     el.style.height = `${lh}px`;
     element.prepend(el);
     mark = {el, from, to};
-    el.animate([{opacity: 0}, {opacity: 1, offset: 0.25}, {opacity: 1, offset: 0.8}, {opacity: 0.55}],
-      {duration: 2400, delay: 380, easing: 'ease-out', fill: 'both'});
   }
-  // Where the Agent's eye is in it (bench/play.ts): a line lit faintly across the sheet, gliding from line to line as it
-  // reads; gone (faded) when the eye leaves.
-  let eye: HTMLElement | null = null, resting = 0;
+  // Where the Agent's eye is in it (bench/play.ts): a line lit across the sheet, going from line to line as it reads;
+  // gone when the eye leaves.
+  let eye: HTMLElement | null = null;
   function gaze(area: HTMLTextAreaElement, line: number | null) {
-    // Still on a line a moment, it breathes (forge-desk.css): resting on it, not stopped.
-    clearTimeout(resting);
-    eye?.classList.remove('resting');
-    if (line !== null) resting = window.setTimeout(() => eye?.classList.add('resting'), 600);
     if (line === null) {
       const el = eye;
       eye = null;
-      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: 260, easing: 'ease-out'}).onfinish = () => el.remove();
+      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: motionless() ? 0 : 260, easing: SPRING}).onfinish = () => el.remove();
       return;
     }
     const lh = lineHeight(area), top = `${area.offsetTop + (line - 1) * lh}px`;
@@ -109,7 +103,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
       eye.style.top = top;
       eye.style.height = `${lh}px`;
       element.prepend(eye);
-      eye.animate([{opacity: 0}, {opacity: 1}], {duration: 200, easing: 'ease-out'});
+      eye.animate([{opacity: 0}, {opacity: 1}], {duration: motionless() ? 0 : 200, easing: SPRING});
       return;
     }
     eye.style.top = top;
@@ -123,7 +117,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     if (at === null) {
       const el = hand;
       hand = null;
-      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: 160, easing: 'ease-out'}).onfinish = () => el.remove();
+      if (el) el.animate([{opacity: 1}, {opacity: 0}], {duration: motionless() ? 0 : 160, easing: SPRING}).onfinish = () => el.remove();
       return;
     }
     const p = caretIn(area, at);
@@ -154,6 +148,7 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     const text = from + (/^[ \t]*/.exec(area.value.slice(from, to))?.[0].length ?? 0);
     area.focus({preventScroll: true});
     area.setSelectionRange(text, text);
+    lead(area);
     markLine(area, line, from, to);
   }
 
@@ -200,7 +195,12 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     });
     e.area.addEventListener('keyup', caretLeft);
     e.area.addEventListener('pointerup', caretLeft);
-    new ResizeObserver(() => grew()).observe(e.area);
+    // Written on, or gone through by the keys, the line in hand keeps the room ahead of it (lead()); a press puts the
+    // caret under the hand and turns nothing.
+    e.area.addEventListener('input', () => lead(e.area));
+    e.area.addEventListener('keydown', (k) => { if (!k.isComposing) requestAnimationFrame(() => lead(e.area)); });
+    new ResizeObserver(() => { stand(e.area); grew(); }).observe(e.area);
+    new ResizeObserver(() => stand(e.area)).observe(element);
     if (!stillAsked()) { wanted = null; endWanted = false; focusing = false; }
     if (wanted !== null) at(wanted);
     else if (endWanted) toEnd();
@@ -236,11 +236,55 @@ export function deskFile(repo: string, path: string, grew: () => void, rename?: 
     editor.take(ch.text);
   });
 
+  /**
+   * A file whose lines pass the world's lower third stands to the window's foot, with paper under its last line up to
+   * that third: the room ahead of the line written last (DESIGN §2, look room). Shorter, it is as tall as its lines.
+   */
+  function stand(area: HTMLTextAreaElement) {
+    const foot = parseFloat(getComputedStyle(element).getPropertyValue('--ahead'));
+    element.classList.toggle('long', foot > 0 && area.offsetTop + area.offsetHeight > foot);
+  }
+  /** How wide a letter of the file is (it is set in the mono face): measured once. */
+  let letter = 0;
+  /**
+   * The line in hand kept out of the third of the world it goes towards (DESIGN §2, look room): its foot no lower than
+   * the lower third line as it is written on, its top no higher than the upper third line going back (while there is
+   * more above), by turning the sheet a whole line at a time, at once, as a typewriter's platen turns a line under the
+   * hand; and along a line that runs on past the sheet, its next fifteen letters in sight ahead of the caret (as many as
+   * it has) and four behind (what is read at a glance is some four letters before the eye and fifteen after it).
+   */
+  function lead(area: HTMLTextAreaElement) {
+    if (document.activeElement !== area) return;
+    const cs = getComputedStyle(element), foot = parseFloat(cs.getPropertyValue('--ahead')), top = parseFloat(cs.getPropertyValue('--ahead-top'));
+    if (!(foot > 0)) return;
+    const lh = lineHeight(area), at = area.selectionDirection === 'backward' ? area.selectionStart : area.selectionEnd;
+    const v = area.value, start = v.lastIndexOf('\n', at - 1) + 1, line = lineOf(v, at) - 1;
+    const y = area.offsetTop + line * lh - element.scrollTop;
+    if (y + lh > foot) element.scrollTop = area.offsetTop + (line + 1) * lh - foot;
+    else if (y < top && element.scrollTop > 0) element.scrollTop = Math.max(0, area.offsetTop + line * lh - top);
+    if (area.scrollWidth > area.clientWidth + 1) {
+      const before = v.slice(start, at);
+      let x: number;
+      // (A line of letters of one width counted; one with other writings in it laid out.)
+      if (/^[\x20-\x7e\t]*$/.test(before)) {
+        letter ||= (() => { const c = document.createElement('canvas').getContext('2d')!; c.font = getComputedStyle(area).font; return c.measureText('0').width; })();
+        let col = 0;
+        for (const ch of before) col = ch === '\t' ? (Math.floor(col / 4) + 1) * 4 : col + 1;
+        x = col * letter;
+      } else x = caretIn(area, at).x + area.scrollLeft;
+      const l = letter || parseFloat(getComputedStyle(area).fontSize) * .602, room = area.clientWidth;
+      if (x - area.scrollLeft > room - 15 * l) area.scrollLeft = x - (room - 15 * l);
+      else if (x - area.scrollLeft < 4 * l && area.scrollLeft > 0) area.scrollLeft = Math.max(0, x - 4 * l);
+    }
+    fieldCarried();
+  }
+
   function toEnd() {
     if (!editor) { endWanted = true; later(); return; }
     const {area} = editor, end = area.value.length;
     area.focus({preventScroll: true});
     area.setSelectionRange(end, end);
+    lead(area);
   }
 
   return {

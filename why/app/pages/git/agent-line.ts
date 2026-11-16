@@ -1,10 +1,10 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {pop} from '../../ui/glide.ts';
-import {agentsOn, harnessName, lineOf, onAgents, type AgentSession} from '../../repos/agents.ts';
-import type {Issue} from '../../repos/issues.ts';
+import {agentsOn, harnessName, lineOf, onAgents, type AgentSession} from '../../../repo/agents.ts';
+import type {Issue} from '../../../repo/issues.ts';
 
-// An agent at work on an issue, in its box, as the agent's hooks say it (repos/agents.ts): who, what it does now, and
+// An agent at work on an issue, in its box, as the agent's hooks say it (repo/agents.ts): who, what it does now, and
 // whether it waits for the person. Its dot breathes while it works, beats at each tool it uses, and holds still in
 // yellow while it waits: the box is where one sees the work go, whatever program does it.
 

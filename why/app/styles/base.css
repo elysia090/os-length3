@@ -8,6 +8,17 @@
   src: url('/fonts/inter-display-black.woff2') format('woff2');
   unicode-range: U+0020-007E, U+00A0-017F, U+2010-2027, U+2030-203A, U+20AC;
 }
+/* A name in Japanese: the heaviest gothic the system has, drawn smaller so that a kanji's face (which fills .92 of its
+   square, where a capital of the display face is .727 of its size) is a cell tall as a capital is: 30 px at the name's
+   size becomes 24 (measured). So a name stands a cell tall on the grid in either writing, and a name of both is one
+   height. No such face on the system, the name is in the words' own (styles/tokens.css --display). */
+@font-face {
+  font-family: 'Display JP'; font-weight: 900; font-style: normal; size-adjust: 80%;
+  src: local('Hiragino Sans W8'), local('HiraginoSans-W8'), local('Hiragino Kaku Gothic ProN W6'), local('Noto Sans JP Black'), local('NotoSansJP-Black'),
+    local('Noto Sans CJK JP Black'), local('NotoSansCJKjp-Black'), local('BIZ UDGothic Bold'), local('BIZ-UDGothicB'), local('Yu Gothic UI Bold'), local('YuGothicUI-Bold'),
+    local('Meiryo Bold'), local('Meiryo-Bold');
+  unicode-range: U+3000-30FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FF00-FFEF;
+}
 
 * { box-sizing: border-box; }
 p { text-wrap: pretty; }
@@ -16,13 +27,19 @@ html { height: 100%; }
 body { min-height: 100%; box-sizing: border-box; }
 body {
   margin: 0;
-  padding: var(--outer-top) var(--outer) var(--outer-bottom);
+  padding: var(--outer-top) var(--outer) calc(var(--outer-bottom) + var(--foot));
   display: grid;
   grid-template-columns: var(--rail) minmax(0, 1fr);
-  background: var(--ground);
+  /* The ground is the desk's, everywhere: one world, its dots a cell apart, under every place and under the rail and
+     the band (which are the window's, and stand over it). Going to another place it goes by, whole cells at a time. */
+  background: var(--ground) var(--dots) 0 0 / var(--u) var(--u);
   color: var(--ink);
-  font: var(--t-body)/1.6 var(--sans);
+  font: var(--t-word)/var(--u) var(--sans);
 }
+/* The place left, kept in sight as it was while the world goes to another (ui/glide.ts travel): over the page, under
+   the rail and the band, and nothing to press. */
+.place-left { position: fixed; z-index: 5; pointer-events: none; }
+.place-left > .page { width: 100%; height: 100%; margin: 0; }
 button, input, textarea { font: inherit; color: inherit; }
 /* The OS's pointer wherever one is, never the browser's: the arrow unless a place says otherwise (over words one only
    reads too, as a desktop has it), the I-beam where one writes, the hand on a link. Of no weight, so a place's own
@@ -39,12 +56,14 @@ html { cursor: var(--cursor-arrow); }
 /* A line too long for its field (a TODO's title on a phone, a placeholder) ends in … while it is not written in, not
    cut through a letter; written in, it scrolls as a field does. */
 input:not([type='checkbox'], [type='radio'], [type='range']) { text-overflow: ellipsis; }
-input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: 50%; background: transparent; cursor: var(--cursor-hand); transition: background var(--motion), border-color var(--motion); }
+input[type='checkbox'] { appearance: none; display: inline-grid; place-content: center; flex: none; width: 20px; height: 20px; margin: 0; border: 1.5px solid var(--edge); border-radius: var(--r-key); background: transparent; cursor: var(--cursor-hand); transition: none; }
 input[type='checkbox']::after { content: ''; width: 9px; height: 5px; margin-top: -2px; border: 2px solid var(--ground); border-top: 0; border-right: 0; transform: rotate(-45deg); opacity: 0; }
 input[type='checkbox']:hover { border-color: var(--ink); }
 input[type='checkbox']:checked { background: var(--done); border-color: var(--done); }
 input[type='checkbox']:checked::after { opacity: 1; }
 input[type='checkbox']:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* A press begun on what is pressed and moved off is a press taken back, never a selection of the page's words. */
+:is(button, [role=button], [role=tab], [role=switch], [role=menuitem], .chip, .pill) { -webkit-user-select: none; user-select: none; }
 h1, h2, p { margin: 0; }
 a { color: var(--ink); }
 [hidden] { display: none !important; }
@@ -58,7 +77,7 @@ a { color: var(--ink); }
 @supports not (scrollbar-color: auto) {
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: transparent padding-box; }
+  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--r-key); background: transparent padding-box; }
   .scrolling::-webkit-scrollbar-thumb { background: var(--edge) padding-box; }
 }
 @media (forced-colors: active) { * { scrollbar-width: auto; scrollbar-color: auto; } }
@@ -67,10 +86,14 @@ a { color: var(--ink); }
 [tabindex].kept:focus-visible { outline: none; }
 ::selection { background: var(--ink); color: var(--ground); }
 .muted { color: var(--sub); }
-.small { font-size: var(--t-meta); }
+/* (No element is set smaller or larger by the browser's own sheet: a heading or a small is its words' size until a rule
+   here says one of the three, DESIGN §3.) */
+:is(h1, h2, h3, h4, h5, h6, small, big) { font-size: inherit; }
+.small { font-size: var(--t-word); }
 .icon {
   width: var(--icon); height: var(--icon); flex: none;
   fill: none; stroke: currentColor; stroke-width: var(--stroke); stroke-linecap: round; stroke-linejoin: round;
 }
-/* What a place's icon encloses is the ground's, nearly: the desk's dots do not show through it as a part of it. */
-.icon > .icon-in { stroke: none; fill: var(--ground); fill-opacity: .85; }
+/* What a place's icon encloses is what lies under its key (--under: the ground, the slot of the place one is in, paper
+   under the hand), whole: the desk's dots do not show through it as a part of it, and no grey is made between. */
+.icon > .icon-in { stroke: none; fill: var(--under, var(--ground)); }

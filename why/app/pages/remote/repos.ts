@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {look, onSync, remoteAll} from '../../remote/lifecycle.ts';
-import * as account from '../../remote/connection.ts';
-import {store} from '../../repos/repos.ts';
-import * as servers from '../../remote/servers.ts';
+import {t} from '../../../text/i18n.ts';
+import {look, onSync, remoteAll} from '../../../shipto/lifecycle.ts';
+import * as account from '../../../shipto/connection.ts';
+import {store} from '../../../repo/repos.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {choosePart} from '../kit/common.ts';
 import type {Context} from '../kit/context.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {repoCard, type CardWays} from './repo-card.ts';
 import {doneTo, type AskWays, type Deed} from './repo-off.ts';
 

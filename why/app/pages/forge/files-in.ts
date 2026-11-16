@@ -1,5 +1,5 @@
-import {t} from '../../i18n/i18n.ts';
-import {store} from '../../repos/repos.ts';
+import {t} from '../../../text/i18n.ts';
+import {store} from '../../../repo/repos.ts';
 import type {Drag} from './drag.ts';
 
 // Files dragged in from the desktop go into the repo whose box they are let go over: into the folder of the file

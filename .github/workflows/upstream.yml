@@ -2,15 +2,15 @@ name: Upstream
 
 # The newest release of every source the root is built from (module/ricebox/pins/sources.env), with digests to pin it by, and
 # every current pin downloaded and checked (module/ricebox/make/next.py): a table in the summary, the proposed files as an
-# artifact. Also the root's Rust and Go programs against advisories published since (module/ricebox/make/advisories.sh). A broken
-# pin or an advisory that reaches one fails the run. Weekly, by hand, or when the pins or scripts change; nothing is
+# artifact. Also the root's Rust and Go programs against advisories published since (module/ricebox/make/advisories.sh). A pin
+# that is broken or cannot be had, or an advisory that reaches one fails the run. Weekly, by hand, or when the pins or scripts change; nothing is
 # pushed.
 on:
   schedule:
     - cron: '17 4 * * 1'
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/upstream.yml', 'module/ricebox/make/next.py', 'module/ricebox/pins/sources.env', 'module/ricebox/make/advisories.sh', 'module/ricebox/pins/advisories.toml']
+    paths: ['.github/workflows/upstream.yml', 'module/ricebox/make/next.py', 'module/ricebox/make/next.test.py', 'module/ricebox/pins/sources.env', 'module/ricebox/make/advisories.sh', 'module/ricebox/pins/advisories.toml']
 
 permissions:
   contents: read
@@ -24,13 +24,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: What a pin that cannot be had ends as
+        run: python3 module/ricebox/make/next.test.py
       - name: Find newest releases
         run: |
           set -o pipefail
-          python3 module/ricebox/make/next.py module/ricebox/pins/sources.env | tee table.txt
+          # (a pin broken or not reached ends the run 1: the table is still shown and kept)
+          status=0
+          python3 module/ricebox/make/next.py module/ricebox/pins/sources.env | tee table.txt || status=$?
           { echo '```'; cat table.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           for f in *.next; do echo "--- $f"; cat "$f"; done
+          exit "$status"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
         with:
           name: upstream
           path: |

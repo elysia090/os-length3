@@ -1,9 +1,10 @@
-import {day, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {shown as named} from '../../remote/inbox.ts';
-import * as servers from '../../remote/servers.ts';
+import {h} from '../../ui/dom.ts';
+import {day} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import {shown as named} from '../../../shipto/inbox.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {copying} from '../kit/common.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {askIn, button, foot, smallCard, type GearWays} from './parts.ts';
 
 // Behind the gear, a board's guests, where it takes them: any of its people invites someone, by a link they pass on

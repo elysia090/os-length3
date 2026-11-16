@@ -1,8 +1,9 @@
-import {bytes, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {REMOTE_URL} from '../../remote/connection.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import {REMOTE_URL} from '../../../shipto/connection.ts';
 import {mark} from '../../ui/icons.ts';
-import desktopPins from '../../../shared/desktop-releases.json' with {type: 'json'};
+import desktopPins from '../../../shipto/desktop-releases.json' with {type: 'json'};
 
 // Runtime's desktop app, offered on the web beside the environments: the app itself is it.
 
@@ -29,7 +30,7 @@ export function desktopApp(): HTMLElement {
     const first = deb ?? (pins.appimage && (await there(pins.appimage.file)) ? pins.appimage : null);
     if (!first) return;
     const what = first === deb ? t('x86-64 Linux · .deb · {size}', {size: bytes(first.bytes)}) : t('x86-64 Linux · AppImage · {size}', {size: bytes(first.bytes)});
-    const get = h('a', {class: 'button primary small-button download', href: url(first.file), download: first.file, title: `${first.file} · ${bytes(first.bytes)}`},
+    const get = h('a', {class: 'button primary small-button download', href: url(first.file), download: first.file},
       mark('download'), h('span', {}, t('Download')));
     // Beside the environments, the same small card: what it is, which file and its size, and Download at its bottom left.
     section.replaceChildren(h('h2', {id: 'app-title'}, t('Desktop App')),

@@ -1,15 +1,16 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {keepOut, paced, putAway, still} from '../../ui/glide.ts';
-import {onChange} from '../../repos/repos.ts';
-import {nextIssueName, numberOf, writeIssue} from '../../repos/issues.ts';
-import * as todo from '../../home/todo.ts';
-import {getState, setState} from '../../home/state.ts';
-import {kindOf} from '../../repos/text.ts';
+import {t} from '../../../text/i18n.ts';
+import {cut, keepOut, paced, putAway, still} from '../../ui/glide.ts';
+import {onChange} from '../../../repo/repos.ts';
+import {nextIssueName, numberOf, writeIssue} from '../../../repo/issues.ts';
+import * as todo from '../../../home/todo.ts';
+import {getState, setState} from '../../../home/state.ts';
+import {kindOf} from '../../../repo/text.ts';
 import {mark} from '../../ui/icons.ts';
 import {mark as todoMark} from '../kit/todo-list.ts';
-import {issueStore} from '../../repos/issue-store.ts';
-import {hasAgentKey, onAgentKey} from '../../account/agent-key.ts';
+import {issueStore} from '../../../repo/issue-store.ts';
+import {hasAgentKey, onAgentKey} from '../../../device/agent-key.ts';
+import {SPRING} from '../../ui/law.ts';
 
 // The box at the foot does one of a few things with what is written in it, and its pill, at its left, says which:
 // it runs it in the repo's Prompt (the pill the prompt line the shell waits at, `garden $`), writes it as the repo's
@@ -50,9 +51,6 @@ const modeWord = (m: Mode): string => (m === 'run' ? t('Run in Prompt') : m === 
 /** The word on the box's own button. */
 export const sendWord = (m: Mode): string =>
   (m === 'run' ? t('Run') : m === 'issue' ? t('Create') : m === 'todo' ? t('Add') : m === 'agent' ? t('Ask') : t('Edit'));
-/** Its title, with the keys that do it from the box (Edit has none: what is typed is in the file as it is typed). */
-export const sendTitle = (m: Mode, keys: string): string => (m === 'run' ? t('Run ({keys})', {keys}) : m === 'issue' ? t('Create ({keys})', {keys})
-  : m === 'todo' ? t('Add ({keys})', {keys}) : m === 'agent' ? t('Ask ({keys})', {keys}) : t('Edit'));
 /** What the empty box says goes there (for Edit, with the file in front, `file`: the line held is an empty one). A
  * terminal says nothing after its prompt: the cursor waiting there is all it says, as any terminal's (its hint is a
  * width of nothing, so the line is known to be empty: forge-desk.css draws the cursor then). */
@@ -209,21 +207,21 @@ export function turn(chip: HTMLElement, button: HTMLElement, change: () => void)
   chip.style.overflow = 'hidden';
   const ms = paced(240);
   const done = () => { ghost.remove(); chip.style.overflow = ''; };
-  chip.animate([{width: `${was}px`}, {width: `${width}px`}], {duration: ms, easing: 'cubic-bezier(.2, .9, .25, 1)'}).finished.then(done, done);
+  chip.animate([{width: `${was}px`}, {width: `${width}px`}], {duration: cut() ? 0 : ms, easing: SPRING}).finished.then(done, done);
   // The old words are out (up) before the new are in (from below), as a counter's figures turn, never one over the other.
-  ghost.animate([{translate: '0 0', opacity: 1}, {translate: '0 -12px', opacity: 0}], {duration: ms * .4, easing: 'ease-in', fill: 'forwards'});
+  ghost.animate([{translate: '0 0', opacity: 1}, {translate: '0 -12px', opacity: 0}], {duration: cut() ? 0 : ms * .4, easing: SPRING, fill: 'forwards'});
   for (const c of chip.children) {
     if (c === ghost || getComputedStyle(c).display === 'none') continue;
     c.animate([{translate: '0 12px', opacity: 0}, {translate: '0 12px', opacity: 0, offset: .38}, {translate: '0 0', opacity: 1}],
-      {duration: ms * 1.15, easing: 'cubic-bezier(.2, .9, .25, 1)'});
+      {duration: cut() ? 0 : ms * 1.15, easing: SPRING});
   }
-  chip.animate([{scale: '1 1'}, {scale: '.96 .9', offset: .3}, {scale: '1.03 1.04', offset: .65}, {scale: '1 1'}], {duration: paced(300), easing: 'ease-out'});
-  button.animate([{opacity: 0, translate: '0 5px'}, {opacity: 1, translate: '0 0'}], {duration: ms, easing: 'cubic-bezier(.2, .9, .25, 1)'});
+  chip.animate([{scale: '1 1'}, {scale: '.96 .9', offset: .3}, {scale: '1.03 1.04', offset: .65}, {scale: '1 1'}], {duration: cut() ? 0 : paced(300), easing: SPRING});
+  button.animate([{opacity: 0, translate: '0 5px'}, {opacity: 1, translate: '0 0'}], {duration: cut() ? 0 : ms, easing: SPRING});
 }
 
 /** A line just come into the Prompt's flow, lit a moment as it lands (as a file landed on is: styles.css landed). */
 const lit = (row: HTMLElement) => row.animate([{backgroundColor: 'color-mix(in srgb, var(--marker) 70%, transparent)'},
-  {backgroundColor: 'color-mix(in srgb, var(--marker) 70%, transparent)', offset: .3}, {backgroundColor: 'transparent'}], {duration: paced(1200), easing: 'ease-out'});
+  {backgroundColor: 'color-mix(in srgb, var(--marker) 70%, transparent)', offset: .3}, {backgroundColor: 'transparent'}], {duration: cut() ? 0 : paced(1200), easing: SPRING});
 /** The slip's margin round its words (styles.css .slip's padding). */
 const SLIP = {x: 6, y: 2};
 /** Whether `row` is where it can be seen: on the screen, inside the Prompt's output where it scrolls. */
@@ -258,9 +256,9 @@ export function sendInto(field: HTMLTextAreaElement): (row: HTMLElement | null) 
 /** The slip `words` slid on to the right and rising out of sight, as a sheet slid off and taken. */
 function slideAway(words: HTMLElement) {
   const gone = () => words.remove();
-  words.animate([{translate: '0 0', opacity: 1, easing: 'cubic-bezier(.3, .7, .3, 1)'},
-    {translate: '76px 0', opacity: 1, offset: .4, easing: 'cubic-bezier(.55, 0, .85, .35)'}, {translate: '82px -38px', opacity: 0}],
-  {duration: paced(400)}).finished.then(gone, gone);
+  words.animate([{translate: '0 0', opacity: 1, easing: SPRING},
+    {translate: '76px 0', opacity: 1, offset: .4, easing: SPRING}, {translate: '82px -38px', opacity: 0}],
+  {duration: cut() ? 0 : paced(400)}).finished.then(gone, gone);
 }
 
 /**
@@ -278,10 +276,10 @@ function slideInto(words: HTMLElement, row: HTMLElement, from: {x: number; y: nu
   const paper = 'var(--paper)', bare = 'color-mix(in srgb, var(--paper) 0%, transparent)';
   const lift = '0 6px 18px color-mix(in srgb, var(--ink) 12%, transparent)', flat = '0 0 0 transparent';
   words.animate([
-    {translate: '0 0', scale: '1', backgroundColor: bare, boxShadow: flat, easing: 'cubic-bezier(.3, .7, .3, 1)'},
-    {translate: '28px 0', scale: '1', backgroundColor: paper, boxShadow: lift, offset: .22, easing: 'cubic-bezier(.45, 0, .2, 1)'},
+    {translate: '0 0', scale: '1', backgroundColor: bare, boxShadow: flat, easing: SPRING},
+    {translate: '28px 0', scale: '1', backgroundColor: paper, boxShadow: lift, offset: .22, easing: SPRING},
     {translate: `${dx}px ${dy}px`, scale: `${scale}`, backgroundColor: bare, boxShadow: flat, opacity: 1, offset: .9},
     {translate: `${dx}px ${dy}px`, scale: `${scale}`, backgroundColor: bare, boxShadow: flat, opacity: 0}],
-  {duration: ms}).finished.then(gone, gone);
-  row.animate([{opacity: 0}, {opacity: 0, offset: .86}, {opacity: 1}], {duration: ms}).finished.then(() => { if (row.isConnected) lit(row); }, () => {});
+  {duration: cut() ? 0 : ms}).finished.then(gone, gone);
+  row.animate([{opacity: 0}, {opacity: 0, offset: .86}, {opacity: 1}], {duration: cut() ? 0 : ms}).finished.then(() => { if (row.isConnected) lit(row); }, () => {});
 }

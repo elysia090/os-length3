@@ -1,4 +1,4 @@
-import {onRenamed, rekey} from '../../repos/repos.ts';
+import {onRenamed, rekey} from '../../../repo/repos.ts';
 
 // What was asked of the box's Agent in each repo while the app runs, and what came of it, as it comes: the question,
 // then what it did and said in the order it did and said it (a step as the pane's flow says it: read, ran, edited;

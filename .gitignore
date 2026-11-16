@@ -29,9 +29,11 @@ agent-key
 /why-web.zip
 /why-web.zip.sha256
 /.wrangler/
-/tests/app/.dist/
-/tests/app/.logs/
-/tests/app/.results/
-/tests/app/.report/
-/tests/app/.pg/
+/why/test/app/.dist/
+/why/test/app/.logs/
+/why/test/app/.results/
+/why/test/app/.report/
+/why/test/app/.pg/
 /why/desktop/binaries/
+
+node_modules
