@@ -1,0 +1,57 @@
+// Connect a prepared distribution to an ordinary Vite deployment. This stages
+// exactly the files its manifest names, not a whole working directory. It neither
+// compiles a second runtime nor persists anything a visitor writes.
+import {createHash} from 'node:crypto';
+import {readFileSync, lstatSync} from 'node:fs';
+import {resolve, join} from 'node:path';
+
+export function distributionAssets(directory, {base = 'ricebox', maxAssetBytes = Infinity} = {}) {
+  if (!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(base)) throw new Error('ricebox: base must be a relative asset directory');
+  if (!(maxAssetBytes > 0)) throw new Error('ricebox: maxAssetBytes must be positive');
+  const root = resolve(directory), result = new Map();
+  const read = (name, digest, size) => {
+    if (!/^(?:webroot\.json|muk\.json|index-[0-9a-f]{64}\.json|packs\/[0-9a-f]{64}\.pack|blobs\/[0-9a-f]{64}\.bin)$/.test(name)) {
+      throw new Error(`ricebox: invalid distribution asset ${name}`);
+    }
+    const parts = name.split('/');
+    for (let i = 1; i <= parts.length; i++) {
+      const stat = lstatSync(join(root, ...parts.slice(0, i)));
+      if (stat.isSymbolicLink()) throw new Error(`ricebox: symbolic link in asset ${name}`);
+      if (i === parts.length && !stat.isFile()) throw new Error(`ricebox: not a file: ${name}`);
+    }
+    const bytes = readFileSync(join(root, name));
+    if (bytes.length > maxAssetBytes) throw new Error(`ricebox: ${name} is ${bytes.length} bytes, over the deployment asset limit ${maxAssetBytes}`);
+    if (size !== undefined && bytes.length !== size) throw new Error(`ricebox: wrong size for ${name}`);
+    if (digest && createHash('sha256').update(bytes).digest('hex') !== digest) throw new Error(`ricebox: wrong digest for ${name}`);
+    result.set(`${base}/${name}`, bytes);
+    return bytes;
+  };
+  const about = JSON.parse(read('webroot.json'));
+  if (!about.index || !/^[0-9a-f]{64}$/.test(about.index.sha256) || about.index.path !== `index-${about.index.sha256}.json` || !Number.isSafeInteger(about.index.size)) throw new Error('ricebox: invalid index descriptor');
+  const index = JSON.parse(read(about.index.path, about.index.sha256, about.index.size));
+  if (index.sha256 !== about.sha256 || index.version !== about.version) throw new Error('ricebox: distribution and index disagree');
+  const blob = (b) => {
+    if (!b || !/^[0-9a-f]{64}$/.test(b.sha256) || !Number.isSafeInteger(b.size) || b.size < 0 || b.path !== `blobs/${b.sha256}.bin`) throw new Error('ricebox: invalid blob descriptor');
+    return read(b.path, b.sha256, b.size);
+  };
+  blob(index.translator);
+  for (const translation of index.translations ?? []) { blob(translation.elf); blob(translation.wasm); }
+  for (const pack of index.packs) read(`packs/${pack.name}`, undefined, pack.bytes);
+  // The maker is required for a deployable root. Do not produce a seemingly valid
+  // deployment whose first launch fails because muk was omitted.
+  const muk = JSON.parse(read('muk.json'));
+  blob(muk);
+  return result;
+}
+
+export default function ricebox({distribution, base = 'ricebox', maxAssetBytes} = {}) {
+  return {
+    name: 'ricebox',
+    config() { return {worker: {format: 'es'}}; },
+    generateBundle() {
+      if (!distribution) return;
+      const assets = distributionAssets(distribution, {base, maxAssetBytes});
+      for (const [fileName, source] of assets) this.emitFile({type: 'asset', fileName, source});
+    },
+  };
+}
