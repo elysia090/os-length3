@@ -133,6 +133,7 @@ export const LINES: Line[] = [
   {uses: ['md5sum', 'sha1sum', 'sha256sum', 'sha512sum', 'cksum'], line: 'printf abc | md5sum; printf abc | sha1sum; printf abc | sha256sum; printf abc | sha512sum | cut -c1-16; printf abc | cksum'},
   {uses: ['b2sum'], line: 'printf abc | b2sum | cut -c1-32'},
   {uses: ['openssl'], line: "printf abc | openssl dgst -sha256 | cut -d' ' -f2; echo hi | openssl base64; openssl rand -hex 4 | wc -c"},
+  {uses: ['openssl'], line: "unset OPENSSL_CONF; d=$(mktemp -d); openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj /CN=localhost -keyout $d/key.pem -out $d/cert.pem -days 1 2>/dev/null && openssl x509 -in $d/cert.pem -noout -subject; rc=$?; rm -rf $d; exit $rc"},
   // Archives
   {uses: ['tar', 'gzip', 'gunzip'], line: 'cd /tmp && mkdir -p ar/d && echo z > ar/d/f && tar czf ar.tgz -C ar d && tar tzf ar.tgz && gzip -c ar/d/f > f.gz && gunzip -c f.gz'},
   {uses: ['zip', 'unzip'], line: 'cd /tmp && mkdir -p zp && echo q > zp/q && zip -qr zp.zip zp && rm -r zp && unzip -q zp.zip && cat zp/q'},
@@ -320,4 +321,5 @@ async function main() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main();
+
 
