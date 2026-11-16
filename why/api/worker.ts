@@ -17,6 +17,7 @@
 import coreWasm from 'virtual:why-core.wasm?url';
 import {Core, type Answer, type Send} from './abi.ts';
 import {MemoryFS, WASI, type Changes, type Entry} from './wasi.ts';
+import {asked, finished, whole, commit as commitDisk} from '../../module/disk/indexeddb.ts';
 import {ASKED, DATA, GENERATION, META, NAME, NODES, READ, TOO_BIG, VERSION, stand} from './kept.ts';
 
 const scope = self as unknown as {postMessage(m: unknown): void; onmessage: ((e: MessageEvent) => void) | null};
@@ -84,16 +85,6 @@ let database: Promise<IDBDatabase | null> | undefined;
  * a page isolated from other origins has shared memory. Without it, every file's bytes are read with the rest.
  */
 const lazily = typeof SharedArrayBuffer === 'function' && (self as {crossOriginIsolated?: boolean}).crossOriginIsolated !== false;
-
-const asked = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
-  r.onsuccess = () => resolve(r.result);
-  r.onerror = () => reject(r.error);
-});
-const finished = (tx: IDBTransaction) => new Promise<void>((resolve, reject) => {
-  tx.oncomplete = () => resolve();
-  tx.onerror = () => reject(tx.error);
-  tx.onabort = () => reject(tx.error ?? new Error('the write was abandoned'));
-});
 
 /** The name this was kept under while the product was named root3 (kept.ts NAME is its name now). */
 const BEFORE = 'root3-core';
@@ -180,10 +171,6 @@ function open(): Promise<IDBDatabase | null> {
  * as its read of the nodes answered, waited out PATIENCE as the tab's worker kept a change, and a file just written
  * was taken as unreadable).
  */
-async function whole<T>(tx: IDBTransaction, r: IDBRequest<T>): Promise<T> {
-  return (await Promise.all([asked(r), finished(tx)]))[0];
-}
-
 async function generation(db: IDBDatabase): Promise<number> {
   const tx = db.transaction(META);
   return (await whole(tx, tx.objectStore(META).get(GENERATION)) as number | undefined) ?? 0;
@@ -192,12 +179,15 @@ async function generation(db: IDBDatabase): Promise<number> {
 /** Every node as kept (a file's bytes left where they are, unless they cannot be read later), and the generation. */
 async function readAll(db: IDBDatabase): Promise<{entries: Entry[]; generation: number}> {
   const tx = db.transaction([NODES, DATA, META]);
-  const [entries, g, bytes] = await Promise.all([
+  const reading = Promise.all([
     asked(tx.objectStore(NODES).getAll() as IDBRequest<Entry[]>),
     asked(tx.objectStore(META).get(GENERATION) as IDBRequest<number | undefined>),
     lazily ? null : asked(tx.objectStore(DATA).getAll() as IDBRequest<{path: string; data: Uint8Array}[]>),
-    finished(tx),
-  ]);
+  ]).then(value => ({value}), error => ({error}));
+  await finished(tx);
+  const outcome = await reading;
+  if ('error' in outcome) throw outcome.error;
+  const [entries, g, bytes] = outcome.value;
   if (bytes) {
     const by = new Map(bytes.map((b) => [b.path, b.data]));
     for (const e of entries) if (e.kind === 'file') e.data = by.get(e.path) ?? new Uint8Array(0);
@@ -213,16 +203,8 @@ async function readAll(db: IDBDatabase): Promise<{entries: Entry[]; generation: 
 let keeping: Promise<void> = Promise.resolve();
 
 async function keep(db: IDBDatabase, changes: Changes, g: number) {
-  const tx = db.transaction([NODES, DATA, META], 'readwrite');
-  const nodes = tx.objectStore(NODES), data = tx.objectStore(DATA);
-  for (const path of changes.removed) { nodes.delete(path); data.delete(path); }
-  for (const {data: bytes, ...e} of changes.put) {
-    if (e.kind === 'file') { nodes.put({...e, size: bytes?.length ?? 0}); data.put({path: e.path, data: bytes ?? new Uint8Array(0)}); }
-    else { nodes.put(e); data.delete(e.path); }
-  }
-  tx.objectStore(META).put(g, GENERATION);
-  const done = finished(tx);
-  keeping = done.catch(() => {});
+  const done = commitDisk(db, {nodes: NODES, data: DATA, meta: META, generation: GENERATION}, changes, g - 1);
+  keeping = done.then(() => {}, () => {});
   await done;
 }
 
@@ -392,9 +374,9 @@ async function run(name: string, args: unknown): Promise<Answer> {
 /** Keep what the last call changed, and tell the other tabs each path; under the lock. */
 async function persist(db: IDBDatabase | null, answer: Answer): Promise<Answer> {
   if (!fs.dirty) return answer;
-  const changes = fs.flush();
-  if (!db) return answer;
   try {
+    const changes = fs.flush();
+    if (!db) return answer;
     await keep(db, changes, seen + 1);
     seen++;
     channel.postMessage({changed: true, from: tab, paths: [...changes.put.map((e) => e.path), ...changes.removed]});
@@ -465,9 +447,14 @@ async function calls(list: {name: string; args: unknown}[]): Promise<Answer[]> {
     return out;
   }
   return locked(async () => {
-    const db = await current();
+    let db = await current();
     await readInRepos(db, list);
-    for (const c of list) out.push(await persist(db, await run(c.name, c.args)));
+    for (const c of list) {
+      // A rejected disk commit invalidates the memory snapshot. Later calls in the same batch must reload too,
+      // not continue writing from the rejected generation until the next message arrives.
+      if (seen < 0) { db = await current(); await readInRepos(db, [c]); }
+      out.push(await persist(db, await run(c.name, c.args)));
+    }
     return out;
   });
 }
@@ -516,3 +503,4 @@ async function handle(m: Message) {
 
 let turn = Promise.resolve();
 scope.onmessage = (e) => { turn = turn.then(() => handle(e.data as Message)); };
+
