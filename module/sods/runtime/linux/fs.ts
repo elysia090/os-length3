@@ -246,7 +246,14 @@ export class File extends Node {
    * the file to every other mapping (another process's memory: fork, or the same file mapped twice).
    */
   map(m: Mapping): void {
-    m.seen = m.proc.bytes.slice(m.start, m.start + m.length);
+    const bytes = m.proc.bytes.subarray(m.start, m.start + m.length);
+    // Reuse the first live mapping's baseline when its extent and initial bytes agree.
+    // Looking at one candidate keeps registration bounded even for many extents. A mapping can
+    // begin after an exposed file view changed; that requires its own baseline. Do not
+    // share subranges: a small surviving mapping must not retain a larger snapshot.
+    const other = this.maps?.values().next().value;
+    m.seen = other && other.off === m.off && other.length === m.length
+      && other.seen!.length === bytes.length && same(other.seen!, bytes) ? other.seen : bytes.slice();
     if (!this.maps) { this.maps = new Set(); counted.mapped++; }
     this.maps.add(m);
   }
@@ -831,3 +838,4 @@ export function provide(vfs: Vfs, {path, bytes, mode = 0o644, root = false}: {pa
   }
   return vfs.writeFile(path, bytes, mode);
 }
+
