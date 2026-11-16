@@ -335,7 +335,10 @@ visit() {
   done_="$done_$1 "
 }
 for n in ${*:-$all}; do visit "$n"; done
-# What was made: name, version, its source's sha256, a line each.
+# What this selection made or reused, in the same sorted order as a full build.
+# Cached packages outside its dependency closure are not part of this deployment.
 for n in $all; do
+  case $done_ in *" $n "*) ;; *) continue ;; esac
   if [ -f "$out/$n/key" ]; then echo "$n $(cat "$out/$n/version") $(cat "$out/$n/source")"; fi
 done > "$out/record"
+
