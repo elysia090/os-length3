@@ -37,11 +37,12 @@ for (const [path, {source, javascript}] of closure) {
   writeFileSync(destination, source);
   writeFileSync(destination.slice(0, -3) + '.js', javascript.replace(/(['"])(\.[^'"\n]+)\.ts\1/g, '$1$2.js$1'));
 }
-writeFileSync(join(out, 'vite.mjs'), readFileSync(join(repository, 'module/ricebox/npm/vite.mjs')));
+mkdirSync(join(out, 'module/ricebox/npm'), {recursive: true});
+writeFileSync(join(out, 'module/ricebox/npm/vite.mjs'), readFileSync(join(repository, 'module/ricebox/npm/vite.mjs'), 'utf8').replace("'../layers/table.ts'", "'../layers/table.js'"));
 writeFileSync(join(out, 'package.json'), JSON.stringify({
   name: 'ricebox', version: '0.0.1', private: true, type: 'module',
   description: 'The product-independent ricebox distribution loader',
-  exports: {'.': {types: './' + entry, import: './' + entry.replace(/\.ts$/, '.js')}, './vite': './vite.mjs'},
+  exports: {'.': {types: './' + entry, import: './' + entry.replace(/\.ts$/, '.js')}, './vite': './module/ricebox/npm/vite.mjs'},
   engines: {node: '>=22.18'},
 }, null, 2) + '\n');
 writeFileSync(join(out, 'README.md'), `# ricebox\n\nThis local package exposes the existing createRoot and Box contracts without why.\nIt carries ricebox and sods JavaScript, including their Worker entry points.\nServe the distribution's layers separately and give createRoot its base URL.\nA bundler with module-Worker support is required for browser applications.\nThis package does not select/build packages, persist user data, or deploy a service.\nIt does not claim Cloudflare isolate execution merely because its files can be served there.\nThe package is private while the complete public installation flow is being verified.\n`);

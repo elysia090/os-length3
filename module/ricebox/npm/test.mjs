@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import ricebox, {distributionAssets} from './vite.mjs';
+import {packOf} from '../layers/table.ts';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'ricebox-assets-'));
@@ -13,18 +14,20 @@ function fixture(t) {
   const hash = (b) => createHash('sha256').update(b).digest('hex');
   const blob = (text) => { const bytes = Buffer.from(text), sha256 = hash(bytes); const path = `blobs/${sha256}.bin`; writeFileSync(join(root, path), bytes); return {path, sha256, size: bytes.length}; };
   const translator = blob('translator'), muk = blob('maker');
-  const index = {sha256: 'root', version: '0.0.1', translator, translations: [], packs: []};
+  const pack = packOf([Buffer.from('file contents')], b => createHash('sha256').update(b).digest());
+  writeFileSync(join(root, 'packs', pack.name), pack.bytes);
+  const index = {sha256: 'root', version: '0.0.1', translator, translations: [], packs: [{name:pack.name,bytes:pack.bytes.length}], files: [{pack:0,at:pack.at[0],len:13}]};
   const bytes = Buffer.from(JSON.stringify(index)), sha256 = hash(bytes), path = `index-${sha256}.json`;
   writeFileSync(join(root, path), bytes);
   writeFileSync(join(root, 'webroot.json'), JSON.stringify({sha256:'root', version:'0.0.1', index: {path, sha256, size:bytes.length}}));
   writeFileSync(join(root, 'muk.json'), JSON.stringify(muk));
   writeFileSync(join(root, '.env'), 'must never be deployed');
-  return {root, translator};
+  return {root, translator, pack};
 }
 
 test('connects only manifest-listed assets, no secrets or product paths', t => {
   const {root} = fixture(t), files = distributionAssets(root);
-  assert.equal(files.size, 5);
+  assert.equal(files.size, 6);
   assert.ok([...files.keys()].every(p => p.startsWith('ricebox/')));
   assert.ok(![...files.keys()].some(p => /why|\.env/.test(p)));
 });
@@ -53,6 +56,13 @@ test('uses ES Workers and emits existing AOT distribution unchanged', t => {
   const {root} = fixture(t), plugin = ricebox({distribution:root,base:'runtime/assets'}), emitted=[];
   assert.equal(plugin.config().worker.format,'es');
   plugin.generateBundle.call({emitFile: a => emitted.push(a)});
-  assert.equal(emitted.length,5);
+  assert.equal(emitted.length,6);
   assert.ok(emitted.every(a => a.type === 'asset' && a.fileName.startsWith('runtime/assets/')));
+});
+
+test('rejects a pack with changed bytes using the shared pack verifier', t => {
+  const {root, pack} = fixture(t);
+  pack.bytes[pack.bytes.length - 1] ^= 1;
+  writeFileSync(join(root,'packs',pack.name),pack.bytes);
+  assert.throws(() => distributionAssets(root), /not the file its table names/);
 });

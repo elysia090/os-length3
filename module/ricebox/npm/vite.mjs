@@ -4,6 +4,7 @@
 import {createHash} from 'node:crypto';
 import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
+import {checkPacks} from '../layers/table.ts';
 
 export function distributionAssets(directory, {base = 'ricebox', maxAssetBytes = Infinity} = {}) {
   if (!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(base)) throw new Error('ricebox: base must be a relative asset directory');
@@ -36,7 +37,8 @@ export function distributionAssets(directory, {base = 'ricebox', maxAssetBytes =
   };
   blob(index.translator);
   for (const translation of index.translations ?? []) { blob(translation.elf); blob(translation.wasm); }
-  for (const pack of index.packs) read(`packs/${pack.name}`, undefined, pack.bytes);
+  const packs = new Map(index.packs.map(pack => [pack.name, read(`packs/${pack.name}`, undefined, pack.bytes)]));
+  checkPacks(index, (name, at, len) => packs.get(name).subarray(at, at + len), name => packs.get(name).length, bytes => createHash('sha256').update(bytes).digest());
   // The maker is required for a deployable root. Do not produce a seemingly valid
   // deployment whose first launch fails because muk was omitted.
   const muk = JSON.parse(read('muk.json'));
