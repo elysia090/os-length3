@@ -225,6 +225,8 @@ test('a letter typed is there in the frame after its key, in every field; and wh
 test('a folder in File opens by its name and shuts by it again, and does nothing else: the page under the tree stays where it is', async ({signedIn: app}) => {
   await app.newRepo.make('hello', {template: 'C'});
   await app.rail.go('home');
+  // The preceding Forge → Home move is setup, not a move caused by unfolding the folder.
+  await expect(app.page.locator('.place-left')).toHaveCount(0);
   const src = await app.file.item('hello', 'src');
   const name = src.getByRole('button', {name: 'src', exact: true}).first();
   const title = await app.page.title();
