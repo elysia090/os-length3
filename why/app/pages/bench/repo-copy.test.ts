@@ -74,3 +74,116 @@ test('what was saved after a file being read again does not reach the copy befor
   await settled();
   assert.equal(put.length, 5);
 });
+
+
+// Writeback is a why repo adapter, not an implicit persistent disk in ricebox.
+import {store} from '../../../repo/repos.ts';
+import {WriteBack} from './repo-copy.ts';
+
+function journal(t: import('node:test').TestContext) {
+  const before = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+  const memory: Record<string, string> = {};
+  Object.defineProperties(memory, {
+    setItem: {value: (k: string, v: string) => { memory[k] = v; }},
+    getItem: {value: (k: string) => memory[k] ?? null},
+    removeItem: {value: (k: string) => { delete memory[k]; }},
+  });
+  Object.defineProperty(globalThis, 'sessionStorage', {configurable: true, value: memory});
+  t.after(() => { if (before) Object.defineProperty(globalThis, 'sessionStorage', before); else Reflect.deleteProperty(globalThis, 'sessionStorage'); });
+  return memory;
+}
+const changed = (bytes = new Uint8Array([1])) => ({dirs: [], files: [{path: 'same.txt', bytes, existed: true}], removed: []});
+
+test('completed writes release the pending file allowance instead of exhausting a long session', async (t) => {
+  journal(t);
+  let written = 0;
+  t.mock.method(store, 'put', async () => { written++; return 1; });
+  const skipped: string[] = [];
+  const copy = new WriteBack('notes', 'shell', (s) => skipped.push(s));
+  for (let i = 0; i < 2001; i++) { copy.write(changed()); await new Promise<void>((r) => setImmediate(r)); }
+  assert.equal(written, 2001);
+  assert.deepEqual(skipped, []);
+});
+
+test('completed writes release the pending byte allowance', async (t) => {
+  journal(t);
+  let written = 0;
+  t.mock.method(store, 'put', async () => { written++; return 1; });
+  const copy = new WriteBack('notes', 'shell', () => {});
+  const bytes = new Uint8Array(1 << 20);
+  for (let i = 0; i < 33; i++) { copy.write(changed(bytes)); await new Promise<void>((r) => setImmediate(r)); }
+  assert.equal(written, 33);
+});
+
+test('failed writes keep their recovery journal and later writes cannot be replayed behind them', async (t) => {
+  const kept = journal(t);
+  let calls = 0;
+  t.mock.method(store, 'put', async () => { if (++calls === 1) throw new Error('disk temporarily unavailable'); return 1; });
+  const skipped: string[] = [];
+  const copy = new WriteBack('notes', 'shell', (s) => skipped.push(s));
+  copy.write(changed(new Uint8Array([1])));
+  await settled();
+  assert.equal(Object.keys(kept).length, 1, 'the failed write must survive a reload');
+  copy.write(changed(new Uint8Array([2])));
+  await settled();
+  assert.equal(Object.keys(kept).length, 2, 'retain later values too so replay cannot restore the older value last');
+  assert.equal(skipped.length, 1);
+});
+
+test('pending writes stay bounded, and successful batches leave no journal', async (t) => {
+  const kept = journal(t);
+  let release!: () => void, written = 0;
+  const gate = new Promise<void>((r) => { release = r; });
+  t.mock.method(store, 'put', async () => { await gate; written++; return 1; });
+  const skipped: string[] = [];
+  const copy = new WriteBack('bounded', 'shell', (s) => skipped.push(s));
+  for (let i = 0; i < 2001; i++) copy.write(changed());
+  release();
+  await settled();
+  assert.equal(written, 2000);
+  assert.equal(skipped.length, 1);
+  assert.equal(Object.keys(kept).length, 0);
+  copy.write(changed());
+  await settled();
+  assert.equal(written, 2001);
+});
+
+test('recovery ordering is shared by simultaneous shells of the same repo, not unrelated repos', async (t) => {
+  const kept = journal(t);
+  let fail = true;
+  t.mock.method(store, 'put', async () => { if (fail) throw new Error('refused'); return 1; });
+  const a = new WriteBack('shared', 'shell-a', () => {});
+  const b = new WriteBack('shared', 'shell-b', () => {});
+  const other = new WriteBack('unrelated', 'shell-c', () => {});
+  a.write(changed());
+  await settled();
+  fail = false;
+  b.write(changed(new Uint8Array([2])));
+  other.write(changed());
+  await settled();
+  const journals = Object.values(kept).map((v) => JSON.parse(v));
+  assert.deepEqual(journals.map((j) => j.repo), ['shared', 'shared']);
+  assert.deepEqual(journals.map((j) => j.files[0].b64), ['AQ==', 'Ag==']);
+});
+
+test('two shells serialize writes to the same repo before acknowledging their journals', async (t) => {
+  const kept = journal(t);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const calls: number[] = [];
+  t.mock.method(store, 'put', async (_repo: string, _path: string, bytes: Uint8Array) => {
+    calls.push(bytes[0]);
+    if (bytes[0] === 1) { await gate; throw new Error('late refusal'); }
+    return 1;
+  });
+  const a = new WriteBack('concurrent', 'a', () => {});
+  const b = new WriteBack('concurrent', 'b', () => {});
+  a.write(changed(new Uint8Array([1])));
+  b.write(changed(new Uint8Array([2])));
+  await settled();
+  assert.deepEqual(calls, [1]);
+  release();
+  await settled();
+  assert.deepEqual(calls, [1, 2]);
+  assert.equal(Object.keys(kept).length, 2);
+});
