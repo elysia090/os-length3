@@ -454,6 +454,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Source download fallback and digest checks
+        run: sh module/ricebox/make/fetch.test.sh
       - id: key
         run: echo "key=root-${{ hashFiles('why/**', 'Cargo.toml', 'Cargo.lock', '.cargo/**', '.github/workflows/ci.yml', 'module/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
