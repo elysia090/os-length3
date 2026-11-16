@@ -1,7 +1,6 @@
 // One directory of the guest kept in step with the outside: what the guest
 // changes under `root` is reported as changes, and what the outside changes
-// is put in without being reported back. The app uses it so a repo the
-// shell works in is the same repo File, Forge and Git show.
+// is put in without being reported back. Product path policies belong to the caller.
 //
 // A change is {dirs: [rel], files: [{path: rel, bytes, existed}], removed: [rel]}.
 // Paths are relative to `root`; a removed directory is reported once, not
@@ -14,21 +13,10 @@ type Seen = {node: Dir; dir: true} | {node: File; dir: false; version: number; s
 /** What changed: directories made, files written (their bytes, whether each was there before), and what went. */
 export interface Changes { dirs: string[]; files: {path: string; bytes: Uint8Array; existed: boolean}[]; removed: string[] }
 
-/**
- * A repo's .git however it is spelt (the app's core refuses the same names):
- * case, trailing dots and spaces, the short name git~1 and invisible code
- * points do not make it something else. It is never mirrored either way.
- */
-export function isGitName(name: string): boolean {
-  const n = name.replace(/[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g, '').toLowerCase().replace(/[. ]+$/, '');
-  return n === '.git' || n === 'git~1';
-}
-
 /** Every directory and file under `dir`, by relative path. */
 function walk(dir: Dir, prefix: string, out: Map<string, Seen>): Map<string, Seen> {
   for (const [name, node] of dir.entries) {
     const rel = prefix ? `${prefix}/${name}` : name;
-    if (isGitName(name)) continue;
     if (node instanceof Dir) { out.set(rel, {node, dir: true}); walk(node, rel, out); }
     else if (node instanceof File) { if (node.maps) node.settle(); out.set(rel, {node, dir: false, version: node.version, size: node.size}); }
   }
@@ -83,7 +71,7 @@ export class Mirror {
   /** Put an outside change in: bytes for a file, null to remove, 'dir' for a directory. */
   put(rel: string, what: Uint8Array | null | 'dir'): void {
     const parts = rel.split('/');
-    if (!rel || parts.some((p) => !p || p === '.' || p === '..' || isGitName(p))) return;
+    if (!rel || parts.some((p) => !p || p === '.' || p === '..')) return;
     const path = `${this.root}/${rel}`;
     if (what === 'dir') this.vfs.mkdirp(path);
     else if (what === null) {

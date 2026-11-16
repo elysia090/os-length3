@@ -13,6 +13,7 @@ import {createHash} from 'node:crypto';
 import {createWriteStream, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {pipeline} from 'node:stream/promises';
 
 /** One file of a release as this tree pins it: where the bucket keeps it, where the Remote serves it, where GitHub has it. */
 export interface Pinned {
@@ -75,16 +76,16 @@ async function asset(s: Source, p: Pinned): Promise<Response> {
 async function keep(r: Response, file: string, most: number): Promise<{sha256: string; bytes: number}> {
   const hash = createHash('sha256'), out = createWriteStream(file);
   let bytes = 0;
-  try {
-    for await (const chunk of (r.body ?? []) as unknown as AsyncIterable<Uint8Array>) {
+  // pipeline owns completion, backpressure and every stream error. In particular,
+  // ENOSPC must reject this pin, not escape as an unhandled WriteStream event.
+  await pipeline(r.body ?? [], async function* (chunks: AsyncIterable<Uint8Array>) {
+    for await (const chunk of chunks) {
       bytes += chunk.length;
       if (bytes > most) throw new Error(`more than the ${most} bytes pinned`);
       hash.update(chunk);
-      if (!out.write(chunk)) await new Promise<void>((go) => out.once('drain', () => go()));
+      yield chunk;
     }
-  } finally {
-    await new Promise<void>((done, failed) => out.end((e?: Error | null) => (e ? failed(e) : done())));
-  }
+  }, out);
   return {sha256: hash.digest('hex'), bytes};
 }
 
@@ -121,3 +122,4 @@ export async function mirror(pins: Pinned[], store: Store, source: Source, log: 
   if (failed.length) throw new Error(`release files not on the Remote:\n  ${failed.join('\n  ')}`);
   return {kept, put};
 }
+

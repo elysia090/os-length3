@@ -34,8 +34,8 @@ node --test test/*.test.ts                                     with a real progr
 | a host, by its address | dialled as it stands | the same |
 
 The host hands in what carries a link (`dial`): in node a socket; in a page a relay's WebSocket (`host/relay.ts`).
-What is said over a relay is sealed between the box and the host it reaches (TLS, SSH): the relay reads none of
-it. sods lends the port it is given at (`linux({outside})`), as it lends a tree, and knows nothing of who answers;
+TLS and SSH protect contents between the box and the destination. Plaintext protocols remain visible to the
+relay; WebSocket transport encryption alone does not provide destination-to-box secrecy. sods lends the port it is given at (`linux({outside})`), as it lends a tree, and knows nothing of who answers;
 a box has it only where it was lent the machine's network (a network namespace of its own has its loopback alone).
 
 ## Its bounds
@@ -52,8 +52,11 @@ Counted by hand, held by its tests.
 
 ## Not yet
 
-- A page is not given it: the Worker that runs the root takes no outside yet, and no relay is served (shipto's:
-  who may use it, to where, how much).
+- A page is not given it: the Worker that runs the root takes no outside yet. shipto already serves the relay
+  on Node and Workers, with admission and destination checks.
+- End-to-end backpressure: the current relay protocol has no receive credit. The outside bridge can retain
+  incoming bytes while the guest is full; this is not a bounded network-memory guarantee.
 - A link between boxes on two devices (a channel between them, the Remote saying only where each is).
 - A host that answers a page itself (HTTP with CORS) reached by the page's own request, with no relay.
 - IPv6.
+

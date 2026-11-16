@@ -1,56 +1,37 @@
 #!/bin/sh
-# OS Length3 Linux's root, put together from its packages (module/ricebox/make/build.sh) and this tree's why, as one bundle.
-#
-#   sh module/ricebox/make/assemble.sh PACKAGES OUT [VERSION]
-#
-# PACKAGES is what module/ricebox/make/build.sh made (each package's tree, key, version and source digest). The root is every
-# package's tree, none over another's: a path two packages give stops it, naming both. It is laid out by what each
-# place is, the merged /usr of Fedora, Debian and Arch:
-#
-#   /usr       what the root is: programs, libraries, data (read-only); /bin, /sbin and /lib are links into it
-#   /etc       its settings
-#   /var/lib   state a package keeps; /var/cache, /var/tmp, /var/log the repo's caches (bound over by the app)
-#   /root      home, and each repo at /root/<repo>
-#   /tmp, /run the Prompt's own, gone when it ends
-#   /dev, /proc, /sys  the kernel's, made by the app
-#
-# Beside the packages: /usr/bin/why (static, musl, this tree's, without the SSH listener: a Prompt listens for no one),
-# /etc/os-release (its version), and what the root is made of,
-# /usr/share/length3/packages (each package's name, version, source digest and key) with the pins it was made from.
-# Its package database says exactly what is there, each file with its checksum (module/ricebox/make/db.ts). The bundle (pax, which
-# the installer reads) is deterministic (sorted names, time 0, owner 0, no per-run header names) and so is its zstd:
-# the same packages and why make the same bundle, byte for byte. OUT gets it, its SHA256SUMS and its manifest.
+# Assemble the selected package record into one distribution, independent of any product.
+# sh module/ricebox/make/assemble.sh PACKAGES OUT [VERSION [NAME]]
+# Each package has tree/, version, source, key and optionally url. Product composition
+# supplies packages too; it may supply os-release and extra provenance in PACKAGES/manifest.
+# The same root is used directly or served as layers. No persistence is implied.
 set -eu
-pkgs=$1; out=$2; version=${3:-0.0.0}
+[ "$#" -ge 2 ] && [ "$#" -le 4 ] || { echo "usage: assemble.sh PACKAGES OUT [VERSION [NAME]]" >&2; exit 2; }
+pkgs=$1; out=$2; version=${3:-0.0.1}; name=${4:-ricebox}
+case $name in ''|*[!a-zA-Z0-9._-]*) echo 'assemble: invalid distribution name' >&2; exit 2 ;; esac
+echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo 'assemble: invalid version' >&2; exit 2; }
 here=$(cd "$(dirname "$0")/.." && pwd)
-os=$(cd "$here/../.." && pwd)
 pkgs=$(cd "$pkgs" && pwd)
 say() { echo "root-assemble: $*" >&2; }
 [ -s "$pkgs/record" ] || { say "$pkgs has no record: run module/ricebox/make/build.sh first"; exit 1; }
-for n in $(cd "$here/packages" && ls */recipe.sh | sed 's|/recipe\.sh$||'); do
-  grep -q "^$n " "$pkgs/record" || { say "$n has a recipe and was not made"; exit 1; }
-done
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/length3-root.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/ricebox-root.XXXXXX")
 trap 'rm -rf "${work:?}"' EXIT
-mkdir -p "$work/tree/root" "$work/why/usr/bin"
+mkdir -p "$work/tree/root"
 root="$work/tree/root"
 
-# why, as a package of its own.
-(cd "$os" && cargo build -q --locked --profile prompt -p why --no-default-features --target x86_64-unknown-linux-musl)
-why="$os/target/x86_64-unknown-linux-musl/prompt/why"
-install -m 0755 "$why" "$work/why/usr/bin/why"
-
-# NAME VERSION URL TREE, a line each: the packages, and why.
+# NAME VERSION URL TREE, a line per selected package.
 . "$here/pins/sources.env"
 while read -r n v _; do
-  # Where its first pin's source is from; - for a package made of this tree's files alone (system-config).
-  pin=$(sed -n 's/^pins="\([A-Z0-9_]*\).*/\1/p' "$here/packages/$n/recipe.sh")
+  case $n in ''|*[!a-zA-Z0-9._+-]*) say "invalid package name: $n"; exit 1 ;; esac
+  [ -d "$pkgs/$n/tree" ] || { say "$n has no built tree"; exit 1; }
   url=-
-  [ -z "$pin" ] || eval "url=\${${pin}_URL}"
+  if [ -f "$pkgs/$n/url" ]; then url=$(cat "$pkgs/$n/url")
+  elif [ -f "$here/packages/$n/recipe.sh" ]; then
+    pin=$(sed -n 's/^pins="\([A-Z0-9_]*\).*/\1/p' "$here/packages/$n/recipe.sh")
+    [ -z "$pin" ] || eval "url=\${${pin}_URL}"
+  fi
   echo "$n $v $url $pkgs/$n/tree"
 done < "$pkgs/record" > "$work/list"
-echo "why $version https://github.com/elysia090/os-length3 $work/why" >> "$work/list"
 
 # Each tree, none over another's.
 while read -r n _ _ t; do
@@ -74,7 +55,8 @@ install -d -m 0700 "$root/root"
 ln -s ../run "$root/var/run"
 
 # Its own words: what it is, its shell, and what it is made of.
-sed "s/@VERSION@/$version/g" "$here/etc/os-release" > "$root/etc/os-release"
+mkdir -p "$root/etc"
+[ -f "$root/etc/os-release" ] || sed "s/@VERSION@/$version/g" "$here/etc/os-release" > "$root/etc/os-release"
 chmod 0644 "$root/etc/os-release"
 mkdir -p "$root/usr/share/length3"
 while read -r n _; do echo "$n $(cat "$pkgs/$n/version") $(cat "$pkgs/$n/source") $(cat "$pkgs/$n/key")"; done < "$pkgs/record" \
@@ -82,18 +64,18 @@ while read -r n _; do echo "$n $(cat "$pkgs/$n/version") $(cat "$pkgs/$n/source"
 install -m 0644 "$here/pins/sources.env" "$root/usr/share/length3/sources.env"
 mkdir -p "$root/etc/apk"
 printf '%s\n' "# No repository yet: what is installed is all there is (usr/lib/apk/db/installed)." > "$root/etc/apk/repositories"
+node "$here/make/scripts.ts" "$root"
 node "$here/make/db.ts" "$root" "$work/list"
 
 {
   echo "format=length3-root-v3"
   echo "version=$version"
   sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\) \([^ ]*\)$/package.\1=\2 \3 \4/' "$root/usr/share/length3/packages"
-  echo "why.sha256=$(sha256sum "$why" | cut -d' ' -f1)"
-  echo "why.source=$(git -C "$os" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$os" status --porcelain -- why ':!why/app' ':!why/desktop' ':!why/test' ':!why/shipto/remote' 2>/dev/null | grep -q . && echo +changed)"
-  echo "assembler.sha256=$(cat "$here/make/assemble.sh" "$here/make/db.ts" "$here/etc/os-release" | sha256sum | cut -d' ' -f1)"
+  [ ! -f "$pkgs/manifest" ] || cat "$pkgs/manifest"
+  echo "assembler.sha256=$(cat "$here/make/assemble.sh" "$here/make/db.ts" "$here/make/scripts.ts" "$here/etc/os-release" | sha256sum | cut -d' ' -f1)"
 } > "$work/tree/manifest"
 
-name="os-length3-linux-$version-x86_64"
+name="$name-$version-x86_64"
 tar -C "$work/tree" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
   --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
   -cf "$work/$name.tar" manifest root
@@ -105,3 +87,4 @@ size=$(stat -c %s "$out/$name-$sha.tar.zst")
 echo "$sha  $name-$sha.tar.zst" > "$out/SHA256SUMS"
 cp "$work/tree/manifest" "$out/manifest"
 echo "$name-$sha.tar.zst  $size bytes  sha256 $sha"
+

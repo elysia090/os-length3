@@ -48,8 +48,8 @@
 # desktop entries and icons (the root has no man, no locales and no desktop, and its interactive shell is ash, whose
 # completions are its own). Nothing a package made names where it was made: what it says of what it was built against
 # is said as the root has it, a recipe whose build names its sources by where they are says them from their top, and a
-# package that still names its build's place is not made. Every script it made is for sh or bash, the root's
-# languages.
+# package that still names its build's place is not made. Script interpreters are checked on the assembled
+# root, not against the build host's installed languages.
 set -eu
 out=$1; shift
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -287,16 +287,7 @@ make_one() {
   # Nothing it made runs with more than the rights of whoever runs it, or is everyone's to change.
   loose=$(find "$t" \( -type f \( -perm -4000 -o -perm -2000 \) \) -o \( ! -type l -perm -0002 \) | sed "s|^$t/||" | tr '\n' ' ')
   [ -z "$loose" ] || { say "$name: setuid, setgid or writable by everyone: $loose"; exit 1; }
-  # Every script it made runs in the root: by sh or bash, the root having no other language (git's sample hooks,
-  # which nothing runs until a person renames one, aside).
-  stray=$(find "$t" -type f -perm -u+x ! -name '*.sample' | while read -r f; do
-    l=$(head -c 128 "$f" | head -n 1 | tr -d '\000')
-    case $l in '#!'*) ;; *) continue ;; esac
-    set -f; set -- ${l#??}; set +f
-    [ "${1:-}" != /usr/bin/env ] || shift
-    case ${1##*/} in sh|bash) ;; *) echo "${f#"$t/"} (${1:-nothing})" ;; esac
-  done)
-  [ -z "$stray" ] || { say "$name: scripts for a language the root has not: $stray"; exit 1; }
+  # Script interpreters are checked against the assembled selection, not this package alone.
   # Nothing it made names where it was made.
   named=$(grep -rlF "$w" "$t" 2>/dev/null | sed "s|^$t/||" | tr '\n' ' ')
   [ -z "$named" ] || { say "$name: names where it was made ($w): $named"; exit 1; }
@@ -335,7 +326,10 @@ visit() {
   done_="$done_$1 "
 }
 for n in ${*:-$all}; do visit "$n"; done
-# What was made: name, version, its source's sha256, a line each.
+# What this selection made or reused, in the same sorted order as a full build.
+# Cached packages outside its dependency closure are not part of this deployment.
 for n in $all; do
+  case $done_ in *" $n "*) ;; *) continue ;; esac
   if [ -f "$out/$n/key" ]; then echo "$n $(cat "$out/$n/version") $(cat "$out/$n/source")"; fi
 done > "$out/record"
+

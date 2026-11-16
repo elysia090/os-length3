@@ -7,13 +7,15 @@
 #
 # Needs cargo with the wasm32-unknown-unknown target, and a C compiler for muk.
 set -eu
-[ "$#" -eq 2 ] || { echo "usage: sh module/ricebox/make/layers.sh ROOT.tar.zst OUT" >&2; exit 2; }
+[ "$#" -ge 2 ] || { echo "usage: sh module/ricebox/make/layers.sh ROOT.tar.zst OUT" >&2; exit 2; }
 make=$(cd "$(dirname "$0")" && pwd)
 here=$(cd "$make/../../.." && pwd)
 sods=$(cd "$here/module/sods" && pwd)
 root=$1
 out=$2
+shift 2
 target=${CARGO_TARGET_DIR:-$sods/target}
 (cd "$sods" && cargo build -q --locked --release --target wasm32-unknown-unknown --lib && cargo build -q --locked --release --bin sods)
-node "$make/layers.ts" "$root" "$out" --translator "$target/wasm32-unknown-unknown/release/sods.wasm" --sods "$target/release/sods" --stage "$here/target/userland"
+node "$make/layers.ts" "$root" "$out" --translator "$target/wasm32-unknown-unknown/release/sods.wasm" --sods "$target/release/sods" --stage "$here/target/userland" "$@"
 node "$make/muk.ts" "$out"
+

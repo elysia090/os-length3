@@ -1,7 +1,9 @@
 import {h} from '../../ui/dom.ts';
 import {isNative, type Freed} from '../../../api/host.ts';
 import {t} from '../../../text/i18n.ts';
-import {onSync} from '../../../shipto/lifecycle.ts';
+import {onSync, remoteOnly, repoState} from '../../../shipto/lifecycle.ts';
+import {connection} from '../../../shipto/connection.ts';
+import {deviceStateKey} from './device-state.ts';
 import {readSpace} from '../../../device/space.ts';
 import {pageHead, parts} from '../kit/common.ts';
 import type {Context} from '../kit/context.ts';
@@ -41,7 +43,7 @@ export function runtime(ctx: Context): Node[] {
   const read = (fresh = false): void => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo), fresh).then((u) => {
     // A repo's gear list out is not drawn away under the pointer: read again once it is put away.
     if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => read(fresh), 1000); return; }
-    const now = JSON.stringify({u: {...u, kept: false}, last});
+    const now = deviceStateKey(u, last, u.items.map((i) => i.id.startsWith('repo:') ? repoState(i.what) : undefined), remoteOnly(), !!connection());
     if (now !== drawn) { drawn = now; holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); })); }
     if (u.kept && holder.isConnected) read(true);
   },

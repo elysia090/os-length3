@@ -44,7 +44,7 @@ cd "$here"
 case "$version" in 0.[0-5].*) node module/sods/runtime/targets.ts --owed ;; esac
 
 # The root: its packages, made from this tree's pins, with this tree's why.
-sh module/ricebox/make/assemble.sh "${ROOT_PACKAGES:?the root's packages, as module/ricebox/make/build.sh made them}" "$out" "$version"
+sh why/make/root.sh "${ROOT_PACKAGES:?the root's packages, as module/ricebox/make/build.sh made them}" "$out" "$version"
 root=$(ls "$out"/os-length3-linux-"$version"-x86_64-*.tar.zst)
 
 # The film of the release, from the branch that holds it (kept out of main's history), checked against its digest.
@@ -126,3 +126,4 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "\`manifest\` names each package, the why inside and the script that put them together. The web build opens with any static server (\`npx serve\` in the unzipped folder). The desktop app: \`sudo apt install ./$deb\`, or \`chmod +x $appimage\` and run it (x86-64 Linux with glibc 2.39 or newer: Ubuntu 24.04, Debian 13 and later, with a desktop's libEGL)."
 } > ../notes.md
 cat ../notes.md
+

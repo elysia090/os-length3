@@ -1,54 +1,18 @@
-// The web root: why for the browser, made from the release root itself: the same tree the
-// desktop app installs, so a Prompt in a browser runs the same programs
-// with the same bytes. Nothing is built or chosen apart from the root:
-// BusyBox, why and /etc are the root's own.
-//
-//   node module/ricebox/make/layers.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR]
-//
-// ROOT is a release root, os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst
-// (checked against the digest in its name), read as why installs it
-// (module/ricebox/make/tree.ts). OUT (public/webroot) receives:
-//
-//   webroot.json               what why this is: {name: 'why', version, sha256 and bytes
-//                         of the root (the digest why/prompt/roots/pins.rs pins), file,
-//                         root: {name, profile}, index: {path, sha256, size},
-//                         translator: {name, version}}. The one name that is not a
-//                         digest; everything it names is.
-//   index-<sha256>.json   every path of the root ({codec: 'zstd', packs, dirs,
-//                         links, files: [{path, mode, size, pack, at, len, raw?}]},
-//                         as module/ricebox/layers/mount.ts mounts it), the translator and
-//                         the translations made ahead of time ({path, sha256 of the
-//                         program, elf, wasm}, each a blob: {path, sha256, size,
-//                         bytes}); its digest is what a
-//                         release pins for the web (why/prompt/roots/pins.rs, `web`)
-//   packs/<sha256>.pack   one per package of the root (lib/apk/db/installed says
-//                         which owns a file; what none owns is one more, `local`):
-//                         its table (the SHA-256 of each file it stores), then its
-//                         files' bytes, each a zstd frame (level 19; as it is when
-//                         that is no smaller); named by its table's digest, so a
-//                         file read alone from it is checked (module/ricebox/layers/table.ts),
-//                         and a release that changes a few packages leaves every
-//                         other pack's name, and what a browser has of it
-//   blobs/<sha256>.bin    the translator (sods.wasm) and each translation made
-//                         ahead of time with its program's bytes, gzip'd: the hot programs (`--hot`, by
-//                         default bash, the Prompt's shell, BusyBox, every coreutils
-//                         applet, why, and git, which every repo is), translated whole by the same
-//                         translator so no Prompt spends its first seconds on them; every other
-//                         program is translated in the browser when it first runs
-//
-// Names are sorted and nothing depends on time, so the same root and
-// translator give the same files, byte for byte. Unreferenced files of a why
-// before in OUT go. `--stage DIR` also puts BusyBox, its translation and
-// sods.wasm in DIR, for muk/test (target/userland).
-import {execFileSync} from 'node:child_process';
+// One distribution root as content-addressed layers for any static host. This is a
+// delivery form of the same tree, not a separate product or package selection.
+// node module/ricebox/make/layers.ts ROOT OUT [--translator SODS.wasm] [--sods SODS]
+//   [--hot PATH,…] [--name NAME] [--stage DIR] [--cache DIR]
+// The root's filename binds its version and digest. Each pack is checked by its
+// digest; files are fetched only when read. Product-specific hot programs and
+// compatibility names are supplied by the caller.
 import {createHash} from 'node:crypto';
-import {copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
 import {packOf} from '../layers/table.ts';
+import {translateWhole} from './aot-cache.ts';
 import {readTarball, sha256, type Index} from './tree.ts';
 
 const here = fileURLToPath(new URL('../../..', import.meta.url));
@@ -67,16 +31,19 @@ function flag(name: string, d: string | null = null): string | null {
 }
 const translatorWasm = flag('--translator', join(repo, 'module/sods/target/wasm32-unknown-unknown/release/sods.wasm'));
 const sods = flag('--sods', join(repo, 'module/sods/target/release/sods'));
-const hot = flag('--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/why,/usr/bin/git').split(',').filter(Boolean);
+const chosenHot = flag('--hot');
+const hot = (chosenHot || '/usr/bin/bash,/usr/bin/busybox,/usr/bin/git').split(',').filter(Boolean);
+const distributionName = flag('--name');
 const stage = flag('--stage');
+const aotCache = flag('--cache', join(repo, 'target/ricebox-aot'));
 const [rootFile, out] = args;
 if (!rootFile || !out) { console.error('usage: webroot.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR]'); process.exit(2); }
 
 // A root is a few hundred megabytes: past a few gigabytes held, something is wrong, and it stops before the machine does.
 setInterval(() => { const rss = process.memoryUsage().rss; if (rss > 3e9) { console.error(`webroot.ts: holding ${(rss / 1e9).toFixed(1)} GB; stopped`); process.exit(1); } }, 500).unref();
 
-const named = /^os-length3-linux-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-x86_64-([0-9a-f]{64})\.tar\.zst$/.exec(basename(rootFile));
-if (!named) throw new Error(`${basename(rootFile)} is not named as a release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst)`);
+const named = /^[a-zA-Z0-9._-]+-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-x86_64-([0-9a-f]{64})\.tar\.zst$/.exec(basename(rootFile));
+if (!named) throw new Error(`${basename(rootFile)} is not named as a release root (NAME-X.Y.Z-x86_64-<sha256>.tar.zst)`);
 const [, version = '', rootSha = ''] = named;
 const got = sha256(readFileSync(rootFile));
 if (got !== rootSha) throw new Error(`${basename(rootFile)}: its bytes are sha256 ${got}, not the digest in its name`);
@@ -129,17 +96,14 @@ const compress = (bytes: Buffer) => new Promise<Buffer>((resolve) => {
 /** A file's bytes as its pack keeps them: compressed when that is smaller, else raw. */
 type Stored = {z: Buffer; raw?: undefined} | {raw: Buffer; z?: undefined};
 const hotBytes = new Map<string, Buffer>();
-let before: Buffer | undefined;
 const stored: {path: string; bytes: Promise<Stored>}[] = [];
 const {entries, manifest} = await readTarball(rootFile, (e, bytes) => {
   if (!bytes) return; // a second name of a file: the file's bytes
   if (hot.includes(e.path)) hotBytes.set(e.path, bytes);
-  if (e.path === '/usr/bin/l3') before = bytes;
   stored.push({path: e.path, bytes: bytes.length ? compress(bytes).then((z): Stored => (z.length < bytes.length ? {z} : {raw: bytes})) : Promise.resolve({raw: bytes})});
 });
-// The root's own command is why; a root released before it was named so (0.6.4) has it as l3.
-const cli = hot.indexOf('/usr/bin/why');
-if (cli >= 0 && !hotBytes.has('/usr/bin/why') && before) { hot[cli] = '/usr/bin/l3'; hotBytes.set('/usr/bin/l3', before); }
+// A deployment may remove optional tools. Only an explicitly requested hot set is mandatory.
+if (!chosenHot) for (let i = hot.length - 1; i >= 0; i--) if (!hotBytes.has(hot[i])) hot.splice(i, 1);
 for (const p of hot) if (!hotBytes.has(p)) throw new Error(`${p} is not a file of this root`);
 const packed = new Map(await Promise.all(stored.map(async (s) => [s.path, await s.bytes] as const)));
 for (const w of pool) void w.terminate();
@@ -208,23 +172,21 @@ const translator = {name: 'sods', version: crate(join(repo, 'module/sods/Cargo.t
 // Each hot program translated whole by the native build of the same translator (it gives the bytes the wasm one
 // does): what it reaches only through a pointer (BusyBox's applets and its shell's builtins) is there from its first
 // run, not translated as it runs.
-const work = mkdtempSync(join(tmpdir(), 'why-'));
 const translations: Index['translations'] = [];
-try {
-  for (const path of hot) {
-    const elf = join(work, 'in'), made = join(work, 'out.wasm');
-    const bytes = hotBytes.get(path) ?? Buffer.alloc(0);
-    writeFileSync(elf, bytes);
-    execFileSync(sods, ['--whole', elf, made], {stdio: ['ignore', 'ignore', 'inherit']});
-    // The program's own bytes beside it (the same as in its pack), so a page has both without a zstd decoder of its own.
-    translations.push({path, sha256: sha256(bytes), elf: blob(bytes), wasm: blob(readFileSync(made))});
-    if (stage && path === '/usr/bin/busybox') { mkdirSync(stage, {recursive: true}); copyFileSync(elf, join(stage, 'busybox')); copyFileSync(made, join(stage, 'busybox.wasm')); }
+for (const path of hot) {
+  const bytes = hotBytes.get(path) ?? Buffer.alloc(0);
+  const made = translateWhole(sods, wasm, bytes, aotCache || null);
+  translations.push({path, sha256: sha256(bytes), elf: blob(bytes), wasm: blob(made)});
+  if (stage && path === '/usr/bin/busybox') {
+    mkdirSync(stage, {recursive: true});
+    writeFileSync(join(stage, 'busybox'), bytes);
+    writeFileSync(join(stage, 'busybox.wasm'), made);
   }
-} finally { rmSync(work, {recursive: true, force: true}); }
-if (stage) writeFileSync(join(stage, 'sods.wasm'), wasm);
+}
+if (stage) { mkdirSync(stage, {recursive: true}); writeFileSync(join(stage, 'sods.wasm'), wasm); }
 
 const index: Index = {
-  name: release.NAME ?? 'OS Length3 Linux', version, sha256: rootSha, codec: 'zstd',
+  name: release.NAME ?? 'ricebox', version, sha256: rootSha, codec: 'zstd',
   packs: packList,
   dirs: entries.filter((e) => e.type === 'dir').map((e) => ({path: e.path, mode: e.mode})),
   links: entries.filter((e) => e.type === 'link').map((e) => ({path: e.path, target: e.target ?? ''})),
@@ -236,18 +198,19 @@ const indexPath = `index-${indexSha}.json`;
 writeFileSync(join(out, indexPath), json);
 const profile = /^base\.profile=(.*)$/m.exec(manifest ?? '')?.[1] ?? '';
 const about = {
-  name: 'why', version, sha256: rootSha, bytes: statSync(rootFile).size, file: basename(rootFile),
+  name: distributionName || index.name, version, sha256: rootSha, bytes: statSync(rootFile).size, file: basename(rootFile),
   root: {name: index.name, profile},
   index: {path: indexPath, sha256: indexSha, size: json.length},
   translator: {name: translator.name, version: translator.version},
 };
 writeFileSync(join(out, 'webroot.json'), `${JSON.stringify(about, null, 2)}\n`);
 
-// What a why before left here, and this one does not name, goes (only names this script makes).
+// Artifacts a previous distribution left here, and this one does not name, go (only names this script makes).
 const keep = new Set([indexPath, 'webroot.json', ...packList.map((p) => `packs/${p.name}`), translator.path, ...translations.flatMap((t) => [t.elf.path, t.wasm.path])]);
 for (const f of readdirSync(out)) if (/^index-[0-9a-f]{64}\.json$/.test(f) && !keep.has(f)) rmSync(join(out, f));
 for (const [dir, re] of [['packs', /^[0-9a-f]{64}\.pack$/], ['blobs', /^[0-9a-f]{64}\.bin$/]] as const) {
   for (const f of readdirSync(join(out, dir))) if (re.test(f) && !keep.has(`${dir}/${f}`)) rmSync(join(out, dir, f));
 }
 const total = packList.reduce((n, p) => n + p.bytes, 0);
-console.log(`why ${version} (root sha256 ${rootSha.slice(0, 12)}…): ${packList.length} packs ${total} bytes, ${files.length} files, ${index.dirs.length} dirs, ${index.links.length} links; translator ${translator.size} bytes; ${translations.map((t) => `${t.path} ${t.elf.size}+${t.wasm.size}`).join(', ')}; index ${indexPath} ${json.length} bytes`);
+console.log(`${about.name} ${version} (root sha256 ${rootSha.slice(0, 12)}…): ${packList.length} packs ${total} bytes, ${files.length} files, ${index.dirs.length} dirs, ${index.links.length} links; translator ${translator.size} bytes; ${translations.map((t) => `${t.path} ${t.elf.size}+${t.wasm.size}`).join(', ')}; index ${indexPath} ${json.length} bytes`);
+

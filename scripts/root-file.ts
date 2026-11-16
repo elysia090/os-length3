@@ -30,10 +30,20 @@ const releases = process.env.WHY_RELEASES || `https://github.com/${repo}/release
 // A server's own trouble (5xx, a connection cut) is asked again, four times over a minute; anything else is final.
 async function download(url: string, what: string): Promise<Buffer> {
   for (let attempt = 0; ; attempt++) {
-    const r = await fetch(url, {headers: {'user-agent': 'why-build'}}).catch((e: unknown) => e as Error);
-    const failed = r instanceof Error ? r.message : r.ok ? null : `${r.status}`;
-    if (!failed) return Buffer.from(await (r as Response).arrayBuffer());
-    if (attempt === 4 || (!(r instanceof Error) && r.status < 500)) throw new Error(`${what}: ${failed}`);
+    let failed: string;
+    let retry = true;
+    try {
+      const r = await fetch(url, {headers: {'user-agent': 'why-build'}});
+      if (r.ok) return Buffer.from(await r.arrayBuffer());
+      failed = `${r.status}`;
+      retry = r.status >= 500;
+      // Release an error response before retrying, including terminal HTTP failures.
+      await r.body?.cancel().catch(() => {});
+    } catch (e) {
+      // Receiving headers is not a completed download: body failures retry too.
+      failed = e instanceof Error ? e.message : String(e);
+    }
+    if (attempt === 4 || !retry) throw new Error(`${what}: ${failed}`);
     console.error(`${what}: ${failed}; again in ${4 << attempt} s`);
     await new Promise((go) => setTimeout(go, 4000 << attempt));
   }
@@ -44,3 +54,4 @@ mkdirSync(dir, {recursive: true});
 writeFileSync(`${at}.part`, bytes);
 renameSync(`${at}.part`, at);
 console.log(at);
+
