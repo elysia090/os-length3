@@ -70,8 +70,12 @@ test('pinned prebuilt tools compose real layers without cargo or a C build', asy
     sods: artifact('sods',Buffer.from('not invoked: no executable fixture')),
     muk: artifact('muk',Buffer.from('maker fixture')),
   };
+  const {publishCatalog} = await import('../../otter/make/artifacts.mjs');
+  const published=join(at,'published');
+  const pin={...publishCatalog({packageCache:cache,packages:{base:[],extra:[]},toolchains:{[`${process.platform}-${process.arch}`]:Object.fromEntries(Object.entries(tools).map(([n,d])=>[n,d.path]))},output:published}),url:'https://example.test/catalog.json'};
+  t.mock.method(globalThis,'fetch',async url=>new Response(readFileSync(join(published,new URL(url).pathname.slice(1)))));
   const output=join(at,'layers');
-  await prepareDistribution({packages:['base'],packageCache:cache,tools,output,cache:''});
+  await prepareDistribution({packages:['base'],packageCache:join(at,'downloaded'),catalog:pin,output,cache:''});
   const assets=distributionAssets(output);
   assert.ok(assets.has('ricebox/muk.json'));
   assert.ok([...assets.keys()].some(n=>n.startsWith('ricebox/packs/')));

@@ -3,6 +3,7 @@
 import {mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, symlinkSync, rmSync, renameSync, existsSync, lstatSync} from 'node:fs';
 import {resolve, join, dirname} from 'node:path';
 import {spawn} from 'node:child_process';
+import {acquirePackages} from '../../otter/make/artifacts.mjs';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 
@@ -41,15 +42,20 @@ function run(command, args) {
     child.once('exit', (code, signal) => code === 0 ? resolve() : reject(new Error(`ricebox: ${command} failed (${signal || code})`)));
   });
 }
-export async function prepareDistribution({packages, packageCache, toolchain, tools, output, version = '0.0.1', cache, hot = []}) {
+export async function prepareDistribution({packages, packageCache, catalog, toolchain, tools, output, version = '0.0.1', cache, hot = []}) {
   if (!packageCache || !output) throw new Error('ricebox: packageCache and output are required for package composition');
-  if (!toolchain && !tools) throw new Error('ricebox: provide pinned tools, or a source toolchain for development');
+  if (!toolchain && !tools && !catalog) throw new Error('ricebox: provide pinned tools, or a source toolchain for development');
   if (!Array.isArray(hot) || hot.some(p => typeof p !== 'string' || !p.startsWith('/') || /[\s,]/.test(p))) throw new Error('ricebox: hot must contain absolute guest program paths');
   const target = resolve(output), source = toolchain ? resolve(toolchain) : fileURLToPath(new URL('../../../', import.meta.url));
   if (existsSync(target)) throw new Error(`ricebox: output already exists: ${target}`);
   mkdirSync(dirname(target), {recursive: true});
   const work = mkdtempSync(join(dirname(target), '.ricebox-build-'));
   try {
+    if (catalog) {
+      const acquired = await acquirePackages({catalog, packages, cache: packageCache});
+      packages = acquired.packages; packageCache = acquired.packageCache; tools ??= acquired.tools;
+      if (!toolchain && !tools) throw new Error('ricebox: catalog has no build toolchain');
+    }
     selectPackages(packages, packageCache, join(work, 'packages'));
     await run('sh', [join(source, 'module/ricebox/make/assemble.sh'), join(work, 'packages'), join(work, 'root'), version, 'ricebox']);
     const archives = readdirSync(join(work, 'root')).filter(n => n.endsWith('.tar.zst'));
