@@ -19,8 +19,8 @@
 // memory, held}, {type: 'exit', status} or {type: 'error', message}. A
 // kernel waits `for` 'input' (what runs reads what is typed) or 'time' (it
 // sleeps, and goes on by itself in `ms` milliseconds; waiting.ts). `memory` is all the
-// kernel holds, and `held` the same by kind (Kernel.held: guest,
-// translations, translator, files, and what of it can go now, spare).
+// worker holds, including disposable pack responses, and `held` the same by kind (Kernel.held: guest,
+// translations, translator, files including pack responses, and what of it can go now, spare).
 // {type: 'free'} gives back all that can go without stopping anything and
 // answers {type: 'freed', before, after}; a program that ends gives back
 // what is past the kernel's budget on its own.
@@ -147,6 +147,10 @@ let kernel: Kernel | null = null;
 let mirror: Mirror | null = null;
 /** What 'ready' readied ({translate, vfs, files}), or 'start' itself where none came first. */
 let readied: Promise<Readied> | null = null;
+// Transport cache belongs to the root's worker, never the guest or a product.
+let packRange: ReturnType<typeof syncRange> | null = null;
+const withPacks = <T extends {files: number; spare: number; total: number}>(held: T, bytes = packRange?.held() ?? 0): T =>
+  ({...held, files: held.files + bytes, spare: held.spare + bytes, total: held.total + bytes});
 let apart = false;
 const pending: Uint8Array[] = [];
 let ended = false;
@@ -170,7 +174,7 @@ function ready(data: Ready): Promise<Readied> {
   readied ??= (async () => {
     const translate = await loadTranslator(data.translator);
     const vfs = new Vfs();
-    if (data.root) mountPack(mountTarget(vfs), data.root.index, {range: syncRange(data.root.url, rangeNow), decode: translate.unzstd, sha256: translate.sha256});
+    if (data.root) mountPack(mountTarget(vfs), data.root.index, {range: packRange = syncRange(data.root.url, rangeNow, new Map(data.root.index.packs.map(p => [p.name, p.bytes]))), decode: translate.unzstd, sha256: translate.sha256});
     // Over the root, so what was given (why, its BusyBox) is what runs: a hot program in the root's own node.
     for (const f of data.files ?? []) provide(vfs, f);
     // The box's maker, beside the root it makes boxes of. A root served with none has no way to run its programs.
@@ -231,7 +235,7 @@ function paused(r: Pumped): Said {
   report();
   send();
   told();
-  const m = said(r, k.held(), performance.now(), (keep?.reading() ?? 0) > 0);
+  const m = said(r, withPacks(k.held()), performance.now(), (keep?.reading() ?? 0) > 0);
   self.postMessage(m);
   // Waiting for a person: what is due is consolidated while they read or type, then said as anything translated is.
   clearTimeout(idle);
@@ -390,7 +394,12 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     return;
   }
   if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
-  if (data.type === 'free') { if (kernel) self.postMessage({type: 'freed', ...kernel.free(0)}); return; }
+  if (data.type === 'free') {
+    const bytes = packRange?.held() ?? 0;
+    packRange?.clear();
+    if (kernel) { const result = kernel.free(0); self.postMessage({type: 'freed', before: withPacks(result.before, bytes), after: withPacks(result.after, 0)}); }
+    return;
+  }
   if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
   if (data.type === 'hot') { if (kernel) given(kernel, data.files); return; }
   // A program translated ahead by the page since this Prompt started (ahead.ts): read when it is run.
@@ -446,3 +455,4 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
   }
   if (kernel instanceof RemoteKernel) kernel.serve().catch(failed); else pump();
 };
+
