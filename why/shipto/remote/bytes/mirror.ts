@@ -78,7 +78,7 @@ async function keep(r: Response, file: string, most: number): Promise<{sha256: s
   let bytes = 0;
   // pipeline owns completion, backpressure and every stream error. In particular,
   // ENOSPC must reject this pin, not escape as an unhandled WriteStream event.
-  await pipeline(r.body ?? [], async function* (chunks) {
+  await pipeline(r.body ?? [], async function* (chunks: AsyncIterable<Uint8Array>) {
     for await (const chunk of chunks) {
       bytes += chunk.length;
       if (bytes > most) throw new Error(`more than the ${most} bytes pinned`);
