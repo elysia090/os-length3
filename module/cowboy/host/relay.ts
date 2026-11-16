@@ -8,24 +8,33 @@ import type {Dial} from './outside.ts';
 export const relay = (url: string): Dial => (where, heard) => {
   const ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
-  let made = false, over = false;
-  const fail = (errno: number) => { if (!over) { over = true; heard.failed(errno); } };
-  ws.onopen = () => ws.send(new TextEncoder().encode(`${where}\n`));
+  let made = false, over = false, receivedEnd = false, sentEnd = false;
+  const fail = (errno: number) => { if (!over) { over = true; ws.close(); heard.failed(errno); } };
+  ws.onopen = () => { if (!over) ws.send(new TextEncoder().encode(`${where}\n`)); };
   ws.onmessage = ({data}) => {
-    const bytes = new Uint8Array(data as ArrayBuffer);
+    if (over) return;
+    if (!(data instanceof ArrayBuffer)) { fail(71); return; }
+    const bytes = new Uint8Array(data);
     if (!made) {
-      if (bytes.length !== 1 || bytes[0] !== 0) { fail(bytes[0] || 111); ws.close(); return; }
+      if (bytes.length !== 1 || bytes[0] !== 0) { fail(bytes[0] || 111); return; }
       made = true;
       heard.opened();
       return;
     }
-    if (bytes.length) heard.bytes(bytes); else heard.ended();
+    if (bytes.length) { if (receivedEnd) { fail(71); return; } heard.bytes(bytes); }
+    else if (!receivedEnd) { receivedEnd = true; heard.ended(); }
   };
   ws.onerror = () => fail(made ? 104 : 101);
-  ws.onclose = () => { if (made && !over) { over = true; heard.ended(); } else fail(101); };
+  ws.onclose = ({code, wasClean}) => {
+    if (over) return;
+    // The carrier disappearing is not a TCP FIN. Both explicit ends must have crossed first.
+    if (made && receivedEnd && sentEnd && wasClean && (code === 1000 || code === 1005)) over = true;
+    else fail(made ? 104 : 101);
+  };
   return {
-    send: (bytes) => { if (ws.readyState === WebSocket.OPEN) ws.send(bytes); },
-    finish: () => { if (ws.readyState === WebSocket.OPEN) ws.send(new Uint8Array(0)); },
+    send: (bytes) => { if (!over && !sentEnd && ws.readyState === WebSocket.OPEN) ws.send(bytes.buffer instanceof ArrayBuffer ? bytes as Uint8Array<ArrayBuffer> : bytes.slice()); },
+    finish: () => { if (!over && !sentEnd && ws.readyState === WebSocket.OPEN) { sentEnd = true; ws.send(new Uint8Array(0)); } },
     close: () => { over = true; ws.close(); },
   };
 };
+
