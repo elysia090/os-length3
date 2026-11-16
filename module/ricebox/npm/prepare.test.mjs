@@ -54,3 +54,28 @@ test('orchestration invokes assemble then AOT and publishes only after success',
   assert.equal(existsSync(join(at,'failed')),false);
   assert.equal(readdirSync(at).some(n=>n.startsWith('.ricebox-build-')),false);
 });
+
+test('pinned prebuilt tools compose real layers without cargo or a C build', async t => {
+  const {createHash} = await import('node:crypto');
+  const {distributionAssets} = await import('./vite.mjs');
+  const {at, cache} = fixture(t);
+  const artifact = (name, bytes) => {
+    const path = join(at,name); writeFileSync(path,bytes);
+    return {path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
+  };
+  // Nonexecutable package fixture: no program is claimed to run or translate.
+  // Real assemble, layers, manifest and pack validation are exercised here.
+  const tools = {
+    translator: artifact('translator.wasm',Buffer.from([0,97,115,109,1,0,0,0])),
+    sods: artifact('sods',Buffer.from('not invoked: no executable fixture')),
+    muk: artifact('muk',Buffer.from('maker fixture')),
+  };
+  const output=join(at,'layers');
+  await prepareDistribution({packages:['base'],packageCache:cache,tools,output,cache:''});
+  const assets=distributionAssets(output);
+  assert.ok(assets.has('ricebox/muk.json'));
+  assert.ok([...assets.keys()].some(n=>n.startsWith('ricebox/packs/')));
+  tools.translator.sha256='0'.repeat(64);
+  await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,output:join(at,'bad')}),/integrity mismatch/);
+  assert.equal(existsSync(join(at,'bad')),false);
+});
