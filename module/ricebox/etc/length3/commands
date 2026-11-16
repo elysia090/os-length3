@@ -12,7 +12,7 @@ whoami	core	+
 id	core	+	
 groups	core	+	
 printenv	core	+	
-getconf	core	-	
+getconf	core	+	
 shuf	core	+	
 ls	files	+	
 cat	files	+	
@@ -52,26 +52,26 @@ wc	text	+
 xargs	text	+	
 tee	text	+	
 paste	text	+	
-join	text	-	awk
+join	text	+	
 split	text	+	
 diff	text	+	
 patch	text	+	
-column	text	-	awk
+column	text	+	
 nl	text	+	
 fold	text	+	
 expand	text	+	
 unexpand	text	+	
 comm	text	+	
-fmt	text	-	fold
+fmt	text	+	
 tac	text	+	
-iconv	text	-	
+iconv	text	+	
 dos2unix	text	+	
 unix2dos	text	+	
 rg	search	+	
 fd	search	+	
 fzf	search	t	
 which	search	+	
-whereis	search	-	which
+whereis	search	+	
 clear	terminal	+	
 reset	terminal	+	
 tty	terminal	+	
@@ -88,7 +88,7 @@ sha1sum	checksum	+
 sha256sum	checksum	+	
 sha512sum	checksum	+	
 cksum	checksum	+	
-b2sum	checksum	-	sha512sum
+b2sum	checksum	+	
 openssl	checksum	+	
 tar	archives	+	
 gzip	archives	+	

@@ -56,6 +56,7 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 recipes="$here/packages"
 pins_file="$here/pins/sources.env"
 . "$here/make/lift.sh"
+. "$here/make/fetch.sh"
 . "$pins_file"
 say() { echo "root-build: $*" >&2; }
 grep -q '^3\.24\.' /etc/alpine-release 2>/dev/null || { say "run on Alpine 3.24 (the root's target)"; exit 2; }
@@ -107,7 +108,7 @@ offered() { apk search -x "$1" | while read -r l; do echo "${l#"$1"-}"; done; }
 libc=$(installed musl-dev)
 case $libc in "$MUSL_VERSION"-r*) ;; *) say "Alpine's musl is ${libc:-not installed}, the root's $MUSL_VERSION: pin them alike"; exit 2 ;; esac
 # What a build's output follows from beyond its recipe: this script, and the compiler, linker, libc and kernel headers.
-machine=$({ cat "$0" "$here/make/lift.sh"; for p in gcc binutils musl-dev linux-headers make fortify-headers; do echo "$p $(installed "$p")"; done; } |
+machine=$({ cat "$0" "$here/make/lift.sh" "$here/make/fetch.sh"; for p in gcc binutils musl-dev linux-headers make fortify-headers; do echo "$p $(installed "$p")"; done; } |
   sha256sum | cut -d' ' -f1)
 
 mkdir -p "$out"
@@ -149,18 +150,7 @@ unpack() {
   [ -n "$sum" ] || { sum=$(eval "echo \"\${$1_SHA512}\""); alg=sha512; }
   base=$(basename "${url%%\?*}") # (a URL's query, as cgit's ?id=COMMIT, is no part of the file's name)
   f="$src/$1-$base"
-  # A maker's site may answer once with something else (a CDN's page, a cut-off file): it is asked again, and only
-  # the file pinned is ever taken.
-  tries=0
-  while ! echo "$sum  $f" | ${alg}sum -c - >/dev/null 2>&1; do
-    tries=$((tries + 1))
-    if [ "$tries" -gt 3 ]; then
-      say "$url is not the file pinned: $(wc -c < "$f.part") bytes, $(head -c 64 "$f.part" | od -An -c | tr -s ' ' | head -c 60)"
-      exit 1
-    fi
-    [ "$tries" = 1 ] || sleep $((tries * 5))
-    curl -fsSL --retry 4 -o "$f.part" "$url" && echo "$sum  $f.part" | ${alg}sum -c - >/dev/null 2>&1 && mv "$f.part" "$f"
-  done
+  fetch_source "$url" "$f" "$sum" "$alg" || exit 1
   mkdir -p "$2"
   case $f in
     *.tar.*|*.tgz|*.crate) if [ "${3:-}" = flat ]; then tar -xf "$f" -C "$2"; else tar -xf "$f" -C "$2" --strip-components=1; fi ;;

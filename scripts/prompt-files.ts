@@ -54,7 +54,7 @@ const tar = await file(asset);
 if (!listed || listed !== sha(tar)) throw new Error(`${asset}: sha256 ${sha(tar)}; SHA256SUMS of ${tag} says ${listed ?? 'nothing'}`);
 
 // Only what why is made of comes out of it: webroot.json, its index, packs and blobs, each by a name it may have.
-const NAMES = /^((?:webroot|l3)\.json|index-[0-9a-f]{64}\.json|packs\/[0-9a-f]{64}\.pack|blobs\/[0-9a-f]{64}\.bin)$/;
+const NAMES = /^((?:webroot|l3|muk)\.json|index-[0-9a-f]{64}\.json|packs\/[0-9a-f]{64}\.pack|blobs\/[0-9a-f]{64}\.bin)$/;
 const members = new Map();
 for await (const m of tarMembers(Readable.from([tar]))) {
   const name = m.name.replace(/^\.\//, '');
@@ -73,6 +73,17 @@ if (!indexBytes || sha(indexBytes) !== pin.web) throw new Error(`${asset}: ${abo
 const index: Index = JSON.parse(indexBytes.toString('utf8'));
 if (index.sha256 !== pin.sha256 || index.version !== version) throw new Error(`${asset}: its index is of root ${index.sha256} ${index.version}`);
 const named = [[index.translator.path, index.translator.sha256], ...index.translations.flatMap((t) => [[t.elf.path, t.elf.sha256], [t.wasm.path, t.wasm.sha256]])];
+// Some releases carry the box maker beside the root, rather than inside its index.
+// The archive checksum covers this descriptor; bind its blob's name, digest and size too.
+const mukBytes = members.get('muk.json');
+if (mukBytes) {
+  const muk = JSON.parse(mukBytes.toString('utf8'));
+  if (!muk || !/^[0-9a-f]{64}$/.test(muk.sha256) || muk.path !== `blobs/${muk.sha256}.bin`
+      || !Number.isSafeInteger(muk.size) || muk.size <= 0) throw new Error(`${asset}: invalid muk.json`);
+  const bytes = members.get(muk.path);
+  if (!bytes || bytes.length !== muk.size) throw new Error(`${asset}: muk.json names a missing or wrongly sized blob`);
+  named.push([muk.path, muk.sha256]);
+}
 for (const [path, digest] of named) {
   const bytes = members.get(path);
   if (!bytes) throw new Error(`${asset} has no ${path}, which its index names`);
@@ -82,7 +93,7 @@ for (const [path, digest] of named) {
 for (const p of index.packs) if (!members.has(`packs/${p.name}`)) throw new Error(`${asset} has no packs/${p.name}, which its index names`);
 checkPacks(index, (name, at, len) => members.get(`packs/${name}`).subarray(at, at + len), (name) => members.get(`packs/${name}`).length,
   (b) => createHash('sha256').update(b).digest());
-const known = new Set(['webroot.json', about.index.path, ...named.map(([path]) => path), ...index.packs.map((p) => `packs/${p.name}`)]);
+const known = new Set(['webroot.json', ...(mukBytes ? ['muk.json'] : []), about.index.path, ...named.map(([path]) => path), ...index.packs.map((p) => `packs/${p.name}`)]);
 const unnamed = [...members.keys()].filter((name) => !known.has(name));
 if (unnamed.length) throw new Error(`${asset} holds ${unnamed.join(', ')}, which its index does not name`);
 

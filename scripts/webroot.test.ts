@@ -135,6 +135,41 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     assert.equal(r.status, 0, r.stderr);
     assert.deepEqual(files(join(tree, 'public/webroot')), files(out));
 
+
+    // The release may carry muk beside the indexed root. It is part of the
+    // checked archive, and its descriptor must bind exactly one checked blob.
+    const withMuk = join(work, 'with-muk');
+    cpSync(out, withMuk, {recursive: true});
+    const muk = Buffer.from('stand-in muk');
+    const said = {path: `blobs/${sha(muk)}.bin`, sha256: sha(muk), size: muk.length};
+    writeFileSync(join(withMuk, said.path), muk);
+    const describe = (value: unknown) => writeFileSync(join(withMuk, 'muk.json'), JSON.stringify(value));
+    describe(said);
+    tar = tarOf(withMuk);
+    r = await go();
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(files(join(tree, 'public/webroot')), files(withMuk));
+    const accepted = files(join(tree, 'public/webroot'));
+    for (const broken of [
+      {...said, size: said.size + 1},
+      {...said, size: -1},
+      {...said, path: '../muk'},
+      {...said, path: `blobs/${'0'.repeat(64)}.bin`, sha256: '0'.repeat(64)},
+    ]) {
+      describe(broken); tar = tarOf(withMuk); r = await go();
+      assert.notEqual(r.status, 0);
+      assert.deepEqual(files(join(tree, 'public/webroot')), accepted);
+    }
+    describe(said);
+    writeFileSync(join(withMuk, said.path), Buffer.alloc(muk.length));
+    tar = tarOf(withMuk); r = await go();
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /its index says/);
+    assert.deepEqual(files(join(tree, 'public/webroot')), accepted);
+    // A release with no sidecar remains supported.
+    tar = tarOf(out); r = await go();
+    assert.equal(r.status, 0, r.stderr);
+
     // A release from before the web root had its name: -l3-web.tar, its webroot.json as l3.json. Taken the same.
     const old = join(work, 'old-release');
     rmSync(old, {recursive: true, force: true});

@@ -67,12 +67,12 @@ pub struct Distro {
 /// The releases why trusts, newest first. Nothing else is installed.
 pub const RELEASES: &[Release] = &[Release {
     name: "OS Length3 Linux",
-    version: "0.6.4",
-    sha256: "aa5b0dc6a71f924da5b83e5f11ca93262d8bcd6bb19350a4b2acd746e14132e7",
-    bytes: 114_940_014,
-    file: "os-length3-linux-0.6.4-x86_64-aa5b0dc6a71f924da5b83e5f11ca93262d8bcd6bb19350a4b2acd746e14132e7.tar.zst",
-    tag: "os-length3-linux-v0.6.4",
-    web: "dc174e9900a75a75eed65699adafb1b3e98c2047a136f1073daa21723e453c5d",
+    version: "0.6.5",
+    sha256: "ec84d6a4f34359f322726e323e294b03987a19b1aa544563c846ca1a83060ee3",
+    bytes: 115_302_848,
+    file: "os-length3-linux-0.6.5-x86_64-ec84d6a4f34359f322726e323e294b03987a19b1aa544563c846ca1a83060ee3.tar.zst",
+    tag: "os-length3-linux-v0.6.5",
+    web: "a1d09f7f88a0d575fd7a961a0760cf5151520428fcdc1a7d4baabfeab0210f8b",
 }];
 
 /// A release the device may install, as published.

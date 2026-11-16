@@ -43,15 +43,40 @@ import re
 import subprocess
 import sys
 import tarfile
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+
+def source_urls(url):
+    """GNU's documented HTTPS mirrors, then the original; preserve the complete path and the pin.
+
+    https://www.gnu.org/prep/ftp.html (also module/ricebox/make/fetch.sh, used by the builder).
+    """
+    prefix = 'https://ftp.gnu.org/gnu/'
+    if url.startswith(prefix):
+        path = url.removeprefix(prefix)
+        return ['https://ftpmirror.gnu.org/' + path, 'https://mirror.csclub.uwaterloo.ca/gnu/' + path, url]
+    return [url]
 
 
 def get(url, binary=False):
     """What `url` holds, fetched with curl (a site that turns away scripts by their name answers curl)."""
-    r = subprocess.run(['curl', '-fsSL', '--retry', '3', '--retry-delay', '5', '--max-time', '600', url], capture_output=True)
-    if r.returncode:
-        raise RuntimeError(f'{url}: {r.stderr.decode(errors="replace").strip()}')
-    return r.stdout if binary else r.stdout.decode('utf-8', 'replace')
+    errors = []
+    with tempfile.TemporaryDirectory(prefix='ricebox-next-') as folder:
+        out = Path(folder, 'download')
+        for at in source_urls(url):
+            # With -o curl truncates a partial response before retrying. Capturing its stdout instead can join
+            # the partial bytes to the retry's complete archive and thus report a sound pin as broken.
+            r = subprocess.run(['curl', '-fsSL', '--connect-timeout', '20', '--max-time', '600',
+                                '--speed-limit', '1024', '--speed-time', '30', '--retry', '2',
+                                '--retry-delay', '5', '--retry-max-time', '120', '-o', str(out), at], capture_output=True)
+            if not r.returncode:
+                data = out.read_bytes()
+                return data if binary else data.decode('utf-8', 'replace')
+            errors.append(f'{at}: {r.stderr.decode(errors="replace").strip()}')
+            out.unlink(missing_ok=True)
+    raise RuntimeError('; '.join(errors))
 
 
 def key(v):

@@ -10,7 +10,7 @@ on:
     - cron: '17 4 * * 1'
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/upstream.yml', 'module/ricebox/make/next.py', 'module/ricebox/make/next.test.py', 'module/ricebox/pins/sources.env', 'module/ricebox/make/advisories.sh', 'module/ricebox/pins/advisories.toml']
+    paths: ['.github/workflows/upstream.yml', 'module/ricebox/make/next.py', 'module/ricebox/make/next.test.py', 'module/ricebox/make/fetch.sh', 'module/ricebox/make/fetch.test.sh', 'module/ricebox/pins/sources.env', 'module/ricebox/make/advisories.sh', 'module/ricebox/pins/advisories.toml']
 
 permissions:
   contents: read
@@ -25,7 +25,9 @@ jobs:
         with:
           persist-credentials: false
       - name: What a pin that cannot be had ends as
-        run: python3 module/ricebox/make/next.test.py
+        run: |
+          sh module/ricebox/make/fetch.test.sh
+          python3 module/ricebox/make/next.test.py
       - name: Find newest releases
         run: |
           set -o pipefail

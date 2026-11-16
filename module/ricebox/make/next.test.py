@@ -5,9 +5,13 @@ import hashlib
 import importlib.util
 import io
 import os
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,7 +40,7 @@ def run(newest, served, digest=sha(GOOD)):
         os.chdir(folder)
         try:
             with patch.object(nxt, 'get', get), patch.dict(nxt.NEWEST, {'ONE': newest}, clear=True), \
-                 patch.object(sys, 'argv', ['next.py', str(pins)]), contextlib.redirect_stdout(out):
+                 patch.object(sys, 'argv', ['next.py', pins.as_posix()]), contextlib.redirect_stdout(out):
                 try:
                     nxt.main()
                     code = 0
@@ -50,6 +54,96 @@ def run(newest, served, digest=sha(GOOD)):
 
 def fails():
     raise RuntimeError('its listing is away')
+
+
+class Downloads(unittest.TestCase):
+    def test_curl_retry_does_not_append_a_timed_out_response(self):
+        attempts = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                attempts.append(1)
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(GOOD)))
+                self.end_headers()
+                self.wfile.write(b'partial' if len(attempts) == 1 else GOOD)
+                self.wfile.flush()
+                if len(attempts) == 1:
+                    time.sleep(2)
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        actual_run = subprocess.run
+
+        def quick_curl(args, **kwargs):
+            args[args.index('--max-time') + 1] = '1'
+            args[args.index('--retry-delay') + 1] = '0'
+            return actual_run(args, **kwargs)
+
+        try:
+            with patch.object(nxt.subprocess, 'run', quick_curl):
+                self.assertEqual(nxt.get(f'http://127.0.0.1:{server.server_port}/archive', binary=True), GOOD)
+            self.assertEqual(len(attempts), 2)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def test_gnu_paths_and_patch_listings_use_documented_mirrors(self):
+        for path in ('ncurses/ncurses-6.6.tar.gz', 'bash/bash-5.3-patches/', 'bash/?x=1'):
+            url = 'https://ftp.gnu.org/gnu/' + path
+            self.assertEqual(nxt.source_urls(url), [
+                'https://ftpmirror.gnu.org/' + path, 'https://mirror.csclub.uwaterloo.ca/gnu/' + path, url])
+        for url in ('https://example.org/file', 'https://ftp.gnu.org.example/gnu/file'):
+            self.assertEqual(nxt.source_urls(url), [url])
+
+    def test_partial_download_is_discarded_before_fallback(self):
+        calls = []
+
+        def curl(args, **kwargs):
+            calls.append(args[-1])
+            out = Path(args[args.index('-o') + 1])
+            if len(calls) == 1:
+                out.write_bytes(b'partial')
+                return subprocess.CompletedProcess(args, 18, b'partial stdout', b'transfer cut short')
+            self.assertFalse(out.exists())
+            out.write_bytes(GOOD)
+            return subprocess.CompletedProcess(args, 0, b'ignored stdout', b'')
+
+        with patch.object(nxt.subprocess, 'run', curl):
+            self.assertEqual(nxt.get('https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz', binary=True), GOOD)
+        self.assertEqual(len(calls), 2)
+
+    def test_original_is_tried_and_text_is_read_from_the_output_file(self):
+        calls = []
+
+        def curl(args, **kwargs):
+            calls.append(args[-1])
+            if len(calls) < 3:
+                return subprocess.CompletedProcess(args, 22, b'', b'HTTP 503')
+            Path(args[args.index('-o') + 1]).write_bytes(b'bash53-001\n')
+            return subprocess.CompletedProcess(args, 0, b'', b'')
+
+        url = 'https://ftp.gnu.org/gnu/bash/bash-5.3-patches/'
+        with patch.object(nxt.subprocess, 'run', curl):
+            self.assertEqual(nxt.get(url), 'bash53-001\n')
+        self.assertEqual(calls, nxt.source_urls(url))
+
+    def test_all_sources_failing_reports_each_url_and_no_partial_content(self):
+        def curl(args, **kwargs):
+            Path(args[args.index('-o') + 1]).write_bytes(b'partial')
+            return subprocess.CompletedProcess(args, 28, b'partial', b'timed out')
+
+        url = 'https://ftp.gnu.org/gnu/readline/readline-8.3.tar.gz'
+        with patch.object(nxt.subprocess, 'run', curl), self.assertRaises(RuntimeError) as caught:
+            nxt.get(url, binary=True)
+        for at in nxt.source_urls(url):
+            self.assertIn(at, str(caught.exception))
+        self.assertIn('timed out', str(caught.exception))
 
 
 class Pins(unittest.TestCase):
