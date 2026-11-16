@@ -195,13 +195,13 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
 
   test('the box\'s line is the terminal\'s: it starts with the prompt line the shell waits at, said once, green as the shell\'s', async ({app}) => {
     const waits = app.main.locator('.desk-term.stand .prompt-chip');
-    await expect(waits).toHaveText('hello $');
+    await expect(waits).toHaveText('/root/hello $');
     // The output's own last line, the same words, is not shown then.
     await expect(app.forge.prompt.locator('.term-out > .ps.waits')).toBeHidden();
     await app.forge.run('ls');
     // The line run is a prompt line among the output (in the green), and the box's line waits at the next.
-    await expect(app.forge.prompt.locator('.term-out > .ps:not(.waits)').first()).toHaveText('hello $ ');
-    await expect(waits).toHaveText('hello $');
+    await expect(app.forge.prompt.locator('.term-out > .ps:not(.waits)').first()).toHaveText('/root/hello $ ');
+    await expect(waits).toHaveText('/root/hello $');
     // No pill: the prompt as a terminal shows it, in the green of the prompt lines above it.
     await expect(waits).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     const green = await app.forge.prompt.locator('.term-out > .ps:not(.waits)').first().evaluate((e) => getComputedStyle(e).color);
@@ -214,7 +214,7 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await app.forge.promptBox.press('Alt+3');
     await expect(pill).toHaveText(/TODO/);
     await app.forge.promptBox.press('Alt+1');
-    await expect(pill).toHaveText('hello $');
+    await expect(pill).toHaveText('/root/hello $');
     await expect(app.forge.promptBox).toBeFocused();
     await app.forge.promptBox.fill('echo seen');
     await app.forge.promptBox.press('Control+Enter');
@@ -233,18 +233,18 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     await expect(app.forge.prompt.locator('.term-activity')).toContainText(/Running|Waiting/, {timeout: 30_000});
     await app.forge.promptBox.press('Control+c');
     await expect(out).toContainText('^C');
-    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveText('hello $');
+    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveText('/root/hello $');
     // A flood cut: what it had on its way and not yet shown goes with it, as a terminal flushes its output on ^C, so
     // ^C stands at the foot, where the run was cut, not buried under a megabyte of y. (yes is sent at the prompt line,
     // as a person sends it once clear has come back.)
     await app.forge.run('clear');
-    await expect(out).toHaveText(/^\s*hello \$\s*$/);
+    await expect(out).toHaveText(/^\s*\/root\/hello \$\s*$/);
     await app.forge.promptBox.fill('yes');
     await app.forge.promptBox.press('Control+Enter');
     await expect(out).toContainText('y\ny\ny');
     await app.forge.promptBox.press('Control+c');
-    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveText('hello $');
-    await expect.poll(async () => (await out.textContent())?.slice(-14)).toMatch(/y\n\^C\nhello \$ ?$/);
+    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveText('/root/hello $');
+    await expect.poll(async () => (await out.textContent())?.slice(-20)).toMatch(/y\n\^C\n\/root\/hello \$ ?$/);
   });
 
   test('several lines sent at once run as they would one after another, the shell waiting once after them all', async ({app}) => {
@@ -255,8 +255,8 @@ test.describe('the Prompt running', {tag: '@slow'}, () => {
     // What they print together, as they print it: no prompt line said for each line read, nor > for a line going on.
     const said = await out.innerText();
     expect(said).toMatch(/sum=50\s+it=1\s+it=2/);
-    expect(said).not.toMatch(/hello \$ hello \$|^> /m);
-    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveText('hello $');
+    expect(said).not.toMatch(/\/root\/hello \$ \/root\/hello \$|^> /m);
+    await expect(app.main.locator('.desk-term.stand .prompt-chip')).toHaveText('/root/hello $');
   });
 
   test('↑ and ↓ walk the lines run before, and come back to what was being written', async ({app}) => {
@@ -488,7 +488,7 @@ test('what draws on a screen runs on it: a pager, an editor, top and htop, a pic
   await expect.poll(async () => (await out.innerText()).match(/^\d{10}$/m)?.[0], {timeout: 30_000}).not.toBe(first);
   // (Caps Lock on: the key comes as C, and is still Ctrl+C to what runs.)
   await box.dispatchEvent('keydown', {key: 'C', code: 'KeyC', ctrlKey: true, bubbles: true, cancelable: true});
-  await expect(app.forge.prompt).toContainText(/\^C\nhello \$\s*$/, {timeout: 15_000});
+  await expect(app.forge.prompt).toContainText(/\^C\n\/root\/hello \$\s*$/, {timeout: 15_000});
   await box.fill('echo after watch');
   await box.press('Enter');
   await expect(out).toContainText(/^after watch$/m, {timeout: 60_000});
