@@ -105,3 +105,20 @@ test('the same neutral root becomes static layers without requiring why or optio
     assert.deepEqual(readFileSync(join(stage, 'sods.wasm')), readFileSync(wasm));
   } finally { rmSync(at, {recursive: true, force: true}); }
 });
+
+test('layers keep identical translated artifacts when the build cache is reused', async () => {
+  const at = mkdtempSync(join(tmpdir(), 'ricebox-layers-test-'));
+  try {
+    const {standIn, makeWebroot} = await import('../module/ricebox/make/standin.ts');
+    const archive = standIn(at, '9.9.9');
+    const one = join(at, 'one'), two = join(at, 'two');
+    for (const out of [one, two]) { const r = makeWebroot(archive, out, at); assert.equal(r.status, 0, r.stderr); }
+    const about = JSON.parse(readFileSync(join(one, 'webroot.json'), 'utf8'));
+    assert.equal(about.name, 'why');
+    const a = readFileSync(join(one, about.index.path));
+    const b = readFileSync(join(two, about.index.path));
+    assert.deepEqual(a, b);
+    assert.equal(JSON.parse(a.toString()).translations.length, 1);
+    assert.equal(readdirSync(join(at, 'aot-cache')).length, 1);
+  } finally { rmSync(at, {recursive: true, force: true}); }
+});
