@@ -4,7 +4,7 @@ name: Root packages
 # their inputs change, and cached for CI's Root job and the release.
 on:
   push:
-    paths: ['module/ricebox/make/build.sh', 'module/ricebox/make/lift.sh', 'module/ricebox/packages/**', 'module/ricebox/pins/sources.env', 'module/ricebox/etc/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
+    paths: ['module/ricebox/make/build.sh', 'module/ricebox/make/lift.sh', 'module/ricebox/make/fetch.sh', 'module/ricebox/packages/**', 'module/ricebox/pins/sources.env', 'module/ricebox/etc/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**', '.github/workflows/root-packages.yml']
   workflow_dispatch:
 
 permissions:
