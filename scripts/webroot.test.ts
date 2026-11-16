@@ -109,6 +109,8 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
   // And what both of those check packs by, where the repository has it (module/ricebox/layers).
   for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'module/ricebox/make/tree.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
     'module/ricebox/layers/table.ts', 'module/ricebox/layers/shape.ts']) copyFileSync(join(os, f), join(tree, f));
+  // And what it checks the root's translator by: the names sods's runtime calls (module/sods/runtime/translate.ts).
+  cpSync(join(os, 'module/sods/runtime'), join(tree, 'module/sods/runtime'), {recursive: true});
   assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', join(tree, 'why/prompt/roots/pins.rs')]).status, 0);
 
   const tarOf = (dir: string) => execFileSync('tar', ['-C', dir, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax', '-cf', '-', '.'], {maxBuffer: 1 << 28});

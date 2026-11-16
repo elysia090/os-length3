@@ -110,6 +110,9 @@ export function scoped<T extends object>(idle: T) {
 export const open = (url: string) => {
   // A database that does not answer is said in ten seconds (request.ts failed: 503), not waited on until the client gives up.
   const pool = new Pool({connectionString: url, connectionTimeoutMillis: 10_000});
+  // An idle connection that drops (the database restarting, its socket closed as the pool ends) is let go, and the
+  // next query opens another: with no listener the pool threw it (as pg's Pool does), after what it served had ended.
+  pool.on('error', () => {});
   return {pool, db: drizzle(pool, {schema})};
 };
 

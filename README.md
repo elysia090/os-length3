@@ -111,7 +111,7 @@ from; ricebox and the units under it take from nothing over them, and no unit's 
 
 ## Develop
 
-why\* (Node 22 and Rust with the `wasm32-wasip1` target):
+why\* (Node 26 and Rust with the `wasm32-wasip1` target):
 
 ```sh
 npm ci

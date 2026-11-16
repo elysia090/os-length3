@@ -20,11 +20,13 @@
 // is not this one).
 
 import {createHash} from 'node:crypto';
+import {gunzipSync} from 'node:zlib';
 import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
 import {checkPacks} from '../module/ricebox/layers/table.ts';
+import {lacking} from '../module/sods/runtime/translate.ts';
 import {tarMembers, type About, type Index} from '../module/ricebox/make/tree.ts';
 
 const here = new URL('..', import.meta.url).pathname;
@@ -78,6 +80,11 @@ for (const [path, digest] of named) {
   if (!bytes) throw new Error(`${asset} has no ${path}, which its index names`);
   if (sha(bytes) !== digest) throw new Error(`${asset}: ${path} is sha256 ${sha(bytes)}, its index says ${digest}`);
 }
+// Its translator one this tree's runtime runs: the names it calls (sods's) all there. A root made before the translator
+// was named sods (0.6.4) carried one this runtime could not run, and every Prompt halted on its first program.
+const translator = new WebAssembly.Module(gunzipSync(members.get(index.translator.path)));
+const missing = lacking(translator);
+if (missing.length) throw new Error(`${asset}: its translator is of another build than this tree's runtime (it lacks ${missing.join(', ')}): release the root again from this tree`);
 // Each pack whole: its table against its name, each file it stores against its table, nothing else in it.
 for (const p of index.packs) if (!members.has(`packs/${p.name}`)) throw new Error(`${asset} has no packs/${p.name}, which its index names`);
 checkPacks(index, (name, at, len) => members.get(`packs/${name}`).subarray(at, at + len), (name) => members.get(`packs/${name}`).length,

@@ -82,7 +82,7 @@ jobs:
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -121,7 +121,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Restore web root
@@ -156,7 +156,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Restore web root
@@ -186,7 +186,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
@@ -208,7 +208,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Restore core (wasm)
@@ -256,7 +256,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       # why prompt makes user namespaces, which this image's AppArmor restricts.
@@ -290,7 +290,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
       - name: Install toolchains
         run: |
           sudo apt-get update -qq
@@ -359,7 +359,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install webview
@@ -465,7 +465,7 @@ jobs:
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
       - name: Install toolchains
         if: steps.kept.outputs.cache-hit != 'true'
         run: |
@@ -563,7 +563,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - name: npm audit
@@ -621,7 +621,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci

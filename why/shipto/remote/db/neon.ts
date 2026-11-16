@@ -122,6 +122,8 @@ export async function migrateBeforeWorker(db: ReturnType<typeof drizzle>): Promi
 /** A pool on `url` and its Drizzle database (no schema: for the owner's statements). */
 export function owner(url: string) {
   const pool = new Pool({connectionString: url});
+  // (An idle connection that drops is let go, not thrown: serve/worker.ts open.)
+  pool.on('error', () => {});
   return {pool, db: drizzle(pool)};
 }
 

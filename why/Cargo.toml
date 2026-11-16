@@ -31,7 +31,7 @@ ricebox = { path = "../module/ricebox" }
 rustix = { version = "1.1", default-features = false, features = ["std", "fs", "mount", "net", "param", "pipe", "process", "system", "termios", "thread"] }
 # This host's interface addresses (cowboy/reach.rs: getifaddrs, which rustix does not have), through nix's safe call;
 # nix is in the lock already (russh's).
-nix = { version = "0.31", default-features = false, features = ["net"] }
+nix = { version = "0.32", default-features = false, features = ["net"] }
 
 # The network as a host reaches it (net.rs). Built for the web (wasm32-wasip1) the core asks the page
 # that runs it instead, so none of this is in it.

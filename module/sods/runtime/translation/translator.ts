@@ -27,6 +27,21 @@ interface Exports {
 }
 
 /**
+ * What this runtime calls of a translator by name: its own (Exports, above) and its x87's (x87.ts). A translator that
+ * lacks one is of another build, one before these names were sods's (a root released before them carries it), and
+ * nothing it made runs here: a root's translator is checked against this before it is shipped (scripts/prompt-files.ts).
+ */
+export const CALLED = ['sods_alloc', 'sods_free', 'sods_output_ptr', 'sods_output_len', 'sods_translate', 'sods_translate_whole',
+  'sods_translate_seeded', 'sods_open', 'sods_translate_more', 'sods_close', 'sods_unzstd', 'sods_sha256',
+  'sods_fpu', 'sods_x87_new', 'sods_x87_reset', 'sods_x87_free', 'sods_x87_save', 'sods_x87_load', 'sods_x87_names'] as const;
+
+/** What of CALLED the translator `module` does not export: none, and this runtime runs what it makes. */
+export const lacking = (module: WebAssembly.Module): string[] => {
+  const has = new Set(WebAssembly.Module.exports(module).map((e) => e.name));
+  return CALLED.filter((name) => !has.has(name));
+};
+
+/**
  * The translator's own word that what it was given is no program it takes: not an ELF it can read (cut short, of
  * another machine or class, not an executable, not one with nothing to load at run time), said as it reads it and
  * before it translates anything. Whoever asked to run the file has this as the file's fault (a kernel's exec:

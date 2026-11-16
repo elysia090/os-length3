@@ -23,7 +23,7 @@
 # The version is module/ricebox/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
 # ROOT_PACKAGES, what module/ricebox/make/build.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
 # keeps them from release to release; by hand, as the top README says). Needs Rust with the targets
-# x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, the Tauri
+# x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 26, musl-gcc, zstd, zip, the Tauri
 # build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
 # libgles2), and for the AppImage's smoke test bubblewrap, xvfb and imagemagick.
 set -eu

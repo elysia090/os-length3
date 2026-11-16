@@ -9,7 +9,7 @@
 #
 # ROOT is the release root (by default the newest why/prompt/roots/pins.rs pins,
 # fetched by scripts/root-file.ts); with WEBROOT_READY=1, a public/webroot
-# made already from it is kept. Needs node 22, cargo with the
+# made already from it is kept. Needs node 26, cargo with the
 # wasm32-unknown-unknown target, and zip.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
