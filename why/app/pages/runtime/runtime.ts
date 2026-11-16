@@ -1,8 +1,9 @@
 import {h} from '../../ui/dom.ts';
-import {isNative, type Freed} from '../../../api/host.ts';
+import {isNative, type Freed, type Space} from '../../../api/host.ts';
 import {t} from '../../../text/i18n.ts';
 import {onSync} from '../../../shipto/lifecycle.ts';
 import {readSpace} from '../../../device/space.ts';
+import {whole} from '../../ui/whole.ts';
 import {pageHead, parts} from '../kit/common.ts';
 import type {Context} from '../kit/context.ts';
 import {allSessions} from '../bench/sessions.ts';
@@ -29,23 +30,34 @@ import {agentSection} from './agent-part.ts';
  * running (offered while there is one), the environments, and the dotfiles. Hidden parts go on: a Prompt runs,
  * what is read is read again, a dotfile half written stays.
  */
+/** What this device holds as last measured: Runtime is drawn from it at once (come to, or drawn again), then measured
+ * again and drawn where that differs. Measured first as this page is brought (main.ts brings each place's page while
+ * the first is read), so a first visit has it too: never "Calculating storage…" a moment, the sheet growing under it. */
+let spaceWas: Space | null = null;
+void readSpace([]).then((u) => { spaceWas ??= u; }, () => {});
+
 export function runtime(ctx: Context): Node[] {
   const page = parts<'device' | 'prompts' | 'environments' | 'dotfiles' | 'agent'>('runtime', [
     {id: 'device', label: isNative ? t('This device') : t('This browser')}, {id: 'prompts', label: t('Running Prompts')},
     {id: 'environments', label: t('Environments')}, {id: 'dotfiles', label: t('Dotfiles')}, {id: 'agent', label: t('Agent')}]);
-  const holder = h('div', {}, h('section', {class: 'section'}, h('p', {class: 'muted'}, t('Calculating storage…'))));
+  const holder = h('div', {});
   let last: Freed | null = null;
-  // Drawn at once from what the core last measured, then, if some of it was that, measured now and drawn again where
-  // it differs (what is drawn the same is left as it is).
+  // Drawn at once from what was last measured (here, or as the page was brought), then, if some of it was the core's
+  // kept figures, measured now and drawn again where it differs (what is drawn the same is left as it is).
   let drawn = '';
-  const read = (fresh = false): void => void readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo), fresh).then((u) => {
-    // A repo's gear list out is not drawn away under the pointer: read again once it is put away.
-    if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => read(fresh), 1000); return; }
+  const paint = (u: Space) => {
+    spaceWas = u;
     const now = JSON.stringify({u: {...u, kept: false}, last});
     if (now !== drawn) { drawn = now; holder.replaceChildren(device(ctx, u, last, (r) => { last = r; read(); })); }
+  };
+  const read = (fresh = false): void => void whole(readSpace(allSessions().filter(([, s]) => s.running).map(([repo]) => repo), fresh)).then((u) => {
+    // A repo's gear list out is not drawn away under the pointer: read again once it is put away.
+    if (holder.isConnected && holder.querySelector('.repo-gear-pop:not([hidden])')) { setTimeout(() => read(fresh), 1000); return; }
+    paint(u);
     if (u.kept && holder.isConnected) read(true);
   },
     (e) => holder.replaceChildren(h('section', {class: 'section'}, h('p', {class: 'error'}, t('Storage calculation failed ({why})', {why: errorText(e)})))));
+  if (spaceWas) paint(spaceWas);
   read();
   // What the Remote holds changes what can come here.
   const stop = onSync(() => { if (!holder.isConnected) { stop(); return; } read(); });

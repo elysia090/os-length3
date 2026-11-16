@@ -16,10 +16,9 @@ test('a pointer against the window\'s edges is on the frame: the rail from the l
     expect(await at(0, 24), `${what}: the window's left edge beside the first place`).toBe('purpose-home');
     expect(await at(24, 0), `${what}: the window's top over the first place`).toBe('purpose-home');
     // Between two places each has its half of the room: none of it is nobody's.
-    expect([await at(24, 45), await at(24, 51)], `${what}: between the first place and the second`).toEqual(['purpose-home', 'purpose-forge']);
+    expect([await at(24, 45), await at(24, 51)], `${what}: between the first place and the second`).toEqual(['purpose-home', 'purpose-remote']);
     expect(await at(0, size.height - 1), `${what}: the window's bottom left corner`).toBe('me');
-    expect(await at(72, 0), `${what}: the window's top over the door`).toBe('door');
-    expect(await at(120, 0), `${what}: the window's top over the band's first key`).toBe('band-tool');
+    expect(await at(72, 0), `${what}: the window's top over the band's first key`).toBe('band-tool');
   }
 });
 

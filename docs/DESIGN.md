@@ -172,7 +172,7 @@ One world, and the window looks at it.
 - **Along, past the row: a place's far side.** Some pages are not places of their own but the far side of one: the
   same thing seen from its other side (a work written, then recorded; what is one's own here, then where it is kept;
   where many talk, then what was said to one). A far side is a whole screen, a step along from its place, reached
-  through the door (§4) and left through it.
+  by its own icon on the rail, right under its place's (§4), and left by its place's.
 - **Along: the pieces.** What is in a place lies in a row from the desk's left edge, left to right (§6).
 - **In front: what is called up from the frame.** A search's finds, the tree of everything, the person's menu: they come in front
   of the world, and the world behind them goes out of focus (blurred) until they are put away. A thing's own menu (a
@@ -203,7 +203,7 @@ frame, kept as rules here:
 | A horizon kept at one height from shot to shot | **One horizon.** Every place hangs from the frame's lines: the world's first row at y = 48 (a sheet's top, a piece's name), a piece's top at 72, every edge on a line of the grid (§3). So going down the rail the frame's architecture does not move; only what is on it changes. |
 | Separation: one subject, picked out from what is behind it by light and focus, everything else graded down (Barr's "gradation of emphasis", written of CinemaScope) | **One subject in focus.** At every rest one thing casts the shadow and is in focus: the hand's piece, a place's sheet, or what was called up in front, behind which the world is out of focus, its shadow with it. The shadow is the one light's: 12 px right and down (§3). The rest is graded by fill, ink and size (§5). |
 | The frame belongs to the camera, not to the scene | **The frame is never in the scene.** The rail and the band are the camera's instruments: never out of focus, never under what is called up, never moved (§2). |
-| Eye-trace (Murch): at a cut, the new shot puts what is to be looked at where the eye already is | **The eye lands on what the place is.** After a move the eye is where the hand was: on the rail, or at the door, at the frame's top left. So what stands just past the frame's corner (a cell and a half right of the rail, two cells under the band) is what the place is: its subject, its name, or the index of what is in it. It is never ground, and never a control of something else. |
+| Eye-trace (Murch): at a cut, the new shot puts what is to be looked at where the eye already is | **The eye lands on what the place is.** After a move the eye is where the hand was: on the rail, at the frame's left. So what stands just past the frame's corner (a cell and a half right of the rail, two cells under the band) is what the place is: its subject, its name, or the index of what is in it. It is never ground, and never a control of something else. |
 | Title-safe: a title stands whole, inside the frame; what is in the scene may be cut by the frame's edge, which says the world goes on past it (off-screen space) | **A title is whole; a thing may be cut.** The frame's own words (a place's name, the band's name of what is in hand) are whole at their size, inside the window and clear of its 6 px. A thing on the desk may be cut by the window's edge (the next piece of a row: the row goes on), except the subject, which is whole with its shadow. |
 | One colour temperature to a frame: the camera balanced to the scene's light, a window of another light gelled to match it | **One light, one white.** Every grey is the ground's light at its lightness, and white is that light; what is coloured is seen under it and balanced on it, mixing to its grey (§3, colour). Nothing in the frame is lit by another white. |
 | One title to a shot, set at a few sizes | **One voice.** The display face is at its two sizes only (33 and 66), and what it says it says once in a frame: no two of its words alike, no number twice. |
@@ -225,7 +225,7 @@ checks the sum.
 `Ω = [F, W] × [F, H]`, and its thirds down it, `y₁ = F + (H − F)/3` and `y₂ = F + 2(H − F)/3`; a degree, 47 px (§4);
 a pixel's ink (§5), and a region's weight, the sum of its ink (the ground's dots are the ground); the **subject** `S`,
 the one thing with the shadow; and `h`, **where the eye is** as a rest begins: the middle of what the hand pressed (a
-place's square, the door, a piece), or, when a key or a find moved the world, where the subject stood before it.
+place's square, a piece), or, when a key or a find moved the world, where the subject stood before it.
 
 | Law | What film found | Computed | Bound |
 |---|---|---|---|
@@ -543,7 +543,7 @@ The frame is the camera's own (§2): it is how the window is held, not something
   when it moves; the right and the foot are the world's open sides (off-screen space, the row's way and the page's
   way, §2). Nothing of the world is seen in the frame's strips, and nothing of the frame is set in the world.
 - **One square.** Every place of the rail is a 36 px square at a 48 px pitch from (6, 6), its mark 18 px drawn at
-  2 px; the door and the band's keys are the same square two cells wide.
+  2 px; the band's keys are the same square two cells wide.
 - **The same in every place**, to the pixel. A camera's frame does not change from scene to scene.
 - **Quiet.** What is always on the screen is kept faint: broadcasters keep their station's mark grey and dim, screens
   dim a still mark of their own accord against burn-in, and the navigation rails and tab bars of both platforms set
@@ -560,35 +560,22 @@ The frame is the camera's own (§2): it is how the window is held, not something
   and so every one, at one pitch from first to last. So four dots stand round every icon alike. Its icon is 18 px,
   drawn with a 2 px stroke of its 24 px box.
 - Its marks are the frame's quiet colour; the place one is in has the slot colour under it and its mark in ink; a
-  place under the pointer or the keyboard, paper, a 2 px ink ring and its mark in ink. At a place's far side its place is the one lit. A place's name stands out beside it while the keyboard is on
+  place under the pointer or the keyboard, paper, a 2 px ink ring and its mark in ink. A place's name stands out beside it while the keyboard is on
   it; a pointer over it brings nothing out (§7).
-- **An icon stands on the rail only for what the day goes to from anywhere**, in order, nearest the person first:
-  what is one's own; the work; the people; the machine. Then what is not a place: what is called up in front of
-  whatever place is shown (the tree of everything, the plug) and the key that makes a new thing. At the rail's foot,
-  the person's own menu. (Which icon is which: `PLACES.md`.)
-- **What is gone to from one place has no icon: it is that place's far side, and its door is there.** An icon costs
-  the screen a square for ever and saves a press only when its page is gone to from somewhere not its place; a page
-  gone to from one place is seldom the next thing from anywhere else.
+- **An icon stands on the rail for each place the day goes to**, in order, nearest the person first: what is one's
+  own; the work; the people; the machine. Then what is not a place: what is called up in front of whatever place is
+  shown (the tree of everything, the plug) and the key that makes a new thing. At the rail's foot, the person's own
+  menu. (Which icon is which: `PLACES.md`.)
+- **A place's far side has its icon right under its place's**: where it belongs is where it stands, and the two are
+  one group. Every page is gone to by one key, and every key to a page is on the rail: none stands at the head of a
+  band, where it would lead elsewhere than the band does and push the band's own keys a key further from the rail.
+  Going from a place to its far side, or back, the world goes **along** (§8), the far side coming in from the right;
+  back, from the left. Only places have far sides; what is called up, and the key that makes a new thing, lead
+  nowhere further.
 
-  What is to be seen at a far side is said on its place's icon, the place's own name first: a red dot while what it
-  reaches does not answer; an ink dot while something there is unread.
+  What is to be seen at a far side is said on its own icon: a red dot while what it reaches does not answer; an ink
+  dot while something there is unread.
 - A window too short for the rail (under 560 px) closes the places up, and they scroll inside the rail.
-
-### The door
-
-The way from a place to its far side, and **in the same spot** the way back: there and back is two presses with the
-hand where it was.
-
-- One key of the band's own make: x = 48 to 96, y = 6 to 42 (two cells wide, as tall as a place of the rail),
-  ground under an 18 px mark, 1 px of the quiet line round it (ink under the hand). Its mark is the icon of where it leads. It is the window's,
-  fixed, and there on a far side that has no band of its own.
-- It is the first key of the band: nearest the rail, where the hand was when it came to the place. Where the page
-  has a band, the band goes on from the door and the two are one bar as wide as a piece (the door has no edge of its
-  own on that side).
-- What waits where it leads is a dot on it, as on a place of the rail.
-- Going through it the world goes **along** (§8), the far side coming in from the right; back, from the left.
-- Only a place with a far side, and that far side, have a door; what is called up, and the key that makes a new
-  thing, lead nowhere further.
 
 ### The band
 
@@ -597,7 +584,7 @@ piece (§3). Ground under it, a 1 px outline of the quiet line (ink while its se
 edge, a 1 px line between them; the search is the rest, its words the words' size. Every edge of the bar is on a line of the
 grid, so no dot is cut by it.
 
-- Its keys, in order: the door (where the place has a far side), the terminal's key, the files' key, then the search.
+- Its keys, in order: the terminal's key, the files' key, then the search.
   A desk has the keys its work needs and no others (which: `PLACES.md`).
 - The search, written in, is a field in the hand: paper inside and its own pixel of ink round it (one pixel where it
   meets the key before it). What it finds is the desk's files and the lines in them, and nothing else lives under it.
@@ -794,7 +781,7 @@ pressed a moment early or late, or two pixels from the wall, counts.) Here:
 - **The window's edges are the frame's.** The 6 px between a square of the frame and the window, or the square next
   to it, are that square's to be pressed in (a quarter of a cell: the same game's own code gives a jump four pixels
   of grace on tiles of eight, a tenth of a second after the ledge is left). So a pointer thrown against the window's
-  left edge is on the rail, against its top on the band or the door, and in its bottom left corner on the person's
+  left edge is on the rail, against its top on the band, and in its bottom left corner on the person's
   menu: an edge cannot be overshot, and between two places there is no room that is nobody's.
 - **A press that just misses a menu is the menu's.** 16 px round what was called up neither put it away nor land on
   what is under it; its shadow lies in them. (The margin a toolkit that copies the phones' manners keeps round a
@@ -814,7 +801,7 @@ still be the right one, when ease was not its aim. Three are kept on purpose:
 - **In a board and a conversation Enter is a new line, and sending is a key of its own** (Ctrl+Enter, or the key that
   comes with the words). What is said there is a whole thought that will be read later, not a line in a chat.
 - **One piece is in the hand.** To work in another it is taken up; nothing is done to a piece from a distance.
-- **A far side is a step away** (the door), not a pane beside its place: where the work is judged is not where it is
+- **A far side is a step away** (its icon under its place's), not a pane beside its place: where the work is judged is not where it is
   done.
 
 And one kind is not friction but noise: **being asked "are you sure".** Asked every time, it is answered without
@@ -946,7 +933,7 @@ four ways:
 | **world** | the plane under the frame, `[48, W] × [48, H]`: the desk, the places down it, their far sides along | film's field | measured |
 | **ground** | the world's colour with a dot a cell: what is not anything | squared paper | rendered |
 | **frame** | the rail's column and the band's row, 48 each, the camera's own: quiet, fixed, never in the scene | film's frame line; safe action | measured |
-| **place**, **far side** | what the rail goes to, down; its other page, along through the door | — | given |
+| **place**, **far side** | what the rail goes to, down; its other page, along, its icon under its place's | — | given |
 | **piece**, **sheet** | a thing with something in it lying on a desk, its edges on the grid; a piece of paper (paper, corner 10) | stationery | measured |
 | **row** | pieces along from the desk's edge, `x(n) = n(W + G)`; a piece's place is its number | a line of words | measured |
 | **rest** | the world still, a piece at the desk's edge: a shot | film's composed frame | measured |
@@ -1037,7 +1024,7 @@ research has one, measured on every control of every place from the top right, h
 | **Unfold** (a folder, a line's detail) | **its name opens it, and opens nothing else**: pressed again it shuts; at once, nothing folding on its way; what is under it and round it stays where it is (the place, the page under a tree). One press, one deed, whatever else is so: a press whose deed hangs on something not in sight (which work another place is at) is a mode, and is not made. From the keyboard a tree opens with → and shuts with ←, a line's next line opens with Enter at its end | in the press's frame; nothing else moves | Raskin, *The Humane Interface* (2000): modelessness, the same gesture the same result; W3C WAI-ARIA APG, tree view and disclosure patterns | measured: a folder opened and shut with the place under it unmoved |
 | **Ask** (a yes to say, a name to write out) | in the place it was pressed, its deed under the press, Cancel on the other side (§7); **Escape is its Cancel** with the keyboard anywhere in it, heard before whatever stands round it (the desk, the page); answered either way, the thing as it was and the keyboard on it. A switch that asks stays as it was until the ask is answered | in the key's frame | Escape as a dialog's Cancel since IBM's CUA and the Macintosh; W3C WAI-ARIA APG, dialog pattern | measured: an off asked and let go by Escape, the switch on and the keyboard on it |
 | **Switch** (a page's parts, an on and off) | the one chosen is shown in the press's frame with what it holds; the arrows go to the next and show it as they go, for what it holds is at hand (no part waits to be read); an on and off is a switch, round, and turned by a press or Space | in the press's frame | W3C WAI-ARIA APG, tabs: activated as they are focused only where their panels show at once; switch pattern | measured: parts chosen at once, the arrows to the next (measured) |
-| **Back** | **Back goes to the place before, Forward to the one after**, however it is asked (the browser's, a mouse's side button, a phone's edge, Alt+← or ⌘[), with the world's move the way the rail lies (§8); each place gone to is a step, the place one is at pressed is none; never out of the OS from a place gone through; the place come back to is as it was left (read to where it was, the piece in hand, what was half written) | one step a place | Back was 41% of what people did in a browser, second only to links (Catledge and Pitkow 1995), and still one of its first ways in 2006 though less than half that (Weinreich et al.); breaking it is the web's first mistake (Nielsen 1999) | measured: Back and Forward through the places and the door, the address the OS's throughout |
+| **Back** | **Back goes to the place before, Forward to the one after**, however it is asked (the browser's, a mouse's side button, a phone's edge, Alt+← or ⌘[), with the world's move the way the rail lies (§8); each place gone to is a step, the place one is at pressed is none; never out of the OS from a place gone through; the place come back to is as it was left (read to where it was, the piece in hand, what was half written) | one step a place | Back was 41% of what people did in a browser, second only to links (Catledge and Pitkow 1995), and still one of its first ways in 2006 though less than half that (Weinreich et al.); breaking it is the web's first mistake (Nielsen 1999) | measured: Back and Forward through the places and their far sides, the address the OS's throughout |
 | **Comes, goes** | there at once and explained after, never grown from nothing or faded over what it replaces (§8) | — | an animated transition makes one wait; show the result, then an afterglow where it changed (Baudisch et al., *Phosphor*, 2006) | a dozen still grow or fade (§11) |
 | **Refused** | said once the field is left, where it is put right, and in words; the thing nudged the way that means no, short | the nudge ≤ a cell, ≤ 300 ms | inline validation after leaving a field: 22% more success, 22% fewer errors (Wroblewski 2009); a shake in a meaningful direction, not a random one (Pichlmair and Johansen) | New repo, Git's lines |
 | **Done** | **the one strong answer**: what was done lands, lit, where its result is (a line under what is done, a step's mark), and nowhere else | lit ≥ its read time (§8) | amplified feedback on success raised competence and enjoyment; on mere action it lowered them (Kao et al. 2024, n = 1,699); Sakurai: the stop that marks a hit is for what counts | Git's Committed and steps |

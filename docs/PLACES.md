@@ -23,13 +23,13 @@ The rail (DESIGN §4), nearest the person first, and what is not a place:
 
 | | Icon | What it is |
 |---|---|---|
-| mine | Home | who one is, what is one's own to do |
-| the work | Forge | a repo written and run |
-| people | Server | where many talk |
+| mine | Home, under it the Remote | who one is, what is one's own to do; where it is kept |
+| the work | Forge, under it Git | a repo written and run; recorded and reviewed |
+| people | Server, under it Inbox | where many talk; what was said to one |
 | the machine | Runtime | this device |
 | not places | File, the plug, + | File (the tree of "/") and the plug are called up in front of whatever place is shown; + makes a repo |
 
-Each far side, and its door:
+Each far side, its icon right under its place's:
 
 | Far side | Of | Why it is its far side |
 |---|---|---|
@@ -37,11 +37,11 @@ Each far side, and its door:
 | the Remote | Home | what is mine here, then where it is kept |
 | Inbox | Server | where many talk, then what was said to one |
 
-A red dot on Home while the Remote does not answer; an ink dot on Server while something in Inbox is unread. Only
-these six pages have a door; Runtime, File, the plug and + lead nowhere further.
+A red dot on the Remote while it does not answer; an ink dot on Inbox while something in it is unread, and on Server
+while something new is posted there. Runtime, File, the plug and + have no far side.
 
-The band's keys: Home and Forge, the door, the terminal's key, the files' key, the search; Git, the door, the
-terminal's key, the search; New repo, the terminal's key, the files' key, the search (it has no far side). At its
+The band's keys, from the desk's edge: Home, Forge and New repo, the terminal's key, the files' key, the search; Git,
+the search (Forge's icon, over Git's, is the way to the terminal). At its
 right end: on Forge the name of what is in the hand; on Git the repo the desk is of.
 
 The widths of DESIGN §3, here: Home's slip 12 cells; the row's first sheet 8 (Git's own, Server's); Inbox's first
@@ -187,7 +187,7 @@ nothing round it**, as wide as the name, as a repo's is on Home; pressed, it is 
 not made yet. The board in the hand is a sheet: its name in the display
 face on its second line, its two parts after the name (its talk, its list; they go under the name where they do not
 fit beside it), the part chosen under a quiet rule, and at its foot the box one writes in, part of the sheet. Its
-servers are chips on the band's row after the door; the chip of the server on screen, pressed, turns the desk to the
+servers are chips on the band's row; the chip of the server on screen, pressed, turns the desk to the
 row's start.
 
 ### Inbox: Server's far side, what was said to one
@@ -305,7 +305,7 @@ breaks; none is a decision to leave it.
 | Server | behind its gear and a repo shown: a page of the old make (its title 24 px, its parts on a sliding line) | §3, §5 |
 | Server's chips, a sheet's parts | a line of them longer than its room slides, cut at its end (the parts' › standing there) | §6, what does not fit goes under |
 | the search's finds | the find beside the one read lights under a pointer | §7, nothing waits on a pointer |
-| the band | Home, Forge and Git each build their own (the door alone is the window's); Runtime, the Remote, Server and Inbox have no search, so the band's row is not the same in every place: Server's is a round +, its servers as pills and a chevron at the row's far end; Inbox's and the Remote's the door alone; Runtime's nothing | §2, the frame is the window's; §4, the frame the same in every place (held of the rail, not yet of the band's row) |
+| the band | Home, Forge and Git each build their own; Runtime, the Remote, Server and Inbox have no search, so the band's row is not the same in every place: Server's is a round +, its servers as pills and a chevron at the row's far end; Inbox's, the Remote's and Runtime's nothing | §2, the frame is the window's; §4, the frame the same in every place (held of the rail, not yet of the band's row) |
 | Forge | the desk still turns by itself to where the Agent is working | §8, the world moves only for what was asked |
 | moves in code | their lengths are still written where they are made (their curve is the law's) | §8 |
 | the sheets (Runtime, the Remote) | what is in them is laid by the window's width in places (27 rules that ask the window how wide it is remain in the sheets, most of them here) | §1, a narrow window has the same rules |
@@ -339,9 +339,9 @@ Nothing here rests on how a screen looks to someone. Each rule is held by a test
 | What a colour may say: the greys from ink to paper each lighter than the last and none a hue; each hue a kind of its own (§13) | `why/app/ui/tokens.test.ts` |
 | A piece's place is its number; where the desk rests; going to a piece, every case; a phone by the same rule (§6) | `why/app/pages/forge/desk-layout.test.ts` |
 | A piece's width at every window; a row whose first sheet is narrower than its pieces (§3, §6) | `why/app/ui/row.test.ts` |
-| The rail's order; which pages are a place's far side, where each door leads and that it leads back (§4) | `why/app/host/purposes.test.ts` |
+| The rail's order, each far side right under its place; which pages are a place's far side, and the step to it and back (§4) | `why/app/host/purposes.test.ts` |
 | What a typed key sounds as (§9) | `why/app/ui/touch.test.ts`, `why/test/app/sound.spec.ts` |
-| Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, the door where there is one, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
+| Every page starts at the frame's corner, a desk's band from the desk's edge, a sheet from the desk's corner, at four widths down to a phone; the dots under every page; nothing wider than the window (§2, §4) | `why/test/app/skeleton.spec.ts` |
 | Every rest is a shot, in every place at four widths: one lens (nothing scaled, zoomed or in perspective), one horizon (the subject on the grid), one subject in focus with the one light's shadow, the frame in focus under what is called up, the eye landing on what the place is within 5° of where the hand was, the weight left of the world's middle on a desk, the lean (the lower right at least as empty as the upper left), the bare ground one open field with nothing trapped and at most a third of the world marked, the band's title whole at its size, one voice (§2); every size of type one of three, and every line of words on a cell of the grid (§3) | `why/test/app/composition.spec.ts` |
 | Touch, with motion on: under the pointer a thing takes paper or nothing; a press answers in its own frame, sounds as it goes down, gives at most 8% and comes home never past; every place's subject holds its act (§14) | `why/test/app/touch.spec.ts` |
 | Master and servant: on a desk one piece holds the fill, the ink edge, the shadow and the keyboard, and what is typed goes to it alone (§1) | `why/test/app/master.spec.ts` |

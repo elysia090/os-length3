@@ -50,11 +50,14 @@
 .git-switch { padding: 0; }
 .git-switch:empty { display: none; }
 .switch-lines { display: grid; }
-.switch-line { position: relative; display: flex; justify-content: flex-start; align-items: center; height: var(--u); padding: 0 var(--u); }
+.switch-line { position: relative; display: flex; justify-content: flex-start; align-items: center; height: var(--u); padding: 0; }
 .switch-line.next::before { content: ''; position: absolute; inset: 0 1px; background: var(--ink); }
-/* (A step is a line pressed: a cell tall, its words not trimmed to their capitals, which left a target of 12 px.) */
-.git-switch .switch-line > :is(button, span) { position: relative; min-width: 0; min-height: 0; height: var(--u); text-box: normal; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
-  font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; }
+/* (A step is a line pressed: a cell tall, its words not trimmed to their capitals, which left a target of 12 px; and as
+   wide as its band, the cell before its word and all after it: pressed where the band is, it is pressed, not only on
+   its word.) */
+.git-switch .switch-line > :is(button, span) { position: relative; flex: 1 1 auto; display: flex; align-items: center; justify-content: flex-start; align-self: stretch;
+  min-width: 0; min-height: 0; height: var(--u); text-box: normal; margin: 0; padding: 0 var(--u); border: 0; border-radius: 0; background: none; box-shadow: none;
+  font: 400 var(--t-word)/var(--u) var(--mono); color: var(--sub); white-space: nowrap; text-align: left; }
 .git-switch .switch-line > button { cursor: var(--cursor-hand); }
 .git-switch .switch-line > button:is(:disabled, [aria-disabled='true']) { cursor: var(--cursor-arrow); opacity: 1; }
 .git-switch .switch-line.next > :is(button, span) { font-weight: 700; color: var(--ground); }

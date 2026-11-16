@@ -27,7 +27,7 @@ function framed() {
     return {label: b.getAttribute('aria-label') ?? '', box: box(b), mark: box(mark), stroke: path ? getComputedStyle(path).strokeWidth : '', colour: getComputedStyle(b).color, current: b.getAttribute('aria-current') === 'page'};
   });
   // What of the world is seen in the frame's strips: anything outside the frame's own that is painted there.
-  const own = '.rail, .door, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .sr-only';
+  const own = '.rail, .home-band, .work > .bar, .server-top, .server-bar, .band-tools, .band-held, .page-veil, .sr-only';
   const intrudes: string[] = [];
   for (const el of document.querySelectorAll('#page *')) {
     if (el.closest(own) || !shown(el) || el.children.length) continue;
@@ -47,7 +47,7 @@ function framed() {
   // What is loud in the frame: marks or words in ink that are not the place one is in, nor chosen, nor under the hand;
   // lines of ink; anything filled with ink.
   const loud: string[] = [];
-  for (const el of document.querySelectorAll('.rail *, .door, .door *, .band-tools, .band-tools *, .band-held, .server-top *, .server-bar *')) {
+  for (const el of document.querySelectorAll('.rail *, .band-tools, .band-tools *, .band-held, .server-top *, .server-bar *')) {
     if (!shown(el)) continue;
     const r = el.getBoundingClientRect();
     if (!(r.top < F || r.left < F) || r.bottom <= 0) continue;
@@ -61,7 +61,7 @@ function framed() {
     for (const line of [c.outlineStyle !== 'none' && c.outlineWidth !== '0px' ? c.outlineColor : '', c.boxShadow.includes(INK) && !c.boxShadow.includes('12px') ? INK : ''])
       if (line === INK) loud.push(`${name}: a line of ink`);
   }
-  return {W, H, places, door: document.querySelector('.door:not([hidden])') && box(document.querySelector('.door')!), intrudes, loud};
+  return {W, H, places, intrudes, loud};
 }
 
 test('the frame is the camera\'s: one degree, receding, one square, the same in every place, on two sides only, and quiet at rest', async ({signedIn: app}) => {
@@ -95,8 +95,6 @@ test('the frame is the camera\'s: one degree, receding, one square, the same in 
           // Quiet: ink only on the place one is in.
           expect(p.colour, `${what}: ${p.label}'s mark`).toBe(p.current ? INK : FRAME);
         }
-        // The door, where there is one: two cells wide, a place's height, from the desk's edge on the rail's first row.
-        if (f.door) expect(f.door, `${what}: the door`).toEqual([F, 6, F, 36]);
         // Constant: the rail the same in every place.
         const now = JSON.stringify(f.places.map((p) => [p.label, p.box, p.mark]));
         rail ??= now;

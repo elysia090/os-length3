@@ -3,16 +3,15 @@
 // person, nearest first: Home (mine), Forge (the work), Server (people), Runtime (the machine); then what is not a
 // place: File and the plug, called up in front of whatever place is shown, and +, which makes a repo.
 //
-// Three pages have no icon. Each is the far side of a place and is reached from it, by the door at the head of that
-// place's band (main.ts), and from it the same door leads back: the door is in one spot both ways, so there and back
-// is two presses without moving the hand.
+// Three pages are a place's far side, each with its icon on the rail right under its place's, so where it belongs is
+// where it stands (a door at the head of the place's band led there before: a key of the page's own that went
+// elsewhere than its band, and the band started a key later for it):
 //   Git     is Forge's far side: the repo written, then the repo recorded and reviewed.
 //   Remote  is Home's: what is mine here, then where it is kept.
 //   Inbox   is Server's: where many talk, then what was said to one.
-// They are not put on their place's screen: each stays the whole screen it was, a step along from its place. An icon
-// stands on the rail only for a place the day goes to from anywhere; what is gone to from one place has its door
-// there. Purposes are not directories: the filesystem stays an ordinary POSIX tree and never re-implements this
-// classification.
+// They are not put on their place's screen: each stays the whole screen it was, a step along from its place (the
+// world goes along to it, not down). Purposes are not directories: the filesystem stays an ordinary POSIX tree and
+// never re-implements this classification.
 
 export type PurposeId =
   | 'home' | 'file' | 'git' | 'forge' | 'runtime' | 'remote' | 'server' | 'inbox' | 'plugin'
@@ -64,17 +63,12 @@ export const NEW_REPO: Purpose = {id: 'new-repo', label: 'New repo', role: 'Crea
 const FAR: Partial<Record<PurposeId, PurposeId>> = {git: 'forge', remote: 'home', inbox: 'server'};
 /** The place a page is in: itself, or the place it is the far side of. Its icon is the rail's for that page. */
 export const placeOf = (id: PurposeId): PurposeId => FAR[id] ?? id;
-/** Where the door of `id` leads: from a place to its far side, from a far side back to its place; none where a place has no far side. */
-export function doorOf(id: PurposeId): PurposeId | null {
-  if (FAR[id]) return FAR[id]!;
-  const far = (Object.keys(FAR) as PurposeId[]).find((k) => FAR[k] === id);
-  return far ?? null;
-}
 /** Whether `id` is a place's far side: a step along from its place. */
 export const isFar = (id: PurposeId): boolean => id in FAR;
 
-/** Rail order, top to bottom, as keyboard navigation walks it: the places, then what is not a place. */
-export const RAIL: readonly Purpose[] = [...PURPOSES.filter((p) => !(p.id in FAR)), NEW_REPO];
+/** Rail order, top to bottom, as keyboard navigation walks it: the places, each with its far side under it, then what
+ * is not a place. */
+export const RAIL: readonly Purpose[] = [...PURPOSES, NEW_REPO];
 
 /** Where a page lies in the world, down from Home: its place's number on the rail. */
 export const depth = (id: PurposeId): number => RAIL.findIndex((p) => p.id === placeOf(id));

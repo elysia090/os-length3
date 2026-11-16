@@ -2,8 +2,9 @@
 /* Runtime: one box in three columns, as tall as the longest: here, on the Remote, can be freed */
 .space-box { margin-top: var(--s5); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
-/* (Inside the box's edge, a cell of paper over its lines, as a sheet's: the edge's own pixel in it.) */
-.space-col { display: flex; flex-direction: column; min-width: 0; padding: calc(var(--u) - 1px) var(--s4) var(--u); }
+/* (Inside the box's edge, a cell of paper over its lines and under them, as a sheet's: the edge's own pixel in it, at
+   its foot too, so the box is whole cells and the sheet's foot is on the grid.) */
+.space-col { display: flex; flex-direction: column; min-width: 0; padding: calc(var(--u) - 1px) var(--s4); }
 .space-col + .space-col { border-left: 1px solid var(--rule); }
 .space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--u); font-size: var(--t-word); font-weight: 700; line-height: var(--u); }
 .space-col > h3 b { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -24,4 +25,6 @@
 .space-foot .grow { flex: 1; }
 .link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 700; color: inherit; text-align: left; cursor: var(--cursor-hand); }
 .link-name:hover { border-radius: var(--r-key); color: var(--ink); }
-@media (max-width: 900px) { .space-box { grid-template-columns: 1fr; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }
+/* (One under another, the line between two is the next's, and the one over it keeps its whole cell under its lines.) */
+@media (max-width: 900px) { .space-box { grid-template-columns: 1fr; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); }
+  .space-col:not(:last-child) { padding-bottom: var(--u); } }

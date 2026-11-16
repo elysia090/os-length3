@@ -10,7 +10,7 @@ import {across, emptiness, emptyIn, fields} from './weigh.ts';
 //   one subject     one shadow cast in focus, the one light's: 12 px right and down
 //   the frame       under what is called up, the rail and the band stay over the world, in focus
 //   eye-trace       what stands just past the frame's corner is what the place is, within 5° of where the hand was
-//                   (the place's square on the rail, or the door): found without a search
+//                   (the place's square on the rail): found without a search
 //   look room       on a desk screen, the room ahead of the subject (to its right, the way the row runs) at least the
 //                   room behind it, wherever it stands
 //   weight          on a desk screen, the weight of what is drawn lies left of the world's middle (the room ahead to
@@ -115,8 +115,8 @@ function frame({subject, corner}: {subject: string; corner: string}) {
   // (A cell and a half right of the rail, two cells under the band: 24 px a cell, the frame two cells each way.)
   const at = document.elementFromPoint(84, 96);
   const landed = !!at?.closest(corner);
-  // How far that is from where the hand was: the place's square on the rail, or the door to a far side.
-  const from = document.querySelector('.door:not([hidden])') ?? document.querySelector('.rail .rail-item[aria-current="page"]');
+  // How far that is from where the hand was: the page's square on the rail.
+  const from = document.querySelector('.rail .rail-item[aria-current="page"]');
   const fr = from?.getBoundingClientRect(), lr = at?.closest(corner)?.getBoundingClientRect();
   const reach = fr && lr ? Math.hypot(Math.max(lr.left - (fr.left + fr.width / 2), 0, fr.left + fr.width / 2 - lr.right),
     Math.max(lr.top - (fr.top + fr.height / 2), 0, fr.top + fr.height / 2 - lr.bottom)) : Infinity;

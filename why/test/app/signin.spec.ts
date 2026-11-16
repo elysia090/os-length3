@@ -34,14 +34,13 @@ test('a Remote that answers with a page or a 503 is said to be away, not to offe
     : r.fulfill({status: 503, contentType: 'text/plain', body: 'upstream connect error'})));
   await app.page.route('**/v1/open', (r) => (answer === 'ok' ? r.continue() : r.fulfill({status: 200, contentType: 'text/html', body: '<!doctype html>'})));
   await app.open();
-  // Away, Home's icon says so (the Remote is Home's far side and has no icon of its own), Home's name first.
-  const rail = app.page.getByRole('navigation', {name: 'Purposes'}).getByRole('button', {name: /^Home( · Cannot connect to Remote)?$/});
+  // Away, the Remote's own icon says so (on the rail under Home's), its name first.
+  const rail = app.page.getByRole('navigation', {name: 'Purposes'}).getByRole('button', {name: /^Remote( · Cannot connect to Remote)?$/});
   await app.rail.go('remote');
   const card = app.main.getByRole('region', {name: 'Sign in'});
   await expect(card.getByRole('status')).toHaveText('Unexpected response from server (200)');
   await expect(card).not.toContainText('offers no way');
-  await expect(rail).toHaveAccessibleName('Home · Cannot connect to Remote');
-  await expect(app.rail.door).toBeVisible();
+  await expect(rail).toHaveAccessibleName('Remote · Cannot connect to Remote');
   // Server, signed out, reads its open boards from the same Remote: said in words, never the parser's.
   await app.server.open();
   await expect(app.server.view).toContainText('Unexpected response from server (200)');
@@ -54,7 +53,7 @@ test('a Remote that answers with a page or a 503 is said to be away, not to offe
   answer = 'ok';
   await card.getByRole('button', {name: 'Try again'}).click();
   await expect(card.getByRole('button', {name: 'Continue with Development'})).toBeVisible();
-  await expect(rail).toHaveAccessibleName('Home');
+  await expect(rail).toHaveAccessibleName('Remote');
 });
 
 test('signing out from the person menu brings back the way in', async ({app}, info) => {
@@ -167,7 +166,7 @@ test('signing in from Inbox comes back to Inbox, signed in', async ({app}, info)
   await app.atProvider(personName(info));
   await app.settled();
   await expect(app.page.locator('#page')).toHaveAttribute('data-place', 'inbox');
-  await expect(app.rail.button('server')).toHaveAttribute('aria-current', 'page');
+  await expect(app.rail.button('inbox')).toHaveAttribute('aria-current', 'page');
   await expect(app.main.getByRole('region', {name: 'Sign in'})).toHaveCount(0);
 });
 

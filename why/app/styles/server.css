@@ -11,11 +11,9 @@
 .server-center { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: 0; }
 /* The band's row, and under it the board's top on the rail's first row: its head is that row, and what it holds
    starts on the second. Under the band's row, while one is named, what the Remote said no to (server/band.ts). */
-/* (Its keys are the band's, 36 from the window's 6, as the door is; under it the row's top is a cell under the band:
-   y = 72.) */
-.server-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s1) var(--s2); margin: 0 var(--s5) calc(3 * var(--u) - var(--outer-top) - var(--h-control)) var(--band-left); }
-/* (Its top line is on the band's row: it goes on from the door to Inbox, a step after it.) */
-body.has-door .server-top { margin-left: calc(2 * var(--u) + var(--outer) + var(--band-left)); }
+/* (Its keys are the band's, 36 from the window's 6, from the desk's edge as every band's are; under it the row's top
+   is a cell under the band: y = 72.) */
+.server-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s1) var(--s2); margin: 0 var(--s5) calc(3 * var(--u) - var(--outer-top) - var(--h-control)) 0; }
 /* Server's page: the view the whole page's, its edges the bench's. */
 /* (Its row goes to the window's right edge and foot, past the page's own: nothing of it is cut at the page's.) */
 .page.page-work[data-place='server'] { overflow: visible; }

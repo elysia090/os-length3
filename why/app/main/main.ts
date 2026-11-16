@@ -23,7 +23,7 @@ import {getState, loadState, onState} from '../../home/state.ts';
 import {inEffect} from '../../home/dotfiles.ts';
 import {NAME as LOOK, wear} from '../ui/look.ts';
 import {onLang, t, useLang} from '../../text/i18n.ts';
-import {depth, doorOf, isFar, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
+import {depth, isFar, placeOf, RAIL, purpose, restorePurpose, stepPurpose, type PurposeId} from '../host/purposes.ts';
 import {glide, morph, stage, stopStage, travel, where, type Carry} from '../ui/glide.ts';
 import {letGo, touch} from '../ui/touch.ts';
 import {clearings} from '../ui/clearing.ts';
@@ -209,28 +209,6 @@ function railButton(id: PurposeId): HTMLButtonElement {
   return button;
 }
 
-/**
- * The door: at the head of the band, the way from a place to its far side (Forge to Git, Home to the Remote, Server
- * to Inbox) and, in the same spot, the way back. It is the window's, not the page's: one key at the desk's corner on
- * the band's row, the page's own band (where it has one) going on from it. It says what waits where it leads.
- */
-const door = h('button', {type: 'button', id: 'door', class: 'door', hidden: ''}) as HTMLButtonElement;
-door.addEventListener('click', () => { const to = doorOf(current); if (to) void select(to); });
-document.body.append(door);
-function hang() {
-  const to = doorOf(current);
-  door.hidden = !to;
-  document.body.classList.toggle('has-door', !!to);
-  if (!to) return;
-  if (door.dataset.to !== to) { door.dataset.to = to; door.replaceChildren(icon(to)); }
-  const away = to === 'remote' && remoteAway(), unread = to === 'inbox' && marks(news()).inbox;
-  door.classList.toggle('away', away);
-  door.classList.toggle('news', unread);
-  door.setAttribute('aria-label', away ? t('Cannot connect to Remote') : unread ? t('Unread messages in Inbox') : t(purpose(to).label));
-  // (A page with a band of its own: the band goes on from the door, the two one bar.)
-  door.classList.toggle('with-bar', !![...document.querySelectorAll('#page .band-tools')].some((b) => b.getClientRects().length));
-}
-
 /** What a repo was last opened from (its card, its row in File), to grow from. */
 let pressedOn: HTMLElement | null = null;
 let pressedAt = 0;
@@ -309,17 +287,15 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   if (first) history.replaceState({...(history.state as object | null), place: id}, '');
   else if (from !== id && !stepped) history.pushState({place: id}, '');
   for (const [tabId, tab] of tabs) {
-    // (A place's far side is in that place: its icon is the one lit.)
-    const selected = tabId === placeOf(id);
+    // (A place's far side has its own icon, under its place's: it is the one lit there.)
+    const selected = tabId === id;
     if (tabId !== 'file' && tabId !== 'plugin') { if (selected) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); }
     tab.tabIndex = selected ? 0 : -1;
   }
-  // (A place's far side has no icon to be named by: it is named in words.)
-  if (isFar(id)) { $('page').removeAttribute('aria-labelledby'); $('page').setAttribute('aria-label', t(purpose(id).label)); }
-  else { $('page').removeAttribute('aria-label'); $('page').setAttribute('aria-labelledby', `purpose-${id}`); }
+  $('page').removeAttribute('aria-label');
+  $('page').setAttribute('aria-labelledby', `purpose-${id}`);
   named();
   const shown = render();
-  hang();
   if (from !== id) readAgain(id);
   plugState();
   if (id !== 'new-repo') save(PURPOSE_KEY, id);
@@ -327,7 +303,7 @@ function draw(id: PurposeId, quiet: boolean, stepped = false) {
   if (first && !quiet) { void shown.then(() => stage($('page'), 1)); return; }
   if (from !== id) {
     // The rail's ink goes from the place left to the place come to, and the page comes from that side of the rail.
-    const tab = tabs.get(placeOf(id));
+    const tab = tabs.get(id);
     glide(inkWas, tab?.getAttribute('aria-current') ? tab : null, $('rail-tabs'), 'var(--r-place)', 220);
     arrived?.();
   }
@@ -430,27 +406,26 @@ document.querySelector('.rail')?.setAttribute('aria-label', t('Purposes'));
 // Something come in and not seen yet is said the same way on Inbox and Server: a dot in the colour
 // of the place (ink, or ground on ink when it is current), gone once it is seen.
 const railName = (id: PurposeId): string => {
-  // (What is to be seen at a place's far side is said on the place's own icon: the far side has none.)
-  // (The place's own name first: it is still the way there.)
+  // (What is to be seen at a far side is said on its own icon, under its place's. The page's own name first: it is
+  // still the way there.)
   const name = t(purpose(id).label);
-  if (id === 'home' && remoteAway()) return `${name} · ${t('Cannot connect to Remote')}`;
-  if (id === 'server' && marks(news()).inbox) return `${name} · ${t('Unread messages in Inbox')}`;
+  if (id === 'remote' && remoteAway()) return `${name} · ${t('Cannot connect to Remote')}`;
+  if (id === 'inbox' && marks(news()).inbox) return t('Unread messages in Inbox');
   if (id === 'server' && marks(news()).server) return t('New posts in server');
   return name;
 };
 const mark = (id: PurposeId) => {
   const b = tabs.get(id);
   if (!b) return;
-  b.classList.toggle('away', id === 'home' && remoteAway());
-  b.classList.toggle('news', id === 'server' && (marks(news()).inbox || marks(news()).server));
+  b.classList.toggle('away', id === 'remote' && remoteAway());
+  b.classList.toggle('news', (id === 'inbox' && marks(news()).inbox) || (id === 'server' && marks(news()).server));
   const label = railName(id);
   b.setAttribute('aria-label', label);
   const tag = b.querySelector('.rail-tag');
   if (tag) tag.textContent = label;
-  hang();
 };
-const reach = () => mark('home');
-onNews(() => mark('server'));
+const reach = () => mark('remote');
+onNews(() => { mark('server'); mark('inbox'); });
 let askAgain: {stop(): void} | null = null;
 onReach(() => {
   reach();

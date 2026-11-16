@@ -12,9 +12,8 @@
   padding: var(--u) var(--u) calc(2 * var(--u)); background: var(--paper); border-radius: var(--r-sheet); outline: 1px solid var(--ink); outline-offset: -1px; box-shadow: var(--shade) var(--shade) 0 var(--ink); }
 .page:focus { outline: none; }
 /* (Nothing on it yet, it is no sheet: an empty sheet in the hand's white and shadow stood there before the first page.)
-   The first page the OS opens on, drawn and still reading what it shows (ui/whole.ts): not seen until it is whole, nor
-   the door at the head of its band (one bar with it). */
-.page.reading, body:has(> #page.reading) > .door { visibility: hidden; }
+   The first page the OS opens on, drawn and still reading what it shows (ui/whole.ts): not seen until it is whole. */
+.page.reading { visibility: hidden; }
 /* index.html's word for a page whose scripts never run; boot.js marks the page scripted as it starts. */
 .boot-static { max-width: 34rem; margin: 15vh auto 0; }
 .boot-static h1 { font-size: var(--t-word); margin: 0 0 var(--s3); }

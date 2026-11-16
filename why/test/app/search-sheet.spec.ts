@@ -18,7 +18,7 @@ for (const width of [390, 500, 760, 1024, 1400]) {
       const paper = await app.forge.results.boundingBox(), center = await app.main.locator('.center').boundingBox();
       const words = await row.locator('.sheet-text').boundingBox(), keys = await app.main.locator('.band-tools').boundingBox();
       expect(paper && center && words && keys).toBeTruthy();
-      // (From the desk's edge, where the band's door is: two cells in, past the rail.)
+      // (From the desk's edge, where the band starts: two cells in, past the rail.)
       expect(paper!.x).toBeGreaterThanOrEqual(47);
       expect(paper!.x).toBeLessThanOrEqual(keys!.x);
       expect(paper!.x + paper!.width).toBeLessThanOrEqual(center!.x + center!.width + 1);

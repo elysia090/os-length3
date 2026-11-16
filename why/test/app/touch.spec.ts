@@ -254,9 +254,9 @@ test('Back goes to the place before and Forward to the one after, however many w
     expect(app.page.url(), 'still the OS').toBe(os);
     await expect(app.rail.button(place.toLowerCase() as 'home')).toHaveAttribute('aria-current', 'page');
   }
-  // The door is a step as the rail is: there and Back again.
+  // A far side on the rail is a step as any place is: there and Back again.
   await app.rail.go('home');
-  await app.page.locator('#door').click();
+  await app.rail.button('remote').click();
   await expect.poll(at).toBe('Remote');
   await app.page.goBack();
   await expect.poll(at).toBe('Home');

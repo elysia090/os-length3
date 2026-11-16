@@ -14,28 +14,20 @@ const U = 24;
 /** Where the one of `l` on screen is (a page left stays in the document, hidden). */
 const at = async (l: Locator) => (await l.locator('visible=true').first().boundingBox())!;
 
-/** A desk: its band is one bar from the desk's edge on the row of the rail's first place, whole cells wide; where the
- * place has a far side (or is one), the door is the bar's first two cells. */
-async function desk(app: App, what: string, door: boolean) {
+/** A desk: its band is one bar from the desk's edge on the row of the rail's first place, whole cells wide (a far side
+ * is on the rail, under its place: nothing stands before the band). */
+async function desk(app: App, what: string) {
   await expect(async () => {
     const bar = await at(app.main.locator('.band-tools')), first = await at(app.rail.button('home'));
-    await expect(app.rail.door).toBeVisible({visible: door});
-    const from = door ? (await app.rail.door.boundingBox())! : bar;
-    if (door) {
-      expect([from.width, from.height, from.y], `${what}: its door two cells wide, on the band's row`).toEqual([2 * U, first.height, first.y]);
-      expect(Math.abs(bar.x - (from.x + from.width)), `${what}: its band goes on from the door`).toBeLessThan(1);
-    }
-    expect(Math.abs(from.x - 2 * U), `${what}: its band's left edge`).toBeLessThan(1);
+    expect(Math.abs(bar.x - 2 * U), `${what}: its band's left edge`).toBeLessThan(1);
     expect(Math.abs(bar.y - first.y), `${what}: its band's top, the rail's first place's`).toBeLessThan(1);
     expect(Math.abs(bar.height - first.height), `${what}: its band as tall as a place`).toBeLessThan(1);
-    expect((bar.x + bar.width - from.x) % U, `${what}: its band whole cells wide`).toBeLessThan(1);
+    expect(bar.width % U, `${what}: its band whole cells wide`).toBeLessThan(1);
   }).toPass({timeout: 4000});
 }
-/** A sheet: paper from the desk's corner; where it is a place's far side, the door over its corner on the band's row. */
-async function sheet(app: App, what: string, door: boolean) {
+/** A sheet: paper from the desk's corner. */
+async function sheet(app: App, what: string) {
   await expect(async () => {
-    await expect(app.rail.door).toBeVisible({visible: door});
-    if (door) expect(await app.rail.door.boundingBox(), `${what}: its door`).toMatchObject({x: 2 * U, width: 2 * U});
     const page = await at(app.main);
     expect(Math.abs(page.x - 2 * U), `${what}: its left edge`).toBeLessThan(1);
     expect(Math.abs(page.y - 2 * U), `${what}: its top`).toBeLessThan(1);
@@ -54,13 +46,13 @@ test('signed out, every place starts at the frame\'s corner: a desk\'s band from
     const what = (page: string) => `${page} at ${size.width}×${size.height}`;
     for (const place of ['home', 'new-repo', 'forge', 'git'] as const) {
       await app.rail.go(place);
-      await desk(app, what(place), place !== 'new-repo');
+      await desk(app, what(place));
       expect(await dotted(app), what(place)).toBe(true);
       expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
     }
     for (const place of ['runtime', 'remote', 'inbox'] as const) {
       await app.rail.go(place);
-      await sheet(app, what(place), place !== 'runtime');
+      await sheet(app, what(place));
       expect(await dotted(app), what(place)).toBe(true);
       expect(await sideways(app), what(place)).toBeLessThanOrEqual(0);
     }
@@ -106,11 +98,11 @@ test('signed in, the Remote is a sheet from the desk\'s corner still; Server and
     await app.page.setViewportSize(size);
     const what = (page: string) => `${page} at ${size.width}×${size.height}`;
     await app.rail.go('git');
-    await desk(app, what('Git'), true);
+    await desk(app, what('Git'));
     await app.rail.go('remote');
-    await sheet(app, what('remote'), true);
+    await sheet(app, what('remote'));
     await app.rail.go('inbox');
-    await expect(app.rail.door).toBeVisible();
+    await expect(app.rail.button('inbox')).toHaveAttribute('aria-current', 'page');
     await row(what('Inbox'), size, app.main.locator('.inbox-index'), 12, app.main.locator('.inbox-thread'));
     expect(await sideways(app), what('Inbox')).toBeLessThanOrEqual(0);
     await app.server.open();

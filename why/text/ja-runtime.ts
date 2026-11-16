@@ -60,7 +60,6 @@ export default {
   'Stopped · Freed {size}': '停止完了 · {size}を解放',
   'Stop': '停止',
   'Free {size}': '{size}を解放',
-  'Calculating storage…': '計測中…',
   'Storage calculation failed ({why})': '計測できませんでした（{why}）',
   'Network': 'ネットワーク',
   'Enable network for {repo} Prompt': '{repo}の Prompt にネットワークアクセスを許可',
