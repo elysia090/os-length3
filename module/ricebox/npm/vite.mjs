@@ -4,6 +4,7 @@
 import {createHash} from 'node:crypto';
 import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
+import {prepareDistribution} from './prepare.mjs';
 import {checkPacks} from '../layers/table.ts';
 
 export function distributionAssets(directory, {base = 'ricebox', maxAssetBytes = Infinity} = {}) {
@@ -46,13 +47,18 @@ export function distributionAssets(directory, {base = 'ricebox', maxAssetBytes =
   return result;
 }
 
-export default function ricebox({distribution, base = 'ricebox', maxAssetBytes} = {}) {
+export default function ricebox({distribution, build, base = 'ricebox', maxAssetBytes} = {}) {
+  if (distribution && build) throw new Error('ricebox: choose distribution or build, not both');
+  let prepared = distribution;
   return {
     name: 'ricebox',
+    async buildStart() {
+      if (build) prepared = await prepareDistribution(build);
+    },
     config() { return {worker: {format: 'es'}}; },
     generateBundle() {
-      if (!distribution) return;
-      const assets = distributionAssets(distribution, {base, maxAssetBytes});
+      if (!prepared) return;
+      const assets = distributionAssets(prepared, {base, maxAssetBytes});
       for (const [fileName, source] of assets) this.emitFile({type: 'asset', fileName, source});
     },
   };

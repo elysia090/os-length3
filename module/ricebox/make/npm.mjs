@@ -39,11 +39,12 @@ for (const [path, {source, javascript}] of closure) {
 }
 mkdirSync(join(out, 'module/ricebox/npm'), {recursive: true});
 writeFileSync(join(out, 'module/ricebox/npm/vite.mjs'), readFileSync(join(repository, 'module/ricebox/npm/vite.mjs'), 'utf8').replace("'../layers/table.ts'", "'../layers/table.js'"));
+writeFileSync(join(out, 'module/ricebox/npm/prepare.mjs'), readFileSync(join(repository, 'module/ricebox/npm/prepare.mjs')));
 writeFileSync(join(out, 'package.json'), JSON.stringify({
   name: 'ricebox', version: '0.0.1', private: true, type: 'module',
   description: 'The product-independent ricebox distribution loader',
-  exports: {'.': {types: './' + entry, import: './' + entry.replace(/\.ts$/, '.js')}, './vite': './module/ricebox/npm/vite.mjs'},
+  exports: {'.': {types: './' + entry, import: './' + entry.replace(/\.ts$/, '.js')}, './vite': './module/ricebox/npm/vite.mjs', './prepare': './module/ricebox/npm/prepare.mjs'},
   engines: {node: '>=22.18'},
 }, null, 2) + '\n');
-writeFileSync(join(out, 'README.md'), `# ricebox\n\nThis local package exposes the existing createRoot and Box contracts without why.\nIt carries ricebox and sods JavaScript, including their Worker entry points.\nServe the distribution's layers separately and give createRoot its base URL.\nA bundler with module-Worker support is required for browser applications.\nThis package does not select/build packages, persist user data, or deploy a service.\nIt does not claim Cloudflare isolate execution merely because its files can be served there.\nThe package is private while the complete public installation flow is being verified.\n`);
+writeFileSync(join(out, 'README.md'), `# ricebox\n\nThis local package exposes the existing createRoot and Box contracts without why.\nIt carries ricebox and sods JavaScript, including their Worker entry points.\nServe the distribution's layers separately and give createRoot its base URL.\nA bundler with module-Worker support is required for browser applications.\nThe Vite build option composes explicitly selected prebuilt packages through the existing assemble and AOT toolchain. It currently requires a package cache and source toolchain; it does not fetch release packages or install native build prerequisites. It does not persist user data or deploy a service.\nIt does not claim Cloudflare isolate execution merely because its files can be served there.\nThe package is private while the complete public installation flow is being verified.\n`);
 console.log(`ricebox: ${closure.size} modules, no product dependencies; npm pack ${out}`);
