@@ -187,3 +187,20 @@ test('two shells serialize writes to the same repo before acknowledging their jo
   assert.deepEqual(calls, [1, 2]);
   assert.equal(Object.keys(kept).length, 2);
 });
+
+test('why excludes git metadata in both directions without imposing that policy on sods', async (t) => {
+  journal(t);
+  const hidden = ['.git/config', '.GIT/config', '.Git./x', '.git /x', 'git~1/hooks', '.g\u200cit/config', 'nested/.git/x'];
+  const {source, tell} = told();
+  const reached: string[] = [];
+  const stop = mirror('policy', 'shell', (m) => reached.push(m.path), source);
+  for (const path of [...hidden, '.gitignore', '.github/workflows/test.yml']) tell({repo: 'policy', path, what: 'file', text: 'x'});
+  const written: string[] = [];
+  t.mock.method(store, 'put', async (_r: string, path: string) => { written.push(path); return 1; });
+  t.mock.method(store, 'mkdir', async (_r: string, path: string) => { written.push(path); });
+  t.mock.method(store, 'remove', async (_r: string, path: string) => { written.push(path); });
+  new WriteBack('policy', 'shell', () => {}).write({dirs: hidden, files: [...hidden, '.gitignore'].map((path) => ({path, bytes: new Uint8Array([1]), existed: false})), removed: hidden});
+  await settled(); stop();
+  assert.deepEqual(reached, ['.gitignore', '.github/workflows/test.yml']);
+  assert.deepEqual(written, ['.gitignore']);
+});
