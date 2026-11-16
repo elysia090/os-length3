@@ -24,6 +24,7 @@ import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {builtMuk, nativeBox, type Asked} from './runnable.ts';
 import {openWeb} from './tree.ts';
+import {LANGUAGE_LINES} from './language-cases.ts';
 
 const OS = fileURLToPath(new URL('../../..', import.meta.url));
 const ENV = ['HOME=/root', 'PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'LANG=C.UTF-8', 'TERM=xterm-256color', 'USER=root', 'SHELL=/bin/sh'];
@@ -65,11 +66,12 @@ const SCREEN = new Set(['vi', 'vim', 'nano', 'less', 'more', 'top', 'watch', 'fz
 /** What to reach for instead of a command the root does not have. */
 const INSTEAD: Record<string, string> = {
   join: 'awk', column: 'awk', fmt: 'fold', whereis: 'which', b2sum: 'sha512sum', dig: 'nslookup', host: 'nslookup', vim: 'vi nano',
-  cmake: 'make', ninja: 'make', clang: 'gcc', 'c++': 'gcc', ltrace: 'strace',
+  ltrace: 'strace',
 };
 
 /** The lines, each using the commands it names as a person would; a command's lines all end as natively, or it is not marked as running. */
 export const LINES: Line[] = [
+  ...LANGUAGE_LINES,
   // Core
   {uses: ['sh'], line: 'echo $((6*7)) "${0##*/}"; sh -c \'exit 3\'; echo $?'},
   {uses: ['bash'], line: `bash -c 'declare -A m; m[k]=v; a=(1 2 3); echo "\${m[k]} \${#a[@]} \${a[@]:1}"; [[ abc == a* ]] && echo glob; tr a-z A-Z <<< here'`},
@@ -318,3 +320,5 @@ async function main() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main();
+
+

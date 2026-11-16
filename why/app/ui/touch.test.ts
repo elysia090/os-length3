@@ -56,3 +56,68 @@ test('a stroke typed is a key as any other, Enter and Backspace too, and Space t
   assert.equal(typedKey(k('Enter', {altKey: true}), true), null);
   assert.equal(typedKey(k('a'), false), null);
 });
+
+test('release cleanup from an earlier press cannot make the next press sound twice, even on the same control', (t) => {
+  const handlers = new Map<string, EventListener[]>();
+  const listen = (name: string, handler: EventListener) => {
+    const list = handlers.get(name) ?? [];
+    list.push(handler);
+    handlers.set(name, list);
+  };
+  const pending: (() => void)[] = [];
+  const window = new EventTarget();
+  const heard: string[] = [];
+  window.addEventListener('why-key', (event) => heard.push((event as CustomEvent<string>).detail));
+  class Button {
+    closest(selector: string) { return selector.startsWith('button') ? this : null; }
+    matches(selector: string) { return selector.startsWith('button'); }
+    getBoundingClientRect() { return {width: 40, height: 40}; }
+    animate() { return {cancel() {}}; }
+  }
+  class Mouse {}
+  const values = {
+    document: {addEventListener: listen}, window, Element: Button, MouseEvent: Mouse,
+    addEventListener: listen,
+    setTimeout: (callback: () => void) => { pending.push(callback); return pending.length; },
+  };
+  for (const [key, value] of Object.entries(values)) {
+    const old = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, {configurable: true, writable: true, value});
+    t.after(() => { if (old) Object.defineProperty(globalThis, key, old); else Reflect.deleteProperty(globalThis, key); });
+  }
+  const button = new Button();
+  const fire = (name: string, more: Record<string, unknown> = {}) => {
+    const event = Object.assign(new Mouse(), {target: button, isTrusted: true, button: 0, pointerType: 'mouse', detail: 0, repeat: false}, more);
+    for (const handler of handlers.get(name) ?? []) handler(event as unknown as Event);
+  };
+  const flush = () => { for (const callback of pending.splice(0)) callback(); };
+  touch();
+  for (const previous of ['Enter', 'pointer']) {
+    for (const next of [' ', 'pointer']) {
+      heard.length = 0;
+      if (previous === 'Enter') {
+        fire('keydown', {key: 'Enter'});
+        fire('click');
+        fire('keyup', {key: 'Enter'});
+      } else {
+        fire('pointerdown');
+        fire('pointerup');
+        fire('click', {detail: 1});
+      }
+      assert.deepEqual(heard, ['enter']);
+      // The previous release timer is still queued when a new press starts on the very same button.
+      if (next === 'pointer') fire('pointerdown');
+      else fire('keydown', {key: next});
+      flush();
+      assert.deepEqual(heard, ['enter', 'enter']);
+      if (next === 'pointer') fire('pointerup');
+      else fire('keyup', {key: next});
+      fire('click', {detail: next === 'pointer' ? 1 : 0});
+      assert.deepEqual(heard, ['enter', 'enter'], `${previous} followed by ${next}: one sound per press`);
+      flush();
+      // Once release cleanup finishes, an independent native activation still sounds.
+      fire('click');
+      assert.deepEqual(heard, ['enter', 'enter', 'enter']);
+    }
+  }
+});

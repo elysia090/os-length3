@@ -55,7 +55,13 @@ function sounding(e: Event): Element | null {
   return !button || button.closest(':disabled, [aria-disabled="true"], [inert]') || e.target.closest('input, textarea, select, [contenteditable]') ? null : button;
 }
 /** The control whose press a pointer's going down sounded: its click does not sound again. */
-let sounded: Element | null = null;
+let sounded: {control: Element} | null = null;
+
+/** Release cleanup belongs to one press, not whichever press happens to be current when its timer runs. */
+function forgetSound() {
+  const released = sounded;
+  setTimeout(() => { if (sounded === released) sounded = null; }, 0);
+}
 
 /**
  * The key a stroke of the person's own typing sounds as: what is written in a field, a text or a terminal's line is
@@ -88,7 +94,7 @@ export function touch() {
     const button = sounding(e);
     if (!button) return;
     // (A pointer's press sounded as it went down, below: its click is the same activation.)
-    if (button === sounded) { sounded = null; return; }
+    if (button === sounded?.control) { sounded = null; return; }
     // (Enter typed in a field sounded as it was struck: the press it gives the form's button is that stroke.)
     if (e instanceof MouseEvent && e.detail === 0 && performance.now() - enterTyped < 60) return;
     strike('enter');
@@ -102,13 +108,14 @@ export function touch() {
     // A control pressed with a mouse or a pen sounds as it goes down, as a key does, and its release as it is let
     // go: heard at the click that ends the press, it was late by as long as the press was held. (A finger's press
     // may be the start of a scroll: it sounds at its click.)
-    sounded = e.pointerType === 'touch' ? null : sounding(e);
+    const control = e.pointerType === 'touch' ? null : sounding(e);
+    sounded = control ? {control} : null;
     if (sounded) press('enter');
   }, true);
   for (const name of ['pointerup', 'pointercancel', 'dragstart']) addEventListener(name, up, true);
   for (const name of ['pointerup', 'pointercancel', 'dragstart']) {
     // (The click, if one comes, comes before the control pressed is forgotten.)
-    addEventListener(name, () => { lift(); setTimeout(() => { sounded = null; }, 0); }, true);
+    addEventListener(name, () => { lift(); forgetSound(); }, true);
   }
   addEventListener('blur', (e) => { if (e.target === window) { up(); keyed = null; } });
   // From the keys too: Enter or Space on a control is a press, down as the key goes down and up as it comes up, heard
@@ -124,7 +131,7 @@ export function touch() {
     }
     if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat || e.isComposing) return;
     const control = sounding(e);
-    if (control) { sounded = control; press('enter'); }
+    if (control) { sounded = {control}; press('enter'); }
     const el = pressable(e.target);
     if (el && (e.target as Element).matches(ONE)) down(el);
     if (control || held) keyed = {key: e.key, at: performance.now()};
@@ -135,6 +142,6 @@ export function touch() {
     keyed = null;
     lift();
     // (Space's click, if one comes, comes as the key comes up: before the control pressed is forgotten.)
-    setTimeout(() => { sounded = null; }, 0);
+    forgetSound();
   }, true);
 }

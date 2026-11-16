@@ -58,7 +58,8 @@ export async function outside(module: WebAssembly.Module | BufferSource, dial: D
       const n = to.ip.length === 4 ? cowboy.cowboy_line(((to.ip[0] << 24) | (to.ip[1] << 16) | (to.ip[2] << 8) | to.ip[3]) >>> 0, to.port) : 0;
       if (!n) { far.refused(113); return; }
       const where = new TextDecoder().decode(passed().subarray(0, n - 1));
-      let open = false, over = false;
+      let open = false, over = false, sentEnd = false;
+      let link: Link | undefined;
       // What came from the far side and the machine's side had no room for yet, in the order it came.
       const waiting: Uint8Array[] = [];
       let ended = false;
@@ -71,20 +72,24 @@ export async function outside(module: WebAssembly.Module | BufferSource, dial: D
         if (ended && !waiting.length) { ended = false; far.finish(); }
       };
       const take = () => {
-        if (over) return;
-        if (far.closed) { over = true; link.close(); return; }
-        if (!open) return;
-        for (let b = far.take(); b.length; b = far.take()) link.send(b);
-        if (far.gone) { over = true; link.finish(); }
+        if (over || !link) return;
+        if (far.closed) { over = true; waiting.length = 0; link.close(); return; }
+        if (!open || sentEnd) return;
+        while (!over) { const b = far.take(); if (!b.length) break; link.send(b); }
+        if (!over && far.gone) { sentEnd = true; link.finish(); }
       };
-      const link = dial(where, {
-        opened: () => { open = true; far.opened(); take(); wake(); },
-        failed: (errno) => { if (open) far.close(); else far.refused(errno); over = true; wake(); },
-        bytes: (b) => { waiting.push(b); give(); wake(); },
-        ended: () => { ended = true; give(); wake(); },
+      link = dial(where, {
+        opened: () => { if (over || open) return; if (far.closed) { over = true; link?.close(); return; } open = true; far.opened(); take(); wake(); },
+        failed: (errno) => { if (over) return; over = true; waiting.length = 0; if (open) far.close(); else far.refused(errno); link?.close(); wake(); },
+        bytes: (b) => { if (over) return; waiting.push(b); give(); wake(); },
+        ended: () => { if (over) return; ended = true; give(); wake(); },
       });
+      // A dial may report success or failure before returning its link.
+      if (over) { link.close(); return; }
       far.onwrote = take;
-      far.onroom = () => { if (waiting.length || ended) { give(); wake(); } };
+      far.onroom = () => { if (!over && (waiting.length || ended)) { give(); wake(); } };
+      take();
     },
   };
 }
+

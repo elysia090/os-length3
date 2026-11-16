@@ -455,7 +455,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=root-${{ hashFiles('module/ricebox/RELEASE', 'module/ricebox/make/build.sh', 'module/ricebox/make/lift.sh', 'module/ricebox/make/assemble.sh', 'module/ricebox/make/db.ts', 'module/ricebox/packages/**', 'module/ricebox/pins/**', 'module/ricebox/etc/**', 'module/ricebox/usr/**', 'module/you/**', 'module/otter/**', 'module/lib/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=root-${{ hashFiles('why/**', 'Cargo.toml', 'Cargo.lock', '.cargo/**', '.github/workflows/ci.yml', 'module/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -487,7 +487,7 @@ jobs:
       - name: Assemble and check
         if: steps.kept.outputs.cache-hit != 'true'
         run: |
-          sh module/ricebox/make/assemble.sh target/root-packages target/root-made 0.0.0
+          sh why/make/root.sh target/root-packages target/root-made 0.0.0
           mkdir -p target/root-open
           # Owned by root, as in a Prompt: apk will not audit a database another user owns.
           sudo tar --zstd -xf target/root-made/os-length3-linux-0.0.0-x86_64-*.tar.zst -C target/root-open
@@ -510,6 +510,8 @@ jobs:
           audit=$(inside 'apk audit --system 2>&1' || true)
           [ -z "$audit" ] || { echo "apk audit says:" >&2; echo "$audit" >&2; exit 1; }
           inside 'openssl version' | grep -F "OpenSSL $OPENSSL_VERSION "
+          # Check the new source-built distribution, not the older pinned release.
+          inside 'unset OPENSSL_CONF; d=$(mktemp -d); openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj /CN=localhost -keyout $d/key.pem -out $d/cert.pem -days 1 && openssl x509 -in $d/cert.pem -noout -subject; rc=$?; rm -rf $d; exit $rc' | grep -E '^subject=CN *= *localhost$'
           inside 'curl --version' | grep -F "curl $CURL_VERSION "
           inside 'ssh -V 2>&1' | grep -F "OpenSSH_$OPENSSH_VERSION"
           inside 'git --version' | grep -F "git version $GIT_VERSION"

@@ -123,13 +123,13 @@ less	editor	t
 more	editor	t	
 git	development	+	
 make	development	+	
-cmake	development	-	make
-ninja	development	-	make
+cmake	development	-	
+ninja	development	-	
 pkg-config	development	+	
 gcc	development	+	
-clang	development	-	gcc
+clang	development	-	
 cc	development	+	
-c++	development	-	gcc
+c++	development	-	
 ld	development	+	
 ar	development	+	
 nm	development	+	

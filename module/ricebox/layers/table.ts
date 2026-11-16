@@ -79,7 +79,7 @@ export function checkPacks(index: Packed, read: (name: string, at: number, len: 
  * from it, checked: `read(k, at, len)` gives the bytes of the file at `at` of the `k`th pack once they are what that
  * pack's table says, each table fetched once and checked against its pack's name.
  */
-export function checkedRange(index: Packed, range: (name: string, at: number, len: number) => Uint8Array, sha256: Sha256): (pack: number, at: number, len: number) => Uint8Array {
+export function checkedRange(index: Packed, range: ((name: string, at: number, len: number) => Uint8Array) & {forget?(name: string): void}, sha256: Sha256): (pack: number, at: number, len: number) => Uint8Array {
   const entries = entriesOf(index);
   const tables = new Map<number, Uint8Array>();
   const tableOf = (k: number): Uint8Array => {
@@ -87,15 +87,26 @@ export function checkedRange(index: Packed, range: (name: string, at: number, le
       const {name} = index.packs[k];
       const table = range(name, 0, entries[k].size * LINE);
       checkTable(table, name, sha256);
-      tables.set(k, table);
+      // A Range-ignoring host returns a view into its whole pack. Keep only
+      // the verified table: neither retain that response nor let its later
+      // reuse mutate the hashes we accepted. A transport view, including an
+      // exact-sized one, does not transfer ownership of its backing memory.
+      tables.set(k, Uint8Array.from(table));
     }
     return tables.get(k)!;
   };
   return (k, at, len) => {
     if (!len) return new Uint8Array(0);
     const {name} = index.packs[k];
-    const bytes = range(name, at, len);
-    checkFile(bytes, tableOf(k), entries[k].get(at)?.line, name, sha256);
-    return bytes;
+    try {
+      const bytes = range(name, at, len);
+      checkFile(bytes, tableOf(k), entries[k].get(at)?.line, name, sha256);
+      return bytes;
+    } catch (error) {
+      tables.delete(k);
+      range.forget?.(name);
+      throw error;
+    }
   };
 }
+
