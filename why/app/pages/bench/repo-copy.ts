@@ -56,6 +56,10 @@ async function writeBatch(repo: string, by: string, b: Batch, skipped: string[])
 const JOURNAL = 1 << 20, KEPT = 'why.os.writeback.';
 interface Kept { repo: string; by: string; dirs: string[]; files: {path: string; b64: string}[]; removed: string[] }
 let batches = 0;
+// Once a repo has an uncommitted batch, later batches must stay in the journal too.
+// Otherwise a reload could replay an older failed value over a newer successful one.
+const replayRepos = new Set<string>();
+const writeQueues = new Map<string, Promise<void>>();
 /** `b` kept under a key that sorts in the order it came; null when it is not kept (too large, or no storage). */
 function keep(repo: string, by: string, b: Batch): string | null {
   if (b.files.reduce((n, f) => n + f.bytes.length, 0) > JOURNAL) return null;
@@ -103,8 +107,7 @@ export class WriteBack {
   readonly #repo: string;
   readonly #by: string;
   readonly #skipped: (said: string) => void;
-  #queue: Promise<void> = Promise.resolve();
-  /** What the shell may still write back, in files and bytes: the snapshot's limits. */
+  /** Bound outstanding writes, not the total edits made during a session. */
   #budget = {files: LIMIT_FILES, bytes: LIMIT_BYTES};
 
   constructor(repo: string, by: string, skipped: (said: string) => void) {
@@ -124,11 +127,21 @@ export class WriteBack {
       return true;
     });
     const batch = {dirs: c.dirs, files, removed: c.removed}, key = keep(repo, by, batch);
-    this.#queue = this.#queue.then(async () => {
-      await writeBatch(repo, by, batch, skipped);
-      unkeep(key);
+    const queue = (writeQueues.get(repo) ?? Promise.resolve()).then(async () => {
+      const failed: string[] = [];
+      try {
+        await writeBatch(repo, by, batch, failed);
+        if (failed.length && key) replayRepos.add(repo);
+        if (!failed.length && !replayRepos.has(repo)) unkeep(key);
+      } finally {
+        this.#budget.files += files.length;
+        this.#budget.bytes += files.reduce((n, f) => n + f.bytes.length, 0);
+      }
+      skipped.push(...failed);
       if (skipped.length) this.#skipped(t('Failed to sync back to repo: {list}', {list: `${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`}));
     });
+    writeQueues.set(repo, queue);
+    void queue.finally(() => { if (writeQueues.get(repo) === queue) writeQueues.delete(repo); });
   }
 }
 
@@ -164,3 +177,4 @@ export function mirror(repo: string, by: string, put: (message: Put) => void, so
   });
   return () => { stopped = true; off(); };
 }
+
