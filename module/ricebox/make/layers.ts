@@ -1,19 +1,18 @@
 // One distribution root as content-addressed layers for any static host. This is a
 // delivery form of the same tree, not a separate product or package selection.
 // node module/ricebox/make/layers.ts ROOT OUT [--translator SODS.wasm] [--sods SODS]
-//   [--hot PATH,…] [--name NAME] [--stage DIR]
+//   [--hot PATH,…] [--name NAME] [--stage DIR] [--cache DIR]
 // The root's filename binds its version and digest. Each pack is checked by its
 // digest; files are fetched only when read. Product-specific hot programs and
 // compatibility names are supplied by the caller.
-import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
 import {packOf} from '../layers/table.ts';
+import {translateWhole} from './aot-cache.ts';
 import {readTarball, sha256, type Index} from './tree.ts';
 
 const here = fileURLToPath(new URL('../../..', import.meta.url));
@@ -36,6 +35,7 @@ const chosenHot = flag('--hot');
 const hot = (chosenHot || '/usr/bin/bash,/usr/bin/busybox,/usr/bin/git').split(',').filter(Boolean);
 const distributionName = flag('--name');
 const stage = flag('--stage');
+const aotCache = flag('--cache', join(repo, 'target/ricebox-aot'));
 const [rootFile, out] = args;
 if (!rootFile || !out) { console.error('usage: webroot.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR]'); process.exit(2); }
 
@@ -172,19 +172,17 @@ const translator = {name: 'sods', version: crate(join(repo, 'module/sods/Cargo.t
 // Each hot program translated whole by the native build of the same translator (it gives the bytes the wasm one
 // does): what it reaches only through a pointer (BusyBox's applets and its shell's builtins) is there from its first
 // run, not translated as it runs.
-const work = mkdtempSync(join(tmpdir(), 'ricebox-'));
 const translations: Index['translations'] = [];
-try {
-  for (const path of hot) {
-    const elf = join(work, 'in'), made = join(work, 'out.wasm');
-    const bytes = hotBytes.get(path) ?? Buffer.alloc(0);
-    writeFileSync(elf, bytes);
-    execFileSync(sods, ['--whole', elf, made], {stdio: ['ignore', 'ignore', 'inherit']});
-    // The program's own bytes beside it (the same as in its pack), so a page has both without a zstd decoder of its own.
-    translations.push({path, sha256: sha256(bytes), elf: blob(bytes), wasm: blob(readFileSync(made))});
-    if (stage && path === '/usr/bin/busybox') { mkdirSync(stage, {recursive: true}); copyFileSync(elf, join(stage, 'busybox')); copyFileSync(made, join(stage, 'busybox.wasm')); }
+for (const path of hot) {
+  const bytes = hotBytes.get(path) ?? Buffer.alloc(0);
+  const made = translateWhole(sods, wasm, bytes, aotCache || null);
+  translations.push({path, sha256: sha256(bytes), elf: blob(bytes), wasm: blob(made)});
+  if (stage && path === '/usr/bin/busybox') {
+    mkdirSync(stage, {recursive: true});
+    writeFileSync(join(stage, 'busybox'), bytes);
+    writeFileSync(join(stage, 'busybox.wasm'), made);
   }
-} finally { rmSync(work, {recursive: true, force: true}); }
+}
 if (stage) { mkdirSync(stage, {recursive: true}); writeFileSync(join(stage, 'sods.wasm'), wasm); }
 
 const index: Index = {
