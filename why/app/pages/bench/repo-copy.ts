@@ -6,6 +6,18 @@ import type {Change} from '../../../repo/repos.ts';
 // changes under /root/<repo> written back through the store, and what is saved elsewhere (Forge, Git, why on the host…
 // through the store) put into the shell's copy. Binary files and files over the read limit stay where they are.
 
+/**
+ * A repo's .git however it is spelt (the app's core refuses the same names):
+ * case, trailing dots and spaces, the short name git~1 and invisible code
+ * points do not make it something else. why never mirrors it either way; sods observes ordinary filesystem changes.
+ */
+export function isGitName(name: string): boolean {
+  const n = name.replace(/[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g, '').toLowerCase().replace(/[. ]+$/, '');
+  return n === '.git' || n === 'git~1';
+}
+
+const repoPath = (path: string) => !path.split('/').some(isGitName);
+
 const LIMIT_FILES = 2000;
 const LIMIT_BYTES = 32 << 20;
 
@@ -23,6 +35,7 @@ export async function snapshot(repo: string) {
   const wanted: {path: string; size: number}[] = [];
   let total = 0, complete = true;
   for (const {path, entry: e} of await walkRepo(repo)) {
+    if (!repoPath(path)) continue;
     if (e.kind === 'dir') { dirs.push(`/root/${repo}/${path}`); continue; }
     if (e.kind !== 'file') continue;
     if (wanted.length >= LIMIT_FILES || total + e.size > LIMIT_BYTES) { complete = false; continue; }
@@ -43,9 +56,9 @@ interface Batch { dirs: string[]; files: {path: string; bytes: Uint8Array}[]; re
 
 /** `b` written to the repo `repo` as `by`, in its order; each path that could not be is pushed to `skipped`. */
 async function writeBatch(repo: string, by: string, b: Batch, skipped: string[]) {
-  for (const d of b.dirs) await store.mkdir(repo, d, by).catch(() => skipped.push(`${d}/`));
-  for (const f of b.files) await store.put(repo, f.path, f.bytes, by).catch(() => skipped.push(f.path));
-  for (const r of b.removed) await store.remove(repo, r, by).catch(() => skipped.push(r));
+  for (const d of b.dirs.filter(repoPath)) await store.mkdir(repo, d, by).catch(() => skipped.push(`${d}/`));
+  for (const f of b.files.filter((f) => repoPath(f.path))) await store.put(repo, f.path, f.bytes, by).catch(() => skipped.push(f.path));
+  for (const r of b.removed.filter(repoPath)) await store.remove(repo, r, by).catch(() => skipped.push(r));
 }
 
 // Each batch is kept in this tab's storage as it comes (a synchronous write) until the store has it: a page reloaded
@@ -121,12 +134,13 @@ export class WriteBack {
     const repo = this.#repo, by = this.#by, skipped: string[] = [];
     // Any file, text or not, as the app's Prompt writes the repo itself; one past the budget is said, not written.
     const files = c.files.filter((f) => {
+      if (!repoPath(f.path)) return false;
       if (this.#budget.files <= 0 || this.#budget.bytes < f.bytes.length) return !skipped.push(f.path);
       this.#budget.files--;
       this.#budget.bytes -= f.bytes.length;
       return true;
     });
-    const batch = {dirs: c.dirs, files, removed: c.removed}, key = keep(repo, by, batch);
+    const batch = {dirs: c.dirs.filter(repoPath), files, removed: c.removed.filter(repoPath)}, key = keep(repo, by, batch);
     const queue = (writeQueues.get(repo) ?? Promise.resolve()).then(async () => {
       const failed: string[] = [];
       try {
@@ -170,11 +184,10 @@ export function mirror(repo: string, by: string, put: (message: Put) => void, so
     }).catch(() => {});
   };
   const off = source.onChange((c) => {
-    if (c.repo !== repo || c.by === by || c.what === 'repo') return;
+    if (c.repo !== repo || c.by === by || c.what === 'repo' || !repoPath(c.path)) return;
     if (c.what === 'file') { const text = c.text; next(() => new TextEncoder().encode(text), c.path); return; }
     if (c.what === 'unread') { next(() => source.bytes(repo, c.path).catch(() => undefined), c.path); return; }
     next(() => (c.what === 'dir' ? 'dir' : null), c.path);
   });
   return () => { stopped = true; off(); };
 }
-
