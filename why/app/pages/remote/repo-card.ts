@@ -1,10 +1,11 @@
-import {ago, bytes, day, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {bring, look, repoState, type RepoSync} from '../../remote/lifecycle.ts';
-import type {RemoteRepo} from '../../repos/sync.ts';
-import * as account from '../../remote/connection.ts';
-import {freeOff} from '../../account/space.ts';
-import type * as servers from '../../remote/servers.ts';
+import {h} from '../../ui/dom.ts';
+import {ago, bytes, day} from '../../../text/format.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {bring, look, repoState, type RepoSync} from '../../../shipto/lifecycle.ts';
+import type {RemoteRepo} from '../../../repo/sync.ts';
+import * as account from '../../../shipto/connection.ts';
+import {freeOff} from '../../../device/space.ts';
+import type * as servers from '../../../shipto/servers.ts';
 import {summaryOf} from '../kit/repo-words.ts';
 import {button, pressing} from '../kit/remote-parts.ts';
 import {sharing} from './share.ts';
@@ -94,7 +95,6 @@ function forgeButton(name: string, here: Here | null, there: RemoteRepo | null, 
   forge.disabled = gone && !here;
   if (off) {
     forge.hidden = !here;
-    forge.title = t('Kept on Remote until {date}; local copy will be removed', {date: day(there!.until!)});
     forge.addEventListener('click', () => void pressing(forge, error, async () => { await freeOff(name); await w.paint(); }));
   } else forge.addEventListener('click', () => void pressing(forge, error, async () => { if (!here) await bring(name); w.forge(name); }));
   return forge;

@@ -1,8 +1,9 @@
-import {bytes, h} from '../../ui/dom.ts';
-import {rootHere, rootStatus, rootUse, type RootStatus} from '../../host/host.ts';
-import {t} from '../../i18n/i18n.ts';
-import {about} from '../../prompt/userland.ts';
-import {errorText} from '../../host/errors.ts';
+import {h} from '../../ui/dom.ts';
+import {bytes} from '../../../text/format.ts';
+import {rootHere, rootStatus, rootUse, type RootStatus} from '../../../api/host.ts';
+import {t} from '../../../text/i18n.ts';
+import {about} from '../../../prompt/userland.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button} from './parts.ts';
 
 // Runtime's environments: the one a Prompt runs on, and the others it could.
@@ -38,7 +39,7 @@ const version = (v: string) => (v ? h('span', {class: 'version'}, v) : null);
 /** The one in effect: the card's head. */
 const top = (name: string, v: string, note: string, sha: string) => [
   h('span', {class: 'card-title'}, name, ' ', version(v)), h('span', {class: 'muted small'}, note),
-  ...(sha ? [h('code', {class: 'muted small env-sha', title: sha}, sha.slice(0, 12))] : [])];
+  ...(sha ? [h('code', {class: 'muted small env-sha'}, sha.slice(0, 12))] : [])];
 
 /** Another: its name and version, what it is (or its state), and at its right what can be done (or nothing). */
 const other = (name: string, v: string, note: string | Node, end: Node | null) =>
@@ -85,7 +86,7 @@ function roots(root: RootStatus, now: string | null) {
 
 /** On the web: why at the top (`a`, as this build carries it), and the others, which run in the app. */
 function onTheWeb(a: Awaited<ReturnType<typeof about>>): Node[] {
-  // The same why as the app's: its version, and the digest of the root it is (why/core/src/root/), run here through muk.
+  // The same why as the app's: its version, and the digest of the root it is (why/prompt/roots/), run here through muk.
   // A build that carries no why says so in why's own row: Ubuntu, Debian and Custom are under it all the same.
   return [...(a ? top('why', a.version, t('{name} · via muk', {name: a.root.name}), a.sha256)
     : top('why', '', t('why missing (run: npm run webroot)'), '')),

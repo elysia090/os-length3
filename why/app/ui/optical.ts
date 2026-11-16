@@ -19,7 +19,7 @@ function capDrop(font: string): number {
 
 /** The box's line's drop, kept on the page as --box-drop, again once the faces are all there. */
 export function optical() {
-  const keep = () => document.documentElement.style.setProperty('--box-drop', `${capDrop('var(--t-meta)/1.6 var(--mono)').toFixed(2)}px`);
+  const keep = () => document.documentElement.style.setProperty('--box-drop', `${capDrop('var(--t-word)/1.6 var(--mono)').toFixed(2)}px`);
   keep();
   void document.fonts?.ready.then(keep);
 }

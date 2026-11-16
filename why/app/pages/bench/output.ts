@@ -389,7 +389,7 @@ export class Output {
     // Full, what comes in scrolls the rest up, smoothly, as a terminal's screen does (at once when much came at once).
     const out = this.element, far = out.scrollHeight - out.clientHeight - out.scrollTop;
     const smooth = added && far < out.clientHeight && moving;
-    out.scrollTo({top: out.scrollHeight, behavior: smooth ? 'smooth' : 'auto'});
+    out.scrollTo({top: out.scrollHeight}); void smooth; // (at once, DESIGN §8)
   }
 
   /** `nodes` just drawn from kept text, coloured as `spans` say (in the order their text is drawn). */

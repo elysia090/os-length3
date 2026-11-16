@@ -1,4 +1,4 @@
-# What a Prompt runs, as scripts/commands.ts saw it: name, kind, mark (+ runs, t needs a terminal, x not yet here, - not in the root), why or what instead.
+# What a Prompt runs, as module/ricebox/make/commands.ts saw it: name, kind, mark (+ runs, t needs a terminal, x not yet here, - not in the root), why or what instead.
 sh	core	+	
 bash	core	+	
 date	core	+	
@@ -168,7 +168,7 @@ lsof	process	+
 fuser	process	+	
 gdb	debug	-	
 lldb	debug	-	
-strace	debug	x	ends 1, natively 0
+strace	debug	x	ends 1 in a box, on Linux as here
 ltrace	debug	-	strace
 addr2line	debug	+	
 builtins	shell	+	

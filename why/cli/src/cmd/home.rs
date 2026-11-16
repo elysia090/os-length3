@@ -4,7 +4,7 @@ use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{Error, now_ms, Reply, Result};
 use crate::words::spec::{Fact, On};
-use why_core::{home, remote, remote::inbox, text::i18n, text::title, tr};
+use why_core::{home, shipto, shipto::inbox, text::i18n, text::title, tr};
 use serde_json::json;
 
 pub fn todo_list(_: &Ctx, _: &Call) -> Result<Reply> {
@@ -122,7 +122,7 @@ pub fn profile_set(_: &Ctx, call: &Call) -> Result<Reply> {
     let field = call.word(0).unwrap_or_default();
     let mut value = call.word(1).unwrap_or_default().to_string();
     // Signed in, the handle is your username: changed on the Remote first (taken, nothing is saved), kept as it says.
-    if field == "handle" && remote::connection().is_some() && !value.trim().is_empty() {
+    if field == "handle" && shipto::connection().is_some() && !value.trim().is_empty() {
         let a = inbox::set_username(&value)?;
         value = a.split('@').next().unwrap_or_default().to_string();
     }

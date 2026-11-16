@@ -5,10 +5,7 @@
    stays on the top line, at its right; its results open under it over the center. */
 @media (max-width: 760px) {
   .work { grid-template-columns: minmax(0, 1fr); position: relative; }
-  /* Server's side holds only what its gear holds too (people, repos): it folds, the gear stays. */
-  .work > .side.server-side { display: none; }
-  .work > .center.server-center { padding-right: var(--s2); }
-  .center, .repo-strip { border-right: 0; }
+  .center { border-right: 0; }
   /* The files 16 px from the rail's line, as every page on a phone (§1); the prompt box a step left of them (F1). */
   .dock { left: var(--s2); right: var(--s2); bottom: var(--s3); }
   .work.bench .dock { left: var(--s2); }
@@ -18,10 +15,9 @@
 /* The side: the reference on top, the terminal's home below. While the
    prompt is in use the terminal is away and the reference grows down. */
 /* The reference scrolls, the Prompt does not, so the Prompt starts higher (2 : 3). */
-.side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); min-height: 0; transition: grid-template-rows var(--move); }
+.side { grid-column: 2; grid-row: 1 / -1; display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); min-height: 0; transition: none; }
 .work.unrun .side { grid-template-rows: minmax(0, 1fr) auto; }
 .work.prompting .side { grid-template-rows: minmax(0, 2fr) minmax(0, 0fr); }
-.issue-one .row { flex-wrap: wrap; }
 
 /* The bench's top line: the band (Forge's) at the left, the search box in the middle of the center,
    the right pane's switch at its right end. Its row is the band's, so nothing under it moves. */
@@ -30,22 +26,21 @@
    its width (from the pane's inner left to its inner right); only what opens under it reaches into the
    center, 2 W wide from the box's right end, so that a diff's lines or a run's output are not cut off. With
    nothing searched the pane is straight. The pane's switch is just left of the box; put away, the box stays. */
-.work.bench { grid-template-columns: minmax(0, 1fr) max(280px, 25%); transition: grid-template-columns var(--move) var(--land); }
+.work.bench { grid-template-columns: minmax(0, 1fr) max(280px, 25%); transition: none; }
 /* Brought out, its edge lands a touch past where it stops and settles back, as a thing pushed out does (glide.ts
    paneOut brings what it holds in after it); put away, it goes straight. */
-.work.bench:not(.pane-closed) { transition: grid-template-columns var(--slide) cubic-bezier(.2, 1.4, .32, 1); }
+.work.bench:not(.pane-closed) { transition: none; }
 .work.bench > .bar {
   --pane-w: max(280px, calc(var(--bench-w, 1200px) / 4));
   --search-w: calc(var(--pane-w) - 2 * var(--s5) - var(--h-row) - var(--s3));
   grid-column: 1 / -1; grid-row: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--search-w) auto;
   align-items: center; gap: var(--s3); padding: var(--band) var(--s5) var(--s3);
 }
-.work.bench > .bar > .repo-strip { grid-column: 1; min-width: 0; padding: 0; border: 0; overflow: visible; }
 .work.bench > .bar > * { grid-row: 1; }
 .work.bench > .bar > .pane-toggle { grid-column: 3; }
 .work.bench > .bar > .search-box { grid-column: 2; }
 .pane-toggle { display: grid; place-items: center; width: var(--h-row); height: var(--h-row); padding: 0; border: 1px solid var(--edge); border-radius: var(--r-round); background: transparent; color: var(--ink); cursor: var(--cursor-hand); }
-.pane-toggle:hover { background: var(--raised); }
+.pane-toggle:hover { color: var(--ink); }
 .pane-toggle .mark { width: var(--s4); height: var(--s4); }
 .work.bench > .center { grid-row: 2; display: flex; flex-direction: column; border-right: 0; }
 /* No band (Git): the center reaches up to the top line, so the page's head stands on it as every page's does; the

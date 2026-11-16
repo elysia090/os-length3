@@ -13,8 +13,8 @@
 #   SHA256SUMS, manifest                           the digests; what the root was made from
 #
 # and OUT/../notes.md, the release's notes. Before the web build and the app are made, the root is pinned
-# in why/core/src/root/pins.rs (pin-root.ts), so what ships trusts this release's root; once the app is made, it is
-# pinned in why/shared/desktop-releases.json (pin-desktop.ts). Both changes stay in the tree, to be committed as
+# in why/prompt/roots/pins.rs (pin-root.ts), so what ships trusts this release's root; once the app is made, it is
+# pinned in why/shipto/desktop-releases.json (pin-desktop.ts). Both changes stay in the tree, to be committed as
 # one: release.yml proposes them to main. The release itself is made by publish-release.ts (or
 # .github/workflows/release.yml, which runs this script).
 #
@@ -38,6 +38,10 @@ if [ -z "${GITHUB_SHA:-}" ] && [ -n "$(git -C "$here" status --porcelain)" ]; th
   echo "release: the tree has changes; a release is made from a commit as it is" >&2; exit 1
 fi
 cd "$here"
+# ricebox's own line (0.0.1 on; 0.6.x is the line before the name) is released owing nothing: every input, machine
+# and host verified or excluded with its reason, every call muk makes answered where there is no Linux, and a box and
+# a terminal made by muk and prompt alone (module/sods/runtime/targets.ts). While anything is owed it is not made.
+case "$version" in 0.[0-5].*) node module/sods/runtime/targets.ts --owed ;; esac
 
 # The root: its packages, made from this tree's pins, with this tree's why.
 sh module/ricebox/make/assemble.sh "${ROOT_PACKAGES:?the root's packages, as module/ricebox/make/build.sh made them}" "$out" "$version"
@@ -56,7 +60,7 @@ fi
 
 # The web root, the same root: every path, type, mode, link target and sha256 as the app installs.
 sh scripts/webroot.sh "$root" public/webroot
-node scripts/webroot-parity.ts "$root" public/webroot
+node module/ricebox/make/parity.ts "$root" public/webroot
 webroot=os-length3-linux-$version-webroot.tar
 tar -C public/webroot --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
   --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -cf "$out/$webroot" .
@@ -104,13 +108,13 @@ digest() { sha256sum "$1" | cut -d' ' -f1; }
   echo "mkdir opened && tar --zstd -xf $rootfile -C opened"
   echo '```'
   echo
-  echo "why $version is the root (the desktop app installs it) and \`$webroot\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`why/core/src/root/pins.rs\` RELEASES pins both; the release pinned it:"
+  echo "why $version is the root (the desktop app installs it) and \`$webroot\`, the same root as the browser reads it (the same paths, modes, links and bytes: checked when it was made). One entry of \`why/prompt/roots/pins.rs\` RELEASES pins both; the release pinned it:"
   echo
   echo '```rust'
-  awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/why/core/src/root/pins.rs"
+  awk '/^pub const RELEASES/{on=1; sub(/^pub const RELEASES: &\[Release\] = &\[/, "")} on{print} on && /^}/{exit}' "$here/why/prompt/roots/pins.rs"
   echo '```'
   echo
-  echo "and its desktop app in \`why/shared/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes why from \`$webroot\` only at the pinned index (\`scripts/prompt-files.ts\`)."
+  echo "and its desktop app in \`why/shipto/desktop-releases.json\`, as below. Both are proposed to main as one change (Pin $version); once it is in, each deploy of the Remote takes the pinned root and desktop files from this release, checks them against those pins and puts them on the Remote, which hands them to anyone beside this release; a web build takes why from \`$webroot\` only at the pinned index (\`scripts/prompt-files.ts\`)."
   echo
   echo '```json'
   echo "\"$version\": {"

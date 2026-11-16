@@ -2,7 +2,7 @@
 // root3: kept under this one from here on, so a page of this build finds what a page before it left (the purpose and
 // repo last open, Home's settings, which Remote, what a tab was in the middle of). start.ts reads this file before
 // any other, so nothing has read a note by then. What the core kept (its files, in IndexedDB) is carried by its
-// worker (core/worker.ts carry).
+// worker (api/worker.ts carry).
 
 const BEFORE = 'root3.', NOW = 'why.';
 

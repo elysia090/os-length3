@@ -1,53 +1,115 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {BIG, GAP, GRID, inSight, LINE, next, PAD, row, SHADOW, tabbed, tallest, TERM, TERM_GAP, termHeight, WIDTH} from './desk-layout.ts';
+import {ahead, atRest, CODE, eased, GAP, GRID, LINE, next, planeWidth, restFor, row, SHADOW, tabbed, tallest, termHeight, TOP, turnedTo, turnTime, WIDTH} from './desk-layout.ts';
 
 // The desk's places and how far it is turned (desk-layout.ts), as numbers.
 
-const pieces = [{key: 'term', width: TERM, term: true}, {key: 'a.c', width: WIDTH}, {key: 'README.md', width: WIDTH}];
+const keys = ['term', 'a.c', 'README.md'];
 
-test('the pieces lie in a row on the grid: the terminal, then the files three cells apart', () => {
-  const {at, end} = row(pieces);
-  assert.equal(at.get('term'), PAD);
-  assert.equal(at.get('a.c'), PAD + TERM + TERM_GAP);
-  assert.equal(at.get('README.md'), PAD + TERM + TERM_GAP + WIDTH + GAP);
+test('a piece\'s place is its number in the row: all one width, two cells apart, on the grid', () => {
+  const {at, end} = row(keys);
+  keys.forEach((key, n) => assert.equal(at.get(key), n * (WIDTH + GAP)));
   assert.equal(end, at.get('README.md')! + WIDTH + SHADOW + GRID);
-  // Fifty letters, the numbers' margin before them and half a cell after, on the grid; twice that when made larger.
-  assert.equal(WIDTH, 20 * GRID);
-  assert.equal(WIDTH * BIG, 40 * GRID);
+  // Two cells for the numbers, forty-nine letters of 17 px, a cell of paper: every column whole cells.
+  assert.equal(CODE, 17);
+  assert.equal(WIDTH, 24 * GRID);
   for (const x of at.values()) assert.equal(x % GRID, 0);
+  // A narrower piece (a window narrower than one): the same rule.
+  assert.equal(row(keys, 14 * GRID).at.get('a.c'), 16 * GRID);
+  assert.deepEqual(row([]), {at: new Map(), end: 0});
 });
 
-test('a sheet is whole lines tall, its foot two cells over the face\'s', () => {
-  // A face 804 high (a 900 px window under the band): 28 lines and half a line over and under them.
-  assert.equal(tallest(804), 29 * LINE);
-  // Larger letters, fewer lines, the same foot or higher.
-  const big = tallest(804, LINE * BIG);
-  assert.ok(big <= 804 - 4 * GRID && big > 804 - 4 * GRID - LINE * BIG);
+test('a window half a screen wide shows one piece and the edge of the next; a whole screen, two and the edge of the third', () => {
+  const {at} = row(keys), half = 768 - 48, whole = 1536 - 48;
+  assert.ok(at.get('term')! + WIDTH + SHADOW <= half && at.get('a.c')! < half && at.get('a.c')! + WIDTH > half);
+  assert.ok(at.get('a.c')! + WIDTH + SHADOW <= whole && at.get('README.md')! < whole && at.get('README.md')! + WIDTH > whole);
+});
+
+test('a sheet is whole lines tall, its foot a cell over the face\'s', () => {
+  // A face 804 high: 29 lines and a cell of paper over and under them.
+  assert.equal(tallest(804), 31 * LINE);
   // Never under four lines, however low the face.
-  assert.equal(tallest(100), 5 * LINE);
-  // The terminal: fourteen lines and a cell over and under, or what a low face has room for.
+  assert.equal(tallest(100), 6 * LINE);
+  // The terminal: eighteen lines and a cell over and under, or as many as keep its last line out of the lower third.
   assert.equal(termHeight(804), 20 * LINE);
-  assert.equal(termHeight(300), tallest(300));
+  assert.equal(termHeight(816), 20 * LINE);
+  assert.equal(termHeight(682), 18 * LINE);
+  assert.equal(termHeight(300), 8 * LINE);
+  for (const hgt of [300, 520, 682, 720, 796, 816, 1032]) {
+    const lines = termHeight(hgt) / LINE - 2;
+    assert.ok(TOP + LINE + lines * LINE <= 2 * hgt / 3 || lines === 4, `the terminal's last line out of the lower third at ${hgt}`);
+  }
 });
 
-test('the desk is turned only as far as brings the piece in hand whole into sight', () => {
-  const {at, end} = row(pieces), face = 1320;
-  // The first two are in sight from the row's start: nothing moves.
-  assert.equal(inSight(0, at.get('term')!, TERM, face, end), 0);
-  assert.equal(inSight(0, at.get('a.c')!, WIDTH, face, end), 0);
-  // The third is cut by the face's edge: turned as little as shows it and its shadow.
-  const to = inSight(0, at.get('README.md')!, WIDTH, face, end);
-  assert.equal(to, at.get('README.md')! + WIDTH + SHADOW + GRID - face);
-  assert.ok(to > 0 && to <= end - face);
-  // Back to the terminal from there: turned back to the start, a cell of ground before it.
-  assert.equal(inSight(to, at.get('term')!, TERM, face, end), 0);
-  // A piece wider than the face is read from its left.
-  assert.equal(inSight(0, at.get('a.c')!, WIDTH, 400, end), at.get('a.c')! - PAD);
+test('the line written stands out of the third of the world it goes towards: its foot over the lower third, its top under the upper', () => {
+  // A face 816 high (a 864 window under the band): the world's thirds at 272 and 544 down it, the sheet's lines from 48.
+  assert.deepEqual(ahead(816), {top: 240, foot: 480});
+  for (const hgt of [520, 682, 720, 796, 816, 1032]) {
+    const {top, foot} = ahead(hgt), from = TOP + LINE;
+    // On the sheet's lines, the foot at or over the lower third, the top at or under the upper, and lines between.
+    assert.equal(top % LINE, 0);
+    assert.equal(foot % LINE, 0);
+    assert.ok(from + foot <= 2 * hgt / 3 && from + foot + LINE > 2 * hgt / 3, `the foot at ${hgt}`);
+    assert.ok(from + top >= hgt / 3 && from + top - LINE < hgt / 3, `the top at ${hgt}`);
+    assert.ok(foot - top >= 2 * LINE, `room to write between at ${hgt}`);
+  }
+});
+
+test('a piece pressed stays under the hand; one gone to any other way comes to the desk\'s edge, where the eye is', () => {
+  const four = [...keys, 'Makefile'], {at} = row(four), starts = [...at.values()], whole = 1536 - 48;
+  // The second piece whole in sight beside the first: pressed, nothing moves; gone to by a key, it comes to the edge.
+  assert.equal(restFor(true, 0, at.get('a.c')!, WIDTH, whole, starts), 0);
+  assert.equal(restFor(false, 0, at.get('a.c')!, WIDTH, whole, starts), at.get('a.c'));
+  // The last: to its own place at the edge, the ground ahead of it.
+  assert.equal(restFor(false, 0, at.get('Makefile')!, WIDTH, whole, starts), at.get('Makefile'));
+});
+
+test('the desk rests with a piece at its edge and nowhere else; a piece whole in sight is gone to where it lies, one cut or out of sight by the nearest rest that shows it whole', () => {
+  const four = [...keys, 'Makefile'], {at} = row(four), starts = [...at.values()], pitch = WIDTH + GAP;
+  const go = (now: number, key: string, face: number) => turnedTo(now, at.get(key)!, WIDTH, face, starts);
+  // A whole screen (61 cells of desk): two pieces whole in sight. The second pressed: nothing moves.
+  const whole = 1536 - 48;
+  assert.equal(go(0, 'term', whole), 0);
+  assert.equal(go(0, 'a.c', whole), 0);
+  // The third is cut by the edge: brought in by one piece, the second now at the edge (not the third: the least move).
+  assert.equal(go(0, 'README.md', whole), pitch);
+  // The fourth from the start: the third at the edge.
+  assert.equal(go(0, 'Makefile', whole), 2 * pitch);
+  // Back to one before the edge: that one at the edge.
+  assert.equal(go(2 * pitch, 'term', whole), 0);
+  assert.equal(go(2 * pitch, 'a.c', whole), pitch);
+  // Half a screen (29 cells): one piece whole in sight. Any other gone to is at the edge.
+  const half = 768 - 48;
+  assert.equal(go(0, 'a.c', half), pitch);
+  assert.equal(go(pitch, 'Makefile', half), 3 * pitch);
+  // A phone (a piece as wide as the face has room for): the same.
+  const narrow = row(four, 13 * GRID), ns = [...narrow.at.values()];
+  assert.equal(turnedTo(0, narrow.at.get('a.c')!, 13 * GRID, 342, ns), 15 * GRID);
+  // Every rest is a piece's start, on the grid.
+  for (const face of [whole, half]) for (const from of starts) for (const key of four) { const to = go(from, key, face); assert.ok(starts.includes(to) && to % GRID === 0); }
+  // Scrolled by hand and let go, the desk comes to rest at the nearest piece.
+  assert.equal(atRest(0, starts), 0);
+  assert.equal(atRest(.49 * pitch, starts), 0);
+  assert.equal(atRest(.51 * pitch, starts), pitch);
+  assert.equal(atRest(99999, starts), 3 * pitch);
+  assert.equal(atRest(77, []), 0);
+  // The last piece can stand at the edge: the plane is that much wider than the row.
+  assert.equal(planeWidth(at.get('Makefile')!, whole) - whole, at.get('Makefile')!);
+});
+
+test('one law for every move of the desk: off at once, most of the way in the first third, at rest at the end; a longer way takes a little longer, never over 420 ms', () => {
+  assert.equal(eased(0), 0);
+  assert.equal(eased(1), 1);
+  assert.ok(eased(1 / 3) > .7 && eased(1 / 3) < .8);
+  assert.ok(eased(.05) > 0);
+  for (let u = 0; u < 1; u += .05) assert.ok(eased(u + .05) > eased(u));
+  assert.equal(turnTime(0, 1488), 250);
+  assert.equal(turnTime(744, 1488), 335);
+  assert.equal(turnTime(1488, 1488), 420);
+  assert.equal(turnTime(-9999, 1488), 420);
 });
 
 test('Tab goes along the row and round; an arrow to the next, and no further than the ends', () => {
-  const keys = pieces.map((p) => p.key);
   assert.equal(tabbed(keys, 'term'), 'a.c');
   assert.equal(tabbed(keys, 'README.md'), 'term');
   assert.equal(tabbed(keys, 'term', true), 'README.md');

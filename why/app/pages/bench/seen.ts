@@ -1,9 +1,8 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
+import {t} from '../../../text/i18n.ts';
 import {mark} from '../../ui/icons.ts';
 import {fileName} from '../kit/diff-view.ts';
-import {firstLine} from './kinds.ts';
-import {onRenamed, rekey} from '../../repos/repos.ts';
+import {onRenamed, rekey} from '../../../repo/repos.ts';
 
 // What was searched and read under the search box lines up sideways, in the order it came: the one in hand fills
 // the large box, the ones beside it hidden past its edges but for a sliver, pressed (or ← →) to move to them.
@@ -11,17 +10,14 @@ import {onRenamed, rekey} from '../../repos/repos.ts';
 /** What was searched and read, kept per repo, at most (how many is not decided by the issue; a short line). */
 const HISTORY = 10;
 
-/** One thing searched or read: a query, a file opened from what was found, an issue, a file's diff, a run, an ask of the Agent. */
-export type Seen = {what: 'query'; text: string} | {what: 'file'; path: string} | {what: 'issue'; path: string; label: string}
-  | {what: 'diff'; path: string} | {what: 'run'; started: number; line: string} | {what: 'ask'; started: number; question: string};
+/** One thing searched or read: a query, or a file opened from what was found. */
+export type Seen = {what: 'query'; text: string} | {what: 'file'; path: string};
 /** What tells one thing searched or read from another: the same again is the same place in the line. */
-export const seenKey = (s: Seen) => (s.what === 'query' ? `q:${s.text}` : s.what === 'run' ? `r:${s.started}` : s.what === 'ask' ? `a:${s.started}` : `${s.what}:${s.path}`);
+export const seenKey = (s: Seen) => (s.what === 'query' ? `q:${s.text}` : `file:${s.path}`);
 
 /** What a thing searched or read is called, and what it is. */
-export const seenLabel = (s: Seen) => (s.what === 'query' ? s.text : s.what === 'issue' ? s.label : s.what === 'run' ? firstLine(s.line)
-  : s.what === 'ask' ? firstLine(s.question) : fileName(s.path));
-export const seenKind = (s: Seen) => (s.what === 'query' ? t('Search history') : s.what === 'file' ? t('File') : s.what === 'issue' ? t('Issue')
-  : s.what === 'diff' ? t('diff') : s.what === 'ask' ? t('Agent') : t('Output'));
+export const seenLabel = (s: Seen) => (s.what === 'query' ? s.text : fileName(s.path));
+export const seenKind = (s: Seen) => (s.what === 'query' ? t('Search history') : t('File'));
 
 /**
  * Per repo, while the app is open, what was searched and read, oldest first: the line it makes sideways keeps its
@@ -43,7 +39,7 @@ export function remember(repo: string, s: Seen) {
 /** One thing searched or read, pressed to search or read it again (`again`). */
 export function seenButton(s: Seen, again: (s: Seen) => void): HTMLElement {
   const b = h('button', {type: 'button', class: 'choice found-item'}, h('span', {class: 'found-kind'}, seenKind(s)),
-    h('span', {class: s.what === 'run' || s.what === 'file' || s.what === 'diff' ? 'found-what mono' : 'found-what'}, seenLabel(s)));
+    h('span', {class: s.what === 'file' ? 'found-what mono' : 'found-what'}, seenLabel(s)));
   b.addEventListener('click', () => again(s));
   return b;
 }
@@ -62,7 +58,7 @@ function edge(to: Slot | undefined, by: -1 | 1): HTMLButtonElement {
 
 /** Under the box, ← or → (`by`) to the one beside, `to`: the same moves as the slivers, where a hand finds them. */
 function step(to: Slot | undefined, by: -1 | 1): HTMLButtonElement {
-  const b = h('button', {type: 'button', class: `found-step ${by < 0 ? 'prev' : 'next'}`, 'aria-label': to ? `${to.kind} ${to.label}`.trim() : '', title: to ? `${to.kind} ${to.label}`.trim() : ''}, by < 0 ? '←' : '→') as HTMLButtonElement;
+  const b = h('button', {type: 'button', class: `found-step ${by < 0 ? 'prev' : 'next'}`, 'aria-label': to ? `${to.kind} ${to.label}`.trim() : ''}, by < 0 ? '←' : '→') as HTMLButtonElement;
   b.disabled = !to;
   b.addEventListener('click', () => to?.go());
   return b;
@@ -74,7 +70,7 @@ function step(to: Slot | undefined, by: -1 | 1): HTMLButtonElement {
  */
 function nav(slots: Slot[], k: number, shut: () => void): HTMLElement {
   const here = slots[k];
-  const x = h('button', {type: 'button', class: 'found-shut', 'aria-label': t('Close'), title: t('Close')}, mark('close'));
+  const x = h('button', {type: 'button', class: 'found-shut', 'aria-label': t('Close')}, mark('close'));
   // Pressed, the keyboard stays where it is (the file written beside it), as the Prompt's × keeps it.
   x.addEventListener('pointerdown', (event) => event.preventDefault());
   x.addEventListener('click', shut);

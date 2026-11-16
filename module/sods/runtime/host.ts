@@ -68,7 +68,7 @@ export async function roomLater(): Promise<Room | null> {
 /**
  * The host's clocks. `steady()`: milliseconds since this thread of the host began, as finely as the host tells them,
  * never set back. `began`: when that was, in milliseconds since 1970 by the same clock (a thread elsewhere began at
- * another time, and is told this one's: muk's clock.ts). `epoch()`: the calendar's time now, in milliseconds since
+ * another time, and is told this one's: linux/clock.ts). `epoch()`: the calendar's time now, in milliseconds since
  * 1970, which the host may set.
  */
 export const steady = (): number => performance.now();

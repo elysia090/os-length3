@@ -1,0 +1,113 @@
+import type {Page} from '@playwright/test';
+
+// The weight of a shot, measured on what is drawn (DESIGN §5: a pixel's ink is how far its colour is from the ground's
+// in CIE Lab, full at 50; the ground's dots are the ground).
+
+/** Where the weight of what is drawn in the world lies across it, from its middle (-1 its left edge, 1 its right). */
+export async function across(page: Page): Promise<number> {
+  const shot = (await page.screenshot()).toString('base64');
+  return page.evaluate(async (src) => {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width, c.height = img.height;
+    const g = c.getContext('2d')!;
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data, W = c.width, H = c.height;
+    const lab = (r: number, gr: number, b: number) => {
+      const f = (v: number) => { v /= 255; return v > .04045 ? ((v + .055) / 1.055) ** 2.4 : v / 12.92; };
+      r = f(r), gr = f(gr), b = f(b);
+      let x = (r * .4124 + gr * .3576 + b * .1805) / .95047, y = r * .2126 + gr * .7152 + b * .0722, z = (r * .0193 + gr * .1192 + b * .9505) / 1.08883;
+      const k = (t: number) => (t > .008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+      x = k(x), y = k(y), z = k(z);
+      return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+    };
+    const ground = getComputedStyle(document.body).backgroundColor.match(/\d+/g)!.slice(0, 3).map(Number), G = lab(ground[0], ground[1], ground[2]);
+    // (The ground's dots are the ground: a pixel of the dot's colour is not ink.)
+    const D = lab(0x95, 0x93, 0x90);
+    let sum = 0, sx = 0;
+    for (let y = 48; y < H; y += 2) for (let x = 48; x < W; x += 2) {
+      const i = 4 * (y * W + x), L = lab(d[i], d[i + 1], d[i + 2]);
+      if (Math.hypot(L[0] - D[0], L[1] - D[1], L[2] - D[2]) < 6) continue;
+      const ink = Math.min(1, Math.hypot(L[0] - G[0], L[1] - G[1], L[2] - G[2]) / 50);
+      sum += ink, sx += ink * x;
+    }
+    return (sx / sum - (48 + W) / 2) / ((W - 48) / 2);
+  }, `data:image/png;base64,${shot}`);
+}
+
+/** The world in cells of 24 px from the frame's corner, each as drawn: 'g' bare ground (its colour and its dot only), 'p'
+ * bare paper, 'x' a mark on it (DESIGN §2, the negative space). */
+export async function emptiness(page: Page): Promise<string[]> {
+  const shot = (await page.screenshot()).toString('base64');
+  return page.evaluate(async (src) => {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width, c.height = img.height;
+    const g = c.getContext('2d')!;
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data, W = c.width, H = c.height, U = 24;
+    const lab = (r: number, gr: number, b: number) => {
+      const f = (v: number) => { v /= 255; return v > .04045 ? ((v + .055) / 1.055) ** 2.4 : v / 12.92; };
+      r = f(r), gr = f(gr), b = f(b);
+      let x = (r * .4124 + gr * .3576 + b * .1805) / .95047, y = r * .2126 + gr * .7152 + b * .0722, z = (r * .0193 + gr * .1192 + b * .9505) / 1.08883;
+      const k = (t: number) => (t > .008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+      x = k(x), y = k(y), z = k(z);
+      return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+    };
+    const tone = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+    const G = lab(...rgb(tone('--ground'))), D = lab(...rgb(tone('--dot') || '#959390')), P = lab(...rgb(tone('--paper')));
+    const far = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    const rows: string[] = [];
+    for (let j = 0; j < Math.floor((H - 48) / U); j++) {
+      let line = '';
+      for (let i = 0; i < Math.floor((W - 48) / U); i++) {
+        let ground = 0, paper = 0, n = 0;
+        for (let y = 48 + j * U; y < 48 + (j + 1) * U; y += 2) for (let x = 48 + i * U; x < 48 + (i + 1) * U; x += 2) {
+          const k = 4 * (y * W + x), L = lab(d[k], d[k + 1], d[k + 2]);
+          n++;
+          if (far(L, G) < 3 || far(L, D) < 6) ground++;
+          else if (far(L, P) < 3) paper++;
+        }
+        line += ground === n ? 'g' : paper === n ? 'p' : 'x';
+      }
+      rows.push(line);
+    }
+    return rows;
+  }, `data:image/png;base64,${shot}`);
+}
+
+/** The bare ground's fields (joined cells of it): each one's size, and whether it reaches the world's edge (the frame's
+ * line or the window's), its open sides (the window's right or foot). */
+export function fields(rows: string[]): {n: number; edge: boolean; open: boolean}[] {
+  const R = rows.length, C = rows[0]?.length ?? 0, seen = rows.map((r) => [...r].map(() => false)), out: {n: number; edge: boolean; open: boolean}[] = [];
+  for (let j = 0; j < R; j++) for (let i = 0; i < C; i++) {
+    if (rows[j]![i] !== 'g' || seen[j]![i]) continue;
+    const todo: [number, number][] = [[j, i]];
+    seen[j]![i] = true;
+    let n = 0, edge = false, open = false;
+    while (todo.length) {
+      const [y, x] = todo.pop()!;
+      n++;
+      if (y === 0 || x === 0 || y === R - 1 || x === C - 1) edge = true;
+      if (y === R - 1 || x === C - 1) open = true;
+      for (const [dy, dx] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const ny = y + dy, nx = x + dx;
+        if (ny >= 0 && ny < R && nx >= 0 && nx < C && !seen[ny]![nx] && rows[ny]![nx] === 'g') { seen[ny]![nx] = true; todo.push([ny, nx]); }
+      }
+    }
+    out.push({n, edge, open});
+  }
+  return out.sort((a, b) => b.n - a.n);
+}
+
+/** How much of a part of the world is empty (bare ground or bare paper): rows `r0` to `r1`, columns `c0` to `c1`. */
+export function emptyIn(rows: string[], r0: number, r1: number, c0: number, c1: number): number {
+  let empty = 0, all = 0;
+  for (let j = r0; j < r1; j++) for (let i = c0; i < c1; i++) { all++; if (rows[j]![i] !== 'x') empty++; }
+  return all ? empty / all : 0;
+}

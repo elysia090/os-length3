@@ -1,11 +1,11 @@
-// Prompts on the distribution's root (why prompt, why/core/src/prompt/launch.rs). Each
+// Prompts on the distribution's root (why prompt, why/prompt/launch.rs). Each
 // is an `why prompt REPO` process beside the app; what it prints comes to the
 // webview as `prompt` events, what is typed goes to its standard input.
 // Closing kills its supervisor, and with it (PDEATHSIG, then the pid
 // namespace) every process inside; it is only called stopped once the host
 // shows none left, and what they held and how long it took are said.
 
-use why_core::{fs::paths, prompt::running, root, storage};
+use why_core::{fs::paths, prompt::running, roots, storage};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -28,7 +28,7 @@ pub struct Shells {
 
 impl Shells {
     /// Repos a Prompt of this window has open now: they stay on the device while it runs. The core reads every
-    /// other (each why's, in a terminal too) from its record, with the root it runs on (why/core/src/storage/).
+    /// other (each why's, in a terminal too) from its record, with the root it runs on (why/device/storage/).
     pub fn open_repos(&self) -> Vec<String> {
         let mut all: Vec<String> = self.open.lock().unwrap().values().map(|s| s.repo.clone()).collect();
         all.sort();
@@ -72,11 +72,11 @@ pub async fn prompt_open(app: AppHandle, repo: String) -> Result<u32, String> {
 
 fn open(app: AppHandle, repo: String) -> Result<u32, String> {
     let shells = tauri::Manager::state::<Shells>(&app);
-    if root::current(&paths::data_dir()).is_none() {
+    if roots::current(&paths::data_dir()).is_none() {
         return Err(why_core::tr!("There is no root", "root がありません"));
     }
     // Said plainly when it is not here, rather than as why's "which repo?".
-    why_core::repos::store::Repos::open()?.dir(&repo)?;
+    why_core::repo::store::Repos::open()?.dir(&repo)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let (mut reader, writer) = std::io::pipe().map_err(|e| e.to_string())?;
     // One pipe for both, so what it prints keeps its order. The repo is named by WHY_REPO from the data
@@ -177,8 +177,8 @@ fn close(shells: &Shells, id: u32) -> Result<running::Stopped, String> {
 
 #[derive(serde::Serialize)]
 pub struct RootStatus {
-    current: Option<root::Installed>,
-    held: Vec<(root::Installed, bool)>,
+    current: Option<roots::Installed>,
+    held: Vec<(roots::Installed, bool)>,
     release: Release,
     /// The other distributions' roots that can be used (held or fetched).
     distros: Vec<Distro>,
@@ -228,12 +228,12 @@ pub async fn root_native() -> Native {
 #[tauri::command]
 pub fn root_status() -> RootStatus {
     let data = paths::data_dir();
-    let r = &root::RELEASES[0];
+    let r = &roots::RELEASES[0];
     RootStatus {
-        current: root::current(&data).map(|(_, a)| a),
-        held: root::held(&data),
+        current: roots::current(&data).map(|(_, a)| a),
+        held: roots::held(&data),
         release: Release { name: r.name, version: r.version, bytes: r.bytes },
-        distros: root::DISTROS.iter().map(|d| Distro { id: d.id, name: d.name, version: d.version, bytes: d.bytes, sha256: d.sha256 }).collect(),
+        distros: roots::DISTROS.iter().map(|d| Distro { id: d.id, name: d.name, version: d.version, bytes: d.bytes, sha256: d.sha256 }).collect(),
     }
 }
 
@@ -246,25 +246,25 @@ struct Fetching {
 
 /// The Remote this device talks to (Home's `remote` setting, by its name today), or the default.
 fn remote_url() -> String {
-    why_core::remote::connection().map_or_else(why_core::remote::default_url, |c| c.url)
+    why_core::shipto::connection().map_or_else(why_core::shipto::default_url, |c| c.url)
 }
 
 /// What a directory of the current root holds (File's tree of "/"), read off the window's thread.
 #[tauri::command]
-pub async fn root_list(path: String) -> Result<Vec<root::Entry>, String> {
-    apart(move || root::list(&paths::data_dir(), &path)).await
+pub async fn root_list(path: String) -> Result<Vec<roots::Entry>, String> {
+    apart(move || roots::list(&paths::data_dir(), &path)).await
 }
 
 /// Fetch the release root from the Remote and install it, saying how far it is.
 #[tauri::command]
-pub async fn root_fetch(app: AppHandle) -> Result<root::Installed, String> {
+pub async fn root_fetch(app: AppHandle) -> Result<roots::Installed, String> {
     root_use(app, "why".into()).await
 }
 
 /// Make `id` (why, ubuntu, debian) the root Prompts run on, fetching it first
 /// if it is not held, saying how far it is (`root-fetch`).
 #[tauri::command]
-pub async fn root_use(app: AppHandle, id: String) -> Result<root::Installed, String> {
+pub async fn root_use(app: AppHandle, id: String) -> Result<roots::Installed, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let data = paths::data_dir();
         let mut last = 0u64;
@@ -279,12 +279,12 @@ pub async fn root_use(app: AppHandle, id: String) -> Result<root::Installed, Str
             _ => {}
         };
         if id == "why" {
-            return match root::use_held(&data, root::RELEASES[0].sha256) {
+            return match roots::use_held(&data, roots::RELEASES[0].sha256) {
                 Some(r) => Ok(r),
                 None => storage::fetch_root(&data, &remote_url(), progress),
             };
         }
-        let d = root::distro(&id).ok_or_else(|| format!("no root {id}"))?;
+        let d = roots::distro(&id).ok_or_else(|| format!("no root {id}"))?;
         storage::fetch_distro(&data, &remote_url(), d, progress)
     }).await.map_err(|e| e.to_string())?
 }

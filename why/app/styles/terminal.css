@@ -10,18 +10,18 @@
 .term-activity:empty { display: none; }
 /* Ended: its power switch where the prompt stood, and how it ended after it, the last thing under its output
    (terminal.ts sayEnded); what happened wraps in its own room, so the line is no taller. */
-.term-end { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font: var(--t-meta)/20px var(--sans); white-space: normal; }
+.term-end { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font: var(--t-word)/var(--u) var(--sans); white-space: normal; }
 .term-end > span { min-width: 0; overflow-wrap: anywhere; color: var(--sub); }
-.screen .term-end > span { color: color-mix(in srgb, var(--add-tint) 62%, transparent); }
+.screen .term-end > span { color: var(--term-quiet); }
 /* The switch the size of the line's letters, off quiet as SSH's (ended is a rest, not a fault). */
 .term-end > .power { --knob: 10px; --inset: 2px; --travel: 14px; --grow: 3px; width: 30px; height: 16px; }
 /* Its ring as fine as the switch is small (the keys go to it once the prompt line goes, terminal.ts sayEnded). */
 .term-end > .power:focus-visible { outline-width: 1px; outline-offset: 2px; }
-/* Ended, its output stays to be read, dimmed as a screen switched off (it flares and dims to this as it ends); how it
-   ended, and its switch, are not. */
-.term.ended > .term-out > :not(.term-end) { opacity: .72; }
-.small-button { min-height: var(--h-row); padding: 0 var(--s3); font-size: var(--t-meta); }
-.term-out { position: relative; margin: 0; overflow: auto; min-height: 0; font: var(--t-meta)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Ended, its output stays to be read, a step quieter (its plain words; what a program coloured keeps its colour); how
+   it ended, and its switch, are not. */
+.term.ended > .term-out > :not(.term-end) { color: var(--term-quiet, var(--sub)); }
+.small-button { min-height: var(--h-control); padding: 0 var(--s3); font-size: var(--t-word); }
+.term-out { position: relative; margin: 0; overflow: auto; min-height: 0; font: var(--t-word)/var(--u) var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* A block of lines off the screen is not laid out or painted: as tall as it was last drawn, or as its rows (output.ts). */
 .term-out > .term-lines { content-visibility: auto; contain-intrinsic-block-size: auto 1lh; }
 
@@ -29,12 +29,15 @@
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
-/* The terminal's sixteen colours, as programs name them, in the page's own: deep and a little muted, read on paper
-   ("white" a grey, so it is seen). The rest of xterm's 256, and colours given as red, green and blue, as they are. */
+/* The terminal's sixteen colours, as programs name them, under the one light (DESIGN §3, colour; scripts/light.ts
+   writes them): the six hues at equal steps round the wheel, at one lightness and one chroma from the light's neutral,
+   so they mix to it and none is louder than another; read on paper, the bright ones a step more ink; black and white
+   the OS's own greys ("white" the edge's, so it is seen). The rest of xterm's 256, and colours given as red, green and
+   blue, as they are. */
 :root {
-  --ansi-0: var(--ink); --ansi-1: var(--del); --ansi-2: var(--add); --ansi-3: #86650f; --ansi-4: var(--agent); --ansi-5: #763a74;
-  --ansi-6: #1b6670; --ansi-7: #85827d; --ansi-8: var(--rule); --ansi-9: #ad3d57; --ansi-10: var(--done); --ansi-11: #a17a10;
-  --ansi-12: #2d5a96; --ansi-13: #964a93; --ansi-14: #217d88; --ansi-15: var(--ink);
+  --ansi-0: var(--ink); --ansi-1: #874b42; --ansi-2: #3a663d; --ansi-3: #71591b; --ansi-4: #4b5b88; --ansi-5: #784e73;
+  --ansi-6: #07656f; --ansi-7: var(--edge); --ansi-8: var(--quiet); --ansi-9: #64362e; --ansi-10: #294a2b; --ansi-11: #524110;
+  --ansi-12: #364265; --ansi-13: #593855; --ansi-14: #014a51; --ansi-15: var(--sub);
 }
 /* The line under way, drawn again as it changes (output.ts). */
 .term-live { white-space: pre-wrap; }

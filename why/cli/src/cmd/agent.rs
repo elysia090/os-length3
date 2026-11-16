@@ -8,7 +8,7 @@
 use super::Ctx;
 use crate::words::args::Call;
 use crate::say::out::{ago, Error, Reply, Result};
-use why_core::{agent::activity, agent::tasks, compute::spec, fs::paths, fs::write, tr};
+use why_core::{agent::activity, agent::spec, agent::tasks, fs::paths, fs::write, tr};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
@@ -20,7 +20,7 @@ const PAYLOAD: usize = 4 * 1024 * 1024;
 
 /// A session as a line: the harness, where (repo, and the issue as #N), what it does, how long ago.
 fn said(s: &activity::Session) -> (String, String) {
-    let at = if s.line == why_core::repos::lines::MAIN { s.repo.clone() } else { format!("{} {}", s.repo, super::git::line_called(&s.line)) };
+    let at = if s.line == why_core::repo::lines::MAIN { s.repo.clone() } else { format!("{} {}", s.repo, super::git::line_called(&s.line)) };
     let state = match s.state.as_str() {
         "working" => tr!("working", "作業中"),
         "waits" => tr!("waits for you", "あなたを待っています"),
@@ -32,7 +32,7 @@ fn said(s: &activity::Session) -> (String, String) {
 
 /// Where a task is, as a person calls it: the repo, and its issue as #N.
 fn task_at(k: &tasks::Task) -> String {
-    if k.issue.is_empty() { k.repo.clone() } else { format!("{} {}", k.repo, why_core::repos::issues::number(&k.issue)) }
+    if k.issue.is_empty() { k.repo.clone() } else { format!("{} {}", k.repo, why_core::repo::issues::number(&k.issue)) }
 }
 
 /// A task as a line: what it is for, and the deed that goes on with it.
@@ -283,8 +283,8 @@ pub fn run(ctx: &Ctx, _: &Call) -> Result<Reply> {
         }
         drop(hold);
         // One set off while this let go is left to this one: nothing waiting is ever left without a runner.
-        let shown = why_core::repos::lines::current(&repo);
-        if !tasks::all().iter().any(|k| k.repo == repo && k.state == tasks::State::Waiting && (!k.deed.writes() || shown == why_core::repos::lines::MAIN || shown == k.line)) {
+        let shown = why_core::repo::lines::current(&repo);
+        if !tasks::all().iter().any(|k| k.repo == repo && k.state == tasks::State::Waiting && (!k.deed.writes() || shown == why_core::repo::lines::MAIN || shown == k.line)) {
             return Ok(Reply::Nothing);
         }
     }
@@ -306,12 +306,12 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     let name = harness.as_deref().map(tasks::agent_name).unwrap_or_default();
     // What writes runs on the issue's own copy, shown as the work the person would have started; what reads, on the
     // copy it is about.
-    if k.deed.writes() && why_core::repos::lines::current(repo) != line {
-        let at = if why_core::repos::lines::worktree(repo, line).is_dir() { work::switch(&repos, repo, line) } else { work::start(&repos, repo, &k.issue).map(|_| ()) };
+    if k.deed.writes() && why_core::repo::lines::current(repo) != line {
+        let at = if why_core::repo::lines::worktree(repo, line).is_dir() { work::switch(&repos, repo, line) } else { work::start(&repos, repo, &k.issue).map(|_| ()) };
         if let Err(why) = at { return stopped(why, if ctx.connected() { String::new() } else { "why login".into() }); }
     }
-    let copy = why_core::repos::lines::worktree(repo, line);
-    let dir = if why_core::repos::lines::current(repo) == line || line == why_core::repos::lines::MAIN || !copy.is_dir() { repos.dir(repo) } else { Ok(copy) };
+    let copy = why_core::repo::lines::worktree(repo, line);
+    let dir = if why_core::repo::lines::current(repo) == line || line == why_core::repo::lines::MAIN || !copy.is_dir() { repos.dir(repo) } else { Ok(copy) };
     let Ok(dir) = dir else { return stopped(tr!("{} is not here", "{} はここにありません", repo), String::new()) };
     let command = match &harness {
         None => match tasks::tests_command(&dir) { Some(c) => c, None => return stopped(String::new(), String::new()) },
@@ -325,7 +325,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     }
     // The issue's words, and for a review the change's files, weighed: the order it reads in.
     let issue = (!k.issue.is_empty()).then(|| repos.on_main().read(repo, &k.issue, 64 * 1024).ok().and_then(|c| c.text)
-        .map(|t| why_core::repos::issues::parse(repo, k.issue.trim_start_matches("issue/"), &t))).flatten();
+        .map(|t| why_core::repo::issues::parse(repo, k.issue.trim_start_matches("issue/"), &t))).flatten();
     let number = issue.as_ref().and_then(|i| i.n).map(|n| format!("#{n}")).unwrap_or_else(|| line.to_string());
     let detail = issue.as_ref().map(|i| i.detail.clone()).unwrap_or_default();
     let (parts, files) = if k.deed == tasks::Deed::Review {
@@ -348,7 +348,7 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
             repo: repo.into(), line: line.into(), kind, text: activity::line_of(text) };
         if let Err(why) = activity::append(&e) { crate::say::out::note(&why); }
     };
-    // What the run is, by what it is made of (core compute/spec.rs): the same Spec builds it here, and anywhere else.
+    // What the run is, by what it is made of (core agent/spec.rs): the same Spec builds it here, and anywhere else.
     let root = match super::runtime::root_now(paths::data_dir()) {
         Ok((_, about)) => about.sha256,
         Err(e) => return stopped(e.message().to_string(), "why root fetch".into()),
@@ -378,15 +378,15 @@ fn run_one(ctx: &Ctx, k: &tasks::Task) -> tasks::Outcome {
     o
 }
 
-/// The environment the person's dotfiles ask of the root `root` here (prompt/launch.rs environment_of; none off Linux).
+/// The environment the person's dotfiles ask of the root `root` here (prompt/start.rs environment_of; none off Linux).
 fn launch_environment(root: &str) -> String {
     #[cfg(target_os = "linux")]
-    return why_core::prompt::launch::environment_of(root, &why_core::home::dotfiles_in_effect());
+    return why_core::prompt::start::environment_of(root, &why_core::home::dotfiles_in_effect());
     #[cfg(not(target_os = "linux"))]
     return { let _ = root; String::new() };
 }
 
-/// The run itself: `why agent inside N` (the Prompt), given its Spec; watched as it goes (core compute/spec.rs watch),
+/// The run itself: `why agent inside N` (the Prompt), given its Spec; watched as it goes (core agent/spec.rs watch),
 /// stopped past its budget; what it prints read line by line into the journal (an agent's stream of JSON as its
 /// tools) and the log; its last words and session kept. What it used, and what of its budget it went past.
 fn supervise(k: &tasks::Task, spec: &spec::Spec, journal: &dyn Fn(activity::Kind, &str)) -> (tasks::Outcome, spec::Usage, Option<spec::Over>) {
@@ -438,7 +438,7 @@ fn supervise(k: &tasks::Task, spec: &spec::Spec, journal: &dyn Fn(activity::Kind
     (o, usage, over)
 }
 
-/// The run `pid` supervises, watched until `ended` (core compute/spec.rs watch); off Linux, only its wall time.
+/// The run `pid` supervises, watched until `ended` (core agent/spec.rs watch); off Linux, only its wall time.
 fn watched(pid: u32, budget: &spec::Budget, ended: &std::sync::atomic::AtomicBool, stop: impl FnOnce()) -> (spec::Usage, Option<spec::Over>) {
     let is_over = || ended.load(std::sync::atomic::Ordering::SeqCst);
     #[cfg(target_os = "linux")]
@@ -448,13 +448,13 @@ fn watched(pid: u32, budget: &spec::Budget, ended: &std::sync::atomic::AtomicBoo
         (spec::Usage { wall_ms: t.elapsed().as_millis() as u64, ..Default::default() }, None) };
 }
 
-/// `why agent inside N` (by `why agent run`): the run its Spec says (WHY_SPEC, core compute/spec.rs), built here: the root
+/// `why agent inside N` (by `why agent run`): the run its Spec says (WHY_SPEC, core agent/spec.rs), built here: the root
 /// it names (held here by its sha256), the repo's copy of its line (main's, the issue's), what it is told in its
 /// environment, the network only if the repo has it here (a Spec asking for more is refused, whoever wrote it).
 /// Ends with its command's code.
 #[cfg(target_os = "linux")]
 pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    use why_core::{home, prompt::launch, prompt::running, root};
+    use why_core::{home, prompt::running, prompt::start, roots};
     let repo = ctx.here.as_ref().map(|h| h.repo.clone()).ok_or_else(|| Error::Usage(tr!("Which repo? (WHY_REPO)", "どの repo ですか（WHY_REPO）")))?;
     task_id(call)?;
     let spec: spec::Spec = serde_json::from_str(&std::env::var("WHY_SPEC").unwrap_or_default())
@@ -464,20 +464,20 @@ pub fn inside(ctx: &Ctx, call: &Call) -> Result<Reply> {
         return Err(Error::Refused(tr!("{} has no network here (why network on {0})", "{} にはここでネットワークがありません（why network on {0}）", repo)));
     }
     let data = paths::data_dir();
-    let held = root::held(data).into_iter().map(|(a, _)| a).find(|a| a.sha256 == spec.root)
+    let held = roots::held(data).into_iter().map(|(a, _)| a).find(|a| a.sha256 == spec.root)
         .ok_or_else(|| Error::NotFound(tr!("The root it runs on is not here (why root fetch)", "実行する root がここにありません（why root fetch）")))?;
-    let root = root::system_dir(data).join(&spec.root).join("root");
+    let root = roots::system_dir(data).join(&spec.root).join("root");
     let repos = ctx.repos()?;
-    let copy = why_core::repos::lines::worktree(&repo, &spec.line);
-    let dir = if spec.line == why_core::repos::lines::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
-    let s = launch::Sandbox { root, repo: dir, name: repo.clone(), argv: spec.argv.clone(), network: spec.network,
-        dotfiles: launch::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: [spec.env.clone(), why_core::device::agent_key::env()].concat() };
+    let copy = why_core::repo::lines::worktree(&repo, &spec.line);
+    let dir = if spec.line == why_core::repo::lines::MAIN { repos.on_main().dir(&repo)? } else if copy.is_dir() { copy } else { repos.dir(&repo)? };
+    let s = start::Prompt { root, other: held.distro.is_some(), repo: dir, name: repo.clone(), cmd: spec.argv.clone(), network: spec.network,
+        dotfiles: start::dotfiles_in_effect(), data: Some(data.to_path_buf()), env: [spec.env.clone(), why_core::device::agent_key::env()].concat() };
     // Recorded as any Prompt is: why prompt ls and Runtime see it, why prompt stop ends it.
     let mut recorded = running::record(data, &repo, s.network, &s.root)?;
     why_core::storage::make_room(data, paths::repos_dir(), super::forge::PROMPT_ROOM);
-    launch::set_up(&s, held.distro.is_some())?;
+    s.set_up()?;
     recorded.ready()?;
-    let code = launch::run(&s)?;
+    let code = s.run()?;
     drop(recorded);
     if ctx.connected() { crate::cmd::sync::send(&repo); }
     std::process::exit(code);

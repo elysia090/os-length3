@@ -9,8 +9,8 @@
 //!             (taken in from the Remote at most every 10 s as keys are
 //!             tried, so one added or removed elsewhere counts here at once);
 //!             no password, no keyboard-interactive; an address refused too
-//!             often is not heard for a minute (core ssh::Tries)
-//!   where     the scope chosen (core ssh::listen_on): 127.0.0.1 and ::1
+//!             often is not heard for a minute (core cowboy::Tries)
+//!   where     the scope chosen (core cowboy::listen_on): 127.0.0.1 and ::1
 //!             alone, so another PC finds the port closed; or, for the same
 //!             network too, each LAN address besides and a VPN interface's
 //!             100.64/10 one, a socket each, never 0.0.0.0, a public
@@ -19,7 +19,7 @@
 //!             chosen): an address gone or no longer asked for is let go,
 //!             and the connections that came in on it are closed
 //!   from      only the network of the address a connection came in on
-//!             (core ssh::admit: its subnet, or for a VPN's interface a peer
+//!             (core cowboy::admit: its subnet, or for a VPN's interface a peer
 //!             the kernel routes by it), or the device itself: Linux takes a
 //!             packet for any of its addresses on any interface, so without
 //!             this a sender on another segment could route to the LAN
@@ -36,7 +36,7 @@
 //!             off, the device is signed out, or it is told to (SIGTERM:
 //!             why address ssh off, logout, the app)
 
-use why_core::{fs::paths, remote, ssh, tr};
+use why_core::{fs::paths, shipto, cowboy, tr};
 use russh::keys::{PrivateKey, PublicKey};
 use russh::server::{self, Auth, Msg, Session};
 use russh::{Channel, ChannelId, ChannelMsg, MethodKind, MethodSet};
@@ -84,11 +84,11 @@ fn log(s: &str) {
 /// The host key: read, or made once (Ed25519, from the kernel's randomness) and kept owner-only. It is made
 /// whole or not at all (bug: a crash while writing it left half a key, and SSH could not be turned on again).
 pub fn host_key(data: &Path) -> Result<PrivateKey, String> {
-    let at = ssh::host_key(data);
+    let at = cowboy::host_key(data);
     let read = |text: Vec<u8>| PrivateKey::from_openssh(text).map_err(|e| tr!("The host key {} cannot be read: {}. Remove it to make a new one (each ssh client then says the host key changed)",
         "ホスト鍵 {} を読めません：{}。消せば新しく作ります（そのあと各 ssh クライアントはホスト鍵が変わったと言います）", at.display(), e));
     if let Ok(text) = std::fs::read(&at) { return read(text); }
-    why_core::fs::write::private_dir(&ssh::dir(data)).map_err(|e| e.to_string())?;
+    why_core::fs::write::private_dir(&cowboy::dir(data)).map_err(|e| e.to_string())?;
     let mut seed = [0u8; 32];
     std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut seed)).map_err(|e| e.to_string())?;
     let pair = russh::keys::ssh_key::private::Ed25519Keypair::from_seed(&seed);
@@ -104,28 +104,28 @@ pub fn host_key(data: &Path) -> Result<PrivateKey, String> {
 
 /// The host key's fingerprint, as ssh shows it when it first connects.
 pub fn fingerprint(key: &PrivateKey) -> String {
-    ssh::fingerprint(&key.public_key().to_bytes().unwrap_or_default())
+    cowboy::fingerprint(&key.public_key().to_bytes().unwrap_or_default())
 }
 
 /// What every connection shares.
 struct Shared {
     /// why itself, which each session runs as `why prompt REPO`.
     exe: PathBuf,
-    keys: Mutex<(Instant, Vec<ssh::Key>)>,
-    tries: Mutex<ssh::Tries>,
+    keys: Mutex<(Instant, Vec<cowboy::Key>)>,
+    tries: Mutex<cowboy::Tries>,
     /// The session processes running (their pids): ended with the listener.
     sessions: Mutex<HashSet<u32>>,
 }
 
 impl Shared {
     /// The keys, taken in from the Remote first when they were last taken in a while ago.
-    async fn keys(&self) -> Vec<ssh::Key> {
+    async fn keys(&self) -> Vec<cowboy::Key> {
         let stale = self.keys.lock().map(|k| k.0.elapsed() >= KEYS_FRESH).unwrap_or(true);
         if stale {
             // Out of reach, the keys this device has stand.
-            let took = tokio::time::timeout(Duration::from_secs(5), tokio::task::spawn_blocking(|| remote::sync_home("dotfiles"))).await;
+            let took = tokio::time::timeout(Duration::from_secs(5), tokio::task::spawn_blocking(|| shipto::sync_home("dotfiles"))).await;
             if !matches!(took, Ok(Ok(Ok(_)))) { log("keys: the Remote's not taken in; this device's stand"); }
-            if let Ok(mut k) = self.keys.lock() { *k = (Instant::now(), ssh::keys().keys); }
+            if let Ok(mut k) = self.keys.lock() { *k = (Instant::now(), cowboy::keys().keys); }
         }
         self.keys.lock().map(|k| k.1.clone()).unwrap_or_default()
     }
@@ -133,7 +133,7 @@ impl Shared {
 
 /// Whether `user` names a repo here (an SSH user is a repo).
 fn is_repo(user: &str) -> bool {
-    why_core::text::names::valid_name(user) && why_core::repos::store::Repos::open().is_ok_and(|r| r.dir(user).is_ok())
+    why_core::text::names::valid_name(user) && why_core::repo::store::Repos::open().is_ok_and(|r| r.dir(user).is_ok())
 }
 
 struct Conn {
@@ -174,7 +174,7 @@ impl server::Handler for Conn {
         let key = verified.public_key;
         let a = self.check(user, key).await;
         if a == Auth::Accept {
-            log(&format!("{} in as {user} with {}", self.peer, ssh::fingerprint(&key.to_bytes().unwrap_or_default())));
+            log(&format!("{} in as {user} with {}", self.peer, cowboy::fingerprint(&key.to_bytes().unwrap_or_default())));
             self.repo = Some(user.to_string());
             self.authed.store(true, std::sync::atomic::Ordering::SeqCst);
         } else {
@@ -441,7 +441,7 @@ enum Why { Off, SignedOut, Asked }
 /// SSH library or its version.
 const SERVER_ID: &str = "SSH-2.0-why";
 
-/// The key kinds offered and taken, for the host key and the clients' (ssh::KINDS): no RSA.
+/// The key kinds offered and taken, for the host key and the clients' (cowboy::KINDS): no RSA.
 const KEY_KINDS: [russh::keys::ssh_key::Algorithm; 4] = {
     use russh::keys::ssh_key::{Algorithm, EcdsaCurve};
     [Algorithm::Ed25519, Algorithm::Ecdsa { curve: EcdsaCurve::NistP256 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP384 }, Algorithm::Ecdsa { curve: EcdsaCurve::NistP521 }]
@@ -461,7 +461,7 @@ const CIPHERS: [russh::cipher::Name; 3] = [russh::cipher::CHACHA20_POLY1305, rus
 /// The MACs, never chosen beside those ciphers (each carries its own): encrypt-then-MAC with SHA-2 only.
 const MACS: [russh::mac::Name; 2] = [russh::mac::HMAC_SHA512_ETM, russh::mac::HMAC_SHA256_ETM];
 
-/// The sockets listened on, one an address (ssh::listen_on), each with the task taking its connections; and the
+/// The sockets listened on, one an address (cowboy::listen_on), each with the task taking its connections; and the
 /// addresses listened on, as every connection watches them: one that came in on an address let go is closed.
 struct Sockets {
     port: u16,
@@ -473,9 +473,9 @@ impl Sockets {
     /// Listen on what `scope` asks of the host's addresses now, and on nothing else. Run inside the runtime. What it
     /// listens on then, and those besides loopback with their interfaces; an error when 127.0.0.1 cannot be listened
     /// on (the port is another program's).
-    fn take(&mut self, scope: ssh::Scope, shared: &Arc<Shared>, config: &Arc<server::Config>) -> Result<(Vec<IpAddr>, Vec<ssh::Taken>), String> {
-        let interfaces = ssh::interfaces();
-        let want = ssh::listen_on(scope, &interfaces);
+    fn take(&mut self, scope: cowboy::Scope, shared: &Arc<Shared>, config: &Arc<server::Config>) -> Result<(Vec<IpAddr>, Vec<cowboy::Taken>), String> {
+        let interfaces = cowboy::interfaces();
+        let want = cowboy::listen_on(scope, &interfaces);
         self.open.retain(|(ip, task)| {
             let keep = want.contains(ip);
             if !keep { task.abort(); log(&format!("no longer listening on {ip}")); }
@@ -497,7 +497,7 @@ impl Sockets {
         }
         let now: Vec<IpAddr> = want.into_iter().filter(|a| self.open.iter().any(|(b, _)| b == a)).collect();
         self.bound.send_replace(now.clone());
-        let taken = ssh::taken(&now, &interfaces);
+        let taken = cowboy::taken(&now, &interfaces);
         Ok((now, taken))
     }
 }
@@ -525,15 +525,15 @@ async fn take_connections(listener: tokio::net::TcpListener, shared: Arc<Shared>
 /// the log from then on.
 pub fn serve() -> Result<(), String> {
     let data = paths::data_dir();
-    if ssh::keys().keys.is_empty() {
-        return Err(tr!("There is no key in {} to let anyone in with", "{} に入れる鍵がありません", ssh::KEYS));
+    if cowboy::keys().keys.is_empty() {
+        return Err(tr!("There is no key in {} to let anyone in with", "{} に入れる鍵がありません", cowboy::KEYS));
     }
     let key = host_key(data)?;
     let print = fingerprint(&key);
-    let port = ssh::port();
-    let mut scope = ssh::scope(data);
-    let shared = Arc::new(Shared { exe: std::env::current_exe().map_err(|e| e.to_string())?, keys: Mutex::new((Instant::now(), ssh::keys().keys)),
-        tries: Mutex::new(ssh::Tries::default()), sessions: Mutex::new(HashSet::new()) });
+    let port = cowboy::port();
+    let mut scope = cowboy::scope(data);
+    let shared = Arc::new(Shared { exe: std::env::current_exe().map_err(|e| e.to_string())?, keys: Mutex::new((Instant::now(), cowboy::keys().keys)),
+        tries: Mutex::new(cowboy::Tries::default()), sessions: Mutex::new(HashSet::new()) });
     let config = Arc::new(server::Config {
         server_id: russh::SshId::Standard(SERVER_ID.into()),
         methods: MethodSet::from(&[MethodKind::PublicKey][..]),
@@ -544,7 +544,7 @@ pub fn serve() -> Result<(), String> {
         inactivity_timeout: None,
         keepalive_interval: Some(Duration::from_secs(30)),
         nodelay: true,
-        // The kinds of key there are here (ssh::KINDS), and nothing more said of them (server-sig-algs); OpenSSH 10's
+        // The kinds of key there are here (cowboy::KINDS), and nothing more said of them (server-sig-algs); OpenSSH 10's
         // key exchange and authenticated encryption alone.
         preferred: russh::Preferred {
             kex: std::borrow::Cow::Borrowed(&KEX),
@@ -558,12 +558,12 @@ pub fn serve() -> Result<(), String> {
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
     let mut sockets = Sockets { port, open: Vec::new(), bound: tokio::sync::watch::channel(Vec::new()).0 };
     let (mut bound, taken) = rt.block_on(async { sockets.take(scope, &shared, &config) })?;
-    remote::ssh::announce(scope)?;
-    let mut recorded = ssh::record(data, port, scope, bound.clone(), taken, print.clone()).map_err(|e| e.to_string())?;
+    shipto::ssh::announce(scope)?;
+    let mut recorded = cowboy::record(data, port, scope, bound.clone(), taken, print.clone()).map_err(|e| e.to_string())?;
     // Turning on waits for this line; then the log takes standard output and error.
     println!("ready");
     let _ = std::io::stdout().flush();
-    if let Ok(f) = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(ssh::dir(data).join("log")) {
+    if let Ok(f) = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(cowboy::dir(data).join("log")) {
         let _ = rustix::stdio::dup2_stdout(&f);
         let _ = rustix::stdio::dup2_stderr(&f);
     }
@@ -576,8 +576,8 @@ pub fn serve() -> Result<(), String> {
             _ => return Err("signals".to_string()),
         };
         // The scope kept now, and the host's addresses now: what is listened on follows both.
-        let mut follow = |sockets: &mut Sockets, scope: &mut ssh::Scope, bound: &mut Vec<IpAddr>| {
-            let next = ssh::scope(data);
+        let mut follow = |sockets: &mut Sockets, scope: &mut cowboy::Scope, bound: &mut Vec<IpAddr>| {
+            let next = cowboy::scope(data);
             match sockets.take(next, &shared, &config) {
                 Ok((now, taken)) if (next, &now) != (*scope, &*bound) => {
                     if next != *scope { log(&format!("now {}", next.word())); }
@@ -596,12 +596,12 @@ pub fn serve() -> Result<(), String> {
                 () = &mut beat => {
                     follow(&mut sockets, &mut scope, &mut bound);
                     let said = scope;
-                    let heard = tokio::time::timeout(Duration::from_secs(20), tokio::task::spawn_blocking(move || remote::ssh::beat(said))).await
-                        .ok().and_then(|r| r.ok()).unwrap_or(remote::ssh::Heard::Unreachable);
-                    if !remote::ssh::goes_on(heard) {
-                        return Ok(if heard == remote::ssh::Heard::Off { Why::Off } else { Why::SignedOut });
+                    let heard = tokio::time::timeout(Duration::from_secs(20), tokio::task::spawn_blocking(move || shipto::ssh::beat(said))).await
+                        .ok().and_then(|r| r.ok()).unwrap_or(shipto::ssh::Heard::Unreachable);
+                    if !shipto::ssh::goes_on(heard) {
+                        return Ok(if heard == shipto::ssh::Heard::Off { Why::Off } else { Why::SignedOut });
                     }
-                    missed = if heard == remote::ssh::Heard::Unreachable { missed + 1 } else { 0 };
+                    missed = if heard == shipto::ssh::Heard::Unreachable { missed + 1 } else { 0 };
                     beat.as_mut().reset(tokio::time::Instant::now() + next_beat(missed));
                 }
                 // Another scope was chosen (why address ssh on device|network): taken now, not at the next beat,
@@ -628,7 +628,7 @@ pub fn serve() -> Result<(), String> {
     if why == Why::Asked {
         // Said to the Remote, so pages stop showing it; not waited on past a few seconds.
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || { let _ = tx.send(remote::ssh::withdraw()); });
+        std::thread::spawn(move || { let _ = tx.send(shipto::ssh::withdraw()); });
         let _ = rx.recv_timeout(Duration::from_secs(5));
     }
     log(&format!("stopped ({why:?})"));
@@ -636,12 +636,12 @@ pub fn serve() -> Result<(), String> {
     Ok(())
 }
 
-/// A connection: taken only from the network of the address it came in on, or from the device itself (ssh::admit),
+/// A connection: taken only from the network of the address it came in on, or from the device itself (cowboy::admit),
 /// and from an address not held off; otherwise closed before a byte is said. Closed later when the address it came
 /// in on is no longer listened on (the scope narrowed, or the address went).
 fn accept(stream: tokio::net::TcpStream, peer: SocketAddr, shared: &Arc<Shared>, config: &Arc<server::Config>, mut bound: tokio::sync::watch::Receiver<Vec<IpAddr>>) {
     let Ok(local) = stream.local_addr().map(|a| a.ip()) else { return };
-    if !ssh::admit(local, peer.ip(), &ssh::interfaces(), ssh::route_dev) {
+    if !cowboy::admit(local, peer.ip(), &cowboy::interfaces(), cowboy::route_dev) {
         log(&format!("{} closed: not from the network of {local}", peer.ip()));
         return;
     }

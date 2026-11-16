@@ -1,7 +1,8 @@
-import {ago, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import * as account from '../../remote/connection.ts';
-import {errorText} from '../../host/errors.ts';
+import {h} from '../../ui/dom.ts';
+import {ago} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import * as account from '../../../shipto/connection.ts';
+import {errorText} from '../../../api/errors.ts';
 import {atSignIn, button, pressing} from '../kit/remote-parts.ts';
 
 // Remote's Sign-in part: what keeps the account: the passkeys, and the providers it can sign in with.

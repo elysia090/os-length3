@@ -1,11 +1,12 @@
-import {day, h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {RemoteError} from '../../host/errors.ts';
-import * as servers from '../../remote/servers.ts';
+import {h} from '../../ui/dom.ts';
+import {day} from '../../../text/format.ts';
+import {t} from '../../../text/i18n.ts';
+import {RemoteError} from '../../../api/errors.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {nudge} from '../../ui/glide.ts';
 import {deed} from '../kit/common.ts';
 import {planRefused} from '../kit/plan-gate.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {button, fitting, type Here} from './parts.ts';
 import {ghostBody} from './board.ts';
 
@@ -96,14 +97,13 @@ export function nameServer(here: Here, ways: MakingWays): {name: HTMLInputElemen
 function fields(say: string, sayAt: string) {
   const name = h('input', {class: 'server-name-in', maxlength: '64', placeholder: say, 'aria-label': t('Name')}) as HTMLInputElement;
   const handle = h('input', {class: 'server-handle-in mono', maxlength: '31', placeholder: sayAt, autocapitalize: 'off', spellcheck: 'false',
-    'aria-label': t('Username on this Remote'),
-    title: t('First-come, first-served: reserved exclusively while active on this server.')}) as HTMLInputElement;
+    'aria-label': t('Username on this Remote')}) as HTMLInputElement;
   // Its address follows its name until it is written itself.
   let own = false;
   const fit = fitting(name, handle);
   // Its name on this Remote follows its name unseen (Trip is trip): the chip says one name, not two. The quiet @
   // after it shows the address to write it otherwise, and it shows itself when the one it would be is taken.
-  const at = h('button', {type: 'button', class: 'server-at', 'aria-label': t('Username on this Remote'), title: t('Username on this Remote')}, '@') as HTMLButtonElement;
+  const at = h('button', {type: 'button', class: 'server-at', 'aria-label': t('Username on this Remote')}, '@') as HTMLButtonElement;
   const address = h('span', {class: 'server-address', hidden: ''}, h('span', {class: 'muted', 'aria-hidden': 'true'}, '@'), handle);
   const reveal = () => { at.hidden = true; address.hidden = false; fit(); handle.focus(); handle.select(); };
   at.addEventListener('click', reveal);
@@ -125,7 +125,7 @@ function fields(say: string, sayAt: string) {
 function refused(e: unknown, ask: HTMLElement, here: Here, reveal: () => void, ways: MakingWays) {
   const plan = planRefused(e, () => ways.plan());
   if (plan) ask.replaceChildren(plan);
-  // Told apart by what the Remote said in its own words (why/remote/talk/servers.ts), not by the words shown here.
+  // Told apart by what the Remote said in its own words (why/shipto/remote/talk/servers.ts), not by the words shown here.
   else if (e instanceof RemoteError && (e.status === 409 || e.status === 400 && /^(Its name|Only on a domain)/.test(String(e.detail.error)))) {
     // The name on this Remote is someone else's (or held for them), or one it cannot be (a name in other
     // letters follows to nothing): the address shows, to be written otherwise.
@@ -140,9 +140,9 @@ function heldServers(ways: MakingWays): HTMLElement {
   const back = h('div', {class: 'server-back'});
   void servers.goneServers().then((held) => back.replaceChildren(...held.map((g) => {
     const b = button(t('Restore {name}', {name: g.name}), 'small-button');
-    b.title = t('Reserved until {date}', {date: day(g.until)});
     deed(b, async () => { await servers.bringBack(g.id); await ways.broughtBack(g.id); });
-    return b;
+    // How long it is held, said beside it in words (not a tooltip: nothing waits on a pointer, DESIGN §7).
+    return h('span', {class: 'server-held'}, b, h('span', {class: 'muted small'}, t('Reserved until {date}', {date: day(g.until)})));
   })), (e) => back.replaceChildren(h('p', {class: 'error small'}, errorText(e))));
   return back;
 }
@@ -155,7 +155,9 @@ function ghostBoard(back: HTMLElement): HTMLElement[] {
   return [h('div', {class: 'slide', 'aria-current': 'true'}, h('div', {class: 'board-card board-ghost', 'aria-hidden': 'true'},
     h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '#'), h('h2', {}, 'general')), ghostBody()), back),
   // Beside it, the edge of the box that will make its next board, where it will be.
-  h('div', {class: 'slide', 'aria-current': 'false'}, h('div', {class: 'board-card board-ghost ghost-next', 'aria-hidden': 'true'}, h('span', {class: 'board-head'}, '+')))];
+  // (As it will stand once the server is made: + New board, not a + alone that says nothing of what it makes.)
+  h('div', {class: 'slide', 'aria-current': 'false'}, h('div', {class: 'board-card board-ghost ghost-next', 'aria-hidden': 'true'},
+    h('div', {class: 'board-head'}, h('span', {class: 'muted board-mark'}, '+'), h('h2', {class: 'muted'}, t('New board')))))];
 }
 
 /** Under it, the box that will write to its people, saying them by the name being written (`people`). */

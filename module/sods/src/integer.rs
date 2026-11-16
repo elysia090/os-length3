@@ -693,6 +693,9 @@ impl Fx<'_> {
         let ok = match m {
             Nop | Endbr64 | Pause | Prefetchnta | Prefetcht0 | Prefetcht1 | Prefetcht2 | Prefetchw | Lfence | Mfence
             | Sfence => true,
+            // The shadow stack's pointer read: where there is no shadow stack (here, and every machine that has not
+            // turned one on) it is a NOP that leaves its register as it was, which is how glibc's setjmp asks.
+            Rdsspd | Rdsspq => true,
             // DF: the thread's (G_RF), and known to the code after in this block.
             Cld => { self.gget(G_RF); self.c64(!RF_DF); self.e(I64_AND); self.gset(G_RF); self.backward = Some(false); true }
             Std => { self.gget(G_RF); self.c64(RF_DF); self.e(I64_OR); self.gset(G_RF); self.backward = Some(true); true }

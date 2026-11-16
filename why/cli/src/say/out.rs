@@ -4,7 +4,7 @@
 //! writer: a reader that stops early (`| head`) ends why quietly, never with
 //! a panic. Numbers, sizes and times are said one way everywhere.
 
-use why_core::remote::{last_failure, Failure};
+use why_core::shipto::{last_failure, Failure};
 use why_core::tr;
 use serde_json::Value;
 use std::io::Write;

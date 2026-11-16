@@ -7,13 +7,14 @@
 .repo-cards .card { cursor: var(--cursor-arrow); display: flex; flex-direction: column; }
 .repo-cards .card > .card-foot { align-self: stretch; margin-top: auto; }
 /* The size of Home's cards, its name as Home's says it: one repo reads the same on both pages. */
-.grid.repo-cards .card { min-height: 152px; }
-.grid.repo-cards .card-title { font-size: var(--t-body); }
+.grid.repo-cards .card { min-height: calc(6 * var(--u)); }
+.grid.repo-cards .card-title { font-size: var(--t-word); }
 /* Remote's parts are 760 wide (the passkey's offer above them, the plan's): its cards two to a row in that width,
    so their edges are the offer's. */
 .grid.repo-cards { max-width: 760px; }
 .repo-cards .card:hover { background: transparent; }
-.card-foot { display: flex; align-items: center; gap: var(--s2); align-self: end; }
+/* (Its keys, the frame's square, each in a field of two cells.) */
+.card-foot { display: flex; align-items: center; gap: var(--s2); align-self: end; min-height: calc(2 * var(--u)); }
 .card-foot .grow { flex: 1; }
 /* Share, and once pressed the servers beside it, each pressed in where the repo is shown. */
 /* Share opens as the language does: a list over the card, from the button's left edge upward, so nothing
@@ -37,6 +38,7 @@
 .card.off { border-style: dashed; }
 /* What was turned off, pressed again to bring it back: red, as a repo turned off is. */
 .button.off { background: var(--off); border-color: var(--off); color: var(--ground); }
-/* Hovered, a step toward ink rather than toward the ground, so its words keep their contrast. */
-.button.off:hover:not(:disabled) { background: color-mix(in srgb, var(--off) 85%, var(--ink)); filter: none; }
+/* (Under the pointer it stays as it is, as a key in ink does: it is the strongest thing already, and a darker red mixed
+   for it is a colour the design has not.) */
+.button.off:hover:not(:disabled) { background: var(--off); border-color: var(--off); color: var(--ground); }
 .card.off .card-title, .card.off > .muted { color: var(--sub); }

@@ -5,15 +5,15 @@
 //! Which differ is seen here, from the digests kept, so a repo in step costs
 //! no request. Home's settings kept on the Remote go the same way (the
 //! command says which it reads: spec::Command::home), agreed as the app
-//! agrees them (why/core/src/home/). Offline, changes wait here and why says so once.
+//! agrees them (why/home/). Offline, changes wait here and why says so once.
 
 use crate::words::args::Call;
 use crate::cmd::Ctx;
 use crate::say::out::note;
 use crate::words::spec::{Arg, Sync};
 use crate::words::target;
-use why_core::remote::{self, Failure};
-use why_core::{home, repos::store::Repos, tr};
+use why_core::shipto::{self, Failure};
+use why_core::{home, repo::store::Repos, tr};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub fn before(ctx: &Ctx, call: &Call) {
@@ -35,20 +35,20 @@ static OUT_OF_REACH: AtomicBool = AtomicBool::new(false);
 pub fn after(ctx: &Ctx, call: &Call, offline: bool) {
     if offline || OUT_OF_REACH.load(Ordering::Relaxed) || !ctx.connected() || call.form.sync == Sync::None { return; }
     // Each of Home's settings that differs from what was last agreed (seen here, without a request).
-    for key in home::SYNCED { if remote::home_waiting(key) && !home(key) { return; } }
+    for key in home::SYNCED { if shipto::home_waiting(key) && !home(key) { return; } }
     send_changed();
 }
 
 /// Agree one of Home's settings with the Remote. Whether the Remote could be reached.
 fn home(key: &str) -> bool {
     if OUT_OF_REACH.load(Ordering::Relaxed) { return false; }
-    match remote::sync_home(key) {
+    match shipto::sync_home(key) {
         Ok(_) => true,
         Err(e) => {
             let what = match key { "todo" => "TODO".to_string(), "profile" => tr!("profile", "プロフィール"), _ => tr!("dotfiles", "dotfile"), };
             // What changes here meanwhile is kept, and sent once a later command reaches the Remote.
             note(&tr!("Home's {} is not in step with the Remote yet: {}; a later command tries again", "Home の {} はまだ Remote とそろっていません：{}。後のコマンドでもう一度試します", what, e));
-            let reached = !matches!(remote::last_failure(), Some((Failure::Unreachable | Failure::Unknown, _)));
+            let reached = !matches!(shipto::last_failure(), Some((Failure::Unreachable | Failure::Unknown, _)));
             if !reached { OUT_OF_REACH.store(true, Ordering::Relaxed); }
             reached
         }
@@ -68,14 +68,14 @@ fn named(ctx: &Ctx, call: &Call) -> Option<String> {
 /// Bring one repo into step (send, take in). Whether the Remote could be reached.
 pub fn send(repo: &str) -> bool {
     if OUT_OF_REACH.load(Ordering::Relaxed) { return false; }
-    match Repos::open().and_then(|r| remote::sync(&r, repo)) {
+    match Repos::open().and_then(|r| shipto::sync(&r, repo)) {
         Ok(s) => {
-            for p in &s.both { note(&tr!("{} changed on another device too: the Remote's keeps the name, and this device's is beside it, marked ({})", "{} は別の端末でも変わっていました。その名前は Remote の版にし、この端末の版は（{}）を付けて横に置きました", p, remote::device_tag())); }
+            for p in &s.both { note(&tr!("{} changed on another device too: the Remote's keeps the name, and this device's is beside it, marked ({})", "{} は別の端末でも変わっていました。その名前は Remote の版にし、この端末の版は（{}）を付けて横に置きました", p, shipto::device_tag())); }
             true
         }
         Err(e) => {
             note(&tr!("{} is not sent yet: {}; it goes after a later command", "{} はまだ送れていません：{}。後のコマンドのあとに送ります", repo, e));
-            let reached = !matches!(remote::last_failure(), Some((Failure::Unreachable | Failure::Unknown, _)));
+            let reached = !matches!(shipto::last_failure(), Some((Failure::Unreachable | Failure::Unknown, _)));
             if !reached { OUT_OF_REACH.store(true, Ordering::Relaxed); }
             reached
         }
@@ -86,6 +86,6 @@ pub fn send(repo: &str) -> bool {
 fn send_changed() {
     let Ok(r) = Repos::open() else { return };
     for name in r.names().unwrap_or_default() {
-        if matches!(remote::status_of(&r, &name), Ok(st) if st.fresh || st.changed > 0) && !send(&name) { return; }
+        if matches!(shipto::status_of(&r, &name), Ok(st) if st.fresh || st.changed > 0) && !send(&name) { return; }
     }
 }

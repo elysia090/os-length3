@@ -1,3 +1,4 @@
+import {SPRING} from './law.ts';
 // The camera going along the rail (main.ts select), in three moves, each a camera's own:
 //
 //   out    the page left steps back with its own camera, the page still itself: a ground camera (below) to half its
@@ -57,7 +58,7 @@ export function workAt(el: HTMLElement, at: WorkAt | null) {
 /** How far back the camera stands: half its size. */
 export const FAR = .5;
 /** Stepping back: quick off at the press, slowing as it gets there (the desk camera's land); coming down, the same. */
-const LAND = 'cubic-bezier(.2, .8, .3, 1)';
+const LAND = SPRING;
 
 const matrix = (k: number, x: number, y: number) => `matrix(${k}, 0, 0, ${k}, ${x}, ${y})`;
 

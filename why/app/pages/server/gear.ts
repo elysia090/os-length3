@@ -1,12 +1,13 @@
-import {day, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {lookup, send, shown as named, shownAs, threads} from '../../remote/inbox.ts';
-import * as servers from '../../remote/servers.ts';
+import {h} from '../../ui/dom.ts';
+import {day} from '../../../text/format.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {lookup, send, shown as named, shownAs, threads} from '../../../shipto/inbox.ts';
+import * as servers from '../../../shipto/servers.ts';
 import {deed, parts, type Parts} from '../kit/common.ts';
-import {every} from '../../host/runs.ts';
+import {every} from '../../../api/runs.ts';
 import {askIn, boardName, button, foot, footLeft, line, MOVE, smallCard, type GearWays} from './parts.ts';
 import {guestsCard} from './guests.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {personBadge} from '../kit/pane.ts';
 
 // Behind the gear: what changes the server for everyone. In parts, as
@@ -80,7 +81,7 @@ function sheet(s: servers.Server, w: GearWays): Parts<Part> {
   done.addEventListener('click', () => w.done());
   const tabs = parts<Part>('server-gear', [{id: 'people', label: t('Members')}, {id: 'repos', label: t('Repos')}, {id: 'boards', label: t('Boards')}, {id: 'server', label: t('This server')}]);
   const ids: Part[] = ['people', 'repos', 'boards', 'server'];
-  // Done is the sheet's answer, so it is at its bottom right (DESIGN.md §3, Where a deed sits), under what scrolls:
+  // Done is the sheet's answer, so it is at its bottom right (a deed sits where its answer is read), under what scrolls:
   // found at the same place however long a part is, and on a phone too.
   w.sheet.replaceChildren(
     h('div', {class: 'sheet-head'}, h('div', {class: 'sheet-title'}, h('h2', {}, s.name), h('p', {}, `${named(s.address)} · ${s.code}`))),
@@ -243,7 +244,7 @@ function boardCards(r: Read, b: servers.BoardRef): HTMLElement[] {
 
 /** Removed: quiet, held until then, its 外す red; pressed again, it is back at once. */
 function goneBoard({s, w}: Read, b: servers.BoardRef, until: number): HTMLElement {
-  const back = s.owner ? h('button', {type: 'button', class: 'button small-button off', 'aria-pressed': 'true', title: t('Restore')}, t('Remove')) as HTMLButtonElement : null;
+  const back = s.owner ? h('button', {type: 'button', class: 'button small-button off', 'aria-pressed': 'true'}, t('Remove')) as HTMLButtonElement : null;
   if (back) deed(back, async () => { await servers.bringBackBoard(b.id); delete b.gone; w.boardsChanged(); w.again(); });
   return h('div', {class: 'card small-card off'}, h('span', {class: 'card-title'}, boardName(b.name)), line(t('Deleted · Recoverable until {date}', {date: day(until)})),
     back ? h('div', {class: 'card-foot'}, back, h('span', {class: 'grow'})) : null);
@@ -291,7 +292,6 @@ function boardCard({s, w}: Read, b: servers.BoardRef): HTMLElement {
 /** Everything stays on the Remote: Take home takes a copy of the board as text. */
 function takeHome(s: servers.Server, b: servers.BoardRef): HTMLButtonElement {
   const take = button(t('Export local copy'), 'small-button');
-  take.title = t('Data is backed up on Remote. Export local text copies whenever needed.');
   deed(take, async () => {
     const text = await servers.archive(b.id, true);
     const a = h('a', {href: URL.createObjectURL(new Blob([text], {type: 'text/markdown'})), download: `${s.name}-${b.name}.md`.replace(/[^\w.-]+/g, '-')}) as HTMLAnchorElement;

@@ -4,26 +4,7 @@
  * one writev; and how it fails. The last of lib's three (word.h, then sys.h, then this).
  */
 #pragma once
-#include "sys.h"
-
-/* What a run works in, used from its start and as far as it needs: what it is given is SLACK past what it asks for.
- * Taken at once (an atomic add), so threads (sys.h spawn) take from it side by side. */
-#ifndef ARENA
-#define ARENA (1 << 21)
-#endif
-static u8 arena[ARENA];
-static u64 used;
-static u8 *grab(u64 n) {
-  u64 size = (n + SLACK + 15) & ~15ul, at = __atomic_fetch_add(&used, size, __ATOMIC_RELAXED);
-  u8 *p = arena + at;
-  if (at + size > sizeof arena) {
-    static const char m[] = UNIT ": out of room\n";
-    sys3(SYS_write, 2, (i64)m, sizeof m - 1);
-    leave(1);
-  }
-  return p;
-}
-#define LEFT (sizeof arena - used)
+#include "arena.h"
 
 /* What is written to standard output: pieces of what is already in memory, not copied, and pieces made to be written
  * (a number, in `text`, 32 bytes each, at most one piece in two), gathered and written by one writev each IOV of them.
@@ -39,10 +20,15 @@ static u8 text[IOV / 2 * 32];
 static u64 textn;
 static u8 stage[64 << 10];
 static u64 stagen;
+/* What flush writes by: writev to standard output, unless the unit says its own (IO_WRITEV: rg's, which one of
+ * several processes writes to the one that puts their output in order by). */
+#ifndef IO_WRITEV
+#define IO_WRITEV(v, k) sys3(SYS_writev, 1, (i64)(v), (k))
+#endif
 static void flush(void) {
   struct iovec *v = iov;
   for (u32 k = niov; k;) {
-    i64 r = sys3(SYS_writev, 1, (i64)v, k);
+    i64 r = IO_WRITEV(v, k);
     if (r == -EINTR) continue;
     if (r <= 0) leave(1);
     for (; k && (u64)r >= v->len; v++, k--) r -= (i64)v->len;
@@ -62,7 +48,10 @@ static void staged(const void *p, u64 n, int nl) {
   if (niov == IOV) flush();
 }
 static void put(const void *p, u64 n) {
+  if (!n) return; /* (nothing: no piece, so what is written out always holds a byte) */
   if (n <= SMALL) { staged(p, n, 0); return; }
+  /* (What lies where the piece before it ends is that piece, longer: lines of a text one after another are one piece.) */
+  if (niov && (const u8 *)iov[niov - 1].base + iov[niov - 1].len == (const u8 *)p) { iov[niov - 1].len += n; return; }
   iov[niov].base = p, iov[niov++].len = n;
   if (niov == IOV) flush();
 }

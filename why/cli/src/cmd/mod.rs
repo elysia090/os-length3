@@ -28,12 +28,12 @@ pub mod sync;
 
 use crate::words::args::Call;
 use crate::say::out::{Error, Reply, Result};
-use why_core::{fs::paths, home as core_home, remote as core_remote, repos::store::Repos, tr};
+use why_core::{fs::paths, home as core_home, shipto as core_remote, repo::store::Repos, tr};
 use serde_json::json;
 
 /// Where why runs: in which repo (and where in it), and whether inside the app's Prompt.
 pub struct Ctx {
-    pub here: Option<why_core::repos::lines::Here>,
+    pub here: Option<why_core::repo::lines::Here>,
     /// Inside the app's Prompt: only the open repo is here (under /root), written back and sent by the app.
     pub prompt: bool,
     /// What it reads: this device (None), or words alone, never the device (a form read, a line completed, a card
@@ -46,7 +46,7 @@ struct Words { known: Vec<&'static str>, online: bool }
 impl Ctx {
     pub fn new() -> Ctx {
         Ctx {
-            here: std::env::current_dir().ok().and_then(|d| why_core::repos::lines::here(&d)),
+            here: std::env::current_dir().ok().and_then(|d| why_core::repo::lines::here(&d)),
             prompt: std::env::var_os("WHY_PROMPT").is_some(),
             words: None,
         }
@@ -55,7 +55,7 @@ impl Ctx {
     /// Words alone, in `here`, knowing the repos `known`, on no Remote: what a test reads why with.
     #[cfg(test)]
     pub fn test(here: Option<&str>, known: Vec<&'static str>) -> Ctx {
-        Ctx { here: here.map(|r| why_core::repos::lines::Here { repo: r.into(), line: why_core::repos::lines::MAIN.into(), folder: String::new() }), prompt: false,
+        Ctx { here: here.map(|r| why_core::repo::lines::Here { repo: r.into(), line: why_core::repo::lines::MAIN.into(), folder: String::new() }), prompt: false,
             words: Some(Words { known, online: false }) }
     }
 
@@ -121,7 +121,7 @@ pub fn next(_: &Ctx, _: &Call) -> Result<Reply> {
 /// why's own version (why/VERSION), and the root it runs: ricebox's, which has a version of its own.
 pub fn version(_: &Ctx, _: &Call) -> Result<Reply> {
     let v = include_str!("../../../VERSION").trim();
-    let root = why_core::root::current(paths::data_dir()).map(|(_, i)| i);
+    let root = why_core::roots::current(paths::data_dir()).map(|(_, i)| i);
     let mut text = format!("why {v}");
     if let Some(i) = &root { text += &format!("\nroot {} {} ({})", i.name, i.version, crate::say::out::short(&i.sha256)); }
     Ok(Reply::data(text, json!({"version": v, "root": root})))

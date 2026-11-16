@@ -1,8 +1,8 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import {errorText} from '../../host/errors.ts';
-import {agentKey, forgetAgentKey, giveAgentKey, onAgentKey, type Shown} from '../../account/agent-key.ts';
-import {isNative} from '../../host/host.ts';
+import {t} from '../../../text/i18n.ts';
+import {errorText} from '../../../api/errors.ts';
+import {agentKey, forgetAgentKey, giveAgentKey, onAgentKey, type Shown} from '../../../device/agent-key.ts';
+import {isNative} from '../../../api/host.ts';
 import {button} from './parts.ts';
 
 // Runtime's Agent: the one API key the box's Agent answers with, kept on this device alone. One line to give it in,
@@ -26,7 +26,7 @@ export function agentSection(counted: (n: number) => void = () => {}): HTMLEleme
 
 /**
  * Where the key is kept, as it is: in the app, the device's keyring (core device/vault.rs); in a browser, sealed by the
- * person's passkey (account/seal.ts), or, where it could not be, as given in the browser's own keeping.
+ * person's passkey (device/seal.ts), or, where it could not be, as given in the browser's own keeping.
  */
 function keptWhere(k: Shown | null): string {
   if (isNative || !k) return t('Stored securely on this device only. Excluded from dotfiles and Remote sync.');

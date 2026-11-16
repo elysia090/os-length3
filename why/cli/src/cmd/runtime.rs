@@ -7,14 +7,14 @@ use crate::words::args::Call;
 use crate::say::out::{self, bytes, Error, Reply, Result, things};
 use crate::words::spec::{Fact, On};
 use crate::words::target;
-use why_core::{device::download::Progress, fs::paths, home, remote, root, storage, tr};
+use why_core::{device::download::Progress, fs::paths, home, shipto, roots, storage, tr};
 use serde_json::json;
 
 pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     // What a Prompt here holds (the app's or why's, running or being prepared) stays while it does: the core reads
-    // their records itself (storage/), so there is nothing to tell it as open.
+    // their records itself (device/storage/), so there is nothing to tell it as open.
     let s = storage::space(paths::data_dir(), paths::repos_dir(), &[], true);
-    let current = root::current(paths::data_dir()).map(|(_, r)| r);
+    let current = roots::current(paths::data_dir()).map(|(_, r)| r);
     let mut t = vec![match &current {
         Some(r) => tr!("root  {} {} (where Prompts run)", "root  {} {}（Prompt が動く環境）", r.name, r.version),
         None => tr!("root  none yet (why root fetch)", "root  まだありません（why root fetch）"),
@@ -24,7 +24,7 @@ pub fn page(_: &Ctx, _: &Call) -> Result<Reply> {
     t.push(String::new());
     t.push(tr!("This device  {} free of {} (the host's figures) · this OS {}", "この端末  空き {} / {}（ホストの値） · この OS {}", bytes(s.host_free), bytes(s.host_total), bytes(s.allocated)));
     // What runs used of time and space in the last day, by repo (core compute/spec.rs ledger): the most CPU first.
-    let used = why_core::compute::spec::by_repo(&why_core::compute::spec::runs(), crate::say::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
+    let used = why_core::agent::spec::by_repo(&why_core::agent::spec::runs(), crate::say::out::now_ms().saturating_sub(24 * 60 * 60 * 1000));
     if !used.is_empty() {
         t.push(tr!("Compute, the last day", "計算資源（この1日）"));
         let secs = |ms: u64| if ms < 60_000 { format!("{:.1} s", ms as f64 / 1000.0) } else { format!("{} min", ms / 60_000) };
@@ -95,7 +95,7 @@ pub fn free(_: &Ctx, call: &Call) -> Result<Reply> {
 }
 
 pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
-    let held = root::held(paths::data_dir());
+    let held = roots::held(paths::data_dir());
     let data = json!(held.iter().map(|(r, c)| json!({"root": r, "current": c})).collect::<Vec<_>>());
     if held.is_empty() { return Ok(Reply::data(tr!("No root yet (why root fetch)", "root はまだありません（why root fetch）"), data)); }
     let t: Vec<String> = held.iter().map(|(r, current)| format!("{} {}  {} · {}  {}{}", r.name, r.version, out::files(r.files as usize), bytes(r.bytes), out::short(&r.sha256),
@@ -103,11 +103,10 @@ pub fn roots(_: &Ctx, _: &Call) -> Result<Reply> {
     Ok(Reply::data(t.join("\n"), data))
 }
 
-/// Whether a Prompt runs on the root here: this machine lets why make the namespaces one is made in (prompt/launch.rs
-/// kept_from_namespaces). Where it does not, the app runs its Prompts translated, as a browser does, and says why.
+/// Whether a Prompt runs on the root here: this machine lets muk make a box (prompt/start.rs kept_from_boxes). Where it does not, the app runs its Prompts translated, as a browser does, and says why.
 pub fn root_check(_: &Ctx, _: &Call) -> Result<Reply> {
     #[cfg(target_os = "linux")]
-    let why = why_core::prompt::launch::kept_from_namespaces();
+    let why = why_core::prompt::start::kept_from_boxes();
     #[cfg(not(target_os = "linux"))]
     let why = Some(tr!("A Prompt runs on the root on Linux only; here it runs translated, as in a browser", "root の上で Prompt が動くのは Linux だけです。ここではブラウザと同じく翻訳して動きます"));
     let data = json!({"native": why.is_none(), "why": why});
@@ -142,19 +141,19 @@ pub(crate) fn progress() -> impl FnMut(Progress) {
 }
 
 fn the_remote() -> String {
-    remote::connection().map_or_else(remote::default_url, |c| c.url)
+    shipto::connection().map_or_else(shipto::default_url, |c| c.url)
 }
 
 /// The root Prompts run on, fetched now when there is none yet: a Prompt wanted is when it is wanted, never a step
 /// of its own. What it fetches is said on standard error as it goes.
-pub(crate) fn root_now(data: &std::path::Path) -> Result<(std::path::PathBuf, root::Installed)> {
-    if let Some(r) = root::current(data) { return Ok(r); }
+pub(crate) fn root_now(data: &std::path::Path) -> Result<(std::path::PathBuf, roots::Installed)> {
+    if let Some(r) = roots::current(data) { return Ok(r); }
     crate::say::out::note(&tr!("Fetching the root Prompts run on (once)", "Prompt が動く root を取ってきます（最初の一度だけ）"));
     storage::fetch_root(data, &the_remote(), progress())?;
-    root::current(data).ok_or_else(|| Error::NotFound(tr!("No root yet (why root fetch)", "root がありません（why root fetch）")))
+    roots::current(data).ok_or_else(|| Error::NotFound(tr!("No root yet (why root fetch)", "root がありません（why root fetch）")))
 }
 
-fn installed(r: &root::Installed) -> String {
+fn installed(r: &roots::Installed) -> String {
     tr!("Installed {} {} ({} · {})", "{} {} を入れました（{} · {}）", r.name, r.version, out::files(r.files as usize), bytes(r.bytes))
 }
 
@@ -167,12 +166,12 @@ pub fn root_fetch(_: &Ctx, _: &Call) -> Result<Reply> {
 pub fn root_use(_: &Ctx, call: &Call) -> Result<Reply> {
     let data = paths::data_dir();
     let r = match call.word(0).unwrap_or_default() {
-        "why" => match root::use_held(data, root::RELEASES[0].sha256) {
+        "why" => match roots::use_held(data, roots::RELEASES[0].sha256) {
             Some(r) => r,
             None => storage::fetch_root(data, &the_remote(), progress())?,
         },
         id => {
-            let d = root::distro(id).ok_or_else(|| Error::Usage(tr!("No such root: {} (why, ubuntu or debian)", "そういう root はありません：{}（why、ubuntu、debian）", id)))?;
+            let d = roots::distro(id).ok_or_else(|| Error::Usage(tr!("No such root: {} (why, ubuntu or debian)", "そういう root はありません：{}（why、ubuntu、debian）", id)))?;
             storage::fetch_distro(data, &the_remote(), d, progress())?
         }
     };
@@ -183,7 +182,7 @@ pub fn root_install(_: &Ctx, call: &Call) -> Result<Reply> {
     let bundle = std::path::Path::new(call.word(0).unwrap_or_default());
     if bundle.is_dir() { return Err(Error::Usage(tr!("{} is a folder; a root is installed from its bundle, a file", "{} はフォルダーです。root はそのバンドル（ファイル）から入れます", bundle.display()))); }
     if !bundle.is_file() { return Err(Error::NotFound(tr!("There is no file {}", "ファイル {} はありません", bundle.display()))); }
-    let r = root::install(paths::data_dir(), bundle)?;
+    let r = roots::install(paths::data_dir(), bundle)?;
     Ok(Reply::done(installed(&r), json!(r)))
 }
 
@@ -229,7 +228,7 @@ pub fn dotfile_list(_: &Ctx, _: &Call) -> Result<Reply> {
 }
 
 /// `why dotfile take [NAME]`: what changed on another device (or on the Remote) runs here from now; until then it is
-/// kept and runs nowhere here (why/core/src/home/dotfiles.rs dotfiles_in_effect).
+/// kept and runs nowhere here (why/home/dotfiles.rs dotfiles_in_effect).
 pub fn dotfile_take(_: &Ctx, call: &Call) -> Result<Reply> {
     let names: Vec<String> = call.word(0).map(|n| vec![n.to_string()]).unwrap_or_default();
     let taken = home::take_dotfiles(&names).map_err(Error::NotFound)?;
@@ -265,7 +264,7 @@ pub fn dotfile_rm(_: &Ctx, call: &Call) -> Result<Reply> {
 /// SSH into the Prompts, said and as data: the listener, when it runs (why address lists where; why address ssh off stops it).
 #[cfg(unix)]
 fn ssh_here() -> (String, serde_json::Value) {
-    match why_core::ssh::listening(paths::data_dir()) {
+    match why_core::cowboy::listening(paths::data_dir()) {
         Some(l) => (tr!("SSH  on · {} · port {} (why address; why address ssh off stops it)", "SSH  オン · {} · ポート {}（why address。止めるなら why address ssh off）", l.scope.said(), l.port),
             json!({"port": l.port, "scope": l.scope, "destinations": l.destinations(), "fingerprint": l.fingerprint})),
         None => (tr!("SSH  off (why address ssh on)", "SSH  オフ（why address ssh on）"), serde_json::Value::Null),
@@ -274,39 +273,6 @@ fn ssh_here() -> (String, serde_json::Value) {
 #[cfg(not(unix))]
 fn ssh_here() -> (String, serde_json::Value) {
     (tr!("SSH  not here (Linux only for now)", "SSH  ここにはありません（いまは Linux だけ）"), serde_json::Value::Null)
-}
-
-#[cfg(target_os = "linux")]
-pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
-    let h = why_core::compute::vm::host(paths::data_dir());
-    let yes = |b: bool| if b { "✓" } else { "○" };
-    let mut t = vec![
-        format!("{} KVM", yes(h.kvm)),
-        format!("{} firecracker{}", yes(h.firecracker.is_some()), h.firecracker.as_deref().map(|v| format!("  {v}")).unwrap_or_default()),
-        format!("{} jailer{}", yes(h.jailer.is_some()), h.jailer.as_deref().map(|v| format!("  {v}")).unwrap_or_default()),
-        format!("{} kernel{}", yes(h.kernel.is_some()), h.kernel.as_deref().map(|k| format!("  {}", out::short(k))).unwrap_or_default()),
-        tr!("  {} CPUs · {} memory", "  CPU {} · メモリ {}", h.cpus, bytes(h.memory)),
-    ];
-    if h.lacks.is_empty() { t.push(tr!("This machine runs VMs", "この機械は VM を動かせます")); }
-    for (what, fix) in &h.lacks { t.push(if fix.is_empty() { what.clone() } else { format!("{what} ({fix})") }); }
-    Ok(Reply::data(t.join("\n"), json!(h)))
-}
-
-/// `why host fetch`: what this machine lacks to run VMs (Firecracker, its jailer, the kernel), fetched by digest.
-#[cfg(target_os = "linux")]
-pub fn host_fetch(ctx: &Ctx, call: &Call) -> Result<Reply> {
-    why_core::compute::vm::fetch(paths::data_dir(), progress())?;
-    host(ctx, call)
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn host_fetch(_: &Ctx, _: &Call) -> Result<Reply> {
-    Err(Error::Refused(tr!("VMs run on a Linux host with KVM", "VM は KVM のある Linux で動きます")))
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn host(_: &Ctx, _: &Call) -> Result<Reply> {
-    Err(Error::Refused(tr!("VMs run on a Linux host with KVM", "VM は KVM のある Linux で動きます")))
 }
 
 #[cfg(test)]

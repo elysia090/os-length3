@@ -13,7 +13,7 @@
 // What cannot be followed (a value from a call, from data) may be any word written in a string anywhere in the
 // sources: that is the one thing taken on trust, that a class is never put together from parts none of which is a
 // word written whole (from what a person typed). The tests and why/app/testing/ are not the app; the Japanese of
-// why/app/i18n/ and the English given to t() are words said, not classes, unless a class is ever made from t().
+// why/text/ and the English given to t() are words said, not classes, unless a class is ever made from t().
 
 import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve} from 'node:path';
@@ -62,17 +62,19 @@ interface Index {
 interface Ctx { index: Index; memo: Map<string, Value>; busy: Set<string> }
 type Fn = ESTree.Function | ESTree.ArrowFunctionExpression;
 
-/** The sources of the app: why/'s modules (not its tests, why/app/testing/ or why/app/i18n/), and public/'s scripts. */
+/** The sources of the app: why's modules that a page runs (not its tests, why/app/testing/ or why/text/), and public/'s scripts. */
 export function appSources(os: string): string[] {
   const out: string[] = [];
+  // What a page is made of is why's parts and its window: not the Remote, the faces Rust writes, or what drives it.
+  const not = new Set(['app/testing', 'text', 'test', 'cli', 'desktop', 'shipto/remote'].map((d) => join(os, 'why', d)));
   const walk = (dir: string) => {
     for (const e of readdirSync(dir, {withFileTypes: true})) {
       const p = join(dir, e.name);
-      if (e.isDirectory()) { if (p !== join(os, 'why', 'app', 'testing') && p !== join(os, 'why', 'app', 'i18n')) walk(p); }
+      if (e.isDirectory()) { if (!not.has(p)) walk(p); }
       else if (/\.ts$/.test(e.name) && !/\.test\.ts$/.test(e.name)) out.push(p);
     }
   };
-  walk(join(os, 'why', 'app'));
+  walk(join(os, 'why'));
   const pub = join(os, 'public');
   if (existsSync(pub)) for (const e of readdirSync(pub, {withFileTypes: true})) if (e.isFile() && /\.m?js$/.test(e.name)) out.push(join(pub, e.name));
   return out.sort();

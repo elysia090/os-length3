@@ -1,6 +1,6 @@
 import {h} from '../../ui/dom.ts';
-import {t} from '../../i18n/i18n.ts';
-import * as account from '../../remote/connection.ts';
+import {t} from '../../../text/i18n.ts';
+import * as account from '../../../shipto/connection.ts';
 import {pageHead, parts, type Parts} from '../kit/common.ts';
 import type {Context} from '../kit/context.ts';
 import {signInBox, signInLead, signInPlace} from '../kit/sign-in.ts';

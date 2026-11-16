@@ -2,25 +2,26 @@
 /* Runtime: one box in three columns, as tall as the longest: here, on the Remote, can be freed */
 .space-box { margin-top: var(--s5); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   border: 1px solid var(--rule); border-radius: var(--r-place); overflow: hidden; }
-.space-col { display: flex; flex-direction: column; min-width: 0; padding: var(--s4); }
+/* (Inside the box's edge, a cell of paper over its lines, as a sheet's: the edge's own pixel in it.) */
+.space-col { display: flex; flex-direction: column; min-width: 0; padding: calc(var(--u) - 1px) var(--s4) var(--u); }
 .space-col + .space-col { border-left: 1px solid var(--rule); }
-.space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--s3); font-size: var(--t-body); font-weight: 600; }
-.space-col > h3 b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.space-list { display: grid; align-content: start; gap: var(--s1); flex: 1; overflow-y: auto; }
+.space-col > h3 { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin: 0 0 var(--u); font-size: var(--t-word); font-weight: 700; line-height: var(--u); }
+.space-col > h3 b { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.space-list { display: grid; align-content: start; gap: var(--u); flex: 1; overflow-y: auto; }
 /* A row: what a thing takes is on its name's line against its column's right edge, as the column's total is over
    it (the figures of a column are one right-aligned column); what is said of it runs the column's width under its
    name; what is done to it (Free space) is under that, against the same edge. Its gear, come at a touch, is on the
    name's line beside what it takes. */
-.space-row { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s2) var(--s3); padding: var(--s2) 0; }
+.space-row { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 var(--s3); padding: 0; }
 .space-what { display: grid; min-width: 0; flex: 1 0 100%; }
-.space-name { padding-right: calc(4 * var(--u)); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-name { padding-right: calc(4 * var(--u)); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .space-row:has(> .repo-gear-button) .space-name { padding-right: calc(6 * var(--u)); }
 .space-row > .repo-gear-button { position: absolute; right: calc(3 * var(--u)); top: 0; }
-.space-row > button:not(.repo-gear-button) { margin-left: auto; }
+.space-row > button:not(.repo-gear-button) { margin-left: auto; margin-block: calc((2 * var(--u) - var(--h-control)) / 2); } /* (a key in a field of two cells) */
 .space-what .small { overflow-wrap: anywhere; } /* what a row is, and why, read whole */
-.space-size { position: absolute; right: 0; top: var(--s2); font-size: var(--t-meta); line-height: var(--u); font-variant-numeric: tabular-nums; color: var(--sub); }
-.space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--s3); }
+.space-size { position: absolute; right: 0; top: 0; font-size: var(--t-word); line-height: var(--u); font-variant-numeric: tabular-nums; color: var(--sub); }
+.space-foot { display: flex; align-items: center; gap: var(--s3); padding-top: var(--u); }
 .space-foot .grow { flex: 1; }
-.link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: var(--cursor-hand); }
-.link-name:hover { background: var(--raised); border-radius: var(--r-field); }
+.link-name { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 700; color: inherit; text-align: left; cursor: var(--cursor-hand); }
+.link-name:hover { border-radius: var(--r-key); color: var(--ink); }
 @media (max-width: 900px) { .space-box { grid-template-columns: 1fr; } .space-col + .space-col { border-left: 0; border-top: 1px solid var(--rule); } }

@@ -1,16 +1,16 @@
 import {openNext} from '../kit/next.ts';
 import {agentCards} from '../kit/agent-cards.ts';
 import {arrowKeys, h} from '../../ui/dom.ts';
-import {t, tn} from '../../i18n/i18n.ts';
-import {LIMITS, normalize, parse, type Profile} from '../../home/profile.ts';
-import {connection, myName, rename} from '../../remote/connection.ts';
-import {getState, onState, setState, settingName, unreadable} from '../../home/state.ts';
-import * as servers from '../../remote/servers.ts';
-import * as inbox from '../../remote/inbox.ts';
-import {news, onNews} from '../../remote/news.ts';
-import {onRenamed, store, type RepoSummary} from '../../repos/repos.ts';
-import {homeIsHeld} from '../../remote/lifecycle.ts';
-import {shownName} from '../../repos/issues.ts';
+import {t, tn} from '../../../text/i18n.ts';
+import {LIMITS, normalize, parse, type Profile} from '../../../home/profile.ts';
+import {connection, myName, rename} from '../../../shipto/connection.ts';
+import {getState, onState, setState, settingName, unreadable} from '../../../home/state.ts';
+import * as servers from '../../../shipto/servers.ts';
+import * as inbox from '../../../shipto/inbox.ts';
+import {news, onNews} from '../../../shipto/news.ts';
+import {onRenamed, store, type RepoSummary} from '../../../repo/repos.ts';
+import {homeIsHeld} from '../../../shipto/lifecycle.ts';
+import {shownName} from '../../../repo/issues.ts';
 import {repoList} from './repo-list.ts';
 import {todoBox} from '../kit/todo-list.ts';
 import {remember} from '../server/parts.ts';
@@ -19,8 +19,10 @@ import type {Context} from '../kit/context.ts';
 import {latelyRow, pluginArea, waiting, wordLine} from '../kit/pane.ts';
 import {mark, type MarkName} from '../../ui/icons.ts';
 import {fitSize, inkEdge} from '../../ui/optical.ts';
-import {errorText} from '../../host/errors.ts';
-import {nudge, still} from '../../ui/glide.ts';
+import {wholeCells} from '../../ui/row.ts';
+import {errorText} from '../../../api/errors.ts';
+import {nudge} from '../../ui/glide.ts';
+import {whole} from '../../ui/whole.ts';
 
 /** The profile as it stands (Home's state, see state.ts), for Home and the rail's own icon. */
 export const currentProfile = (): Profile => parse(getState('profile'));
@@ -38,7 +40,8 @@ export function home(ctx: Context): Node[] {
   const owner = true;
   const count = h('span', {});
   const list = repoList(ctx, {newCard: true, brief: true, counted: (n) => counting(count, n, 'repo', 'repos')});
-  const listed = list.refresh();
+  // (Home is not seen before its repos are drawn: ui/whole.ts.)
+  const listed = whole(list.refresh());
   const grid = list.element;
   // A column of names (home.css), Home's own: New repo's list and other grids stay cards.
   grid.classList.add('home-repos');
@@ -50,15 +53,23 @@ export function home(ctx: Context): Node[] {
   const repos = h('section', {class: 'section home-repos-sec', 'aria-labelledby': 'repos-title'}, h('h2', {id: 'repos-title'}, t('Repos')), grid);
   const waits = h('div', {class: 'home-waits'}, pluginArea(), agentCards((repo, issue) => { void import('../git/git.ts').then((g) => { g.showIssue(repo, issue.replace(/^issue\//, '')); void ctx.go('git'); }); }), lately(ctx));
   const beside = h('div', {class: 'home-beside'}, repos, waits);
-  const main = h('div', {class: 'home-main'}, h('div', {class: 'home-own'}, header, ...unread, todoBox()), beside);
-  // The names' ink stands on the right edge (not their boxes), and the person's name is as large as the room the
-  // repos leave it: measured as the repos are drawn, and as what waits is.
+  const note = todoBox();
+  // Home's own things are pieces on its desk: the person's (name and note), then the repos and what waits. They are
+  // short, so they are set as words are (home.css): along, and what does not fit beside the last goes under it.
+  const own = h('div', {class: 'home-own'}, header, ...unread, note);
+  const main = h('div', {class: 'home-main home-row'}, own, beside);
+  // The note and the slip are whole cells tall, whatever is written on them: what is under them stays on the grid.
+  wholeCells(note);
+  for (const slip of waits.children) wholeCells(slip as HTMLElement);
+  // The names' ink stands on the column's left edge (not their boxes), and the person's name is as large as the column
+  // has room for: measured as the repos are drawn, and as what waits is.
   const edges = () => {
-    for (const el of beside.querySelectorAll<HTMLElement>('.home-repos .card-title, .lately-list > .pane-row:first-child > .pane-line')) inkEdge(el, 'right');
+    for (const el of beside.querySelectorAll<HTMLElement>('.home-repos .card-title')) inkEdge(el, 'left');
     fitName(header);
   };
   new MutationObserver(edges).observe(beside, {childList: true, subtree: true, characterData: true});
-  new ResizeObserver(edges).observe(repos);
+  const sized = new ResizeObserver(edges);
+  sized.observe(repos); sized.observe(header);
   return [onTheGround(main, ctx, listed)];
 }
 
@@ -78,7 +89,7 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
   // Forge's band, tool for tool, so the frame is one frame between the two: >_ to the terminal of the repo last worked
   // in, the files button to its file deeds there (New, Rename, Delete), then the search.
   const tool = (name: MarkName, label: string, press: () => void) => {
-    const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label, title: label}, mark(name));
+    const b = h('button', {type: 'button', class: 'band-tool', 'aria-label': label}, mark(name));
     b.addEventListener('click', press);
     return b;
   };
@@ -118,8 +129,12 @@ export function onTheGround(main: HTMLElement, ctx: Context, listed: Promise<Rep
  * and the boards they write in as a guest.
  * With nothing new it says so, quietly: the pane out is never a line with nothing beside it.
  */
+/** What waited when Home was last drawn: drawn again at once with it (a redraw is the same page, not a box empty a
+ * moment), then as it is now. */
+let latelyWas: HTMLElement[] = [];
+
 function lately(ctx: Context): HTMLElement {
-  const list = h('div', {class: 'lately-list'});
+  const list = h('div', {class: 'lately-list'}, ...latelyWas);
   arrowKeys(list, '.pane-row');
   const box = h('section', {class: 'lately', 'aria-labelledby': 'lately-title'}, h('h2', {id: 'lately-title'}, t('Recent activity')), list);
   let asked = 0;
@@ -171,9 +186,11 @@ function lately(ctx: Context): HTMLElement {
       rows.push(latelyRow(here.name, t('{server} · Joined as guest', {server: here.server}), {go: there}));
     }
     if (mine !== asked) return;
-    list.replaceChildren(...(rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))]));
+    latelyWas = rows.length ? rows : [h('p', {class: 'muted small lately-none'}, t('Nothing new'))];
+    list.replaceChildren(...latelyWas);
   };
-  void paint();
+  // (Home is not seen before what waits is read: ui/whole.ts.)
+  void whole(paint());
   list.addEventListener('look-closed', () => void paint());
   const off = onNews(() => { if (!box.isConnected) { off(); return; } void paint(); });
   // A repo renamed: where one left off says it under its new name.
@@ -187,7 +204,7 @@ function toSection(count: HTMLElement, title: string): HTMLElement {
   b.addEventListener('click', () => {
     const head = document.getElementById(title);
     if (!head) return;
-    head.closest('section')?.scrollIntoView({behavior: still() ? 'auto' : 'smooth', block: 'start'});
+    head.closest('section')?.scrollIntoView({block: 'start'}); // (at once, DESIGN §8)
     head.classList.remove('landed'); void head.offsetWidth; head.classList.add('landed');
   });
   return b;
@@ -200,10 +217,13 @@ function toServer(count: HTMLElement, ctx: Context): HTMLElement {
   return b;
 }
 
+/** How many servers there were when they were last counted: a redraw says it at once, then as it is now. */
+let serversWere = 0;
 const servers0 = () => {
   const el = h('span', {id: 'server-count'});
-  counting(el, 0, 'server', 'servers');
-  if (connection()) void servers.servers().then((list) => counting(el, list.length, 'server', 'servers'), () => {});
+  if (!connection()) serversWere = 0;
+  counting(el, serversWere, 'server', 'servers');
+  if (connection()) void whole(servers.servers()).then((list) => { serversWere = list.length; counting(el, list.length, 'server', 'servers'); }, () => {});
   return el;
 };
 
@@ -216,21 +236,19 @@ function counting(el: HTMLElement, n: number, one: string, many: string) {
 const U = 24, CAP = .727;
 
 /**
- * The name on its line: its capitals whole cells tall, seven where there is room, fewer as the name is longer or the
- * window narrower (the repos' names keep their column), never under two; longer than that, it breaks over lines. Its
- * ink, not its box, stands on the left edge.
+ * The name, Home's title: its capitals two cells tall at any length, over as many lines as it takes; one cell only
+ * where a word of it is longer than the column at two (the programme's next size down, never a size between). Its ink,
+ * not its box, stands on the left edge.
  */
 function fitName(header: HTMLElement) {
   const name = header.querySelector<HTMLElement>('.identity > h1'), layout = header.closest<HTMLElement>('.home-layout');
   if (!name || !layout) return;
-  const repos = layout.querySelector<HTMLElement>('.home-repos-sec');
-  const beside = repos && getComputedStyle(repos).position === 'absolute' ? repos.offsetWidth + 2 * U : 0;
-  // (With no name written, what stands in its place is measured: the placeholder.)
-  const fits = fitSize(name, name.textContent || name.dataset.placeholder || '', layout.clientWidth - beside, -.055, () => fitName(header));
-  if (!fits) return;
-  const cells = Math.floor((fits * CAP) / U);
-  name.style.setProperty('--name-cap', String(Math.max(2, Math.min(7, cells))));
-  name.classList.toggle('long', cells < 2);
+  // (With no name written, what stands in its place is measured: the placeholder.) Each word, as a line holds it whole.
+  const words = (name.textContent || name.dataset.placeholder || '').split(/\s+/).filter(Boolean);
+  const each = words.map((word) => fitSize(name, word, header.clientWidth, -.055, () => fitName(header)));
+  if (!each.length || each.some((fits) => !fits)) return;
+  const cells = Math.floor((Math.min(...each) * CAP) / U);
+  name.style.setProperty('--name-cap', String(Math.max(1, Math.min(2, cells))));
   inkEdge(name, 'left');
 }
 
@@ -274,6 +292,25 @@ function written(el: HTMLElement, o: {most: number; lines?: boolean; begun?: () 
   });
 }
 
+/** Where the account's name and username are kept as last heard, for the session they were heard in. */
+const ACCOUNT_KEY = 'why.account';
+const accountOf = () => { const c = connection(); return c ? c.user || c.session : ''; };
+
+/** The account's name and username as last heard for this session: Home drawn again, or the OS opened again, says
+ * them at once, never a moment of the handle or "Your name" standing in for the name. */
+function knownAccount(): {name: string; user: string} {
+  const who = accountOf();
+  try {
+    const k = JSON.parse(localStorage.getItem(ACCOUNT_KEY) ?? 'null') as {who?: string; name?: string; user?: string} | null;
+    if (who && k?.who === who) return {name: String(k.name ?? ''), user: String(k.user ?? '')};
+  } catch { /* none kept */ }
+  return {name: '', user: ''};
+}
+function keepAccount(a: {name: string; user: string}) {
+  const who = accountOf();
+  try { if (who) localStorage.setItem(ACCOUNT_KEY, JSON.stringify({who, ...a})); } catch { /* said again next time */ }
+}
+
 /**
  * The profile at Home's top, written where it is read. The name is the line it is written on, where it stands and as
  * large: pressed, the caret is in it; there is no sheet, no Cancel and no Save. Signed in, the handle after it is
@@ -294,8 +331,8 @@ function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLEl
   const counts = h('p', {class: 'counts'}, toSection(count, 'repos-title'), toServer(servers0(), ctx));
   const identity = h('div', {class: 'identity'}, name, handle, bio, owner ? bioAsk : null, counts, said);
   const header = h('section', {class: 'profile'}, identity);
-  /** The name the person signed in with and their username there, once known ('' signed out, or not yet). */
-  let account = {name: '', user: ''};
+  /** The name the person signed in with and their username there, as last known ('' signed out, or not yet). */
+  let account = knownAccount();
   /** What stands in for a name where none is written: the handle. Pressed, the line is empty to write a name on. */
   let standsIn = false;
   const writing = () => identity.contains(document.activeElement);
@@ -312,8 +349,11 @@ function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLEl
   paint();
   // Signed in, one person, one name: none written here yet, it is the one signed in with (the Remote's); and the
   // handle is their username there, the one name others find them by, kept on the profile too as it changes.
-  void Promise.all([myName().catch(() => ''), inbox.myUsername().catch(() => '')]).then(([called, user]) => {
-    account = {name: called, user};
+  // (Home is not seen before they are known, ui/whole.ts; known before, they are said at once.)
+  void whole(Promise.all([myName().catch(() => ''), inbox.myUsername().catch(() => '')])).then(([called, user]) => {
+    // (Not heard, they are as last known: the Remote away does not take the name off the page.)
+    account = {name: called || account.name, user: user || account.user};
+    keepAccount(account);
     if (!writing()) paint();
     // Onto the profile as it is now, not as it was drawn (it may have come in from the Remote meanwhile, and was
     // written over), signed in still, and not while it is being taken off this device (it came back then, after Remove
@@ -338,13 +378,14 @@ function profileHeader(count: HTMLElement, owner: boolean, ctx: Context): HTMLEl
       if (next.handle !== undefined && connection()) {
         if (!result.profile.handle) result.profile.handle = account.user;
         else if (result.profile.handle !== account.user) {
-          try { result.profile.handle = account.user = await inbox.changeUsername(result.profile.handle); } catch (e) { refused(errorText(e)); return; }
+          try { result.profile.handle = account.user = await inbox.changeUsername(result.profile.handle); keepAccount(account); } catch (e) { refused(errorText(e)); return; }
         }
       }
       try { await setState('profile', JSON.stringify(result.profile)); } catch (e) { said.textContent = t('Failed to save: {message}', {message: errorText(e)}); return; }
       // Signed in, the name is the account's too: what is started, committed and reviewed from here says it.
       if (next.name !== undefined && result.profile.name) {
         account.name = result.profile.name;
+        keepAccount(account);
         try { await rename(result.profile.name); } catch (e) { said.textContent = t('Saved locally; Remote name unchanged ({message})', {message: errorText(e)}); return; }
       }
       if (!writing()) paint();

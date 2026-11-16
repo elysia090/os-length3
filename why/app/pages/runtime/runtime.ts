@@ -1,12 +1,12 @@
 import {h} from '../../ui/dom.ts';
-import {isNative, type Freed} from '../../host/host.ts';
-import {t} from '../../i18n/i18n.ts';
-import {onSync} from '../../remote/lifecycle.ts';
-import {readSpace} from '../../account/space.ts';
+import {isNative, type Freed} from '../../../api/host.ts';
+import {t} from '../../../text/i18n.ts';
+import {onSync} from '../../../shipto/lifecycle.ts';
+import {readSpace} from '../../../device/space.ts';
 import {pageHead, parts} from '../kit/common.ts';
 import type {Context} from '../kit/context.ts';
 import {allSessions} from '../bench/sessions.ts';
-import {errorText} from '../../host/errors.ts';
+import {errorText} from '../../../api/errors.ts';
 import {device} from './device.ts';
 import {prompts} from './prompts.ts';
 import {environment} from './environment.ts';

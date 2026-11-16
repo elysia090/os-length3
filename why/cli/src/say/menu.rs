@@ -20,7 +20,7 @@ use crate::cmd::{self, Ctx};
 use crate::say::out::{self, Error};
 use crate::words::spec::{self, Arg, Command, Deed, Fact, Flag, Form, Group, On, say};
 use crate::say::term::{self, Block, Key, Keys, Style};
-use why_core::{fs::paths, home, remote, root, text::i18n, tr};
+use why_core::{fs::paths, home, shipto, roots, text::i18n, tr};
 use std::cell::{Cell, RefCell};
 use std::process::ExitCode;
 
@@ -98,7 +98,7 @@ impl Env {
 /// What holds of this device.
 fn device(ctx: &Ctx) -> Vec<Fact> {
     let mut f = vec![if ctx.connected() { Fact::SignedIn } else { Fact::SignedOut }];
-    if root::current(paths::data_dir()).is_none() { f.push(Fact::NoRoot); }
+    if roots::current(paths::data_dir()).is_none() { f.push(Fact::NoRoot); }
     f
 }
 
@@ -674,8 +674,8 @@ fn states(ctx: &Ctx) -> Vec<String> {
     let (tx, rx) = std::sync::mpsc::channel();
     if connected {
         let t = tx.clone();
-        std::thread::spawn(move || { let _ = t.send(("server", why_core::remote::servers::list().map(|l| l.len()).ok())); });
-        std::thread::spawn(move || { let _ = tx.send(("inbox", why_core::remote::inbox::threads().map(|l| l.iter().filter(|t| t.unread > 0).count()).ok())); });
+        std::thread::spawn(move || { let _ = t.send(("server", why_core::shipto::servers::list().map(|l| l.len()).ok())); });
+        std::thread::spawn(move || { let _ = tx.send(("inbox", why_core::shipto::inbox::threads().map(|l| l.iter().filter(|t| t.unread > 0).count()).ok())); });
     } else { drop(tx); }
     let todos = if ctx.prompt { Vec::new() } else { home::todos().unwrap_or_default() };
     let open_issues: usize = names.iter().map(|n| {
@@ -684,8 +684,8 @@ fn states(ctx: &Ctx) -> Vec<String> {
     }).sum();
     let band = home::band(&names).map(|b| b.len()).unwrap_or(0);
     let running = why_core::prompt::running::all(paths::data_dir()).len();
-    let root_now = root::current(paths::data_dir()).map(|(_, i)| format!("root {} {}", i.name, i.version)).unwrap_or_else(|| tr!("no root yet", "root はまだありません"));
-    let not_sent = r.as_ref().and_then(|r| remote::status(r).ok()).map_or(0, |l| l.iter().filter(|s| s.fresh || s.changed > 0).count());
+    let root_now = roots::current(paths::data_dir()).map(|(_, i)| format!("root {} {}", i.name, i.version)).unwrap_or_else(|| tr!("no root yet", "root はまだありません"));
+    let not_sent = r.as_ref().and_then(|r| shipto::status(r).ok()).map_or(0, |l| l.iter().filter(|s| s.fresh || s.changed > 0).count());
     let signed_out = tr!("not signed in", "サインインしていません");
     let mut server = if connected { "—".to_string() } else { signed_out.clone() };
     let mut inbox = server.clone();
@@ -701,7 +701,7 @@ fn states(ctx: &Ctx) -> Vec<String> {
         Group::File => tr!("/root holds {}", "/root に {}", repos(names.len())),
         Group::Git => if i18n::ja() { format!("開いている Issue {open_issues}件") } else if open_issues == 1 { "1 issue open".into() } else { format!("{open_issues} issues open") },
         Group::Runtime => if running > 0 { tr!("{} · {} Prompts running", "{} · Prompt {} 個が動いています", root_now, running) } else { root_now.clone() },
-        Group::Remote => match remote::connection().filter(|_| connected) {
+        Group::Remote => match shipto::connection().filter(|_| connected) {
             Some(c) => format!("{} · {}", cmd::host(&c.url), if not_sent == 0 { tr!("in step", "Remote と同じ") } else { if not_sent == 1 { tr!("1 repo not sent", "未送信の repo 1") } else { tr!("{} repos not sent", "未送信の repo {}", not_sent) } }),
             None => signed_out.clone(),
         },
@@ -723,7 +723,7 @@ fn rail_rows(states: Vec<String>) -> Vec<Row> {
 /// The line over the rail: the OS, and where it is kept.
 fn heading(ctx: &Ctx) -> String {
     let where_ = if ctx.prompt { tr!("this Prompt's repo", "この Prompt の repo") } else {
-        match remote::connection() { Some(c) => cmd::host(&c.url).to_string(), None => tr!("not signed in", "サインインしていません") }
+        match shipto::connection() { Some(c) => cmd::host(&c.url).to_string(), None => tr!("not signed in", "サインインしていません") }
     };
     format!("why* · {where_}")
 }
