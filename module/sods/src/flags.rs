@@ -7,15 +7,15 @@ use crate::frame::*;
 use crate::wasm::*;
 use crate::x86::*;
 
-/// CF, ZF, SF, OF and PF: each with its RflagsBits mask, its local and its bit in G_FLAGS.
-pub const FLAG_BITS: [(Flag, u32, u32); 5] = [
+/// CF, ZF, SF, OF, PF and AF: each with its RflagsBits mask, its local and its bit in G_FLAGS.
+pub const FLAG_BITS: [(Flag, u32, u32); 6] = [
     (Flag::C, RflagsBits::CF, L_CF), (Flag::Z, RflagsBits::ZF, L_ZF), (Flag::S, RflagsBits::SF, L_SF),
-    (Flag::O, RflagsBits::OF, L_OF), (Flag::P, RflagsBits::PF, L_PF),
+    (Flag::O, RflagsBits::OF, L_OF), (Flag::P, RflagsBits::PF, L_PF), (Flag::A, RflagsBits::AF, L_AF),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Flags {
-    /// Flags are in the CF/ZF/SF/OF/PF locals.
+    /// Flags are in the CF/ZF/SF/OF/PF/AF locals.
     Held,
     Sub(u8),
     Add(u8),
@@ -26,7 +26,7 @@ pub enum Flags {
 }
 
 #[derive(Clone, Copy)]
-pub enum Flag { C, Z, S, O, P }
+pub enum Flag { C, Z, S, O, P, A }
 
 impl Fx<'_> {
     /// Every change of the flag state goes through here, so a pending result never outlives its compare.
@@ -58,7 +58,7 @@ impl Fx<'_> {
         let state = self.flags;
         let (kind, size) = match state {
             Flags::Held => {
-                self.get(match f { Flag::C => L_CF, Flag::Z => L_ZF, Flag::S => L_SF, Flag::O => L_OF, Flag::P => L_PF });
+                self.get(match f { Flag::C => L_CF, Flag::Z => L_ZF, Flag::S => L_SF, Flag::O => L_OF, Flag::P => L_PF, Flag::A => L_AF });
                 return;
             }
             Flags::Sub(s) => (0, s),
@@ -68,6 +68,13 @@ impl Fx<'_> {
             Flags::Dec(s) => (4, s),
         };
         match f {
+            Flag::A => {
+                if kind == 2 { self.c32(0); } else {
+                    // Carry/borrow across bit 3, including ADC/SBB carry-in via r.
+                    self.get(L_FA); self.get(L_FB); self.e(I64_XOR); self.fr(); self.e(I64_XOR);
+                    self.c64(4); self.e(I64_SHR_U); self.c64(1); self.e(I64_AND); self.e(I32_WRAP_I64);
+                }
+            }
             Flag::Z => { self.fr(); self.e(I64_EQZ); }
             Flag::S => self.sign_bit(L_FR, size),
             Flag::P => {
@@ -104,7 +111,7 @@ impl Fx<'_> {
             return;
         }
         // Compute every flag before overwriting any local the state reads.
-        for (f, l) in [(Flag::Z, L_ZF), (Flag::S, L_SF), (Flag::O, L_OF), (Flag::P, L_PF), (Flag::C, L_CF)] {
+        for (f, l) in [(Flag::Z, L_ZF), (Flag::S, L_SF), (Flag::O, L_OF), (Flag::P, L_PF), (Flag::C, L_CF), (Flag::A, L_AF)] {
             self.flag(f);
             self.set(l);
         }

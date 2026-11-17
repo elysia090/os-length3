@@ -47,12 +47,14 @@ pub(crate) const L_SP0: u32 = 54;
 pub(crate) const L_BUDGET: u32 = 55;
 /// Where a loop entered past its head goes on: that block + 1, read at each loop's head, 0 once there.
 pub(crate) const L_INTO: u32 = 56;
-pub(crate) const LOCALS: usize = 57;
+/// Auxiliary carry, appended to preserve every existing local index.
+pub const L_AF: u32 = 57;
+pub(crate) const LOCALS: usize = 58;
 
 /// Each local's type (a function declares only those it touches: V8's first tier zeroes them at every entry).
 const fn local_type(l: u32) -> u8 {
     match l {
-        L_BLK | L_CF..=L_PF | L_BUDGET | L_INTO => I32,
+        L_BLK | L_CF..=L_PF | L_BUDGET | L_INTO | L_AF => I32,
         _ if l >= l_u(0) && l < l_x(0) => I32,
         _ if l >= l_x(0) && l < l_d(0) => V128,
         _ if l >= l_d(0) && l < L_SP0 => F64,

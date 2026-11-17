@@ -35,7 +35,8 @@ const ENTRY: u32 = 1 << 31;
 const INDIRECT: u8 = 0x80;
 
 impl Liveness {
-    pub fn new(program: &Program) -> Liveness {
+    pub fn new(program: &Program) -> Liveness { Self::for_lowering(program, &[]) }
+    pub(crate) fn for_lowering(program: &Program, summaries: &[Summary]) -> Liveness {
         let entries: Vec<u64> = program.entries.keys().copied().collect();
         let blocks: usize = program.functions.iter().map(|f| f.blocks.len()).sum();
         let mut l = Liveness {
@@ -43,7 +44,8 @@ impl Liveness {
             defined: Vec::with_capacity(blocks), to: Vec::with_capacity(blocks), fixed: Vec::with_capacity(blocks),
             entry: vec![NONE; blocks], live: vec![0; blocks], cases: vec![0; program.functions.len()], entries,
         };
-        for f in &program.functions {
+        for (index, f) in program.functions.iter().enumerate() {
+            let preserves = summaries.get(index).is_some_and(Summary::preserves_flags);
             l.first.push(l.used.len() as u32);
             for (b, at) in f.blocks.iter().zip(&f.succ) {
                 let (mut to, mut fixed) = ([NONE; 2], if b.exit == Exit::IndirectJump { INDIRECT } else { 0 });
@@ -57,6 +59,15 @@ impl Liveness {
                     Exit::Fall(a) | Exit::Jump(a) => add(a, at[0]),
                     Exit::TailJump(a) => add(a, NO),
                     Exit::Branch { taken, fall } => { add(taken, at[0]); add(fall, at[1]); }
+                    // A separately translated caller can observe every arithmetic flag after a return.
+                    // Keep the same contract at calls: the callee may read incoming flags, preserve
+                    // some, and replace others. Register summaries do not describe those effects.
+                    Exit::Call { .. } | Exit::IndirectCall { .. } | Exit::Return | Exit::IndirectJump => {
+                        // A proven flag-transparent quiet function leaves the input global
+                        // state untouched, including at a nonlocal return. All other callers
+                        // retain every flag: a changed return address can observe them too.
+                        if !preserves { fixed |= ALL_FLAGS as u8; }
+                    }
                     _ => {}
                 }
                 l.used.push(b.reads);
@@ -145,7 +156,13 @@ impl Liveness {
 /// between the call and its return looks at the globals as a whole (the kernel, at a system call, a time slice's end,
 /// code not translated yet, a trap): a callee that may go out to it (`exits`) is called as any call is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Summary { pub reads: u32, pub writes: u32, pub exits: bool }
+pub struct Summary { pub reads: u32, pub writes: u32, pub exits: bool, pub flags: u32 }
+impl Summary {
+    /// A closed, nonrecursive call tree neither observes nor modifies arithmetic
+    /// flags. Read-only users are excluded: they still require incoming flags.
+    /// For exits=true the usage mask can be incomplete and proves nothing.
+    pub fn preserves_flags(&self) -> bool { !self.exits && self.flags == 0 }
+}
 
 /// The longest chain of calls made without counting their depth: one longer goes out, so the host's stack is never
 /// more than this many frames past what DEPTH_LIMIT allows.
@@ -160,7 +177,7 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
     let (mut info, mut code) = (InstructionInfoFactory::new(), Vec::new());
     let rsp = 1 << (Register::RSP as u32 - Register::RAX as u32);
     let (mut summaries, callees): (Vec<Summary>, Vec<Vec<usize>>) = program.functions.iter().map(|f| {
-        let mut s = Summary { reads: rsp, writes: rsp, exits: has_loop(f) };
+        let mut s = Summary { reads: rsp, writes: rsp, exits: has_loop(f), flags: 0 };
         let mut callees = Vec::new();
         for (b, to) in f.blocks.iter().zip(&f.succ) {
             s.exits |= b.traps || match b.exit {
@@ -180,6 +197,8 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
         for b in &f.blocks {
             at.decode(elf, b.start, b.count, &mut code);
             for i in &code {
+                let k = kind(i);
+                s.flags |= (k.reads | k.writes) as u32;
                 for u in info.info(i).used_registers() {
                     let Some(k) = bit(u.register()) else { continue };
                     // A write that keeps any of what was there reads it too (an 8- or 16-bit register's, an xmm's, a
@@ -206,6 +225,7 @@ pub fn summarize(elf: &Elf, program: &Program) -> Vec<Summary> {
         for &g in &callees[k] {
             let c = summaries[g];
             let s = &mut summaries[k];
+            s.flags |= c.flags;
             (s.reads, s.writes, s.exits) = (s.reads | c.reads, s.writes | c.writes, s.exits | c.exits);
             height[k] = height[k].max(height[g] + 1);
         }
@@ -239,11 +259,43 @@ mod tests {
     const XMM0: u32 = 1 << 16;
 
     #[test]
+    fn quiet_flag_preservation_excludes_observation_modification_and_unknown_calls() {
+        for (bytes, mask) in [
+            (&[0x9c, 0x58, 0xc3][..], ALL_FLAGS), // pushfq; pop rax; ret
+            (&[0x74, 0x00, 0xc3][..], RflagsBits::ZF), // jz; ret (read-only)
+            (&[0x48, 0x83, 0xc0, 0x01, 0xc3][..], ALL_FLAGS), // add rax,1; ret
+        ] {
+            let (elf, p) = program(&[(0x1000,bytes,Exit::Return)]);
+            let s = summarize(&elf,&p)[0];
+            assert!(!s.exits);
+            assert_eq!(s.flags,mask);
+            assert!(!s.preserves_flags());
+            let (elf,p) = program(&[
+                (0x2000,&[0xe8,0xfb,0xef,0xff,0xff],Exit::Call{target:0x1000,ret:0x2005}),
+                (0x1000,bytes,Exit::Return),
+            ]);
+            let summaries=summarize(&elf,&p);
+            assert_eq!(summaries[0].flags,mask);
+            assert!(!summaries[0].preserves_flags());
+        }
+        let (elf,p)=program(&[
+            (0x3000,&[0xe8,0xfb,0xef,0xff,0xff],Exit::Call{target:0x2000,ret:0x3005}),
+            (0x2000,&[0xe8,0xfb,0xef,0xff,0xff],Exit::Call{target:0x1000,ret:0x2005}),
+            (0x1000,&[0x48,0x8d,0x44,0x7f,0x01,0xc3],Exit::Return),
+        ]);
+        assert!(summarize(&elf,&p).iter().all(Summary::preserves_flags));
+        for target in [0x1000,0x9000] {
+            let (elf,p)=program(&[(0x1000,&[0xe8,0xfb,0xff,0xff,0xff],Exit::Call{target,ret:0x1005})]);
+            assert!(!summarize(&elf,&p)[0].preserves_flags());
+        }
+    }
+
+    #[test]
     fn a_leaf_reads_and_writes_what_its_instructions_do() {
         // lea rax, [rdi + rdi*2 + 1]; ret
         let (elf, p) = program(&[(0x1000, &[0x48, 0x8d, 0x44, 0x7f, 0x01, 0xc3], Exit::Return)]);
         let s = summarize(&elf, &p)[0];
-        assert_eq!(s, Summary { reads: RDI | RSP, writes: RAX | RSP, exits: false });
+        assert_eq!(s, Summary { reads: RDI | RSP, writes: RAX | RSP, exits: false, flags: 0 });
     }
 
     #[test]
@@ -254,7 +306,7 @@ mod tests {
             (0x1000, &[0x48, 0x8d, 0x44, 0x7f, 0x01, 0xc3], Exit::Return),
         ]);
         let s = summarize(&elf, &p);
-        assert_eq!(s[0], Summary { reads: RDI | RSP, writes: RAX | RSP, exits: false });
+        assert_eq!(s[0], Summary { reads: RDI | RSP, writes: RAX | RSP, exits: false, flags: 0 });
         // 0x3000: call 0x3000, itself.
         let (elf, p) = program(&[(0x3000, &[0xe8, 0xfb, 0xff, 0xff, 0xff], Exit::Call { target: 0x3000, ret: 0x3005 })]);
         assert!(summarize(&elf, &p)[0].exits);

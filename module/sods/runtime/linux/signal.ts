@@ -170,8 +170,8 @@ export function take(kernel: Kern, task: Thread, ctx: {regs: bigint[]; rip: bigi
 // sigcontext's general registers, in its order, as the translator numbers them (rax 0, rcx 1, rdx 2, rbx 3, rsp 4, rbp 5, rsi 6, rdi 7, r8..r15).
 const SIGCONTEXT = [8, 9, 10, 11, 12, 13, 14, 15, 7, 6, 5, 3, 2, 0, 1, 4];
 const UC = 8, MCONTEXT = UC + 40, SIGMASK = UC + 296, INFO = UC + 304, FRAME = INFO + 128;
-// The translator's flags global holds CF, ZF, SF, OF, PF as bits 0..4; rflags has them where x86 does.
-const FLAGS: [number, number][] = [[0, 0x1], [1, 0x40], [2, 0x80], [3, 0x800], [4, 0x4]];
+// The translator's flags global holds CF, ZF, SF, OF, PF, AF as bits 0..5; rflags has them where x86 does.
+const FLAGS: [number, number][] = [[0, 0x1], [1, 0x40], [2, 0x80], [3, 0x800], [4, 0x4], [5, 0x10]];
 const toRflags = (fl: bigint): bigint => FLAGS.reduce((r, [k, m]) => (fl >> BigInt(k)) & 1n ? r | BigInt(m) : r, 0x202n);
 const fromRflags = (rf: bigint): bigint => FLAGS.reduce((f, [k, m]) => rf & BigInt(m) ? f | (1n << BigInt(k)) : f, 0n);
 // DF, where rflags has it and where the translation's other flags keep it (sods' abi.rs G_RF, a register's 18).

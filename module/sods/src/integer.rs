@@ -95,7 +95,7 @@ impl Fx<'_> {
         self.e(SELECT);
         self.set(l_u(0));
         self.set_flags(if subtract { Flags::Sub(size) } else { Flags::Add(size) });
-        for (f, l) in [(Flag::Z, L_ZF), (Flag::S, L_SF), (Flag::O, L_OF), (Flag::P, L_PF)] {
+        for (f, l) in [(Flag::Z, L_ZF), (Flag::S, L_SF), (Flag::O, L_OF), (Flag::P, L_PF), (Flag::A, L_AF)] {
             self.flag(f);
             self.set(l);
         }
@@ -638,7 +638,7 @@ impl Fx<'_> {
             if m == Mnemonic::Popcnt {
                 // ZF by the source; every other flag clear.
                 self.get(l_t(1)); self.e(I64_EQZ); self.set(L_ZF);
-                for l in [L_CF, L_SF, L_PF] { self.c32(0); self.set(l); }
+                for l in [L_CF, L_SF, L_PF, L_AF] { self.c32(0); self.set(l); }
             }
             if m == Mnemonic::Tzcnt || m == Mnemonic::Lzcnt {
                 self.get(l_t(3)); self.e(I64_EQZ); self.set(L_ZF);
@@ -849,19 +849,14 @@ impl Fx<'_> {
                 // The flags come back as they were, held or not.
                 true
             }
-            // RFLAGS as x86 lays it out: CF, bit 1 (always set), PF, AF, ZF, SF, IF (set), DF, OF. AF is known while
-            // an add, sub, inc or dec's operands are still held (bit 4 of a ^ b ^ r), else it reads as clear.
+            // RFLAGS as x86 lays it out; AF survives both deferred and held states.
             Pushfq => {
                 self.push_with(|fx| {
                     fx.c64(0x202); fx.gget(G_RF); fx.c64(RF_DF); fx.e(I64_AND); fx.e(I64_OR);
-                    for (f, bit) in [(Flag::C, 0), (Flag::P, 2), (Flag::Z, 6), (Flag::S, 7), (Flag::O, 11)] {
+                    for (f, bit) in [(Flag::C, 0), (Flag::P, 2), (Flag::A, 4), (Flag::Z, 6), (Flag::S, 7), (Flag::O, 11)] {
                         fx.flag(f); fx.e(I64_EXTEND_I32_U);
                         if bit > 0 { fx.c64(bit); fx.e(I64_SHL); }
                         fx.e(I64_OR);
-                    }
-                    if let Flags::Add(_) | Flags::Sub(_) | Flags::Inc(_) | Flags::Dec(_) = fx.flags {
-                        fx.get(L_FA); fx.get(L_FB); fx.e(I64_XOR); fx.fr(); fx.e(I64_XOR);
-                        fx.c64(0x10); fx.e(I64_AND); fx.e(I64_OR);
                     }
                     true
                 })
@@ -870,7 +865,7 @@ impl Fx<'_> {
             // know it, and reads it as it runs.
             Popfq => {
                 self.pop_value(l_t(1));
-                for (l, bit) in [(L_CF, 0), (L_PF, 2), (L_ZF, 6), (L_SF, 7), (L_OF, 11)] {
+                for (l, bit) in [(L_CF, 0), (L_PF, 2), (L_AF, 4), (L_ZF, 6), (L_SF, 7), (L_OF, 11)] {
                     self.get(l_t(1)); if bit > 0 { self.c64(bit); self.e(I64_SHR_U); }
                     self.c64(1); self.e(I64_AND); self.e(I32_WRAP_I64); self.set(l);
                 }

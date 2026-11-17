@@ -28,6 +28,10 @@ pub struct Lowering<'p> {
     pub trace: bool,
 }
 
+/// Where arithmetic flags live when a known call returns.
+#[derive(Clone, Copy)]
+enum CallFlags { Returned, Held, Unchanged }
+
 impl Fx<'_> {
     /// Into loop `l` at its head: its label and those of the blocks directly within it. Entered past its head (only
     /// ever from the dispatch: a call's continuation, a loop within, after the thread went to the kernel there), on to
@@ -115,12 +119,13 @@ impl Fx<'_> {
     /// target `target` pushes); else one frame more.
     fn enter_call(&mut self, flags: u32, target: impl FnOnce(&mut Self)) {
         self.note_low();
+        // Both the ordinary call and a depth/budget unwind hand the callee the same flags.
+        self.save_flags(flags);
         self.gget(G_DEPTH); self.c32(DEPTH_LIMIT); self.op(I32_GE_U);
         self.spent();
         self.op(I32_OR);
         self.if_();
         self.depth += 1;
-        self.save_flags(flags);
         target(self);
         self.c32(TRAP_UNWIND); self.c32(TRAP_YIELD);
         self.gget(G_DEPTH); self.c32(DEPTH_LIMIT); self.op(I32_GE_U);
@@ -146,14 +151,17 @@ impl Fx<'_> {
     /// After a call: on at its return address (taking back `writes`, or all of them, from the globals), or, handed
     /// another (a longjmp out of the callee, in l_t(0)), to the function's resume (after what this frame holds is
     /// saved, where a quiet call left it in the locals).
-    fn after_call(&mut self, ret: (u64, u32), next: Option<u64>, writes: Option<u32>) {
+    fn after_call(&mut self, ret: (u64, u32), next: Option<u64>, writes: Option<u32>, flags: CallFlags) {
         self.get(l_t(0)); self.c64(ret.0 as i64); self.op(I64_NE);
         self.if_();
         if writes.is_some() { self.save(); }
+        // A transparent callee may still return through a guest-modified address.
+        // That destination can observe every flag, not only the normal continuation's.
+        if matches!(flags, CallFlags::Held) { self.save_flags(ALL_FLAGS); }
         self.br(self.depth + 1 + self.dispatch as u32);
         self.end();
         self.sync_in(false, writes.unwrap_or(ALL));
-        self.set_flags(Flags::Held);
+        if matches!(flags, CallFlags::Returned) { self.load_flags(ALL_FLAGS); }
         self.goto(ret, next);
     }
 }
@@ -408,9 +416,9 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                 fx.br(fx.depth + 1);
                 fx.end();
                 fx.save();
-                // Elsewhere, it is handed what this function's own cases read: up to the frames further out when rsp
-                // is above where this one began (a longjmp), else to the dispatcher.
-                fx.save_flags(cases);
+                // An indirect destination may be a later module or a frame further out (a longjmp).
+                // Hand it the full arithmetic state, not just this function's own entry demand.
+                fx.save_flags(ALL_FLAGS);
                 fx.get(l_reg(RSP)); fx.get(L_SP0); fx.op(I64_GT_U);
                 fx.if_();
                 fx.get(l_t(0)); fx.op(RETURN);
@@ -423,20 +431,29 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                 if let Some((f, s)) = quiet(program, fx.summaries, target, e) {
                     // To a function that never goes out: only what it may touch is moved, and its depth not counted.
                     fx.note_low();
+                    let flags = if !s.preserves_flags() {
+                        fx.save_flags(ALL_FLAGS);
+                        CallFlags::Returned
+                    } else if summaries[index as usize].preserves_flags() {
+                        CallFlags::Unchanged
+                    } else {
+                        fx.hold_flags();
+                        CallFlags::Held
+                    };
                     fx.sync_in(true, s.reads | s.writes);
                     fx.c32(0); fx.call(FIRST_GUEST + f);
                     fx.set(l_t(0));
-                    fx.after_call((ret, to[0]), next, Some(s.writes));
+                    fx.after_call((ret, to[0]), next, Some(s.writes), flags);
                 } else {
                     fx.save();
-                    fx.enter_call(handed.handed_at(e), |fx| fx.c64(target as i64));
+                    fx.enter_call(ALL_FLAGS, |fx| fx.c64(target as i64));
                     match e.map(|e| program.entries.at(e)) {
                         Some((f, b)) => { fx.c32(b as i32); fx.call(FIRST_GUEST + f); }
                         None => { fx.c64(target as i64); fx.call(F_DISPATCH); }
                     }
                     fx.set(l_t(0));
                     fx.leave_call();
-                    fx.after_call((ret, to[0]), next, None);
+                    fx.after_call((ret, to[0]), next, None, CallFlags::Returned);
                 }
             }
             Exit::IndirectCall { ret } => {
@@ -449,12 +466,13 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                 fx.get(l_t(2)); fx.call(F_DISPATCH);
                 fx.set(l_t(0));
                 fx.leave_call();
-                fx.after_call((ret, to[0]), next, None);
+                fx.after_call((ret, to[0]), next, None, CallFlags::Returned);
             }
             Exit::Return => {
                 fx.pop_value(l_t(0));
                 if term.op_count() == 1 { fx.get(l_reg(RSP)); fx.c64(term.immediate16() as i64); fx.op(I64_ADD); fx.set(l_reg(RSP)); }
                 fx.save();
+                if !summaries[index as usize].preserves_flags() { fx.save_flags(ALL_FLAGS); }
                 fx.get(l_t(0)); fx.op(RETURN);
             }
             Exit::Trap => {

@@ -206,6 +206,35 @@ SODS_INLINE=1 node runtime/run.ts PROGRAM        its threads in turn on one thre
 SODS_SYSCALLS=1, SODS_FAULTS=1, SODS_TIMING=1    every call listed; each fault said; where the time went
 ```
 
+### Arithmetic flags across calls
+
+Calls preserve the callee's actual CF/PF/AF/ZF/SF/OF result, including flags the
+callee leaves unchanged. Unknown callees and nonlocal returns retain all six;
+a normal continuation's needs alone are not sufficient when a guest changes a
+return address. A transitive quiet function that neither reads nor modifies any
+of these flags leaves their shared state untouched. Its caller can keep flags in
+locals on normal return, publishing them only if it returns somewhere else.
+This proof excludes unknown calls, traps, loops, recursion and external jumps.
+
+The optimization avoids unconditional packing at every known quiet call. For the
+same 64-call, flags-unused ELF, generated function bodies were 4,650 bytes before
+this correction, 11,085 with unconditional preservation, and 4,650 with the quiet
+proof. A flags-observing indirect-call fixture still grows from 999 to 1,144 body
+bytes. These include helpers/locals and are code-size observations, not a general
+runtime speed claim or a lower-bound proof.
+
+AF occupies bit 5 of the packed `G_FLAGS` convention; bits 0–4 and the global
+index are unchanged. Main and additional modules and host signal conversion must
+use the same convention. Rebuild content-addressed translations after a translator
+change: structural Wasm compatibility is not proof of matching flag semantics.
+The current-source call regression covers direct/indirect, whole/incremental,
+partial updates, AF and a verified depth unwind. This is not a complete proof of
+all x86 flag-producing instructions or every syscall-resume path.
+
+A separate known defect remains: JRCXZ currently takes the branch with nonzero
+RCX. `branch-counter-current.test.ts` keeps the correct expectation as an explicit
+TODO failure. The depth-unwind test uses DEC/JZ, not that defective instruction.
+
 ## A translation kept
 
 A translation is good for exactly what made it: the program's bytes, the translator's, the ABI between the code

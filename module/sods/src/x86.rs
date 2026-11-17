@@ -45,8 +45,8 @@ impl<'e> Code<'e> {
     }
 }
 
-/// CF, ZF, SF, OF and PF: the flags translated code keeps (as RflagsBits).
-pub const ALL_FLAGS: u32 = RflagsBits::OF | RflagsBits::SF | RflagsBits::ZF | RflagsBits::CF | RflagsBits::PF;
+/// CF, ZF, SF, OF, PF and AF: the flags translated code keeps (as RflagsBits).
+pub const ALL_FLAGS: u32 = RflagsBits::OF | RflagsBits::SF | RflagsBits::ZF | RflagsBits::CF | RflagsBits::PF | RflagsBits::AF;
 // A system call keeps the flags here (r11 is not given them), so it neither reads nor writes them.
 pub fn flags_read(i: &Instruction) -> u32 { kind(i).reads as u32 }
 pub fn flags_written(i: &Instruction) -> u32 { kind(i).writes as u32 }
@@ -78,10 +78,11 @@ pub(crate) struct Kind { pub flow: u8, pub reads: u8, pub writes: u8, pub bits: 
 
 /// Every way an instruction reads and writes the flags kept (read, written): what iced says of each of its codes,
 /// and of each as its operands change it (the test asks them all). An instruction's way is its place here.
-const WAYS: [(u8, u8); 24] = [
-    (0x00, 0x00), (0x00, 0x04), (0x00, 0x10), (0x00, 0x11), (0x00, 0x27), (0x00, 0x33), (0x00, 0x36), (0x00, 0x37),
-    (0x01, 0x00), (0x01, 0x01), (0x02, 0x00), (0x03, 0x00), (0x04, 0x00), (0x07, 0x00), (0x10, 0x00), (0x10, 0x10),
-    (0x10, 0x11), (0x10, 0x37), (0x11, 0x11), (0x14, 0x00), (0x20, 0x00), (0x36, 0x00), (0x37, 0x00), (0x37, 0x37),
+const WAYS: [(u8, u8); 26] = [
+    (0x00, 0x00), (0x00, 0x04), (0x00, 0x10), (0x00, 0x11), (0x00, 0x2f), (0x00, 0x3b), (0x00, 0x3e),
+    (0x00, 0x3f), (0x01, 0x00), (0x01, 0x01), (0x02, 0x00), (0x03, 0x00), (0x04, 0x00), (0x07, 0x00),
+    (0x08, 0x3f), (0x10, 0x00), (0x10, 0x10), (0x10, 0x11), (0x10, 0x3f), (0x11, 0x11), (0x14, 0x00),
+    (0x18, 0x3f), (0x20, 0x00), (0x3e, 0x00), (0x3f, 0x00), (0x3f, 0x3f),
 ];
 fn way(reads: u8, writes: u8) -> u8 { WAYS.iter().position(|&w| w == (reads, writes)).expect("every way with the flags is listed") as u8 }
 
@@ -245,8 +246,11 @@ mod tests {
     /// Every way iced says an instruction reads and writes the flags kept has its place in WAYS, and nothing else has.
     #[test]
     fn every_way_with_the_flags_is_listed() {
+        assert!(WAYS.len() <= CLASS_TRAPS as usize, "flag classes must fit below the trap bit");
         let mut met = [false; WAYS.len()];
-        for code in iced_x86::Code::values() { for (r, w) in said(code) { met[way(r, w) as usize] = true; } }
+        for code in iced_x86::Code::values() { for (r, w) in said(code) { let class = way(r, w); met[class as usize] = true;
+            assert_eq!(of_class(class), [r, w, 0]);
+            assert_eq!(of_class(class | CLASS_TRAPS), [r, w, TRAPS]); } }
         assert!(met.iter().all(|&m| m), "a way no instruction has: {met:?}");
     }
 }

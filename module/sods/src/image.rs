@@ -154,8 +154,8 @@ fn helpers(code: &mut Out, entries: u32, table: u64, cache: u64) {
 /// on its own, so natively they share the cores; wasm has one thread and lowers in turn, each into the module as it
 /// is made (a big program's functions are most of what the translator would otherwise hold at once).
 fn lower_all(elf: &Elf, program: &Program, base: u32, options: Options, report: &mut Report, code: &mut Out) {
-    let handed = Liveness::new(program);
     let summaries = summarize(elf, program);
+    let handed = Liveness::for_lowering(program, &summaries);
     let cx = Lowering { elf, program, handed: &handed, summaries: &summaries, trace: options.trace };
     let n = program.functions.len();
     let threads = if cfg!(target_family = "wasm") { 1 } else { std::thread::available_parallelism().map_or(1, |t| t.get()) };

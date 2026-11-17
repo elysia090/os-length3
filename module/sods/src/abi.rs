@@ -23,7 +23,7 @@ pub const FIRST_GUEST: u32 = 13;
 /// Globals every module of a program shares: r0..r15, fs, x0..x15, then these.
 pub const G_FS: u32 = 16;
 pub const fn g_xmm(n: u32) -> u32 { 17 + n }
-/// CF, ZF, SF, OF and PF as bits 0..4: what an entry that reads flags first is handed.
+/// CF, ZF, SF, OF, PF and AF as bits 0..5 (AF appended): what an entry that reads flags first is handed.
 pub const G_FLAGS: u32 = 33;
 /// Loops gone round and calls made before the thread goes back to the kernel (its time slice).
 pub const G_BUDGET: u32 = 34;
