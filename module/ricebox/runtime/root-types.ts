@@ -10,18 +10,11 @@ export interface FileStoreArtifact {
   module: WebAssembly.Module | BufferSource;
   maxFileBytes: number;
 }
-export interface Webroot {
+export interface RootContext {
   fileStore?: FileStoreArtifact;
   about: About;
   index: Index;
   translator: WebAssembly.Module;
-  /**
-   * What the Worker is given beside the packs: each hot program at its own path in the root, with its translation
-   * (its module, its data kept outside it, and whether its memory is shared: threads in Workers of their own). Its
-   * bytes are the root's own (checked against its digest), so the Worker puts them in the root's file (`root`), which
-   * each of its names shares: git's commands are names of git, and each runs git's translation.
-   */
-  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean; root?: boolean; more?: More[]}[];
   /** Where the packs are (the Worker reads them under packs/). */
   url: string;
   /**
@@ -32,3 +25,32 @@ export interface Webroot {
   muk: Uint8Array | null;
 }
 export interface More { module: WebAssembly.Module; bytes: Uint8Array; base: number }
+
+/** Legacy materialized hot files remain byte-bearing. */
+export interface Webroot extends RootContext {
+  /**
+   * What the Worker is given beside the packs: each hot program at its own path in the root, with its translation
+   * (its module, its data kept outside it, and whether its memory is shared: threads in Workers of their own). Its
+   * bytes are the root's own (checked against its digest), so the Worker puts them in the root's file (`root`), which
+   * each of its names shares: git's commands are names of git, and each runs git's translation.
+   */
+  files: {path: string; bytes: Uint8Array; module: WebAssembly.Module | null; mode: number; segments: Segment[] | null; shared: boolean; root?: boolean; more?: More[]}[];
+}
+
+/** A compiled artifact associated with a canonical lazy source, never a file overlay. */
+export interface PreparedExecutable {
+  generation: string;
+  key: string;
+  path: string;
+  source: {origin: string; sha256: string; size: number; binding: 'explicit' | 'legacy-derived'};
+  artifact: {sha256: string; translator: string; mode: 'whole'};
+  module: WebAssembly.Module;
+  segments: Segment[] | null;
+  shared: boolean;
+  more?: More[];
+}
+export interface PreparedRoot extends RootContext {
+  profile: 'canonical-aot-v1';
+  generation: string;
+  executables: PreparedExecutable[];
+}

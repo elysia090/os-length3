@@ -1,4 +1,7 @@
 export {retireRootWorker, type RootRetirement} from './retire-worker.ts';
+import {createExecutionProfile} from './execution-profile.ts';
+import {executableKey, canonicalHotSources} from './prepared-executable.ts';
+import {canonicalExecutableSource} from '../distribution/executable-source.ts';
 import {createAhead} from './pretranslate.ts';
 import {releaseFileStore} from './file-store.ts';
 import {requireFileStoreName} from './root-types.ts';
@@ -6,8 +9,8 @@ import {digest, download as fetchFile, Fatal, type Check} from './download.ts';
 import {FIRST} from './startup-programs.ts';
 import {canRunApart} from '../../sods/runtime/host.ts';
 import {MORE, madeBy, packMain, packMore, prepare, unpackMore, type Segment} from '../../sods/runtime/translate.ts';
-export type {Segment, Blob, About, Translation, Index, Webroot, More} from './root-types.ts';
-import type {About, Blob, Index, More, Translation, Webroot} from './root-types.ts';
+export type {Segment, Blob, About, Translation, Index, Webroot, RootContext, PreparedRoot, PreparedExecutable, More} from './root-types.ts';
+import type {About, Blob, Index, More, Translation, Webroot, RootContext, PreparedRoot, PreparedExecutable} from './root-types.ts';
 export type Stage =
   | {at: 'fetch'; got: number; of: number; quiet?: number}
   | {at: 'retry'; attempt: number; why: string; got: number; of: number}
@@ -423,7 +426,7 @@ const keptOrigin = (path: string, tag: string): string | null => {
 };
 
 /** What a Prompt's kernel is told is kept ({cache, at: {[origin]: {main, more}}}, sods' keeper). */
-async function keptNow(webroot: Webroot): Promise<{cache: string; at: Record<string, {main: string; more: string | null}>} | null> {
+async function keptNow(webroot: RootContext): Promise<{cache: string; at: Record<string, {main: string; more: string | null}>} | null> {
   const c = await open();
   if (!c) return null;
   const tag = keptTag(webroot.index), at: Record<string, {main: string; more: string | null}> = {};
@@ -457,7 +460,7 @@ const reached = new Map<string, Reached>();
 const originOf = (index: Index, f: Index['files'][number]) => `${index.packs[f.pack].name.replace(/\.pack$/, '')}_${f.at}_${f.len}`;
 
 /** Whether a translation of the file at `origin`, by this translator, is kept here. */
-async function translationKept(webroot: Webroot, origin: string): Promise<boolean> {
+async function translationKept(webroot: RootContext, origin: string): Promise<boolean> {
   const c = await open();
   return !!(await c?.match(translatedURL(origin, keptTag(webroot.index), 'wasm')).catch(() => undefined));
 }
@@ -467,7 +470,7 @@ async function translationKept(webroot: Webroot, origin: string): Promise<boolea
  * it, and its data segments, or null when they are in it): kept for the Prompts after it, 'L3T1' (sods/runtime/kept.ts). Once
  * kept, the URL it is kept at; null when it is not (no room, no Cache Storage).
  */
-function keepTranslation(webroot: Webroot, origin: string, wasm: Uint8Array, segments: Segment[] | null): Promise<string | null> {
+function keepTranslation(webroot: RootContext, origin: string, wasm: Uint8Array, segments: Segment[] | null): Promise<string | null> {
   const tag = keptTag(webroot.index);
   reached.set(origin, {list: [], saved: 0, timer: 0, url: translatedURL(origin, tag, 'more'), ready: Promise.resolve()});
   return (async () => {
@@ -487,7 +490,7 @@ function keepTranslation(webroot: Webroot, origin: string, wasm: Uint8Array, seg
 }
 
 /** The code a translated program reached later (the kernel's modules from the `from`th on): kept with it. */
-function keepReached(webroot: Webroot, origin: string, from: number, list: {bytes: Uint8Array; base: number}[]) {
+function keepReached(webroot: RootContext, origin: string, from: number, list: {bytes: Uint8Array; base: number}[]) {
   let r = reached.get(origin);
   if (!r) {
     // A program read from what was kept, reaching code it never reached before: on from what was kept of it.
@@ -715,6 +718,76 @@ const withMore = (f: Webroot['files'][number]): Webroot['files'][number] => ({..
     const value = spare; spare = null; return value;
   }
 
-  return {threadsApart, watchLoad, about, keptWebroot, keepMore, keptNow, originOf, translationKept, keepTranslation, keepReached, usedKept, hearLater, rootIndex, loadWebroot, warmWebroot, filesNow,
+  // A sibling profile: no call to hot/loadWebroot/filesNow may materialize its sources.
+  const preparedJobs = new Map<string, Promise<{value: PreparedExecutable; moreURL: string; reached: More[]} | null>>();
+  function preparedHot(index: Index, generation: string, t: Translation, quiet: boolean) {
+    const source = canonicalExecutableSource(index, t), shared = threadsApart();
+    const key = executableKey(generation, source, t, index.translator.sha256, shared);
+    const existing = preparedJobs.get(key);
+    if (existing) return existing;
+    const job = (async () => {
+      const step = quiet ? idle : atOnce;
+      // Integrity and decode errors propagate. Only engine compilation has the
+      // established fallback to ordinary execution of the lazy canonical file.
+      const p = await translation(t.wasm, shared, undefined, step);
+      await step();
+      const module = await WebAssembly.compile(p.wasm as BufferSource).catch(() => null);
+      if (!module) return null;
+      const url = moreURL(t, index.translator.sha256, shared);
+      return {value: {generation, key, path: source.path,
+        source: {origin: source.origin, sha256: source.sha256, size: source.size, binding: source.binding},
+        artifact: {sha256: t.wasm.sha256, translator: index.translator.sha256, mode: 'whole' as const},
+        module, segments: p.segments, shared}, moreURL: url, reached: await keptMore(url).catch(() => [])};
+    })();
+    preparedJobs.set(key, job);
+    void job.catch(() => { if (preparedJobs.get(key) === job) preparedJobs.delete(key); });
+    return job;
+  }
+  const execution = createExecutionProfile({first: first0, worker: rootWorker, save,
+    ready: () => tell({at: 'ready'}), failed: error => tell({at: 'failed', message: config.errorText(error)}),
+    executable: (root, t, quiet) => preparedHot(root.index, root.generation, t, quiet),
+    async load() {
+      worker();
+      const a = await download(`${BASE}webroot.json`, {}, undefined, {attempts: 4}).then(bytes => {
+        try { return JSON.parse(new TextDecoder().decode(bytes)) as About; } catch { throw new Fatal(config.missing()); }
+      });
+      const maker = download(`${BASE}muk.json`, {}, undefined, {attempts: 2})
+        .then(bytes => JSON.parse(new TextDecoder().decode(bytes)) as {path: string; sha256: string; size: number})
+        .then(m => /^blobs\/[0-9a-f]{64}\.bin$/.test(m.path) ? bytesOf(m.path, m).then(bytes => ({bytes, path: m.path})) : null, () => null);
+      const bytes = await bytesOf(a.index.path, a.index);
+      const index = JSON.parse(new TextDecoder().decode(bytes)) as Index;
+      requireFileStoreName(index);
+      if (index.sha256 !== a.sha256 || index.version !== a.version) throw new Fatal('webroot: its index is of another root');
+      // Check every hot association before source capture or asynchronous image work.
+      canonicalHotSources(index);
+      const first = index.translations.filter(t => first0.includes(t.path));
+      const parts = [index.translator, ...(index.fileStore ? [index.fileStore] : []), ...first.map(t => t.wasm)];
+      const of = parts.reduce((n, p) => n + p.size, 0), got = new Map<string, number>();
+      const progress = (p: Blob) => ({
+        bytes(n: number) { got.set(p.path, n); tell({at: 'fetch', got: [...got.values()].reduce((a, b) => a + b, 0), of}); },
+        retry(attempt: number, why: string) { tell({at: 'retry', attempt, why, got: [...got.values()].reduce((a, b) => a + b, 0), of}); },
+        waiting(quiet: number) { tell({at: 'fetch', quiet, got: [...got.values()].reduce((a, b) => a + b, 0), of}); },
+      });
+      tell({at: 'fetch', got: 0, of});
+      for (const t of first) void preparedHot(index, a.index.sha256, t, false).then(() => progress(t.wasm).bytes(t.wasm.size), () => {});
+      const [fileStore, translatorBytes, muk] = await Promise.all([
+        releaseFileStore(index.fileStore, b => unblob(b, progress(b), b.wasm), config.fileStore),
+        unblob(index.translator, progress(index.translator)), maker,
+      ]);
+      tell({at: 'prepare'});
+      const translator = await WebAssembly.compile(translatorBytes as BufferSource);
+      // Keep the same release/cache policy, including ELF blobs still used by
+      // legacy consumers. Deferring demand does not remove deployed sources.
+      const live = new Set([`${BASE}${a.index.path}`, `${BASE}${index.translator.path}`,
+        ...(index.fileStore ? [`${BASE}${index.fileStore.path}`] : []), ...(muk ? [`${BASE}${muk.path}`] : []),
+        ...index.translations.flatMap(t => [`${BASE}${t.elf.path}`, `${BASE}${t.wasm.path}`, moreURL(t, index.translator.sha256, threadsApart())])]);
+      const packs = new Set(index.packs.map(p => p.name.replace(/\.pack$/, ''))), tag = keptTag(index);
+      void forgetOthers(path => live.has(path) || (path.startsWith(TRANSLATED) && keptOrigin(path, tag) !== null && packs.has(keptOrigin(path, tag)!.split('_')[0])));
+      return {profile: 'canonical-aot-v1' as const, generation: a.index.sha256, about: a, index,
+        translator, fileStore, url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
+    },
+  });
+
+  return {execution, threadsApart, watchLoad, about, keptWebroot, keepMore, keptNow, originOf, translationKept, keepTranslation, keepReached, usedKept, hearLater, rootIndex, loadWebroot, warmWebroot, filesNow,
     rootWorker, readyWorker, takeReady, ...createAhead({keepTranslation, originOf, threadsApart, translationKept})};
 }

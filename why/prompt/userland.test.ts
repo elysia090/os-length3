@@ -33,6 +33,30 @@ before(() => {
 });
 after(() => rmSync(work, {recursive: true, force: true}));
 
+test('the explicit execution profile keeps canonical program bytes lazy without changing the legacy profile', async () => {
+  const {executionRoot} = await import('./userland.ts');
+  const root = await executionRoot.load();
+  assert.equal(root.profile, 'canonical-aot-v1');
+  assert.equal(root.generation, root.about.index.sha256);
+  assert.equal('files' in root, false, 'prepared roots do not pretend to have synchronous byte-bearing files');
+  const executables = executionRoot.executablesNow(root);
+  assert.deepEqual(executables.map(e => e.path), ['/usr/bin/busybox']);
+  for (const e of executables) {
+    assert.equal(e.generation, root.generation);
+    assert.ok(e.module instanceof WebAssembly.Module);
+    const translation = root.index.translations.find(t => t.path === e.path)!;
+    assert.equal(e.source.sha256, translation.sha256);
+    assert.equal(e.source.size, translation.elf.bytes);
+    assert.equal('bytes' in e, false);
+  }
+  const elfPaths = new Set(root.index.translations.map(t => `/webroot/${t.elf.path}`));
+  assert.equal(asked.some(path => elfPaths.has(path)), false, 'execution preparation never fetches source ELF blobs');
+  assert.equal(asked.some(path => path.includes('/packs/')), false, 'preparation never fetches canonical source packs');
+  // The following unchanged legacy test starts with its own request log. Its byte-bearing
+  // API must still independently fetch the ELF and retain the original meaning.
+  asked.length = 0;
+});
+
 test('a Prompt is given the root\'s own BusyBox at its own path, its translation beside it, and the whole root by its index', async () => {
   const {loadWebroot} = await import('./userland.ts');
   const webroot = await loadWebroot();

@@ -87,10 +87,12 @@ import {requireFileStoreName} from './root-types.ts';
 // {type: 'reached', origin, from, more} as code is reached later; and what
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
+import {validateExecutable, canonicalHotSources} from './prepared-executable.ts';
+import type {Index, PreparedExecutable} from './root-types.ts';
 import {WorkerLifetime} from './worker-lifetime.ts';
 import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
-import {Mirror, RemoteKernel, Vfs, keeper, linux, provide, said, warmThreads,
-  type Console, type File, type Kept, type Kernel, type Pumped, type RetirableReading, type Said} from '../../sods/runtime/linux.ts';
+import {Mirror, RemoteKernel, Vfs, keeper, linux, preparedLinux, PreparedLinuxError, provide, said, warmThreads,
+  type Console, type File, type Image, type SourceBoundExecutable, type Kept, type Kernel, type Pumped, type RetirableReading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
 import {type Given, type Packed} from '../distribution/mount.ts';
 import {prepareTree, type FileStoreArtifact, type PreparedTree} from './prepared-tree.ts';
@@ -104,7 +106,7 @@ interface Program extends Given { module?: WebAssembly.Module; segments?: Segmen
 /** A box as it is written for muk (../src/bundle.rs): config.json, and the words muk is run with. */
 interface Box { config: string; words: string[] }
 /** What every start has the same ('ready', or 'start' where none came first). `muk`: the box's maker, served beside the root. */
-interface Ready { fileStore?: FileStoreArtifact; translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
+interface Ready { profile?: 'canonical-aot-v1'; generation?: string; executables?: PreparedExecutable[]; fileStore?: FileStoreArtifact; translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
 /** What 'start' brings of its own: the box to make, and where in the tree the repo's copy is. */
 interface Start extends Ready {
   type: 'start';
@@ -126,11 +128,13 @@ type Posted =
   | {type: 'interrupt'; sig?: number; flush?: number}
   | {type: 'put'; path: string; what: Uint8Array | null | 'dir'}
   | {type: 'hot'; files: Program[]}
+  | {type: 'executables'; generation: string; executables: PreparedExecutable[]}
   | {type: 'kept'; at: Kept['at']}
   | (Ready & {type: 'ready'})
   | Start;
 /** What was readied: the translator loaded, the files given and the root put around them, the box's maker beside it. */
-interface Readied { translate: Translate; vfs: Vfs; files: Program[]; tree: PreparedTree }
+interface Readied { translate: Translate; vfs: Vfs; files: Program[]; tree: PreparedTree;
+  prepared?: {generation: string; index: Index; executables: Map<string, PreparedExecutable>}; }
 
 /** Where the bundle is in the tree (BOX, as whoever asks for the bundle names it), under the tmpfs the box has at /run: its maker and its config.json. */
 const BOX = '/run/box';
@@ -154,6 +158,70 @@ let foregroundReference: {release(): void} | null = null;
 let mirror: Mirror | null = null;
 /** What 'ready' readied ({translate, vfs, files}), or 'start' itself where none came first. */
 let readied: Promise<Readied> | null = null;
+let selection: {profile: 'legacy' | 'canonical-aot-v1'; generation?: string} | null = null;
+function checkSelection(data: {profile?: string; generation?: string; executables?: PreparedExecutable[]}, first = false): void {
+  if (data.profile !== undefined && data.profile !== 'canonical-aot-v1') throw new Error('Unsupported root execution profile');
+  const profile = data.profile === undefined ? 'legacy' : data.profile;
+  if (profile === 'legacy' && (data.generation !== undefined || data.executables !== undefined)) throw new Error('Prepared executables require their explicit profile');
+  if (profile === 'canonical-aot-v1' && (typeof data.generation !== 'string' || !/^[0-9a-f]{64}$/.test(data.generation))) throw new Error('Invalid prepared root generation');
+  if (selection && (selection.profile !== profile || selection.generation !== data.generation)) throw new Error('Root execution profile or generation does not match its first preparation');
+  if (first && !selection) selection = {profile, ...(profile === 'canonical-aot-v1' ? {generation: data.generation} : {})};
+}
+function ordinaryOverlays(files: Program[] = []): void {
+  for (const file of files) if (file.root || 'module' in file || 'segments' in file || 'shared' in file || 'more' in file) throw new Error('Prepared root files are ordinary byte overlays, not executable associations');
+}
+function addExecutables(r: Readied, values: PreparedExecutable[] = []): void {
+  const prepared = r.prepared;
+  if (!prepared) throw new Error('Prepared executables require their explicit root profile');
+  const admitted = new Map<string, PreparedExecutable>();
+  for (const value of values) {
+    const source = validateExecutable(prepared.index, prepared.generation, value);
+    if (!r.tree.sources.has(source.origin)) throw new Error('Prepared executable has no captured canonical source');
+    if (prepared.executables.has(value.key) || admitted.has(value.key)) throw new Error('Duplicate prepared executable');
+    admitted.set(value.key, value);
+  }
+  for (const [key, value] of admitted) prepared.executables.set(key, value);
+}
+function boundExecutables(r: Readied): SourceBoundExecutable[] {
+  return [...r.prepared!.executables.values()].map(value => ({key: value.key, source: r.tree.sources.get(value.source.origin)!, module: value.module, segments: value.segments, shared: value.shared}));
+}
+function makePreparedKernel(r: Readied, options: Parameters<typeof linux>[0]) {
+  try {
+    const result = preparedLinux({...options, vfs: r.vfs, executables: boundExecutables(r)});
+    if (!lifetime.accepting) {
+      // Freeze may reenter physical/engine preparation. The retirement pass
+      // could not see this newly returned owner, so explicitly retain and stop it.
+      const errors: unknown[] = [new Error('Prepared kernel completed after admission closed')];
+      executionOwners.add(new WeakRef(result.kernel));
+      lifetime.observe('late-prepared-kernel', result.kernel);
+      lifetime.failures.push({kernel: result.kernel, errors});
+      try { result.kernel.halt(); } catch (error) { errors.push(error); }
+      if (result.kernel instanceof RemoteKernel) try { result.kernel.close(); } catch (error) { errors.push(error); }
+      throw new AggregateError(errors, 'Prepared kernel retained after retirement');
+    }
+    return result;
+  }
+  catch (error) {
+    if (error instanceof PreparedLinuxError) {
+      // A failed association may already own an initial namespace. Keep the
+      // typed partial owner for retirement; never manufacture rollback proof.
+      executionOwners.add(new WeakRef(error.kernel));
+      lifetime.observe('partial-prepared-kernel', error.kernel);
+      lifetime.failures.push(error);
+      if (!lifetime.accepting) {
+        try { error.kernel.halt(); } catch (cleanup) { lifetime.failures.push(cleanup); }
+        if (error.kernel instanceof RemoteKernel) try { error.kernel.close(); } catch (cleanup) { lifetime.failures.push(cleanup); }
+      }
+    }
+    throw error;
+  }
+}
+function followPrepared(r: Readied, attached: ReadonlyMap<string, Image>): void {
+  for (const [key, image] of attached) {
+    const value = r.prepared!.executables.get(key)!;
+    observations.track(value.path, image, value.more?.length ? image.adopt(value.more) : 0);
+  }
+}
 /** One finite prepared result, including a result arriving after freeze. This
  * root is explicit; weak observations must never stand in for ownership. */
 let preparedOwner: PreparedTree | null = null;
@@ -163,6 +231,7 @@ let packRange: ReturnType<typeof syncRange> | null = null;
 const withPacks = <T extends {files: number; spare: number; total: number}>(held: T, bytes = packRange?.held() ?? 0): T =>
   ({...held, files: held.files + bytes, spare: held.spare + bytes, total: held.total + bytes});
 let apart = false;
+let preparedForegroundStarted = false;
 const pending: Uint8Array[] = [];
 let ended = false;
 /** The programs given with their translation: the image of each, and how much of its code reached later is said. */
@@ -185,6 +254,8 @@ function read(n: number): Uint8Array | null {
 
 /** The translator loaded, `files` written and the root put around them: what every start has the same. */
 function ready(data: Ready): Promise<Readied> {
+  checkSelection(data, true);
+  if (data.profile) ordinaryOverlays(data.files);
   if (readied && data.fileStore !== undefined) {
     throw new Error('File-store ownership was selected by the first preparation; omit fileStore when using that prepared root');
   }
@@ -193,7 +264,11 @@ function ready(data: Ready): Promise<Readied> {
     try {
       const translate = await loadTranslator(data.translator);
       lifetime.check();
-      const tree = await prepareTree({fileStore: data.fileStore, muk: data.muk, files: data.files,
+      const index = data.profile ? data.root?.index as Index | undefined : undefined;
+      if (data.profile && (!index || !Array.isArray(index.translations))) throw new Error('Prepared root requires its complete canonical index');
+      const captureSources = index ? canonicalHotSources(index) : undefined;
+      if (index) for (const executable of data.executables ?? []) validateExecutable(index, data.generation!, executable);
+      const tree = await prepareTree({captureSources, fileStore: data.fileStore, muk: data.muk, files: data.files,
         root: data.root ? {index: data.root.index, reading: {
           range: packRange = syncRange(data.root.url, rangeNow, new Map(data.root.index.packs.map(p => [p.name, p.bytes]))),
           decode: translate.unzstd, sha256: translate.sha256,
@@ -217,7 +292,9 @@ function ready(data: Ready): Promise<Readied> {
       }
       // This owner survives rehearsal and ordinary kernel exit. Worker termination
       // releases the realm; no per-run path may dispose a tree borrowed by another run.
-      const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree};
+      const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree,
+        ...(index ? {prepared: {generation: data.generation!, index, executables: new Map<string, PreparedExecutable>()}} : {})};
+      if (r.prepared) addExecutables(r, data.executables);
       if (data.rehearse) await rehearse(r, data.rehearse).catch(error => {
         // Rehearsal is optional for startup speed, not optional ownership
         // evidence. A later successful foreground run cannot erase its failure.
@@ -233,10 +310,12 @@ function ready(data: Ready): Promise<Readied> {
 const REHEARSAL_MS = 2000;
 
 /** `box` run to its end over what is readied, in a kernel made for it alone (see 'ready'). */
-async function rehearse({translate, vfs, files}: Readied, box: Box): Promise<void> {
+async function rehearse(r: Readied, box: Box): Promise<void> {
+  const {translate, vfs, files} = r;
   const argv = boxed(vfs, box), env: string[] = [], cwd = '/';
   const quiet: Console = {interactive: false, write() {}, read: () => new Uint8Array(0), ready: () => true, pending: () => 0};
-  const k = linux({vfs, translate, console: quiet, passOn: true, unownedWorkerFailure: failed, translated: files});
+  const made = {vfs, translate, console: quiet, passOn: true, unownedWorkerFailure: failed};
+  const k = r.prepared ? makePreparedKernel(r, made).kernel : linux({...made, translated: files});
   executionOwners.add(new WeakRef(k)); lifetime.observe('rehearsal-kernel', k);
   const operation = lifetime.enter('rehearsal-operation');
   let completed = false;
@@ -525,24 +604,44 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       return;
     }
     if (data.type === 'warm') { if (canRunApart()) { warmOwner ??= lifetime.observe('warm-pool'); warmThreads({failed}); } return; }
-    if (data.type === 'hot') { if (kernel) given(kernel, data.files); return; }
+    if (data.type === 'hot') { if (selection?.profile === 'canonical-aot-v1') throw new Error('Prepared root requires executable-only hot messages'); if (kernel) given(kernel, data.files); return; }
+    if (data.type === 'executables') {
+      checkSelection({profile: 'canonical-aot-v1', generation: data.generation});
+      if (!readied) throw new Error('Root is not prepared');
+      const r = await readied; lifetime.check();
+      addExecutables(r, data.executables);
+      if (kernel) for (const value of data.executables) {
+        if (kernel.shared !== value.shared) continue;
+        const image = kernel.prebuiltSource(r.tree.sources.get(value.source.origin)!, value.module, value.segments);
+        lifetime.check();
+        if (image) followPrepared(r, new Map([[value.key, image]]));
+      }
+      return;
+    }
     // A program translated ahead by the page since this Prompt started (pretranslate.ts): read when it is run.
     if (data.type === 'kept') { if (keptAt) Object.assign(keptAt, data.at); return; }
     // (A failure is said by the 'start' that waits for it.)
     if (data.type === 'ready') {
-      try { ready(data).catch(() => {}); } catch (error) { failed(error); }
+      try { ready(data).catch(error => { if (data.profile) failed(error); }); } catch (error) { failed(error); }
       return;
     }
     if (data.type !== 'start') return;
     try {
+      if (data.profile === 'canonical-aot-v1') {
+        checkSelection(data);
+        if (preparedForegroundStarted) throw new Error('Prepared Worker accepts one foreground start');
+        preparedForegroundStarted = true;
+      }
       // Readied before, or now: then this start's files are those readied, put before the root.
       const before = readied !== null;
-      const {translate, vfs, files: early} = await ready(data);
+      const r = await ready(data);
+      const {translate, vfs, files: early} = r;
       lifetime.check();
       const later = before ? data.files ?? [] : [];
       for (const d of data.dirs ?? []) vfs.mkdirp(d);
       // Over the root, as over the files readied: what this start gives is what is there.
-      for (const f of later) provide(vfs, f);
+      for (const f of later) { if (r.prepared) vfs.writeFile(f.path, f.bytes, f.mode); else provide(vfs, f); }
+      if (r.prepared && before) addExecutables(r, data.executables);
       for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
       vfs.mkdirp(data.cwd);
       const files = [...early, ...later];
@@ -570,11 +669,14 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       keptAt = data.kept?.at ?? null;
       // Each thread in a Worker of its own, all at once, where memory can be shared and every ready translation was made
       // for shared memory; otherwise they take turns here (sods' linux.ts decides, by the host it is on).
-      const k = kernel = linux({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r), consolidateIdle: true, translated: files});
+      const made = {vfs, translate, console, keeper: keep, onIdle: (r: Pumped) => paused(r), consolidateIdle: true};
+      const prepared = r.prepared ? makePreparedKernel(r, made) : null;
+      const k = kernel = prepared?.kernel ?? linux({...made, translated: files});
       foregroundReference?.release(); foregroundReference = lifetime.observe('foreground-reference', k);
       executionOwners.add(new WeakRef(k)); lifetime.observe('foreground-kernel', k);
       apart = k instanceof RemoteKernel;
-      for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);
+      if (prepared) followPrepared(r, prepared.attached);
+      else for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);
       if (data.mirror) {
         const preparedMirror = new Mirror(vfs, data.mirror);
         // Construction walks mappings/loaders too; retirement must not be
@@ -598,6 +700,10 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
         catch (notification) { lifetime.failures.push({error, notification}); lifetime.observe('diagnostic-failure'); }
       });
     } else pump();
-  } finally { command.release(); }
+  } catch (error) {
+    if (selection?.profile === 'canonical-aot-v1' || data.type === 'executables') failed(error);
+    else throw error; // Preserve the legacy command-error contract.
+  }
+  finally { command.release(); }
 };
 

@@ -9,7 +9,7 @@
 // memory at every Prompt on a repo with C, built in or not, and held Prompts starting after it for minutes.
 
 import {entriesOf} from '../distribution/pack.ts';
-import type {Index, Webroot} from './root-types.ts';
+import type {Index, RootContext} from './root-types.ts';
 
 /**
  * What anyone reaches for at a Prompt and the root has as a program of its own (not BusyBox's, which is hot; nor what
@@ -31,10 +31,10 @@ export function aheadFor(index: Index): string[] {
  * time, each kept as a Prompt keeps what it translates and told to every Prompt listening.
  */
 export function createAhead(root: {
-  keepTranslation(webroot: Webroot, origin: string, wasm: Uint8Array, segments: {offset: number; bytes: Uint8Array}[] | null): Promise<string | null>;
+  keepTranslation(webroot: RootContext, origin: string, wasm: Uint8Array, segments: {offset: number; bytes: Uint8Array}[] | null): Promise<string | null>;
   originOf(index: Index, f: Index['files'][number]): string;
   threadsApart(): boolean;
-  translationKept(webroot: Webroot, origin: string): Promise<boolean>;
+  translationKept(webroot: RootContext, origin: string): Promise<boolean>;
 }) {
   const {keepTranslation, originOf, threadsApart, translationKept} = root;
 
@@ -81,7 +81,7 @@ export function createAhead(root: {
   /** A translation let go of before it was done (held: holdAhead), to be done again. */
   const DROPPED = 'dropped';
   /** One program translated in a worker of its own, which then ends (its memory goes back with it). */
-  function translated(webroot: Webroot, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null | typeof DROPPED> {
+  function translated(webroot: RootContext, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null | typeof DROPPED> {
     const pack = entries(webroot.index)[f.pack];
     return new Promise((resolve) => {
       const w = new Worker(new URL('./translate.worker.ts', import.meta.url), {type: 'module'});
@@ -99,7 +99,7 @@ export function createAhead(root: {
    * Translate `paths` ahead, one after another, each when the page has time, skipping what is kept already; each kept
    * is told to every Prompt listening (hearAhead). Once at a time in a page: a call while it goes adds nothing.
    */
-  async function translateAhead(webroot: Webroot, paths: readonly string[]): Promise<void> {
+  async function translateAhead(webroot: RootContext, paths: readonly string[]): Promise<void> {
     if (going || typeof Worker !== 'function') return;
     going = true;
     try {
