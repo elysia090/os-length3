@@ -17,6 +17,8 @@ const hostImports: Record<string, readonly string[]> = {
   'module/ricebox/host/node/tar.ts': ['node:fs','node:zlib','node:stream'],
   'module/ricebox/host/node/inventory.ts': ['node:fs','node:path'],
   'module/ricebox/deployment/local.ts': ['node:fs','node:path','node:zlib'],
+  'module/ricebox/build/package-database.ts': ['node:crypto','node:fs','node:path'],
+  'module/ricebox/build/script-interpreters.ts': ['node:fs','node:path','node:url'],
   'module/ricebox/build/prepare.ts': ['node:fs','node:path','node:child_process','node:crypto','node:url'],
   'module/ricebox/deployment/assets.ts': ['node:crypto','node:fs','node:path','node:zlib'],
   'module/sods/runtime/host.ts': ['node:worker_threads', 'node:os', 'node:fs'],

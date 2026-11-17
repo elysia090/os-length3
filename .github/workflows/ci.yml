@@ -443,7 +443,7 @@ jobs:
       - name: prompt, at a terminal
         run: sh module/prompt/test/prompt.sh
 
-  # The root as a release builds it (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), then used inside as a Prompt uses it and
+  # The root as a release builds it (module/ricebox/make/build.sh, module/ricebox/build/assemble.sh), then used inside as a Prompt uses it and
   # under muk. Runs only when what the root is made of changed (what makes its layers, beside those in make/, is not).
   root:
     name: Root

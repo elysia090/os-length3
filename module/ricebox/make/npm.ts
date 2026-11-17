@@ -43,7 +43,7 @@ for (const [path, {source, javascript}] of closure) {
   writeFileSync(destination.slice(0, -3) + '.js', javascript.replace(/(['"])(\.[^'"\n]+)\.ts\1/g, '$1$2.js$1'));
 }
 // The distribution builder is the same implementation, not a second npm assembler.
-for (const path of ['make/assemble.sh', 'make/db.ts', 'make/scripts.ts', 'make/layers.ts', 'make/file-store.ts', 'make/aot-cache.ts', 'etc/os-release', 'pins/sources.env']) {
+for (const path of ['build/assemble.sh', 'build/package-database.ts', 'build/script-interpreters.ts', 'make/layers.ts', 'make/file-store.ts', 'make/aot-cache.ts', 'etc/os-release', 'pins/sources.env']) {
   const name = 'module/ricebox/' + path;
   mkdirSync(dirname(join(out, name)), {recursive: true});
   writeFileSync(join(out, name), readFileSync(join(repository, name)));

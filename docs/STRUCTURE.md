@@ -193,9 +193,10 @@ What stays why's, because it is a product's choice or its words:
 | the repos under /root in the tree a page shows | `why/prompt/system.ts` |
 | the web root made of the root it pins, taken from the release it pins | `scripts/webroot.sh`, `root-file.ts`, `pin-root.ts`, `prompt-files.ts` |
 
-Still ricebox's to take, and not taken yet: the root carries why's own command (`make/assemble.sh` puts it at
-/usr/bin/why) and its settings read why's variables by the names before (`/etc/length3/shrc`, `LENGTH3_*`): both
-change with a root released from this tree, which the pin (0.6.4) is not.
+Product composition belongs to `why/make/root.sh` and `why/make/shell.sh`: they supply
+why's command and shell settings as package inputs. `module/ricebox/build/assemble.sh`
+only combines selected packages. Historical pinned releases are not evidence of a
+complete distribution rebuilt from the current source.
 
 why, inside, is its parts and its faces. A part is one responsibility, a folder of why holding all of it whatever
 it is written in: what the core does of it (Rust) and what a page does of it (TypeScript) are side by side, so

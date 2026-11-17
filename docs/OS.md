@@ -250,7 +250,7 @@ the same thing for the desktop app and for the web.
   Alpine 3.24 at one digest, with one libc: its musl, at the root's own
   musl's version and with the same security fixes; a package's own build
   tools are there for its build alone), and `/usr/bin/why`, put together by
-  `module/ricebox/make/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
+  `module/ricebox/build/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
   (GCC, binutils, make, musl with fortify-headers, Linux's headers; its
   `cc` makes a static PIE, hardened as the root's own programs are,
   unasked), git with delta and Git LFS, curl, wget, OpenSSL, OpenSSH's

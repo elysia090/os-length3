@@ -96,6 +96,9 @@ source/lift helpers remain under `make/` until their producer contracts are spli
 
 ## Composition and deployment
 
+- `build/assemble.sh` assembles selected package trees into a root archive. Its
+  `package-database.ts` writes the apk inventory; `script-interpreters.ts` checks
+  interpreter resolution inside the guest root, not against host-installed tools.
 - `build/prepare.ts` composes an explicit package cache with pinned tools. It
   creates an isolated temporary generation and publishes its output only after success.
 - `deployment/assets.ts` validates and collects a prepared distribution's named

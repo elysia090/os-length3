@@ -2,7 +2,7 @@
 # Everything a release of OS Length3 Linux holds, made from this tree, into OUT:
 #
 #   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
-#                                                  recipe (module/ricebox/make/build.sh), with this tree's why (module/ricebox/make/assemble.sh)
+#                                                  recipe (module/ricebox/make/build.sh), with this tree's why (module/ricebox/build/assemble.sh)
 #   os-length3-linux-X.Y.Z-webroot.tar               the same root as the browser reads it (webroot.sh), checked
 #                                                  to be the same tree (webroot-parity.ts)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that why (web-release.sh)

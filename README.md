@@ -127,7 +127,7 @@ only when what it is made of changed):
 ```sh
 docker run --rm -v "$PWD:/w" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d \
   sh /w/module/ricebox/make/build.sh /w/target/root-packages
-sh module/ricebox/make/assemble.sh target/root-packages target/root-made
+sh module/ricebox/build/assemble.sh target/root-packages target/root-made
 ```
 
 CI (`.github/workflows/ci.yml`) runs on each pull request; what each

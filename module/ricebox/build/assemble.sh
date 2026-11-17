@@ -1,6 +1,6 @@
 #!/bin/sh
 # Assemble the selected package record into one distribution, independent of any product.
-# sh module/ricebox/make/assemble.sh PACKAGES OUT [VERSION [NAME]]
+# sh module/ricebox/build/assemble.sh PACKAGES OUT [VERSION [NAME]]
 # Each package has tree/, version, source, key and optionally url. Product composition
 # supplies packages too; it may supply os-release and extra provenance in PACKAGES/manifest.
 # The same root is used directly or served as layers. No persistence is implied.
@@ -64,15 +64,15 @@ while read -r n _; do echo "$n $(cat "$pkgs/$n/version") $(cat "$pkgs/$n/source"
 install -m 0644 "$here/pins/sources.env" "$root/usr/share/length3/sources.env"
 mkdir -p "$root/etc/apk"
 printf '%s\n' "# No repository yet: what is installed is all there is (usr/lib/apk/db/installed)." > "$root/etc/apk/repositories"
-node "$here/make/scripts.ts" "$root"
-node "$here/make/db.ts" "$root" "$work/list"
+node "$here/build/script-interpreters.ts" "$root"
+node "$here/build/package-database.ts" "$root" "$work/list"
 
 {
   echo "format=length3-root-v3"
   echo "version=$version"
   sed 's/^\([^ ]*\) \([^ ]*\) \([^ ]*\) \([^ ]*\)$/package.\1=\2 \3 \4/' "$root/usr/share/length3/packages"
   [ ! -f "$pkgs/manifest" ] || cat "$pkgs/manifest"
-  echo "assembler.sha256=$(cat "$here/make/assemble.sh" "$here/make/db.ts" "$here/make/scripts.ts" "$here/etc/os-release" | sha256sum | cut -d' ' -f1)"
+  echo "assembler.sha256=$(cat "$here/build/assemble.sh" "$here/build/package-database.ts" "$here/build/script-interpreters.ts" "$here/etc/os-release" | sha256sum | cut -d' ' -f1)"
 } > "$work/tree/manifest"
 
 name="$name-$version-x86_64"

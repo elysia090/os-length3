@@ -21,7 +21,7 @@ function fixture() {
   return {at, pkgs, add};
 }
 function assemble(pkgs: string, out: string) {
-  const result = spawnSync('sh', [join(repo, 'module/ricebox/make/assemble.sh'), pkgs, out, '0.0.1'], {encoding: 'utf8'});
+  const result = spawnSync('sh', [join(repo, 'module/ricebox/build/assemble.sh'), pkgs, out, '0.0.1'], {encoding: 'utf8'});
   assert.equal(result.status, 0, result.stderr);
   const archive = readdirSync(out).find((p) => p.endsWith('.tar.zst'))!;
   assert.match(archive, /^ricebox-0\.0\.1-x86_64-[0-9a-f]{64}\.tar\.zst$/);
@@ -65,7 +65,7 @@ test('why composes its CLI, identity and shell extension without putting them in
   try {
     writeFileSync(join(pkgs, 'record'), 'base 1.0 base-source\n');
     const root = join(at, 'source');
-    for (const path of ['why/make/root.sh', 'why/make/shell.sh', 'module/ricebox/make/assemble.sh', 'module/ricebox/make/db.ts', 'module/ricebox/make/scripts.ts', 'module/ricebox/etc/os-release', 'module/ricebox/pins/sources.env']) {
+    for (const path of ['why/make/root.sh', 'why/make/shell.sh', 'module/ricebox/build/assemble.sh', 'module/ricebox/build/package-database.ts', 'module/ricebox/build/script-interpreters.ts', 'module/ricebox/etc/os-release', 'module/ricebox/pins/sources.env']) {
       mkdirSync(join(root, path, '..'), {recursive: true}); writeFileSync(join(root, path), readFileSync(join(repo, path)));
     }
     const bin = join(at, 'bin'); mkdirSync(bin);

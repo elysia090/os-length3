@@ -30,7 +30,7 @@ test('declarative selection never mutates shared caches or includes unselected p
 test('selected packages pass through the real neutral archive assembler', t => {
   const {at,cache}=fixture(t), selected=join(at,'selected'), out=join(at,'root');
   selectPackages(['extra'],cache,selected);
-  const script=fileURLToPath(new URL('../../make/assemble.sh',import.meta.url));
+  const script=fileURLToPath(new URL('../assemble.sh',import.meta.url));
   const r=spawnSync('sh',[script,selected,out],{encoding:'utf8'});
   assert.equal(r.status,0,r.stderr);
   const archive=join(out,readdirSync(out).find(n=>n.endsWith('.tar.zst'))!);
@@ -43,7 +43,8 @@ test('orchestration invokes assemble then AOT and publishes only after success',
   const {at,cache}=fixture(t), toolchain=join(at,'toolchain'), make=join(toolchain,'module/ricebox/make'); mkdirSync(make,{recursive:true});
   // Contract doubles only. The preceding test exercises real archive assembly;
   // this checks the subprocess boundary, not Linux execution or translation.
-  writeFileSync(join(make,'assemble.sh'),'set -eu\nmkdir -p "$2"\nprintf root > "$2/root.tar.zst"\n');
+  mkdirSync(join(toolchain,'module/ricebox/build'),{recursive:true});
+  writeFileSync(join(toolchain,'module/ricebox/build/assemble.sh'),'set -eu\nmkdir -p "$2"\nprintf root > "$2/root.tar.zst"\n');
   writeFileSync(join(make,'layers.sh'),'set -eu\nmkdir -p "$2"\nprintf "%s\\n" "$@" > "$2/arguments"\n');
   const output=join(at,'out');
   await prepareDistribution({packages:['base'],packageCache:cache,toolchain,output,cache:join(at,'aot'),hot:['/usr/bin/base']});

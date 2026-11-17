@@ -68,7 +68,7 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (why/shipto in why).
   assert.equal(unitOf('module/sods/runtime/translation/translator.ts')?.name, 'sods');
   assert.equal(unitOf('module/sods/runtime/linux/process.ts')?.name, 'sods');
-  assert.equal(unitOf('module/ricebox/make/db.ts')?.name, 'ricebox');
+  assert.equal(unitOf('module/ricebox/build/package-database.ts')?.name, 'ricebox');
 });
 
 test('ricebox can be cut out with the units under it: none of them takes from a unit over them, by the table or by an import', () => {

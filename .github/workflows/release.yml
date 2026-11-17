@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes OS Length3 Linux X.Y.Z: the root (module/ricebox/make/build.sh, module/ricebox/make/assemble.sh), the web root, the web build and
+# Publishes OS Length3 Linux X.Y.Z: the root (module/ricebox/make/build.sh, module/ricebox/build/assemble.sh), the web root, the web build and
 # the desktop app (.deb, AppImage), with digests and build provenance; then proposes the pins to main as one pull
 # request (Pin vX.Y.Z: why/prompt/roots/pins.rs, why/shipto/desktop-releases.json). Asked for by a tag
 # os-length3-linux-vX.Y.Z, by a push to main that changes module/ricebox/RELEASE, or by hand.

@@ -4,7 +4,7 @@
 // its owner and mode where they are not apk's default, and each package the words of its recipe's first line, its
 // version as apk orders versions, and where its source is from.
 //
-//   node module/ricebox/make/db.ts ROOT LIST
+//   node module/ricebox/build/package-database.ts ROOT LIST
 //
 // LIST names a package a line: NAME VERSION URL TREE, TREE being what that package installed (its files are taken as
 // the root has them).
@@ -13,7 +13,7 @@ import {lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFile
 import {dirname, join} from 'node:path';
 
 const [root, list] = process.argv.slice(2) as [string, string | undefined];
-if (!list) { console.error('usage: module/ricebox/make/db.ts ROOT LIST'); process.exit(2); }
+if (!list) { console.error('usage: module/ricebox/build/package-database.ts ROOT LIST'); process.exit(2); }
 const recipes = new URL('../packages/', import.meta.url).pathname;
 
 /** A version as apk compares them: digits and dots, a letter, and _p for a portable release (10.6p1, 2026-10-20). */

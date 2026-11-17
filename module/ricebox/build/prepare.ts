@@ -68,7 +68,7 @@ export async function prepareDistribution(options: PrepareOptions) {
   const work = mkdtempSync(join(dirname(target), '.ricebox-build-'));
   try {
     selectPackages(packages, packageCache, join(work, 'packages'));
-    await run('sh', [join(source, 'module/ricebox/make/assemble.sh'), join(work, 'packages'), join(work, 'root'), version, 'ricebox']);
+    await run('sh', [join(source, 'module/ricebox/build/assemble.sh'), join(work, 'packages'), join(work, 'root'), version, 'ricebox']);
     const archives = readdirSync(join(work, 'root')).filter(n => n.endsWith('.tar.zst'));
     if (archives.length !== 1) throw new Error('ricebox: assembler did not produce exactly one root');
     const verified = tools && Object.fromEntries((['translator', 'sods', 'muk'] as const).map(n => [n, verifiedTool(tools![n], n)]));

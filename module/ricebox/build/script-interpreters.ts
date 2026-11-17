@@ -97,7 +97,7 @@ function splitEnv(source: string): string[] {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  if (process.argv.length !== 3) { console.error('usage: scripts.ts ROOT'); process.exit(2); }
+  if (process.argv.length !== 3) { console.error('usage: script-interpreters.ts ROOT'); process.exit(2); }
   const errors = checkScripts(process.argv[2]!);
   if (errors.length) { console.error(errors.join('\n')); process.exit(1); }
 }
