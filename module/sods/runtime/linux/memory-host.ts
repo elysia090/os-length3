@@ -1,6 +1,9 @@
 import {fixedTranslatedModule} from './translated-image.ts';
+import {prepare} from '../translation/share.ts';
+import type {createGuest} from '../host/node/execution.ts';
 /** Private managed-memory adapter. Rust decides admission and lifetime; this file
- * holds actual engine objects and executes synchronous physical operations only.
+ * holds engine objects, performs short synchronous memory operations, and
+ * transports asynchronous source results and matching Worker evidence.
  * Not exported by linux.ts. The translated runner is a fixed diagnostic profile,
  * not the Node caller, ELF loader or complete Linux syscall implementation. */
 interface Admission extends WebAssembly.Exports {
@@ -216,7 +219,167 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     const value = result(status);
     return {tag: core.linux_result_state(), value, target: unsigned(64, core.linux_result_auxiliary()), next: unsigned(64, core.linux_result_length())};
   };
+  type Loader = (source: number) => Uint8Array | Promise<Uint8Array>;
+  // Shared source dispatcher for inline suspension and Worker synchronous waits.
+  // The Rust continuation, not this adapter, owns errno and OFD commit policy.
+  const finishRead = async (id: bigint, read: bigint, target: bigint, memory: WebAssembly.Memory, load?: Loader, failed: () => void = () => {}): Promise<ReturnType<typeof command>> => {
+    checked(core.linux_read_query(read));
+    if ((core.linux_result_state() & 255) === 5) {
+      const source = numeric(result(core.linux_read_load_start(id, read)));
+      const attempt = numeric(core.linux_result_length());
+      let ok = false, sourceError: unknown;
+      try {
+        if (!load) throw new Error('No translated source loader');
+        const bytes = new Bytes(await load(source));
+        put(result(core.linux_load_input(u32(lengthOf(bytes)))), bytes);
+        ok = true;
+      } catch (error) { failed(); sourceError = error; }
+      let completionError: unknown, completionFailed = false;
+      try { checked(core.linux_syscall_load_finish(id, read, attempt, ok ? 1 : 0)); }
+      catch (error) { completionError = error; completionFailed = true; }
+      // No await/callback since staging: only this attempt can own the scratch.
+      // Late rejected source bytes must not remain retained as staging input.
+      try { checked(core.linux_load_input(0)); }
+      catch (cleanup) {
+        throw new AggregateError([...(ok ? [] : [sourceError]), ...(completionFailed ? [completionError] : []), cleanup], 'Source staging cleanup failed');
+      }
+      if (completionFailed) throw new AggregateError(ok ? [completionError] : [sourceError, completionError], 'Source completion failed');
+    }
+    checked(core.linux_read_query(read));
+    if ((core.linux_result_state() & 255) === 0) copyRead({id: read, memory, offset: numeric(target), execution: id});
+    return command(core.linux_syscall_complete(id));
+  };
+  type WorkerState = {
+    id: bigint; memory: WebAssembly.Memory; bridge: ReturnType<typeof createGuest>;
+    invocation: bigint; receipt: boolean; imagePending: boolean; active: boolean;
+    failureCount: number; firstFailure?: unknown;
+  };
+  const workers = new Map<ExecutionBinding, WorkerState>();
+  const workerOf = (handle: ExecutionBinding): WorkerState => {
+    const w = apply(mapGet, workers, [handle]);
+    if (!w) throw new Error('Unknown Worker execution');
+    return w;
+  };
+  const workerFailure = (w: WorkerState, error: unknown): void => {
+    if (!w.failureCount++) w.firstFailure = error;
+  };
+  const abandonWorker = (w: WorkerState): void => {
+    try { checked(core.linux_syscall_abandon(w.id)); }
+    catch (error) { workerFailure(w, error); }
+  };
   return {
+    /** Fixed shared-memory diagnostic. No default Node caller cutover. */
+    async workerExecution(input: Uint8Array, pages: number): Promise<ExecutionBinding> {
+      u32(pages);
+      const bytes = new Bytes(input);
+      fixedTranslatedModule(bytes); // Reject raw start/defined memory before transform.
+      const prepared = prepare(bytes, {shared: true});
+      if (prepared.segments === null) throw new Error('Worker image requires external data');
+      const translated = fixedTranslatedModule(prepared.wasm, {externalData: true});
+      const extent = wide(pages) * 65536n;
+      for (const segment of prepared.segments) {
+        if (!Number.isSafeInteger(segment.offset) || segment.offset < 0 || wide(segment.offset) > extent || wide(lengthOf(segment.bytes)) > extent - wide(segment.offset)) throw new RangeError('Worker image segment exceeds memory');
+      }
+      const {createGuest} = await import('../host/node/execution.ts');
+      checked(core.linux_binding_room());
+      const memory = new Memory({initial: pages, maximum: pages, shared: true});
+      const binding = result(core.linux_bind(extent));
+      const id = result(core.linux_execution_create(binding));
+      checked(core.linux_image_begin(id, extent));
+      let bridge: ReturnType<typeof createGuest>;
+      try {
+        for (const segment of prepared.segments) apply(setBytes, new Bytes(bufferOf(memory), segment.offset, lengthOf(segment.bytes)), [segment.bytes]);
+        bridge = createGuest({module: translated, memory});
+      } catch (error) {
+        try { checked(core.linux_image_finish(id, 2)); }
+        catch (receipt) { throw new AggregateError([error, receipt], 'Worker preparation and receipt failed'); }
+        throw error;
+      }
+      const handle = freeze({kind: 'managed-execution' as const});
+      const w: WorkerState = {id, memory, bridge, invocation: 0n, receipt: false, imagePending: true, active: false, failureCount: 0};
+      apply(mapSet, workers, [handle, w]);
+      // The listener retains failed initialization as well as successful handles.
+      // Exit evidence is separate from an outstanding source callback obligation.
+      void bridge.stopped.then(() => {
+        if (w.imagePending) {
+          try { checked(core.linux_image_finish(id, 2)); w.imagePending = false; }
+          catch (error) { workerFailure(w, error); }
+        } else if (w.invocation && !w.receipt) {
+          w.receipt = true; // One attempt: failure is retained, never replayed blindly.
+          try { checked(core.linux_run_receipt(id, w.invocation, 2, 0n)); }
+          catch (error) { workerFailure(w, error); }
+          abandonWorker(w);
+        }
+      }).catch(error => workerFailure(w, error));
+      try {
+        await bridge.ready;
+        if (bridge.diagnostics().exited) throw new Error('Worker exited during initialization');
+        const next = remember(result(core.linux_image_finish(id, 0)), memory);
+        w.imagePending = false;
+        apply(mapSet, executions, [handle, {id, binding: next}]);
+        return handle;
+      } catch (error) {
+        workerFailure(w, error);
+        if (w.imagePending) {
+          try { checked(core.linux_image_finish(id, 3)); }
+          catch (receipt) { workerFailure(w, receipt); }
+        }
+        bridge.requestStop();
+        // No unbounded exit wait on failure. Late exit owns the matching receipt.
+        throw error;
+      }
+    },
+    stopWorker(handle: ExecutionBinding): void { workerOf(handle).bridge.requestStop(); },
+    /** Observations only: neither method proves tree disposal or full owner release. */
+    workerEvidence(handle: ExecutionBinding) {
+      const w = workerOf(handle), evidence = w.bridge.diagnostics();
+      return {...evidence, failureCount: evidence.failureCount + w.failureCount,
+        firstFailure: w.firstFailure ?? evidence.firstFailure,
+        ownerFailure: w.firstFailure, transportFailure: evidence.firstFailure};
+    },
+    workerSettled(handle: ExecutionBinding): Promise<void> { return workerOf(handle).bridge.requestsSettled(); },
+    async runWorker(handle: ExecutionBinding, entry: bigint, load?: Loader): Promise<{status: number; sourceFailures: number}> {
+      const w = workerOf(handle);
+      if (w.active || w.invocation || w.imagePending || w.bridge.diagnostics().exited || w.bridge.diagnostics().stopping) throw new Error('Worker run unavailable');
+      w.invocation = result(core.linux_run_start(w.id));
+      w.active = true;
+      let failures = 0, exit = false;
+      try {
+        const outcome = await w.bridge.run(w.invocation, entry, async request => {
+          try {
+            const c = command(core.linux_syscall(w.id, request.invocation, request.nr, ...request.args, request.next));
+            if (c.tag === 0) return {kind: 'return', value: c.value};
+            if (c.tag === 2) { exit = true; return {kind: 'leave'}; }
+            if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag}`);
+            const completed = await finishRead(w.id, c.value, c.target, w.memory, load, () => { failures++; });
+            if (completed.tag !== 0) throw new Error(`Worker read did not return: ${completed.tag}`);
+            return {kind: 'return', value: completed.value};
+          } catch (error) {
+            // A callback can finish after exit; settle its source before trying
+            // abandonment again. Unknown obligations remain owned in Rust.
+            try { checked(core.linux_syscall_abandon(w.id)); }
+            catch (cleanup) { workerFailure(w, cleanup); throw new AggregateError([error, cleanup], 'Worker source and cleanup failed'); }
+            throw error;
+          }
+        });
+        if (outcome.kind !== 'left' || !outcome.unwound || !exit) {
+          throw outcome.kind === 'failed' ? outcome.error : new Error('Worker did not unwind an exit command');
+        }
+        w.receipt = true;
+        const status = numeric(result(core.linux_run_receipt(w.id, w.invocation, 1, 0n)));
+        w.bridge.requestStop();
+        const evidence = await w.bridge.stopEvidence();
+        if (!evidence.stopped) throw new Error('Worker stop remains unconfirmed');
+        if (w.failureCount || w.bridge.diagnostics().failureCount) throw w.firstFailure ?? w.bridge.diagnostics().firstFailure;
+        return {status, sourceFailures: failures};
+      } catch (error) {
+        workerFailure(w, error);
+        w.bridge.requestStop();
+        // A host error/termination request is not a stopped-stack certificate.
+        // The exit callback above is responsible for the fault receipt.
+        throw error;
+      } finally { w.active = false; }
+    },
     /** Diagnostic only: fresh fixed memory, one runner, preopened files. */
     translatedExecution(input: Uint8Array, pages: number): ExecutionBinding {
       u32(pages);
@@ -301,23 +464,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
             return {status: numeric(result(core.linux_run_receipt(e.id, state.invocation, 1, 0n))), sourceFailures: failures};
           }
           checked(core.linux_run_receipt(e.id, state.invocation, 0, c.next));
-          checked(core.linux_read_query(c.value));
-          if ((core.linux_result_state() & 255) === 5) {
-            const source = numeric(result(core.linux_read_load_start(e.id, c.value)));
-            const attempt = numeric(core.linux_result_length());
-            let ok = false, sourceError: unknown;
-            try {
-              if (!load) throw new Error('No translated source loader');
-              const bytes = new Bytes(await load(source));
-              put(result(core.linux_load_input(u32(lengthOf(bytes)))), bytes);
-              ok = true;
-            } catch (error) { failures++; sourceError = error; }
-            try { checked(core.linux_syscall_load_finish(e.id, c.value, attempt, ok ? 1 : 0)); }
-            catch (completion) { throw new AggregateError(ok ? [completion] : [sourceError, completion], 'Source completion failed'); }
-          }
-          checked(core.linux_read_query(c.value));
-          if ((core.linux_result_state() & 255) === 0) copyRead({id: c.value, memory: state.memory, offset: numeric(c.target), execution: e.id});
-          const resume = command(core.linux_syscall_complete(e.id));
+          const resume = await finishRead(e.id, c.value, c.target, state.memory, load, () => { failures++; });
           if (resume.tag !== 5) throw new Error(`Read did not produce a resume command: ${resume.tag}`);
           try {
             apply(globalValue, state.guest.r0, [resume.value]);
@@ -369,14 +516,14 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       return {execution, memory: next};
     },
     replaceImage(execution: ExecutionBinding, input: Uint8Array): MemoryBinding {
-      if (apply(mapGet, guests, [execution])) throw new Error('Translated image replacement is not supported');
+      if (apply(mapGet, guests, [execution]) || apply(mapGet, workers, [execution])) throw new Error('Translated image replacement is not supported');
       const bytes = new Bytes(input), entry = executionOf(execution);
       const next = installImage(entry.id, entry.binding, bytes, execution);
       apply(mapSet, executions, [execution, {id: entry.id, binding: next}]);
       return next;
     },
     beginManagedRead(execution: ExecutionBinding, fd: number, offset: number, length: number): ReadBinding {
-      if (apply(mapGet, guests, [execution])) throw new Error('Translated execution owns its reads');
+      if (apply(mapGet, guests, [execution]) || apply(mapGet, workers, [execution])) throw new Error('Translated execution owns its reads');
       u32(fd); integer(offset); integer(length);
       const e = executionOf(execution), {memory} = get(e.binding);
       const id = result(core.linux_managed_read_begin(e.id, fd, wide(offset), wide(length)));

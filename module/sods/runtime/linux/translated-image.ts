@@ -8,7 +8,7 @@ const importsOf = WebAssembly.Module.imports;
 const Bytes = Uint8Array;
 const functions = new Set(['syscall', 'trap', 'div128', 'clock', 'fpu', 'trace', 'miss', 'time']);
 
-export function fixedTranslatedModule(input: Uint8Array): WebAssembly.Module {
+export function fixedTranslatedModule(input: Uint8Array, {externalData = false}: {externalData?: boolean} = {}): WebAssembly.Module {
   // Own the exact bytes inspected and compiled; callers cannot change a section
   // after the engine has validated it. Shared input is not an atomic snapshot.
   const bytes = new Bytes(input);
@@ -30,6 +30,7 @@ export function fixedTranslatedModule(input: Uint8Array): WebAssembly.Module {
   while (at < bytes.length) {
     const section = bytes[at++], length = size();
     if (section === 8) throw new Error('Translated image must not have a start function');
+    if (externalData && section === 11) throw new Error('Externally initialized image must not retain data segments');
     if (section === 5) throw new Error('Translated image must not define memory');
     if (length > bytes.length - at) throw new Error('Truncated Wasm section');
     at += length;
@@ -49,6 +50,8 @@ export function fixedTranslatedModule(input: Uint8Array): WebAssembly.Module {
   // Names/kinds only: JS functions adapt to the module-declared signatures.
   // Expected translator signatures remain a trusted-artifact precondition;
   // instantiation checks physical memory type/limits, not that precondition.
+  // externalData forbids the whole data section (including passive segments),
+  // so Worker instantiation cannot reapply initialization behind the main owner.
   // No export or function is called here. Active data is applied only later,
   // inside the exclusive initialization of a fresh private Memory.
   return module;

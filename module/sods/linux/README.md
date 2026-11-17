@@ -451,3 +451,51 @@ have not been demonstrated minimal. Lazy initialization additionally transports 
 source bytes into Wasm and, when input ownership is not transferred, captures S
 host bytes. A pending continuation is inline and bounded to one per execution.
 Bounded-table scans and translator/artifact costs remain separate from copy costs.
+
+### Same authority with a Node guest Worker
+
+The private diagnostic can now keep the Rust State on the main thread and execute
+translated guest code in a separate Node Worker over fresh fixed shared memory.
+The Worker imports no legacy Kernel/Process implementation and makes no decisions
+about Linux syscall numbers, errno, descriptors or offsets. It publishes a request
+and waits for a Rust-decided Return or Leave. This is not a default Node entry
+switch: `run.ts`, full ELF startup, execution-owned credentials/FD/Fs creation and
+the old production TS authority remain migration work.
+
+There is one non-reused Worker, invocation and 88-byte request slot. The slot holds
+invocation identity, nr/six arguments/next PC, a return value, publication state
+and a non-wrapping sequence. Payload is published before the atomic state change;
+waits recheck the predicate rather than treating notification as the result.
+Guest read bytes are not copied through the message channel. Main copies n bytes
+from the Rust canonical payload to shared guest memory while the Worker waits.
+The wait is **not** stack unwind: RunHold stays live, and the translator performs
+its normal RAX/RCX update when the synchronous import returns. This avoids a second
+register-resume protocol on the Worker path. Central placement still incurs a
+request/reply synchronization per syscall; it is not a universal performance floor.
+
+Initialization validates raw module framing, externalizes data with the existing
+translator adapter, rejects remaining data/start sections, checks all segment
+ranges, and writes only inside image-change admission. Worker ready precedes
+Installed/run admission. Initialization failure with uncertain Worker completion
+retains the image action until an actual Node exit permits a stopped failure
+receipt. Constructor failure without an exit witness is conservative quarantine,
+not successful rollback. Shared growth beyond initial size is unavailable in this
+profile; concurrent guest threads and growable memories have not been admitted.
+
+Exit intent, matching guest unwind, Node exit, pending source completion and copy
+completion are separate facts. A stop request or terminate promise does not prove
+exit. A source callback remains observed after Worker exit; its matching completion
+is attempted once, then terminal read cleanup is attempted again even when the
+completion reports an identity failure. Late bytes are not adopted and staging is
+cleared. The original OFD is held independently of its fd number, so close/reuse
+cannot make late cleanup alter a replacement descriptor. Unknown main-side copy
+still requires its own stopped-copy receipt even after the guest has stopped.
+
+Local tests exercise real Node Workers with the Rust Wasm instance, successful
+resident/lazy reads, source failure, reentry rejection, forced exit during source
+loading and both late outcomes. Separate physical-channel tests cover initialization
+failure and callback retention. The current-source translator CI test also runs
+both inline and Worker profiles; local environments without that translator skip
+only that explicitly unconfigured test, never substitute the frozen fixture.
+These results do not yet establish normal Node startup, multiple execution sharing,
+full syscall coverage, browser Workers or automatic whole-tree disposal.

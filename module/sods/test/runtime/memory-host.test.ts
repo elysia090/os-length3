@@ -536,3 +536,22 @@ test('wrong syscall source completion is rejected before affecting another read'
   assert.equal(a.state(), 5);
   a.ok('linux_syscall_resumed', execution, 0, 1);
 });
+
+test('execution exit evidence cannot retire an unknown main-side syscall copy', {skip: !artifact}, () => {
+  const a = readAbi(), execution = a.ok('linux_execution_create', a.binding);
+  a.ok('linux_image_begin', execution, 65536n); a.ok('linux_image_finish', execution, 0);
+  const invocation = a.ok('linux_run_start', execution);
+  const read = a.ok('linux_syscall', execution, invocation, 0n, BigInt(a.fd), 0n, 3n, 0n, 0n, 0n, 123n);
+  const pointer = Number(a.ok('linux_managed_read_start', execution, read));
+  new Uint8Array(a.memory.buffer, 0, 2).set(new Uint8Array((a.e.memory as WebAssembly.Memory).buffer, pointer, 2));
+  a.ok('linux_read_receipt', read, 2n, 1); // independent copy completion remains unknown
+  a.ok('linux_run_receipt', execution, invocation, 2, 0n); // matching guest stop only
+  assert.equal(a.ok('linux_syscall_abandon', execution), 0n);
+  assert.ok(a.call('linux_image_begin', execution, 65536n) < 0);
+  assert.equal(a.ok('linux_offset', a.fd), 0n);
+  a.ok('linux_read_receipt', read, 2n, 0); // separate, explicit stopped-copy evidence
+  assert.equal(a.ok('linux_syscall_abandon', execution), 1n);
+  assert.equal(a.ok('linux_offset', a.fd), 2n);
+  a.ok('linux_image_begin', execution, 65536n);
+  a.ok('linux_image_finish', execution, 1);
+});

@@ -49,3 +49,9 @@ test('fixed image rejects hidden memory and ambiguous import identities', () => 
   assert.throws(() => fixedTranslatedModule(image({duplicate: true})), /Unsupported.*import/);
   assert.throws(() => fixedTranslatedModule(image({wrongKind: true})), /Unsupported.*import/);
 });
+
+
+test('externally initialized Worker image rejects retained data', () => {
+  assert.throws(() => fixedTranslatedModule(image({data: true}), {externalData: true}), /retain data segments/);
+  assert.ok(fixedTranslatedModule(image(), {externalData: true}) instanceof WebAssembly.Module);
+});

@@ -40,7 +40,7 @@ test('current-source translator ELF runs through Rust read/exit authority', {
     assert.ok(Number.isSafeInteger(facts.imageEnd) && facts.imageEnd > facts.entry);
     const pages = Math.ceil(facts.imageEnd / 65536);
     assert.ok(pages > 0 && pages <= 65536);
-    for (const scenario of ['resident', 'lazy', 'source-failure'] as const) {
+    for (const runner of ['inline', 'worker'] as const) for (const scenario of ['resident', 'lazy', 'source-failure'] as const) {
       const host = memoryHost(linux, 2, 8);
       const root = host.prepareFiles({inodes: 8, entries: 8, fileBytes: 32, tables: 1, descriptions: 8, slots: 8, reads: 8});
       const name = new TextEncoder().encode('data');
@@ -49,17 +49,28 @@ test('current-source translator ELF runs through Rust read/exit authority', {
         : host.lazyFile(root, name, 1, 0);
       host.sealFiles(8);
       for (let fd = 0; fd < 4; fd++) assert.equal(host.open(file), fd);
-      const execution = host.translatedExecution(bytes, pages);
+      const execution = runner === 'worker'
+        ? await host.workerExecution(bytes, pages)
+        : host.translatedExecution(bytes, pages);
       let loads = 0;
-      const outcome = await host.runTranslated(execution, BigInt(facts.entry), async source => {
+      const load = async (source: number) => {
         assert.equal(source, 1); loads++;
         if (scenario === 'source-failure') throw new Error('source unavailable');
         return new TextEncoder().encode('abcd');
-      });
+      };
+      let outcome;
+      try {
+        outcome = runner === 'worker'
+          ? await host.runWorker(execution, BigInt(facts.entry), load)
+          : await host.runTranslated(execution, BigInt(facts.entry), load);
+        if (runner === 'worker') assert.equal(host.workerEvidence(execution).exited, true);
+      } finally {
+        if (runner === 'worker') { host.stopWorker(execution); await host.workerSettled(execution); }
+      }
       const failed = scenario === 'source-failure';
-      assert.deepEqual(outcome, {status: failed ? 1 : 0, sourceFailures: failed ? 1 : 0}, scenario);
-      assert.equal(host.offset(3), failed ? 0n : 4n, scenario);
-      assert.equal(loads, scenario === 'resident' ? 0 : 1, scenario);
+      assert.deepEqual(outcome, {status: failed ? 1 : 0, sourceFailures: failed ? 1 : 0}, `${runner}/${scenario}`);
+      assert.equal(host.offset(3), failed ? 0n : 4n, `${runner}/${scenario}`);
+      assert.equal(loads, scenario === 'resident' ? 0 : 1, `${runner}/${scenario}`);
     }
     // This is fixed-memory, preopened-FD integration, not full Node/ELF loading,
     // stack setup, muk, threads, or a proof of general syscall compatibility.
