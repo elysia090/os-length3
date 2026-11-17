@@ -94,3 +94,26 @@ for (const operation of ['given','own','release','map','settle']) test(`Rust ino
   assert.throws(() => file.bytes(),io); assert.equal(file.size,0); assert.equal(file.version,0); assert.equal(file.maps,null);
   assert.equal(dec.decode(file.bytes()),'outer'); scope.dispose();
 });
+
+for (const action of ['release', 'write', 'close', 'throw', 'copy-fault'] as const) test(`readInto preserves readiness and copy completion after ${action}`, {skip: !wasm}, async () => {
+  const scope=await loadFileScope(readFileSync(wasm!),64),vfs=scope.createVfs();
+  let loads=0,ready=0;
+  const file=scope.lazyFile(vfs,'/a',()=>enc.encode(++loads===1?'old':'new'));
+  const into=new Uint8Array(action==='copy-fault'?0:3), refused=new Error('ready refused');
+  const read=()=>file.readInto(0,into,0,3,()=>{
+    ready++;
+    if(action==='release') assert.equal(file.release(),3);
+    if(action==='write') file.write(0,enc.encode('new'));
+    if(action==='close') scope.dispose();
+    if(action==='throw') throw refused;
+  });
+  if(action==='close') assert.throws(read,/closed/);
+  else if(action==='throw') assert.throws(read,error=>error===refused);
+  else if(action==='copy-fault') assert.throws(read,RangeError);
+  else {assert.equal(read(),3);assert.equal(dec.decode(into),'new');}
+  assert.equal(ready,1);assert.equal(loads,action==='release'?2:1);
+  if(action==='throw'||action==='copy-fault') {
+    const later=new Uint8Array(3);assert.equal(file.readInto(0,later,0,3),3);assert.equal(dec.decode(later),'old');
+  }
+  scope.dispose();
+});

@@ -159,3 +159,39 @@ file, unloaded/loading/closed rejection without calling loaders, preparation/ext
 failure after own, and publication failure before the next run. An injected second
 core-write error verifies first-run canonical/visible prefix and source retirement;
 it is explicit boundary fault injection, not a claim of reproducing allocator OOM.
+
+## Warm read: retain revalidation, omit unused size
+
+The previous nine-call readInto path was: outer materialize (load_begin, size,
+source), caller readiness callback, inner materialize (load_begin, size), then
+read_begin, pointer, length and finish. The second load_begin is not redundant:
+the callback can release/reload, close or mutate the inode. The second size result,
+however, was discarded. Read admission already determines the accepted extent.
+
+Only the private readInto path now skips that ready-state size query. Public
+materialize still returns the size; cold completion, callbacks, poison and lease
+retirement stay unchanged. No ABI change, TS shadow state, page batching or
+resident-data borrowing is introduced. The same real debug-Wasm ledger measures:
+
+| Operation | Previous exports | Current exports |
+| --- | ---: | ---: |
+| Cold readInto | 13 | 12 |
+| Warm readInto | 9 | 8 |
+| Reload/readInto | 13 | 12 |
+
+Warm still checks readiness twice and queries size once. Mapping/write/release
+rows are unchanged, including 10,241 calls for alternating dirty bytes. Required
+destination population, canonical-to-scratch copy, scratch retention and mapping
+scans are unchanged. This removes one representation query, not a universal lower
+bound or a measured elapsed-time improvement. Fusing ABI results or changing the
+memory model would be a different design with compatibility and ownership costs.
+
+Ready callback release/reload, mutation, close and exception, plus destination
+copy failure followed by another read, pass against the actual core. Existing
+poison/reentry and syscall-offset tests remain in the regression set: 31 focused
+Wasm tests pass. Independent source review reports no blocking issue.
+Independent package acceptance also passes (2 tests, seven actual ELF scenarios
+including inline/Node and finite disposal/refusal checks); focused strict TypeScript
+passes. The translator remains the explicitly selected historical artifact. No
+new Rust build is needed for this host-boundary-only change; the unchanged real
+core exports were exercised, not mocked for the measured calls.

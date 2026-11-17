@@ -98,10 +98,10 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
   const handle = (id: number, origin = 0): CoreFile => {
       let closed = false;
       const live = () => { if (closed) throw new Error('File handle is closed'); };
-      const materialize = (given?: Uint8Array): number => {
+      const materialize = (given?: Uint8Array, needSize = true): number => {
         live();
         const operation = check(core.files_load_begin(id));
-        if (!operation) return check(core.files_size(id));
+        if (!operation) return needSize ? check(core.files_size(id)) : 0;
         const source = check(core.files_load_source(id));
         try {
           const loader = sources.get(source);
@@ -126,7 +126,7 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
         return size;
       };
       return {
-        materialize,
+        materialize() { return materialize(); },
         checkIdle() { live(); check(core.files_load_check(id)); },
         resident() { live(); return check(core.files_resident(id)); },
         source() { live(); return check(core.files_load_source(id)); },
@@ -145,7 +145,9 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
           } catch (error) { return abort(operation, error); }
         },
         readInto(start, into, at, length) {
-          uint(start); uint(at); uint(length); materialize();
+          // Recheck readiness after the outer caller callback, but do not query
+          // an unused size. Cold load completion and failure retirement are unchanged.
+          uint(start); uint(at); uint(length); materialize(undefined, false);
           const operation = check(core.files_read_begin(id, start, length));
           try {
             const bytes = view();

@@ -89,6 +89,9 @@ test('same raw-pack and mapping semantics expose ABI work without timing claims'
   assert.equal(row('rust','mapping-alternating').calls.files_write,2048);
   assert.equal(row('rust','mapping-clean').baselineBytes,4096);
   const crossings=(phase:string)=>Object.values(row('rust',phase).calls).reduce((sum,n)=>sum+n,0);
+  assert.equal(crossings('warm'),8);
+  assert.equal(row('rust','warm').calls.files_load_begin,2);
+  assert.equal(row('rust','warm').calls.files_size,1);
   assert.equal(crossings('mapping-one'),6);
   assert.equal(crossings('mapping-contiguous'),6);
   assert.equal(crossings('mapping-alternating'),10241);
