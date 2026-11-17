@@ -70,12 +70,9 @@ test('pinned prebuilt tools compose real layers without cargo or a C build', asy
     sods: artifact('sods',Buffer.from('not invoked: no executable fixture')),
     muk: artifact('muk',Buffer.from('maker fixture')),
   };
-  const {publishCatalog} = await import('../../otter/make/artifacts.mjs');
-  const published=join(at,'published');
-  const pin={...publishCatalog({packageCache:cache,packages:{base:[],extra:[]},toolchains:{[`${process.platform}-${process.arch}`]:Object.fromEntries(Object.entries(tools).map(([n,d])=>[n,d.path]))},output:published}),url:'https://example.test/catalog.json'};
-  t.mock.method(globalThis,'fetch',async (url: string)=>new Response(readFileSync(join(published,new URL(url).pathname.slice(1)))));
+  t.mock.method(globalThis,'fetch',()=>{throw new Error('composition must not fetch');});
   const output=join(at,'layers');
-  await prepareDistribution({packages:['base'],packageCache:join(at,'downloaded'),catalog:pin,output,cache:''});
+  await prepareDistribution({packages:['base'],packageCache:cache,tools,output,cache:''});
   const assets=distributionAssets(output);
   assert.ok(assets.has('ricebox/muk.json'));
   assert.ok([...assets.keys()].some(n=>n.startsWith('ricebox/packs/')));
@@ -95,4 +92,19 @@ test('pinned file core reaches real composition and deployment assets',{skip:!pr
   assert.ok(distributionAssets(output).has('ricebox/'+index.fileCore.path));
   rmSync(join(output,index.fileCore.path));assert.throws(()=>distributionAssets(output),/ENOENT/);
   const bad=join(at,'bad-core');await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,fileCore:{...fileCore,sha256:'0'.repeat(64)},output:bad}),/integrity mismatch/);assert.equal(existsSync(bad),false);
+});
+
+test('former catalog option fails explicitly before any IO even with usable tools', async t => {
+  const {at,cache}=fixture(t),output=join(at,'not-created');
+  t.mock.method(globalThis,'fetch',()=>{throw new Error('unexpected network');});
+  await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,toolchain:at,output,catalog:{}} as unknown as Parameters<typeof prepareDistribution>[0]),/acquire catalog packages first/);
+  assert.equal(existsSync(output),false);
+  assert.equal(readdirSync(at).some(n=>n.startsWith('.ricebox-build-')),false);
+});
+
+test('acquired package metadata without tools requires an explicit toolchain', async t => {
+  const {at,cache}=fixture(t),output=join(at,'not-created');
+  await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,output}),/provide pinned tools/);
+  assert.equal(existsSync(output),false);
+  assert.equal(readdirSync(at).some(n=>n.startsWith('.ricebox-build-')),false);
 });

@@ -15,6 +15,7 @@ test('built npm package contains builder dependencies and imports public JS with
     execFileSync(process.execPath,[builder,out],{encoding:'utf8',timeout:30_000});
     const pkg=JSON.parse(readFileSync(join(out,'package.json'),'utf8'));
     assert.equal(pkg.private,true);
+    assert.equal(existsSync(join(out,'module/otter')),false);
     assert.equal(pkg.exports['./vite'].import,'./module/ricebox/npm/vite.js');
     assert.equal(pkg.exports['./prepare'].types,'./module/ricebox/npm/prepare.ts');
     for(const name of ['module/ricebox/make/layers.ts','module/ricebox/make/file-core.ts','module/sods/runtime/core/files.ts',
@@ -32,6 +33,22 @@ test('built npm package contains builder dependencies and imports public JS with
     const result=execFileSync(process.execPath,['--no-experimental-strip-types','--input-type=module','-e',
       `for (const url of ${JSON.stringify(imports)}) await import(url); console.log('imports-ok');`],{encoding:'utf8',timeout:30_000});
     assert.match(result,/imports-ok/);
+    const composed=execFileSync(process.execPath,['--no-experimental-strip-types','--input-type=module','-e',`
+      import {mkdirSync,writeFileSync} from 'node:fs'; import {join} from 'node:path'; import {createHash} from 'node:crypto';
+      const {prepareDistribution}=await import(${JSON.stringify(imports[2])});
+      const {distributionAssets}=await import(${JSON.stringify(imports[1])});
+      const work=${JSON.stringify(work)}, cache=join(work,'selected-cache'), base=join(cache,'base');
+      mkdirSync(join(base,'tree/usr/share'),{recursive:true});writeFileSync(join(base,'tree/usr/share/base'),'package');
+      for(const [key,value] of Object.entries({version:'1',source:'fixture',key:'fixture'}))writeFileSync(join(base,key),value);
+      const tools=Object.fromEntries(['translator','sods','muk'].map(name=>{
+        const path=join(work,name),bytes=name==='translator'?Buffer.from([0,97,115,109,1,0,0,0]):Buffer.from('fixture');
+        writeFileSync(path,bytes);return [name,{path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}];
+      }));
+      globalThis.fetch=()=>{throw Error('package composition must not acquire');};
+      const output=join(work,'composed');await prepareDistribution({packages:['base'],packageCache:cache,tools,output,cache:''});
+      if(!distributionAssets(output).has('ricebox/muk.json'))throw Error('missing maker');console.log('composition-ok');
+    `],{encoding:'utf8',timeout:30_000});
+    assert.match(composed,/composition-ok/);
     const helper=pathToFileURL(join(out,'module/ricebox/make/file-core.ts')).href;
     const checks=execFileSync(process.execPath,['--input-type=module','-e',
       `const {fileCoreOptions}=await import(${JSON.stringify(helper)}); if(fileCoreOptions([])!==null) throw Error('selection'); console.log('builder-ok');`],{encoding:'utf8',timeout:30_000});

@@ -3,7 +3,6 @@
 import {mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, symlinkSync, rmSync, renameSync, existsSync, lstatSync} from 'node:fs';
 import {resolve, join, dirname} from 'node:path';
 import {spawn} from 'node:child_process';
-import {acquirePackages} from '../../otter/make/artifacts.mjs';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 
@@ -11,7 +10,6 @@ export interface PinnedTool { path: string; size: number; sha256: string }
 export interface FileCoreTool extends PinnedTool { maxFileBytes: number }
 export interface PrepareOptions {
   packages: string[]; packageCache: string; output: string;
-  catalog?: {url: string; sha256: string; size: number};
   toolchain?: string;
   tools?: Record<'translator' | 'sods' | 'muk', PinnedTool>;
   /** Explicitly pinned core artifact; no implicit download/build. */
@@ -53,9 +51,12 @@ function run(command: string, args: string[]) {
     child.once('exit', (code, signal) => code === 0 ? resolve() : reject(new Error(`ricebox: ${command} failed (${signal || code})`)));
   });
 }
-export async function prepareDistribution({packages, packageCache, catalog, toolchain, tools, fileCore, output, version = '0.0.1', cache, hot = []}: PrepareOptions) {
+export async function prepareDistribution(options: PrepareOptions) {
+  // Do not silently accept the former network-acquiring API in JavaScript callers.
+  if ('catalog' in options) throw new Error('ricebox: acquire catalog packages first, then pass packages, packageCache and tools');
+  const {packages, packageCache, toolchain, tools, fileCore, output, version = '0.0.1', cache, hot = []} = options;
   if (!packageCache || !output) throw new Error('ricebox: packageCache and output are required for package composition');
-  if (!toolchain && !tools && !catalog) throw new Error('ricebox: provide pinned tools, or a source toolchain for development');
+  if (!toolchain && !tools) throw new Error('ricebox: provide pinned tools, or a source toolchain for development');
   if (!Array.isArray(hot) || hot.some(p => typeof p !== 'string' || !p.startsWith('/') || /[\s,]/.test(p))) throw new Error('ricebox: hot must contain absolute guest program paths');
   const core = fileCore === undefined ? null : verifiedTool(fileCore, 'fileCore');
   if (fileCore && (!Number.isInteger(fileCore.maxFileBytes) || fileCore.maxFileBytes < 0 || fileCore.maxFileBytes > 0x7fffffff)) throw new Error('ricebox: invalid fileCore maxFileBytes');
@@ -64,11 +65,6 @@ export async function prepareDistribution({packages, packageCache, catalog, tool
   mkdirSync(dirname(target), {recursive: true});
   const work = mkdtempSync(join(dirname(target), '.ricebox-build-'));
   try {
-    if (catalog) {
-      const acquired = await acquirePackages({catalog, packages, cache: packageCache});
-      packages = acquired.packages; packageCache = acquired.packageCache; tools ??= acquired.tools;
-      if (!toolchain && !tools) throw new Error('ricebox: catalog has no build toolchain');
-    }
     selectPackages(packages, packageCache, join(work, 'packages'));
     await run('sh', [join(source, 'module/ricebox/make/assemble.sh'), join(work, 'packages'), join(work, 'root'), version, 'ricebox']);
     const archives = readdirSync(join(work, 'root')).filter(n => n.endsWith('.tar.zst'));
