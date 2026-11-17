@@ -1,18 +1,18 @@
-import {test} from 'node:test';
+import {test, type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
-import ricebox, {distributionAssets} from './vite.mjs';
+import ricebox, {distributionAssets} from './vite.ts';
 import {packOf} from '../layers/table.ts';
 
-function fixture(t) {
+function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), 'ricebox-assets-'));
   t.after(() => rmSync(root, {recursive: true, force: true}));
   mkdirSync(join(root, 'blobs')); mkdirSync(join(root, 'packs'));
-  const hash = (b) => createHash('sha256').update(b).digest('hex');
-  const blob = (text) => { const bytes = Buffer.from(text), sha256 = hash(bytes); const path = `blobs/${sha256}.bin`; writeFileSync(join(root, path), bytes); return {path, sha256, size: bytes.length}; };
+  const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+  const blob = (text: string) => { const bytes = Buffer.from(text), sha256 = hash(bytes); const path = `blobs/${sha256}.bin`; writeFileSync(join(root, path), bytes); return {path, sha256, size: bytes.length}; };
   const translator = blob('translator'), muk = blob('maker');
   const pack = packOf([Buffer.from('file contents')], b => createHash('sha256').update(b).digest());
   writeFileSync(join(root, 'packs', pack.name), pack.bytes);
@@ -53,7 +53,7 @@ test('refuses symbolic links and path escape declarations', t => {
   assert.throws(() => distributionAssets(root, {base:'../oops'}), /relative asset directory/);
 });
 test('uses ES Workers and emits existing AOT distribution unchanged', t => {
-  const {root} = fixture(t), plugin = ricebox({distribution:root,base:'runtime/assets'}), emitted=[];
+  const {root} = fixture(t), plugin = ricebox({distribution:root,base:'runtime/assets'}), emitted: {type: string; fileName: string}[]=[];
   assert.equal(plugin.config().worker.format,'es');
   plugin.generateBundle.call({emitFile: a => emitted.push(a)});
   assert.equal(emitted.length,6);

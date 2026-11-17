@@ -1,12 +1,12 @@
-import {test} from 'node:test';
+import {test, type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
-import {selectPackages, prepareDistribution} from './prepare.mjs';
-function fixture(t) {
+import {selectPackages, prepareDistribution} from './prepare.ts';
+function fixture(t: TestContext) {
   const at = mkdtempSync(join(tmpdir(), 'ricebox-selection-'));
   t.after(() => rmSync(at, {recursive: true, force: true}));
   const cache = join(at, 'cache'); mkdirSync(cache);
@@ -33,7 +33,7 @@ test('selected packages pass through the real neutral archive assembler', t => {
   const script=fileURLToPath(new URL('../make/assemble.sh',import.meta.url));
   const r=spawnSync('sh',[script,selected,out],{encoding:'utf8'});
   assert.equal(r.status,0,r.stderr);
-  const archive=join(out,readdirSync(out).find(n=>n.endsWith('.tar.zst')));
+  const archive=join(out,readdirSync(out).find(n=>n.endsWith('.tar.zst'))!);
   const list=spawnSync('tar',['--zstd','-tf',archive],{encoding:'utf8'});
   assert.equal(list.status,0,list.stderr);
   assert.match(list.stdout,/root\/usr\/bin\/extra\n/);
@@ -57,9 +57,9 @@ test('orchestration invokes assemble then AOT and publishes only after success',
 
 test('pinned prebuilt tools compose real layers without cargo or a C build', async t => {
   const {createHash} = await import('node:crypto');
-  const {distributionAssets} = await import('./vite.mjs');
+  const {distributionAssets} = await import('./vite.ts');
   const {at, cache} = fixture(t);
-  const artifact = (name, bytes) => {
+  const artifact = (name: string, bytes: Uint8Array) => {
     const path = join(at,name); writeFileSync(path,bytes);
     return {path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
   };
@@ -73,7 +73,7 @@ test('pinned prebuilt tools compose real layers without cargo or a C build', asy
   const {publishCatalog} = await import('../../otter/make/artifacts.mjs');
   const published=join(at,'published');
   const pin={...publishCatalog({packageCache:cache,packages:{base:[],extra:[]},toolchains:{[`${process.platform}-${process.arch}`]:Object.fromEntries(Object.entries(tools).map(([n,d])=>[n,d.path]))},output:published}),url:'https://example.test/catalog.json'};
-  t.mock.method(globalThis,'fetch',async url=>new Response(readFileSync(join(published,new URL(url).pathname.slice(1)))));
+  t.mock.method(globalThis,'fetch',async (url: string)=>new Response(readFileSync(join(published,new URL(url).pathname.slice(1)))));
   const output=join(at,'layers');
   await prepareDistribution({packages:['base'],packageCache:join(at,'downloaded'),catalog:pin,output,cache:''});
   const assets=distributionAssets(output);
@@ -82,4 +82,17 @@ test('pinned prebuilt tools compose real layers without cargo or a C build', asy
   tools.translator.sha256='0'.repeat(64);
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,output:join(at,'bad')}),/integrity mismatch/);
   assert.equal(existsSync(join(at,'bad')),false);
+});
+test('pinned file core reaches real composition and deployment assets',{skip:!process.env.SODS_CORE_WASM},async t=>{
+  const {createHash}=await import('node:crypto');const {distributionAssets}=await import('./vite.ts');
+  const {at,cache}=fixture(t);
+  const artifact=(name:string,bytes:Uint8Array)=>{const path=join(at,name);writeFileSync(path,bytes);return {path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};};
+  const tools={translator:artifact('translator.wasm',new Uint8Array([0,97,115,109,1,0,0,0])),sods:artifact('sods',Buffer.from('unused')),muk:artifact('muk',Buffer.from('fixture'))};
+  const fileCore={...artifact('core.wasm',readFileSync(process.env.SODS_CORE_WASM!)),maxFileBytes:8192},output=join(at,'core-release');
+  await prepareDistribution({packages:['base'],packageCache:cache,tools,fileCore,output,cache:''});
+  const about=JSON.parse(readFileSync(join(output,'webroot.json'),'utf8')),index=JSON.parse(readFileSync(join(output,about.index.path),'utf8'));
+  assert.equal(index.fileCore.abi,4);assert.equal(index.fileCore.maxFileBytes,8192);
+  assert.ok(distributionAssets(output).has('ricebox/'+index.fileCore.path));
+  rmSync(join(output,index.fileCore.path));assert.throws(()=>distributionAssets(output),/ENOENT/);
+  const bad=join(at,'bad-core');await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,fileCore:{...fileCore,sha256:'0'.repeat(64)},output:bad}),/integrity mismatch/);assert.equal(existsSync(bad),false);
 });

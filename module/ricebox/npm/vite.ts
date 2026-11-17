@@ -4,14 +4,16 @@
 import {createHash} from 'node:crypto';
 import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
-import {prepareDistribution} from './prepare.mjs';
+import {prepareDistribution, type PrepareOptions} from './prepare.ts';
+import {gunzipSync} from 'node:zlib';
+import type {Index, About, Blob} from '../layers/shape.ts';
 import {checkPacks} from '../layers/table.ts';
 
-export function distributionAssets(directory, {base = 'ricebox', maxAssetBytes = Infinity} = {}) {
+export function distributionAssets(directory: string, {base = 'ricebox', maxAssetBytes = Infinity}: {base?: string; maxAssetBytes?: number} = {}) {
   if (!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(base)) throw new Error('ricebox: base must be a relative asset directory');
   if (!(maxAssetBytes > 0)) throw new Error('ricebox: maxAssetBytes must be positive');
-  const root = resolve(directory), result = new Map();
-  const read = (name, digest, size) => {
+  const root = resolve(directory), result = new Map<string, Buffer>();
+  const read = (name: string, digest?: string, size?: number) => {
     if (!/^(?:webroot\.json|muk\.json|index-[0-9a-f]{64}\.json|packs\/[0-9a-f]{64}\.pack|blobs\/[0-9a-f]{64}\.bin)$/.test(name)) {
       throw new Error(`ricebox: invalid distribution asset ${name}`);
     }
@@ -28,26 +30,32 @@ export function distributionAssets(directory, {base = 'ricebox', maxAssetBytes =
     result.set(`${base}/${name}`, bytes);
     return bytes;
   };
-  const about = JSON.parse(read('webroot.json'));
+  const about = JSON.parse(read('webroot.json').toString('utf8')) as About;
   if (!about.index || !/^[0-9a-f]{64}$/.test(about.index.sha256) || about.index.path !== `index-${about.index.sha256}.json` || !Number.isSafeInteger(about.index.size)) throw new Error('ricebox: invalid index descriptor');
-  const index = JSON.parse(read(about.index.path, about.index.sha256, about.index.size));
+  const index = JSON.parse(read(about.index.path, about.index.sha256, about.index.size).toString('utf8')) as Index;
   if (index.sha256 !== about.sha256 || index.version !== about.version) throw new Error('ricebox: distribution and index disagree');
-  const blob = (b) => {
+  const blob = (b: Blob) => {
     if (!b || !/^[0-9a-f]{64}$/.test(b.sha256) || !Number.isSafeInteger(b.size) || b.size < 0 || b.path !== `blobs/${b.sha256}.bin`) throw new Error('ricebox: invalid blob descriptor');
     return read(b.path, b.sha256, b.size);
   };
   blob(index.translator);
+  if (index.fileCore !== undefined) {
+    const core = index.fileCore;
+    if (!core || core.abi !== 4 || !Number.isInteger(core.maxFileBytes) || core.maxFileBytes < 0 || core.maxFileBytes > 0x7fffffff || !/^[0-9a-f]{64}$/.test(core.wasm)) throw new Error('ricebox: invalid file core descriptor');
+    const bytes = gunzipSync(blob(core));
+    if (bytes.length !== core.bytes || createHash('sha256').update(bytes).digest('hex') !== core.wasm) throw new Error('ricebox: file core expanded content mismatch');
+  }
   for (const translation of index.translations ?? []) { blob(translation.elf); blob(translation.wasm); }
   const packs = new Map(index.packs.map(pack => [pack.name, read(`packs/${pack.name}`, undefined, pack.bytes)]));
-  checkPacks(index, (name, at, len) => packs.get(name).subarray(at, at + len), name => packs.get(name).length, bytes => createHash('sha256').update(bytes).digest());
+  checkPacks(index, (name, at, len) => packs.get(name)!.subarray(at, at + len), name => packs.get(name)!.length, bytes => createHash('sha256').update(bytes).digest());
   // The maker is required for a deployable root. Do not produce a seemingly valid
   // deployment whose first launch fails because muk was omitted.
-  const muk = JSON.parse(read('muk.json'));
+  const muk = JSON.parse(read('muk.json').toString('utf8')) as Blob;
   blob(muk);
   return result;
 }
 
-export default function ricebox({distribution, build, base = 'ricebox', maxAssetBytes} = {}) {
+export default function ricebox({distribution, build, base = 'ricebox', maxAssetBytes}: {distribution?: string; build?: PrepareOptions; base?: string; maxAssetBytes?: number} = {}) {
   if (distribution && build) throw new Error('ricebox: choose distribution or build, not both');
   let prepared = distribution;
   return {
@@ -56,7 +64,7 @@ export default function ricebox({distribution, build, base = 'ricebox', maxAsset
       if (build) prepared = await prepareDistribution(build);
     },
     config() { return {worker: {format: 'es'}}; },
-    generateBundle() {
+    generateBundle(this: {emitFile(asset: {type: 'asset'; fileName: string; source: Uint8Array}): unknown}) {
       if (!prepared) return;
       const assets = distributionAssets(prepared, {base, maxAssetBytes});
       for (const [fileName, source] of assets) this.emitFile({type: 'asset', fileName, source});
