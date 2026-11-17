@@ -684,8 +684,13 @@ impl Files {
         self.release(id);
         Ok(())
     }
-    pub(crate) fn let_go(&mut self, table: Table) -> Result<(), Error> {
-        let holders = self.state(&table)?.holders;
+    /// Return ownership unchanged on validation failure. Once validated, release
+    /// is infallible: no allocation or external callback occurs below.
+    pub(crate) fn let_go(&mut self, table: Table) -> Result<(), (Error, Table)> {
+        let holders = match self.state(&table) {
+            Ok(state) => state.holders,
+            Err(error) => return Err((error, table)),
+        };
         if holders > 1 {
             self.tables[table.0.slot].value.as_mut().unwrap().holders -= 1;
             return Ok(());
@@ -1029,6 +1034,56 @@ mod tests {
         f.let_go(t).unwrap();
         assert_eq!(f.live_slots, 0);
         assert!(f.descriptions.iter().all(|c| c.value.is_none()));
+    }
+    #[test]
+    fn rejected_table_release_returns_ticket_to_its_owner() {
+        let (mut files, inode) = setup(4);
+        let table = files.table(4).unwrap();
+        let fd = files.open(&table, inode, false).unwrap();
+        // Distinct live Files incarnations, as required by the embedding.
+        let mut foreign = Files::new(
+            93,
+            Tree::new(94, 1, 0, 0).unwrap(),
+            Limits {
+                contexts: 0,
+                tables: 1,
+                descriptions: 0,
+                slots: 0,
+            },
+        );
+        let foreign_table = foreign.table(0).unwrap();
+        let (error, table) = foreign.let_go(table).unwrap_err();
+        assert_eq!(error, Error::BadHandle);
+        assert_eq!(files.inode(&table, fd), Ok(inode));
+        files.let_go(table).unwrap();
+        assert_eq!(files.live_slots, 0);
+        assert!(files.descriptions.iter().all(|cell| cell.value.is_none()));
+        // The rejected operation did not consume the foreign owner's holder.
+        foreign.let_go(foreign_table).unwrap();
+    }
+    #[test]
+    fn shared_table_retirement_preserves_other_holder_and_pending_read() {
+        let (mut files, inode) = setup(4);
+        let table = files.table(4).unwrap();
+        let fd = files.open(&table, inode, false).unwrap();
+        let other = files.share(&table).unwrap();
+        files.let_go(table).unwrap();
+        assert_eq!(files.inode(&other, fd), Ok(inode));
+        assert_eq!(files.live_slots, 1);
+        let pending = files.reserve_read(&other, fd, 4).unwrap();
+        files.let_go(other).unwrap();
+        assert_eq!(files.live_slots, 0);
+        assert_eq!(files.read_bytes(&pending), b"body");
+        assert_eq!(
+            files
+                .descriptions
+                .iter()
+                .filter(|cell| cell.value.is_some())
+                .count(),
+            1
+        );
+        files.finish_read(pending, 4);
+        assert!(files.descriptions.iter().all(|cell| cell.value.is_none()));
     }
     #[test]
     fn fork_preflights_capacity_and_aggregate_reference_overflow() {
