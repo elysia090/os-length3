@@ -162,7 +162,8 @@ export class RemoteKernel extends Kernel {
   /** Latched host-stop/notification failures; close() remains synchronous, not a disposal barrier. */
   readonly stopFailures: unknown[] = [];
   /** Includes detached Hands. Transfer to a warm/next kernel does not prove
-   * their cached instances released this kernel's memory or Images. */
+   * their cached instances released this kernel's guest memory. This does not
+   * assert that CPU instances retain the host's JS Image/File objects. */
   private readonly workerOwners = new Set<Hand>();
   declare readonly tasks: Map<number, RemoteTask>;
   declare readonly door: Int32Array;
@@ -288,29 +289,45 @@ export class RemoteKernel extends Kernel {
     w.kernel = this;
     if (heard) return w;
     w.listening = true;
-    w.on((m) => {
+    // Diagnostics are callbacks too. Their failure must not skip independent
+    // retirement/wake work or erase the original CPU/host failure. Capture the
+    // assignment before notifying; a callback may synchronously replace it.
+    const retireFailed = (error: {message?: string}, host: boolean): void => {
       const k = w.kernel;
-      if (k && m?.type === 'error') {
-        const t = [...k.tasks.values()].find((x) => x.worker === w);
-        k.say(2, enc.encode(`muk: ${m.message.split('\n')[0]}\n`));
-        if (t) k.exitProcess(t.proc, 11);
-        k.kick();
+      const t = k ? [...k.tasks.values()].find(x => x.worker === w) : undefined;
+      const failures: unknown[] = [];
+      const attempt = (work: () => void): void => { try { work(); } catch (failure) { failures.push(failure); } };
+      if (!k) reportUnowned(w, error);
+      if (k) attempt(() => k.say(2, enc.encode(`muk: ${host ? error?.message ?? error : error.message?.split('\n')[0]}\n`)));
+      if (host) {
+        for (const kept of k ? [k.spares, warmed] : [warmed]) { const at = kept.indexOf(w); if (at >= 0) kept.splice(at, 1); }
       }
+      const current = k ? [...k.tasks.values()].find(x => x.worker === w) : undefined;
+      // Do not retire a replacement task or a Hand transferred by a callback.
+      if (k && t && w.kernel === k && k.tasks.get(t.tid) === t && k.procs.get(t.proc.pid) === t.proc && t.worker === w) attempt(() => k.exitProcess(t.proc, 11));
+      else if (host && w.kernel === k && !t && !current) attempt(() => w.end());
+      else if (w.kernel !== k || (t ? !t.dead : !!current)) {
+        // A callback changed the assignment. Do not mistake skipping an unsafe
+        // cleanup for successful retirement; the original owner keeps evidence.
+        (k?.stopFailures ?? (w.diagnosticFailures ??= [])).push(new Error('Worker failure retirement unconfirmed after assignment changed', {cause: error}));
+      }
+      if (k) attempt(() => k.kick());
+      if (failures.length) {
+        const held = k?.stopFailures ?? (w.diagnosticFailures ??= []);
+        for (const failure of [error, ...failures]) if (!held.includes(failure)) held.push(failure);
+        if (failures.length === 1) throw failures[0];
+        throw new AggregateError(failures, 'Worker failure notification and retirement failed', {cause: error});
+      }
+    };
+    w.on((m) => {
+      if (w.kernel && m?.type === 'error') retireFailed(m, false);
     });
-    // The host's own word that the Worker failed (it could not start, or threw where cpu.ts does not catch): no
-    // message follows it, so its thread is ended here as one whose Worker said 'error' is, and the kernel woken.
-    // The Worker runs nothing again: it is taken out of those kept spare and ended, once however often it is said.
+    // A host failure is terminal even when its diagnostic or cleanup throws.
+    // Repeated host notifications must not repeat a partially completed stop.
     w.onError((e) => {
       if (w.failed) return;
       w.failed = true;
-      const k = w.kernel;
-      if (!k) reportUnowned(w, e);
-      k?.say(2, enc.encode(`muk: ${e?.message ?? e}\n`));
-      for (const kept of k ? [k.spares, warmed] : [warmed]) { const at = kept.indexOf(w); if (at >= 0) kept.splice(at, 1); }
-      const t = k ? [...k.tasks.values()].find((x) => x.worker === w) : undefined;
-      // Its thread's end ends it (RemoteTask.end: a failed one is never kept); with no thread, it is ended here.
-      if (k && t) k.exitProcess(t.proc, 11); else w.end();
-      k?.kick();
+      retireFailed(e, true);
     });
     return w;
   }

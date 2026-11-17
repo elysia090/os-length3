@@ -699,3 +699,37 @@ A test deadline therefore rejects that wait and reaches its finally termination
 request rather than leaving a message/exit waiter indefinitely pending. The
 10-second deadline is unchanged. Abort of the waiter itself is not stop evidence;
 the cleanup still awaits Node termination separately.
+
+### Used-tree owner audit and diagnostic-independent retirement
+
+The private root still has no general used-tree disposal barrier. `readied` and
+`preparedOwner` own the published tree; preparation/rehearsal/start/serve may be
+in flight; Kernel Images and deferred sources may retain Files after a process
+ends; translation observers and Mirror have their own references. Closing the
+last two does not clear the first ones. A rehearsal operation's finally is not
+proof that every internal Kernel reference was retired.
+
+Separate this JS ownership from CPU host ownership. `passOn` clears Hand.kernel;
+Hand.kept stores numeric memory/image IDs, not JS Image/File references. CPU kept
+Threads retain Wasm memory/instance/modules and the last Run, but the posted Run
+does not contain Vfs/File/JS Image. This is evidence of guest-memory retention,
+not evidence by itself of a reverse edge to the old FileScope. A future barrier
+must prove both relevant boundaries rather than requiring CPU stop as a substitute
+for tracing File references, or using a weak Kernel disappearing as proof.
+
+One concrete obstruction is now removed: CPU/host failure diagnostics may throw,
+but this no longer skips independent task retirement or scheduler wake. Assignment
+identity is captured before the diagnostic and rechecked afterward, including
+process identity; replacement tasks/Hands are not stopped by an old callback.
+A changed live assignment leaves an explicit unconfirmed-retirement diagnostic.
+Secondary exceptions and the original failure remain in the old owner's history;
+all applicable phases are attempted before the same single exception, or an
+AggregateError for multiple exceptions, is rethrown. Host failure remains terminal
+and repeated notifications do not retry partial cleanup. A CPU error message does
+not newly mark the Hand terminal. None of these observations authorizes tree
+release: failed task cleanup can still leave owners quarantined.
+
+Focused injected-Hand tests exercise diagnostic failure, independent stop failure,
+wake, and replacement assignment. These test production Kernel/task retirement,
+not positive real-host stop, browser UI, full Wasm guest execution, or complete
+scope collection. Used-tree disposal remains a separate unfinished gate.

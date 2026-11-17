@@ -242,3 +242,65 @@ test('legacy or browser-like hand with no stop observation remains an owner afte
   const evidence = await k.snapshotWorkerStops();
   assert.equal(evidence.captured, 1); assert.equal(evidence.observedStopped, 0); assert.equal(evidence.unconfirmed, 1);
 });
+
+test('diagnostic failure does not prevent CPU/host retirement or wake', () => {
+  for (const how of ['fail', 'say'] as const) {
+    const {k} = bench(), {t, w} = running(k);
+    const diagnostic = new Error('console unavailable');
+    let wakes = 0;
+    k.say = () => { throw diagnostic; };
+    k.kick = () => { wakes++; };
+    assert.throws(() => w[how](), error => error === diagnostic);
+    assert.equal(t.dead, true, how);
+    assert.equal(k.tasks.size, 0, how);
+    assert.ok(wakes > 0, how);
+    assert.ok(k.stopFailures.includes(diagnostic));
+    assert.ok(k.stopFailures.some(e => typeof e === 'object' && e !== null && 'message' in e && String(e.message).includes('injected')));
+  }
+});
+
+test('host diagnostic and stop failures are both retained and wake is still attempted', () => {
+  const {k} = bench(), w = hand();
+  k.spares.push(k.adoptWorker(w as unknown as Adopted));
+  const diagnostic = new Error('console unavailable'), stop = new Error('stop failed');
+  let wakes = 0;
+  k.say = () => { throw diagnostic; };
+  k.kick = () => { wakes++; };
+  w.end = () => { w.ended++; throw stop; };
+  assert.throws(() => w.fail(), (e: unknown) => e instanceof AggregateError && e.errors[0] === diagnostic && e.errors[1] === stop);
+  assert.equal(k.spares.length, 0);
+  assert.equal(wakes, 1);
+  assert.ok(k.stopFailures.includes(diagnostic)); assert.ok(k.stopFailures.includes(stop));
+  w.fail(); assert.equal(w.ended, 1); // no automatic retry of partial retirement
+});
+
+test('diagnostic reentry does not retire a replacement Hand assignment', () => {
+  const {k} = bench(), {t, w} = running(k), replacement = hand();
+  const diagnostic = new Error('diagnostic after reassignment');
+  k.say = () => { t.worker = k.adoptWorker(replacement as unknown as Adopted); throw diagnostic; };
+  assert.throws(() => w.fail(), e => e === diagnostic);
+  assert.equal(t.dead, false);
+  assert.equal(replacement.ended, 0);
+  assert.equal(w.failed, true);
+  assert.ok(k.stopFailures.includes(diagnostic));
+  // The abandoned assignment has no completion proof; test cleanup owns both.
+  w.end(); k.close();
+});
+
+test('spare failure diagnostic cannot stop a newly assigned task on that same Hand', () => {
+  const {k} = bench(), w = hand();
+  k.spares.push(k.adoptWorker(w as unknown as Adopted));
+  let assigned: ReturnType<typeof running> | undefined;
+  k.say = () => {
+    assigned = running(k);
+    // Deliberately exercise raw mutation during notification, even though the
+    // normal selector excludes a failed Hand.
+    assigned.t.worker = w as unknown as Adopted;
+  };
+  w.fail();
+  assert.ok(assigned);
+  assert.equal(w.ended, 0);
+  assert.equal(assigned.t.dead, false);
+  assert.ok(k.stopFailures.some(e => e instanceof Error && /unconfirmed after assignment changed/.test(e.message)));
+  k.close();
+});
