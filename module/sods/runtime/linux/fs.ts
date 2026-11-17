@@ -336,9 +336,7 @@ export class File extends Node {
           let e = k + 1;
           while (e < to && memory[base + e] !== seen[e - m.off]) e++;
           const run = memory.slice(base + k, base + e);
-          this.own();
-          this.replaceRange(k, run);
-          this.show(k, e, run);
+          this.publishRange(k, run);
           k = e;
         }
         this.mtime = epoch();
@@ -346,6 +344,13 @@ export class File extends Node {
         counted.changes++;
       }
     }
+  }
+  /** Keep each accepted run's ownership, canonical update and publication ordered.
+   * Specialized storage may reduce boundary work, not batch later observations. */
+  protected publishRange(at: number, bytes: Uint8Array): void {
+    this.own();
+    this.replaceRange(at, bytes);
+    this.show(at, at + bytes.length, bytes);
   }
   /** Bytes [start, end) are these now (`bytes`, or the file's own; zero past its end, as a new page is) in every mapping. */
   protected show(start: number, end: number, bytes: Uint8Array | null = null): void {

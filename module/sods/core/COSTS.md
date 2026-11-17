@@ -25,7 +25,7 @@ the first mapping only. Both storage paths must produce identical canonical/gues
 bytes. The same 2,048 changed bytes are contiguous in one case and alternate with
 unchanged bytes in another, isolating dirty-run count from payload size.
 
-## Observed selected debug Wasm, Node 24, 4 KiB payload
+## Baseline before resident-path reduction: debug Wasm, Node 24, 4 KiB
 
 | Operation | Core export calls | Prepared input | Completed read | Pack range bytes | Hash input bytes |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -68,7 +68,7 @@ retained pages are included and Wasm memory does not shrink on Vec release.
   mapping requires inspecting its relevant bytes. Current settle scans each mapping's
   pages; changed pages also scan runs after the initial equality check. Shared baseline
   storage does not eliminate per-mapping comparison.
-- For r dirty runs, the observed Rust settle path uses 1 + 11r export calls here.
+- For r dirty runs, the baseline Rust settle path used 1 + 11r export calls here.
   Repeated own/materialize/source checks scale with runs although accepted byte count
   is unchanged. Each run is captured, marshalled and written; `show` then writes both
   guest arrays and their baseline slots, including two writes to the same shared
@@ -127,3 +127,35 @@ one owner without a mutable TS shadow of core state. This can reduce constants, 
 remove the O(r) crossings. Page batching remains a distinct contract change requiring
 proof of non-failing post-admission publication or explicit revised failure semantics.
 Neither route permits unconditional whole-page replacement.
+
+
+## Implemented resident per-run path
+
+The private file facade now offers resident own/write operations that do not invoke
+host loaders. Rust's existing readiness/handle/lease checks remain authoritative.
+The File hook keeps each run in order: capture, detach source, update loaded-pool
+accounting, prepare input, canonical write, then show. If preparation/write/show
+fails, the next run is not started. No page gathering or new Wasm ABI was introduced.
+The callback registry retains an immutable, never-reused origin ID for cleanup;
+that ID is not a loaded/owned flag and never decides readiness.
+
+Same measurement fixture and debug Wasm, after this change:
+
+| Settle case | Baseline exports | Resident-path exports | Prepared input bytes |
+| --- | ---: | ---: | ---: |
+| Clean | 1 | 1 | 0 |
+| One byte | 12 | 6 | 1 |
+| 2048 contiguous | 12 | 6 | 2048 |
+| 2048 alternating | 22529 | 10241 | 2048 |
+
+The measured expression becomes 1 + 5r: own, input preparation, pointer, length,
+write for each run, plus the outer loading-state check. The other file-operation
+rows above are unchanged. Payload copying, zeroing, scanning, mapping baseline and
+per-run allocations remain; this is fewer boundary calls, not a measured runtime
+speedup or O(1) publication.
+
+Regression cases include the previous alias counterexample on a real Rust-backed
+file, unloaded/loading/closed rejection without calling loaders, preparation/extent
+failure after own, and publication failure before the next run. An injected second
+core-write error verifies first-run canonical/visible prefix and source retirement;
+it is explicit boundary fault injection, not a claim of reproducing allocator OOM.

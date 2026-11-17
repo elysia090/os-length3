@@ -138,3 +138,23 @@ test('real core lazy scratch transfer preserves stale/poison retry and independe
     assert.equal(call('files_read_finish',read,0,3),3);
   }
 });
+
+test('resident mapping operations reject unloaded/loading/closed files without invoking a loader',{skip:!wasm},async()=>{
+  const store=await loadCoreFiles(readFileSync(wasm!),8);let loads=0;
+  const file=store.createLazy(()=>{loads++;assert.throws(()=>file.ownResident(),/core file error -8/);return enc.encode('abc');});
+  assert.throws(()=>file.ownResident(),/core file error -8/);
+  assert.throws(()=>file.writeResident(0,enc.encode('x')),/core file error -8/);
+  assert.equal(loads,0);
+  assert.throws(()=>file.materialize(),/core file error -8/);assert.equal(loads,1);
+  file.close();assert.throws(()=>file.ownResident(),/closed/);assert.throws(()=>file.writeResident(0,enc.encode('x')),/closed/);
+});
+test('resident own precedes preparation/write failure and permanently retires the reload source',{skip:!wasm},async()=>{
+  const store=await loadCoreFiles(readFileSync(wasm!),8);let loads=0;
+  const file=store.createLazy(()=>{loads++;return enc.encode('abc');});
+  file.materialize();file.ownResident();
+  assert.equal(file.source(),0);
+  assert.throws(()=>file.writeResident(0,new Uint8Array(9)),/limit/);
+  assert.throws(()=>file.writeResident(8,enc.encode('x')),/core file error -2/);
+  assert.equal(file.release(),0);assert.equal(dec.decode(file.read(0,8)),'abc');assert.equal(loads,1);
+  file.writeResident(1,enc.encode('Z'));assert.equal(dec.decode(file.read(0,8)),'aZc');file.close();
+});

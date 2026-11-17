@@ -40,6 +40,15 @@ class OwnedFile extends File {
   protected override replaceRange(at: number, bytes: Uint8Array): void {
     this.live(); payload(() => this.owned.write(at, bytes));
   }
+  protected override publishRange(at: number, bytes: Uint8Array): void {
+    this.live();
+    // Mapped payloads cannot be evicted. Do not invoke a lazy host callback
+    // inside writeback; Rust still rejects unloaded/loading/stale handles.
+    payload(() => this.owned.ownResident());
+    this.unholdLoaded(); // Must occur even when later input/write fails.
+    payload(() => this.owned.writeResident(at, bytes));
+    this.show(at, at + bytes.length, bytes);
+  }
   override map(m: Mapping): void { this.live(); payload(() => this.owned.checkIdle()); super.map(m); }
   override unmap(m: Mapping): void { this.live(); super.unmap(m); }
   override settle(start = 0, end = this.size, only: Mapping | null = null): void { this.live(); payload(() => this.owned.checkIdle()); super.settle(start, end, only); }

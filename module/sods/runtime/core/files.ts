@@ -35,6 +35,9 @@ export interface CoreFile {
   source(): number;
   release(): number;
   own(): void;
+  /** Internal resident mapping route: never runs a loader; Rust validates readiness. */
+  ownResident(): void;
+  writeResident(at: number, bytes: Uint8Array): void;
   given(bytes: Uint8Array): number;
   read(at: number, length: number): Uint8Array<ArrayBuffer>;
   readInto(start: number, into: Uint8Array, at: number, length: number): number;
@@ -90,7 +93,9 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
   };
   const sources = new Map<number, () => Uint8Array>();
   let nextSource = 1;
-  const handle = (id: number): CoreFile => {
+  // origin is immutable host callback identity, not a cached loaded/owned state.
+  // Rust remains authoritative; deleting an already-retired callback is harmless.
+  const handle = (id: number, origin = 0): CoreFile => {
       let closed = false;
       const live = () => { if (closed) throw new Error('File handle is closed'); };
       const materialize = (given?: Uint8Array): number => {
@@ -127,6 +132,8 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
         source() { live(); return check(core.files_load_source(id)); },
         release() { live(); return check(core.files_release(id)); },
         own() { materialize(); const source = check(core.files_load_source(id)); check(core.files_own(id)); if (source) sources.delete(source); },
+        ownResident() { live(); check(core.files_own(id)); if (origin) sources.delete(origin); },
+        writeResident(at, bytes) { live(); uint(at); input(bytes); live(); check(core.files_write(id, at)); if (origin) sources.delete(origin); },
         given(bytes) { return materialize(bytes); },
         read(at, length) {
           materialize();
@@ -166,7 +173,7 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
       const source = nextSource++;
       const id = check(core.files_create_lazy(source, size));
       sources.set(source, loader);
-      return handle(id);
+      return handle(id, source);
     },
   };
 }
