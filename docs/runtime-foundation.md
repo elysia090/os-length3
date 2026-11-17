@@ -108,6 +108,37 @@ Acceptance gates:
 - repeated starts, late hot arrival, cancellation/retirement and selected Rust payload ownership;
 - unchanged strict cold-budget browser test with all real network bytes counted.
 
+### Implementation checkpoint, pending browser acceptance
+
+The additive candidate now exists as `createRoot(config).execution`, with a
+`PreparedRoot`/prepared-executable channel distinct from legacy byte-bearing
+values. The producer records an optional v1 source association. Canonical tokens
+are captured before overlays, and sods attaches only to their original
+Vfs/inode/revision. Release generation, source/artifact identity, memory mode,
+hardlink conflicts and late arrivals are checked. why's terminal explicitly
+selects this profile; no legacy API is silently relabeled lazy.
+
+An independent review found that mapping publication could update a canonical
+prefix and then fail before advancing its revision. The owner now advances its
+invalidation nonce before effects. Existing run ordering and committed-prefix
+behavior remain, while stale tokens, cached images and keeper entries cannot be
+revived by abandoning that mapping. Tests cover both TS and selected Rust payload
+owners, including no-load lazy mapped admission and disposed-owner errors.
+
+Configured Node checks pass: 782 sods runtime cases with four existing
+missing-fixture skips, and 144 ricebox/distribution/package/why cases with one
+existing absent-webroot skip. These include actual fresh/rehearsed muk execution
+of a translated fixture with no source-range demand, complete original ELF reads,
+replacement/hardlink behavior and partial-publication failure. An unchanged
+concurrent full-runtime trial hit the existing CPU-accounting timing ratio;
+the complete serial-file rerun passed without changing its threshold.
+
+These counts do not prove full TypeScript checking, the real root's browser
+startup demand or the 6 MB wire gate. They do not establish a native display
+session or a broader Rust Linux compatibility profile. The existing public-head
+CI remains above its wire budget at 6,274,652 bytes; this candidate's net effect
+must be measured by the unchanged browser test before claiming that it fixes it.
+
 ## Conditional work and cost ledger
 
 - **Integrity:** authenticating fresh bytes requires inspecting the bytes covered by that digest, unless a valid trusted result is reused. It does not require every unrelated lazy file at startup.
@@ -119,6 +150,27 @@ Acceptance gates:
 - **Display:** live clients/toolkits/fonts/events and unreleased backing retain real state. A chosen `k * buffer_size` ledger does not prove that k buffers are necessary. Native shared backing need not imply a JS copy; a bridge must account for its own queues, copies and acknowledgements.
 
 Compare identical inputs and accepted behavior, generated Wasm, bounded native disassembly and measured runs. Keep compilation, startup, steady execution, copy volume, retained memory and wire bytes separate. A constant-result benchmark can have an O(1) specification even when the existing native binary runs a loop.
+
+### Bounded instruction and timing comparison
+
+A matched x86-64 ELF fixture performs a full ADD flag producer in a leaf and uses
+CF with ADC after each call. The old and demand-masked translators preserve the
+same nonlocal-return contract. The generated leaf remains 147 Wasm body bytes /
+90 operators; the caller falls from 910/476 to 754/372. The native leaf is one ADD
+and RET, five encoded bytes. In a separate bounded V8 TurboFan diagnostic with
+inlining disabled, the leaf is 172 native instruction bytes in both modules, and
+the caller is 2,032 versus 2,024 bytes. This diagnostic is not the default-tiering
+timing configuration. Wasm operators and encoded bytes are not native
+instruction counts or physical traffic.
+
+For the same 100-million-iteration ELF, nine alternating measured runs after
+three warmups per translator gave median kernel-pump times 325.7 ms (old) and
+307.9 ms (demand masks). Native spawn/exec measured 105.6 ms median, including its
+startup. Default Node 24 V8 tiering/inlining, no CPU isolation or frequency control
+and these different measurement windows limit the comparison. No significance,
+language superiority or universal gap is inferred. The accepted constant exit
+result could be computed in O(1); this binary's loop is not a specification lower
+bound. The evidence locates implementation work, not unavoidable work.
 
 ## Existing terminal/display compatibility sequence
 

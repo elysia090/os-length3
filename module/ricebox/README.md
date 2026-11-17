@@ -62,6 +62,39 @@ product code. Runtime consumes it; producers and deployment tools use the same
 stored-format contract. Execution objects such as WebAssembly modules are kept in
 runtime/root-types.ts rather than serialized-manifest types.
 
+### Explicit prepared execution profile
+
+`createRoot(config).execution` is an additive `canonical-aot-v1` profile. Its
+`load()` returns a `PreparedRoot` whose `executables` carry checked release/index,
+canonical source and AOT identities, compiled modules and preparation mode. They
+are not byte-bearing overlays. The legacy `loadWebroot`, `Webroot.files`,
+`filesNow` and Worker hot-file channel keep their existing materialized contract.
+The profile has independent loading, late-executable and spare-Worker state.
+
+`distribution/executable-source.ts` selects the exact canonical file from a
+trusted authenticated index. New producers emit an optional versioned source
+association; legacy releases derive it under the same trusted-producer contract.
+Present malformed associations fail rather than falling back. These checks do not
+independently prove that an arbitrary compiled module translates those source
+bytes. Deployed ELF blobs remain available to legacy consumers.
+
+Before overlays, `prepareTree` captures sods' realm-local canonical inode tokens.
+The Worker admits AOT only through those tokens, never by looking up a path again
+after replacement. Hardlink names may share one source; conflicting artifacts
+for it are rejected. An unchanged canonical file remains lazy, and its normal
+pack integrity path supplies complete original bytes on demand, including bytes
+absent from loadable ELF segments. Failed engine compilation uses ordinary
+execution of that canonical file; checksum or decode failure is not compile
+fallback. Permission and mount checks remain with sods' Linux exec owner.
+
+The profile validates release generation, repeated starts and late arrivals.
+Retirement closes admission and retains possible owners; it is not evidence that
+a Worker or host access stopped. Source-bound admission preserves the existing
+running-image mutation contract rather than defining a new one. See
+[`../../docs/runtime-foundation.md`](../../docs/runtime-foundation.md) for the
+remaining compatibility and browser-transfer gates. Node integration evidence is
+not proof of the unchanged browser cold-start budget.
+
 Comparison harnesses live in `verification/`, not in the production runtime or
 package entry points. They consume the distribution readers and execute matched
 native/sods cases. Their child executor is private to those checks. Language workloads are readable

@@ -87,6 +87,45 @@ Worker dependency closure without Node's TypeScript loader. With `SODS_FILE_STOR
 Worker. These checks do not establish browser execution or all-current-source artifact
 compatibility when a historical translator is selected.
 
+## Source-bound prepared executables
+
+`runtime/linux.ts` additionally exports `captureExecutableSource`,
+`preparedLinux` and `PreparedLinuxError`. Existing `linux({translated})` and
+byte-bearing file APIs are unchanged. The caller authenticates its release,
+source digest, translated artifact and shared-memory preparation mode; origin
+and size alone do not prove content identity or translation correctness.
+
+Capture the canonical file before overlays:
+
+```ts
+const source = captureExecutableSource(vfs, '/usr/bin/program', {origin, size});
+// Ordinary overlays may now replace names without receiving the old image.
+const {kernel, attached} = preparedLinux({
+  vfs, translate, inline: true, console: hostConsole,
+  executables: [{key, source, module: compiledAot, segments, shared: false}],
+});
+```
+
+A token is opaque and realm-local, not a transferable descriptor or a public
+inode. Attachment uses that exact Vfs/inode/revision, never a path relookup.
+Changed sources decline and retain ordinary exec fallback. Duplicate keys or
+inodes, foreign tokens and malformed admission are rejected before kernel
+construction. Execution permissions, credentials and mount restrictions are
+still checked by Linux when the program runs. Canonical payloads are not read
+merely to attach an image, including selected Rust lazy payloads.
+
+Dirty mapping settlement invalidates the file revision **before** any canonical
+or alias publication. A failed partial publication, abandonment or retry cannot
+revive an old AOT/cache/keeper association. Revision is conservative invalidation
+evidence, not a receipt for a completed write. Per-run committed-prefix and alias
+ordering remain unchanged.
+
+If attachment fails after construction, `PreparedLinuxError` retains the actual
+`kernel` and earlier `attached` images for explicit cleanup. It does not promise
+rollback or physical Worker stop. Existing constructor-failure ownership limits
+are unchanged. The source/tree owner must still outlive all kernels, mappings,
+images and delayed readers; this API is not a whole-kernel Rust cutover.
+
 ## What runs where
 
 `runtime/targets.ts` is the table (`node module/sods/runtime/targets.ts` prints it; a test holds this copy to it).
