@@ -117,6 +117,52 @@ impl std::fmt::Debug for Program {
             .finish_non_exhaustive()
     }
 }
+/// Initial-startup proposal with completed source delivery. Not a published
+/// execution identity. No mutable source/eviction API currently exists.
+#[must_use = "publish into a live execution or release through Files"]
+pub(crate) struct ReadyProgram {
+    owner: u64,
+    place: mount::Hold,
+    decision: crate::credentials::Decision,
+}
+/// Live execution ownership. Dropping retains the hold until Files ends; the
+/// execution coordinator must release only after its own stopped-use proof.
+#[must_use = "retain for the live execution, then release through Files"]
+pub(crate) struct Executable {
+    owner: u64,
+    place: mount::Hold,
+}
+impl std::fmt::Debug for ReadyProgram {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReadyProgram")
+            .field("owner", &self.owner)
+            .finish_non_exhaustive()
+    }
+}
+impl std::fmt::Debug for Executable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Executable")
+            .field("owner", &self.owner)
+            .finish_non_exhaustive()
+    }
+}
+impl ReadyProgram {
+    /// Aux-vector proposal only, not permission to change live credentials.
+    pub(crate) fn stack_credentials(&self) -> crate::stack::Credentials {
+        self.decision.stack_credentials()
+    }
+    /// Infallible ownership move for the coordinator's publication commit.
+    /// No allocation, callback, source access or mount release occurs here.
+    pub(crate) fn publish(self) -> (Executable, crate::credentials::Decision) {
+        (
+            Executable {
+                owner: self.owner,
+                place: self.place,
+            },
+            self.decision,
+        )
+    }
+}
 #[derive(Debug)]
 pub(crate) enum ProgramError {
     Path(crate::path::Error),
@@ -948,6 +994,86 @@ impl Files {
             .as_mut()
             .expect("validated mount owner")
             .release_hold(program.place);
+        Ok(())
+    }
+    /// Query the source obligation after a completion error; stale delivery
+    /// retains Loading, whereas a matching failed attempt has already stopped.
+    pub(crate) fn check_unstarted_program(&self, program: &Program) -> Result<(), Error> {
+        self.check_program(program)?;
+        if program.phase != PreparationPhase::Reserved {
+            return Err(Error::State);
+        }
+        Ok(())
+    }
+    pub(crate) fn program_source_pending(&self, program: &Program) -> Result<bool, Error> {
+        self.check_program(program)?;
+        Ok(matches!(program.phase, PreparationPhase::Loading(_)))
+    }
+    pub(crate) fn check_program(&self, program: &Program) -> Result<(), Error> {
+        self.program_inode(program).map(|_| ())
+    }
+    pub(crate) fn check_ready(&self, program: &ReadyProgram) -> Result<(), Error> {
+        self.held_program_inode(program.owner, &program.place)
+            .map(|_| ())
+    }
+    pub(crate) fn ready_program(&self, program: Program) -> Result<ReadyProgram, (Error, Program)> {
+        if let Err(e) = self.program_inode(&program) {
+            return Err((e, program));
+        }
+        if program.phase != PreparationPhase::Ready {
+            return Err((Error::State, program));
+        }
+        Ok(ReadyProgram {
+            owner: program.owner,
+            place: program.place,
+            decision: program.decision,
+        })
+    }
+    fn held_program_inode(&self, owner: u64, place: &mount::Hold) -> Result<Inode, Error> {
+        if owner != self.owner {
+            return Err(Error::BadHandle);
+        }
+        self.mounts
+            .as_ref()
+            .ok_or(Error::BadHandle)?
+            .position_ref(place)
+            .map(|p| p.inode())
+            .map_err(Error::Mount)
+    }
+    /// Short synchronous borrow only; no derived pointer may cross callback or
+    /// await. The ReadyProgram owns the mount, not a transferable byte slice.
+    pub(crate) fn ready_program_bytes<'a>(
+        &'a mut self,
+        program: &ReadyProgram,
+    ) -> Result<&'a [u8], Error> {
+        let inode = self.held_program_inode(program.owner, &program.place)?;
+        let size = self.filesystems.size(inode).map_err(Error::Source)?;
+        self.filesystems.read(inode, 0, size).map_err(Error::Source)
+    }
+    pub(crate) fn release_ready(
+        &mut self,
+        program: ReadyProgram,
+    ) -> Result<(), (Error, ReadyProgram)> {
+        if let Err(e) = self.held_program_inode(program.owner, &program.place) {
+            return Err((e, program));
+        }
+        self.mounts
+            .as_mut()
+            .expect("validated mount owner")
+            .release_hold(program.place);
+        Ok(())
+    }
+    pub(crate) fn release_executable(
+        &mut self,
+        executable: Executable,
+    ) -> Result<(), (Error, Executable)> {
+        if let Err(e) = self.held_program_inode(executable.owner, &executable.place) {
+            return Err((e, executable));
+        }
+        self.mounts
+            .as_mut()
+            .expect("validated mount owner")
+            .release_hold(executable.place);
         Ok(())
     }
     fn check_preparation(&self, prep: &ReadPreparation) -> Result<(), Error> {
@@ -2578,5 +2704,59 @@ mod program_tests {
         for p in programs {
             f.release_program(p).unwrap();
         }
+    }
+    #[test]
+    fn readiness_rejects_loading_and_foreign_without_losing_source_ownership() {
+        let (mut f, fs) = setup(4101, allowed());
+        let (other, _) = setup(4201, allowed());
+        let mut p = f
+            .prepare_program(&fs, &Credentials::initial_root(), b"program")
+            .unwrap();
+        let request = f.prepare_program_source(&mut p).unwrap().unwrap();
+        assert_eq!(other.check_program(&p), Err(Error::BadHandle));
+        assert_eq!(f.check_program(&p), Ok(()));
+        let (error, p) = other.ready_program(p).unwrap_err();
+        assert_eq!(error, Error::BadHandle);
+        let (error, mut p) = f.ready_program(p).unwrap_err();
+        assert_eq!(error, Error::State);
+        assert_eq!(p.phase, PreparationPhase::Loading(request.attempt));
+        f.finish_program_source(&mut p, request.attempt, true, &mut b"elf".to_vec())
+            .unwrap();
+        let ready = f.ready_program(p).unwrap();
+        assert_eq!(f.ready_program_bytes(&ready).unwrap(), b"elf");
+        f.release_ready(ready).unwrap();
+    }
+    #[test]
+    fn ready_and_executable_transfer_keep_hold_until_final_release() {
+        let (mut f, fs) = setup(4301, allowed());
+        let (mut other, _) = setup(4401, allowed());
+        let root = f.fs_start(&fs, Base::Root).unwrap();
+        let point = f.component(&root, b"point").unwrap().unwrap();
+        let view = f.clone_view(&root).unwrap();
+        f.attach_view(&view, &point).unwrap();
+        let mounted = f.component(&root, b"point").unwrap().unwrap();
+        let mut p = f
+            .prepare_program(&fs, &Credentials::initial_root(), b"/point/resident")
+            .unwrap();
+        assert_eq!(f.prepare_program_source(&mut p), Ok(None));
+        let ready = f.ready_program(p).unwrap();
+        f.detach_view(&mounted).unwrap();
+        assert!(f.release_view(view).is_ok());
+        assert!(f.view_policy(&mounted).is_ok());
+        assert_eq!(other.check_ready(&ready), Err(Error::BadHandle));
+        assert_eq!(f.check_ready(&ready), Ok(()));
+        assert_eq!(other.ready_program_bytes(&ready), Err(Error::BadHandle));
+        let (error, ready) = other.release_ready(ready).unwrap_err();
+        assert_eq!(error, Error::BadHandle);
+        assert_eq!(ready.stack_credentials().uid, 0);
+        assert_eq!(f.ready_program_bytes(&ready).unwrap(), b"elf");
+        let (executable, decision) = ready.publish();
+        assert_eq!(decision.credentials.user().effective, 0);
+        assert!(f.view_policy(&mounted).is_ok());
+        let (error, executable) = other.release_executable(executable).unwrap_err();
+        assert_eq!(error, Error::BadHandle);
+        assert!(f.view_policy(&mounted).is_ok());
+        f.release_executable(executable).unwrap();
+        assert!(f.view_policy(&mounted).is_err());
     }
 }

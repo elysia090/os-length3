@@ -622,3 +622,29 @@ The Program's proposed credentials remain unpublished. Translation identity,
 initial-start slot ownership, physical image installation and atomic credential
 adoption are still unconnected. In particular, no normal Node startup or legacy TS
 semantic-authority deletion is claimed by these source-lifetime tests.
+
+### Initial-start ownership coordinator (native internal)
+
+`startup.rs` connects the retained Program to the existing Execution image
+admission protocol. It does not create an Execution or a placeholder memory binding
+before translation supplies an extent. Source commands and translation receipts
+belong to one non-reused startup ID; cancellation does not complete either host
+obligation. Cancelled late source success is settled without adopting its bytes.
+ReadyProgram freezes completed-source ownership before image preparation.
+
+Installed image acceptance moves credentials and the executable hold together
+without allocation or callback. The hold survives in Live rather than being released
+after translation. Unknown initialization remains owned and cannot become Live;
+matching stopped-poison evidence is required. Failed image preparation retains its
+Execution, including any new binding incarnation, until explicit transfer to the
+outer owner. That transfer is image-change completion evidence, not proof of Worker
+termination or physical memory reclamation. Domain capacity is not reclaimed here.
+
+This is a native internal coordinator, not a new public launch API. Its outer bounded
+slot must enforce unique startup IDs and fresh, uniquely owned physical bindings.
+The actual Wasm/Node slot wiring, original execfn/argv/env ownership, Rust stack from
+these credentials, trusted Module/facts/segments association, complete FD/Fs
+bootstrap and diagnostic-entry bypass prevention remain required before normal
+startup can switch. Numeric facts bounds do not prove ELF authenticity, executable
+segment membership or arbitrary translated Module correctness. The profile remains
+initial-start only, not fork or exec replacement.
