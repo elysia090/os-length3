@@ -22,34 +22,42 @@ test.describe('the first Prompt', {tag: '@slow'}, () => {
 
   test('comes with a few megabytes, not the whole root, and sooner again once cached', async ({app}) => {
     test.setTimeout(300_000);
-    // Made from New repo alone (no file written in Forge first), so opening it in Forge is the Prompt's first start.
-    await app.newRepo.make('hello');
-    let counting = false;
-    const got: {url: string; bytes: number}[] = [];
+    type Response = {url: string; bytes: number};
+    let recording: {got: Response[]; pending: Promise<void>[]} | undefined;
     // Every response the page and its workers take while the Prompt starts (a worker's synchronous reads too).
     // What comes once its prompt line is there (why's translation, a few seconds after, for the Prompts after it) is not the first Prompt's.
-    app.page.context().on('requestfinished', async (r) => {
-      if (!counting || !/\/(webroot|userland|root)\//.test(r.url())) return;
-      const s = await r.sizes().catch(() => null);
-      if (s) got.push({url: new URL(r.url()).pathname, bytes: s.responseBodySize + s.responseHeadersSize});
+    app.page.context().on('requestfinished', (r) => {
+      const sample = recording;
+      if (!sample || !/\/(webroot|userland|root)\//.test(r.url())) return;
+      // Keep accepted observations with their own run, even when sizes resolves
+      // after the prompt appears or a later run starts.
+      sample.pending.push(r.sizes().then((s) => {
+        sample.got.push({url: new URL(r.url()).pathname, bytes: s.responseBodySize + s.responseHeadersSize});
+      }).catch(() => {}));
     });
     // From opening the repo (Forge reads why ahead as it shows it) to the Prompt's first prompt line, once written to.
     const first = async (open: () => Promise<unknown>, reloads: boolean) => {
-      got.length = 0;
-      counting = true;
+      const sample = {got: [] as Response[], pending: [] as Promise<void>[]};
+      recording = sample;
       const since = reloads ? 0 : await app.page.evaluate(() => performance.now());
       const started = Date.now();
       await open();
       await app.forge.startPrompt('hello');
       const ms = Date.now() - started;
-      counting = false;
+      recording = undefined;
       // What the page itself fetched, as its own clock has it (bytes over the wire: none for what it had); the Worker's reads into the packs, as heard above.
       const page = await app.page.evaluate((t) => (performance.getEntriesByType('resource') as PerformanceResourceTiming[])
         .filter((e) => e.startTime >= t && /\/(webroot|userland|root)\//.test(e.name)).map((e) => ({url: new URL(e.name).pathname, bytes: e.transferSize})), since);
-      const all = [...page, ...got.filter((g) => g.url.includes('/packs/'))];
+      await Promise.all(sample.pending);
+      const all = [...page, ...sample.got.filter((g) => g.url.includes('/packs/'))];
       return {ms, bytes: all.reduce((n, g) => n + g.bytes, 0), requests: all.length, largest: [...all].sort((a, b) => b.bytes - a.bytes).slice(0, 6)};
     };
-    const cold = await first(() => app.newRepo.openInForge(), false);
+    // make already opens Forge and starts preparing the Prompt. Include that
+    // work in cold, just as warm includes preparation triggered by reload.
+    const cold = await first(async () => {
+      await app.newRepo.make('hello');
+      await app.newRepo.openInForge();
+    }, false);
     const warm = await first(async () => { await app.page.reload(); await app.forge.promptBox.waitFor(); }, true);
     // why itself in that Prompt: translated as it runs, until its translation made ahead of time is ready (it comes after
     // the prompt line), when this Prompt is given it and runs why from it from its next run on.
