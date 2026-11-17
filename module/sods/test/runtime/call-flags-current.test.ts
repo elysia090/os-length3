@@ -16,7 +16,14 @@ const artifact = process.env.SODS_CURRENT_TRANSLATOR_WASM;
 for (const [caseIndex, scenario] of ['preserved', 'callee output', 'partial CF', 'incoming CF',
   'AF preserved', 'AF callee output', 'AF INC preserves CF', 'AF ADC input', 'AF POPFQ preserved', 'AF recursive depth unwind',
   'pure redirected caller entry', 'pure redirected external entry', 'nested pure redirected return',
-  'read-only callee', 'normal and pure callees mixed'].entries()) {
+  'read-only callee', 'normal and pure callees mixed',
+  'normal return INC then ADC', 'normal return CL shift zero',
+  'normal return branch kill edge', 'normal return branch preserving edge',
+  'normal return immediately calls again', 'callee immediately returns after call',
+  'callee INC preserves incoming CF', 'callee CL shift zero preserves incoming flags',
+  'callee CFG join killing edge', 'callee CFG join preserving edge',
+  'full producer redirected own return', 'nested pure return bypasses middle full producer',
+  'deferred CMP external branch fall skips first save', 'deferred CMP external branch taken'].entries()) {
   for (const indirect of [false, true]) {
     test(`current call flags: ${scenario}, ${indirect ? 'indirect' : 'direct'}, whole and incremental`, {
       skip: artifact === undefined, timeout: 30_000,
@@ -54,7 +61,10 @@ for (const [caseIndex, scenario] of ['preserved', 'callee output', 'partial CF',
             // calls exceed depth 400 but not its initial 65536-call budget.
             if (caseIndex === 9) assert.ok(preemptions > 0, 'recursive case must cross a real unwind');
             if (mode === 'whole') assert.equal(additions, 0, 'whole must contain all fixture entries');
-            else if (caseIndex < 10 || !indirect) {
+            else if (caseIndex === 25 || caseIndex === 26) {
+              assert.equal(additions, indirect ? 2 : 1,
+                'redirected continuation and indirect target must be translated when cold');
+            } else if (caseIndex < 10 || caseIndex >= 15 || !indirect) {
               // Initial translation also leaves these redirected continuations cold.
               const coldReturn = caseIndex === 10 || caseIndex === 12 || caseIndex === 14;
               assert.equal(additions, indirect || coldReturn ? 1 : 0,

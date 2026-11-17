@@ -106,12 +106,21 @@ impl Fx<'_> {
         }
     }
 
-    pub(crate) fn hold_flags(&mut self) {
+    pub(crate) fn hold_flags(&mut self) { self.hold_flags_mask(ALL_FLAGS); }
+
+    /// At a block boundary only, retain the union of its local and external
+    /// successors' demand. Instruction-internal partial updates still hold ALL.
+    pub(crate) fn hold_flags_mask(&mut self, mask: u32) {
         if self.flags == Flags::Held {
             return;
         }
-        // Compute every flag before overwriting any local the state reads.
-        for (f, l) in [(Flag::Z, L_ZF), (Flag::S, L_SF), (Flag::O, L_OF), (Flag::P, L_PF), (Flag::C, L_CF), (Flag::A, L_AF)] {
+        let result_flags = mask & (RflagsBits::ZF | RflagsBits::SF | RflagsBits::OF | RflagsBits::PF | RflagsBits::AF);
+        if result_flags.count_ones() > 1 { self.materialize_result(); }
+        // Compute every demanded flag before overwriting any local its state reads.
+        for (f, bit, l) in [(Flag::Z, RflagsBits::ZF, L_ZF), (Flag::S, RflagsBits::SF, L_SF),
+            (Flag::O, RflagsBits::OF, L_OF), (Flag::P, RflagsBits::PF, L_PF),
+            (Flag::C, RflagsBits::CF, L_CF), (Flag::A, RflagsBits::AF, L_AF)] {
+            if mask & bit == 0 { continue; }
             self.flag(f);
             self.set(l);
         }
@@ -252,6 +261,11 @@ impl Fx<'_> {
 
     /// Hand the flags in `mask` to code outside, in G_FLAGS, each computed from the state as it is.
     pub fn save_flags(&mut self, mask: u32) {
+        let pending = self.fr_pending;
+        // CF compares the operands directly. A single result consumer does not
+        // justify adding a store/reload; share only a repeated difference.
+        let result_flags = mask & (RflagsBits::ZF | RflagsBits::SF | RflagsBits::OF | RflagsBits::PF | RflagsBits::AF);
+        if result_flags.count_ones() > 1 { self.materialize_result(); }
         let mut first = true;
         for (k, &(f, bit, _)) in FLAG_BITS.iter().enumerate() {
             if mask & bit == 0 { continue; }
@@ -263,6 +277,18 @@ impl Fx<'_> {
         if first { return; }
         self.op(I64_EXTEND_I32_U);
         self.gset(G_FLAGS);
+        // save may be emitted inside a conditional slow path. Its computation
+        // cannot establish a result on the path that skipped that save.
+        self.fr_pending = pending;
+    }
+    /// A deferred compare may feed several flag formulas. Compute its common
+    /// difference once before materialization, rather than once per use.
+    fn materialize_result(&mut self) {
+        if self.fr_pending {
+            self.fr();
+            self.set(L_FR);
+            self.fr_pending = false;
+        }
     }
     /// Take the flags in `mask` that the code before left in G_FLAGS.
     pub fn load_flags(&mut self, mask: u32) {

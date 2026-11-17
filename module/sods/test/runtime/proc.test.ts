@@ -49,7 +49,7 @@ const secs = (line: string): number[] => [...line.matchAll(/(\d+)m([\d.]+)s/g)].
 
 test('time on the processor is counted as it is had: the shell\'s loop in its stat, a child\'s in times once waited for, a sleep not at all', {skip: !have}, async () => {
   const loop = 'i=0; while [ $i -lt 20000 ]; do i=$((i+1)); done';
-  const r = await run(`${loop}; set -- $(cat /proc/$$/stat); echo "utime \${14}"; times; sh -c '${loop}'; times; sleep 1; times`);
+  const r = await run(`${loop}; IFS= read -r stat < /proc/$$/stat; set -- $stat; echo "utime \${14}"; times; sh -c '${loop}'; times; sleep 1; times`);
   const [own, ...times] = r.out.trim().split('\n');
   assert.match(own, /^utime [1-9]\d*$/, 'the shell ran its loop: it had the processor');
   const [, before, , after, , slept] = times.map(secs);

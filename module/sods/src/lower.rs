@@ -161,7 +161,11 @@ impl Fx<'_> {
         self.br(self.depth + 1 + self.dispatch as u32);
         self.end();
         self.sync_in(false, writes.unwrap_or(ALL));
-        if matches!(flags, CallFlags::Returned) { self.load_flags(ALL_FLAGS); }
+        if matches!(flags, CallFlags::Returned) {
+            // The nonlocal branch above keeps the callee's full published state.
+            // Only the normal continuation may discard flags it surely kills.
+            self.load_flags(self.handed.handed(ret.0));
+        }
         self.goto(ret, next);
     }
 }
@@ -377,7 +381,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
         }
         let term = code[last];
         let to = fx.succ[k];
-        if held != 0 && !matches!(block.exit, Exit::Branch { .. }) { fx.hold_flags(); }
+        if held != 0 && !matches!(block.exit, Exit::Branch { .. }) { fx.hold_flags_mask(held | ext); }
         match block.exit {
             Exit::Fall(a) | Exit::Jump(a) => fx.goto((a, to[0]), next),
             Exit::TailJump(a) => fx.tail(a),
@@ -390,7 +394,7 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                     Mnemonic::Jcxz => { fx.read_reg(Register::CX); fx.op(I64_EQZ); }
                     _ => fx.condition(term.condition_code()),
                 }
-                if held != 0 { fx.set(l_u(1)); fx.hold_flags(); fx.get(l_u(1)); }
+                if held != 0 { fx.set(l_u(1)); fx.hold_flags_mask(held | ext); fx.get(l_u(1)); }
                 // A side going forward to a label open here is a br_if to it; where the taken side is the next block,
                 // the condition turned round goes to the other.
                 let (taken, fall) = ((taken, to[0]), (fall, to[1]));
@@ -440,7 +444,10 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
                     // To a function that never goes out: only what it may touch is moved, and its depth not counted.
                     fx.note_low();
                     let flags = if !s.preserves_flags() {
-                        fx.save_flags(ALL_FLAGS);
+                        // This exact entry must either read an incoming bit or
+                        // overwrite it before any return or nested call. Outputs
+                        // still publish all flags, including on a nonlocal return.
+                        fx.save_flags(handed.handed_at(e));
                         CallFlags::Returned
                     } else if summaries[index as usize].preserves_flags() {
                         CallFlags::Unchanged

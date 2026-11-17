@@ -216,6 +216,15 @@ of these flags leaves their shared state untouched. Its caller can keep flags in
 locals on normal return, publishing them only if it returns somewhere else.
 This proof excludes unknown calls, traps, loops, recursion and external jumps.
 
+A nontransparent quiet callee is handed its exact entry's input demand, not the union
+loaded for all entries of its function. It still publishes all six flags on return.
+A caller takes back only the flags its normal continuation needs, after the nonlocal
+return branch has retained the full published state. At ordinary CFG boundaries,
+held flags cover the union of local and external successor demand. Instruction-internal
+partial updates and quiet-call nonlocal publication retain full holding. A deferred
+CMP difference is shared only when several demanded formulas use it; a conditional
+save cannot establish that difference on the path that skipped the save.
+
 The optimization avoids unconditional packing at every known quiet call. For the
 same 64-call, flags-unused ELF, generated function bodies were 4,650 bytes before
 this correction, 11,085 with unconditional preservation, and 4,650 with the quiet
@@ -236,6 +245,13 @@ taken and fallthrough paths, unchanged counter/flags, and CMP/TEST immediately
 before these branches without flag-condition fusion. The depth-unwind fixture
 continues to use DEC/JZ so its acceptance does not depend on this instruction.
 LOOP/LOOPE/LOOPNE lowering remains a separate gate, not covered by these checks.
+
+For the same pinned root 0.6.5 ELF inputs, whole-translation gzip level 9 is now
+2,891,098 bytes for bash and 1,714,641 for BusyBox, 99,666 fewer bytes in total than
+the published full-preservation correction. Native and Wasm translators produced
+byte-identical modules. These are artifact-size measurements, not a passed browser
+cold-start budget or a runtime speed claim. Input identities and the broader
+ownership/compatibility gates are recorded in [the runtime foundation design](../../docs/runtime-foundation.md).
 
 ## A translation kept
 
@@ -263,6 +279,9 @@ layers, named by the translator's digest.
 | no system at all | nothing yet | not begun |
 
 ## Its counts
+
+These historical implementation-ledger estimates are not proved specification lower bounds;
+[the runtime foundation design](../../docs/runtime-foundation.md) separates required work from interface-imposed copies and measurements.
 
 A program made a module, in the translator's own instructions (callgrind, one machine, 2026-11-11). By hand, an
 x86 instruction is about 550: scanned once, decoded once, its block and its function laid out, the 30 bytes of

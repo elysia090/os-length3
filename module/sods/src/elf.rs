@@ -314,8 +314,8 @@ impl Elf {
         if !pie && relocation_targets.is_empty() && relative_slots.is_empty() {
             for s in segments.iter().filter(|s| !s.executable) {
                 let skip = s.vaddr.next_multiple_of(8) - s.vaddr;
-                let words = s.data.get(skip as usize..).unwrap_or(&[]).chunks_exact(8);
-                data_pointers.extend(words.map(|w| u64::from_le_bytes(w.try_into().unwrap())).filter(|&a| is_code(a)));
+                let (words, _) = s.data.get(skip as usize..).unwrap_or(&[]).as_chunks::<8>();
+                data_pointers.extend(words.iter().map(|w| u64::from_le_bytes(*w)).filter(|&a| is_code(a)));
             }
         }
         data_pointers.sort_unstable();

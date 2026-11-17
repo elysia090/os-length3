@@ -290,6 +290,77 @@ mod tests {
         }
     }
 
+    /// Several blocks per function, every block also an externally known entry.
+    /// Entry-specific demand must not be confused with the union loaded by its prologue.
+    fn marked_program(functions: &[&[(u64, &[u8], Exit)]]) -> (Elf, Program) {
+        let base = functions.iter().flat_map(|f| f.iter()).map(|b| b.0).min().unwrap();
+        let end = functions.iter().flat_map(|f| f.iter()).map(|b| b.0 + b.1.len() as u64).max().unwrap();
+        let mut bytes = vec![0; (end - base) as usize];
+        let made = functions.iter().map(|blocks| {
+            let blocks: Vec<Block> = blocks.iter().map(|(start, code, exit)| {
+                bytes[(*start - base) as usize..][..code.len()].copy_from_slice(code);
+                Block::of(*start, &decode_all(code, *start), exit.clone())
+            }).collect();
+            Function::new(blocks[0].start, String::new(), blocks)
+        }).collect::<Vec<_>>();
+        let entries = Entries::of(made.iter().enumerate().flat_map(|(f, function)| {
+            function.blocks.iter().enumerate().map(move |(b, block)| (block.start, (f as u32, b as u32)))
+        }).collect());
+        (Elf::of_code(base, bytes), Program { entry: made[0].start, functions: made, entries })
+    }
+
+    #[test]
+    fn quiet_call_input_is_its_entry_demand_not_its_prologue_union() {
+        let blocks = [
+            (0x1000, &[0x48, 0x83, 0xf8, 0x01][..], Exit::Fall(0x1004)), // cmp rax,1
+            (0x1004, &[0x9c, 0x5b, 0xc3][..], Exit::Return), // address-taken: pushfq; pop rbx; ret
+        ];
+        let (elf, p) = marked_program(&[&blocks]);
+        let summaries = summarize(&elf, &p);
+        assert!(!summaries[0].exits);
+        assert!(!summaries[0].preserves_flags());
+        let live = Liveness::for_lowering(&p, &summaries);
+        assert_eq!(live.handed(0x1000), 0);
+        assert_eq!(live.handed(0x1004), ALL_FLAGS);
+        assert_eq!(live.cases[0] as u32, ALL_FLAGS);
+        assert_eq!(live.handed(0x9000), ALL_FLAGS, "unknown entries stay conservative");
+    }
+
+    #[test]
+    fn quiet_partial_and_counted_producers_keep_their_incoming_bits() {
+        for (code, expected) in [
+            (&[0x48, 0xff, 0xc0, 0xc3][..], RflagsBits::CF), // inc rax; ret
+            (&[0x48, 0xd3, 0xe0, 0xc3][..], ALL_FLAGS), // shl rax,cl; ret (CL may be zero)
+            (&[0x9c, 0x5b, 0xc3][..], ALL_FLAGS), // read-only: pushfq; pop rbx; ret
+        ] {
+            let blocks = [(0x1000, code, Exit::Return)];
+            let (elf, p) = marked_program(&[&blocks]);
+            let summaries = summarize(&elf, &p);
+            assert!(!summaries[0].exits);
+            assert!(!summaries[0].preserves_flags());
+            assert_eq!(Liveness::for_lowering(&p, &summaries).handed(0x1000), expected);
+        }
+    }
+
+    #[test]
+    fn a_quiet_call_before_a_later_producer_retains_nonlocal_input() {
+        // The inner pure function may rewrite its return address and bypass CMP.
+        // A Call must demand ALL even when its ordinary continuation kills them.
+        let outer = [
+            (0x1000, &[0xe8, 0xfb, 0x0f, 0x00, 0x00][..], Exit::Call { target: 0x2000, ret: 0x1005 }),
+            (0x1005, &[0x48, 0x83, 0xf8, 0x01, 0xc3][..], Exit::Return),
+        ];
+        let inner = [(0x2000, &[0xc3][..], Exit::Return)];
+        let (elf, p) = marked_program(&[&outer, &inner]);
+        let summaries = summarize(&elf, &p);
+        assert!(!summaries[0].exits);
+        assert!(!summaries[0].preserves_flags());
+        assert!(summaries[1].preserves_flags());
+        let live = Liveness::for_lowering(&p, &summaries);
+        assert_eq!(live.handed(0x1005), 0);
+        assert_eq!(live.handed(0x1000), ALL_FLAGS);
+    }
+
     #[test]
     fn a_leaf_reads_and_writes_what_its_instructions_do() {
         // lea rax, [rdi + rdi*2 + 1]; ret
