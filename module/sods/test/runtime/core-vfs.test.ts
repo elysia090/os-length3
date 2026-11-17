@@ -69,3 +69,48 @@ test('Rust payload is the sole file authority for shared mappings, truncation an
   for (const m of maps) file.unmap(m);
   scope.dispose();
 });
+
+test('two real processes retain one Rust inode across replacement, failure and mapping retirement', {skip: !wasm}, async () => {
+  const scope = await loadFileScope(readFileSync(wasm!), 32), vfs = new Vfs();
+  const file = scope.writeFile(vfs, '/tmp/shared', 'abcdefgh');
+  const k = new Kernel({vfs, translate() { throw new Error('unused'); }, console: {write() {}, read: () => new Uint8Array(0)}});
+  const processes = [0, 1].map(() => {
+    const p = new Process(k, null);
+    p.memory = Object.assign(new WebAssembly.Memory({initial: 1}), {users: 1, written: [], keeps: false, imageOf: null});
+    p.bytes.set(enc.encode('/tmp/shared\0'), 1024);
+    return p;
+  });
+  const [a, b] = processes;
+  const [fa, fb] = processes.map(p => Number(call(p, 2, 1024, 2)));
+  assert.ok(fa >= 0 && fb >= 0);
+  assert.equal(call(a, 9, 8192, 4096, 3, 0x11, fa, 0), 8192n);
+  assert.equal(call(b, 9, 12288, 4096, 3, 0x11, fb, 0), 12288n);
+  a.bytes[8193] = 90;
+  assert.equal(call(a, 26, 8192, 4096, 4), 0n);
+  assert.equal(b.bytes[12289], 90);
+  assert.equal(call(b, 17, fb, 4096, 8, 0), 8n);
+  assert.equal(dec.decode(b.bytes.subarray(4096, 4104)), 'aZcdefgh');
+  scope.writeFile(vfs, '/tmp/shared', 'replacement');
+  assert.equal(call(a, 3, fa), 0n);
+  b.bytes.set(enc.encode('XY'), 4096);
+  assert.equal(call(b, 18, fb, 4096, 2, 2), 2n);
+  assert.equal(dec.decode(file.bytes()), 'aZXYefgh');
+  assert.equal(dec.decode(a.bytes.subarray(8192, 8200)), 'aZXYefgh');
+  assert.equal(dec.decode(vfs.readFile('/tmp/shared')), 'replacement');
+  const version = file.version, before = file.bytes();
+  assert.equal(call(b, 18, fb, 4096, 2, 31), -27n);
+  assert.equal(call(b, 77, fb, 33), -27n);
+  assert.equal(file.version, version);
+  assert.deepEqual(file.bytes(), before);
+  assert.deepEqual(b.bytes.subarray(12288, 12296), before);
+  assert.equal(call(b, 11, 12288, 4096), 0n);
+  assert.equal(call(b, 9, 12288, 4096, 3, 0x32, -1, 0), 12288n); // new private anonymous mapping
+  b.bytes.fill(77, 12288, 12296);
+  file.write(0, enc.encode('Q'));
+  assert.equal(a.bytes[8192], 81);
+  assert.deepEqual([...b.bytes.subarray(12288, 12296)], new Array(8).fill(77));
+  assert.equal(call(b, 11, 12288, 4096), 0n);
+  assert.equal(call(b, 3, fb), 0n);
+  assert.equal(call(a, 11, 8192, 4096), 0n);
+  scope.dispose();
+});

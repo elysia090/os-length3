@@ -123,3 +123,36 @@ They do not establish translated-program, Worker, concurrent shared-memory or
 full filesystem compatibility. Generic core errors are translated to filesystem
 errnos only at this adapter; payload size failure is EFBIG and allocation refusal
 is ENOSPC. Engine traps and scope misuse remain failures, not false successful IO.
+
+## Next integration gate: loader effects and destination lifetime
+
+Priority is destination lifetime before lazy loading, then migration of pending
+kernel operations rather than more standalone payload helpers. A source probe of
+existing TS lazy files reproduced a real failure: the loader replaced
+`Process.memory` during read, the syscall returned 3, and `abc` was written into
+the old memory while the current memory remained zero. **This remains unresolved.**
+No pending-read or pin fix is implemented by the two-process regression below.
+This is an existing raw
+embedding path, not evidence that the new Rust file entrance supports lazy loading.
+
+The next finite operation is a pending ordinary-file read. It must preserve the
+originating process/image/mapping identity across loading, hold no guest view or
+Rust byte lease over a host callback, and acquire a destination only after checking
+that identity. Merely reacquiring `p.bytes` can target a different image; merely
+checking buffer identity misses same-memory exec/renew. The checks must cover
+readv scatter as well as read, including partial success and offset commit.
+
+During migration, TS Description remains the sole offset owner until all of its
+mutators move. A Rust pending operation may own the operation identity, source
+revision, accepted range and copy outcome, but not an independently writable
+shadow descriptor offset. Reentrant offset/lifetime changes need an explicit
+reservation/rejection rule before a host loader is enabled. Copy completion cannot
+be invented from a successful loader return. Loader external effects are not
+rolled back. No generic pin or pending-read implementation is claimed yet.
+
+The two-process regression now checks the existing non-lazy slice through real
+syscalls: separate process memories map one Rust-backed inode, msync/read observe
+the other mapping, entry replacement and fd close preserve it, refused writes and
+truncation leave bytes/version unchanged, and an unmapped/reused region receives
+no later file propagation. This is deterministic process interleaving, not a test
+of simultaneous OS threads, shared-memory stores or arbitrary embedding mutation.
