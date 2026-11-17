@@ -257,8 +257,18 @@ pub extern "C" fn linux_files_prepare(
         if s.builder.is_some() || s.sealed.is_some() {
             return Err(-9);
         }
-        let tree = Tree::new(TREE, inodes as usize, entries as usize, file_bytes as usize)
-            .map_err(|_| -10)?;
+        let tree = Tree::new(
+            TREE,
+            inodes as usize,
+            entries as usize,
+            file_bytes as usize,
+            crate::inode::Creation {
+                mode: 0o755,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .map_err(|_| -10)?;
         let capacity = ReadCapacity::new(reads as usize).map_err(read_code)?;
         s.builder = Some(Builder {
             tree: Some(tree),
@@ -310,7 +320,15 @@ pub extern "C" fn linux_tree_directory(parent: u64, mode: u32) -> i32 {
         b.tree
             .as_mut()
             .ok_or(-9)?
-            .directory(inode(parent), &b.name, mode)
+            .directory(
+                inode(parent),
+                &b.name,
+                crate::inode::Creation {
+                    mode: mode,
+                    uid: 0,
+                    gid: 0,
+                },
+            )
             .map(|n| n.number())
             .map_err(|_| -10)
     })
@@ -322,7 +340,16 @@ pub extern "C" fn linux_tree_file(parent: u64, mode: u32) -> i32 {
         b.tree
             .as_mut()
             .ok_or(-9)?
-            .file_take(inode(parent), &b.name, mode, &mut b.input)
+            .file_take(
+                inode(parent),
+                &b.name,
+                crate::inode::Creation {
+                    mode: mode,
+                    uid: 0,
+                    gid: 0,
+                },
+                &mut b.input,
+            )
             .map(|n| n.number())
             .map_err(|_| -10)
     })
@@ -570,7 +597,17 @@ pub extern "C" fn linux_tree_lazy(parent: u64, mode: u32, source: u32, size: u32
         b.tree
             .as_mut()
             .ok_or(-9)?
-            .lazy_file(inode(parent), &b.name, mode, source, size as usize)
+            .lazy_file(
+                inode(parent),
+                &b.name,
+                crate::inode::Creation {
+                    mode: mode,
+                    uid: 0,
+                    gid: 0,
+                },
+                source,
+                size as usize,
+            )
             .map(|n| n.number())
             .map_err(|_| -10)
     })

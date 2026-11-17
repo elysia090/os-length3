@@ -306,6 +306,37 @@ impl Files {
             )
             .map_err(Error::Fs)
     }
+    /// Owned nonholding position for a synchronous path walk. The Fs ticket
+    /// keeps its starting view alive; callers must hold a resolved route before
+    /// any asynchronous use. No namespace mutation/callback occurs in the walk.
+    pub(crate) fn fs_start(&self, ticket: &fs_context::Ticket, base: Base) -> Result<Place, Error> {
+        let mounts = self.mounts.as_ref().ok_or(Error::BadHandle)?;
+        let place = self
+            .contexts
+            .position_ref(mounts, ticket, base)
+            .map_err(Error::Fs)?;
+        mounts.copy_position(place).map_err(Error::Mount)
+    }
+    pub(crate) fn place_metadata(&self, place: &Place) -> Result<crate::inode::Metadata, Error> {
+        self.mounts
+            .as_ref()
+            .ok_or(Error::BadHandle)?
+            .validate(place)
+            .map_err(Error::Mount)?;
+        self.filesystems
+            .metadata(place.inode())
+            .map_err(|_| Error::BadHandle)
+    }
+    pub(crate) fn symlink_target<'a>(&'a self, place: &Place) -> Result<&'a [u8], Error> {
+        self.mounts
+            .as_ref()
+            .ok_or(Error::BadHandle)?
+            .validate(place)
+            .map_err(Error::Mount)?;
+        self.filesystems
+            .target(place.inode())
+            .map_err(|_| Error::BadHandle)
+    }
     pub(crate) fn fs_component(
         &self,
         ticket: &fs_context::Ticket,
@@ -389,6 +420,7 @@ impl Files {
         &mut self,
         root: Inode,
         limits: mount::Limits,
+        policy: mount::ViewPolicy,
     ) -> Result<Ticket, Error> {
         if self.mounts.is_some() || self.descriptions.iter().any(|cell| cell.value.is_some()) {
             return Err(Error::Busy);
@@ -400,9 +432,18 @@ impl Files {
         {
             return Err(Error::BadHandle);
         }
-        let (mounts, ticket) = Mounts::new(self.owner, root, limits).map_err(Error::Mount)?;
+        let (mounts, ticket) =
+            Mounts::new(self.owner, root, limits, policy).map_err(Error::Mount)?;
         self.mounts = Some(mounts);
         Ok(ticket)
+    }
+    /// Query only: syscall/path/executable policy enforcement is not implied.
+    pub(crate) fn view_policy(&self, place: &Place) -> Result<mount::ViewPolicy, Error> {
+        self.mounts
+            .as_ref()
+            .ok_or(Error::BadHandle)?
+            .policy(place)
+            .map_err(Error::Mount)
     }
     pub(crate) fn view_root(&self, ticket: &Ticket) -> Result<Place, Error> {
         self.mounts
@@ -427,7 +468,11 @@ impl Files {
             .map_err(Error::Mount)
     }
     /// Only an admitted filesystem root can introduce a new storage view.
-    pub(crate) fn filesystem_view(&mut self, root: Inode) -> Result<Ticket, Error> {
+    pub(crate) fn filesystem_view(
+        &mut self,
+        root: Inode,
+        policy: mount::ViewPolicy,
+    ) -> Result<Ticket, Error> {
         if !self
             .filesystems
             .is_root(root)
@@ -438,7 +483,7 @@ impl Files {
         self.mounts
             .as_mut()
             .ok_or(Error::BadHandle)?
-            .filesystem_root(root)
+            .filesystem_root(root, policy)
             .map_err(Error::Mount)
     }
     pub(crate) fn clone_view(&mut self, source: &Place) -> Result<Ticket, Error> {
@@ -985,11 +1030,20 @@ impl Files {
 
 #[cfg(test)]
 mod tests {
+    // Prepared-root fixture ownership, not a production metadata default.
+    fn root_owned(mode: u32) -> crate::inode::Creation {
+        crate::inode::Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+
     use super::*;
     fn setup(slots: usize) -> (Files, Inode) {
-        let mut tree = Tree::new(91, 4, 4, 16).unwrap();
+        let mut tree = Tree::new(91, 4, 4, 16, root_owned(0o755)).unwrap();
         let file = tree
-            .file_take(tree.root(), b"f", 0o600, &mut b"body".to_vec())
+            .file_take(tree.root(), b"f", root_owned(0o600), &mut b"body".to_vec())
             .unwrap();
         (
             Files::new(
@@ -1043,7 +1097,7 @@ mod tests {
         // Distinct live Files incarnations, as required by the embedding.
         let mut foreign = Files::new(
             93,
-            Tree::new(94, 1, 0, 0).unwrap(),
+            Tree::new(94, 1, 0, 0, root_owned(0o755)).unwrap(),
             Limits {
                 contexts: 0,
                 tables: 1,
@@ -1154,10 +1208,12 @@ mod tests {
     }
     #[test]
     fn kinds_foreign_inodes_and_description_exhaustion_are_checked() {
-        let mut tree = Tree::new(41, 4, 4, 8).unwrap();
+        let mut tree = Tree::new(41, 4, 4, 8, root_owned(0o755)).unwrap();
         let root = tree.root();
-        let link = tree.symlink(root, b"link", b"target").unwrap();
-        let foreign = Tree::new(42, 1, 0, 0).unwrap().root();
+        let link = tree
+            .symlink(root, b"link", b"target", root_owned(0o777))
+            .unwrap();
+        let foreign = Tree::new(42, 1, 0, 0, root_owned(0o755)).unwrap().root();
         let mut f = Files::new(
             43,
             tree,
@@ -1186,11 +1242,11 @@ mod tests {
         assert_eq!(f.live_slots, 0);
     }
     fn prepared(owner: u64, bytes: &[u8]) -> (Tree, Inode, *const u8) {
-        let mut tree = Tree::new(owner, 4, 4, 32).unwrap();
+        let mut tree = Tree::new(owner, 4, 4, 32, root_owned(0o755)).unwrap();
         let mut payload = bytes.to_vec();
         let pointer = payload.as_ptr();
         let inode = tree
-            .file_take(tree.root(), b"same", 0o600, &mut payload)
+            .file_take(tree.root(), b"same", root_owned(0o600), &mut payload)
             .unwrap();
         (tree, inode, pointer)
     }
@@ -1291,13 +1347,13 @@ mod tests {
         // absent inode. Unique owner allocation remains an embedding invariant.
         let (mut malformed, _, _) = prepared(121, b"other");
         let absent = malformed
-            .file_take(malformed.root(), b"absent", 0o600, &mut vec![1])
+            .file_take(malformed.root(), b"absent", root_owned(0o600), &mut vec![1])
             .unwrap();
         let t = f.table(2).unwrap();
         assert_eq!(f.open(&t, absent, false), Err(Error::BadHandle));
-        let mut pending = Tree::new(122, 2, 1, 16).unwrap();
+        let mut pending = Tree::new(122, 2, 1, 16, root_owned(0o755)).unwrap();
         let lazy = pending
-            .lazy_file(pending.root(), b"lazy", 0o600, 9, 4)
+            .lazy_file(pending.root(), b"lazy", root_owned(0o600), 9, 4)
             .unwrap();
         let attempt = pending.load_begin(lazy).unwrap();
         let mut pending = match f.admit_tree(pending) {
@@ -1314,13 +1370,13 @@ mod tests {
         f.let_go(t).unwrap();
     }
     fn mounted_setup(holds: usize) -> (Files, Ticket, Place) {
-        let mut tree = Tree::new(301, 10, 12, 32).unwrap();
+        let mut tree = Tree::new(301, 10, 12, 32, root_owned(0o755)).unwrap();
         let root = tree.root();
-        let src = tree.directory(root, b"src", 0o755).unwrap();
-        tree.directory(root, b"dst", 0o755).unwrap();
-        tree.directory(root, b"dst2", 0o755).unwrap();
-        tree.directory(src, b"child", 0o755).unwrap();
-        tree.file_take(src, b"file", 0o600, &mut b"mounted".to_vec())
+        let src = tree.directory(root, b"src", root_owned(0o755)).unwrap();
+        tree.directory(root, b"dst", root_owned(0o755)).unwrap();
+        tree.directory(root, b"dst2", root_owned(0o755)).unwrap();
+        tree.directory(src, b"child", root_owned(0o755)).unwrap();
+        tree.file_take(src, b"file", root_owned(0o600), &mut b"mounted".to_vec())
             .unwrap();
         let mut f = Files::new(
             302,
@@ -1333,7 +1389,15 @@ mod tests {
             },
         );
         let ticket = f
-            .bootstrap_mount(root, mount::Limits { views: 8, holds })
+            .bootstrap_mount(
+                root,
+                mount::Limits { views: 8, holds },
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false,
+                },
+            )
             .unwrap();
         let place = f.view_root(&ticket).unwrap();
         (f, ticket, place)
@@ -1426,12 +1490,12 @@ mod tests {
     }
     #[test]
     fn file_bind_covers_a_name_not_every_hardlink_of_the_inode() {
-        let mut tree = Tree::new(311, 5, 5, 32).unwrap();
+        let mut tree = Tree::new(311, 5, 5, 32, root_owned(0o755)).unwrap();
         let root = tree.root();
-        tree.file_take(root, b"source", 0o600, &mut b"source".to_vec())
+        tree.file_take(root, b"source", root_owned(0o600), &mut b"source".to_vec())
             .unwrap();
         let original = tree
-            .file_take(root, b"a", 0o600, &mut b"original".to_vec())
+            .file_take(root, b"a", root_owned(0o600), &mut b"original".to_vec())
             .unwrap();
         tree.hardlink(root, b"b", original).unwrap();
         let mut f = Files::new(
@@ -1445,7 +1509,15 @@ mod tests {
             },
         );
         let ticket = f
-            .bootstrap_mount(root, mount::Limits { views: 2, holds: 4 })
+            .bootstrap_mount(
+                root,
+                mount::Limits { views: 2, holds: 4 },
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false,
+                },
+            )
             .unwrap();
         let root = f.view_root(&ticket).unwrap();
         let src = f.component(&root, b"source").unwrap().unwrap();
@@ -1469,9 +1541,9 @@ mod tests {
     }
     #[test]
     fn admitted_second_filesystem_root_mounts_without_arbitrary_inode_conversion() {
-        let mut first = Tree::new(321, 3, 3, 8).unwrap();
+        let mut first = Tree::new(321, 3, 3, 8, root_owned(0o755)).unwrap();
         let root = first.root();
-        first.directory(root, b"at", 0o755).unwrap();
+        first.directory(root, b"at", root_owned(0o755)).unwrap();
         let (second, file, pointer) = prepared(322, b"second");
         let second_root = second.root();
         let mut f = Files::with_filesystem_capacity(
@@ -1486,17 +1558,58 @@ mod tests {
             NonZeroUsize::new(2).unwrap(),
         );
         let bootstrap = f
-            .bootstrap_mount(root, mount::Limits { views: 2, holds: 3 })
+            .bootstrap_mount(
+                root,
+                mount::Limits { views: 2, holds: 3 },
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false,
+                },
+            )
             .unwrap();
         assert!(matches!(
-            f.filesystem_view(second_root),
+            f.filesystem_view(
+                second_root,
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false
+                }
+            ),
             Err(Error::BadHandle)
         ));
         assert!(f.admit_tree(second).is_ok());
-        assert!(matches!(f.filesystem_view(file), Err(Error::BadHandle)));
-        let ticket = f.filesystem_view(second_root).unwrap();
         assert!(matches!(
-            f.filesystem_view(second_root),
+            f.filesystem_view(
+                file,
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false
+                }
+            ),
+            Err(Error::BadHandle)
+        ));
+        let ticket = f
+            .filesystem_view(
+                second_root,
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            f.filesystem_view(
+                second_root,
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false
+                }
+            ),
             Err(Error::Mount(mount::Error::Capacity))
         ));
         let top = f.view_root(&bootstrap).unwrap();
@@ -1523,10 +1636,10 @@ mod tests {
     }
     #[test]
     fn bare_builder_and_mount_open_modes_cannot_mix_even_after_fd_close() {
-        let mut tree = Tree::new(331, 2, 1, 8).unwrap();
+        let mut tree = Tree::new(331, 2, 1, 8, root_owned(0o755)).unwrap();
         let root = tree.root();
         let inode = tree
-            .file_take(root, b"file", 0o600, &mut b"body".to_vec())
+            .file_take(root, b"file", root_owned(0o600), &mut b"body".to_vec())
             .unwrap();
         let mut f = Files::new(
             332,
@@ -1541,12 +1654,44 @@ mod tests {
         let table = f.table(2).unwrap();
         let fd = f.open(&table, inode, false).unwrap();
         let limits = mount::Limits { views: 1, holds: 2 };
-        assert!(matches!(f.bootstrap_mount(root, limits), Err(Error::Busy)));
+        assert!(matches!(
+            f.bootstrap_mount(
+                root,
+                limits,
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false
+                }
+            ),
+            Err(Error::Busy)
+        ));
         let pending = f.reserve_read(&table, fd, 4).unwrap();
         f.close(&table, fd).unwrap();
-        assert!(matches!(f.bootstrap_mount(root, limits), Err(Error::Busy)));
+        assert!(matches!(
+            f.bootstrap_mount(
+                root,
+                limits,
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false
+                }
+            ),
+            Err(Error::Busy)
+        ));
         f.abort_read(pending);
-        let ticket = f.bootstrap_mount(root, limits).unwrap();
+        let ticket = f
+            .bootstrap_mount(
+                root,
+                limits,
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false,
+                },
+            )
+            .unwrap();
         assert_eq!(f.open(&table, inode, false), Err(Error::NotSupported));
         let top = f.view_root(&ticket).unwrap();
         let file = f.component(&top, b"file").unwrap().unwrap();
@@ -1674,14 +1819,18 @@ mod tests {
     }
     #[test]
     fn fs_parent_clamps_bind_points_and_reads_through_the_correct_view() {
-        let mut tree = Tree::new(911, 8, 8, 16).unwrap();
+        let mut tree = Tree::new(911, 8, 8, 16, root_owned(0o755)).unwrap();
         let inode_root = tree.root();
-        let src = tree.directory(inode_root, b"src", 0o755).unwrap();
-        tree.directory(src, b"child", 0o755).unwrap();
-        tree.file_take(src, b"file", 0o600, &mut b"mounted".to_vec())
+        let src = tree
+            .directory(inode_root, b"src", root_owned(0o755))
             .unwrap();
-        let jail = tree.directory(inode_root, b"jail", 0o755).unwrap();
-        tree.directory(jail, b"mnt", 0o755).unwrap();
+        tree.directory(src, b"child", root_owned(0o755)).unwrap();
+        tree.file_take(src, b"file", root_owned(0o600), &mut b"mounted".to_vec())
+            .unwrap();
+        let jail = tree
+            .directory(inode_root, b"jail", root_owned(0o755))
+            .unwrap();
+        tree.directory(jail, b"mnt", root_owned(0o755)).unwrap();
         let mut f = Files::new(
             912,
             tree,
@@ -1698,6 +1847,11 @@ mod tests {
                 mount::Limits {
                     views: 8,
                     holds: 24,
+                },
+                crate::mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false,
                 },
             )
             .unwrap();
@@ -1757,8 +1911,10 @@ mod tests {
         assert!(f.release_view(root_ticket).is_ok());
     }
     fn lazy_setup() -> (Files, Table, u32, Inode) {
-        let mut tree = Tree::new(1001, 3, 3, 32).unwrap();
-        let file = tree.lazy_file(tree.root(), b"lazy", 0o600, 7, 2).unwrap();
+        let mut tree = Tree::new(1001, 3, 3, 32, root_owned(0o755)).unwrap();
+        let file = tree
+            .lazy_file(tree.root(), b"lazy", root_owned(0o600), 7, 2)
+            .unwrap();
         let mut files = Files::new(
             1002,
             tree,
@@ -1901,5 +2057,101 @@ mod tests {
         assert_eq!(f.tables.len(), 1);
         assert_eq!(f.descriptions.len(), 1);
         assert_eq!(f.filesystems.read(inode, 0, 16).unwrap(), b"body");
+    }
+}
+
+#[cfg(test)]
+mod view_policy_tests {
+    use super::*;
+    use crate::inode::{Creation, Tree};
+    use crate::mount::ViewPolicy;
+    #[test]
+    fn policies_belong_to_views_survive_holds_and_reject_stale_positions() {
+        let metadata = Creation {
+            mode: 0o755,
+            uid: 11,
+            gid: 12,
+        };
+        let mut tree = Tree::new(720, 4, 4, 16, metadata).unwrap();
+        let root = tree.root();
+        tree.directory(root, b"at", metadata).unwrap();
+        tree.file_take(root, b"file", metadata, &mut b"body".to_vec())
+            .unwrap();
+        let mut f = Files::new(
+            721,
+            tree,
+            Limits {
+                contexts: 0,
+                tables: 1,
+                descriptions: 2,
+                slots: 4,
+            },
+        );
+        let restricted = ViewPolicy {
+            no_exec: true,
+            no_suid: true,
+            no_symfollow: true,
+        };
+        let allowed = ViewPolicy {
+            no_exec: false,
+            no_suid: false,
+            no_symfollow: false,
+        };
+        let first = f
+            .bootstrap_mount(root, mount::Limits { views: 4, holds: 8 }, restricted)
+            .unwrap();
+        let first_root = f.view_root(&first).unwrap();
+        let second = f.filesystem_view(root, allowed).unwrap();
+        let second_root = f.view_root(&second).unwrap();
+        assert_eq!(first_root.inode(), second_root.inode());
+        assert_eq!(f.view_policy(&first_root), Ok(restricted));
+        assert_eq!(f.view_policy(&second_root), Ok(allowed));
+        let clone = f.clone_view(&second_root).unwrap();
+        let clone_root = f.view_root(&clone).unwrap();
+        assert_eq!(f.view_policy(&clone_root), Ok(allowed));
+        assert!(f.release_view(clone).is_ok());
+        assert_eq!(
+            f.view_policy(&clone_root),
+            Err(Error::Mount(mount::Error::BadPlace))
+        );
+        let point = f.component(&first_root, b"at").unwrap().unwrap();
+        f.attach_view(&second, &point).unwrap();
+        let covered = f.component(&first_root, b"at").unwrap().unwrap();
+        assert_eq!(f.view_policy(&covered), Ok(allowed));
+        let file = f.component(&covered, b"file").unwrap().unwrap();
+        let table = f.table(4).unwrap();
+        let fd = f.open_place(&table, &file, false).unwrap();
+        assert!(f.release_view(second).is_ok());
+        f.detach_view(&covered).unwrap();
+        assert_eq!(f.view_policy(&file), Ok(allowed));
+        let hold = f.reserve_read(&table, fd, 4).unwrap();
+        f.close(&table, fd).unwrap();
+        assert_eq!(f.view_policy(&file), Ok(allowed));
+        assert_eq!(f.read_bytes(&hold), b"body");
+        f.finish_read(hold, 4);
+        assert_eq!(
+            f.view_policy(&file),
+            Err(Error::Mount(mount::Error::BadPlace))
+        );
+        let foreign = Tree::new(722, 1, 0, 0, metadata).unwrap();
+        let root2 = foreign.root();
+        let mut other = Files::new(
+            723,
+            foreign,
+            Limits {
+                contexts: 0,
+                tables: 0,
+                descriptions: 0,
+                slots: 0,
+            },
+        );
+        let ticket = other
+            .bootstrap_mount(root2, mount::Limits { views: 1, holds: 1 }, allowed)
+            .unwrap();
+        let foreign_place = other.view_root(&ticket).unwrap();
+        assert_eq!(
+            f.view_policy(&foreign_place),
+            Err(Error::Mount(mount::Error::BadPlace))
+        );
     }
 }

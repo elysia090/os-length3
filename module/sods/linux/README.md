@@ -567,3 +567,38 @@ alone cannot use it. Terminal retirement inspects the bounded
 read arena (O(read capacity)); syscall dispatch gets its Table in constant time.
 There is no per-read scan added to the ordinary path and no copied FD table, file
 payload or mount graph for the diagnostic's shared holder.
+
+### Prepared path authorization (internal migration)
+
+Prepared metadata now receives explicit mode/uid/gid; kind and link count remain
+Tree-owned. Immutable mount-view policy distinguishes `no_exec`, `no_suid` and
+`no_symfollow`. It is not a Linux mount-flag bitmask: unsupported flags and profiles
+must be handled at their admission boundary rather than ignored. Existing private
+Wasm preparation still explicitly creates root-owned nodes.
+
+The private path resolver reads the Fs root/cwd and Rust credentials, checks each
+traversed directory, follows relative/absolute symlinks and clamps parent traversal
+at the Fs root. This does not turn a cwd initially outside that root into a
+BENEATH sandbox; startup must construct the intended root/cwd pair. Forty total
+symlink traversals are permitted; trailing separators
+require a directory. `no_symfollow` is checked on the traversed link's view. The
+result is a nonholding Place, not authorization to execute or a safe asynchronous
+source reference. Final regular-file/execute/noexec checks and a retained program
+must precede loading and translation; that complete startup transaction is not
+connected by this change.
+
+Credentials are initial-user-namespace root or exec-derived private values. The
+limited profile uses mode-only DAC and default securebits, excluding ACLs, file
+capabilities, LSM/ptrace, idmapped mounts and unsafe shared exec. Exec computes a
+proposal including saved/fs IDs, capabilities and secure aux values; it does not
+publish credentials before image acceptance. Dumpability also observes old IDs,
+ID changes and capability gains, independently of secureexec. This is not an
+implementation of core dumping, pdeath-signal changes or full exec state updates.
+
+Path processing borrows symlink targets in at most 41 frames instead of building
+repeated concatenated paths. Existing mount coverage still scans the view table;
+work is proportional to visited bytes plus components times that scan, and Place
+provenance still allocates. No namespace snapshot, hidden FD table, duplicated
+payload or host-provided permission decision is introduced. Normal Node startup,
+program/source retention, process-owned Fs/credentials and deletion of the old TS
+Linux authority remain migration gates, not completed capabilities.

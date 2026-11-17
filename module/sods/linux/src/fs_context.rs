@@ -211,12 +211,30 @@ impl Contexts {
 
 #[cfg(test)]
 mod tests {
+    // Prepared-root fixture ownership, not a production metadata default.
+    fn root_owned(mode: u32) -> crate::inode::Creation {
+        crate::inode::Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+
     use super::*;
     use crate::inode::Tree;
     fn mounts(holds: usize) -> (Mounts, mount::Ticket, Place) {
-        let tree = Tree::new(501, 1, 0, 0).unwrap();
-        let (mounts, ticket) =
-            Mounts::new(502, tree.root(), mount::Limits { views: 1, holds }).unwrap();
+        let tree = Tree::new(501, 1, 0, 0, root_owned(0o755)).unwrap();
+        let (mounts, ticket) = Mounts::new(
+            502,
+            tree.root(),
+            mount::Limits { views: 1, holds },
+            crate::mount::ViewPolicy {
+                no_exec: false,
+                no_suid: false,
+                no_symfollow: false,
+            },
+        )
+        .unwrap();
         let root = mounts.root(&ticket).unwrap();
         (mounts, ticket, root)
     }

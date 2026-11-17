@@ -589,17 +589,26 @@ impl Reads {
 
 #[cfg(test)]
 mod tests {
+    // Prepared-root fixture ownership, not a production metadata default.
+    fn root_owned(mode: u32) -> crate::inode::Creation {
+        crate::inode::Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+
     use super::*;
     use crate::descriptor::Limits;
     use crate::inode::{Inode, Tree};
     fn setup() -> (Reads, Files, Table, Domain, u64, u32, Inode) {
-        let mut tree = Tree::new(2, 4, 4, 32).unwrap();
+        let mut tree = Tree::new(2, 4, 4, 32, root_owned(0o755)).unwrap();
         let root = tree.root();
         let a = tree
-            .file_take(root, b"a", 0o600, &mut b"abcd".to_vec())
+            .file_take(root, b"a", root_owned(0o600), &mut b"abcd".to_vec())
             .unwrap();
         let b = tree
-            .file_take(root, b"b", 0o600, &mut b"xyz".to_vec())
+            .file_take(root, b"b", root_owned(0o600), &mut b"xyz".to_vec())
             .unwrap();
         let mut files = Files::new(
             3,
@@ -619,10 +628,17 @@ mod tests {
         (reads, files, table, domain, binding, fd, b)
     }
     fn lazy_setup() -> (Reads, Files, Table, Domain, Execution, u32, Inode) {
-        let mut tree = Tree::new(12, 8, 8, 32).unwrap();
-        let lazy = tree.lazy_file(tree.root(), b"lazy", 0o600, 7, 1).unwrap();
+        let mut tree = Tree::new(12, 8, 8, 32, root_owned(0o755)).unwrap();
+        let lazy = tree
+            .lazy_file(tree.root(), b"lazy", root_owned(0o600), 7, 1)
+            .unwrap();
         let other = tree
-            .file_take(tree.root(), b"other", 0o600, &mut b"xyz".to_vec())
+            .file_take(
+                tree.root(),
+                b"other",
+                root_owned(0o600),
+                &mut b"xyz".to_vec(),
+            )
             .unwrap();
         let mut files = Files::new(
             13,
@@ -1003,7 +1019,7 @@ mod tests {
         let (mut r, mut files, table, mut d, m, fd, _) = setup();
         let mut foreign = Files::new(
             99,
-            Tree::new(98, 2, 2, 32).unwrap(),
+            Tree::new(98, 2, 2, 32, root_owned(0o755)).unwrap(),
             Limits {
                 contexts: 0,
                 tables: 2,

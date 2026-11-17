@@ -262,6 +262,15 @@ impl Continuation {
 
 #[cfg(test)]
 mod tests {
+    // Prepared-root fixture ownership, not a production metadata default.
+    fn root_owned(mode: u32) -> crate::inode::Creation {
+        crate::inode::Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+
     use super::*;
     use crate::execution::{ImageResult, Unwind};
     use crate::inode::Tree;
@@ -278,12 +287,12 @@ mod tests {
         Invocation,
         u32,
     ) {
-        let mut t = Tree::new(1, 4, 4, 32).unwrap();
+        let mut t = Tree::new(1, 4, 4, 32, root_owned(0o755)).unwrap();
         let root = t.root();
         let inode = if lazy {
-            t.lazy_file(root, b"a", 0o644, 7, 1).unwrap()
+            t.lazy_file(root, b"a", root_owned(0o644), 7, 1).unwrap()
         } else {
-            t.file_take(root, b"a", 0o644, &mut b"abcd".to_vec())
+            t.file_take(root, b"a", root_owned(0o644), &mut b"abcd".to_vec())
                 .unwrap()
         };
         let mut f = Files::new(

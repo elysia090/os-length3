@@ -23,6 +23,16 @@ pub(crate) enum Error {
     Attached,
     Type,
 }
+/// Immutable per-view policy, not Linux mount syscall bit values. This is only
+/// policy storage: executable acquisition and the path walker must enforce it.
+/// Read-only, nodev, atime and propagation are not represented; future external
+/// inputs must reject unsupported policies rather than silently discard them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ViewPolicy {
+    pub no_exec: bool,
+    pub no_suid: bool,
+    pub no_symfollow: bool,
+}
 #[derive(Clone, Copy)]
 pub(crate) struct Limits {
     pub views: usize,
@@ -49,6 +59,7 @@ pub(crate) enum ParentStep<'a> {
     Across(&'a Place),
 }
 struct View {
+    policy: ViewPolicy,
     root: Inode,
     root_parent: Option<Inode>,
     root_name: Vec<u8>,
@@ -79,7 +90,12 @@ impl Place {
     }
 }
 impl Mounts {
-    pub(crate) fn new(owner: u64, root: Inode, limits: Limits) -> Result<(Self, Ticket), Error> {
+    pub(crate) fn new(
+        owner: u64,
+        root: Inode,
+        limits: Limits,
+        policy: ViewPolicy,
+    ) -> Result<(Self, Ticket), Error> {
         if limits.views == 0 || limits.holds == 0 {
             return Err(Error::Capacity);
         }
@@ -88,6 +104,7 @@ impl Mounts {
         cells.push(Cell {
             generation: 1,
             view: Some(View {
+                policy,
                 root,
                 root_parent: None,
                 root_name: Vec::new(),
@@ -116,6 +133,9 @@ impl Mounts {
             return Err(Error::BadPlace);
         }
         cell.view.as_ref().ok_or(Error::BadPlace)
+    }
+    pub(crate) fn policy(&self, place: &Place) -> Result<ViewPolicy, Error> {
+        Ok(self.view(place.view)?.policy)
     }
     pub(crate) fn validate(&self, place: &Place) -> Result<(), Error> {
         self.view(place.view).map(|_| ())
@@ -308,11 +328,21 @@ impl Mounts {
         if self.has_children(source.view) {
             return Err(Error::Unsupported);
         }
-        self.create_view(source.inode, source.parent, &source.name, directory)
+        self.create_view(
+            source.inode,
+            source.parent,
+            &source.name,
+            directory,
+            self.policy(source)?,
+        )
     }
     /// Files validates that root is the root of an admitted filesystem.
-    pub(crate) fn filesystem_root(&mut self, root: Inode) -> Result<Ticket, Error> {
-        self.create_view(root, None, &[], true)
+    pub(crate) fn filesystem_root(
+        &mut self,
+        root: Inode,
+        policy: ViewPolicy,
+    ) -> Result<Ticket, Error> {
+        self.create_view(root, None, &[], true, policy)
     }
     fn create_view(
         &mut self,
@@ -320,6 +350,7 @@ impl Mounts {
         root_parent: Option<Inode>,
         name: &[u8],
         directory: bool,
+        policy: ViewPolicy,
     ) -> Result<Ticket, Error> {
         if self.holds >= self.limits.holds {
             return Err(Error::Capacity);
@@ -347,6 +378,7 @@ impl Mounts {
         let cell = Cell {
             generation,
             view: Some(View {
+                policy,
                 root,
                 root_parent,
                 root_name,
@@ -425,13 +457,31 @@ impl Mounts {
 
 #[cfg(test)]
 mod tests {
+    // Prepared-root fixture ownership, not a production metadata default.
+    fn root_owned(mode: u32) -> crate::inode::Creation {
+        crate::inode::Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+
     use super::*;
     use crate::inode::Tree;
     #[test]
     fn stale_generation_foreign_view_and_capacity_do_not_alias() {
-        let tree = Tree::new(1, 1, 0, 0).unwrap();
-        let (mut mounts, root) =
-            Mounts::new(2, tree.root(), Limits { views: 2, holds: 3 }).unwrap();
+        let tree = Tree::new(1, 1, 0, 0, root_owned(0o755)).unwrap();
+        let (mut mounts, root) = Mounts::new(
+            2,
+            tree.root(),
+            Limits { views: 2, holds: 3 },
+            crate::mount::ViewPolicy {
+                no_exec: false,
+                no_suid: false,
+                no_symfollow: false,
+            },
+        )
+        .unwrap();
         let place = mounts.root(&root).unwrap();
         let ticket = mounts.clone_view(&place, true).unwrap();
         let stale = mounts.root(&ticket).unwrap();
@@ -468,9 +518,18 @@ mod tests {
     }
     #[test]
     fn parent_boundary_ignores_name_provenance_but_validates_view_incarnation() {
-        let tree = Tree::new(901, 1, 0, 0).unwrap();
-        let (mut mounts, ticket) =
-            Mounts::new(902, tree.root(), Limits { views: 2, holds: 3 }).unwrap();
+        let tree = Tree::new(901, 1, 0, 0, root_owned(0o755)).unwrap();
+        let (mut mounts, ticket) = Mounts::new(
+            902,
+            tree.root(),
+            Limits { views: 2, holds: 3 },
+            crate::mount::ViewPolicy {
+                no_exec: false,
+                no_suid: false,
+                no_symfollow: false,
+            },
+        )
+        .unwrap();
         let root = mounts.root(&ticket).unwrap();
         let variant = Place {
             view: root.view,
@@ -519,9 +578,18 @@ mod tests {
     }
     #[test]
     fn view_and_description_keep_file_location_provenance() {
-        let tree = Tree::new(11, 1, 0, 0).unwrap();
-        let (mut mounts, root) =
-            Mounts::new(12, tree.root(), Limits { views: 2, holds: 3 }).unwrap();
+        let tree = Tree::new(11, 1, 0, 0, root_owned(0o755)).unwrap();
+        let (mut mounts, root) = Mounts::new(
+            12,
+            tree.root(),
+            Limits { views: 2, holds: 3 },
+            crate::mount::ViewPolicy {
+                no_exec: false,
+                no_suid: false,
+                no_symfollow: false,
+            },
+        )
+        .unwrap();
         let place = mounts.root(&root).unwrap();
         // component is called only after Files checked the tree lookup.
         let child = mounts.component(&place, b"name", tree.root()).unwrap();

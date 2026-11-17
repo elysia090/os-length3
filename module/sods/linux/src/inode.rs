@@ -55,6 +55,13 @@ impl Inode {
     }
 }
 
+/// Prepared namespace creation metadata; kind and link count belong to Tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Creation {
+    pub mode: u32,
+    pub uid: u32,
+    pub gid: u32,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Metadata {
     pub mode: u32,
@@ -140,7 +147,9 @@ impl Tree {
         max_inodes: usize,
         max_entries: usize,
         max_file_bytes: usize,
+        creation: Creation,
     ) -> Result<Self, Error> {
+        mode(creation.mode)?;
         if max_inodes == 0 {
             return Err(Error::Capacity);
         }
@@ -150,9 +159,9 @@ impl Tree {
             .map_err(|_| Error::Capacity)?;
         nodes.push(Node {
             metadata: Metadata {
-                mode: DIRECTORY | 0o755,
-                uid: 0,
-                gid: 0,
+                mode: DIRECTORY | creation.mode,
+                uid: creation.uid,
+                gid: creation.gid,
                 nlink: 2,
             },
             kind: Kind::Directory(Directory {
@@ -239,15 +248,17 @@ impl Tree {
         &mut self,
         parent: Inode,
         component: &[u8],
-        permissions: u32,
+        creation: Creation,
     ) -> Result<Inode, Error> {
-        mode(permissions)?;
+        mode(creation.mode)?;
         if let Some(inode) = self.lookup(parent, component)? {
             let index = self.index(inode)?;
             if !matches!(self.nodes[index].kind, Kind::Directory(_)) {
                 return Err(Error::NotDirectory);
             }
-            self.nodes[index].metadata.mode = DIRECTORY | permissions;
+            self.nodes[index].metadata.mode = DIRECTORY | creation.mode;
+            self.nodes[index].metadata.uid = creation.uid;
+            self.nodes[index].metadata.gid = creation.gid;
             return Ok(inode);
         }
         let place = self.prepare(parent, component, true)?;
@@ -262,9 +273,9 @@ impl Tree {
             place,
             Node {
                 metadata: Metadata {
-                    mode: DIRECTORY | permissions,
-                    uid: 0,
-                    gid: 0,
+                    mode: DIRECTORY | creation.mode,
+                    uid: creation.uid,
+                    gid: creation.gid,
                     nlink: 2,
                 },
                 kind: Kind::Directory(Directory {
@@ -280,19 +291,19 @@ impl Tree {
         &mut self,
         parent: Inode,
         component: &[u8],
-        permissions: u32,
+        creation: Creation,
         bytes: &mut Vec<u8>,
     ) -> Result<Inode, Error> {
-        mode(permissions)?;
+        mode(creation.mode)?;
         let place = self.prepare(parent, component, true)?;
         let payload = self.payloads.create_take(bytes)?;
         Ok(self.publish(
             place,
             Node {
                 metadata: Metadata {
-                    mode: REGULAR | permissions,
-                    uid: 0,
-                    gid: 0,
+                    mode: REGULAR | creation.mode,
+                    uid: creation.uid,
+                    gid: creation.gid,
                     nlink: 1,
                 },
                 kind: Kind::Regular(payload),
@@ -303,20 +314,20 @@ impl Tree {
         &mut self,
         parent: Inode,
         component: &[u8],
-        permissions: u32,
+        creation: Creation,
         source: u32,
         size: usize,
     ) -> Result<Inode, Error> {
-        mode(permissions)?;
+        mode(creation.mode)?;
         let place = self.prepare(parent, component, true)?;
         let payload = self.payloads.create_lazy(source, size)?;
         Ok(self.publish(
             place,
             Node {
                 metadata: Metadata {
-                    mode: REGULAR | permissions,
-                    uid: 0,
-                    gid: 0,
+                    mode: REGULAR | creation.mode,
+                    uid: creation.uid,
+                    gid: creation.gid,
                     nlink: 1,
                 },
                 kind: Kind::Regular(payload),
@@ -328,7 +339,9 @@ impl Tree {
         parent: Inode,
         component: &[u8],
         target: &[u8],
+        creation: Creation,
     ) -> Result<Inode, Error> {
+        mode(creation.mode)?;
         if target.is_empty() || target.len() > TARGET_MAX || target.contains(&0) {
             return Err(Error::InvalidTarget);
         }
@@ -338,9 +351,9 @@ impl Tree {
             place,
             Node {
                 metadata: Metadata {
-                    mode: SYMLINK | 0o777,
-                    uid: 0,
-                    gid: 0,
+                    mode: SYMLINK | creation.mode,
+                    uid: creation.uid,
+                    gid: creation.gid,
                     nlink: 1,
                 },
                 kind: Kind::Symlink(target),
@@ -417,33 +430,49 @@ impl Tree {
 
 #[cfg(test)]
 mod tests {
+    // Prepared-root fixture ownership, not a production metadata default.
+    fn root_owned(mode: u32) -> crate::inode::Creation {
+        crate::inode::Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+
     use super::*;
     fn tree() -> Tree {
-        Tree::new(9, 8, 8, 32).unwrap()
+        Tree::new(9, 8, 8, 32, root_owned(0o755)).unwrap()
     }
     #[test]
     fn directory_parent_is_borrowed_stable_and_not_applied_to_hardlinks() {
-        let mut t = Tree::new(801, 8, 8, 16).unwrap();
+        let mut t = Tree::new(801, 8, 8, 16, root_owned(0o755)).unwrap();
         let root = t.root();
         assert_eq!(t.directory_parent(root), Ok(None));
-        let dir = t.directory(root, b"dir", 0o755).unwrap();
-        let child = t.directory(dir, &[0xff, b'x'], 0o700).unwrap();
+        let dir = t.directory(root, b"dir", root_owned(0o755)).unwrap();
+        let child = t.directory(dir, &[0xff, b'x'], root_owned(0o700)).unwrap();
         assert_eq!(
             t.directory_parent(child),
             Ok(Some((dir, &[0xff, b'x'][..])))
         );
         let name_pointer = t.directory_parent(child).unwrap().unwrap().1.as_ptr();
-        assert_eq!(t.directory(dir, &[0xff, b'x'], 0o750), Ok(child));
+        assert_eq!(
+            t.directory(dir, &[0xff, b'x'], root_owned(0o750)),
+            Ok(child)
+        );
         assert_eq!(
             t.directory_parent(child).unwrap().unwrap().1.as_ptr(),
             name_pointer
         );
         assert_eq!(t.directory_parent(dir), Ok(Some((root, &b"dir"[..]))));
-        let file = t.file_take(root, b"file", 0o600, &mut vec![1]).unwrap();
+        let file = t
+            .file_take(root, b"file", root_owned(0o600), &mut vec![1])
+            .unwrap();
         t.hardlink(dir, b"alias", file).unwrap();
         assert_eq!(t.directory_parent(file), Err(Error::NotDirectory));
         assert_eq!(t.hardlink(root, b"dir-alias", dir), Err(Error::NotRegular));
-        let link = t.symlink(root, b"link", &[b'.', b'.', b'/', 0xfe]).unwrap();
+        let link = t
+            .symlink(root, b"link", &[b'.', b'.', b'/', 0xfe], root_owned(0o777))
+            .unwrap();
         assert_eq!(t.directory_parent(link), Err(Error::NotDirectory));
         assert_eq!(t.target(link), Ok(&[b'.', b'.', b'/', 0xfe][..]));
         assert_eq!(
@@ -467,24 +496,33 @@ mod tests {
     }
     #[test]
     fn directory_construction_failure_keeps_parent_name_links_and_entries() {
-        let mut t = Tree::new(803, 3, 2, 16).unwrap();
+        let mut t = Tree::new(803, 3, 2, 16, root_owned(0o755)).unwrap();
         let root = t.root();
-        let dir = t.directory(root, b"dir", 0o700).unwrap();
+        let dir = t.directory(root, b"dir", root_owned(0o700)).unwrap();
         let before = t.metadata(root).unwrap();
         assert_eq!(
-            t.directory(root, b"bad/name", 0o755),
+            t.directory(root, b"bad/name", root_owned(0o755)),
             Err(Error::InvalidName)
         );
-        assert_eq!(t.directory(root, b"dir", 0o10000), Err(Error::InvalidMode));
+        assert_eq!(
+            t.directory(root, b"dir", root_owned(0o10000)),
+            Err(Error::InvalidMode)
+        );
         let root_index = t.index(root).unwrap();
         t.nodes[root_index].metadata.nlink = u64::MAX;
-        assert_eq!(t.directory(root, b"overflow", 0o755), Err(Error::Capacity));
+        assert_eq!(
+            t.directory(root, b"overflow", root_owned(0o755)),
+            Err(Error::Capacity)
+        );
         assert_eq!(t.lookup(root, b"overflow"), Ok(None));
         assert_eq!(t.directory_parent(dir), Ok(Some((root, &b"dir"[..]))));
         assert_eq!(t.metadata(dir).unwrap().mode, DIRECTORY | 0o700);
         t.nodes[root_index].metadata = before;
-        let child = t.directory(dir, b"child", 0o755).unwrap();
-        assert_eq!(t.directory(root, b"full", 0o755), Err(Error::Capacity));
+        let child = t.directory(dir, b"child", root_owned(0o755)).unwrap();
+        assert_eq!(
+            t.directory(root, b"full", root_owned(0o755)),
+            Err(Error::Capacity)
+        );
         assert_eq!(t.lookup(root, b"full"), Ok(None));
         assert_eq!(t.directory_parent(child), Ok(Some((dir, &b"child"[..]))));
         assert_eq!(t.metadata(root), Ok(before));
@@ -495,7 +533,9 @@ mod tests {
         let root = t.root();
         let mut bytes = b"payload".to_vec();
         let pointer = bytes.as_ptr();
-        let file = t.file_take(root, b"a", 0o640, &mut bytes).unwrap();
+        let file = t
+            .file_take(root, b"a", root_owned(0o640), &mut bytes)
+            .unwrap();
         assert!(bytes.is_empty());
         t.hardlink(root, b"b", file).unwrap();
         assert_eq!(t.lookup(root, b"b"), Ok(Some(file)));
@@ -510,11 +550,13 @@ mod tests {
     #[test]
     fn many_siblings_keep_identity_and_payload_through_growth_and_rejection() {
         const COUNT: usize = 4096;
-        let mut t = Tree::new(31, COUNT + 2, COUNT + 1, 8).unwrap();
+        let mut t = Tree::new(31, COUNT + 2, COUNT + 1, 8, root_owned(0o755)).unwrap();
         let root = t.root();
         let mut original = b"kept".to_vec();
         let pointer = original.as_ptr();
-        let file = t.file_take(root, b"file", 0o640, &mut original).unwrap();
+        let file = t
+            .file_take(root, b"file", root_owned(0o640), &mut original)
+            .unwrap();
         for i in 0..COUNT {
             let name = format!("sibling-{i:04}");
             t.hardlink(root, name.as_bytes(), file).unwrap();
@@ -526,11 +568,11 @@ mod tests {
         let mut rejected = b"new".to_vec();
         let rejected_pointer = rejected.as_ptr();
         assert_eq!(
-            t.file_take(root, b"sibling-2048", 0o777, &mut rejected),
+            t.file_take(root, b"sibling-2048", root_owned(0o777), &mut rejected),
             Err(Error::Exists)
         );
         assert_eq!(
-            t.file_take(root, b"extra", 0o777, &mut rejected),
+            t.file_take(root, b"extra", root_owned(0o777), &mut rejected),
             Err(Error::Capacity)
         );
         assert_eq!(t.hardlink(root, b"extra", file), Err(Error::Capacity));
@@ -545,14 +587,14 @@ mod tests {
     #[test]
     fn many_distinct_siblings_keep_payload_and_inode_identity() {
         const COUNT: usize = 2048;
-        let mut t = Tree::new(32, COUNT + 1, COUNT, 8).unwrap();
+        let mut t = Tree::new(32, COUNT + 1, COUNT, 8, root_owned(0o755)).unwrap();
         let root = t.root();
         let mut identities = Vec::new();
         for i in 0..COUNT {
             let name = format!("file-{i:04}");
             let mut payload = (i as u64).to_le_bytes().to_vec();
             identities.push(
-                t.file_take(root, name.as_bytes(), 0o600, &mut payload)
+                t.file_take(root, name.as_bytes(), root_owned(0o600), &mut payload)
                     .unwrap(),
             );
             assert!(payload.is_empty());
@@ -566,18 +608,20 @@ mod tests {
     }
     #[test]
     fn collisions_and_capacity_preserve_input_and_existing_identity() {
-        let mut t = Tree::new(9, 2, 2, 3).unwrap();
+        let mut t = Tree::new(9, 2, 2, 3, root_owned(0o755)).unwrap();
         let root = t.root();
         let mut original = b"old".to_vec();
-        let file = t.file_take(root, b"a", 0o600, &mut original).unwrap();
+        let file = t
+            .file_take(root, b"a", root_owned(0o600), &mut original)
+            .unwrap();
         let mut next = b"new".to_vec();
         let pointer = next.as_ptr();
         assert_eq!(
-            t.file_take(root, b"a", 0o777, &mut next),
+            t.file_take(root, b"a", root_owned(0o777), &mut next),
             Err(Error::Exists)
         );
         assert_eq!(
-            t.file_take(root, b"c", 0o777, &mut next),
+            t.file_take(root, b"c", root_owned(0o777), &mut next),
             Err(Error::Capacity)
         );
         assert_eq!(next.as_ptr(), pointer);
@@ -589,32 +633,39 @@ mod tests {
     }
     #[test]
     fn payload_rejection_does_not_publish_or_consume_input() {
-        let mut t = Tree::new(9, 2, 2, 1).unwrap();
+        let mut t = Tree::new(9, 2, 2, 1, root_owned(0o755)).unwrap();
         let root = t.root();
         let mut bytes = vec![1, 2];
         let pointer = bytes.as_ptr();
         assert_eq!(
-            t.file_take(root, b"a", 0o600, &mut bytes),
+            t.file_take(root, b"a", root_owned(0o600), &mut bytes),
             Err(Error::Payload(store::Error::TooLarge))
         );
         assert_eq!(t.lookup(root, b"a"), Ok(None));
         assert_eq!(bytes.as_ptr(), pointer);
         assert_eq!(bytes, [1, 2]);
         bytes.truncate(1);
-        assert!(t.file_take(root, b"a", 0o600, &mut bytes).is_ok());
+        assert!(t
+            .file_take(root, b"a", root_owned(0o600), &mut bytes)
+            .is_ok());
     }
     #[test]
     fn directories_update_mode_without_replacing_and_cannot_be_hardlinked() {
         let mut t = tree();
         let root = t.root();
-        let dir = t.directory(root, b"etc", 0o755).unwrap();
-        assert_eq!(t.directory(root, b"etc", 0o700), Ok(dir));
+        let dir = t.directory(root, b"etc", root_owned(0o755)).unwrap();
+        assert_eq!(t.directory(root, b"etc", root_owned(0o700)), Ok(dir));
         assert_eq!(t.metadata(dir).unwrap().mode, DIRECTORY | 0o700);
         assert_eq!(t.metadata(root).unwrap().nlink, 3);
         assert_eq!(t.hardlink(root, b"alias", dir), Err(Error::NotRegular));
         let mut bytes = vec![];
-        let file = t.file_take(root, b"f", 0o600, &mut bytes).unwrap();
-        assert_eq!(t.directory(root, b"f", 0o755), Err(Error::NotDirectory));
+        let file = t
+            .file_take(root, b"f", root_owned(0o600), &mut bytes)
+            .unwrap();
+        assert_eq!(
+            t.directory(root, b"f", root_owned(0o755)),
+            Err(Error::NotDirectory)
+        );
         assert_eq!(t.lookup(file, b"x"), Err(Error::NotDirectory));
     }
     #[test]
@@ -622,9 +673,12 @@ mod tests {
         let mut t = tree();
         let root = t.root();
         for name in [&b""[..], b".", b"..", b"a/b", b"a\0b"] {
-            assert_eq!(t.directory(root, name, 0o755), Err(Error::InvalidName));
+            assert_eq!(
+                t.directory(root, name, root_owned(0o755)),
+                Err(Error::InvalidName)
+            );
         }
-        let other = Tree::new(10, 1, 0, 0).unwrap();
+        let other = Tree::new(10, 1, 0, 0, root_owned(0o755)).unwrap();
         assert_eq!(t.metadata(other.root()), Err(Error::UnknownInode));
         assert_eq!(
             t.hardlink(root, b"x", other.root()),
@@ -645,7 +699,7 @@ mod tests {
             Err(Error::UnknownInode)
         );
         assert_eq!(
-            t.directory(root, b"x", REGULAR | 0o600),
+            t.directory(root, b"x", root_owned(REGULAR | 0o600)),
             Err(Error::InvalidMode)
         );
     }
@@ -653,18 +707,28 @@ mod tests {
     fn non_utf8_components_and_targets_are_preserved() {
         let mut t = tree();
         let root = t.root();
-        let link = t.symlink(root, &[0xff, 0xfe], &[b'.', b'/', 0xff]).unwrap();
+        let link = t
+            .symlink(root, &[0xff, 0xfe], &[b'.', b'/', 0xff], root_owned(0o777))
+            .unwrap();
         assert_eq!(t.lookup(root, &[0xff, 0xfe]), Ok(Some(link)));
         assert_eq!(t.target(link).unwrap(), &[b'.', b'/', 0xff]);
-        assert_eq!(t.symlink(root, b"empty", b""), Err(Error::InvalidTarget));
-        assert_eq!(t.symlink(root, b"nul", b"a\0b"), Err(Error::InvalidTarget));
+        assert_eq!(
+            t.symlink(root, b"empty", b"", root_owned(0o777)),
+            Err(Error::InvalidTarget)
+        );
+        assert_eq!(
+            t.symlink(root, b"nul", b"a\0b", root_owned(0o777)),
+            Err(Error::InvalidTarget)
+        );
     }
 
     #[test]
     fn symlink_target_is_stored_without_resolution() {
         let mut t = tree();
         let root = t.root();
-        let link = t.symlink(root, b"link", b"../missing/./target").unwrap();
+        let link = t
+            .symlink(root, b"link", b"../missing/./target", root_owned(0o777))
+            .unwrap();
         assert_eq!(t.target(link).unwrap(), b"../missing/./target");
         assert_eq!(t.lookup(root, b"link"), Ok(Some(link)));
         assert_eq!(t.lookup(link, b"target"), Err(Error::NotDirectory));
@@ -674,16 +738,19 @@ mod tests {
     fn pending_lazy_source_survives_collision_and_completes_for_all_names() {
         let mut t = tree();
         let root = t.root();
-        let f = t.lazy_file(root, b"a", 0o644, 7, 3).unwrap();
+        let f = t.lazy_file(root, b"a", root_owned(0o644), 7, 3).unwrap();
         t.hardlink(root, b"b", f).unwrap();
         assert_eq!(t.size(f), Ok(3));
         assert_eq!(t.source(f), Ok(7));
         let attempt = t.load_begin(f).unwrap();
         assert_ne!(attempt, 0);
-        assert_eq!(t.symlink(root, b"a", b"elsewhere"), Err(Error::Exists));
+        assert_eq!(
+            t.symlink(root, b"a", b"elsewhere", root_owned(0o777)),
+            Err(Error::Exists)
+        );
         let mut bytes = b"new".to_vec();
         assert_eq!(
-            t.file_take(root, b"b", 0o644, &mut bytes),
+            t.file_take(root, b"b", root_owned(0o644), &mut bytes),
             Err(Error::Exists)
         );
         assert_eq!(
@@ -698,5 +765,125 @@ mod tests {
                 .unwrap(),
             b"new"
         );
+    }
+}
+
+#[cfg(test)]
+mod creation_tests {
+    // Prepared-root fixture ownership, not a production metadata default.
+    fn root_owned(mode: u32) -> crate::inode::Creation {
+        crate::inode::Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+
+    use super::*;
+    #[test]
+    fn creation_owns_metadata_and_hardlinks_share_it() {
+        let initial = Creation {
+            mode: 0o750,
+            uid: 11,
+            gid: 12,
+        };
+        let mut t = Tree::new(710, 8, 8, 32, initial).unwrap();
+        let root = t.root();
+        assert_eq!(
+            t.metadata(root).unwrap(),
+            Metadata {
+                mode: DIRECTORY | 0o750,
+                uid: 11,
+                gid: 12,
+                nlink: 2
+            }
+        );
+        let dir = t.directory(root, b"dir", initial).unwrap();
+        let file = t
+            .file_take(
+                dir,
+                b"file",
+                Creation {
+                    mode: 0o640,
+                    uid: 21,
+                    gid: 22,
+                },
+                &mut vec![1],
+            )
+            .unwrap();
+        t.hardlink(root, b"alias", file).unwrap();
+        let alias = t.lookup(root, b"alias").unwrap().unwrap();
+        assert_eq!(alias, file);
+        assert_eq!(
+            t.metadata(alias).unwrap(),
+            Metadata {
+                mode: REGULAR | 0o640,
+                uid: 21,
+                gid: 22,
+                nlink: 2
+            }
+        );
+        let child = t.directory(dir, b"child", initial).unwrap();
+        let next = Creation {
+            mode: 0o700,
+            uid: 31,
+            gid: 32,
+        };
+        assert_eq!(t.directory(root, b"dir", next), Ok(dir));
+        assert_eq!(t.lookup(dir, b"child").unwrap(), Some(child));
+        assert_eq!(t.lookup(dir, b"file").unwrap(), Some(file));
+        assert_eq!(
+            t.metadata(dir).unwrap(),
+            Metadata {
+                mode: DIRECTORY | 0o700,
+                uid: 31,
+                gid: 32,
+                nlink: 3
+            }
+        );
+        assert_eq!(
+            t.directory(
+                root,
+                b"dir",
+                Creation {
+                    mode: REGULAR,
+                    uid: 99,
+                    gid: 99
+                }
+            ),
+            Err(Error::InvalidMode)
+        );
+        assert_eq!(t.metadata(dir).unwrap().uid, 31);
+        let link = t
+            .symlink(
+                root,
+                b"link",
+                b"dir",
+                Creation {
+                    mode: 0o777,
+                    uid: 41,
+                    gid: 42,
+                },
+            )
+            .unwrap();
+        assert_eq!(t.metadata(link).unwrap().uid, 41);
+        let lazy = t
+            .lazy_file(
+                root,
+                b"lazy",
+                Creation {
+                    mode: 0o600,
+                    uid: 51,
+                    gid: 52,
+                },
+                1,
+                0,
+            )
+            .unwrap();
+        assert_eq!(t.metadata(lazy).unwrap().gid, 52);
+        assert!(matches!(
+            Tree::new(711, 1, 0, 0, root_owned(DIRECTORY)),
+            Err(Error::InvalidMode)
+        ));
     }
 }

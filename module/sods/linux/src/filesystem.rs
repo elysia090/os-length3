@@ -107,19 +107,34 @@ impl Filesystems {
 
 #[cfg(test)]
 mod tests {
+    // Prepared-root fixture ownership, not a production metadata default.
+    fn root_owned(mode: u32) -> crate::inode::Creation {
+        crate::inode::Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+
     use super::*;
     #[test]
     fn parent_and_target_route_to_their_storage_without_copying() {
-        let mut first = Tree::new(811, 4, 4, 8).unwrap();
+        let mut first = Tree::new(811, 4, 4, 8, root_owned(0o755)).unwrap();
         let aroot = first.root();
-        let adir = first.directory(aroot, b"first", 0o755).unwrap();
-        let alink = first.symlink(adir, b"link", b"../first").unwrap();
+        let adir = first.directory(aroot, b"first", root_owned(0o755)).unwrap();
+        let alink = first
+            .symlink(adir, b"link", b"../first", root_owned(0o777))
+            .unwrap();
         let aname = first.directory_parent(adir).unwrap().unwrap().1.as_ptr();
         let atarget = first.target(alink).unwrap().as_ptr();
-        let mut second = Tree::new(812, 4, 4, 8).unwrap();
+        let mut second = Tree::new(812, 4, 4, 8, root_owned(0o755)).unwrap();
         let broot = second.root();
-        let bdir = second.directory(broot, b"second", 0o755).unwrap();
-        let blink = second.symlink(bdir, b"link", b"../second").unwrap();
+        let bdir = second
+            .directory(broot, b"second", root_owned(0o755))
+            .unwrap();
+        let blink = second
+            .symlink(bdir, b"link", b"../second", root_owned(0o777))
+            .unwrap();
         let bname = second.directory_parent(bdir).unwrap().unwrap().1.as_ptr();
         let btarget = second.target(blink).unwrap().as_ptr();
         let mut fs = Filesystems::new(first, NonZeroUsize::new(2).unwrap());
@@ -141,7 +156,7 @@ mod tests {
         assert_eq!(fs.target(alink).unwrap().as_ptr(), atarget);
         assert_eq!(fs.target(blink).unwrap().as_ptr(), btarget);
         assert_eq!(fs.target(adir), Err(Error::InvalidTarget));
-        let foreign = Tree::new(813, 1, 0, 0).unwrap().root();
+        let foreign = Tree::new(813, 1, 0, 0, root_owned(0o755)).unwrap().root();
         assert_eq!(fs.directory_parent(foreign), Err(Error::UnknownInode));
         assert_eq!(fs.target(foreign), Err(Error::UnknownInode));
     }

@@ -28,3 +28,7 @@ mod execution;
 mod syscall;
 
 mod stack;
+
+mod credentials;
+
+mod path;
