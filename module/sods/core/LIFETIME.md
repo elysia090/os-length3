@@ -1314,3 +1314,26 @@ pool is not blindly put back on later failure: safe pool return and Task super/
 numbered partial acquisition remain separate gates.
 Actual inline/Node rehearsal: 2 pass; focused strict TypeScript and independent
 source review pass. No external publishing or browser/desktop execution.
+
+### Return the unassigned channel independently of later Task ownership
+
+With channel acquisition first, a later numbered/Task-super failure has one
+already proven unassigned resource: the channel. The private constructor now
+catches only that super/numbered expression and returns this captured channel
+once via the existing Kernel.release pool operation. Successful return preserves
+the original exception; failed return reports both and is not retried. This
+neither invokes endTask/exitProcess nor pretends PID/Fs acquisition rolled back.
+Invalid view creation remains outside this catch, so such a buffer is not put
+into the pool. Full size/unassigned provenance relies on kernel.channel's
+existing contract, not merely on view construction succeeding; arbitrary raw
+channel implementations violating that contract are unsupported here.
+
+Workers 34 pass. Four new cases cover refusal before/after numbering, failed
+release, and Task-super metadata refusal with successful channel reuse next time.
+The super case explicitly observes that PID numbering still advanced: that gate
+is not hidden by successful channel return. Initial three counterexamples failed
+before this change. Failures are injected at the actual backend preparation
+boundary, not host allocation-exhaustion or full-guest rollback proofs. Normal
+path creates no new payload copies or scans and keeps the same channel/view work.
+Actual inline/Node rehearsal: 2 pass; focused strict TypeScript and independent
+source review pass.

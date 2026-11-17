@@ -571,7 +571,14 @@ class RemoteTask extends Task {
     // first instead of acquiring those owners and trying to roll them back.
     const channel = kernel.channel();
     const i32 = new Int32Array(channel), i64 = new BigInt64Array(channel);
-    super(proc, kernel.numbered(proc));
+    try { super(proc, kernel.numbered(proc)); }
+    catch (error) {
+      // channel() grants an unassigned channel; neither numbering nor Task
+      // construction has published it to a Worker. Return only this resource.
+      try { kernel.release(channel); }
+      catch (cleanup) { throw new AggregateError([error, cleanup], 'Task preparation and unpublished channel return failed'); }
+      throw error;
+    }
     this.channel = channel;
     this.i32 = i32;
     this.i64 = i64;

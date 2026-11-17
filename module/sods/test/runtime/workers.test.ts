@@ -365,3 +365,38 @@ test('preparing a reusable channel before numbering preserves its initialized st
   assert.equal(t.i32[CH.LEFT], 0); assert.equal(t.i32[CH.FILTERED], 0);
   assert.equal(p.taken, true); assert.equal(p.fs.users, 1);
 });
+
+for (const reserveFirst of [false, true]) test(`unpublished channel returns when numbering fails, partial reservation=${reserveFirst}`, () => {
+  const {k} = bench(), p = new Process(k, null), channel = new SharedArrayBuffer(CH.SIZE);
+  const words = new Int32Array(channel); words[CH.LEFT] = 1; k.channels.push(channel);
+  const numbered = k.numbered.bind(k), original = new Error('numbering failed');
+  k.numbered = proc => { if (reserveFirst) numbered(proc); throw original; };
+  assert.throws(() => k.newTask(p), error => error === original);
+  assert.deepEqual(k.channels, [channel]); assert.equal(words[CH.LEFT], 1);
+  assert.equal(p.taken, false); assert.equal(p.fs.users, 1);
+  k.numbered = numbered;
+  const task = k.newTask(p);
+  assert.equal(task.channel, channel); assert.equal(k.channels.length, 0);
+});
+
+test('failed unpublished channel return retains original and cleanup failures', () => {
+  const {k} = bench(), p = new Process(k, null), original = new Error('numbering failed'), cleanup = new Error('channel return failed');
+  k.numbered = () => { throw original; };
+  let returned = 0; k.release = () => { returned++; throw cleanup; };
+  assert.throws(() => k.newTask(p), error => {
+    assert.ok(error instanceof AggregateError); assert.deepEqual(error.errors, [original, cleanup]); return true;
+  });
+  assert.equal(returned, 1); assert.equal(p.taken, false);
+});
+
+test('Task super refusal returns its channel without claiming PID rollback', () => {
+  const {k} = bench(), p = new Process(k, null), channel = new SharedArrayBuffer(CH.SIZE), original = new Error('Task metadata refused');
+  new Int32Array(channel)[CH.LEFT] = 1; k.channels.push(channel);
+  const next = k.nextPid;
+  Object.defineProperty(p, 'own', {configurable: true, get() { throw original; }});
+  assert.throws(() => k.newTask(p), error => error === original);
+  assert.deepEqual(k.channels, [channel]); assert.equal(p.taken, false);
+  assert.equal(k.nextPid, next + 1, 'numbering rollback is deliberately still a separate gate');
+  Reflect.deleteProperty(p, 'own');
+  assert.equal(k.newTask(p).channel, channel);
+});
