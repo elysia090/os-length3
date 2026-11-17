@@ -171,3 +171,19 @@ test('a failed spare is never passed to the next kernel',()=>{
   const next=new RemoteKernel({spares:0,console:{write(){},read(){return null;}}});
   assert.equal(next.spares.includes(failed as unknown as Adopted),false);next.close();
 });
+
+import {WorkerStop} from '../../runtime/linux/worker-stop.ts';
+test('requested or observed-stopped spares cannot be selected or kept', () => {
+  for (const state of ['requested', 'exited'] as const) {
+    const {k, made} = bench();
+    const w = hand() as Hand & {stop: WorkerStop};
+    let exit!: (code: number) => void;
+    w.stop = new WorkerStop(() => new Promise(() => {}), fn => { exit = fn; });
+    if (state === 'requested') w.stop.request(() => {}); else exit(0);
+    k.spares.push(k.adoptWorker(w as unknown as Adopted));
+    const selected = k.worker(null);
+    assert.notEqual(selected, w); assert.equal(made.length, 1);
+    k.keep(w as unknown as Adopted); assert.equal(k.spares.includes(w as unknown as Adopted), false);
+    k.close();
+  }
+});

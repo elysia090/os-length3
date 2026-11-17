@@ -385,3 +385,33 @@ abandoning the owning realm remain necessary for persistent unconfirmed stops.
 The host tests have a finite 10-second test deadline; exceeding it is a failed
 observation, not evidence of termination. Ready precedes entry into the wait loop,
 so the test does not assert the exact instruction where terminate interrupts it.
+
+### First production boundary: per-Worker observation, not tree disposal
+
+The Node adapter now attaches `WorkerStop` before returning a Hand. `end()` still
+returns synchronously. Its one request immediately consumes rejection, preserves
+request failure independently of matching exit evidence, and routes it through
+the existing host-error path (console, task retirement, wake). The current kernel
+also retains `stopFailures`; a notification callback failure is separately retained
+on the stop record and cannot become an unhandled derived Promise rejection.
+A naturally exited CPU Worker is reported as unusable, including an active task;
+it is not silently kept as a healthy spare. Requested/exited Hands are excluded
+from warm adoption, selection, keep and pass-on. Pass-on clears the owning kernel
+without adding a second set of listeners on later adoption.
+
+After matching Node exit, only that Hand's `kept` and `channel` bookkeeping is
+released. No kernel, Image, namespace, file-scope or memory ownership is released;
+forced-stop memory stays tainted. This is a deliberately small managed-release
+step, not permission to call FileScope.dispose or promote long-lived default.
+Browser Hands have no fabricated `WorkerStop` observation and retain their existing
+conservative isolation. There is no timeout-based release or retry. An optional
+waiter can stop waiting without cancelling the host's attached exit observer.
+
+Warm workers with no owning kernel follow the existing warm-error removal path;
+the failure remains on their stop record, but a public warm-start diagnostic
+recipient is still absent. This is not claimed as complete warm-start diagnostics.
+Likewise notification failure does not certify successful process cleanup.
+Admission limits for unconfirmed stops and closed ownership of the tree remain
+separate gates. Actual Node CPU adapter tests cover stop/bookkeeping and a real
+Node shared-memory worker covers termination evidence; they do not prove whole
+translated-guest teardown or browser completion.

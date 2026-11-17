@@ -21,6 +21,7 @@ import type {Saved} from '../translation/x87.ts';
 import type {Call, Filter, Mem, Range} from './parts.ts';
 import type {FdTable} from './fd.ts';
 import {deliverable, take} from './signal.ts';
+import {WorkerStop} from './worker-stop.ts';
 
 const NodeWorker = (await nodeThreads())?.Worker ?? null;
 const enc = new TextEncoder();
@@ -42,9 +43,12 @@ interface Held { memoryId: number; imageId: number; extras: number }
 interface Hand {
   post(m: Run | Forget): void;
   end(): void;
+  /** Node-only completion evidence. Absent on browser and legacy injected hands. */
+  stop?: WorkerStop;
   on(fn: (m: Said) => void): void;
   onError(fn: (e: {message?: string}) => void): void;
   kernel?: RemoteKernel;
+  listening?: boolean;
   kept?: Held[];
   /** It has the x87's module (cpu.ts): sent with its first run. */
   x87?: boolean;
@@ -58,6 +62,7 @@ export interface Apart extends Made { spares?: number; onIdle?: ((r: Pumped) => 
 
 /** Workers started before any kernel here (warmThreads), for its first threads. */
 const warmed: Hand[] = [];
+const reusable = (w: Hand): boolean => !w.failed && !w.stop?.requested && w.stop?.exitCode === undefined;
 /** A number for each memory and image whose module is sent to a Worker: what is posted arrives there as another object each time. */
 const ids = new WeakMap<object, number>();
 let lastId = 0;
@@ -102,13 +107,38 @@ function newWorker(): Hand {
     const w = new NodeWorker(new URL('./cpu.ts', here));
     // A spare one waiting for a thread keeps nothing alive.
     w.unref();
-    return {post: (m) => w.postMessage(m), end: () => void w.terminate(), on: (fn) => w.on('message', fn), onError: (fn) => w.on('error', fn)};
+    const errors = new Set<(e: {message?: string}) => void>();
+    const report = (error: unknown, owner: RemoteKernel | undefined): void => {
+      owner?.stopFailures.push(error);
+      // Existing host-error routing retires a running task or removes a spare.
+      // WorkerStop retains a callback failure separately from the stop failure.
+      const failures: unknown[] = [];
+      for (const hear of errors) { try { hear({message: String(error)}); } catch (error) { failures.push(error); } }
+      if (failures.length) throw new AggregateError(failures, 'Worker stop notification failed');
+    };
+    const stop = new WorkerStop(() => w.terminate(), exit => { w.once('exit', exit); });
+    const hand: Hand = {post: (m) => w.postMessage(m), stop, end: () => {
+      const owner = hand.kernel;
+      stop.request(error => report(error, owner));
+    }, on: (fn) => w.on('message', fn), onError: (fn) => { errors.add(fn); w.on('error', fn); }};
+    void stop.stopped.then(() => {
+      hand.kept = undefined; hand.channel = undefined;
+      if (!stop.requested) {
+        // Natural early exit is not a healthy warm/spare Worker. Active tasks
+        // must hear it as well rather than waiting forever on their channel.
+        try { report(new Error('CPU Worker exited before a stop request'), hand.kernel); }
+        catch (error) { stop.notificationFailure = {error}; }
+      }
+    });
+    return hand;
   }
   const w = new Worker(new URL('./cpu.ts', import.meta.url), {type: 'module'});
   return {post: (m) => w.postMessage(m), end: () => w.terminate(), on: (fn) => w.addEventListener('message', (e) => fn(e.data)), onError: (fn) => w.addEventListener('error', fn)};
 }
 
 export class RemoteKernel extends Kernel {
+  /** Latched stop-request failures; close() remains synchronous, not a disposal barrier. */
+  readonly stopFailures: unknown[] = [];
   declare readonly tasks: Map<number, RemoteTask>;
   declare readonly door: Int32Array;
   declare readonly outbox: Outbox;
@@ -138,7 +168,7 @@ export class RemoteKernel extends Kernel {
     // Once it ends, its Workers left over go on to the next kernel made here (a start rehearsed: their code is warm).
     this.passOn = options.passOn ?? false;
     // Started now, while the first program is translated (those warmed already first).
-    for (const w of warmed.splice(0)) this.spares.push(this.adoptWorker(w));
+    for (const w of warmed.splice(0)) if (reusable(w)) this.spares.push(this.adoptWorker(w));
     while (this.spares.length < this.spareCount) this.spares.push(this.spawnWorker());
   }
 
@@ -158,7 +188,7 @@ export class RemoteKernel extends Kernel {
 
   /** A Worker whose thread ended in a call: free for the next thread (up to a few). */
   keep(w: Hand): void {
-    if (!w.failed && this.spares.length < 8) this.spares.push(w); else w.end();
+    if (reusable(w) && this.spares.length < 8) this.spares.push(w); else w.end();
   }
 
   /**
@@ -166,6 +196,7 @@ export class RemoteKernel extends Kernel {
    * its last few: `kept`), where that may go on (t.mayGoOn: again); any other, one started ahead.
    */
   worker(t: RemoteTask | null = null): Hand {
+    for (let i = this.spares.length - 1; i >= 0; i--) if (!reusable(this.spares[i])) this.spares.splice(i, 1);
     let w: Hand | undefined;
     const k = t?.mayGoOn ? this.spares.findIndex((s) => this.holds(s, t)) : -1;
     if (t && k >= 0) { [w] = this.spares.splice(k, 1); t.again = true; PROFILE.instancesKept++; }
@@ -218,9 +249,10 @@ export class RemoteKernel extends Kernel {
 
   /** A Worker for threads, heard by this kernel (by the kernel it is passed on to, after: `w.kernel`). */
   adoptWorker(w: Hand): Hand {
-    const heard = !!w.kernel;
+    const heard = !!w.listening;
     w.kernel = this;
     if (heard) return w;
+    w.listening = true;
     w.on((m) => {
       const k = w.kernel;
       if (k && m?.type === 'error') {
@@ -427,7 +459,7 @@ export class RemoteKernel extends Kernel {
     // Only healthy spares may pass on. Each captured stop request is attempted
     // even when another synchronously fails; this does not await host termination.
     for (const w of spares) {
-      try { if (this.passOn && !w.failed) warmed.push(w); else w.end(); }
+      try { if (this.passOn && reusable(w)) { w.kernel = undefined; warmed.push(w); } else w.end(); }
       catch (error) { (errors ??= []).push(error); }
     }
     if (errors?.length === 1) throw errors[0];
