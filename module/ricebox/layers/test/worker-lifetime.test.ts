@@ -243,7 +243,7 @@ test('operation finally after failure drains but does not erase the failure or t
   assert.deepEqual(lifetime.snapshot(), {kernel: 1});
 });
 
-for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'node', 'node-unconfirmed'] as const) {
+for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'node', 'node-rehearsal', 'node-unconfirmed'] as const) {
   test(`used ${mode} root drops only a proven inactive foreground reference`, {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
     const {readFileSync} = await import('node:fs');
     const {Kernel, RemoteKernel} = await import('../../../sods/runtime/linux.ts');
@@ -261,7 +261,7 @@ for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'node', 'nod
     Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
     try {
       await import(new URL(`../worker.ts?foreground-release-${mode}`, import.meta.url).href);
-      await host.onmessage!({data: {rehearse: mode === 'inline-rehearsal' ? {config: '{}', words: []} : undefined, type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), box: {config: '{}', words: []}, cwd: '/'}});
+      await host.onmessage!({data: {rehearse: mode.endsWith('-rehearsal') ? {config: '{}', words: []} : undefined, type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), box: {config: '{}', words: []}, cwd: '/'}});
       await Promise.race([done, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('guest did not exit')), 10_000); })]);
       assert.ok(messages.some(m => m.type === 'exit'), JSON.stringify(messages));
       assert.ok(captured);
@@ -280,6 +280,8 @@ for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'node', 'nod
       assert.equal(owners?.['foreground-reference'], mode === 'inline-failure' || mode === 'node-unconfirmed' ? 1 : undefined);
       assert.equal(owners?.['foreground-kernel'], 1);
       assert.equal(owners?.['prepared-tree'], 1);
+      if (mode === 'inline-rehearsal') assert.equal(owners?.['rehearsal-initial-mounts-retired'], 1);
+      if (mode === 'node-rehearsal') assert.equal(owners?.['rehearsal-host-unconfirmed'], 1);
       for (const [image, source] of sources) assert.equal(image.source, source); // no alias invalidation
       assert.ok(captured.vfs.file('/run/box/muk').bytes().length);
     } finally {

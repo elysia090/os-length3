@@ -238,18 +238,35 @@ async function rehearse({translate, vfs, files}: Readied, box: Box): Promise<voi
   const k = linux({vfs, translate, console: quiet, passOn: true, unownedWorkerFailure: failed, translated: files});
   executionOwners.add(new WeakRef(k)); lifetime.observe('rehearsal-kernel', k);
   const operation = lifetime.enter('rehearsal-operation');
+  let completed = false;
   const timer = setTimeout(() => {
     try { k.halt(); } catch (error) { lifetime.failures.push(error); }
   }, REHEARSAL_MS);
   rehearsalTimers.add(timer);
   try {
-    if (k instanceof RemoteKernel) { await k.spawn(argv[0], argv, env, cwd); return; }
+    if (k instanceof RemoteKernel) { await k.spawn(argv[0], argv, env, cwd); completed = true; return; }
     // In turn here, a turn at a time, the host's own work (messages) between.
     k.start(argv[0], argv, env, cwd);
     while (lifetime.accepting && k.status === null) { k.pump(); await new Promise((go) => setTimeout(go, 0)); }
+    completed = k.status !== null;
   } finally {
     clearTimeout(timer); rehearsalTimers.delete(timer);
     operation.release();
+    if (completed && !lifetime.failures.length) {
+      // At most one rehearsal per prepared root. Do not delay ready/start for
+      // host evidence or retain a history of completed Kernel graphs.
+      const checking = lifetime.observe('rehearsal-namespace-check');
+      void Promise.resolve().then(async () => {
+        if (k instanceof RemoteKernel) {
+          const evidence = await k.snapshotWorkerStops();
+          if (evidence.unconfirmed || evidence.failures.length || k.stopFailures.length) {
+            lifetime.observe('rehearsal-host-unconfirmed'); return;
+          }
+        }
+        if (lifetime.failures.length) return;
+        lifetime.observe(k.retireInitialMounts() ? 'rehearsal-initial-mounts-retired' : 'rehearsal-initial-mounts-retained');
+      }).catch(error => { lifetime.failures.push(error); }).finally(() => checking.release());
+    }
   }
 }
 

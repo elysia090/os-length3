@@ -32,7 +32,7 @@ import {Description, FdTable} from './fd.ts';
 import type {Dir, Mapping, Place, Super} from './fs.ts';
 import {E, File, FsError, Link, MNT, Mount, Vfs, pathOf, walk} from './fs.ts';
 import {CAP, HOST, MAY, ROOT, asProgram, capable, idIn, may, type Cred} from './cred.ts';
-import {copy, firstSpace, put} from './mount.ts';
+import {copy, firstSpace, put, retireInitialTree} from './mount.ts';
 import {CgroupNs, Fs, byNr, firstSpaces, forget, nrIn, number, type Numbers, type PidNs, type Spaces} from './space.ts';
 import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
 import {GuestBytes, GuestView} from './guest.ts';
@@ -781,6 +781,23 @@ export class Kernel implements Kern {
   }
   /** Its run is over: it keeps nothing of its tree from going any longer (and the tree does not keep it). */
   ended(): void { this.vfs.loaded.keepers.delete(this); }
+
+  /** Explicit embedding-owner action, never automatic process exit cleanup.
+   * Caller must prevent future execution and confirm host stop where required.
+   * Raw aliases and guest-created namespace copies are NOT invalidated or proven
+   * released. Only this initial tree's structural mount edges are retired. */
+  retireInitialMounts(): boolean {
+    if (this.current || this.tasks.size || this.procs.size || this.runq.length || this.blocked.size
+      || this.vfs.loaded.keepers.has(this)) return false;
+    const restore = this.vfs.who.root === this.root;
+    const base = this.vfs.mount;
+    // Restore only the original, unattached Vfs base. Never restore a saved
+    // walker that might itself belong to an already-retired namespace.
+    if (restore && (base.space || base.parent || base.point)) return false;
+    if (!retireInitialTree(this.spaces.mnt)) return false;
+    if (restore) this.vfs.who.root = {mnt: base, node: this.vfs.root};
+    return true;
+  }
 
   /** A new thread of `proc` (the backend's kind). */
   newTask(proc: Process): Task { return new Task(proc, this.numbered(proc)); }

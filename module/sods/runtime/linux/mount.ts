@@ -31,6 +31,36 @@ export function tree(m: Mount): Mount[] {
   return out;
 }
 
+/** Explicit owner retirement of this initial mount tree, not umount or a
+ * last-alias detector. Caller must have closed execution/host entry points.
+ * Reject busy, shared, foreign or malformed graphs before changing any edge.
+ * Other namespaces on the same Entry remain in their original covered order. */
+export function retireInitialTree(space: Space): boolean {
+  const top = space.top, mounts: Mount[] = [top], seen = new Set<Mount>();
+  if (top.parent || top.point) return false;
+  for (let i = 0; i < mounts.length; i++) {
+    const m = mounts[i];
+    if (seen.has(m) || m.space !== space || m.refs !== 0 || m.group || m.master || m.locked) return false;
+    seen.add(m);
+    if (m !== top) {
+      if (!m.parent || !seen.has(m.parent) || !m.parent.children.has(m) || !m.point
+        || m.point.covered?.filter(over => over === m).length !== 1) return false;
+    }
+    for (const child of m.children) {
+      if (child.parent !== m) return false;
+      mounts.push(child);
+    }
+  }
+  // No callbacks between preflight and mutation. detach alone is unsafe on a
+  // malformed covered list (indexOf=-1); the preflight rules that case out.
+  for (let i = mounts.length - 1; i >= 0; i--) {
+    const m = mounts[i];
+    if (m.parent) detach(m);
+    m.space = null;
+  }
+  return true;
+}
+
 /** Whether `node` is `under` or lies beneath it (by the directories it lies in; a file by the one it was reached through). */
 function beneath(under: Entry, node: Entry, dir: Dir | null): boolean {
   if (node === under) return true;

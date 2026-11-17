@@ -891,3 +891,51 @@ initialized inline kernel whose pump/stop are injected to exercise the productio
 timer failure callback (deadline accelerated in the test). The latter keeps the
 operation pending until explicit retirement and does not claim the guest executed
 to completion. Both preserve the tree and historical unknown observation.
+
+### Initial namespace back-edges are not removed by ended()
+
+Source audit and regression tests establish two concrete reverse edges after a
+rehearsal: Vfs.who.root points into its initial mount tree, and shared Entry.covered
+arrays hold its mounted procfs/sysfs/cgroup nodes. Their callbacks retain the old
+Kernel and thus Images/sources. ended() only unregisters the loaded-file keeper;
+replacing the walker during a later foreground construction does not remove the
+covered edges. A success receipt cannot omit this namespace ownership.
+
+An explicit Kernel.retireInitialMounts action now permits an embedding owner to
+retire only that initial tree's structural edges. It is never automatic on raw
+Kernel/process exit. The caller must already prevent future execution and confirm
+host stop as required; public raw aliases remain its responsibility. It rejects
+nonempty execution state/keeper registration. The mount helper preflights the
+entire initial tree: zero refs, matching namespace identity, no propagation group
+or master or locked mount, consistent parent/children, no repeated node/cycle, and
+exactly one matching covered entry. Any rejection leaves all edges unchanged.
+
+After complete preflight, synchronous leaf-first detach removes only each target
+identity, preserving other namespaces' covered order and graph. If the shared
+walker still names this Kernel's root, it is restored only to the original
+unattached Vfs base; another Kernel's walker is untouched. This is not lazy umount:
+that intentionally retains descendants and can propagate to peers. No callback
+or File payload work occurs during structural mutation. Cost is O(mounts plus
+covered-array searches/removals), not a scan of every file or payload byte.
+
+The private Worker starts a bounded, nonblocking check after normal rehearsal and
+timer cleanup. At most one rehearsal belongs to its prepared result. For Remote,
+missing stop evidence (including pass-on warm Workers) leaves mounts intact and
+records unconfirmed host ownership. Successful structural retirement records only
+initial-mounts-retired; it does NOT release the historical rehearsal-kernel
+observation or call preparedOwner.dispose. A pending check remains an explicit
+unknown observation, separate from registered-operation drain; there is no
+startup wait for it. Its continuation retains the current Kernel only until the
+check settles, not an unbounded history of completed kernels.
+
+Guest-created namespace/bind copies can still retain the same procfs Super and
+callbacks. Tests specifically preserve such a copy, plus another Kernel's shared
+entry order/walker, and reject busy, shared, missing, duplicate and foreign edges
+without partial mutation. Actual inline rehearsal followed by foreground startup
+exercises the narrow successful path; actual Node pass-on rehearsal stays
+unconfirmed. This closes the initial structural back-edge only, not all namespace
+copies, raw aliases, Image/source ownership, or general used-tree collection.
+The preflight/mutation guarantee assumes the runtime's ordinary Mount/Entry/Set
+objects, not a raw caller replacing them with reentrant getters or custom
+collections. Additional lightweight regressions reject locked/master propagation,
+a cycle and duplicate-child attachment without changing any edge.
