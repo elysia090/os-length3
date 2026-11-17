@@ -29,13 +29,56 @@ changing.
 | File | What it gives |
 | --- | --- |
 | `runtime/translate.ts` | the translator loaded (`loadTranslator`: a program's bytes in, a module's out; `NotAProgram` is the file's fault), a program translated ahead of its run (`aheadOf`), a translation as a Linux here runs it (`prepare`), the form it is kept in (`packMain`, `packMore`, `taken`) and the name it is kept under (`madeBy`) |
-| `runtime/linux.ts` | a Linux here (`linux(options)`: its threads apart or in turn, by the host), its tree and the port an image is mounted through (`Vfs`, `mountTarget`, `provide`), translations kept from earlier runs (`keeper`), what a program changed (`Mirror`), a kernel's pause said (`said`) |
+| `runtime/linux.ts` | a Linux here (`linux(options)`: its threads apart or in turn, by the host), its tree and the port an image is mounted through (`Vfs`, `mountTarget`, `provide`), translations kept from earlier runs (`keeper`), what a program changed (`Mirror`), a kernel's pause said (`said`), explicitly selected Rust file payloads (`prepareFileCore`, `loadFileScope`) |
 | `runtime/host.ts` | the host, asked in one place: which it is, its threads and shared memory, clocks, random bytes, memory and room, a digest, what it keeps, how it fetches |
 | `runtime/targets.ts` | what runs where, and how far each is |
 
 Besides those: `sods` the program (`cargo build --release`: `sods [--whole] IN.elf OUT.wasm`), the same translator
 as a module (`--target wasm32-unknown-unknown --lib`, byte-identical output), and `node runtime/run.ts PROGRAM`,
 which runs a program on node as a page runs it.
+
+## Local JavaScript package
+
+`node module/sods/make/npm.ts NEW_DIRECTORY` emits a private package with four explicit
+exports: `sods/translate`, `sods/linux`, `sods/host`, `sods/targets`. `npm pack` in that
+directory produces an installable local tarball. Building uses Node 24, not a new
+compiler or a registry download. Generated JavaScript includes the CPU Worker entry;
+browser applications still need a module-Worker-aware bundler. No ricebox or why is
+included. This is not a public registry release.
+
+The caller supplies trusted, integrity-verified translator bytes. A file core is a
+separate explicit selection, not a translator replacement or an implicit download:
+
+```ts
+import {loadTranslator} from 'sods/translate';
+import {linux, Vfs, prepareFileCore, loadFileScope} from 'sods/linux';
+
+const translate = await loadTranslator(translatorBytes);
+const module = await prepareFileCore(fileCoreBytes, 16 * 1024 * 1024);
+const scope = await loadFileScope(module, 16 * 1024 * 1024);
+const vfs = new Vfs();
+scope.writeFile(vfs, '/bin/program', programBytes, 0o755);
+const kernel = linux({vfs, translate, inline: true, console: hostConsole});
+const status = await kernel.spawn('/bin/program', ['/bin/program'], [], '/');
+// status is a Linux wait status, not a decoded exit code.
+// Once no other kernels, mappings or embedding users depend on these files:
+scope.dispose();
+```
+
+`prepareFileCore` checks the expected ABI with a temporary instance and returns a
+reusable module. It is neither an integrity check nor a sandbox for untrusted Wasm.
+Each `loadFileScope` creates independent payload ownership; disposing one does not
+dispose another. The selected limit bounds each file's logical size, not all retained
+memory. The scope must outlive the tree's users, not merely one execution. Ordinary
+files created outside the scope still use their existing storage; this interface does
+not claim migration of all kernel/namespace state. There is no implicit fallback when
+an explicitly supplied core is invalid.
+
+The package test extracts the actual tarball and checks its public JavaScript and
+Worker dependency closure without Node's TypeScript loader. With `SODS_CORE_WASM` and
+`SODS_TRANSLATOR_WASM`, it also runs a small real ELF inline and through a Node CPU
+Worker. These checks do not establish browser execution or all-current-source artifact
+compatibility when a historical translator is selected.
 
 ## What runs where
 
