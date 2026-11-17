@@ -25,6 +25,7 @@ class OwnedFile extends File {
     // A legacy mutable array must not masquerade as this inode's canonical bytes.
     Object.defineProperty(this, '_data', {get() { throw new FsError(E.OPNOTSUPP); }, set() { throw new FsError(E.OPNOTSUPP); }});
   }
+  override materialize(): void { this.live(); }
   override get data(): Uint8Array { throw new FsError(E.OPNOTSUPP); }
   protected override range(start: number, end: number): Uint8Array {
     this.live();

@@ -522,7 +522,10 @@ function writeData(p: Proc, d: Description, data: Uint8Array, offset: number | n
     case 'socket': return net.write(p, d, data);
     case 'file': {
       if ((d.flags & 3) === 0) fail(E.BADF);
-      const file = fileOf(d), at = offset ?? (d.flags & O.APPEND ? file.size : d.offset);
+      const file = fileOf(d), identity = p.readIdentity(), revision = d.offsetRevision;
+      try { file.materialize(); }
+      finally { identity(); if (d.offsetRevision !== revision) throw new ReadLifetimeError(); }
+      const at = offset ?? (d.flags & O.APPEND ? file.size : d.offset);
       file.write(at, data);
       if (offset === null) d.offset = at + length;
       return length;

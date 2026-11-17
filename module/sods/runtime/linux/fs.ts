@@ -152,6 +152,8 @@ export class File extends Node {
     }
     return this._data;
   }
+  /** Resolve a lazy source before selecting positions or changing ownership. */
+  materialize(): void { if (this.load) void this.data; }
   /** Bytes [start, end) — a view, not a copy. */
   read(start: number, end: number): Uint8Array {
     if (this.maps) this.settle(start, end);
@@ -209,6 +211,7 @@ export class File extends Node {
     return n;
   }
   write(at: number, bytes: Uint8Array): void {
+    this.materialize();
     this.own();
     const need = at + bytes.length;
     let data = this.data;
@@ -232,6 +235,7 @@ export class File extends Node {
   truncate(length: number): void {
     if (!Number.isInteger(length) || length < 0) fail(E.INVAL);
     if (length > FILE_MOST) fail(E.FBIG);
+    this.materialize();
     if (this.maps) this.settle();
     const was = this.size;
     this.own();

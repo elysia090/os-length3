@@ -237,3 +237,23 @@ Before lazy core entry is enabled, each entrance needs success, source-throw,
 same-inode reentry and close/stale outcomes. Read-only lazy demos would hide these
 mutation-order issues and are not introduced. The next step is this finite order
 contract, not a claim that pending ready reads have already solved lazy IO.
+
+### Materialization stage 1: ownership and write position
+
+File.materialize now resolves an ordinary lazy source before write/truncate call
+`own()` and discard reload/cache ownership. A throwing loader therefore leaves
+reload ownership available for retry. This is not an all-allocation-failures
+transaction guarantee: later growth or mapping propagation can still fail.
+
+The real file write/pwrite/append path validates process and description identity
+on both materialization success and failure, then chooses the offset (including
+append's loaded size) and commits the write. A loader that replaces memory and
+throws cannot become an ordinary EIO returned into the new image. The existing
+Rust-ready File implementation has no loader callback and materialize is live-only.
+
+Open O_TRUNC and other materialization callers are not declared lifetime-safe by
+this change. In particular, open currently selects an fd before a possible source
+callback; callback-after-fd-selection needs re-selection/reservation analysis.
+Rust lazy loading remains disabled while those entrance contracts are incomplete.
+Mapping materialization/publication ordering is a separate change with its own
+same-inode dirty-map and failure tests, not implied by this ownership fix.
