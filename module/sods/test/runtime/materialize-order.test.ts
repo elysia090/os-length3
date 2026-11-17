@@ -51,4 +51,3 @@ for (const throws of [false, true]) test(`write materialization rejects retired 
   assert.equal(file.version, 0);
   if (!throws) assert.equal(dec.decode(file.bytes()), 'abc');
 });
-

@@ -32,7 +32,7 @@ No guest execution memory is touched, so mapping-pin enforcement and the propose
 A caller supplies a trusted matching core module and an explicit per-file length
 limit, then owns each returned handle until `close()`. Close is idempotent; IDs are
 not reused. Dropping the store/handles permits the instance to be collected, not a
-synchronous reclamation guarantee. Empty ID-table slots and scratch capacity can be
+synchronous reclamation guarantee. Live-index high-water capacity and scratch capacity can be
 retained, so the limit is not a total-memory bound. Input snapshots, scratch import,
 Rust file storage and output snapshots have explicit copy/retention costs; no
 zero-copy or performance claim is made.
