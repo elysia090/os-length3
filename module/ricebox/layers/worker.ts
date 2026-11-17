@@ -469,7 +469,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       // This is only this private global reference, not every Image/source or
       // a FileScope disposal barrier. Do not mutate shared Image objects.
       const inactive = (): boolean => k.current === null && k.tasks.size === 0 && k.procs.size === 0
-        && k.runq.length === 0 && k.blocked.size === 0 && !k.vfs.loaded.keepers.has(k);
+        && k.runq.length === 0 && k.blocked.size === 0 && !k.failedPreparations?.size && !k.vfs.loaded.keepers.has(k);
       if (!inactive()) return;
       if (k instanceof RemoteKernel) {
         const evidence = await k.snapshotWorkerStops();

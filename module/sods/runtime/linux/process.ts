@@ -358,6 +358,9 @@ export interface Made {
 }
 
 export class Kernel implements Kern {
+  /** Unresolved preparation evidence. Lazily allocated only on failed cleanup;
+   * no automatic cleanup retry or tree disposal is authorized by these roots. */
+  declare failedPreparations?: Set<Process>;
   declare readonly vfs: Vfs;
   declare readonly consolidateIdle: boolean;
   declare readonly due: Map<File, Kept>;
@@ -791,7 +794,7 @@ export class Kernel implements Kern {
     // Closing an nsfs descriptor does not prove raw File/Place/bind aliases
     // disappeared. Do not infer namespace ownership from mount refs alone.
     if (namespaceWasExposed(this.spaces.mnt)) return false;
-    if (this.current || this.tasks.size || this.procs.size || this.runq.length || this.blocked.size
+    if (this.current || this.tasks.size || this.procs.size || this.runq.length || this.blocked.size || this.failedPreparations?.size
       || this.vfs.loaded.keepers.has(this)) return false;
     const restore = this.vfs.who.root === this.root;
     const base = this.vfs.mount;
@@ -1568,7 +1571,12 @@ function markShares(node: File): void {
 /** A shared file mapping a process made (Process.mapShared): its process and file, and where. */
 type Shared = Mapping & {proc: Process; node: File};
 
+type PreparationRetirement = Record<'backend' | 'x87' | 'fs' | 'fds' | 'memory' | 'cgroup', 'not-attempted' | 'returned' | 'uncertain'>;
+
 export class Process implements Proc {
+  /** Failure evidence only, not permission to retry release: some resources
+   * may already have retired before a callback failed. No record on success. */
+  declare failedPreparation?: {task: Task; memory: Mem; x87Owner: X87 | null; x87Handle: number; retirement: PreparationRetirement; error: unknown};
   declare readonly kernel: Kernel;
   declare pid: number;
   declare ppid: number;
@@ -2075,7 +2083,77 @@ export class Process implements Proc {
       // over it afterwards, so the child sees what the parent changed.
     }
     ct.mask = t.mask;
-    ct.load(this.image, made, t);
+    const preparedFds = child.fds, preparedFs = ct.fs, preparedGroup = child.cgroup;
+    const preparedPool = made.pooled, preparedX87Module = k.x87Module;
+    const preparedEpoch = memoryEpoch(made), preparedBuffer = made.buffer;
+    try { ct.load(this.image, made, t); }
+    catch (error) {
+      const preparedX87 = ct.x87Owner, preparedFpu = ct.x87;
+      // A failed *new instance* has not returned exports. Do not generalize this
+      // to a partially taken pooled instance, a published child, or later fork
+      // preparation. Those paths need their own ownership proof.
+      const failures = [error];
+      let returnedMemory = false, retiredX87 = false;
+      const retirement: PreparationRetirement = {backend: 'not-attempted', x87: 'not-attempted', fs: 'not-attempted',
+        fds: 'not-attempted', memory: 'not-attempted', cgroup: 'not-attempted'};
+      const retainFailure = (failure: unknown): never => {
+        child.failedPreparation = {task: ct, memory: made, x87Owner: preparedX87, x87Handle: preparedFpu,
+          retirement: {...retirement}, error: failure};
+        (k.failedPreparations ??= new Set()).add(child);
+        throw failure;
+      };
+      const unexposed = (): void => {
+        if (ct.instance || ct.memory !== made || made.pooled !== preparedPool || child.memory !== (returnedMemory ? null : made)
+          || !returnedMemory && (memoryEpoch(made) !== preparedEpoch || made.buffer !== preparedBuffer)
+          || child.fds !== preparedFds || ct.fs !== preparedFs || child.cgroup !== preparedGroup
+          || k.x87Module !== preparedX87Module || ct.x87Owner !== preparedX87 || ct.x87 !== (retiredX87 ? 0 : preparedFpu) || ct.x87 !== 0 && !preparedX87
+          || child.maps.length || child.tasks.size || child.children.size
+          || up.children.has(child) || k.procs.has(child.pid) || k.tasks.has(ct.tid)
+          || k.runq.includes(ct) || k.blocked.has(ct) || k.current === ct)
+          throw new Error('failed child load no longer has exclusive preparation ownership');
+      };
+      try {
+        unexposed();
+        retirement.backend = 'uncertain';
+        ct.end(); // No ordinary exit: no signals, robust-list writes or parent notification.
+        unexposed();
+        if (made.tainted) throw new Error('failed child load has unconfirmed memory readers');
+        retirement.backend = 'returned';
+        ct.dead = true; ct.state = 'dead';
+        child.state = 'zombie'; // No further ordinary execution may start it.
+      } catch (cleanup) {
+        retainFailure(new AggregateError([error, cleanup], 'child load failed without safe preparation retirement'));
+      }
+      const retire = (kind: keyof PreparationRetirement, action: () => void): void => {
+        unexposed();
+        retirement[kind] = 'uncertain';
+        try { action(); retirement[kind] = 'returned'; } catch (cleanup) { failures.push(cleanup); }
+        unexposed(); // Cleanup callbacks cannot grant ownership of a replacement.
+      };
+      try {
+        ct.x87 = 0; retiredX87 = true;
+        retire('x87', () => { if (preparedFpu) preparedX87!.free(preparedFpu); });
+        retire('fs', () => preparedFs.drop());
+        retire('fds', () => preparedFds.letGo());
+        retire('memory', () => {
+          if (live ? made.users !== 1 : made.users < 2) throw new Error('failed child load lost its exclusive memory acquisition');
+          child.memory = null; returnedMemory = true;
+          // Returning this extra shared owner must not invalidate the parent's
+          // pending read epoch. Discard a failed private instance's memory:
+          // an uncertain forget must never leave it in the ordinary reuse pool.
+          if (!live) made.users--;
+          else { made.tainted = true; k.letGo(made); }
+        });
+        if (failures.length === 1) {
+          retirement.cgroup = 'uncertain';
+          if (!preparedGroup.procs.has(child)) throw new Error('failed child load has no cgroup membership');
+          if (!preparedGroup.procs.delete(child)) throw new Error('failed child load lost its cgroup membership');
+          retirement.cgroup = 'returned';
+        }
+      } catch (cleanup) { failures.push(cleanup); }
+      if (failures.length > 1) retainFailure(new AggregateError(failures, 'child load and preparation cleanup failed'));
+      throw error;
+    }
     if (live) {
       this.copyLive(child, live);
       for (const m of this.maps) child.mapShared(m.node, m.start, m.length, m.off);
@@ -2146,6 +2224,9 @@ export class Task implements Thread {
   declare image: Image;
   /** Its x87 registers' handle (x87.ts); 0 before it has any. */
   declare x87: number;
+  /** Allocator that established the handle; preparation cleanup must not reread
+   * a possibly replaced kernel allocator after calling external hooks. */
+  declare x87Owner: X87 | null;
   declare memory: Mem;
   declare slot: Slot;
   declare instance: WebAssembly.Instance;
@@ -2194,6 +2275,7 @@ export class Task implements Thread {
     this.owed = 0;
     this.trail = null;
     this.x87 = 0;
+    this.x87Owner = null;
     // Complete metadata/object preparation before acquiring PID and Fs owners.
     // An explicit tid retains the raw constructor's existing numbering contract.
     this.tid = tid ?? this.kernel.numbered(proc);
@@ -2213,6 +2295,7 @@ export class Task implements Thread {
     const x87 = this.kernel.x87;
     x87.check(namesIn(image.module));
     if (from) { if (this.x87) x87.free(this.x87); this.x87 = x87.make(from.x87); } else if (this.x87) x87.reset(this.x87); else this.x87 = x87.make();
+    this.x87Owner = x87;
     this.memory = memory;
     // A memory an exited process of the same program left its instance on: that instance goes on, its globals as a
     // fresh one's, the modules made since attached, where nothing instantiating would write is wanted (goesOn).

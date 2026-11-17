@@ -243,7 +243,7 @@ test('operation finally after failure drains but does not erase the failure or t
   assert.deepEqual(lifetime.snapshot(), {kernel: 1});
 });
 
-for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'node', 'node-rehearsal', 'node-unconfirmed'] as const) {
+for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'inline-preparation-failure', 'node', 'node-rehearsal', 'node-unconfirmed'] as const) {
   test(`used ${mode} root drops only a proven inactive foreground reference`, {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
     const {readFileSync} = await import('node:fs');
     const {Kernel, RemoteKernel} = await import('../../../sods/runtime/linux.ts');
@@ -266,6 +266,7 @@ for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'node', 'nod
       assert.ok(messages.some(m => m.type === 'exit'), JSON.stringify(messages));
       assert.ok(captured);
       const sources = [...captured.images.values()].map(entry => [entry.image, entry.image.source] as const);
+      if (mode === 'inline-preparation-failure') captured.failedPreparations = new Set([{} as import('../../../sods/runtime/linux/process.ts').Process]); // Inject an unresolved preparation root, not stop evidence.
       if (mode === 'inline-failure') Kernel.prototype.halt = () => { throw new Error('injected halt failure'); };
       if (mode === 'node-unconfirmed') RemoteKernel.prototype.snapshotWorkerStops = async () => ({captured: 1, observedStopped: 0, unconfirmed: 1, failures: []});
       await host.onmessage!({data: {type: 'retire'}});
@@ -274,10 +275,10 @@ for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'node', 'nod
       for (let i = 0; i < 100; i++) {
         await new Promise(resolve => setTimeout(resolve, 10));
         await host.onmessage!({data: {type: 'retire'}});
-        if (mode === 'inline-failure' || mode === 'node-unconfirmed' || !messages.at(-1)?.owners?.['foreground-reference']) break;
+        if (mode === 'inline-failure' || mode === 'inline-preparation-failure' || mode === 'node-unconfirmed' || !messages.at(-1)?.owners?.['foreground-reference']) break;
       }
       const owners = messages.at(-1)?.owners;
-      assert.equal(owners?.['foreground-reference'], mode === 'inline-failure' || mode === 'node-unconfirmed' ? 1 : undefined);
+      assert.equal(owners?.['foreground-reference'], mode === 'inline-failure' || mode === 'inline-preparation-failure' || mode === 'node-unconfirmed' ? 1 : undefined);
       assert.equal(owners?.['foreground-kernel'], 1);
       assert.equal(owners?.['prepared-tree'], 1);
       if (mode === 'inline-rehearsal') assert.equal(owners?.['rehearsal-initial-mounts-retired'], 1);

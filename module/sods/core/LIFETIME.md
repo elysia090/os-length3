@@ -1505,3 +1505,44 @@ is injected, not an actual concurrent host scheduler demonstration.
 Actual inline/Node rehearsal before this final ended check: 2 pass.
 Final ended-gate revision also passes actual inline/Node rehearsal (2) and
 independent source review; no additional blocking issue was reported.
+
+### Failed new child instance: bounded preparation retirement
+
+A trap inside `Task.load` now retires the acquired child Fs/FD/x87 and memory
+ownership only when a new instance has not returned exports, identities and
+memory generation still match, and no child publication is visible. Backend
+retirement precedes the resource returns. Callbacks are checked again before
+continuing. This is not ordinary process exit: no signals or robust-list writes.
+The x87 handle is returned to its actual acquisition allocator. Shared memory's
+extra reference is decremented without invalidating the parent's pending-read
+epoch; private memory is tainted before discard and never enters ordinary reuse.
+The acquisition branch, not the current count, determines shared versus private;
+unexpected counts reject retirement rather than reclassifying another owner.
+
+Failed actions remain `uncertain`, successful returns are recorded individually,
+and unattempted actions stay distinct. A lazy Kernel failure set retains the
+unregistered Task and resource evidence. It blocks initial-mount retirement and
+private Worker's global Kernel-reference release. This evidence authorizes no
+retry. Repeated failures retain additional records/resources, an explicit failure
+cost rather than a bounded-memory success claim. Taint is not host-stop proof.
+Pooled-instance attachment failures, changed identities/generation, and unknown
+backend readers remain quarantined. Other constructor/Task acquisition failures,
+later register setup, copyLive or publication failures are separate gates. PID
+reservations are not rolled back or reused by this change.
+
+Focused actual Wasm/CPU preparation tests: 20 pass. Actual current muk inline
+rehearsal, injected unresolved-preparation ownership, and Node rehearsal: 3 pass.
+The injected ownership case tests the release gate, not an actual child trap in
+that host integration. These runs use the historical translator artifact and
+current core/muk; no current-source translator, browser or desktop claim.
+Focused runtime strict TypeScript and Worker boundary strict TypeScript pass.
+Family/PID/Task/FD preparation regressions: 86 pass (~0.85 s). Normal successful
+fork adds scalar/reference captures and one memory-epoch read; no new payload
+copy or mapping scan. Failure cleanup checks only known owner collections and
+releases acquired resources; it does not claim to enumerate arbitrary raw aliases.
+Independent source review found two missing ownership checks: backend cleanup
+could replace the x87 handle, and missing cgroup membership was called returned.
+Captured-handle versus retired-zero state is now checked and free uses only the
+captured handle; cgroup requires membership and successful delete. New injected
+counterexamples pass: final preparation/CPU total 22, strict TypeScript passes.
+Final review reports no additional blocking issue within this limited scope.
