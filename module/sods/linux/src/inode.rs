@@ -46,6 +46,10 @@ impl Inode {
     pub(crate) fn number(self) -> u64 {
         self.number
     }
+    /// Storage incarnation only, not a mount/namespace or an ownership ticket.
+    pub(crate) fn owner(self) -> u64 {
+        self.owner
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

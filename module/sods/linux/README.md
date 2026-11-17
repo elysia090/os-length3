@@ -92,9 +92,9 @@ This is a semantic migration unit, not an optimized or usable Linux replacement.
 
 ## Descriptor ownership (internal)
 
-`descriptor.rs` keeps prepared Tree storage, open descriptions and descriptor
-tables in one Rust owner. The Tree cannot be taken out or individually disposed
-while its descriptions remain. This owner is not a Kernel: PID/IPC, credentials,
+`descriptor.rs` keeps prepared filesystem storage, open descriptions and descriptor
+tables in one Rust owner. Trees cannot be taken out or individually disposed
+while their descriptions remain. This owner is not a Kernel: PID/IPC, credentials,
 mount namespaces and process termination decisions do not belong here.
 
 FD numbers are reusable positions in a table, not description identities. Separate
@@ -191,3 +191,43 @@ The bootstrap table, resident source and one segment are deliberate restrictions
 access flags, lazy source actions, process/image generations, readv progression,
 mount-aware paths and real Node/muk caller switching remain unimplemented. No
 production TS Linux authority has yet been removed by this private pipeline.
+
+## Filesystem storage identity before mount views
+
+`filesystem.rs` owns the prepared Trees used by Files. An inode includes its
+filesystem incarnation as well as its tree-local number: equal inode numbers in
+two filesystems must not select the same payload. Description reads route through
+this same owner, not a parallel TS inode map. Additional filesystem admission is
+bounded by total Tree count, reserves storage before transfer, and returns the
+unchanged incoming Tree on duplicate identity or capacity/allocation failure.
+Duplicate identity is checked before capacity; it never replaces existing storage.
+
+The bootstrap Tree stays inline and additional Trees use an owner-keyed map. This
+asymmetry preserves the existing infallible, allocation-free Files construction
+and seal failure contract. A uniform map would require a fallible initial insertion
+and returning Tree ownership through that constructor. This is an internal choice,
+not a public two-class filesystem model. Routing costs one bootstrap identity check
+and expected constant map probes for another filesystem; hash collisions remain
+a worst-case limitation. Admission moves Tree ownership, not payload bytes.
+
+Storage currently remains until Files drops. There is deliberately no removal,
+replacement or mutable Tree export. This prevents a pending read from losing its
+source, but does not solve per-filesystem reclamation. Count limits do not bound
+payload bytes or retained map capacity. The private Wasm builder still admits one
+bootstrap Tree; additional filesystems are exercised through Rust Files tests, not
+yet through a guest mount syscall or new host export.
+
+The next connection must distinguish mount views from filesystem storage. A bind
+mount shares inode/payload but has its own topology and flags; namespace detach
+cannot free storage held by an open description, cwd/root or pending operation.
+A Tree-only path resolver or a TS-resolved inode passed to Rust would leave the
+mount authority split. The acceptance target remains actual muk mount setup, guest
+path open and the same Rust description's read/close, followed by corresponding
+TS authority removal. That target is not yet implemented.
+
+Tests distinguish equal inode numbers across three filesystems and preserve payload
+pointers through pending-read admission, close and failed registration. They do not
+prove that a rehash occurs or permit allocation during a live Wasm host view: any
+future admission export must retain that copy interval's mutation exclusion. Owner
+collision rejection is not protection against forged equal owner/number handles;
+a domain-unique incarnation issuer is still required before guest connection.

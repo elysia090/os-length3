@@ -1,7 +1,8 @@
 //! Internal file ownership and resident read reservations, not guest syscalls.
-//! Tree is moved here and cannot be independently dropped or mutably borrowed.
+//! Trees move into the private filesystem registry and cannot be independently
+//! dropped or mutably borrowed. Mount topology is not part of this registry.
 //! Sparse tables own slots; descriptions own shared offsets. Inodes remain owned
-//! by Tree even after the last descriptor closes (no unlink/physical reclamation).
+//! by their filesystem even after the last descriptor closes (no unlink/physical reclamation).
 //! No callbacks run inside these operations. The embedding must allocate a unique
 //! owner incarnation; reusing it while handles exist is invalid.
 //! Fork copies only live slots, but source HashMap iteration scans retained
@@ -19,8 +20,10 @@
 //! are non-Copy owning holder tickets; share creates a new ticket, let_go consumes it.
 //! Dropping a ticket without let_go retains its table until Files is dropped; this
 //! cannot prematurely retire another holder, but domain cleanup must consume it.
+use super::filesystem::{AdmissionError, Filesystems};
 use super::inode::{Inode, Tree};
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Id {
@@ -85,7 +88,7 @@ impl ReadHold {
 
 pub(crate) struct Files {
     owner: u64,
-    tree: Tree,
+    filesystems: Filesystems,
     limits: Limits,
     tables: Vec<Cell<TableState>>,
     descriptions: Vec<Cell<Description>>,
@@ -131,14 +134,27 @@ fn get<T>(arena: &[Cell<T>], owner: u64, id: Id) -> Result<&T, Error> {
 }
 impl Files {
     pub(crate) fn new(owner: u64, tree: Tree, limits: Limits) -> Self {
+        Self::with_filesystem_capacity(owner, tree, limits, NonZeroUsize::MIN)
+    }
+    /// Internal multi-filesystem construction; the bootstrap counts toward capacity.
+    pub(crate) fn with_filesystem_capacity(
+        owner: u64,
+        tree: Tree,
+        limits: Limits,
+        capacity: NonZeroUsize,
+    ) -> Self {
         Self {
             owner,
-            tree,
+            filesystems: Filesystems::new(tree, capacity),
             limits,
             tables: Vec::new(),
             descriptions: Vec::new(),
             live_slots: 0,
         }
+    }
+    /// Transfer storage only after admission; failure returns its entire ownership.
+    pub(crate) fn admit_tree(&mut self, tree: Tree) -> Result<Inode, (AdmissionError, Tree)> {
+        self.filesystems.admit(tree)
     }
     pub(crate) fn table(&mut self, limit: u32) -> Result<Table, Error> {
         let id = prepare(&mut self.tables, self.limits.tables, self.owner)?;
@@ -190,7 +206,7 @@ impl Files {
     ) -> Result<u32, Error> {
         self.state(table)?;
         let mode = self
-            .tree
+            .filesystems
             .metadata(inode)
             .map_err(|_| Error::BadHandle)?
             .mode
@@ -388,7 +404,7 @@ impl Files {
             d.revision.checked_add(1).ok_or(Error::Overflow)?
         };
         if self
-            .tree
+            .filesystems
             .metadata(inode)
             .map_err(|_| Error::BadHandle)?
             .mode
@@ -397,10 +413,10 @@ impl Files {
         {
             return Err(Error::NotSupported);
         }
-        if self.tree.source(inode).map_err(|_| Error::Payload)? != 0 {
+        if self.filesystems.source(inode).map_err(|_| Error::Payload)? != 0 {
             return Err(Error::NotSupported);
         }
-        let size = self.tree.size(inode).map_err(|_| Error::Payload)? as u64;
+        let size = self.filesystems.size(inode).map_err(|_| Error::Payload)? as u64;
         let length = if offset >= size {
             0
         } else {
@@ -427,7 +443,7 @@ impl Files {
         } else {
             hold.offset as usize
         };
-        self.tree
+        self.filesystems
             .read(hold.inode, at, hold.length)
             .expect("pinned resident source")
     }
@@ -629,6 +645,131 @@ mod tests {
         assert_eq!(f.open(&t, root, false), Err(Error::Capacity));
         assert_eq!(f.live_slots, 0);
     }
+    fn prepared(owner: u64, bytes: &[u8]) -> (Tree, Inode, *const u8) {
+        let mut tree = Tree::new(owner, 4, 4, 32).unwrap();
+        let mut payload = bytes.to_vec();
+        let pointer = payload.as_ptr();
+        let inode = tree
+            .file_take(tree.root(), b"same", 0o600, &mut payload)
+            .unwrap();
+        (tree, inode, pointer)
+    }
+    #[test]
+    fn filesystem_identity_routes_same_number_through_real_read_holds() {
+        let (first, a, pa) = prepared(101, b"first");
+        let (second, b, pb) = prepared(102, b"second");
+        let (third, c, pc) = prepared(103, b"third");
+        let mut f = Files::with_filesystem_capacity(
+            200,
+            first,
+            Limits {
+                tables: 1,
+                descriptions: 4,
+                slots: 4,
+            },
+            NonZeroUsize::new(3).unwrap(),
+        );
+        let t = f.table(4).unwrap();
+        let fa = f.open(&t, a, false).unwrap();
+        let ha = f.reserve_read(&t, fa, 32).unwrap();
+        assert!(f.admit_tree(second).is_ok());
+        let fb = f.open(&t, b, false).unwrap();
+        let hb = f.reserve_read(&t, fb, 32).unwrap();
+        // Additional registry growth while two descriptions independently retain reads.
+        assert!(f.admit_tree(third).is_ok());
+        let fc = f.open(&t, c, false).unwrap();
+        let hc = f.reserve_read(&t, fc, 32).unwrap();
+        f.close(&t, fa).unwrap();
+        f.close(&t, fb).unwrap();
+        assert_eq!(f.read_bytes(&ha), b"first");
+        assert_eq!(f.read_bytes(&ha).as_ptr(), pa);
+        assert_eq!(f.read_bytes(&hb), b"second");
+        assert_eq!(f.read_bytes(&hb).as_ptr(), pb);
+        assert_eq!(f.read_bytes(&hc), b"third");
+        assert_eq!(f.read_bytes(&hc).as_ptr(), pc);
+        f.finish_read(ha, 5);
+        f.abort_read(hb);
+        f.finish_read(hc, 3);
+        assert_eq!(f.offset(&t, fc), Ok((3, 1)));
+        f.let_go(t).unwrap();
+    }
+    #[test]
+    fn registry_rejection_returns_unchanged_payload_and_checks_owner_before_capacity() {
+        let (first, original, _) = prepared(111, b"original");
+        let mut f = Files::new(
+            210,
+            first,
+            Limits {
+                tables: 1,
+                descriptions: 2,
+                slots: 2,
+            },
+        );
+        let (duplicate, duplicate_inode, pointer) = prepared(111, b"duplicate");
+        let mut returned = match f.admit_tree(duplicate) {
+            Err((AdmissionError::DuplicateOwner, tree)) => tree,
+            _ => panic!("duplicate owner must precede full capacity"),
+        };
+        assert_eq!(returned.read(duplicate_inode, 0, 32).unwrap(), b"duplicate");
+        assert_eq!(
+            returned.read(duplicate_inode, 0, 32).unwrap().as_ptr(),
+            pointer
+        );
+        let (extra, extra_inode, extra_pointer) = prepared(112, b"extra");
+        let mut returned = match f.admit_tree(extra) {
+            Err((AdmissionError::Capacity, tree)) => tree,
+            _ => panic!("bootstrap capacity must reject additional storage"),
+        };
+        assert_eq!(
+            returned.read(extra_inode, 0, 32).unwrap().as_ptr(),
+            extra_pointer
+        );
+        let t = f.table(2).unwrap();
+        assert_eq!(f.open(&t, extra_inode, false), Err(Error::BadHandle));
+        let fd = f.open(&t, original, false).unwrap();
+        let hold = f.reserve_read(&t, fd, 32).unwrap();
+        assert_eq!(f.read_bytes(&hold), b"original");
+        f.abort_read(hold);
+        f.let_go(t).unwrap();
+    }
+    #[test]
+    fn registry_checks_inode_range_and_preserves_rejected_pending_source() {
+        let (first, _, _) = prepared(121, b"stored");
+        let mut f = Files::new(
+            220,
+            first,
+            Limits {
+                tables: 1,
+                descriptions: 2,
+                slots: 2,
+            },
+        );
+        // A malformed same-owner tree cannot supply an in-range proof for an
+        // absent inode. Unique owner allocation remains an embedding invariant.
+        let (mut malformed, _, _) = prepared(121, b"other");
+        let absent = malformed
+            .file_take(malformed.root(), b"absent", 0o600, &mut vec![1])
+            .unwrap();
+        let t = f.table(2).unwrap();
+        assert_eq!(f.open(&t, absent, false), Err(Error::BadHandle));
+        let mut pending = Tree::new(122, 2, 1, 16).unwrap();
+        let lazy = pending
+            .lazy_file(pending.root(), b"lazy", 0o600, 9, 4)
+            .unwrap();
+        let attempt = pending.load_begin(lazy).unwrap();
+        let mut pending = match f.admit_tree(pending) {
+            Err((AdmissionError::Capacity, tree)) => tree,
+            _ => panic!("full registry must return pending storage"),
+        };
+        assert_eq!(pending.source(lazy), Ok(9));
+        let mut bytes = b"load".to_vec();
+        pending
+            .load_finish(lazy, attempt, true, &mut bytes)
+            .unwrap();
+        assert!(bytes.is_empty());
+        assert_eq!(pending.read(lazy, 0, 16).unwrap(), b"load");
+        f.let_go(t).unwrap();
+    }
     #[test]
     fn repeated_close_reuses_bounded_arena_and_keeps_tree_owned() {
         let (mut f, inode) = setup(1);
@@ -642,6 +783,6 @@ mod tests {
         }
         assert_eq!(f.tables.len(), 1);
         assert_eq!(f.descriptions.len(), 1);
-        assert_eq!(f.tree.read(inode, 0, 16).unwrap(), b"body");
+        assert_eq!(f.filesystems.read(inode, 0, 16).unwrap(), b"body");
     }
 }
