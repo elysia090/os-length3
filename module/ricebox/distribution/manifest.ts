@@ -8,7 +8,19 @@ export interface About {
   index: {path: string; sha256: string; size: number};
   translator: {name: string; version: string};
 }
-export interface Translation { path: string; sha256: string; elf: Blob; wasm: Blob }
+/** Additive source association for the producer's existing whole-program translation. */
+export interface TranslationAssociation {
+  version: 1;
+  origin: string;
+  sourceSha256: string;
+  sourceBytes: number;
+  mode: 'whole';
+}
+export interface Translation {
+  path: string; sha256: string; elf: Blob; wasm: Blob;
+  /** Omitted by older trusted producers; malformed present metadata is never a legacy fallback. */
+  association?: TranslationAssociation;
+}
 export interface FileStoreDescriptor extends Blob {
   abi: 4;
   wasm: string;

@@ -13,6 +13,7 @@ import {fileURLToPath} from 'node:url';
 import {withCompression} from './compression-pool.ts';
 import {gzipSync} from 'node:zlib';
 import {packOf} from '../distribution/pack.ts';
+import {canonicalExecutableSource} from '../distribution/executable-source.ts';
 import {translateWhole} from './aot-cache.ts';
 import {fileStoreOptions, validateFileStore, fileStoreDescriptor} from './file-store-artifact.ts';
 import {readTarball} from '../host/node/tar.ts';
@@ -170,7 +171,12 @@ const translations: Index['translations'] = [];
 for (const path of hot) {
   const bytes = hotBytes.get(path) ?? Buffer.alloc(0);
   const made = translateWhole(sods, wasm, bytes, aotCache || null);
-  translations.push({path, sha256: sha256(bytes), elf: blob(bytes), wasm: blob(made)});
+  const translation: Index['translations'][number] = {path, sha256: sha256(bytes), elf: blob(bytes), wasm: blob(made)};
+  // Bind the same captured hot bytes to their exact placed canonical file. This
+  // additive descriptor leaves the established ELF/Wasm blob format unchanged.
+  const source = canonicalExecutableSource({packs: packList, files}, translation);
+  translation.association = {version: 1, origin: source.origin, sourceSha256: source.sha256, sourceBytes: bytes.length, mode: 'whole'};
+  translations.push(translation);
   if (stage && path === '/usr/bin/busybox') {
     mkdirSync(stage, {recursive: true});
     writeFileSync(join(stage, 'busybox'), bytes);

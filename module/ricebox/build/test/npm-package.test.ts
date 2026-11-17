@@ -21,7 +21,7 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.equal(existsSync(join(out,'module/ricebox/npm')),false);
     assert.equal(pkg.exports['./vite'].import,'./module/ricebox/integrations/vite.js');
     assert.equal(pkg.exports['./prepare'].types,'./module/ricebox/build/prepare.ts');
-    for(const name of ['module/ricebox/build/distribution.ts','module/ricebox/build/file-store-artifact.ts','module/sods/runtime/file-store.ts',
+    for(const name of ['module/ricebox/distribution/executable-source.ts','module/ricebox/build/distribution.ts','module/ricebox/build/file-store-artifact.ts','module/sods/runtime/file-store.ts',
       'module/ricebox/deployment/assets.ts','module/ricebox/deployment/assets.js',
       'module/ricebox/integrations/vite.ts','module/ricebox/integrations/vite.js','module/ricebox/build/prepare.ts','module/ricebox/build/prepare.js']) {
       assert.ok(existsSync(join(out,name)),`missing ${name}`);
@@ -61,6 +61,7 @@ test('built npm package contains builder dependencies and imports public JS with
       {cwd:out,env:{...process.env,npm_config_cache:join(work,'npm-cache')},encoding:'utf8',timeout:30_000}));
     assert.ok(existsSync(join(work,packed[0].filename)));
     assert.ok(packed[0].files.some((f:{path:string})=>f.path==='module/ricebox/build/file-store-artifact.ts'));
+    assert.ok(packed[0].files.some((f:{path:string})=>f.path==='module/ricebox/distribution/executable-source.ts'));
     assert.ok(packed[0].files.some((f:{path:string})=>f.path==='module/ricebox/integrations/vite.js'));
     assert.throws(()=>execFileSync(process.execPath,[builder,out],{stdio:'pipe',timeout:30_000}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}
