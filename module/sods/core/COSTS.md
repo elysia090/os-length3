@@ -78,7 +78,8 @@ retained pages are included and Wasm memory does not shrink on Vec release.
 
 The strongest bounded finding is call amplification by fragmented mapping writes,
 not evidence that every workload is dominated by it. Compare a page/span-batched
-publication against the current per-run route before choosing an ABI. It must preserve
+publication against the current per-run route before choosing an ABI. The resulting
+decision is recorded in the final section below. It must preserve
 which dirty bytes win, publication to other mappings, source retirement, ordering,
 partial failure, metadata version/change counts, and memory/attempt lifetime. Extra
 staging or descriptor scans must be counted. Changing the mutable memory model would
@@ -91,3 +92,38 @@ does not itself justify an untested batching implementation.
 
 Current-source translator availability, real browser cache and everyday desktop
 compatibility are unrelated open gates and remain unverified by this measurement.
+
+## Publication batching decision after counterexamples
+
+`mapping-publication-contract.test.ts` records three constraints: sparse writes must
+not erase another mapping's independent dirty bytes; the first run's canonical and
+visible update survives a later run failure; and a publication through a shifted
+alias can change a later source observation. These are File/Mapping embedding tests,
+not a claim that an unaligned mapping is valid native Linux. Existing syscall tests
+remain the separate check of implemented mmap/remap behavior.
+
+Source audit adds a real runtime concern: `forkProcess(vm=true)` shares memory but
+copies mapping records only in the non-VM `live` branch. A child MAP_FIXED removes
+only its own mapping records. Parent and child can therefore retain records on one
+backing with different translations. Current mmap/munmap paths do not provide a
+universal alignment invariant that would eliminate intra-page aliases. This is a
+source-derived path, not a newly executed end-to-end clone regression or a claim
+that the current model is fully Linux-compatible.
+
+A page-gather candidate would need at least non-shared backing, byteOffset-aware
+alias exclusion, one mapping/page per batch, and unchanged cross-page/map order.
+Unknown backing or SharedArrayBuffer must fall back until synchronization is proven.
+Even those guards do not preserve failure prefixes: canonical batch application
+followed by several `show` calls can leave more canonical effects ahead of visible
+publication than the current run-at-a-time contract. Returning an applied-run count
+alone does not solve failure during `show`. Preparing all runs also changes which
+prefix exists if later capture/allocation fails.
+
+Decision: do not adopt page-wide batching yet. The smaller next candidate retains
+`capture → own → write → show` per run and removes redundant materialize/source
+queries at the private core boundary for already-resident mapped payloads. Rust must
+still validate readiness/handle/input lease, and callback cleanup must retain exactly
+one owner without a mutable TS shadow of core state. This can reduce constants, not
+remove the O(r) crossings. Page batching remains a distinct contract change requiring
+proof of non-failing post-admission publication or explicit revised failure semantics.
+Neither route permits unconditional whole-page replacement.
