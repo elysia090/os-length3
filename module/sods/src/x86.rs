@@ -243,6 +243,24 @@ pub(crate) fn bit(r: Register) -> Option<u32> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn count_zero_branches_select_address_width_without_flags() {
+        for (bytes, mnemonic, register) in [
+            (&[0xe3, 0x00][..], Mnemonic::Jrcxz, Register::RCX),
+            (&[0x67, 0xe3, 0x00][..], Mnemonic::Jecxz, Register::ECX),
+            (&[0x66, 0xe3, 0x00][..], Mnemonic::Jrcxz, Register::RCX),
+        ] {
+            let instruction = Decoder::with_ip(64, bytes, 0x1000, DecoderOptions::NONE).decode();
+            assert_eq!(instruction.mnemonic(), mnemonic);
+            assert_eq!(instruction.condition_code(), ConditionCode::None);
+            let k = kind(&instruction);
+            assert_eq!((k.flow, k.reads, k.writes), (go::BRANCH, 0, 0));
+            let mut factory = InstructionInfoFactory::new();
+            assert!(factory.info(&instruction).used_registers().iter()
+                .any(|used| used.register() == register && used.access() == OpAccess::Read));
+        }
+    }
+
     /// Every way iced says an instruction reads and writes the flags kept has its place in WAYS, and nothing else has.
     #[test]
     fn every_way_with_the_flags_is_listed() {

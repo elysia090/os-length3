@@ -368,7 +368,8 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
             fx.report.instructions += 1;
             if j == last && !runs_on(i) { break; }
             // A compare whose flags only the branch that ends the block reads is that branch's condition.
-            if j + 1 == last && held | ext == 0 && matches!(block.exit, Exit::Branch { .. }) && Fx::fusable(i, code[last].condition_code()) {
+            if j + 1 == last && held | ext == 0 && matches!(block.exit, Exit::Branch { .. })
+                && code[last].condition_code() != ConditionCode::None && Fx::fusable(i, code[last].condition_code()) {
                 fx.fused = Some(*i);
                 continue;
             }
@@ -381,7 +382,14 @@ pub fn lower_function(cx: &Lowering, index: u32, base: u32, report: &mut Report,
             Exit::Fall(a) | Exit::Jump(a) => fx.goto((a, to[0]), next),
             Exit::TailJump(a) => fx.tail(a),
             Exit::Branch { taken, fall } => {
-                fx.condition(term.condition_code());
+                // These branches test the address-size-selected count register, not
+                // arithmetic flags. Reading ECX must not zero the upper half of RCX.
+                match term.mnemonic() {
+                    Mnemonic::Jrcxz => { fx.read_reg(Register::RCX); fx.op(I64_EQZ); }
+                    Mnemonic::Jecxz => { fx.get(l_reg(RCX)); fx.op(I32_WRAP_I64); fx.op(I32_EQZ); }
+                    Mnemonic::Jcxz => { fx.read_reg(Register::CX); fx.op(I64_EQZ); }
+                    _ => fx.condition(term.condition_code()),
+                }
                 if held != 0 { fx.set(l_u(1)); fx.hold_flags(); fx.get(l_u(1)); }
                 // A side going forward to a label open here is a br_if to it; where the taken side is the next block,
                 // the condition turned round goes to the other.

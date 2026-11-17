@@ -231,9 +231,11 @@ The current-source call regression covers direct/indirect, whole/incremental,
 partial updates, AF and a verified depth unwind. This is not a complete proof of
 all x86 flag-producing instructions or every syscall-resume path.
 
-A separate known defect remains: JRCXZ currently takes the branch with nonzero
-RCX. `branch-counter-current.test.ts` keeps the correct expectation as an explicit
-TODO failure. The depth-unwind test uses DEC/JZ, not that defective instruction.
+`branch-counter-current.test.ts` separately checks JRCXZ/JECXZ counter width,
+taken and fallthrough paths, unchanged counter/flags, and CMP/TEST immediately
+before these branches without flag-condition fusion. The depth-unwind fixture
+continues to use DEC/JZ so its acceptance does not depend on this instruction.
+LOOP/LOOPE/LOOPNE lowering remains a separate gate, not covered by these checks.
 
 ## A translation kept
 
