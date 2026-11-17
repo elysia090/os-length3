@@ -1653,26 +1653,11 @@ export class Process implements Proc {
     this.ppid = parent?.pid ?? 0;
     this.pgid = parent?.pgid ?? 0;
     this.sid = parent?.sid ?? 0;
-    // Its descriptors: the parent's own table where it is to be shared (clone's CLONE_FILES), else a copy of it. Which
-    // is known before either is taken (before: a copy always, thrown away for the shared one with every description
-    // in it still held).
-    this.fds = parent ? (files ? parent.fds.share() : parent.fds.fork()) : new FdTable();
-    // Where it is in the tree: its parent's own where that is to be shared (CLONE_FS), else one like it.
-    const acquiredFds = this.fds;
-    try { this.fs0 = parent ? (fs ? (parent.fs.users++, parent.fs) : parent.fs.copy()) : new Fs(kernel.root); }
-    catch (error) {
-      // Fs acquisition never completed: return exactly this new FD-table owner,
-      // not the parent's current table after a reentrant embedding callback.
-      // No process, PID or cgroup has been published at this boundary.
-      try { acquiredFds.letGo(); }
-      catch (cleanup) { throw new AggregateError([error, cleanup], 'process Fs preparation and FD cleanup failed'); }
-      throw error;
-    }
     this.ns0 = ns ?? parent?.ns ?? kernel.spaces;
     this.taken = false;
     // The pid namespace it is made in is the one its parent's children are made in: its own, from here on.
     this.pidns = this.ns0.children;
-    enter(this, cgroup ?? parent?.cgroup ?? kernel.cgroups.root);
+    const group = cgroup ?? parent?.cgroup ?? kernel.cgroups.root;
     // How nice it is (-20 to 19), as getpriority says and a child takes: no scheduling here weighs it.
     this.nice = parent?.nice ?? 0;
     this.limits = (parent?.limits ?? RLIMITS).map(([soft, hard]): [bigint, bigint] => [soft, hard]); // getrlimit's, kept across exec
@@ -1698,6 +1683,23 @@ export class Process implements Proc {
     this.vfork = null; // {released}: its parent waits on this (CLONE_VFORK)
     this.call = null; // the call its thread (`task`) makes now: {nr, args, next, state}
     this.memory = null;
+    // Prepare metadata before acquiring external owners; publish only a complete process.
+    // Its descriptors: the parent's own table where it is to be shared (clone's CLONE_FILES), else a copy of it. Which
+    // is known before either is taken (before: a copy always, thrown away for the shared one with every description
+    // in it still held).
+    this.fds = parent ? (files ? parent.fds.share() : parent.fds.fork()) : new FdTable();
+    // Where it is in the tree: its parent's own where that is to be shared (CLONE_FS), else one like it.
+    const acquiredFds = this.fds;
+    try { this.fs0 = parent ? (fs ? (parent.fs.users++, parent.fs) : parent.fs.copy()) : new Fs(kernel.root); }
+    catch (error) {
+      // Fs acquisition never completed: return exactly this new FD-table owner,
+      // not the parent's current table after a reentrant embedding callback.
+      // No process, PID or cgroup has been published at this boundary.
+      try { acquiredFds.letGo(); }
+      catch (cleanup) { throw new AggregateError([error, cleanup], 'process Fs preparation and FD cleanup failed'); }
+      throw error;
+    }
+    enter(this, group);
   }
 
   /** Make one system call as this process's thread (or as a thread of it that has none yet), as the dispatcher does. */

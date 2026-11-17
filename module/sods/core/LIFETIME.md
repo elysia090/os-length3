@@ -1546,3 +1546,26 @@ Captured-handle versus retired-zero state is now checked and free uses only the
 captured handle; cgroup requires membership and successful delete. New injected
 counterexamples pass: final preparation/CPU total 22, strict TypeScript passes.
 Final review reports no additional blocking issue within this limited scope.
+
+### Prepare Process metadata before acquiring owners
+
+Process now builds its ordinary metadata, namespace selection and target cgroup
+before FD/Fs acquisition; cgroup publication is last. This avoids acquiring
+resources that would need rollback when limits/actions/cgroup preparation fails.
+Existing FD cleanup on unsuccessful Fs acquisition is unchanged. Raw getters
+now run in a different order, so simultaneous injected failures can report a
+different first failure; arbitrary getter mutation is not transactional rollback.
+
+This also intentionally changes successful cgroup peak accounting: previously
+enter/count saw an uninitialized state and omitted this new process; now it sees
+live state and initialized tasks and includes the process. No additional payload
+copy, collection scan or owner acquisition is introduced by the reordering.
+Five baseline counterexamples failed before the change. Final Task/family tests
+(64) pass, including metadata refusal, target-group getter refusal, complete
+cgroup publication, shared/copied owner counts and existing Fs cleanup. Focused
+strict TypeScript passes. Independent source review found no blocking issue.
+enter's own partial failure, unknown acquisition inside overridden newTask, and
+later executable/register/publication failures remain distinct gates.
+Actual current-muk inline/Node rehearsals: 2 pass. Actual Wasm/CPU preparation
+plus PID gates: 47 pass. Historical translator artifact as before; no new browser,
+Wayland, full-distribution or automatic used-tree-disposal claim.

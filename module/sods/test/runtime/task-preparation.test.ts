@@ -61,3 +61,39 @@ test('cross-kernel Task construction refuses before numbering or channel acquisi
   assert.equal(channels, 0);
   assert.deepEqual([owner.nextPid, other.nextPid, remote.nextPid, p.taken, p.fs.users], before);
 });
+
+for (const phase of ['limits', 'actions', 'cgroup'] as const) for (const shared of [false, true]) {
+  test(`Process ${phase} preparation fails before FD/Fs/cgroup acquisition, shared=${shared}`, () => {
+    const k = kernel(), p = new Process(k, null), fs = p.fs, fds = p.fds, group = p.cgroup;
+    const before = [fs.users, fs.root.mnt.refs, fds.holders, group.procs.size, group.peak];
+    const original = new Error(`${phase} metadata refused`);
+    if (phase !== 'actions') Object.defineProperty(p, phase, {get() { throw original; }});
+    else Object.defineProperty(p.actions, Symbol.iterator, {value() { throw original; }});
+    assert.throws(() => new Process(k, p, shared, shared), error => error === original);
+    assert.deepEqual([fs.users, fs.root.mnt.refs, fds.holders, group.procs.size, group.peak], before);
+  });
+}
+
+test('cgroup publication sees a fully initialized Process and counts its peak', () => {
+  const k = kernel(), p = new Process(k, null), group = p.cgroup;
+  const add = group.procs.add.bind(group.procs); let observed = false;
+  group.procs.add = child => {
+    assert.equal(child.state, 'live'); assert.equal(child.tasks.size, 0);
+    assert.equal((child as Process).maps.length, 0); assert.equal((child as Process).memory, null);
+    observed = true; return add(child);
+  };
+  const child = new Process(k, p);
+  assert.equal(observed, true); assert.equal(group.procs.has(child), true);
+  assert.equal(group.count, 2); assert.equal(group.peak, 2);
+});
+
+for (const shared of [false, true]) test(`completed child acquires one FD/Fs owner, shared=${shared}`, () => {
+  const k = kernel(), p = new Process(k, null), fs = p.fs, fds = p.fds;
+  const users = fs.users, refs = fs.root.mnt.refs, holders = fds.holders;
+  const child = new Process(k, p, shared, shared);
+  assert.equal(child.taken, false); assert.equal(child.fs.users, shared ? users + 1 : 1);
+  assert.equal(fs.users, shared ? users + 1 : users);
+  assert.equal(fs.root.mnt.refs, shared ? refs : refs + 2);
+  assert.equal(fds.holders, shared ? holders + 1 : holders);
+  assert.equal(child.fds.holders, shared ? holders + 1 : 1);
+});
