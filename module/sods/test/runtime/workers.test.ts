@@ -304,3 +304,44 @@ test('spare failure diagnostic cannot stop a newly assigned task on that same Ha
   assert.ok(k.stopFailures.some(e => e instanceof Error && /unconfirmed after assignment changed/.test(e.message)));
   k.close();
 });
+
+for (const existing of [false, true]) for (const invalidView of [false, true]) test(`RemoteTask channel refusal returns Fs ownership, existing task=${existing}, invalid view=${invalidView}`, () => {
+  const {k} = bench(), p = new Process(k, null);
+  if (existing) { const t = k.newTask(p); p.tasks.add(t); }
+  const location = p.fs, before = [location.users, location.root.mnt.refs, p.taken];
+  const original = new Error('channel allocation refused');
+  k.channel = () => { if (invalidView) return new SharedArrayBuffer(1); throw original; };
+  assert.throws(() => k.newTask(p), error => invalidView ? error instanceof RangeError : error === original);
+  assert.deepEqual([location.users, location.root.mnt.refs, p.taken], before);
+  assert.equal(k.tasks.size, 0); assert.equal(k.procs.size, 0);
+});
+
+test('RemoteTask failed channel cleanup keeps both failures without hiding the Fs release', () => {
+  const {k} = bench(), p = new Process(k, null), t = k.newTask(p); p.tasks.add(t);
+  const fs = p.fs, before = fs.users, original = new Error('channel refused'), cleanup = new Error('Fs release callback failed');
+  const drop = fs.drop.bind(fs); fs.drop = () => { drop(); throw cleanup; };
+  k.channel = () => { throw original; };
+  assert.throws(() => k.newTask(p), error => {
+    assert.ok(error instanceof AggregateError); assert.deepEqual(error.errors, [original, cleanup]); return true;
+  });
+  assert.equal(fs.users, before); assert.equal(p.taken, true);
+});
+
+for (const changed of ['fs0', 'taken', 'task'] as const) test(`RemoteTask channel reentry keeps unknown ${changed} ownership isolated`, async () => {
+  const {Task} = await import('../../runtime/linux/process.ts');
+  const {k} = bench(), p = new Process(k, null), initialFs = p.fs0, original = new Error('channel callback failed');
+  let afterCallback: unknown;
+  const snapshot = () => [p.taken, p.fs0, p.own, initialFs.users, initialFs.root.mnt.refs];
+  k.channel = () => {
+    if (changed === 'fs0') p.fs0 = p.fs0.copy();
+    if (changed === 'taken') p.taken = false;
+    if (changed === 'task') p.tasks.add(new Task(p, 99));
+    afterCallback = snapshot();
+    throw original;
+  };
+  assert.throws(() => k.newTask(p), error => {
+    assert.ok(error instanceof AggregateError); assert.equal(error.errors[0], original);
+    assert.match(String(error.errors[1]), /lost its Fs ownership/); return true;
+  });
+  assert.deepEqual(snapshot(), afterCallback, 'uncertain ownership must not be dropped or reassigned');
+});

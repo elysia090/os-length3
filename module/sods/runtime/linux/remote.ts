@@ -567,15 +567,28 @@ class RemoteTask extends Task {
   declare renewed?: boolean;
   declare regsChanged: boolean;
   constructor(proc: Process, tid: number) {
+    const from = proc.own, taken = proc.taken, fs0 = proc.fs0, expectedFs = from?.fs ?? fs0;
     super(proc, tid);
-    this.channel = this.kernel.channel();
-    this.i32 = new Int32Array(this.channel);
-    this.i64 = new BigInt64Array(this.channel);
-    this.worker = null;
-    this.execd = false; // a new image waits to be sent to its Worker
-    this.fpuState = null;
-    this.consoles = null;
-    this.i32[CH.FILTERED] = 0; // (a channel had before by a thread that had one)
+    try {
+      this.channel = this.kernel.channel();
+      this.i32 = new Int32Array(this.channel);
+      this.i64 = new BigInt64Array(this.channel);
+      this.worker = null;
+      this.execd = false; // a new image waits to be sent to its Worker
+      this.fpuState = null;
+      this.consoles = null;
+      this.i32[CH.FILTERED] = 0; // (a channel had before by a thread that had one)
+    } catch (error) {
+      // No Worker has been assigned. Undo only super's known Fs acquisition,
+      // not ordinary thread exit, PID retirement or possible raw callback work.
+      try {
+        if (this.fs !== expectedFs || proc.fs0 !== fs0 || proc.own !== from
+          || proc.taken !== (from ? taken : true)) throw new Error('failed RemoteTask preparation lost its Fs ownership');
+        if (from) this.fs.drop();
+        else proc.taken = taken; // Return the initial Fs owner to Process; do not drop it.
+      } catch (cleanup) { throw new AggregateError([error, cleanup], 'RemoteTask channel preparation and Fs cleanup failed'); }
+      throw error;
+    }
   }
 
   /** Its Worker is told: with a filter, it answers no call itself (cpu.ts). */

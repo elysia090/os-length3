@@ -1258,3 +1258,30 @@ context on failure too. The shared failure helper preserves both errors without
 duplicating an already reported ownership error. Family total: 42 pass, strict
 TypeScript pass. Override side effects after successful child publication are
 not rolled back by this boundary and remain outside its guarantee.
+
+### RemoteTask channel failure returns only its completed Fs acquisition
+
+Task construction has two different Fs transfers: a sibling retains the existing
+thread's Fs (users++), while a first task takes Process.fs0 without incrementing
+users and sets Process.taken. RemoteTask then allocates/takes its channel and
+constructs views before any Worker assignment. Failure there previously left the
+extra user, or left taken=true with no returned first Task.
+
+The constructor now captures the transfer context before super and guards the
+channel/view initialization. On failure with unchanged context it drops only the
+sibling's added Fs owner, or returns first-task ownership to Process by restoring
+taken without dropping Fs. A changed fs0/taken/own task or mismatched Fs is not
+reconciled by guessing: original failure and unknown-ownership cleanup failure
+are both retained. Normal process/thread exit, signals, PID namespace retirement
+and memory recycling are not invoked. Successful acquisition adds bounded local
+captures/check setup only, no file/namespace scan or payload copy.
+
+Workers regression: 28 pass, including eight new boundary cases (both Fs paths
+with channel refusal and real invalid-view RangeError; cleanup callback failure;
+fs0/taken/new-task reentry). Initial three cases failed before the change. These
+are controlled channel boundary failures, not an actual host memory exhaustion
+claim. Arbitrary in-place/ABA mutation remains unproved. PID reservation cleanup,
+super's own partial failure and reuse of a channel already removed from the pool
+are separate gates; no blanket fork rollback or managed tree disposal is claimed.
+Actual Wasm/CPU Worker focused tests: 6 pass; actual inline/Node rehearsal: 2
+pass; focused strict TypeScript and independent source review pass.
