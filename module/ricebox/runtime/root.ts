@@ -10,7 +10,7 @@ import {FIRST} from './startup-programs.ts';
 import {canRunApart} from '../../sods/runtime/host.ts';
 import {MORE, madeBy, packMain, packMore, prepare, unpackMore, type Segment} from '../../sods/runtime/translate.ts';
 export type {Segment, Blob, About, Translation, Index, Webroot, RootContext, PreparedRoot, PreparedExecutable, More} from './root-types.ts';
-import type {About, Blob, Index, More, Translation, Webroot, RootContext, PreparedRoot, PreparedExecutable} from './root-types.ts';
+import type {About, Blob, Index, More, Translation, Webroot, RootContext, PreparedExecutable} from './root-types.ts';
 export type Stage =
   | {at: 'fetch'; got: number; of: number; quiet?: number}
   | {at: 'retry'; attempt: number; why: string; got: number; of: number}

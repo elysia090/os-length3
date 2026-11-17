@@ -84,7 +84,7 @@ test('actual Worker captures original source before an ordinary overlay and vali
   try{
     await import(new URL('../worker.ts?prepared-hot-source',import.meta.url).href);
     await host.onmessage!({data:{type:'ready',profile:'canonical-aot-v1',generation,translator:memoryModule,muk:Uint8Array.of(1),root:{index:r.index,url:'https://unused.test/'},files:[{path:r.t.path,bytes:elf(),mode:0o755}],executables:[]}});
-    await host.onmessage!({data:{type:'executables',generation,executables:[executable]}});assert.deepEqual(messages,[]);
+    await host.onmessage!({data:{type:'executables',generation,executables:[executable]}});assert.equal(messages.length,0);
     await host.onmessage!({data:{type:'executables',generation,executables:[{...executable,key:'wrong'}]}});assert.match(messages.at(-1)!.message!,/match/);
     await host.onmessage!({data:{type:'executables',generation,executables:[executable]}});assert.match(messages.at(-1)!.message!,/Duplicate/);
     await host.onmessage!({data:{type:'retire'}});
