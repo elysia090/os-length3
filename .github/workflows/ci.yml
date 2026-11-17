@@ -307,6 +307,26 @@ jobs:
         if: matrix.part == 'native'
         working-directory: module/sods
         run: sh test/programs/run.sh
+      # Preserve the exact translator already built above for isolated runtime regressions.
+      # This is a diagnostic artifact, not a release or a cache of arbitrary build outputs.
+      - name: Record current-source translator identity
+        if: matrix.part == 'native'
+        working-directory: module/sods/target/wasm32-unknown-unknown/release
+        run: |
+          git rev-parse HEAD > source-revision.txt
+          sha256sum sods.wasm > SHA256SUMS
+      - name: Upload current-source translator
+        if: matrix.part == 'native'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sods-translator-current-source
+          path: |
+            module/sods/target/wasm32-unknown-unknown/release/sods.wasm
+            module/sods/target/wasm32-unknown-unknown/release/source-revision.txt
+            module/sods/target/wasm32-unknown-unknown/release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
       # The translator's own tests: among them every opcode scanned as the decoder decodes it; a translation's
       # identity, and the cache that keeps translations under it.
       - name: Test sods
