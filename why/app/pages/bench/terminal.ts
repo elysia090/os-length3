@@ -16,6 +16,7 @@ import {Output, strip} from './output.ts';
 import {asOne, FirstPrompt, waitsAt} from './prompt-line.ts';
 import {mirror, snapshot, WriteBack} from './repo-copy.ts';
 import {sessions, type Prompt, type Run} from './sessions.ts';
+import {Consumption, type ConsumptionResult} from './consumption.ts';
 
 // A shell per repo: in a browser, why's root (its BusyBox sh, and every other
 // program of it) translated in a Worker; in the app, the same root on the
@@ -135,6 +136,9 @@ export class Session implements Prompt {
   /** The prompt line put at the foot for a shell not yet started (a line the Agent ran, shown): its own takes its place. */
   private standIn = '';
   private worker: Worker | null = null;
+  private readonly consumption = new Consumption();
+  private consumptionBoundary: Promise<ConsumptionResult> | null = null;
+  private consumptionResult: ConsumptionResult | null = null;
   private repo: string;
   /** What was run here, newest last. */
   readonly runs: Run[] = [];
@@ -584,14 +588,20 @@ export class Session implements Prompt {
   /** What the Worker says. */
   private fromWorker(data: MessageEvent['data']) {
     this.activity.heard = Date.now();
+    if (this.consumption.closed && (data.type === 'output' || data.type === 'changes' || data.type === 'output-boundary')) {
+      this.end(() => t('Halted: {message}', {message: 'Data arrived after the final output boundary'}));
+      return;
+    }
     switch (data.type) {
       case 'output':
         // (Written before a key flushed it: taken in, not shown.)
         if ((data.epoch ?? 0) >= this.epoch) this.received(this.decoder.decode(data.bytes, {stream: true}));
+        this.consumption.output(data.bytes.length, (data.epoch ?? 0) < this.epoch);
         this.drained(data.bytes.length);
         break;
       case 'tty': this.setTty(data); break;
-      case 'changes': void this.copy.write(data); break; // Errors are reported by the existing writeback sink; not an output-drain acknowledgement.
+      case 'changes': this.consumption.write(this.copy.write(data)); break;
+      case 'output-boundary': this.consumptionBoundary = this.consumption.boundary(data.sentBytes); break;
       // Code its shell reached later, a program of the root it translated and the code that reached later, and what it
       // read of what was kept: kept for the Prompts after it, and counted as used.
       case 'more': keepMore(data.path, data.from, data.more); break;
@@ -766,6 +776,14 @@ export class Session implements Prompt {
         this.sayEnded(false);
       });
     }
+    if (this.consumptionBoundary) void this.consumptionBoundary.then(result => {
+      this.consumptionResult = result;
+      if (generation !== this.retirementGeneration || this.restarting) return;
+      if (result.prefixReceived && result.storeAccepted) return;
+      const detail = !result.prefixReceived ? 'Final output prefix was not received completely' : 'Repository writeback did not complete successfully';
+      this.why = [this.why, detail].filter(Boolean).join('\n');
+      this.sayEnded(false);
+    });
     this.measuring?.stop();
     this.measuring = null;
     this.native?.forget();

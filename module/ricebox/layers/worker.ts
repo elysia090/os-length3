@@ -256,6 +256,7 @@ let rawKeys = false;
 
 /** The kernel paused (here: every thread waits or it ended, `r` as pump says): what the shell changed, and why it waits. */
 function paused(r: Pumped): Said {
+  if (publishingOutput) throw new Error('Output publication is already active; cannot establish a final boundary');
   if (!lifetime.accepting) return said(r, withPacks(kernel!.held()), performance.now(), false);
   const k = kernel!;
   // What the shell changed goes before what it printed (send reports it first): a page that has the prompt back has
@@ -264,6 +265,11 @@ function paused(r: Pumped): Said {
   send();
   told();
   const m = said(r, withPacks(k.held()), performance.now(), (keep?.reading() ?? 0) > 0);
+  if (!lifetime.accepting) return m;
+  if (m.type === 'exit' && !outputBoundarySent) {
+    outputBoundarySent = true; // Before posting: an ambiguous send must not be retried.
+    self.postMessage({type: 'output-boundary', sentBytes: publishedOutputBytes});
+  }
   if (!lifetime.accepting) return m;
   self.postMessage(m);
   if (!lifetime.accepting) return m;
@@ -279,14 +285,14 @@ function paused(r: Pumped): Said {
  * (repo-copy.ts), so a page that has heard the pause, and shows the line done, has what the line wrote, a reload or not.
  */
 function report(): void {
-  if (!lifetime.accepting) return;
+  if (outputBoundarySent || !lifetime.accepting) return;
   const c = mirror?.changes();
   if (c) self.postMessage({type: 'changes', ...c}, moved(...c.files.filter((f) => f.bytes).map((f) => f.bytes)));
 }
 
 /** What was translated here or reached later since it was last said. */
 function told(): void {
-  if (!lifetime.accepting) return;
+  if (outputBoundarySent || !lifetime.accepting) return;
   observations.publish(kernel?.images.values() ?? [], (message, options) => self.postMessage(message, options));
 }
 
@@ -295,6 +301,7 @@ let waking: ReturnType<typeof setTimeout> | undefined;
 function pump(): void {
   if (!lifetime.accepting) return;
   try {
+    if (publishingOutput) throw new Error('Output publication is already active; cannot reenter execution');
     const m = paused(kernel!.pump());
     // A process that sleeps goes on when its time comes, input or not.
     clearTimeout(waking);
@@ -326,7 +333,7 @@ function given(k: Kernel, files: Program[]): void {
 }
 
 /** Something came from outside (input, Ctrl-C): the kernel looks again. */
-const nudge = (): void => { if (!kernel) return; clearTimeout(idle); waitingInput = false; if (kernel instanceof RemoteKernel) kernel.kick(); else pump(); };
+const nudge = (): void => { if (outputBoundarySent || !kernel) return; clearTimeout(idle); waitingInput = false; if (kernel instanceof RemoteKernel) kernel.kick(); else pump(); };
 
 /**
  * Output on its way to the page and not yet taken in there (it says how much it took, 'drained', once a frame): past
@@ -335,6 +342,10 @@ const nudge = (): void => { if (!kernel) return; clearTimeout(idle); waitingInpu
  */
 const ON_ITS_WAY_MOST = 1 << 20;
 let onItsWay = 0;
+let publishedOutputBytes = 0;
+let outputBoundarySent = false;
+let publishingOutput = false;
+let abandonedAfterBoundary = 0;
 
 /**
  * Output gathered before it goes to the page. A terminal's stdout is written a line at a time, and each line sent as a
@@ -352,22 +363,31 @@ let gathered: Uint8Array[] = [], gatheredBytes = 0, gatheredFd = 1, sentAt = -In
  */
 let epoch = 0;
 function send(): void {
-  if (!lifetime.accepting || !gatheredBytes) return;
-  // What the shell changed goes before anything it printed after: a page that shows a line has what it wrote before.
-  report();
-  if (!lifetime.accepting) return;
-  let bytes = gathered[0];
-  if (gathered.length > 1) {
-    bytes = new Uint8Array(gatheredBytes);
-    let at = 0;
-    for (const b of gathered) { bytes.set(b, at); at += b.length; }
-  }
-  self.postMessage({type: 'output', fd: gatheredFd, bytes, epoch}, moved(bytes));
-  gathered = [];
-  gatheredBytes = 0;
-  sentAt = performance.now();
+  if (publishingOutput) throw new Error('Output publication is already active');
+  if (outputBoundarySent || !lifetime.accepting || !gatheredBytes) return;
+  publishingOutput = true;
+  try {
+    // What the shell changed goes before anything it printed after: a page that shows a line has what it wrote before.
+    report();
+    if (!lifetime.accepting) return;
+    let bytes = gathered[0];
+    if (gathered.length > 1) {
+      bytes = new Uint8Array(gatheredBytes);
+      let at = 0;
+      for (const b of gathered) { bytes.set(b, at); at += b.length; }
+    }
+    if (!Number.isSafeInteger(publishedOutputBytes + bytes.length)) throw new Error('Output byte count exhausted');
+    const count = bytes.length;
+    self.postMessage({type: 'output', fd: gatheredFd, bytes, epoch}, moved(bytes));
+    publishedOutputBytes += count;
+    gathered = [];
+    gatheredBytes = 0;
+    sentAt = performance.now();
+  } finally { publishingOutput = false; }
 }
 function gather(fd: number, bytes: Uint8Array): void {
+  if (publishingOutput) throw new Error('Output publication is already active');
+  if (outputBoundarySent) { abandonedAfterBoundary += bytes.length; return; }
   onItsWay += bytes.length;
   if (fd !== gatheredFd) { send(); gatheredFd = fd; }
   gathered.push(bytes);
@@ -394,12 +414,14 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     observations.close(); observerOwner.release();
     mirror = null; mirrorOwner?.release(); mirrorOwner = null;
     if (gatheredBytes) lifetime.observe('pending-output');
+    if (abandonedAfterBoundary) errors.push(new Error(`${abandonedAfterBoundary} output bytes were abandoned after the final boundary`));
     // This acknowledges admission closure, not stopped Workers or tree disposal.
     self.postMessage({type: 'retiring', owners: lifetime.snapshot(), failures: errors.map(error => error instanceof Error ? `${error.name}: ${error.message}` : String(error))});
     if (errors.length) failed(new AggregateError(errors, 'Worker retirement failed'));
     return;
   }
   if (!lifetime.accepting) { failed(new Error('Worker is retiring; new work is not accepted')); return; }
+  if (outputBoundarySent && data.type !== 'drained') { failed(new Error('Worker output boundary is closed; new work is not accepted')); return; }
   const command = lifetime.enter(`command:${data.type}`);
   try {
     if (data.type === 'drained') {

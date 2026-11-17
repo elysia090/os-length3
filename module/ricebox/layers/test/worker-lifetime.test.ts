@@ -108,3 +108,61 @@ test('real core preparation completing after freeze remains an unresolved prepar
     if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
   }
 });
+
+test('actual muk exit publishes one ordered byte boundary before exit and rejects later production', {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
+  const {readFileSync} = await import('node:fs');
+  const messages: {type: string; bytes?: Uint8Array; sentBytes?: number; message?: string}[] = [];
+  let finish!: () => void;
+  const done = new Promise<void>(resolve => { finish = resolve; });
+  const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) {
+    messages.push(message); if (message.type === 'exit' || message.type === 'error') finish();
+  }};
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'self');
+  Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await import(new URL('../worker.ts?natural-output-boundary', import.meta.url).href);
+    await host.onmessage!({data: {type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), box: {config: '{}', words: []}, cwd: '/', mirror: '/run/box'}});
+    await Promise.race([done, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('guest did not exit')), 10_000); })]);
+    const boundaries = messages.filter(m => m.type === 'output-boundary');
+    assert.equal(boundaries.length, 1, JSON.stringify(messages.map(m => ({type: m.type, message: m.message}))));
+    const boundaryAt = messages.findIndex(m => m.type === 'output-boundary'), exitAt = messages.findIndex(m => m.type === 'exit');
+    assert.ok(boundaryAt < exitAt);
+    assert.equal(boundaries[0].sentBytes, messages.slice(0, boundaryAt).reduce((n, m) => n + (m.type === 'output' ? m.bytes!.length : 0), 0));
+    assert.ok(messages.some(m => m.type === 'changes'));
+    assert.ok(messages.some(m => m.type === 'output'));
+    await host.onmessage!({data: {type: 'input', bytes: new Uint8Array([1])}});
+    assert.match(messages.at(-1)?.message ?? '', /boundary is closed/);
+    assert.ok(messages.slice(boundaryAt + 1).every(m => m.type !== 'output' && m.type !== 'changes'));
+  } finally {
+    clearTimeout(timer); await host.onmessage?.({data: {type: 'retire'}});
+    if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+  }
+});
+
+test('output-send reentry cannot establish a boundary before the send commits its bytes', {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
+  const {readFileSync} = await import('node:fs');
+  const messages: {type: string; bytes?: Uint8Array; sentBytes?: number; message?: string}[] = [];
+  let reentered = false, nested: Promise<void> | undefined;
+  const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) {
+    messages.push(message);
+    if (message.type === 'output' && !reentered) { reentered = true; nested = host.onmessage!({data: {type: 'drained', n: 0}}); }
+  }};
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'self'), inline = process.env.SODS_INLINE;
+  Object.defineProperty(globalThis, 'self', {value: host, configurable: true}); process.env.SODS_INLINE = '1';
+  try {
+    await import(new URL('../worker.ts?output-send-reentry', import.meta.url).href);
+    await host.onmessage!({data: {type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), box: {config: '{}', words: []}, cwd: '/'}});
+    await nested;
+    assert.equal(reentered, true);
+    assert.ok(messages.some(m => m.type === 'error' && /already active/.test(m.message ?? '')));
+    const boundaryAt = messages.findIndex(m => m.type === 'output-boundary');
+    assert.ok(boundaryAt >= 0);
+    assert.equal(messages[boundaryAt].sentBytes, messages.slice(0, boundaryAt).reduce((n, m) => n + (m.type === 'output' ? m.bytes!.length : 0), 0));
+    assert.equal(messages.filter(m => m.type === 'output-boundary').length, 1);
+  } finally {
+    await host.onmessage?.({data: {type: 'retire'}});
+    if (inline === undefined) delete process.env.SODS_INLINE; else process.env.SODS_INLINE = inline;
+    if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+  }
+});
