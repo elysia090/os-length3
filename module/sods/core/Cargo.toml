@@ -6,3 +6,6 @@ publish = false
 description = "Portable execution-core contracts for sods"
 
 [workspace]
+
+[lib]
+crate-type = ["rlib", "cdylib"]

@@ -3,3 +3,6 @@
 //! This first unit validates the private byte-effect representation. It does not
 //! yet implement the kernel, allocate exported slots, or enforce mapping pins.
 pub mod byte_effect;
+pub mod files;
+#[cfg(target_arch = "wasm32")]
+mod web_files;
