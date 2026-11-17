@@ -6,7 +6,7 @@
 // Each namespace has a number and a file by it (/proc/PID/ns/NAME leads there): two that are one namespace are one
 // file, and one held open is a namespace kept, to be joined.
 
-import {File, Mount, Super} from './fs.ts';
+import {E, File, FsError, Mount, Super} from './fs.ts';
 import type {Place} from './fs.ts';
 import {HOST, spaceId, type UserNs} from './cred.ts';
 import type {Space} from './mount.ts';
@@ -115,6 +115,9 @@ export class PidNs implements Named {
   /** Its first process's own number (the kernel's), once it has one; and whether that one has ended. */
   init = 0;
   ended = false;
+  /** Number 1 was consumed by a failed registration. Refuse new reservations
+   * while init is absent; do not revoke existing reservations or mark init dead. */
+  firstReservationFailed = false;
   /** Its /proc, once one is mounted (procfs.ts): the one file system however often. */
   proc: Super | null = null;
   declare readonly owner: UserNs;
@@ -123,8 +126,24 @@ export class PidNs implements Named {
 
 /** The numbers something has: in the namespace it was made in (the last), and in each above it (the first is the kernel's own). */
 export interface Numbered { readonly space: PidNs; readonly nrs: readonly number[] }
+/** New-reservation admission only; an already reserved process may still be
+ * pending. Root global IDs have no first-init reservation gate. */
+export function pidReservationAllowed(space: PidNs): boolean {
+  for (let ns: PidNs | null = space; ns?.parent; ns = ns.parent) {
+    if (ns.firstReservationFailed && !ns.init) return false;
+  }
+  return true;
+}
+/** Preserve the failure fact even when lookup retirement was unconfirmed. */
+export function failedInitialReservation(space: PidNs, nrs: readonly number[]): void {
+  for (let ns: PidNs | null = space; ns?.parent; ns = ns.parent) {
+    if (nrs[ns.level] === 1) ns.firstReservationFailed = true;
+  }
+}
+
 /** Numbers for one made in `space`: the next in it, and in each namespace above (the first's is the kernel's own, and is kept by none). */
 export function number(space: PidNs): number[] {
+  if (!pidReservationAllowed(space)) throw new FsError(E.NOMEM);
   const nrs: number[] = [];
   for (let ns: PidNs | null = space; ns; ns = ns.parent) nrs[ns.level] = ++ns.last;
   let attempted: PidNs | null = null;
@@ -134,6 +153,7 @@ export function number(space: PidNs): number[] {
       ns.numbers.set(nrs[ns.level], nrs[0]);
     }
   } catch (error) {
+    failedInitialReservation(space, nrs);
     const failures = [error];
     // Keep counters monotonic: cleanup is not PID reuse or a complete undo.
     failures.push(...discardNumberLookups(space, nrs, attempted));

@@ -1427,3 +1427,39 @@ false retains dependent inner entries. Two added cases pass (PID total 14).
 Actual inline/Node rehearsal: 2 pass; focused strict TypeScript passes.
 Independent source review confirmed the false-result correction with no further
 blocking issue. PID1 lifecycle remains undecided and unchanged.
+
+### Lost PID1 records refuse new reservations, not existing owners
+
+A bounded policy is now implemented instead of resetting counters or reusing
+ended. PidNs.firstReservationFailed records failure of a registration that
+consumed local number 1. It is distinct from init exit and is retained even if
+lookup cleanup fails. Before number() increments any counter it checks all
+nested ancestors: failure recorded plus absent init refuses new reservations
+with ENOMEM. Root global ID consumption is not this gate. Kernel outer
+registration failure records the same fact. No existing init, ended flag, or
+other owner's lookups are changed.
+
+Clone checks this admission before namespace construction, including NEWPID
+(which must not bypass an unavailable ancestor), after sync reentry, and in the
+thread branch before mount copying. Established init owners are not revoked by
+recording a failure. This is deliberately new-reservation admission, NOT whole
+namespace fail-closed completion: an already reserved PID2 may still reach its
+later publication gate, and successful numbering followed by Task/Process
+failure is not classified by this registration-failure record. Those publication
+and lifetime contracts remain unfinished.
+
+Alternatives rejected: rewinding counters can reuse observed identities; using
+ended conflates reservation failure with an executed init's death and can revoke
+new owners. The chosen policy trades availability of an uninitialized namespace
+following a failed first registration for avoiding ordinary retry creating a
+silent init2. No claim of transparent retry or complete Linux compatibility is
+made for that exceptional path.
+
+PID 17 and Task 9 pass; family 45 pass. Coverage includes target and ancestor
+admission, counter stability, cleanup failure still recording the loss, reentrant
+established init ownership remaining intact, process/NEWPID/thread refusal before
+mount copying. Existing failure tests now expect admission refusal instead of
+retry number 2. Checks add O(namespace depth) scalar inspection, not mapping/file
+scans or payload copies; this is necessary ancestor admission work, not zero-cost
+safety. Independent source review found no blocking issue for this limited gate.
+Actual inline/Node rehearsal: 2 pass; focused strict TypeScript passes.

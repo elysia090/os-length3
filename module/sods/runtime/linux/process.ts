@@ -35,7 +35,7 @@ import type {Dir, Mapping, Place, Super} from './fs.ts';
 import {E, File, FsError, Link, MNT, Mount, Vfs, pathOf, walk} from './fs.ts';
 import {CAP, HOST, MAY, ROOT, asProgram, capable, idIn, may, type Cred} from './cred.ts';
 import {copy, firstSpace, put, retireInitialTree} from './mount.ts';
-import {CgroupNs, Fs, byNr, discardNumberLookups, firstSpaces, forget, namespaceWasExposed, nrIn, number, type Numbers, type PidNs, type Spaces} from './space.ts';
+import {CgroupNs, Fs, byNr, discardNumberLookups, failedInitialReservation, firstSpaces, forget, namespaceWasExposed, nrIn, number, type Numbers, type PidNs, type Spaces} from './space.ts';
 import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
 import {GuestBytes, GuestView} from './guest.ts';
 import {FILE_CALLS} from './sys-file.ts';
@@ -826,6 +826,7 @@ export class Kernel implements Kern {
           forget(this.numbers, used);
         }
       } catch (error) {
+        failedInitialReservation(space, nrs);
         const failures = [error];
         let owns = false;
         try {

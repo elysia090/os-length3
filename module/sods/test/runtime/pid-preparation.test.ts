@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {PidNs, number} from '../../runtime/linux/space.ts';
 import {ROOT} from '../../runtime/linux/cred.ts';
+import {E, FsError} from '../../runtime/linux/fs.ts';
 
 function spaces() {
   const root = new PidNs(null, ROOT.ns), middle = new PidNs(root, ROOT.ns), leaf = new PidNs(middle, ROOT.ns);
@@ -15,7 +16,8 @@ for (const afterSet of [false, true]) test(`failed PID registration removes only
   assert.equal(leaf.numbers.size, 0); assert.equal(middle.numbers.size, 0);
   assert.deepEqual([root.last, middle.last, leaf.last], [1, 1, 1], 'consumed identities are not rewound/reused');
   middle.numbers.set = set;
-  assert.deepEqual(number(leaf), [2, 2, 2]);
+  assert.throws(() => number(leaf), e => e instanceof FsError && e.errno === E.NOMEM);
+  assert.deepEqual([root.last, middle.last, leaf.last], [1, 1, 1]);
 });
 
 test('PID cleanup continues after one removal fails and preserves both failures', () => {
@@ -107,4 +109,37 @@ test('PID pruning failure removes the new reservation without undoing accepted o
   assert.throws(() => k.numbered(p), error => error === original);
   assert.equal(k.numbers.has(10), false); assert.equal(k.numbers.has(11), true);
   assert.equal(k.numbers.has(1), false); assert.equal(ns.numbers.size, 0);
+});
+
+test('first reservation failure in an ancestor rejects a fresh descendant before counters change', () => {
+  const {root, middle, leaf} = spaces();
+  middle.firstReservationFailed = true;
+  const before = [root.last, middle.last, leaf.last];
+  assert.throws(() => number(leaf), e => e instanceof FsError && e.errno === E.NOMEM);
+  assert.deepEqual([root.last, middle.last, leaf.last], before);
+  assert.equal(leaf.numbers.size, 0); assert.equal(root.firstReservationFailed, false);
+});
+
+test('failure admission never marks an established init ended or replaces its owner', () => {
+  const {root, middle, leaf} = spaces(), original = new Error('registration refused');
+  const set = middle.numbers.set.bind(middle.numbers);
+  middle.numbers.set = () => { leaf.init = 99; middle.init = 88; throw original; };
+  assert.throws(() => number(leaf), e => e === original);
+  assert.equal(leaf.firstReservationFailed, true); assert.equal(middle.firstReservationFailed, true);
+  assert.deepEqual([leaf.init, middle.init, leaf.ended, middle.ended], [99, 88, false, false]);
+  assert.equal(root.firstReservationFailed, false);
+  middle.numbers.set = set;
+  assert.deepEqual(number(leaf), [2, 2, 2], 'established init owners are not revoked by the failure record');
+});
+
+test('lookup cleanup failure still records lost first reservation admission', () => {
+  const {root, middle, leaf} = spaces();
+  middle.numbers.set = () => { throw new Error('set refused'); };
+  leaf.numbers.delete = () => { throw new Error('cleanup refused'); };
+  assert.throws(() => number(leaf), AggregateError);
+  assert.equal(leaf.firstReservationFailed, true); assert.equal(middle.firstReservationFailed, true);
+  assert.equal(root.firstReservationFailed, false);
+  const last = [root.last, middle.last, leaf.last];
+  assert.throws(() => number(leaf), e => e instanceof FsError && e.errno === E.NOMEM);
+  assert.deepEqual([root.last, middle.last, leaf.last], last);
 });

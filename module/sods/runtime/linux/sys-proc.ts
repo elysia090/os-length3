@@ -8,7 +8,7 @@ import {CAP, CAP_LAST, MAY, UserNs, asUser, capable, idIn, idOf, inNew, may, sho
 import {cgroupOf, room, type Cgroup} from './cgroup.ts';
 import {copySpace} from './mount.ts';
 import {down} from './fs.ts';
-import {CgroupNs, Ipc, NS, Net, PidNs, Uts, byNr, nrIn, spaceOf, withSpaces, type Spaces} from './space.ts';
+import {CgroupNs, Ipc, NS, Net, PidNs, Uts, byNr, nrIn, pidReservationAllowed, spaceOf, withSpaces, type Spaces} from './space.ts';
 import {move, zero} from './bulk.ts';
 import {answerTime, clocks, cpuClock, cpuOf} from './clock.ts';
 import {E, File, FsError} from './fs.ts';
@@ -212,6 +212,7 @@ function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number
     if (flags & NS.mnt && flags & CLONE.FS) fail(E.INVAL);
     // (a thread may be made in namespaces of its own, but for the users' and the processes')
     const c = flags & NEW ? namespaceCredentials(p, flags) : null;
+    if (!pidReservationAllowed(p.pidns)) fail(E.NOMEM);
     if (!room(p.cgroup)) fail(E.AGAIN);
     const how = c ? spaces(p, flags, c) : null;
     const nt = p.newThread(t.resumeAt, stack, flags & CLONE.SETTLS ? tls : null);
@@ -232,7 +233,7 @@ function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number
     const c = flags & NEW ? namespaceCredentials(p, flags) : null;
     // A requested new PID namespace starts unended; otherwise preserve the
     // existing namespace refusal before the cgroup check.
-    if (!(flags & NS.pid) && p.ns.children.ended) fail(E.NOMEM);
+    if ((!(flags & NS.pid) && p.ns.children.ended) || !pidReservationAllowed(p.ns.children)) fail(E.NOMEM);
     if (!room(into ?? p.cgroup)) fail(E.AGAIN);
     const parentUnchanged = forkIdentity(p);
     const prepared: {how: ReturnType<typeof spaces> | null; consumed: boolean} = {how: null, consumed: false};
@@ -241,7 +242,7 @@ function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number
       prepared.consumed = true;
       parentUnchanged(); // Also covers an override changing inputs before super.
       // Publication may consume capacity/end a namespace through host reentry.
-      if (!(flags & NS.pid) && p.ns.children.ended) fail(E.NOMEM);
+      if ((!(flags & NS.pid) && p.ns.children.ended) || !pidReservationAllowed(p.ns.children)) fail(E.NOMEM);
       if (!room(into ?? p.cgroup)) fail(E.AGAIN);
       prepared.how = c ? spaces(p, flags, c) : {ns: p.ns, cred: p.cred, made: null};
       return prepared.how;

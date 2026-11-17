@@ -440,3 +440,23 @@ test('override input replacement plus early sync refusal preserves both failures
   });
   assert.deepEqual(point.covered, before); assert.equal(p.kernel.procs.size, 1);
 });
+
+for (const newPid of [false, true]) test(`lost initial PID admission refuses before namespace copy or sync, new PID=${newPid}`, async () => {
+  const {PidNs} = await import('../../runtime/linux/space.ts');
+  const p = first(), ns = new PidNs(p.ns.children, p.cred.ns);
+  ns.firstReservationFailed = true; p.ns = {...p.ns, children: ns};
+  let syncs = 0; p.syncShared = () => { syncs++; };
+  const point = p.kernel.vfs.root.entries.get('proc')!, before = [...point.covered!];
+  assert.equal(call(p, CLONE, CLONE_VM | SIGCHLD | 0x20000 | (newPid ? 0x20000000 : 0)), -12n);
+  assert.equal(syncs, 0); assert.deepEqual(point.covered, before);
+  assert.equal(ns.last, 0); assert.equal(ns.ended, false);
+});
+
+test('thread clone checks lost initial PID admission before a mount copy', async () => {
+  const {PidNs} = await import('../../runtime/linux/space.ts');
+  const p = first(), ns = new PidNs(p.ns.children, p.cred.ns);
+  Object.assign(p, {pidns: ns}); p.ns = {...p.ns, children: ns}; ns.firstReservationFailed = true;
+  const point = p.kernel.vfs.root.entries.get('proc')!, before = [...point.covered!];
+  assert.equal(call(p, CLONE, CLONE_VM | 0x10000 | 0x800 | 0x20000), -12n);
+  assert.deepEqual(point.covered, before); assert.equal(ns.last, 0);
+});
