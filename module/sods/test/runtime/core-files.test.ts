@@ -12,6 +12,11 @@ test('real Rust Wasm owns payloads across growth, failure and closed handles', {
   const a = files.create(input);
   input.fill(120);
   assert.equal(dec.decode(a.read(0, 99)), 'old');
+  const into = new Uint8Array(5).fill(33);
+  assert.equal(a.readInto(1, into, 2, 99), 2);
+  assert.deepEqual([...into], [33, 33, 108, 100, 33]);
+  assert.throws(() => a.readInto(0, into, 4, 3), RangeError);
+  assert.equal(a.readInto(99, into, 5, 1), 0);
   const old = a.read(0, 99);
   a.write(5, enc.encode('z'));
   assert.deepEqual(a.read(0, 99), new Uint8Array([111, 108, 100, 0, 0, 122]));

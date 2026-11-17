@@ -157,6 +157,17 @@ export class File extends Node {
     if (this.maps) this.settle(start, end);
     return this.data.subarray(start, Math.min(end, this.size));
   }
+  /** Copy a range into a caller-owned destination, returning the bytes copied.
+   * No file view escapes. The destination must fit the actual bytes read; a
+   * failed copy does not report success to a syscall or advance its offset.
+   * This separates consuming reads from legacy mutable read/data views and
+   * retained share/bytes snapshots; it does not change those APIs' semantics.
+   */
+  readInto(start: number, into: Uint8Array, at: number, length: number): number {
+    const bytes = this.read(start, start + length);
+    into.set(bytes, at);
+    return bytes.length;
+  }
   /** The exact contents as a view, not a copy: a later write changes a copy, never what was handed out. */
   share(): Uint8Array {
     if (this.maps) this.settle();

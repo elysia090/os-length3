@@ -16,6 +16,7 @@ interface Core extends WebAssembly.Exports {
 }
 export interface CoreFile {
   read(at: number, length: number): Uint8Array<ArrayBuffer>;
+  readInto(start: number, into: Uint8Array, at: number, length: number): number;
   write(at: number, bytes: Uint8Array): void;
   truncate(length: number): void;
   close(): void;
@@ -60,6 +61,14 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
       const live = () => { if (closed) throw new Error('File handle is closed'); };
       return {
         read(at, length) { live(); check(core.files_read(id, uint(at), uint(length))); return view().slice(); },
+        readInto(start, into, at, length) {
+          live(); uint(start); uint(at); uint(length);
+          check(core.files_read(id, start, length));
+          const bytes = view();
+          // No host callback or escaping scratch view between export and copy.
+          Uint8Array.prototype.set.call(into, bytes, at);
+          return bytes.length;
+        },
         write(at, bytes) { live(); uint(at); input(bytes); live(); check(core.files_write(id, at)); },
         truncate(length) { live(); check(core.files_truncate(id, uint(length))); },
         close() { if (!closed) { check(core.files_close(id)); closed = true; } },

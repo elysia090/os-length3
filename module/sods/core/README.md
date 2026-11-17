@@ -71,3 +71,20 @@ this is not a quota against arbitrary hostile embedding objects or allocations.
 Use an artifact built from the same matching crate revision. The v1 export check
 rejects unknown versions but is not code authentication or exhaustive export/schema
 validation. This API is not a sandbox for arbitrary supplied Wasm modules.
+
+## Consuming-read migration boundary
+
+The existing Vfs file syscall now calls `File.readInto` rather than obtaining an
+escaping file view. Legacy TS `read`/`data`/`share` retain their current behavior. Raw-alias
+overlap tests preserve legacy behavior, not a supported mediated mutation contract.
+The Rust facade offers the same consuming-copy shape: file → core scratch → caller
+destination, without the extra output snapshot allocation of `read`. It does not
+retain the destination or invoke a host callback while scratch is live.
+
+This is a shared operation boundary, **not yet a Rust-backed Vfs**. Actual Vfs and
+syscall tests cover replacement retaining the old inode through an open fd,
+independent pread offsets, partial reads before a memory boundary, and fd close not
+closing the inode. Attaching Rust payloads still requires explicit ownership scope,
+errno mapping, and mapping/loader integration. Neither namespace replacement nor
+fd close can reclaim a payload still held by another name, descriptor, mapping or
+image. No silent promotion to a TS payload or second mutable authority is added.

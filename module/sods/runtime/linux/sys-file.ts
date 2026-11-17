@@ -417,10 +417,9 @@ function readTo(p: Proc, d: Description, into: Uint8Array, at: number, length: n
     case 'file': {
       if ((d.flags & 3) === O.WRONLY) fail(E.BADF);
       const from = offset ?? d.offset;
-      const data = fileOf(d).read(from, from + length);
-      into.set(data, at);
-      if (offset === null) d.offset += data.length;
-      return data.length;
+      const n = fileOf(d).readInto(from, into, at, length);
+      if (offset === null) d.offset += n;
+      return n;
     }
     case 'dir': return fail(E.ISDIR);
     case 'socket': return net.read(p, d, into, at, length);
