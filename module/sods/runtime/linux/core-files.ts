@@ -25,27 +25,29 @@ class OwnedFile extends File {
     // A legacy mutable array must not masquerade as this inode's canonical bytes.
     Object.defineProperty(this, '_data', {get() { throw new FsError(E.OPNOTSUPP); }, set() { throw new FsError(E.OPNOTSUPP); }});
   }
-  override materialize(): void { this.live(); }
+  override materialize(): void { this.live(); this.size = payload(() => this.owned.materialize()); }
   override snapshot(start: number, end: number): Uint8Array { return this.read(start, end); }
   override get data(): Uint8Array { throw new FsError(E.OPNOTSUPP); }
   protected override range(start: number, end: number): Uint8Array {
-    this.live();
+    this.materialize();
     return payload(() => this.owned.read(start, Math.max(0, end - start)));
   }
   protected override replaceRange(at: number, bytes: Uint8Array): void {
     this.live(); payload(() => this.owned.write(at, bytes));
   }
-  override map(m: Mapping): void { this.live(); super.map(m); }
+  override map(m: Mapping): void { this.live(); payload(() => this.owned.checkIdle()); super.map(m); }
   override unmap(m: Mapping): void { this.live(); super.unmap(m); }
-  override settle(start = 0, end = this.size, only: Mapping | null = null): void { this.live(); super.settle(start, end, only); }
-  override own(): void { this.live(); }
-  override release(): number { this.live(); return 0; } // No lazy/reload source in this entrance.
-  override given(_bytes: Uint8Array): void { this.live(); }
+  override settle(start = 0, end = this.size, only: Mapping | null = null): void { this.live(); payload(() => this.owned.checkIdle()); super.settle(start, end, only); }
+  override own(): void { this.live(); payload(() => this.owned.checkIdle()); }
+  override release(): number { this.live(); payload(() => this.owned.checkIdle()); return 0; } // No eviction/reload in this entrance.
+  override given(_bytes: Uint8Array): void { this.live(); payload(() => this.owned.checkIdle()); }
   override share(): Uint8Array { return this.bytes(); }
-  override bytes(): Uint8Array { this.live(); if (this.maps) this.settle(); return this.range(0, this.size); }
+  override bytes(): Uint8Array { this.materialize(); if (this.maps) this.settle(); return this.range(0, this.size); }
   override readInto(start: number, into: Uint8Array, at: number, length: number, ready?: () => void): number {
     this.live(); if (this.maps) this.settle(start, start + length);
-    ready?.(); // Before entering core scratch; no callback is passed into the core facade.
+    try { this.materialize(); }
+    catch (error) { ready?.(); throw error; }
+    ready?.(); // After loading, before core read scratch. No callback crosses the lease.
     return payload(() => this.owned.readInto(start, into, at, length));
   }
   override write(at: number, bytes: Uint8Array): void {
@@ -53,6 +55,7 @@ class OwnedFile extends File {
     if (!Number.isInteger(at) || at < 0) throw new FsError(E.INVAL);
     if (at > this.limit || bytes.length > this.limit - at) throw new FsError(E.FBIG);
     // One stable value is committed and propagated, even for shared host input.
+    this.materialize();
     const accepted = new Uint8Array(bytes);
     payload(() => this.owned.write(at, accepted));
     this.size = Math.max(this.size, at + accepted.length);
@@ -64,6 +67,7 @@ class OwnedFile extends File {
     this.live();
     if (!Number.isInteger(length) || length < 0) throw new FsError(E.INVAL);
     if (length > FILE_MOST) throw new FsError(E.FBIG);
+    this.materialize();
     if (this.maps) this.settle();
     const was = this.size;
     payload(() => this.owned.truncate(length));
@@ -99,6 +103,20 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
         const inode = new OwnedFile(file, bytes.length, mode, live, maxFileBytes);
         held.add(file);
         dir.entries.set(path.slice(at + 1), inode);
+        return inode;
+      } catch (e) { held.delete(file); file.close(); throw e; }
+    },
+    /** Explicit lazy entrance. Rust owns source/attempt state; TS keeps only the host capability. */
+    lazyFile(vfs: Vfs, path: string, loader: () => Uint8Array, mode = 0o644): File {
+      live();
+      const at = path.lastIndexOf('/'), dir = vfs.mkdirp(path.slice(0, at));
+      const file = payload(() => store.createLazy(() => {
+        try { return loader(); }
+        catch { throw new FsError(E.IO); }
+      }));
+      try {
+        const inode = new OwnedFile(file, 0, mode, live, maxFileBytes);
+        held.add(file); dir.entries.set(path.slice(at + 1), inode);
         return inode;
       } catch (e) { held.delete(file); file.close(); throw e; }
     },

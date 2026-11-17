@@ -20,6 +20,7 @@ fn error(e: Error) -> i32 {
         Error::Exhausted => -4,
         Error::Busy => -6,
         Error::BadCompletion => -7,
+        Error::LoadConflict => -8,
     }
 }
 fn with(f: impl FnOnce(&mut State) -> Result<i32, Error>) -> i32 {
@@ -36,7 +37,7 @@ fn idle(f: impl FnOnce(&mut State) -> Result<i32, Error>) -> i32 {
 }
 #[no_mangle]
 pub extern "C" fn files_abi_version() -> u32 {
-    2
+    3
 }
 #[no_mangle]
 pub extern "C" fn files_init(limit: u32) -> i32 {
@@ -146,5 +147,61 @@ pub extern "C" fn files_read_finish(operation: u32, outcome: u32, count: u32) ->
             _ => return Err(Error::BadCompletion),
         };
         s.reads.finish(operation, result).map(|n| n as i32)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn files_create_lazy(source: u32) -> i32 {
+    idle(|s| {
+        s.input = false;
+        s.files.create_lazy(source).map(|id| id as i32)
+    })
+}
+#[no_mangle]
+pub extern "C" fn files_load_begin(id: u32) -> i32 {
+    idle(|s| {
+        s.input = false;
+        s.files.load_begin(id).map(|op| op as i32)
+    })
+}
+#[no_mangle]
+pub extern "C" fn files_load_source(id: u32) -> i32 {
+    with(|s| s.files.load_source(id).map(|source| source as i32))
+}
+#[no_mangle]
+pub extern "C" fn files_load_finish(id: u32, operation: u32, outcome: u32) -> i32 {
+    idle(|s| {
+        if outcome > 1 {
+            return Err(Error::BadCompletion);
+        }
+        let success = outcome == 0;
+        if success && !s.input {
+            return Err(Error::BadCompletion);
+        }
+        s.input = false;
+        s.files.load_finish(
+            id,
+            operation,
+            success,
+            if success { &s.scratch } else { &[] },
+        )?;
+        if success {
+            s.files.size(id).map(|n| n as i32)
+        } else {
+            Ok(0)
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn files_size(id: u32) -> i32 {
+    with(|s| s.files.size(id).map(|n| n as i32))
+}
+
+#[no_mangle]
+pub extern "C" fn files_load_check(id: u32) -> i32 {
+    with(|s| {
+        s.files.load_check(id)?;
+        Ok(0)
     })
 }

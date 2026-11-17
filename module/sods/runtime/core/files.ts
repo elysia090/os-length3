@@ -9,6 +9,12 @@ interface Core extends WebAssembly.Exports {
   files_ptr(): number;
   files_len(): number;
   files_create(): number;
+  files_create_lazy(source: number): number;
+  files_load_begin(id: number): number;
+  files_load_source(id: number): number;
+  files_load_finish(id: number, operation: number, outcome: number): number;
+  files_size(id: number): number;
+  files_load_check(id: number): number;
   files_write(id: number, at: number): number;
   files_read_begin(id: number, at: number, length: number): number;
   files_read_finish(operation: number, outcome: number, count: number): number;
@@ -16,6 +22,8 @@ interface Core extends WebAssembly.Exports {
   files_close(id: number): number;
 }
 export interface CoreFile {
+  materialize(): number;
+  checkIdle(): void;
   read(at: number, length: number): Uint8Array<ArrayBuffer>;
   readInto(start: number, into: Uint8Array, at: number, length: number): number;
   write(at: number, bytes: Uint8Array): void;
@@ -40,7 +48,7 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
   if (maxFileBytes > 0x7fffffff) throw new RangeError('File limit exceeds supported length');
   const module = source instanceof WebAssembly.Module ? source : await WebAssembly.compile(source);
   const core = new WebAssembly.Instance(module, {}).exports as Core;
-  if (typeof core.files_abi_version !== 'function' || core.files_abi_version() !== 2) throw new Error('Unsupported core files ABI');
+  if (typeof core.files_abi_version !== 'function' || core.files_abi_version() !== 3) throw new Error('Unsupported core files ABI');
   check(core.files_init(maxFileBytes));
   const view = (): Uint8Array<ArrayBuffer> => {
     const offset = core.files_ptr() >>> 0, length = core.files_len() >>> 0;
@@ -64,15 +72,44 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
     catch (cleanup) { throw new AggregateError([error, cleanup], 'Core read failed and its lease could not be retired'); }
     throw error;
   };
-  return {
-    create(bytes: Uint8Array): CoreFile {
-      input(bytes);
-      const id = check(core.files_create());
+  const sources = new Map<number, () => Uint8Array>();
+  let nextSource = 1;
+  const handle = (id: number): CoreFile => {
       let closed = false;
       const live = () => { if (closed) throw new Error('File handle is closed'); };
-      return {
-        read(at, length) {
+      const materialize = (): number => {
+        live();
+        const operation = check(core.files_load_begin(id));
+        if (!operation) return check(core.files_size(id));
+        const source = check(core.files_load_source(id));
+        try {
+          const loader = sources.get(source);
+          if (!loader) throw new Error('Missing core file source');
+          const bytes = loader();
+          // Input capture happens after the callback, with no read scratch lease.
           live();
+          if (bytes.byteLength > maxFileBytes) throw new CoreFileError(-2);
+          input(bytes); live();
+        } catch (error) {
+          // Closed slots already retired their attempt. Otherwise preparation
+          // failure must explicitly abort before an independent retry is possible.
+          if (!closed) {
+            try { check(core.files_load_finish(id, operation, 1)); }
+            catch (cleanup) { throw new AggregateError([error, cleanup], 'Core load failed and its attempt could not be retired'); }
+          }
+          throw error;
+        }
+        // Matching finish retires on success, poison and allocation/size failure.
+        // Do not mistake a second abort's BadCompletion for a cleanup failure.
+        const size = check(core.files_load_finish(id, operation, 0));
+        sources.delete(source);
+        return size;
+      };
+      return {
+        materialize,
+        checkIdle() { live(); check(core.files_load_check(id)); },
+        read(at, length) {
+          materialize();
           const operation = check(core.files_read_begin(id, uint(at), uint(length)));
           try {
             const result = view().slice();
@@ -81,7 +118,7 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
           } catch (error) { abort(operation, error); }
         },
         readInto(start, into, at, length) {
-          live(); uint(start); uint(at); uint(length);
+          uint(start); uint(at); uint(length); materialize();
           const operation = check(core.files_read_begin(id, start, length));
           try {
             const bytes = view();
@@ -90,10 +127,25 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
             return check(core.files_read_finish(operation, 0, bytes.length));
           } catch (error) { abort(operation, error); }
         },
-        write(at, bytes) { live(); uint(at); input(bytes); live(); check(core.files_write(id, at)); },
-        truncate(length) { live(); check(core.files_truncate(id, uint(length))); },
-        close() { if (!closed) { check(core.files_close(id)); closed = true; } },
+        write(at, bytes) { live(); uint(at); materialize(); input(bytes); live(); check(core.files_write(id, at)); },
+        truncate(length) { live(); uint(length); materialize(); check(core.files_truncate(id, length)); },
+        close() {
+          if (!closed) {
+            const source = check(core.files_load_source(id));
+            check(core.files_close(id)); closed = true;
+            if (source) sources.delete(source);
+          }
+        },
       };
+  };
+  return {
+    create(bytes: Uint8Array): CoreFile { input(bytes); return handle(check(core.files_create())); },
+    createLazy(loader: () => Uint8Array): CoreFile {
+      if (nextSource > 0x7fffffff) throw new Error('Core source identities exhausted');
+      const source = nextSource++;
+      const id = check(core.files_create_lazy(source));
+      sources.set(source, loader);
+      return handle(id);
     },
   };
 }

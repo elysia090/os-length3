@@ -402,3 +402,38 @@ implementation. The real-Wasm regression covers a TS lazy source reading an
 independent Rust inode and releasing its read lease, not Rust-owned loading state.
 Rust must eventually own the lazy attempt/source identity with its payload; no
 second canonical lazy state should be retained after that migration.
+
+### Stage 8: explicit Rust-owned lazy payloads (files ABI 3)
+
+`loadFileScope(...).lazyFile(vfs, path, loader)` now installs an explicitly
+Rust-owned lazy inode. The Rust slot owns payload, source identity and loading
+attempt/poison state together. TS retains only the source-token-to-host-callback
+registry and existing inode metadata. It does not maintain a second unloaded /
+loading / loaded flag; File's legacy load/reload fields stay null for these inodes.
+This opt-in entrance does not automatically migrate pack loaders or ordinary files.
+
+Load begins with a non-reused operation token. Matching success atomically adopts
+owned bytes and removes the source. Poison, failure or failed allocation retires
+the attempt but preserves the source for retry; stale completion cannot retire a
+new attempt. Close retires the slot permanently. Same-inode reentry fails even if
+caught by the loader. Different inode loads may nest: no read scratch lease is
+held across a source callback. This remains synchronous, not a remote/async waiter
+queue. Ordinary source exceptions become EIO in the inode adapter; ABI/cleanup or
+scope lifetime failures remain distinct. Process identity is checked after loading
+before readInto copies or reports accepted bytes. Loaded payload adoption itself
+is not rolled back when the requesting process was replaced.
+
+Real Wasm tests cover two-process sharing, swallowed reentry, independent nested
+load, retry, close/dispose during loading, size limits, append/truncate and
+post-callback process replacement. ABI 2 artifacts are rejected rather than
+silently falling back. Ready materialization currently requires begin plus size
+host crossings; loading adds source query, input capture and matching completion.
+Source capture still copies host bytes to an owned JS snapshot, to scratch, then
+to canonical payload (three length-n copies for an n-byte source), and
+reads still copy via scratch. These costs and retained Wasm capacity are not the
+claimed lower bound. Source/operation IDs are finite, non-reused values in `1..=2^31-1`.
+
+No source eviction/reload is offered yet (`release` remains zero); `given` does not
+replace a Rust source. Raw data/alias mutation and arbitrary overrides remain
+unsupported. Kernel namespace/FD/process/mapping state is still TS, and sendfile
+partial effects plus deferred-image contracts remain separate migration gates.
