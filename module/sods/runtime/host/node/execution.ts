@@ -5,7 +5,7 @@ export type {GuestRequest, GuestReply, GuestOutcome} from './protocol.ts';
 /** Internal only. The caller admits a prepared module (no start/active data),
  * fresh fixed shared Memory and its initialization before construction. Neither
  * the Worker nor channel nor Memory is returned to the application. */
-export function createGuest(input: {module: WebAssembly.Module; memory: WebAssembly.Memory}) {
+export function createGuest(input: {module: WebAssembly.Module; memory: WebAssembly.Memory; stackPointer?: bigint}) {
   const channel = new SharedArrayBuffer(SLOT_BYTES);
   const control = new Int32Array(channel, 0, 2), words = new BigUint64Array(channel, 8, 10);
   let readyResolve!: () => void, readyReject!: (error: unknown) => void;

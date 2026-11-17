@@ -88,3 +88,67 @@ for (const failure of [false, true]) {
     }
   });
 }
+
+function startup() {
+  const wasm = Buffer.from(readFileSync(new URL('../fixtures/managed-startup/translated.wasm.base64', import.meta.url), 'utf8'), 'base64');
+  const [section] = WebAssembly.Module.customSections(new WebAssembly.Module(wasm), 'sods.facts');
+  const facts = JSON.parse(new TextDecoder().decode(section)) as {entry: number; imageEnd: number; phdr: number; phent: number; phnum: number};
+  const low = Math.ceil(facts.imageEnd / 65536) * 65536, top = low + 65536;
+  return {wasm, pages: top / 65536, stack: {low, top, facts,
+    credentials: {uid: 11, euid: 12, gid: 13, egid: 14, secure: true},
+    execfn: bytes('/bin/startup'), argv: [bytes('alias'), new Uint8Array([255, 254])],
+    env: [bytes('A=1'), bytes('A=2')], random: new Uint8Array(16).fill(7)}};
+}
+function startupHost() {
+  const host = memoryHost(new WebAssembly.Module(readFileSync(artifact!)), 3, 8);
+  host.prepareFiles({inodes: 2, entries: 2, fileBytes: 32, tables: 1, descriptions: 2, slots: 2, reads: 2});
+  host.sealFiles(2);
+  return host;
+}
+test('real guest reads Rust initial stack and independently checks argv, env and auxv', {skip: !artifact, timeout: 15_000}, async () => {
+  const host = startupHost(), input = startup();
+  const preparing = host.workerExecution(input.wasm, input.pages, input.stack);
+  // Physical preparation uses its accepted snapshot, not later caller mutation.
+  input.stack.argv[0].fill(120); input.stack.random.fill(0);
+  const execution = await preparing;
+  try {
+    assert.deepEqual(await host.runWorker(execution, BigInt(input.stack.facts.entry)), {status: 0, sourceFailures: 0});
+    assert.equal(host.workerEvidence(execution).exited, true);
+  } finally { host.stopWorker(execution); await host.workerSettled(execution); }
+});
+test('initial stack rejects overlap and malformed bytes before guest publication', {skip: !artifact}, async () => {
+  for (const bad of ['overlap', 'nul', 'random'] as const) {
+    const host = startupHost(), input = startup();
+    if (bad === 'overlap') input.stack.low = 0;
+    if (bad === 'nul') input.stack.argv[1] = new Uint8Array([1, 0, 2]);
+    if (bad === 'random') input.stack.random = new Uint8Array(15);
+    await assert.rejects(host.workerExecution(input.wasm, input.pages, input.stack));
+  }
+});
+
+test('zero-length image data inside the stack region is not an overlap', {skip: !artifact, timeout: 10_000}, async () => {
+  const leb = (n: number): number[] => n < 128 ? [n] : [(n & 127) | 128, ...leb(n >>> 7)];
+  const section = (id: number, data: number[]) => [id, ...leb(data.length), ...data];
+  const name = (s: string) => [s.length, ...bytes(s)];
+  const imports = [[...name('env'), ...name('memory'), 2, 1, 1, 1],
+    ...['syscall', 'trap', 'div128', 'clock', 'fpu', 'trace', 'miss', 'time'].map(n => [...name('env'), ...name(n), 0, 0])];
+  // Minimal engine-valid guest with a mutable i64 r4 and one empty active segment
+  // at address 1. Its empty run is not a translated Linux program.
+  const wasm = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0,
+    ...section(1, [1, 0x60, 1, 0x7e, 0]),
+    ...section(2, [imports.length, ...imports.flat()]),
+    ...section(3, [1, 0]),
+    ...section(6, [1, 0x7e, 1, 0x42, 0, 0x0b]),
+    ...section(7, [2, 3, 114, 117, 110, 0, 8, 2, 114, 52, 3, 0]),
+    ...section(10, [1, 2, 0, 0x0b]),
+    ...section(11, [1, 0, 0x41, 1, 0x0b, 0]),
+  ]);
+  const host = startupHost(), {stack} = startup();
+  const execution = await host.workerExecution(wasm, 1, {...stack, low: 0, top: 65536,
+    facts: {entry: 0, phdr: 0, phent: 0, phnum: 0}});
+  host.stopWorker(execution);
+  // Await actual Node exit, not merely the source request queue.
+  const deadline = Date.now() + 5000;
+  while (!host.workerEvidence(execution).exited && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 1));
+  assert.equal(host.workerEvidence(execution).exited, true);
+});

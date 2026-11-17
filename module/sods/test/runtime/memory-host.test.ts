@@ -555,3 +555,39 @@ test('execution exit evidence cannot retire an unknown main-side syscall copy', 
   a.ok('linux_image_begin', execution, 65536n);
   a.ok('linux_image_finish', execution, 1);
 });
+
+test('stack staging belongs to one initializing image and Unknown revokes access', {skip: !artifact}, () => {
+  const e = new WebAssembly.Instance(moduleOf()).exports;
+  const call = (name: string, ...args: (number | bigint)[]) => (e[name] as (...a: (number | bigint)[]) => number)(...args);
+  const result = () => (e.linux_result as () => bigint)();
+  assert.equal(call('linux_init', 2, 4), 0);
+  const ids: bigint[] = [];
+  for (let i = 0; i < 2; i++) {
+    assert.equal(call('linux_bind', 65536n), 0);
+    assert.equal(call('linux_execution_create', result()), 0); ids.push(result());
+  }
+  const [a, b] = ids;
+  assert.ok(call('linux_stack_input', a, 145) < 0);
+  assert.equal(call('linux_image_begin', a, 65536n), 0);
+  assert.equal(call('linux_image_begin', b, 65536n), 0);
+  assert.equal(call('linux_stack_input', a, 145), 0);
+  const offset = Number(result());
+  const wire = new Uint8Array(145), view = new DataView(wire.buffer);
+  [1, 8192, 65536, 65536, 4096, 64, 56, 1, 0, 0, 0, 0, 0, 0, 0, 1]
+    .forEach((v, i) => view.setBigUint64(i * 8, BigInt(v), true));
+  wire.fill(7, 128, 144); wire[144] = 47;
+  new Uint8Array((e.memory as WebAssembly.Memory).buffer, offset, wire.length).set(wire);
+  assert.ok(call('linux_stack_input', b, 145) < 0);
+  assert.ok(call('linux_stack_build', b) < 0);
+  assert.equal(call('linux_stack_build', a), 0);
+  const output = Number(result());
+  assert.equal(new DataView((e.memory as WebAssembly.Memory).buffer).getBigUint64(output, true), 1n);
+  assert.ok(call('linux_stack_build', a) < 0);
+  assert.equal(call('linux_image_finish', a, 3), 0);
+  assert.ok(call('linux_stack_input', a, 145) < 0);
+  assert.ok(call('linux_stack_build', a) < 0);
+  assert.equal(call('linux_stack_input', b, 145), 0);
+  assert.equal(call('linux_stack_clear'), 0);
+  assert.equal(call('linux_image_finish', a, 2), 0); // late matching stop remains valid
+  assert.equal(call('linux_image_finish', b, 1), 0);
+});

@@ -78,3 +78,39 @@ test('current-source translator ELF runs through Rust read/exit authority', {
     rmSync(directory, {recursive: true, force: true});
   }
 });
+
+test('current-source guest checks the Rust initial stack through a real Node Worker', {
+  skip: translatorPath === undefined,
+}, async () => {
+  assert.ok(translatorPath);
+  assert.ok(process.env.SODS_LINUX_WASM);
+  const directory = mkdtempSync(join(tmpdir(), 'sods-current-stack-'));
+  try {
+    const source = fileURLToPath(new URL('../fixtures/managed-startup/program.S', import.meta.url));
+    const elfPath = join(directory, 'startup.elf');
+    execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
+      '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', elfPath,
+    ], {stdio: 'pipe', timeout: 30_000});
+    const translator = await loadTranslator(readFileSync(translatorPath));
+    const wasm = translator.whole(new Uint8Array(readFileSync(elfPath)));
+    const sections = WebAssembly.Module.customSections(new WebAssembly.Module(wasm), 'sods.facts');
+    assert.equal(sections.length, 1);
+    const facts = JSON.parse(new TextDecoder().decode(sections[0])) as {entry: number; imageEnd: number; phdr: number; phent: number; phnum: number};
+    assert.ok(Number.isSafeInteger(facts.imageEnd) && facts.imageEnd > facts.entry);
+    const low = Math.ceil(facts.imageEnd / 65536) * 65536, top = low + 65536;
+    const host = memoryHost(new WebAssembly.Module(readFileSync(process.env.SODS_LINUX_WASM)), 2, 8);
+    host.prepareFiles({inodes: 2, entries: 2, fileBytes: 32, tables: 1, descriptions: 2, slots: 2, reads: 2});
+    host.sealFiles(2);
+    const encode = (s: string) => new TextEncoder().encode(s);
+    const execution = await host.workerExecution(wasm, top / 65536, {low, top, facts,
+      credentials: {uid: 11, euid: 12, gid: 13, egid: 14, secure: true},
+      execfn: encode('/bin/startup'), argv: [encode('alias'), new Uint8Array([255, 254])],
+      env: [encode('A=1'), encode('A=2')], random: new Uint8Array(16).fill(7)});
+    try {
+      assert.deepEqual(await host.runWorker(execution, BigInt(facts.entry)), {status: 0, sourceFailures: 0});
+      assert.equal(host.workerEvidence(execution).exited, true);
+    } finally { host.stopWorker(execution); await host.workerSettled(execution); }
+    // Explicit aux inputs are transport evidence, not implemented exec credentials,
+    // path authorization, ordinary Node startup, or a deleted legacy TS authority.
+  } finally { rmSync(directory, {recursive: true, force: true}); }
+});

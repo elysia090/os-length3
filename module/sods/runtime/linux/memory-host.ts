@@ -7,6 +7,9 @@ import type {createGuest} from '../host/node/execution.ts';
  * Not exported by linux.ts. The translated runner is a fixed diagnostic profile,
  * not the Node caller, ELF loader or complete Linux syscall implementation. */
 interface Admission extends WebAssembly.Exports {
+  linux_stack_input(execution: bigint, length: number): number;
+  linux_stack_build(execution: bigint): number;
+  linux_stack_clear(): number;
   linux_run_start(id: bigint): number;
   linux_run_receipt(id: bigint, invocation: bigint, outcome: number, next: bigint): number;
   linux_syscall(id: bigint, invocation: bigint, nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint): number;
@@ -77,7 +80,7 @@ export interface FileLimits {
   inodes: number; entries: number; fileBytes: number; tables: number;
   descriptions: number; slots: number; reads: number;
 }
-const required = ['linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
+const required = ['linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
   'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file',
@@ -99,6 +102,38 @@ const u32 = (n: number): number => {
 const checked = (status: number): void => {
   if (status !== 0) throw new Error(`Linux memory admission failed: ${status}`);
 };
+
+/** Private fixed-profile input, not a credential or ELF authentication API.
+ * Rust validates and lays out the stack; this adapter only serializes bytes. */
+export interface InitialStack {
+  low: number; top: number;
+  facts: {entry: number; phdr: number; phent: number; phnum: number};
+  credentials: {uid: number; euid: number; gid: number; egid: number; secure: boolean};
+  execfn: Uint8Array; argv: readonly Uint8Array[]; env: readonly Uint8Array[];
+  random: Uint8Array;
+}
+function stackWire(input: InitialStack, extent: bigint): Uint8Array {
+  if (input.argv.length + input.env.length > 65536 || lengthOf(input.random) !== 16) throw new RangeError('Stack transport input exceeds profile');
+  const strings = [input.execfn, ...input.argv, ...input.env];
+  const size = strings.reduce((n, s, i) => integer(n + lengthOf(s) + (i ? 8 : 0)), 144);
+  if (size > 2 * 1024 * 1024) throw new RangeError('Stack transport input exceeds profile');
+  const bytes = new Bytes(size), view = new DataView(bytes.buffer);
+  const {facts: f, credentials: c} = input;
+  if (typeof c.secure !== 'boolean') throw new TypeError('Expected secure flag');
+  const header = [1n, wide(integer(input.low)), wide(integer(input.top)), extent,
+    ...[f.entry, f.phdr, f.phent, f.phnum].map(n => wide(integer(n))),
+    ...[c.uid, c.euid, c.gid, c.egid].map(n => wide(u32(n))),
+    c.secure ? 1n : 0n, wide(input.argv.length), wide(input.env.length), wide(lengthOf(input.execfn))];
+  for (let i = 0; i < header.length; i++) view.setBigUint64(i * 8, header[i], true);
+  apply(setBytes, bytes, [input.random, 128]);
+  let at = 144;
+  for (let i = 0; i < strings.length; i++) {
+    const s = strings[i];
+    if (i) { view.setBigUint64(at, wide(lengthOf(s)), true); at += 8; }
+    apply(setBytes, bytes, [s, at]); at += lengthOf(s);
+  }
+  return bytes;
+}
 
 /** Instantiate once: the Rust instance is private and has no guest/host imports.
  * No memory/view/instance escapes. There is deliberately no arbitrary callback API. */
@@ -269,7 +304,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   };
   return {
     /** Fixed shared-memory diagnostic. No default Node caller cutover. */
-    async workerExecution(input: Uint8Array, pages: number): Promise<ExecutionBinding> {
+    async workerExecution(input: Uint8Array, pages: number, stack?: InitialStack): Promise<ExecutionBinding> {
       u32(pages);
       const bytes = new Bytes(input);
       fixedTranslatedModule(bytes); // Reject raw start/defined memory before transform.
@@ -277,8 +312,14 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       if (prepared.segments === null) throw new Error('Worker image requires external data');
       const translated = fixedTranslatedModule(prepared.wasm, {externalData: true});
       const extent = wide(pages) * 65536n;
+      // Snapshot transport before the first await; no caller array is retained.
+      const stackInput = stack ? stackWire(stack, extent) : undefined;
+      const stackHeader = stackInput ? new DataView(stackInput.buffer) : undefined;
+      const stackLow = stackHeader ? numeric(stackHeader.getBigUint64(8, true)) : 0;
+      const stackTop = stackHeader ? numeric(stackHeader.getBigUint64(16, true)) : 0;
       for (const segment of prepared.segments) {
         if (!Number.isSafeInteger(segment.offset) || segment.offset < 0 || wide(segment.offset) > extent || wide(lengthOf(segment.bytes)) > extent - wide(segment.offset)) throw new RangeError('Worker image segment exceeds memory');
+        if (stackInput && lengthOf(segment.bytes) > 0 && segment.offset < stackTop && segment.offset + lengthOf(segment.bytes) > stackLow) throw new RangeError('Stack overlaps image segment');
       }
       const {createGuest} = await import('../host/node/execution.ts');
       checked(core.linux_binding_room());
@@ -288,8 +329,20 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       checked(core.linux_image_begin(id, extent));
       let bridge: ReturnType<typeof createGuest>;
       try {
+        let stackPointer: bigint | undefined;
+        if (stackInput) {
+          try {
+            put(result(core.linux_stack_input(id, stackInput.length)), stackInput);
+            const pointer = result(core.linux_stack_build(id));
+            const length = numeric(core.linux_result_length());
+            stackPointer = core.linux_result_auxiliary();
+            // No export/callback/await while this short core view is live.
+            apply(setBytes, new Bytes(bufferOf(memory), numeric(stackPointer), length),
+              [new Bytes(bufferOf(core.memory), numeric(pointer), length)]);
+          } finally { checked(core.linux_stack_clear()); }
+        }
         for (const segment of prepared.segments) apply(setBytes, new Bytes(bufferOf(memory), segment.offset, lengthOf(segment.bytes)), [segment.bytes]);
-        bridge = createGuest({module: translated, memory});
+        bridge = createGuest({module: translated, memory, stackPointer});
       } catch (error) {
         try { checked(core.linux_image_finish(id, 2)); }
         catch (receipt) { throw new AggregateError([error, receipt], 'Worker preparation and receipt failed'); }

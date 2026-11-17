@@ -59,6 +59,8 @@ pub(crate) enum Unwind {
     Unknown,
 }
 struct ImageChange {
+    initializing: bool,
+    extent: u64,
     token: Token,
     generation: u64,
     prior: Phase,
@@ -99,6 +101,12 @@ impl Execution {
     }
     pub(crate) fn phase(&self) -> Phase {
         self.phase
+    }
+    pub(crate) fn initialization(&self) -> Option<(u64, u64)> {
+        self.changing
+            .as_ref()
+            .filter(|c| c.initializing)
+            .map(|c| (c.generation, c.extent))
     }
     pub(crate) fn binding(&self) -> u64 {
         self.binding
@@ -164,6 +172,8 @@ impl Execution {
         domain.start(token).expect("new private image change");
         self.next_image = generation.checked_add(1);
         self.changing = Some(ImageChange {
+            initializing: true,
+            extent,
             token,
             generation,
             prior: self.phase,
@@ -195,6 +205,10 @@ impl Execution {
             },
         )?;
         if outcome == ImageResult::Unknown {
+            self.changing
+                .as_mut()
+                .expect("existing image change")
+                .initializing = false;
             return Ok(());
         }
         let replacement = domain
@@ -486,5 +500,24 @@ mod tests {
         let invocation = e.start(&mut d).unwrap();
         other.start(&mut foreign).unwrap();
         assert_eq!(other.request_exit(invocation, 0), Err(Error::Identity));
+    }
+}
+
+#[cfg(test)]
+mod initialization_tests {
+    use super::*;
+    #[test]
+    fn unknown_initialization_revokes_stack_construction_but_allows_late_stop() {
+        let mut d = Domain::new(81, 1, 2).unwrap();
+        let binding = d.bind(65536).unwrap();
+        let mut e = Execution::new(82, binding);
+        assert_eq!(e.initialization(), None);
+        e.image_begin(&mut d, 131072).unwrap();
+        assert_eq!(e.initialization().unwrap().1, 131072);
+        e.image_finish(&mut d, ImageResult::Unknown).unwrap();
+        assert_eq!(e.initialization(), None);
+        e.image_finish(&mut d, ImageResult::PoisonedStopped)
+            .unwrap();
+        assert_eq!(e.initialization(), None);
     }
 }

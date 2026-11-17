@@ -35,7 +35,14 @@ struct ExecutionSlot {
     execution: Execution,
     continuation: Option<Continuation>,
 }
+struct StackTransport {
+    owner: u64,
+    generation: u64,
+    input: Vec<u8>,
+    output: Option<crate::stack::Stack>,
+}
 struct State {
+    stack: Option<StackTransport>,
     domain: Domain,
     executions: Vec<ExecutionSlot>,
     execution_limit: usize,
@@ -138,6 +145,7 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             Err(e) => return code(e),
         };
         *outer = Some(State {
+            stack: None,
             domain,
             executions: Vec::new(),
             execution_limit: memories as usize,
@@ -509,6 +517,9 @@ pub extern "C" fn linux_image_begin(id: u64, extent: u64) -> i32 {
             .execution
             .image_begin(&mut s.domain, extent)
             .map_err(|_| -11)?;
+        if s.stack.as_ref().is_some_and(|stack| stack.owner == id) {
+            s.stack = None;
+        }
         Ok(0)
     })
 }
@@ -527,6 +538,9 @@ pub extern "C" fn linux_image_finish(id: u64, outcome: u32) -> i32 {
             .execution
             .image_finish(&mut s.domain, outcome)
             .map_err(|_| -11)?;
+        if s.stack.as_ref().is_some_and(|stack| stack.owner == id) {
+            s.stack = None;
+        }
         Ok(s.executions[i].execution.binding())
     })
 }
@@ -824,5 +838,63 @@ pub extern "C" fn linux_syscall_abandon(id: u64) -> i32 {
             )
             .map(u64::from)
             .map_err(|_| -12)
+    })
+}
+
+/// One bounded initialization wire. The private host must perform only short
+/// intrinsic copy between pointer publication and the next ABI operation.
+#[no_mangle]
+pub extern "C" fn linux_stack_input(id: u64, length: u32) -> i32 {
+    with_state(false, |s| {
+        if length as usize > crate::stack::MAX_WIRE_BYTES {
+            return Err(-5);
+        }
+        let i = execution_index(s, id)?;
+        let (generation, _) = s.executions[i].execution.initialization().ok_or(-11)?;
+        let owner = id;
+        if s.stack.as_ref().is_some_and(|stack| stack.owner != id) {
+            return Err(-4);
+        }
+        let mut input = Vec::new();
+        input.try_reserve_exact(length as usize).map_err(|_| -1)?;
+        input.resize(length as usize, 0);
+        s.stack = Some(StackTransport {
+            owner,
+            generation,
+            input,
+            output: None,
+        });
+        Ok(s.stack.as_mut().unwrap().input.as_mut_ptr() as usize as u64)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_stack_build(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let (generation, extent) = s.executions[i].execution.initialization().ok_or(-11)?;
+        let transport = s.stack.as_mut().ok_or(-9)?;
+        if transport.owner != id || transport.generation != generation {
+            return Err(-11);
+        }
+        if transport.output.is_some() {
+            return Err(-4);
+        }
+        let stack = crate::stack::build_wire(&transport.input, extent).map_err(|e| match e {
+            crate::stack::Error::Capacity => -1,
+            _ => -5,
+        })?;
+        transport.input = Vec::new();
+        transport.output = Some(stack);
+        let output = transport.output.as_ref().unwrap();
+        s.length = output.bytes.len() as u64;
+        s.auxiliary = output.pointer;
+        Ok(output.bytes.as_ptr() as usize as u64)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_stack_clear() -> i32 {
+    with_state(false, |s| {
+        s.stack = None;
+        Ok(0)
     })
 }

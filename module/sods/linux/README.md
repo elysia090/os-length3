@@ -499,3 +499,43 @@ both inline and Worker profiles; local environments without that translator skip
 only that explicitly unconfigured test, never substitute the frozen fixture.
 These results do not yet establish normal Node startup, multiple execution sharing,
 full syscall coverage, browser Workers or automatic whole-tree disposal.
+
+## Initial stack integration (private fixed profile)
+
+The same Worker diagnostic can now consume a stack built by Rust. Byte arguments
+and environment entries retain order, duplicates and non-UTF-8 data. Internal NUL
+is rejected; an empty argv becomes one empty argument. Executable path is separate
+from argv[0]. Rust decides argc/pointer tables, auxv, absolute addresses and aligned
+RSP using checked arithmetic; the host does not construct a second stack layout.
+Only the live suffix is allocated and copied, not an entire stack-sized snapshot.
+
+The private wire has a 2 MiB frame budget, 128 KiB per NUL-terminated string and
+65,536 argument/environment pointers. These are explicit diagnostic admission
+limits, **not** Linux RLIMIT_STACK/ARG_MAX compatibility. Facts, low/top and aux
+credential values currently come from the diagnostic caller. Validation checks
+representation, ranges and actual image-change extent; it does not authenticate
+ELF facts or implement credential changes, path authorization or program loading.
+The host rejects stack/image-segment overlap before mutation. Linear-memory gaps
+are not protected guard pages. Production startup must derive these inputs from
+its Rust-owned process and executable before it can use this path normally.
+
+Input and output staging belong to one execution/image generation. Unknown image
+completion revokes new initialization access; only a matching later stop can finish
+the existing action. Stack bytes are copied synchronously during image admission,
+without an intervening export or callback, then staging is cleared. The Worker
+sets the Rust-selected RSP in the exported mutable i64 register before ready. A
+missing/incorrect register cannot become a ready guest. Initialization/stop evidence
+continues to use the existing Worker lifecycle, not promise success as proof of exit.
+
+For B input string bytes and K entries, validation and writing require O(B+K)
+work. This representation additionally holds a bounded host wire and core wire,
+a borrowed-reference table, and the generated suffix while building. It transfers
+the wire host-to-core and the suffix core-to-guest. These are the costs of the
+current separate-heap ABI, not a universal lower bound. Qualification/provenance,
+execution-specific FD/Fs and ordinary Node caller cutover still precede deletion
+of the corresponding legacy TS semantic implementation.
+
+A frozen historical-translator guest checks its own argc, raw argv, duplicate env,
+aux credentials, execfn, random bytes and RSP alignment. Current-source translator
+CI separately compiles and runs that source through the Worker. Passing the frozen
+fixture alone is not evidence that the current translator or normal startup works.

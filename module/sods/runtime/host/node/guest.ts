@@ -2,7 +2,7 @@ import {parentPort, workerData} from 'node:worker_threads';
 import {IDLE, REQUEST, RETURN, LEAVE, MAX_SEQUENCE} from './protocol.ts';
 
 const port = parentPort!;
-const {module, memory, channel} = workerData as {module: WebAssembly.Module; memory: WebAssembly.Memory; channel: SharedArrayBuffer};
+const {module, memory, channel, stackPointer} = workerData as {module: WebAssembly.Module; memory: WebAssembly.Memory; channel: SharedArrayBuffer; stackPointer?: bigint};
 const control = new Int32Array(channel, 0, 2), words = new BigUint64Array(channel, 8, 10);
 const leave = {};
 let ready = false, running = false, invocation = 0n, sequence = 0;
@@ -32,6 +32,11 @@ const instance = new WebAssembly.Instance(module, {env: {
 }});
 const {run} = instance.exports;
 if (typeof run !== 'function') throw new Error('Unsupported guest exports');
+if (stackPointer !== undefined) {
+  const rsp = instance.exports.r4;
+  if (!(rsp instanceof WebAssembly.Global) || typeof rsp.value !== 'bigint') throw new Error('Unsupported guest stack register');
+  rsp.value = stackPointer; // Immutable or incorrectly typed globals fail before ready.
+}
 ready = true;
 port.on('message', (message: {kind: string; invocation: bigint; entry: bigint}) => {
   if (message.kind !== 'run' || running || invocation !== 0n || message.invocation <= 0n) throw new Error('Invalid guest invocation');
