@@ -4,6 +4,7 @@
 //! and read_receipt it performs only intrinsic synchronous copy, no callback/await.
 use crate::descriptor::{self, Files, Table};
 use crate::effect::{Completion, Token};
+use crate::execution::{Execution, ImageResult};
 use crate::inode::{Inode, Tree};
 use crate::lease::{Domain, Error};
 use crate::read::{ReadCapacity, Reads};
@@ -25,9 +26,13 @@ struct Sealed {
     files: Files,
     table: Table,
     reads: Reads,
+    input: Vec<u8>,
+    file_limit: usize,
 }
 struct State {
     domain: Domain,
+    executions: Vec<Execution>,
+    execution_limit: usize,
     result: u64,
     length: u64,
     state: u32,
@@ -53,6 +58,7 @@ fn read_code(error: crate::read::Error) -> i32 {
         crate::read::Error::Busy => -4,
         crate::read::Error::Range => -5,
         crate::read::Error::Capacity => -1,
+        crate::read::Error::Execution(_) => -11,
         _ => -10,
     }
 }
@@ -86,7 +92,9 @@ fn token(sequence: u64) -> Token {
 fn generic(sequence: u64, f: impl FnOnce(&mut Domain, Token) -> Result<u64, Error>) -> i32 {
     with_state(false, |s| {
         let t = token(sequence);
-        if s.sealed.as_ref().is_some_and(|r| r.reads.owns(t)) {
+        if s.sealed.as_ref().is_some_and(|r| r.reads.owns(t))
+            || s.executions.iter().any(|e| e.owns(t))
+        {
             return Err(-4);
         }
         f(&mut s.domain, t).map_err(code)
@@ -122,6 +130,8 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
         };
         *outer = Some(State {
             domain,
+            executions: Vec::new(),
+            execution_limit: memories as usize,
             result: 0,
             length: 0,
             state: 0,
@@ -163,7 +173,17 @@ pub extern "C" fn linux_span(binding: u64, offset: u64, length: u64) -> i32 {
 }
 #[no_mangle]
 pub extern "C" fn linux_change(binding: u64, extent: u64) -> i32 {
-    with(|d| d.change(binding, extent).map(|t| t.sequence()))
+    with_state(false, |s| {
+        // An execution owns its image incarnation. Generic physical growth must
+        // not silently leave that owner pointing at a retired binding.
+        if s.executions.iter().any(|e| e.binding() == binding) {
+            return Err(-4);
+        }
+        s.domain
+            .change(binding, extent)
+            .map(|t| t.sequence())
+            .map_err(code)
+    })
 }
 #[no_mangle]
 pub extern "C" fn linux_start(sequence: u64) -> i32 {
@@ -296,6 +316,8 @@ pub extern "C" fn linux_files_seal(fd_limit: u32) -> i32 {
             files,
             table,
             reads,
+            input: Vec::new(),
+            file_limit: b.file_limit,
         });
         s.builder = None;
         Ok(0)
@@ -425,5 +447,163 @@ pub extern "C" fn linux_read_retire(id: u64) -> i32 {
             .retire(id)
             .map(|_| 0)
             .map_err(read_code)
+    })
+}
+
+// Private execution admission. IDs index a bounded, append-only owner table;
+// neither identity nor image/run state is reconstructed by the host.
+fn execution_index(s: &State, id: u64) -> Result<usize, i32> {
+    let n = usize::try_from(id.checked_sub(1).ok_or(-11)?).map_err(|_| -11)?;
+    if n < s.executions.len() {
+        Ok(n)
+    } else {
+        Err(-11)
+    }
+}
+#[no_mangle]
+pub extern "C" fn linux_execution_create(binding: u64) -> i32 {
+    with_state(false, |s| {
+        s.domain.range(binding, 0, 0).map_err(code)?;
+        if s.executions.len() == s.execution_limit {
+            return Err(-1);
+        }
+        s.executions.try_reserve(1).map_err(|_| -1)?;
+        let id = s.executions.len() as u64 + 1;
+        s.executions.push(Execution::new(id, binding));
+        Ok(id)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_image_begin(id: u64, extent: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        s.executions[i]
+            .image_begin(&mut s.domain, extent)
+            .map_err(|_| -11)?;
+        Ok(0)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_image_finish(id: u64, outcome: u32) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let outcome = match outcome {
+            0 => ImageResult::Installed,
+            1 => ImageResult::Untouched,
+            2 => ImageResult::PoisonedStopped,
+            3 => ImageResult::Unknown,
+            _ => return Err(-5),
+        };
+        s.executions[i]
+            .image_finish(&mut s.domain, outcome)
+            .map_err(|_| -11)?;
+        Ok(s.executions[i].binding())
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_tree_lazy(parent: u64, mode: u32, source: u32, size: u32) -> i32 {
+    with_state(false, |s| {
+        let b = s.builder.as_mut().ok_or(-9)?;
+        b.tree
+            .as_mut()
+            .ok_or(-9)?
+            .lazy_file(inode(parent), &b.name, mode, source, size as usize)
+            .map(|n| n.number())
+            .map_err(|_| -10)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_managed_read_begin(
+    execution: u64,
+    fd: u32,
+    at: u64,
+    requested: u64,
+) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, execution)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        r.reads
+            .begin_managed(
+                &mut r.files,
+                &r.table,
+                &mut s.domain,
+                &s.executions[i],
+                fd,
+                at,
+                requested,
+            )
+            .map_err(read_code)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_read_load_start(execution: u64, id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, execution)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let (source, attempt) = r
+            .reads
+            .load_start(&mut r.files, &s.executions[i], id)
+            .map_err(read_code)?;
+        s.length = attempt as u64;
+        Ok(source as u64)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_load_input(length: u32) -> i32 {
+    with_state(false, |s| {
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let n = length as usize;
+        if n > r.file_limit {
+            return Err(-5);
+        }
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(n).map_err(|_| -1)?;
+        bytes.resize(n, 0);
+        r.input = bytes;
+        Ok(if n == 0 {
+            0
+        } else {
+            r.input.as_mut_ptr() as u64
+        })
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_read_load_finish(
+    execution: u64,
+    id: u64,
+    attempt: u32,
+    success: u32,
+) -> i32 {
+    with_state(false, |s| {
+        if success > 1 {
+            return Err(-5);
+        }
+        let i = execution_index(s, execution)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        r.reads
+            .load_finish(
+                &mut r.files,
+                &mut s.domain,
+                &s.executions[i],
+                id,
+                attempt,
+                success == 1,
+                &mut r.input,
+            )
+            .map(|_| 0)
+            .map_err(read_code)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_managed_read_start(execution: u64, id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, execution)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let (pointer, length) = r
+            .reads
+            .start_managed(&mut r.files, &mut s.domain, &s.executions[i], id)
+            .map_err(read_code)?;
+        s.length = length;
+        Ok(pointer as u64)
     })
 }

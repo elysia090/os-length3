@@ -87,6 +87,19 @@ impl Filesystems {
     pub(crate) fn size(&mut self, inode: Inode) -> Result<usize, Error> {
         self.tree_mut(inode)?.size(inode)
     }
+    pub(crate) fn load_begin(&mut self, inode: Inode) -> Result<u32, Error> {
+        self.tree_mut(inode)?.load_begin(inode)
+    }
+    pub(crate) fn load_finish(
+        &mut self,
+        inode: Inode,
+        attempt: u32,
+        success: bool,
+        bytes: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        self.tree_mut(inode)?
+            .load_finish(inode, attempt, success, bytes)
+    }
     pub(crate) fn read(&mut self, inode: Inode, at: usize, length: usize) -> Result<&[u8], Error> {
         self.tree_mut(inode)?.read(inode, at, length)
     }

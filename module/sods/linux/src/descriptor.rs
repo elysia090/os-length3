@@ -45,6 +45,8 @@ pub(crate) enum Error {
     NotSupported,
     Busy,
     Payload,
+    State,
+    Source(super::inode::Error),
     Mount(mount::Error),
     Fs(fs_context::Error),
 }
@@ -76,6 +78,31 @@ struct Description {
     offset: u64,
     revision: u64,
     reading: bool,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreparationPhase {
+    Reserved,
+    Loading(u32),
+    Ready,
+    Failed,
+}
+/// One OFD reservation before source materialization. Its phase describes this
+/// request's command lifecycle, never a second inode source/loading authority.
+#[must_use = "capture or abort after any dispatched loader has stopped"]
+#[derive(Debug)]
+pub(crate) struct ReadPreparation {
+    description: Id,
+    inode: Inode,
+    offset: u64,
+    requested: u64,
+    next_revision: u64,
+    phase: PreparationPhase,
+}
+/// Snapshot of a command issued by Store; not a separately mutable source state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LoadRequest {
+    pub source: u32,
+    pub attempt: u32,
 }
 /// Owned pending reference to one OFD, not an fd number. Only Files resolves it.
 #[must_use = "finish or abort the read reservation; dropping retains the OFD reference"]
@@ -691,12 +718,12 @@ impl Files {
     pub(crate) fn inode(&self, table: &Table, fd: u32) -> Result<Inode, Error> {
         Ok(get(&self.descriptions, self.owner, self.description(table, fd)?)?.inode)
     }
-    pub(crate) fn reserve_read(
+    pub(crate) fn begin_read(
         &mut self,
         table: &Table,
         fd: u32,
         requested: u64,
-    ) -> Result<ReadHold, Error> {
+    ) -> Result<ReadPreparation, Error> {
         let id = self.description(table, fd)?;
         let d = get(&self.descriptions, self.owner, id)?;
         if d.reading {
@@ -720,30 +747,179 @@ impl Files {
         {
             return Err(Error::NotSupported);
         }
-        if self.filesystems.source(inode).map_err(|_| Error::Payload)? != 0 {
-            return Err(Error::NotSupported);
-        }
-        let size = self.filesystems.size(inode).map_err(|_| Error::Payload)? as u64;
-        let length = if offset >= size {
-            0
-        } else {
-            requested.min(size - offset) as usize
-        };
-        offset.checked_add(length as u64).ok_or(Error::Overflow)?;
-        // No mutation/export is exposed for this sealed resident source.
         let d = self.descriptions[id.slot].value.as_mut().unwrap();
         d.refs = refs;
         d.reading = true;
-        Ok(ReadHold {
+        Ok(ReadPreparation {
             description: id,
             inode,
             offset,
-            length,
+            requested,
             next_revision: revision,
+            phase: PreparationPhase::Reserved,
         })
+    }
+    fn check_preparation(&self, prep: &ReadPreparation) -> Result<(), Error> {
+        let d = get(&self.descriptions, self.owner, prep.description)?;
+        if !d.reading || d.inode != prep.inode || d.offset != prep.offset {
+            return Err(Error::State);
+        }
+        Ok(())
+    }
+    /// Dispatch at most once. Shared inode contention/poisoning is decided by
+    /// Store::load_begin, not a cached per-description loading flag.
+    pub(crate) fn prepare_read(
+        &mut self,
+        prep: &mut ReadPreparation,
+    ) -> Result<Option<LoadRequest>, Error> {
+        self.check_preparation(prep)?;
+        if prep.phase != PreparationPhase::Reserved {
+            return Err(Error::State);
+        }
+        if prep.requested == 0 {
+            prep.phase = PreparationPhase::Ready;
+            return Ok(None);
+        }
+        prep.phase = PreparationPhase::Failed;
+        let source = self.filesystems.source(prep.inode).map_err(Error::Source)?;
+        let attempt = self
+            .filesystems
+            .load_begin(prep.inode)
+            .map_err(Error::Source)?;
+        if attempt == 0 {
+            prep.phase = PreparationPhase::Ready;
+            return Ok(None);
+        }
+        prep.phase = PreparationPhase::Loading(attempt);
+        Ok(Some(LoadRequest { source, attempt }))
+    }
+    /// Caller supplies stopped-loader completion, not merely a cancellation
+    /// request. Matching failure leaves the OFD owned for explicit coordinator
+    /// cleanup. Stale completions preserve both preparation and input bytes.
+    pub(crate) fn finish_load(
+        &mut self,
+        prep: &mut ReadPreparation,
+        attempt: u32,
+        success: bool,
+        bytes: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        self.check_preparation(prep)?;
+        let PreparationPhase::Loading(expected) = prep.phase else {
+            return Err(Error::State);
+        };
+        // Do not let a forged/stale command complete another inode attempt.
+        if attempt != expected {
+            return Err(Error::Source(super::inode::Error::Payload(
+                sods_file_store::store::Error::BadCompletion,
+            )));
+        }
+        let result = self
+            .filesystems
+            .load_finish(prep.inode, attempt, success, bytes);
+        if matches!(
+            result,
+            Err(super::inode::Error::Payload(
+                sods_file_store::store::Error::BadCompletion
+            ))
+        ) {
+            return result.map_err(Error::Source);
+        }
+        prep.phase = if success && result.is_ok() {
+            PreparationPhase::Ready
+        } else {
+            PreparationPhase::Failed
+        };
+        result.map_err(Error::Source)
+    }
+    /// Actual length is known only after materialization. Ownership is returned
+    /// on failure; callers explicitly abort rather than losing the OFD pin.
+    pub(crate) fn capture_read(
+        &mut self,
+        prep: ReadPreparation,
+    ) -> Result<ReadHold, (Error, ReadPreparation)> {
+        if let Err(error) = self.check_preparation(&prep) {
+            return Err((error, prep));
+        }
+        if prep.phase != PreparationPhase::Ready {
+            return Err((Error::State, prep));
+        }
+        let size = if prep.requested == 0 {
+            0
+        } else {
+            match self.filesystems.size(prep.inode) {
+                Ok(size) => size as u64,
+                Err(e) => return Err((Error::Source(e), prep)),
+            }
+        };
+        let length = if prep.offset >= size {
+            0
+        } else {
+            prep.requested.min(size - prep.offset) as usize
+        };
+        if prep.offset.checked_add(length as u64).is_none() {
+            return Err((Error::Overflow, prep));
+        }
+        Ok(ReadHold {
+            description: prep.description,
+            inode: prep.inode,
+            offset: prep.offset,
+            length,
+            next_revision: prep.next_revision,
+        })
+    }
+    pub(crate) fn abort_preparation(
+        &mut self,
+        prep: ReadPreparation,
+    ) -> Result<(), (Error, ReadPreparation)> {
+        if let Err(error) = self.check_preparation(&prep) {
+            return Err((error, prep));
+        }
+        if matches!(prep.phase, PreparationPhase::Loading(_)) {
+            return Err((Error::Busy, prep));
+        }
+        self.descriptions[prep.description.slot]
+            .value
+            .as_mut()
+            .unwrap()
+            .reading = false;
+        self.release(prep.description);
+        Ok(())
+    }
+    /// Compatibility entry for the existing sealed resident ABI; managed lazy
+    /// reads use begin/prepare/finish/capture, never an implicit host callback.
+    pub(crate) fn reserve_read(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        requested: u64,
+    ) -> Result<ReadHold, Error> {
+        let mut prep = self.begin_read(table, fd, requested)?;
+        let result = match self.filesystems.source(prep.inode) {
+            Ok(0) => self.prepare_read(&mut prep).map(|request| {
+                debug_assert!(request.is_none());
+            }),
+            Ok(_) => Err(Error::NotSupported),
+            Err(_) => Err(Error::Payload),
+        };
+        if let Err(error) = result {
+            self.abort_preparation(prep)
+                .expect("undispatched resident preparation");
+            return Err(error);
+        }
+        match self.capture_read(prep) {
+            Ok(hold) => Ok(hold),
+            Err((error, prep)) => {
+                self.abort_preparation(prep)
+                    .expect("resident capture failure");
+                Err(error)
+            }
+        }
     }
 
     pub(crate) fn read_bytes(&mut self, hold: &ReadHold) -> &[u8] {
+        if hold.length == 0 {
+            return &[];
+        }
         // EOF at an arbitrary u64 offset does not narrow that offset to usize.
         let at = if hold.length == 0 {
             0
@@ -1524,6 +1700,137 @@ mod tests {
         ));
         assert!(f.release_fs(fresh).is_ok());
         assert!(f.release_view(root_ticket).is_ok());
+    }
+    fn lazy_setup() -> (Files, Table, u32, Inode) {
+        let mut tree = Tree::new(1001, 3, 3, 32).unwrap();
+        let file = tree.lazy_file(tree.root(), b"lazy", 0o600, 7, 2).unwrap();
+        let mut files = Files::new(
+            1002,
+            tree,
+            Limits {
+                contexts: 0,
+                tables: 2,
+                descriptions: 4,
+                slots: 8,
+            },
+        );
+        let table = files.table(8).unwrap();
+        let fd = files.open(&table, file, false).unwrap();
+        (files, table, fd, file)
+    }
+    #[test]
+    fn lazy_read_owns_old_description_and_captures_actual_size_after_load() {
+        let (mut f, table, fd, inode) = lazy_setup();
+        let mut prep = f.begin_read(&table, fd, 16).unwrap();
+        let request = f.prepare_read(&mut prep).unwrap().unwrap();
+        assert_eq!(request.source, 7);
+        assert_eq!(f.prepare_read(&mut prep), Err(Error::State));
+        f.close(&table, fd).unwrap();
+        let replacement = f.open(&table, inode, false).unwrap();
+        assert_eq!(replacement, fd);
+        let mut bytes = b"hello".to_vec();
+        let pointer = bytes.as_ptr();
+        assert!(matches!(
+            f.finish_load(&mut prep, request.attempt + 1, true, &mut bytes),
+            Err(Error::Source(super::super::inode::Error::Payload(
+                sods_file_store::store::Error::BadCompletion
+            )))
+        ));
+        assert_eq!(bytes, b"hello");
+        assert_eq!(bytes.as_ptr(), pointer);
+        f.finish_load(&mut prep, request.attempt, true, &mut bytes)
+            .unwrap();
+        assert!(bytes.is_empty());
+        let hold = f.capture_read(prep).unwrap();
+        assert_eq!(hold.length(), 5); // advertised size was only 2
+        assert_eq!(f.read_bytes(&hold).as_ptr(), pointer);
+        f.finish_read(hold, 5);
+        assert_eq!(f.offset(&table, replacement), Ok((0, 0)));
+        let mut warm = f.begin_read(&table, replacement, 16).unwrap();
+        assert_eq!(f.prepare_read(&mut warm), Ok(None)); // Store loaded state, source still 7
+        let hold = f.capture_read(warm).unwrap();
+        assert_eq!(f.read_bytes(&hold), b"hello");
+        f.finish_read(hold, 5);
+        assert_eq!(f.offset(&table, replacement), Ok((5, 1)));
+        f.let_go(table).unwrap();
+    }
+    #[test]
+    fn loading_abort_requires_stopped_completion_and_stale_retry_preserves_input() {
+        let (mut f, table, fd, _) = lazy_setup();
+        let mut prep = f.begin_read(&table, fd, 8).unwrap();
+        let first = f.prepare_read(&mut prep).unwrap().unwrap();
+        let (error, mut prep) = f.abort_preparation(prep).unwrap_err();
+        assert_eq!(error, Error::Busy);
+        assert_eq!(f.set_offset(&table, fd, 1), Err(Error::Busy));
+        let mut bytes = b"kept".to_vec();
+        f.finish_load(&mut prep, first.attempt, false, &mut bytes)
+            .unwrap();
+        assert_eq!(bytes, b"kept");
+        f.abort_preparation(prep).unwrap();
+        assert_eq!(f.offset(&table, fd), Ok((0, 0)));
+        let mut retry = f.begin_read(&table, fd, 8).unwrap();
+        let next = f.prepare_read(&mut retry).unwrap().unwrap();
+        assert_ne!(first.attempt, next.attempt);
+        assert!(f
+            .finish_load(&mut retry, first.attempt, true, &mut bytes)
+            .is_err());
+        assert_eq!(bytes, b"kept");
+        f.finish_load(&mut retry, next.attempt, true, &mut bytes)
+            .unwrap();
+        let hold = f.capture_read(retry).unwrap();
+        assert_eq!(f.read_bytes(&hold), b"kept");
+        f.abort_read(hold);
+        f.let_go(table).unwrap();
+    }
+    #[test]
+    fn same_inode_loading_conflict_uses_store_poison_and_explicit_cleanup() {
+        let (mut f, table, fd, inode) = lazy_setup();
+        let second = f.open(&table, inode, false).unwrap();
+        let mut a = f.begin_read(&table, fd, 4).unwrap();
+        let request = f.prepare_read(&mut a).unwrap().unwrap();
+        let mut b = f.begin_read(&table, second, 4).unwrap();
+        assert_eq!(
+            f.prepare_read(&mut b),
+            Err(Error::Source(super::super::inode::Error::Payload(
+                sods_file_store::store::Error::LoadConflict
+            )))
+        );
+        assert_eq!(f.set_offset(&table, second, 1), Err(Error::Busy)); // no hidden ref cleanup
+        f.abort_preparation(b).unwrap();
+        let mut bytes = b"data".to_vec();
+        assert_eq!(
+            f.finish_load(&mut a, request.attempt, true, &mut bytes),
+            Err(Error::Source(super::super::inode::Error::Payload(
+                sods_file_store::store::Error::LoadConflict
+            )))
+        );
+        assert_eq!(bytes, b"data");
+        f.abort_preparation(a).unwrap();
+        let mut retry = f.begin_read(&table, fd, 4).unwrap();
+        let request = f.prepare_read(&mut retry).unwrap().unwrap();
+        f.finish_load(&mut retry, request.attempt, true, &mut bytes)
+            .unwrap();
+        let hold = f.capture_read(retry).unwrap();
+        f.abort_read(hold);
+        f.let_go(table).unwrap();
+    }
+    #[test]
+    fn zero_lazy_read_does_not_start_or_poison_another_load() {
+        let (mut f, table, fd, inode) = lazy_setup();
+        let second = f.open(&table, inode, false).unwrap();
+        let mut loading = f.begin_read(&table, fd, 4).unwrap();
+        let request = f.prepare_read(&mut loading).unwrap().unwrap();
+        let mut zero = f.begin_read(&table, second, 0).unwrap();
+        assert_eq!(f.prepare_read(&mut zero), Ok(None));
+        let hold = f.capture_read(zero).unwrap();
+        assert!(f.read_bytes(&hold).is_empty());
+        f.finish_read(hold, 0);
+        assert_eq!(f.offset(&table, second), Ok((0, 0)));
+        let mut bytes = b"data".to_vec();
+        f.finish_load(&mut loading, request.attempt, true, &mut bytes)
+            .unwrap();
+        f.abort_preparation(loading).unwrap();
+        f.let_go(table).unwrap();
     }
     #[test]
     fn repeated_close_reuses_bounded_arena_and_keeps_tree_owned() {

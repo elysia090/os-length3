@@ -1,6 +1,6 @@
 //! Linux execution-domain authority, separate from translation and file payloads.
 //!
-//! Private memory admission and sealed resident-file read ABI.
+//! Private memory/image admission and sealed resident/lazy read ABI.
 //! No guest Linux runtime entry exists yet.
 //! The legacy TypeScript runtime is not replaced by this crate.
 mod effect;
@@ -21,3 +21,5 @@ mod filesystem;
 mod mount;
 
 mod fs_context;
+
+mod execution;

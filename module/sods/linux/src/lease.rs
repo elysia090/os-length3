@@ -28,6 +28,7 @@ struct Binding {
     id: u64,
     extent: u64,
     spans: usize,
+    running: usize,
     changing: bool,
 }
 
@@ -42,7 +43,17 @@ struct Pending {
     kind: Kind,
 }
 
+/// Non-copy execution lifetime ticket. Dropping it is not stopping evidence.
+/// Only the owning execution may release it after its host invocation unwinds.
+#[derive(Debug)]
+pub(crate) struct RunHold {
+    domain: u64,
+    binding: u64,
+}
+
 pub(crate) struct Domain {
+    id: u64,
+    runs: usize,
     issuer: Issuer,
     next_memory: Option<u64>,
     memories: Vec<Binding>,
@@ -64,6 +75,8 @@ impl Domain {
             .map_err(|_| Error::Capacity)?;
         actions.resize_with(max_actions, || None);
         Ok(Self {
+            id,
+            runs: 0,
             issuer: Issuer::new(id),
             next_memory: Some(1),
             memories,
@@ -72,6 +85,43 @@ impl Domain {
         })
     }
 
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Run capacity uses the configured action count as a separate upper bound.
+    /// No action or byte-progress record is created; ordinary guest writes and
+    /// host read spans remain permitted. A ticket never crosses the host ABI.
+    pub(crate) fn hold_run(&mut self, binding: u64) -> Result<RunHold, Error> {
+        let i = self.memory(binding)?;
+        if self.memories[i].changing {
+            return Err(Error::Busy);
+        }
+        if self.runs == self.actions.len() {
+            return Err(Error::Capacity);
+        }
+        self.runs += 1;
+        self.memories[i].running += 1;
+        Ok(RunHold {
+            domain: self.id,
+            binding,
+        })
+    }
+    pub(crate) fn release_run(&mut self, hold: RunHold) -> Result<(), (Error, RunHold)> {
+        if hold.domain != self.id {
+            return Err((Error::UnknownMemory, hold));
+        }
+        let i = match self.memory(hold.binding) {
+            Ok(i) => i,
+            Err(e) => return Err((e, hold)),
+        };
+        if self.memories[i].running == 0 {
+            return Err((Error::Incomplete, hold));
+        }
+        self.memories[i].running -= 1;
+        self.runs -= 1;
+        Ok(())
+    }
     fn next_id(&mut self) -> Result<u64, Error> {
         let id = self.next_memory.ok_or(Error::Exhausted)?;
         self.next_memory = id.checked_add(1);
@@ -103,6 +153,7 @@ impl Domain {
             id,
             extent,
             spans: 0,
+            running: 0,
             changing: false,
         });
         Ok(id)
@@ -128,6 +179,19 @@ impl Domain {
             .filter_map(Option::as_mut)
             .find(|p| p.action.token() == token)
             .ok_or(Error::UnknownAction)
+    }
+
+    /// Non-retaining exact-span preflight. It neither clamps guest syscall
+    /// lengths nor protects a later access; span admission must check again.
+    pub(crate) fn range(&self, binding: u64, offset: u64, length: u64) -> Result<(), Error> {
+        let m = &self.memories[self.memory(binding)?];
+        if m.changing {
+            return Err(Error::Busy);
+        }
+        if offset > m.extent || length > m.extent - offset {
+            return Err(Error::Range);
+        }
+        Ok(())
     }
 
     /// Reserve a span before any host access. Even a zero-length span has an
@@ -160,7 +224,7 @@ impl Domain {
     pub(crate) fn change(&mut self, binding: u64, extent: u64) -> Result<Token, Error> {
         let memory = self.memory(binding)?;
         let m = &self.memories[memory];
-        if m.changing || m.spans != 0 {
+        if m.changing || m.spans != 0 || m.running != 0 {
             return Err(Error::Busy);
         }
         if extent > 1u64 << 32 {

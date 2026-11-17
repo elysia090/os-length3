@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync, mkdtempSync, writeFileSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {test} from 'node:test';
 import {memoryHost} from '../../runtime/linux/memory-host.ts';
 
@@ -293,4 +295,156 @@ test('terminal observations retain result capacity but no guest lifetime lease',
   assert.equal(host.copyRead(read), 2);
   assert.deepEqual(host.capture(grown, 65536, 2), textBytes('ef'));
   host.retireRead(read);
+});
+
+const lazyHost = (size = 1) => {
+  const host = memoryHost(moduleOf(), 3, 12);
+  const root = host.prepareFiles({inodes: 8, entries: 8, fileBytes: 1024, tables: 4, descriptions: 8, slots: 16, reads: 8});
+  const lazy = host.lazyFile(root, textBytes('lazy'), 7, size);
+  const other = host.file(root, textBytes('other'), textBytes('other'));
+  host.sealFiles(16);
+  const admitted = host.execution(host.create(1, 2), new Uint8Array(0));
+  return {host, lazy, other, ...admitted, fd: host.open(lazy)};
+};
+
+test('managed lazy delivery uses actual source size then reads resident payload without a new load', {skip: !artifact}, () => {
+  const {host, fd, execution, memory} = lazyHost();
+  const first = host.beginManagedRead(execution, fd, 32, 4);
+  assert.equal(host.readResult(first).state, 'load-ready');
+  const load = host.startLoad(first);
+  assert.equal(load.source, 7);
+  const input = textBytes('abcd');
+  host.finishLoad(first, load.attempt, input); input.fill(99);
+  assert.equal(host.copyRead(first), 4);
+  assert.equal(host.offset(fd), 4n);
+  assert.deepEqual(host.capture(memory, 32, 4), textBytes('abcd'));
+  host.retireRead(first); host.seek(fd, 0n);
+  const next = host.beginManagedRead(execution, fd, 48, 4);
+  assert.equal(host.readResult(next).state, 'ready');
+  assert.throws(() => host.startLoad(next), /admission/);
+  assert.equal(host.copyRead(next), 4);
+  host.retireRead(next);
+});
+
+test('managed requested range is checked before source admission, including metadata EOF', {skip: !artifact}, () => {
+  const {host, fd, execution} = lazyHost();
+  host.seek(fd, 99n);
+  assert.throws(() => host.beginManagedRead(execution, fd, 65536, 1), /admission/);
+  host.seek(fd, 0n); // failure did not reserve the original OFD
+  const read = host.beginManagedRead(execution, fd, 0, 1);
+  const load = host.startLoad(read);
+  assert.equal(load.attempt, 1); // failed range did not begin a source attempt
+  host.finishLoad(read, load.attempt, textBytes('a'));
+  assert.equal(host.copyRead(read), 1);
+});
+
+test('cancelled started loader is retired once; late bytes do not become a new read', {skip: !artifact}, () => {
+  const {host, fd, execution, memory} = lazyHost();
+  const read = host.beginManagedRead(execution, fd, 8, 3);
+  const load = host.startLoad(read);
+  host.cancelRead(read);
+  assert.equal(host.readResult(read).state, 'loading');
+  assert.throws(() => host.retireRead(read), /admission/);
+  assert.throws(() => host.seek(fd, 3n), /admission/);
+  host.finishLoad(read, load.attempt, textBytes('old'));
+  assert.equal(host.readResult(read).state, 'cancelled');
+  assert.equal(host.offset(fd), 0n);
+  assert.deepEqual(host.capture(memory, 8, 3), new Uint8Array(3));
+  assert.throws(() => host.finishLoad(read, load.attempt, textBytes('old')), /admission/);
+  host.retireRead(read);
+  const fresh = host.beginManagedRead(execution, fd, 8, 3);
+  const retry = host.startLoad(fresh); assert.notEqual(retry.attempt, load.attempt);
+  host.finishLoad(fresh, retry.attempt, textBytes('new'));
+  assert.equal(host.copyRead(fresh), 3);
+  assert.deepEqual(host.capture(memory, 8, 3), textBytes('new'));
+});
+
+test('image replacement during loading prevents delivery to either incarnation', {skip: !artifact}, () => {
+  const {host, fd, execution, memory} = lazyHost();
+  const read = host.beginManagedRead(execution, fd, 8, 3), load = host.startLoad(read);
+  const next = host.replaceImage(execution, new Uint8Array(16));
+  assert.throws(() => host.capture(memory, 8, 3), /Unknown memory/);
+  assert.throws(() => host.finishLoad(read, load.attempt, textBytes('abc')), /admission/);
+  assert.equal(host.readResult(read).state, 'failed');
+  assert.throws(() => host.copyRead(read), /admission/);
+  assert.equal(host.offset(fd), 0n);
+  assert.deepEqual(host.capture(next, 8, 3), new Uint8Array(3));
+  host.retireRead(read);
+});
+
+test('source completion keeps the original OFD after close and fd reuse', {skip: !artifact}, () => {
+  const {host, fd, other, execution, memory} = lazyHost();
+  const dup = host.dup(fd), read = host.beginManagedRead(execution, fd, 8, 3);
+  const load = host.startLoad(read);
+  host.close(fd); const reused = host.open(other); assert.equal(reused, fd);
+  host.finishLoad(read, load.attempt, textBytes('abc'));
+  assert.equal(host.copyRead(read), 3);
+  assert.equal(host.offset(dup), 3n); assert.equal(host.offset(reused), 0n);
+  assert.deepEqual(host.capture(memory, 8, 3), textBytes('abc'));
+});
+
+test('same-inode loading reentry poisons the original attempt without fallback', {skip: !artifact}, () => {
+  const {host, fd, lazy, execution, memory} = lazyHost();
+  const secondFd = host.open(lazy);
+  const read = host.beginManagedRead(execution, fd, 8, 3), load = host.startLoad(read);
+  assert.throws(() => host.beginManagedRead(execution, secondFd, 32, 3), /admission/);
+  assert.throws(() => host.finishLoad(read, load.attempt, textBytes('abc')), /admission/);
+  assert.equal(host.readResult(read).state, 'failed');
+  assert.deepEqual(host.capture(memory, 8, 3), new Uint8Array(3));
+  assert.equal(host.offset(fd), 0n); host.retireRead(read);
+  const retry = host.beginManagedRead(execution, fd, 8, 3), fresh = host.startLoad(retry);
+  host.finishLoad(retry, fresh.attempt, textBytes('new'));
+  assert.equal(host.copyRead(retry), 3);
+});
+
+
+test('stopped source input staging failure releases its reservation without adopting data', {skip: !artifact}, () => {
+  const {host, fd, execution} = lazyHost();
+  const read = host.beginManagedRead(execution, fd, 0, 3), load = host.startLoad(read);
+  assert.throws(() => host.finishLoad(read, load.attempt, new Uint8Array(1025)), /Source completion|admission/);
+  assert.equal(host.readResult(read).state, 'failed');
+  host.seek(fd, 0n); host.retireRead(read);
+  const retry = host.beginManagedRead(execution, fd, 0, 3), next = host.startLoad(retry);
+  host.finishLoad(retry, next.attempt, textBytes('abc'));
+  assert.equal(host.copyRead(retry), 3);
+});
+
+test('Node host-file source transport feeds the same Rust-owned lazy read', {skip: !artifact}, async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'sods-managed-source-'));
+  try {
+    const path = join(directory, 'input'); writeFileSync(path, 'node-file');
+    const {host, fd, execution, memory} = lazyHost(0);
+    const read = host.beginManagedRead(execution, fd, 64, 9), load = host.startLoad(read);
+    assert.equal(load.source, 7);
+    await Promise.resolve(); // no guest/core view lives across host source work
+    host.finishLoad(read, load.attempt, readFileSync(path));
+    assert.equal(host.copyRead(read), 9);
+    assert.equal(host.offset(fd), 9n);
+    assert.deepEqual(host.capture(memory, 64, 9), textBytes('node-file'));
+    host.retireRead(read);
+  } finally { rmSync(directory, {recursive: true}); }
+});
+
+test('image-owned mutation tokens and managed canonical views reject generic interference', {skip: !artifact}, () => {
+  const a = readAbi(), execution = a.ok('linux_execution_create', a.binding);
+  a.ok('linux_image_begin', execution, 65536n);
+  // First domain action is the image change; generic paths cannot control it.
+  assert.ok(a.call('linux_cancel', 0n) < 0);
+  assert.ok(a.call('linux_receipt', 0n, 1n, 0) < 0);
+  assert.ok(a.call('linux_retire', 0n) < 0);
+  const binding = a.ok('linux_image_finish', execution, 0);
+  assert.notEqual(binding, a.binding);
+  assert.ok(a.call('linux_change', binding, 65536n) < 0);
+  const read = a.ok('linux_managed_read_begin', execution, a.fd, 0n, 3n);
+  assert.ok(a.call('linux_image_begin', execution, 65536n) < 0);
+  const pointer = Number(a.ok('linux_managed_read_start', execution, read));
+  assert.ok(a.call('linux_load_input', 4) < 0);
+  assert.ok(a.call('linux_execution_create', binding) < 0);
+  new Uint8Array(a.memory.buffer, 0, 3).set(new Uint8Array((a.e.memory as WebAssembly.Memory).buffer, pointer, 3));
+  a.ok('linux_read_receipt', read, 3n, 1);
+  assert.ok(a.call('linux_image_begin', execution, 65536n) < 0);
+  a.ok('linux_read_receipt', read, 3n, 0);
+  a.ok('linux_image_begin', execution, 65536n);
+  a.ok('linux_image_finish', execution, 1); // no initialization happened
+  assert.equal(a.ok('linux_offset', a.fd), 3n);
 });

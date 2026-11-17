@@ -32,6 +32,15 @@ interface Admission extends WebAssembly.Exports {
   linux_read_retire(read: bigint): number;
   linux_result_length(): bigint;
   linux_result_state(): number;
+  linux_execution_create(binding: bigint): number;
+  linux_image_begin(execution: bigint, extent: bigint): number;
+  linux_image_finish(execution: bigint, outcome: number): number;
+  linux_tree_lazy(parent: bigint, mode: number, source: number, size: number): number;
+  linux_managed_read_begin(execution: bigint, fd: number, at: bigint, requested: bigint): number;
+  linux_read_load_start(execution: bigint, read: bigint): number;
+  linux_load_input(length: number): number;
+  linux_read_load_finish(execution: bigint, read: bigint, attempt: number, success: number): number;
+  linux_managed_read_start(execution: bigint, read: bigint): number;
 }
 // Capture the physical operations before any caller can replace their prototypes.
 // The importing realm's intrinsics must be trusted at module initialization.
@@ -48,6 +57,7 @@ const extentOf = (memory: WebAssembly.Memory): bigint => wide(lengthOf(new Bytes
 export interface MemoryBinding { readonly kind: 'managed-memory' }
 export interface InodeBinding { readonly kind: 'managed-inode' }
 export interface ReadBinding { readonly kind: 'managed-read' }
+export interface ExecutionBinding { readonly kind: 'managed-execution' }
 export interface FileLimits {
   inodes: number; entries: number; fileBytes: number; tables: number;
   descriptions: number; slots: number; reads: number;
@@ -57,7 +67,10 @@ const required = ['linux_abi_version', 'linux_init', 'linux_result', 'linux_bind
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file',
   'linux_files_seal', 'linux_open', 'linux_dup', 'linux_close', 'linux_offset', 'linux_seek',
   'linux_read_begin', 'linux_read_start', 'linux_read_receipt', 'linux_read_query',
-  'linux_read_cancel', 'linux_read_retire', 'linux_result_length', 'linux_result_state'];
+  'linux_read_cancel', 'linux_read_retire', 'linux_result_length', 'linux_result_state',
+  'linux_execution_create', 'linux_image_begin', 'linux_image_finish', 'linux_tree_lazy',
+  'linux_managed_read_begin', 'linux_read_load_start', 'linux_load_input',
+  'linux_read_load_finish', 'linux_managed_read_start'];
 const integer = (n: number): number => {
   if (!Number.isSafeInteger(n) || n < 0) throw new RangeError('Expected a nonnegative safe integer');
   return n;
@@ -96,9 +109,15 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     apply(mapSet, objects, [binding, {id, memory}]);
     return binding;
   };
+  const executions = new Map<ExecutionBinding, {id: bigint; binding: MemoryBinding}>();
+  const executionOf = (handle: ExecutionBinding): {id: bigint; binding: MemoryBinding} => {
+    const e = apply(mapGet, executions, [handle]);
+    if (!e) throw new Error('Unknown execution binding');
+    return e;
+  };
   const inodes = new Map<InodeBinding, bigint>();
   const inodeHandles = new Map<bigint, InodeBinding>();
-  const reads = new Map<ReadBinding, {id: bigint; memory: WebAssembly.Memory; offset: number}>();
+  const reads = new Map<ReadBinding, {id: bigint; memory: WebAssembly.Memory; offset: number; execution?: bigint}>();
   const inodeOf = (inode: InodeBinding): bigint => {
     const id = apply(mapGet, inodes, [inode]);
     if (id === undefined) throw new Error('Unknown inode binding');
@@ -112,7 +131,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     apply(mapSet, inodeHandles, [id, inode]);
     return inode;
   };
-  const readOf = (read: ReadBinding): {id: bigint; memory: WebAssembly.Memory; offset: number} => {
+  const readOf = (read: ReadBinding): {id: bigint; memory: WebAssembly.Memory; offset: number; execution?: bigint} => {
     const entry = apply(mapGet, reads, [read]);
     if (!entry) throw new Error('Unknown read binding');
     return entry;
@@ -136,6 +155,30 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   const put = (pointer: bigint, bytes: Uint8Array): void => {
     apply(setBytes, new Bytes(bufferOf(core.memory), numeric(pointer), lengthOf(bytes)), [bytes]);
   };
+  // Physical initialization only. Rust owns the image generation and decides
+  // whether this binding may change. No view survives the synchronous write.
+  const installImage = (id: bigint, binding: MemoryBinding, bytes: Uint8Array, owner?: ExecutionBinding): MemoryBinding => {
+    const {memory} = get(binding), extent = extentOf(memory);
+    if (wide(lengthOf(bytes)) > extent) throw new RangeError('Image exceeds memory extent');
+    checked(core.linux_image_begin(id, extent));
+    try { apply(setBytes, new Bytes(bufferOf(memory), 0, lengthOf(bytes)), [bytes]); }
+    catch (error) {
+      // Captured synchronous intrinsics have unwound: no access remains, but
+      // partial initialization is not rollback or a usable image.
+      try {
+        const next = remember(result(core.linux_image_finish(id, 2)), memory);
+        apply(mapDelete, objects, [binding]);
+        // The failed image is not runnable, but a known stopped mutation must
+        // not leave the physical owner associated with a retired incarnation.
+        if (owner !== undefined) apply(mapSet, executions, [owner, {id, binding: next}]);
+      }
+      catch (receipt) { throw new AggregateError([error, receipt], 'Image initialization and receipt failed'); }
+      throw error;
+    }
+    const next = remember(result(core.linux_image_finish(id, 0)), memory);
+    apply(mapDelete, objects, [binding]);
+    return next;
+  };
   return {
     prepareFiles(limits: FileLimits): InodeBinding {
       const {inodes, entries, fileBytes, tables, descriptions, slots, reads} = limits;
@@ -153,6 +196,57 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       put(result(core.linux_name(u32(lengthOf(component)))), component);
       put(result(core.linux_input(u32(lengthOf(bytes)))), bytes);
       return rememberInode(result(core.linux_tree_file(id, mode)));
+    },
+    lazyFile(parent: InodeBinding, name: Uint8Array, source: number, size: number, mode = 0o644): InodeBinding {
+      const id = inodeOf(parent), component = new Bytes(name); u32(source); u32(size); u32(mode);
+      put(result(core.linux_name(u32(lengthOf(component)))), component);
+      return rememberInode(result(core.linux_tree_lazy(id, mode, source, size)));
+    },
+    /** Private memory-image admission, not ELF loading or a guest run API. */
+    execution(binding: MemoryBinding, input: Uint8Array): {execution: ExecutionBinding; memory: MemoryBinding} {
+      const bytes = new Bytes(input), {id, memory} = get(binding);
+      if (wide(lengthOf(bytes)) > extentOf(memory)) throw new RangeError('Image exceeds memory extent');
+      const executionId = result(core.linux_execution_create(id));
+      const next = installImage(executionId, binding, bytes);
+      const execution = freeze({kind: 'managed-execution' as const});
+      apply(mapSet, executions, [execution, {id: executionId, binding: next}]);
+      return {execution, memory: next};
+    },
+    replaceImage(execution: ExecutionBinding, input: Uint8Array): MemoryBinding {
+      const bytes = new Bytes(input), entry = executionOf(execution);
+      const next = installImage(entry.id, entry.binding, bytes, execution);
+      apply(mapSet, executions, [execution, {id: entry.id, binding: next}]);
+      return next;
+    },
+    beginManagedRead(execution: ExecutionBinding, fd: number, offset: number, length: number): ReadBinding {
+      u32(fd); integer(offset); integer(length);
+      const e = executionOf(execution), {memory} = get(e.binding);
+      const id = result(core.linux_managed_read_begin(e.id, fd, wide(offset), wide(length)));
+      const read = freeze({kind: 'managed-read' as const});
+      apply(mapSet, reads, [read, {id, memory, offset, execution: e.id}]);
+      return read;
+    },
+    startLoad(read: ReadBinding): {source: number; attempt: number} {
+      const r = readOf(read);
+      if (r.execution === undefined) throw new Error('Read has no execution');
+      const source = numeric(result(core.linux_read_load_start(r.execution, r.id)));
+      return {source, attempt: numeric(core.linux_result_length())};
+    },
+    finishLoad(read: ReadBinding, attempt: number, input: Uint8Array | null): void {
+      u32(attempt); const r = readOf(read);
+      if (r.execution === undefined) throw new Error('Read has no execution');
+      // The source caller has returned before input staging. A capture/allocation
+      // failure must settle that stopped attempt, not strand a Loading owner.
+      try {
+        const bytes = input === null ? null : new Bytes(input);
+        if (bytes !== null) put(result(core.linux_load_input(u32(lengthOf(bytes)))), bytes);
+      } catch (error) {
+        try { checked(core.linux_read_load_finish(r.execution, r.id, attempt, 0)); }
+        catch (completion) { throw new AggregateError([completion, error], 'Source completion and input staging failed'); }
+        throw error;
+      }
+      // Do not retry completion if this call fails after changing source state.
+      checked(core.linux_read_load_finish(r.execution, r.id, attempt, input === null ? 0 : 1));
     },
     sealFiles(fdLimit: number): void { checked(core.linux_files_seal(u32(fdLimit))); },
     open(inode: InodeBinding): number { return numeric(result(core.linux_open(inodeOf(inode)))); },
@@ -172,8 +266,8 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       return read;
     },
     copyRead(read: ReadBinding): number {
-      const {id, memory, offset} = readOf(read);
-      const pointer = numeric(result(core.linux_read_start(id)));
+      const {id, memory, offset, execution} = readOf(read);
+      const pointer = numeric(result(execution === undefined ? core.linux_read_start(id) : core.linux_managed_read_start(execution, id)));
       const length = numeric(core.linux_result_length());
       try {
         // No caller callback, await or core export between fresh views and copy.
@@ -195,7 +289,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     readResult(read: ReadBinding) {
       const confirmed = result(core.linux_read_query(readOf(read).id));
       const length = numeric(core.linux_result_length()), flags = core.linux_result_state();
-      const state = (['ready', 'executing', 'unknown', 'finished', 'cancelled'] as const)[flags & 0xff];
+      const state = (['ready', 'executing', 'unknown', 'finished', 'cancelled', 'load-ready', 'loading', 'failed'] as const)[flags & 0xff];
       if (state === undefined) throw new Error('Invalid read state');
       return {state, confirmed, length, cancelRequested: !!(flags & 0x100)};
     },

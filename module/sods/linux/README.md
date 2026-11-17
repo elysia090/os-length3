@@ -354,3 +354,60 @@ lookups. No constant-time or allocation-free path claim follows. Tests connect
 returned positions through component lookup, open and resident read, but this is
 not a guest `..` syscall: search permissions, symlinks, NO_XDEV, BENEATH/IN_ROOT,
 full path validation and actual Node caller cutover remain unimplemented.
+
+## Private lazy reads and execution image identity
+
+The resident ABI above remains unchanged. A separate managed read path now ties
+its pending operation to a Rust execution/image snapshot and original OFD before
+calling a source. Source ID, loaded state and attempt identity remain in the
+file-store; a nonzero source ID does not mean a loaded payload must be loaded again.
+The private adapter transports source bytes and actual engine Memory objects, not
+Linux offsets, loader state or execution decisions. Node readFileSync delivery is
+covered through this same adapter, but the normal Node guest runner is not switched.
+
+Requested memory range is checked before any load attempt. This is an exact private
+range contract, not guest read's partial-range clamp, access flags or errno order.
+After loading, actual source size determines the copy length. The original image,
+binding and execution are checked again before copy admission. Foreign execution
+or domain selection rejects without retiring somebody else's operation; a changed
+image of the same owner fails the old read before destination access. A failed
+staging allocation settles a stopped matching source attempt rather than leaving
+its OFD reserved. Stale completion never adopts input or changes a new attempt.
+
+Ready load cancellation retires an unstarted attempt. Once host source work starts,
+cancellation records intent but retains the attempt/OFD until its stopped result.
+Late cancelled bytes are discarded, not cached or delivered. Source reentry retains
+the existing file-store poison behavior. Same-OFD seek/read conflicts are refused
+by the reservation: this is an intentional difference from legacy raw callbacks
+that mutate offset and then fail the read's identity check. No guest errno or raw
+callback compatibility is claimed by that private refusal.
+
+The image owner distinguishes successful initialization, proven untouched failure,
+poisoned-but-stopped initialization, and unknown completion. Partial initialization
+never restores an old runnable image. Generic physical growth cannot retire an
+execution-owned binding behind that owner's back. Image writes in the private host
+are bounded memory-prefix initialization, not ELF loading, a translated module or
+a stack/auxv constructor. A failed initial admission can consume bounded execution
+capacity until its State ends; no automatic owner recycling is implemented.
+
+Rust also has a separate run lifetime hold, not a zero-byte copy effect. An exit
+request is not stop evidence; only a matching invocation's unwind can release the
+hold. Unknown retains it, while syscall read spans may coexist. These run transitions
+are native-tested but not yet connected to a real guest run or Worker stop receipt.
+Execution ownership is not yet bound to a Task's FD/Fs/credentials and namespace.
+
+There is no mutable payload/eviction export in this sealed path. Its source safety
+comes from the Store attempt, original OFD and Files lifetime, not a general inode
+write lock. Future write/truncate/mapping/eviction must acquire shared source
+exclusion before exposure. A short canonical view blocks all allocation/image/load
+exports; unknown copy retains source and guest obligations. Unexpected cleanup
+failure can quarantine a bounded pending slot until State ends, not silently free it.
+
+First load requires stable host capture when necessary plus S input bytes into
+Wasm, followed by n bytes from canonical payload to the guest Memory. Adopting the
+input Vec avoids an additional S-byte scratch-to-payload copy. Warm reads omit
+source transport. Record lookups still scan bounded tables; no universal optimum
+or atomic shared-memory snapshot is claimed. The new production TS is physical
+image/source transport and opaque handle associations. Corresponding old TS Linux
+semantics have not yet been removed: guest admission, translator validation, real
+Node/Worker execution, credentials and the complete caller cutover remain gates.
