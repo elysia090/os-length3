@@ -1369,3 +1369,29 @@ numbering. PID reservation publication/rollback remains a separate gate; channel
 return does not prove it, and no whole-fork completion is claimed.
 Actual inline/Node rehearsal: 2 pass; focused strict TypeScript and independent
 source review pass.
+
+### Failed PID registration removes only its attempted lookup prefix
+
+number(space) previously left namespace lookup entries if a later Map.set failed.
+It now cleans only the completed/attempted prefix, including a set that inserted
+then threw. An absent entry requires no action; a matching global ID is removed;
+a different owner is left intact with uncertainty reported. get/delete failures
+are caught independently so the remaining prefix can retire. Original failure
+identity survives clean rollback of entries; cleanup failures accompany it.
+
+This is lookup cleanup, not PID rollback: last counters stay monotonic to avoid
+reusing possibly observed IDs. Loss of number 1 in a fresh namespace on this
+exceptional path is unresolved, so successful retry is not claimed to restore
+full Linux first-process semantics. Partial failure of the outer Kernel.numbers
+registration is another boundary. Raw overriding methods with unobservable or
+same-ID alias side effects remain outside the guarantee. Tests inject errors at
+observable map operations, not a claim of recovering safely from host heap OOM.
+
+Six PID tests pass: before/after-insertion failure, read/delete cleanup failure,
+replacement/unrelated entries, unattempted ancestor preservation and monotonic
+counters. Initial four tests failed before this patch. Task 9 and family 42 also
+pass. Normal work retains the existing number array plus one attempted-namespace
+local; no successful-path extra lookup scan, copy or allocation ledger. The
+failure path alone traverses its attempted prefix.
+Actual inline/Node rehearsal: 2 pass; focused strict TypeScript and independent
+source review pass. Arbitrary ancestor-chain mutation is not proven safe.

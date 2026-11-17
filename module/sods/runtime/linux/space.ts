@@ -127,7 +127,27 @@ export interface Numbered { readonly space: PidNs; readonly nrs: readonly number
 export function number(space: PidNs): number[] {
   const nrs: number[] = [];
   for (let ns: PidNs | null = space; ns; ns = ns.parent) nrs[ns.level] = ++ns.last;
-  for (let ns: PidNs | null = space; ns?.parent; ns = ns.parent) ns.numbers.set(nrs[ns.level], nrs[0]);
+  let attempted: PidNs | null = null;
+  try {
+    for (let ns: PidNs | null = space; ns?.parent; ns = ns.parent) {
+      attempted = ns;
+      ns.numbers.set(nrs[ns.level], nrs[0]);
+    }
+  } catch (error) {
+    const failures = [error];
+    // Remove lookup entries only through the attempted prefix. Keep consumed
+    // counters monotonic: this is not PID reuse or a complete reservation undo.
+    for (let ns: PidNs | null = space; ns?.parent && attempted; ns = ns.parent) {
+      try {
+        const own = ns.numbers.get(nrs[ns.level]);
+        if (own === nrs[0]) ns.numbers.delete(nrs[ns.level]);
+        else if (own !== undefined) throw new Error('failed PID registration changed lookup ownership');
+      } catch (cleanup) { failures.push(cleanup); }
+      if (ns === attempted) break;
+    }
+    if (failures.length > 1) throw new AggregateError(failures, 'PID registration and lookup cleanup failed');
+    throw error;
+  }
   return nrs;
 }
 /** What the kernel keeps of those it numbers: each not made in the first namespace, by its own number there. */
