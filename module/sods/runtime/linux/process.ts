@@ -2088,9 +2088,33 @@ export class Process implements Proc {
     const preparedFds = child.fds, preparedFs = ct.fs, preparedGroup = child.cgroup;
     const preparedPool = made.pooled, preparedX87Module = k.x87Module;
     const preparedEpoch = memoryEpoch(made), preparedBuffer = made.buffer;
-    try { ct.load(this.image, made, t); }
+    let loadCompleted = false, loadedX87: X87 | null = null, loadedFpu = 0;
+    try {
+      ct.load(this.image, made, t);
+      loadCompleted = true; loadedX87 = ct.x87Owner; loadedFpu = ct.x87;
+      if (live) {
+        this.copyLive(child, live);
+        for (const m of this.maps) child.mapShared(m.node, m.start, m.length, m.off);
+      }
+      const regs = t.context().regs;
+      regs[0] = 0n;
+      if (stack) regs[4] = stack;
+      if (tls !== null) regs[16] = tls;
+      ct.setContext(regs, resume);
+      ct.redirected = false;
+      ct.clearTid = clearTid;
+      // Do not establish init while executable/memory preparation can still fail.
+      // Recheck admission for reservations obtained before a reentrant failure.
+      publishInitialPid(child.pidns, child.pid, k.numbers, reservation);
+      child.tasks.add(ct);
+      up.children.add(child);
+      k.procs.set(child.pid, child);
+      k.tasks.set(ct.tid, ct);
+      k.go(ct);
+      return child;
+    }
     catch (error) {
-      const preparedX87 = ct.x87Owner, preparedFpu = ct.x87;
+      const preparedX87 = loadCompleted ? loadedX87 : ct.x87Owner, preparedFpu = loadCompleted ? loadedFpu : ct.x87;
       // A failed *new instance* has not returned exports. Do not generalize this
       // to a partially taken pooled instance, a published child, or later fork
       // preparation. Those paths need their own ownership proof.
@@ -2104,6 +2128,9 @@ export class Process implements Proc {
         (k.failedPreparations ??= new Set()).add(child);
         throw failure;
       };
+      // A returned instance may already be shared, partially published or running.
+      // Preserve evidence only; no stop, rollback or resource return is proven here.
+      if (loadCompleted) retainFailure(error);
       const unexposed = (): void => {
         if (ct.instance || ct.memory !== made || made.pooled !== preparedPool || child.memory !== (returnedMemory ? null : made)
           || !returnedMemory && (memoryEpoch(made) !== preparedEpoch || made.buffer !== preparedBuffer)
@@ -2156,26 +2183,6 @@ export class Process implements Proc {
       if (failures.length > 1) retainFailure(new AggregateError(failures, 'child load and preparation cleanup failed'));
       throw error;
     }
-    if (live) {
-      this.copyLive(child, live);
-      for (const m of this.maps) child.mapShared(m.node, m.start, m.length, m.off);
-    }
-    const regs = t.context().regs;
-    regs[0] = 0n;
-    if (stack) regs[4] = stack;
-    if (tls !== null) regs[16] = tls;
-    ct.setContext(regs, resume);
-    ct.redirected = false;
-    ct.clearTid = clearTid;
-    // Do not establish init while executable/memory preparation can still fail.
-    // Recheck admission for reservations obtained before a reentrant failure.
-    publishInitialPid(child.pidns, child.pid, k.numbers, reservation);
-    child.tasks.add(ct);
-    up.children.add(child);
-    k.procs.set(child.pid, child);
-    k.tasks.set(ct.tid, ct);
-    k.go(ct);
-    return child;
   }
 
   /** A new thread of this process (clone with CLONE_THREAD): the caller's registers, rax 0, on `stack`. */

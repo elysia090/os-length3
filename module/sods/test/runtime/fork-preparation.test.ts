@@ -257,3 +257,39 @@ test('missing cgroup membership is not reported as successful retirement', async
   assert.throws(() => p.forkProcess(0n, {vm: true}), AggregateError);
   assert.equal(prepared().proc.failedPreparation!.retirement.cgroup, 'uncertain');
 });
+
+for (const phase of ['copy', 'registers', 'publication', 'schedule'] as const) test(`post-load ${phase} failure retains known preparation without pretending rollback`, async () => {
+  const {k, p, t, freed, prepared} = await trappedFork(), original = new Error(`${phase} refused`);
+  p.image = new Image(moduleOf(false));
+  t.reg = () => 0n; t.context = () => ({regs: Array(17).fill(0n), rip: 0n});
+  p.stackLow = p.stackTop = p.mapBase = p.mapEnd = 4096;
+  const newTask = k.newTask.bind(k);
+  k.newTask = proc => { const child = newTask(proc); child.setContext = () => { if (phase === 'registers') throw original; }; return child; };
+  if (phase === 'copy') p.copyLive = () => { throw original; };
+  if (phase === 'publication') {
+    const set = k.procs.set.bind(k.procs);
+    k.procs.set = (id, child) => { set(id, child); throw original; };
+  }
+  if (phase === 'schedule') k.go = child => { k.runq.push(child); throw original; };
+  assert.throws(() => p.forkProcess(0n, {vm: phase !== 'copy'}), error => error === original);
+  const child = prepared().proc, record = child.failedPreparation!;
+  assert.ok(k.failedPreparations?.has(child)); assert.equal(record.task, prepared());
+  assert.equal(record.error, original); assert.ok(Object.values(record.retirement).every(value => value === 'not-attempted'));
+  assert.ok(prepared().instance instanceof WebAssembly.Instance); assert.equal(prepared().dead, false);
+  assert.deepEqual(freed, []); assert.equal(child.memory, prepared().memory);
+  if (phase === 'publication' || phase === 'schedule') {
+    assert.equal(k.procs.get(child.pid), child); assert.equal(p.children.has(child), true);
+  }
+  if (phase === 'schedule') assert.ok(k.runq.includes(prepared()));
+});
+
+test('post-load evidence distinguishes captured FPU ownership from a changed Task handle', async () => {
+  const {k, p, t, prepared, freed, fpu} = await trappedFork(), original = new Error('register callback changed handle');
+  p.image = new Image(moduleOf(false)); t.context = () => ({regs: Array(17).fill(0n), rip: 0n});
+  const newTask = k.newTask.bind(k);
+  k.newTask = proc => { const child = newTask(proc); child.setContext = () => { child.x87 = 99; throw original; }; return child; };
+  assert.throws(() => p.forkProcess(0n, {vm: true}), error => error === original);
+  const record = prepared().proc.failedPreparation!;
+  assert.equal(record.x87Handle, 7); assert.equal(record.x87Owner, fpu);
+  assert.equal(record.task.x87, 99); assert.deepEqual(freed, []);
+});

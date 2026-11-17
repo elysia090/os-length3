@@ -1569,3 +1569,28 @@ later executable/register/publication failures remain distinct gates.
 Actual current-muk inline/Node rehearsals: 2 pass. Actual Wasm/CPU preparation
 plus PID gates: 47 pass. Historical translator artifact as before; no new browser,
 Wayland, full-distribution or automatic used-tree-disposal claim.
+
+### Retain evidence across post-load fork failures
+
+The fork failure boundary now includes copyLive, shared mapping preparation,
+register setup, PID admission/publication and scheduler admission. A normally
+returned load may already have made an instance reachable; a later failure only
+retains the Task, captured memory and post-load x87 allocator/handle in the
+Kernel failure roots. It does not end the backend, mark dead/zombie, return an
+owner, remove published entries or retry cleanup. Every retirement state stays
+not-attempted. The mutable Task remains distinct from captured acquisition data.
+The original error is rethrown unchanged, including FsError: an errno response
+can therefore coexist with already accepted child effects. This is not rollback.
+A scheduler callback can enqueue/run and then throw; execution state is unknown.
+
+Four baseline failures showed missing evidence at copy/register/Map publication/
+scheduling boundaries. The revised tests preserve that evidence, including effect
+then throw and a handle changed after load. Actual Wasm/CPU plus family/PID: 98
+pass; focused strict TypeScript passes. Failure roots increase retained state on
+repeated failure intentionally; normal execution adds only a flag and captured
+references/scalar, no payload copy/scan. Later reclamation still needs stop and
+ownership proof. Earlier constructor/newTask and pre-load preparation failures
+remain outside this boundary. No claim of atomic publication or PID rollback.
+Actual current-muk inline/Node rehearsal and unresolved-root retention gate:
+3 pass, using the historical translator as before. Independent source review
+reported no blocking issue for this evidence-only scope.
