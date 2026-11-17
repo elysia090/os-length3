@@ -79,3 +79,25 @@ test('another namespace copy retains its own callbacks and is not mistaken for w
   // Test cleanup owns this separate graph; the Kernel action did not touch it.
   assert.equal(retireInitialTree(separate), true);
 });
+
+test('namespace descriptor ownership is not represented by the target tree mount refs', async () => {
+  const {fileOf, spaceOf, namespaceWasExposed} = await import('../../runtime/linux/space.ts');
+  const {Description} = await import('../../runtime/linux/fd.ts');
+  const k = made(), ns = k.spaces.mnt;
+  assert.equal(namespaceWasExposed(ns), false);
+  const place = fileOf('mnt', ns), before = place.mnt.refs;
+  assert.equal(namespaceWasExposed(ns), true);
+  assert.equal(k.retireInitialMounts(), false); // issuance alone is conservatively unresolved
+  assert.equal(fileOf('mnt', ns).node, place.node);
+  const descriptor = new Description('file', {mnt: place.mnt, node: place.node}).retain();
+  assert.equal(place.mnt.refs, before + 1);
+  assert.ok(tree(ns.top).every(m => m.refs === 0));
+  k.halt();
+  assert.equal(k.retireInitialMounts(), false);
+  descriptor.release();
+  assert.equal(place.mnt.refs, before);
+  assert.equal(k.retireInitialMounts(), false); // raw Place still exists, no negative owner proof
+  assert.equal(spaceOf(place.node)?.ns, ns);
+  // Explicit test owner drops the graph; no auto collection claims this alias.
+  assert.equal(retireInitialTree(ns), true);
+});

@@ -939,3 +939,43 @@ The preflight/mutation guarantee assumes the runtime's ordinary Mount/Entry/Set
 objects, not a raw caller replacing them with reentrant getters or custom
 collections. Additional lightweight regressions reject locked/master propagation,
 a cycle and duplicate-child attachment without changing any edge.
+
+### Namespace files are ownership crossings, not target-mount refs
+
+fileOf('mnt', ns) returns a node on the common nsfs mount. Description increments
+that mount's refs, not any mount in ns.top. Its File-to-namespace association can
+also survive through a raw Place, bind mount or an fd carried by SCM_RIGHTS. A
+zero-ref target tree is therefore not a proof that its namespace is unobservable.
+The normal structural retirement path now refuses an initial namespace once a
+namespace File has been issued. A WeakSet records issuance before every return,
+including a reused File; it adds no strong namespace root and is not cleared by
+FD close. This is conservative history, not proof that a value actually escaped:
+a failed open or an unused returned Place may still force retention. Tests cover
+issuance, descriptor-held and descriptor-closed states separately, while showing
+that the represented tree's refs stay zero throughout.
+
+This does not solve cloned namespace ownership. copySpace can reuse procfs Super
+callbacks, setns imports a namespace through a File, mount propagation can create
+cross-namespace edges, and arbitrary public Image aliases can retain source
+closures independently. Three alternatives remain distinct:
+
+* Per-reference ownership on every namespace File/descriptor/mount crossing would
+  require complete acquisition/release coverage, including SCM_RIGHTS queues,
+  bind mounts and cycles. Adding only descriptor counts is not enough.
+* A genuinely private root ownership boundary could track namespaces created or
+  imported by its kernels and prohibit untracked live-object export. At closure,
+  internal cycles could be retired together after processes/callbacks/hosts end.
+  That requires provenance at clone/unshare/setns and propagation boundaries,
+  not simply relabeling the existing public graph as managed. sods must own the
+  runtime meaning; no reverse dependency on ricebox/why should be introduced.
+* Existing finite realm ownership retains unknown aliases and ends the whole realm.
+  It remains the safe fallback, not evidence of prompt reclamation or a viable
+  unbounded long-lived cache. Browser request-return is still not stop evidence.
+
+For the second alternative the necessary record scales with namespace creations
+and ownership crossings, and teardown with mount edges, not file payload bytes.
+It cannot infer absent raw aliases for free. Image.source should still not be
+revoked behind callers; the boundary must first establish who can invoke it.
+No generic domain manager, automatic copied-namespace destruction, or used-tree
+disposal is introduced here. The sticky initial-namespace gate closes the proven
+hole without pretending the larger ownership contract has been implemented.

@@ -44,8 +44,15 @@ export type Kind = keyof typeof NS;
 export interface Named { readonly id: number }
 
 const files = new WeakMap<Named, File>(), named = new WeakMap<File, {kind: Kind; ns: Named}>();
+// A namespace file can escape through an fd, a bind or a raw Place alias.
+// Mount.refs counts the nsfs mount, not the namespace represented by that file.
+// Without a complete external-owner protocol this is a sticky uncertainty, not
+// a reference count. Weak membership does not itself retain the namespace.
+const exposed = new WeakSet<Named>();
+export const namespaceWasExposed = (ns: Named): boolean => exposed.has(ns);
 /** The file of namespace `ns` (of kind `kind`), and where it is: what /proc/PID/ns/KIND leads to. */
 export function fileOf(kind: Kind, ns: Named): Place {
+  exposed.add(ns);
   let f = files.get(ns);
   if (!f) {
     f = new File(new Uint8Array(0), 0o444);
