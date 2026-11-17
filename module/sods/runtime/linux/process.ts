@@ -1,3 +1,4 @@
+import {ReadLifetimeError, memoryEpoch, retireMemoryView} from './read-lifetime.ts';
 // Processes and threads for translated programs. There is no machine to
 // boot: a process starts at its ELF entry with a SysV stack and its system
 // calls land in the tables of sys-file.ts, sys-proc.ts and signal.ts.
@@ -599,6 +600,7 @@ export class Kernel implements Kern {
     if (k < 0) k = this.spareMemories.length - 1;
     if (k < 0) return null;
     const [m] = this.spareMemories.splice(k, 1);
+    retireMemoryView(m);
     const have = m.buffer.byteLength / WASM_PAGE;
     if (have < pages) m.grow(pages - have);
     m.keeps = same(m);
@@ -614,6 +616,7 @@ export class Kernel implements Kern {
    * it would be let go of and taken back, and not let go of, so what is instantiated over it stays (Task.renew).
    */
   renew(memory: Mem, written: Range[] | null, pages: number, image: Image, over: Range[] = []): void {
+    retireMemoryView(memory);
     memory.written = merge([...memory.written, ...written ?? []]);
     memory.keeps = true;
     memory.exact = memory.imageOf === image;
@@ -628,6 +631,7 @@ export class Kernel implements Kern {
    * image, stack and mappings: Process.written); what lies outside them is still zero, and is not zeroed again.
    */
   letGo(memory: Mem | null, written: Range[] | null = null): void {
+    retireMemoryView(memory);
     if (!memory || --memory.users > 0) return;
     if (memory.tainted) { this.forget(memory); return; }
     memory.written = merge([...memory.written, ...written ?? [[0, memory.buffer.byteLength] as Range]]);
@@ -973,6 +977,11 @@ export class Kernel implements Kern {
       if (TRACE_SYSCALLS) console.error(`[${t.tid}]   = ${BigInt.asIntN(64, v)}`);
       return v;
     } catch (error) {
+      if (error instanceof ReadLifetimeError) {
+        try { this.exitProcess(p, SIG.KILL); }
+        catch (cleanup) { error.cleanupFailure = cleanup; p.stopped = SIG.KILL; }
+        throw error; // A failed cleanup must not disguise the original lost-identity failure.
+      }
       if (error instanceof FsError) {
         this.dirty = true;
         if (TRACE_SYSCALLS) console.error(`[${t.tid}]   = -${error.errno}`);
@@ -1493,8 +1502,22 @@ export class Process implements Proc {
   declare waited: Cpu;
   declare task: Task;
   declare call: Call | null;
-  declare memory: Mem | null;
-  declare image: Image;
+  private memory0: Mem | null = null;
+  private image0!: Image;
+  private readGeneration: object = {};
+  get memory(): Mem | null { return this.memory0; }
+  set memory(value: Mem | null) { this.readGeneration = {}; this.memory0 = value; }
+  get image(): Image { return this.image0; }
+  set image(value: Image) { this.readGeneration = {}; this.image0 = value; }
+  /** Capture identity, not a guest view. Shared byte stores do not retire it. */
+  readIdentity(): () => void {
+    const generation = this.readGeneration, memory = this.memory, buffer = memory?.buffer;
+    const epoch = memoryEpoch(memory), state = this.state;
+    return () => {
+      if (this.readGeneration !== generation || this.memory !== memory || memory?.buffer !== buffer
+        || memoryEpoch(memory) !== epoch || this.state !== state) throw new ReadLifetimeError();
+    };
+  }
   declare stackLow: number;
   declare stackTop: number;
   declare mapBase: number;
@@ -1608,6 +1631,7 @@ export class Process implements Proc {
   }
 
   reserve(length: number): number {
+    retireMemoryView(this.memory);
     length = Math.ceil(length / PAGE) * PAGE;
     const k = this.free.findIndex((r) => r.length >= length);
     if (k >= 0) {
@@ -1624,6 +1648,7 @@ export class Process implements Proc {
 
   /** Memory up to `end` is mapped (mapEnd moves past it): grown as it must be. */
   cover(end: number): void {
+    retireMemoryView(this.memory);
     const m = this.memory;
     if (!m) return;
     const need = end - m.buffer.byteLength;
@@ -1643,11 +1668,13 @@ export class Process implements Proc {
   }
 
   release(start: number, length: number): void {
+    retireMemoryView(this.memory);
     if (start >= this.mapBase) this.free.push({start, length: Math.ceil(length / PAGE) * PAGE});
   }
 
   /** Bytes [start, start + length) of memory are `node`'s from `off` on, both ways (MAP_SHARED). */
   mapShared(node: File, start: number, length: number, off: number): void {
+    retireMemoryView(this.memory);
     const m: Shared = {proc: this, node, start, length, off};
     node.map(m);
     this.maps.push(m);
@@ -1670,6 +1697,7 @@ export class Process implements Proc {
   sharedIn(start: number, length: number): Shared[] { return this.maps.filter((m) => m.start < start + length && start < m.start + m.length); }
   /** [start, start + length) is no longer mapped: what was written there through a mapping stays in its file. */
   unmapShared(start = 0, length = Infinity): void {
+    retireMemoryView(this.memory);
     for (const m of this.sharedIn(start, length)) {
       m.node.unmap(m);
       this.maps.splice(this.maps.indexOf(m), 1);

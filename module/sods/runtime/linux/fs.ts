@@ -166,9 +166,12 @@ export class File extends Node {
    * This separates consuming reads from legacy mutable read/data views and
    * retained share/bytes snapshots; it does not change those APIs' semantics.
    */
-  readInto(start: number, into: Uint8Array, at: number, length: number): number {
-    const bytes = this.read(start, start + length);
-    into.set(bytes, at);
+  readInto(start: number, into: Uint8Array, at: number, length: number, ready?: () => void): number {
+    let bytes: Uint8Array;
+    try { bytes = this.read(start, start + length); }
+    catch (error) { ready?.(); throw error; }
+    ready?.();
+    Uint8Array.prototype.set.call(into, bytes, at);
     return bytes.length;
   }
   /** The exact contents as a view, not a copy: a later write changes a copy, never what was handed out. */

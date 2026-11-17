@@ -1,3 +1,4 @@
+import {ReadLifetimeError} from './read-lifetime.ts';
 // File, directory, descriptor and pipe system calls. Handlers run with
 // `this` bound to the calling Process (`this.task` the thread, `this.call`
 // the call, whose `state` lasts while it waits) and throw FsError for errno
@@ -417,7 +418,11 @@ function readTo(p: Proc, d: Description, into: Uint8Array, at: number, length: n
     case 'file': {
       if ((d.flags & 3) === O.WRONLY) fail(E.BADF);
       const from = offset ?? d.offset;
-      const n = fileOf(d).readInto(from, into, at, length);
+      const identity = p.readIdentity(), revision = d.offsetRevision;
+      const n = fileOf(d).readInto(from, into, at, length, () => {
+        identity();
+        if (d.offsetRevision !== revision) throw new ReadLifetimeError();
+      });
       if (offset === null) d.offset += n;
       return n;
     }

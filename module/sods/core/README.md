@@ -130,8 +130,8 @@ Priority is destination lifetime before lazy loading, then migration of pending
 kernel operations rather than more standalone payload helpers. A source probe of
 existing TS lazy files reproduced a real failure: the loader replaced
 `Process.memory` during read, the syscall returned 3, and `abc` was written into
-the old memory while the current memory remained zero. **This remains unresolved.**
-No pending-read or pin fix is implemented by the two-process regression below.
+the old memory while the current memory remained zero. The two-process regression
+did not fix it. The bounded guard below now rejects this ordinary-file read path.
 This is an existing raw
 embedding path, not evidence that the new Rust file entrance supports lazy loading.
 
@@ -156,3 +156,38 @@ the other mapping, entry replacement and fd close preserve it, refused writes an
 truncation leave bytes/version unchanged, and an unmapped/reused region receives
 no later file propagation. This is deterministic process interleaving, not a test
 of simultaneous OS threads, shared-memory stores or arbitrary embedding mutation.
+
+### Implemented ordinary-file read lifetime guard
+
+The existing TS syscall owner now captures process assignment identity, backing
+buffer identity, memory renewal/mapping epoch, and open-description offset revision
+before source access. File.readInto checks these after source access (including a
+throwing loader), then performs a built-in typed-array copy without a user `set`
+callback. Rust-backed files check before entering the callback-free core copy;
+no guard is called while a Rust scratch view is outstanding.
+
+A stale read is a host ReadLifetimeError, not EFAULT or a successful short count.
+Kernel.attempt retires the affected process and rethrows it before guest resumption.
+Cleanup failure is retained on the original error and scheduling is stopped; this
+does not claim successful full cleanup. File readv preserves already-committed
+prefix bytes/offset but does not swallow a later stale error as partial success.
+The TS Description remains the only offset authority. Descriptor offset ABA and
+process memory assignment ABA are detected, not just pointer inequality.
+
+Regression coverage includes replacement, replacement followed by loader failure,
+assignment ABA, grow, same-memory renew, real reentrant mmap/mremap, cover without
+grow, offset ABA, later-vector invalidation, and cleanup failure. The renewal test
+uses the real renewal method with minimal image metadata, not a translated exec.
+
+This is **not** the complete Rust pending-read/slot-pin implementation. It closes
+the reproduced supported ordinary-file copy path; console/device consuming reads,
+sendfile, malicious method/property replacement, and general concurrent embedding
+lifetime changes are not thereby protected. Epochs conservatively invalidate even
+unrelated mapping operations and release by another sharing process. Concurrent
+shared byte stores are content changes, not invalidations or atomic snapshots.
+
+Current cost is O(1) identity state per process/description/memory and O(1) checks
+per read, with short-lived closure/token allocations; these are implementation
+costs, not a proven lower bound. No extra payload snapshot is introduced by the
+guard. Moving pending operation state into Rust must preserve these rejection,
+copy/offset ordering and cleanup contracts rather than add a second mutable offset.

@@ -41,8 +41,9 @@ class OwnedFile extends File {
   override given(_bytes: Uint8Array): void { this.live(); }
   override share(): Uint8Array { return this.bytes(); }
   override bytes(): Uint8Array { this.live(); if (this.maps) this.settle(); return this.range(0, this.size); }
-  override readInto(start: number, into: Uint8Array, at: number, length: number): number {
+  override readInto(start: number, into: Uint8Array, at: number, length: number, ready?: () => void): number {
     this.live(); if (this.maps) this.settle(start, start + length);
+    ready?.(); // Before entering core scratch; no callback is passed into the core facade.
     return payload(() => this.owned.readInto(start, into, at, length));
   }
   override write(at: number, bytes: Uint8Array): void {

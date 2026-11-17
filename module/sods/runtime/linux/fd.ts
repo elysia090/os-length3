@@ -169,7 +169,11 @@ export class Description {
   declare tree?: boolean;
   /** What is done once it is closed for good (a terminal's end gone, a mount's copy taken apart). */
   declare gone?: () => void;
-  declare offset: number;
+  private offset0 = 0;
+  private offsetGeneration: object = {};
+  get offset(): number { return this.offset0; }
+  set offset(value: number) { this.offsetGeneration = {}; this.offset0 = value; }
+  get offsetRevision(): object { return this.offsetGeneration; }
   declare refs: number;
   declare closed: boolean;
   declare locked: object | null;

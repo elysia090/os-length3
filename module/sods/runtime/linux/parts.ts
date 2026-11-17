@@ -206,6 +206,7 @@ export interface Cpu { user: number; sys: number }
 
 /** A process as the calls see it (process.ts Process). */
 export interface Proc {
+  readIdentity(): () => void;
   readonly kernel: Kern;
   pid: number;
   ppid: number;
