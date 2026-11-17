@@ -297,3 +297,19 @@ The regression first reproduced fabricated zero writeback (expected 7, observed
 already-settled bytes, and continuing propagation to another process's mapping.
 Normal exit/unmap still settles mappings. Cleanup-failure reporting remains
 separate from a claim that all resources were recovered.
+
+### Materialization stage 3: truncation and fd installation
+
+Regular-file O_TRUNC keeps its initial EMFILE precedence check, then materializes
+and validates process identity, reselects a currently free fd, and only then
+truncates and installs. A loader occupying the initial candidate is not closed by
+the outer open; if no fd remains, the file is not truncated. No new reservation
+system is introduced for the callback-free truncate/install interval.
+
+truncate/ftruncate preserve existing path/fd/permission and length refusal order,
+then validate identity across materialization before content mutation. Holding the
+already-selected inode is distinct from looking a possibly reused fd up again.
+Regression cases include candidate occupation, exhaustion during loading,
+replacement followed by loader throw, and refusal before any source invocation.
+These are ordinary synchronous File/OwnedFile contracts, not arbitrary overridden
+methods or concurrent external fd-table mutation guarantees.

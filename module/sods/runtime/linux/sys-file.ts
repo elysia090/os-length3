@@ -10,7 +10,7 @@ import {ReadLifetimeError} from './read-lifetime.ts';
 import {Description, PIPE_BUF, Pipe, flock, unflock, type Interest} from './fd.ts';
 import * as net from './sys-net.ts';
 import {Listing, Made, madeOf} from './made.ts';
-import {Dir, Device, E, ending, Fifo, File, FsError, Link, MNT, S_IFBLK, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG, S_IFSOCK, SocketName, WALK, device, pathOf, walk, type Entry, type Found, type Mount, type Place} from './fs.ts';
+import {Dir, Device, E, ending, Fifo, File, FILE_MOST, FsError, Link, MNT, S_IFBLK, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG, S_IFSOCK, SocketName, WALK, device, pathOf, walk, type Entry, type Found, type Mount, type Place} from './fs.ts';
 import {CAP, MAY, capable, capableOver, idOf, may, owns, shownIn} from './cred.ts';
 import {take} from './mount.ts';
 import * as pty from './pty.ts';
@@ -265,12 +265,26 @@ function openat2(p: Proc, dirfd: bigint, address: bigint, how: number, size: num
 const RESOLVE = {...WALK, CACHED: 32};
 const O_PATH = 0x200000;
 
+/** Source callbacks finish before a caller commits inode or address-space effects. */
+function materializeFor(p: Proc, file: File): void {
+  const identity = p.readIdentity();
+  try { file.materialize(); }
+  finally { identity(); }
+}
+function truncateFor(p: Proc, file: File, length: number): void {
+  // Preserve File.truncate's refusal order before running a source callback.
+  if (!Number.isInteger(length) || length < 0) fail(E.INVAL);
+  if (length > FILE_MOST) fail(E.FBIG);
+  materializeFor(p, file);
+  file.truncate(length);
+}
+
 function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bigint, resolve = 0): number {
   const f = N(flags), name = path(p, address), c = p.cred, bare = (f & O_PATH) !== 0;
   // The descriptor it will be is found before anything is looked at or changed, as Linux takes one before it walks the
   // path: with none left the open is EMFILE whatever it names, and nothing is made or emptied for it. (Before: found
   // last, after the file had been made or emptied.)
-  const fd = p.fds.lowest();
+  let fd = p.fds.lowest();
   if (fd < 0) fail(E.MFILE);
   const install = (d: Description): number => p.fds.install(d, {fd, cloexec: !!(f & O.CLOEXEC)});
   // (a name to be made that must not be there is not looked through: a link there is in the way)
@@ -328,7 +342,14 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
     }
   }
   const writing = (f & 3) !== 0;
-  if (node instanceof File && writing && (f & O.TRUNC)) node.truncate(0);
+  if (node instanceof File && writing && (f & O.TRUNC)) {
+    materializeFor(p, node);
+    // A synchronous source may have installed another descriptor. Never let
+    // install's replace semantics close it using the pre-callback candidate.
+    fd = p.fds.lowest();
+    if (fd < 0) fail(E.MFILE);
+    node.truncate(0);
+  }
   // A named pipe: read, write or both ends of the one pipe its opens share. As on Linux, a reader waits for a writer
   // and a writer for a reader, each there from the moment its open began (so two waiting opens meet); O_RDWR and a
   // non-blocking reader do not wait, and a non-blocking writer with no reader is ENXIO.
@@ -1499,7 +1520,7 @@ export const FILE_CALLS: Calls = {
     if (x.mnt.sb.readonly) fail(E.ROFS);
     if (!may(this.cred, node, MAY.WRITE)) fail(E.ACCES);
     writable(x.mnt);
-    node.truncate(n);
+    truncateFor(this, node, n);
     return 0;
   },
   77(fd, length) {
@@ -1507,7 +1528,7 @@ export const FILE_CALLS: Calls = {
     if (n < 0) fail(E.INVAL);
     const d = descriptor(this, fd);
     if (d.kind !== 'file' || !(d.flags & 3)) fail(E.INVAL);
-    fileOf(d).truncate(n);
+    truncateFor(this, fileOf(d), n);
     return 0;
   },
   79(buf, size) {
