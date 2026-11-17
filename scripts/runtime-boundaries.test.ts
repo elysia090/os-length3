@@ -48,6 +48,14 @@ test('computed imports cannot bypass the allowlist; Node facilities stay in the 
   assert.equal(allowed('module/sods/runtime/host.ts', 'node:worker_threads'), true);
   assert.equal(allowed('module/sods/runtime/linux.ts', 'node:worker_threads'), false);
   assert.equal(allowed('module/sods/runtime/host.ts', 'node:child_process'), false);
+  for (const file of ['execution.ts', 'guest.ts']) {
+    const adapter = 'module/sods/runtime/host/node/' + file;
+    assert.equal(allowed(adapter, 'node:worker_threads'), true);
+    for (const facility of ['node:fs', 'node:child_process', 'node:net']) assert.equal(allowed(adapter, facility), false);
+  }
+  for (const file of ['linux/memory-host.ts', 'host/node/protocol.ts']) {
+    assert.equal(allowed('module/sods/runtime/' + file, 'node:worker_threads'), false);
+  }
   assert.equal(allowed('module/sods/runtime/run.ts', 'node:child_process'), true);
 });
 
