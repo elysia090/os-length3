@@ -690,13 +690,21 @@ export const PROC_CALLS: Calls = {
     // mapping's read as the file is (what was written through it is the file's already).
     const a = N(addr), b = a + N(len);
     if (N(advice) !== 4 && N(advice) !== 8) return 0;
-    const maps = this.sharedIn(a, N(len));
-    for (const m of maps) m.node.settle(m.off, m.off + m.length, m);
-    zero(this.memory!, a, b);
-    for (const m of maps) {
-      const from = Math.max(a, m.start), to = Math.min(b, m.start + m.length);
-      this.bytes.set(m.node.read(m.off + from - m.start, m.off + to - m.start), from);
+    const maps = this.sharedIn(a, N(len)), restore: [number, Uint8Array][] = [];
+    if (maps.length) {
+      const identity = this.readIdentity();
+      try {
+        for (const m of maps) m.node.settle(m.off, m.off + m.length, m);
+        for (const m of maps) {
+          const from = Math.max(a, m.start), to = Math.min(b, m.start + m.length);
+          restore.push([from, m.node.snapshot(m.off + from - m.start, m.off + to - m.start)]);
+        }
+      } finally { identity(); }
     }
+    // All source effects and allocations precede zeroing. Preserve record order
+    // where embedding-created mappings overlap; snapshots cannot alias the zero.
+    zero(this.memory!, a, b);
+    for (const [from, bytes] of restore) this.bytes.set(bytes, from);
     return 0;
   },
   35(req, rem) { return sleepUntil(this, steady() + ms(readTime(this, N(req))), N(rem)); }, // nanosleep

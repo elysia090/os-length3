@@ -313,3 +313,17 @@ Regression cases include candidate occupation, exhaustion during loading,
 replacement followed by loader throw, and refusal before any source invocation.
 These are ordinary synchronous File/OwnedFile contracts, not arbitrary overridden
 methods or concurrent external fd-table mutation guarantees.
+
+### Materialization stage 4: madvise restoration
+
+Shared-file madvise now settles existing records and captures every restoration
+snapshot before zeroing the advised guest region. Failure in a later snapshot
+does not erase earlier regions. Source/identity validation also runs on throws;
+invalidated owners use the abnormal no-writeback retirement path. Overlapping
+embedding-created records retain their previous restoration order.
+
+The temporary retention cost is the sum of captured restoration ranges, including
+overlap, rather than a proven minimal working set. Rust-backed reads use their
+existing owned result without a second JS copy. Normal shared guest writes are
+settled before restoration, so this is not a rollback of dirty file data. Source
+settling itself can have effects even when a later snapshot fails.
