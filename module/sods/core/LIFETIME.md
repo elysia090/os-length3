@@ -1169,3 +1169,43 @@ namespace construction without changing public fork semantics or duplicating the
 scan, then proving ownership cleanup across actual Task/backend preparation.
 Focused FD tests: 6 pass; family: 13 pass; actual inline/Node rehearsal: 2 pass.
 Focused strict TypeScript and independent source review pass.
+
+### Sync-before-namespace: demonstrated failure and the remaining contract choice
+
+An actual File.settle mapping trace now demonstrates the ordering defect without
+replacing Process.syncShared: two one-byte dirty mappings, first ordinary File,
+second File subclass refusing publishRange with EIO; NEWNS|VM clone returns -5.
+The first file's accepted byte is 2, procs/tasks stay 1, but /proc.covered grows
+1 -> 2. The second mapping's refusal is injected at its storage publication
+boundary. Already accepted first-file publication must remain accepted; a fork
+rollback must not restore an old file snapshot. The probe is a diagnostic, not
+a passing regression or a new guarantee.
+
+The least invasive ordering must keep permission/PID/cgroup refusal before the
+single all-mappings sync, then construct new namespaces only after sync succeeds.
+Moving a call out while leaving forkProcess's call would add a redundant scan.
+Calling an internal child-construction helper directly from clone would bypass
+raw subclasses overriding forkProcess and weaken the Proc interface with a cast;
+independent review rejected that alternative.
+
+Preferred candidate: a narrowly typed deferred namespace preparation in the
+existing forkProcess options, used by clone and invoked by base forkProcess once
+after successful sync and identity revalidation. Existing raw calls without it
+keep their behavior; overrides forwarding options to super keep the seam.
+Overrides discarding options or doing their own child creation do not establish
+that guarantee. This is an extension to the raw method contract, even without
+new public linux exports or a user-facing manager. Do not hide that fact behind
+a symbol/WeakMap or claim zero API impact. A repeated preparation request must
+fail rather than constructing a second namespace. The clone remap step must use
+the exact namespace copy that was prepared, not reconstruct it after return.
+
+Remaining proof before adopting the candidate: sync may reenter an embedding.
+Memory generation/image/task replacement must refuse child creation; preserve
+both original sync failure and changed-identity evidence if both occurred.
+Other input ownership (Fs/FD/credentials/namespaces/cgroup) and capacity changing
+during the callback need an explicit policy, not a claim that a memory check
+alone makes fork atomic. Repeating room/permission checks can change error order
+and add normal work, while taking a broad state snapshot invents a new contract.
+The next implementation should choose that policy explicitly before adding a
+callback option. Current code has not adopted the option or fixed the demonstrated
+namespace leak. Independent review reached the same compatibility boundary.
