@@ -417,9 +417,21 @@ export class RemoteKernel extends Kernel {
   /** End every Worker (threads, and spares unless they are passed on). */
   close(): void {
     this.closing = true;
-    for (const t of this.tasks.values()) t.end();
-    // (Those passed on wait in warmThreads' list, as Workers started ahead do.)
-    for (const w of this.spares.splice(0)) if (this.passOn) warmed.push(w); else w.end();
+    const tasks = [...this.tasks.values()].map(t => ({t, worker: t.worker}));
+    const spares = this.spares.splice(0);
+    let errors: unknown[] | undefined;
+    for (const {t, worker} of tasks) {
+      if (t.worker !== worker) continue; // A callback replaced this assignment.
+      try { t.end(); } catch (error) { (errors ??= []).push(error); }
+    }
+    // Only healthy spares may pass on. Each captured stop request is attempted
+    // even when another synchronously fails; this does not await host termination.
+    for (const w of spares) {
+      try { if (this.passOn && !w.failed) warmed.push(w); else w.end(); }
+      catch (error) { (errors ??= []).push(error); }
+    }
+    if (errors?.length === 1) throw errors[0];
+    if (errors?.length) throw new AggregateError(errors, 'Worker stop requests failed');
   }
 
   /** Run to the end (a sleep is waited out); its wait status. */
@@ -439,6 +451,7 @@ function count(image: Image): Int32Array {
 
 /** A thread whose registers live in its channel while it waits there, and whose code runs in its Worker. */
 class RemoteTask extends Task {
+  private endedOnce = false;
   declare readonly kernel: RemoteKernel;
   declare channel: SharedArrayBuffer;
   declare i32: Int32Array;
@@ -659,6 +672,10 @@ class RemoteTask extends Task {
   }
 
   override end(): void {
+    // A failed forced-stop request is terminal too: a repeat must not advance to
+    // GIL release after losing the original Worker assignment.
+    if (this.endedOnce) return;
+    this.endedOnce = true;
     const w = this.worker;
     this.worker = null;
     if (this.consoles) { this.proc.fds.readers.delete(this.consoles); this.consoles = null; }
@@ -674,9 +691,11 @@ class RemoteTask extends Task {
     else {
       // Ended while it ran guest code: it may write on a little, so its memory is never given to another process, and
       // what it would still put in the console's outbox is not put (its interrupt word, raised first: Outbox.put).
+      // Taint before any host action: neither diagnostic drainage nor the stop
+      // request returning is proof that the Worker has stopped writing.
+      if (w && this.memory) this.memory.tainted = true;
       if (w) this.kernel.lookIn(this.proc);
       w?.end();
-      if (w && this.memory) this.memory.tainted = true;
     }
     // Ended while it held its process's lock (killed while running): the lock goes with it.
     if (this.memory) {

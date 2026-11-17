@@ -301,3 +301,34 @@ This does not strengthen the backend's stop acknowledgment. RemoteTask.end alrea
 marks memory tainted when terminating a Worker that may still write briefly;
 letGo retains its existing no-reuse treatment for that memory. The new continuation
 is not a proof of an atomic snapshot of all writes during asynchronous termination.
+
+## Worker stop request versus stop completion
+
+RemoteTask now taints execution memory before lookIn or the forced stop request.
+A synchronous failure in either operation therefore cannot leave that memory
+eligible for pool reuse. It does not release the GIL in a new finally block:
+unknown running code is not evidence that another execution can safely proceed.
+The assignment is detached as before; a terminal end guard makes subsequent close
+neither an implicit retry nor a way to reach GIL release after a failed stop.
+
+RemoteKernel.close snapshots task assignments and spare identities before callbacks,
+attempts independent unchanged assignments/spares despite synchronous failures, then
+reports a single original error or all failures. A replacement assignment is not
+stopped just because the old task occupied that place in the snapshot. Failed spares
+cannot enter the warm pool. Newly introduced callback-owned work is not an unbounded
+drain target. Snapshot space is O(tasks + spares), no file payload copy/scan is added.
+
+The host contract still has no portable completion evidence. Node's current adapter
+discards terminate()'s Promise; browser terminate returns no matching Promise here.
+This change captures synchronous exceptions only, not a later Node Promise rejection.
+Awaiting a Node-specific completion could strengthen that one host, but would not
+prove browser completion, all channel users gone, or every Image/namespace owner
+released. Do not label close() or successful stop requests as a managed-tree disposal
+barrier. That API/profile decision remains open, with tainted memory never reused.
+
+The failure tests use injected host hands, not live CPU Worker stop failures. Existing
+independent package execution still exercises the real Node CPU Worker path normally.
+Neither normal completion nor those injected failures prove an OS-level quiescence
+barrier for every supported host. Long-lived default promotion remains withheld.
+A repeated terminal end returning normally is only an idempotence guard, never
+positive evidence that the first stop request succeeded or completed.

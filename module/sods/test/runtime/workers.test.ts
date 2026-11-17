@@ -139,3 +139,35 @@ test('#118: a Worker started ahead that fails before a kernel has it is not hand
   assert.deepEqual([k.spares.length, late.ended], [0, 1]);
   k.close();
 });
+
+for (const phase of ['drain', 'stop'] as const) test(`forced Worker ${phase} failure taints memory before host actions`,()=>{
+  const {k}=bench(),{p,t,w}=running(k),failure=Error(phase);
+  const memory=Object.assign(new WebAssembly.Memory({initial:1,maximum:1,shared:true}),{users:1,written:[],keeps:false,imageOf:null,tainted:false});
+  p.memory=memory;t.memory=memory;
+  const gil=new Int32Array(k.gil(memory));Atomics.store(gil,0,t.tid);
+  if(phase==='drain')k.lookIn=()=>{assert.equal(memory.tainted,true);throw failure;};
+  else w.end=()=>{assert.equal(memory.tainted,true);w.ended++;throw failure;};
+  assert.throws(()=>t.end(),e=>e===failure);
+  assert.equal(memory.tainted,true);assert.equal(t.worker,null);assert.equal(k.spares.length,0);
+  k.letGo(memory);assert.equal(k.spareMemories.includes(memory),false);
+  // End detached the assignment: a later close is not a hidden stop retry.
+  k.close();assert.equal(w.ended,phase==='stop'?1:0);
+  assert.equal(Atomics.load(gil,0),t.tid); // Repeated close must not unlock unconfirmed execution.
+});
+
+test('close attempts independent captured Worker stops and preserves multiple failures',()=>{
+  const {k}=bench(),a=running(k),b=running(k),first=Error('task'),second=Error('spare');
+  a.w.end=()=>{a.w.ended++;throw first;};
+  const bad=hand(),good=hand();bad.end=()=>{bad.ended++;throw second;};
+  k.spares.push(k.adoptWorker(bad as unknown as Adopted),k.adoptWorker(good as unknown as Adopted));
+  assert.throws(()=>k.close(),e=>e instanceof AggregateError&&e.errors[0]===first&&e.errors[1]===second);
+  assert.deepEqual([a.w.ended,b.w.ended,bad.ended,good.ended],[1,1,1,1]);assert.equal(k.spares.length,0);
+  k.close();assert.deepEqual([a.w.ended,b.w.ended,bad.ended,good.ended],[1,1,1,1]);
+});
+
+test('a failed spare is never passed to the next kernel',()=>{
+  const k=new RemoteKernel({spares:0,passOn:true,console:{write(){},read(){return null;}}}),failed=hand();failed.failed=true;
+  k.spares.push(k.adoptWorker(failed as unknown as Adopted));k.close();assert.equal(failed.ended,1);
+  const next=new RemoteKernel({spares:0,console:{write(){},read(){return null;}}});
+  assert.equal(next.spares.includes(failed as unknown as Adopted),false);next.close();
+});
