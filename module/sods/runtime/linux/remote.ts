@@ -200,7 +200,7 @@ export class RemoteKernel extends Kernel {
     while (this.spares.length < this.spareCount) this.spares.push(this.spawnWorker());
   }
 
-  override newTask(proc: Process): RemoteTask { return new RemoteTask(proc, this.numbered(proc)); }
+  override newTask(proc: Process): RemoteTask { return new RemoteTask(proc, this); }
   override ready(t: Task): void { this.go(t); }
   override go(t: Task): void { (t as RemoteTask).answer(); }
   // Its run ends at the call: counted to here, so the wait is not (answer counts from when it goes on).
@@ -566,29 +566,20 @@ class RemoteTask extends Task {
   declare keep: Range | null;
   declare renewed?: boolean;
   declare regsChanged: boolean;
-  constructor(proc: Process, tid: number) {
-    const from = proc.own, taken = proc.taken, fs0 = proc.fs0, expectedFs = from?.fs ?? fs0;
-    super(proc, tid);
-    try {
-      this.channel = this.kernel.channel();
-      this.i32 = new Int32Array(this.channel);
-      this.i64 = new BigInt64Array(this.channel);
-      this.worker = null;
-      this.execd = false; // a new image waits to be sent to its Worker
-      this.fpuState = null;
-      this.consoles = null;
-      this.i32[CH.FILTERED] = 0; // (a channel had before by a thread that had one)
-    } catch (error) {
-      // No Worker has been assigned. Undo only super's known Fs acquisition,
-      // not ordinary thread exit, PID retirement or possible raw callback work.
-      try {
-        if (this.fs !== expectedFs || proc.fs0 !== fs0 || proc.own !== from
-          || proc.taken !== (from ? taken : true)) throw new Error('failed RemoteTask preparation lost its Fs ownership');
-        if (from) this.fs.drop();
-        else proc.taken = taken; // Return the initial Fs owner to Process; do not drop it.
-      } catch (cleanup) { throw new AggregateError([error, cleanup], 'RemoteTask channel preparation and Fs cleanup failed'); }
-      throw error;
-    }
+  constructor(proc: Process, kernel: RemoteKernel) {
+    // Channel preparation needs neither a PID nor an Fs owner. Complete it
+    // first instead of acquiring those owners and trying to roll them back.
+    const channel = kernel.channel();
+    const i32 = new Int32Array(channel), i64 = new BigInt64Array(channel);
+    super(proc, kernel.numbered(proc));
+    this.channel = channel;
+    this.i32 = i32;
+    this.i64 = i64;
+    this.worker = null;
+    this.execd = false; // a new image waits to be sent to its Worker
+    this.fpuState = null;
+    this.consoles = null;
+    this.i32[CH.FILTERED] = 0; // (a channel had before by a thread that had one)
   }
 
   /** Its Worker is told: with a filter, it answers no call itself (cpu.ts). */

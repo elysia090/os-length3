@@ -1285,3 +1285,32 @@ super's own partial failure and reuse of a channel already removed from the pool
 are separate gates; no blanket fork rollback or managed tree disposal is claimed.
 Actual Wasm/CPU Worker focused tests: 6 pass; actual inline/Node rehearsal: 2
 pass; focused strict TypeScript and independent source review pass.
+
+### Prefer preparing the channel before acquiring PID/Fs owners
+
+The prior RemoteTask cleanup boundary still consumed PID numbers before a
+channel failure. Strengthened tests showed nextPid/namespace.last advancing
+although Fs was restored. Rather than add PID rollback (which must not reuse
+observable identities or erase another reservation), RemoteTask now prepares its
+channel and both typed views before numbered/Task super. These operations need
+no Task/Fs/PID. The private constructor receives the same fixed RemoteKernel
+used by newTask; no cross-callback relookup of the backend is introduced.
+
+This supersedes the preceding post-super channel cleanup: it is removed, not
+stacked with another rollback layer. A failing channel callback now has no new
+Fs/PID owner to retire, so its exact original exception survives even if it
+changed the parent. Those callback-owned changes are not undone. Successful
+channel initialization and CH.FILTERED reset remain intact. Normal view count,
+PID assignment and Fs acquisitions are unchanged; failure creates fewer owners,
+with no new normal-path scan/copy/registry.
+
+Workers 30 pass. Four strengthened failure cases first demonstrated the consumed
+PID, then passed with unchanged counters. A fresh nested PID namespace retains
+its first number after channel failure and uses 1 on success. Another test uses
+an actually reusable CH.LEFT channel and verifies removal from the pool and
+cleared header/filter state. These are backend boundary tests, not full fork
+rollback or failure inside numbered/Task super. A channel already taken from a
+pool is not blindly put back on later failure: safe pool return and Task super/
+numbered partial acquisition remain separate gates.
+Actual inline/Node rehearsal: 2 pass; focused strict TypeScript and independent
+source review pass. No external publishing or browser/desktop execution.

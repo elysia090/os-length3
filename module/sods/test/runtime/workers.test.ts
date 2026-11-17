@@ -305,29 +305,27 @@ test('spare failure diagnostic cannot stop a newly assigned task on that same Ha
   k.close();
 });
 
-for (const existing of [false, true]) for (const invalidView of [false, true]) test(`RemoteTask channel refusal returns Fs ownership, existing task=${existing}, invalid view=${invalidView}`, () => {
+for (const existing of [false, true]) for (const invalidView of [false, true]) test(`RemoteTask channel refusal acquires no PID or Fs, existing task=${existing}, invalid view=${invalidView}`, () => {
   const {k} = bench(), p = new Process(k, null);
   if (existing) { const t = k.newTask(p); p.tasks.add(t); }
-  const location = p.fs, before = [location.users, location.root.mnt.refs, p.taken];
+  const location = p.fs, before = [location.users, location.root.mnt.refs, p.taken, k.nextPid, p.pidns.last, k.numbers.size];
   const original = new Error('channel allocation refused');
   k.channel = () => { if (invalidView) return new SharedArrayBuffer(1); throw original; };
   assert.throws(() => k.newTask(p), error => invalidView ? error instanceof RangeError : error === original);
-  assert.deepEqual([location.users, location.root.mnt.refs, p.taken], before);
+  assert.deepEqual([location.users, location.root.mnt.refs, p.taken, k.nextPid, p.pidns.last, k.numbers.size], before);
   assert.equal(k.tasks.size, 0); assert.equal(k.procs.size, 0);
 });
 
-test('RemoteTask failed channel cleanup keeps both failures without hiding the Fs release', () => {
+test('RemoteTask failed channel never needs to release an Fs owner', () => {
   const {k} = bench(), p = new Process(k, null), t = k.newTask(p); p.tasks.add(t);
   const fs = p.fs, before = fs.users, original = new Error('channel refused'), cleanup = new Error('Fs release callback failed');
   const drop = fs.drop.bind(fs); fs.drop = () => { drop(); throw cleanup; };
   k.channel = () => { throw original; };
-  assert.throws(() => k.newTask(p), error => {
-    assert.ok(error instanceof AggregateError); assert.deepEqual(error.errors, [original, cleanup]); return true;
-  });
+  assert.throws(() => k.newTask(p), error => error === original);
   assert.equal(fs.users, before); assert.equal(p.taken, true);
 });
 
-for (const changed of ['fs0', 'taken', 'task'] as const) test(`RemoteTask channel reentry keeps unknown ${changed} ownership isolated`, async () => {
+for (const changed of ['fs0', 'taken', 'task'] as const) test(`RemoteTask channel reentry leaves ${changed} changes with their actual owner`, async () => {
   const {Task} = await import('../../runtime/linux/process.ts');
   const {k} = bench(), p = new Process(k, null), initialFs = p.fs0, original = new Error('channel callback failed');
   let afterCallback: unknown;
@@ -339,9 +337,31 @@ for (const changed of ['fs0', 'taken', 'task'] as const) test(`RemoteTask channe
     afterCallback = snapshot();
     throw original;
   };
-  assert.throws(() => k.newTask(p), error => {
-    assert.ok(error instanceof AggregateError); assert.equal(error.errors[0], original);
-    assert.match(String(error.errors[1]), /lost its Fs ownership/); return true;
-  });
-  assert.deepEqual(snapshot(), afterCallback, 'uncertain ownership must not be dropped or reassigned');
+  assert.throws(() => k.newTask(p), error => error === original);
+  assert.deepEqual(snapshot(), afterCallback, 'unacquired ownership must not be dropped or reassigned');
+});
+
+test('channel refusal does not consume the first PID in a new namespace', async () => {
+  const {PidNs} = await import('../../runtime/linux/space.ts');
+  const {k} = bench(), pidns = new PidNs(k.spaces.children, k.spaces.children.owner);
+  const p = new Process(k, null, false, false, {...k.spaces, children: pidns});
+  const channel = k.channel.bind(k), original = new Error('channel unavailable');
+  k.channel = () => { throw original; };
+  assert.throws(() => k.newTask(p), error => error === original);
+  assert.equal(pidns.last, 0); assert.equal(pidns.numbers.size, 0); assert.equal(k.numbers.size, 0);
+  assert.equal(p.taken, false); assert.equal(pidns.init, 0);
+  k.channel = channel;
+  const t = k.newTask(p);
+  assert.equal(pidns.last, 1); assert.equal(pidns.numbers.get(1), t.tid);
+  assert.equal(p.taken, true);
+});
+
+test('preparing a reusable channel before numbering preserves its initialized state', () => {
+  const {k} = bench(), p = new Process(k, null), channel = new SharedArrayBuffer(CH.SIZE);
+  const words = new Int32Array(channel); words[CH.LEFT] = 1; words[CH.FILTERED] = 1;
+  k.channels.push(channel);
+  const t = k.newTask(p);
+  assert.equal(t.channel, channel); assert.equal(k.channels.length, 0);
+  assert.equal(t.i32[CH.LEFT], 0); assert.equal(t.i32[CH.FILTERED], 0);
+  assert.equal(p.taken, true); assert.equal(p.fs.users, 1);
 });
