@@ -1,5 +1,5 @@
 // A pack's bytes, read a range at a time (module/ricebox/make/layers.ts makes the packs): a file's bytes are fetched only when
-// they are first wanted, and used only once they are checked against the pack's table (table.ts). In a Worker the
+// they are first wanted, and used only once they are checked against the pack's table (distribution/pack.ts). In a Worker the
 // kernel reads inside a system call, where nothing can wait, so `syncRange` fetches synchronously (a synchronous
 // Range request); `fetchStored` is the same read where one can wait. How a host fetches is not known here: whoever
 // reads is given the host's way (sods' host.ts `rangeNow`, `range`) and hands it in. What puts a pack's tree in a
@@ -9,7 +9,7 @@ export interface Ranged { status: number; bytes: Uint8Array }
 export type ReadRange = (url: string, at: number, length: number) => Promise<Ranged>;
 export type ReadRangeNow = (url: string, at: number, length: number) => Ranged;
 
-import {LINE, checkFile, checkTable, type Sha256} from './table.ts';
+import {LINE, checkFile, checkTable, type Sha256} from '../distribution/pack.ts';
 
 /** The current pack response owned by one root reader, releasable independently of guest files. */
 export interface PackRange {

@@ -8,8 +8,8 @@
 // building C runs (gcc, cc1's 40 MB of code, the assembler, the linker) translated here took a browser's time and
 // memory at every Prompt on a repo with C, built in or not, and held Prompts starting after it for minutes.
 
-import {entriesOf} from './table.ts';
-import type {Index, Webroot} from './shape.ts';
+import {entriesOf} from '../distribution/pack.ts';
+import type {Index, Webroot} from './root-types.ts';
 
 /**
  * What anyone reaches for at a Prompt and the root has as a program of its own (not BusyBox's, which is hot; nor what
@@ -84,7 +84,7 @@ export function createAhead(root: {
   function translated(webroot: Webroot, f: Index['files'][number]): Promise<{wasm: Uint8Array; segments: {offset: number; bytes: Uint8Array}[] | null} | null | typeof DROPPED> {
     const pack = entries(webroot.index)[f.pack];
     return new Promise((resolve) => {
-      const w = new Worker(new URL('./ahead.worker.ts', import.meta.url), {type: 'module'});
+      const w = new Worker(new URL('./translate.worker.ts', import.meta.url), {type: 'module'});
       const done = (v: Awaited<ReturnType<typeof translated>>) => { dropping = null; w.terminate(); resolve(v); };
       dropping = () => done(DROPPED);
       w.onmessage = ({data}) => done(data.error ? null : data);

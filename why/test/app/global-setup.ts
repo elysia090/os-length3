@@ -70,7 +70,7 @@ function newest(path: string): number {
 // What the build is made of: why's parts (their TypeScript, and the Rust the browser's core is built from by
 // vite.config.ts) and its window, what is shipped beside them, and the units under them that a page runs.
 const SOURCES = ['why/app', 'why/lib.rs', ...CORE_PARTS.map((part) => `why/${part}`), 'public', 'package-lock.json', 'scripts/core-wasm.ts', 'module/sods/runtime',
-  'module/everyday/src', 'module/ricebox/layers', 'module/ricebox/src'];
+  'module/everyday/src', 'module/ricebox/runtime', 'module/ricebox/src'];
 const STAMP = join(OUT, '.built');
 
 /** What the build carries besides the sources: the browser's Prompt, when public/ has it. */

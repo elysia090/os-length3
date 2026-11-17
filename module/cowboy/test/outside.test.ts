@@ -6,7 +6,7 @@ import {connect} from 'node:net';
 import {test} from 'node:test';
 import {Kernel, Vfs, mountTarget, provide} from '../../sods/runtime/linux.ts';
 import {loadTranslator} from '../../sods/runtime/translate.ts';
-import {mountPack} from '../../ricebox/layers/mount.ts';
+import {mountPack} from '../../ricebox/distribution/mount.ts';
 import {openWeb} from '../../ricebox/make/tree.ts';
 import {outside, type Dial} from '../host/outside.ts';
 

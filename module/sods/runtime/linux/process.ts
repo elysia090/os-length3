@@ -556,7 +556,7 @@ export class Kernel implements Kern {
     // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
     PROFILE.compile += steady() - t; PROFILE.images++;
-    // A root file unchanged: its translation can be kept (the host hears of it once the kernel pauses: module/ricebox/layers/worker.ts).
+    // A root file unchanged: its translation can be kept (the host hears of it once the kernel pauses: module/ricebox/runtime/worker.ts).
     sourceRevision(node, revision);
     if (revision === 0 && node.origin) { image.origin = node.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
     this.remember(node, {version: revision, image, used: ++this.uses, kept: false});

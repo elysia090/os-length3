@@ -1,6 +1,6 @@
 //! A root run in a box: the bundle muk is given for it, said once. On every host a root's programs are started one
 //! way, `muk run` of this bundle: on a Linux machine by the host's kernel (run.rs), anywhere else by the same muk over
-//! the Linux sods answers (layers/worker.ts). Nothing here makes a namespace, a mount or a filter: this is what is
+//! the Linux sods answers (runtime/worker.ts). Nothing here makes a namespace, a mount or a filter: this is what is
 //! asked for, in the words muk reads (the OCI runtime's config.json) and the words it is run with (what is lent).
 //!
 //!   /                 the root, read-only, or written where it is the box's own to write

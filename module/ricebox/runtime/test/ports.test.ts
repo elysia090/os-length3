@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {test} from 'node:test';
-import {mountPack, type MountTarget} from '../mount.ts';
-import {fetchStored, syncRange} from '../pack.ts';
-import {packOf} from '../table.ts';
+import {mountPack, type MountTarget} from '../../distribution/mount.ts';
+import {fetchStored, syncRange} from '../pack-range.ts';
+import {packOf} from '../../distribution/pack.ts';
 
 const sha256 = (bytes: Uint8Array): Uint8Array => new Uint8Array(createHash('sha256').update(bytes).digest());
 const content = new TextEncoder().encode('one file, two names');

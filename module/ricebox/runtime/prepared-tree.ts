@@ -1,9 +1,9 @@
 /** Prepared root ownership: the tree outlives individual rehearsals/runs. */
-import {requireFileStoreName, type FileStoreArtifact} from './shape.ts';
+import {requireFileStoreName, type FileStoreArtifact} from './root-types.ts';
 import {Vfs, mountTarget, provide, loadFileScope} from '../../sods/runtime/linux.ts';
-import {mountPack, type Given, type Packed, type Reading} from './mount.ts';
+import {mountPack, type Given, type Packed, type Reading} from '../distribution/mount.ts';
 
-export type {FileStoreArtifact} from './shape.ts';
+export type {FileStoreArtifact} from './root-types.ts';
 export interface PreparedTree {
   vfs: Vfs;
   /** Only after all kernels, images, mappings and embedding users have ended.

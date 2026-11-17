@@ -12,7 +12,7 @@ import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
-import {packOf} from '../layers/table.ts';
+import {packOf} from '../distribution/pack.ts';
 import {translateWhole} from './aot-cache.ts';
 import {fileStoreOptions, validateFileStore, fileStoreDescriptor} from './file-store.ts';
 import {readTarball, sha256, type Index} from './tree.ts';

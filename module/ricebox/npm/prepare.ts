@@ -4,7 +4,7 @@ import {mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, symlin
 import {resolve, join, dirname} from 'node:path';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {requireFileStoreName} from '../layers/shape.ts';
+import {requireFileStoreName} from '../distribution/manifest.ts';
 import {fileURLToPath} from 'node:url';
 
 export interface PinnedTool { path: string; size: number; sha256: string }

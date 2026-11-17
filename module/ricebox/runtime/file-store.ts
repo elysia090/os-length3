@@ -1,8 +1,8 @@
 /** Resolve only the descriptor in the verified current index. A stale startup
  * plan is a cache hint, never authority to select another file-store generation. */
-import type {FileStoreDescriptor} from './shape.ts';
+import type {FileStoreDescriptor} from './root-types.ts';
 import type {FileStoreArtifact} from './prepared-tree.ts';
-import {digest} from './fetch.ts';
+import {digest} from './download.ts';
 import {prepareFileStore} from '../../sods/runtime/linux.ts';
 export async function releaseFileStore(
   descriptor: FileStoreDescriptor | undefined,

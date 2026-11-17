@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {releaseFileStore} from '../file-store.ts';
 import {prepareTree} from '../prepared-tree.ts';
-import type {FileStoreDescriptor} from '../shape.ts';
+import type {FileStoreDescriptor} from '../root-types.ts';
 const wasm=process.env.SODS_FILE_STORE_WASM;
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 function descriptor(bytes:Uint8Array):FileStoreDescriptor {const packed=gzipSync(bytes),sha256=hash(packed);return {abi:4,maxFileBytes:64,path:`blobs/${sha256}.bin`,sha256,size:packed.length,bytes:bytes.length,wasm:hash(bytes)};}
@@ -42,7 +42,7 @@ test('claiming ABI4 without its required operations is rejected before readiness
 
 test('legacy selection names are rejected before browser config acquires resources', async () => {
   const {createRoot}=await import('../root.ts');
-  const {requireFileStoreName}=await import('../shape.ts');
+  const {requireFileStoreName}=await import('../root-types.ts');
   for(const value of [null,false,{},undefined]) {
     assert.throws(()=>requireFileStoreName({fileCore:value}),/regenerate/);
     assert.throws(()=>requireFileStoreName({fileCore:value,fileStore:{}}),/regenerate/);

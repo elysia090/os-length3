@@ -8,8 +8,8 @@ import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {zstdCompressSync} from 'node:zlib';
 import {openWeb} from './tree.ts';
-import {releaseFileStore} from '../layers/file-store.ts';
-import {prepareTree} from '../layers/prepared-tree.ts';
+import {releaseFileStore} from '../runtime/file-store.ts';
+import {prepareTree} from '../runtime/prepared-tree.ts';
 const core=process.env.SODS_FILE_STORE_WASM,translator=process.env.SODS_TRANSLATOR_WASM;
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 function tarFile(name:string,text:string){

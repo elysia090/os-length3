@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {prepareTree} from '../prepared-tree.ts';
-import {packOf} from '../table.ts';
+import {packOf} from '../../distribution/pack.ts';
 import {Kernel} from '../../../sods/runtime/linux.ts';
 const wasm=process.env.SODS_FILE_STORE_WASM, enc=new TextEncoder(), dec=new TextDecoder();
 const sha256=(b:Uint8Array)=>new Uint8Array(createHash('sha256').update(b).digest());

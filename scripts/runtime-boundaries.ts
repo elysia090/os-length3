@@ -2,7 +2,7 @@
 import {readdirSync, readFileSync} from 'node:fs';
 import {posix} from 'node:path';
 
-export const ROOTS = ['module/ricebox/layers', 'module/sods/runtime', 'module/cowboy/host', 'module/disk'];
+export const ROOTS = ['module/ricebox/distribution', 'module/ricebox/runtime', 'module/sods/runtime', 'module/cowboy/host', 'module/disk'];
 const inside = (path: string, root: string) => path.startsWith(root + '/');
 const publicSods = new Set(['module/sods/runtime/host.ts', 'module/sods/runtime/linux.ts', 'module/sods/runtime/translate.ts']);
 // Adapters are allowed host facilities explicitly, not forbidden. Add a new adapter and its facilities here
@@ -67,7 +67,7 @@ export function allowed(from: string, specifier: string): boolean {
   const owner = ROOTS.find(root => inside(from, root));
   if (!owner || target === 'module/sods/runtime/run.ts' || target.includes('/test/') || /\.(test|spec)\./.test(target)) return false;
   if (inside(target, owner)) return true;
-  if (owner === 'module/ricebox/layers') return publicSods.has(target);
+  if (owner === 'module/ricebox/runtime') return inside(target, 'module/ricebox/distribution') || publicSods.has(target);
   return owner === 'module/cowboy/host' && target === 'module/sods/runtime/linux.ts';
 }
 

@@ -5,8 +5,8 @@ import {readFileSync} from 'node:fs';
 import {constants, zstdCompressSync, zstdDecompressSync} from 'node:zlib';
 import {Vfs, mountTarget, provide} from '../../../sods/runtime/linux.ts';
 import {loadTranslator} from '../../../sods/runtime/translate.ts';
-import {mountPack} from '../mount.ts';
-import {checkPacks, packOf} from '../table.ts';
+import {mountPack} from '../../distribution/mount.ts';
+import {checkPacks, packOf} from '../../distribution/pack.ts';
 
 const enc = new TextEncoder(), dec = new TextDecoder();
 

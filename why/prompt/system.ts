@@ -1,12 +1,12 @@
 // "/" is the root of the whole system, the same tree the Prompt's shell
 // sees: in the app, the root installed on this machine (ricebox's list,
 // through the core); in a browser, the root as its index has it (ricebox's
-// layers/tree.ts). Each top-level directory says where it comes from: the
+// runtime/directory-tree.ts). Each top-level directory says where it comes from: the
 // distribution, the kernel (/dev, /proc, /sys, made when a box starts) or
 // nothing (/tmp, /run start empty), which ricebox says; or the person's
 // repos (/root), which is why's to say.
 
-import {devices, madeBy, treeOf, type TreeEntry} from '../../module/ricebox/layers/tree.ts';
+import {devices, madeBy, treeOf, type TreeEntry} from '../../module/ricebox/runtime/directory-tree.ts';
 import {native, rootHere} from '../api/host.ts';
 import {t} from '../text/i18n.ts';
 import {shownTree, store} from '../repo/repos.ts';

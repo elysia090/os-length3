@@ -1,4 +1,4 @@
-import {requireFileStoreName} from './shape.ts';
+import {requireFileStoreName} from './root-types.ts';
 // The root run in a page's Worker: its layers mounted (mount.ts), the Linux that runs it (sods: the tree, the
 // kernel, what the translator makes and what was kept of it) and the box its programs run in, which muk makes here
 // as it does on a Linux machine: the same program, run on this Linux with the bundle written for it (../src/bundle.rs,
@@ -80,7 +80,7 @@ import {requireFileStoreName} from './shape.ts';
 // translation an earlier Prompt made is read from that Cache Storage instead
 // (by its file's origin, pack.ts: the URLs of its translation and of the
 // code it reached later, keeper.ts), and the exec waits only for that read.
-// A program the page translates ahead while a person reads (ahead.ts) is told as it is kept,
+// A program the page translates ahead while a person reads (pretranslate.ts) is told as it is kept,
 // {type: 'kept', at: {[origin]: {main, more}}}, and read as one kept before would be.
 // What is translated here of a root file is said once the kernel pauses, for
 // the page to keep: {type: 'translated', origin, wasm, segments} once, then
@@ -92,9 +92,9 @@ import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
 import {Mirror, RemoteKernel, Vfs, keeper, linux, provide, said, warmThreads,
   type Console, type File, type Kept, type Kernel, type Pumped, type RetirableReading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
-import {type Given, type Packed} from './mount.ts';
+import {type Given, type Packed} from '../distribution/mount.ts';
 import {prepareTree, type FileStoreArtifact, type PreparedTree} from './prepared-tree.ts';
-import {syncRange} from './pack.ts';
+import {syncRange} from './pack-range.ts';
 import {TranslationObserver} from './translation-observer.ts';
 
 /** A module of code a run reached later: its first table slot and bytes (Image.adopt). */
@@ -526,7 +526,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     }
     if (data.type === 'warm') { if (canRunApart()) { warmOwner ??= lifetime.observe('warm-pool'); warmThreads({failed}); } return; }
     if (data.type === 'hot') { if (kernel) given(kernel, data.files); return; }
-    // A program translated ahead by the page since this Prompt started (ahead.ts): read when it is run.
+    // A program translated ahead by the page since this Prompt started (pretranslate.ts): read when it is run.
     if (data.type === 'kept') { if (keptAt) Object.assign(keptAt, data.at); return; }
     // (A failure is said by the 'start' that waits for it.)
     if (data.type === 'ready') {

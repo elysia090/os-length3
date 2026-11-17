@@ -1,13 +1,13 @@
 export {retireRootWorker, type RootRetirement} from './retire-worker.ts';
-import {createAhead} from './ahead.ts';
+import {createAhead} from './pretranslate.ts';
 import {releaseFileStore} from './file-store.ts';
-import {requireFileStoreName} from './shape.ts';
-import {digest, download as fetchFile, Fatal, type Check} from './fetch.ts';
-import {FIRST} from './first.ts';
+import {requireFileStoreName} from './root-types.ts';
+import {digest, download as fetchFile, Fatal, type Check} from './download.ts';
+import {FIRST} from './startup-programs.ts';
 import {canRunApart} from '../../sods/runtime/host.ts';
 import {MORE, madeBy, packMain, packMore, prepare, unpackMore, type Segment} from '../../sods/runtime/translate.ts';
-export type {Segment, Blob, About, Translation, Index, Webroot, More} from './shape.ts';
-import type {About, Blob, Index, More, Translation, Webroot} from './shape.ts';
+export type {Segment, Blob, About, Translation, Index, Webroot, More} from './root-types.ts';
+import type {About, Blob, Index, More, Translation, Webroot} from './root-types.ts';
 export type Stage =
   | {at: 'fetch'; got: number; of: number; quiet?: number}
   | {at: 'retry'; attempt: number; why: string; got: number; of: number}
@@ -25,7 +25,7 @@ export interface RootConfig {
   planKey: string;
   oldKeys?: readonly string[];
   oldCaches?: readonly string[];
-  message: NonNullable<import('./fetch.ts').Options['message']>;
+  message: NonNullable<import('./download.ts').Options['message']>;
   missing(): string;
   errorText(error: unknown): string;
 }
@@ -62,7 +62,7 @@ const threadsApart = canRunApart;
 //                        SHA-256 of each file it stores, at its head): a file is
 //                        read from it only when a program first opens it (the
 //                        Worker, one Range request), and used only once it is
-//                        what the table says (table.ts)
+//                        what the table says (distribution/pack.ts)
 //   blobs/<sha256>.bin   the translator, and the hot programs (bash, the
 //                        Prompt's shell; BusyBox and its applets; why; git,
 //                        each of its commands a name of it) with their
@@ -463,7 +463,7 @@ async function translationKept(webroot: Webroot, origin: string): Promise<boolea
 }
 
 /**
- * A program a Prompt translated, or one translated ahead of its first run (ahead.ts) (its module as the kernel runs
+ * A program a Prompt translated, or one translated ahead of its first run (pretranslate.ts) (its module as the kernel runs
  * it, and its data segments, or null when they are in it): kept for the Prompts after it, 'L3T1' (sods/runtime/kept.ts). Once
  * kept, the URL it is kept at; null when it is not (no room, no Cache Storage).
  */

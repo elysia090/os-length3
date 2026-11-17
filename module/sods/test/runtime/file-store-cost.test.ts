@@ -7,8 +7,8 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {Vfs,mountTarget,loadFileScope} from '../../runtime/linux.ts';
 import type {Mapping} from '../../runtime/linux/fs.ts';
-import {mountPack} from '../../../ricebox/layers/mount.ts';
-import {packOf} from '../../../ricebox/layers/table.ts';
+import {mountPack} from '../../../ricebox/distribution/mount.ts';
+import {packOf} from '../../../ricebox/distribution/pack.ts';
 const wasm=process.env.SODS_FILE_STORE_WASM;
 const hash=(b:Uint8Array)=>new Uint8Array(createHash('sha256').update(b).digest());
 interface Meter {calls:Record<string,number>;preparedInputBytes:number;readBytes:number;rangeBytes:number;hashBytes:number}

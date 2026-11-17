@@ -8,7 +8,7 @@ test('runtime module boundaries hold in the actual source tree', () => {
   for (const root of ROOTS) assert.ok(Object.keys(sources).some(path => path.startsWith(root + '/')), `no runtime sources checked in ${root}`);
   assert.deepEqual(violations(sources), []);
   // Prove that this is checking repository content, not only the parser's synthetic examples.
-  const file = 'module/ricebox/layers/root.ts';
+  const file = 'module/ricebox/runtime/root.ts';
   assert.equal(typeof sources[file], 'string');
   assert.deepEqual(violations({...sources, [file]: sources[file] + '\nimport type {Product} from "../../../why/api/host.ts";'}),
     [file + ' -> ../../../why/api/host.ts']);
@@ -32,18 +32,18 @@ test('type imports, re-exports, dynamic imports and worker source URLs are depen
 
 test('runtime cannot reach products, build tools, tests or private sods internals', () => {
   for (const target of ['../../../why/api/host.ts', '../../../shipto/client.ts', '../make/layers.ts', './test/helper.ts', '../../otter/make/artifacts.mjs', '../../sods/runtime/linux/process.ts', 'node:fs', 'why', 'https://example.com/code.js']) {
-    assert.equal(allowed('module/ricebox/layers/root.ts', target), false, target);
+    assert.equal(allowed('module/ricebox/runtime/root.ts', target), false, target);
   }
-  assert.equal(allowed('module/sods/runtime/linux.ts', '../../ricebox/layers/root.ts'), false);
+  assert.equal(allowed('module/sods/runtime/linux.ts', '../../ricebox/runtime/root.ts'), false);
   assert.equal(allowed('module/sods/runtime/linux.ts', './run.ts'), false);
   assert.equal(allowed('module/disk/indexeddb.ts', '../sods/runtime/linux.ts'), false);
   assert.equal(allowed('module/cowboy/host/outside.ts', '../../sods/runtime/linux.ts'), true);
-  assert.equal(allowed('module/ricebox/layers/root.ts', '../../sods/runtime/translate.ts'), true);
+  assert.equal(allowed('module/ricebox/runtime/root.ts', '../../sods/runtime/translate.ts'), true);
 });
 
 test('computed imports cannot bypass the allowlist; Node facilities stay in the host adapter', () => {
   for (const source of ['import(name)', 'import("./a" + name)', 'import(`./${name}.ts`)', 'require(name)']) {
-    assert.ok(violations({'module/ricebox/layers/root.ts': source}).length, source);
+    assert.ok(violations({'module/ricebox/runtime/root.ts': source}).length, source);
   }
   assert.equal(allowed('module/sods/runtime/host.ts', 'node:worker_threads'), true);
   assert.equal(allowed('module/sods/runtime/linux.ts', 'node:worker_threads'), false);
@@ -52,7 +52,7 @@ test('computed imports cannot bypass the allowlist; Node facilities stay in the 
 });
 
 test('bundler worker queries and computed worker sources cannot hide a forbidden dependency', () => {
-  const from = 'module/ricebox/layers/root.ts';
+  const from = 'module/ricebox/runtime/root.ts';
   for (const source of [
     "new Worker(new URL('../../../why/api/worker.ts?worker', import.meta.url))",
     "import Worker from '../../../why/api/worker.ts?worker'",
@@ -63,4 +63,11 @@ test('bundler worker queries and computed worker sources cannot hide a forbidden
     '`result: ${import("../../../why/api/host.ts")}`',
   ]) assert.ok(violations({[from]: source}).length, source);
   assert.deepEqual(violations({[from]: "new Worker(new URL('./worker.ts', import.meta.url))"}), []);
+});
+
+test('distribution format is below execution, without host or product capabilities', () => {
+  const format='module/ricebox/distribution/manifest.ts';
+  for (const target of ['../runtime/root-types.ts','../runtime/root.ts','../make/layers.ts','../../sods/runtime/linux.ts','node:fs']) assert.equal(allowed(format,target),false,target);
+  assert.equal(allowed('module/ricebox/runtime/root.ts','../distribution/manifest.ts'),true);
+  assert.equal(allowed('module/ricebox/distribution/mount.ts','./pack.ts'),true);
 });

@@ -118,11 +118,11 @@ async function keptIn(dir: string) {
 async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV, muk}: Asked) {
   const {RemoteKernel, keeper, linux, provide} = await import('../../sods/runtime/linux.ts');
   const {loadTranslator} = await import('../../sods/runtime/translate.ts');
-  const {prepareTree} = await import('../layers/prepared-tree.ts');
-  const {releaseFileStore} = await import('../layers/file-store.ts');
+  const {prepareTree} = await import('../runtime/prepared-tree.ts');
+  const {releaseFileStore} = await import('../runtime/file-store.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
-  const {requireFileStoreName} = await import('../layers/shape.ts');
+  const {requireFileStoreName} = await import('../runtime/root-types.ts');
   requireFileStoreName(w.index);
   // --fresh: this checkout's translator, translating everything as it runs (what the next why will be).
   const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));

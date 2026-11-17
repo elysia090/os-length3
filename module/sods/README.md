@@ -17,7 +17,7 @@ instead. Rust; where the bound is not reached in plain Rust, C on `../lib` besid
 | --- | --- |
 | a program made a module: the translator, its form, its ABI (`src/`) | what a box is, and making one: muk (`../muk`, an OCI bundle run) |
 | what makes a translation the same translation, and translations kept under it (`src/identity.rs`, `src/cache.rs`, `runtime/translation/kept.ts`) | which programs are translated ahead and shipped: ricebox (`../ricebox`), which puts them in its layers |
-| the Linux a translated program asks for (`runtime/linux/`) | an image, its layers and their form: ricebox (`../ricebox/layers`); sods lends a tree to mount them in |
+| the Linux a translated program asks for (`runtime/linux/`) | an image, its layers and their form: ricebox (`../ricebox/runtime`); sods lends a tree to mount them in |
 | every difference between hosts (`runtime/host.ts`), and the table of what runs where (`runtime/targets.ts`) | a terminal's other end: prompt (`../prompt`); words, addresses, policy: a product |
 
 ## How others take it
@@ -143,7 +143,7 @@ and given another, its signals read as a file (signalfd).
 root's 555 programs and every line of work say the same (the one apart says which processor it runs on).
 
 **A box is made by muk on every host, and a terminal held by prompt or by the page that is one.** In a page's
-Worker (`module/ricebox/layers/worker.ts`) and in node, the root's programs run in a box `muk run` makes on
+Worker (`module/ricebox/runtime/worker.ts`) and in node, the root's programs run in a box `muk run` makes on
 this Linux, of the bundle ricebox writes for every host (`module/ricebox/src/bundle.rs`); on a Linux machine the
 same bundle is run by the same muk on its kernel (`module/ricebox/src/run.rs`), and at a person's
 terminal the box has one of its own, its other end held by `prompt attach`. In a page the terminal is the page

@@ -1,11 +1,11 @@
 import {existsSync} from 'node:fs';
 import {basename, join} from 'node:path';
-import {aheadFor} from '../../../module/ricebox/layers/ahead.ts';
+import {aheadFor} from '../../../module/ricebox/runtime/pretranslate.ts';
 import type {Index} from '../../prompt/userland.ts';
 import {expect, test} from './fixtures.ts';
 import {OS} from './paths.ts';
 
-// What a Prompt is likely to run next, translated by the browser while it waits for a line (module/ricebox/layers/ahead.ts): the
+// What a Prompt is likely to run next, translated by the browser while it waits for a line (module/ricebox/runtime/pretranslate.ts): the
 // light programs of the root, what its shell runs itself as one moves first, then what anyone reaches for. Kept before
 // they are asked for, they are not translated when they run. What building C runs is not among them, in a repo made
 // from C's files ('hello') too: gcc's compiler proper (cc1, 40 MB of code) is the release's to translate. @slow, as the
@@ -35,7 +35,7 @@ test.describe('translated ahead', {tag: '@slow'}, () => {
     const ahead = aheadFor(index);
     expect(ahead.length, 'this root has none of the programs translated ahead').toBeGreaterThan(0);
     const keptOf = (origins: string[]) => app.page.evaluate(async (os) => {
-      // Where ricebox keeps a root's translations in a page: a cache named for where the root is served from (layers/root.ts).
+      // Where ricebox keeps a root's translations in a page: a cache named for where the root is served from (runtime/root.ts).
       const urls = (await (await caches.open(`ricebox:${new URL('/webroot/', location.href).href}`)).keys()).map((r) => r.url);
       return os.filter((o) => urls.some((u) => u.includes(`/webroot/tr/${o}-`)));
     }, origins);

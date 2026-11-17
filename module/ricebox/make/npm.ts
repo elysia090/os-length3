@@ -14,11 +14,11 @@ const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const out = process.argv[2] && resolve(process.argv[2]);
 if (!out) throw new Error('usage: node module/ricebox/make/npm.ts OUT');
 if (existsSync(out)) throw new Error(`Refusing to replace an existing directory: ${out}`);
-const entry = 'module/ricebox/layers/root.ts';
+const entry = 'module/ricebox/runtime/root.ts';
 const closure = new Map<string, {source: string; javascript: string}>();
 function visit(path: string): void {
   if (closure.has(path)) return;
-  if (!/^module\/(ricebox\/layers|sods\/runtime)\//.test(path) || !path.endsWith('.ts')) {
+  if (!/^module\/(ricebox\/(?:runtime|distribution)|sods\/runtime)\//.test(path) || !path.endsWith('.ts')) {
     throw new Error(`Unexpected dependency outside ricebox and sods: ${path}`);
   }
   const source = readFileSync(join(repository, path), 'utf8');

@@ -8,7 +8,7 @@
 //                    turn on this thread; the programs given with their translations run them from the start
 //   Vfs, mountTarget, provide
 //                    its tree: made empty, filled through a mount's port (an image's reader fills it: ricebox's
-//                    layers/mount.ts), a file given with its bytes put over what is there
+//                    distribution/mount.ts), a file given with its bytes put over what is there
 //   keeper           translations kept from earlier runs, read when a program is first run
 //   Mirror           what a program changed under one directory, said to whoever keeps a copy outside
 //   said             a kernel that ran as far as it could: ended, or waiting, and for what

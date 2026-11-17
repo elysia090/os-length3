@@ -1,4 +1,4 @@
-// Copies kept from earlier runs, read where the kernel runs. Whoever keeps them (a page: ricebox's layers/root.ts,
+// Copies kept from earlier runs, read where the kernel runs. Whoever keeps them (a page: ricebox's runtime/root.ts,
 // within its share of the browser's room) keeps them where the host keeps such things (host.ts `kept`: a browser's
 // Cache Storage), each program's under the origin of its file in the root (its pack, named by its digest, and its
 // place in it), and says at the start which there are: kept = {cache, at: {[origin]: {main, more}}}, the URL of a

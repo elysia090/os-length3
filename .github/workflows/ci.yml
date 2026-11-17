@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'why/prompt/roots/pins.rs', 'why/shipto/remote/ship/releases.ts', 'scripts/webroot.sh', 'module/ricebox/make/layers.ts', 'module/ricebox/make/tree.ts', 'scripts/root-file.ts', 'module/ricebox/make/parity.ts', 'module/ricebox/layers/table.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=webroot-${{ hashFiles('module/ricebox/RELEASE', 'why/prompt/roots/pins.rs', 'why/shipto/remote/ship/releases.ts', 'scripts/webroot.sh', 'module/ricebox/make/layers.ts', 'module/ricebox/make/tree.ts', 'scripts/root-file.ts', 'module/ricebox/make/parity.ts', 'module/ricebox/distribution/pack.ts', 'module/sods/Cargo.toml', 'module/sods/Cargo.lock', 'module/sods/src/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -317,7 +317,7 @@ jobs:
       - name: Layers, and muk's parser beside its model
         if: matrix.part == 'native'
         run: |
-          node --test module/ricebox/layers/test/*.test.ts module/muk/test/*.test.ts
+          node --test module/ricebox/runtime/test/*.test.ts module/muk/test/*.test.ts
           sh module/muk/test/same.sh
 
       # The one muk on every host: muk's own corpus (module/muk/test/muk.sh, hostile.sh) run whole inside sods, the

@@ -1,4 +1,4 @@
-// A translation as it is kept between runs: written by whoever keeps it (a page: ricebox's layers/root.ts; node:
+// A translation as it is kept between runs: written by whoever keeps it (a page: ricebox's runtime/root.ts; node:
 // module/ricebox/make/runnable.ts), read back by a kernel through its keeper (../linux/keeper.ts), which checks each copy
 // against the SHA-256 that seals it. These are the bodies.
 //

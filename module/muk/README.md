@@ -27,7 +27,7 @@ sh test/same.sh        the C parser and a model of it (test/asks.ts), asked the 
 root), read as runc reads it and run as runc runs it, the `run` profile of it (not the whole lifecycle CLI).
 `test/muk.sh` runs the same bundles under both and compares what each box says of itself, line for line. Where muk
 is stricter than runc it refuses in words rather than differing quietly (the floor, below). It has no second
-contract: an image's layers are the distribution's to read ([`../ricebox/layers`](../ricebox/layers)), and where
+contract: an image's layers are the distribution's to read ([`../ricebox/runtime`](../ricebox/runtime)), and where
 there is no Linux under it (a browser, another system) the Linux it asks for is sods'
 ([`../sods`](../sods/README.md)), so this same C is what runs there: in a page's Worker and in node a box is made by this muk, translated, on the
 Linux sods answers (`../sods/test/muk/run.sh` runs this corpus there).

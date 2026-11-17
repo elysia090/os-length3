@@ -24,7 +24,7 @@ import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync}
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
-import {checkPacks} from '../module/ricebox/layers/table.ts';
+import {checkPacks} from '../module/ricebox/distribution/pack.ts';
 import {tarMembers, type About, type Index} from '../module/ricebox/make/tree.ts';
 
 const here = new URL('..', import.meta.url).pathname;

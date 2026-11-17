@@ -1,6 +1,6 @@
 // muk for a web root: the box's maker (module/muk: one x86-64 Linux program of C, made by module/lib/build.sh),
 // built from this tree when its sources are newer than what was built, and put beside a root's layers as a page
-// reads it (module/ricebox/layers/root.ts): its bytes as a blob named by their digest, and muk.json, which says
+// reads it (module/ricebox/runtime/root.ts): its bytes as a blob named by their digest, and muk.json, which says
 // which. A root's programs run in a box muk makes, in a page as on Linux (the same program, translated there as
 // the root's own are); it is served beside the root until a root is released that carries it.
 //

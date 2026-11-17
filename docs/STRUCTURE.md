@@ -22,7 +22,7 @@ where there is no Linux, the same C muk runs over the Linux sods answers: a box 
 on every host (below, A Prompt is a bundle), in a page's Worker and in node as on a Linux machine.
 
 An image's layers are the distribution's: their form, what writes them and what reads them are ricebox's
-(`module/ricebox/layers`), mounted into a tree sods lends through a port neither side names the other by. What makes
+(`module/ricebox/runtime`), mounted into a tree sods lends through a port neither side names the other by. What makes
 a translation reusable (the program, the translator, the ABI, the options) is one key in sods
 (`src/identity.rs`), and translations are kept under it by sods (`src/cache.rs`; in a browser, `madeBy`); which
 programs are translated ahead and shipped is ricebox's, in its layers. The caller (a product) assembles: it starts
@@ -97,7 +97,7 @@ inside out, so that nothing of a product is left further in than the product.
 | xlat | was sods' crate, its program and its wasm, `XLAT_*`, the jobs' names; 338 mentions | sods, and where it meant what runs a box, muk | `sods`, `SODS_*`; `MUK_*`: done |
 | length3, Length³ OS, os-length3, OS Length3 Linux, l3 | the crates (`length3-core`, `length3-os`), `LENGTH3_*`, `/etc/length3` and the hostname in ricebox, the releases' names; 1,111 mentions | why where it is the product; ricebox where it is the root; nothing where it is muk's | `why-*`, `WHY_*`; `/etc/ricebox`; `ricebox-0.6.4-…`, `why-0.0.1-…` |
 | the core | was `why/core`, 15,687 lines, fourteen parts that take from each other in rings | what why says of a repo, its history, Home, a device; with a box run (muk's) and the Remote's client (shipto's) in it | a folder of why to each part (`why/<part>`, the crate's root `why/lib.rs`); the bundle is ricebox's to write; `compute` gone: done |
-| the web root | was `scripts/webroot*.ts`; `public/webroot`, `…-l3-web.tar` | ricebox as layers | ricebox's layers: read by `module/ricebox/layers`, made by `module/ricebox/make`: done |
+| the web root | was `scripts/webroot*.ts`; `public/webroot`, `…-l3-web.tar` | ricebox as layers | ricebox's layers: read by `module/ricebox/runtime`, made by `module/ricebox/make`: done |
 | the Remote, remote, shipto | was `why/remote`, the core's `remote`, the page's `app/remote`; the command's `remote`, `sync`, `git` | what a service wants | `why/shipto`, one folder (the Remote in it, `why/shipto/remote`): done, but for the command's three files |
 | scripts | `scripts/`, 4,798 lines of every unit's making and checking | each unit's own | in the unit it makes; what checks the whole stays |
 | tests | was `tests/` | why's, driven as a person drives it | `why/test`: done |
@@ -116,7 +116,7 @@ a product lends and tells   →   ricebox writes the bundle   →   muk run   �
 | Where | ricebox | muk | The Linux it asks |
 | --- | --- | --- | --- |
 | a Linux machine (x86-64) that lets a program make user namespaces | `src/run.rs` | the program beside the one that runs it | the host's kernel |
-| a page's Worker, node, a desktop that is not such a machine | `layers/worker.ts` | the same program, translated as any program of the root is | sods' |
+| a page's Worker, node, a desktop that is not such a machine | `runtime/worker.ts` | the same program, translated as any program of the root is | sods' |
 
 Nothing of a product makes a namespace, a mount or a filter, starts a box's program itself, writes config.json, or
 says what the root's shell is run as. One function writes the bundle (`module/ricebox/src/bundle.rs`), for a page
@@ -178,9 +178,9 @@ What was why's and is ricebox's, since it is the distribution's own to do:
 | a root's bundle unpacked, the roots held and the one in use (`why/core/src/root/unpack.rs`, `held.rs`, `install.rs`) | `module/ricebox/src/unpack.rs`, `held.rs`: a file is three calls, the kernel holds that nothing lands outside or through a link, and the bundle is hashed as it is unpacked (once) |
 | the bundle for muk, the shell's words, what a box runs with (`why/core/src/prompt/bundle.rs`; four copies before it) | `module/ricebox/src/bundle.rs`: n bytes written once into memory asked for once |
 | a box started on Linux, its terminal handed over, whether a box can be made (`why/core/src/prompt/start.rs`) | `module/ricebox/src/run.rs` |
-| the Worker that runs the root in a page (`why/app/host/prompt/kernel.worker.ts`), one readied ahead | `module/ricebox/layers/worker.ts`, `root.ts` |
-| which programs a first start waits for, and which are translated ahead (`why/app/prompt/first.ts`, `ahead.ts`) | `module/ricebox/layers/first.ts`, `ahead.ts` |
-| the root's tree for a page, and what at its top is the kernel's or starts empty (`why/app/prompt/system.ts`) | `module/ricebox/layers/tree.ts` |
+| the Worker that runs the root in a page (`why/app/host/prompt/kernel.worker.ts`), one readied ahead | `module/ricebox/runtime/worker.ts`, `root.ts` |
+| which programs a first start waits for, and which are translated ahead (`why/app/prompt/first.ts`, `ahead.ts`) | `module/ricebox/runtime/startup-programs.ts`, `ahead.ts` |
+| the root's tree for a page, and what at its top is the kernel's or starts empty (`why/app/prompt/system.ts`) | `module/ricebox/runtime/directory-tree.ts` |
 | the layers written, checked against the root, the root's programs run under muk here and on Linux, the box's maker put beside the layers (`scripts/webroot*.ts`, `commands.ts`, `muk.ts`) | `module/ricebox/make/` (`layers.ts`, `layers.sh`, `tree.ts`, `parity.ts`, `standin.ts`, `runnable.ts`, `commands.ts`, `muk.ts`) |
 
 What stays why's, because it is a product's choice or its words:

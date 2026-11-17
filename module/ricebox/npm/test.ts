@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import ricebox, {distributionAssets} from './vite.ts';
-import {packOf} from '../layers/table.ts';
+import {packOf} from '../distribution/pack.ts';
 
 function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), 'ricebox-assets-'));

@@ -7,7 +7,7 @@
 // is stored as zstd frames (`decode(bytes, size)` gives it back: in a Worker the translator's decoder, in node its
 // own) or as it is (`raw`), whichever is smaller.
 
-import {checkedRange, type Sha256} from './table.ts';
+import {checkedRange, type Sha256} from './pack.ts';
 
 /** The root's index, as far as mounting it reads it (what serves it holds all of it). */
 export interface Packed {

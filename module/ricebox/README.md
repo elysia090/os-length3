@@ -3,8 +3,8 @@
 As BusyBox is one, and as thin: the root, and the command line #80 lists, ordinary POSIX with no window. This
 folder is all of it: its version (`RELEASE`), what it is made from (`pins/`), a folder per package with its recipe
 and its patches (`packages/NAME/recipe.sh`), its own files (`etc/`, `usr/`), what makes it (`make/`: each
-package on one pinned Alpine, then the root and its package database; and the root as layers), the root as a
-page reads and runs it (`layers/`), and the root where it is used (`src/`: on a device, in a box).
+package on one pinned Alpine, then the root and its package database; and the root as layers), the stored distribution format (`distribution/`), the root as a
+page reads and runs it (`runtime/`), and the root where it is used (`src/`: on a device, in a box).
 
 It knows no service and nothing of a product's. The weight of running it is its own: it unpacks and holds its
 root, writes the bundle its box is made from, starts that box and hands its terminal over, and in a page mounts
@@ -41,22 +41,31 @@ their table, each file fetched when first read and used only once it is what the
 ricebox's alone: muk reads no image, and sods lends a tree without knowing what fills it.
 
 ```
-layers/table.ts         a pack's table: what makes one file read alone as checked as the whole pack
-layers/pack.ts          a pack's bytes a range at a time, through whatever fetch the host has (handed in)
-layers/mount.ts         an index put in a tree someone lends (a port: directories, links, lazy files)
-layers/fetch.ts         a download that survives what lies between a page and its server
-layers/shape.ts         the root as a page reads it, in its shapes (webroot.json, the index, the root loaded)
-layers/root.ts          a release read by a page: its index, its translator, its programs translated ahead,
-                        what a browser keeps of them, the box's maker beside it, and the Worker that runs it
-layers/worker.ts        the root run in a Worker: its layers mounted, the Linux sods answers, the box muk makes
-layers/first.ts         the programs a first start waits for
-layers/ahead.ts         what is likely run next, translated while the page has time (ahead.worker.ts)
-layers/tree.ts          the root's tree for whoever shows it, and what at its top the kernel makes
-layers/check.worker.ts  digests and copies off the page's thread
-layers/test/            node --test module/ricebox/layers/test/*.test.ts
+distribution/manifest.ts  stored release descriptors, without execution objects
+distribution/pack.ts      pack format, writer and integrity checks
+distribution/mount.ts     lazy files mounted through a caller-supplied neutral port
+runtime/root-types.ts     prepared root values passed to execution Workers
+runtime/root.ts           release loading, cache policy and session entry
+runtime/worker.ts         execution through sods and muk
+runtime/pack-range.ts     checked range reads through supplied host operations
+runtime/download.ts       resumable downloads and integrity
+runtime/startup-programs.ts programs needed for initial launch
+runtime/pretranslate.ts  background translation scheduling
+runtime/translate.worker.ts background translator entry
+runtime/directory-tree.ts directory listing projection for callers
+runtime/check.worker.ts   off-thread digest/copy entry
+runtime/test/             integration and execution tests
 ```
 
-What makes the layers is here too:
+The distribution directory has no dependency on execution, sods, host APIs or
+product code. Runtime consumes it; producers and deployment tools use the same
+stored-format contract. Execution objects such as WebAssembly modules are kept in
+runtime/root-types.ts rather than serialized-manifest types.
+
+The existing make directory still contains producers, native/web comparison and
+execution tooling. Its remaining mixed responsibilities are being reviewed
+separately; it is not a proposed generic build/runtime abstraction:
+
 
 ```
 make/layers.sh, layers.ts   a release root written as layers: its index, packs and blobs, the hot programs

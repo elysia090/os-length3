@@ -1,7 +1,7 @@
 // The root's tree as its index has it, for whoever shows it: what each directory holds, by name; and what a
 // directory at the top is made by: the distribution, the kernel (made when a box starts), or nothing (it starts
 // empty in every box). The same tree a program in the root sees.
-import type {Index} from './shape.ts';
+import type {Index} from './root-types.ts';
 
 export interface TreeEntry {
   name: string;

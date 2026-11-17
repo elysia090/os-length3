@@ -6,8 +6,8 @@ import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
 import {prepareDistribution, type PrepareOptions} from './prepare.ts';
 import {gunzipSync} from 'node:zlib';
-import {requireFileStoreName, type Index, type About, type Blob} from '../layers/shape.ts';
-import {checkPacks} from '../layers/table.ts';
+import {requireFileStoreName, type Index, type About, type Blob} from '../distribution/manifest.ts';
+import {checkPacks} from '../distribution/pack.ts';
 
 export function distributionAssets(directory: string, {base = 'ricebox', maxAssetBytes = Infinity}: {base?: string; maxAssetBytes?: number} = {}) {
   if (!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(base)) throw new Error('ricebox: base must be a relative asset directory');

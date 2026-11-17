@@ -19,7 +19,7 @@ test('muk and prompt: each a program and nothing of why\'s; the root in a box is
   // why's core says what it lends and tells, and keeps a Prompt's record.
   assert.deepEqual(unit('muk').holds, ['module/muk']);
   assert.deepEqual(unit('prompt').holds, ['module/prompt']);
-  for (const f of ['src/bundle.rs', 'src/run.rs', 'src/held.rs', 'src/unpack.rs', 'layers/worker.ts', 'layers/ahead.ts', 'layers/first.ts', 'layers/tree.ts']) {
+  for (const f of ['src/bundle.rs', 'src/run.rs', 'src/held.rs', 'src/unpack.rs', 'runtime/worker.ts', 'runtime/pretranslate.ts', 'runtime/startup-programs.ts', 'runtime/directory-tree.ts']) {
     assert.ok(existsSync(new URL(`../module/ricebox/${f}`, import.meta.url)), f);
     assert.equal(unitOf(`module/ricebox/${f}`)?.name, 'ricebox');
   }
@@ -56,7 +56,7 @@ test('muk, prompt and sods are taken from through their entries alone: muk and p
   assert.deepEqual(unit('prompt').entries, []);
   assert.deepEqual(unit('sods').entries, ['translate', 'linux', 'host', 'targets'].map((name) => `module/sods/runtime/${name}.ts`));
   // (what reads an image's layers is the distribution's, not the machine's: muk holds no TypeScript that runs)
-  assert.equal(unitOf('module/ricebox/layers/mount.ts')?.name, 'ricebox');
+  assert.equal(unitOf('module/ricebox/distribution/mount.ts')?.name, 'ricebox');
   assert.equal(unitOf('module/sods/src/cache.rs')?.name, 'sods');
 });
 
