@@ -69,7 +69,7 @@ The builder operates on parent inode plus one component, not guest paths. Each
 operation preserves published logical state/input ownership on failure; a whole
 mount is not a transaction and failed allocation may leave reserved capacity.
 Existing directory modes can update; files/symlinks cannot replace existing names.
-Root overlay/origin hydration, permission resolution, FD/mapping/Image references,
+Root overlay/origin hydration, permission resolution, guest FD/mapping/Image integration,
 source-registry retirement, and Node/muk caller switching are still absent.
 The future Rust domain must uniquely allocate Tree owner IDs before connection.
 
@@ -89,3 +89,44 @@ still cause quadratic work within admission limits. No directory enumeration API
 is provided here. Legacy getdents sorts names and resumes after the last name, not
 insertion order; its sort cost and string-versus-byte ordering need separate review.
 This is a semantic migration unit, not an optimized or usable Linux replacement.
+
+## Descriptor ownership (internal)
+
+`descriptor.rs` keeps prepared Tree storage, open descriptions and descriptor
+tables in one Rust owner. The Tree cannot be taken out or individually disposed
+while its descriptions remain. This owner is not a Kernel: PID/IPC, credentials,
+mount namespaces and process termination decisions do not belong here.
+
+FD numbers are reusable positions in a table, not description identities. Separate
+opens have separate offsets; dup and a copied table share a description and its
+offset revision. A shared table has independent holder accounting. CLOEXEC belongs
+to its slot rather than the shared description. Internal handles must reject stale
+or foreign generations; exhaustion must not wrap them into an old identity.
+
+These operations do not implement guest open/openat, permission checks, mounted
+path resolution, console/pipe/socket finalizers, pending reads or memory copies.
+Closing the last description does not reclaim its inode payload: namespace,
+mapping, image and source ownership still need the full migration. The Node and
+muk callers continue using the existing TS runtime; no production TS deletion is
+claimed for this internal stage.
+
+Tables use sparse maps rather than allocating the full FD-number limit. Limits
+cover table/description record counts and total live slots, not exact allocated
+bytes: Vec and HashMap spare capacity can exceed live counts and is retained.
+Fork copies live slots and aggregates all reference increments before publication,
+but map iteration scans retained capacity; expected work is O(source capacity +
+live slots), plus the table arena scan. It also reserves a temporary count map
+for up to the live-slot count. Lowest-free FD search can scan to the table limit;
+open admission scans the description arena. These gaps from the necessary
+O(live slots) fork work are explicit, not claimed optimal.
+
+Table holder tickets are non-Copy/non-Clone; share creates a ticket and let_go
+consumes it. Dropping a ticket without let_go retains the table until Files drops.
+The embedding must allocate unique owner incarnations and retire all tickets.
+Neither a Rust handle nor a guest FD number alone proves an external operation
+has stopped. Pending read references and offset commit after copy receipts must
+be integrated before asynchronous access can safely use this owner.
+
+Passing a holder to the wrong Files rejects it but consumes that ticket, retaining
+its original table. This is an internal misuse limitation, not a public recovery
+contract; a public release API must preserve recoverability before exposure.

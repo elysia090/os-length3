@@ -10,3 +10,5 @@ mod lease;
 mod wasm;
 
 mod inode;
+
+mod descriptor;
