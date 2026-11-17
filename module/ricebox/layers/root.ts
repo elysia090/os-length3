@@ -1,4 +1,5 @@
 import {createAhead} from './ahead.ts';
+import {releaseFileCore} from './file-core.ts';
 import {digest, download as fetchFile, Fatal, type Check} from './fetch.ts';
 import {FIRST} from './first.ts';
 import {canRunApart} from '../../sods/runtime/host.ts';
@@ -637,14 +638,14 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
   const modeOf = (path: string) => index.files.find((f) => f.path === path)?.mode ?? 0o755;
   const first = index.translations.filter((t) => first0.includes(t.path));
   const muk = await maker;
-  const live = new Set([`${BASE}${a.index.path}`, `${BASE}${index.translator.path}`, ...(muk ? [`${BASE}${muk.path}`] : []),
+  const live = new Set([`${BASE}${a.index.path}`, `${BASE}${index.translator.path}`, ...(index.fileCore ? [`${BASE}${index.fileCore.path}`] : []), ...(muk ? [`${BASE}${muk.path}`] : []),
     ...index.translations.flatMap((t) => [`${BASE}${t.elf.path}`, `${BASE}${t.wasm.path}`, moreURL(t, index.translator.sha256, threadsApart())])]);
   // And the translations Prompts made of the root's programs, by this translator, of files in this root's packs.
   const packs = new Set(index.packs.map((p) => p.name.replace(/\.pack$/, '')));
   const tag = keptTag(index);
   void forgetOthers((path) => live.has(path) || (path.startsWith(TRANSLATED) && keptOrigin(path, tag) !== null && packs.has(keptOrigin(path, tag)!.split('_')[0])));
   // Progress over everything this start waits for: the translator and each program it is given now.
-  const parts = [index.translator, ...first.flatMap((t) => [t.elf, t.wasm])];
+  const parts = [index.translator, ...(index.fileCore ? [index.fileCore] : []), ...first.flatMap((t) => [t.elf, t.wasm])];
   const of = parts.reduce((n, p) => n + p.size, 0);
   const got = new Map<string, number>();
   const progress = (p: Blob) => ({
@@ -652,10 +653,13 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
     retry(attempt: number, why: string) { tell({at: 'retry', attempt, why, got: [...got.values()].reduce((x, y) => x + y, 0), of}); },
     waiting(quiet: number) { tell({at: 'fetch', got: [...got.values()].reduce((x, y) => x + y, 0), of, quiet}); },
   });
+  // Always resolve the current verified index's core, including when the old
+  // plan supplied translator/hot caches. Do not mix descriptor generations.
+  tell({at: 'fetch', got: 0, of});
+  const fileCore = await releaseFileCore(index.fileCore, (b) => unblob(b, progress(b), b.wasm), config.fileCore);
   let translator: WebAssembly.Module, files: Hot[];
   if (read) [translator, ...files] = read.slice(1) as [WebAssembly.Module, ...Hot[]];
   else {
-    tell({at: 'fetch', got: 0, of});
     const [translatorWasm, ...hots] = await Promise.all([
       unblob(index.translator, progress(index.translator)),
       ...first.map((t) => hot(t, modeOf(t.path), index.translator.sha256, progress(t.wasm))),
@@ -669,7 +673,7 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
     localStorage.setItem(PLAN, JSON.stringify(next));
   } catch { /* not remembered: the next start reads as webroot.json says */ }
   tell({at: 'ready'});
-  return {about: a, index, translator, fileCore: config.fileCore, files: files.map(taken), url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
+  return {about: a, index, translator, fileCore, files: files.map(taken), url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
 })().catch((e) => {
   loading = null;
   tell({at: 'failed', message: config.errorText(e)});

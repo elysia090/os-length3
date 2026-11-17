@@ -12,7 +12,14 @@ export interface About {
   translator: {name: string; version: string};
 }
 export interface Translation { path: string; sha256: string; elf: Blob; wasm: Blob }
+export interface CoreDescriptor extends Blob {
+  abi: 4;
+  wasm: string;
+  maxFileBytes: number;
+}
 export interface Index {
+  /** When present this release requires the matching Rust file owner. */
+  fileCore?: CoreDescriptor;
   name: string; version: string; sha256: string; codec: string;
   packs: {name: string; owner: string; bytes: number}[];
   dirs: {path: string; mode: number}[];

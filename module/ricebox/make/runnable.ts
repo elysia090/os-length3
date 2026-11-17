@@ -116,19 +116,23 @@ async function keptIn(dir: string) {
 
 /** One program in its box on sods' Linux, in this process: prints {status, stdout, stderr, error?, ms} as JSON. */
 async function child({web, path, args, translator, fresh, kept: keptDir, env = ENV, muk}: Asked) {
-  const {RemoteKernel, Vfs, keeper, linux, mountTarget, provide} = await import('../../sods/runtime/linux.ts');
+  const {RemoteKernel, keeper, linux, provide} = await import('../../sods/runtime/linux.ts');
   const {loadTranslator} = await import('../../sods/runtime/translate.ts');
-  const {mountPack} = await import('../layers/mount.ts');
+  const {prepareTree} = await import('../layers/prepared-tree.ts');
+  const {releaseFileCore} = await import('../layers/file-core.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
   // --fresh: this checkout's translator, translating everything as it runs (what the next why will be).
   const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));
-  const vfs = new Vfs();
-  mountPack(mountTarget(vfs), w.index, {
+  const core = await releaseFileCore(w.index.fileCore, async (descriptor) => new Uint8Array(w.blob(descriptor)));
+  const tree = await prepareTree({core, muk: new Uint8Array(readFileSync(muk)), root: {index: w.index, reading: {
     range: (pack, at, len) => { const b = Buffer.alloc(len); w.readRange(pack, at, len, b); return new Uint8Array(b); },
     decode: (b) => new Uint8Array(w.unzstd(b)),
     sha256: (b) => new Uint8Array(createHash('sha256').update(b).digest()),
-  });
+  }}});
+  // The child realm owns this root across the run, like the browser Worker.
+  // Do not retire its scope merely because one kernel reports an exit.
+  const vfs = tree.vfs;
   // As the page gives them: each program translated ahead of time, with its bytes, in the root's file (each of its names).
   const ready = (fresh ? [] : w.index.translations ?? []).map((t) => {
     const f = w.index.files.find((x) => x.path === t.path);
@@ -136,7 +140,6 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
     return {path: t.path, wasm: new Uint8Array(w.blob(t.wasm))};
   });
   // The box: its maker (the same muk as natively, translated as it is run) and what it is told to make, beside the root.
-  vfs.writeFile('/run/box/muk', new Uint8Array(readFileSync(muk)), 0o755);
   vfs.writeFile('/run/box/config.json', bundle('/', [path, ...args], env));
   const run = ['/run/box/muk', 'run', '--lend', '/', '--ids', '0-0', '-b', '/run/box', 'box'];
   let stdout = '', stderr = '';

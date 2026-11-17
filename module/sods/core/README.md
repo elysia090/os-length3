@@ -513,3 +513,36 @@ Release-index descriptors, generation-aware fetch/cache/progress, build artifact
 production and runnable/default deployment selection are not switched yet. No
 product receives an unverified hard-coded artifact URL. Copy costs remain stage9's
 3n; no optimization or end-to-end performance improvement is claimed by this step.
+
+### Stage 11: release-selected artifacts and normal boot selection
+
+The release builder accepts `--file-core PATH [--file-core-limit BYTES]`. Explicit
+missing/malformed flags or incompatible artifacts fail before root reading/output.
+It validates imports, required exports, ABI 4 and an empty-file smoke, then uses
+the existing content-addressed gzip blob writer. Index.fileCore binds compressed
+hash/size, expanded Wasm hash/size, ABI and per-file limit; the index digest changes
+with that selection, and artifact pruning retains its blob. Core compilation is
+still an explicit Cargo build step, not an implicit toolchain download.
+
+Browser root loading resolves the current verified index's descriptor by default,
+then passes the module into the existing prepared Worker path. The speculative
+Plan may supply translator/hot caches but never selects a core; core loading occurs
+after current-index verification on every load, including a plan hit. Its blob is
+included in the live cache set and progress accounting. Missing descriptor alone
+means legacy release compatibility; null/invalid descriptors, missing/corrupt blob,
+wrong expanded digest, missing exports or mismatched ABI fail without fallback.
+An additional caller override conflicts with release ownership and is rejected.
+Node runnable uses the same descriptor resolver and prepared-tree selection.
+
+Validation instantiates a throwaway core; the Worker/child later creates its owned
+instance. This extra startup work is not hidden in a compile-only claim. Scope
+lifetime remains Worker/child realm, not a per-kernel exit cleanup. Resource totals
+and source copying retain the prior limitations.
+
+Focused integration builds an actual tiny release via the layers CLI, reads its
+index/blob through openWeb, selects Rust without an explicit caller override,
+mounts/reads the pack and rejects a missing declared blob. It uses the verified
+historical translator fixture with no hot AOT work. This is not a full distribution
+build, browser-cache/Worker end-to-end test or runnable muk guest run. No artifact
+has been published or registered. Full generation-aware browser integration and
+production release/deployment remain verification work, not completed claims.

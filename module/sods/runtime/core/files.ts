@@ -1,6 +1,10 @@
 /** Opt-in regular-file payloads owned by the Rust core. No namespace or mappings.
  * All returned bytes are owned snapshots; no core memory view escapes this facade.
  */
+export const CORE_FILE_FUNCTIONS = ['files_abi_version', 'files_init', 'files_input', 'files_ptr', 'files_len', 'files_create',
+  'files_create_lazy', 'files_load_begin', 'files_load_source', 'files_load_finish', 'files_size',
+  'files_resident', 'files_release', 'files_own', 'files_load_check', 'files_write', 'files_read_begin',
+  'files_read_finish', 'files_truncate', 'files_close'] as const;
 interface Core extends WebAssembly.Exports {
   memory: WebAssembly.Memory;
   files_abi_version(): number;
@@ -55,6 +59,10 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
   uint(maxFileBytes);
   if (maxFileBytes > 0x7fffffff) throw new RangeError('File limit exceeds supported length');
   const module = source instanceof WebAssembly.Module ? source : await WebAssembly.compile(source);
+  const exports = new Map(WebAssembly.Module.exports(module).map(entry => [entry.name, entry.kind]));
+  if (exports.get('memory') !== 'memory' || CORE_FILE_FUNCTIONS.some(name => exports.get(name) !== 'function')) {
+    throw new Error('Unsupported core files ABI: missing required exports');
+  }
   const core = new WebAssembly.Instance(module, {}).exports as Core;
   if (typeof core.files_abi_version !== 'function' || core.files_abi_version() !== 4) throw new Error('Unsupported core files ABI');
   check(core.files_init(maxFileBytes));
