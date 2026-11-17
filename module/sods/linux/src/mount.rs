@@ -29,6 +29,7 @@ pub(crate) struct Limits {
     pub holds: usize,
 }
 /// Non-owning position; no arbitrary inode/view constructor is exposed to callers.
+#[derive(PartialEq, Eq)]
 pub(crate) struct Place {
     view: Id,
     inode: Inode,
@@ -39,8 +40,7 @@ pub(crate) struct Place {
 pub(crate) struct Ticket(Id);
 /// One description's hold. Dup/fork/read refs share that description.
 pub(crate) struct Hold {
-    id: Id,
-    location: Point,
+    location: Place,
 }
 struct Point {
     view: Id,
@@ -176,7 +176,7 @@ impl Mounts {
     }
     pub(crate) fn hold(&mut self, place: &Place) -> Result<Hold, Error> {
         let count = self.admit_hold(place.view)?;
-        let location = Point {
+        let location = Place {
             view: place.view,
             inode: place.inode,
             parent: place.parent,
@@ -184,10 +184,16 @@ impl Mounts {
         };
         self.cells[place.view.slot].view.as_mut().unwrap().holds = count;
         self.holds += 1;
-        Ok(Hold {
-            id: place.view,
-            location,
-        })
+        Ok(Hold { location })
+    }
+    /// Borrowed only within Rust; the hold stays owned throughout the lookup.
+    pub(crate) fn position_ref<'a>(&self, hold: &'a Hold) -> Result<&'a Place, Error> {
+        self.validate(&hold.location)?;
+        Ok(&hold.location)
+    }
+    pub(crate) fn copy_hold(&mut self, hold: &Hold) -> Result<Hold, Error> {
+        let position = self.position_ref(hold)?;
+        self.hold(position)
     }
     fn collect(&mut self, id: Id) {
         if id.slot == 0 {
@@ -199,7 +205,7 @@ impl Mounts {
         }
     }
     pub(crate) fn release_hold(&mut self, hold: Hold) {
-        self.release_id(hold.id);
+        self.release_id(hold.location.view);
     }
     fn release_id(&mut self, id: Id) {
         let view = self.cells[id.slot].view.as_mut().unwrap();

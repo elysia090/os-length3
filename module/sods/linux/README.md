@@ -284,3 +284,49 @@ permission nor process root/cwd ownership. Component lookup also scans the mount
 arena and copies a name; a future K-component walk using it unchanged can cost
 O(K * mount high water + name bytes), above the necessary path-inspection work.
 That indexing debt must be evaluated before claiming a production fast path.
+
+## Filesystem contexts and read ownership (internal)
+
+`fs_context.rs` models the CLONE_FS sharing unit: root and cwd each own a mount
+hold, even when both positions coincide, together with one shared umask. Sharing a
+context increments its holder count, not its mount holds. Copying creates a separate
+context and acquires both holds before publication; a failed second acquisition
+releases the first. Root/cwd replacement acquires its new hold before replacing and
+releasing the old one. A validated, exactly equal view/inode/parent/name position
+is a no-op, avoiding a transient hold and name allocation; equal inode alone is
+not sufficient. Task credentials, descriptor-table sharing and address-space
+sharing are separate and have not been folded into this context. Explicit context
+capacity is independent of FD-table capacity; the existing ABI2 sets it to zero.
+
+Files owns the context arena and exposes no mutable context/hold. A context can
+select root/cwd for component lookup, then open a mounted description and use the
+existing read reservation. Dropping a context ticket without explicit release keeps
+its ownership until Files drops. Released slots change generation before reuse.
+Root/cwd ownership alone is not chdir/chroot permission checking, path confinement,
+namespace/pivot integration or Task execution. Those guest contracts remain absent.
+
+The pending-read coordinator no longer owns a single Files/table pair. The private
+Wasm state instead owns Files, its bootstrap table and Reads together, allowing the
+Rust coordinator to take the selected table without adding a TS descriptor shadow.
+The coordinator checks its Files incarnation before every backing/effect operation;
+wrong-incarnation calls do not start, cancel or acknowledge another operation. This
+still relies on the embedding's unique, non-reused Files IDs. Numeric ID equality
+is not protection against a forged second Files with that ID. The current sealed
+Wasm owner does not allow Files replacement. A general Task/domain identity issuer
+and real execution/image binding are still prerequisites for guest connection.
+
+No Rust borrow is held across a host callback or wait. A pending operation retains
+its original OFD and memory action; completion never re-resolves a reused fd in a
+current table. Unknown access remains held until stopped evidence, while terminal
+query records need no backing reference. Merely dropping State is not evidence of
+external access completion. No new host export or production TS deletion follows
+from this ownership refactor.
+
+Contexts use a bounded reusable arena with generation checks. Admission scans its
+record high water; sharing and umask changes do not duplicate root/cwd names. Copy
+needs the two new hold locations, while component lookup borrows its held starting
+position instead of capturing its name again. Changing to an exactly equal position
+still compares provenance bytes. These costs and the mount lookup scan remain
+separate from guest payload delivery and are not claimed optimal. The read
+coordinator also requires the same memory Domain throughout an operation; the
+sealed State enforces this pairing, not a general caller-selected resource API.

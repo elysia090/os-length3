@@ -52,20 +52,27 @@ impl ReadCapacity {
     }
 }
 pub(crate) struct Reads {
-    pub(crate) files: Files,
-    pub(crate) table: Table,
+    owner: u64,
     slots: Vec<Option<Pending>>,
     next: Option<u64>,
     viewing: bool,
 }
 impl Reads {
-    pub(crate) fn new(files: Files, table: Table, capacity: ReadCapacity) -> Self {
+    pub(crate) fn new(files: &Files, capacity: ReadCapacity) -> Self {
         Self {
-            files,
-            table,
+            owner: files.owner(),
             slots: capacity.0,
             next: Some(1),
             viewing: false,
+        }
+    }
+    // Files incarnation IDs are unique within the managed owner; never reused.
+    // Check before any Domain transition, not after consuming effect permission.
+    fn check_owner(&self, files: &Files) -> Result<(), Error> {
+        if files.owner() == self.owner {
+            Ok(())
+        } else {
+            Err(Error::Files(descriptor::Error::BadHandle))
         }
     }
     pub(crate) fn viewing(&self) -> bool {
@@ -82,12 +89,15 @@ impl Reads {
     }
     pub(crate) fn begin(
         &mut self,
+        files: &mut Files,
+        table: &Table,
         domain: &mut Domain,
         fd: u32,
         binding: u64,
         at: u64,
         requested: u64,
     ) -> Result<u64, Error> {
+        self.check_owner(files)?;
         if self.viewing {
             return Err(Error::Busy);
         }
@@ -97,12 +107,12 @@ impl Reads {
             .position(Option::is_none)
             .ok_or(Error::Capacity)?;
         let id = self.next.ok_or(Error::Capacity)?;
-        let hold = self.files.reserve_read(&self.table, fd, requested)?;
+        let hold = files.reserve_read(table, fd, requested)?;
         let length = hold.length() as u64;
         let token = match domain.span(binding, if length == 0 { 0 } else { at }, length) {
             Ok(t) => t,
             Err(error) => {
-                self.files.abort_read(hold);
+                files.abort_read(hold);
                 return Err(error.into());
             }
         };
@@ -118,7 +128,13 @@ impl Reads {
         });
         Ok(id)
     }
-    pub(crate) fn start(&mut self, domain: &mut Domain, id: u64) -> Result<(usize, u64), Error> {
+    pub(crate) fn start(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        id: u64,
+    ) -> Result<(usize, u64), Error> {
+        self.check_owner(files)?;
         if self.viewing {
             return Err(Error::Busy);
         }
@@ -130,7 +146,7 @@ impl Reads {
         domain.start(p.token)?;
         p.phase = Phase::Executing;
         self.viewing = true;
-        let bytes = self.files.read_bytes(p.hold.as_ref().unwrap());
+        let bytes = files.read_bytes(p.hold.as_ref().unwrap());
         Ok((
             if bytes.is_empty() {
                 0
@@ -144,11 +160,13 @@ impl Reads {
     /// not certify a guest copy count or release any operation/backing obligation.
     pub(crate) fn receipt(
         &mut self,
+        files: &mut Files,
         domain: &mut Domain,
         id: u64,
         confirmed: u64,
         completion: Completion,
     ) -> Result<(), Error> {
+        self.check_owner(files)?;
         let i = self.index(id)?;
         let p = self.slots[i].as_mut().unwrap();
         if self.viewing && p.phase != Phase::Executing {
@@ -170,7 +188,7 @@ impl Reads {
         } else {
             // All fallible preflight happened before copy. The pending reference
             // pins this description even if its last descriptor slot has closed.
-            self.files.finish_read(p.hold.take().unwrap(), confirmed);
+            files.finish_read(p.hold.take().unwrap(), confirmed);
             // This coordinator alone owns the span token; no callback or other
             // core call can run between stopped receipt and retirement.
             assert_eq!(domain.retire(p.token).expect("stopped owned span"), None);
@@ -178,7 +196,13 @@ impl Reads {
         }
         Ok(())
     }
-    pub(crate) fn cancel(&mut self, domain: &mut Domain, id: u64) -> Result<(), Error> {
+    pub(crate) fn cancel(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        id: u64,
+    ) -> Result<(), Error> {
+        self.check_owner(files)?;
         let i = self.index(id)?;
         let p = self.slots[i].as_mut().unwrap();
         if self.viewing && p.phase != Phase::Executing {
@@ -190,7 +214,7 @@ impl Reads {
         domain.cancel(p.token)?;
         p.cancel = true;
         if p.phase == Phase::Ready {
-            self.files.abort_read(p.hold.take().unwrap());
+            files.abort_read(p.hold.take().unwrap());
             assert_eq!(
                 domain.retire(p.token).expect("cancelled ready owned span"),
                 None
@@ -235,7 +259,7 @@ mod tests {
     use super::*;
     use crate::descriptor::Limits;
     use crate::inode::{Inode, Tree};
-    fn setup() -> (Reads, Domain, u64, u32, Inode) {
+    fn setup() -> (Reads, Files, Table, Domain, u64, u32, Inode) {
         let mut tree = Tree::new(2, 4, 4, 32).unwrap();
         let root = tree.root();
         let a = tree
@@ -248,6 +272,7 @@ mod tests {
             3,
             tree,
             Limits {
+                contexts: 0,
                 tables: 2,
                 descriptions: 4,
                 slots: 8,
@@ -255,65 +280,68 @@ mod tests {
         );
         let table = files.table(8).unwrap();
         let fd = files.open(&table, a, false).unwrap();
-        let reads = Reads::new(files, table, ReadCapacity::new(3).unwrap());
+        let reads = Reads::new(&files, ReadCapacity::new(3).unwrap());
         let mut domain = Domain::new(1, 1, 3).unwrap();
         let binding = domain.bind(16).unwrap();
-        (reads, domain, binding, fd, b)
+        (reads, files, table, domain, binding, fd, b)
     }
     #[test]
     fn canonical_copy_commits_original_description_after_fd_reuse() {
-        let (mut r, mut d, m, fd, b) = setup();
-        let alias = r.files.dup(&r.table, fd, 0, false).unwrap();
-        let read = r.begin(&mut d, fd, m, 0, 3).unwrap();
-        r.files.close(&r.table, fd).unwrap();
-        assert_eq!(r.files.open(&r.table, b, false).unwrap(), fd);
-        let (ptr, len) = r.start(&mut d, read).unwrap();
+        let (mut r, mut files, table, mut d, m, fd, b) = setup();
+        let alias = files.dup(&table, fd, 0, false).unwrap();
+        let read = r.begin(&mut files, &table, &mut d, fd, m, 0, 3).unwrap();
+        files.close(&table, fd).unwrap();
+        assert_eq!(files.open(&table, b, false).unwrap(), fd);
+        let (ptr, len) = r.start(&mut files, &mut d, read).unwrap();
         let copied = unsafe { std::slice::from_raw_parts(ptr as *const u8, len as usize) }.to_vec();
         assert_eq!(copied, b"abc");
-        r.receipt(&mut d, read, 3, Completion::Stopped).unwrap();
-        assert_eq!(r.files.offset(&r.table, fd), Ok((0, 0)));
-        assert_eq!(r.files.offset(&r.table, alias), Ok((3, 1)));
+        r.receipt(&mut files, &mut d, read, 3, Completion::Stopped)
+            .unwrap();
+        assert_eq!(files.offset(&table, fd), Ok((0, 0)));
+        assert_eq!(files.offset(&table, alias), Ok((3, 1)));
         assert_eq!(r.query(read), Ok((3, 3, 3)));
         r.retire(read).unwrap();
         assert_eq!(r.query(read), Err(Error::BadRead));
     }
     #[test]
     fn failed_span_rolls_back_only_read_preparation() {
-        let (mut r, mut d, m, fd, _) = setup();
+        let (mut r, mut files, table, mut d, m, fd, _) = setup();
         assert_eq!(
-            r.begin(&mut d, fd, m, 15, 4),
+            r.begin(&mut files, &table, &mut d, fd, m, 15, 4),
             Err(Error::Lease(lease::Error::Range))
         );
-        assert_eq!(r.files.offset(&r.table, fd), Ok((0, 0)));
-        r.files.set_offset(&r.table, fd, 1).unwrap();
-        assert!(r.begin(&mut d, fd, m, 0, 3).is_ok());
+        assert_eq!(files.offset(&table, fd), Ok((0, 0)));
+        files.set_offset(&table, fd, 1).unwrap();
+        assert!(r.begin(&mut files, &table, &mut d, fd, m, 0, 3).is_ok());
     }
     #[test]
     fn unknown_copy_retains_offset_reservation_until_stopped() {
-        let (mut r, mut d, m, fd, _) = setup();
-        let read = r.begin(&mut d, fd, m, 0, 4).unwrap();
-        r.start(&mut d, read).unwrap();
-        r.receipt(&mut d, read, 2, Completion::Unknown).unwrap();
+        let (mut r, mut files, table, mut d, m, fd, _) = setup();
+        let read = r.begin(&mut files, &table, &mut d, fd, m, 0, 4).unwrap();
+        r.start(&mut files, &mut d, read).unwrap();
+        r.receipt(&mut files, &mut d, read, 2, Completion::Unknown)
+            .unwrap();
         assert!(!r.viewing());
-        assert_eq!(r.files.offset(&r.table, fd), Ok((0, 0)));
+        assert_eq!(files.offset(&table, fd), Ok((0, 0)));
         assert_eq!(
-            r.files.set_offset(&r.table, fd, 0),
+            files.set_offset(&table, fd, 0),
             Err(descriptor::Error::Busy)
         );
-        assert_eq!(r.start(&mut d, read), Err(Error::State));
-        r.cancel(&mut d, read).unwrap();
+        assert_eq!(r.start(&mut files, &mut d, read), Err(Error::State));
+        r.cancel(&mut files, &mut d, read).unwrap();
         assert_eq!(r.query(read), Ok((2, 4, 258)));
         assert_eq!(r.retire(read), Err(Error::State));
         assert_eq!(d.change(m, 32), Err(lease::Error::Busy));
         assert_eq!(
-            r.receipt(&mut d, read, 1, Completion::Stopped),
+            r.receipt(&mut files, &mut d, read, 1, Completion::Stopped),
             Err(Error::Range)
         );
-        r.receipt(&mut d, read, 3, Completion::Stopped).unwrap();
-        assert_eq!(r.files.offset(&r.table, fd), Ok((3, 1)));
+        r.receipt(&mut files, &mut d, read, 3, Completion::Stopped)
+            .unwrap();
+        assert_eq!(files.offset(&table, fd), Ok((3, 1)));
         assert_eq!(r.query(read), Ok((3, 4, 259)));
         assert_eq!(
-            r.receipt(&mut d, read, 4, Completion::Stopped),
+            r.receipt(&mut files, &mut d, read, 4, Completion::Stopped),
             Err(Error::State)
         );
         // Result observation need not block already-proven-safe memory mutation.
@@ -322,20 +350,20 @@ mod tests {
     }
     #[test]
     fn ready_cancel_does_not_advance_offset_and_remains_queryable() {
-        let (mut r, mut d, m, fd, _) = setup();
-        let read = r.begin(&mut d, fd, m, 0, 4).unwrap();
-        r.cancel(&mut d, read).unwrap();
+        let (mut r, mut files, table, mut d, m, fd, _) = setup();
+        let read = r.begin(&mut files, &table, &mut d, fd, m, 0, 4).unwrap();
+        r.cancel(&mut files, &mut d, read).unwrap();
         assert_eq!(r.query(read), Ok((0, 4, 260)));
-        assert_eq!(r.files.offset(&r.table, fd), Ok((0, 0)));
-        assert_eq!(r.start(&mut d, read), Err(Error::State));
+        assert_eq!(files.offset(&table, fd), Ok((0, 0)));
+        assert_eq!(r.start(&mut files, &mut d, read), Err(Error::State));
         r.retire(read).unwrap();
-        assert!(r.begin(&mut d, fd, m, 0, 4).is_ok());
+        assert!(r.begin(&mut files, &table, &mut d, fd, m, 0, 4).is_ok());
     }
     #[test]
     fn cancelled_result_observation_does_not_hold_guest_backing() {
-        let (mut r, mut d, m, fd, _) = setup();
-        let id = r.begin(&mut d, fd, m, 0, 2).unwrap();
-        r.cancel(&mut d, id).unwrap();
+        let (mut r, mut files, table, mut d, m, fd, _) = setup();
+        let id = r.begin(&mut files, &table, &mut d, fd, m, 0, 2).unwrap();
+        r.cancel(&mut files, &mut d, id).unwrap();
         assert_eq!(r.query(id), Ok((0, 2, 260)));
         assert!(d.change(m, 32).is_ok());
         r.retire(id).unwrap();
@@ -343,34 +371,114 @@ mod tests {
 
     #[test]
     fn zero_requested_and_eof_do_not_touch_target_or_narrow_large_offset() {
-        let (mut r, mut d, m, fd, _) = setup();
-        let zero = r.begin(&mut d, fd, m, u64::MAX, 0).unwrap();
-        assert_eq!(r.start(&mut d, zero), Ok((0, 0)));
-        r.receipt(&mut d, zero, 0, Completion::Stopped).unwrap();
-        assert_eq!(r.files.offset(&r.table, fd), Ok((0, 0)));
+        let (mut r, mut files, table, mut d, m, fd, _) = setup();
+        let zero = r
+            .begin(&mut files, &table, &mut d, fd, m, u64::MAX, 0)
+            .unwrap();
+        assert_eq!(r.start(&mut files, &mut d, zero), Ok((0, 0)));
+        r.receipt(&mut files, &mut d, zero, 0, Completion::Stopped)
+            .unwrap();
+        assert_eq!(files.offset(&table, fd), Ok((0, 0)));
         r.retire(zero).unwrap();
-        r.files.set_offset(&r.table, fd, u64::MAX).unwrap();
-        let eof = r.begin(&mut d, fd, m, u64::MAX, u64::MAX).unwrap();
-        assert_eq!(r.start(&mut d, eof), Ok((0, 0)));
-        r.receipt(&mut d, eof, 0, Completion::Stopped).unwrap();
-        assert_eq!(r.files.offset(&r.table, fd), Ok((u64::MAX, 2)));
+        files.set_offset(&table, fd, u64::MAX).unwrap();
+        let eof = r
+            .begin(&mut files, &table, &mut d, fd, m, u64::MAX, u64::MAX)
+            .unwrap();
+        assert_eq!(r.start(&mut files, &mut d, eof), Ok((0, 0)));
+        r.receipt(&mut files, &mut d, eof, 0, Completion::Stopped)
+            .unwrap();
+        assert_eq!(files.offset(&table, fd), Ok((u64::MAX, 2)));
     }
     #[test]
     fn read_budget_and_single_copy_interval_are_enforced() {
-        let (mut r, mut d, m, fd, b) = setup();
-        let other = r.files.open(&r.table, b, false).unwrap();
-        let first = r.begin(&mut d, fd, m, 0, 2).unwrap();
-        let second = r.begin(&mut d, other, m, 2, 2).unwrap();
-        r.start(&mut d, first).unwrap();
-        assert_eq!(r.start(&mut d, second), Err(Error::Busy));
-        assert_eq!(r.cancel(&mut d, second), Err(Error::Busy));
+        let (mut r, mut files, table, mut d, m, fd, b) = setup();
+        let other = files.open(&table, b, false).unwrap();
+        let first = r.begin(&mut files, &table, &mut d, fd, m, 0, 2).unwrap();
+        let second = r.begin(&mut files, &table, &mut d, other, m, 2, 2).unwrap();
+        r.start(&mut files, &mut d, first).unwrap();
+        assert_eq!(r.start(&mut files, &mut d, second), Err(Error::Busy));
+        assert_eq!(r.cancel(&mut files, &mut d, second), Err(Error::Busy));
         assert_eq!(r.query(first), Ok((0, 2, 1)));
-        r.receipt(&mut d, first, 2, Completion::Stopped).unwrap();
-        r.cancel(&mut d, second).unwrap();
-        let third = r.begin(&mut d, fd, m, 4, 2).unwrap();
-        assert_eq!(r.begin(&mut d, other, m, 6, 2), Err(Error::Capacity));
-        r.cancel(&mut d, third).unwrap();
+        r.receipt(&mut files, &mut d, first, 2, Completion::Stopped)
+            .unwrap();
+        r.cancel(&mut files, &mut d, second).unwrap();
+        let third = r.begin(&mut files, &table, &mut d, fd, m, 4, 2).unwrap();
+        assert_eq!(
+            r.begin(&mut files, &table, &mut d, other, m, 6, 2),
+            Err(Error::Capacity)
+        );
+        r.cancel(&mut files, &mut d, third).unwrap();
         r.retire(first).unwrap();
-        assert!(r.begin(&mut d, other, m, 6, 2).is_ok());
+        assert!(r.begin(&mut files, &table, &mut d, other, m, 6, 2).is_ok());
+    }
+    #[test]
+    fn foreign_files_rejected_before_effect_transitions() {
+        let (mut r, mut files, table, mut d, m, fd, _) = setup();
+        let mut foreign = Files::new(
+            99,
+            Tree::new(98, 2, 2, 32).unwrap(),
+            Limits {
+                contexts: 0,
+                tables: 2,
+                descriptions: 2,
+                slots: 4,
+            },
+        );
+        let foreign_table = foreign.table(4).unwrap();
+        let bad = Error::Files(descriptor::Error::BadHandle);
+        assert_eq!(
+            r.begin(&mut foreign, &foreign_table, &mut d, fd, m, 0, 2),
+            Err(bad)
+        );
+        assert_eq!(
+            r.begin(&mut files, &foreign_table, &mut d, fd, m, 0, 2),
+            Err(Error::Files(descriptor::Error::BadHandle))
+        );
+        let id = r.begin(&mut files, &table, &mut d, fd, m, 0, 2).unwrap();
+        assert_eq!(
+            r.start(&mut foreign, &mut d, id),
+            Err(Error::Files(descriptor::Error::BadHandle))
+        );
+        assert_eq!(
+            r.cancel(&mut foreign, &mut d, id),
+            Err(Error::Files(descriptor::Error::BadHandle))
+        );
+        assert_eq!(r.query(id), Ok((0, 2, 0)));
+        r.start(&mut files, &mut d, id).unwrap();
+        assert_eq!(
+            r.receipt(&mut foreign, &mut d, id, 2, Completion::Stopped),
+            Err(Error::Files(descriptor::Error::BadHandle))
+        );
+        assert!(r.viewing());
+        assert_eq!(r.query(id), Ok((0, 2, 1)));
+        assert_eq!(d.change(m, 32), Err(lease::Error::Busy));
+        r.receipt(&mut files, &mut d, id, 1, Completion::Unknown)
+            .unwrap();
+        assert_eq!(
+            r.receipt(&mut foreign, &mut d, id, 2, Completion::Stopped),
+            Err(Error::Files(descriptor::Error::BadHandle))
+        );
+        assert_eq!(r.query(id), Ok((1, 2, 2)));
+        r.receipt(&mut files, &mut d, id, 2, Completion::Stopped)
+            .unwrap();
+        assert_eq!(files.offset(&table, fd), Ok((2, 1)));
+        assert!(d.change(m, 32).is_ok());
+    }
+    #[test]
+    fn separate_tables_share_reserved_description_without_becoming_read_owners() {
+        let (mut r, mut files, table, mut d, m, fd, _) = setup();
+        let child = files.fork(&table).unwrap();
+        let id = r.begin(&mut files, &child, &mut d, fd, m, 0, 2).unwrap();
+        assert_eq!(
+            files.set_offset(&table, fd, 3),
+            Err(descriptor::Error::Busy)
+        );
+        files.close(&child, fd).unwrap();
+        r.start(&mut files, &mut d, id).unwrap();
+        r.receipt(&mut files, &mut d, id, 2, Completion::Stopped)
+            .unwrap();
+        assert_eq!(files.offset(&table, fd), Ok((2, 1)));
+        r.retire(id).unwrap();
+        files.let_go(child).unwrap();
     }
 }

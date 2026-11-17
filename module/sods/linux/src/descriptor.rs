@@ -21,6 +21,7 @@
 //! Dropping a ticket without let_go retains its table until Files is dropped; this
 //! cannot prematurely retire another holder, but domain cleanup must consume it.
 use super::filesystem::{AdmissionError, Filesystems};
+use super::fs_context::{self, Base, Contexts};
 use super::inode::{Inode, Tree};
 use super::mount::{self, Mounts, Place, Ticket};
 use std::collections::HashMap;
@@ -45,9 +46,11 @@ pub(crate) enum Error {
     Busy,
     Payload,
     Mount(mount::Error),
+    Fs(fs_context::Error),
 }
 #[derive(Clone, Copy)]
 pub(crate) struct Limits {
+    pub contexts: usize,
     pub tables: usize,
     pub descriptions: usize,
     pub slots: usize,
@@ -93,6 +96,7 @@ pub(crate) struct Files {
     owner: u64,
     filesystems: Filesystems,
     mounts: Option<Mounts>,
+    contexts: Contexts,
     limits: Limits,
     tables: Vec<Cell<TableState>>,
     descriptions: Vec<Cell<Description>>,
@@ -137,6 +141,10 @@ fn get<T>(arena: &[Cell<T>], owner: u64, id: Id) -> Result<&T, Error> {
     cell.value.as_ref().ok_or(Error::BadHandle)
 }
 impl Files {
+    /// Owner incarnation; never reuse while any operation or handle can reference it.
+    pub(crate) fn owner(&self) -> u64 {
+        self.owner
+    }
     pub(crate) fn new(owner: u64, tree: Tree, limits: Limits) -> Self {
         Self::with_filesystem_capacity(owner, tree, limits, NonZeroUsize::MIN)
     }
@@ -151,6 +159,7 @@ impl Files {
             owner,
             filesystems: Filesystems::new(tree, capacity),
             mounts: None,
+            contexts: Contexts::new(owner, limits.contexts),
             limits,
             tables: Vec::new(),
             descriptions: Vec::new(),
@@ -202,6 +211,106 @@ impl Files {
             .try_reserve(1)
             .map_err(|_| Error::Capacity)?;
         Ok(fd)
+    }
+    /// Internal context creation; bounds are independent of FD-table capacity.
+    pub(crate) fn create_fs(
+        &mut self,
+        root: &Place,
+        cwd: &Place,
+        umask: u32,
+    ) -> Result<fs_context::Ticket, Error> {
+        self.directory_place(root)?;
+        self.directory_place(cwd)?;
+        self.contexts
+            .create(
+                self.mounts.as_mut().ok_or(Error::BadHandle)?,
+                root,
+                cwd,
+                umask,
+            )
+            .map_err(Error::Fs)
+    }
+    fn directory_place(&self, place: &Place) -> Result<(), Error> {
+        self.mounts
+            .as_ref()
+            .ok_or(Error::BadHandle)?
+            .validate(place)
+            .map_err(Error::Mount)?;
+        if self
+            .filesystems
+            .metadata(place.inode())
+            .map_err(|_| Error::BadHandle)?
+            .mode
+            & 0o170000
+            != 0o040000
+        {
+            return Err(Error::NotSupported);
+        }
+        Ok(())
+    }
+    pub(crate) fn share_fs(
+        &mut self,
+        ticket: &fs_context::Ticket,
+    ) -> Result<fs_context::Ticket, Error> {
+        self.contexts.share(ticket).map_err(Error::Fs)
+    }
+    pub(crate) fn copy_fs(
+        &mut self,
+        ticket: &fs_context::Ticket,
+    ) -> Result<fs_context::Ticket, Error> {
+        self.contexts
+            .copy(self.mounts.as_mut().ok_or(Error::BadHandle)?, ticket)
+            .map_err(Error::Fs)
+    }
+    /// Internal position exchange, not guest chdir/chroot authorization.
+    pub(crate) fn change_fs(
+        &mut self,
+        ticket: &fs_context::Ticket,
+        base: Base,
+        place: &Place,
+    ) -> Result<(), Error> {
+        self.directory_place(place)?;
+        self.contexts
+            .change(
+                self.mounts.as_mut().ok_or(Error::BadHandle)?,
+                ticket,
+                base,
+                place,
+            )
+            .map_err(Error::Fs)
+    }
+    pub(crate) fn fs_component(
+        &self,
+        ticket: &fs_context::Ticket,
+        base: Base,
+        name: &[u8],
+    ) -> Result<Option<Place>, Error> {
+        let position = self
+            .contexts
+            .position_ref(self.mounts.as_ref().ok_or(Error::BadHandle)?, ticket, base)
+            .map_err(Error::Fs)?;
+        self.component(position, name)
+    }
+    pub(crate) fn fs_umask(&self, ticket: &fs_context::Ticket) -> Result<u32, Error> {
+        self.contexts.umask(ticket).map_err(Error::Fs)
+    }
+    pub(crate) fn set_fs_umask(
+        &mut self,
+        ticket: &fs_context::Ticket,
+        mask: u32,
+    ) -> Result<u32, Error> {
+        self.contexts.set_umask(ticket, mask).map_err(Error::Fs)
+    }
+    pub(crate) fn release_fs(
+        &mut self,
+        ticket: fs_context::Ticket,
+    ) -> Result<(), (Error, fs_context::Ticket)> {
+        let Some(mounts) = &mut self.mounts else {
+            return Err((Error::BadHandle, ticket));
+        };
+        self.contexts
+            .release(mounts, ticket)
+            .map_err(|(error, ticket)| (Error::Fs(error), ticket))
     }
     /// One bootstrap namespace. Existing bare-inode ABI validation stays separate.
     pub(crate) fn bootstrap_mount(
@@ -661,6 +770,7 @@ mod tests {
                 92,
                 tree,
                 Limits {
+                    contexts: 4,
                     tables: 4,
                     descriptions: 4,
                     slots,
@@ -776,6 +886,7 @@ mod tests {
             43,
             tree,
             Limits {
+                contexts: 4,
                 tables: 1,
                 descriptions: 1,
                 slots: 8,
@@ -816,6 +927,7 @@ mod tests {
             200,
             first,
             Limits {
+                contexts: 4,
                 tables: 1,
                 descriptions: 4,
                 slots: 4,
@@ -853,6 +965,7 @@ mod tests {
             210,
             first,
             Limits {
+                contexts: 4,
                 tables: 1,
                 descriptions: 2,
                 slots: 2,
@@ -892,6 +1005,7 @@ mod tests {
             220,
             first,
             Limits {
+                contexts: 4,
                 tables: 1,
                 descriptions: 2,
                 slots: 2,
@@ -936,6 +1050,7 @@ mod tests {
             302,
             tree,
             Limits {
+                contexts: 4,
                 tables: 3,
                 descriptions: 8,
                 slots: 16,
@@ -1047,6 +1162,7 @@ mod tests {
             312,
             tree,
             Limits {
+                contexts: 4,
                 tables: 1,
                 descriptions: 2,
                 slots: 2,
@@ -1086,6 +1202,7 @@ mod tests {
             323,
             first,
             Limits {
+                contexts: 4,
                 tables: 1,
                 descriptions: 2,
                 slots: 2,
@@ -1139,6 +1256,7 @@ mod tests {
             332,
             tree,
             Limits {
+                contexts: 4,
                 tables: 1,
                 descriptions: 2,
                 slots: 2,
@@ -1161,6 +1279,122 @@ mod tests {
         assert_eq!(f.open(&table, inode, false), Err(Error::NotSupported));
         f.let_go(table).unwrap();
         assert!(f.release_view(ticket).is_ok());
+    }
+    #[test]
+    fn fs_shared_and_copied_positions_drive_component_open_and_read() {
+        let (mut f, root_ticket, root) = mounted_setup(20);
+        let source = f.component(&root, b"src").unwrap().unwrap();
+        let fs = f.create_fs(&root, &source, 0o022).unwrap();
+        let shared = f.share_fs(&fs).unwrap();
+        let copied = f.copy_fs(&fs).unwrap();
+        f.change_fs(&shared, Base::Cwd, &root).unwrap();
+        assert!(f.fs_component(&fs, Base::Cwd, b"file").unwrap().is_none());
+        let file = f
+            .fs_component(&copied, Base::Cwd, b"file")
+            .unwrap()
+            .unwrap();
+        assert_eq!(f.set_fs_umask(&shared, 0o1077), Ok(0o022));
+        assert_eq!(f.fs_umask(&fs), Ok(0o077));
+        assert_eq!(f.fs_umask(&copied), Ok(0o022));
+        f.change_fs(&shared, Base::Root, &source).unwrap();
+        assert_eq!(
+            f.fs_component(&fs, Base::Root, b"file")
+                .unwrap()
+                .unwrap()
+                .inode(),
+            file.inode()
+        );
+        assert!(f
+            .fs_component(&copied, Base::Root, b"file")
+            .unwrap()
+            .is_none());
+        assert_eq!(f.change_fs(&fs, Base::Cwd, &file), Err(Error::NotSupported));
+        assert_eq!(f.create_fs(&file, &root, 0), Err(Error::NotSupported));
+        assert_eq!(f.create_fs(&root, &file, 0), Err(Error::NotSupported));
+        let table = f.table(2).unwrap();
+        let fd = f.open_place(&table, &file, false).unwrap();
+        let read = f.reserve_read(&table, fd, 32).unwrap();
+        assert!(f.release_fs(copied).is_ok());
+        assert_eq!(f.read_bytes(&read), b"mounted");
+        f.finish_read(read, 7);
+        f.let_go(table).unwrap();
+        assert!(f.release_fs(shared).is_ok());
+        assert_eq!(f.fs_umask(&fs), Ok(0o077));
+        assert!(f.release_fs(fs).is_ok());
+        // A fresh independent start needs no permanently retained seed context.
+        let fresh = f.create_fs(&root, &root, 0o002).unwrap();
+        assert_eq!(f.fs_umask(&fresh), Ok(0o002));
+        assert!(f.release_fs(fresh).is_ok());
+        assert!(f.release_view(root_ticket).is_ok());
+    }
+    #[test]
+    fn fs_detached_view_holds_end_without_retiring_pending_read() {
+        let (mut f, root_ticket, root) = mounted_setup(20);
+        let source = f.component(&root, b"src").unwrap().unwrap();
+        let at = f.component(&root, b"dst").unwrap().unwrap();
+        let view = f.clone_view(&source).unwrap();
+        f.attach_view(&view, &at).unwrap();
+        let mounted = f.view_root(&view).unwrap();
+        let fs = f.create_fs(&mounted, &mounted, 0).unwrap(); // two holds of same view
+        assert!(f.release_view(view).is_ok());
+        f.detach_view(&mounted).unwrap();
+        let file = f.fs_component(&fs, Base::Cwd, b"file").unwrap().unwrap();
+        let table = f.table(2).unwrap();
+        let fd = f.open_place(&table, &file, false).unwrap();
+        let read = f.reserve_read(&table, fd, 32).unwrap();
+        f.close(&table, fd).unwrap();
+        assert!(f.release_fs(fs).is_ok());
+        assert_eq!(f.read_bytes(&read), b"mounted");
+        f.abort_read(read);
+        assert_eq!(
+            f.open_place(&table, &file, false),
+            Err(Error::Mount(mount::Error::BadPlace))
+        );
+        f.let_go(table).unwrap();
+        assert!(f.release_view(root_ticket).is_ok());
+    }
+    #[test]
+    fn fs_change_failure_keeps_old_position_and_same_place_needs_no_hold() {
+        let (mut f, root_ticket, root) = mounted_setup(3);
+        let source = f.component(&root, b"src").unwrap().unwrap();
+        let fs = f.create_fs(&root, &source, 0o022).unwrap();
+        assert_eq!(
+            f.change_fs(&fs, Base::Cwd, &root),
+            Err(Error::Fs(fs_context::Error::Mount(mount::Error::Capacity)))
+        );
+        assert_eq!(f.change_fs(&fs, Base::Cwd, &source), Ok(()));
+        assert!(f.fs_component(&fs, Base::Cwd, b"file").unwrap().is_some());
+        assert_eq!(f.fs_umask(&fs), Ok(0o022));
+        assert!(f.release_fs(fs).is_ok());
+        let retry = f.create_fs(&root, &root, 0).unwrap();
+        assert!(f.release_fs(retry).is_ok());
+        assert!(f.release_view(root_ticket).is_ok());
+    }
+    #[test]
+    fn fs_same_inode_different_view_still_requires_new_hold() {
+        let (mut f, root_ticket, root) = mounted_setup(5);
+        let source = f.component(&root, b"src").unwrap().unwrap();
+        let a = f.clone_view(&source).unwrap();
+        let b = f.clone_view(&source).unwrap();
+        let ar = f.view_root(&a).unwrap();
+        let br = f.view_root(&b).unwrap();
+        assert_eq!(ar.inode(), br.inode());
+        let fs = f.create_fs(&root, &ar, 0).unwrap();
+        assert_eq!(f.change_fs(&fs, Base::Cwd, &ar), Ok(()));
+        assert_eq!(
+            f.change_fs(&fs, Base::Cwd, &br),
+            Err(Error::Fs(fs_context::Error::Mount(mount::Error::Capacity)))
+        );
+        assert!(
+            f.contexts
+                .position_ref(f.mounts.as_ref().unwrap(), &fs, Base::Cwd)
+                .unwrap()
+                == &ar
+        );
+        assert!(f.release_fs(fs).is_ok());
+        assert!(f.release_view(a).is_ok());
+        assert!(f.release_view(b).is_ok());
+        assert!(f.release_view(root_ticket).is_ok());
     }
     #[test]
     fn repeated_close_reuses_bounded_arena_and_keeps_tree_owned() {

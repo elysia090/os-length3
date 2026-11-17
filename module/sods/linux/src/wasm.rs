@@ -2,7 +2,7 @@
 //! Prepared resident Tree is sealed once into Files; no source mutation afterward.
 //! The host reads result fields before making a fresh core view. Between read_start
 //! and read_receipt it performs only intrinsic synchronous copy, no callback/await.
-use crate::descriptor::{self, Files};
+use crate::descriptor::{self, Files, Table};
 use crate::effect::{Completion, Token};
 use crate::inode::{Inode, Tree};
 use crate::lease::{Domain, Error};
@@ -21,13 +21,18 @@ struct Builder {
     name: Vec<u8>,
     input: Vec<u8>,
 }
+struct Sealed {
+    files: Files,
+    table: Table,
+    reads: Reads,
+}
 struct State {
     domain: Domain,
     result: u64,
     length: u64,
     state: u32,
     builder: Option<Builder>,
-    reads: Option<Reads>,
+    sealed: Option<Sealed>,
 }
 thread_local! { static STATE: RefCell<Option<State>> = const { RefCell::new(None) }; }
 fn code(error: Error) -> i32 {
@@ -60,7 +65,7 @@ fn with_state(allow_view: bool, f: impl FnOnce(&mut State) -> Result<u64, i32>) 
         s.result = 0;
         s.length = 0;
         s.state = 0;
-        if !allow_view && s.reads.as_ref().is_some_and(Reads::viewing) {
+        if !allow_view && s.sealed.as_ref().is_some_and(|r| r.reads.viewing()) {
             return -4;
         }
         match f(s) {
@@ -81,7 +86,7 @@ fn token(sequence: u64) -> Token {
 fn generic(sequence: u64, f: impl FnOnce(&mut Domain, Token) -> Result<u64, Error>) -> i32 {
     with_state(false, |s| {
         let t = token(sequence);
-        if s.reads.as_ref().is_some_and(|r| r.owns(t)) {
+        if s.sealed.as_ref().is_some_and(|r| r.reads.owns(t)) {
             return Err(-4);
         }
         f(&mut s.domain, t).map_err(code)
@@ -121,7 +126,7 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             length: 0,
             state: 0,
             builder: None,
-            reads: None,
+            sealed: None,
         });
         0
     })
@@ -194,7 +199,7 @@ pub extern "C" fn linux_files_prepare(
     reads: u32,
 ) -> i32 {
     with_state(false, |s| {
-        if s.builder.is_some() || s.reads.is_some() {
+        if s.builder.is_some() || s.sealed.is_some() {
             return Err(-9);
         }
         let tree = Tree::new(TREE, inodes as usize, entries as usize, file_bytes as usize)
@@ -204,6 +209,7 @@ pub extern "C" fn linux_files_prepare(
             tree: Some(tree),
             sealing: None,
             limits: descriptor::Limits {
+                contexts: 0,
                 tables: tables as usize,
                 descriptions: descriptions as usize,
                 slots: slots as usize,
@@ -269,7 +275,7 @@ pub extern "C" fn linux_tree_file(parent: u64, mode: u32) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_files_seal(fd_limit: u32) -> i32 {
     with_state(false, |s| {
-        if s.reads.is_some() {
+        if s.sealed.is_some() {
             return Err(-9);
         }
         let b = s.builder.as_mut().ok_or(-9)?;
@@ -285,7 +291,12 @@ pub extern "C" fn linux_files_seal(fd_limit: u32) -> i32 {
         // Capacity was acquired in prepare, before ownership moved into Files.
         let files = b.sealing.take().unwrap();
         let capacity = b.capacity.take().unwrap();
-        s.reads = Some(Reads::new(files, table, capacity));
+        let reads = Reads::new(&files, capacity);
+        s.sealed = Some(Sealed {
+            files,
+            table,
+            reads,
+        });
         s.builder = None;
         Ok(0)
     })
@@ -293,7 +304,7 @@ pub extern "C" fn linux_files_seal(fd_limit: u32) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_open(node: u64) -> i32 {
     with_state(false, |s| {
-        let r = s.reads.as_mut().ok_or(-9)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
         r.files
             .open(&r.table, inode(node), false)
             .map(|fd| fd as u64)
@@ -303,7 +314,7 @@ pub extern "C" fn linux_open(node: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_dup(fd: u32) -> i32 {
     with_state(false, |s| {
-        let r = s.reads.as_mut().ok_or(-9)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
         r.files
             .dup(&r.table, fd, 0, false)
             .map(|fd| fd as u64)
@@ -313,21 +324,21 @@ pub extern "C" fn linux_dup(fd: u32) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_close(fd: u32) -> i32 {
     with_state(false, |s| {
-        let r = s.reads.as_mut().ok_or(-9)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
         r.files.close(&r.table, fd).map(|_| 0).map_err(|_| -10)
     })
 }
 #[no_mangle]
 pub extern "C" fn linux_offset(fd: u32) -> i32 {
     with_state(true, |s| {
-        let r = s.reads.as_ref().ok_or(-9)?;
+        let r = s.sealed.as_ref().ok_or(-9)?;
         r.files.offset(&r.table, fd).map(|v| v.0).map_err(|_| -10)
     })
 }
 #[no_mangle]
 pub extern "C" fn linux_seek(fd: u32, offset: u64) -> i32 {
     with_state(false, |s| {
-        let r = s.reads.as_mut().ok_or(-9)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
         r.files
             .set_offset(&r.table, fd, offset)
             .map(|_| 0)
@@ -337,21 +348,27 @@ pub extern "C" fn linux_seek(fd: u32, offset: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_read_begin(fd: u32, binding: u64, at: u64, requested: u64) -> i32 {
     with_state(false, |s| {
-        s.reads
-            .as_mut()
-            .ok_or(-9)?
-            .begin(&mut s.domain, fd, binding, at, requested)
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        r.reads
+            .begin(
+                &mut r.files,
+                &r.table,
+                &mut s.domain,
+                fd,
+                binding,
+                at,
+                requested,
+            )
             .map_err(read_code)
     })
 }
 #[no_mangle]
 pub extern "C" fn linux_read_start(id: u64) -> i32 {
     with_state(false, |s| {
-        let (ptr, len) = s
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let (ptr, len) = r
             .reads
-            .as_mut()
-            .ok_or(-9)?
-            .start(&mut s.domain, id)
+            .start(&mut r.files, &mut s.domain, id)
             .map_err(read_code)?;
         s.length = len;
         Ok(ptr as u64)
@@ -360,10 +377,15 @@ pub extern "C" fn linux_read_start(id: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_read_receipt(id: u64, confirmed: u64, done: u32) -> i32 {
     with_state(true, |s| {
-        s.reads
-            .as_mut()
-            .ok_or(-9)?
-            .receipt(&mut s.domain, id, confirmed, completion(done)?)
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        r.reads
+            .receipt(
+                &mut r.files,
+                &mut s.domain,
+                id,
+                confirmed,
+                completion(done)?,
+            )
             .map(|_| 0)
             .map_err(read_code)
     })
@@ -371,10 +393,9 @@ pub extern "C" fn linux_read_receipt(id: u64, confirmed: u64, done: u32) -> i32 
 #[no_mangle]
 pub extern "C" fn linux_read_cancel(id: u64) -> i32 {
     with_state(true, |s| {
-        s.reads
-            .as_mut()
-            .ok_or(-9)?
-            .cancel(&mut s.domain, id)
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        r.reads
+            .cancel(&mut r.files, &mut s.domain, id)
             .map(|_| 0)
             .map_err(read_code)
     })
@@ -382,7 +403,13 @@ pub extern "C" fn linux_read_cancel(id: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_read_query(id: u64) -> i32 {
     with_state(true, |s| {
-        let (confirmed, len, state) = s.reads.as_ref().ok_or(-9)?.query(id).map_err(read_code)?;
+        let (confirmed, len, state) = s
+            .sealed
+            .as_ref()
+            .ok_or(-9)?
+            .reads
+            .query(id)
+            .map_err(read_code)?;
         s.length = len;
         s.state = state;
         Ok(confirmed)
@@ -391,9 +418,10 @@ pub extern "C" fn linux_read_query(id: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_read_retire(id: u64) -> i32 {
     with_state(false, |s| {
-        s.reads
+        s.sealed
             .as_mut()
             .ok_or(-9)?
+            .reads
             .retire(id)
             .map(|_| 0)
             .map_err(read_code)
