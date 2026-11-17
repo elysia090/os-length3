@@ -35,10 +35,26 @@ test('second-run failure leaves first canonical write and its publication visibl
   assert.deepEqual([...file.data],[1,0,0,0,0,0,0,0]);
   assert.deepEqual([...maps[1].proc.bytes],[1,0,0,0,0,0,0,0]);
   assert.equal(maps[0].seen![0],1);assert.equal(maps[0].seen![2],0);
-  assert.equal(file.version,version); // Current page metadata advances only after its run loop.
+  assert.equal(file.version,version+1); // Dirty-page admission invalidates before a publication can partially fail.
   file.settle(0,8,maps[0]);
+  assert.equal(file.version,version+2); // Retrying remaining dirt is another invalidating observation, not rollback.
   assert.equal(file.data[2],2);assert.equal(maps[1].proc.bytes[2],2);
   for(const m of maps)file.unmap(m);
+});
+
+test('publication callback failure preserves the canonical prefix and invalidates before the callback',()=>{
+  const file=new File(new Uint8Array(8)),memory=new Uint8Array(8),failure=new Error('mapping publication failed');
+  let reads=0,seenVersion=-1;
+  const mapping:Mapping={proc:{get bytes(){
+    if(++reads===3){seenVersion=file.version;throw failure;}
+    return memory;
+  }},start:0,length:8,off:0};
+  file.map(mapping);memory[0]=1;memory[2]=2;
+  assert.throws(()=>file.settle(),(error:unknown)=>error===failure);
+  assert.deepEqual([...file.data],[1,0,0,0,0,0,0,0]);
+  assert.deepEqual([...mapping.seen!],[0,0,0,0,0,0,0,0]);
+  assert.equal(seenVersion,1);assert.equal(file.version,1);
+  file.abandon(mapping);
 });
 
 test('nonoverlapping changes from another mapping survive sparse publication',()=>{

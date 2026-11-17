@@ -36,7 +36,7 @@ test('injected second core write failure preserves first publication and source 
     assert.throws(()=>file.settle(0,8,maps[0]),(e:unknown)=>e instanceof FsError&&e.errno===E.NOSPC);
     assert.deepEqual([...maps[1].proc.bytes],[1,0,0,0,0,0,0,0]);
     assert.equal(maps[0].seen![0],1);assert.equal(maps[0].seen![2],0);
-    assert.equal(file.version,version);assert.equal(vfs.loaded.files.size,0);
+    assert.equal(file.version,version+1);assert.equal(vfs.loaded.files.size,0);
     // Abandon before inspecting canonical bytes so inspection does not retry
     // publication and conceal the retained failure prefix.
     for(const m of maps)file.abandon(m);
@@ -50,7 +50,9 @@ test('Rust publication failure does not start the following run',{skip:!wasm},as
   const first:Mapping={proc:{bytes:new Uint8Array(8)},start:0,length:8,off:0},second:Mapping={proc,start:0,length:8,off:0};
   try {
     file.map(first);file.map(second);first.proc.bytes[0]=1;first.proc.bytes[2]=2;refuse=true;
+    const version=file.version;
     assert.throws(()=>file.settle(0,8,first),/publication refused/);
+    assert.equal(file.version,version+1); // Failure cannot retain the old executable source identity.
     file.abandon(first);file.abandon(second);
     assert.deepEqual([...file.bytes()],[1,0,0,0,0,0,0,0]);
     assert.equal(backing[0],0);assert.equal(first.seen![0],1);

@@ -13,12 +13,15 @@
 //   Mirror           what a program changed under one directory, said to whoever keeps a copy outside
 //   said             a kernel that ran as far as it could: ended, or waiting, and for what
 import {canRunApart, said as told} from './host.ts';
-import {Kernel} from './linux/process.ts';
+import {Image, Kernel} from './linux/process.ts';
 import {RemoteKernel, type Apart} from './linux/remote.ts';
+import {Vfs, type File} from './linux/fs.ts';
+import {executableSourceFor, type ExecutableSource} from './linux/executable-source.ts';
 import type {Segment} from './translation/share.ts';
 
 export {Vfs, mountTarget, provide, type File} from './linux/fs.ts';
 export {loadFileScope, type FileScope} from './linux/file-scope.ts';
+export {captureExecutableSource, type ExecutableSource} from './linux/executable-source.ts';
 export {prepareFileStore} from './file-store.ts';
 export {Mirror} from './linux/mirror.ts';
 export {Kernel, type Image, type Pumped} from './linux/process.ts';
@@ -47,4 +50,76 @@ export function linux({translated = [], inline = false, ...made}: Options): Kern
   const k = apart ? new RemoteKernel(made) : new Kernel(made);
   for (const p of translated) if (p.module) k.prebuilt(k.vfs.file(p.path), p.module, p.segments ?? null);
   return k;
+}
+
+/** A trusted artifact paired with a realm-local source captured before overlays. */
+export interface SourceBoundExecutable {
+  key: string;
+  source: ExecutableSource;
+  module: WebAssembly.Module;
+  segments?: Segment[] | null;
+  /** The compiled module's memory-import mode, supplied by its trusted preparer. */
+  shared?: boolean;
+}
+export interface PreparedLinuxOptions extends Omit<Options, 'translated' | 'vfs'> {
+  vfs: Vfs;
+  executables: readonly SourceBoundExecutable[];
+}
+export interface PreparedLinux { kernel: Kernel; attached: ReadonlyMap<string, Image> }
+
+/**
+ * An attachment failed after kernel construction. This owner remains available
+ * for explicit retirement; neither rollback nor a physical Worker stop is
+ * implied. Constructor failures remain ordinary linux() constructor failures.
+ */
+export class PreparedLinuxError extends Error {
+  readonly kernel: Kernel;
+  readonly attached: ReadonlyMap<string, Image>;
+  constructor(cause: unknown, kernel: Kernel, attached: ReadonlyMap<string, Image>) {
+    super('Prepared Linux attachment failed; kernel ownership retained', {cause});
+    this.name = 'PreparedLinuxError'; this.kernel = kernel; this.attached = attached;
+  }
+}
+
+/**
+ * Additive prepared-tree profile. No source payload is demanded. The release
+ * owner authenticates source/artifact identity; this API protects the captured
+ * inode/revision association, not the correctness of a claimed translation.
+ * Invalid admissions are rejected before constructing a kernel. Changed sources
+ * are simply absent from attached and keep the ordinary exec fallback.
+ *
+ * All artifacts must have one compiled memory mode. linux() still owns backend
+ * choice. Shared artifacts also work inline, with a shared guest Memory, when
+ * Workers are disabled/unavailable. Compiled-module import limits are not
+ * introspectable here: shared is trusted preparation metadata, not a rewrite.
+ */
+export function preparedLinux({vfs, executables, inline = false, ...made}: PreparedLinuxOptions): PreparedLinux {
+  if (!(vfs instanceof Vfs) || !Array.isArray(executables) || 'translated' in made) throw new TypeError('Invalid prepared Linux input');
+  const keys = new Set<string>(), nodes = new Set<File>();
+  const admitted = executables.map(({key, source, module, segments = null, shared = false}) => {
+    if (typeof key !== 'string' || !key || keys.has(key)) throw new TypeError('Duplicate or invalid executable key');
+    keys.add(key);
+    const {node} = executableSourceFor(source, vfs);
+    if (nodes.has(node)) throw new TypeError('Duplicate executable source inode');
+    nodes.add(node);
+    if (!(module instanceof WebAssembly.Module) || typeof shared !== 'boolean') throw new TypeError('Invalid executable artifact');
+    if (segments !== null && (!Array.isArray(segments) || segments.some((s) => !s || !Number.isSafeInteger(s.offset)
+      || s.offset < 0 || !(s.bytes instanceof Uint8Array)))) throw new TypeError('Invalid executable segments');
+    // Exercise the existing Image parser before the backend can start Workers.
+    // This does not prove its facts/segments correspond to the claimed ELF.
+    new Image(module, null, 0, segments);
+    return {key, source, module, segments, shared};
+  });
+  if (admitted.some((p) => p.shared !== admitted[0].shared)) throw new TypeError('Mixed executable memory modes');
+  const shared = admitted.length ? admitted[0].shared : null;
+  const kernel = linux({...made, vfs, inline: inline || shared === false});
+  if (shared === true) kernel.shared = true;
+  const attached = new Map<string, Image>();
+  try {
+    for (const p of admitted) {
+      const image = kernel.prebuiltSource(p.source, p.module, p.segments);
+      if (image) attached.set(p.key, image);
+    }
+  } catch (cause) { throw new PreparedLinuxError(cause, kernel, attached); }
+  return {kernel, attached};
 }

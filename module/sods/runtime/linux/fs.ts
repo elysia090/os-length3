@@ -331,6 +331,13 @@ export class File extends Node {
       for (let page = a; page < b; page = (Math.floor(page / PAGE) + 1) * PAGE) {
         const to = Math.min(b, (Math.floor(page / PAGE) + 1) * PAGE);
         if (same(memory.subarray(base + page, base + to), seen.subarray(page - m.off, to - m.off))) continue;
+        // Revision is an invalidation nonce, not a completed-write receipt.
+        // A run or its alias publication may fail after a canonical prefix was
+        // written. Invalidate before either can have an effect or call out;
+        // neither abandonment nor retry may revive this page's old identity.
+        this.version++;
+        counted.changes++;
+        this.mtime = epoch();
         for (let k = page; k < to;) {
           if (memory[base + k] === seen[k - m.off]) { k++; continue; }
           let e = k + 1;
@@ -339,9 +346,6 @@ export class File extends Node {
           this.publishRange(k, run);
           k = e;
         }
-        this.mtime = epoch();
-        this.version++;
-        counted.changes++;
       }
     }
   }

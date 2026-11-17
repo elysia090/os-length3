@@ -1,6 +1,7 @@
 import {forkFailure, forkIdentity} from './fork-preparation.ts';
 export {ForkPreparationChangedError} from './fork-preparation.ts';
 import {ReadLifetimeError, memoryEpoch, retireMemoryView} from './read-lifetime.ts';
+import {executableSourceFor, unchangedExecutableSource, type ExecutableSource} from './executable-source.ts';
 // Processes and threads for translated programs. There is no machine to
 // boot: a process starts at its ELF entry with a SysV stack and its system
 // calls land in the tables of sys-file.ts, sys-proc.ts and signal.ts.
@@ -628,10 +629,41 @@ export class Kernel implements Kern {
    * write makes it translate again.
    */
   prebuilt(node: File, module: WebAssembly.Module, segments: Segment[] | null = null): void {
+    this.rememberPrebuilt(node, this.makePrebuilt(node, module, segments));
+  }
+
+  private makePrebuilt(node: File, module: WebAssembly.Module, segments: Segment[] | null): Image {
     const image = new Image(module, null, 0, segments);
     image.source = readLater(node, image);
+    return image;
+  }
+
+  private rememberPrebuilt(node: File, image: Image): void {
     // Kept: nothing here could make it again.
     this.remember(node, {version: node.version, image, used: ++this.uses, kept: true});
+  }
+
+  /**
+   * Attach only to the captured canonical inode, never a path's replacement.
+   * Stale metadata declines before touching the source. Mapping observation is
+   * the same as image(); dirty mappings invalidate the captured revision. An
+   * unusual still-lazy mapped file declines rather than reading its payload.
+   * This is association, not exec authorization or artifact authentication.
+   */
+  prebuiltSource(source: ExecutableSource, module: WebAssembly.Module, segments: Segment[] | null = null): Image | null {
+    const captured = executableSourceFor(source, this.vfs), {node} = captured;
+    if (!unchangedExecutableSource(captured)) return null;
+    if (node.maps) {
+      // Rust-owned lazy files keep source state outside File.load. Residency
+      // metadata is enough to decline, without invoking either loader.
+      if (node.load || node.heldBytes() < node.size) return null;
+      node.settle();
+      if (!unchangedExecutableSource(captured)) return null;
+    }
+    const image = this.makePrebuilt(node, module, segments);
+    if (!unchangedExecutableSource(captured)) return null;
+    this.rememberPrebuilt(node, image);
+    return image;
   }
 
   /** Every live process. */
