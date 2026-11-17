@@ -86,6 +86,7 @@
 // {type: 'reached', origin, from, more} as code is reached later; and what
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
+import {WorkerLifetime} from './worker-lifetime.ts';
 import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
 import {Mirror, RemoteKernel, Vfs, keeper, linux, provide, said, warmThreads,
   type Console, type File, type Kept, type Kernel, type Pumped, type Reading, type Said} from '../../sods/runtime/linux.ts';
@@ -120,7 +121,7 @@ interface Start extends Ready {
 type Posted =
   | {type: 'drained'; n: number}
   | {type: 'input'; bytes: Uint8Array}
-  | {type: 'eof' | 'typing' | 'free' | 'warm'}
+  | {type: 'eof' | 'typing' | 'free' | 'warm' | 'retire'}
   | {type: 'interrupt'; sig?: number; flush?: number}
   | {type: 'put'; path: string; what: Uint8Array | null | 'dir'}
   | {type: 'hot'; files: Program[]}
@@ -145,10 +146,16 @@ function boxed(vfs: Vfs, box: Box): string[] {
 const moved = (...views: {buffer: ArrayBufferLike}[]): {transfer: ArrayBuffer[]} =>
   ({transfer: [...new Set(views.map((v) => v.buffer))].filter((b) => b instanceof ArrayBuffer)});
 
+const lifetime = new WorkerLifetime();
+const executionOwners = new Set<WeakRef<Kernel>>();
 let kernel: Kernel | null = null;
 let mirror: Mirror | null = null;
 /** What 'ready' readied ({translate, vfs, files}), or 'start' itself where none came first. */
 let readied: Promise<Readied> | null = null;
+/** One finite prepared result, including a result arriving after freeze. This
+ * root is explicit; weak observations must never stand in for ownership. */
+let preparedOwner: PreparedTree | null = null;
+const rehearsalTimers = new Set<ReturnType<typeof setTimeout>>();
 // Transport cache belongs to the root's worker, never the guest or a product.
 let packRange: ReturnType<typeof syncRange> | null = null;
 const withPacks = <T extends {files: number; spare: number; total: number}>(held: T, bytes = packRange?.held() ?? 0): T =>
@@ -158,6 +165,9 @@ const pending: Uint8Array[] = [];
 let ended = false;
 /** The programs given with their translation: the image of each, and how much of its code reached later is said. */
 const observations = new TranslationObserver();
+const observerOwner = lifetime.observe('translation-observer', observations);
+let mirrorOwner: {release(): void} | null = null;
+let warmOwner: {release(): void} | null = null;
 /** Translations kept from earlier Prompts (keeper.ts), when the page has any. */
 let keep: Reading | null = null;
 /** What is kept, by origin, as 'start' said it: a program translated ahead later ({type: 'kept', at}) is put here. */
@@ -177,18 +187,25 @@ function ready(data: Ready): Promise<Readied> {
     throw new Error('File-core ownership was selected by the first preparation; omit fileCore when using that prepared root');
   }
   readied ??= (async () => {
-    const translate = await loadTranslator(data.translator);
-    const tree = await prepareTree({core: data.fileCore, muk: data.muk, files: data.files,
-      root: data.root ? {index: data.root.index, reading: {
-        range: packRange = syncRange(data.root.url, rangeNow, new Map(data.root.index.packs.map(p => [p.name, p.bytes]))),
-        decode: translate.unzstd, sha256: translate.sha256,
-      }} : undefined,
-    });
-    // This owner survives rehearsal and ordinary kernel exit. Worker termination
-    // releases the realm; no per-run path may dispose a tree borrowed by another run.
-    const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree};
-    if (data.rehearse) await rehearse(r, data.rehearse).catch(() => { /* only a start that is not faster */ });
-    return r;
+    const preparing = lifetime.enter('preparation');
+    try {
+      const translate = await loadTranslator(data.translator);
+      lifetime.check();
+      const tree = await prepareTree({core: data.fileCore, muk: data.muk, files: data.files,
+        root: data.root ? {index: data.root.index, reading: {
+          range: packRange = syncRange(data.root.url, rangeNow, new Map(data.root.index.packs.map(p => [p.name, p.bytes]))),
+          decode: translate.unzstd, sha256: translate.sha256,
+        }} : undefined,
+      });
+      preparedOwner = tree;
+      lifetime.observe('prepared-tree', preparedOwner);
+      lifetime.check();
+      // This owner survives rehearsal and ordinary kernel exit. Worker termination
+      // releases the realm; no per-run path may dispose a tree borrowed by another run.
+      const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree};
+      if (data.rehearse) await rehearse(r, data.rehearse).catch(() => { /* only a start that is not faster */ });
+      return r;
+    } finally { preparing.release(); }
   })();
   return readied;
 }
@@ -201,14 +218,18 @@ async function rehearse({translate, vfs, files}: Readied, box: Box): Promise<voi
   const argv = boxed(vfs, box), env: string[] = [], cwd = '/';
   const quiet: Console = {interactive: false, write() {}, read: () => new Uint8Array(0), ready: () => true, pending: () => 0};
   const k = linux({vfs, translate, console: quiet, passOn: true, unownedWorkerFailure: failed, translated: files});
+  executionOwners.add(new WeakRef(k)); lifetime.observe('rehearsal-kernel', k);
+  const operation = lifetime.enter('rehearsal-operation');
   const timer = setTimeout(() => k.halt(), REHEARSAL_MS);
+  rehearsalTimers.add(timer);
   try {
     if (k instanceof RemoteKernel) { await k.spawn(argv[0], argv, env, cwd); return; }
     // In turn here, a turn at a time, the host's own work (messages) between.
     k.start(argv[0], argv, env, cwd);
-    while (k.status === null) { k.pump(); await new Promise((go) => setTimeout(go, 0)); }
+    while (lifetime.accepting && k.status === null) { k.pump(); await new Promise((go) => setTimeout(go, 0)); }
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timer); rehearsalTimers.delete(timer);
+    operation.release();
   }
 }
 
@@ -227,7 +248,7 @@ let idle: ReturnType<typeof setTimeout> | undefined;
 let waitingInput = false;
 /** Translated again as one module, a program takes every thread the page draws with for seconds: done while the
  * person is still, never while they type. */
-const consolidateLater = (ms: number): void => { clearTimeout(idle); idle = setTimeout(() => { if (kernel?.consolidateDue()) told(); }, ms); };
+const consolidateLater = (ms: number): void => { clearTimeout(idle); idle = setTimeout(() => { if (lifetime.accepting && kernel?.consolidateDue()) told(); }, ms); };
 /** A program in front reads each key as it comes (vi, less, top): waiting for input is waiting for the next key, the
  * person typing, not reading; nothing is translated again until it gives the terminal back (it would hold up the page's
  * frames, the translation taking the threads the page draws with, at every pause between keys). */
@@ -235,6 +256,7 @@ let rawKeys = false;
 
 /** The kernel paused (here: every thread waits or it ended, `r` as pump says): what the shell changed, and why it waits. */
 function paused(r: Pumped): Said {
+  if (!lifetime.accepting) return said(r, withPacks(kernel!.held()), performance.now(), false);
   const k = kernel!;
   // What the shell changed goes before what it printed (send reports it first): a page that has the prompt back has
   // what the line wrote.
@@ -242,7 +264,9 @@ function paused(r: Pumped): Said {
   send();
   told();
   const m = said(r, withPacks(k.held()), performance.now(), (keep?.reading() ?? 0) > 0);
+  if (!lifetime.accepting) return m;
   self.postMessage(m);
+  if (!lifetime.accepting) return m;
   // Waiting for a person: what is due is consolidated while they read or type, then said as anything translated is.
   clearTimeout(idle);
   waitingInput = m.type === 'waiting' && m.for === 'input';
@@ -255,18 +279,21 @@ function paused(r: Pumped): Said {
  * (repo-copy.ts), so a page that has heard the pause, and shows the line done, has what the line wrote, a reload or not.
  */
 function report(): void {
+  if (!lifetime.accepting) return;
   const c = mirror?.changes();
   if (c) self.postMessage({type: 'changes', ...c}, moved(...c.files.filter((f) => f.bytes).map((f) => f.bytes)));
 }
 
 /** What was translated here or reached later since it was last said. */
 function told(): void {
+  if (!lifetime.accepting) return;
   observations.publish(kernel?.images.values() ?? [], (message, options) => self.postMessage(message, options));
 }
 
 let waking: ReturnType<typeof setTimeout> | undefined;
 /** Threads in turn here: run until they all wait, then again for input or when a sleep ends. */
 function pump(): void {
+  if (!lifetime.accepting) return;
   try {
     const m = paused(kernel!.pump());
     // A process that sleeps goes on when its time comes, input or not.
@@ -325,9 +352,10 @@ let gathered: Uint8Array[] = [], gatheredBytes = 0, gatheredFd = 1, sentAt = -In
  */
 let epoch = 0;
 function send(): void {
-  if (!gatheredBytes) return;
+  if (!lifetime.accepting || !gatheredBytes) return;
   // What the shell changed goes before anything it printed after: a page that shows a line has what it wrote before.
   report();
+  if (!lifetime.accepting) return;
   let bytes = gathered[0];
   if (gathered.length > 1) {
     bytes = new Uint8Array(gatheredBytes);
@@ -350,93 +378,128 @@ function gather(fd: number, bytes: Uint8Array): void {
 const due = (): void => { if (gatheredBytes && performance.now() - sentAt >= GATHER_MS) send(); };
 
 self.onmessage = async ({data}: MessageEvent<Posted>) => {
-  if (data.type === 'drained') {
-    onItsWay = Math.max(0, onItsWay - data.n);
-    if (kernel) kernel.dirty = true;
-    nudge();
-    return;
-  }
-  if (data.type === 'input') { pending.push(data.bytes); nudge(); return; }
-  if (data.type === 'eof') { ended = true; nudge(); return; }
-  if (data.type === 'typing') { if (kernel && waitingInput && kernel.due.size && !rawKeys) consolidateLater(QUIET_MS); return; }
-  if (data.type === 'interrupt') {
-    pending.length = 0;
-    // The signal first (what runs in front writes no more without asking: cpu.ts toConsole), then what was written and
-    // not yet shown goes (flush: the page's epoch from here on).
-    const sent = kernel?.interrupt(data.sig);
-    if (data.flush !== undefined) {
-      epoch = data.flush;
-      onItsWay = Math.max(0, onItsWay - gatheredBytes);
-      gathered = [];
-      gatheredBytes = 0;
-      if (kernel instanceof RemoteKernel) kernel.outbox.take();
+  if (data.type === 'retire') {
+    if (!lifetime.accepting) { self.postMessage({type: 'retiring', owners: lifetime.snapshot()}); return; }
+    lifetime.freeze(); // Before callbacks, including synchronous message reentry.
+    clearTimeout(idle); clearTimeout(waking);
+    for (const timer of rehearsalTimers) clearTimeout(timer);
+    rehearsalTimers.clear();
+    const errors: unknown[] = [];
+    for (const ref of [...executionOwners]) {
+      const k = ref.deref();
+      if (!k) { executionOwners.delete(ref); continue; }
+      try { k.halt(); } catch (error) { errors.push(error); }
+      if (k instanceof RemoteKernel) { try { k.close(); } catch (error) { errors.push(error); } }
     }
-    if (sent) nudge();
+    observations.close(); observerOwner.release();
+    mirror = null; mirrorOwner?.release(); mirrorOwner = null;
+    if (gatheredBytes) lifetime.observe('pending-output');
+    // This acknowledges admission closure, not stopped Workers or tree disposal.
+    self.postMessage({type: 'retiring', owners: lifetime.snapshot()});
+    if (errors.length) failed(new AggregateError(errors, 'Worker retirement failed'));
     return;
   }
-  if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
-  if (data.type === 'free') {
-    const bytes = packRange?.held() ?? 0;
-    packRange?.clear();
-    if (kernel) { const result = kernel.free(0); self.postMessage({type: 'freed', before: withPacks(result.before, bytes), after: withPacks(result.after, 0)}); }
-    return;
-  }
-  if (data.type === 'warm') { if (canRunApart()) warmThreads({failed}); return; }
-  if (data.type === 'hot') { if (kernel) given(kernel, data.files); return; }
-  // A program translated ahead by the page since this Prompt started (ahead.ts): read when it is run.
-  if (data.type === 'kept') { if (keptAt) Object.assign(keptAt, data.at); return; }
-  // (A failure is said by the 'start' that waits for it.)
-  if (data.type === 'ready') {
-    try { ready(data).catch(() => {}); } catch (error) { failed(error); }
-    return;
-  }
-  if (data.type !== 'start') return;
+  if (!lifetime.accepting) { failed(new Error('Worker is retiring; new work is not accepted')); return; }
+  const command = lifetime.enter(`command:${data.type}`);
   try {
-    // Readied before, or now: then this start's files are those readied, put before the root.
-    const before = readied !== null;
-    const {translate, vfs, files: early} = await ready(data);
-    const later = before ? data.files ?? [] : [];
-    for (const d of data.dirs ?? []) vfs.mkdirp(d);
-    // Over the root, as over the files readied: what this start gives is what is there.
-    for (const f of later) provide(vfs, f);
-    for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
-    vfs.mkdirp(data.cwd);
-    const files = [...early, ...later];
-    const console: Console = {
-      // Shown as a terminal's screen (the app's Prompt), it is a terminal: its output a terminal's, this many columns
-      // wide, and what reads keys from it reads them as from one, a line at a time unless it asks for each key as it
-      // comes (then the page sends keys as they are pressed: it is told each change, `mode`).
-      interactive: !!data.screen,
-      screen: !!data.screen, cols: data.cols ?? 80, rows: data.rows ?? 24,
-      // What was written before the change goes first: a program leaving the screen (nano, less) writes its last of it
-      // and then gives the terminal back, and the page, told of the change before those last bytes, drew them on the
-      // shell's lines (the prompt line came up as `hello $ ng... ][ Wrote 1 line ]`).
-      mode: (tio) => { rawKeys = !(tio.lflag & 2); send(); self.postMessage({type: 'tty', ...tio}); },
-      write: gather,
-      // The kernel's turns (process.ts, remote.ts): what gathered goes when it is due, or now (`all`, it stops).
-      flush: (all) => (all ? send() : due()),
-      // Past so much on its way to the page and not yet taken in there, what writes to it waits (sys-file.ts).
-      full: () => onItsWay > ON_ITS_WAY_MOST,
-      read,
-      ready: () => pending.length > 0 || ended,
-      pending: () => pending.reduce((n, b) => n + b.length, 0),
-    };
-    // Translations kept from earlier Prompts: read when their program is first run, the kernel looking again once they are.
-    keep = data.kept ? keeper(data.kept, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
-    keptAt = data.kept?.at ?? null;
-    // Each thread in a Worker of its own, all at once, where memory can be shared and every ready translation was made
-    // for shared memory; otherwise they take turns here (sods' linux.ts decides, by the host it is on).
-    const k = kernel = linux({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r), consolidateIdle: true, translated: files});
-    apart = k instanceof RemoteKernel;
-    for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);
-    if (data.mirror) mirror = new Mirror(vfs, data.mirror);
-    const run = boxed(vfs, data.box);
-    k.start(run[0], run, [], '/');
-    self.postMessage({type: 'threads', apart});
-  } catch (e) {
-    failed(e);
-    return;
-  }
-  if (kernel instanceof RemoteKernel) kernel.serve().catch(failed); else pump();
+    if (data.type === 'drained') {
+      onItsWay = Math.max(0, onItsWay - data.n);
+      if (kernel) kernel.dirty = true;
+      nudge();
+      return;
+    }
+    if (data.type === 'input') { pending.push(data.bytes); nudge(); return; }
+    if (data.type === 'eof') { ended = true; nudge(); return; }
+    if (data.type === 'typing') { if (kernel && waitingInput && kernel.due.size && !rawKeys) consolidateLater(QUIET_MS); return; }
+    if (data.type === 'interrupt') {
+      pending.length = 0;
+      // The signal first (what runs in front writes no more without asking: cpu.ts toConsole), then what was written and
+      // not yet shown goes (flush: the page's epoch from here on).
+      const sent = kernel?.interrupt(data.sig);
+      if (data.flush !== undefined) {
+        epoch = data.flush;
+        onItsWay = Math.max(0, onItsWay - gatheredBytes);
+        gathered = [];
+        gatheredBytes = 0;
+        if (kernel instanceof RemoteKernel) kernel.outbox.take();
+      }
+      if (sent) nudge();
+      return;
+    }
+    if (data.type === 'put') { mirror?.put(data.path, data.what); return; }
+    if (data.type === 'free') {
+      const bytes = packRange?.held() ?? 0;
+      packRange?.clear();
+      if (kernel) { const result = kernel.free(0); self.postMessage({type: 'freed', before: withPacks(result.before, bytes), after: withPacks(result.after, 0)}); }
+      return;
+    }
+    if (data.type === 'warm') { if (canRunApart()) { warmOwner ??= lifetime.observe('warm-pool'); warmThreads({failed}); } return; }
+    if (data.type === 'hot') { if (kernel) given(kernel, data.files); return; }
+    // A program translated ahead by the page since this Prompt started (ahead.ts): read when it is run.
+    if (data.type === 'kept') { if (keptAt) Object.assign(keptAt, data.at); return; }
+    // (A failure is said by the 'start' that waits for it.)
+    if (data.type === 'ready') {
+      try { ready(data).catch(() => {}); } catch (error) { failed(error); }
+      return;
+    }
+    if (data.type !== 'start') return;
+    try {
+      // Readied before, or now: then this start's files are those readied, put before the root.
+      const before = readied !== null;
+      const {translate, vfs, files: early} = await ready(data);
+      lifetime.check();
+      const later = before ? data.files ?? [] : [];
+      for (const d of data.dirs ?? []) vfs.mkdirp(d);
+      // Over the root, as over the files readied: what this start gives is what is there.
+      for (const f of later) provide(vfs, f);
+      for (const l of data.links ?? []) vfs.symlink(l.target, l.path);
+      vfs.mkdirp(data.cwd);
+      const files = [...early, ...later];
+      const console: Console = {
+        // Shown as a terminal's screen (the app's Prompt), it is a terminal: its output a terminal's, this many columns
+        // wide, and what reads keys from it reads them as from one, a line at a time unless it asks for each key as it
+        // comes (then the page sends keys as they are pressed: it is told each change, `mode`).
+        interactive: !!data.screen,
+        screen: !!data.screen, cols: data.cols ?? 80, rows: data.rows ?? 24,
+        // What was written before the change goes first: a program leaving the screen (nano, less) writes its last of it
+        // and then gives the terminal back, and the page, told of the change before those last bytes, drew them on the
+        // shell's lines (the prompt line came up as `hello $ ng... ][ Wrote 1 line ]`).
+        mode: (tio) => { rawKeys = !(tio.lflag & 2); send(); self.postMessage({type: 'tty', ...tio}); },
+        write: gather,
+        // The kernel's turns (process.ts, remote.ts): what gathered goes when it is due, or now (`all`, it stops).
+        flush: (all) => (all ? send() : due()),
+        // Past so much on its way to the page and not yet taken in there, what writes to it waits (sys-file.ts).
+        full: () => onItsWay > ON_ITS_WAY_MOST,
+        read,
+        ready: () => pending.length > 0 || ended,
+        pending: () => pending.reduce((n, b) => n + b.length, 0),
+      };
+      // Translations kept from earlier Prompts: read when their program is first run, the kernel looking again once they are.
+      keep = data.kept ? keeper(data.kept, () => nudge(), (urls) => self.postMessage({type: 'used', urls})) : null;
+      keptAt = data.kept?.at ?? null;
+      // Each thread in a Worker of its own, all at once, where memory can be shared and every ready translation was made
+      // for shared memory; otherwise they take turns here (sods' linux.ts decides, by the host it is on).
+      const k = kernel = linux({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r), consolidateIdle: true, translated: files});
+      executionOwners.add(new WeakRef(k)); lifetime.observe('foreground-kernel', k);
+      apart = k instanceof RemoteKernel;
+      for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);
+      if (data.mirror) { mirror = new Mirror(vfs, data.mirror); mirrorOwner = lifetime.observe('mirror', mirror); }
+      const run = boxed(vfs, data.box);
+      k.start(run[0], run, [], '/');
+      self.postMessage({type: 'threads', apart});
+    } catch (e) {
+      failed(e);
+      return;
+    }
+    if (!lifetime.accepting) return;
+    if (kernel instanceof RemoteKernel) {
+      const serving = lifetime.enter('serve-operation');
+      void kernel.serve().then(() => serving.release(), error => {
+        serving.release();
+        try { failed(error); }
+        catch (notification) { lifetime.failures.push({error, notification}); lifetime.observe('diagnostic-failure'); }
+      });
+    } else pump();
+  } finally { command.release(); }
 };
 

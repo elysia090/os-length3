@@ -462,3 +462,48 @@ PreparedTree contract. Node can subsequently supply a positive stop barrier for
 that subset; browser needs a separately verified cooperative ownership-return
 protocol or must keep realm-lifetime isolation. Neither a generic managed flag
 nor a new runner that still returns raw Vfs/Kernel would solve this boundary.
+
+### Admission freeze and actual operation observations
+
+The private ricebox Worker now understands an explicit `retire` command. It
+freezes new admission before invoking callbacks, cancels idle/wake timers, attempts
+halt/close for each still-reachable recorded execution kernel, closes translation
+observation, and relinquishes its current Mirror reference. The `retiring` reply
+acknowledges only that admission is closed; it is not `stopped`, output drain,
+cache reclamation, or prepared-tree disposal. Repeated retire does not issue more
+halt requests. Existing root/terminal termination callers are not yet changed to
+use this command. They retain their previous realm-termination behavior.
+
+Commands, preparation, rehearsal and serve have separate operation tokens. Results
+of already admitted asynchronous preparation are recorded before checking freeze,
+so a tree completed after retirement is neither published into a new run nor
+silently disposed. A single explicit preparedOwner field retains that finite
+result even if freeze causes the preparation Promise to reject; successful
+readied also refers to it. This intentional late-result root is not a history
+of all kernels. Foreground/rehearsal kernel,
+observer, Mirror, warm-pool and pending-output observations stay distinguishable.
+An outstanding kernel observation is not proof that it is still executing, and a
+settled operation is not proof that its cached Images or host Workers stopped.
+
+The lifecycle ledger and execution list are deliberately **non-owning** WeakRef
+observations. They do not introduce new strong roots for every historical Kernel,
+cache or tree. Actual ownership still comes from preparedOwner/readied, running operations,
+current kernel/observer/Mirror and host Hands. Snapshot counts are conservative
+unresolved observations, not GC liveness or a collection predicate. Observation
+records still consume metadata and can accumulate; this is not zero-cost tracking. Callback
+failure records are retained explicitly for diagnosis. No new collector is built
+on these counts.
+
+RemoteKernel separately records adopted Hands including those later detached from
+tasks/spares. Only matching Node exit removes that record. Browser/legacy Hands
+remain unconfirmed; pass-on does not prove that their cached instances released
+an earlier kernel's memory. The exit callback references the owner set weakly, so
+a healthy Worker passed through successive kernels does not itself keep all past
+kernels alive through this added observer. This is not a browser stop barrier.
+
+Tests cover injected retirement reentry, actual asynchronous translator preparation,
+and real muk image start with retirement reentered from `threads` publication.
+They also cover detached Hand lifetime and no-observation retention. The reentrant
+message host is a test double, not a browser execution. Production sends and
+admission checks are exercised; browser quiescence, all-root disposal and complete
+output draining remain unimplemented.

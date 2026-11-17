@@ -157,6 +157,9 @@ function newWorker(): Hand {
 export class RemoteKernel extends Kernel {
   /** Latched stop-request failures; close() remains synchronous, not a disposal barrier. */
   readonly stopFailures: unknown[] = [];
+  /** Includes detached Hands. Transfer to a warm/next kernel does not prove
+   * their cached instances released this kernel's memory or Images. */
+  private readonly workerOwners = new Set<Hand>();
   declare readonly tasks: Map<number, RemoteTask>;
   declare readonly door: Int32Array;
   declare readonly outbox: Outbox;
@@ -269,6 +272,14 @@ export class RemoteKernel extends Kernel {
 
   /** A Worker for threads, heard by this kernel (by the kernel it is passed on to, after: `w.kernel`). */
   adoptWorker(w: Hand): Hand {
+    if (!this.workerOwners.has(w)) {
+      this.workerOwners.add(w);
+      // Browser/legacy hands supply no positive stop observation: keep the root.
+      if (w.stop) {
+        const owners = new WeakRef(this.workerOwners);
+        void w.stop.stopped.then(() => { owners.deref()?.delete(w); });
+      }
+    }
     const heard = !!w.listening;
     w.kernel = this;
     if (heard) return w;

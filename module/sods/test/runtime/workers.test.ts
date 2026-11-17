@@ -220,3 +220,23 @@ test('warm diagnostic preserves adapter-shaped exit and termination-failure mess
     assert.ok(!delivered[0].includes('[object Object]')); assert.equal(w.ended, 1);
   }
 });
+
+test('detached Worker ownership survives close until its matching observed stop', async () => {
+  const {k} = bench(), w = hand() as Hand & {stop: WorkerStop};
+  let exit!: (code: number) => void;
+  w.stop = new WorkerStop(() => new Promise(() => {}), fn => { exit = fn; });
+  w.end = () => { w.ended++; w.stop.request(() => {}); };
+  const owners = (k as unknown as {workerOwners: Set<Adopted>}).workerOwners;
+  k.spares.push(k.adoptWorker(w as unknown as Adopted));
+  k.close();
+  assert.equal(k.spares.length, 0); assert.equal(owners.size, 1);
+  exit(1); await w.stop.stopped;
+  assert.equal(owners.size, 0);
+});
+
+test('legacy or browser-like hand with no stop observation remains an owner after request', () => {
+  const {k} = bench(), w = hand();
+  const owners = (k as unknown as {workerOwners: Set<Adopted>}).workerOwners;
+  k.spares.push(k.adoptWorker(w as unknown as Adopted));
+  k.close(); assert.equal(w.ended, 1); assert.equal(owners.size, 1);
+});
