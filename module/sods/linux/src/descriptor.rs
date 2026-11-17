@@ -291,6 +291,51 @@ impl Files {
             .map_err(Error::Fs)?;
         self.component(position, name)
     }
+    /// Internal mount-aware parent topology, clamped by this FsContext's root.
+    /// Not a guest `..` operation: credentials/search and resolve-policy flags
+    /// (BENEATH, IN_ROOT, NO_XDEV) are not implemented by this primitive.
+    pub(crate) fn fs_parent(
+        &self,
+        ticket: &fs_context::Ticket,
+        from: &Place,
+    ) -> Result<Place, Error> {
+        let mounts = self.mounts.as_ref().ok_or(Error::BadHandle)?;
+        let boundary = self
+            .contexts
+            .position_ref(mounts, ticket, Base::Root)
+            .map_err(Error::Fs)?;
+        let mut current = from;
+        loop {
+            // Reject file/.. before root/detached clamping, and validate every
+            // mountpoint crossed. No callback or mutable namespace access occurs.
+            self.directory_place(current)?;
+            match mounts
+                .parent_step(current, boundary)
+                .map_err(Error::Mount)?
+            {
+                mount::ParentStep::Fixed => {
+                    return mounts.copy_position(current).map_err(Error::Mount)
+                }
+                mount::ParentStep::Across(point) => current = point,
+                mount::ParentStep::TreeParent => {
+                    let Some((parent, _)) = self
+                        .filesystems
+                        .directory_parent(current.inode())
+                        .map_err(|_| Error::BadHandle)?
+                    else {
+                        return mounts.copy_position(current).map_err(Error::Mount);
+                    };
+                    let provenance = self
+                        .filesystems
+                        .directory_parent(parent)
+                        .map_err(|_| Error::BadHandle)?;
+                    return mounts
+                        .parent_position(current, parent, provenance, boundary)
+                        .map_err(Error::Mount);
+                }
+            }
+        }
+    }
     pub(crate) fn fs_umask(&self, ticket: &fs_context::Ticket) -> Result<u32, Error> {
         self.contexts.umask(ticket).map_err(Error::Fs)
     }
@@ -1394,6 +1439,90 @@ mod tests {
         assert!(f.release_fs(fs).is_ok());
         assert!(f.release_view(a).is_ok());
         assert!(f.release_view(b).is_ok());
+        assert!(f.release_view(root_ticket).is_ok());
+    }
+    #[test]
+    fn fs_parent_clamps_bind_points_and_reads_through_the_correct_view() {
+        let mut tree = Tree::new(911, 8, 8, 16).unwrap();
+        let inode_root = tree.root();
+        let src = tree.directory(inode_root, b"src", 0o755).unwrap();
+        tree.directory(src, b"child", 0o755).unwrap();
+        tree.file_take(src, b"file", 0o600, &mut b"mounted".to_vec())
+            .unwrap();
+        let jail = tree.directory(inode_root, b"jail", 0o755).unwrap();
+        tree.directory(jail, b"mnt", 0o755).unwrap();
+        let mut f = Files::new(
+            912,
+            tree,
+            Limits {
+                contexts: 4,
+                tables: 2,
+                descriptions: 4,
+                slots: 8,
+            },
+        );
+        let root_ticket = f
+            .bootstrap_mount(
+                inode_root,
+                mount::Limits {
+                    views: 8,
+                    holds: 24,
+                },
+            )
+            .unwrap();
+        let root = f.view_root(&root_ticket).unwrap();
+        let source = f.component(&root, b"src").unwrap().unwrap();
+        let jail = f.component(&root, b"jail").unwrap().unwrap();
+        let destination = f.component(&jail, b"mnt").unwrap().unwrap();
+        let view = f.clone_view(&source).unwrap();
+        let overlay = f.clone_view(&source).unwrap();
+        f.attach_view(&view, &destination).unwrap();
+        let mounted = f.view_root(&view).unwrap();
+        let child = f.component(&mounted, b"child").unwrap().unwrap();
+        let fs = f.create_fs(&root, &mounted, 0).unwrap();
+        let parent = f.fs_parent(&fs, &child).unwrap();
+        assert!(parent == mounted);
+        assert!(f.fs_parent(&fs, &mounted).unwrap() == jail); // destination's parent, not src
+        assert!(f.fs_parent(&fs, &root).unwrap() == root);
+        let file = f.component(&parent, b"file").unwrap().unwrap();
+        assert!(matches!(f.fs_parent(&fs, &file), Err(Error::NotSupported)));
+        let table = f.table(2).unwrap();
+        let fd = f.open_place(&table, &file, false).unwrap();
+        let read = f.reserve_read(&table, fd, 32).unwrap();
+        assert_eq!(f.read_bytes(&read), b"mounted");
+        f.finish_read(read, 7);
+        f.let_go(table).unwrap();
+        // Boundary at the underlying attachment point clamps during Across,
+        // before climbing another directory or descending into its covering view.
+        let at_boundary = f.create_fs(&destination, &mounted, 0).unwrap();
+        assert!(f.fs_parent(&at_boundary, &mounted).unwrap() == destination);
+        // Same backing inode in a distinct view must NOT clamp.
+        let same_inode = f.create_fs(&source, &mounted, 0).unwrap();
+        assert_eq!(source.inode(), mounted.inode());
+        assert!(f.fs_parent(&same_inode, &mounted).unwrap() == jail);
+        assert!(f.release_fs(same_inode).is_ok());
+        // When actual ascent reaches the boundary, coverage must not descend
+        // back into the view mounted over that boundary.
+        let underlying_child = f.component(&source, b"child").unwrap().unwrap();
+        f.attach_view(&overlay, &source).unwrap();
+        let overlay_root = f.view_root(&overlay).unwrap();
+        assert!(f.fs_parent(&fs, &underlying_child).unwrap() == overlay_root);
+        let source_boundary = f.create_fs(&source, &source, 0).unwrap();
+        assert!(f.fs_parent(&source_boundary, &underlying_child).unwrap() == source);
+        assert!(f.release_fs(source_boundary).is_ok());
+        assert!(f.release_view(overlay).is_ok());
+        f.detach_view(&overlay_root).unwrap();
+        f.detach_view(&mounted).unwrap();
+        assert!(f.fs_parent(&fs, &mounted).unwrap() == mounted); // detached root fixed
+        assert!(f.release_fs(at_boundary).is_ok());
+        assert!(f.release_fs(fs).is_ok());
+        assert!(f.release_view(view).is_ok());
+        let fresh = f.create_fs(&root, &root, 0).unwrap();
+        assert!(matches!(
+            f.fs_parent(&fresh, &mounted),
+            Err(Error::Mount(mount::Error::BadPlace))
+        ));
+        assert!(f.release_fs(fresh).is_ok());
         assert!(f.release_view(root_ticket).is_ok());
     }
     #[test]

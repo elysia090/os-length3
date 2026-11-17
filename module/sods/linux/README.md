@@ -255,8 +255,9 @@ dropping a ticket conservatively retains its hold until Files itself is dropped.
 Only private leaf views are supported here. Attach requires a destination in the
 bootstrap/attached topology and matching directory/file type; collisions and root
 overmounts reject. Clone/detach of a view with child mounts also reject. There is
-no stacking, recursive clone/detach, propagation, mount flags, FsContext root/cwd,
-pivot, symlink/path traversal, credentials or guest mount syscall implementation.
+no stacking, recursive clone/detach, propagation, mount flags, pivot, full
+symlink/path traversal, credentials or guest mount syscall implementation.
+FsContext root/cwd ownership and internal parent traversal are described below.
 Detached live positions may be used while their view is explicitly held; a bare
 position alone cannot prevent retirement. Filesystem payload storage still remains
 until Files drops, independently of view retirement.
@@ -330,3 +331,26 @@ still compares provenance bytes. These costs and the mount lookup scan remain
 separate from guest payload delivery and are not claimed optimal. The read
 coordinator also requires the same memory Domain throughout an operation; the
 sealed State enforces this pairing, not a general caller-selected resource API.
+
+## Internal parent traversal
+
+Directory storage retains its unique parent and byte name; files and hardlinks
+have no such unique location. The extra retained directory names cost O(total
+directory-name bytes). Parent and symlink target queries borrow storage rather
+than scan siblings or copy their bytes. Rename/unlink are still absent.
+
+`Files::fs_parent` now follows mount topology under a borrowed Fs root. Location
+equality for confinement is view incarnation plus inode, not the route's name.
+The root is checked before and after crossing an attached view: a bind root's
+parent comes from its attachment point, not from its source directory. A live
+detached view root stays fixed. Files are rejected before even root clamping.
+After a storage-parent step, current mount coverage is applied unless the parent
+is already the Fs root. Foreign/stale views reject rather than becoming an escape.
+
+Crossing borrows attachment positions without intermediate name allocations;
+only the final returned position copies provenance. Coverage still scans mount
+high water, O(M), in addition to the number of crossed boundaries and storage
+lookups. No constant-time or allocation-free path claim follows. Tests connect
+returned positions through component lookup, open and resident read, but this is
+not a guest `..` syscall: search permissions, symlinks, NO_XDEV, BENEATH/IN_ROOT,
+full path validation and actual Node caller cutover remain unimplemented.

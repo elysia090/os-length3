@@ -42,18 +42,18 @@ pub(crate) struct Ticket(Id);
 pub(crate) struct Hold {
     location: Place,
 }
-struct Point {
-    view: Id,
-    inode: Inode,
-    parent: Option<Inode>,
-    name: Vec<u8>,
+/// Topology decision only. Tree parent/search semantics stay in Files.
+pub(crate) enum ParentStep<'a> {
+    Fixed,
+    TreeParent,
+    Across(&'a Place),
 }
 struct View {
     root: Inode,
     root_parent: Option<Inode>,
     root_name: Vec<u8>,
     directory: bool,
-    point: Option<Point>,
+    point: Option<Place>,
     holds: u64,
 }
 struct Cell {
@@ -160,6 +160,88 @@ impl Mounts {
             name: copy(name)?,
         })
     }
+    /// Root confinement compares location identity, not route-name provenance.
+    pub(crate) fn same_position(&self, a: &Place, b: &Place) -> Result<bool, Error> {
+        self.validate(a)?;
+        self.validate(b)?;
+        Ok(a.view == b.view && a.inode == b.inode)
+    }
+    pub(crate) fn copy_position(&self, from: &Place) -> Result<Place, Error> {
+        self.validate(from)?;
+        Ok(Place {
+            view: from.view,
+            inode: from.inode,
+            parent: from.parent,
+            name: copy(&from.name)?,
+        })
+    }
+    /// No search permissions or BENEATH/IN_ROOT/NO_XDEV policy here. Caller
+    /// checks directory type even when a boundary or detached root clamps.
+    pub(crate) fn parent_step<'a>(
+        &'a self,
+        from: &Place,
+        boundary: &Place,
+    ) -> Result<ParentStep<'a>, Error> {
+        if self.same_position(from, boundary)? {
+            return Ok(ParentStep::Fixed);
+        }
+        let view = self.view(from.view)?;
+        if from.inode != view.root {
+            return Ok(ParentStep::TreeParent);
+        }
+        match &view.point {
+            Some(point) => {
+                self.validate(point)?;
+                Ok(ParentStep::Across(point))
+            }
+            None => Ok(ParentStep::Fixed),
+        }
+    }
+    /// Files supplies an actual Tree parent and its own borrowed provenance.
+    /// At a bind root preserve the view's provenance, not the backing-tree path.
+    pub(crate) fn parent_position(
+        &self,
+        from: &Place,
+        inode: Inode,
+        provenance: Option<(Inode, &[u8])>,
+        boundary: &Place,
+    ) -> Result<Place, Error> {
+        let view = self.view(from.view)?;
+        self.validate(boundary)?;
+        // Root overmount is unsupported, so no coverage can supersede this view root.
+        if inode == view.root {
+            return self.root_id(from.view);
+        }
+        let parent = provenance.map(|p| p.0);
+        let name = provenance.map_or(&[][..], |p| p.1);
+        if from.view != boundary.view || inode != boundary.inode {
+            // Existing leaf coverage. O(M) scan, using borrowed name bytes;
+            // only the ultimately returned Place allocates its provenance.
+            for (slot, cell) in self.cells.iter().enumerate() {
+                if let Some(view) = &cell.view {
+                    if view.point.as_ref().is_some_and(|p| {
+                        p.view == from.view
+                            && p.parent == parent
+                            && p.name == name
+                            && p.inode == inode
+                    }) {
+                        return self.root_id(Id {
+                            owner: self.owner,
+                            slot,
+                            generation: cell.generation,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(Place {
+            view: from.view,
+            inode,
+            parent,
+            name: copy(name)?,
+        })
+    }
+
     fn has_children(&self, id: Id) -> bool {
         self.cells.iter().any(|c| {
             c.view
@@ -316,7 +398,7 @@ impl Mounts {
         }) {
             return Err(Error::Attached);
         }
-        let point = Point {
+        let point = Place {
             view: to.view,
             inode: to.inode,
             parent: to.parent,
@@ -383,6 +465,57 @@ mod tests {
             Err(Error::Capacity)
         ));
         assert!(mounts.release_ticket(root).is_ok());
+    }
+    #[test]
+    fn parent_boundary_ignores_name_provenance_but_validates_view_incarnation() {
+        let tree = Tree::new(901, 1, 0, 0).unwrap();
+        let (mut mounts, ticket) =
+            Mounts::new(902, tree.root(), Limits { views: 2, holds: 3 }).unwrap();
+        let root = mounts.root(&ticket).unwrap();
+        let variant = Place {
+            view: root.view,
+            inode: root.inode,
+            parent: Some(root.inode),
+            name: b"different".to_vec(),
+        };
+        assert!(matches!(
+            mounts.parent_step(&variant, &root),
+            Ok(ParentStep::Fixed)
+        ));
+        let view = mounts.clone_view(&root, true).unwrap();
+        let detached = mounts.root(&view).unwrap();
+        assert!(!mounts.same_position(&root, &detached).unwrap());
+        assert!(matches!(
+            mounts.parent_step(&detached, &root),
+            Ok(ParentStep::Fixed)
+        ));
+        let foreign = Place {
+            view: Id {
+                owner: 999,
+                ..root.view
+            },
+            inode: root.inode,
+            parent: None,
+            name: Vec::new(),
+        };
+        assert!(matches!(
+            mounts.parent_step(&root, &foreign),
+            Err(Error::BadPlace)
+        ));
+        assert!(matches!(
+            mounts.parent_step(&foreign, &root),
+            Err(Error::BadPlace)
+        ));
+        assert!(mounts.release_ticket(view).is_ok());
+        assert!(matches!(
+            mounts.parent_step(&detached, &root),
+            Err(Error::BadPlace)
+        ));
+        assert!(matches!(
+            mounts.parent_step(&root, &detached),
+            Err(Error::BadPlace)
+        ));
+        assert!(mounts.release_ticket(ticket).is_ok());
     }
     #[test]
     fn view_and_description_keep_file_location_provenance() {
