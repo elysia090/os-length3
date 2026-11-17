@@ -63,7 +63,7 @@ test('real core owns the read lease and rejects overwrite and invalid completion
   const exports = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(wasm!)), {}).exports;
   const call = (name: string, ...args: number[]) => (exports[name] as (...n: number[]) => number)(...args);
   const memory = exports.memory as WebAssembly.Memory;
-  assert.equal(call('files_abi_version'), 3);
+  assert.equal(call('files_abi_version'), 4);
   assert.equal(call('files_init', 32), 0);
   assert.equal(call('files_input', 3), 0);
   new Uint8Array(memory.buffer, call('files_ptr'), 3).set(enc.encode('abc'));

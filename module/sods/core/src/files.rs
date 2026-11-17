@@ -15,10 +15,12 @@ struct Source {
     id: u32,
     operation: Option<u32>,
     poisoned: bool,
+    loaded: bool,
 }
 #[derive(Debug)]
 struct Slot {
     bytes: Vec<u8>,
+    logical_size: usize,
     source: Option<Source>,
 }
 #[derive(Debug)]
@@ -50,6 +52,7 @@ impl Files {
         self.files.try_reserve(1).map_err(|_| Error::NoMemory)?;
         self.files.push(Some(Slot {
             bytes,
+            logical_size: input.len(),
             source: None,
         }));
         Ok(self.files.len() as u32)
@@ -65,20 +68,28 @@ impl Files {
         if let Some(source) = &mut slot.source {
             if source.operation.is_some() {
                 source.poisoned = true;
+                return Err(Error::LoadConflict);
             }
-            return Err(Error::LoadConflict);
+            if !source.loaded {
+                return Err(Error::LoadConflict);
+            }
         }
         Ok(&mut slot.bytes)
     }
-    pub fn create_lazy(&mut self, source: u32) -> Result<u32, Error> {
+    pub fn create_lazy(&mut self, source: u32, size: usize) -> Result<u32, Error> {
         if source == 0 || source > i32::MAX as u32 {
             return Err(Error::BadHandle);
         }
+        if size > self.max_file {
+            return Err(Error::TooLarge);
+        }
         let id = self.create(&[])?;
+        self.slot_mut(id)?.logical_size = size;
         self.slot_mut(id)?.source = Some(Source {
             id: source,
             operation: None,
             poisoned: false,
+            loaded: false,
         });
         Ok(id)
     }
@@ -92,7 +103,7 @@ impl Files {
         Ok(())
     }
     pub fn size(&mut self, id: u32) -> Result<usize, Error> {
-        Ok(self.slot_mut(id)?.bytes.len())
+        Ok(self.slot_mut(id)?.logical_size)
     }
     pub fn load_source(&mut self, id: u32) -> Result<u32, Error> {
         Ok(self.slot_mut(id)?.source.as_ref().map_or(0, |s| s.id))
@@ -105,6 +116,9 @@ impl Files {
         if source.operation.is_some() {
             source.poisoned = true;
             return Err(Error::LoadConflict);
+        }
+        if source.loaded {
+            return Ok(0);
         }
         if self.next_load == i32::MAX as u32 {
             return Err(Error::Exhausted);
@@ -146,7 +160,8 @@ impl Files {
             .map_err(|_| Error::NoMemory)?;
         bytes.extend_from_slice(input);
         slot.bytes = bytes;
-        slot.source = None;
+        slot.logical_size = input.len();
+        source.loaded = true;
         Ok(())
     }
     pub fn read(&mut self, id: u32, at: usize, length: usize) -> Result<&[u8], Error> {
@@ -168,6 +183,9 @@ impl Files {
             bytes.resize(end, 0);
         }
         bytes[at..end].copy_from_slice(input);
+        let slot = self.slot_mut(id)?;
+        slot.logical_size = slot.bytes.len();
+        slot.source = None;
         Ok(())
     }
     pub fn truncate(&mut self, id: u32, length: usize) -> Result<(), Error> {
@@ -182,6 +200,32 @@ impl Files {
                 .map_err(|_| Error::NoMemory)?;
         }
         bytes.resize(length, 0);
+        let slot = self.slot_mut(id)?;
+        slot.logical_size = length;
+        slot.source = None;
+        Ok(())
+    }
+    /// Resident logical payload bytes, not allocator capacity or Wasm pages.
+    pub fn resident(&mut self, id: u32) -> Result<usize, Error> {
+        Ok(self.slot_mut(id)?.bytes.len())
+    }
+    pub fn release(&mut self, id: u32) -> Result<usize, Error> {
+        self.load_check(id)?;
+        let slot = self.slot_mut(id)?;
+        let Some(source) = &mut slot.source else {
+            return Ok(0);
+        };
+        if !source.loaded {
+            return Ok(0);
+        }
+        let n = slot.bytes.len();
+        slot.bytes = Vec::new();
+        source.loaded = false;
+        Ok(n)
+    }
+    pub fn own(&mut self, id: u32) -> Result<(), Error> {
+        self.ready(id)?;
+        self.slot_mut(id)?.source = None;
         Ok(())
     }
     pub fn close(&mut self, id: u32) -> Result<(), Error> {
@@ -197,9 +241,71 @@ impl Files {
 mod tests {
     use super::*;
     #[test]
+    fn reload_preserves_source_and_logical_size_but_not_residency() {
+        let mut f = Files::new(8);
+        let id = f.create_lazy(7, 5).unwrap();
+        assert_eq!(f.size(id), Ok(5));
+        assert_eq!(f.resident(id), Ok(0));
+        assert_eq!(f.own(id), Err(Error::LoadConflict));
+        let op = f.load_begin(id).unwrap();
+        f.load_finish(id, op, true, b"abc").unwrap();
+        assert_eq!(f.size(id), Ok(3));
+        assert_eq!(f.load_source(id), Ok(7));
+        assert_eq!(f.resident(id), Ok(3));
+        assert_eq!(f.release(id), Ok(3));
+        assert_eq!(f.size(id), Ok(3));
+        assert_eq!(f.resident(id), Ok(0));
+        assert_eq!(f.release(id), Ok(0));
+        let next = f.load_begin(id).unwrap();
+        assert_ne!(op, next);
+        assert_eq!(
+            f.load_finish(id, op, true, b"old"),
+            Err(Error::BadCompletion)
+        );
+        f.load_finish(id, next, false, &[]).unwrap();
+        assert_eq!(f.size(id), Ok(3));
+        let retry = f.load_begin(id).unwrap();
+        f.load_finish(id, retry, true, b"abc").unwrap();
+        assert_eq!(f.read(id, 0, 8).unwrap(), b"abc");
+    }
+    #[test]
+    fn mutation_detaches_source_only_on_success() {
+        let mut f = Files::new(8);
+        for action in 0..3 {
+            let id = f.create_lazy(1, 3).unwrap();
+            let op = f.load_begin(id).unwrap();
+            f.load_finish(id, op, true, b"abc").unwrap();
+            assert_eq!(f.write(id, 8, b"x"), Err(Error::TooLarge));
+            assert_eq!(f.truncate(id, 9), Err(Error::TooLarge));
+            assert_eq!(f.load_source(id), Ok(1));
+            match action {
+                0 => f.write(id, 0, b"x").unwrap(),
+                1 => f.truncate(id, 2).unwrap(),
+                _ => f.own(id).unwrap(),
+            };
+            assert_eq!(f.load_source(id), Ok(0));
+            let size = f.size(id).unwrap();
+            assert_eq!(f.release(id), Ok(0));
+            assert_eq!(f.resident(id), Ok(size));
+        }
+    }
+    #[test]
+    fn empty_loaded_source_can_be_released_and_loading_release_poisons() {
+        let mut f = Files::new(8);
+        let id = f.create_lazy(1, 0).unwrap();
+        let op = f.load_begin(id).unwrap();
+        assert_eq!(f.release(id), Err(Error::LoadConflict));
+        assert_eq!(f.load_finish(id, op, true, &[]), Err(Error::LoadConflict));
+        let op = f.load_begin(id).unwrap();
+        f.load_finish(id, op, true, &[]).unwrap();
+        assert_eq!(f.load_begin(id), Ok(0));
+        assert_eq!(f.release(id), Ok(0));
+        assert!(f.load_begin(id).unwrap() > 0);
+    }
+    #[test]
     fn lazy_load_poison_retry_and_stale_completion() {
         let mut f = Files::new(8);
-        let id = f.create_lazy(12).unwrap();
+        let id = f.create_lazy(12, 0).unwrap();
         assert_eq!(f.read(id, 0, 1), Err(Error::LoadConflict));
         assert_eq!(f.load_check(id), Ok(()));
         let op = f.load_begin(id).unwrap();
@@ -218,14 +324,14 @@ mod tests {
         );
         assert_eq!(f.load_finish(id, retry, true, b"good"), Ok(()));
         assert_eq!(f.load_begin(id), Ok(0));
-        assert_eq!(f.load_source(id), Ok(0));
+        assert_eq!(f.load_source(id), Ok(12));
         assert_eq!(f.size(id), Ok(4));
         assert_eq!(f.read(id, 0, 8).unwrap(), b"good");
     }
     #[test]
     fn lazy_mutation_conflicts_and_failure_retry() {
         let mut f = Files::new(4);
-        let id = f.create_lazy(1).unwrap();
+        let id = f.create_lazy(1, 0).unwrap();
         for action in 0..3 {
             let op = f.load_begin(id).unwrap();
             let result = match action {
@@ -247,8 +353,8 @@ mod tests {
     #[test]
     fn independent_loads_and_closed_source_cannot_publish() {
         let mut f = Files::new(8);
-        let a = f.create_lazy(1).unwrap();
-        let b = f.create_lazy(2).unwrap();
+        let a = f.create_lazy(1, 0).unwrap();
+        let b = f.create_lazy(2, 0).unwrap();
         let oa = f.load_begin(a).unwrap();
         let ob = f.load_begin(b).unwrap();
         f.load_finish(b, ob, true, b"B").unwrap();
@@ -256,13 +362,13 @@ mod tests {
         f.close(a).unwrap();
         assert_eq!(f.load_finish(a, oa, true, b"A"), Err(Error::BadHandle));
         assert_eq!(f.load_begin(a), Err(Error::BadHandle));
-        let c = f.create_lazy(3).unwrap();
+        let c = f.create_lazy(3, 0).unwrap();
         assert_ne!(a, c);
     }
     #[test]
     fn load_operations_do_not_wrap() {
         let mut f = Files::new(8);
-        let id = f.create_lazy(1).unwrap();
+        let id = f.create_lazy(1, 0).unwrap();
         f.next_load = i32::MAX as u32;
         assert_eq!(f.load_begin(id), Err(Error::Exhausted));
         assert_eq!(f.size(id), Ok(0));

@@ -699,8 +699,8 @@ export class Kernel implements Kern {
     const keep = this.keptFiles();
     let files = 0, spareFiles = 0;
     for (const f of this.vfs.loaded.files) {
-      files += f._data.length;
-      if (!keep.has(f)) spareFiles += f._data.length;
+      files += f.heldBytes();
+      if (!keep.has(f)) spareFiles += f.releasableBytes();
     }
     const guest = this.memoryBytes(), translator = this.translate?.held?.() ?? 0, spareTranslator = this.translate?.spare?.() ?? translator;
     const spareGuest = this.spareMemories.reduce((n, m) => n + m.buffer.byteLength, 0);

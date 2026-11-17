@@ -142,13 +142,19 @@ export class File extends Node {
    */
   #loaded(): void {
     if (!this.reload) return;
+    this.holdLoaded();
+  }
+  protected holdLoaded(): void {
     let dir = this.home ?? undefined;
     while (dir && !dir.loaded) dir = dir.parent;
     this.pool = dir?.loaded?.files ?? null;
     this.pool?.add(this);
   }
   /** Its bytes are its own now, or gone back to its loader: its tree holds them no longer. */
-  #unheld(): void { this.pool?.delete(this); this.pool = null; }
+  protected unholdLoaded(): void { this.pool?.delete(this); this.pool = null; }
+  /** Resident payload bytes, not a mutable data view or total allocator memory. */
+  heldBytes(): number { return this._data.length; }
+  releasableBytes(): number { return this.heldBytes(); }
   get data(): Uint8Array {
     this.#notLoading();
     if (this.load) {
@@ -217,7 +223,7 @@ export class File extends Node {
   own(): void {
     this.#notLoading();
     if (this.shared) { this._data = this.data.slice(0, this.size); this.shared = false; }
-    this.#unheld();
+    this.unholdLoaded();
     this.reload = null;
   }
   /** Let go of bytes its loader can give again (unchanged since); returns how many. */
@@ -228,7 +234,7 @@ export class File extends Node {
     this._data = new Uint8Array(0);
     this.shared = false;
     this.load = this.reload;
-    this.#unheld();
+    this.unholdLoaded();
     return n;
   }
   write(at: number, bytes: Uint8Array): void {
@@ -848,7 +854,10 @@ export function detach(m: Mount): void {
 }
 
 /** Image mounting through ordinary file operations, supplied by the caller to an image reader. */
-export function mountTarget(vfs: Vfs) {
+export type MountedFileFactory = (mode: number, size: number, read: () => Uint8Array) => File;
+export function mountTarget(vfs: Vfs, makeFile: MountedFileFactory = (mode, size, read) => {
+  const file = new File(new Uint8Array(0), mode, read); file.size = size; return file;
+}) {
   const place = (path: string): [Dir, string] => {
     const at = path.lastIndexOf('/');
     return [vfs.mkdirp(path.slice(0, at) || '/'), path.slice(at + 1)];
@@ -862,8 +871,7 @@ export function mountTarget(vfs: Vfs) {
     symlink(target: string, path: string): void { vfs.symlink(target, path); },
     file(path: string, mode: number, size: number, read: () => Uint8Array, origin: string): File {
       const [dir, name] = place(path);
-      const file = new File(new Uint8Array(0), mode, read);
-      file.size = size;
+      const file = makeFile(mode, size, read);
       file.origin = origin;
       dir.entries.set(name, file);
       return file;

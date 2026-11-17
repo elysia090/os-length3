@@ -3,7 +3,7 @@
  */
 import {CoreFileError, loadCoreFiles, type CoreFile} from '../core/files.ts';
 import {epoch} from '../host.ts';
-import {File, Vfs, E, FsError, FILE_MOST, counted, type Mapping} from './fs.ts';
+import {File, Vfs, E, FsError, FILE_MOST, counted, mountTarget, type Mapping} from './fs.ts';
 
 function payload<T>(action: () => T): T {
   try { return action(); }
@@ -25,7 +25,12 @@ class OwnedFile extends File {
     // A legacy mutable array must not masquerade as this inode's canonical bytes.
     Object.defineProperty(this, '_data', {get() { throw new FsError(E.OPNOTSUPP); }, set() { throw new FsError(E.OPNOTSUPP); }});
   }
-  override materialize(): void { this.live(); this.size = payload(() => this.owned.materialize()); }
+  override materialize(): void {
+    this.live(); this.size = payload(() => this.owned.materialize());
+    if (this.owned.source()) this.holdLoaded();
+  }
+  override heldBytes(): number { this.live(); return payload(() => this.owned.resident()); }
+  override releasableBytes(): number { return this.maps ? 0 : this.heldBytes(); }
   override snapshot(start: number, end: number): Uint8Array { return this.read(start, end); }
   override get data(): Uint8Array { throw new FsError(E.OPNOTSUPP); }
   protected override range(start: number, end: number): Uint8Array {
@@ -38,9 +43,20 @@ class OwnedFile extends File {
   override map(m: Mapping): void { this.live(); payload(() => this.owned.checkIdle()); super.map(m); }
   override unmap(m: Mapping): void { this.live(); super.unmap(m); }
   override settle(start = 0, end = this.size, only: Mapping | null = null): void { this.live(); payload(() => this.owned.checkIdle()); super.settle(start, end, only); }
-  override own(): void { this.live(); payload(() => this.owned.checkIdle()); }
-  override release(): number { this.live(); payload(() => this.owned.checkIdle()); return 0; } // No eviction/reload in this entrance.
-  override given(_bytes: Uint8Array): void { this.live(); payload(() => this.owned.checkIdle()); }
+  override own(): void { this.live(); payload(() => this.owned.own()); this.unholdLoaded(); }
+  override release(): number {
+    this.live(); payload(() => this.owned.checkIdle());
+    // Keep mapped bytes resident: a later dirty observation must not invoke a loader
+    // inside mapping writeback. Mapping/pin-aware eviction is a separate contract.
+    if (this.maps) return 0;
+    const released = payload(() => this.owned.release());
+    if (!this.owned.resident()) this.unholdLoaded();
+    return released;
+  }
+  override given(bytes: Uint8Array): void {
+    this.live(); this.size = payload(() => this.owned.given(bytes));
+    if (this.owned.source()) this.holdLoaded();
+  }
   override share(): Uint8Array { return this.bytes(); }
   override bytes(): Uint8Array { this.materialize(); if (this.maps) this.settle(); return this.range(0, this.size); }
   override readInto(start: number, into: Uint8Array, at: number, length: number, ready?: () => void): number {
@@ -58,6 +74,7 @@ class OwnedFile extends File {
     this.materialize();
     const accepted = new Uint8Array(bytes);
     payload(() => this.owned.write(at, accepted));
+    this.unholdLoaded();
     this.size = Math.max(this.size, at + accepted.length);
     this.mtime = epoch(); this.version++; counted.changes++;
     // Pass captured bytes: do not allocate a fresh Rust readout after commit.
@@ -71,6 +88,7 @@ class OwnedFile extends File {
     if (this.maps) this.settle();
     const was = this.size;
     payload(() => this.owned.truncate(length));
+    this.unholdLoaded();
     this.size = length;
     this.mtime = epoch(); this.version++; counted.changes++;
     // The changed interval is entirely zero, both on growth and beyond new EOF.
@@ -89,10 +107,23 @@ class OwnedFile extends File {
  * live until then; closing an fd does not close a payload. No automatic fallback.
  */
 export async function loadFileScope(source: WebAssembly.Module | BufferSource, maxFileBytes: number) {
-  const store = await loadCoreFiles(source, maxFileBytes), held = new Set<CoreFile>();
+  const store = await loadCoreFiles(source, maxFileBytes), held = new Map<CoreFile, OwnedFile>();
   let closed = false;
   const live = () => { if (closed) throw new Error('Rust file scope is closed'); };
+  const lazy = (mode: number, size: number, loader: () => Uint8Array): File => {
+    live();
+    const file = payload(() => store.createLazy(() => {
+      try { return loader(); }
+      catch { throw new FsError(E.IO); }
+    }, size));
+    try {
+      const inode = new OwnedFile(file, size, mode, live, maxFileBytes);
+      held.set(file, inode); return inode;
+    } catch (e) { file.close(); throw e; }
+  };
   return {
+    /** All pack files use this scope, without coupling the pack reader to Rust. */
+    mountTarget(vfs: Vfs) { live(); return mountTarget(vfs, lazy); },
     writeFile(vfs: Vfs, path: string, input: Uint8Array | string, mode = 0o644): File {
       live();
       const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
@@ -101,7 +132,7 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
       const file = payload(() => store.create(bytes));
       try {
         const inode = new OwnedFile(file, bytes.length, mode, live, maxFileBytes);
-        held.add(file);
+        held.set(file, inode);
         dir.entries.set(path.slice(at + 1), inode);
         return inode;
       } catch (e) { held.delete(file); file.close(); throw e; }
@@ -110,20 +141,14 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
     lazyFile(vfs: Vfs, path: string, loader: () => Uint8Array, mode = 0o644): File {
       live();
       const at = path.lastIndexOf('/'), dir = vfs.mkdirp(path.slice(0, at));
-      const file = payload(() => store.createLazy(() => {
-        try { return loader(); }
-        catch { throw new FsError(E.IO); }
-      }));
-      try {
-        const inode = new OwnedFile(file, 0, mode, live, maxFileBytes);
-        held.add(file); dir.entries.set(path.slice(at + 1), inode);
-        return inode;
-      } catch (e) { held.delete(file); file.close(); throw e; }
+      const inode = lazy(mode, 0, loader);
+      dir.entries.set(path.slice(at + 1), inode);
+      return inode;
     },
     dispose(): void {
       if (closed) return;
       closed = true;
-      for (const file of held) file.close();
+      for (const [file, inode] of held) { file.close(); inode.pool?.delete(inode); inode.pool = null; }
       held.clear();
     },
   };

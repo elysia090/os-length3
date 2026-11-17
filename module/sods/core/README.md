@@ -437,3 +437,49 @@ No source eviction/reload is offered yet (`release` remains zero); `given` does 
 replace a Rust source. Raw data/alias mutation and arbitrary overrides remain
 unsupported. Kernel namespace/FD/process/mapping state is still TS, and sendfile
 partial effects plus deferred-image contracts remain separate migration gates.
+
+### Stage 9: reloadable pack sources (files ABI 4)
+
+`mountPack(scope.mountTarget(vfs), index, reading)` now selects Rust payloads for
+all newly mounted pack files through the existing neutral MountTarget port.
+Directories, links, origin and hardlink identity remain the existing Vfs behavior.
+The ordinary `mountTarget(vfs)` default and Worker/runnable boot paths are not
+silently switched: their matching core artifact injection and root/scope lifetime
+still require integration. No fallback conceals a missing or mismatched artifact.
+
+Rust now distinguishes source-backed Unloaded/Loading/Loaded from source-free
+Owned payloads and keeps logical size separate from resident bytes. Load/given
+success retains the source; successful write/truncate or explicit own detaches it.
+Failed mutation retains reload eligibility. Release drops the payload but not
+logical size, source identity or inode version. The host callback registry follows
+that source lifetime. `given` adopts only an unloaded source, does nothing when
+already loaded, and rejects Loading reentry. Upstream must authenticate root bytes;
+source identity is not a digest check.
+
+Kernel held/free use storage-neutral resident/releasable byte accessors rather
+than mutable `_data`. Existing tree-local Loaded/keeper ownership remains in use.
+Mapped Rust inodes conservatively refuse eviction and report zero releasable bytes;
+this prevents a later dirty writeback from invoking a reload callback inside its
+commit. Dirty writes are preserved, not discarded or represented as clean source.
+Mapping-aware eviction remains deferred. Mapping settle still calls own before
+copy, so arbitrary allocation/host failures there are not claimed failure-atomic
+like the normal precommit write/truncate refusal cases. `held().files` remains
+reloadable resident-file accounting, not all dirty payload or Wasm capacity.
+Dispose removes source accounting entries;
+its existing requirement to end all scope users first remains unchanged.
+
+Tests mount a real hashed pack, preserve hardlinks, give hot bytes without fetching,
+release/reload through failed integrity checks, preserve source after failed
+mutation, and honor two kernels' shared keepers. Empty files also transition back
+to Unloaded even when release returns zero. Resident bytes exclude Vec capacity,
+shared scratch and retained Wasm pages: dropping a payload is not an OS-memory
+return claim. HTTP whole-pack response retention remains a separate reader resource.
+
+Cost derivation: an n-byte mutable external source requires a stable accepted value
+before canonical publication. The current host snapshot, scratch transfer and
+payload copy cost 3n copied bytes, in addition to pack verification/decompression
+and read output. Moving the completed scratch Vec into the payload could remove
+one n-byte copy without weakening capture; direct bounded canonical staging could
+remove another only after exclusive input/lifetime constraints are established.
+Neither is implemented here. Reload repeats verified reading and these costs;
+keeping the source avoids retaining duplicate canonical bytes, not all host buffers.

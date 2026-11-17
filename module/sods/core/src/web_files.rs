@@ -37,7 +37,7 @@ fn idle(f: impl FnOnce(&mut State) -> Result<i32, Error>) -> i32 {
 }
 #[no_mangle]
 pub extern "C" fn files_abi_version() -> u32 {
-    3
+    4
 }
 #[no_mangle]
 pub extern "C" fn files_init(limit: u32) -> i32 {
@@ -151,10 +151,12 @@ pub extern "C" fn files_read_finish(operation: u32, outcome: u32, count: u32) ->
 }
 
 #[no_mangle]
-pub extern "C" fn files_create_lazy(source: u32) -> i32 {
+pub extern "C" fn files_create_lazy(source: u32, size: u32) -> i32 {
     idle(|s| {
         s.input = false;
-        s.files.create_lazy(source).map(|id| id as i32)
+        s.files
+            .create_lazy(source, size as usize)
+            .map(|id| id as i32)
     })
 }
 #[no_mangle]
@@ -202,6 +204,26 @@ pub extern "C" fn files_size(id: u32) -> i32 {
 pub extern "C" fn files_load_check(id: u32) -> i32 {
     with(|s| {
         s.files.load_check(id)?;
+        Ok(0)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn files_resident(id: u32) -> i32 {
+    with(|s| s.files.resident(id).map(|n| n as i32))
+}
+#[no_mangle]
+pub extern "C" fn files_release(id: u32) -> i32 {
+    idle(|s| {
+        s.input = false;
+        s.files.release(id).map(|n| n as i32)
+    })
+}
+#[no_mangle]
+pub extern "C" fn files_own(id: u32) -> i32 {
+    idle(|s| {
+        s.input = false;
+        s.files.own(id)?;
         Ok(0)
     })
 }
