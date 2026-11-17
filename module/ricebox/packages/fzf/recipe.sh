@@ -2,7 +2,7 @@
 # and as a filter where it is not.
 pins="FZF"
 tools="go"
-# Past what its go.mod is still open to (module/ricebox/make/advisories.sh): golang.org/x/sys (GO-2026-5024) and golang.org/x/text
+# Past what its go.mod is still open to (module/ricebox/maintenance/advisories.sh): golang.org/x/sys (GO-2026-5024) and golang.org/x/text
 # (GO-2026-5970, -6629).
 lifts="golang.org/x/sys=v0.44.0 golang.org/x/text=v0.41.0"
 build() {

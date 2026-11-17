@@ -102,7 +102,7 @@ request passes, and the one secret") and are tested in
   (`gh attestation verify`). Lockfiles are enforced, and Dependabot proposes
   updates; npm's, the app's crates' and the root's Rust and Go programs'
   dependencies are checked against published advisories with every change
-  and, for the root, every week (`module/ricebox/make/advisories.sh`).
+  and, for the root, every week (`module/ricebox/maintenance/advisories.sh`).
 - **How the root is built.** Every package from a source pinned by digest
   (`module/ricebox/pins/sources.env`), in one Alpine pinned by digest, by a compiler
   that hardens every unit it compiles (stack protector, stack clash

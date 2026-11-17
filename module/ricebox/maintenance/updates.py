@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The newest upstream release of every source the root is built from, and its digests; and every pin checked.
 
-    python3 module/ricebox/make/next.py module/ricebox/pins/sources.env
+    python3 module/ricebox/maintenance/updates.py module/ricebox/pins/sources.env
 
 For each component a file pins it reads its makers' own listing (their download directory, release feed or tags),
 picks the newest release by the rule written beside it, downloads the archive over HTTPS and takes the digests it
@@ -103,7 +103,7 @@ def github(repo, prefix='v', line='', back=0):
 @functools.lru_cache(maxsize=None)
 def alpine(package, repo):
     """The version of an Alpine package the builder installs: its Alpine (module/ricebox/make/build.sh's), the repository's index."""
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build.sh')) as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'make', 'build.sh')) as f:
         release = '.'.join(re.search(r"grep -q '\^(\d+)\\\.(\d+)\\\.' /etc/alpine-release", f.read()).groups())
     index = get(f'https://dl-cdn.alpinelinux.org/alpine/v{release}/{repo}/x86_64/APKINDEX.tar.gz', binary=True)
     with tarfile.open(fileobj=io.BytesIO(index)) as t:
@@ -118,7 +118,7 @@ def alpine(package, repo):
 def aports(path):
     """A file of Alpine's musl-utils (aports' main/musl/) as the builder's Alpine has it: (its package's version, the
     file at the head of that Alpine's stable branch)."""
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build.sh')) as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'make', 'build.sh')) as f:
         release = '.'.join(re.search(r"grep -q '\^(\d+)\\\.(\d+)\\\.' /etc/alpine-release", f.read()).groups())
     refs = get('https://git.alpinelinux.org/aports/info/refs?service=git-upload-pack')
     commit = re.search(rf'([0-9a-f]{{40}}) refs/heads/{re.escape(release)}-stable$', refs, re.M).group(1)

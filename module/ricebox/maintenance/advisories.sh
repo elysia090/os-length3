@@ -3,16 +3,16 @@
 # (Cargo.lock; go.mod), taken from the very archive its pin names and checked against the pin's digest, with what its
 # recipe lifts past advisories taken as the builder takes it (lift.sh: cargo update, go get), asked of OSV
 # (osv-scanner: RustSec's advisories and Go's vulnerability database among them). A Go program's standard library is
-# the one it is built with, the build machine's Go (Alpine's, at the version module/ricebox/make/build.sh's Alpine has: module/ricebox/make/next.py
+# the one it is built with, the build machine's Go (Alpine's, at the version module/ricebox/make/build.sh's Alpine has: module/ricebox/maintenance/updates.py
 # finds it), not the version its go.mod asks for at least: that Go is asked of OSV itself, by its version (osv-scanner
 # matches the standard library by go.mod's version, whatever it is told the toolchain is). An advisory that is known
 # and does not reach the root, or has nothing to raise to yet, is named in module/ricebox/pins/advisories.toml with why, and until
 # when: one of Go's own as any other.
 #
-#   sh module/ricebox/make/advisories.sh [OSV-SCANNER]
+#   sh module/ricebox/maintenance/advisories.sh [OSV-SCANNER]
 #
 # Fails when one is known to be vulnerable, saying which, by what, and fixed where. (The root's C is not in it: its
-# makers' advisories carry no versions OSV knows them by. What fixes them comes with each newer pin, module/ricebox/make/next.py, and
+# makers' advisories carry no versions OSV knows them by. What fixes them comes with each newer pin, module/ricebox/maintenance/updates.py, and
 # the security fixes Alpine carries, which its recipes take.)
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -51,7 +51,7 @@ done
 # The Go every Go program is built with: its standard library's advisories, as OSV has them for that version. One that
 # advisories.toml sets aside (until its day) is said with its reason, as the scanner says its own, and taken out of
 # the list the scanner is handed, which would call it unused.
-go=$(cd "$here/make" && python3 -c 'import next; print(next.alpine("go", "community"))')
+go=$(cd "$here/maintenance" && python3 -c 'import updates; print(updates.alpine("go", "community"))')
 config="$work/advisories.toml"
 curl -fsS --retry 4 -o "$work/stdlib.json" -X POST https://api.osv.dev/v1/query \
   -d "{\"package\": {\"name\": \"stdlib\", \"ecosystem\": \"Go\"}, \"version\": \"$go\"}"

@@ -3,7 +3,7 @@
 # expressions (Oniguruma) are crates' own copies, built here.
 pins="DELTA"
 tools="rust cargo"
-# Past what its lockfile is still open to (module/ricebox/make/advisories.sh): anyhow (RUSTSEC-2026-0190), git2 (RUSTSEC-2026-0008),
+# Past what its lockfile is still open to (module/ricebox/maintenance/advisories.sh): anyhow (RUSTSEC-2026-0190), git2 (RUSTSEC-2026-0008),
 # libz-sys (RUSTSEC-2026-0418), plist, whose 1.10 takes quick-xml past RUSTSEC-2026-0194 and -0195, rand
 # (RUSTSEC-2026-0097), rustix (RUSTSEC-2026-0486), serde_with (GHSA-7gcf-g7xr-8hxj), time (RUSTSEC-2026-0009), and url,
 # whose 2.5.4 takes idna past RUSTSEC-2024-0421.

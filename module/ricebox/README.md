@@ -83,6 +83,17 @@ make/standin.ts               a small root for tests
 A release of ricebox is whole without a product: the root, its layers, and beside them `muk` and `sods` (the
 program, the translator as a module, and `sods/runtime`), each taken at the boundary it publishes.
 
+## Dependency maintenance
+
+`maintenance/updates.py` compares pinned sources with upstream releases, downloads
+and verifies archives, and writes candidate `NAME.next` files in the current
+working directory. It does not replace the pins or build the distribution.
+`maintenance/advisories.sh` temporarily extracts pinned Rust/Go sources, applies
+the same dependency lifts as the builder, and queries vulnerability data. It can
+fetch and modify that temporary workspace; it is not a side-effect-free check.
+Both remain separate from package generation and the runtime. Shared build
+source/lift helpers remain under `make/` until their producer contracts are split.
+
 ## Composition and deployment
 
 - `build/prepare.ts` composes an explicit package cache with pinned tools. It

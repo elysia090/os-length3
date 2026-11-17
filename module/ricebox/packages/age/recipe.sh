@@ -1,7 +1,7 @@
 # age: files encrypted to a key, a passphrase or an SSH key (age, age-keygen); small keys, no settings to get wrong.
 pins="AGE"
 tools="go"
-# Past what its go.mod is still open to (module/ricebox/make/advisories.sh): golang.org/x/crypto's ssh (GO-2026-6354, -6355).
+# Past what its go.mod is still open to (module/ricebox/maintenance/advisories.sh): golang.org/x/crypto's ssh (GO-2026-6354, -6355).
 lifts="golang.org/x/crypto=v0.56.0"
 build() {
   go build -ldflags "$golink -s -w -X main.Version=v$AGE_VERSION" -o "$dest/usr/bin/" ./cmd/age ./cmd/age-keygen

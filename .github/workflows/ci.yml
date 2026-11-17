@@ -607,7 +607,7 @@ jobs:
           key: osv-scanner-2.7.0-${{ runner.os }}
       - name: Scan the root's programs
         if: ${{ !cancelled() }}
-        run: sh module/ricebox/make/advisories.sh ~/go/bin/osv-scanner
+        run: sh module/ricebox/maintenance/advisories.sh ~/go/bin/osv-scanner
 
   # The app end to end in Chromium, in four shards, each with its own Remote and its own build of the app.
   selftest:

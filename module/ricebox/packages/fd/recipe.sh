@@ -1,7 +1,7 @@
 # fd: files found by their names, skipping what .gitignore and hidden files say to; what find is reached for.
 pins="FD"
 tools="rust cargo"
-# Past what its lockfile is still open to (module/ricebox/make/advisories.sh): crossbeam-epoch (RUSTSEC-2026-0204).
+# Past what its lockfile is still open to (module/ricebox/maintenance/advisories.sh): crossbeam-epoch (RUSTSEC-2026-0204).
 lifts="crossbeam-epoch=0.9.20"
 build() {
   cargo build --release --locked --target "$target"

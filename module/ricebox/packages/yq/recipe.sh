@@ -1,7 +1,7 @@
 # yq: jq's way of asking, for YAML (and TOML, XML, CSV and JSON), its comments and order kept when it writes.
 pins="YQ"
 tools="go"
-# Past what its go.mod is still open to (module/ricebox/make/advisories.sh): golang.org/x/net's html and HTTP/2 (GO-2026-6603, -6610,
+# Past what its go.mod is still open to (module/ricebox/maintenance/advisories.sh): golang.org/x/net's html and HTTP/2 (GO-2026-6603, -6610,
 # -6611, -6612, -6617, -6860, -6866).
 lifts="golang.org/x/net=v0.62.0"
 build() {

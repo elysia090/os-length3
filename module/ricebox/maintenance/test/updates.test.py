@@ -1,4 +1,4 @@
-"""next.py's pins: one that is fetched and is its digest is checked; one that is another file, or cannot be had, is
+"""updates.py's pins: one that is fetched and is its digest is checked; one that is another file, or cannot be had, is
 said and fails the run; a newest release not looked up or not taken is said and does not."""
 import contextlib
 import hashlib
@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tarfile
 import threading
 import time
 import unittest
@@ -15,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location('ricebox_next', Path(__file__).with_name('next.py'))
+spec = importlib.util.spec_from_file_location('ricebox_updates', Path(__file__).resolve().parent.parent / 'updates.py')
 nxt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(nxt)
 
@@ -40,7 +41,7 @@ def run(newest, served, digest=sha(GOOD)):
         os.chdir(folder)
         try:
             with patch.object(nxt, 'get', get), patch.dict(nxt.NEWEST, {'ONE': newest}, clear=True), \
-                 patch.object(sys, 'argv', ['next.py', pins.as_posix()]), contextlib.redirect_stdout(out):
+                 patch.object(sys, 'argv', ['updates.py', pins.as_posix()]), contextlib.redirect_stdout(out):
                 try:
                     nxt.main()
                     code = 0
@@ -144,6 +145,39 @@ class Downloads(unittest.TestCase):
         for at in nxt.source_urls(url):
             self.assertIn(at, str(caught.exception))
         self.assertIn('timed out', str(caught.exception))
+
+
+class BuilderProfile(unittest.TestCase):
+    def test_builder_release_and_advisory_import_contract_from_an_unrelated_cwd(self):
+        # Both alpine() and aports() read the actual producer's target profile.
+        # No upstream request is made; keep the public alpine() shape advisories imports.
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode='w:gz') as tar:
+            data = b'P:musl-utils\nV:1.2.5-r1\n\nP:go\nV:1.26.0-r1\n'
+            member = tarfile.TarInfo('APKINDEX')
+            member.size = len(data)
+            tar.addfile(member, io.BytesIO(data))
+        seen = []
+        def get(url, binary=False):
+            seen.append(url)
+            if url.endswith('APKINDEX.tar.gz'):
+                self.assertTrue(binary)
+                return archive.getvalue()
+            return 'a' * 40 + ' refs/heads/3.24-stable\n'
+        before = os.getcwd()
+        nxt.alpine.cache_clear()
+        try:
+            with tempfile.TemporaryDirectory() as work, patch.object(nxt, 'get', get):
+                os.chdir(work)
+                self.assertEqual(nxt.alpine('go', 'community'), '1.26.0')
+                version, url = nxt.aports('APKBUILD')
+                self.assertEqual(version, '1.2.5')
+                self.assertTrue(url.endswith('APKBUILD?id=' + 'a' * 40))
+                self.assertIn('https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/APKINDEX.tar.gz', seen)
+                self.assertIn('https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/APKINDEX.tar.gz', seen)
+        finally:
+            os.chdir(before)
+            nxt.alpine.cache_clear()
 
 
 class Pins(unittest.TestCase):

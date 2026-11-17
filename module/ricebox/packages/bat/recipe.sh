@@ -3,7 +3,7 @@
 # expressions (Oniguruma) are crates' own copies, built here.
 pins="BAT"
 tools="rust cargo"
-# Past what its lockfile is still open to (module/ricebox/make/advisories.sh): anyhow (RUSTSEC-2026-0190), crossbeam-epoch
+# Past what its lockfile is still open to (module/ricebox/maintenance/advisories.sh): anyhow (RUSTSEC-2026-0190), crossbeam-epoch
 # (RUSTSEC-2026-0204), git2 (RUSTSEC-2026-0008), libz-sys (RUSTSEC-2026-0418), plist, whose 1.10 takes quick-xml past
 # RUSTSEC-2026-0194 and -0195, serde_with (GHSA-7gcf-g7xr-8hxj) and time (RUSTSEC-2026-0009).
 lifts="anyhow=1.0.103 crossbeam-epoch=0.9.20 git2=0.20.4 libz-sys=1.1.31 plist=1.10.3 serde_with=3.21.0 time=0.3.47"

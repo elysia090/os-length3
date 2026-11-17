@@ -282,7 +282,7 @@ the same thing for the desktop app and for the web.
   lockfile, with what its recipe lifts: a crate or module its makers have
   fixed an advisory in, taken to that version where the program asks for
   it at all (`lifts=`, `module/ricebox/make/lift.sh`); what those programs are made of is
-  asked of OSV with every change and every week (`module/ricebox/make/advisories.sh`), and
+  asked of OSV with every change and every week (`module/ricebox/maintenance/advisories.sh`), and
   what no lift answers is written down with why and until when
   (`module/ricebox/pins/advisories.toml`). For the web it also holds the translator
   (sods, as WebAssembly) and the translations of the hot programs made
