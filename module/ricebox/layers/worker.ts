@@ -88,11 +88,12 @@
 
 import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
 import {Mirror, RemoteKernel, Vfs, keeper, linux, provide, said, warmThreads,
-  type Console, type File, type Image, type Kept, type Kernel, type Pumped, type Reading, type Said} from '../../sods/runtime/linux.ts';
+  type Console, type File, type Kept, type Kernel, type Pumped, type Reading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
 import {type Given, type Packed} from './mount.ts';
 import {prepareTree, type FileCore, type PreparedTree} from './prepared-tree.ts';
 import {syncRange} from './pack.ts';
+import {TranslationObserver} from './translation-observer.ts';
 
 /** A module of code a run reached later: its first table slot and bytes (Image.adopt). */
 interface Reached { module: WebAssembly.Module; bytes: Uint8Array; base: number }
@@ -156,7 +157,7 @@ let apart = false;
 const pending: Uint8Array[] = [];
 let ended = false;
 /** The programs given with their translation: the image of each, and how much of its code reached later is said. */
-const kept: {path: string; image: Image; told: number}[] = [];
+const observations = new TranslationObserver();
 /** Translations kept from earlier Prompts (keeper.ts), when the page has any. */
 let keep: Reading | null = null;
 /** What is kept, by origin, as 'start' said it: a program translated ahead later ({type: 'kept', at}) is put here. */
@@ -260,32 +261,7 @@ function report(): void {
 
 /** What was translated here or reached later since it was last said. */
 function told(): void {
-  // Code reached later since it was last said, for the page to keep (each module's bytes copied: the image keeps its own).
-  for (const k of kept) {
-    const x = k.image.extras;
-    // (Reached in bytes its file had once changed: this run's own, never the program's: process.ts readLater.)
-    if (x.length <= k.told || k.image.changed) continue;
-    const more = x.slice(k.told).map((e) => ({module: e.module, bytes: e.bytes.slice(), base: e.base}));
-    self.postMessage({type: 'more', path: k.path, from: k.told, more}, moved(...more.map((m) => m.bytes)));
-    k.told = x.length;
-  }
-  // What was translated here of the root's programs, and the code they reached later since it was said.
-  for (const e of kernel?.images.values() ?? []) {
-    const im = e.image;
-    if (!im.origin || e.kept) continue;
-    if (!im.mainTold && im.wasm) {
-      const wasm = im.wasm;
-      im.wasm = null;
-      im.mainTold = true;
-      const segments = im.segments ? im.segments.map((s) => ({offset: s.offset, bytes: s.bytes.slice()})) : null;
-      self.postMessage({type: 'translated', origin: im.origin, wasm, segments}, moved(wasm, ...(segments ?? []).map((s) => s.bytes)));
-    }
-    if (im.mainTold && im.extras.length > (im.told ?? 0)) {
-      const more = im.extras.slice(im.told).map((x) => ({module: x.module, bytes: x.bytes.slice(), base: x.base}));
-      self.postMessage({type: 'reached', origin: im.origin, from: im.told, more}, moved(...more.map((m) => m.bytes)));
-      im.told = im.extras.length;
-    }
-  }
+  observations.publish(kernel?.images.values() ?? [], (message, options) => self.postMessage(message, options));
 }
 
 let waking: ReturnType<typeof setTimeout> | undefined;
@@ -310,7 +286,7 @@ function runs(k: Kernel, node: File, f: Program, module: WebAssembly.Module): vo
 /** `f`, given with its translation and run from it (`node`), is followed: what it reaches later is said from where its `more` ends. */
 function follow(k: Kernel, node: File, f: Program): void {
   const image = k.images.get(node)!.image;
-  kept.push({path: f.path, image, told: f.more?.length ? image.adopt(f.more) : 0});
+  observations.track(f.path, image, f.more?.length ? image.adopt(f.more) : 0);
 }
 
 /**

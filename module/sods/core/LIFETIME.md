@@ -162,12 +162,39 @@ call ended(), then read its still-valid deferred source; raw Entries mutations a
 show two or zero real namespace edges with an unchanged nlink of one. These tests
 reject premature last-owner rules. They do not establish final-owner reclamation.
 
-Next implementation gate: make translation observation an explicit private owner
-with prepared output, success/failure disposition and close, then migrate Worker
-follow/told without changing its messages or losing late code. Test path replacement,
-consolidated old/new images, send failure, observer close and lazy source retention.
-This closes a real escaping consumer before introducing an inode root counter;
-namespace/fd/map/operation owners must still be connected before automatic close.
-The observer's send-success boundary means local send acceptance, not receiver
-persistence. Retaining state on rejected send does not itself authorize automatic
-retry or promise exactly-once delivery; those are separate caller policies.
+Worker follow/told now use a private TranslationObserver. Its tracked records own
+Image observation references; individual close nulls that record's Image, global
+close releases all observations, and neither closes executable images or files.
+Root publication progress remains the existing Image mainTold/told fields as one
+source of truth, including keeper seeds and fresh consolidated Images. Ordinary
+run end still does not close the realm-owned observer: late code/shared preparation
+have not acquired a stronger lifetime proof.
+
+Each message captures bytes/identity and an extras end index before send. Successful
+return acknowledges only that prefix; main wasm is cleared only after acceptance.
+The existing more/translated/reached message shapes and ordering are retained.
+Failure behavior is intentionally stricter: any publication exception permanently
+fails that observer, preserves the already-accepted prefix, and permits close but
+no retry/new tracking. A send may transfer bytes and then throw, so unacknowledged
+is not proof of no external effect. Local acceptance is not receiver persistence
+or exactly-once delivery. No automatic retry is added. Reentrant publish/track is
+rejected; close during send permits that accepted prefix but stops subsequent sends.
+
+The private helper snapshots root entry identities once (O(number of image entries)
+transient host records); this bounds an iteration even if a sender mutates the map.
+Extras/segments keep the existing byte copies and main wasm transfers its original
+buffer. It does not scan/copy file payloads. Hash indexing/observer extraction is
+not a claim of whole-system resource optimality. Tests cover same-path old/new
+images, consolidation/keeper seeds, late extras during send, partial failure,
+transfer-then-throw, close, and a real Rust-backed deferred source after observer
+close. The latter explicitly remains usable: observation ownership is not total
+Image/inode ownership.
+
+Next gate remains namespace/fd/map/image/operation ownership for a managed tree.
+Moving raw Image accesses into this private helper alone does not prove final
+reference reclamation; the current Worker keeps its observations for its realm
+and the raw public kernel/tree APIs stay unchanged.
+During send, appending extras and closing observation are supported; arbitrarily
+replacing the same Image's wasm/mainTold/told/origin is not a revision transaction
+provided by this helper. The consolidation-shaped test uses two distinct Image
+objects and seed values; it does not execute the actual consolidation compiler.
