@@ -733,3 +733,20 @@ Focused injected-Hand tests exercise diagnostic failure, independent stop failur
 wake, and replacement assignment. These test production Kernel/task retirement,
 not positive real-host stop, browser UI, full Wasm guest execution, or complete
 scope collection. Used-tree disposal remains a separate unfinished gate.
+
+### Mirror publication cannot outlive synchronous retirement
+
+Mirror construction and changes capture can walk mappings or call lazy loaders.
+The private Worker now rechecks admission after construction, before installing
+the Mirror or starting the kernel. It also captures the current Mirror identity
+and rechecks admission/identity after changes(), before sending a changes batch.
+Thus a synchronous callback that retires the root cannot install a new observer
+or publish bytes by relying on the admission check made before capture. The local
+capture result simply expires when that stack returns; there is no acknowledgement
+of saving those bytes and no rollback claim for capture side effects.
+
+Two real-muk Worker-handler regressions inject retirement at these Mirror method
+boundaries. Construction retirement prevents a threads publication; capture
+retirement prevents a later changes publication. Both leave the published tree
+quarantined. They are not a proof that all possible callback paths are quiescent,
+nor that ordinary scope disposal can yet run after retirement.

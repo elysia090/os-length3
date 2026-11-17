@@ -299,7 +299,11 @@ function paused(r: Pumped): Said {
  */
 function report(): void {
   if (outputBoundarySent || !lifetime.accepting) return;
-  const c = mirror?.changes();
+  const source = mirror;
+  const c = source?.changes();
+  // Capture can call a lazy loader, which may synchronously retire this root.
+  // The locally held Mirror is not publication authority after that callback.
+  if (!lifetime.accepting || outputBoundarySent || mirror !== source) return;
   if (c) self.postMessage({type: 'changes', ...c}, moved(...c.files.filter((f) => f.bytes).map((f) => f.bytes)));
 }
 
@@ -518,7 +522,13 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       executionOwners.add(new WeakRef(k)); lifetime.observe('foreground-kernel', k);
       apart = k instanceof RemoteKernel;
       for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);
-      if (data.mirror) { mirror = new Mirror(vfs, data.mirror); mirrorOwner = lifetime.observe('mirror', mirror); }
+      if (data.mirror) {
+        const preparedMirror = new Mirror(vfs, data.mirror);
+        // Construction walks mappings/loaders too; retirement must not be
+        // followed by publishing a fresh Mirror or starting its kernel.
+        lifetime.check();
+        mirror = preparedMirror; mirrorOwner = lifetime.observe('mirror', mirror);
+      }
       const run = boxed(vfs, data.box);
       k.start(run[0], run, [], '/');
       self.postMessage({type: 'threads', apart});

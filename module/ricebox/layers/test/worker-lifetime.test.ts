@@ -166,3 +166,38 @@ test('output-send reentry cannot establish a boundary before the send commits it
     if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
   }
 });
+
+for (const phase of ['construction', 'capture'] as const) {
+  test(`Mirror ${phase} reentry cannot publish after retirement`, {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
+    const {readFileSync} = await import('node:fs');
+    const {Mirror} = await import('../../../sods/runtime/linux.ts');
+    const messages: {type: string; owners?: Record<string, number>; message?: string}[] = [];
+    const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) { messages.push(message); }};
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'self');
+    const now = Mirror.prototype.now, changes = Mirror.prototype.changes;
+    let retiring: Promise<void> | undefined;
+    const retire = () => { retiring ??= host.onmessage!({data: {type: 'retire'}}); };
+    Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
+    try {
+      await import(new URL(`../worker.ts?mirror-retirement-${phase}`, import.meta.url).href);
+      // Model a synchronous loader/mapping hook inside the actual Mirror call;
+      // no UI, native session or positive host-stop claim is involved.
+      if (phase === 'construction') Mirror.prototype.now = function () { const result = now.call(this); retire(); return result; };
+      else Mirror.prototype.changes = function () { retire(); return {dirs: ['late'], files: [], removed: []}; };
+      await host.onmessage!({data: {type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), box: {config: '{}', words: []}, cwd: '/', mirror: '/run/box'}});
+      // The inline pump may yield once before reaching report.
+      for (let i = 0; i < 100 && !retiring; i++) await new Promise(resolve => setTimeout(resolve, 10));
+      assert.ok(retiring); await retiring;
+      const at = messages.findIndex(m => m.type === 'retiring');
+      assert.ok(at >= 0);
+      assert.ok(messages.slice(at + 1).every(m => m.type !== 'changes'));
+      if (phase === 'construction') assert.ok(messages.every(m => m.type !== 'threads'));
+      await host.onmessage!({data: {type: 'retire'}});
+      assert.equal(messages.at(-1)?.owners?.mirror, undefined);
+      assert.equal(messages.at(-1)?.owners?.['prepared-tree'], 1); // still quarantined, not disposed
+    } finally {
+      Mirror.prototype.now = now; Mirror.prototype.changes = changes;
+      if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+    }
+  });
+}
