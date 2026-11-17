@@ -25,8 +25,12 @@ const uint = (n: number): number => {
   if (!Number.isInteger(n) || n < 0 || n > 0xffffffff) throw new RangeError('Expected a uint32');
   return n;
 };
+export class CoreFileError extends Error {
+  readonly code: number;
+  constructor(code: number) { super(`sods core file error ${code}`); this.code = code; }
+}
 const check = (result: number): number => {
-  if (result < 0) throw new Error(`sods core file error ${result}`);
+  if (result < 0) throw new CoreFileError(result);
   return result;
 };
 /** limit is per-file logical length, not a bound on total live memory or capacity. */

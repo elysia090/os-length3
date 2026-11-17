@@ -155,8 +155,11 @@ export class File extends Node {
   /** Bytes [start, end) — a view, not a copy. */
   read(start: number, end: number): Uint8Array {
     if (this.maps) this.settle(start, end);
-    return this.data.subarray(start, Math.min(end, this.size));
+    return this.range(start, end);
   }
+  /** Internal payload access. Mapping visibility remains owned by this inode. */
+  protected range(start: number, end: number): Uint8Array { return this.data.subarray(start, Math.min(end, this.size)); }
+  protected replaceRange(at: number, bytes: Uint8Array): void { this.data.set(bytes, at); }
   /** Copy a range into a caller-owned destination, returning the bytes copied.
    * No file view escapes. The destination must fit the actual bytes read; a
    * failed copy does not report success to a syscall or advance its offset.
@@ -216,7 +219,7 @@ export class File extends Node {
     this.mtime = epoch();
     this.version++;
     counted.changes++;
-    if (this.maps) this.#show(at, need);
+    if (this.maps) this.show(at, need);
   }
   /**
    * Its length made `length`: cut there, or grown to it with zeros. A whole number from 0 to FILE_MOST: one that is not
@@ -242,7 +245,7 @@ export class File extends Node {
     this.mtime = epoch();
     this.version++;
     counted.changes++;
-    if (this.maps) this.#show(Math.min(was, length), Math.max(was, length));
+    if (this.maps) this.show(Math.min(was, length), Math.max(was, length));
   }
   /** The exact contents as an independent array. */
   bytes(): Uint8Array {
@@ -291,8 +294,8 @@ export class File extends Node {
           while (e < to && memory[base + e] !== seen[e - m.off]) e++;
           const run = memory.slice(base + k, base + e);
           this.own();
-          this.data.set(run, k);
-          this.#show(k, e, run);
+          this.replaceRange(k, run);
+          this.show(k, e, run);
           k = e;
         }
         this.mtime = epoch();
@@ -302,11 +305,11 @@ export class File extends Node {
     }
   }
   /** Bytes [start, end) are these now (`bytes`, or the file's own; zero past its end, as a new page is) in every mapping. */
-  #show(start: number, end: number, bytes: Uint8Array | null = null): void {
+  protected show(start: number, end: number, bytes: Uint8Array | null = null): void {
     for (const m of this.maps ?? []) {
       const a = Math.max(start, m.off), b = Math.min(end, m.off + m.length);
       if (a >= b) continue;
-      const part = bytes ? bytes.subarray(a - start, b - start) : this.data.subarray(a, Math.max(a, Math.min(b, this.size)));
+      const part = bytes ? bytes.subarray(a - start, b - start) : this.range(a, Math.max(a, Math.min(b, this.size)));
       for (const [into, at] of [[m.proc.bytes, m.start + a - m.off], [m.seen!, a - m.off]] as const) {
         into.set(part, at);
         into.fill(0, at + part.length, at + b - a);

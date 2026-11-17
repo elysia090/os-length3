@@ -47,3 +47,17 @@ test('real Vfs and file syscalls retain old inode, advance only successful reads
   assert.equal(call(p, 3, fd), 0n);
   assert.equal(dec.decode(old.bytes()), 'abcdef'); // fd close is not payload close
 });
+
+test('first lazy read loads before clipping to the resulting file length', () => {
+  for (const copy of [false, true]) {
+    let loads = 0;
+    const file = new File(new Uint8Array(0), 0o644, () => { loads++; return enc.encode('abc'); });
+    if (copy) {
+      const into = new Uint8Array(3);
+      assert.equal(file.readInto(0, into, 0, 3), 3);
+      assert.equal(dec.decode(into), 'abc');
+    } else assert.equal(dec.decode(file.read(0, 3)), 'abc');
+    assert.equal(loads, 1);
+    assert.equal(file.size, 3);
+  }
+});

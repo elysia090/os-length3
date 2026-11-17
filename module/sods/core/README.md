@@ -9,8 +9,8 @@ public kernel protocol. `validate_backing_bounds` checks arithmetic against supp
 extents, not guest mapping permissions or live allocations. Completion records must
 be scoped to the owning core instance by the eventual integration.
 
-The running TS kernel is **not yet connected** to this unit. The opt-in file-payload
-slice below has a real TS/Wasm connection; kernel allocation leases, mapping pins,
+The TS kernel can use explicitly installed Rust-backed file payloads through the
+limited Vfs entrance below. Kernel state remains in TS; kernel allocation leases, mapping pins,
 host callbacks, syscall execution and Worker lifecycle are not implemented here. No stub claims success for them. Native unit tests do not establish
 Wasm ABI compatibility, runtime memory safety or a performance improvement.
 
@@ -81,10 +81,45 @@ The Rust facade offers the same consuming-copy shape: file → core scratch → 
 destination, without the extra output snapshot allocation of `read`. It does not
 retain the destination or invoke a host callback while scratch is live.
 
-This is a shared operation boundary, **not yet a Rust-backed Vfs**. Actual Vfs and
+This is a shared operation boundary; the explicit file entrance below now connects
+it to Vfs, without replacing the entire Vfs. Actual Vfs and
 syscall tests cover replacement retaining the old inode through an open fd,
 independent pread offsets, partial reads before a memory boundary, and fd close not
-closing the inode. Attaching Rust payloads still requires explicit ownership scope,
-errno mapping, and mapping/loader integration. Neither namespace replacement nor
+closing the inode. The explicit entrance supplies ownership scope, errno mapping and ordinary shared
+mapping integration. Loader migration remains unimplemented. Neither namespace replacement nor
 fd close can reclaim a payload still held by another name, descriptor, mapping or
 image. No silent promotion to a TS payload or second mutable authority is added.
+
+## Explicit Vfs file scope
+
+`runtime/linux/core-files.ts` provides `loadFileScope(module, perFileLimit)` and
+`scope.writeFile(existingVfs, path, bytes, mode)`. Only those explicitly installed
+regular files have Rust payloads. Ordinary `Vfs.writeFile`, guest-created files,
+lazy pack loaders and anonymous shared mappings still use the existing backend;
+there is no automatic promotion or fallback. Namespace, inode identity/metadata,
+FDs and mapping visibility remain TS-owned for this incremental migration.
+
+This entrance deliberately does not support mutable `data`/`_data` views. Its
+`read` and `share` return independent snapshots. Loader/cache release is absent.
+The scope retains all created payloads, including unlinked and replaced inodes,
+until `dispose()`. The owner must first end **all** processes, mappings, images
+and embedding operations using them. This precondition is not reference-counted
+or automatically verified; premature disposal invalidates later byte operations
+with an explicit scope-closed failure. No fd close or namespace replacement
+closes the Rust handle. Disposal frees Rust payload allocations, not necessarily
+Wasm linear-memory pages or retained scratch capacity.
+
+Write propagates the same captured bytes to Rust and mappings. Truncate propagates
+zeros without allocating a read-back after commit. Existing mapping scans/baselines
+still cost proportional to scanned/mapped bytes; they are not a second independent
+canonical file. A multi-run settle can partly succeed before later failure, as
+can propagation to an invalid embedding memory. It is not transactional rollback
+or a new concurrent-memory/pin guarantee. Shared input capture is not atomic.
+
+Focused tests use the actual Rust artifact and existing Kernel/Process syscalls:
+open/read/write/ftruncate/mmap/close/munmap, old inode after path replacement,
+mapping writes after fd close, two-map visibility, snapshot ownership and Mirror.
+They do not establish translated-program, Worker, concurrent shared-memory or
+full filesystem compatibility. Generic core errors are translated to filesystem
+errnos only at this adapter; payload size failure is EFBIG and allocation refusal
+is ENOSPC. Engine traps and scope misuse remain failures, not false successful IO.
