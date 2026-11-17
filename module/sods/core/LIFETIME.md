@@ -332,3 +332,56 @@ Neither normal completion nor those injected failures prove an OS-level quiescen
 barrier for every supported host. Long-lived default promotion remains withheld.
 A repeated terminal end returning normally is only an idempotence guard, never
 positive evidence that the first stop request succeeded or completed.
+
+## Host-specific completion evidence (checked 2026-11-16)
+
+[Node v24.22.1](https://nodejs.org/download/release/v24.22.1/docs/api/worker_threads.html#workerterminate)
+defines asynchronous terminate completion through the Worker's exit event. That
+event identifies a stopped Worker, is its final event, and follows delivery of its
+messages. The new host-only test on installed Node v24.22.1 runs an actual Worker
+that writes shared WebAssembly.Memory and then enters a wait loop: request return precedes exit, which precedes
+Promise fulfillment. A separate natural-exit test observes final-message delivery
+before exit. These tests do not use the translated CPU runtime or change disposal.
+
+[HTML's termination algorithm](https://html.spec.whatwg.org/multipage/workers.html#terminate-a-worker)
+runs alongside the worker loop, sets its closing state, drops queued work and aborts
+execution. The browser Worker API supplies no equivalent exit-completion Promise
+in this interface. This is not a claim that browser termination does nothing; it
+means this host adapter has no affirmative completion observation to use as the
+managed resource barrier. Browser memory remains non-reusable under this design;
+no browser execution was attempted, and browser completion remains unverified.
+
+### Candidate contract, not implemented production API
+
+Keep request outcome and observed termination as separate dimensions associated
+with the specific Hand identity, not whichever kernel currently owns its worker:
+
+| Case | Request result | Observed stop / ownership consequence |
+| --- | --- | --- |
+| Node request returns Promise | Accepted/pending | Still unknown until matching exit evidence; keep owners and taint. |
+| Matching Node exit | May be natural or requested | Stop known for this Worker only. Other process/map/namespace/output owners still block tree disposal. |
+| Synchronous throw or asynchronous rejection | Preserve failure for the requesting owner | No inferred completion. If an independent matching exit was already observed, keep that fact as well rather than erasing it. |
+| Waiter deadline | Report timeout to that waiter | Remains unknown; retain observation and ownership. Deadline is not permission to recycle or retry automatically. |
+| Late exit after timeout | Original waiter timed out | Update host evidence; do not automatically dispose resources whose other owners have not ended. |
+| Duplicate request | Reuse original request identity/outcome | Never issue a second termination merely because a waiter timed out or close returned. |
+| Already-exited Hand | Do not invent a new stop operation | Use latched matching exit evidence. |
+| Browser terminate return | Request made | No Node-equivalent observation; continue isolation/non-reuse, not a fabricated fulfilled ticket. |
+| Healthy spare passed on | No termination requested | Ownership transferred to warm/next kernel, not reclaimed or counted as stopped. |
+
+A completion observer must attach before use so it cannot miss natural early exit,
+and a waiter timeout must not detach that observer. A Node rejection handler must
+be installed when requesting, not later during optional wait; retaining a rejected
+Promise without a consumer would create an unhandled rejection. The failure must
+reach a defined owner/diagnostic path, not be swallowed to keep tests green.
+
+The minimum next adapter decision is therefore a per-Hand stop observation separate
+from end():void, with one request identity, latched evidence and explicit failure
+recipient. Changing end to return Promise alone would silently weaken existing
+callers that ignore it. No production adapter or managed-disposal API is added in
+this evidence-only step. Isolation retains resources and can consume memory; it
+bounds reuse risk, not storage. A resource admission limit and a caller policy for
+abandoning the owning realm remain necessary for persistent unconfirmed stops.
+
+The host tests have a finite 10-second test deadline; exceeding it is a failed
+observation, not evidence of termination. Ready precedes entry into the wait loop,
+so the test does not assert the exact instruction where terminate interrupts it.
