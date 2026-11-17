@@ -200,7 +200,7 @@ const REHEARSAL_MS = 2000;
 async function rehearse({translate, vfs, files}: Readied, box: Box): Promise<void> {
   const argv = boxed(vfs, box), env: string[] = [], cwd = '/';
   const quiet: Console = {interactive: false, write() {}, read: () => new Uint8Array(0), ready: () => true, pending: () => 0};
-  const k = linux({vfs, translate, console: quiet, passOn: true, translated: files});
+  const k = linux({vfs, translate, console: quiet, passOn: true, unownedWorkerFailure: failed, translated: files});
   const timer = setTimeout(() => k.halt(), REHEARSAL_MS);
   try {
     if (k instanceof RemoteKernel) { await k.spawn(argv[0], argv, env, cwd); return; }
@@ -381,7 +381,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     if (kernel) { const result = kernel.free(0); self.postMessage({type: 'freed', before: withPacks(result.before, bytes), after: withPacks(result.after, 0)}); }
     return;
   }
-  if (data.type === 'warm') { if (canRunApart()) warmThreads(); return; }
+  if (data.type === 'warm') { if (canRunApart()) warmThreads({failed}); return; }
   if (data.type === 'hot') { if (kernel) given(kernel, data.files); return; }
   // A program translated ahead by the page since this Prompt started (ahead.ts): read when it is run.
   if (data.type === 'kept') { if (keptAt) Object.assign(keptAt, data.at); return; }

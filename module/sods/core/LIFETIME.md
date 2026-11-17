@@ -415,3 +415,50 @@ Admission limits for unconfirmed stops and closed ownership of the tree remain
 separate gates. Actual Node CPU adapter tests cover stop/bookkeeping and a real
 Node shared-memory worker covers termination evidence; they do not prove whole
 translated-guest teardown or browser completion.
+
+### Unowned warm diagnostics and the remaining tree-release boundary
+
+`warmThreads({count, failed})` gives newly created warm workers an explicit failure
+recipient. Existing numeric calls remain compatible; they do not silently acquire
+a global logger. `Apart.unownedWorkerFailure` is the destination a kernel chooses
+when passing healthy workers into the unowned warm pool. At that transition the
+old kernel reference is cleared, the recipient is assigned, and the existing
+listeners are retained exactly once. Adopting a warm worker routes ordinary
+failures to its new kernel; passing it on again replaces the unowned recipient.
+An already populated warm pool is not reassigned by a later warmThreads call.
+
+ricebox's existing Worker now supplies its existing error-message sender both for
+explicit warming and rehearsal pass-on. A failed diagnostic sender is retained
+on the Hand independently and cannot prevent warm removal or its stop request.
+A later failed stop request remains a distinct failure, even if the original
+worker error already marked the Hand failed. Numeric legacy callers and callers
+that omit the optional pass-on recipient still have no promised public unowned
+notification. No global sink, silent retry, or new error message protocol is added.
+
+The concrete full-tree owner boundary remains the existing ricebox Worker, not
+an arbitrary kernel returned by sods.linux. A safe future shutdown must perform
+these phases in order; none is inferred from a guest exit code:
+
+| Phase | Concrete owners/operations | Failure rule |
+| --- | --- | --- |
+| Freeze admission | Worker start/ready/hot/put/kept and idle-consolidation timers | No new operation may acquire the tree while it retires. Already started ready/rehearse work must settle or retain its owner. |
+| Retire execution | Every rehearsal and foreground kernel, including detached/failed Hands and healthy pass-on workers | Track the exact identities that may still hold an instance. Node matching exit can end that Worker owner; browser terminate return cannot. Timeout retains ownership. |
+| Finish or abandon external effects | Pending output/Mirror reports and translation publication | Preserve send failure and any accepted prefix. Diagnostic failure is not cleanup success. |
+| Retire observers and deferred source | TranslationObserver, Mirror, keeper callbacks, old/new Image identities and pending loader/read/translation work | Close each real root, not only current kernel.images. An observer close does not revoke an independently escaped Image. |
+| Retire process and namespace roots | FD/SCM_RIGHTS, mappings, filesystem views, prepared tree, raw embedding handles | Abnormal writeback may abandon dirty data but cannot release a still-running reader. Public raw escape makes the finite owner sticky. |
+| Final dispose | The finite scope, only after all preceding owners are demonstrably gone | Preserve original and cleanup failures. No disposal after an unknown barrier or a merely emptied registry. |
+
+In the current implementation `readied` owns a raw PreparedTree across rehearsal
+and foreground runs; local variables in asynchronous preparation/rehearsal also
+own it. The Worker lacks a shutdown/admission state and an owner registry for all
+these asynchronous operations. Merely adding a borrow counter around `kernel`
+would miss those roots. Likewise recording only workers() at close misses Hands
+already detached by an earlier failed stop. These are concrete blockers, not
+permission to erase or synthesize ownership evidence.
+
+The next managed step must first close admission and track actual operation/Hand
+owners in this private Worker lifecycle, without changing the public raw
+PreparedTree contract. Node can subsequently supply a positive stop barrier for
+that subset; browser needs a separately verified cooperative ownership-return
+protocol or must keep realm-lifetime isolation. Neither a generic managed flag
+nor a new runner that still returns raw Vfs/Kernel would solve this boundary.

@@ -49,6 +49,8 @@ interface Hand {
   onError(fn: (e: {message?: string}) => void): void;
   kernel?: RemoteKernel;
   listening?: boolean;
+  unownedFailure?: (error: unknown) => void;
+  diagnosticFailures?: unknown[];
   kept?: Held[];
   /** It has the x87's module (cpu.ts): sent with its first run. */
   x87?: boolean;
@@ -58,7 +60,7 @@ interface Hand {
   failed?: boolean;
 }
 /** What a RemoteKernel is made with besides a Kernel's: Workers kept spare, who hears it idle, and whether its Workers go on. */
-export interface Apart extends Made { spares?: number; onIdle?: ((r: Pumped) => void) | null; passOn?: boolean }
+export interface Apart extends Made { spares?: number; onIdle?: ((r: Pumped) => void) | null; passOn?: boolean; unownedWorkerFailure?: (error: unknown) => void }
 
 /** Workers started before any kernel here (warmThreads), for its first threads. */
 const warmed: Hand[] = [];
@@ -84,16 +86,31 @@ const keeps = (w: Hand, memoryId: number | undefined, imageId: number | null): b
  * Start `n` Workers for threads now, before the kernel is made (its program and translator still on their way):
  * a Worker takes a while to load and run its script, and the first threads would otherwise wait for theirs.
  */
-export function warmThreads(n = 2, make: () => Hand = newWorker): void {
+/** Diagnostic destination for Workers created by this call only; an existing warm pool keeps its owners. */
+export interface WarmThreads { count?: number; failed?: (error: unknown) => void }
+const reportUnowned = (w: Hand, error: unknown): void => {
+  const recipient = w.unownedFailure;
+  if (!recipient) return;
+  try {
+    const message = error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
+    recipient(error instanceof Error ? error : new Error(message, {cause: error}));
+  }
+  catch (failure) { (w.diagnosticFailures ??= []).push(failure); }
+};
+export function warmThreads(options: number | WarmThreads = 2, make: () => Hand = newWorker): void {
+  const n = typeof options === 'number' ? options : options.count ?? 2;
+  const failed = typeof options === 'number' ? undefined : options.failed;
   while (warmed.length < n) {
     const w = make();
+    w.unownedFailure = failed;
     // One the host says failed before a kernel has it (it could not start) is not handed to one: taken out and ended.
     // (Once a kernel has it, the kernel hears of it: adoptWorker.)
-    w.onError(() => {
+    w.onError((error) => {
       if (w.kernel || w.failed) return;
       w.failed = true;
       const at = warmed.indexOf(w);
       if (at >= 0) warmed.splice(at, 1);
+      reportUnowned(w, error);
       w.end();
     });
     warmed.push(w);
@@ -108,8 +125,9 @@ function newWorker(): Hand {
     // A spare one waiting for a thread keeps nothing alive.
     w.unref();
     const errors = new Set<(e: {message?: string}) => void>();
-    const report = (error: unknown, owner: RemoteKernel | undefined): void => {
+    const report = (error: unknown, owner: RemoteKernel | undefined, requestFailure = false): void => {
       owner?.stopFailures.push(error);
+      if (requestFailure && !owner && hand.failed) reportUnowned(hand, error);
       // Existing host-error routing retires a running task or removes a spare.
       // WorkerStop retains a callback failure separately from the stop failure.
       const failures: unknown[] = [];
@@ -119,7 +137,7 @@ function newWorker(): Hand {
     const stop = new WorkerStop(() => w.terminate(), exit => { w.once('exit', exit); });
     const hand: Hand = {post: (m) => w.postMessage(m), stop, end: () => {
       const owner = hand.kernel;
-      stop.request(error => report(error, owner));
+      stop.request(error => report(error, owner, true));
     }, on: (fn) => w.on('message', fn), onError: (fn) => { errors.add(fn); w.on('error', fn); }};
     void stop.stopped.then(() => {
       hand.kept = undefined; hand.channel = undefined;
@@ -152,6 +170,7 @@ export class RemoteKernel extends Kernel {
   /** Until when (steady() ms) a thread just handed to its Worker may make its first call: watched for, not slept through. */
   declare starting: number;
   declare readonly passOn: boolean;
+  readonly unownedWorkerFailure: ((error: unknown) => void) | undefined;
   constructor(options: Apart) {
     super(options);
     this.shared = true;
@@ -167,6 +186,7 @@ export class RemoteKernel extends Kernel {
     this.starting = 0;
     // Once it ends, its Workers left over go on to the next kernel made here (a start rehearsed: their code is warm).
     this.passOn = options.passOn ?? false;
+    this.unownedWorkerFailure = options.unownedWorkerFailure;
     // Started now, while the first program is translated (those warmed already first).
     for (const w of warmed.splice(0)) if (reusable(w)) this.spares.push(this.adoptWorker(w));
     while (this.spares.length < this.spareCount) this.spares.push(this.spawnWorker());
@@ -269,6 +289,7 @@ export class RemoteKernel extends Kernel {
       if (w.failed) return;
       w.failed = true;
       const k = w.kernel;
+      if (!k) reportUnowned(w, e);
       k?.say(2, enc.encode(`muk: ${e?.message ?? e}\n`));
       for (const kept of k ? [k.spares, warmed] : [warmed]) { const at = kept.indexOf(w); if (at >= 0) kept.splice(at, 1); }
       const t = k ? [...k.tasks.values()].find((x) => x.worker === w) : undefined;
@@ -459,7 +480,7 @@ export class RemoteKernel extends Kernel {
     // Only healthy spares may pass on. Each captured stop request is attempted
     // even when another synchronously fails; this does not await host termination.
     for (const w of spares) {
-      try { if (this.passOn && reusable(w)) { w.kernel = undefined; warmed.push(w); } else w.end(); }
+      try { if (this.passOn && reusable(w)) { w.kernel = undefined; w.unownedFailure = this.unownedWorkerFailure; warmed.push(w); } else w.end(); }
       catch (error) { (errors ??= []).push(error); }
     }
     if (errors?.length === 1) throw errors[0];

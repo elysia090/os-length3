@@ -21,7 +21,7 @@ function hand() {
     on(fn: (m: never) => void) { message = fn; },
     onError(fn: (e: {message?: string}) => void) { heard.push(fn); },
     /** The host's error event (the Worker could not start, or threw outside what cpu.ts catches). */
-    fail() { error({message: 'injected host Worker failure'}); },
+    fail(message = 'injected host Worker failure') { error({message}); },
     /** cpu.ts's own word that its thread failed. */
     say() { message({type: 'error', message: 'injected cpu error'} as never); },
   };
@@ -185,5 +185,38 @@ test('requested or observed-stopped spares cannot be selected or kept', () => {
     assert.notEqual(selected, w); assert.equal(made.length, 1);
     k.keep(w as unknown as Adopted); assert.equal(k.spares.includes(w as unknown as Adopted), false);
     k.close();
+  }
+});
+
+test('explicit warm owner hears failure even if its diagnostic throws, and the hand retires', () => {
+  const w = hand(), seen: unknown[] = [], failed = new Error('diagnostic sink failed');
+  warmThreads({count: 1, failed(error) { seen.push(error); throw failed; }}, () => w as unknown as Adopted);
+  w.fail();
+  assert.equal(seen.length, 1); assert.equal(w.ended, 1);
+  assert.ok(seen[0] instanceof Error); assert.match(seen[0].message, /injected host Worker failure/);
+  assert.deepEqual((w as unknown as Adopted).diagnosticFailures, [failed]);
+  w.fail(); assert.equal(seen.length, 1);
+  const {k} = bench(); assert.equal(k.spares.length, 0); k.close();
+});
+
+test('pass-on transfers ownerless diagnostics without retaining the old kernel owner', () => {
+  const seen: unknown[] = [];
+  const k = new RemoteKernel({spares: 0, passOn: true, unownedWorkerFailure: error => seen.push(error), console: {write() {}, read() { return null; }}});
+  const w = hand(); k.spares.push(k.adoptWorker(w as unknown as Adopted));
+  k.close(); assert.equal((w as unknown as Adopted).kernel, undefined);
+  w.fail(); assert.equal(seen.length, 1); assert.equal(w.ended, 1);
+  assert.ok(seen[0] instanceof Error); assert.match(seen[0].message, /injected host Worker failure/);
+  const {k: next} = bench(); assert.equal(next.spares.length, 0); next.close();
+});
+
+
+test('warm diagnostic preserves adapter-shaped exit and termination-failure messages', () => {
+  for (const message of ['CPU Worker exited before a stop request', 'Error: termination rejected']) {
+    const w = hand(), delivered: string[] = [];
+    // Same serialization used by ricebox's existing failed(error) sender.
+    warmThreads({count: 1, failed(error) { delivered.push(error instanceof Error ? `${error.name}: ${error.message}` : String(error)); }}, () => w as unknown as Adopted);
+    w.fail(message);
+    assert.equal(delivered.length, 1); assert.ok(delivered[0].includes(message));
+    assert.ok(!delivered[0].includes('[object Object]')); assert.equal(w.ended, 1);
   }
 });
