@@ -5,7 +5,7 @@ one has been, and back to one by a part of its name: zoxide's) and `rg` (a tree 
 expressions of its own). Each prints what the one it stands in for prints, and is checked beside it.
 
 ```
-src/you.c        the places you have been: learnt in five calls, found in four
+src/zoxide.c     the places you have been: learnt in five calls, found in four
 src/rg.c         a tree searched: the walk and the run
 src/rg/          what it was asked (options.h), which files it takes (ignore.h, types.h), what it prints (print.h),
                  a walk by several processes (wide.h)
@@ -17,7 +17,7 @@ test/            beside ripgrep and zoxide: rg.sh, regex.sh and its corpus, you.
 ```
 sh ../lib/build.sh src/rg.c rg && sh test/rg.sh RIPGREP ./rg     142 cases, what each prints and how it ends
 sh test/regex.sh RIPGREP                                         124 patterns, nine ways each
-sh ../lib/build.sh src/you.c you && sh test/you.sh ./you && sh test/you-stress.sh ./you
+sh ../lib/build.sh src/zoxide.c you && sh test/you.sh ./you && sh test/you-stress.sh ./you
 ```
 
 ## Why one thread is fast
