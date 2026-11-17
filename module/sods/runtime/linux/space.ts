@@ -135,21 +135,30 @@ export function number(space: PidNs): number[] {
     }
   } catch (error) {
     const failures = [error];
-    // Remove lookup entries only through the attempted prefix. Keep consumed
-    // counters monotonic: this is not PID reuse or a complete reservation undo.
-    for (let ns: PidNs | null = space; ns?.parent && attempted; ns = ns.parent) {
-      try {
-        const own = ns.numbers.get(nrs[ns.level]);
-        if (own === nrs[0]) ns.numbers.delete(nrs[ns.level]);
-        else if (own !== undefined) throw new Error('failed PID registration changed lookup ownership');
-      } catch (cleanup) { failures.push(cleanup); }
-      if (ns === attempted) break;
-    }
+    // Keep counters monotonic: cleanup is not PID reuse or a complete undo.
+    failures.push(...discardNumberLookups(space, nrs, attempted));
     if (failures.length > 1) throw new AggregateError(failures, 'PID registration and lookup cleanup failed');
     throw error;
   }
   return nrs;
 }
+/** Failure-only lookup cleanup. `through` bounds an attempted prefix; null
+ * means every nested namespace. Call only with ownership of this reservation. */
+export function discardNumberLookups(space: PidNs, nrs: readonly number[], through: PidNs | null = null): unknown[] {
+  const failures: unknown[] = [];
+  for (let ns: PidNs | null = space; ns?.parent; ns = ns.parent) {
+    try {
+      const own = ns.numbers.get(nrs[ns.level]);
+      if (own === nrs[0]) {
+        if (!ns.numbers.delete(nrs[ns.level])) throw new Error('failed PID registration could not confirm lookup removal');
+      }
+      else if (own !== undefined) throw new Error('failed PID registration changed lookup ownership');
+    } catch (cleanup) { failures.push(cleanup); }
+    if (ns === through) break;
+  }
+  return failures;
+}
+
 /** What the kernel keeps of those it numbers: each not made in the first namespace, by its own number there. */
 export type Numbers = Map<number, Numbered>;
 /** What one in `viewer` calls the process, thread, group or session the kernel numbers `id` (0: none such is seen from there). */

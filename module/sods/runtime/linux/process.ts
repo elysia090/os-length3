@@ -35,7 +35,7 @@ import type {Dir, Mapping, Place, Super} from './fs.ts';
 import {E, File, FsError, Link, MNT, Mount, Vfs, pathOf, walk} from './fs.ts';
 import {CAP, HOST, MAY, ROOT, asProgram, capable, idIn, may, type Cred} from './cred.ts';
 import {copy, firstSpace, put, retireInitialTree} from './mount.ts';
-import {CgroupNs, Fs, byNr, firstSpaces, forget, namespaceWasExposed, nrIn, number, type Numbers, type PidNs, type Spaces} from './space.ts';
+import {CgroupNs, Fs, byNr, discardNumberLookups, firstSpaces, forget, namespaceWasExposed, nrIn, number, type Numbers, type PidNs, type Spaces} from './space.ts';
 import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
 import {GuestBytes, GuestView} from './guest.ts';
 import {FILE_CALLS} from './sys-file.ts';
@@ -816,12 +816,31 @@ export class Kernel implements Kern {
   numbered(proc: Process): number {
     const space = proc.pidns, nrs = number(space), id = nrs[0];
     if (space.parent) {
-      this.numbers.set(id, {space, nrs});
-      if (this.numbers.size > 2 * this.tasks.size + 64) {
-        const used = new Set<number>(this.tasks.keys());
-        for (const p of this.procs.values()) used.add(p.pid).add(p.pgid).add(p.sid);
-        used.add(id);
-        forget(this.numbers, used);
+      const record = {space, nrs};
+      try {
+        this.numbers.set(id, record);
+        if (this.numbers.size > 2 * this.tasks.size + 64) {
+          const used = new Set<number>(this.tasks.keys());
+          for (const p of this.procs.values()) used.add(p.pid).add(p.pgid).add(p.sid);
+          used.add(id);
+          forget(this.numbers, used);
+        }
+      } catch (error) {
+        const failures = [error];
+        let owns = false;
+        try {
+          const current = this.numbers.get(id);
+          if (current === record) {
+            if (!this.numbers.delete(id)) throw new Error('failed Kernel PID registration could not confirm record removal');
+          }
+          else if (current !== undefined) throw new Error('failed Kernel PID registration changed record ownership');
+          owns = true;
+        } catch (cleanup) { failures.push(cleanup); }
+        // If another record adopted the same ID, or outer retirement failed,
+        // an inner numeric match alone cannot prove our ownership. Retain it.
+        if (owns) failures.push(...discardNumberLookups(space, nrs));
+        if (failures.length > 1) throw new AggregateError(failures, 'Kernel PID registration and lookup cleanup failed');
+        throw error;
       }
     }
     return id;

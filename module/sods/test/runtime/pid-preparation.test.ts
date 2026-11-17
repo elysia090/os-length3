@@ -59,3 +59,52 @@ test('PID cleanup never visits an unattempted ancestor', () => {
   assert.equal(inner.numbers.size, 0); assert.equal(middle.numbers.get(1), 888);
   assert.equal(root.last, 1);
 });
+
+for (const afterSet of [false, true]) test(`outer Kernel PID registration failure cleans its own lookups, inserted=${afterSet}`, async () => {
+  const {Kernel, Process} = await import('../../runtime/linux/process.ts');
+  const k = new Kernel({console: {write() {}, read: () => null}}), ns = new PidNs(k.spaces.children, ROOT.ns);
+  const p = new Process(k, null, false, false, {...k.spaces, children: ns}), original = new Error('outer registration failed');
+  const set = k.numbers.set.bind(k.numbers);
+  k.numbers.set = (id, record) => { if (afterSet) set(id, record); throw original; };
+  assert.throws(() => k.numbered(p), error => error === original);
+  assert.equal(k.numbers.size, 0); assert.equal(ns.numbers.size, 0);
+  assert.equal(ns.last, 1, 'counter remains consumed');
+});
+
+for (const kind of ['replacement', 'outer-delete', 'inner-delete', 'outer-false', 'inner-false'] as const) test(`outer PID failure respects ${kind} ownership uncertainty`, async () => {
+  const {Kernel, Process} = await import('../../runtime/linux/process.ts');
+  const k = new Kernel({console: {write() {}, read: () => null}}), ns = new PidNs(k.spaces.children, ROOT.ns);
+  const p = new Process(k, null, false, false, {...k.spaces, children: ns});
+  const original = new Error('outer set failed'), cleanup = new Error('delete refused'), set = k.numbers.set.bind(k.numbers);
+  let replacement: Parameters<typeof k.numbers.set>[1] | null = null;
+  k.numbers.set = (id, record) => {
+    replacement = kind === 'replacement' ? {...record} : record;
+    set(id, replacement); throw original;
+  };
+  if (kind === 'outer-delete') k.numbers.delete = () => { throw cleanup; };
+  if (kind === 'inner-delete') ns.numbers.delete = () => { throw cleanup; };
+  if (kind === 'outer-false') k.numbers.delete = () => false;
+  if (kind === 'inner-false') ns.numbers.delete = () => false;
+  assert.throws(() => k.numbered(p), error => {
+    assert.ok(error instanceof AggregateError); assert.equal(error.errors[0], original);
+    if (kind === 'replacement') assert.match(String(error.errors[1]), /ownership/);
+    else if (kind.endsWith('false')) assert.match(String(error.errors[1]), /confirm.*removal/);
+    else assert.equal(error.errors[1], cleanup);
+    return true;
+  });
+  assert.equal(ns.numbers.get(1), 1, 'uncertain lookup is retained');
+  if (kind === 'inner-delete' || kind === 'inner-false') assert.equal(k.numbers.size, 0);
+  else assert.equal(k.numbers.get(1), replacement);
+});
+
+test('PID pruning failure removes the new reservation without undoing accepted old pruning', async () => {
+  const {Kernel, Process} = await import('../../runtime/linux/process.ts');
+  const k = new Kernel({console: {write() {}, read: () => null}}), ns = new PidNs(k.spaces.children, ROOT.ns);
+  const p = new Process(k, null, false, false, {...k.spaces, children: ns});
+  for (let id = 10; id < 75; id++) k.numbers.set(id, {space: ns, nrs: [id, id]});
+  const del = k.numbers.delete.bind(k.numbers), original = new Error('prune failed after removal');
+  k.numbers.delete = id => { const result = del(id); if (id === 10) throw original; return result; };
+  assert.throws(() => k.numbered(p), error => error === original);
+  assert.equal(k.numbers.has(10), false); assert.equal(k.numbers.has(11), true);
+  assert.equal(k.numbers.has(1), false); assert.equal(ns.numbers.size, 0);
+});

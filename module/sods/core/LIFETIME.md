@@ -1395,3 +1395,35 @@ local; no successful-path extra lookup scan, copy or allocation ledger. The
 failure path alone traverses its attempted prefix.
 Actual inline/Node rehearsal: 2 pass; focused strict TypeScript and independent
 source review pass. Arbitrary ancestor-chain mutation is not proven safe.
+
+### Outer Kernel registration owns the proof for inner PID lookup retirement
+
+Kernel.numbered now captures the exact {space,nrs} record it tries to publish.
+If outer registration or stale-ID pruning fails, it retires only that record
+identity. Once outer removal succeeded (or absence was confirmed), it removes
+matching namespace lookups through the shared failure-only helper. If the outer
+record was replaced or its retirement failed, it retains inner lookups too: a
+numeric ID match alone cannot distinguish a replacement owner's adopted ID.
+Original and cleanup failures remain explicit. Partial successful pruning of
+unrelated obsolete IDs is not reversed. Counters remain monotonic.
+
+PID tests 12, Task 9 and family 42 pass (63 sequential total). New cases cover
+outer insertion before/after throw, replacement with the same global ID, outer
+and inner removal refusal, and old-ID pruning that removes one entry then fails.
+The first two new counterexamples failed before this change. Normal successful
+registration uses the same record and scans as before; cleanup proof and extra
+lookup traversal occur only on failure. Map faults are injected, not OOM proof.
+
+PID1 policy remains explicitly unimplemented. Reusing number 1 is not justified
+by removal of map entries alone; setting ended=true is also not justified because
+that currently means an executed init ended, and reentry may have established a
+new owner. A separate reservation-failed state versus the existing init-exited
+state needs a finite lifecycle contract, including ancestor namespaces. No
+blanket namespace termination, counter rewind, or successful retry claim was
+added to disguise this gap. Later Task/fork publication remains separate work.
+Independent review required positive delete results, not just absence of throws.
+Both outer and inner deletion now reject false as unconfirmed retirement; outer
+false retains dependent inner entries. Two added cases pass (PID total 14).
+Actual inline/Node rehearsal: 2 pass; focused strict TypeScript passes.
+Independent source review confirmed the false-result correction with no further
+blocking issue. PID1 lifecycle remains undecided and unchanged.
