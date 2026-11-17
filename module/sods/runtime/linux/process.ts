@@ -804,7 +804,10 @@ export class Kernel implements Kern {
   }
 
   /** A new thread of `proc` (the backend's kind). */
-  newTask(proc: Process): Task { return new Task(proc, this.numbered(proc)); }
+  newTask(proc: Process): Task {
+    if (proc.kernel !== this) throw new TypeError('Task process belongs to another kernel');
+    return new Task(proc);
+  }
 
   /**
    * A number for a new thread of `proc`: the kernel's own, and, made in a pid namespace that is not the first, one
@@ -2141,11 +2144,10 @@ export class Task implements Thread {
   declare cont?: () => void;
   /** Its process took a table of descriptors of its own in place of `was` (exec, from one shared): the backend's, where it follows the table (remote.ts). */
   tableLeft(_was: FdTable): void {}
-  constructor(proc: Process, tid: number) {
+  constructor(proc: Process, tid?: number) {
     this.slice = SLICE_LOOPS; // loops and calls in its next time slice (nextSlice)
     this.proc = proc;
     this.kernel = proc.kernel;
-    this.tid = tid;
     this.mask = 0n;
     this.savedMask = null; // the mask to come back to after a handler (rt_sigsuspend)
     this.pending = new Pending();
@@ -2160,7 +2162,6 @@ export class Task implements Thread {
     this.cred = from?.cred ?? proc.alone ?? ROOT;
     this.ns = from?.ns ?? proc.ns0;
     this.fs = from?.fs ?? proc.fs0;
-    if (from) this.fs.users++; else proc.taken = true;
     this.call = null; // the call it waits in: {nr, args, next, state}
     this.resumeAt = 0n;
     this.redirected = false; // its registers were replaced since its call
@@ -2171,6 +2172,10 @@ export class Task implements Thread {
     this.owed = 0;
     this.trail = null;
     this.x87 = 0;
+    // Complete metadata/object preparation before acquiring PID and Fs owners.
+    // An explicit tid retains the raw constructor's existing numbering contract.
+    this.tid = tid ?? this.kernel.numbered(proc);
+    if (from) this.fs.users++; else proc.taken = true;
   }
 
   /** `filters` are over its calls from here on (and strict mode, when said): what it starts starts with them. */

@@ -1337,3 +1337,35 @@ boundary, not host allocation-exhaustion or full-guest rollback proofs. Normal
 path creates no new payload copies or scans and keeps the same channel/view work.
 Actual inline/Node rehearsal: 2 pass; focused strict TypeScript and independent
 source review pass.
+
+### Task metadata preparation precedes numbering and Fs transfer
+
+A further acquisition-order improvement removes PID/Fs work from ordinary Task
+metadata failure. Default Kernel.newTask now constructs Task without a supplied
+number; Task initializes metadata and its Pending/altstack/cpu objects first,
+then assigns a PID and performs its final Fs ownership transfer. Explicit tid
+calls retain the old raw behavior and never invoke numbered. RemoteTask's
+already-prepared channel is still returned if super fails. Both backend entries
+refuse a Process belonging to another Kernel before acquiring anything, so lazy
+numbering cannot silently change which Kernel numbers it.
+
+Four initial counterexamples demonstrated metadata refusal consuming PID records
+and late field refusal leaking Fs users/taken. After reordering, Task-focused 9,
+Workers 34 and family 42 tests pass (85 sequential total). Tests include first
+and sibling Task paths, nested PID namespace records, numbering refusal without
+Fs acquisition, exact normal owner increments, explicit tid and cross-kernel
+refusal. The prior Remote super-refusal test now correctly expects no PID
+consumption rather than freezing the old defect. Faults are controlled metadata
+boundary injections, not proof of recovery from JS heap exhaustion.
+
+No new scans, payload copies, callback manager or intermediate state object was
+introduced. Task's internal/direct constructor now accepts omitted tid as lazy
+numbering; direct explicit-number consumers are preserved. Successful default
+acquisition has the same objects and reference operations, reordered. An
+arbitrary numbered override that mutates the parent, partial failure inside
+numbered itself, or a hostile setter throwing during the final scalar writes
+is not solved by this ordering. The captured source Fs is not rediscovered after
+numbering. PID reservation publication/rollback remains a separate gate; channel
+return does not prove it, and no whole-fork completion is claimed.
+Actual inline/Node rehearsal: 2 pass; focused strict TypeScript and independent
+source review pass.

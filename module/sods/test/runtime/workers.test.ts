@@ -396,7 +396,7 @@ test('Task super refusal returns its channel without claiming PID rollback', () 
   Object.defineProperty(p, 'own', {configurable: true, get() { throw original; }});
   assert.throws(() => k.newTask(p), error => error === original);
   assert.deepEqual(k.channels, [channel]); assert.equal(p.taken, false);
-  assert.equal(k.nextPid, next + 1, 'numbering rollback is deliberately still a separate gate');
+  assert.equal(k.nextPid, next, 'metadata refusal now precedes numbering');
   Reflect.deleteProperty(p, 'own');
   assert.equal(k.newTask(p).channel, channel);
 });

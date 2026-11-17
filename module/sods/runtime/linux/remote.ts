@@ -567,11 +567,12 @@ class RemoteTask extends Task {
   declare renewed?: boolean;
   declare regsChanged: boolean;
   constructor(proc: Process, kernel: RemoteKernel) {
+    if (proc.kernel !== kernel) throw new TypeError('Task process belongs to another kernel');
     // Channel preparation needs neither a PID nor an Fs owner. Complete it
     // first instead of acquiring those owners and trying to roll them back.
     const channel = kernel.channel();
     const i32 = new Int32Array(channel), i64 = new BigInt64Array(channel);
-    try { super(proc, kernel.numbered(proc)); }
+    try { super(proc); }
     catch (error) {
       // channel() grants an unassigned channel; neither numbering nor Task
       // construction has published it to a Worker. Return only this resource.
