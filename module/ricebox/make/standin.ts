@@ -46,5 +46,5 @@ export function makeWebroot(root: string, dir: string, work: string) {
   const sods = join(work, 'sods');
   writeFileSync(sods, `#!${process.execPath}\nrequire('fs').copyFileSync(${JSON.stringify(wasm)}, process.argv.at(-1));\n`);
   chmodSync(sods, 0o755);
-  return spawnSync(process.execPath, [join(os, 'module/ricebox/make/layers.ts'), root, dir, '--translator', wasm, '--sods', sods, '--hot', '/usr/bin/busybox', '--name', 'why', '--cache', join(work, 'aot-cache')], {encoding: 'utf8'});
+  return spawnSync(process.execPath, [join(os, 'module/ricebox/build/distribution.ts'), root, dir, '--translator', wasm, '--sods', sods, '--hot', '/usr/bin/busybox', '--name', 'why', '--cache', join(work, 'aot-cache')], {encoding: 'utf8'});
 }

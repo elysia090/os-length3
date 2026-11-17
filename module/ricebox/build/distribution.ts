@@ -1,6 +1,6 @@
 // One distribution root as content-addressed layers for any static host. This is a
 // delivery form of the same tree, not a separate product or package selection.
-// node module/ricebox/make/layers.ts ROOT OUT [--translator SODS.wasm] [--sods SODS]
+// node module/ricebox/build/distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS]
 //   [--hot PATH,…] [--name NAME] [--stage DIR] [--cache DIR]
 //   [--file-store FILE_STORE.wasm] [--file-store-limit BYTES]
 // The root's filename binds its version and digest. Each pack is checked by its
@@ -14,7 +14,7 @@ import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
 import {packOf} from '../distribution/pack.ts';
 import {translateWhole} from './aot-cache.ts';
-import {fileStoreOptions, validateFileStore, fileStoreDescriptor} from './file-store.ts';
+import {fileStoreOptions, validateFileStore, fileStoreDescriptor} from './file-store-artifact.ts';
 import {readTarball} from '../host/node/tar.ts';
 import {sha256} from '../host/node/hash.ts';
 import type {Index} from '../distribution/manifest.ts';
@@ -44,10 +44,10 @@ const distributionName = flag('--name');
 const stage = flag('--stage');
 const aotCache = flag('--cache', join(repo, 'target/ricebox-aot'));
 const [rootFile, out] = args;
-if (!rootFile || !out) { console.error('usage: webroot.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR] [--file-store FILE_STORE.wasm] [--file-store-limit BYTES]'); process.exit(2); }
+if (!rootFile || !out) { console.error('usage: distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR] [--file-store FILE_STORE.wasm] [--file-store-limit BYTES]'); process.exit(2); }
 
 // A root is a few hundred megabytes: past a few gigabytes held, something is wrong, and it stops before the machine does.
-setInterval(() => { const rss = process.memoryUsage().rss; if (rss > 3e9) { console.error(`webroot.ts: holding ${(rss / 1e9).toFixed(1)} GB; stopped`); process.exit(1); } }, 500).unref();
+setInterval(() => { const rss = process.memoryUsage().rss; if (rss > 3e9) { console.error(`distribution.ts: holding ${(rss / 1e9).toFixed(1)} GB; stopped`); process.exit(1); } }, 500).unref();
 
 const named = /^[a-zA-Z0-9._-]+-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-x86_64-([0-9a-f]{64})\.tar\.zst$/.exec(basename(rootFile));
 if (!named) throw new Error(`${basename(rootFile)} is not named as a release root (NAME-X.Y.Z-x86_64-<sha256>.tar.zst)`);
@@ -82,15 +82,7 @@ if (release.VERSION_ID !== version) throw new Error(`${basename(rootFile)}: its 
 // Three compressions at a time, each in a thread of its own and done synchronously there, so what one
 // holds while it runs (tens of megabytes at level 19) goes back as it ends, not when a collector gets to it.
 const POOL = 3;
-const pool = Array.from({length: POOL}, () => new Worker(`
-  const {parentPort, isMarkedAsUntransferable} = require('node:worker_threads');
-  const {constants, zstdCompressSync} = require('node:zlib');
-  parentPort.on('message', ({id, bytes}) => {
-    const z = zstdCompressSync(bytes, {params: {[constants.ZSTD_c_compressionLevel]: 19, [constants.ZSTD_c_checksumFlag]: 0}});
-    // Small Buffer results can share node's non-transferable slab. Give only those their own backing bytes.
-    const ready = isMarkedAsUntransferable(z.buffer) ? new Uint8Array(z) : z;
-    parentPort.postMessage({id, z: ready}, [ready.buffer]);
-  });`, {eval: true}));
+const pool = Array.from({length: POOL}, () => new Worker(new URL('./compress.worker.ts', import.meta.url)));
 const waiting = new Map<number, (z: Buffer) => void>();
 const idle = [...pool];
 const queue: (() => void)[] = [];

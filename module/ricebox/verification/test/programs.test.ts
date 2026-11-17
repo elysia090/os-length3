@@ -9,7 +9,7 @@ import {createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {execFileSync} from 'node:child_process';
 import {openDistribution} from '../../deployment/local.ts';
-import {validateFileStore,fileStoreDescriptor} from '../../make/file-store.ts';
+import {validateFileStore,fileStoreDescriptor} from '../../build/file-store-artifact.ts';
 const source=process.env.RICEBOX_RELEASE_DIR,muk=process.env.RICEBOX_MUK_FILE,mukHash=process.env.RICEBOX_MUK_SHA256,core=process.env.SODS_FILE_STORE_WASM;
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 test('historical full release runs muk and shell with a release-selected Rust file owner',{skip:!source||!muk||!mukHash||!core},async()=>{

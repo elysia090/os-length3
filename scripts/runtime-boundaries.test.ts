@@ -31,7 +31,7 @@ test('type imports, re-exports, dynamic imports and worker source URLs are depen
 });
 
 test('runtime cannot reach products, build tools, tests or private sods internals', () => {
-  for (const target of ['../../../why/api/host.ts', '../../../shipto/client.ts', '../make/layers.ts', './test/helper.ts', '../../otter/make/artifacts.mjs', '../../sods/runtime/linux/process.ts', 'node:fs', 'why', 'https://example.com/code.js']) {
+  for (const target of ['../../../why/api/host.ts', '../../../shipto/client.ts', '../build/distribution.ts', './test/helper.ts', '../../otter/make/artifacts.mjs', '../../sods/runtime/linux/process.ts', 'node:fs', 'why', 'https://example.com/code.js']) {
     assert.equal(allowed('module/ricebox/runtime/root.ts', target), false, target);
   }
   assert.equal(allowed('module/sods/runtime/linux.ts', '../../ricebox/runtime/root.ts'), false);
@@ -67,7 +67,7 @@ test('bundler worker queries and computed worker sources cannot hide a forbidden
 
 test('distribution format is below execution, without host or product capabilities', () => {
   const format='module/ricebox/distribution/manifest.ts';
-  for (const target of ['../runtime/root-types.ts','../runtime/root.ts','../make/layers.ts','../../sods/runtime/linux.ts','node:fs']) assert.equal(allowed(format,target),false,target);
+  for (const target of ['../runtime/root-types.ts','../runtime/root.ts','../build/distribution.ts','../../sods/runtime/linux.ts','node:fs']) assert.equal(allowed(format,target),false,target);
   assert.equal(allowed('module/ricebox/runtime/root.ts','../distribution/manifest.ts'),true);
   assert.equal(allowed('module/ricebox/distribution/mount.ts','./pack.ts'),true);
 });
@@ -94,8 +94,18 @@ test('Node readers cannot depend on execution or deployment orchestration',()=>{
 
 test('verification consumes production contracts without becoming a production dependency',()=>{
   const programs='module/ricebox/verification/programs.ts';
-  for(const target of ['../runtime/prepared-tree.ts','../deployment/local.ts','../make/muk.ts','../../sods/runtime/linux.ts','node:child_process']) assert.equal(allowed(programs,target),true,target);
-  for(const target of ['../make/layers.ts','../../sods/runtime/linux/kernel.ts','../../../why/api/host.ts','node:net']) assert.equal(allowed(programs,target),false,target);
+  for(const target of ['../runtime/prepared-tree.ts','../deployment/local.ts','../build/muk-artifact.ts','../../sods/runtime/linux.ts','node:child_process']) assert.equal(allowed(programs,target),true,target);
+  for(const target of ['../build/distribution.ts','../../sods/runtime/linux/kernel.ts','../../../why/api/host.ts','node:net']) assert.equal(allowed(programs,target),false,target);
   for(const from of ['runtime/root.ts','distribution/manifest.ts','deployment/local.ts','build/prepare.ts','integrations/vite.ts']) assert.equal(allowed('module/ricebox/'+from,'../verification/programs.ts'),false,from);
   assert.equal(allowed('module/ricebox/verification/language-cases.ts','node:child_process'),false);
+});
+
+
+test('build artifact validation uses only the public sods entry and compression is host-specific',()=>{
+  assert.equal(allowed('module/ricebox/build/file-store-artifact.ts','../../sods/runtime/linux.ts'),true);
+  assert.equal(allowed('module/ricebox/build/file-store-artifact.ts','../../sods/runtime/file-store.ts'),false);
+  assert.equal(allowed('module/ricebox/build/prepare.ts','../../sods/runtime/linux.ts'),false);
+  assert.equal(allowed('module/ricebox/build/compress.worker.ts','node:zlib'),true);
+  assert.equal(allowed('module/ricebox/build/compress.worker.ts','node:fs'),false);
+  assert.deepEqual(violations({'module/ricebox/build/distribution.ts':"new Worker(new URL('./compress.worker.ts', import.meta.url))"}),[]);
 });

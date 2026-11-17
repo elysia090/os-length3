@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {gzipSync, gunzipSync} from 'node:zlib';
-import {fileStoreOptions, validateFileStore, fileStoreDescriptor, FILE_STORE_LIMIT} from './file-store.ts';
+import {fileStoreOptions, validateFileStore, fileStoreDescriptor, FILE_STORE_LIMIT} from '../file-store-artifact.ts';
 const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 test('file store selection is explicit and preserves other builder arguments', () => {
   const legacy = ['root', 'out', '--translator', 'translator'];

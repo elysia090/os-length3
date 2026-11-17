@@ -7,9 +7,9 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {zstdCompressSync} from 'node:zlib';
-import {openDistribution} from '../deployment/local.ts';
-import {releaseFileStore} from '../runtime/file-store.ts';
-import {prepareTree} from '../runtime/prepared-tree.ts';
+import {openDistribution} from '../../deployment/local.ts';
+import {releaseFileStore} from '../../runtime/file-store.ts';
+import {prepareTree} from '../../runtime/prepared-tree.ts';
 const core=process.env.SODS_FILE_STORE_WASM,translator=process.env.SODS_TRANSLATOR_WASM;
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 function tarFile(name:string,text:string){
@@ -25,7 +25,7 @@ test('layers CLI builds a coherent core release that selects Rust without caller
   try{
     const tar=Buffer.concat([tarFile('root/etc/os-release','NAME=fixture\nVERSION_ID=0.0.1\n'),tarFile('root/hello','hello\n'),Buffer.alloc(1024)]);
     const archive=zstdCompressSync(tar),path=join(dir,`fixture-0.0.1-x86_64-${hash(archive)}.tar.zst`),out=join(dir,'web');writeFileSync(path,archive);
-    execFileSync(process.execPath,[fileURLToPath(new URL('layers.ts',import.meta.url)),path,out,'--translator',translator!,'--hot',',','--file-store',core!,'--file-store-limit','8192'],{stdio:'pipe'});
+    execFileSync(process.execPath,[fileURLToPath(new URL('../distribution.ts',import.meta.url)),path,out,'--translator',translator!,'--hot',',','--file-store',core!,'--file-store-limit','8192'],{stdio:'pipe'});
     const web=openDistribution(out);
     try{
       assert.equal(web.index.fileStore?.abi,4);assert.equal(web.index.fileStore?.maxFileBytes,8192);

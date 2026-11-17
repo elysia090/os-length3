@@ -4,7 +4,7 @@
 // which. A root's programs run in a box muk makes, in a page as on Linux (the same program, translated there as
 // the root's own are); it is served beside the root until a root is released that carries it.
 //
-//   node module/ricebox/make/muk.ts [WEB]     WEB: the web root (public/webroot)
+//   node module/ricebox/build/muk-artifact.ts [WEB]     WEB: the web root (public/webroot)
 //
 // By the Vite plugin (why/app/vite.config.ts) at each dev-server start and build, where there is a web root; and by
 // what checks the root's programs in node (../verification/programs.ts).

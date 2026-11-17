@@ -4,8 +4,8 @@ import {mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFil
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
-import {translateWhole} from '../module/ricebox/make/aot-cache.ts';
-const moduleURL = new URL('../module/ricebox/make/aot-cache.ts', import.meta.url).href;
+import {translateWhole} from '../module/ricebox/build/aot-cache.ts';
+const moduleURL = new URL('../module/ricebox/build/aot-cache.ts', import.meta.url).href;
 const wasm = Buffer.from([0,97,115,109,1,0,0,0]);
 function fixture(t: import('node:test').TestContext) {
   const dir=mkdtempSync(join(tmpdir(),'aot-test-')), sods=join(dir,'sods'), cache=join(dir,'cache'), log=join(dir,'calls');

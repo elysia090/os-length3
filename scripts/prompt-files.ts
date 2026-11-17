@@ -1,6 +1,6 @@
 // The web root (public/webroot): why for the browser's Prompt, taken from the release of the
 // newest why this tree pins: the same root the desktop app installs, as the browser reads it
-// (module/ricebox/make/layers.ts). It is made where Rust is, by the release
+// (module/ricebox/build/distribution.ts). It is made where Rust is, by the release
 // (.github/workflows/release.yml), and is the OS that version is; a build
 // that only has Node (Cloudflare's Workers Builds) takes it from it, and
 // takes only the why this tree pins: why/prompt/roots/pins.rs

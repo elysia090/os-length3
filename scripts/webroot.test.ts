@@ -1,5 +1,5 @@
 // The web root against the root it is made from, on a stand-in
-// release root (a few files of each kind a root has): made by module/ricebox/make/layers.ts,
+// release root (a few files of each kind a root has): made by module/ricebox/build/distribution.ts,
 // it is the root (webroot-parity.ts), the same twice, and anything changed in it
 // is caught; pin-root.ts pins both in one entry, and prompt-files.ts takes
 // it from a stand-in release only at that pin. The real root is checked the

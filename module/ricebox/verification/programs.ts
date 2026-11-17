@@ -34,7 +34,7 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {Kernel} from '../../sods/runtime/linux.ts';
-import {buildMuk} from '../make/muk.ts';
+import {buildMuk} from '../build/muk-artifact.ts';
 import {openDistribution} from '../deployment/local.ts';
 import type {Index} from '../distribution/manifest.ts';
 
@@ -198,7 +198,7 @@ export function nativeBox(muk: string, rootDir: string, argv: string[], env: str
   return {cmd: muk, argv: ['run', '--lend', root, ...(uid === 0 ? ['--ids', '0-0'] : []), '-b', dir, 'box'], done: () => rmSync(dir, {recursive: true, force: true})};
 }
 
-/** muk for this machine, made of this tree's source (module/ricebox/make/muk.ts), unless one is given (--muk). */
+/** muk for this machine, made of this tree's source (module/ricebox/build/muk-artifact.ts), unless one is given (--muk). */
 export const builtMuk = (): string => buildMuk();
 
 /** Run `cmd` with a time limit: {code, signal, stdout, stderr, timedOut}. */

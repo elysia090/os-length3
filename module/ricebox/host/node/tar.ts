@@ -79,7 +79,7 @@ const inRoot = (name: string) => {
 /**
  * The root in a release tarball, as why installs it, and its manifest file:
  * {entries, manifest}. `each(entry, bytes)` sees every file's bytes once
- * (module/ricebox/make/layers.ts packs them from here).
+ * (module/ricebox/build/distribution.ts packs them from here).
  */
 export async function readTarball(file: string, each: (entry: Entry, bytes: Buffer | null) => void = () => {}): Promise<Tree> {
   const entries: Entry[] = [];

@@ -30,7 +30,7 @@ The adjacent runtime layers have different responsibilities:
   plus explicit finite-scope ownership.
 - `runtime/host.ts`: host capabilities such as threads, clocks and storage. This is
   not the guest Linux ABI; Linux guests run under Node or browsers too.
-- ricebox `make/file-store.ts` and `layers/file-store.ts`: respectively artifact
+- ricebox `build/file-store-artifact.ts` and `runtime/file-store.ts`: respectively artifact
   generation/selection and verified release consumption. Integrity/distribution
   policy does not belong in this crate or the portable Wasm binding.
 

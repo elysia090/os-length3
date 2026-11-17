@@ -40,17 +40,17 @@ test('selected packages pass through the real neutral archive assembler', t => {
   assert.doesNotMatch(list.stdout,/root\/usr\/bin\/base\n/);
 });
 test('orchestration invokes assemble then AOT and publishes only after success', async t => {
-  const {at,cache}=fixture(t), toolchain=join(at,'toolchain'), make=join(toolchain,'module/ricebox/make'); mkdirSync(make,{recursive:true});
+  const {at,cache}=fixture(t), toolchain=join(at,'toolchain'), make=join(toolchain,'module/ricebox/build'); mkdirSync(make,{recursive:true});
   // Contract doubles only. The preceding test exercises real archive assembly;
   // this checks the subprocess boundary, not Linux execution or translation.
   mkdirSync(join(toolchain,'module/ricebox/build'),{recursive:true});
   writeFileSync(join(toolchain,'module/ricebox/build/assemble.sh'),'set -eu\nmkdir -p "$2"\nprintf root > "$2/root.tar.zst"\n');
-  writeFileSync(join(make,'layers.sh'),'set -eu\nmkdir -p "$2"\nprintf "%s\\n" "$@" > "$2/arguments"\n');
+  writeFileSync(join(make,'distribution.sh'),'set -eu\nmkdir -p "$2"\nprintf "%s\\n" "$@" > "$2/arguments"\n');
   const output=join(at,'out');
   await prepareDistribution({packages:['base'],packageCache:cache,toolchain,output,cache:join(at,'aot'),hot:['/usr/bin/base']});
   assert.match(readFileSync(join(output,'arguments'),'utf8'),/--cache\n.*\/aot\n--hot\n\/usr\/bin\/base/);
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,toolchain,output}),/already exists/);
-  writeFileSync(join(make,'layers.sh'),'exit 4\n');
+  writeFileSync(join(make,'distribution.sh'),'exit 4\n');
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,toolchain,output:join(at,'failed')}),/failed/);
   assert.equal(existsSync(join(at,'failed')),false);
   assert.equal(readdirSync(at).some(n=>n.startsWith('.ricebox-build-')),false);

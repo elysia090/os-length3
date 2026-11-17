@@ -72,7 +72,7 @@ export async function prepareDistribution(options: PrepareOptions) {
     const archives = readdirSync(join(work, 'root')).filter(n => n.endsWith('.tar.zst'));
     if (archives.length !== 1) throw new Error('ricebox: assembler did not produce exactly one root');
     const verified = tools && Object.fromEntries((['translator', 'sods', 'muk'] as const).map(n => [n, verifiedTool(tools![n], n)]));
-    const args = [join(source, verified ? 'module/ricebox/make/layers.ts' : 'module/ricebox/make/layers.sh'), join(work, 'root', archives[0]), join(work, 'layers'), '--name', 'ricebox'];
+    const args = [join(source, verified ? 'module/ricebox/build/distribution.ts' : 'module/ricebox/build/distribution.sh'), join(work, 'root', archives[0]), join(work, 'layers'), '--name', 'ricebox'];
     if (verified) args.push('--translator', verified.translator.path, '--sods', verified.sods.path);
     if (verifiedStore) args.push('--file-store', verifiedStore.path, '--file-store-limit', String(fileStore!.maxFileBytes));
     if (cache !== undefined) args.push('--cache', cache === '' ? '' : resolve(cache));

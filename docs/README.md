@@ -72,7 +72,7 @@ tracked in issue #20.
   what is saved anywhere else is put into the shell's copy, so the shell,
   File, Forge and Git see one repo. Its one dependency is why (OS.md,
   why: the one base): in a browser, `public/webroot`, made from the release root
-  by `module/ricebox/make/layers.ts`: `webroot.json` (which why, and the root's digest), an index
+  by `module/ricebox/build/distribution.ts`: `webroot.json` (which why, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
   first opens it, and the translator with BusyBox, why and git translated
   ahead of time. A first Prompt fetches about 0.8 MB (the index, the translator,

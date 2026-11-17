@@ -17,6 +17,11 @@ const hostImports: Record<string, readonly string[]> = {
   'module/ricebox/host/node/tar.ts': ['node:fs','node:zlib','node:stream'],
   'module/ricebox/host/node/inventory.ts': ['node:fs','node:path'],
   'module/ricebox/deployment/local.ts': ['node:fs','node:path','node:zlib'],
+  'module/ricebox/build/distribution.ts': ['node:crypto','node:fs','node:path','node:url','node:worker_threads','node:zlib'],
+  'module/ricebox/build/compress.worker.ts': ['node:worker_threads','node:zlib'],
+  'module/ricebox/build/aot-cache.ts': ['node:child_process','node:crypto','node:fs','node:os','node:path'],
+  'module/ricebox/build/file-store-artifact.ts': ['node:crypto'],
+  'module/ricebox/build/muk-artifact.ts': ['node:child_process','node:crypto','node:fs','node:path','node:url'],
   'module/ricebox/build/package-database.ts': ['node:crypto','node:fs','node:path'],
   'module/ricebox/build/script-interpreters.ts': ['node:fs','node:path','node:url'],
   'module/ricebox/build/prepare.ts': ['node:fs','node:path','node:child_process','node:crypto','node:url'],
@@ -80,9 +85,10 @@ export function allowed(from: string, specifier: string): boolean {
   const owner = ROOTS.find(root => inside(from, root));
   if (!owner || target === 'module/sods/runtime/run.ts' || target.includes('/test/') || /\.(test|spec)\./.test(target)) return false;
   if (inside(target, owner)) return true;
-  if (owner === 'module/ricebox/verification') return ['module/ricebox/distribution','module/ricebox/deployment','module/ricebox/host/node','module/ricebox/runtime'].some(root => inside(target,root)) || publicSods.has(target) || target === 'module/ricebox/make/muk.ts';
+  if (owner === 'module/ricebox/verification') return ['module/ricebox/distribution','module/ricebox/deployment','module/ricebox/host/node','module/ricebox/runtime'].some(root => inside(target,root)) || publicSods.has(target) || target === 'module/ricebox/build/muk-artifact.ts';
   if (owner === 'module/ricebox/integrations') return inside(target, 'module/ricebox/build') || inside(target, 'module/ricebox/deployment');
   if (owner === 'module/ricebox/host/node') return inside(target, 'module/ricebox/distribution');
+  if (from === 'module/ricebox/build/file-store-artifact.ts' && target === 'module/sods/runtime/linux.ts') return true;
   if (owner === 'module/ricebox/build' || owner === 'module/ricebox/deployment') return inside(target, 'module/ricebox/distribution') || inside(target, 'module/ricebox/host/node');
   if (owner === 'module/ricebox/runtime') return inside(target, 'module/ricebox/distribution') || publicSods.has(target);
   return owner === 'module/cowboy/host' && target === 'module/sods/runtime/linux.ts';

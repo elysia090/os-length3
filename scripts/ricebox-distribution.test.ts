@@ -93,7 +93,7 @@ test('the same neutral root becomes static layers without requiring why or optio
     const wasm = join(at, 'translator.wasm');
     writeFileSync(wasm, new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
     const out = join(at, 'site'), stage = join(at, 'stage');
-    const r = spawnSync(process.execPath, [join(repo, 'module/ricebox/make/layers.ts'), archive, out, '--translator', wasm, '--stage', stage], {encoding: 'utf8', timeout: 30000});
+    const r = spawnSync(process.execPath, [join(repo, 'module/ricebox/build/distribution.ts'), archive, out, '--translator', wasm, '--stage', stage], {encoding: 'utf8', timeout: 30000});
     assert.equal(r.status, 0, r.stderr);
     const about = JSON.parse(readFileSync(join(out, 'webroot.json'), 'utf8'));
     assert.equal(about.name, 'ricebox');

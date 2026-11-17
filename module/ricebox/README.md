@@ -66,7 +66,7 @@ Comparison harnesses live in `verification/`, not in the production runtime or
 package entry points. They consume the distribution readers and execute matched
 native/sods cases. Their child executor is private to those checks. Language workloads are readable
 shell fixtures, fed byte-for-byte to both roots, not host-runner imports. The remaining
-`make/` producers and maintenance tools are being reviewed separately:
+`make/` source-package and npm producers are being reviewed separately:
 
 
 ```
@@ -75,8 +75,9 @@ verification/programs.ts      programs run in matching native and sods boxes
 verification/commands.ts      command workloads compared; the evidence table `help` reads
 verification/workloads/       offline language projects as literal shell input
 verification/test/            harness contracts and release-selected file-store regression
-make/layers.sh, layers.ts      release root written as layers; hot programs translated ahead
-make/muk.ts                   the box maker put beside the layers (muk.json, a blob)
+build/distribution.ts       root archive converted to packs, blobs and translations
+build/distribution.sh       source-toolchain wrapper; builds translator and box maker
+build/muk-artifact.ts       the box maker put beside the layers (muk.json, a blob)
 make/standin.ts               a small root for tests
 ```
 
@@ -135,3 +136,16 @@ retention or symlink refusal contract. Verification still checks whole packs and
 then reads individual files; this change does not reduce those reads or hashes.
 The existing comparison and program-execution tools in make are the next boundary
 being separated, not production runtime API additions.
+
+The distribution producer and source-toolchain wrapper live in `build/distribution.ts`
+and `build/distribution.sh`. Build-only AOT cache entries bind source bytes, native
+translator, Wasm translator and invocation options. `file-store-artifact.ts` validates
+selected artifacts, while `muk-artifact.ts` builds/packages the box maker for source
+workflows. None of these belongs to the runtime's loading/cache policy.
+
+Compression has a real `build/compress.worker.ts` entry, copied with the source
+builder into the npm package. Composition still invokes the builder's TypeScript
+with Node; this is not a newly promised standalone JavaScript builder API. The pool
+size, compression settings, input cloning and output transfer are unchanged. Its
+error/exit rejection and abnormal-path Worker cleanup remain a separate lifecycle
+limitation; the entry extraction does not claim to fix those failures.
