@@ -395,7 +395,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     mirror = null; mirrorOwner?.release(); mirrorOwner = null;
     if (gatheredBytes) lifetime.observe('pending-output');
     // This acknowledges admission closure, not stopped Workers or tree disposal.
-    self.postMessage({type: 'retiring', owners: lifetime.snapshot()});
+    self.postMessage({type: 'retiring', owners: lifetime.snapshot(), failures: errors.map(error => error instanceof Error ? `${error.name}: ${error.message}` : String(error))});
     if (errors.length) failed(new AggregateError(errors, 'Worker retirement failed'));
     return;
   }

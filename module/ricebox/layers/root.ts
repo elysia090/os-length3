@@ -1,3 +1,4 @@
+export {retireRootWorker, type RootRetirement} from './retire-worker.ts';
 import {createAhead} from './ahead.ts';
 import {releaseFileCore} from './file-core.ts';
 import {digest, download as fetchFile, Fatal, type Check} from './fetch.ts';

@@ -5,7 +5,7 @@ import {h} from '../../ui/dom.ts';
 import {bytes} from '../../../text/format.ts';
 import {core, promptOpen, rootFetch, rootHere, rootStatus, type Holding, type Stopped} from '../../../api/host.ts';
 import {currentLang, onLang, t, tn} from '../../../text/i18n.ts';
-import {aheadFor, BOX, filesNow, hearAhead, hearLater, holdAhead, translateAhead, keepMore, keepReached, keepTranslation, keptNow, loadWebroot, promptWorker, readyPrompt, takeReady, usedKept, warmWebroot, watchLoad, type Box, type Webroot, type Stage} from '../../../prompt/userland.ts';
+import {retireRootWorker, aheadFor, BOX, filesNow, hearAhead, hearLater, holdAhead, translateAhead, keepMore, keepReached, keepTranslation, keptNow, loadWebroot, promptWorker, readyPrompt, takeReady, usedKept, warmWebroot, watchLoad, type Box, type Webroot, type Stage} from '../../../prompt/userland.ts';
 import {every} from '../../../api/runs.ts';
 import {errorText} from '../../../api/errors.ts';
 import {still} from '../../ui/glide.ts';
@@ -728,6 +728,8 @@ export class Session implements Prompt {
   }
   /** Started again: its own ending is not shown going dark, the new one comes at once. */
   private restarting = false;
+  private retirementGeneration = 0;
+  private readonly retirementFailures: unknown[] = [];
 
   /** What the ended Prompt says, drawn again in the language chosen meanwhile. */
   private said: (() => string) | null = null;
@@ -740,6 +742,7 @@ export class Session implements Prompt {
    * element: a desk takes its box off, to be opened again from the band), unless it is being started again.
    */
   private end(message: () => string, why = '', gone = false) {
+    const generation = ++this.retirementGeneration;
     this.ended = true;
     this.holding(false);
     this.said = message;
@@ -749,8 +752,20 @@ export class Session implements Prompt {
     this.unwatch = null;
     this.unhear?.();
     this.unhear = null;
-    this.worker?.terminate();
-    this.worker = null;
+    const worker = this.worker;
+    this.worker = null; // No more input/hot updates, including during retirement callbacks.
+    if (worker) {
+      worker.onmessage = null; // Closing remains abort-style; do not mutate the ended session from late messages.
+      void retireRootWorker(worker).then(result => {
+        if (!result.failures.length) return;
+        const failure = new AggregateError(result.failures.map(f => f.error), 'Worker retirement failed');
+        this.retirementFailures.push(failure);
+        if (generation !== this.retirementGeneration || this.restarting) return;
+        const detail = result.failures.map(({phase, error}) => `${phase}: ${errorText(error)}`).join('; ');
+        this.why = [this.why, detail].filter(Boolean).join('\n');
+        this.sayEnded(false);
+      });
+    }
     this.measuring?.stop();
     this.measuring = null;
     this.native?.forget();

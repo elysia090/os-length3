@@ -507,3 +507,50 @@ They also cover detached Hand lifetime and no-observation retention. The reentra
 message host is a test double, not a browser execution. Production sends and
 admission checks are exercised; browser quiescence, all-root disposal and complete
 output draining remain unimplemented.
+
+### Existing browser terminal caller connected, still abort-style
+
+The existing terminal end path now clears its Worker pointer and ordinary message
+handler, then calls ricebox's `retireRootWorker` through the existing root entry.
+It requests admission freeze and waits at most 250 ms before requesting browser
+termination. The UI still ends immediately. A retirement acknowledgement, timeout,
+or terminate() return is **not** stop evidence: the returned hostStopped value is
+always unconfirmed. Timeout only bounds how long abort waits for admission closure;
+it never authorizes memory reuse or FileScope.dispose. Duplicate close requests
+share a single attempt. Listener/request/cleanup/termination exceptions are retained,
+and the terminal appends failures to its existing ended reason without erasing
+the original failure. Stale/restarted-session results are retained diagnostically
+but do not redraw or refocus an obsolete terminal.
+
+The Worker includes synchronous cleanup failures in the acknowledgement itself,
+so terminating after that acknowledgement does not depend on receiving a subsequent
+error message. Synchronous acknowledge-then-throw and repeated/reentrant calls are
+tested. The helper is a browser boundary, not the Node Worker exit-observation API.
+No real browser session was run; the actual private Worker message handler is tested
+against a structural caller double, and live Node CPU execution is a separate test.
+
+This remains **abort-style**, not timing-equivalent to the old immediate terminate.
+The new grace period permits additional guest execution/writes until acknowledgement
+or fallback handling; a busy event loop can extend it beyond 250 ms. It promises no graceful drain. Late ordinary Worker
+messages no longer mutate the ended session. Messages already processed by the UI
+and repository writeback work already accepted there are not undone. No promise
+is made to flush gathered bytes, receive queued messages, finish repository writes,
+or drain output credits before abort. That is the next separate protocol decision,
+not a hidden interpretation of `retiring`.
+
+For a future draining close, the specific evidence chain is: stop guest production;
+finish or explicitly abandon gathering and Mirror/translation publications; freeze
+a final sent-byte/epoch boundary; let the consumer acknowledge receipt through that
+boundary; separately await any requested durable repository writeback; then obtain
+host-specific stop evidence before disposing the closed ownership graph. Current
+`drained(n)` is only output backpressure credit, not a persistence acknowledgement,
+and the page can defer it until a render turn. While retire rejects all new messages,
+it cannot double as this drain protocol. A separate closing mode must continue to
+accept exactly the required acknowledgements and reject unrelated new work.
+
+A correct drain need not copy payloads again: at minimum it retains the outstanding
+sent/gathered bytes until consumption or explicit abandonment, and adds completion
+metadata/notifications for the final boundary. It cannot be proved by a fixed timer,
+by resetting onItsWay to zero, or by treating a postMessage return as consumption.
+Browser shutdown may still remain unconfirmed after drain; Node exit proves only
+that Worker stopped, not that repository writes or other tree owners completed.

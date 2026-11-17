@@ -6,7 +6,7 @@ import {errorText} from '../api/errors.ts';
 import {isNative} from '../api/host.ts';
 import {REMOTE_URL} from '../shipto/connection.ts';
 import {t} from '../text/i18n.ts';
-export {BOX, type Segment, type Blob, type About, type Box, type Index, type Webroot, type More, type Stage} from '../../module/ricebox/layers/root.ts';
+export {retireRootWorker, BOX, type Segment, type Blob, type About, type Box, type Index, type Webroot, type More, type Stage} from '../../module/ricebox/layers/root.ts';
 export {aheadFor} from '../../module/ricebox/layers/ahead.ts';
 
 const root = createRoot({
