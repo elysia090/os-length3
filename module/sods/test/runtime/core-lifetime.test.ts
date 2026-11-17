@@ -73,3 +73,21 @@ test('raw namespace changes are not a reliable link-count ownership ledger', {sk
     assert.equal(dec.decode(file.bytes()), 'old'); // Raw embedding ownership still exists.
   } finally { scope.dispose(); }
 });
+
+test('deferred capture retains its source through failure, then works after owner disposal', {skip: !wasm}, async () => {
+  const scope = await loadFileScope(readFileSync(wasm!), 32), vfs=scope.createVfs(), p=processFor(vfs);
+  let fail=true, loads=0;
+  const file=scope.lazyFile(vfs,'/tmp/image',()=>{loads++;if(fail)throw Error('source unavailable');return enc.encode('old');});
+  const name=enc.encode('sods.facts'), facts=enc.encode('{}');
+  const module=new WebAssembly.Module(new Uint8Array([0,97,115,109,1,0,0,0,0,1+name.length+facts.length,name.length,...name,...facts]));
+  p.kernel.prebuilt(file,module); const image=p.kernel.images.get(file)!.image;
+  try {
+    assert.throws(()=>image.source!()); assert.equal(loads,1);
+    fail=false; const captured=image.source!(); assert.equal(dec.decode(captured),'old'); assert.equal(loads,2);
+    file.write(0,enc.encode('new')); assert.equal(dec.decode(image.source!()),'old');
+    p.kernel.images.delete(file); vfs.dir('/tmp').entries.delete('image'); p.kernel.ended();
+    // Deliberately end this finite owner to demonstrate the captured byte path
+    // no longer accesses it. This is not permission to dispose a live shared tree.
+    scope.dispose(); assert.equal(image.source!(),captured); assert.equal(loads,2);
+  } finally {scope.dispose();}
+});

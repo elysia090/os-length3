@@ -92,3 +92,13 @@ test('Rust-backed executable source is checked after completed copy and translat
   assert.equal(k.images.get(file)!.version, 1);
   scope.dispose();
 });
+
+test('prebuilt source invalidates origin on first changed capture and then keeps its COW bytes', () => {
+  const k = new Kernel({console: quiet}), file = k.vfs.writeFile('/p', elf());
+  k.prebuilt(file, module); const image = k.images.get(file)!.image; image.origin = 'original';
+  file.write(4, Uint8Array.of(2));
+  const captured = image.source!(); assert.equal(captured[4], 2);
+  assert.equal(image.changed, true); assert.equal(image.origin, undefined);
+  file.write(4, Uint8Array.of(3));
+  assert.equal(image.source!(), captured); assert.equal(captured[4], 2);
+});

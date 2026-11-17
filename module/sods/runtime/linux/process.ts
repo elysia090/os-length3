@@ -307,11 +307,15 @@ export class Image implements Program {
  */
 function readLater(node: File, image: Image): () => Uint8Array {
   const version = node.version;
-  let view: Uint8Array | null = null;
+  let pending: File | null = node, view: Uint8Array | null = null;
   return () => {
     if (view) return view;
-    view = node.share();
-    if (node.version !== version) { image.changed = true; image.origin = undefined; }
+    // Before capture this closure owns a source reference. A failed load keeps
+    // it for retry; after capture only the independent/COW bytes are needed.
+    const source = pending!, bytes = source.share();
+    if (source.version !== version) { image.changed = true; image.origin = undefined; }
+    view = bytes;
+    pending = null;
     return view;
   };
 }

@@ -198,3 +198,36 @@ During send, appending extras and closing observation are supported; arbitrarily
 replacing the same Image's wasm/mainTold/told/origin is not a revision transaction
 provided by this helper. The consolidation-shaped test uses two distinct Image
 objects and seed values; it does not execute the actual consolidation compiler.
+
+## Source capture and observation are different owners
+
+`readLater` now explicitly holds a nullable pending File reference. A failed source
+read leaves that reference for retry; successful capture checks the revision, stores
+the independent/COW byte view, and clears the pending File reference. Later calls
+use only that captured view. This removes the closure's logical File edge after
+capture without closing the file or changing any public Image properties. The
+Rust regression covers load failure/retry, later inode mutation, cache removal and
+scope disposal after capture, then reuse of exactly the captured byte object.
+It proves the captured path does not access the disposed owner, not that GC runs
+or that other owners of the inode have ended. Captured bytes remain resident.
+
+An observation still holds an Image, and uncaptured images still need their File.
+A publication-only record could eliminate that extra observation→Image/source edge:
+it would own extras, segments, origin/changed and publication progress, with no
+back-pointer/getter capturing Image. An immutable snapshot alone cannot follow late
+code; event subscriptions add ordering/failure/unsubscribe contracts. The shared
+record is the smallest candidate, but normal Image property access and reflection
+compatibility must be assessed before replacing public mutable fields with accessors.
+It has not been silently implemented here. Same-path replacement/consolidation
+must produce independent records, and source revision invalidation must still reach
+the old record. Returning a record must not give a caller authority to close a file.
+
+For final inode close the conjunction remains: no actual namespace/mount owner,
+no installation/in-flight/live Description, no mapping or split transition, no
+uncaptured image source or exe identity owner, no active load/read/copy operation,
+and no raw embedding/scope owner. Removing the captured-source edge or closing the
+observer proves only one component of that conjunction. No new per-inode counter
+or long-lived default is enabled until these ownership transitions are connected.
+The capture regression also passes the former cached-view behavior; it protects
+functional compatibility, not a measurement of reference collection. Removal of
+the pending edge is established by the explicit nullable state change in source.
