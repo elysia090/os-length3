@@ -1114,3 +1114,29 @@ Independent source review found no blocking issue for this constructor scope.
 Tid equality follows the existing cooperative lock protocol; it is not an epoch
 or proof that the lock was never released/reacquired. Actual inline and Node
 rehearsal regressions also pass (2), as does focused strict TypeScript checking.
+
+### Process Fs-acquisition refusal returns its already acquired FD owner
+
+The Process constructor acquires a copied/shared FD table before acquiring Fs.
+A failing Fs.copy left either Description.refs or table.holders incremented,
+although no Process was returned. The constructor now captures the acquired
+table and returns exactly that owner if Fs acquisition throws. It does not read
+parent.fds again during rollback, invoke process exit, change a PID namespace,
+or undo the callback's own changes. Successful cleanup rethrows the original
+error identity (including FsError/errno); failed cleanup preserves both errors
+and does not retry. The copied table's existing independent slot cleanup allows
+other acquired descriptors to retire after one release callback fails.
+
+Five added boundary-injection regressions pass: shared/copied Fs refusal through
+the actual clone syscall; copied-descriptor cleanup failure preserving both
+errors and cleaning the other descriptor; shared/copied cleanup after callback
+replacement of parent.fds. Parent descriptors remain open, original refs/holders
+return, and no new cgroup/task/process/PID publication is reached. Initial three
+regressions failed before this fix. These are boundary faults, not simulated
+allocator exhaustion or proof that Fs.copy partial allocation is transactional.
+FdTable.fork's own partial failure, Fs partial acquisition, later constructor
+failure and all previously listed namespace/memory/publication gates remain.
+Normal-path FD copy remains O(number of descriptors), sharing O(1); the change
+adds no scan, copy, owner registry or public API on successful preparation.
+Focused family regression: 13 pass; actual inline/Node rehearsal: 2 pass;
+focused strict TypeScript and independent source review pass.

@@ -289,3 +289,51 @@ test('ended pid namespace refusal precedes cgroup capacity and mount creation', 
   assert.equal(p.cgroup.refused, refused + 1);
   assert.deepEqual(proc.covered, before);
 });
+
+for (const files of [false, true]) test(`fork Fs preparation failure releases only its acquired FD owner, shared=${files}`, async () => {
+  const {FsError, E} = await import('../../runtime/linux/fs.ts');
+  const p = first(), k = p.kernel, fd = new Description('console', {path: 'stdout'});
+  p.fds.install(fd, {fd: 5});
+  const before = [fd.refs, p.fds.holders, p.fs.users, p.fs.root.mnt.refs, k.procs.size, k.tasks.size, p.cgroup.procs.size, k.nextPid, k.numbers.size];
+  const failure = new FsError(E.IO);
+  p.fs.copy = () => { throw failure; };
+  assert.equal(call(p, CLONE, CLONE_VM | SIGCHLD | (files ? CLONE_FILES : 0)), -BigInt(E.IO));
+  assert.deepEqual([fd.refs, p.fds.holders, p.fs.users, p.fs.root.mnt.refs, k.procs.size, k.tasks.size, p.cgroup.procs.size, k.nextPid, k.numbers.size], before);
+  assert.equal(p.fds.get(5), fd); assert.equal(fd.closed, false);
+});
+
+test('fork Fs and FD rollback failures both survive; other acquired descriptors still retire', async () => {
+  const {FsError, E} = await import('../../runtime/linux/fs.ts');
+  const p = first(), firstFd = new Description('console', {path: 'stdout'}), otherFd = new Description('console', {path: 'stderr'});
+  p.fds.install(firstFd, {fd: 5}); p.fds.install(otherFd, {fd: 6});
+  const original = new FsError(E.IO), cleanup = new Error('release callback failed');
+  const release = firstFd.release.bind(firstFd);
+  firstFd.release = () => { release(); throw cleanup; };
+  p.fs.copy = () => { throw original; };
+  // Direct construction keeps exact error identities observable; syscall errno
+  // conversion must not turn a rollback failure into ordinary EIO.
+  assert.throws(() => new Process(p.kernel, p), (error: unknown) => {
+    assert.ok(error instanceof AggregateError);
+    assert.equal(error.errors[0], original);
+    assert.ok(error.errors.includes(cleanup) || error.errors.some(e => e instanceof AggregateError && e.errors.includes(cleanup)));
+    return true;
+  });
+  assert.equal(firstFd.refs, 1); assert.equal(otherFd.refs, 1);
+  assert.equal(firstFd.closed, false); assert.equal(otherFd.closed, false);
+  assert.equal(p.fds.get(5), firstFd); assert.equal(p.fds.get(6), otherFd);
+});
+
+for (const files of [false, true]) test(`Fs callback replacement cannot redirect FD rollback, shared=${files}`, async () => {
+  const {FdTable} = await import('../../runtime/linux/fd.ts');
+  const p = first(), old = p.fds, replacement = new FdTable();
+  const firstFd = new Description('console', {path: 'stdout'}), replacementFd = new Description('console', {path: 'stderr'});
+  old.install(firstFd, {fd: 5}); replacement.install(replacementFd, {fd: 6});
+  const failure = new Error('Fs setup replaced parent table');
+  p.fs.copy = () => { p.fds = replacement; throw failure; };
+  assert.throws(() => new Process(p.kernel, p, files), error => error === failure);
+  assert.equal(p.fds, replacement);
+  assert.equal(old.holders, 1); assert.equal(firstFd.refs, 1);
+  assert.equal(replacement.holders, 1); assert.equal(replacementFd.refs, 1);
+  assert.equal(old.get(5), firstFd); assert.equal(replacement.get(6), replacementFd);
+  assert.equal(firstFd.closed, false); assert.equal(replacementFd.closed, false);
+});

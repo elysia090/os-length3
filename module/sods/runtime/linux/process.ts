@@ -1626,7 +1626,16 @@ export class Process implements Proc {
     // in it still held).
     this.fds = parent ? (files ? parent.fds.share() : parent.fds.fork()) : new FdTable();
     // Where it is in the tree: its parent's own where that is to be shared (CLONE_FS), else one like it.
-    this.fs0 = parent ? (fs ? (parent.fs.users++, parent.fs) : parent.fs.copy()) : new Fs(kernel.root);
+    const acquiredFds = this.fds;
+    try { this.fs0 = parent ? (fs ? (parent.fs.users++, parent.fs) : parent.fs.copy()) : new Fs(kernel.root); }
+    catch (error) {
+      // Fs acquisition never completed: return exactly this new FD-table owner,
+      // not the parent's current table after a reentrant embedding callback.
+      // No process, PID or cgroup has been published at this boundary.
+      try { acquiredFds.letGo(); }
+      catch (cleanup) { throw new AggregateError([error, cleanup], 'process Fs preparation and FD cleanup failed'); }
+      throw error;
+    }
     this.ns0 = ns ?? parent?.ns ?? kernel.spaces;
     this.taken = false;
     // The pid namespace it is made in is the one its parent's children are made in: its own, from here on.
