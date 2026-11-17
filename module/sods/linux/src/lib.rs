@@ -1,6 +1,7 @@
 //! Linux execution-domain authority, separate from translation and file payloads.
 //!
-//! Internal memory-admission ABI only: no Linux runtime entry exists yet.
+//! Private memory admission and sealed resident-file read ABI.
+//! No guest Linux runtime entry exists yet.
 //! The legacy TypeScript runtime is not replaced by this crate.
 mod effect;
 
@@ -12,3 +13,5 @@ mod wasm;
 mod inode;
 
 mod descriptor;
+
+mod read;

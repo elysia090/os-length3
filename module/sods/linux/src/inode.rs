@@ -39,6 +39,15 @@ pub(crate) struct Inode {
     number: u64,
 }
 
+impl Inode {
+    pub(crate) fn from_parts(owner: u64, number: u64) -> Self {
+        Self { owner, number }
+    }
+    pub(crate) fn number(self) -> u64 {
+        self.number
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Metadata {
     pub mode: u32,

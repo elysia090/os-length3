@@ -1,4 +1,4 @@
-//! Internal file ownership, not guest open/path/mount or read-effect semantics.
+//! Internal file ownership and resident read reservations, not guest syscalls.
 //! Tree is moved here and cannot be independently dropped or mutably borrowed.
 //! Sparse tables own slots; descriptions own shared offsets. Inodes remain owned
 //! by Tree even after the last descriptor closes (no unlink/physical reclamation).
@@ -13,9 +13,10 @@
 //! at its high water. Vacant-slot selection scans record high water. Hashing is
 //! not a worst-case complexity guarantee. No per-table FD-limit-sized allocation.
 //! Lowest-FD search can scan up to the table limit; no bitmap/index is added.
-//! Pending operations are not supported: slot references are the only description
-//! holders. No read or offset-after-copy contract is implemented. Table tokens are
-//! non-Copy owning holder tickets; share creates a new ticket, let_go consumes it.
+//! Slot and pending-read references keep descriptions alive. The read coordinator
+//! commits a reserved offset only after stopped copy evidence. Source mutation,
+//! lazy reads, mappings and process/image identity remain unconnected. Table tokens
+//! are non-Copy owning holder tickets; share creates a new ticket, let_go consumes it.
 //! Dropping a ticket without let_go retains its table until Files is dropped; this
 //! cannot prematurely retire another holder, but domain cleanup must consume it.
 use super::inode::{Inode, Tree};
@@ -37,6 +38,8 @@ pub(crate) enum Error {
     Capacity,
     Overflow,
     NotSupported,
+    Busy,
+    Payload,
 }
 #[derive(Clone, Copy)]
 pub(crate) struct Limits {
@@ -63,7 +66,23 @@ struct Description {
     refs: u64,
     offset: u64,
     revision: u64,
+    reading: bool,
 }
+/// Owned pending reference to one OFD, not an fd number. Only Files resolves it.
+#[must_use = "finish or abort the read reservation; dropping retains the OFD reference"]
+pub(crate) struct ReadHold {
+    description: Id,
+    inode: Inode,
+    offset: u64,
+    length: usize,
+    next_revision: u64,
+}
+impl ReadHold {
+    pub(crate) fn length(&self) -> usize {
+        self.length
+    }
+}
+
 pub(crate) struct Files {
     owner: u64,
     tree: Tree,
@@ -189,6 +208,7 @@ impl Files {
                 refs: 1,
                 offset: 0,
                 revision: 0,
+                reading: false,
             },
         );
         self.tables[table.0.slot]
@@ -333,6 +353,9 @@ impl Files {
     }
     pub(crate) fn set_offset(&mut self, table: &Table, fd: u32, offset: u64) -> Result<(), Error> {
         let id = self.description(table, fd)?;
+        if get(&self.descriptions, self.owner, id)?.reading {
+            return Err(Error::Busy);
+        }
         let revision = get(&self.descriptions, self.owner, id)?
             .revision
             .checked_add(1)
@@ -345,6 +368,95 @@ impl Files {
     pub(crate) fn inode(&self, table: &Table, fd: u32) -> Result<Inode, Error> {
         Ok(get(&self.descriptions, self.owner, self.description(table, fd)?)?.inode)
     }
+    pub(crate) fn reserve_read(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        requested: u64,
+    ) -> Result<ReadHold, Error> {
+        let id = self.description(table, fd)?;
+        let d = get(&self.descriptions, self.owner, id)?;
+        if d.reading {
+            return Err(Error::Busy);
+        }
+        let inode = d.inode;
+        let offset = d.offset;
+        let refs = d.refs.checked_add(1).ok_or(Error::Overflow)?;
+        let revision = if requested == 0 {
+            d.revision
+        } else {
+            d.revision.checked_add(1).ok_or(Error::Overflow)?
+        };
+        if self
+            .tree
+            .metadata(inode)
+            .map_err(|_| Error::BadHandle)?
+            .mode
+            & 0o170000
+            != 0o100000
+        {
+            return Err(Error::NotSupported);
+        }
+        if self.tree.source(inode).map_err(|_| Error::Payload)? != 0 {
+            return Err(Error::NotSupported);
+        }
+        let size = self.tree.size(inode).map_err(|_| Error::Payload)? as u64;
+        let length = if offset >= size {
+            0
+        } else {
+            requested.min(size - offset) as usize
+        };
+        offset.checked_add(length as u64).ok_or(Error::Overflow)?;
+        // No mutation/export is exposed for this sealed resident source.
+        let d = self.descriptions[id.slot].value.as_mut().unwrap();
+        d.refs = refs;
+        d.reading = true;
+        Ok(ReadHold {
+            description: id,
+            inode,
+            offset,
+            length,
+            next_revision: revision,
+        })
+    }
+
+    pub(crate) fn read_bytes(&mut self, hold: &ReadHold) -> &[u8] {
+        // EOF at an arbitrary u64 offset does not narrow that offset to usize.
+        let at = if hold.length == 0 {
+            0
+        } else {
+            hold.offset as usize
+        };
+        self.tree
+            .read(hold.inode, at, hold.length)
+            .expect("pinned resident source")
+    }
+
+    /// Infallible after receipt validation: refs, revision and maximal offset
+    /// were reserved before any copy; no conflicting offset writer is admitted.
+    pub(crate) fn finish_read(&mut self, hold: ReadHold, copied: u64) {
+        assert!(copied <= hold.length as u64);
+        let d = self.descriptions[hold.description.slot]
+            .value
+            .as_mut()
+            .unwrap();
+        assert!(d.reading);
+        d.offset = hold.offset + copied;
+        d.revision = hold.next_revision;
+        d.reading = false;
+        self.release(hold.description);
+    }
+
+    pub(crate) fn abort_read(&mut self, hold: ReadHold) {
+        let d = self.descriptions[hold.description.slot]
+            .value
+            .as_mut()
+            .unwrap();
+        assert!(d.reading);
+        d.reading = false;
+        self.release(hold.description);
+    }
+
     pub(crate) fn cloexec(&self, table: &Table, fd: u32) -> Result<bool, Error> {
         Ok(self
             .state(table)?

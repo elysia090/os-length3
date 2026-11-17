@@ -9,7 +9,7 @@ permission before host execution, retains uncertain completion, accepts cumulati
 prefix evidence, and refuses stale/duplicate actions. `Completion::Stopped` requires
 both no further effects and ended access; a confirmed byte count alone does not.
 
-The private wasm32 ABI connects that table to `runtime/linux/memory-host.ts`, which
+The private wasm32 ABI (version 2) connects that table to `runtime/linux/memory-host.ts`, which
 creates and retains actual engine memories without exposing raw memory or callbacks.
 Capture/write/grow operations acquire admission before host access. Mutation reserves
 exclusively before execution; successful retirement publishes a new binding identity.
@@ -103,8 +103,9 @@ offset revision. A shared table has independent holder accounting. CLOEXEC belon
 to its slot rather than the shared description. Internal handles must reject stale
 or foreign generations; exhaustion must not wrap them into an old identity.
 
-These operations do not implement guest open/openat, permission checks, mounted
-path resolution, console/pipe/socket finalizers, pending reads or memory copies.
+These descriptor operations do not implement guest open/openat, permission checks,
+mounted path resolution, console/pipe/socket finalizers or guest read syscalls.
+The resident-only private copy pipeline below is connected separately.
 Closing the last description does not reclaim its inode payload: namespace,
 mapping, image and source ownership still need the full migration. The Node and
 muk callers continue using the existing TS runtime; no production TS deletion is
@@ -124,9 +125,69 @@ Table holder tickets are non-Copy/non-Clone; share creates a ticket and let_go
 consumes it. Dropping a ticket without let_go retains the table until Files drops.
 The embedding must allocate unique owner incarnations and retire all tickets.
 Neither a Rust handle nor a guest FD number alone proves an external operation
-has stopped. Pending read references and offset commit after copy receipts must
-be integrated before asynchronous access can safely use this owner.
+has stopped. The resident-only pending references described below do not yet provide lazy
+source, process/image lifetime or asynchronous guest syscall integration.
 
 Passing a holder to the wrong Files rejects it but consumes that ticket, retaining
 its original table. This is an internal misuse limitation, not a public recovery
 contract; a public release API must preserve recoverability before exposure.
+
+
+## Resident file to physical memory (private ABI 2)
+
+The same Wasm instance now owns Files, memory admission and finite pending reads.
+The component builder uses bounded name/input staging; file input is transferred
+into the payload owner without another payload copy. A one-way seal creates the
+bootstrap FD table. Source mutations and reinitialization are then refused. This
+is an ordinary preparation port, not a hard-coded sample-file generator, but it
+still lacks full archive/root-overlay and guest path integration.
+
+A read resolves the description once, retains it independently of FD slots and
+reserves its offset. Actual resident length, offset arithmetic and the next
+revision are checked before any effect. A failed destination admission releases
+that preparation without changing the offset. Closing/reusing the original FD
+cannot retarget the pending operation. Another open of the same inode has an
+independent offset; dup shares the reserved description. Busy is an internal
+admission result, not an invented guest errno.
+
+`read_start` consumes copy permission and exposes a numerical canonical payload
+span only for the private host's short synchronous copy interval. The host reads
+scalar results, then creates fresh views and uses captured physical intrinsics:
+no callback, await or further core call between view creation and the copy. No
+view escapes. Source mutation is forbidden by seal; allocating/mutating exports
+are refused during the short interval. Generic action exports cannot interfere
+with read-owned tokens. ABI u64 results use `BigInt.asUintN(64, result)` because
+Wasm i64 values are returned to JavaScript as signed BigInts.
+
+A stopped receipt atomically commits its confirmed prefix to the original OFD and
+releases its backing obligations. Ready cancellation releases without effects.
+Finished/cancelled results remain queryable until explicit read retirement, without
+holding a memory lease just to await observation. Unknown ends the host's short
+core-view interval (the private host must have stopped using the view before
+reporting it) but retains source/description/offset reservation and guest
+memory lifetime obligations; it never permits a second copy. Later monotone stopped
+evidence can settle that same operation. Invalid/stale/duplicate receipts must not
+release another operation. Generic memory growth may proceed once its relevant
+backing obligation ends, not merely because a byte count was reported.
+
+For a resident, sealed, non-alias source this delivery performs one N-byte copy
+from canonical payload to physical guest memory, with constant-size per-read
+records and no N-byte read snapshot. It is not atomic against concurrent writers
+to shared guest memory. Preparation still captures caller input and copies it into
+Wasm input storage; allocation/initialization and staging retention are not free.
+Read/action/memory tables still use bounded linear lookup, and terminal records
+consume read capacity until retired. These are not universal lower-bound claims.
+
+Real-engine tests cover copy into shared/unshared Memory objects, close/reuse,
+ready cancellation, late stopped evidence after a partially copied unknown result,
+EOF without a destination view, sealed mutation rejection and generic-token
+interference. Protocol fault injection is distinct from actual guest execution or a shared
+Worker failure/stop test. Late receipt reconciliation is currently available only
+at the private raw ABI, not through the host facade. Input buffer resizing can
+temporarily retain both old and new allocations. Zero requested length still
+requires a valid FD and known binding in this private path; a guest zero-read
+fast path is not implemented.
+The bootstrap table, resident source and one segment are deliberate restrictions:
+access flags, lazy source actions, process/image generations, readv progression,
+mount-aware paths and real Node/muk caller switching remain unimplemented. No
+production TS Linux authority has yet been removed by this private pipeline.
