@@ -978,8 +978,13 @@ export class Kernel implements Kern {
       return v;
     } catch (error) {
       if (error instanceof ReadLifetimeError) {
-        try { this.exitProcess(p, SIG.KILL); }
-        catch (cleanup) { error.cleanupFailure = cleanup; p.stopped = SIG.KILL; }
+        try {
+          // The callback may have replaced or renewed memory. Ordinary unmap
+          // would settle unrelated/new bytes into the old file's canonical data.
+          const invalid = p.maps; p.maps = [];
+          for (const m of invalid) m.node.abandon(m);
+          this.exitProcess(p, SIG.KILL);
+        } catch (cleanup) { error.cleanupFailure = cleanup; p.state = 'zombie'; p.stopped = SIG.KILL; }
         throw error; // A failed cleanup must not disguise the original lost-identity failure.
       }
       if (error instanceof FsError) {

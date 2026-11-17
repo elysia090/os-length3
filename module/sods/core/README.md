@@ -257,3 +257,43 @@ callback; callback-after-fd-selection needs re-selection/reservation analysis.
 Rust lazy loading remains disabled while those entrance contracts are incomplete.
 Mapping materialization/publication ordering is a separate change with its own
 same-inode dirty-map and failure tests, not implied by this ownership fix.
+
+### Materialization stage 2: mapping source snapshots
+
+mmap now obtains an owned initial snapshot, with source/identity checks, before
+reserving addresses, retiring an old MAP_FIXED mapping or writing guest memory.
+mremap similarly obtains every required growing-file tail before its destructive
+phase. Source failure therefore does not reserve/publish the new mapping or remove
+the old one. Snapshot reads still settle shared file changes; source observation
+can update canonical file bytes/baselines, so this is not a claim of zero effects
+or full transactionality on every failure.
+
+File.snapshot uses the existing read/settle semantics and then copies the range.
+The Rust-backed override already receives an owned snapshot from its pending-read
+path and adds no second snapshot copy. Legacy TS mappings now retain an extra
+range snapshot until publication, a deliberate cost to avoid source aliases being
+zeroed by destination replacement. Concurrent guest stores and later allocation/
+publication failures remain outside a general atomic/pin guarantee.
+
+Regressions cover same-inode dirty MAP_FIXED replacement, source aliasing the fixed
+destination, later-tail failure in an explicit multi-record mapping fixture, and
+real Rust-backed mmap/mremap through Kernel/Process. madvise's zero-then-read order,
+O_TRUNC fd selection, and source effects in image setup remain separate unfinished
+entrances. These fixes still do not enable Rust lazy loading automatically.
+
+Abnormal retirement correction: a source callback that replaces memory can leave
+old Mapping records pointing through the Process to unrelated new bytes. Normal
+unmap/settle during fatal cleanup would then corrupt the old inode. Lost-identity
+retirement now first detaches the Process mapping list, then removes those inode
+registrations **without reading guest bytes or writing payloads**, before ordinary
+process teardown. Last legitimately settled payload is retained; unobserved dirty
+bytes may be lost. This is neither rollback nor normal exit durability semantics.
+Other processes' registrations remain active, and duplicate discard does not alter
+the mapped count twice. Conservative sharing hints may persist until a later
+normal mapping update; discard deliberately avoids touching other guest memories.
+
+The regression first reproduced fabricated zero writeback (expected 7, observed
+0) after memory replacement. It now verifies no such writeback, preservation of
+already-settled bytes, and continuing propagation to another process's mapping.
+Normal exit/unmap still settles mappings. Cleanup-failure reporting remains
+separate from a claim that all resources were recovered.

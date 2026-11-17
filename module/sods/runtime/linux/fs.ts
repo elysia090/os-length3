@@ -159,6 +159,8 @@ export class File extends Node {
     if (this.maps) this.settle(start, end);
     return this.range(start, end);
   }
+  /** A retained range, independent of subsequent file or mapping changes. */
+  snapshot(start: number, end: number): Uint8Array { return this.read(start, end).slice(); }
   /** Internal payload access. Mapping visibility remains owned by this inode. */
   protected range(start: number, end: number): Uint8Array { return this.data.subarray(start, Math.min(end, this.size)); }
   protected replaceRange(at: number, bytes: Uint8Array): void { this.data.set(bytes, at); }
@@ -282,7 +284,14 @@ export class File extends Node {
   unmap(m: Mapping): void {
     if (!this.maps) return;
     this.settle(m.off, m.off + m.length, m);
-    this.maps.delete(m);
+    this.abandon(m);
+  }
+  /** An invalidated execution owner cannot supply trustworthy mapping bytes.
+   * Remove only the observation record: never read guest memory or write back.
+   * Unobserved writes are not recovered by this abnormal retirement path.
+   */
+  abandon(m: Mapping): void {
+    if (!this.maps?.delete(m)) return;
     if (!this.maps.size) { this.maps = null; counted.mapped--; }
   }
   /** What was written through the mappings (all, or `only`) into [start, end) goes to the bytes and the other mappings. */

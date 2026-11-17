@@ -26,6 +26,7 @@ class OwnedFile extends File {
     Object.defineProperty(this, '_data', {get() { throw new FsError(E.OPNOTSUPP); }, set() { throw new FsError(E.OPNOTSUPP); }});
   }
   override materialize(): void { this.live(); }
+  override snapshot(start: number, end: number): Uint8Array { return this.read(start, end); }
   override get data(): Uint8Array { throw new FsError(E.OPNOTSUPP); }
   protected override range(start: number, end: number): Uint8Array {
     this.live();

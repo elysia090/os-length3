@@ -626,6 +626,15 @@ export const PROC_CALLS: Calls = {
     const d = anonymous ? null : this.fds.get(N(fd));
     const node = d?.node instanceof File ? d.node : null;
     if (!anonymous && (!d || d.kind !== 'file' || !node)) fail(E.BADF);
+    // Source callbacks and snapshot allocation happen before reserving or replacing
+    // guest mappings. Source failure must not start this call’s reserve/replacement
+    // phase; source settling, callback effects and fatal cleanup are separate.
+    let initial: Uint8Array | null = null;
+    if (node) {
+      const identity = this.readIdentity();
+      try { initial = node.snapshot(N(off), N(off) + length); }
+      finally { identity(); }
+    }
     const start = fixed ? N(addr) : this.reserve(length);
     if (fixed) {
       this.unmapShared(start, length);
@@ -634,7 +643,7 @@ export const PROC_CALLS: Calls = {
       if (start < this.mapBase) this.fixed.push({start, length});
     }
     if (node) {
-      this.bytes.set(node.read(N(off), N(off) + length), start);
+      this.bytes.set(initial!, start);
       if (shared) this.mapShared(node, start, length, N(off));
     } else if (shared) {
       // Shared anonymous memory (what fork leaves shared): a file of its own, in no directory.
@@ -655,13 +664,20 @@ export const PROC_CALLS: Calls = {
   12() { return this.mapBase; }, // brk never grows; libc then uses mmap
   24() { return 0; }, // sched_yield: the kernel gives another its turn first (process.ts YIELDS)
   25(old, oldLength, newLength) {
+    // Resolve growing file tails before changing either mapping. Keep snapshots:
+    // reserving a new region may zero memory that an embedding source aliases.
+    const moved = this.maps.filter((m) => m.start === N(old));
+    const tails: Uint8Array[] = [];
+    if (N(newLength) > N(oldLength)) {
+      const identity = this.readIdentity();
+      try { for (const m of moved) tails.push(m.node.snapshot(m.off + N(oldLength), m.off + N(newLength))); }
+      finally { identity(); }
+    }
     const start = this.reserve(N(newLength));
     move(this.memory!, start, N(old), Math.min(N(oldLength), N(newLength)));
-    // A shared file mapping moves with what it maps, and grows into more of the file.
-    const moved = this.maps.filter((m) => m.start === N(old));
     this.unmapShared(N(old), N(oldLength));
-    for (const m of moved) {
-      if (N(newLength) > N(oldLength)) this.bytes.set(m.node.read(m.off + N(oldLength), m.off + N(newLength)), start + N(oldLength));
+    for (const [i, m] of moved.entries()) {
+      if (N(newLength) > N(oldLength)) this.bytes.set(tails[i], start + N(oldLength));
       this.mapShared(m.node, start, N(newLength), m.off);
     }
     this.release(N(old), N(oldLength));
