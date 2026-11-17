@@ -53,7 +53,7 @@ export const UNITS: Unit[] = [
   {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, the command line #80 lists, the root as layers (their form, what writes and what reads them), and the root where it is used: unpacked and held on a device, and run in a box (the bundle muk is given, the box started, in a page its Worker); no window, ordinary POSIX, and no service or product known to it',
     holds: ['module/ricebox'],
     takes: ['lib', 'muk', 'sods', 'everyday']},
-  {name: 'everyday', says: 'the look and feel, changed by the one who uses it: what a face is drawn through. A sheet of names and values, a person\'s lines held to it, the way back the file itself; no window of its own',
+  {name: 'everyday', says: 'display and input compatibility using existing Wayland components; no product UI of its own. Current implementation is the independent theme-value parser, not yet the display/input foundation',
     holds: ['module/everyday'], takes: []},
   {name: 'you', says: 'the tools a person reaches for, each a unit of C on lib made to its bound: you (the places one has been, zoxide\'s) and rg (a tree searched, ripgrep\'s), on regular expressions of its own', holds: ['module/you'], takes: ['lib']},
   {name: 'otter', says: 'to see and to decide: every floor counted at its hook, small bounded policies put at the hooks, each said; never the work itself',

@@ -1,4 +1,21 @@
-# everyday — the look and feel, changed by the one who uses it
+# everyday — display and input compatibility
+
+The intended role is a display/input compatibility foundation using existing Wayland
+components: ordinary windows through xdg-shell, panels and other desktop surfaces
+through layer-shell, with foot, Waybar, fuzzel, mako, wallpaper clients and Quickshell
+as compatibility targets. Prefer existing session/compositor behavior and add only a
+proven missing connection. The intended ricebox integration includes the foundation, not a new ricebox UI or
+every application by default. everyday remains independently usable.
+
+This target is **not implemented by the current theme parser**. Native borrowed-session
+and non-native execution are different paths, with different proof obligations. The
+first profile and its acceptance gates are in [DISPLAY-INPUT.md](DISPLAY-INPUT.md).
+Neither the terminal artwork experiment nor a theme change establishes compatibility.
+
+## Current implementation: theme values
+
+The following describes the existing theme-value API, retained for its current callers.
+It is not the definition or completion criterion of the display/input foundation.
 
 ricebox has no window of its own. It has this: the layer a face is drawn through, so that whatever face it is
 given (why's pages, a terminal, someone's own), its look is one thing, said one way, and the person's to change.
@@ -15,7 +32,7 @@ pace: 0.5
 ```
 
 everyday reads the sheet for what may be changed, holds the lines to it, and gives the face one rule that makes
-them so. That is all of it (`src/everyday.ts`: `things`, `change`).
+them so. That is the present implementation (`src/everyday.ts`: `things`, `change`).
 
 **It knows no product, and no product is broken through it.** It depends on nothing and is told nothing of what a
 face is for. A person may change nearly everything a look is made of, and whatever they write, the face they
