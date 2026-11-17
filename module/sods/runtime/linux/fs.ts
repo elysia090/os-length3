@@ -101,6 +101,14 @@ export interface Mapping { proc: {readonly bytes: Uint8Array}; start: number; le
 export const FILE_MOST = 2 ** 31 - 1;
 
 export class File extends Node {
+  #loading = false;
+  #loadConflict = false;
+  /** A synchronous source cannot wait for its own stack. Poison even a swallowed reentry. */
+  #notLoading(): void {
+    if (!this.#loading) return;
+    this.#loadConflict = true;
+    throw new FsError(E.IO);
+  }
   declare _data: Uint8Array;
   declare size: number;
   declare load: (() => Uint8Array) | null;
@@ -142,10 +150,18 @@ export class File extends Node {
   /** Its bytes are its own now, or gone back to its loader: its tree holds them no longer. */
   #unheld(): void { this.pool?.delete(this); this.pool = null; }
   get data(): Uint8Array {
+    this.#notLoading();
     if (this.load) {
       // Its bytes not to be had (its pack gave other bytes than its table names, or nothing): the call that wanted
       // them fails as a read of a disk's bad block does (EIO), said once here, and a later call asks again.
-      try { this._data = this.load(); } catch (e) { console.warn(e instanceof Error ? e.message : String(e)); throw new FsError(E.IO); }
+      this.#loading = true;
+      this.#loadConflict = false;
+      try {
+        const bytes = this.load();
+        if (this.#loadConflict) throw new FsError(E.IO);
+        this._data = bytes;
+      } catch (e) { console.warn(e instanceof Error ? e.message : String(e)); throw new FsError(E.IO); }
+      finally { this.#loading = false; this.#loadConflict = false; }
       this.size = this._data.length;
       this.load = null;
       this.#loaded();
@@ -153,7 +169,7 @@ export class File extends Node {
     return this._data;
   }
   /** Resolve a lazy source before selecting positions or changing ownership. */
-  materialize(): void { if (this.load) void this.data; }
+  materialize(): void { this.#notLoading(); if (this.load) void this.data; }
   /** Bytes [start, end) — a view, not a copy. */
   read(start: number, end: number): Uint8Array {
     if (this.maps) this.settle(start, end);
@@ -190,6 +206,7 @@ export class File extends Node {
    * bytes its loader would read, so they are not read.
    */
   given(bytes: Uint8Array): void {
+    this.#notLoading();
     if (!this.load) return;
     this._data = bytes;
     this.size = bytes.length;
@@ -198,12 +215,14 @@ export class File extends Node {
   }
   /** About to change the bytes: from here on they are this file's own. */
   own(): void {
+    this.#notLoading();
     if (this.shared) { this._data = this.data.slice(0, this.size); this.shared = false; }
     this.#unheld();
     this.reload = null;
   }
   /** Let go of bytes its loader can give again (unchanged since); returns how many. */
   release(): number {
+    this.#notLoading();
     if (this.load || !this.reload || this.version !== 0) return 0;
     const n = this._data.length;
     this._data = new Uint8Array(0);
@@ -269,6 +288,7 @@ export class File extends Node {
    * the file to every other mapping (another process's memory: fork, or the same file mapped twice).
    */
   map(m: Mapping): void {
+    this.#notLoading();
     const bytes = m.proc.bytes.subarray(m.start, m.start + m.length);
     // Reuse the first live mapping's baseline when its extent and initial bytes agree.
     // Looking at one candidate keeps registration bounded even for many extents. A mapping can
@@ -296,6 +316,7 @@ export class File extends Node {
   }
   /** What was written through the mappings (all, or `only`) into [start, end) goes to the bytes and the other mappings. */
   settle(start = 0, end = this.size, only: Mapping | null = null): void {
+    this.#notLoading();
     for (const m of only ? [only] : [...this.maps ?? []]) {
       const a = Math.max(start, m.off), b = Math.min(end, m.off + m.length, this.size);
       if (a >= b) continue;

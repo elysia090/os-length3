@@ -378,3 +378,27 @@ accepted-prefix/offset contract; it is deliberately not covered by this change.
 Review also identified separate same-inode loading reentry and deferred-image
 revision/adoption gates. Rust lazy is still disabled. These guards are migration
 prerequisites, not a second TS implementation of Rust-owned lazy state.
+
+### Materialization stage 7: synchronous same-inode loading
+
+The existing synchronous File source has an explicit loading attempt. Reentrant
+materialize/data, own/given/release, map or settle on the same inode fails with EIO
+before their effects and poisons that attempt. Even if the callback catches the
+inner error, its returned bytes are not adopted. Failure clears the attempt and
+retains the source for a later independent retry. Other inode work is allowed and
+is not rolled back; A-to-B-to-A cycles poison A, not a transaction over B.
+
+There is no asynchronous waiter queue: the source returns Uint8Array synchronously,
+so a same-stack waiter cannot await its own completion. Two processes sharing the
+inode observe EIO on reentrant reads without advancing offsets or copying bytes;
+subsequent independent reads share the successfully materialized source. Abnormal
+mapping abandonment stays available for cleanup; normal unmap must still settle.
+The per-inode guard uses constant state, no successful-attempt queue/allocation
+or extra payload copy (errors still allocate their normal diagnostic objects). This does not establish remote concurrency safety. Public raw-field
+mutation, escaping aliases and arbitrary overrides remain unsupported embeddings.
+
+This is the legacy-source boundary contract for migration, not a Rust lazy
+implementation. The real-Wasm regression covers a TS lazy source reading an
+independent Rust inode and releasing its read lease, not Rust-owned loading state.
+Rust must eventually own the lazy attempt/source identity with its payload; no
+second canonical lazy state should be retained after that migration.
