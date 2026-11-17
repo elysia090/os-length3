@@ -252,9 +252,52 @@ The change adds only slot-identity snapshot checking and lazy error arrays; it a
 no payload scan/copy and does not change syscall lookup into Rust. Aggregate errors
 are an exceptional outcome, not silent successful retirement.
 
-Process-level cleanup remains a separate gate: exitProcess marks a process zombie
-before unmapShared and subsequent fd cleanup; a failing dirty publication can still
-interrupt that wider sequence. Making fd-table finalizers robust alone does not
-prove process/tree quiescence or authorize managed/default inode reclamation.
+Process-level cleanup was a separate gate: exitProcess marked a process zombie
+before unmapShared, so failing dirty publication skipped later fd cleanup. The
+continuation below now addresses that case only after task termination succeeded.
+Neither fd-table finalizers alone nor this continuation authorize managed/default
+inode reclamation.
 An attempted finalizer can itself stop partway (for example inside socket.close);
 this step does not repair every nested finalizer or certify complete drain.
+
+
+## Process retirement after existing task-end calls return
+
+The continuation begins only after written-range capture, instance handling and
+every existing endTask call returns without error. It then retires each of the exiting process's
+mapping observations independently: attempt writeback, abandon that observation,
+update sharing flags. A failed mapping cannot prevent unrelated mapping retirement
+or fd/fs/vfork cleanup. Failed dirty bytes are explicitly not recovered; successful
+prior/sibling publications remain. Other processes' mapping records remain owners.
+The process's memory reference is cleared once before letGo, whose existing users
+count still prevents recycling shared memory while another process owns it.
+
+Each independent continuation phase records failure and proceeds. The original
+single error is preserved; multiple errors, including cleanup failures, are returned
+in an AggregateError. Successful child/namespace terminal bookkeeping proceeds, but a failed
+init retirement does not emit the normal stopped callback. Its requested exit status
+remains recorded; the thrown error means cleanup failed, not a successful writeback.
+A reentrant exit sees zombie state and cannot release the same owner twice.
+Any recursive child-exit failure conservatively stops parent tree clearing while
+preserving prior parent errors. Thus a child whose backend failed to stop is not
+removed from process/scheduler ownership records. Surviving shared-memory owners'
+SHARES hint is not unconditionally zeroed by the exiting process.
+
+The real-Wasm regression uses Rust payloads with two processes sharing one execution
+memory, a failed dirty mapping, an independently successful mapping, a failing fd
+finalizer and reentrant exit. It verifies survivor ownership, memory.users, canonical
+bytes and error identity. The process fixture supplies memory/layout directly; this
+is not a translated guest program inducing a storage fault.
+
+A task/backend stop failure is deliberately not swallowed by this continuation.
+Unknown running threads must not race memory reuse. The existing failure leaves
+memory attached and does not enter letGo; a separate injected-endTask test checks
+that conservative guard, not actual CPU Worker termination. Complete cleanup after
+such a stop failure, initial written-range failure, and nested finalizer failures
+remain separate gates requiring quarantine/realm termination evidence. No claim of
+fully drained arbitrary raw callbacks or universal process shutdown is made.
+
+This does not strengthen the backend's stop acknowledgment. RemoteTask.end already
+marks memory tainted when terminating a Worker that may still write briefly;
+letGo retains its existing no-reuse treatment for that memory. The new continuation
+is not a proof of an atomic snapshot of all writes during asynchronous termination.

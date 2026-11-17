@@ -66,7 +66,7 @@ test('lost-read identity remains the primary failure when retirement cleanup als
   const file = new File(new Uint8Array(0), 0o644, () => { p.memory = memory(); return enc.encode('abc'); });
   file.size = 3; k.vfs.dir('/tmp').entries.set('lazy', file);
   const fd = Number(call(p, 2, 1024, 0));
-  p.unmapShared = () => { throw cleanup; };
+  p.retireShared = () => { throw cleanup; }; // Fault at the process-exit mapping retirement boundary.
   assert.throws(() => call(p, 0, fd, 4096, 3), (error: unknown) =>
     error instanceof ReadLifetimeError && error.cleanupFailure === cleanup);
   assert.equal(p.state, 'zombie');

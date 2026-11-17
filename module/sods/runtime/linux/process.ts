@@ -82,6 +82,25 @@ export interface Translation {
   readonly rf?: WebAssembly.Global;
 }
 /** A file's translation, as the kernel keeps it (an Image). */
+/** Continue independent retirement steps, then report every failure. */
+class Retirement {
+  private errors: unknown[] | undefined;
+  get failed(): boolean { return !!this.errors?.length; }
+  attempt(action: () => void): void {
+    try { action(); } catch (error) { (this.errors ??= []).push(error); }
+  }
+  abort(error: unknown): never {
+    (this.errors ??= []).push(error);
+    this.finish();
+    throw error;
+  }
+  finish(): void {
+    if (!this.errors?.length) return;
+    if (this.errors.length === 1) throw this.errors[0];
+    throw new AggregateError(this.errors, 'Process retirement failed');
+  }
+}
+
 interface Kept extends ImageEntry { image: Image }
 
 /** What a pump says: init's wait status once it ended, else that everything waits (until a time, or input). */
@@ -1228,15 +1247,18 @@ export class Kernel implements Kern {
     this.leaveInstance(p);
     for (const t of [...p.tasks]) this.endTask(t);
     p.tasks.clear();
-    p.unmapShared();
-    if (p.memory) this.letGo(p.memory, written);
-    p.memory = null;
+    // Only enter this continuation after every existing task end succeeded.
+    // A failed backend stop is not permission to recycle its memory.
+    const retiring = new Retirement();
+    retiring.attempt(() => p.retireShared());
+    const memory = p.memory;
+    p.memory = null; // Reentrant exit cannot release this owner twice.
+    retiring.attempt(() => { if (memory) this.letGo(memory, written); });
     // Its table of descriptors is let go of: closed, unless another process holds it too (clone's CLONE_FILES).
-    // (Before: closed outright, under a parent that shared it.)
-    p.fds.letGo();
-    if (!p.taken) p.fs0.drop();
+    retiring.attempt(() => p.fds.letGo());
+    retiring.attempt(() => { if (!p.taken) p.fs0.drop(); });
     p.cgroup.procs.delete(p);
-    this.releaseVfork(p);
+    retiring.attempt(() => this.releaseVfork(p));
     this.dirty = true;
     // The first process of a pid namespace of its own is gone: everything in it goes with it, and nothing more is made there.
     const space = p.pidns;
@@ -1244,7 +1266,7 @@ export class Kernel implements Kern {
       space.ended = true;
       const inside = (q: Process): boolean => { for (let ns: PidNs | null = q.pidns; ns; ns = ns.parent) if (ns === space) return true; return false; };
       for (const q of [...this.procs.values()]) if (q !== p && inside(q)) {
-        this.exitProcess(q, SIG.KILL);
+        try { this.exitProcess(q, SIG.KILL); } catch (error) { retiring.abort(error); }
         // (no one in it is left to wait for them)
         this.procs.get(q.ppid)?.children.delete(q);
         this.procs.delete(q.pid);
@@ -1252,13 +1274,16 @@ export class Kernel implements Kern {
     }
     if (p.pid === 1 || p.pid === this.initPid) {
       // Init is gone: everything else goes with it (a PID namespace's end).
-      for (const q of this.live()) this.exitProcess(q, SIG.KILL);
+      for (const q of this.live()) {
+        try { this.exitProcess(q, SIG.KILL); } catch (error) { retiring.abort(error); }
+      }
       this.status = status;
       this.procs.clear();
       this.runq.length = 0;
       this.blocked.clear();
-      this.ended();
-      this.stopped?.();
+      retiring.attempt(() => this.ended());
+      if (!retiring.failed) retiring.attempt(() => this.stopped?.());
+      retiring.finish();
       return;
     }
     // Its children go to the nearest process above it that asked for orphans and is alive (prctl
@@ -1276,22 +1301,23 @@ export class Kernel implements Kern {
           if (a.handler === 1n || a.flags & SA.NOCLDWAIT) { reaper.children.delete(c); this.procs.delete(c.pid); }
           else {
             const how = (c.exitStatus ?? 0) & 0x7f;
-            send(this, reaper, SIG.CHLD, {signo: SIG.CHLD, code: how ? CLD.KILLED : CLD.EXITED, pid: c.pid, uid: 0, status: how ? how : (c.exitStatus ?? 0) >> 8});
+            retiring.attempt(() => send(this, reaper, SIG.CHLD, {signo: SIG.CHLD, code: how ? CLD.KILLED : CLD.EXITED, pid: c.pid, uid: 0, status: how ? how : (c.exitStatus ?? 0) >> 8}));
           }
         }
       } else if (c.state === 'zombie') this.procs.delete(c.pid);
       // Its parent gone: the signal it asked for then (prctl PR_SET_PDEATHSIG).
-      if (c.state === 'live' && c.deathSignal) send(this, c, c.deathSignal, {code: SI.USER, pid: p.pid, uid: 0});
+      if (c.state === 'live' && c.deathSignal) retiring.attempt(() => send(this, c, c.deathSignal!, {code: SI.USER, pid: p.pid, uid: 0}));
     }
     p.children.clear();
     const parent = this.procs.get(p.ppid);
     const signalled = status & 0x7f;
     const info = {signo: SIG.CHLD, code: signalled ? CLD.KILLED : CLD.EXITED, pid: p.pid, uid: 0, status: signalled ? signalled : status >> 8};
-    if (!parent || parent.state !== 'live') { this.procs.delete(p.pid); return; }
+    if (!parent || parent.state !== 'live') { this.procs.delete(p.pid); retiring.finish(); return; }
     const a = actionOf(parent, SIG.CHLD);
     // A parent that ignores SIGCHLD (or says SA_NOCLDWAIT) leaves no zombie (POSIX).
     if (a.handler === 1n || a.flags & SA.NOCLDWAIT) { parent.children.delete(p); this.procs.delete(p.pid); }
-    if (p.exitSignal) send(this, parent, p.exitSignal, info);
+    if (p.exitSignal) retiring.attempt(() => send(this, parent, p.exitSignal, info));
+    retiring.finish();
   }
 
   /** The pid namespace's init: pid 1, or the one a backend names (initPid). */
@@ -1749,6 +1775,21 @@ export class Process implements Proc {
       if (m.start < start) this.mapShared(m.node, m.start, start - m.start, m.off);
       if (end < mend) this.mapShared(m.node, end, mend - end, m.off + end - m.start);
     }
+  }
+
+  /** Final process retirement only. Failed writeback is reported, but its
+   * observation is abandoned so it cannot later publish from recycled memory. */
+  retireShared(): void {
+    retireMemoryView(this.memory);
+    const retiring = new Retirement(), maps = this.maps;
+    this.maps = [];
+    for (const m of maps) {
+      retiring.attempt(() => m.node.unmap(m));
+      retiring.attempt(() => m.node.abandon(m));
+      retiring.attempt(() => markShares(m.node));
+    }
+    retiring.attempt(() => { if (!this.maps.length && this.memory && this.memory.users === 1) this.view.setInt32(SHARES, 0, true); });
+    retiring.finish();
   }
 
   /**
