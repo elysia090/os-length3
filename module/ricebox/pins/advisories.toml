@@ -41,6 +41,11 @@ id = "RUSTSEC-2026-0441"
 ignoreUntil = 2027-02-01
 reason = "pin-utils is unmaintained (delta, through futures-util); no vulnerability is known in it"
 
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+ignoreUntil = 2027-02-01
+reason = "chrono is unmaintained (delta, just); this informational advisory names no vulnerability and has no patched version; review upstream migration to jiff/time before expiry"
+
 # Fixed only in a version the program's own code would have to change for, and not reached by it.
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0183"
