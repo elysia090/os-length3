@@ -198,7 +198,7 @@ test('sealed source mutations and foreign inode/read handles are refused', {skip
   a.host.cancelRead(read); a.host.retireRead(read);
 });
 
-const readAbi = () => {
+const readAbi = (lazy = false, memories = 1) => {
   const e = new WebAssembly.Instance(moduleOf()).exports;
   const call = (name: string, ...args: (number | bigint)[]) => (e[name] as (...a: (number | bigint)[]) => number)(...args);
   const result = () => (e.linux_result as () => bigint)();
@@ -209,16 +209,19 @@ const readAbi = () => {
     const ptr = Number(ok(name, bytes.length));
     new Uint8Array((e.memory as WebAssembly.Memory).buffer, ptr, bytes.length).set(bytes);
   };
-  ok('linux_init', 1, 4);
+  ok('linux_init', memories, 4);
   const root = ok('linux_files_prepare', 4, 4, 1024, 2, 4, 8, 2);
   stage('linux_name', textBytes('source'));
   stage('linux_input', textBytes('abcdef'));
-  const inode = ok('linux_tree_file', root, 0o600);
+  const inode = lazy ? ok('linux_tree_lazy', root, 0o600, 1, 0) : ok('linux_tree_file', root, 0o600);
+  let other: bigint | undefined;
+  if (lazy) { stage('linux_name', textBytes('other')); other = ok('linux_tree_lazy', root, 0o600, 2, 0); }
   ok('linux_files_seal', 8);
   const fd = Number(ok('linux_open', inode));
+  const otherFd = other === undefined ? undefined : Number(ok('linux_open', other));
   const memory = new WebAssembly.Memory({initial: 1, maximum: 2});
   const binding = ok('linux_bind', BigInt(memory.buffer.byteLength));
-  return {e, call, result, length, state, ok, fd, memory, binding};
+  return {e, call, result, length, state, ok, fd, otherFd, memory, binding};
 };
 
 test('unknown copy retains OFD and memory obligations until a monotone stopped receipt', {skip: !artifact}, () => {
@@ -447,4 +450,89 @@ test('image-owned mutation tokens and managed canonical views reject generic int
   a.ok('linux_image_begin', execution, 65536n);
   a.ok('linux_image_finish', execution, 1); // no initialization happened
   assert.equal(a.ok('linux_offset', a.fd), 3n);
+});
+
+// Frozen old-translator ABI diagnostic, not a current-source release artifact.
+const translatedFixture = () => Buffer.from(readFileSync(new URL('../fixtures/managed-read-exit/translated.wasm.base64', import.meta.url), 'utf8'), 'base64');
+function translatedReader(lazy: boolean) {
+  const host = memoryHost(moduleOf(), 2, 8);
+  const root = host.prepareFiles({inodes: 8, entries: 8, fileBytes: 32, tables: 1, descriptions: 8, slots: 8, reads: 8});
+  const name = new TextEncoder().encode('data');
+  const file = lazy ? host.lazyFile(root, name, 1, 0) : host.file(root, name, new TextEncoder().encode('abcd'));
+  host.sealFiles(8);
+  for (let fd = 0; fd < 4; fd++) assert.equal(host.open(file), fd);
+  const execution = host.translatedExecution(translatedFixture(), 69);
+  return {host, execution};
+}
+
+test('translated guest resident read and exit share Rust syscall and OFD authority', {skip: !artifact}, async () => {
+  const {host, execution} = translatedReader(false);
+  assert.deepEqual(await host.runTranslated(execution, 4198400n), {status: 0, sourceFailures: 0});
+  assert.equal(host.offset(3), 4n);
+  await assert.rejects(host.runTranslated(execution, 4198400n), /admission/);
+});
+
+test('translated guest resumes once after synchronous or asynchronous lazy source', {skip: !artifact}, async () => {
+  for (const asyncSource of [false, true]) {
+    const {host, execution} = translatedReader(true);
+    let calls = 0;
+    const output = await host.runTranslated(execution, 4198400n, source => {
+      assert.equal(source, 1); calls++;
+      assert.throws(() => host.replaceImage(execution, new Uint8Array()), /replacement/);
+      assert.throws(() => host.beginManagedRead(execution, 3, 0, 1), /owns its reads/);
+      const bytes = new TextEncoder().encode('abcd');
+      return asyncSource ? Promise.resolve(bytes) : bytes;
+    });
+    assert.deepEqual(output, {status: 0, sourceFailures: 0});
+    assert.equal(calls, 1);
+    assert.equal(host.offset(3), 4n);
+  }
+});
+
+test('translated source failure reaches guest as Rust-decided error without offset advance', {skip: !artifact}, async () => {
+  const {host, execution} = translatedReader(true);
+  assert.deepEqual(await host.runTranslated(execution, 4198400n, async () => { throw new Error('source failed'); }), {status: 1, sourceFailures: 1});
+  assert.equal(host.offset(3), 0n);
+});
+
+test('syscall-owned read cannot be retired independently or its image aliased', {skip: !artifact}, () => {
+  const a = readAbi(false, 2), execution = a.ok('linux_execution_create', a.binding);
+  assert.ok(a.call('linux_execution_create', a.binding) < 0);
+  a.ok('linux_image_begin', execution, 65536n);
+  const binding = a.ok('linux_image_finish', execution, 0);
+  const invocation = a.ok('linux_run_start', execution);
+  const read = a.ok('linux_syscall', execution, invocation, 0n, BigInt(a.fd), 0n, 3n, 0n, 0n, 0n, 123n);
+  assert.equal(a.state(), 1);
+  a.ok('linux_run_receipt', execution, invocation, 0, 123n);
+  assert.ok(a.call('linux_execution_create', binding) < 0);
+  assert.ok(a.call('linux_image_begin', execution, 65536n) < 0);
+  const pointer = Number(a.ok('linux_managed_read_start', execution, read));
+  new Uint8Array(a.memory.buffer, 0, 3).set(new Uint8Array((a.e.memory as WebAssembly.Memory).buffer, pointer, 3));
+  a.ok('linux_read_receipt', read, 3n, 0);
+  assert.ok(a.call('linux_read_retire', read) < 0);
+  assert.equal(a.ok('linux_syscall_complete', execution), 3n);
+  assert.equal(a.state(), 5);
+  assert.equal(a.length(), 123);
+  assert.ok(a.call('linux_run_start', execution) < 0);
+  a.ok('linux_syscall_resumed', execution, 0, 1);
+  a.ok('linux_run_start', execution);
+});
+
+test('wrong syscall source completion is rejected before affecting another read', {skip: !artifact}, () => {
+  const a = readAbi(true), execution = a.ok('linux_execution_create', a.binding);
+  a.ok('linux_image_begin', execution, 65536n); a.ok('linux_image_finish', execution, 0);
+  const invocation = a.ok('linux_run_start', execution);
+  const owned = a.ok('linux_syscall', execution, invocation, 0n, BigInt(a.fd), 0n, 3n, 0n, 0n, 0n, 123n);
+  a.ok('linux_run_receipt', execution, invocation, 0, 123n);
+  a.ok('linux_read_load_start', execution, owned); const attempt = a.length();
+  const other = a.ok('linux_managed_read_begin', execution, a.otherFd!, 8n, 3n);
+  a.ok('linux_read_load_start', execution, other); const otherAttempt = a.length();
+  assert.ok(a.call('linux_syscall_load_finish', execution, other, otherAttempt, 0) < 0);
+  a.ok('linux_read_query', other); assert.equal(a.state() & 255, 6);
+  a.ok('linux_read_load_finish', execution, other, otherAttempt, 0);
+  a.ok('linux_read_retire', other);
+  a.ok('linux_syscall_load_finish', execution, owned, attempt, 0);
+  assert.equal(BigInt.asIntN(64, a.ok('linux_syscall_complete', execution)), -5n);
+  assert.equal(a.state(), 5);
+  a.ok('linux_syscall_resumed', execution, 0, 1);
 });

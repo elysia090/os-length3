@@ -181,6 +181,11 @@ impl Domain {
             .ok_or(Error::UnknownAction)
     }
 
+    /// Non-retaining extent query; callers must acquire admission before access.
+    pub(crate) fn extent(&self, binding: u64) -> Result<u64, Error> {
+        Ok(self.memories[self.memory(binding)?].extent)
+    }
+
     /// Non-retaining exact-span preflight. It neither clamps guest syscall
     /// lengths nor protects a later access; span admission must check again.
     pub(crate) fn range(&self, binding: u64, offset: u64, length: u64) -> Result<(), Error> {

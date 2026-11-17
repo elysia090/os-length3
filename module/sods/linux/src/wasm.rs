@@ -1,13 +1,15 @@
-//! Private wasm32 ABI, one managed domain per instance. No guest syscall entry.
+//! Private wasm32 ABI, one managed domain per instance. The read/exit syscall
+//! entry is a limited fixed-memory diagnostic, not the full Linux runtime.
 //! Prepared resident Tree is sealed once into Files; no source mutation afterward.
 //! The host reads result fields before making a fresh core view. Between read_start
 //! and read_receipt it performs only intrinsic synchronous copy, no callback/await.
 use crate::descriptor::{self, Files, Table};
 use crate::effect::{Completion, Token};
-use crate::execution::{Execution, ImageResult};
+use crate::execution::{Execution, ImageResult, Unwind};
 use crate::inode::{Inode, Tree};
 use crate::lease::{Domain, Error};
 use crate::read::{ReadCapacity, Reads};
+use crate::syscall::{Continuation, Step};
 use std::cell::RefCell;
 const DOMAIN: u64 = 1;
 const TREE: u64 = 2;
@@ -29,12 +31,17 @@ struct Sealed {
     input: Vec<u8>,
     file_limit: usize,
 }
+struct ExecutionSlot {
+    execution: Execution,
+    continuation: Option<Continuation>,
+}
 struct State {
     domain: Domain,
-    executions: Vec<Execution>,
+    executions: Vec<ExecutionSlot>,
     execution_limit: usize,
     result: u64,
     length: u64,
+    auxiliary: u64,
     state: u32,
     builder: Option<Builder>,
     sealed: Option<Sealed>,
@@ -70,6 +77,7 @@ fn with_state(allow_view: bool, f: impl FnOnce(&mut State) -> Result<u64, i32>) 
         };
         s.result = 0;
         s.length = 0;
+        s.auxiliary = 0;
         s.state = 0;
         if !allow_view && s.sealed.as_ref().is_some_and(|r| r.reads.viewing()) {
             return -4;
@@ -93,7 +101,7 @@ fn generic(sequence: u64, f: impl FnOnce(&mut Domain, Token) -> Result<u64, Erro
     with_state(false, |s| {
         let t = token(sequence);
         if s.sealed.as_ref().is_some_and(|r| r.reads.owns(t))
-            || s.executions.iter().any(|e| e.owns(t))
+            || s.executions.iter().any(|e| e.execution.owns(t))
         {
             return Err(-4);
         }
@@ -121,6 +129,7 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
         if let Some(s) = outer.as_mut() {
             s.result = 0;
             s.length = 0;
+            s.auxiliary = 0;
             s.state = 0;
             return -9;
         }
@@ -134,6 +143,7 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             execution_limit: memories as usize,
             result: 0,
             length: 0,
+            auxiliary: 0,
             state: 0,
             builder: None,
             sealed: None,
@@ -176,7 +186,10 @@ pub extern "C" fn linux_change(binding: u64, extent: u64) -> i32 {
     with_state(false, |s| {
         // An execution owns its image incarnation. Generic physical growth must
         // not silently leave that owner pointing at a retired binding.
-        if s.executions.iter().any(|e| e.binding() == binding) {
+        if s.executions
+            .iter()
+            .any(|e| e.execution.binding() == binding)
+        {
             return Err(-4);
         }
         s.domain
@@ -440,6 +453,12 @@ pub extern "C" fn linux_read_query(id: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_read_retire(id: u64) -> i32 {
     with_state(false, |s| {
+        if s.executions
+            .iter()
+            .any(|e| e.continuation.as_ref().is_some_and(|c| c.owns_read(id)))
+        {
+            return Err(-4);
+        }
         s.sealed
             .as_mut()
             .ok_or(-9)?
@@ -464,12 +483,21 @@ fn execution_index(s: &State, id: u64) -> Result<usize, i32> {
 pub extern "C" fn linux_execution_create(binding: u64) -> i32 {
     with_state(false, |s| {
         s.domain.range(binding, 0, 0).map_err(code)?;
+        if s.executions
+            .iter()
+            .any(|e| e.execution.binding() == binding)
+        {
+            return Err(-4);
+        }
         if s.executions.len() == s.execution_limit {
             return Err(-1);
         }
         s.executions.try_reserve(1).map_err(|_| -1)?;
         let id = s.executions.len() as u64 + 1;
-        s.executions.push(Execution::new(id, binding));
+        s.executions.push(ExecutionSlot {
+            execution: Execution::new(id, binding),
+            continuation: None,
+        });
         Ok(id)
     })
 }
@@ -478,6 +506,7 @@ pub extern "C" fn linux_image_begin(id: u64, extent: u64) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
         s.executions[i]
+            .execution
             .image_begin(&mut s.domain, extent)
             .map_err(|_| -11)?;
         Ok(0)
@@ -495,9 +524,10 @@ pub extern "C" fn linux_image_finish(id: u64, outcome: u32) -> i32 {
             _ => return Err(-5),
         };
         s.executions[i]
+            .execution
             .image_finish(&mut s.domain, outcome)
             .map_err(|_| -11)?;
-        Ok(s.executions[i].binding())
+        Ok(s.executions[i].execution.binding())
     })
 }
 #[no_mangle]
@@ -527,7 +557,7 @@ pub extern "C" fn linux_managed_read_begin(
                 &mut r.files,
                 &r.table,
                 &mut s.domain,
-                &s.executions[i],
+                &s.executions[i].execution,
                 fd,
                 at,
                 requested,
@@ -542,7 +572,7 @@ pub extern "C" fn linux_read_load_start(execution: u64, id: u64) -> i32 {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let (source, attempt) = r
             .reads
-            .load_start(&mut r.files, &s.executions[i], id)
+            .load_start(&mut r.files, &s.executions[i].execution, id)
             .map_err(read_code)?;
         s.length = attempt as u64;
         Ok(source as u64)
@@ -567,6 +597,45 @@ pub extern "C" fn linux_load_input(length: u32) -> i32 {
         })
     })
 }
+fn finish_source(
+    s: &mut State,
+    execution: u64,
+    id: u64,
+    attempt: u32,
+    success: u32,
+    syscall: bool,
+) -> Result<u64, i32> {
+    if success > 1 {
+        return Err(-5);
+    }
+    let i = execution_index(s, execution)?;
+    let slot = &mut s.executions[i];
+    if syscall && !slot.continuation.as_ref().is_some_and(|c| c.owns_read(id)) {
+        return Err(-12);
+    }
+    let r = s.sealed.as_mut().ok_or(-9)?;
+    r.reads
+        .load_finish(
+            &mut r.files,
+            &mut s.domain,
+            &slot.execution,
+            id,
+            attempt,
+            success == 1,
+            &mut r.input,
+        )
+        .map_err(read_code)?;
+    // This callback has stopped and its matching failure was accepted above.
+    // Do not infer source failure from unrelated Failed/identity/copy states.
+    if syscall && success == 0 {
+        slot.continuation
+            .as_mut()
+            .ok_or(-11)?
+            .source_failed(&slot.execution, id)
+            .map_err(|_| -12)?;
+    }
+    Ok(0)
+}
 #[no_mangle]
 pub extern "C" fn linux_read_load_finish(
     execution: u64,
@@ -575,23 +644,18 @@ pub extern "C" fn linux_read_load_finish(
     success: u32,
 ) -> i32 {
     with_state(false, |s| {
-        if success > 1 {
-            return Err(-5);
-        }
-        let i = execution_index(s, execution)?;
-        let r = s.sealed.as_mut().ok_or(-9)?;
-        r.reads
-            .load_finish(
-                &mut r.files,
-                &mut s.domain,
-                &s.executions[i],
-                id,
-                attempt,
-                success == 1,
-                &mut r.input,
-            )
-            .map(|_| 0)
-            .map_err(read_code)
+        finish_source(s, execution, id, attempt, success, false)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_syscall_load_finish(
+    execution: u64,
+    id: u64,
+    attempt: u32,
+    success: u32,
+) -> i32 {
+    with_state(false, |s| {
+        finish_source(s, execution, id, attempt, success, true)
     })
 }
 #[no_mangle]
@@ -601,9 +665,164 @@ pub extern "C" fn linux_managed_read_start(execution: u64, id: u64) -> i32 {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let (pointer, length) = r
             .reads
-            .start_managed(&mut r.files, &mut s.domain, &s.executions[i], id)
+            .start_managed(&mut r.files, &mut s.domain, &s.executions[i].execution, id)
             .map_err(read_code)?;
         s.length = length;
         Ok(pointer as u64)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn linux_result_auxiliary() -> u64 {
+    STATE.with(|cell| cell.borrow().as_ref().map_or(0, |s| s.auxiliary))
+}
+fn step(s: &mut State, command: Step) -> u64 {
+    match command {
+        Step::Return(value) => {
+            s.state = 0;
+            value as u64
+        }
+        Step::Read { id, target } => {
+            s.state = 1;
+            s.auxiliary = target;
+            id
+        }
+        Step::Exit => {
+            s.state = 2;
+            0
+        }
+        Step::Unsupported(number) => {
+            s.state = 3;
+            number
+        }
+        Step::Waiting => {
+            s.state = 4;
+            0
+        }
+        Step::Resume(resume) => {
+            s.state = 5;
+            s.length = resume.next;
+            s.auxiliary = resume.rcx;
+            resume.rax as u64
+        }
+    }
+}
+#[no_mangle]
+pub extern "C" fn linux_run_start(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = &mut s.executions[i];
+        if slot.continuation.is_none() {
+            slot.continuation = Some(Continuation::new(&slot.execution).map_err(|_| -11)?);
+        }
+        slot.execution
+            .start(&mut s.domain)
+            .map(|v| v.number())
+            .map_err(|_| -11)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_run_receipt(id: u64, invocation: u64, outcome: u32, next: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let e = &mut s.executions[i].execution;
+        let invocation = e.invocation(invocation).map_err(|_| -11)?;
+        let unwind = match outcome {
+            0 => Unwind::Yield(next),
+            1 => Unwind::Exit,
+            2 => Unwind::Fault,
+            3 => Unwind::Unknown,
+            _ => return Err(-5),
+        };
+        e.receipt(&mut s.domain, invocation, unwind)
+            .map_err(|_| -11)?;
+        Ok(e.status().unwrap_or(0) as u64)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_syscall(
+    id: u64,
+    invocation: u64,
+    nr: u64,
+    a: u64,
+    b: u64,
+    c: u64,
+    d: u64,
+    e: u64,
+    f: u64,
+    next: u64,
+) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = &mut s.executions[i];
+        let invocation = slot.execution.invocation(invocation).map_err(|_| -11)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let command = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .enter(
+                &mut r.files,
+                &r.table,
+                &mut r.reads,
+                &mut s.domain,
+                &mut slot.execution,
+                invocation,
+                nr,
+                [a, b, c, d, e, f],
+                next,
+            )
+            .map_err(|_| -12)?;
+        Ok(step(s, command))
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_syscall_complete(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = &mut s.executions[i];
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let command = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .complete(&mut r.reads, &mut slot.execution)
+            .map_err(|_| -12)?;
+        Ok(step(s, command))
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_syscall_resumed(id: u64, stopped: u32, success: u32) -> i32 {
+    with_state(false, |s| {
+        if success > 1 {
+            return Err(-5);
+        }
+        let i = execution_index(s, id)?;
+        let slot = &mut s.executions[i];
+        slot.continuation
+            .as_mut()
+            .ok_or(-11)?
+            .resumed(&mut slot.execution, completion(stopped)?, success == 1)
+            .map_err(|_| -12)?;
+        Ok(0)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_syscall_abandon(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = &mut s.executions[i];
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        slot.continuation
+            .as_mut()
+            .ok_or(-11)?
+            .abandon(
+                &mut r.files,
+                &mut r.reads,
+                &mut s.domain,
+                &mut slot.execution,
+            )
+            .map(u64::from)
+            .map_err(|_| -12)
     })
 }

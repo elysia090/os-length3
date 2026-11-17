@@ -1,7 +1,17 @@
+import {fixedTranslatedModule} from './translated-image.ts';
 /** Private managed-memory adapter. Rust decides admission and lifetime; this file
  * holds actual engine objects and executes synchronous physical operations only.
- * Not exported by linux.ts and not connected to guest execution yet. */
+ * Not exported by linux.ts. The translated runner is a fixed diagnostic profile,
+ * not the Node caller, ELF loader or complete Linux syscall implementation. */
 interface Admission extends WebAssembly.Exports {
+  linux_run_start(id: bigint): number;
+  linux_run_receipt(id: bigint, invocation: bigint, outcome: number, next: bigint): number;
+  linux_syscall(id: bigint, invocation: bigint, nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint): number;
+  linux_syscall_complete(id: bigint): number;
+  linux_syscall_resumed(id: bigint, completion: number, success: number): number;
+  linux_syscall_abandon(id: bigint): number;
+  linux_syscall_load_finish(id: bigint, read: bigint, attempt: number, success: number): number;
+  linux_result_auxiliary(): bigint;
   linux_abi_version(): number;
   linux_init(memories: number, actions: number): number;
   linux_result(): bigint;
@@ -47,6 +57,8 @@ interface Admission extends WebAssembly.Exports {
 const Bytes = Uint8Array, Memory = WebAssembly.Memory, apply = Reflect.apply, freeze = Object.freeze;
 const numeric = Number, wide = BigInt, unsigned = BigInt.asUintN;
 const setBytes = Uint8Array.prototype.set;
+const Instance = WebAssembly.Instance, Global = WebAssembly.Global;
+const globalValue = Object.getOwnPropertyDescriptor(WebAssembly.Global.prototype, 'value')!.set!;
 const growMemory = WebAssembly.Memory.prototype.grow;
 const memoryBuffer = Object.getOwnPropertyDescriptor(WebAssembly.Memory.prototype, 'buffer')!.get!;
 const mapGet = Map.prototype.get, mapSet = Map.prototype.set, mapDelete = Map.prototype.delete;
@@ -62,7 +74,8 @@ export interface FileLimits {
   inodes: number; entries: number; fileBytes: number; tables: number;
   descriptions: number; slots: number; reads: number;
 }
-const required = ['linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
+const required = ['linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
+  'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file',
   'linux_files_seal', 'linux_open', 'linux_dup', 'linux_close', 'linux_offset', 'linux_seek',
@@ -179,7 +192,150 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     apply(mapDelete, objects, [binding]);
     return next;
   };
+  const copyRead = ({id, memory, offset, execution}: {id: bigint; memory: WebAssembly.Memory; offset: number; execution?: bigint}): number => {
+      const pointer = numeric(result(execution === undefined ? core.linux_read_start(id) : core.linux_managed_read_start(execution, id)));
+      const length = numeric(core.linux_result_length());
+      try {
+        if (length) {
+          const source = new Bytes(bufferOf(core.memory), pointer, length);
+          const target = new Bytes(bufferOf(memory), offset, length);
+          apply(setBytes, target, [source]);
+        }
+      } catch (error) {
+        try { checked(core.linux_read_receipt(id, 0n, 1)); }
+        catch (receipt) { throw new AggregateError([error, receipt], 'Read copy and receipt failed'); }
+        throw error;
+      }
+      checked(core.linux_read_receipt(id, wide(length), 0));
+      return length;
+  };
+  type Guest = {run: (address: bigint) => unknown; r0: WebAssembly.Global; r1: WebAssembly.Global};
+  const guests = new Map<ExecutionBinding, {guest: Guest; memory: WebAssembly.Memory; active: boolean; invocation: bigint; command?: {tag: number; value: bigint; target: bigint; next: bigint}}>();
+  const unwind = freeze({kind: 'private-guest-unwind'});
+  const command = (status: number) => {
+    const value = result(status);
+    return {tag: core.linux_result_state(), value, target: unsigned(64, core.linux_result_auxiliary()), next: unsigned(64, core.linux_result_length())};
+  };
   return {
+    /** Diagnostic only: fresh fixed memory, one runner, preopened files. */
+    translatedExecution(input: Uint8Array, pages: number): ExecutionBinding {
+      u32(pages);
+      const translated = fixedTranslatedModule(input);
+      checked(core.linux_binding_room());
+      const memory = new Memory({initial: pages, maximum: pages});
+      // Failure after binding retains a bounded Rust owner; this diagnostic has
+      // no unbind/reclaim API and must not claim initialization rollback.
+      const old = result(core.linux_bind(extentOf(memory)));
+      const id = result(core.linux_execution_create(old));
+      const handle = freeze({kind: 'managed-execution' as const});
+      let ready = false;
+      let state: {guest: Guest; memory: WebAssembly.Memory; active: boolean; invocation: bigint; command?: {tag: number; value: bigint; target: bigint; next: bigint}};
+      const unavailable = (): never => { throw new Error('Unsupported translated guest import or initialization call'); };
+      checked(core.linux_image_begin(id, extentOf(memory)));
+      let instance: WebAssembly.Instance;
+      try {
+        instance = new Instance(translated, {env: {
+          memory,
+          syscall: (nr: bigint, a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, next: bigint) => {
+            if (!ready || !state.active) return unavailable();
+            const c0 = command(core.linux_syscall(id, state.invocation, nr, a, b, c, d, e, f, next));
+            if (c0.tag === 0) return c0.value;
+            if (c0.tag === 1) {
+              checked(core.linux_read_query(c0.value));
+              if ((core.linux_result_state() & 255) === 0) {
+                // The guest stack is paused inside this import. No callback or
+                // await occurs during the canonical copy. Resident reads need
+                // neither a synthetic unwind nor register restoration.
+                copyRead({id: c0.value, memory, offset: numeric(c0.target), execution: id});
+                const done = command(core.linux_syscall_complete(id));
+                if (done.tag !== 0) throw new Error('Resident read did not return synchronously');
+                return done.value;
+              }
+            }
+            if (c0.tag !== 1 && c0.tag !== 2) throw new Error(`Unsupported Rust syscall command: ${c0.tag}`);
+            state.command = {...c0, next};
+            throw unwind;
+          },
+          trap: unavailable, div128: unavailable, clock: unavailable, fpu: unavailable,
+          trace: unavailable, miss: unavailable,
+          time: () => { if (!ready || !state.active) return unavailable(); return NaN; },
+        }});
+        const {run, r0, r1} = instance.exports;
+        if (typeof run !== 'function' || !(r0 instanceof Global) || !(r1 instanceof Global)) {
+          throw new Error('Unsupported translated guest exports');
+        }
+      } catch (error) {
+        try { checked(core.linux_image_finish(id, 2)); }
+        catch (receipt) { throw new AggregateError([error, receipt], 'Guest initialization and receipt failed'); }
+        throw error;
+      }
+      const binding = remember(result(core.linux_image_finish(id, 0)), memory);
+      apply(mapSet, executions, [handle, {id, binding}]);
+      state = {guest: instance.exports as unknown as Guest, memory, active: false, invocation: 0n};
+      apply(mapSet, guests, [handle, state]);
+      ready = true;
+      return handle;
+    },
+    async runTranslated(handle: ExecutionBinding, entry: bigint, load?: (source: number) => Uint8Array | Promise<Uint8Array>): Promise<{status: number; sourceFailures: number}> {
+      const e = executionOf(handle);
+      const state: {guest: Guest; memory: WebAssembly.Memory; active: boolean; invocation: bigint; command?: {tag: number; value: bigint; target: bigint; next: bigint}} | undefined = apply(mapGet, guests, [handle]);
+      if (!state || state.active) throw new Error('Unknown or active translated execution');
+      state.active = true;
+      let failures = 0;
+      let next = entry;
+      try {
+        for (;;) {
+          state.command = undefined;
+          state.invocation = result(core.linux_run_start(e.id));
+          let caught: unknown;
+          try { state.guest.run(next); caught = new Error('Translated guest returned without an exit command'); }
+          catch (error) { caught = error; }
+          // The Wasm import callback may publish a command during run().
+          const c = state.command as {tag: number; value: bigint; target: bigint; next: bigint} | undefined;
+          if (caught !== unwind || !c) {
+            try { checked(core.linux_run_receipt(e.id, state.invocation, 2, 0n)); }
+            catch (receipt) { throw new AggregateError([caught, receipt], 'Guest failure and unwind receipt failed'); }
+            throw caught;
+          }
+          if (c.tag === 2) {
+            return {status: numeric(result(core.linux_run_receipt(e.id, state.invocation, 1, 0n))), sourceFailures: failures};
+          }
+          checked(core.linux_run_receipt(e.id, state.invocation, 0, c.next));
+          checked(core.linux_read_query(c.value));
+          if ((core.linux_result_state() & 255) === 5) {
+            const source = numeric(result(core.linux_read_load_start(e.id, c.value)));
+            const attempt = numeric(core.linux_result_length());
+            let ok = false, sourceError: unknown;
+            try {
+              if (!load) throw new Error('No translated source loader');
+              const bytes = new Bytes(await load(source));
+              put(result(core.linux_load_input(u32(lengthOf(bytes)))), bytes);
+              ok = true;
+            } catch (error) { failures++; sourceError = error; }
+            try { checked(core.linux_syscall_load_finish(e.id, c.value, attempt, ok ? 1 : 0)); }
+            catch (completion) { throw new AggregateError(ok ? [completion] : [sourceError, completion], 'Source completion failed'); }
+          }
+          checked(core.linux_read_query(c.value));
+          if ((core.linux_result_state() & 255) === 0) copyRead({id: c.value, memory: state.memory, offset: numeric(c.target), execution: e.id});
+          const resume = command(core.linux_syscall_complete(e.id));
+          if (resume.tag !== 5) throw new Error(`Read did not produce a resume command: ${resume.tag}`);
+          try {
+            apply(globalValue, state.guest.r0, [resume.value]);
+            apply(globalValue, state.guest.r1, [resume.target]);
+          } catch (error) {
+            try { checked(core.linux_syscall_resumed(e.id, 0, 0)); }
+            catch (receipt) { throw new AggregateError([error, receipt], 'Resume application and receipt failed'); }
+            throw error;
+          }
+          checked(core.linux_syscall_resumed(e.id, 0, 1));
+          next = resume.next;
+        }
+      } catch (error) {
+        try { checked(core.linux_syscall_abandon(e.id)); }
+        catch (cleanup) { throw new AggregateError([error, cleanup], 'Translated execution failed and cleanup could not be confirmed'); }
+        throw error;
+      } finally { state.active = false; }
+    },
     prepareFiles(limits: FileLimits): InodeBinding {
       const {inodes, entries, fileBytes, tables, descriptions, slots, reads} = limits;
       return rememberInode(result(core.linux_files_prepare(u32(inodes), u32(entries), u32(fileBytes),
@@ -213,12 +369,14 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       return {execution, memory: next};
     },
     replaceImage(execution: ExecutionBinding, input: Uint8Array): MemoryBinding {
+      if (apply(mapGet, guests, [execution])) throw new Error('Translated image replacement is not supported');
       const bytes = new Bytes(input), entry = executionOf(execution);
       const next = installImage(entry.id, entry.binding, bytes, execution);
       apply(mapSet, executions, [execution, {id: entry.id, binding: next}]);
       return next;
     },
     beginManagedRead(execution: ExecutionBinding, fd: number, offset: number, length: number): ReadBinding {
+      if (apply(mapGet, guests, [execution])) throw new Error('Translated execution owns its reads');
       u32(fd); integer(offset); integer(length);
       const e = executionOf(execution), {memory} = get(e.binding);
       const id = result(core.linux_managed_read_begin(e.id, fd, wide(offset), wide(length)));
@@ -265,27 +423,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       apply(mapSet, reads, [read, {id, memory, offset}]);
       return read;
     },
-    copyRead(read: ReadBinding): number {
-      const {id, memory, offset, execution} = readOf(read);
-      const pointer = numeric(result(execution === undefined ? core.linux_read_start(id) : core.linux_managed_read_start(execution, id)));
-      const length = numeric(core.linux_result_length());
-      try {
-        // No caller callback, await or core export between fresh views and copy.
-        // Canonical payload is pinned by Rust; neither view escapes this scope.
-        if (length) {
-          const source = new Bytes(bufferOf(core.memory), pointer, length);
-          const target = new Bytes(bufferOf(memory), offset, length);
-          apply(setBytes, target, [source]);
-        }
-      } catch (error) {
-        // Keep the caller's read handle: unknown effect is queryable, never replayed.
-        try { checked(core.linux_read_receipt(id, 0n, 1)); }
-        catch (receipt) { throw new AggregateError([error, receipt], 'Read copy and receipt failed'); }
-        throw error;
-      }
-      checked(core.linux_read_receipt(id, wide(length), 0));
-      return length;
-    },
+    copyRead(read: ReadBinding): number { return copyRead(readOf(read)); },
     readResult(read: ReadBinding) {
       const confirmed = result(core.linux_read_query(readOf(read).id));
       const length = numeric(core.linux_result_length()), flags = core.linux_result_state();

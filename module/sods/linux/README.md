@@ -393,7 +393,8 @@ capacity until its State ends; no automatic owner recycling is implemented.
 Rust also has a separate run lifetime hold, not a zero-byte copy effect. An exit
 request is not stop evidence; only a matching invocation's unwind can release the
 hold. Unknown retains it, while syscall read spans may coexist. These run transitions
-are native-tested but not yet connected to a real guest run or Worker stop receipt.
+now connect to the fixed-memory read/exit diagnostic described below. Normal Node
+Worker stop receipts and the complete guest profile are not connected.
 Execution ownership is not yet bound to a Task's FD/Fs/credentials and namespace.
 
 There is no mutable payload/eviction export in this sealed path. Its source safety
@@ -411,3 +412,42 @@ or atomic shared-memory snapshot is claimed. The new production TS is physical
 image/source transport and opaque handle associations. Corresponding old TS Linux
 semantics have not yet been removed: guest admission, translator validation, real
 Node/Worker execution, credentials and the complete caller cutover remain gates.
+
+
+## Fixed-memory translated guest diagnostic
+
+A frozen old-translator fixture now runs through the same Rust execution, syscall
+continuation, read and OFD owners. Rust chooses read/exit handling, target-range
+clipping, errors, next PC, and asynchronous RAX/RCX restoration. The host performs
+physical engine operations and reports matching stack unwind; an exit request
+alone does not retire the run hold. Resident reads copy inside the paused import
+and return synchronously. Lazy reads unwind once, fetch the source, copy the
+canonical bytes, apply Rust's resume command and continue at the saved next PC.
+They do not reissue the syscall. Unknown copy or resume completion retains owners.
+
+The first profile has fresh nonshared memory with initial equal to maximum, one
+runner, no start function, no defined extra memory and only known import names and
+kinds. It is not a general bytecode sandbox: expected signatures and translated
+instruction semantics still require trusted translator provenance. Internal
+memory.grow is not claimed absent; nonzero growth cannot extend this memory, and
+zero growth may replace its buffer. Every short copy takes fresh views and cannot
+reenter the guest. Raw instances, memory, globals and executable tables do not
+escape. Active data is applied under exclusive image admission. Initialization
+failure may retain bounded Rust owner capacity until the whole State is dropped.
+
+Tests cover a guest reading `abcd` and checking it before exit, resident and
+synchronous/asynchronous lazy sources, source failure without offset advancement,
+read ownership, duplicate image owners and wrong-source completion. The fixture's
+old translator identity is recorded beside it; this does not prove a current-source
+release, default Node Worker, ELF stack/auxv, paths, credentials, dynamic translation,
+shared memory, signals or a complete syscall set. Old production TS Linux authority
+has not yet been deleted. This is a tested connection step, not a narrowed product
+completion claim.
+
+For an n-byte resident read, canonical-to-guest transfer remains n bytes with no
+source fetch and no extra byte-sized staging. The diagnostic uses several constant
+control crossings for syscall admission, query, copy receipt and completion; these
+have not been demonstrated minimal. Lazy initialization additionally transports S
+source bytes into Wasm and, when input ownership is not transferred, captures S
+host bytes. A pending continuation is inline and bounded to one per execution.
+Bounded-table scans and translator/artifact costs remain separate from copy costs.

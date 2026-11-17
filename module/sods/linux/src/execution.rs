@@ -29,6 +29,7 @@ pub(crate) enum Phase {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Snapshot {
+    domain: u64,
     execution: u64,
     image: u64,
     binding: u64,
@@ -73,6 +74,7 @@ pub(crate) struct Execution {
     phase: Phase,
     changing: Option<ImageChange>,
     running: Option<(Invocation, RunHold)>,
+    pending_call: Option<Invocation>,
     exit_requested: Option<u32>,
     exit_status: Option<u32>,
     resume_at: Option<u64>,
@@ -89,6 +91,7 @@ impl Execution {
             phase: Phase::Empty,
             changing: None,
             running: None,
+            pending_call: None,
             exit_requested: None,
             exit_status: None,
             resume_at: None,
@@ -116,6 +119,7 @@ impl Execution {
             return Err(Error::State);
         }
         Ok(Snapshot {
+            domain: self.domain.ok_or(Error::Identity)?,
             execution: self.id,
             image: self.image,
             binding: self.binding,
@@ -132,7 +136,7 @@ impl Execution {
         self.identity()
     }
     pub(crate) fn owns_snapshot(&self, snapshot: Snapshot) -> bool {
-        self.id == snapshot.execution
+        self.domain == Some(snapshot.domain) && self.id == snapshot.execution
     }
     pub(crate) fn check(&self, identity: Snapshot) -> Result<(), Error> {
         if self.identity()? == identity {
@@ -144,7 +148,11 @@ impl Execution {
     /// Admission immediately consumes host mutation permission. No callback or
     /// physical initialization may occur before this returns successfully.
     pub(crate) fn image_begin(&mut self, domain: &mut Domain, extent: u64) -> Result<(), Error> {
-        if self.changing.is_some() || self.running.is_some() || self.phase == Phase::Exited {
+        if self.changing.is_some()
+            || self.running.is_some()
+            || self.pending_call.is_some()
+            || self.phase == Phase::Exited
+        {
             return Err(Error::State);
         }
         if self.domain.is_some_and(|id| id != domain.id()) {
@@ -209,7 +217,7 @@ impl Execution {
         Ok(())
     }
     pub(crate) fn start(&mut self, domain: &mut Domain) -> Result<Invocation, Error> {
-        if !matches!(self.phase, Phase::Ready | Phase::Suspended) {
+        if self.pending_call.is_some() || !matches!(self.phase, Phase::Ready | Phase::Suspended) {
             return Err(Error::State);
         }
         if self.domain != Some(domain.id()) {
@@ -238,6 +246,35 @@ impl Execution {
         } else {
             Err(Error::Identity)
         }
+    }
+    pub(crate) fn fail_suspended(&mut self) -> Result<(), Error> {
+        if self.phase != Phase::Suspended || self.running.is_some() || self.pending_call.is_some() {
+            return Err(Error::State);
+        }
+        self.phase = Phase::Failed;
+        Ok(())
+    }
+    pub(crate) fn syscall_allowed(&self, invocation: Invocation) -> Result<(), Error> {
+        self.matches(invocation)?;
+        if self.phase != Phase::Running
+            || self.pending_call.is_some()
+            || self.exit_requested.is_some()
+        {
+            return Err(Error::State);
+        }
+        Ok(())
+    }
+    pub(crate) fn hold_call(&mut self, invocation: Invocation) -> Result<(), Error> {
+        self.syscall_allowed(invocation)?;
+        self.pending_call = Some(invocation);
+        Ok(())
+    }
+    pub(crate) fn finish_call(&mut self, invocation: Invocation) -> Result<(), Error> {
+        if self.pending_call != Some(invocation) {
+            return Err(Error::Identity);
+        }
+        self.pending_call = None;
+        Ok(())
     }
     pub(crate) fn request_exit(
         &mut self,
@@ -431,5 +468,23 @@ mod tests {
         e.request_exit(j, 0).unwrap();
         assert_eq!(e.receipt(&mut d, j, Unwind::Yield(2)), Err(Error::State));
         e.receipt(&mut d, j, Unwind::Exit).unwrap();
+    }
+    #[test]
+    fn equal_numeric_execution_and_binding_in_foreign_domain_are_not_same_identity() {
+        let (mut d, mut e) = ready();
+        let stamp = e.stamp().unwrap();
+        let mut foreign = Domain::new(44, 1, 4).unwrap();
+        let binding = foreign.bind(16).unwrap();
+        let mut other = Execution::new(7, binding);
+        other.image_begin(&mut foreign, 16).unwrap();
+        other
+            .image_finish(&mut foreign, ImageResult::Installed)
+            .unwrap();
+        assert_eq!(other.binding(), e.binding());
+        assert!(!other.owns_snapshot(stamp));
+        assert_eq!(other.check(stamp), Err(Error::Identity));
+        let invocation = e.start(&mut d).unwrap();
+        other.start(&mut foreign).unwrap();
+        assert_eq!(other.request_exit(invocation, 0), Err(Error::Identity));
     }
 }
