@@ -132,7 +132,11 @@ function newWorker(): Hand {
       // WorkerStop retains a callback failure separately from the stop failure.
       const failures: unknown[] = [];
       for (const hear of errors) { try { hear({message: String(error)}); } catch (error) { failures.push(error); } }
-      if (failures.length) throw new AggregateError(failures, 'Worker stop notification failed');
+      if (failures.length) {
+        const failure = new AggregateError(failures, 'Worker stop notification failed');
+        owner?.stopFailures.push(failure);
+        throw failure;
+      }
     };
     const stop = new WorkerStop(() => w.terminate(), exit => { w.once('exit', exit); });
     const hand: Hand = {post: (m) => w.postMessage(m), stop, end: () => {
@@ -155,7 +159,7 @@ function newWorker(): Hand {
 }
 
 export class RemoteKernel extends Kernel {
-  /** Latched stop-request failures; close() remains synchronous, not a disposal barrier. */
+  /** Latched host-stop/notification failures; close() remains synchronous, not a disposal barrier. */
   readonly stopFailures: unknown[] = [];
   /** Includes detached Hands. Transfer to a warm/next kernel does not prove
    * their cached instances released this kernel's memory or Images. */
@@ -473,6 +477,21 @@ export class RemoteKernel extends Kernel {
       return this.status ?? 0;
     })();
     return this.serving;
+  }
+
+  /** Host evidence for the exact adopted-Worker snapshot after close, not a
+   * tree-disposal permission. Raw callers can still create later owners. */
+  async snapshotWorkerStops(): Promise<{captured: number; observedStopped: number; unconfirmed: number; failures: unknown[]}> {
+    if (!this.closing) throw new Error('Worker stop evidence requires close first');
+    const workers = [...this.workerOwners];
+    const evidence = await Promise.all(workers.map(async w => w.stop ? w.stop.evidence() : {stopped: false}));
+    const failures: unknown[] = [...this.stopFailures];
+    for (const result of evidence) {
+      if ('requestFailure' in result && !failures.includes(result.requestFailure)) failures.push(result.requestFailure);
+      if ('notificationFailure' in result && !failures.includes(result.notificationFailure)) failures.push(result.notificationFailure);
+    }
+    const observedStopped = evidence.filter(result => result.stopped).length;
+    return {captured: workers.length, observedStopped, unconfirmed: workers.length - observedStopped, failures};
   }
 
   /** Everything ends now; serving ends with it. */

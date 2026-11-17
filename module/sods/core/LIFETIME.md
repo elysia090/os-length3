@@ -643,3 +643,32 @@ through the private Worker handler, plus delayed/rejected sink and late-message
 counterexamples. The message host remains a test double, not an executed browser
 UI. No positive browser host-stop proof or prepared-tree disposal is added, and
 there is still no all-stage draining-close success API.
+
+### Captured host-stop evidence before any tree-disposal decision
+
+WorkerStop now separates request settlement from matching exit evidence. A rejected
+request yields an unconfirmed result promptly, preserving its failure; a later
+query may observe a matching late exit without erasing that failure. Fulfillment
+of a synthetic adapter request without a matching exit remains unconfirmed.
+Waiting for a genuinely pending request can remain pending indefinitely; a caller's
+timeout is not evidence and does not remove the observer. Concurrent queries
+share one pending race per Hand; repeated queries after request settlement add no
+new callback to an indefinitely unobserved exit.
+
+RemoteKernel.snapshotWorkerStops requires close to have been requested and reports
+only the adopted-Hand snapshot captured by that call. It includes detached Hands,
+records positive Node exit evidence, and leaves browser/legacy or never-stopped
+warm/transferred Hands unconfirmed. Known production stop/notification diagnostics
+remain in the kernel independently of removal of a positively stopped Hand. It is
+not a permanent admission fence: public raw callers can create new owners later.
+No result of this method alone permits scope disposal.
+
+The private Worker still needs a closed execution-owner protocol that survives
+completed rehearsal kernels without using WeakRef disappearance as evidence.
+Current weak observations intentionally cannot certify that missing executions,
+old Images, loader/read operations or transferred warm instances released their
+ownership. Output-prefix completion is orthogonal: page-owned bytes may safely
+finish storing after host retirement, but that does not certify guest-tree release.
+Consequently no automatic preparedOwner.dispose is added in this step. Unknown
+owners remain isolated under the finite scope/realm boundary rather than being
+converted into successful completion by an empty snapshot.

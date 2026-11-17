@@ -111,3 +111,56 @@ test('production Node CPU adapter releases only hand bookkeeping after observed 
   k.keep(hand); assert.equal(k.spares.length, 0);
   hand.end();
 });
+
+test('request failure resolves evidence as unconfirmed, while late exit remains independently observable', async () => {
+  let exit!: (code: number) => void;
+  const failure = new Error('request rejected');
+  const stop = new WorkerStop(() => Promise.reject(failure), fn => { exit = fn; });
+  stop.request(() => {});
+  const initial = await stop.evidence();
+  assert.equal(initial.stopped, false); assert.equal(initial.requestFailure, failure);
+  exit(3);
+  const late = await stop.evidence();
+  assert.equal(late.stopped, true); assert.equal(late.exitCode, 3); assert.equal(late.requestFailure, failure);
+});
+
+test('a successful adapter request without matching exit is not stop evidence', async () => {
+  const stop = new WorkerStop(() => Promise.resolve(0), () => {});
+  stop.request(() => {});
+  assert.deepEqual(await stop.evidence(), {stopped: false});
+});
+
+test('actual Node kernel close exposes captured stop evidence without disposing other owners', {timeout: 10_000}, async () => {
+  const k = new RemoteKernel({spares: 1, console: {write() {}, read() { return null; }}});
+  await assert.rejects(k.snapshotWorkerStops(), /close first/);
+  k.close();
+  const evidence = await k.snapshotWorkerStops();
+  assert.equal(evidence.captured, 1); assert.equal(evidence.observedStopped, 1);
+  assert.equal(evidence.unconfirmed, 0); assert.deepEqual(evidence.failures, []);
+  assert.ok(k.vfs); assert.ok(k.images); // Host evidence never disposes these owners.
+});
+
+test('completed Worker history remains diagnostic even when the remaining-owner snapshot is empty', async () => {
+  const k = new RemoteKernel({spares: 0, console: {write() {}, read() { return null; }}});
+  // Production diagnostics outlive removal of an observed-stopped Hand.
+  const failure = new Error('earlier stop request failed before late exit');
+  k.stopFailures.push(failure);
+  k.close();
+  const result = await k.snapshotWorkerStops();
+  assert.equal(result.captured, 0); assert.equal(result.unconfirmed, 0);
+  assert.deepEqual(result.failures, [failure]);
+});
+
+test('concurrent evidence queries share one pending observation and late exit remains readable', async () => {
+  let reject!: (error: unknown) => void, exit!: (code: number) => void;
+  const stop = new WorkerStop(() => new Promise((_resolve, fail) => { reject = fail; }), fn => { exit = fn; });
+  stop.request(() => {});
+  const a = stop.evidence(), wait = (stop as unknown as {evidenceWait: Promise<unknown>}).evidenceWait;
+  const b = stop.evidence();
+  assert.equal((stop as unknown as {evidenceWait: Promise<unknown>}).evidenceWait, wait);
+  reject(new Error('unconfirmed request'));
+  assert.equal((await a).stopped, false); assert.equal((await b).stopped, false);
+  for (let i = 0; i < 100; i++) assert.equal((await stop.evidence()).stopped, false);
+  assert.equal((stop as unknown as {evidenceWait: Promise<unknown>}).evidenceWait, wait);
+  exit(0); assert.equal((await stop.evidence()).stopped, true);
+});

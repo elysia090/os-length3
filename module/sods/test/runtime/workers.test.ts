@@ -234,9 +234,11 @@ test('detached Worker ownership survives close until its matching observed stop'
   assert.equal(owners.size, 0);
 });
 
-test('legacy or browser-like hand with no stop observation remains an owner after request', () => {
+test('legacy or browser-like hand with no stop observation remains an owner after request', async () => {
   const {k} = bench(), w = hand();
   const owners = (k as unknown as {workerOwners: Set<Adopted>}).workerOwners;
   k.spares.push(k.adoptWorker(w as unknown as Adopted));
   k.close(); assert.equal(w.ended, 1); assert.equal(owners.size, 1);
+  const evidence = await k.snapshotWorkerStops();
+  assert.equal(evidence.captured, 1); assert.equal(evidence.observedStopped, 0); assert.equal(evidence.unconfirmed, 1);
 });
