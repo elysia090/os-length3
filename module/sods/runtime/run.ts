@@ -3,6 +3,7 @@
 //
 // Run a static x86-64 program translated by sods, on node. PROGRAM is a host path
 // (placed at /bin/<name>) or, with --root, a path inside that tree (a root unpacked).
+// --managed PROGRAM [args...] selects the explicit rootless, non-TTY Rust profile.
 // stdin/stdout/stderr attach to this process. A root still in its layers is run by
 // what reads layers (ricebox: module/ricebox/verification/programs.ts), over the same linux.ts.
 import {execFileSync, spawnSync} from 'node:child_process';
@@ -10,15 +11,34 @@ import {createHash} from 'node:crypto';
 import {existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {File, Link, Vfs} from './linux/fs.ts';
-import {PROFILE, type Translator} from './linux/process.ts';
-import {linux} from './linux.ts';
+import type {Translator} from './linux/process.ts';
 import {NotAProgram, loadTranslator} from './translation/translator.ts';
 import {steady} from './host.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const translator = join(here, '..', 'target', 'release', 'sods');
 const wasmTranslator = join(here, '..', 'target', 'wasm32-unknown-unknown', 'release', 'sods.wasm');
+
+// Explicit migration profile, never an automatic fallback for the ordinary CLI.
+// Reject incompatible modes before loading a program, translator or standard input.
+if (process.argv[2] === '--managed') {
+  const [program, ...args] = process.argv.slice(3);
+  if (!program || program.startsWith('-')) throw new Error('--managed requires a host PROGRAM and accepts no runner options');
+  for (const name of ['SODS_RUN', 'SODS_BUDGET', 'SODS_BLOCKS', 'SODS_INLINE', 'SODS_TIMING', 'SODS_FREE', 'SODS_UNSUPPORTED']) {
+    if (process.env[name] !== undefined) throw new Error(`--managed does not support ${name}`);
+  }
+  const core = process.env.SODS_LINUX_WASM;
+  if (!core) throw new Error('--managed requires SODS_LINUX_WASM');
+  const selectedTranslator = process.env.SODS_CURRENT_TRANSLATOR_WASM ?? process.env.SODS_PATH_TRANSLATOR_WASM ?? wasmTranslator;
+  const {runManagedProgram} = await import('./host/node/run.ts');
+  // The helper only returns a guest status after observed Worker stop and retirement.
+  process.exit(await runManagedProgram(program, args, core, selectedTranslator));
+}
+
+// Keep the legacy semantic graph out of the selected managed caller.
+const {File, Link, Vfs} = await import('./linux/fs.ts');
+const {PROFILE} = await import('./linux/process.ts');
+const {linux} = await import('./linux.ts');
 
 // SODS_BLOCKS=1: translate with --trace, so every block entered is reported (process.ts prints it).
 const traced = process.env.SODS_BLOCKS ? ['--trace'] : [];
@@ -116,7 +136,7 @@ translate.more = inProcess ? inProcess.more : function more(bytes: Uint8Array, s
 };
 
 /** Mirror a host tree into the VFS; file contents load on first read. */
-function mount(vfs: Vfs, host: string, at: string): void {
+function mount(vfs: InstanceType<typeof Vfs>, host: string, at: string): void {
   const dir = vfs.mkdirp(at);
   for (const name of readdirSync(host)) {
     const full = join(host, name), st = lstatSync(full);
@@ -134,7 +154,8 @@ const args = process.argv.slice(2);
 let root: string | null = null, cwd = '/root', tty = false;
 while (args[0]?.startsWith('--')) {
   const flag = args.shift();
-  if (flag === '--root') root = args.shift() ?? null;
+  if (flag === '--managed') throw new Error('--managed must be the first runner option');
+  else if (flag === '--root') root = args.shift() ?? null;
   else if (flag === '--cwd') cwd = args.shift() ?? cwd;
   // Its console a terminal, 80 by 24, as a Prompt has it: what reads keys reads them from one.
   else if (flag === '--tty') tty = true;

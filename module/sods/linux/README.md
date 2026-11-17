@@ -742,3 +742,44 @@ nor keeping an open host FD proves immutable file contents. A live-root importer
 content identity/reload policy, directory bootstrap and whole/seeded translation
 compatibility remain separate migration gates. These inputs serve prepared trees;
 they do not claim a completed host-filesystem snapshot or ordinary CLI cutover.
+
+### Explicit Node CLI migration profile
+
+The existing Node CLI now has an opt-in path through this authority:
+
+```sh
+SODS_LINUX_WASM=/path/to/sods_linux.wasm \
+SODS_CURRENT_TRANSLATOR_WASM=/path/to/sods.wasm \
+node module/sods/runtime/run.ts --managed ./program.elf argument < input > output 2> errors
+```
+
+`--managed` must be first, followed directly by a host program path and its guest
+arguments. It captures that program once, creates `/bin/<basename>` and `/root`,
+then uses Rust path selection, credentials, stack, standard descriptions and
+syscall continuation through a Node Worker. The guest argv[0] is `/bin/<basename>`;
+cwd is `/root` and the four default environment entries match the ordinary CLI.
+It does not import or construct the legacy Vfs/Kernel for this selected path.
+
+This is a rootless, fixed-memory, whole-translation, non-TTY Linux/Node 22 or 24
+profile, not the ordinary runner's complete Linux environment. Runner options such
+as `--root`, `--cwd` and `--tty`, and the `SODS_RUN`, `SODS_BUDGET`, `SODS_BLOCKS`,
+`SODS_INLINE`, `SODS_TIMING`, `SODS_FREE` and `SODS_UNSUPPORTED` modes are rejected
+before program/translator loading or stdin consumption. Options after PROGRAM are
+guest arguments. The Linux Wasm artifact is required explicitly. Translator input
+is the explicit current-source path above, then `SODS_PATH_TRANSLATOR_WASM`, then
+the existing local Wasm translator build path; missing or incompatible artifacts
+fail without native-translator or legacy-runtime fallback. This path does not use
+the legacy translation cache, mtime selection, incremental translation or devices.
+
+Success requires guest exit, observed Worker stop, settled requests and execution
+resource retirement. Failure retains the original error and reports unconfirmed
+cleanup separately. A bounded cleanup wait is not proof of stop and cannot
+interrupt a synchronous blocked standard-stream operation. Tree/physical memory
+reclamation and general Linux compatibility are not implied by execution retirement.
+Program capture, host-to-core and translator/image copying remain real costs; this
+first caller transition does not claim minimum allocation or retained memory.
+
+The ordinary CLI without `--managed` remains on the existing runtime. Its root
+import, missing-cwd creation, incremental translation, TTY and broader syscall
+requirements are still migration gates. The old TS semantic implementation is not
+yet deleted; only this selected caller no longer uses it.
