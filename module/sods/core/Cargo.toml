@@ -1,0 +1,8 @@
+[package]
+name = "sods-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Portable execution-core contracts for sods"
+
+[workspace]
