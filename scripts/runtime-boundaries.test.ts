@@ -71,3 +71,14 @@ test('distribution format is below execution, without host or product capabiliti
   assert.equal(allowed('module/ricebox/runtime/root.ts','../distribution/manifest.ts'),true);
   assert.equal(allowed('module/ricebox/distribution/mount.ts','./pack.ts'),true);
 });
+
+test('deployment is independent of composition and integrations',()=>{
+  const assets='module/ricebox/deployment/assets.ts';
+  for(const target of ['../build/prepare.ts','../integrations/vite.ts','../runtime/root.ts','../../sods/runtime/linux.ts','node:child_process']) assert.equal(allowed(assets,target),false,target);
+  assert.equal(allowed(assets,'../distribution/manifest.ts'),true);
+  assert.equal(allowed(assets,'node:fs'),true);
+  assert.equal(allowed('module/ricebox/integrations/vite.ts','../deployment/assets.ts'),true);
+  assert.equal(allowed('module/ricebox/integrations/vite.ts','../build/prepare.ts'),true);
+  assert.equal(allowed('module/ricebox/build/prepare.ts','../integrations/vite.ts'),false);
+  assert.equal(allowed('module/ricebox/runtime/root.ts','../deployment/assets.ts'),false);
+});

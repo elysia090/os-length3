@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
-import {selectPackages, prepareDistribution} from './prepare.ts';
+import {selectPackages, prepareDistribution} from '../prepare.ts';
 function fixture(t: TestContext) {
   const at = mkdtempSync(join(tmpdir(), 'ricebox-selection-'));
   t.after(() => rmSync(at, {recursive: true, force: true}));
@@ -30,7 +30,7 @@ test('declarative selection never mutates shared caches or includes unselected p
 test('selected packages pass through the real neutral archive assembler', t => {
   const {at,cache}=fixture(t), selected=join(at,'selected'), out=join(at,'root');
   selectPackages(['extra'],cache,selected);
-  const script=fileURLToPath(new URL('../make/assemble.sh',import.meta.url));
+  const script=fileURLToPath(new URL('../../make/assemble.sh',import.meta.url));
   const r=spawnSync('sh',[script,selected,out],{encoding:'utf8'});
   assert.equal(r.status,0,r.stderr);
   const archive=join(out,readdirSync(out).find(n=>n.endsWith('.tar.zst'))!);
@@ -57,7 +57,7 @@ test('orchestration invokes assemble then AOT and publishes only after success',
 
 test('pinned prebuilt tools compose real layers without cargo or a C build', async t => {
   const {createHash} = await import('node:crypto');
-  const {distributionAssets} = await import('./vite.ts');
+  const {distributionAssets} = await import('../../deployment/assets.ts');
   const {at, cache} = fixture(t);
   const artifact = (name: string, bytes: Uint8Array) => {
     const path = join(at,name); writeFileSync(path,bytes);
@@ -81,7 +81,7 @@ test('pinned prebuilt tools compose real layers without cargo or a C build', asy
   assert.equal(existsSync(join(at,'bad')),false);
 });
 test('pinned file store reaches real composition and deployment assets',{skip:!process.env.SODS_FILE_STORE_WASM},async t=>{
-  const {createHash}=await import('node:crypto');const {distributionAssets}=await import('./vite.ts');
+  const {createHash}=await import('node:crypto');const {distributionAssets}=await import('../../deployment/assets.ts');
   const {at,cache}=fixture(t);
   const artifact=(name:string,bytes:Uint8Array)=>{const path=join(at,name);writeFileSync(path,bytes);return {path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};};
   const tools={translator:artifact('translator.wasm',new Uint8Array([0,97,115,109,1,0,0,0])),sods:artifact('sods',Buffer.from('unused')),muk:artifact('muk',Buffer.from('fixture'))};

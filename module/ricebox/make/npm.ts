@@ -18,7 +18,7 @@ const entry = 'module/ricebox/runtime/root.ts';
 const closure = new Map<string, {source: string; javascript: string}>();
 function visit(path: string): void {
   if (closure.has(path)) return;
-  if (!/^module\/(ricebox\/(?:runtime|distribution)|sods\/runtime)\//.test(path) || !path.endsWith('.ts')) {
+  if (!/^module\/(ricebox\/(?:runtime|distribution|build|deployment|integrations)|sods\/runtime)\//.test(path) || !path.endsWith('.ts')) {
     throw new Error(`Unexpected dependency outside ricebox and sods: ${path}`);
   }
   const source = readFileSync(join(repository, path), 'utf8');
@@ -32,21 +32,14 @@ function visit(path: string): void {
   }
 }
 visit(entry);
+visit('module/ricebox/integrations/vite.ts');
+visit('module/ricebox/build/prepare.ts');
 mkdirSync(out, {recursive: true});
 for (const [path, {source, javascript}] of closure) {
   const destination = join(out, path);
   mkdirSync(dirname(destination), {recursive: true});
   writeFileSync(destination, source);
   writeFileSync(destination.slice(0, -3) + '.js', javascript.replace(/(['"])(\.[^'"\n]+)\.ts\1/g, '$1$2.js$1'));
-}
-// Public plugin/prepare sources retain types; shipped JS requires no TS loader.
-for (const name of ['vite', 'prepare']) {
-  const path = `module/ricebox/npm/${name}.ts`;
-  const source = readFileSync(join(repository, path), 'utf8');
-  const javascript = transform(source, {mode: 'transform'});
-  mkdirSync(dirname(join(out, path)), {recursive: true});
-  writeFileSync(join(out, path), source);
-  writeFileSync(join(out, path.replace(/\.ts$/, '.js')), javascript.replace(/(['"])(\.[^'"\n]+)\.ts\1/g, '$1$2.js$1'));
 }
 // The distribution builder is the same implementation, not a second npm assembler.
 for (const path of ['make/assemble.sh', 'make/db.ts', 'make/scripts.ts', 'make/layers.ts', 'make/file-store.ts', 'make/tree.ts', 'make/aot-cache.ts', 'etc/os-release', 'pins/sources.env']) {
@@ -58,7 +51,7 @@ writeFileSync(join(out, 'module/sods/Cargo.toml'), readFileSync(join(repository,
 writeFileSync(join(out, 'package.json'), JSON.stringify({
   name: 'ricebox', version: '0.0.1', private: true, type: 'module',
   description: 'The product-independent ricebox distribution loader',
-  exports: {'.': {types: './' + entry, import: './' + entry.replace(/\.ts$/, '.js')}, './vite': {types: './module/ricebox/npm/vite.ts', import: './module/ricebox/npm/vite.js'}, './prepare': {types: './module/ricebox/npm/prepare.ts', import: './module/ricebox/npm/prepare.js'}},
+  exports: {'.': {types: './' + entry, import: './' + entry.replace(/\.ts$/, '.js')}, './vite': {types: './module/ricebox/integrations/vite.ts', import: './module/ricebox/integrations/vite.js'}, './prepare': {types: './module/ricebox/build/prepare.ts', import: './module/ricebox/build/prepare.js'}},
   engines: {node: '>=22.18'},
 }, null, 2) + '\n');
 writeFileSync(join(out, 'README.md'), `# ricebox\n\nThis local package exposes the existing createRoot and Box contracts without why.\nIt carries ricebox and sods JavaScript, including their Worker entry points.\nServe the distribution's layers separately and give createRoot its base URL.\nA bundler with module-Worker support is required for browser applications.\nThe Vite build option composes explicitly selected prebuilt packages through the existing assemble and AOT toolchain. Supply selected packages and a package cache. For a pinned catalog, acquire with otter first and pass its packages/packageCache/tools result; ricebox never fetches or resolves a catalog. Supply integrity-pinned translator, sods and muk artifacts as tools, and an optional matching file-store artifact as fileStore to use the bundled assembler and AOT scripts without building Rust/C; a source toolchain remains available for development. It also requires Linux shell tools, GNU tar and zstd; it does not install native build prerequisites. Catalog acquisition is owned by otter, not a second ricebox registry. It does not persist user data or deploy a service.\nIt does not claim Cloudflare isolate execution merely because its files can be served there.\nThe package is private while the complete public installation flow is being verified.\n`);

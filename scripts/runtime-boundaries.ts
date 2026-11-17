@@ -1,13 +1,16 @@
-// Runtime import boundaries, separate from why's own layer order. Build tools and tests are not runtime.
+// Execution and distribution boundary imports, separate from why's own layer order.
+// Host build/deployment entrances are checked too, with explicit facilities and no reverse runtime dependency.
 import {readdirSync, readFileSync} from 'node:fs';
 import {posix} from 'node:path';
 
-export const ROOTS = ['module/ricebox/distribution', 'module/ricebox/runtime', 'module/sods/runtime', 'module/cowboy/host', 'module/disk'];
+export const ROOTS = ['module/ricebox/build', 'module/ricebox/deployment', 'module/ricebox/integrations', 'module/ricebox/distribution', 'module/ricebox/runtime', 'module/sods/runtime', 'module/cowboy/host', 'module/disk'];
 const inside = (path: string, root: string) => path.startsWith(root + '/');
 const publicSods = new Set(['module/sods/runtime/host.ts', 'module/sods/runtime/linux.ts', 'module/sods/runtime/translate.ts']);
 // Adapters are allowed host facilities explicitly, not forbidden. Add a new adapter and its facilities here
 // when its contract lands; do not allow node:* throughout the core to accommodate one adapter.
 const hostImports: Record<string, readonly string[]> = {
+  'module/ricebox/build/prepare.ts': ['node:fs','node:path','node:child_process','node:crypto','node:url'],
+  'module/ricebox/deployment/assets.ts': ['node:crypto','node:fs','node:path','node:zlib'],
   'module/sods/runtime/host.ts': ['node:worker_threads', 'node:os', 'node:fs'],
   // The existing CLI is executable but must not become an importable runtime dependency.
   'module/sods/runtime/run.ts': ['node:child_process', 'node:crypto', 'node:fs', 'node:path', 'node:url'],
@@ -60,13 +63,15 @@ export function references(source: string): string[] {
 }
 
 export function allowed(from: string, specifier: string): boolean {
-  // Node-specific facilities belong only to sods' existing host adapter, not to distribution or disk logic.
+  // Host facilities belong only to the concrete host entrances listed above, never portable format or disk logic.
   if (hostImports[from]?.includes(specifier)) return true;
   if (!specifier.startsWith('./') && !specifier.startsWith('../')) return false;
   const target = posix.normalize(posix.join(posix.dirname(from), specifier.split(/[?#]/)[0]!));
   const owner = ROOTS.find(root => inside(from, root));
   if (!owner || target === 'module/sods/runtime/run.ts' || target.includes('/test/') || /\.(test|spec)\./.test(target)) return false;
   if (inside(target, owner)) return true;
+  if (owner === 'module/ricebox/integrations') return inside(target, 'module/ricebox/build') || inside(target, 'module/ricebox/deployment');
+  if (owner === 'module/ricebox/build' || owner === 'module/ricebox/deployment') return inside(target, 'module/ricebox/distribution');
   if (owner === 'module/ricebox/runtime') return inside(target, 'module/ricebox/distribution') || publicSods.has(target);
   return owner === 'module/cowboy/host' && target === 'module/sods/runtime/linux.ts';
 }

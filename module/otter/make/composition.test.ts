@@ -4,8 +4,8 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,existsSync} from
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {publishCatalog,acquirePackages} from './artifacts.mjs';
-import {prepareDistribution} from '../../ricebox/npm/prepare.ts';
-import {distributionAssets} from '../../ricebox/npm/vite.ts';
+import {prepareDistribution} from '../../ricebox/build/prepare.ts';
+import {distributionAssets} from '../../ricebox/integrations/vite.ts';
 
 test('otter acquires pinned closure then ricebox composes it without acquisition dependency',async t=>{
   const work=mkdtempSync(join(tmpdir(),'otter-composition-'));t.after(()=>rmSync(work,{recursive:true,force:true}));

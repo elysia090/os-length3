@@ -1,10 +1,8 @@
-// Connect a prepared distribution to an ordinary Vite deployment. This stages
-// exactly the files its manifest names, not a whole working directory. It neither
-// compiles a second runtime nor persists anything a visitor writes.
+// Verify and collect only the assets named by a prepared distribution.
+// No bundler, composition or execution dependency; the caller owns the returned bytes.
 import {createHash} from 'node:crypto';
 import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
-import {prepareDistribution, type PrepareOptions} from './prepare.ts';
 import {gunzipSync} from 'node:zlib';
 import {requireFileStoreName, type Index, type About, type Blob} from '../distribution/manifest.ts';
 import {checkPacks} from '../distribution/pack.ts';
@@ -41,10 +39,10 @@ export function distributionAssets(directory: string, {base = 'ricebox', maxAsse
   };
   blob(index.translator);
   if (index.fileStore !== undefined) {
-    const core = index.fileStore;
-    if (!core || core.abi !== 4 || !Number.isInteger(core.maxFileBytes) || core.maxFileBytes < 0 || core.maxFileBytes > 0x7fffffff || !/^[0-9a-f]{64}$/.test(core.wasm)) throw new Error('ricebox: invalid file store descriptor');
-    const bytes = gunzipSync(blob(core));
-    if (bytes.length !== core.bytes || createHash('sha256').update(bytes).digest('hex') !== core.wasm) throw new Error('ricebox: file store expanded content mismatch');
+    const store = index.fileStore;
+    if (!store || store.abi !== 4 || !Number.isInteger(store.maxFileBytes) || store.maxFileBytes < 0 || store.maxFileBytes > 0x7fffffff || !/^[0-9a-f]{64}$/.test(store.wasm)) throw new Error('ricebox: invalid file store descriptor');
+    const bytes = gunzipSync(blob(store));
+    if (bytes.length !== store.bytes || createHash('sha256').update(bytes).digest('hex') !== store.wasm) throw new Error('ricebox: file store expanded content mismatch');
   }
   for (const translation of index.translations ?? []) { blob(translation.elf); blob(translation.wasm); }
   const packs = new Map(index.packs.map(pack => [pack.name, read(`packs/${pack.name}`, undefined, pack.bytes)]));
@@ -56,19 +54,3 @@ export function distributionAssets(directory: string, {base = 'ricebox', maxAsse
   return result;
 }
 
-export default function ricebox({distribution, build, base = 'ricebox', maxAssetBytes}: {distribution?: string; build?: PrepareOptions; base?: string; maxAssetBytes?: number} = {}) {
-  if (distribution && build) throw new Error('ricebox: choose distribution or build, not both');
-  let prepared = distribution;
-  return {
-    name: 'ricebox',
-    async buildStart() {
-      if (build) prepared = await prepareDistribution(build);
-    },
-    config() { return {worker: {format: 'es'}}; },
-    generateBundle(this: {emitFile(asset: {type: 'asset'; fileName: string; source: Uint8Array}): unknown}) {
-      if (!prepared) return;
-      const assets = distributionAssets(prepared, {base, maxAssetBytes});
-      for (const [fileName, source] of assets) this.emitFile({type: 'asset', fileName, source});
-    },
-  };
-}

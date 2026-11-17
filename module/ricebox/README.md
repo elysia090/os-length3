@@ -80,3 +80,24 @@ make/standin.ts             a small root for tests
 
 A release of ricebox is whole without a product: the root, its layers, and beside them `muk` and `sods` (the
 program, the translator as a module, and `sods/runtime`), each taken at the boundary it publishes.
+
+## Composition and deployment
+
+- `build/prepare.ts` composes an explicit package cache with pinned tools. It
+  creates an isolated temporary generation and publishes its output only after success.
+- `deployment/assets.ts` validates and collects a prepared distribution's named
+  assets. It does not build, execute, or invoke a bundler.
+- `integrations/vite.ts` connects those two operations to Vite's hooks. It owns no
+  second manifest reader or distribution builder.
+- `docs/installation.md` describes the caller's acquisition and ownership contract.
+
+The package exports `ricebox`, `ricebox/prepare`, and `ricebox/vite` remain stable.
+The existing `distributionAssets` named export of `ricebox/vite` remains the same
+function, re-exported from the bundler-independent implementation. Source paths
+inside the repository are not additional package exports.
+
+This separation adds no asset scan, copy or retained representation. Asset staging
+still returns a Map retaining all selected stored bytes, and its limit is per asset,
+not an aggregate memory bound. It verifies mutable host files again; prior acquisition
+is not proof that those files remain unchanged. Neither the Vite adapter nor local
+package construction publishes a release or installs missing native tools.
