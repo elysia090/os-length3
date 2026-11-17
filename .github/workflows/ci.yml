@@ -312,6 +312,12 @@ jobs:
       - name: Test sods
         if: matrix.part == 'native'
         run: cargo test --locked --release --manifest-path module/sods/Cargo.toml
+      - name: Test Linux memory admission and real Wasm host boundary
+        if: matrix.part == 'native'
+        run: |
+          cargo test --locked --manifest-path module/sods/linux/Cargo.toml
+          cargo build --locked --target wasm32-unknown-unknown --manifest-path module/sods/linux/Cargo.toml
+          SODS_LINUX_WASM=module/sods/linux/target/wasm32-unknown-unknown/debug/sods_linux.wasm node --test module/sods/test/runtime/memory-host.test.ts
       # What stands beside sods and is checked with what it builds: ricebox's layers mounted in sods' tree (the
       # translator's wasm decodes and digests them), and muk's C parser beside its model over every config.json.
       - name: Layers, and muk's parser beside its model

@@ -8,4 +8,4 @@ description = "Linux execution-domain authority for sods"
 [workspace]
 
 [lib]
-crate-type = ["rlib"]
+crate-type = ["rlib", "cdylib"]

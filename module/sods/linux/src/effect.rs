@@ -10,6 +10,16 @@ pub(crate) struct Token {
     sequence: u64,
 }
 
+impl Token {
+    pub(crate) fn from_parts(domain: u64, sequence: u64) -> Self {
+        Self { domain, sequence }
+    }
+
+    pub(crate) fn sequence(self) -> u64 {
+        self.sequence
+    }
+}
+
 /// A domain-local sequence, exhausted rather than wrapped or reused.
 /// The future domain owner must construct exactly one Issuer for its unique ID
 /// and retain it until the domain ends; recreating it would reuse action tokens.
