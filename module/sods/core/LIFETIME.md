@@ -554,3 +554,44 @@ metadata/notifications for the final boundary. It cannot be proved by a fixed ti
 by resetting onItsWay to zero, or by treating a postMessage return as consumption.
 Browser shutdown may still remain unconfirmed after drain; Node exit proves only
 that Worker stopped, not that repository writes or other tree owners completed.
+
+### Separate sink outcomes before introducing a draining close
+
+The existing consumer returns `drained(n)` for old-epoch output it discards as
+well as output accepted by `Output.print`. That method can defer drawing to a
+later animation frame, and hidden tabs retain only their limited terminal state.
+Thus credit returned, model accepted, visibly painted and preserved forever are
+four different claims. None says repository changes were stored.
+
+The actual repository sink, why's WriteBack.write, now returns a per-batch receipt.
+It waits for the supported store operations and reports storeAccepted, policy
+exclusions, budget/store-skipped paths, whether a tab journal was created, unexpected
+queue failure and diagnostic failure independently. Store acceptance is not fsync
+or permanent durability, and sessionStorage journalling is not a durable receipt.
+Unexpected failure can leave a successful prefix; no rollback or safe automatic
+retry is inferred. A caller racing a timeout still owns an unresolved receipt.
+
+Existing normal callers keep their previous diagnostic callback and do not claim
+a draining close. Notification failure no longer poisons subsequent store work.
+A batch blocked by an unexpectedly failed predecessor reports that failure and
+returns its capacity reservation. Recovery journals remain ordered by repository,
+and unrelated repositories remain independent. The receipt adds no payload copy;
+input file objects/paths and byte views must remain stable and undetached until
+completion; the API does not promise a snapshot of mutable caller data. Outstanding payload retention
+and the existing journal encoding remain real costs, not eliminated by this API.
+
+For the next protocol decision, an **ordered final boundary** is preferable to
+adding an acknowledgement for every output chunk: the Worker-to-page channel
+already orders messages. After stopping production and completing publications,
+a boundary can identify the exact received prefix. The consumer must then wait
+for the write receipts captured before that boundary and explicitly classify
+output accepted versus intentionally discarded. Later work cannot extend the
+boundary. An asynchronous sink result must not be replaced by its queue insertion
+or diagnostic callback returning. Any send with an ambiguous external outcome
+fails the close attempt rather than replaying possibly transferred bytes.
+
+This is still a design candidate: there is no implemented final-boundary message,
+consumer barrier, draining-close state or tree disposal. It must coexist with the
+existing explicit abort path; cancellation can abandon waiting, not undo accepted
+writes. Browser host-stop evidence remains unavailable even after a future
+successful consumer boundary. Node's exit observation proves a different stage.

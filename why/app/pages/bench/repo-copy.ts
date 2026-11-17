@@ -115,6 +115,20 @@ async function writeLeft(): Promise<void> {
 /** How often a batch left kept is tried again at a start, and how long between (longer each time). */
 const LEFT_TRIES = 5, LEFT_WAIT_MS = 60;
 
+/** Completion of this accepted batch, not a rendered-output or disk-fsync receipt.
+ * storeAccepted covers supported paths only; excluded policy paths and skipped
+ * budget/store paths remain explicit. False does not mean no writes occurred:
+ * a prefix or subset can succeed, and unexpected failure may leave the exact
+ * applied set unknown. A created tab journal is not durable storage. */
+export interface WriteReceipt {
+  storeAccepted: boolean;
+  excluded: number;
+  skipped: readonly string[];
+  journalCreated: boolean;
+  failure?: unknown;
+  notificationFailure?: unknown;
+}
+
 /** The shell's changes written back to the repo `repo` as `by`, in order; `skipped` hears what could not be. */
 export class WriteBack {
   readonly #repo: string;
@@ -129,34 +143,57 @@ export class WriteBack {
     this.#skipped = skipped;
   }
 
-  /** Write the shell's changes back to the repo, in order, one batch after another. */
-  write(c: Changes) {
+  /** Accept a batch in repo order and return its actual store outcome. Ignoring
+   * the receipt keeps legacy behavior, without an unhandled rejection chain.
+   * Input file objects (including paths) and byte views must stay stable and
+   * undetached until this receipt settles; this is not snapshot acceptance and
+   * no new payload copy is added here. No cancellation/timeout can undo a successful prefix. */
+  write(c: Changes): Promise<WriteReceipt> {
     const repo = this.#repo, by = this.#by, skipped: string[] = [];
-    // Any file, text or not, as the app's Prompt writes the repo itself; one past the budget is said, not written.
+    let excluded = 0;
+    const allowed = (path: string): boolean => { if (repoPath(path)) return true; excluded++; return false; };
     const files = c.files.filter((f) => {
-      if (!repoPath(f.path)) return false;
+      if (!allowed(f.path)) return false;
       if (this.#budget.files <= 0 || this.#budget.bytes < f.bytes.length) return !skipped.push(f.path);
       this.#budget.files--;
       this.#budget.bytes -= f.bytes.length;
       return true;
     });
-    const batch = {dirs: c.dirs.filter(repoPath), files, removed: c.removed.filter(repoPath)}, key = keep(repo, by, batch);
+    const reservedBytes = files.reduce((n, f) => n + f.bytes.length, 0);
+    const release = (): void => {
+      this.#budget.files += files.length;
+      this.#budget.bytes += reservedBytes;
+    };
+    const batch = {dirs: c.dirs.filter(allowed), files, removed: c.removed.filter(allowed)};
+    let key: string | null;
+    try { key = keep(repo, by, batch); }
+    catch (error) { release(); throw error; } // Not accepted into the repo queue.
     const queue = (writeQueues.get(repo) ?? Promise.resolve()).then(async () => {
       const failed: string[] = [];
-      try {
-        await writeBatch(repo, by, batch, failed);
-        if (failed.length && key) replayRepos.add(repo);
-        if (!failed.length && !replayRepos.has(repo)) unkeep(key);
-      } finally {
-        this.#budget.files += files.length;
-        this.#budget.bytes += files.reduce((n, f) => n + f.bytes.length, 0);
-      }
-      skipped.push(...failed);
-      if (skipped.length) this.#skipped(t('Failed to sync back to repo: {list}', {list: `${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`}));
+      try { await writeBatch(repo, by, batch, failed); }
+      finally { skipped.push(...failed); }
+      if (failed.length && key) replayRepos.add(repo);
+      if (!failed.length && !replayRepos.has(repo)) unkeep(key);
     });
     writeQueues.set(repo, queue);
-    void queue.finally(() => { if (writeQueues.get(repo) === queue) writeQueues.delete(repo); });
+    const finish = (failure?: {error: unknown}): WriteReceipt => {
+      release();
+      if (writeQueues.get(repo) === queue) writeQueues.delete(repo);
+      if (failure && key) replayRepos.add(repo); // Unknown partial progress must not erase recovery.
+      const result: WriteReceipt = {storeAccepted: !failure && !skipped.length, excluded,
+        skipped, journalCreated: key !== null, ...(failure ? {failure: failure.error} : {})};
+      try {
+        if (failure) this.#skipped(t('Failed to sync back to repo: {list}', {list: String(failure.error)}));
+        else if (skipped.length) this.#skipped(t('Failed to sync back to repo: {list}', {list: `${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ' …' : ''}`}));
+      } catch (error) { result.notificationFailure = error; }
+      return result;
+    };
+    // Keep queue ordering independent from diagnostics. Also consume a rejected
+    // predecessor here: the blocked batch releases its reservation and reports
+    // failure rather than silently hanging or producing an unhandled finally().
+    return queue.then(() => finish(), error => finish({error}));
   }
+
 }
 
 /** A file or directory saved in the shell's copy (`what`: its bytes, 'dir', or null for gone). */

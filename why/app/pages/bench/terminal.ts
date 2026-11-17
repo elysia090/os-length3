@@ -591,7 +591,7 @@ export class Session implements Prompt {
         this.drained(data.bytes.length);
         break;
       case 'tty': this.setTty(data); break;
-      case 'changes': this.copy.write(data); break;
+      case 'changes': void this.copy.write(data); break; // Errors are reported by the existing writeback sink; not an output-drain acknowledgement.
       // Code its shell reached later, a program of the root it translated and the code that reached later, and what it
       // read of what was kept: kept for the Prompts after it, and counted as used.
       case 'more': keepMore(data.path, data.from, data.more); break;
