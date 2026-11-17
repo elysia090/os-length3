@@ -20,7 +20,10 @@
 //! entry budget. RandomState's seed unpredictability on the Wasm target has not
 //! been established. No enumeration order or guest getdents contract is exposed.
 //! Inode and entry counts are separately bounded; hardlinks cannot bypass the
-//! entry budget. This remains an internal prepared-root constructor.
+//! entry budget. Directory parent names add O(total directory-name bytes) retained
+//! storage beside directory-entry keys; ascent and symlink targets borrow bytes
+//! without scanning siblings or allocating. Rename/unlink and mount-aware ascent
+//! are not implemented. This remains an internal prepared-root constructor.
 use sods_file_store::store::{self, Store};
 use std::collections::HashMap;
 
@@ -77,8 +80,14 @@ impl From<store::Error> for Error {
         Self::Payload(error)
     }
 }
+struct Directory {
+    entries: HashMap<Vec<u8>, Inode>,
+    // Only directories have one parent in this immutable namespace. Names are
+    // retained separately from the parent's key to support borrowed O(1) ascent.
+    parent: Option<(Inode, Vec<u8>)>,
+}
 enum Kind {
-    Directory(HashMap<Vec<u8>, Inode>),
+    Directory(Directory),
     Regular(u32),
     Symlink(Vec<u8>),
 }
@@ -146,7 +155,10 @@ impl Tree {
                 gid: 0,
                 nlink: 2,
             },
-            kind: Kind::Directory(HashMap::new()),
+            kind: Kind::Directory(Directory {
+                entries: HashMap::new(),
+                parent: None,
+            }),
         });
         Ok(Self {
             owner,
@@ -179,10 +191,10 @@ impl Tree {
     }
     pub(crate) fn lookup(&self, parent: Inode, component: &[u8]) -> Result<Option<Inode>, Error> {
         name(component)?;
-        let Kind::Directory(entries) = &self.nodes[self.index(parent)?].kind else {
+        let Kind::Directory(directory) = &self.nodes[self.index(parent)?].kind else {
             return Err(Error::NotDirectory);
         };
-        Ok(entries.get(component).copied())
+        Ok(directory.entries.get(component).copied())
     }
     /// Perform fallible name/capacity/allocation work before acquiring payloads.
     fn prepare(&mut self, parent: Inode, component: &[u8], inode: bool) -> Result<Place, Error> {
@@ -194,10 +206,13 @@ impl Tree {
         }
         let parent = self.index(parent)?;
         let name = copied(component)?;
-        let Kind::Directory(entries) = &mut self.nodes[parent].kind else {
+        let Kind::Directory(directory) = &mut self.nodes[parent].kind else {
             unreachable!()
         };
-        entries.try_reserve(1).map_err(|_| Error::Capacity)?;
+        directory
+            .entries
+            .try_reserve(1)
+            .map_err(|_| Error::Capacity)?;
         Ok(Place { parent, name })
     }
     /// Only reserved insertion/push remain; no callbacks or payload acquisition.
@@ -211,12 +226,12 @@ impl Tree {
         inode
     }
     fn link_entry(&mut self, place: Place, inode: Inode) {
-        let Kind::Directory(entries) = &mut self.nodes[place.parent].kind else {
+        let Kind::Directory(directory) = &mut self.nodes[place.parent].kind else {
             unreachable!()
         };
         // prepare checked absence and reserved one slot. Exclusive Tree access
         // and no intervening callbacks keep that admission valid through insert.
-        let previous = entries.insert(place.name, inode);
+        let previous = directory.entries.insert(place.name, inode);
         debug_assert!(previous.is_none());
         self.entries += 1;
     }
@@ -241,6 +256,7 @@ impl Tree {
             .nlink
             .checked_add(1)
             .ok_or(Error::Capacity)?;
+        let parent_name = copied(component)?;
         let parent_index = place.parent;
         let inode = self.publish(
             place,
@@ -251,7 +267,10 @@ impl Tree {
                     gid: 0,
                     nlink: 2,
                 },
-                kind: Kind::Directory(HashMap::new()),
+                kind: Kind::Directory(Directory {
+                    entries: HashMap::new(),
+                    parent: Some((parent, parent_name)),
+                }),
             },
         );
         self.nodes[parent_index].metadata.nlink = links;
@@ -348,6 +367,17 @@ impl Tree {
         self.nodes[index].metadata.nlink = links;
         Ok(())
     }
+    /// Namespace parent, not mount-aware `..`. Root has none; files/hardlinks
+    /// have no unique parent and are rejected. Borrowed name allocates nothing.
+    pub(crate) fn directory_parent(&self, inode: Inode) -> Result<Option<(Inode, &[u8])>, Error> {
+        let Kind::Directory(directory) = &self.nodes[self.index(inode)?].kind else {
+            return Err(Error::NotDirectory);
+        };
+        Ok(directory
+            .parent
+            .as_ref()
+            .map(|(parent, name)| (*parent, name.as_slice())))
+    }
     pub(crate) fn target(&self, inode: Inode) -> Result<&[u8], Error> {
         match &self.nodes[self.index(inode)?].kind {
             Kind::Symlink(target) => Ok(target),
@@ -390,6 +420,74 @@ mod tests {
     use super::*;
     fn tree() -> Tree {
         Tree::new(9, 8, 8, 32).unwrap()
+    }
+    #[test]
+    fn directory_parent_is_borrowed_stable_and_not_applied_to_hardlinks() {
+        let mut t = Tree::new(801, 8, 8, 16).unwrap();
+        let root = t.root();
+        assert_eq!(t.directory_parent(root), Ok(None));
+        let dir = t.directory(root, b"dir", 0o755).unwrap();
+        let child = t.directory(dir, &[0xff, b'x'], 0o700).unwrap();
+        assert_eq!(
+            t.directory_parent(child),
+            Ok(Some((dir, &[0xff, b'x'][..])))
+        );
+        let name_pointer = t.directory_parent(child).unwrap().unwrap().1.as_ptr();
+        assert_eq!(t.directory(dir, &[0xff, b'x'], 0o750), Ok(child));
+        assert_eq!(
+            t.directory_parent(child).unwrap().unwrap().1.as_ptr(),
+            name_pointer
+        );
+        assert_eq!(t.directory_parent(dir), Ok(Some((root, &b"dir"[..]))));
+        let file = t.file_take(root, b"file", 0o600, &mut vec![1]).unwrap();
+        t.hardlink(dir, b"alias", file).unwrap();
+        assert_eq!(t.directory_parent(file), Err(Error::NotDirectory));
+        assert_eq!(t.hardlink(root, b"dir-alias", dir), Err(Error::NotRegular));
+        let link = t.symlink(root, b"link", &[b'.', b'.', b'/', 0xfe]).unwrap();
+        assert_eq!(t.directory_parent(link), Err(Error::NotDirectory));
+        assert_eq!(t.target(link), Ok(&[b'.', b'.', b'/', 0xfe][..]));
+        assert_eq!(
+            t.target(link).unwrap().as_ptr(),
+            t.target(link).unwrap().as_ptr()
+        );
+        assert_eq!(
+            t.directory_parent(Inode {
+                owner: 802,
+                number: 1
+            }),
+            Err(Error::UnknownInode)
+        );
+        assert_eq!(
+            t.directory_parent(Inode {
+                owner: 801,
+                number: 99
+            }),
+            Err(Error::UnknownInode)
+        );
+    }
+    #[test]
+    fn directory_construction_failure_keeps_parent_name_links_and_entries() {
+        let mut t = Tree::new(803, 3, 2, 16).unwrap();
+        let root = t.root();
+        let dir = t.directory(root, b"dir", 0o700).unwrap();
+        let before = t.metadata(root).unwrap();
+        assert_eq!(
+            t.directory(root, b"bad/name", 0o755),
+            Err(Error::InvalidName)
+        );
+        assert_eq!(t.directory(root, b"dir", 0o10000), Err(Error::InvalidMode));
+        let root_index = t.index(root).unwrap();
+        t.nodes[root_index].metadata.nlink = u64::MAX;
+        assert_eq!(t.directory(root, b"overflow", 0o755), Err(Error::Capacity));
+        assert_eq!(t.lookup(root, b"overflow"), Ok(None));
+        assert_eq!(t.directory_parent(dir), Ok(Some((root, &b"dir"[..]))));
+        assert_eq!(t.metadata(dir).unwrap().mode, DIRECTORY | 0o700);
+        t.nodes[root_index].metadata = before;
+        let child = t.directory(dir, b"child", 0o755).unwrap();
+        assert_eq!(t.directory(root, b"full", 0o755), Err(Error::Capacity));
+        assert_eq!(t.lookup(root, b"full"), Ok(None));
+        assert_eq!(t.directory_parent(child), Ok(Some((dir, &b"child"[..]))));
+        assert_eq!(t.metadata(root), Ok(before));
     }
     #[test]
     fn hardlinks_share_inode_metadata_and_single_payload() {

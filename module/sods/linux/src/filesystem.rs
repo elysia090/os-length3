@@ -75,6 +75,12 @@ impl Filesystems {
     pub(crate) fn metadata(&self, inode: Inode) -> Result<Metadata, Error> {
         self.tree(inode)?.metadata(inode)
     }
+    pub(crate) fn directory_parent(&self, inode: Inode) -> Result<Option<(Inode, &[u8])>, Error> {
+        self.tree(inode)?.directory_parent(inode)
+    }
+    pub(crate) fn target(&self, inode: Inode) -> Result<&[u8], Error> {
+        self.tree(inode)?.target(inode)
+    }
     pub(crate) fn source(&mut self, inode: Inode) -> Result<u32, Error> {
         self.tree_mut(inode)?.source(inode)
     }
@@ -83,5 +89,47 @@ impl Filesystems {
     }
     pub(crate) fn read(&mut self, inode: Inode, at: usize, length: usize) -> Result<&[u8], Error> {
         self.tree_mut(inode)?.read(inode, at, length)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn parent_and_target_route_to_their_storage_without_copying() {
+        let mut first = Tree::new(811, 4, 4, 8).unwrap();
+        let aroot = first.root();
+        let adir = first.directory(aroot, b"first", 0o755).unwrap();
+        let alink = first.symlink(adir, b"link", b"../first").unwrap();
+        let aname = first.directory_parent(adir).unwrap().unwrap().1.as_ptr();
+        let atarget = first.target(alink).unwrap().as_ptr();
+        let mut second = Tree::new(812, 4, 4, 8).unwrap();
+        let broot = second.root();
+        let bdir = second.directory(broot, b"second", 0o755).unwrap();
+        let blink = second.symlink(bdir, b"link", b"../second").unwrap();
+        let bname = second.directory_parent(bdir).unwrap().unwrap().1.as_ptr();
+        let btarget = second.target(blink).unwrap().as_ptr();
+        let mut fs = Filesystems::new(first, NonZeroUsize::new(2).unwrap());
+        assert!(fs.admit(second).is_ok());
+        assert_eq!(fs.directory_parent(aroot), Ok(None));
+        assert_eq!(fs.directory_parent(broot), Ok(None));
+        assert_eq!(fs.directory_parent(adir), Ok(Some((aroot, &b"first"[..]))));
+        assert_eq!(fs.directory_parent(bdir), Ok(Some((broot, &b"second"[..]))));
+        assert_eq!(
+            fs.directory_parent(adir).unwrap().unwrap().1.as_ptr(),
+            aname
+        );
+        assert_eq!(
+            fs.directory_parent(bdir).unwrap().unwrap().1.as_ptr(),
+            bname
+        );
+        assert_eq!(fs.target(alink), Ok(&b"../first"[..]));
+        assert_eq!(fs.target(blink), Ok(&b"../second"[..]));
+        assert_eq!(fs.target(alink).unwrap().as_ptr(), atarget);
+        assert_eq!(fs.target(blink).unwrap().as_ptr(), btarget);
+        assert_eq!(fs.target(adir), Err(Error::InvalidTarget));
+        let foreign = Tree::new(813, 1, 0, 0).unwrap().root();
+        assert_eq!(fs.directory_parent(foreign), Err(Error::UnknownInode));
+        assert_eq!(fs.target(foreign), Err(Error::UnknownInode));
     }
 }
