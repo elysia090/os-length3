@@ -158,3 +158,46 @@ test('resident own precedes preparation/write failure and permanently retires th
   assert.equal(file.release(),0);assert.equal(dec.decode(file.read(0,8)),'abc');assert.equal(loads,1);
   file.writeResident(1,enc.encode('Z'));assert.equal(dec.decode(file.read(0,8)),'aZc');file.close();
 });
+
+test('real core churn reuses storage without retargeting stale file/load/read identities', {skip: !wasm}, (t) => {
+  const module = new WebAssembly.Module(readFileSync(wasm!));
+  assert.deepEqual(WebAssembly.Module.imports(module), []);
+  const exports = new WebAssembly.Instance(module, {}).exports;
+  const call = (name: string, ...args: number[]) => (exports[name] as (...n: number[]) => number)(...args);
+  const memory = exports.memory as WebAssembly.Memory;
+  assert.equal(call('files_init', 8), 0);
+  const first = call('files_create_lazy', 1, 0), oldLoad = call('files_load_begin', first);
+  assert.ok(first > 0 && oldLoad > 0); assert.equal(call('files_close', first), 0);
+  let previous = first;
+  const churn = (count: number) => {
+    for (let i = 0; i < count; i++) {
+      assert.equal(call('files_input', 0), 0);
+      const id = call('files_create'); assert.ok(id > previous); previous = id;
+      assert.equal(call('files_close', id), 0);
+    }
+  };
+  churn(200);
+  const warmed = memory.buffer.byteLength;
+  churn(10_000);
+  const after = memory.buffer.byteLength;
+  // Artifact-specific allocator evidence, not a universal RSS/capacity bound.
+  assert.equal(after, warmed);
+  t.diagnostic(`empty-file churn: 200 warmup + 10000 create/close, Wasm bytes ${warmed} -> ${after}`);
+  assert.equal(call('files_close', first), 0);
+  assert.equal(call('files_close', 0), -1);
+  assert.equal(call('files_close', previous + 1), -1);
+  assert.equal(call('files_read_begin', first, 0, 0), -1);
+  const current = call('files_create_lazy', 2, 0), load = call('files_load_begin', current);
+  assert.ok(current > previous && load > oldLoad);
+  assert.equal(call('files_input', 0), 0);
+  assert.equal(call('files_load_finish', first, oldLoad, 0), -1);
+  assert.equal(call('files_input', 0), 0);
+  assert.equal(call('files_load_finish', current, load, 0), 0);
+  const read = call('files_read_begin', current, 0, 0); assert.ok(read > 0);
+  assert.equal(call('files_read_finish', read, 0, 0), 0);
+  const nextRead = call('files_read_begin', current, 0, 0); assert.ok(nextRead > read);
+  assert.equal(call('files_read_finish', read, 0, 0), -7);
+  assert.equal(call('files_close', current), -6); // Still protected by the current lease.
+  assert.equal(call('files_read_finish', nextRead, 0, 0), 0);
+  assert.equal(call('files_close', current), 0);
+});

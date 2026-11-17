@@ -74,22 +74,34 @@ ownership scheme also needs O(live inodes + live ownership edges) metadata, with
 O(1) edge updates possible only when all transitions are known. Exact last-owner
 reclamation itself needs no payload scan or copy. GC timing is not such a bound.
 
-Current finite scopes instead retain historical inode payloads, not only live
-ones. Even after correct payload close, Rust `Files.files: Vec<Option<Slot>>`
-keeps one slot per ever-created ID and does not reuse IDs. Thus the metadata high
-water and ID exhaustion are an independent long-lived gate. Alternatives include
-live-only monotonic-ID indexing (lookup/allocation cost) and generation-checked
-slot reuse (stale-handle proof, generation exhaustion). Neither is selected here.
-Wasm memory pages also do not shrink on close; payload release permits allocator
-reuse, not a claim of returned process RSS. A count/byte admission limit bounds
-failure, but is not a substitute for reclaiming dead inodes.
+Current finite scopes still retain historical inode payloads, not only live ones.
+The lower-level Rust store now removes closed slots from a live-only hash index;
+this does not supply the missing close events in those finite scopes. The index
+uses monotonic IDs with deterministic std hashing of internal integer keys, no
+host entropy imports, and fallible reservation before payload ownership transfer.
+IDs never reuse and close remains idempotent for previously issued IDs. Finite
+file/load/read identity exhaustion remains explicit; it is not reset by close.
+
+This removes one permanent slot per past creation. Hash-table capacity and allocator
+retention may stay at a live-set high water, with rehash/tombstone work on churn.
+Native tests cover 10,000 one-live and 64-live rolling creations, stale lookup and
+last-ID exhaustion without consuming rejected input. The current debug Wasm's
+200 warmup + 10,000 empty create/close trace stayed at 1,179,648 memory bytes.
+That is artifact-specific evidence, not a universal peak bound or RSS measurement.
+Hash lookup costs more work than direct vector indexing; no speedup is claimed.
+BTreeMap lacks the needed stable fallible reservation entrance, while generation
+reuse would change stale/identity contracts without solving finite exhaustion.
+
+Wasm pages do not shrink on close; payload release permits allocator reuse, not a
+claim of returned process RSS. A count/byte admission limit bounds failure, but
+is not a substitute for reclaiming dead inodes.
 
 These gates apply to independent sods and ricebox equally. memfd/SCM_RIGHTS and
 shared anonymous mapping remain separate admission/lifetime work. They matter
 for a future guest Wayland buffer path, but do not prove native everyday session
 compatibility or turn terminal artwork into a product architecture requirement.
 
-## Managed entrance and slot-index decisions still to make
+## Managed entrance and remaining slot-index conditions
 
 A future managed caller must not obtain Vfs, File, Kernel.images or mutable
 namespace Maps. Its commands should return copied data or explicit owner handles;
@@ -101,10 +113,10 @@ must carry both inode identity and operation identity, not just a recycled slot.
 Legacy raw escape is sticky, not undone by closing an unrelated managed handle.
 This entrance is a proposal, not a second runtime API implemented in this change.
 
-For C total creations and L currently live payloads, the present slot vector uses
-O(C) records even if every close succeeds. Live-only monotonic-ID indexing can use
-O(L) records with no stale-ID alias, but still exhausts the finite ID space and
-changes lookup cost. A reusable slot plus generation can use O(L) active records
+For C total creations and L currently live payloads, the previous slot vector used
+O(C) records even if every close succeeded. The selected live-only monotonic-ID
+index holds L entries, but retains table capacity, still exhausts the finite ID
+space and changes lookup cost. A reusable slot plus generation can use O(L) active records
 only if historical vacant slots can be bounded; a monotonically growing vacant
 list still has a high water. Generation wrap must reject rather than alias an old
 handle, so finite-width reuse does not permit unlimited churn. Any index strategy

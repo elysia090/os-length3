@@ -1,5 +1,7 @@
 //! Owned regular-file payloads. Namespace, permissions and shared mappings are
 //! deliberately not implemented here. IDs are never reused within a store.
+use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::hash::BuildHasherDefault;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     BadHandle,
@@ -25,37 +27,49 @@ struct Slot {
 }
 #[derive(Debug)]
 pub struct Files {
-    files: Vec<Option<Slot>>,
+    // Live-only index. Deterministic std hashing needs no host entropy capability;
+    // keys are our monotonic IDs, not externally supplied file names.
+    files: HashMap<u32, Slot, BuildHasherDefault<DefaultHasher>>,
+    next_file: u32,
     next_load: u32,
     max_file: usize,
 }
 impl Files {
     pub fn new(max_file: usize) -> Self {
         Self {
-            files: Vec::new(),
+            files: HashMap::default(),
+            next_file: 0,
             max_file,
             next_load: 0,
         }
+    }
+    fn admit(&mut self) -> Result<u32, Error> {
+        if self.next_file >= i32::MAX as u32 {
+            return Err(Error::Exhausted);
+        }
+        self.files.try_reserve(1).map_err(|_| Error::NoMemory)?;
+        Ok(self.next_file + 1)
     }
     pub fn create(&mut self, input: &[u8]) -> Result<u32, Error> {
         if input.len() > self.max_file {
             return Err(Error::TooLarge);
         }
-        if self.files.len() >= i32::MAX as usize {
-            return Err(Error::Exhausted);
-        }
+        let id = self.admit()?;
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(input.len())
             .map_err(|_| Error::NoMemory)?;
         bytes.extend_from_slice(input);
-        self.files.try_reserve(1).map_err(|_| Error::NoMemory)?;
-        self.files.push(Some(Slot {
-            bytes,
-            logical_size: input.len(),
-            source: None,
-        }));
-        Ok(self.files.len() as u32)
+        self.files.insert(
+            id,
+            Slot {
+                bytes,
+                logical_size: input.len(),
+                source: None,
+            },
+        );
+        self.next_file = id;
+        Ok(id)
     }
     /// Transfer one already-owned payload only after all fallible admission work.
     /// On failure the caller retains its buffer, pointer and capacity unchanged.
@@ -63,23 +77,21 @@ impl Files {
         if input.len() > self.max_file {
             return Err(Error::TooLarge);
         }
-        if self.files.len() >= i32::MAX as usize {
-            return Err(Error::Exhausted);
-        }
-        self.files.try_reserve(1).map_err(|_| Error::NoMemory)?;
+        let id = self.admit()?;
         let logical_size = input.len();
-        self.files.push(Some(Slot {
-            bytes: std::mem::take(input),
-            logical_size,
-            source: None,
-        }));
-        Ok(self.files.len() as u32)
+        self.files.insert(
+            id,
+            Slot {
+                bytes: std::mem::take(input),
+                logical_size,
+                source: None,
+            },
+        );
+        self.next_file = id;
+        Ok(id)
     }
     fn slot_mut(&mut self, id: u32) -> Result<&mut Slot, Error> {
-        self.files
-            .get_mut(id.wrapping_sub(1) as usize)
-            .and_then(Option::as_mut)
-            .ok_or(Error::BadHandle)
+        self.files.get_mut(&id).ok_or(Error::BadHandle)
     }
     fn ready(&mut self, id: u32) -> Result<&mut Vec<u8>, Error> {
         let slot = self.slot_mut(id)?;
@@ -272,17 +284,77 @@ impl Files {
         Ok(())
     }
     pub fn close(&mut self, id: u32) -> Result<(), Error> {
-        let slot = self
-            .files
-            .get_mut(id.wrapping_sub(1) as usize)
-            .ok_or(Error::BadHandle)?;
-        *slot = None;
+        // Preserve idempotent close of any previously issued ID, but never let a
+        // removed ID name a later file. No historical tombstone is needed.
+        if id == 0 || id > self.next_file {
+            return Err(Error::BadHandle);
+        }
+        self.files.remove(&id);
         Ok(())
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn churn_reuses_index_capacity_without_reusing_identity() {
+        let mut f = Files::new(8);
+        let first = f.create(b"x").unwrap();
+        let capacity = f.files.capacity();
+        f.close(first).unwrap();
+        for _ in 0..10_000 {
+            let id = f.create(b"y").unwrap();
+            assert!(id > first);
+            assert_eq!(f.files.len(), 1);
+            assert_eq!(f.files.capacity(), capacity);
+            assert_eq!(f.read(first, 0, 1), Err(Error::BadHandle));
+            f.close(id).unwrap();
+        }
+        assert!(f.files.is_empty());
+        assert_eq!(f.close(first), Ok(()));
+        assert_eq!(f.close(0), Err(Error::BadHandle));
+        assert_eq!(f.close(f.next_file + 1), Err(Error::BadHandle));
+    }
+    #[test]
+    fn rolling_live_set_does_not_retain_historical_slots() {
+        let mut f = Files::new(8);
+        let mut live = std::collections::VecDeque::new();
+        for _ in 0..64 {
+            live.push_back(f.create(b"live").unwrap());
+        }
+        let initial_capacity = f.files.capacity();
+        for _ in 0..10_000 {
+            let old = live.pop_front().unwrap();
+            f.close(old).unwrap();
+            live.push_back(f.create(b"next").unwrap());
+            assert_eq!(f.files.len(), 64);
+            // std's tombstone cleanup may grow the table, but not per past ID.
+            assert!(f.files.capacity() <= 2 * initial_capacity);
+            assert_eq!(f.read(old, 0, 1), Err(Error::BadHandle));
+        }
+        for id in live {
+            assert_eq!(f.read(id, 0, 4).unwrap(), b"next");
+        }
+    }
+    #[test]
+    fn file_ids_exhaust_without_consuming_input_or_retargeting_old_handles() {
+        let mut f = Files::new(8);
+        let old = f.create(b"old").unwrap();
+        f.close(old).unwrap();
+        f.next_file = i32::MAX as u32 - 1;
+        let last = f.create(b"last").unwrap();
+        assert_eq!(last, i32::MAX as u32);
+        let mut input = b"input".to_vec();
+        let pointer = input.as_ptr();
+        assert_eq!(f.create_take(&mut input), Err(Error::Exhausted));
+        assert_eq!(input, b"input");
+        assert_eq!(input.as_ptr(), pointer);
+        assert_eq!(f.create(b"new"), Err(Error::Exhausted));
+        assert_eq!(f.read(old, 0, 3), Err(Error::BadHandle));
+        assert_eq!(f.read(last, 0, 4).unwrap(), b"last");
+        f.close(last).unwrap();
+        assert_eq!(f.create(b"new"), Err(Error::Exhausted));
+    }
     #[test]
     fn take_creation_preserves_allocation_and_rejected_input() {
         let mut f = Files::new(8);
