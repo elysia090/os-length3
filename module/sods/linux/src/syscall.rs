@@ -6,7 +6,7 @@
 //! are decided here. The managed owner must not expose the owned ReadId for
 //! independent retirement or manufacture source-failure evidence.
 use crate::descriptor::{self, Files, Table};
-use crate::effect::Completion;
+use crate::effect::{Completion, Token};
 use crate::execution::{self, Execution, Invocation, Phase, Snapshot};
 use crate::lease::{self, Domain};
 use crate::read::{self, Reads};
@@ -44,7 +44,17 @@ pub(crate) struct Resume {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
     Return(i64),
-    Read { id: u64, target: u64 },
+    Read {
+        id: u64,
+        target: u64,
+    },
+    Stream {
+        action: Token,
+        endpoint: u64,
+        target: u64,
+        length: u64,
+        write: bool,
+    },
     Exit,
     Unsupported(u64),
     Waiting,
@@ -64,15 +74,36 @@ struct Pending {
     source_failed: bool,
     progress: Progress,
 }
+/// Known errors certify zero effect and stopped host access. Unknown certifies
+/// neither. The adapter must never classify an arbitrary throw as known zero.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PhysicalResult {
+    Transferred,
+    Again,
+    Interrupted,
+    BadFd,
+    BrokenPipe,
+    Io,
+    Unknown,
+}
+struct StreamPending {
+    hold: descriptor::StreamHold,
+    invocation: Invocation,
+    snapshot: Snapshot,
+    action: Token,
+    started: bool,
+}
 pub(crate) struct Continuation {
     owner: Snapshot,
     pending: Option<Pending>,
+    stream: Option<StreamPending>,
 }
 impl Continuation {
     pub(crate) fn new(execution: &Execution) -> Result<Self, Error> {
         Ok(Self {
             owner: execution.stamp()?,
             pending: None,
+            stream: None,
         })
     }
     /// Only Reading retains a live Reads record; Applying/Uncertain owns the
@@ -103,8 +134,77 @@ impl Continuation {
         self.owner(execution)?;
         execution.check_domain(domain)?;
         execution.syscall_allowed(invocation)?;
-        if self.pending.is_some() {
+        if self.pending.is_some() || self.stream.is_some() {
             return Err(Error::State);
+        }
+        if nr == 0 || nr == 1 {
+            let fd = args[0] as u32;
+            let target = match files.target(table, fd) {
+                Ok(target) => target,
+                Err(descriptor::Error::BadFd) => return Ok(Step::Return(-9)),
+                Err(error) => return Err(Error::Files(error)),
+            };
+            if let descriptor::Target::HostStream {
+                endpoint,
+                direction,
+            } = target
+            {
+                let write = nr == 1;
+                let wanted = if write {
+                    descriptor::StreamDirection::Write
+                } else {
+                    descriptor::StreamDirection::Read
+                };
+                if direction != wanted {
+                    return Ok(Step::Return(-9));
+                }
+                if args[2] == 0 {
+                    return Ok(Step::Return(0));
+                }
+                // Stream consumes irreversibly: unlike resident file clipping,
+                // validate the full requested range before any host command.
+                if args[1]
+                    .checked_add(args[2])
+                    .is_none_or(|end| end > 0x7ffffffff000)
+                {
+                    return Ok(Step::Return(-14));
+                }
+                match domain.range(execution.binding(), args[1], args[2]) {
+                    Ok(()) => (),
+                    Err(lease::Error::Range) => return Ok(Step::Return(-14)),
+                    Err(error) => return Err(error.into()),
+                }
+                if execution.phase() != Phase::Running {
+                    return Err(Error::State);
+                }
+                let snapshot = execution.stamp()?;
+                let length = args[2].min(0x7ffff000);
+                let hold = files.hold_stream(table, fd, wanted).map_err(Error::Files)?;
+                let action = match domain.span(execution.binding(), args[1], length) {
+                    Ok(action) => action,
+                    Err(error) => {
+                        files.release_stream(hold).expect("same admitted owner");
+                        return Err(error.into());
+                    }
+                };
+                execution
+                    .hold_call(invocation)
+                    .expect("validated callback-free admission");
+                self.stream = Some(StreamPending {
+                    hold,
+                    invocation,
+                    snapshot,
+                    action,
+                    started: false,
+                });
+                return Ok(Step::Stream {
+                    action,
+                    endpoint,
+                    target: args[1],
+                    length,
+                    write,
+                });
+            }
         }
         match nr {
             60 => {
@@ -157,6 +257,90 @@ impl Continuation {
             }
             _ => Ok(Step::Unsupported(nr)),
         }
+    }
+    pub(crate) fn owns(&self, token: Token) -> bool {
+        self.stream.as_ref().is_some_and(|p| p.action == token)
+    }
+    pub(crate) fn stream_start(
+        &mut self,
+        files: &Files,
+        domain: &mut Domain,
+        execution: &Execution,
+        action: Token,
+    ) -> Result<(), Error> {
+        self.owner(execution)?;
+        execution.check_domain(domain)?;
+        let p = self.stream.as_mut().ok_or(Error::State)?;
+        if p.action != action || p.started {
+            return Err(Error::State);
+        }
+        files.stream(&p.hold).map_err(Error::Files)?;
+        execution.check(p.snapshot)?;
+        if execution.phase() != Phase::Running {
+            return Err(Error::State);
+        }
+        domain.start(action)?;
+        p.started = true;
+        Ok(())
+    }
+    pub(crate) fn stream_receipt(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        action: Token,
+        count: u64,
+        result: PhysicalResult,
+    ) -> Result<Step, Error> {
+        self.owner(execution)?;
+        execution.check_domain(domain)?;
+        let p = self.stream.as_ref().ok_or(Error::State)?;
+        if p.action != action || !p.started || !execution.owns_snapshot(p.snapshot) {
+            return Err(Error::State);
+        }
+        files.stream(&p.hold).map_err(Error::Files)?;
+        if execution.phase() == Phase::Suspended {
+            return Err(Error::State);
+        }
+        if count != 0
+            && !matches!(
+                result,
+                PhysicalResult::Transferred | PhysicalResult::Unknown
+            )
+        {
+            return Err(Error::State);
+        }
+        let value = match result {
+            PhysicalResult::Transferred => i64::try_from(count).map_err(|_| Error::State)?,
+            PhysicalResult::Again => -11,
+            PhysicalResult::Interrupted => -4,
+            PhysicalResult::BadFd => -9,
+            PhysicalResult::BrokenPipe => -32,
+            PhysicalResult::Io => -5,
+            PhysicalResult::Unknown => 0,
+        };
+        let completion = if result == PhysicalResult::Unknown {
+            Completion::Unknown
+        } else {
+            Completion::Stopped
+        };
+        domain.receipt(action, count, completion)?;
+        if completion == Completion::Unknown {
+            return Ok(Step::Waiting);
+        }
+        domain.retire(action).expect("matching stopped span");
+        let p = self.stream.take().unwrap();
+        files
+            .release_stream(p.hold)
+            .expect("validated retained stream");
+        execution
+            .finish_call(p.invocation)
+            .expect("private continuation owns pending call");
+        Ok(if execution.phase() == Phase::Running {
+            Step::Return(value)
+        } else {
+            Step::Waiting
+        })
     }
     /// Explicit evidence from the trusted source dispatcher, not inferred from
     /// an arbitrary failed read state (which could be identity or cleanup loss).
@@ -216,6 +400,22 @@ impl Continuation {
     ) -> Result<bool, Error> {
         self.owner(execution)?;
         execution.check_domain(domain)?;
+        if let Some(p) = self.stream.as_ref() {
+            files.stream(&p.hold).map_err(Error::Files)?;
+            domain.cancel(p.action)?;
+            if p.started {
+                return Ok(false);
+            }
+            domain.retire(p.action).expect("unstarted cancelled span");
+            let p = self.stream.take().unwrap();
+            files
+                .release_stream(p.hold)
+                .expect("validated retained stream");
+            execution
+                .finish_call(p.invocation)
+                .expect("private continuation owns pending call");
+            return Ok(true);
+        }
         let Some(p) = self.pending.as_ref() else {
             return Ok(true);
         };
@@ -316,6 +516,155 @@ mod tests {
         let c = Continuation::new(&e).unwrap();
         let i = e.start(&mut d).unwrap();
         (f, table, r, d, e, c, i, fd)
+    }
+    #[test]
+    fn stream_admission_full_range_direction_and_zero() {
+        let (mut f, t, mut r, mut d, mut e, mut c, i, _) = setup(false);
+        f.let_go(t).unwrap();
+        let t = f.stdio([1, 2, 3], 8).unwrap();
+        for (nr, args, result) in [
+            (1, [0, 0, 1, 0, 0, 0], -9),
+            (0, [0, 15, 2, 0, 0, 0], -14),
+            (1, [1, u64::MAX, 0, 0, 0, 0], 0),
+        ] {
+            assert_eq!(
+                c.enter(&mut f, &t, &mut r, &mut d, &mut e, i, nr, args, 100)
+                    .unwrap(),
+                Step::Return(result)
+            );
+        }
+        let Step::Stream {
+            action,
+            endpoint,
+            target,
+            length,
+            write,
+        } = c
+            .enter(
+                &mut f,
+                &t,
+                &mut r,
+                &mut d,
+                &mut e,
+                i,
+                1,
+                [2, 2, 3, 0, 0, 0],
+                100,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!((endpoint, target, length, write), (3, 2, 3, true));
+        assert!(c.owns(action));
+        assert!(c.abandon(&mut f, &mut r, &mut d, &mut e).unwrap());
+        assert!(!c.owns(action));
+        assert!(c.stream_start(&f, &mut d, &e, action).is_err());
+    }
+    #[test]
+    fn stream_unknown_retains_original_endpoint_after_close_and_worker_stop() {
+        let (mut f, t, mut r, mut d, mut e, mut c, i, _) = setup(false);
+        f.let_go(t).unwrap();
+        let t = f.stdio([1, 2, 3], 8).unwrap();
+        let Step::Stream { action, .. } = c
+            .enter(
+                &mut f,
+                &t,
+                &mut r,
+                &mut d,
+                &mut e,
+                i,
+                0,
+                [0, 0, 4, 0, 0, 0],
+                100,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        c.stream_start(&f, &mut d, &e, action).unwrap();
+        assert!(c.stream_start(&f, &mut d, &e, action).is_err());
+        assert!(c
+            .stream_receipt(&mut f, &mut d, &mut e, action, 1, PhysicalResult::Io)
+            .is_err());
+        assert_eq!(
+            c.stream_receipt(&mut f, &mut d, &mut e, action, 1, PhysicalResult::Unknown)
+                .unwrap(),
+            Step::Waiting
+        );
+        f.close(&t, 0).unwrap();
+        assert_eq!(f.dup(&t, 1, 0, false), Ok(0));
+        e.receipt(&mut d, i, Unwind::Fault).unwrap();
+        assert!(!c.abandon(&mut f, &mut r, &mut d, &mut e).unwrap());
+        assert!(d.change(e.binding(), 32).is_err());
+        assert_eq!(
+            c.stream_receipt(
+                &mut f,
+                &mut d,
+                &mut e,
+                action,
+                2,
+                PhysicalResult::Transferred
+            )
+            .unwrap(),
+            Step::Waiting
+        );
+        assert!(c.abandon(&mut f, &mut r, &mut d, &mut e).unwrap());
+        assert!(c
+            .stream_receipt(
+                &mut f,
+                &mut d,
+                &mut e,
+                action,
+                2,
+                PhysicalResult::Transferred
+            )
+            .is_err());
+        assert_eq!(
+            f.target(&t, 0),
+            Ok(descriptor::Target::HostStream {
+                endpoint: 2,
+                direction: descriptor::StreamDirection::Write
+            })
+        );
+        assert!(d.change(e.binding(), 32).is_ok());
+    }
+    #[test]
+    fn stream_known_zero_errors_and_short_success_are_rust_results() {
+        let (mut f, t, mut r, mut d, mut e, mut c, i, _) = setup(false);
+        f.let_go(t).unwrap();
+        let t = f.stdio([1, 2, 3], 8).unwrap();
+        for (result, n, value) in [
+            (PhysicalResult::Again, 0, -11),
+            (PhysicalResult::Interrupted, 0, -4),
+            (PhysicalResult::BadFd, 0, -9),
+            (PhysicalResult::BrokenPipe, 0, -32),
+            (PhysicalResult::Io, 0, -5),
+            (PhysicalResult::Transferred, 2, 2),
+        ] {
+            let Step::Stream { action, .. } = c
+                .enter(
+                    &mut f,
+                    &t,
+                    &mut r,
+                    &mut d,
+                    &mut e,
+                    i,
+                    1,
+                    [1, 0, 4, 0, 0, 0],
+                    100,
+                )
+                .unwrap()
+            else {
+                panic!()
+            };
+            c.stream_start(&f, &mut d, &e, action).unwrap();
+            assert_eq!(
+                c.stream_receipt(&mut f, &mut d, &mut e, action, n, result)
+                    .unwrap(),
+                Step::Return(value)
+            );
+        }
     }
     #[test]
     fn read_copy_return_exit_needs_matching_unwind() {

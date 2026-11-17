@@ -678,3 +678,47 @@ These separate memory owners impose work that is not removed by moving the
 semantic authority to Rust. This is neither a zero-copy claim nor a measurement
 of the final lower bound; fixed memory, bounded append-only history and mount-view
 scan costs remain explicit limitations.
+
+### Initial non-TTY stream ownership
+
+The private stdio startup variant adds three independently owned descriptions to
+its execution table. Their targets are host capabilities, not fake regular inodes
+and not OS file descriptor numbers supplied by a guest. Duplication and pending
+operations retain the same description; closing and reusing a guest FD cannot
+retarget an outstanding operation. Failed three-descriptor bootstrap retires its
+unpublished table. Capability targets are borrowed; this does not close or transfer
+ownership of the host's standard descriptors.
+
+Rust checks direction before zero length, then the entire requested range before
+any irreversible input consumption. This intentionally preserves the existing
+console full-range rule, not the regular-file clipping rule or a claim of complete
+Linux fault-prefix semantics. The admitted transfer is capped at 0x7ffff000 bytes.
+One pending operation owns an OFD hold, an execution hold and a bounded Domain
+span. A start is one-shot; receipts describe cumulative confirmed bytes. A known
+zero-effect host error and an unknown effect are different. Unknown access remains
+held even after Worker exit and cannot be retried; matching late stopped evidence
+may release it without resuming a failed guest.
+
+The initial Node adapter is restricted to non-TTY standard streams on Linux hosts
+with reviewed Node 22 or 24 wrappers. Other versions fail before I/O rather than
+assuming their wrapper access and native-error guarantees.
+It borrows private fixed guest memory for a synchronous Node API call, with no
+adapter callback, await or retry while that call uses the view. This removes a JS
+staging snapshot from this restricted transfer, not Node/OS internal copying.
+A blocked native call also blocks cooperative cancellation. Async sinks, externally
+retained views and shared execution of one memory need a different contract.
+
+On-demand input and short-write/EAGAIN visibility differ deliberately from the old
+runner's whole-stdin preload and write-all retry loop. The profile does not yet
+implement SIGPIPE delivery, TTY state, poll/readiness, readv/writev, general regular
+writes or suspended stream continuations. It must not silently replace the
+ordinary runner or UI console while their required operations remain unsupported.
+Per-operation work includes existing descriptor/Domain lookup and lifetime checks;
+there is no stream payload allocation in Rust and no new unbounded input queue.
+
+
+The stream tests additionally exercise a real child Node process with inherited
+standard descriptors and translated guest code, plus raw Wasm receipts proving
+unknown host effects cannot be retired using guest-stop evidence alone. Local
+current-source Linux-core tests passed; local translated execution still used an
+explicit external translator. The CI path requests the current-source translator.

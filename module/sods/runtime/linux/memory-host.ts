@@ -3,6 +3,7 @@ import {fixedTranslatedModule, fixedTranslatedModuleAsync} from './translated-im
 import {prepare} from '../translation/share.ts';
 import {loadTranslator} from '../translation/translator.ts';
 import type {createGuest} from '../host/node/execution.ts';
+import type {captureStdio, Endpoint, PhysicalResult} from '../host/node/stdio.ts';
 /** Private managed-memory adapter. Rust decides admission and lifetime; this file
  * holds engine objects, performs short synchronous memory operations, and
  * transports asynchronous source results and matching Worker evidence.
@@ -12,6 +13,10 @@ interface Admission extends WebAssembly.Exports {
   linux_prepared_files(inodes: number, entries: number, fileBytes: number, tables: number, descriptions: number, slots: number, reads: number, contexts: number, views: number, holds: number, policy: number): number;
   linux_startup_input(length: number): number;
   linux_startup_begin(): number;
+  linux_startup_begin_stdio(): number;
+  linux_stream_start(id: bigint, action: bigint): number;
+  linux_stream_receipt(id: bigint, action: bigint, count: bigint, outcome: number): number;
+  linux_result_endpoint(): bigint;
   linux_startup_source_start(id: bigint): number;
   linux_startup_source_finish(id: bigint, attempt: number, success: number): number;
   linux_startup_bytes(id: bigint): number;
@@ -112,10 +117,12 @@ export interface PathExecutionOptions {
   load?: (source: number) => Uint8Array | Promise<Uint8Array>;
   random: Uint8Array;
   stackBytes?: number;
+  /** Explicit borrowed Linux non-TTY host standards; absent keeps an empty FD table. */
+  stdio?: true;
   /** Startup-only cooperative cancellation; source callbacks remain observed. */
   signal?: AbortSignal;
 }
-const required = ['linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
+const required = ['linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
   'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file',
@@ -305,7 +312,9 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   const unwind = freeze({kind: 'private-guest-unwind'});
   const command = (status: number) => {
     const value = result(status);
-    return {tag: core.linux_result_state(), value, target: unsigned(64, core.linux_result_auxiliary()), next: unsigned(64, core.linux_result_length())};
+    const tag = core.linux_result_state();
+    return {tag, value, target: unsigned(64, core.linux_result_auxiliary()), next: unsigned(64, core.linux_result_length()),
+      endpoint: (tag & 255) === 7 ? numeric(core.linux_result_endpoint()) : 0};
   };
   type Loader = (source: number) => Uint8Array | Promise<Uint8Array>;
   // Shared source dispatcher for inline suspension and Worker synchronous waits.
@@ -341,7 +350,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     id: bigint; memory: WebAssembly.Memory; bridge: ReturnType<typeof createGuest>;
     invocation: bigint; receipt: boolean; imagePending: boolean; active: boolean;
     failureCount: number; firstFailure?: unknown;
-    resourcesRetired: boolean; entry?: bigint;
+    resourcesRetired: boolean; entry?: bigint; stdio?: ReturnType<typeof captureStdio>;
   };
   const workers = new Map<ExecutionBinding, WorkerState>();
   const workerOf = (handle: ExecutionBinding): WorkerState => {
@@ -363,6 +372,30 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     try { checked(core.linux_syscall_abandon(w.id)); retireWorker(w); }
     catch (error) { workerFailure(w, error); }
   };
+  const transferStream = (w: WorkerState, c: ReturnType<typeof command>): ReturnType<typeof command> => {
+    if (!w.stdio) throw new Error('No physical standard-stream capability');
+    const reading = c.tag === 7;
+    if (!(reading ? c.endpoint === 1 : c.tag === 263 && (c.endpoint === 2 || c.endpoint === 3))) throw new Error('Unsupported physical stream endpoint');
+    // Construct the view before start; afterward only the captured synchronous
+    // physical operation and its one matching Rust receipt may run.
+    const bytes = new Bytes(bufferOf(w.memory), numeric(c.target), numeric(c.next));
+    w.stdio.prepareView(bytes);
+    checked(core.linux_stream_start(w.id, c.value));
+    let observed: PhysicalResult;
+    try { observed = w.stdio.transfer(c.endpoint as Endpoint, bytes); }
+    catch (error) { observed = {kind: 'unknown', error}; }
+    const code = observed.kind === 'count' ? 0 : observed.kind === 'unknown' ? 6 :
+      observed.code === 'EAGAIN' ? 1 : observed.code === 'EINTR' ? 2 : observed.code === 'EBADF' ? 3 : observed.code === 'EPIPE' ? 4 : 5;
+    const count = observed.kind === 'count' ? wide(observed.count) : 0n;
+    let completed: ReturnType<typeof command>;
+    try { completed = command(core.linux_stream_receipt(w.id, c.value, count, code)); }
+    catch (receipt) {
+      if (observed.kind === 'unknown') throw new AggregateError([observed.error, receipt], 'Unknown physical IO and receipt failure');
+      throw receipt;
+    }
+    if (observed.kind === 'unknown') throw observed.error;
+    return completed;
+  };
   const runWorker = async (handle: ExecutionBinding, entry: bigint, load?: Loader): Promise<{status: number; sourceFailures: number}> => {
       const w = workerOf(handle);
       if (w.entry !== undefined && entry !== w.entry) throw new Error('Entry differs from Rust committed startup');
@@ -376,6 +409,11 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
             const c = command(core.linux_syscall(w.id, request.invocation, request.nr, ...request.args, request.next));
             if (c.tag === 0) return {kind: 'return', value: c.value};
             if (c.tag === 2) { exit = true; return {kind: 'leave'}; }
+            if ((c.tag & 255) === 7) {
+              const completed = transferStream(w, c);
+              if (completed.tag !== 0) throw new Error(`Worker stream did not return: ${completed.tag}`);
+              return {kind: 'return', value: completed.value};
+            }
             if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag}`);
             const completed = await finishRead(w.id, c.value, c.target, w.memory, load, () => { failures++; });
             if (completed.tag !== 0) throw new Error(`Worker read did not return: ${completed.tag}`);
@@ -412,13 +450,16 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
      * Not default Node/muk startup or a complete Linux syscall environment. */
     async pathExecution(path: Uint8Array, argv: readonly Uint8Array[], env: readonly Uint8Array[], options: PathExecutionOptions): Promise<ExecutionBinding> {
       if ('credentials' in options || 'execfn' in options) throw new TypeError('Path startup derives credentials and execfn in Rust');
-      const {translator: translatorModule, load, signal} = options;
+      const {translator: translatorModule, load, signal, stdio: useStdio} = options;
+      if (useStdio !== undefined && useStdio !== true) throw new TypeError('Expected explicit stdio profile');
       const stackBytes = u32(options.stackBytes ?? 1024 * 1024);
       if (!stackBytes || stackBytes % 65536) throw new RangeError('Stack backing must be a positive whole number of Wasm pages');
       const wire = startupWire(path, argv, env, options.random);
       if (aborted(signal)) throw abortReason(signal);
+      const stdio = useStdio ? (await import('../host/node/stdio.ts')).captureStdio() : undefined;
+      if (aborted(signal)) throw abortReason(signal);
       put(result(core.linux_startup_input(wire.length)), wire);
-      const begun = core.linux_startup_begin();
+      const begun = stdio ? core.linux_startup_begin_stdio() : core.linux_startup_begin();
       const id = unsigned(64, core.linux_result());
       checked(core.linux_startup_input(0));
       if (begun !== 0) {
@@ -535,7 +576,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         for (const segment of prepared.segments) apply(setBytes, new Bytes(bufferOf(memory), segment.offset, lengthOf(segment.bytes)), [segment.bytes]);
         bridge = guestHost.createGuest({module: translated, memory, stackPointer: rsp});
         const handle = freeze({kind: 'managed-execution' as const});
-        w = {id, memory, bridge, invocation: 0n, receipt: false, imagePending: true, active: false, failureCount: 0, resourcesRetired: false};
+        w = {id, memory, bridge, invocation: 0n, receipt: false, imagePending: true, active: false, failureCount: 0, resourcesRetired: false, stdio};
         const owned = w;
         void bridge.stopped.then(() => {
           if (owned.imagePending) {

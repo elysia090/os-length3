@@ -121,7 +121,7 @@ test('path cancellation retains a pending source and does not adopt late success
 });
 
 // Synthetic host receipts exercise private ABI admission, not real Module validation.
-function rawPrepared(lazy = false) {
+function rawPrepared(lazy = false, stdio = false) {
   const e = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(artifact!))).exports;
   const call = (name: string, ...args: (number | bigint)[]) => (e[name] as (...a: (number | bigint)[]) => number)(...args);
   const result = () => (e.linux_result as () => bigint)();
@@ -131,7 +131,7 @@ function rawPrepared(lazy = false) {
     new Uint8Array((e.memory as WebAssembly.Memory).buffer, Number(result()), b.length).set(b);
   };
   assert.equal(call('linux_init', 8, 16), 0);
-  assert.equal(call('linux_prepared_files', 4, 4, 4096, 2, 2, 4, 4, 2, 1, 12, 0), 0);
+  assert.equal(call('linux_prepared_files', 4, 4, 4096, 2, stdio ? 6 : 2, stdio ? 8 : 4, 4, 2, 1, 12, 0), 0);
   const root = result();
   assert.equal(call('linux_bind', 131072n), 0);
   const orphan = result();
@@ -146,7 +146,7 @@ function rawPrepared(lazy = false) {
     v.setBigUint64(0, 1n, true); v.setBigUint64(24, BigInt(path.length), true);
     wire.fill(7, 32, 48); wire.set(path, 48);
     put('linux_startup_input', wire);
-    assert.equal(call('linux_startup_begin'), 0);
+    assert.equal(call(stdio ? 'linux_startup_begin_stdio' : 'linux_startup_begin'), 0);
     const id = result();
     assert.equal(call('linux_startup_input', 0), 0);
     return id;
@@ -157,7 +157,7 @@ function rawPrepared(lazy = false) {
     assert.equal(call('linux_startup_bytes', id), 0);
     assert.equal(call('linux_startup_translation_finish', id, 1, 4096n, 0n, 56n, 0n, 131072n), 0);
   }
-  return {call, result, auxiliary, put, begin, translated};
+  return {call, result, auxiliary, put, begin, translated, exports: e};
 }
 
 test('real startup ABI excludes diagnostic mutation and binds one physical owner', {skip: !artifact}, () => {
@@ -220,4 +220,35 @@ test('real startup ABI keeps cancelled source ownership until matching completio
   assert.notEqual(nextAttempt, attempt);
   assert.equal(r.call('linux_startup_source_finish', next, nextAttempt, 0), 0);
   assert.equal(r.call('linux_startup_cancel', next), 0); assert.equal(r.result(), 1n);
+});
+
+
+test('real stream ABI prevents generic receipt bypass and retains unknown host effects after guest stop', {skip: !artifact}, () => {
+  // Synthetic stop receipts test the actual ABI, not real host I/O behavior.
+  const r = rawPrepared(false, true), id = r.begin(); r.translated(id);
+  assert.equal(r.call('linux_bind', 131072n), 0); const binding = r.result();
+  assert.equal(r.call('linux_startup_image_begin', id, binding, 65536n, 131072n), 0);
+  assert.equal(r.call('linux_startup_image_finish', id, 0), 0);
+  assert.equal(r.call('linux_run_start', id), 0); const invocation = r.result();
+  assert.equal(r.call('linux_syscall', id, invocation, 1n, 1n, 32n, 4n, 0n, 0n, 0n, 4096n), 0);
+  const action = r.result();
+  assert.equal((r.exports.linux_result_state as () => number)(), 263);
+  assert.equal((r.exports.linux_result_endpoint as () => bigint)(), 2n);
+  assert.equal(r.auxiliary(), 32n);
+  assert.equal((r.exports.linux_result_length as () => bigint)(), 4n);
+  assert.ok(r.call('linux_start', action) < 0);
+  assert.ok(r.call('linux_receipt', action, 4n, 0) < 0);
+  assert.equal(r.call('linux_stream_start', id, action), 0);
+  assert.ok(r.call('linux_stream_start', id, action) < 0);
+  assert.ok(r.call('linux_stream_receipt', id, action + 1n, 0n, 0) < 0);
+  assert.equal(r.call('linux_stream_receipt', id, action, 2n, 6), 0);
+  assert.equal((r.exports.linux_result_state as () => number)(), 4);
+  assert.equal(r.call('linux_run_receipt', id, invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 0n);
+  assert.ok(r.call('linux_stream_receipt', id, action, 1n, 0) < 0);
+  assert.ok(r.call('linux_stream_receipt', id, action, 2n, 5) < 0);
+  assert.equal(r.call('linux_stream_receipt', id, action, 2n, 0), 0);
+  assert.equal((r.exports.linux_result_state as () => number)(), 4);
+  assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
+  assert.ok(r.call('linux_stream_receipt', id, action, 2n, 0) < 0);
 });

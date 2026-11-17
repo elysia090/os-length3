@@ -9,7 +9,7 @@ use crate::execution::{Execution, ImageResult, Unwind};
 use crate::inode::{Inode, Tree};
 use crate::lease::{Domain, Error};
 use crate::read::{ReadCapacity, Reads};
-use crate::syscall::{Continuation, Step};
+use crate::syscall::{Continuation, PhysicalResult, Step};
 use crate::{
     credentials::Credentials,
     fs_context, mount,
@@ -121,7 +121,9 @@ impl Slot {
     fn owns(&self, t: Token) -> bool {
         match self {
             Self::Preparing(p) => p.startup.as_ref().is_some_and(|v| v.owns(t)),
-            Self::Live(v) => v.execution.owns(t),
+            Self::Live(v) => {
+                v.execution.owns(t) || v.continuation.as_ref().is_some_and(|c| c.owns(t))
+            }
             Self::Retired(_) => false,
         }
     }
@@ -154,6 +156,7 @@ struct State {
     result: u64,
     length: u64,
     auxiliary: u64,
+    endpoint: u64,
     state: u32,
     builder: Option<Builder>,
     sealed: Option<Sealed>,
@@ -190,6 +193,7 @@ fn with_state(allow_view: bool, f: impl FnOnce(&mut State) -> Result<u64, i32>) 
         s.result = 0;
         s.length = 0;
         s.auxiliary = 0;
+        s.endpoint = 0;
         s.state = 0;
         if !allow_view && s.sealed.as_ref().is_some_and(|r| r.reads.viewing()) {
             return -4;
@@ -242,6 +246,7 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             s.result = 0;
             s.length = 0;
             s.auxiliary = 0;
+            s.endpoint = 0;
             s.state = 0;
             return -9;
         }
@@ -258,6 +263,7 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             result: 0,
             length: 0,
             auxiliary: 0,
+            endpoint: 0,
             state: 0,
             builder: None,
             sealed: None,
@@ -907,6 +913,10 @@ pub extern "C" fn linux_managed_read_start(execution: u64, id: u64) -> i32 {
 pub extern "C" fn linux_result_auxiliary() -> u64 {
     STATE.with(|cell| cell.borrow().as_ref().map_or(0, |s| s.auxiliary))
 }
+#[no_mangle]
+pub extern "C" fn linux_result_endpoint() -> u64 {
+    STATE.with(|cell| cell.borrow().as_ref().map_or(0, |s| s.endpoint))
+}
 fn step(s: &mut State, command: Step) -> u64 {
     match command {
         Step::Return(value) => {
@@ -917,6 +927,19 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.state = 1;
             s.auxiliary = target;
             id
+        }
+        Step::Stream {
+            action,
+            endpoint,
+            target,
+            length,
+            write,
+        } => {
+            s.state = 7 | (u32::from(write) << 8);
+            s.endpoint = endpoint;
+            s.auxiliary = target;
+            s.length = length;
+            action.sequence()
         }
         Step::Exit => {
             s.state = 2;
@@ -1007,6 +1030,55 @@ pub extern "C" fn linux_syscall(
                 nr,
                 [a, b, c, d, e, f],
                 next,
+            )
+            .map_err(|_| -12)?;
+        Ok(step(s, command))
+    })
+}
+/// One physical host operation, never a Linux FD/errno decision in the host.
+#[no_mangle]
+pub extern "C" fn linux_stream_start(id: u64, action: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let r = s.sealed.as_ref().ok_or(-9)?;
+        slot.continuation
+            .as_mut()
+            .ok_or(-11)?
+            .stream_start(&r.files, &mut s.domain, &slot.execution, token(action))
+            .map_err(|_| -12)?;
+        Ok(0)
+    })
+}
+/// 0 transferred, 1 again, 2 interrupted, 3 bad host fd, 4 broken pipe,
+/// 5 known no-effect I/O failure, 6 unknown. Unknown never authorizes retry.
+#[no_mangle]
+pub extern "C" fn linux_stream_receipt(id: u64, action: u64, count: u64, outcome: u32) -> i32 {
+    with_state(false, |s| {
+        let outcome = match outcome {
+            0 => PhysicalResult::Transferred,
+            1 => PhysicalResult::Again,
+            2 => PhysicalResult::Interrupted,
+            3 => PhysicalResult::BadFd,
+            4 => PhysicalResult::BrokenPipe,
+            5 => PhysicalResult::Io,
+            6 => PhysicalResult::Unknown,
+            _ => return Err(-5),
+        };
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let command = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .stream_receipt(
+                &mut r.files,
+                &mut s.domain,
+                &mut slot.execution,
+                token(action),
+                count,
+                outcome,
             )
             .map_err(|_| -12)?;
         Ok(step(s, command))
@@ -1343,6 +1415,13 @@ pub extern "C" fn linux_startup_input(length: u32) -> i32 {
 }
 #[no_mangle]
 pub extern "C" fn linux_startup_begin() -> i32 {
+    startup_begin(false)
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_begin_stdio() -> i32 {
+    startup_begin(true)
+}
+fn startup_begin(stdio: bool) -> i32 {
     with_state(false, |s| {
         let wire = &s.startup_input;
         let mut at = 0;
@@ -1390,7 +1469,14 @@ pub extern "C" fn linux_startup_begin() -> i32 {
         s.result = id; // Failure after admission leaves an addressable cleanup owner.
         let p = s.executions.last_mut().unwrap().preparing_mut()?;
         p.fs = Some(r.files.create_fs(root, root, 0o022).map_err(|_| -10)?);
-        p.table = Some(r.files.table(r.fd_limit).map_err(|_| -10)?);
+        p.table = Some(
+            if stdio {
+                r.files.stdio([1, 2, 3], r.fd_limit)
+            } else {
+                r.files.table(r.fd_limit)
+            }
+            .map_err(|_| -10)?,
+        );
         p.program = Some(
             r.files
                 .prepare_program(p.fs.as_ref().unwrap(), &Credentials::initial_root(), path)

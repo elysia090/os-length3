@@ -71,13 +71,53 @@ struct TableState {
     limit: u32,
     holders: u64,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StreamDirection {
+    Read,
+    Write,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Target {
+    File(Inode),
+    HostStream {
+        endpoint: u64,
+        direction: StreamDirection,
+    },
+}
+#[derive(Debug)]
+#[must_use = "release after host access has stopped; dropping retains the description"]
+pub(crate) struct StreamHold(Id);
 struct Description {
+    refs: u64,
+    target: DescriptionTarget,
+}
+enum DescriptionTarget {
+    File(FileDescription),
+    HostStream {
+        endpoint: u64,
+        direction: StreamDirection,
+    },
+}
+struct FileDescription {
     place: Option<mount::Hold>,
     inode: Inode,
-    refs: u64,
     offset: u64,
     revision: u64,
     reading: bool,
+}
+impl Description {
+    fn file(&self) -> Result<&FileDescription, Error> {
+        match &self.target {
+            DescriptionTarget::File(f) => Ok(f),
+            _ => Err(Error::NotSupported),
+        }
+    }
+    fn file_mut(&mut self) -> Result<&mut FileDescription, Error> {
+        match &mut self.target {
+            DescriptionTarget::File(f) => Ok(f),
+            _ => Err(Error::NotSupported),
+        }
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PreparationPhase {
@@ -679,12 +719,14 @@ impl Files {
             &mut self.descriptions,
             id,
             Description {
-                place,
-                inode,
                 refs: 1,
-                offset: 0,
-                revision: 0,
-                reading: false,
+                target: DescriptionTarget::File(FileDescription {
+                    place,
+                    inode,
+                    offset: 0,
+                    revision: 0,
+                    reading: false,
+                }),
             },
         );
         self.tables[table.0.slot]
@@ -796,7 +838,10 @@ impl Files {
         description.refs -= 1;
         if description.refs == 0 {
             let description = cell.value.take().unwrap();
-            if let Some(place) = description.place {
+            if let DescriptionTarget::File(FileDescription {
+                place: Some(place), ..
+            }) = description.target
+            {
                 self.mounts.as_mut().unwrap().release_hold(place);
             }
         }
@@ -831,26 +876,136 @@ impl Files {
         }
         Ok(())
     }
+    /// New private table only: no partially initialized stdio table escapes.
+    /// Endpoint IDs identify borrowed host resources, never host FD ownership.
+    pub(crate) fn stdio(&mut self, endpoints: [u64; 3], limit: u32) -> Result<Table, Error> {
+        if endpoints.contains(&0) {
+            return Err(Error::BadHandle);
+        }
+        if limit < 3 {
+            return Err(Error::Capacity);
+        }
+        let table = self.table(limit)?;
+        for (i, endpoint) in endpoints.into_iter().enumerate() {
+            let result = (|| {
+                let fd = self.admit_fd(&table, 0)?;
+                let id = prepare(&mut self.descriptions, self.limits.descriptions, self.owner)?;
+                let direction = if i == 0 {
+                    StreamDirection::Read
+                } else {
+                    StreamDirection::Write
+                };
+                publish(
+                    &mut self.descriptions,
+                    id,
+                    Description {
+                        refs: 1,
+                        target: DescriptionTarget::HostStream {
+                            endpoint,
+                            direction,
+                        },
+                    },
+                );
+                self.tables[table.0.slot]
+                    .value
+                    .as_mut()
+                    .unwrap()
+                    .slots
+                    .insert(
+                        fd,
+                        Slot {
+                            description: id,
+                            cloexec: false,
+                        },
+                    );
+                self.live_slots += 1;
+                Ok::<(), Error>(())
+            })();
+            if let Err(error) = result {
+                self.let_go(table).expect("private validated stdio table");
+                return Err(error);
+            }
+        }
+        Ok(table)
+    }
+    pub(crate) fn target(&self, table: &Table, fd: u32) -> Result<Target, Error> {
+        let d = get(&self.descriptions, self.owner, self.description(table, fd)?)?;
+        Ok(match &d.target {
+            DescriptionTarget::File(f) => Target::File(f.inode),
+            DescriptionTarget::HostStream {
+                endpoint,
+                direction,
+            } => Target::HostStream {
+                endpoint: *endpoint,
+                direction: *direction,
+            },
+        })
+    }
+    pub(crate) fn hold_stream(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        direction: StreamDirection,
+    ) -> Result<StreamHold, Error> {
+        let id = self.description(table, fd)?;
+        let d = get(&self.descriptions, self.owner, id)?;
+        match d.target {
+            DescriptionTarget::HostStream {
+                direction: actual, ..
+            } if actual == direction => (),
+            DescriptionTarget::HostStream { .. } => return Err(Error::BadFd),
+            _ => return Err(Error::NotSupported),
+        }
+        let refs = d.refs.checked_add(1).ok_or(Error::Overflow)?;
+        self.descriptions[id.slot].value.as_mut().unwrap().refs = refs;
+        Ok(StreamHold(id))
+    }
+    pub(crate) fn stream(&self, hold: &StreamHold) -> Result<(u64, StreamDirection), Error> {
+        match get(&self.descriptions, self.owner, hold.0)?.target {
+            DescriptionTarget::HostStream {
+                endpoint,
+                direction,
+            } => Ok((endpoint, direction)),
+            _ => Err(Error::BadHandle),
+        }
+    }
+    pub(crate) fn release_stream(&mut self, hold: StreamHold) -> Result<(), (Error, StreamHold)> {
+        if let Err(error) = self.stream(&hold) {
+            return Err((error, hold));
+        }
+        self.release(hold.0);
+        Ok(())
+    }
     pub(crate) fn offset(&self, table: &Table, fd: u32) -> Result<(u64, u64), Error> {
         let d = get(&self.descriptions, self.owner, self.description(table, fd)?)?;
+        let d = d.file()?;
         Ok((d.offset, d.revision))
     }
     pub(crate) fn set_offset(&mut self, table: &Table, fd: u32, offset: u64) -> Result<(), Error> {
         let id = self.description(table, fd)?;
-        if get(&self.descriptions, self.owner, id)?.reading {
+        if get(&self.descriptions, self.owner, id)?.file()?.reading {
             return Err(Error::Busy);
         }
         let revision = get(&self.descriptions, self.owner, id)?
+            .file()?
             .revision
             .checked_add(1)
             .ok_or(Error::Overflow)?;
-        let d = self.descriptions[id.slot].value.as_mut().unwrap();
+        let d = self.descriptions[id.slot]
+            .value
+            .as_mut()
+            .unwrap()
+            .file_mut()?;
         d.offset = offset;
         d.revision = revision;
         Ok(())
     }
     pub(crate) fn inode(&self, table: &Table, fd: u32) -> Result<Inode, Error> {
-        Ok(get(&self.descriptions, self.owner, self.description(table, fd)?)?.inode)
+        Ok(
+            get(&self.descriptions, self.owner, self.description(table, fd)?)?
+                .file()?
+                .inode,
+        )
     }
     pub(crate) fn begin_read(
         &mut self,
@@ -860,12 +1015,13 @@ impl Files {
     ) -> Result<ReadPreparation, Error> {
         let id = self.description(table, fd)?;
         let d = get(&self.descriptions, self.owner, id)?;
+        let refs = d.refs.checked_add(1).ok_or(Error::Overflow)?;
+        let d = d.file()?;
         if d.reading {
             return Err(Error::Busy);
         }
         let inode = d.inode;
         let offset = d.offset;
-        let refs = d.refs.checked_add(1).ok_or(Error::Overflow)?;
         let revision = if requested == 0 {
             d.revision
         } else {
@@ -883,7 +1039,7 @@ impl Files {
         }
         let d = self.descriptions[id.slot].value.as_mut().unwrap();
         d.refs = refs;
-        d.reading = true;
+        d.file_mut()?.reading = true;
         Ok(ReadPreparation {
             description: id,
             inode,
@@ -1100,7 +1256,7 @@ impl Files {
         Ok(())
     }
     fn check_preparation(&self, prep: &ReadPreparation) -> Result<(), Error> {
-        let d = get(&self.descriptions, self.owner, prep.description)?;
+        let d = get(&self.descriptions, self.owner, prep.description)?.file()?;
         if !d.reading || d.inode != prep.inode || d.offset != prep.offset {
             return Err(Error::State);
         }
@@ -1221,6 +1377,8 @@ impl Files {
             .value
             .as_mut()
             .unwrap()
+            .file_mut()
+            .expect("validated file preparation")
             .reading = false;
         self.release(prep.description);
         Ok(())
@@ -1278,7 +1436,9 @@ impl Files {
         let d = self.descriptions[hold.description.slot]
             .value
             .as_mut()
-            .unwrap();
+            .unwrap()
+            .file_mut()
+            .expect("held file description");
         assert!(d.reading);
         d.offset = hold.offset + copied;
         d.revision = hold.next_revision;
@@ -1290,7 +1450,9 @@ impl Files {
         let d = self.descriptions[hold.description.slot]
             .value
             .as_mut()
-            .unwrap();
+            .unwrap()
+            .file_mut()
+            .expect("held file description");
         assert!(d.reading);
         d.reading = false;
         self.release(hold.description);
@@ -1348,6 +1510,100 @@ mod tests {
             ),
             file,
         )
+    }
+    #[test]
+    fn stdio_target_direction_and_regular_exclusion() {
+        let (mut f, inode) = setup(16);
+        let t = f.stdio([11, 12, 13], 8).unwrap();
+        assert_eq!(
+            f.target(&t, 0),
+            Ok(Target::HostStream {
+                endpoint: 11,
+                direction: StreamDirection::Read
+            })
+        );
+        assert_eq!(
+            f.target(&t, 2),
+            Ok(Target::HostStream {
+                endpoint: 13,
+                direction: StreamDirection::Write
+            })
+        );
+        assert_eq!(
+            f.hold_stream(&t, 0, StreamDirection::Write).unwrap_err(),
+            Error::BadFd
+        );
+        assert_eq!(f.inode(&t, 0), Err(Error::NotSupported));
+        assert_eq!(f.offset(&t, 1), Err(Error::NotSupported));
+        assert_eq!(f.set_offset(&t, 1, 10), Err(Error::NotSupported));
+        assert_eq!(f.begin_read(&t, 0, 1).unwrap_err(), Error::NotSupported);
+        let regular = f.open(&t, inode, false).unwrap();
+        assert_eq!(f.target(&t, regular), Ok(Target::File(inode)));
+        assert_eq!(
+            f.hold_stream(&t, regular, StreamDirection::Read)
+                .unwrap_err(),
+            Error::NotSupported
+        );
+        f.let_go(t).unwrap();
+        assert!(f.descriptions.iter().all(|c| c.value.is_none()));
+    }
+    #[test]
+    fn stdio_pending_survives_dup_fork_close_and_reuse() {
+        let (mut f, inode) = setup(32);
+        let t = f.stdio([11, 12, 13], 8).unwrap();
+        let alias = f.dup(&t, 0, 3, false).unwrap();
+        let child = f.fork(&t).unwrap();
+        let hold = f.hold_stream(&t, 0, StreamDirection::Read).unwrap();
+        f.close(&t, 0).unwrap();
+        assert_eq!(f.open(&t, inode, false), Ok(0));
+        assert_eq!(f.target(&t, 0), Ok(Target::File(inode)));
+        assert_eq!(
+            f.target(&child, alias),
+            Ok(Target::HostStream {
+                endpoint: 11,
+                direction: StreamDirection::Read
+            })
+        );
+        f.let_go(t).unwrap();
+        f.let_go(child).unwrap();
+        assert_eq!(f.stream(&hold), Ok((11, StreamDirection::Read)));
+        assert_eq!(
+            f.descriptions.iter().filter(|c| c.value.is_some()).count(),
+            1
+        );
+        let (mut foreign, _) = setup(16);
+        foreign.owner = 999;
+        let (error, hold) = foreign.release_stream(hold).unwrap_err();
+        assert_eq!(error, Error::BadHandle);
+        f.release_stream(hold).unwrap();
+        assert!(f.descriptions.iter().all(|c| c.value.is_none()));
+    }
+    #[test]
+    fn stdio_partial_admission_rolls_back_without_existing_owner_damage() {
+        let (mut f, inode) = setup(3);
+        let existing = f.table(8).unwrap();
+        let fd = f.open(&existing, inode, false).unwrap();
+        assert_eq!(f.stdio([1, 2, 3], 2).unwrap_err(), Error::Capacity);
+        assert_eq!(f.stdio([0, 2, 3], 8).unwrap_err(), Error::BadHandle);
+        assert_eq!(f.stdio([1, 2, 3], 8).unwrap_err(), Error::Capacity);
+        assert_eq!(f.live_slots, 1);
+        assert_eq!(f.inode(&existing, fd), Ok(inode));
+        assert_eq!(f.tables.iter().filter(|c| c.value.is_some()).count(), 1);
+        assert_eq!(
+            f.descriptions.iter().filter(|c| c.value.is_some()).count(),
+            1
+        );
+        f.close(&existing, fd).unwrap();
+        let t = f.stdio([1, 2, 3], 8).unwrap();
+        f.let_go(t).unwrap();
+        f.let_go(existing).unwrap();
+        // Description capacity also rolls back independently of slot capacity.
+        let (mut f, _) = setup(16);
+        f.limits.descriptions = 2;
+        assert_eq!(f.stdio([1, 2, 3], 8).unwrap_err(), Error::Capacity);
+        assert_eq!(f.live_slots, 0);
+        assert!(f.descriptions.iter().all(|c| c.value.is_none()));
+        assert!(f.tables.iter().all(|c| c.value.is_none()));
     }
     #[test]
     fn separate_opens_and_shared_descriptions_have_distinct_semantics() {
@@ -1488,7 +1744,13 @@ mod tests {
         assert_eq!(f.dup(&t, fd, 1, true), Err(Error::Capacity));
         assert_eq!(f.live_slots, 1);
         let id = f.description(&t, fd).unwrap();
-        f.descriptions[id.slot].value.as_mut().unwrap().revision = u64::MAX;
+        f.descriptions[id.slot]
+            .value
+            .as_mut()
+            .unwrap()
+            .file_mut()
+            .unwrap()
+            .revision = u64::MAX;
         assert_eq!(f.set_offset(&t, fd, 42), Err(Error::Overflow));
         assert_eq!(f.offset(&t, fd), Ok((0, u64::MAX)));
         f.tables[t.0.slot].value.as_mut().unwrap().holders = u64::MAX;
