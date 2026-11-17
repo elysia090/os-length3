@@ -602,3 +602,23 @@ provenance still allocates. No namespace snapshot, hidden FD table, duplicated
 payload or host-provided permission decision is introduced. Normal Node startup,
 program/source retention, process-owned Fs/credentials and deletion of the old TS
 Linux authority remain migration gates, not completed capabilities.
+
+The next private acquisition primitive retains the authorized Program's exact
+mount/inode and credential proposal, without creating a file descriptor or an
+open-file description. Store alone owns resident/lazy readiness and attempt
+identity. A warm lazy source does not reload merely because its source ID remains.
+Successful take-completion adopts the loader Vec without another payload copy;
+program bytes are borrowed only for synchronous work. No pointer survives an
+await or callback, and future payload mutation/eviction requires a new pin contract.
+
+Foreign/stale completions cannot consume input; duplicate completion is not retried.
+A loading Program cannot be released. Matching failure/poison can be retired after
+source stop; unknown completion identity retains ownership. This primitive does
+not decide whether a callback was dispatched, cancellation is safe, or execution
+has become stale. The startup coordinator must establish those facts before a
+failure completion. It is not enough that cancellation was requested.
+
+The Program's proposed credentials remain unpublished. Translation identity,
+initial-start slot ownership, physical image installation and atomic credential
+adoption are still unconnected. In particular, no normal Node startup or legacy TS
+semantic-authority deletion is claimed by these source-lifetime tests.

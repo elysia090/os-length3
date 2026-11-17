@@ -98,6 +98,31 @@ pub(crate) struct ReadPreparation {
     next_revision: u64,
     phase: PreparationPhase,
 }
+/// Held executable selection, not committed execution credentials. No FD/OFD is
+/// created. Storage remains owned by Files; the hold retains this precise view.
+/// Dropping instead of release retains the mount until Files ends. Source writes,
+/// replacement and eviction are not exposed; those require an additional pin gate.
+#[must_use = "finish a dispatched source before releasing the program"]
+pub(crate) struct Program {
+    owner: u64,
+    place: mount::Hold,
+    decision: crate::credentials::Decision,
+    phase: PreparationPhase,
+}
+impl std::fmt::Debug for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Program")
+            .field("owner", &self.owner)
+            .field("phase", &self.phase)
+            .finish_non_exhaustive()
+    }
+}
+#[derive(Debug)]
+pub(crate) enum ProgramError {
+    Path(crate::path::Error),
+    Credentials(crate::credentials::Error),
+    Files(Error),
+}
 /// Snapshot of a command issued by Store; not a separately mutable source state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LoadRequest {
@@ -808,6 +833,122 @@ impl Files {
             next_revision: revision,
             phase: PreparationPhase::Reserved,
         })
+    }
+    /// Resolve, authorize and acquire ownership without callbacks between them.
+    /// The proposed credential Decision remains private until an execution commit
+    /// protocol exists. No execution/loader attempt is created here.
+    pub(crate) fn prepare_program(
+        &mut self,
+        fs: &fs_context::Ticket,
+        credentials: &crate::credentials::Credentials,
+        path: &[u8],
+    ) -> Result<Program, ProgramError> {
+        let place =
+            crate::path::resolve(self, fs, credentials, path).map_err(ProgramError::Path)?;
+        let metadata = self.place_metadata(&place).map_err(ProgramError::Files)?;
+        let policy = self.view_policy(&place).map_err(ProgramError::Files)?;
+        let decision = credentials
+            .program(&metadata, policy.no_exec, policy.no_suid)
+            .map_err(ProgramError::Credentials)?;
+        let hold = self
+            .mounts
+            .as_mut()
+            .ok_or(ProgramError::Files(Error::BadHandle))?
+            .hold(&place)
+            .map_err(|e| ProgramError::Files(Error::Mount(e)))?;
+        Ok(Program {
+            owner: self.owner,
+            place: hold,
+            decision,
+            phase: PreparationPhase::Reserved,
+        })
+    }
+    fn program_inode(&self, program: &Program) -> Result<Inode, Error> {
+        if program.owner != self.owner {
+            return Err(Error::BadHandle);
+        }
+        self.mounts
+            .as_ref()
+            .ok_or(Error::BadHandle)?
+            .position_ref(&program.place)
+            .map(|p| p.inode())
+            .map_err(Error::Mount)
+    }
+    pub(crate) fn prepare_program_source(
+        &mut self,
+        program: &mut Program,
+    ) -> Result<Option<LoadRequest>, Error> {
+        let inode = self.program_inode(program)?;
+        if program.phase != PreparationPhase::Reserved {
+            return Err(Error::State);
+        }
+        program.phase = PreparationPhase::Failed;
+        let source = self.filesystems.source(inode).map_err(Error::Source)?;
+        let attempt = self.filesystems.load_begin(inode).map_err(Error::Source)?;
+        if attempt == 0 {
+            program.phase = PreparationPhase::Ready;
+            return Ok(None);
+        }
+        program.phase = PreparationPhase::Loading(attempt);
+        Ok(Some(LoadRequest { source, attempt }))
+    }
+    /// A matching completion attests the callback has stopped, not merely that
+    /// cancellation was requested. BadCompletion preserves delivery ownership.
+    pub(crate) fn finish_program_source(
+        &mut self,
+        program: &mut Program,
+        attempt: u32,
+        success: bool,
+        bytes: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        let inode = self.program_inode(program)?;
+        let PreparationPhase::Loading(expected) = program.phase else {
+            return Err(Error::State);
+        };
+        if expected != attempt {
+            return Err(Error::Source(super::inode::Error::Payload(
+                sods_file_store::store::Error::BadCompletion,
+            )));
+        }
+        let result = self.filesystems.load_finish(inode, attempt, success, bytes);
+        if matches!(
+            result,
+            Err(super::inode::Error::Payload(
+                sods_file_store::store::Error::BadCompletion
+            ))
+        ) {
+            return result.map_err(Error::Source);
+        }
+        program.phase = if success && result.is_ok() {
+            PreparationPhase::Ready
+        } else {
+            PreparationPhase::Failed
+        };
+        result.map_err(Error::Source)
+    }
+    /// Borrow canonical payload synchronously; no whole-program copy or hidden
+    /// descriptor. The slice (or a derived raw pointer) must not be retained
+    /// across callbacks/await. This is not a transferable translation/source pin.
+    pub(crate) fn program_bytes<'a>(&'a mut self, program: &Program) -> Result<&'a [u8], Error> {
+        let inode = self.program_inode(program)?;
+        if program.phase != PreparationPhase::Ready {
+            return Err(Error::State);
+        }
+        let size = self.filesystems.size(inode).map_err(Error::Source)?;
+        self.filesystems.read(inode, 0, size).map_err(Error::Source)
+    }
+    pub(crate) fn release_program(&mut self, program: Program) -> Result<(), (Error, Program)> {
+        if let Err(e) = self.program_inode(&program) {
+            return Err((e, program));
+        }
+        if matches!(program.phase, PreparationPhase::Loading(_)) {
+            return Err((Error::Busy, program));
+        }
+        self.mounts
+            .as_mut()
+            .expect("validated mount owner")
+            .release_hold(program.place);
+        Ok(())
     }
     fn check_preparation(&self, prep: &ReadPreparation) -> Result<(), Error> {
         let d = get(&self.descriptions, self.owner, prep.description)?;
@@ -2153,5 +2294,289 @@ mod view_policy_tests {
             f.view_policy(&foreign_place),
             Err(Error::Mount(mount::Error::BadPlace))
         );
+    }
+}
+
+#[cfg(test)]
+mod program_tests {
+    use super::*;
+    use crate::credentials::Credentials;
+    use crate::inode::Creation;
+    fn setup(owner: u64, policy: mount::ViewPolicy) -> (Files, fs_context::Ticket) {
+        let creation = |mode| Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        };
+        let mut tree = Tree::new(owner, 8, 8, 64, creation(0o755)).unwrap();
+        let root = tree.root();
+        tree.lazy_file(root, b"program", creation(0o4755), 7, 2)
+            .unwrap();
+        tree.lazy_file(root, b"second", creation(0o755), 8, 2)
+            .unwrap();
+        tree.directory(root, b"point", creation(0o755)).unwrap();
+        tree.file_take(root, b"resident", creation(0o755), &mut b"elf".to_vec())
+            .unwrap();
+        tree.file_take(root, b"denied", creation(0o644), &mut vec![])
+            .unwrap();
+        let mut files = Files::new(
+            owner + 1,
+            tree,
+            Limits {
+                contexts: 1,
+                tables: 0,
+                descriptions: 0,
+                slots: 0,
+            },
+        );
+        let view = files
+            .bootstrap_mount(root, mount::Limits { views: 2, holds: 8 }, policy)
+            .unwrap();
+        let position = files.view_root(&view).unwrap();
+        let fs = files.create_fs(&position, &position, 0o022).unwrap();
+        assert!(files.release_view(view).is_ok());
+        (files, fs)
+    }
+    fn allowed() -> mount::ViewPolicy {
+        mount::ViewPolicy {
+            no_exec: false,
+            no_suid: false,
+            no_symfollow: false,
+        }
+    }
+    #[test]
+    fn program_direct_payload_and_warm_lazy_need_no_descriptor() {
+        let (mut f, fs) = setup(3101, allowed());
+        let c = Credentials::initial_root();
+        let mut resident = f.prepare_program(&fs, &c, b"/resident").unwrap();
+        assert_eq!(f.prepare_program_source(&mut resident), Ok(None));
+        assert_eq!(f.program_bytes(&resident).unwrap(), b"elf");
+        f.release_program(resident).unwrap();
+        let mut p = f.prepare_program(&fs, &c, b"/program").unwrap();
+        let request = f.prepare_program_source(&mut p).unwrap().unwrap();
+        assert_eq!(request.source, 7);
+        let mut bytes = b"actual program".to_vec();
+        let pointer = bytes.as_ptr();
+        f.finish_program_source(&mut p, request.attempt, true, &mut bytes)
+            .unwrap();
+        assert!(bytes.is_empty());
+        assert_eq!(f.program_bytes(&p).unwrap(), b"actual program");
+        assert_eq!(f.program_bytes(&p).unwrap().as_ptr(), pointer);
+        f.release_program(p).unwrap();
+        let mut warm = f.prepare_program(&fs, &c, b"/program").unwrap();
+        assert_eq!(f.prepare_program_source(&mut warm), Ok(None));
+        assert_eq!(f.program_bytes(&warm).unwrap().as_ptr(), pointer);
+        f.release_program(warm).unwrap();
+        assert!(f.tables.is_empty() && f.descriptions.is_empty());
+    }
+    #[test]
+    fn program_stale_foreign_and_pending_release_preserve_callback_ownership() {
+        let (mut f, fs) = setup(3201, allowed());
+        let (mut other, _) = setup(3301, allowed());
+        let mut p = f
+            .prepare_program(&fs, &Credentials::initial_root(), b"program")
+            .unwrap();
+        let request = f.prepare_program_source(&mut p).unwrap().unwrap();
+        let mut bytes = b"kept".to_vec();
+        assert_eq!(
+            other.finish_program_source(&mut p, request.attempt, true, &mut bytes),
+            Err(Error::BadHandle)
+        );
+        assert!(f
+            .finish_program_source(&mut p, request.attempt + 1, true, &mut bytes)
+            .is_err());
+        assert_eq!(bytes, b"kept");
+        assert_eq!(p.phase, PreparationPhase::Loading(request.attempt));
+        let (error, p) = other.release_program(p).unwrap_err();
+        assert_eq!(error, Error::BadHandle);
+        let (error, mut p) = f.release_program(p).unwrap_err();
+        assert_eq!(error, Error::Busy);
+        f.release_fs(fs).unwrap(); // Program alone still holds the view.
+        f.finish_program_source(&mut p, request.attempt, true, &mut bytes)
+            .unwrap();
+        assert_eq!(f.program_bytes(&p).unwrap(), b"kept");
+        f.release_program(p).unwrap();
+    }
+    #[test]
+    fn program_matching_failure_and_same_inode_poison_retire_only_after_completion() {
+        let (mut f, fs) = setup(3401, allowed());
+        let c = Credentials::initial_root();
+        let mut a = f.prepare_program(&fs, &c, b"program").unwrap();
+        let mut b = f.prepare_program(&fs, &c, b"program").unwrap();
+        let request = f.prepare_program_source(&mut a).unwrap().unwrap();
+        assert!(f.prepare_program_source(&mut b).is_err());
+        assert_eq!(b.phase, PreparationPhase::Failed);
+        f.release_program(b).unwrap();
+        let mut bytes = b"poisoned input".to_vec();
+        assert!(f
+            .finish_program_source(&mut a, request.attempt, true, &mut bytes)
+            .is_err());
+        assert_eq!(bytes, b"poisoned input");
+        assert_eq!(a.phase, PreparationPhase::Failed);
+        f.release_program(a).unwrap();
+        let mut retry = f.prepare_program(&fs, &c, b"program").unwrap();
+        let request = f.prepare_program_source(&mut retry).unwrap().unwrap();
+        f.finish_program_source(&mut retry, request.attempt, false, &mut bytes)
+            .unwrap();
+        assert_eq!(bytes, b"poisoned input");
+        assert_eq!(retry.phase, PreparationPhase::Failed);
+        f.release_program(retry).unwrap();
+    }
+    #[test]
+    fn program_authorization_precedes_source_and_has_no_published_credentials() {
+        let (mut f, fs) = setup(3501, allowed());
+        let c = Credentials::initial_root();
+        assert!(matches!(
+            f.prepare_program(&fs, &c, b"/"),
+            Err(ProgramError::Credentials(
+                crate::credentials::Error::NotRegular
+            ))
+        ));
+        assert!(matches!(
+            f.prepare_program(&fs, &c, b"denied"),
+            Err(ProgramError::Credentials(crate::credentials::Error::Access))
+        ));
+        assert!(matches!(
+            f.prepare_program(&fs, &c, b"missing"),
+            Err(ProgramError::Path(crate::path::Error::NotFound))
+        ));
+        let p = f.prepare_program(&fs, &c, b"program").unwrap();
+        assert_eq!(p.phase, PreparationPhase::Reserved);
+        assert_eq!(p.decision.credentials.user().effective, 0);
+        f.release_program(p).unwrap();
+        let (mut f, fs) = setup(
+            3601,
+            mount::ViewPolicy {
+                no_exec: true,
+                ..allowed()
+            },
+        );
+        assert!(matches!(
+            f.prepare_program(&fs, &c, b"program"),
+            Err(ProgramError::Credentials(crate::credentials::Error::Access))
+        ));
+    }
+    #[test]
+    fn program_holds_detached_view_after_cwd_moves_until_explicit_release() {
+        let (mut f, fs) = setup(3701, allowed());
+        let root = f.fs_start(&fs, Base::Root).unwrap();
+        let point = f.component(&root, b"point").unwrap().unwrap();
+        let view = f.clone_view(&root).unwrap();
+        f.attach_view(&view, &point).unwrap();
+        let mounted = f.component(&root, b"point").unwrap().unwrap();
+        f.change_fs(&fs, Base::Cwd, &mounted).unwrap();
+        let mut program = f
+            .prepare_program(&fs, &Credentials::initial_root(), b"program")
+            .unwrap();
+        let held_inode = f.program_inode(&program).unwrap();
+        f.change_fs(&fs, Base::Cwd, &root).unwrap();
+        f.detach_view(&mounted).unwrap();
+        assert!(f.release_view(view).is_ok());
+        assert!(f.view_policy(&mounted).is_ok());
+        assert_eq!(f.program_inode(&program), Ok(held_inode));
+        let request = f.prepare_program_source(&mut program).unwrap().unwrap();
+        assert_eq!(request.source, 7);
+        f.finish_program_source(&mut program, request.attempt, true, &mut b"held".to_vec())
+            .unwrap();
+        assert_eq!(f.program_bytes(&program).unwrap(), b"held");
+        f.release_program(program).unwrap();
+        assert!(f.view_policy(&mounted).is_err());
+        assert_eq!(f.fs_start(&fs, Base::Cwd).unwrap().inode(), root.inode());
+    }
+    #[test]
+    fn distinct_inode_loads_and_duplicate_completions_are_independent() {
+        let (mut f, fs) = setup(3801, allowed());
+        let c = Credentials::initial_root();
+        let mut a = f.prepare_program(&fs, &c, b"program").unwrap();
+        let mut b = f.prepare_program(&fs, &c, b"second").unwrap();
+        let ar = f.prepare_program_source(&mut a).unwrap().unwrap();
+        let br = f.prepare_program_source(&mut b).unwrap().unwrap();
+        assert_eq!((ar.source, br.source), (7, 8));
+        f.finish_program_source(&mut b, br.attempt, true, &mut b"second bytes".to_vec())
+            .unwrap();
+        f.finish_program_source(&mut a, ar.attempt, true, &mut b"first bytes".to_vec())
+            .unwrap();
+        let mut duplicate = b"duplicate".to_vec();
+        assert_eq!(
+            f.finish_program_source(&mut a, ar.attempt, true, &mut duplicate),
+            Err(Error::State)
+        );
+        assert_eq!(duplicate, b"duplicate");
+        assert_eq!(f.program_bytes(&a).unwrap(), b"first bytes");
+        assert_eq!(f.program_bytes(&b).unwrap(), b"second bytes");
+        f.release_program(a).unwrap();
+        f.release_program(b).unwrap();
+    }
+    #[test]
+    fn oversized_and_failed_completion_preserve_input_and_allow_new_program_retry() {
+        let (mut f, fs) = setup(3901, allowed());
+        let c = Credentials::initial_root();
+        let mut p = f.prepare_program(&fs, &c, b"program").unwrap();
+        let request = f.prepare_program_source(&mut p).unwrap().unwrap();
+        let mut bytes = vec![9; 65];
+        assert_eq!(
+            f.finish_program_source(&mut p, request.attempt, true, &mut bytes),
+            Err(Error::Source(crate::inode::Error::Payload(
+                sods_file_store::store::Error::TooLarge
+            )))
+        );
+        assert_eq!(bytes, vec![9; 65]);
+        assert_eq!(p.phase, PreparationPhase::Failed);
+        assert_eq!(
+            f.finish_program_source(&mut p, request.attempt, false, &mut bytes),
+            Err(Error::State)
+        );
+        assert_eq!(bytes, vec![9; 65]);
+        f.release_program(p).unwrap();
+        let mut p = f.prepare_program(&fs, &c, b"program").unwrap();
+        let retry = f.prepare_program_source(&mut p).unwrap().unwrap();
+        assert_ne!(retry.attempt, request.attempt);
+        f.finish_program_source(&mut p, retry.attempt, false, &mut bytes)
+            .unwrap();
+        assert_eq!(
+            f.finish_program_source(&mut p, retry.attempt, true, &mut bytes),
+            Err(Error::State)
+        );
+        assert_eq!(bytes, vec![9; 65]);
+        f.release_program(p).unwrap();
+        let mut p = f.prepare_program(&fs, &c, b"program").unwrap();
+        let retry = f.prepare_program_source(&mut p).unwrap().unwrap();
+        f.finish_program_source(&mut p, retry.attempt, true, &mut b"ok".to_vec())
+            .unwrap();
+        assert_eq!(f.program_bytes(&p).unwrap(), b"ok");
+        f.release_program(p).unwrap();
+    }
+    #[test]
+    fn rejected_program_admission_neither_consumes_holds_nor_starts_source() {
+        let (mut f, fs) = setup(4001, allowed());
+        let c = Credentials::initial_root();
+        for _ in 0..16 {
+            assert!(f.prepare_program(&fs, &c, b"denied").is_err());
+        }
+        let mut programs = Vec::new();
+        // Two Fs holds plus six Program holds exactly fill the configured cap.
+        for _ in 0..6 {
+            programs.push(f.prepare_program(&fs, &c, b"program").unwrap());
+        }
+        for _ in 0..16 {
+            assert!(matches!(
+                f.prepare_program(&fs, &c, b"program"),
+                Err(ProgramError::Files(Error::Mount(_)))
+            ));
+        }
+        f.release_program(programs.pop().unwrap()).unwrap();
+        let replacement = f.prepare_program(&fs, &c, b"program").unwrap();
+        programs.push(replacement);
+        let mut p = programs.pop().unwrap();
+        let request = f.prepare_program_source(&mut p).unwrap().unwrap();
+        // If any rejected preparation had started this source, this would
+        // conflict/poison instead of producing its first loader command.
+        assert_eq!(request.source, 7);
+        f.finish_program_source(&mut p, request.attempt, true, &mut b"ok".to_vec())
+            .unwrap();
+        f.release_program(p).unwrap();
+        for p in programs {
+            f.release_program(p).unwrap();
+        }
     }
 }
