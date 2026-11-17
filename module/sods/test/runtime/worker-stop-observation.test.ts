@@ -17,7 +17,7 @@ test('Node terminate completion follows exit after shared Wasm memory activity',
   `, {eval: true, workerData: memory});
   let completed = false;
   try {
-    const [message] = await once(worker, 'message'); assert.equal(message, 'ready');
+    const [message] = await once(worker, 'message', {signal: t.signal}); assert.equal(message, 'ready');
     worker.once('exit', () => order.push('exit'));
     const termination = worker.terminate().then(code => { completed = true; order.push('fulfilled'); return code; });
     order.push('requested');
@@ -33,12 +33,12 @@ test('Node terminate completion follows exit after shared Wasm memory activity',
   }
 });
 
-test('Node natural exit delivers its final message before the observed stop boundary', {timeout: 10_000}, async () => {
+test('Node natural exit delivers its final message before the observed stop boundary', {timeout: 10_000}, async (t) => {
   const seen: string[] = [];
   const worker = new Worker(`require('node:worker_threads').parentPort.postMessage('final');`, {eval: true});
   let exited = false;
   worker.on('message', value => seen.push(value));
-  const stopped = once(worker, 'exit');
+  const stopped = once(worker, 'exit', {signal: t.signal});
   try {
     const [code] = await stopped; exited = true; seen.push('exit');
     assert.equal(code, 0); assert.deepEqual(seen, ['final', 'exit']);
@@ -163,4 +163,14 @@ test('concurrent evidence queries share one pending observation and late exit re
   for (let i = 0; i < 100; i++) assert.equal((await stop.evidence()).stopped, false);
   assert.equal((stop as unknown as {evidenceWait: Promise<unknown>}).evidenceWait, wait);
   exit(0); assert.equal((await stop.evidence()).stopped, true);
+});
+
+test('cancelling a host wait reaches termination cleanup rather than leaving once pending', {timeout: 10_000}, async () => {
+  const worker = new Worker(`setInterval(() => {}, 1000);`, {eval: true});
+  const controller = new AbortController();
+  const waiting = once(worker, 'message', {signal: controller.signal});
+  controller.abort();
+  try { await assert.rejects(waiting, error => (error as Error).name === 'AbortError'); }
+  finally { await worker.terminate(); }
+  assert.equal(worker.threadId, -1);
 });
