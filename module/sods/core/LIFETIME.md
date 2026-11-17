@@ -750,3 +750,38 @@ boundaries. Construction retirement prevents a threads publication; capture
 retirement prevents a later changes publication. Both leave the published tree
 quarantined. They are not a proof that all possible callback paths are quiescent,
 nor that ordinary scope disposal can yet run after retirement.
+
+### Registered-operation drain precedes private root removal
+
+WorkerLifetime now counts enter/release operations separately from its non-owning
+observations. After admission freeze, settledOperations returns one shared promise
+that resolves when those operations have all released; each token releases once.
+Preparation, rehearsal, start commands and serve are included through their
+existing finally/completion paths. An operation that catches failure and releases
+still counts as settled, not successful. Newly observed unknown owners remain in
+the observation table and do not become proven released merely because active
+operation count reached zero.
+
+Private retirement requests halt/close first, then starts this drain without
+waiting before its existing admission acknowledgement. Waiting for serve before
+requesting halt would deadlock. After drain, only the private readied promise root
+is cleared; preparedOwner and the Kernel/Image/source roots are deliberately not
+disposed or rewritten. Duplicate retirement does not add another waiter. A
+pending operation may keep the drain pending indefinitely, and the outer browser
+termination timer is not converted into a successful drain. Late keeper nudges
+also check admission before touching the kernel scheduler.
+
+This is a finite step toward a used-root barrier, not that barrier itself. Timer
+callbacks, host callbacks and externally supplied callbacks are not all registered
+operations. Awaiting this promise crosses the current synchronous stack but does
+not certify that no future unregistered callback exists. Kernel.images/due,
+process images, deferred source closures and Vfs keeper registration need their
+own safe retirement rule, preserving raw public aliases outside this private
+entry. CPU stop evidence stays separate. No Kernel graph history is strongly
+retained to manufacture such proof.
+
+Costs: one integer and at most one pending promise per Worker lifecycle, plus one
+idempotence bit in each operation token. Existing observation records still cost
+O(active or unresolved observations); no claim of fully bounded root collection or
+lower RSS follows. Tests separately cover pending operations, duplicate release,
+late unknown observations and failed-but-settled work.

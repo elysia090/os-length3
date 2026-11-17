@@ -201,3 +201,41 @@ for (const phase of ['construction', 'capture'] as const) {
     }
   });
 }
+
+test('operation drain waits for all registered finally releases without consuming unknown owners', async () => {
+  const lifetime = new WorkerLifetime();
+  assert.throws(() => lifetime.settledOperations(), /admission closure/);
+  const preparing = lifetime.enter('preparation'), serving = lifetime.enter('serve');
+  lifetime.observe('unknown-image', {});
+  lifetime.freeze();
+  let done = false;
+  const drained = lifetime.settledOperations();
+  assert.equal(lifetime.settledOperations(), drained);
+  void drained.then(() => { done = true; });
+  preparing.release(); preparing.release();
+  await Promise.resolve(); assert.equal(done, false);
+  // Even a newly recorded late result is not a registered operation or proof
+  // of safe disposal. It must remain visible after the operation drain.
+  lifetime.observe('late-tree', {});
+  serving.release(); await drained;
+  assert.equal(done, true);
+  assert.deepEqual(lifetime.snapshot(), {'unknown-image': 1, 'late-tree': 1});
+  assert.throws(() => lifetime.enter('reentrant-start'), /retiring/);
+});
+
+test('operation finally after failure drains but does not erase the failure or the owner', async () => {
+  const lifetime = new WorkerLifetime(), error = new Error('cleanup failed');
+  const operation = lifetime.enter('rehearsal');
+  lifetime.observe('kernel', {});
+  let continueOperation!: () => void;
+  const running = (async () => {
+    try { await new Promise<void>(resolve => { continueOperation = resolve; }); throw error; }
+    catch (failure) { lifetime.failures.push(failure); }
+    finally { operation.release(); }
+  })();
+  lifetime.freeze();
+  const drained = lifetime.settledOperations();
+  continueOperation(); await drained; await running;
+  assert.deepEqual(lifetime.failures, [error]);
+  assert.deepEqual(lifetime.snapshot(), {kernel: 1});
+});

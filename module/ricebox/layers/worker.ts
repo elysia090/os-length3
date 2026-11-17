@@ -350,7 +350,7 @@ function given(k: Kernel, files: Program[]): void {
 }
 
 /** Something came from outside (input, Ctrl-C): the kernel looks again. */
-const nudge = (): void => { if (outputBoundarySent || !kernel) return; clearTimeout(idle); waitingInput = false; if (kernel instanceof RemoteKernel) kernel.kick(); else pump(); };
+const nudge = (): void => { if (!lifetime.accepting || outputBoundarySent || !kernel) return; clearTimeout(idle); waitingInput = false; if (kernel instanceof RemoteKernel) kernel.kick(); else pump(); };
 
 /**
  * Output on its way to the page and not yet taken in there (it says how much it took, 'drained', once a frame): past
@@ -432,6 +432,11 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     mirror = null; mirrorOwner?.release(); mirrorOwner = null;
     if (gatheredBytes) lifetime.observe('pending-output');
     if (abandonedAfterBoundary) errors.push(new Error(`${abandonedAfterBoundary} output bytes were abandoned after the final boundary`));
+    // Registered preparation/rehearsal/start/serve finally blocks may still be
+    // pending. Drop only our redundant promise root after those operations settle.
+    // preparedOwner and Kernel/Image/source roots remain quarantined: neither
+    // this drain nor admission acknowledgement authorizes their disposal.
+    void lifetime.settledOperations().then(() => { readied = null; });
     // This acknowledges admission closure, not stopped Workers or tree disposal.
     self.postMessage({type: 'retiring', owners: lifetime.snapshot(), failures: errors.map(error => error instanceof Error ? `${error.name}: ${error.message}` : String(error))});
     if (errors.length) failed(new AggregateError(errors, 'Worker retirement failed'));
