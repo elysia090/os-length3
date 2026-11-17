@@ -205,6 +205,15 @@ export interface Termios { iflag: number; oflag: number; cflag: number; lflag: n
 export interface Cpu { user: number; sys: number }
 
 /** A process as the calls see it (process.ts Process). */
+/** Raw fork options. Syscall namespace preparation runs after shared-mapping
+ * publication, before child publication;
+ * overrides delegating to super must forward it. Not a rollback callback. */
+export interface ForkOptions {
+  stack?: bigint; vm?: boolean; files?: boolean; fs?: boolean; ns?: Spaces | null; cred?: Cred | null;
+  cgroup?: Cgroup | null; exitSignal?: number; tls?: bigint | null; clearTid?: number; parent?: boolean;
+  prepareNamespaces?: () => {ns: Spaces; cred: Cred};
+}
+
 export interface Proc {
   readIdentity(): () => void;
   readonly kernel: Kern;
@@ -280,7 +289,7 @@ export interface Proc {
   unmapShared(start?: number, length?: number): void;
   execve(path: string, argv: string[], env: string[]): void;
   written(): Range[];
-  forkProcess(resume: bigint, how?: {stack?: bigint; vm?: boolean; files?: boolean; fs?: boolean; ns?: Spaces | null; cred?: Cred | null; cgroup?: Cgroup | null; exitSignal?: number; tls?: bigint | null; clearTid?: number; parent?: boolean}): Proc;
+  forkProcess(resume: bigint, how?: ForkOptions): Proc;
   newThread(resume: bigint, stack: bigint, tls: bigint | null): Thread;
 }
 

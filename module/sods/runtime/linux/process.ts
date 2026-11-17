@@ -1,3 +1,5 @@
+import {forkFailure, forkIdentity} from './fork-preparation.ts';
+export {ForkPreparationChangedError} from './fork-preparation.ts';
 import {ReadLifetimeError, memoryEpoch, retireMemoryView} from './read-lifetime.ts';
 // Processes and threads for translated programs. There is no machine to
 // boot: a process starts at its ELF entry with a SysV stack and its system
@@ -44,7 +46,7 @@ import {answerTime, clocks} from './clock.ts';
 import {CLD, SA, SIG, SIGNAL_CALLS, Pending, SI, actionOf, bit, deliverable, send, take} from './signal.ts';
 import type {Taken} from '../translation/kept.ts';
 import type {Machine} from './machine.ts';
-import type {AltStack, Call, Calls, Console, Outside, Cpu, Extra, Facts, Filter, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
+import type {ForkOptions, AltStack, Call, Calls, Console, Outside, Cpu, Extra, Facts, Filter, FutexKey, FutexWaiter, Held, ImageEntry, Kern, Mem, Proc, Program, Range, SigAction, Slot, Thread, Timer, Tty} from './parts.ts';
 import {ARCH, RET, STRICT, verdict} from './seccomp.ts';
 import {said, steady} from '../host.ts';
 
@@ -222,8 +224,7 @@ const u64s = (module: WebAssembly.Module, name: string): BigUint64Array => {
 };
 
 /** A version-managed executable changed during preparation. Never retry a
- * callback automatically or label its old bytes with the new inode revision.
- */
+ * callback automatically or label its old bytes with the new inode revision. */
 export class ImageSourceChangedError extends Error {
   constructor() { super('Executable source changed during image preparation'); this.name = 'ImageSourceChangedError'; }
 }
@@ -2015,10 +2016,15 @@ export class Process implements Proc {
    * starting at `resume` with `stack` (0: the caller's) and rax 0. Its
    * memory is a copy, or this very memory with CLONE_VM. It is ready to run.
    */
-  forkProcess(resume: bigint, {stack = 0n, vm = false, files = false, fs = false, ns = null, cred = null, cgroup = null, exitSignal = SIG.CHLD, tls = null, clearTid = 0, parent = false}:
-    {stack?: bigint; vm?: boolean; files?: boolean; fs?: boolean; ns?: Spaces | null; cred?: Cred | null; cgroup?: Cgroup | null; exitSignal?: number; tls?: bigint | null; clearTid?: number; parent?: boolean} = {}): Process {
+  forkProcess(resume: bigint, {stack = 0n, vm = false, files = false, fs = false, ns = null, cred = null, cgroup = null, exitSignal = SIG.CHLD, tls = null, clearTid = 0, parent = false, prepareNamespaces}: ForkOptions = {}): Process {
     const k = this.kernel, t = this.task;
-    this.syncShared(true); // the child's copy of a shared mapping starts as what its file has
+    const unchanged = forkIdentity(this);
+    try { this.syncShared(true); }
+    catch (error) { forkFailure(error, unchanged); }
+    unchanged();
+    // Exactly one all-mapping publication precedes syscall namespace creation.
+    // Accepted file writes are not rolled back if later preparation fails.
+    if (prepareNamespaces) ({ns, cred} = prepareNamespaces());
     const child = new Process(k, this, files, fs, ns, cgroup);
     const up = parent ? k.procs.get(this.ppid) ?? this : this;
     child.ppid = up.pid;

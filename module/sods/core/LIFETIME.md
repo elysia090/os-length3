@@ -1209,3 +1209,52 @@ and add normal work, while taking a broad state snapshot invents a new contract.
 The next implementation should choose that policy explicitly before adding a
 callback option. Current code has not adopted the option or fixed the demonstrated
 namespace leak. Independent review reached the same compatibility boundary.
+
+### Adopted bounded sync-before-namespace contract
+
+The deferred seam is now implemented as ForkOptions.prepareNamespaces, retaining
+clone's call through p.forkProcess. Base forkProcess performs one all-mappings
+sync and then validates captured memory generation/buffer/state, task, Image,
+FD table, Fs and root/pwd/umask, credentials, Spaces and cgroup identity. Changed
+owners produce ForkPreparationChangedError, not guest errno or automatic kill/
+reclamation. If sync also failed, both failures survive in AggregateError; when
+ownership is unchanged, the exact sync error (including FsError) survives.
+
+Clone's internal preparation consumes its one-shot before work, rechecks ended
+PID namespace and cgroup room in that order, then creates namespaces. Entry-time
+permission/PID/capacity refusals still precede sync. Successful earlier file
+publication remains accepted. Rechecking room costs another hierarchy/capacity
+check because sync can reenter and consume capacity; it does not add another
+mapping scan. New namespace construction and child ownership acquisition do not
+occur on the demonstrated publication refusal.
+
+Policy boundaries: credential values follow existing immutable `with` updates;
+raw mutation inside objects, restoration ABA, arbitrary preparation callbacks,
+and overrides discarding options are not transactionally protected. Delegating
+overrides forwarding options to super retain the seam, as regression-tested.
+Raw callers without preparation retain their options; raw fork now explicitly
+refuses input-owner replacement during sync. This is a documented raw contract
+extension, not zero API impact. No new public manager or general rollback engine.
+The dispatcher still has its pre/post syncShared(false) behavior; the test's
+exactly-one assertion counts fork's syncShared(true), not all dispatcher calls.
+
+Validation: family 38 pass, including actual File.settle accepted-prefix +
+publication EIO with /proc.covered now 1 -> 1 (previously 1 -> 2); 20 injected
+identity-change/throw cases; changed capacity/ended namespace error priority;
+forwarding override; refusal-consuming one-shot. Actual inline/Node rehearsal
+2 pass and focused strict TypeScript pass. Host callback fault tests are not
+concurrent guest race proofs. Fs partial allocation and namespace/Task/PID/
+memory ownership after preparation and partial publication remain unresolved.
+Independent review caught a pre-super override gap: checking only inside base
+forkProcess could combine earlier credentials with an override-modified parent.
+The bounded guard now also captures clone's checked context before calling the
+override and verifies it at one-shot entry. Three before-super credential/Spaces/
+Fs replacement regressions pass; family total is now 41. The shared helper is
+internal to sods, with no new linux entry export. Two bounded owner captures are
+intentional to cover the raw method boundary as well as sync reentry.
+A final counterexample covered replacement before super followed by an early
+sync FsError (before the namespace callback). Clone now checks its original
+context on failure too. The shared failure helper preserves both errors without
+duplicating an already reported ownership error. Family total: 42 pass, strict
+TypeScript pass. Override side effects after successful child publication are
+not rolled back by this boundary and remain outside its guarantee.

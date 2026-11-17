@@ -1,3 +1,4 @@
+import {forkFailure, forkIdentity} from './fork-preparation.ts';
 // Process, thread, memory, time and identity system calls. Handlers run
 // with `this` bound to the calling Process, `this.task` the calling
 // thread and `this.call` the call ({nr, args, next, state}: state lasts
@@ -233,10 +234,23 @@ function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number
     // existing namespace refusal before the cgroup check.
     if (!(flags & NS.pid) && p.ns.children.ended) fail(E.NOMEM);
     if (!room(into ?? p.cgroup)) fail(E.AGAIN);
-    const how = c ? spaces(p, flags, c) : null;
-    const child = p.forkProcess(t.resumeAt, {stack, vm: !!(flags & CLONE.VM), files: !!(flags & CLONE.FILES), fs: !!(flags & CLONE.FS), exitSignal: flags & 0xff,
-      tls: flags & CLONE.SETTLS ? tls : null, clearTid: flags & CLONE.CHILD_CLEARTID ? ctid : 0, parent: !!(flags & CLONE.PARENT), ns: how?.ns ?? null, cred: how?.cred ?? null, cgroup: into});
-    if (how) inCopy(child, how.made);
+    const parentUnchanged = forkIdentity(p);
+    const prepared: {how: ReturnType<typeof spaces> | null; consumed: boolean} = {how: null, consumed: false};
+    const prepareNamespaces = (): {ns: Spaces; cred: Cred} => {
+      if (prepared.consumed) throw new Error('fork namespace preparation was already consumed');
+      prepared.consumed = true;
+      parentUnchanged(); // Also covers an override changing inputs before super.
+      // Publication may consume capacity/end a namespace through host reentry.
+      if (!(flags & NS.pid) && p.ns.children.ended) fail(E.NOMEM);
+      if (!room(into ?? p.cgroup)) fail(E.AGAIN);
+      prepared.how = c ? spaces(p, flags, c) : {ns: p.ns, cred: p.cred, made: null};
+      return prepared.how;
+    };
+    let child: Proc;
+    try { child = p.forkProcess(t.resumeAt, {stack, vm: !!(flags & CLONE.VM), files: !!(flags & CLONE.FILES), fs: !!(flags & CLONE.FS), exitSignal: flags & 0xff,
+      tls: flags & CLONE.SETTLS ? tls : null, clearTid: flags & CLONE.CHILD_CLEARTID ? ctid : 0, parent: !!(flags & CLONE.PARENT), prepareNamespaces, cgroup: into}); }
+    catch (error) { forkFailure(error, parentUnchanged); }
+    if (prepared.how) inCopy(child, prepared.how.made);
     if (flags & CLONE.PARENT_SETTID) writeTid(p.memory!, ptid, nr(p, child.pid));
     if (flags & CLONE.CHILD_SETTID) writeTid(child.memory!, ctid, nr(child, child.pid));
     s.child = child;

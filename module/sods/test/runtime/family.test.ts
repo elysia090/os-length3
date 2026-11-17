@@ -337,3 +337,106 @@ for (const files of [false, true]) test(`Fs callback replacement cannot redirect
   assert.equal(old.get(5), firstFd); assert.equal(replacement.get(6), replacementFd);
   assert.equal(firstFd.closed, false); assert.equal(replacementFd.closed, false);
 });
+
+test('failed actual mapping publication creates no namespace and keeps its accepted prefix', async () => {
+  const {File, FsError, E} = await import('../../runtime/linux/fs.ts');
+  class Refused extends File { protected override publishRange(): void { throw new FsError(E.IO); } }
+  const p = first(), k = p.kernel, a = new File(Uint8Array.of(1)), b = new Refused(Uint8Array.of(1));
+  p.bytes[512] = 1; p.bytes[1024] = 1;
+  p.mapShared(a, 512, 1, 0); p.mapShared(b, 1024, 1, 0);
+  p.bytes[512] = 2; p.bytes[1024] = 3;
+  const point = k.vfs.root.entries.get('proc')!, before = [...point.covered!];
+  let allSyncs = 0; const sync = p.syncShared.bind(p);
+  p.syncShared = all => { if (all) allSyncs++; sync(all); };
+  assert.equal(call(p, CLONE, CLONE_VM | SIGCHLD | 0x20000), -BigInt(E.IO));
+  assert.deepEqual(point.covered, before); assert.equal(allSyncs, 1);
+  assert.equal(a.read(0, 1)[0], 2); assert.equal(k.procs.size, 1); assert.equal(k.tasks.size, 1);
+});
+
+for (const field of ['memory', 'image', 'task', 'fds', 'fs', 'cred', 'ns', 'cgroup', 'pwd', 'umask'] as const)
+for (const throws of [false, true]) test(`fork publication rejects changed ${field}, callback throws=${throws}`, async () => {
+  const {ForkPreparationChangedError} = await import('../../runtime/linux/process.ts');
+  const {FdTable} = await import('../../runtime/linux/fd.ts');
+  const {Cgroup} = await import('../../runtime/linux/cgroup.ts');
+  const p = first(), k = p.kernel, original = new Error('publication failed');
+  const point = k.vfs.root.entries.get('proc')!, before = [...point.covered!];
+  p.syncShared = () => {
+    if (field === 'memory') p.memory = Object.assign(new WebAssembly.Memory({initial: 1}), {users: 1, written: [], keeps: false, imageOf: null});
+    if (field === 'image') p.image = Object.create(null);
+    if (field === 'task') p.task = new Bare(p, 99);
+    if (field === 'fds') p.fds = new FdTable();
+    if (field === 'fs') p.fs = p.fs.copy();
+    if (field === 'cred') p.cred = p.cred.with({effective: 0n});
+    if (field === 'ns') p.ns = {...p.ns};
+    if (field === 'cgroup') p.cgroup = new Cgroup(null, 'other', () => k.cgroups.root.dir);
+    if (field === 'pwd') p.fs.pwd = {...p.fs.pwd};
+    if (field === 'umask') p.fs.umask ^= 1;
+    if (throws) throw original;
+  };
+  assert.throws(() => call(p, CLONE, CLONE_VM | SIGCHLD | 0x20000), error => {
+    if (throws) { assert.ok(error instanceof AggregateError); assert.equal(error.errors[0], original); assert.ok(error.errors[1] instanceof ForkPreparationChangedError); }
+    else assert.ok(error instanceof ForkPreparationChangedError);
+    return true;
+  });
+  assert.deepEqual(point.covered, before); assert.equal(k.procs.size, 1); assert.equal(k.tasks.size, 1);
+  assert.equal(p.state, 'live', 'changed owners are not automatically killed or reclaimed');
+});
+
+for (const ended of [false, true]) test(`fork rechecks namespace/capacity after publication, ended=${ended}`, () => {
+  const p = first(), point = p.kernel.vfs.root.entries.get('proc')!, before = [...point.covered!];
+  let syncs = 0;
+  p.syncShared = () => { syncs++; p.cgroup.most = 0; if (ended) p.ns.children.ended = true; };
+  assert.equal(call(p, CLONE, CLONE_VM | SIGCHLD | 0x20000), ended ? -12n : -11n);
+  assert.equal(syncs, 1); assert.deepEqual(point.covered, before);
+});
+
+test('delegating raw fork override preserves deferred namespace preparation and one sync', () => {
+  const p = first(), inherited = p.forkProcess.bind(p); let called = 0, syncs = 0;
+  p.syncShared = () => { syncs++; };
+  p.forkProcess = (resume, options) => { called++; return inherited(resume, options); };
+  const c = child(p, 0x20000);
+  assert.equal(called, 1); assert.equal(syncs, 1); assert.notEqual(c.ns.mnt, p.ns.mnt);
+  assert.equal(c.fs.root.mnt.space, c.ns.mnt);
+});
+
+test('namespace preparation stays consumed after refusal', () => {
+  const p = first();
+  p.forkProcess = (_resume, options) => {
+    p.cgroup.most = 0;
+    assert.throws(() => options!.prepareNamespaces!());
+    p.cgroup.most = Infinity;
+    assert.throws(() => options!.prepareNamespaces!(), /already consumed/);
+    throw new Error('override stopped after checking one-shot');
+  };
+  const point = p.kernel.vfs.root.entries.get('proc')!, before = [...point.covered!];
+  assert.throws(() => child(p, 0x20000), /override stopped/);
+  assert.deepEqual(point.covered, before);
+});
+
+for (const field of ['cred', 'ns', 'fs'] as const) test(`delegating override cannot mix checked credentials with changed ${field}`, async () => {
+  const {ForkPreparationChangedError} = await import('../../runtime/linux/process.ts');
+  const p = first(), inherited = p.forkProcess.bind(p), point = p.kernel.vfs.root.entries.get('proc')!;
+  const before = [...point.covered!];
+  p.forkProcess = (resume, options) => {
+    if (field === 'cred') p.cred = p.cred.with({effective: 0n});
+    if (field === 'ns') p.ns = {...p.ns};
+    if (field === 'fs') p.fs = p.fs.copy();
+    return inherited(resume, options);
+  };
+  assert.throws(() => child(p, 0x20000), ForkPreparationChangedError);
+  assert.deepEqual(point.covered, before); assert.equal(p.kernel.procs.size, 1);
+});
+
+test('override input replacement plus early sync refusal preserves both failures', async () => {
+  const {ForkPreparationChangedError} = await import('../../runtime/linux/process.ts');
+  const {FsError, E} = await import('../../runtime/linux/fs.ts');
+  const p = first(), inherited = p.forkProcess.bind(p), original = new FsError(E.IO);
+  p.syncShared = () => { throw original; };
+  p.forkProcess = (resume, options) => { p.cred = p.cred.with({effective: 0n}); return inherited(resume, options); };
+  const point = p.kernel.vfs.root.entries.get('proc')!, before = [...point.covered!];
+  assert.throws(() => child(p, 0x20000), error => {
+    assert.ok(error instanceof AggregateError); assert.equal(error.errors[0], original);
+    assert.ok(error.errors[1] instanceof ForkPreparationChangedError); return true;
+  });
+  assert.deepEqual(point.covered, before); assert.equal(p.kernel.procs.size, 1);
+});
