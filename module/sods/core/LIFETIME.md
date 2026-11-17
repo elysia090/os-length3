@@ -1140,3 +1140,32 @@ Normal-path FD copy remains O(number of descriptors), sharing O(1); the change
 adds no scan, copy, owner registry or public API on successful preparation.
 Focused family regression: 13 pass; actual inline/Node rehearsal: 2 pass;
 focused strict TypeScript and independent source review pass.
+
+### FD-copy construction has an unpublished acquisition ledger
+
+FdTable.fork itself now returns the completed retain prefix when construction
+fails. A single pending Description records the interval after retain returns
+but before the copied slot is installed; each installed slot owns its own retain,
+including duplicate descriptors. Failure independently releases pending and the
+unpublished copied table; cleanup errors accompany the original failure, while
+successful cleanup rethrows the same original error/errno. Console metadata copy
+is inside the same boundary. The parent table is never closed or replaced.
+
+Six focused tests cover refused retain, duplicate slots, failing cleanup with
+continued retirement, failure after retain but before slot registration (metadata
+getter), failing pending release, successful copy/release, and detached console
+metadata causing a real TypedArray.set failure. Initial three counterexamples
+failed before this patch. Injected retain/release/getter faults are boundary
+injections, not claims of allocator-exhaustion recovery. A custom retain that
+mutates then throws without returning, or a custom Map that inserts then throws,
+provides no completed-transfer evidence and remains outside the guarantee.
+
+Normal copying stays O(descriptors) with the same retained references and console
+copy, one O(1) pending local, no second scan/registry. Error cleanup visits the
+acquired prefix only. This closes FD-copy partial ownership, not Fs's own partial
+acquisition or subsequent Process/Task/PID/memory/namespace publication. The next
+higher-value gate remains placing one shared-mapping synchronization before new
+namespace construction without changing public fork semantics or duplicating the
+scan, then proving ownership cleanup across actual Task/backend preparation.
+Focused FD tests: 6 pass; family: 13 pass; actual inline/Node rehearsal: 2 pass.
+Focused strict TypeScript and independent source review pass.

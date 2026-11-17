@@ -298,9 +298,25 @@ export class FdTable {
   /** A child's table: the same descriptions, each retained once more. */
   fork(): FdTable {
     const t = new FdTable(this.limit);
-    for (const [fd, s] of this.slots) t.slots.set(fd, {description: s.description.retain(), cloexec: s.cloexec});
-    t.consoles.set(this.consoles);
-    return t;
+    let pending: Description | null = null;
+    try {
+      for (const [fd, s] of this.slots) {
+        pending = s.description.retain();
+        t.slots.set(fd, {description: pending, cloexec: s.cloexec});
+        pending = null; // Ownership moved to the copied slot.
+      }
+      t.consoles.set(this.consoles);
+      return t;
+    } catch (error) {
+      // The copy was never returned. Retire successful acquisitions, including
+      // a retain whose slot construction/insertion did not finish. A retain
+      // that throws before returning grants no ownership proof to guess at.
+      const failures = [error];
+      try { pending?.release(); } catch (cleanup) { failures.push(cleanup); }
+      try { t.letGo(); } catch (cleanup) { failures.push(cleanup); }
+      if (failures.length > 1) throw new AggregateError(failures, 'FD copy preparation and cleanup failed');
+      throw error;
+    }
   }
   /** The same table, held by one process more (clone with CLONE_FILES): what one opens or closes, the other sees. */
   share(): this { this.holders++; return this; }
