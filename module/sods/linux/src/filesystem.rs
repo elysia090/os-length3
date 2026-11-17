@@ -66,6 +66,12 @@ impl Filesystems {
             .get_mut(&inode.owner())
             .ok_or(Error::UnknownInode)
     }
+    pub(crate) fn lookup(&self, parent: Inode, name: &[u8]) -> Result<Option<Inode>, Error> {
+        self.tree(parent)?.lookup(parent, name)
+    }
+    pub(crate) fn is_root(&self, inode: Inode) -> Result<bool, Error> {
+        Ok(self.tree(inode)?.root() == inode)
+    }
     pub(crate) fn metadata(&self, inode: Inode) -> Result<Metadata, Error> {
         self.tree(inode)?.metadata(inode)
     }

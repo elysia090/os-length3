@@ -22,6 +22,7 @@
 //! cannot prematurely retire another holder, but domain cleanup must consume it.
 use super::filesystem::{AdmissionError, Filesystems};
 use super::inode::{Inode, Tree};
+use super::mount::{self, Mounts, Place, Ticket};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
@@ -43,6 +44,7 @@ pub(crate) enum Error {
     NotSupported,
     Busy,
     Payload,
+    Mount(mount::Error),
 }
 #[derive(Clone, Copy)]
 pub(crate) struct Limits {
@@ -65,6 +67,7 @@ struct TableState {
     holders: u64,
 }
 struct Description {
+    place: Option<mount::Hold>,
     inode: Inode,
     refs: u64,
     offset: u64,
@@ -89,6 +92,7 @@ impl ReadHold {
 pub(crate) struct Files {
     owner: u64,
     filesystems: Filesystems,
+    mounts: Option<Mounts>,
     limits: Limits,
     tables: Vec<Cell<TableState>>,
     descriptions: Vec<Cell<Description>>,
@@ -146,6 +150,7 @@ impl Files {
         Self {
             owner,
             filesystems: Filesystems::new(tree, capacity),
+            mounts: None,
             limits,
             tables: Vec::new(),
             descriptions: Vec::new(),
@@ -198,13 +203,146 @@ impl Files {
             .map_err(|_| Error::Capacity)?;
         Ok(fd)
     }
+    /// One bootstrap namespace. Existing bare-inode ABI validation stays separate.
+    pub(crate) fn bootstrap_mount(
+        &mut self,
+        root: Inode,
+        limits: mount::Limits,
+    ) -> Result<Ticket, Error> {
+        if self.mounts.is_some() || self.descriptions.iter().any(|cell| cell.value.is_some()) {
+            return Err(Error::Busy);
+        }
+        if !self
+            .filesystems
+            .is_root(root)
+            .map_err(|_| Error::BadHandle)?
+        {
+            return Err(Error::BadHandle);
+        }
+        let (mounts, ticket) = Mounts::new(self.owner, root, limits).map_err(Error::Mount)?;
+        self.mounts = Some(mounts);
+        Ok(ticket)
+    }
+    pub(crate) fn view_root(&self, ticket: &Ticket) -> Result<Place, Error> {
+        self.mounts
+            .as_ref()
+            .ok_or(Error::BadHandle)?
+            .root(ticket)
+            .map_err(Error::Mount)
+    }
+    pub(crate) fn component(&self, from: &Place, name: &[u8]) -> Result<Option<Place>, Error> {
+        let mounts = self.mounts.as_ref().ok_or(Error::BadHandle)?;
+        mounts.validate(from).map_err(Error::Mount)?;
+        let Some(inode) = self
+            .filesystems
+            .lookup(from.inode(), name)
+            .map_err(|_| Error::BadHandle)?
+        else {
+            return Ok(None);
+        };
+        mounts
+            .component(from, name, inode)
+            .map(Some)
+            .map_err(Error::Mount)
+    }
+    /// Only an admitted filesystem root can introduce a new storage view.
+    pub(crate) fn filesystem_view(&mut self, root: Inode) -> Result<Ticket, Error> {
+        if !self
+            .filesystems
+            .is_root(root)
+            .map_err(|_| Error::BadHandle)?
+        {
+            return Err(Error::BadHandle);
+        }
+        self.mounts
+            .as_mut()
+            .ok_or(Error::BadHandle)?
+            .filesystem_root(root)
+            .map_err(Error::Mount)
+    }
+    pub(crate) fn clone_view(&mut self, source: &Place) -> Result<Ticket, Error> {
+        let kind = self
+            .filesystems
+            .metadata(source.inode())
+            .map_err(|_| Error::BadHandle)?
+            .mode
+            & 0o170000;
+        if kind != 0o040000 && kind != 0o100000 {
+            return Err(Error::NotSupported);
+        }
+        self.mounts
+            .as_mut()
+            .ok_or(Error::BadHandle)?
+            .clone_view(source, kind == 0o040000)
+            .map_err(Error::Mount)
+    }
+    pub(crate) fn attach_view(&mut self, ticket: &Ticket, to: &Place) -> Result<(), Error> {
+        let kind = self
+            .filesystems
+            .metadata(to.inode())
+            .map_err(|_| Error::BadHandle)?
+            .mode
+            & 0o170000;
+        if kind != 0o040000 && kind != 0o100000 {
+            return Err(Error::NotSupported);
+        }
+        self.mounts
+            .as_mut()
+            .ok_or(Error::BadHandle)?
+            .attach(ticket, to, kind == 0o040000)
+            .map_err(Error::Mount)
+    }
+    pub(crate) fn detach_view(&mut self, place: &Place) -> Result<(), Error> {
+        self.mounts
+            .as_mut()
+            .ok_or(Error::BadHandle)?
+            .detach(place)
+            .map_err(Error::Mount)
+    }
+    pub(crate) fn release_view(&mut self, ticket: Ticket) -> Result<(), (Error, Ticket)> {
+        let Some(mounts) = self.mounts.as_mut() else {
+            return Err((Error::BadHandle, ticket));
+        };
+        mounts
+            .release_ticket(ticket)
+            .map_err(|(error, ticket)| (Error::Mount(error), ticket))
+    }
+    /// Borrowed Place; failure retains both its position and the existing FD table.
+    pub(crate) fn open_place(
+        &mut self,
+        table: &Table,
+        place: &Place,
+        cloexec: bool,
+    ) -> Result<u32, Error> {
+        self.open_inner(table, place.inode(), cloexec, Some(place))
+    }
+    /// Existing sealed-resident private ABI entry, not implicit default-mount open.
     pub(crate) fn open(
         &mut self,
         table: &Table,
         inode: Inode,
         cloexec: bool,
     ) -> Result<u32, Error> {
+        if self.mounts.is_some() {
+            return Err(Error::NotSupported);
+        }
+        self.open_inner(table, inode, cloexec, None)
+    }
+    fn open_inner(
+        &mut self,
+        table: &Table,
+        inode: Inode,
+        cloexec: bool,
+        place: Option<&Place>,
+    ) -> Result<u32, Error> {
         self.state(table)?;
+        if let Some(place) = place {
+            self.mounts
+                .as_ref()
+                .ok_or(Error::BadHandle)?
+                .validate(place)
+                .map_err(Error::Mount)?;
+        }
         let mode = self
             .filesystems
             .metadata(inode)
@@ -216,10 +354,22 @@ impl Files {
         }
         let fd = self.admit_fd(table, 0)?;
         let id = prepare(&mut self.descriptions, self.limits.descriptions, self.owner)?;
+        // Last fallible acquisition; publication below is reserved and callback-free.
+        let place = match place {
+            Some(place) => Some(
+                self.mounts
+                    .as_mut()
+                    .unwrap()
+                    .hold(place)
+                    .map_err(Error::Mount)?,
+            ),
+            None => None,
+        };
         publish(
             &mut self.descriptions,
             id,
             Description {
+                place,
                 inode,
                 refs: 1,
                 offset: 0,
@@ -335,7 +485,10 @@ impl Files {
         let description = cell.value.as_mut().unwrap();
         description.refs -= 1;
         if description.refs == 0 {
-            cell.value = None;
+            let description = cell.value.take().unwrap();
+            if let Some(place) = description.place {
+                self.mounts.as_mut().unwrap().release_hold(place);
+            }
         }
     }
     pub(crate) fn close(&mut self, table: &Table, fd: u32) -> Result<(), Error> {
@@ -769,6 +922,245 @@ mod tests {
         assert!(bytes.is_empty());
         assert_eq!(pending.read(lazy, 0, 16).unwrap(), b"load");
         f.let_go(t).unwrap();
+    }
+    fn mounted_setup(holds: usize) -> (Files, Ticket, Place) {
+        let mut tree = Tree::new(301, 10, 12, 32).unwrap();
+        let root = tree.root();
+        let src = tree.directory(root, b"src", 0o755).unwrap();
+        tree.directory(root, b"dst", 0o755).unwrap();
+        tree.directory(root, b"dst2", 0o755).unwrap();
+        tree.directory(src, b"child", 0o755).unwrap();
+        tree.file_take(src, b"file", 0o600, &mut b"mounted".to_vec())
+            .unwrap();
+        let mut f = Files::new(
+            302,
+            tree,
+            Limits {
+                tables: 3,
+                descriptions: 8,
+                slots: 16,
+            },
+        );
+        let ticket = f
+            .bootstrap_mount(root, mount::Limits { views: 8, holds })
+            .unwrap();
+        let place = f.view_root(&ticket).unwrap();
+        (f, ticket, place)
+    }
+    #[test]
+    fn mount_views_survive_detach_all_fd_close_and_pending_reads() {
+        let (mut f, root_ticket, root) = mounted_setup(12);
+        let src = f.component(&root, b"src").unwrap().unwrap();
+        let dst = f.component(&root, b"dst").unwrap().unwrap();
+        let dst2 = f.component(&root, b"dst2").unwrap().unwrap();
+        let a = f.clone_view(&src).unwrap();
+        let b = f.clone_view(&src).unwrap();
+        f.attach_view(&a, &dst).unwrap();
+        f.attach_view(&b, &dst2).unwrap();
+        let ar = f.component(&root, b"dst").unwrap().unwrap();
+        let br = f.component(&root, b"dst2").unwrap().unwrap();
+        let ap = f.component(&ar, b"file").unwrap().unwrap();
+        let bp = f.component(&br, b"file").unwrap().unwrap();
+        assert_eq!(ap.inode(), bp.inode());
+        let table = f.table(8).unwrap();
+        let af = f.open_place(&table, &ap, false).unwrap();
+        let bf = f.open_place(&table, &bp, false).unwrap();
+        let alias = f.dup(&table, af, 0, false).unwrap();
+        let fork = f.fork(&table).unwrap();
+        let read = f.reserve_read(&table, af, 32).unwrap();
+        let pointer = f.read_bytes(&read).as_ptr();
+        assert!(f.release_view(a).is_ok()); // attachment/description still retain it
+        f.detach_view(&ar).unwrap();
+        assert!(f.component(&dst, b"file").unwrap().is_none());
+        f.close(&table, af).unwrap();
+        f.close(&table, alias).unwrap();
+        f.let_go(fork).unwrap(); // pending read is the only A description ref
+        assert_eq!(f.read_bytes(&read), b"mounted");
+        let other = f.reserve_read(&table, bf, 32).unwrap();
+        assert_eq!(f.read_bytes(&other).as_ptr(), pointer);
+        f.finish_read(read, 3);
+        assert_eq!(
+            f.open_place(&table, &ap, false),
+            Err(Error::Mount(mount::Error::BadPlace))
+        );
+        f.finish_read(other, 1);
+        assert_eq!(f.offset(&table, bf), Ok((1, 1)));
+        f.let_go(table).unwrap();
+        assert!(f.release_view(b).is_ok());
+        f.detach_view(&br).unwrap();
+        assert!(f.release_view(root_ticket).is_ok());
+    }
+    #[test]
+    fn mount_admission_and_children_rejections_preserve_topology() {
+        let (mut f, root_ticket, root) = mounted_setup(3);
+        let src = f.component(&root, b"src").unwrap().unwrap();
+        let dst = f.component(&root, b"dst").unwrap().unwrap();
+        let a = f.clone_view(&src).unwrap();
+        let b = f.clone_view(&src).unwrap();
+        let ar = f.view_root(&a).unwrap();
+        let br = f.view_root(&b).unwrap();
+        f.attach_view(&a, &dst).unwrap();
+        assert_eq!(
+            f.attach_view(&b, &dst),
+            Err(Error::Mount(mount::Error::Attached))
+        );
+        assert_eq!(
+            f.attach_view(&b, &root),
+            Err(Error::Mount(mount::Error::Unsupported))
+        );
+        let table = f.table(8).unwrap();
+        assert_eq!(
+            f.open_place(&table, &ar, false),
+            Err(Error::Mount(mount::Error::Capacity))
+        );
+        assert_eq!(f.live_slots, 0);
+        let child = f.component(&ar, b"child").unwrap().unwrap();
+        f.attach_view(&b, &child).unwrap();
+        assert!(f.release_view(a).is_ok());
+        assert!(f.release_view(b).is_ok());
+        assert_eq!(
+            f.detach_view(&ar),
+            Err(Error::Mount(mount::Error::Unsupported))
+        );
+        let fd = f.open_place(&table, &ar, false).unwrap();
+        f.close(&table, fd).unwrap();
+        f.detach_view(&br).unwrap();
+        f.detach_view(&ar).unwrap();
+        assert_eq!(
+            f.open_place(&table, &ar, false),
+            Err(Error::Mount(mount::Error::BadPlace))
+        );
+        f.let_go(table).unwrap();
+        assert!(f.release_view(root_ticket).is_ok());
+    }
+    #[test]
+    fn file_bind_covers_a_name_not_every_hardlink_of_the_inode() {
+        let mut tree = Tree::new(311, 5, 5, 32).unwrap();
+        let root = tree.root();
+        tree.file_take(root, b"source", 0o600, &mut b"source".to_vec())
+            .unwrap();
+        let original = tree
+            .file_take(root, b"a", 0o600, &mut b"original".to_vec())
+            .unwrap();
+        tree.hardlink(root, b"b", original).unwrap();
+        let mut f = Files::new(
+            312,
+            tree,
+            Limits {
+                tables: 1,
+                descriptions: 2,
+                slots: 2,
+            },
+        );
+        let ticket = f
+            .bootstrap_mount(root, mount::Limits { views: 2, holds: 4 })
+            .unwrap();
+        let root = f.view_root(&ticket).unwrap();
+        let src = f.component(&root, b"source").unwrap().unwrap();
+        let at = f.component(&root, b"a").unwrap().unwrap();
+        let view = f.clone_view(&src).unwrap();
+        f.attach_view(&view, &at).unwrap();
+        let a = f.component(&root, b"a").unwrap().unwrap();
+        let b = f.component(&root, b"b").unwrap().unwrap();
+        assert_eq!(a.inode(), src.inode());
+        assert_eq!(b.inode(), original);
+        let table = f.table(2).unwrap();
+        let fd = f.open_place(&table, &a, false).unwrap();
+        let read = f.reserve_read(&table, fd, 32).unwrap();
+        assert_eq!(f.read_bytes(&read), b"source");
+        f.abort_read(read);
+        f.let_go(table).unwrap();
+        assert!(f.release_view(view).is_ok());
+        f.detach_view(&a).unwrap();
+        assert_eq!(f.component(&root, b"a").unwrap().unwrap().inode(), original);
+        assert!(f.release_view(ticket).is_ok());
+    }
+    #[test]
+    fn admitted_second_filesystem_root_mounts_without_arbitrary_inode_conversion() {
+        let mut first = Tree::new(321, 3, 3, 8).unwrap();
+        let root = first.root();
+        first.directory(root, b"at", 0o755).unwrap();
+        let (second, file, pointer) = prepared(322, b"second");
+        let second_root = second.root();
+        let mut f = Files::with_filesystem_capacity(
+            323,
+            first,
+            Limits {
+                tables: 1,
+                descriptions: 2,
+                slots: 2,
+            },
+            NonZeroUsize::new(2).unwrap(),
+        );
+        let bootstrap = f
+            .bootstrap_mount(root, mount::Limits { views: 2, holds: 3 })
+            .unwrap();
+        assert!(matches!(
+            f.filesystem_view(second_root),
+            Err(Error::BadHandle)
+        ));
+        assert!(f.admit_tree(second).is_ok());
+        assert!(matches!(f.filesystem_view(file), Err(Error::BadHandle)));
+        let ticket = f.filesystem_view(second_root).unwrap();
+        assert!(matches!(
+            f.filesystem_view(second_root),
+            Err(Error::Mount(mount::Error::Capacity))
+        ));
+        let top = f.view_root(&bootstrap).unwrap();
+        let at = f.component(&top, b"at").unwrap().unwrap();
+        f.attach_view(&ticket, &at).unwrap();
+        let mounted = f.component(&top, b"at").unwrap().unwrap();
+        let position = f.component(&mounted, b"same").unwrap().unwrap();
+        let table = f.table(2).unwrap();
+        let fd = f.open_place(&table, &position, false).unwrap();
+        let hold = f.reserve_read(&table, fd, 32).unwrap();
+        assert_eq!(f.read_bytes(&hold), b"second");
+        assert_eq!(f.read_bytes(&hold).as_ptr(), pointer);
+        f.close(&table, fd).unwrap();
+        assert!(f.release_view(ticket).is_ok());
+        f.detach_view(&mounted).unwrap();
+        assert_eq!(f.read_bytes(&hold), b"second");
+        f.finish_read(hold, 6);
+        assert!(matches!(
+            f.open_place(&table, &position, false),
+            Err(Error::Mount(mount::Error::BadPlace))
+        ));
+        f.let_go(table).unwrap();
+        assert!(f.release_view(bootstrap).is_ok());
+    }
+    #[test]
+    fn bare_builder_and_mount_open_modes_cannot_mix_even_after_fd_close() {
+        let mut tree = Tree::new(331, 2, 1, 8).unwrap();
+        let root = tree.root();
+        let inode = tree
+            .file_take(root, b"file", 0o600, &mut b"body".to_vec())
+            .unwrap();
+        let mut f = Files::new(
+            332,
+            tree,
+            Limits {
+                tables: 1,
+                descriptions: 2,
+                slots: 2,
+            },
+        );
+        let table = f.table(2).unwrap();
+        let fd = f.open(&table, inode, false).unwrap();
+        let limits = mount::Limits { views: 1, holds: 2 };
+        assert!(matches!(f.bootstrap_mount(root, limits), Err(Error::Busy)));
+        let pending = f.reserve_read(&table, fd, 4).unwrap();
+        f.close(&table, fd).unwrap();
+        assert!(matches!(f.bootstrap_mount(root, limits), Err(Error::Busy)));
+        f.abort_read(pending);
+        let ticket = f.bootstrap_mount(root, limits).unwrap();
+        assert_eq!(f.open(&table, inode, false), Err(Error::NotSupported));
+        let top = f.view_root(&ticket).unwrap();
+        let file = f.component(&top, b"file").unwrap().unwrap();
+        let fd = f.open_place(&table, &file, false).unwrap();
+        f.close(&table, fd).unwrap();
+        assert_eq!(f.open(&table, inode, false), Err(Error::NotSupported));
+        f.let_go(table).unwrap();
+        assert!(f.release_view(ticket).is_ok());
     }
     #[test]
     fn repeated_close_reuses_bounded_arena_and_keeps_tree_owned() {

@@ -231,3 +231,56 @@ prove that a rehash occurs or permit allocation during a live Wasm host view: an
 future admission export must retain that copy interval's mutation exclusion. Owner
 collision rejection is not protection against forged equal owner/number handles;
 a domain-unique incarnation issuer is still required before guest connection.
+
+## Mount positions held by descriptions (internal only)
+
+Files can now establish one private bootstrap namespace over an admitted filesystem
+root. Its `mount.rs` resources distinguish a view from the underlying filesystem.
+Opaque positions are obtained only from view roots and direct component lookups;
+there is no arbitrary inode-to-view conversion. An admitted second filesystem can
+supply a detached root view. Bind views can share payload while retaining distinct
+identity and location. Names/parent provenance for file binds are retained rather
+than reconstructed from inode identity alone.
+
+A position is not an ownership ticket. A non-Copy view ticket keeps a detached view
+alive; attachment borrows that ticket, adds a topology edge, and leaves the ticket
+usable on success or failure. A description acquires exactly one mount hold after
+all other open admission. Dup, fork and pending reads share the description rather
+than acquiring extra mount holds. Its final reference releases the hold. Thus
+closing every FD during a pending read does not retire that read's detached view.
+Namespace attachment and the bootstrap root have ownership independent of tickets.
+Old positions reject retired/reused generations. Explicit ticket release is needed;
+dropping a ticket conservatively retains its hold until Files itself is dropped.
+
+Only private leaf views are supported here. Attach requires a destination in the
+bootstrap/attached topology and matching directory/file type; collisions and root
+overmounts reject. Clone/detach of a view with child mounts also reject. There is
+no stacking, recursive clone/detach, propagation, mount flags, FsContext root/cwd,
+pivot, symlink/path traversal, credentials or guest mount syscall implementation.
+Detached live positions may be used while their view is explicitly held; a bare
+position alone cannot prevent retirement. Filesystem payload storage still remains
+until Files drops, independently of view retirement.
+
+The sealed-resident ABI2 bare-inode open remains a separate validation mode. Mount
+bootstrap refuses existing live descriptions (including pending reads after their
+last FD closes), and bare-inode open refuses once mounts are active. This avoids
+quietly mixing descriptions without mount ownership into the new path. No mount
+operations have been exported through the host/Wasm ABI yet; the new integration
+is tested through Rust Files and its actual read reservations, not guest execution.
+
+Admission preflights capacity, generation, type, topology and fallible name capture
+before publication. Failure can retain reserved allocation capacity but does not
+publish an FD/hold or change topology. Limits bound view records and explicit holds,
+not all heap bytes/spare allocation. This first implementation scans a bounded arena
+for vacancies, coverage and children, O(view high water), and copies location names.
+It does not claim the path/namespace lower bound or constant-time attach. View
+creation and retirement do not copy payloads or repeat path resolution on each read.
+Corresponding production TS mount/FD authority is still present until the full
+caller cutover, not removed merely by these internal operations.
+
+The internal detach is lazy-detach-like: existing holds do not make it fail with
+EBUSY, so it is not ordinary umount semantics. A live position conveys neither
+permission nor process root/cwd ownership. Component lookup also scans the mount
+arena and copies a name; a future K-component walk using it unchanged can cost
+O(K * mount high water + name bytes), above the necessary path-inspection work.
+That indexing debt must be evaluated before claiming a production fast path.
