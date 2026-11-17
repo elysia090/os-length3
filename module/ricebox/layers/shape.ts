@@ -12,6 +12,12 @@ export interface About {
   translator: {name: string; version: string};
 }
 export interface Translation { path: string; sha256: string; elf: Blob; wasm: Blob }
+/** Explicit artifact selection. Omission uses legacy storage; a supplied invalid
+ * artifact fails preparation and never falls back to a different owner. */
+export interface FileStoreArtifact {
+  module: WebAssembly.Module | BufferSource;
+  maxFileBytes: number;
+}
 export interface FileStoreDescriptor extends Blob {
   abi: 4;
   wasm: string;
@@ -29,7 +35,7 @@ export interface Index {
   translations: Translation[];
 }
 export interface Webroot {
-  fileStore?: import('./prepared-tree.ts').FileStoreArtifact;
+  fileStore?: FileStoreArtifact;
   about: About;
   index: Index;
   translator: WebAssembly.Module;

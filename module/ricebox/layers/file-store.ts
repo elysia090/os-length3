@@ -3,7 +3,7 @@
 import type {FileStoreDescriptor} from './shape.ts';
 import type {FileStoreArtifact} from './prepared-tree.ts';
 import {digest} from './fetch.ts';
-import {prepareFileStore} from '../../sods/runtime/file-store.ts';
+import {prepareFileStore} from '../../sods/runtime/linux.ts';
 export async function releaseFileStore(
   descriptor: FileStoreDescriptor | undefined,
   read: (descriptor: FileStoreDescriptor) => Promise<Uint8Array>,

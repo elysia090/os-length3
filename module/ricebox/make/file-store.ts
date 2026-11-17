@@ -1,6 +1,6 @@
 /** Opt-in release artifact validation. Not a sandbox for untrusted Wasm. */
 import {createHash} from 'node:crypto';
-import {prepareFileStore} from '../../sods/runtime/file-store.ts';
+import {prepareFileStore} from '../../sods/runtime/linux.ts';
 
 export const FILE_STORE_ABI = 4;
 export const FILE_STORE_LIMIT = 0x7fffffff;

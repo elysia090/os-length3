@@ -1,14 +1,9 @@
 /** Prepared root ownership: the tree outlives individual rehearsals/runs. */
-import {requireFileStoreName} from './shape.ts';
+import {requireFileStoreName, type FileStoreArtifact} from './shape.ts';
 import {Vfs, mountTarget, provide, loadFileScope} from '../../sods/runtime/linux.ts';
 import {mountPack, type Given, type Packed, type Reading} from './mount.ts';
 
-/** Explicit artifact selection. Omission uses legacy storage; a supplied invalid
- * artifact fails preparation and never falls back to a different owner. */
-export interface FileStoreArtifact {
-  module: WebAssembly.Module | BufferSource;
-  maxFileBytes: number;
-}
+export type {FileStoreArtifact} from './shape.ts';
 export interface PreparedTree {
   vfs: Vfs;
   /** Only after all kernels, images, mappings and embedding users have ended.

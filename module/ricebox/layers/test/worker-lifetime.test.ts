@@ -266,7 +266,12 @@ for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'inline-prep
       assert.ok(messages.some(m => m.type === 'exit'), JSON.stringify(messages));
       assert.ok(captured);
       const sources = [...captured.images.values()].map(entry => [entry.image, entry.image.source] as const);
-      if (mode === 'inline-preparation-failure') captured.failedPreparations = new Set([{} as import('../../../sods/runtime/linux/process.ts').Process]); // Inject an unresolved preparation root, not stop evidence.
+      if (mode === 'inline-preparation-failure') {
+        // Inject an unresolved preparation root through the public Kernel shape, not stop evidence.
+        const roots: NonNullable<typeof captured.failedPreparations> = new Set();
+        roots.add({} as Parameters<typeof roots.add>[0]);
+        captured.failedPreparations = roots;
+      }
       if (mode === 'inline-failure') Kernel.prototype.halt = () => { throw new Error('injected halt failure'); };
       if (mode === 'node-unconfirmed') RemoteKernel.prototype.snapshotWorkerStops = async () => ({captured: 1, observedStopped: 0, unconfirmed: 1, failures: []});
       await host.onmessage!({data: {type: 'retire'}});
