@@ -1,0 +1,11 @@
+[package]
+name = "sods-linux"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Linux execution-domain authority for sods"
+
+[workspace]
+
+[lib]
+crate-type = ["rlib"]
