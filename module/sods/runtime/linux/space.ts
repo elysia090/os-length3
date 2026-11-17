@@ -188,6 +188,21 @@ export function nrIn(all: Numbers, viewer: PidNs, id: number): number {
 }
 /** The kernel's own number for what one in `viewer` calls `nr` (0: nothing there has that number). */
 export const byNr = (viewer: PidNs, nr: number): number => (viewer.parent ? viewer.numbers.get(nr) ?? 0 : nr);
+/** A prepared child may become the namespace's init only at publication.
+ * This does not reclaim its acquired resources if the gate refuses. */
+export function publishInitialPid(space: PidNs, id: number, all: Numbers, reservation: Numbered | undefined): void {
+  for (let ns: PidNs | null = space; ns; ns = ns.parent) {
+    if (ns.ended) throw new Error('PID publication refused in an ended namespace');
+    if (ns.parent && ns.firstReservationFailed && !ns.init) throw new Error('PID publication refused after failed initial reservation');
+  }
+  if (space.parent && (!reservation || all.get(id) !== reservation || reservation.space !== space))
+    throw new Error('PID publication lost its reservation record ownership');
+  if (space.init) return; // Never replace an established owner.
+  if (space.parent && (seenAs(space, reservation!) !== 1 || space.numbers.get(1) !== id))
+    throw new Error('PID publication cannot establish init from a non-initial reservation');
+  space.init = id;
+}
+
 /** Those numbers no longer anyone's (`used`: every number still a thread's, a process's, a group's or a session's) are let go of. */
 export function forget(all: Numbers, used: Set<number>): void {
   for (const [id, it] of all) {

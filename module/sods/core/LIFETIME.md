@@ -1463,3 +1463,45 @@ retry number 2. Checks add O(namespace depth) scalar inspection, not mapping/fil
 scans or payload copies; this is necessary ancestor admission work, not zero-cost
 safety. Independent source review found no blocking issue for this limited gate.
 Actual inline/Node rehearsal: 2 pass; focused strict TypeScript passes.
+
+### Fork init publication follows executable/memory preparation
+
+forkProcess no longer assigns pidns.init immediately after newTask. It captures
+the returned reservation record, finishes Image/memory/load/register preparation,
+then checks publication immediately before child/task/parent/kernel insertion.
+Nested publication requires the same outer record and target namespace; absent
+init additionally requires local PID1 and matching namespace lookup. Ancestor
+admission is checked again so an already reserved PID2 cannot evade a later
+first-registration failure. Existing init owners are not overwritten. Gate
+failure is a host Error, not a guest errno or ordinary process exit.
+
+The gate is limited to fork's publication point. It does not make child.tasks,
+parent.children, kernel maps and go atomic after init is assigned. It does not
+retire resources from preceding preparation. An actual Wasm start-trap regression
+now confirms init remains 0, while cgroup.procs still contains the unreturned
+child and shared memory.users remains 2. This is explicit unfinished cleanup,
+not a managed quarantine claim: the cgroup roots child/FD/memory, but a Task that
+never entered child.tasks can lose its direct owner handle. Those Fs/x87/Task
+retirement obligations require the next transaction boundary.
+
+Six publication checks cover normal PID1, reserved PID2, record replacement,
+lookup replacement, failed admission and preservation of established init.
+Focused combined tests: 73 pass, 2 CPU tests skipped without translator env;
+the full process took about 30 seconds, slower than earlier runs. No failed test
+or timeout was observed, and no full-suite heavy retry was attempted. A later
+narrow actual child-Wasm case passed in ~0.4s after fixing the fixture to obtain
+its parent's PID through normal newTask rather than reusing an explicit number.
+Focused strict TypeScript passes. The gate adds record identity reads and
+O(namespace depth) checks, no payload copies or mapping scans. Successful-number
+followed by other preparation failures remains distinct from registration-failure
+admission and is not disguised as full fork rollback.
+Review found an additional publication race: an init can end during preparation
+while its init ID remains nonzero. The gate now checks ended for target and all
+ancestors in the same ancestry walk as failed-first admission. New tests cover
+both ended scopes and an actual fork whose setContext callback ends the namespace;
+publication is refused without replacing the old init or adding child maps.
+PID 25 + family 46 = 71 pass; focused strict TypeScript passes. The callback race
+is injected, not an actual concurrent host scheduler demonstration.
+Actual inline/Node rehearsal before this final ended check: 2 pass.
+Final ended-gate revision also passes actual inline/Node rehearsal (2) and
+independent source review; no additional blocking issue was reported.

@@ -87,3 +87,21 @@ for (const loseLock of [false, true]) test(`actual CPU Worker preparation failur
     }
   } finally { await worker.terminate(); }
 });
+
+test('actual child Wasm preparation trap does not establish a nonexistent namespace init', async () => {
+  const {PidNs} = await import('../../runtime/linux/space.ts');
+  const k = new Kernel({console: {write() {}, read: () => new Uint8Array(0)}});
+  Object.defineProperty(k, 'x87', {value: {check() {}, make() { return 0; }, free() {}, fpu() { return 0n; }}});
+  const p = new Process(k, null), t = k.newTask(p);
+  p.tasks.add(t); p.task = t; p.pid = t.tid; k.tasks.set(t.tid, t); k.procs.set(p.pid, p);
+  p.memory = t.memory = Object.assign(new WebAssembly.Memory({initial: 1}), {users: 1, written: [], keeps: false, imageOf: null});
+  Object.assign(p, {free: [], fixed: [], stackLow: 0, stackTop: 0, mapBase: 0, mapEnd: 0});
+  p.image = new Image(moduleOf(true));
+  const ns = new PidNs(k.spaces.children, p.cred.ns);
+  assert.throws(() => p.forkProcess(0n, {vm: true, ns: {...p.ns, children: ns}}), WebAssembly.RuntimeError);
+  assert.equal(ns.init, 0); assert.equal(ns.ended, false);
+  assert.equal(k.procs.size, 1); assert.equal(p.children.size, 0);
+  // Acquired child resources are not reclaimed by this publication gate.
+  assert.equal(p.cgroup.procs.size, 2);
+  assert.equal(p.memory.users, 2);
+});

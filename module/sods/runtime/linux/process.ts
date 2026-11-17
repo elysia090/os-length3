@@ -35,7 +35,7 @@ import type {Dir, Mapping, Place, Super} from './fs.ts';
 import {E, File, FsError, Link, MNT, Mount, Vfs, pathOf, walk} from './fs.ts';
 import {CAP, HOST, MAY, ROOT, asProgram, capable, idIn, may, type Cred} from './cred.ts';
 import {copy, firstSpace, put, retireInitialTree} from './mount.ts';
-import {CgroupNs, Fs, byNr, discardNumberLookups, failedInitialReservation, firstSpaces, forget, namespaceWasExposed, nrIn, number, type Numbers, type PidNs, type Spaces} from './space.ts';
+import {CgroupNs, Fs, byNr, discardNumberLookups, failedInitialReservation, firstSpaces, forget, namespaceWasExposed, nrIn, number, publishInitialPid, type Numbers, type PidNs, type Spaces} from './space.ts';
 import {cgroupMount, cgroups, enter, type Cgroup} from './cgroup.ts';
 import {GuestBytes, GuestView} from './guest.ts';
 import {FILE_CALLS} from './sys-file.ts';
@@ -2052,11 +2052,10 @@ export class Process implements Proc {
     const up = parent ? k.procs.get(this.ppid) ?? this : this;
     child.ppid = up.pid;
     const ct = k.newTask(child);
+    const reservation = k.numbers.get(ct.tid);
     ct.screen(t.filters, t.strict);
     ct.cred = cred ?? t.cred;
     child.pid = ct.tid;
-    // The first process made in a pid namespace is the one it ends with.
-    if (!child.pidns.init) child.pidns.init = child.pid;
     child.exitSignal = exitSignal;
     child.image = this.image;
     child.stackLow = this.stackLow;
@@ -2088,6 +2087,9 @@ export class Process implements Proc {
     ct.setContext(regs, resume);
     ct.redirected = false;
     ct.clearTid = clearTid;
+    // Do not establish init while executable/memory preparation can still fail.
+    // Recheck admission for reservations obtained before a reentrant failure.
+    publishInitialPid(child.pidns, child.pid, k.numbers, reservation);
     child.tasks.add(ct);
     up.children.add(child);
     k.procs.set(child.pid, child);

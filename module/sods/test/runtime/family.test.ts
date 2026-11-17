@@ -460,3 +460,17 @@ test('thread clone checks lost initial PID admission before a mount copy', async
   assert.equal(call(p, CLONE, CLONE_VM | 0x10000 | 0x800 | 0x20000), -12n);
   assert.deepEqual(point.covered, before); assert.equal(ns.last, 0);
 });
+
+test('fork refuses publication when namespace init ends during register preparation', async () => {
+  const {PidNs} = await import('../../runtime/linux/space.ts');
+  const p = first(), k = p.kernel, ns = new PidNs(p.ns.children, p.cred.ns);
+  ns.init = 99; p.ns = {...p.ns, children: ns};
+  const newTask = k.newTask.bind(k);
+  k.newTask = proc => {
+    const t = newTask(proc), set = t.setContext.bind(t);
+    t.setContext = (regs, resume) => { set(regs, resume); ns.ended = true; };
+    return t;
+  };
+  assert.throws(() => child(p), /PID publication refused in an ended namespace/);
+  assert.equal(ns.init, 99); assert.equal(k.procs.size, 1); assert.equal(k.tasks.size, 1); assert.equal(p.children.size, 0);
+});

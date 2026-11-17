@@ -143,3 +143,34 @@ test('lookup cleanup failure still records lost first reservation admission', ()
   assert.throws(() => number(leaf), e => e instanceof FsError && e.errno === E.NOMEM);
   assert.deepEqual([root.last, middle.last, leaf.last], last);
 });
+
+for (const mode of ['normal', 'pid2', 'record', 'lookup', 'admission'] as const) test(`initial PID publication checks prepared ownership: ${mode}`, async () => {
+  const {publishInitialPid} = await import('../../runtime/linux/space.ts');
+  const root = new PidNs(null, ROOT.ns), ns = new PidNs(root, ROOT.ns);
+  if (mode === 'pid2') number(ns);
+  const nrs = number(ns), id = nrs[0], reservation = {space: ns, nrs}, all = new Map([[id, reservation]]);
+  if (mode === 'record') all.set(id, {...reservation});
+  if (mode === 'lookup') ns.numbers.set(1, 999);
+  if (mode === 'admission') ns.firstReservationFailed = true;
+  if (mode === 'normal') { publishInitialPid(ns, id, all, reservation); assert.equal(ns.init, id); }
+  else { assert.throws(() => publishInitialPid(ns, id, all, reservation), /PID publication/); assert.equal(ns.init, 0); }
+  assert.equal(ns.ended, false);
+  if (mode === 'lookup') assert.equal(ns.numbers.get(1), 999);
+});
+
+test('prepared PID publication never replaces an established init owner', async () => {
+  const {publishInitialPid} = await import('../../runtime/linux/space.ts');
+  const root = new PidNs(null, ROOT.ns), ns = new PidNs(root, ROOT.ns), nrs = number(ns);
+  const reservation = {space: ns, nrs}, all = new Map([[nrs[0], reservation]]);
+  ns.init = 99; ns.firstReservationFailed = true;
+  publishInitialPid(ns, nrs[0], all, reservation);
+  assert.equal(ns.init, 99); assert.equal(ns.ended, false);
+});
+
+for (const ancestor of [false, true]) test(`PID publication refuses an ended namespace, ancestor=${ancestor}`, async () => {
+  const {publishInitialPid} = await import('../../runtime/linux/space.ts');
+  const {middle, leaf} = spaces(), nrs = number(leaf), record = {space: leaf, nrs}, all = new Map([[nrs[0], record]]);
+  leaf.init = 99; middle.init = 88; (ancestor ? middle : leaf).ended = true;
+  assert.throws(() => publishInitialPid(leaf, nrs[0], all, record), /ended namespace/);
+  assert.equal(leaf.init, 99); assert.equal(middle.init, 88);
+});
