@@ -60,6 +60,7 @@ for (const failure of [false, true]) {
       await rejected;
       assert.equal(host.workerEvidence(execution).exited, true);
       assert.equal(host.workerEvidence(execution).pendingRequest, true);
+      assert.equal(host.workerEvidence(execution).resourcesRetired, false);
       assert.throws(() => host.seek(3, 1n), /admission/);
       host.close(3);
       assert.equal(host.open(replacement), 3);
@@ -69,6 +70,7 @@ for (const failure of [false, true]) {
       finished = true;
       await host.workerSettled(execution);
       assert.equal(host.workerEvidence(execution).pendingRequest, false);
+      assert.equal(host.workerEvidence(execution).resourcesRetired, true);
       assert.ok(host.workerEvidence(execution).ownerFailure);
       assert.ok(host.workerEvidence(execution).transportFailure);
       assert.equal(host.offset(3), 2n); // late cleanup never touches the reused fd
@@ -114,6 +116,7 @@ test('real guest reads Rust initial stack and independently checks argv, env and
   try {
     assert.deepEqual(await host.runWorker(execution, BigInt(input.stack.facts.entry)), {status: 0, sourceFailures: 0});
     assert.equal(host.workerEvidence(execution).exited, true);
+    assert.equal(host.workerEvidence(execution).resourcesRetired, true);
   } finally { host.stopWorker(execution); await host.workerSettled(execution); }
 });
 test('initial stack rejects overlap and malformed bytes before guest publication', {skip: !artifact}, async () => {
@@ -146,9 +149,13 @@ test('zero-length image data inside the stack region is not an overlap', {skip: 
   const host = startupHost(), {stack} = startup();
   const execution = await host.workerExecution(wasm, 1, {...stack, low: 0, top: 65536,
     facts: {entry: 0, phdr: 0, phent: 0, phnum: 0}});
+  assert.equal(host.workerEvidence(execution).resourcesRetired, false);
   host.stopWorker(execution);
+  assert.equal(host.workerEvidence(execution).resourcesRetired, false);
   // Await actual Node exit, not merely the source request queue.
   const deadline = Date.now() + 5000;
   while (!host.workerEvidence(execution).exited && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 1));
   assert.equal(host.workerEvidence(execution).exited, true);
+  // Exit listeners run in an observed microtask before the next timer turn.
+  assert.equal(host.workerEvidence(execution).resourcesRetired, true);
 });

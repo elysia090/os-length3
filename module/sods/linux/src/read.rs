@@ -95,6 +95,14 @@ impl Reads {
             Err(Error::Files(descriptor::Error::BadHandle))
         }
     }
+    /// Includes terminal observations until their explicit retirement, and all
+    /// image generations of this execution owner.
+    pub(crate) fn references(&self, execution: &Execution) -> bool {
+        self.slots
+            .iter()
+            .flatten()
+            .any(|p| p.execution.is_some_and(|s| execution.owns_snapshot(s)))
+    }
     pub(crate) fn viewing(&self) -> bool {
         self.viewing
     }
@@ -647,6 +655,7 @@ mod tests {
         ));
         f.set_offset(&t, fd, 0).unwrap(); // failed admission acquired neither OFD nor loader
         let id = r.begin_managed(&mut f, &t, &mut d, &e, fd, 0, 4).unwrap();
+        assert!(r.references(&e));
         assert_eq!(r.query(id).unwrap().2, 5);
         let (source, attempt) = r.load_start(&mut f, &e, id).unwrap();
         assert_eq!(source, 7);
@@ -670,7 +679,9 @@ mod tests {
         r.receipt(&mut f, &mut d, id, 4, Completion::Stopped)
             .unwrap();
         assert_eq!(f.offset(&t, fd).unwrap().0, 4);
+        assert!(r.references(&e)); // terminal observation still belongs to owner
         r.retire(id).unwrap();
+        assert!(!r.references(&e));
         f.set_offset(&t, fd, 0).unwrap();
         let warm = r.begin_managed(&mut f, &t, &mut d, &e, fd, 0, 1).unwrap();
         assert_eq!(r.query(warm).unwrap().2, 0); // retained source does not imply unloaded

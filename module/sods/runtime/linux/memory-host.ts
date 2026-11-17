@@ -49,6 +49,8 @@ interface Admission extends WebAssembly.Exports {
   linux_result_length(): bigint;
   linux_result_state(): number;
   linux_execution_create(binding: bigint): number;
+  linux_execution_retire(execution: bigint): number;
+  linux_execution_unstarted_stopped(execution: bigint): number;
   linux_image_begin(execution: bigint, extent: bigint): number;
   linux_image_finish(execution: bigint, outcome: number): number;
   linux_tree_lazy(parent: bigint, mode: number, source: number, size: number): number;
@@ -87,7 +89,7 @@ const required = ['linux_stack_input', 'linux_stack_build', 'linux_stack_clear',
   'linux_files_seal', 'linux_open', 'linux_dup', 'linux_close', 'linux_offset', 'linux_seek',
   'linux_read_begin', 'linux_read_start', 'linux_read_receipt', 'linux_read_query',
   'linux_read_cancel', 'linux_read_retire', 'linux_result_length', 'linux_result_state',
-  'linux_execution_create', 'linux_image_begin', 'linux_image_finish', 'linux_tree_lazy',
+  'linux_execution_create', 'linux_execution_retire', 'linux_execution_unstarted_stopped', 'linux_image_begin', 'linux_image_finish', 'linux_tree_lazy',
   'linux_managed_read_begin', 'linux_read_load_start', 'linux_load_input',
   'linux_read_load_finish', 'linux_managed_read_start'];
 const integer = (n: number): number => {
@@ -288,6 +290,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     id: bigint; memory: WebAssembly.Memory; bridge: ReturnType<typeof createGuest>;
     invocation: bigint; receipt: boolean; imagePending: boolean; active: boolean;
     failureCount: number; firstFailure?: unknown;
+    resourcesRetired: boolean;
   };
   const workers = new Map<ExecutionBinding, WorkerState>();
   const workerOf = (handle: ExecutionBinding): WorkerState => {
@@ -298,8 +301,15 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   const workerFailure = (w: WorkerState, error: unknown): void => {
     if (!w.failureCount++) w.firstFailure = error;
   };
+  const retireWorker = (w: WorkerState): void => {
+    // An unwind and an observed Node exit are separate prerequisites. Rust also
+    // checks its own pending reads/copies before returning the execution's holder.
+    if (!w.resourcesRetired && w.bridge.diagnostics().exited) {
+      w.resourcesRetired = result(core.linux_execution_retire(w.id)) === 1n;
+    }
+  };
   const abandonWorker = (w: WorkerState): void => {
-    try { checked(core.linux_syscall_abandon(w.id)); }
+    try { checked(core.linux_syscall_abandon(w.id)); retireWorker(w); }
     catch (error) { workerFailure(w, error); }
   };
   return {
@@ -349,7 +359,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         throw error;
       }
       const handle = freeze({kind: 'managed-execution' as const});
-      const w: WorkerState = {id, memory, bridge, invocation: 0n, receipt: false, imagePending: true, active: false, failureCount: 0};
+      const w: WorkerState = {id, memory, bridge, invocation: 0n, receipt: false, imagePending: true, active: false, failureCount: 0, resourcesRetired: false};
       apply(mapSet, workers, [handle, w]);
       // The listener retains failed initialization as well as successful handles.
       // Exit evidence is separate from an outstanding source callback obligation.
@@ -362,7 +372,14 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
           try { checked(core.linux_run_receipt(id, w.invocation, 2, 0n)); }
           catch (error) { workerFailure(w, error); }
           abandonWorker(w);
+        } else if (!w.invocation) {
+          // Actual exit of an initialized Worker that never received a run.
+          // A stop request alone does not take this path.
+          try { checked(core.linux_execution_unstarted_stopped(w.id)); }
+          catch (error) { workerFailure(w, error); }
         }
+        try { retireWorker(w); }
+        catch (error) { workerFailure(w, error); }
       }).catch(error => workerFailure(w, error));
       try {
         await bridge.ready;
@@ -388,7 +405,8 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       const w = workerOf(handle), evidence = w.bridge.diagnostics();
       return {...evidence, failureCount: evidence.failureCount + w.failureCount,
         firstFailure: w.firstFailure ?? evidence.firstFailure,
-        ownerFailure: w.firstFailure, transportFailure: evidence.firstFailure};
+        ownerFailure: w.firstFailure, transportFailure: evidence.firstFailure,
+        resourcesRetired: w.resourcesRetired};
     },
     workerSettled(handle: ExecutionBinding): Promise<void> { return workerOf(handle).bridge.requestsSettled(); },
     async runWorker(handle: ExecutionBinding, entry: bigint, load?: Loader): Promise<{status: number; sourceFailures: number}> {
@@ -410,7 +428,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
           } catch (error) {
             // A callback can finish after exit; settle its source before trying
             // abandonment again. Unknown obligations remain owned in Rust.
-            try { checked(core.linux_syscall_abandon(w.id)); }
+            try { checked(core.linux_syscall_abandon(w.id)); retireWorker(w); }
             catch (cleanup) { workerFailure(w, cleanup); throw new AggregateError([error, cleanup], 'Worker source and cleanup failed'); }
             throw error;
           }
@@ -423,6 +441,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         w.bridge.requestStop();
         const evidence = await w.bridge.stopEvidence();
         if (!evidence.stopped) throw new Error('Worker stop remains unconfirmed');
+        retireWorker(w);
         if (w.failureCount || w.bridge.diagnostics().failureCount) throw w.firstFailure ?? w.bridge.diagnostics().firstFailure;
         return {status, sourceFailures: failures};
       } catch (error) {

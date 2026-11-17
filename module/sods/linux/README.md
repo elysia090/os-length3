@@ -539,3 +539,31 @@ A frozen historical-translator guest checks its own argc, raw argv, duplicate en
 aux credentials, execfn, random bytes and RSP alignment. Current-source translator
 CI separately compiles and runs that source through the Worker. Passing the frozen
 fixture alone is not evidence that the current translator or normal startup works.
+
+## Execution-owned diagnostic descriptor holders
+
+Execution creation now fixes its resource mode: a sealed diagnostic Files lends
+one shared Table holder, or a memory-only execution has no file capability. Later
+Files preparation cannot silently grant one. Managed reads and syscall dispatch
+use that execution's holder, never a lookup of the current global table. This is
+still the explicit preopened-file diagnostic; normal process Table/Fs/credentials
+and namespace construction are not implemented by these variants.
+
+Resource retirement stops at the execution holder. It requires an Exited/Failed
+execution with no image change or live run, a settled continuation, and no read
+record belonging to that execution (even a terminal observation must be retired).
+Unknown copy, active loader and guest stop are independent obligations. A pending
+answer retains ownership; a failed Table release restores the ticket. Retired IDs
+cannot run, replace images or begin reads again and are not reused. Another shared
+holder and a read-held OFD remain valid. Shared Files, its diagnostic base Table,
+Tree, bounded execution history and physical memory are not freed by this result.
+
+The Node adapter attempts this only after observed Worker exit and rechecks after
+a late source completion. `resourcesRetired` means this bounded holder operation,
+not whole-tree disposal or all engine memory reclaimed. Actual Node exit before
+the first run has a separate receipt: it admits only an initialized execution that
+has never started, with no run, image change or pending syscall. A stop request
+alone cannot use it. Terminal retirement inspects the bounded
+read arena (O(read capacity)); syscall dispatch gets its Table in constant time.
+There is no per-read scan added to the ordinary path and no copied FD table, file
+payload or mount graph for the diagnostic's shared holder.

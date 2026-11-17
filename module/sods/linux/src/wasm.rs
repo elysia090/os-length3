@@ -31,7 +31,21 @@ struct Sealed {
     input: Vec<u8>,
     file_limit: usize,
 }
+enum Resources {
+    MemoryOnly,
+    Diagnostic(Table),
+    Retired,
+}
+impl Resources {
+    fn table(&self) -> Result<&Table, i32> {
+        match self {
+            Self::Diagnostic(table) => Ok(table),
+            _ => Err(-11),
+        }
+    }
+}
 struct ExecutionSlot {
+    resources: Resources,
     execution: Execution,
     continuation: Option<Continuation>,
 }
@@ -481,7 +495,7 @@ pub extern "C" fn linux_read_retire(id: u64) -> i32 {
 // neither identity nor image/run state is reconstructed by the host.
 fn execution_index(s: &State, id: u64) -> Result<usize, i32> {
     let n = usize::try_from(id.checked_sub(1).ok_or(-11)?).map_err(|_| -11)?;
-    if n < s.executions.len() {
+    if n < s.executions.len() && !matches!(s.executions[n].resources, Resources::Retired) {
         Ok(n)
     } else {
         Err(-11)
@@ -502,7 +516,12 @@ pub extern "C" fn linux_execution_create(binding: u64) -> i32 {
         }
         s.executions.try_reserve(1).map_err(|_| -1)?;
         let id = s.executions.len() as u64 + 1;
+        let resources = match &mut s.sealed {
+            Some(r) => Resources::Diagnostic(r.files.share(&r.table).map_err(|_| -10)?),
+            None => Resources::MemoryOnly,
+        };
         s.executions.push(ExecutionSlot {
+            resources,
             execution: Execution::new(id, binding),
             continuation: None,
         });
@@ -569,7 +588,7 @@ pub extern "C" fn linux_managed_read_begin(
         r.reads
             .begin_managed(
                 &mut r.files,
-                &r.table,
+                s.executions[i].resources.table()?,
                 &mut s.domain,
                 &s.executions[i].execution,
                 fd,
@@ -726,7 +745,7 @@ pub extern "C" fn linux_run_start(id: u64) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
         let slot = &mut s.executions[i];
-        if slot.continuation.is_none() {
+        if slot.continuation.is_none() && matches!(slot.resources, Resources::Diagnostic(_)) {
             slot.continuation = Some(Continuation::new(&slot.execution).map_err(|_| -11)?);
         }
         slot.execution
@@ -777,7 +796,7 @@ pub extern "C" fn linux_syscall(
             .ok_or(-11)?
             .enter(
                 &mut r.files,
-                &r.table,
+                slot.resources.table()?,
                 &mut r.reads,
                 &mut s.domain,
                 &mut slot.execution,
@@ -895,6 +914,70 @@ pub extern "C" fn linux_stack_build(id: u64) -> i32 {
 pub extern "C" fn linux_stack_clear() -> i32 {
     with_state(false, |s| {
         s.stack = None;
+        Ok(0)
+    })
+}
+
+/// Retires only the execution's resource holder, not the shared Files or physical
+/// memory. Host evidence, outstanding source/copy work and observations differ.
+#[no_mangle]
+pub extern "C" fn linux_execution_retire(id: u64) -> i32 {
+    with_state(true, |s| {
+        let i = usize::try_from(id.checked_sub(1).ok_or(-11)?).map_err(|_| -11)?;
+        let slot = s.executions.get_mut(i).ok_or(-11)?;
+        if matches!(slot.resources, Resources::Retired) {
+            return Ok(1);
+        }
+        if s.sealed.as_ref().is_some_and(|r| r.reads.viewing()) || !slot.execution.stopped() {
+            return Ok(0);
+        }
+        if let Some(call) = &mut slot.continuation {
+            let r = s.sealed.as_mut().ok_or(-9)?;
+            if !call
+                .abandon(
+                    &mut r.files,
+                    &mut r.reads,
+                    &mut s.domain,
+                    &mut slot.execution,
+                )
+                .map_err(|_| -12)?
+            {
+                return Ok(0);
+            }
+        }
+        if !slot.execution.retireable()
+            || s.sealed
+                .as_ref()
+                .is_some_and(|r| r.reads.references(&slot.execution))
+        {
+            return Ok(0);
+        }
+        // No callback or fallible operation between holder extraction and release.
+        let resources = std::mem::replace(&mut slot.resources, Resources::Retired);
+        if let Resources::Diagnostic(table) = resources {
+            let Some(r) = &mut s.sealed else {
+                slot.resources = Resources::Diagnostic(table);
+                return Err(-9);
+            };
+            if let Err((_, table)) = r.files.let_go(table) {
+                slot.resources = Resources::Diagnostic(table);
+                return Err(-10);
+            }
+        }
+        slot.continuation = None;
+        Ok(1)
+    })
+}
+
+/// Actual host exit before its first invocation, never a timeout or stop request.
+#[no_mangle]
+pub extern "C" fn linux_execution_unstarted_stopped(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        s.executions[i]
+            .execution
+            .unstarted_stopped()
+            .map_err(|_| -11)?;
         Ok(0)
     })
 }

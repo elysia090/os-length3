@@ -102,6 +102,30 @@ impl Execution {
     pub(crate) fn phase(&self) -> Phase {
         self.phase
     }
+    /// Host stop evidence has settled the invocation/image, independently of
+    /// pending syscall cleanup. Result observation does not create a run hold.
+    pub(crate) fn stopped(&self) -> bool {
+        matches!(self.phase, Phase::Exited | Phase::Failed)
+            && self.changing.is_none()
+            && self.running.is_none()
+    }
+    pub(crate) fn retireable(&self) -> bool {
+        self.stopped() && self.pending_call.is_none()
+    }
+    /// Trusted host receipt: the admitted host has actually stopped before its
+    /// first invocation. Read/source obligations are checked separately by owner.
+    pub(crate) fn unstarted_stopped(&mut self) -> Result<(), Error> {
+        if self.phase != Phase::Ready
+            || self.next_invocation != Some(1)
+            || self.changing.is_some()
+            || self.running.is_some()
+            || self.pending_call.is_some()
+        {
+            return Err(Error::State);
+        }
+        self.phase = Phase::Failed;
+        Ok(())
+    }
     pub(crate) fn initialization(&self) -> Option<(u64, u64)> {
         self.changing
             .as_ref()
@@ -519,5 +543,65 @@ mod initialization_tests {
         e.image_finish(&mut d, ImageResult::PoisonedStopped)
             .unwrap();
         assert_eq!(e.initialization(), None);
+    }
+}
+
+#[cfg(test)]
+mod retirement_tests {
+    use super::*;
+    #[test]
+    fn retirement_requires_stop_and_pending_call_completion() {
+        let mut d = Domain::new(90, 1, 4).unwrap();
+        let binding = d.bind(65536).unwrap();
+        let mut e = Execution::new(1, binding);
+        assert!(!e.retireable());
+        e.image_begin(&mut d, 65536).unwrap();
+        e.image_finish(&mut d, ImageResult::Installed).unwrap();
+        assert!(!e.retireable());
+        let invocation = e.start(&mut d).unwrap();
+        e.hold_call(invocation).unwrap();
+        e.receipt(&mut d, invocation, Unwind::Unknown).unwrap();
+        assert!(!e.stopped());
+        e.receipt(&mut d, invocation, Unwind::Fault).unwrap();
+        assert!(e.stopped());
+        assert!(!e.retireable());
+        e.finish_call(invocation).unwrap();
+        assert!(e.retireable());
+    }
+}
+
+#[cfg(test)]
+mod unstarted_stop_tests {
+    use super::*;
+    #[test]
+    fn receipt_is_only_for_ready_never_invoked_image() {
+        let mut d = Domain::new(91, 1, 4).unwrap();
+        let binding = d.bind(65536).unwrap();
+        let mut e = Execution::new(1, binding);
+        assert_eq!(e.unstarted_stopped(), Err(Error::State));
+        e.image_begin(&mut d, 65536).unwrap();
+        assert_eq!(e.unstarted_stopped(), Err(Error::State));
+        e.image_finish(&mut d, ImageResult::Installed).unwrap();
+        assert_eq!(e.unstarted_stopped(), Ok(()));
+        assert!(e.retireable());
+        assert_eq!(e.unstarted_stopped(), Err(Error::State));
+    }
+    #[test]
+    fn invocation_history_survives_unwind_and_new_image() {
+        let mut d = Domain::new(92, 1, 4).unwrap();
+        let binding = d.bind(65536).unwrap();
+        let mut e = Execution::new(1, binding);
+        e.image_begin(&mut d, 65536).unwrap();
+        e.image_finish(&mut d, ImageResult::Installed).unwrap();
+        let invocation = e.start(&mut d).unwrap();
+        assert_eq!(e.unstarted_stopped(), Err(Error::State));
+        e.receipt(&mut d, invocation, Unwind::Unknown).unwrap();
+        assert_eq!(e.unstarted_stopped(), Err(Error::State));
+        e.receipt(&mut d, invocation, Unwind::Yield(123)).unwrap();
+        assert_eq!(e.unstarted_stopped(), Err(Error::State));
+        e.image_begin(&mut d, 65536).unwrap();
+        e.image_finish(&mut d, ImageResult::Installed).unwrap();
+        assert_eq!(e.phase(), Phase::Ready);
+        assert_eq!(e.unstarted_stopped(), Err(Error::State));
     }
 }

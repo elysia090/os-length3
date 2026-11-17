@@ -547,6 +547,7 @@ test('execution exit evidence cannot retire an unknown main-side syscall copy', 
   a.ok('linux_read_receipt', read, 2n, 1); // independent copy completion remains unknown
   a.ok('linux_run_receipt', execution, invocation, 2, 0n); // matching guest stop only
   assert.equal(a.ok('linux_syscall_abandon', execution), 0n);
+  assert.equal(a.ok('linux_execution_retire', execution), 0n);
   assert.ok(a.call('linux_image_begin', execution, 65536n) < 0);
   assert.equal(a.ok('linux_offset', a.fd), 0n);
   a.ok('linux_read_receipt', read, 2n, 0); // separate, explicit stopped-copy evidence
@@ -554,6 +555,8 @@ test('execution exit evidence cannot retire an unknown main-side syscall copy', 
   assert.equal(a.ok('linux_offset', a.fd), 2n);
   a.ok('linux_image_begin', execution, 65536n);
   a.ok('linux_image_finish', execution, 1);
+  assert.equal(a.ok('linux_execution_retire', execution), 1n);
+  assert.ok(a.call('linux_image_begin', execution, 65536n) < 0);
 });
 
 test('stack staging belongs to one initializing image and Unknown revokes access', {skip: !artifact}, () => {
@@ -590,4 +593,47 @@ test('stack staging belongs to one initializing image and Unknown revokes access
   assert.equal(call('linux_stack_clear'), 0);
   assert.equal(call('linux_image_finish', a, 2), 0); // late matching stop remains valid
   assert.equal(call('linux_image_finish', b, 1), 0);
+});
+
+test('execution table retirement leaves the other diagnostic holder usable', {skip: !artifact}, () => {
+  const a = readAbi(false, 2);
+  const first = a.ok('linux_execution_create', a.binding);
+  const secondBinding = a.ok('linux_bind', 65536n);
+  const second = a.ok('linux_execution_create', secondBinding);
+  for (const id of [first, second]) { a.ok('linux_image_begin', id, 65536n); a.ok('linux_image_finish', id, 0); }
+  const invocation = a.ok('linux_run_start', first);
+  assert.equal(a.ok('linux_execution_retire', first), 0n);
+  a.ok('linux_syscall', first, invocation, 60n, 0n, 0n, 0n, 0n, 0n, 0n, 0n);
+  a.ok('linux_run_receipt', first, invocation, 1, 0n);
+  assert.equal(a.ok('linux_execution_retire', first), 1n);
+  assert.equal(a.ok('linux_execution_retire', first), 1n);
+  assert.ok(a.call('linux_run_start', first) < 0);
+  assert.ok(a.call('linux_image_begin', first, 65536n) < 0);
+  assert.ok(a.call('linux_managed_read_begin', first, 0, 0n, 0n) < 0);
+  const read = a.ok('linux_managed_read_begin', second, a.fd, 0n, 2n);
+  const ptr = Number(a.ok('linux_managed_read_start', second, read));
+  assert.deepEqual([...new Uint8Array((a.e.memory as WebAssembly.Memory).buffer, ptr, 2)], [97, 98]);
+  a.ok('linux_read_receipt', read, 2n, 0);
+  const secondRun = a.ok('linux_run_start', second);
+  a.ok('linux_run_receipt', second, secondRun, 2, 0n);
+  assert.equal(a.ok('linux_execution_retire', second), 0n); // terminal observation still owned
+  a.ok('linux_read_retire', read);
+  assert.equal(a.ok('linux_execution_retire', second), 1n);
+  assert.equal(a.ok('linux_offset', a.fd), 2n);
+});
+
+test('memory-only execution never gains a later global file-table fallback', {skip: !artifact}, () => {
+  const e = new WebAssembly.Instance(moduleOf()).exports;
+  const call = (name: string, ...args: (number | bigint)[]) => (e[name] as (...a: (number | bigint)[]) => number)(...args);
+  const result = () => (e.linux_result as () => bigint)();
+  const ok = (name: string, ...args: (number | bigint)[]) => { assert.equal(call(name, ...args), 0, name); return result(); };
+  ok('linux_init', 1, 4);
+  const binding = ok('linux_bind', 65536n), execution = ok('linux_execution_create', binding);
+  ok('linux_files_prepare', 2, 2, 32, 1, 2, 2, 2); ok('linux_files_seal', 2);
+  ok('linux_image_begin', execution, 65536n); ok('linux_image_finish', execution, 0);
+  assert.ok(call('linux_managed_read_begin', execution, 0, 0n, 0n) < 0);
+  const invocation = ok('linux_run_start', execution);
+  assert.ok(call('linux_syscall', execution, invocation, 60n, 0n, 0n, 0n, 0n, 0n, 0n, 0n) < 0);
+  ok('linux_run_receipt', execution, invocation, 2, 0n);
+  assert.equal(ok('linux_execution_retire', execution), 1n);
 });
