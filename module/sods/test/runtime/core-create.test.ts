@@ -53,3 +53,15 @@ test('explicit scope.writeFile retires an inode rejected by namespace publicatio
     assert.equal(dir.entries.has('refused'),false);
   } finally {dir.entries.set=set;scope.dispose();}
 });
+
+
+test('explicit lazy creation retires its source when namespace publication is rejected', {skip: !wasm}, async () => {
+  const scope = await loadFileScope(readFileSync(wasm!), 8), vfs = new Vfs(), dir = vfs.dir('/tmp');
+  const set = dir.entries.set; let rejected: ReturnType<Vfs['writeFile']> | undefined, loads = 0;
+  dir.entries.set = function(_name, node) { rejected = node as typeof rejected; throw Error('entry refused'); };
+  try {
+    assert.throws(() => scope.lazyFile(vfs, '/tmp/refused', () => { loads++; return enc.encode('abc'); }), /entry refused/);
+    assert.ok(rejected); assert.throws(() => rejected!.bytes(), /closed/);
+    assert.equal(loads, 0); assert.equal(dir.entries.has('refused'), false);
+  } finally { dir.entries.set = set; scope.dispose(); }
+});

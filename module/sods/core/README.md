@@ -632,3 +632,9 @@ both inline and Node CPU Worker schedulers and verifies the created Rust-backed 
 It uses the explicitly selected historical translator, not a current-source translator
 build. The full existing runtime suite has separate skipped cases needing unavailable
 compiled programs/toolchains; focused success must not hide those skips.
+
+[Inode lifetime](LIFETIME.md) records the actual ownership roots, failure transitions
+and managed-entry gate before long-lived default adoption. In particular, hardlink
+counts and closed descriptors do not prove that a mapping, deferred image source or
+embedding handle has finished. Payload retirement and bounded slot metadata are
+separate requirements; current finite-scope retention is not automatic reclamation.

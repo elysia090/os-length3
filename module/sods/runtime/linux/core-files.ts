@@ -135,7 +135,7 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
   const store = await loadCoreFiles(source, maxFileBytes), held = new Map<CoreFile, OwnedFile>();
   let closed = false;
   const live = () => { if (closed) throw new Error('Rust file scope is closed'); };
-  const lazy = (mode: number, size: number, loader: () => Uint8Array): File => {
+  const lazy = (mode: number, size: number, loader: () => Uint8Array): {file: CoreFile; inode: OwnedFile} => {
     live();
     const file = payload(() => store.createLazy(() => {
       try { return loader(); }
@@ -143,7 +143,7 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
     }, size));
     try {
       const inode = new OwnedFile(file, size, mode, live, maxFileBytes);
-      held.set(file, inode); return inode;
+      held.set(file, inode); return {file, inode};
     } catch (e) { file.close(); throw e; }
   };
   const create = (bytes: Uint8Array, mode: number): {file: CoreFile; inode: OwnedFile} => {
@@ -171,7 +171,7 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
      * this scope until dispose, including unlinked/replaced inodes. */
     createVfs(): Vfs { live(); return new ScopedVfs(); },
     /** All pack files use this scope, without coupling the pack reader to Rust. */
-    mountTarget(vfs: Vfs) { live(); return mountTarget(vfs, lazy); },
+    mountTarget(vfs: Vfs) { live(); return mountTarget(vfs, (mode, size, read) => lazy(mode, size, read).inode); },
     writeFile(vfs: Vfs, path: string, input: Uint8Array | string, mode = 0o644): File {
       live();
       const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
@@ -185,9 +185,9 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
     lazyFile(vfs: Vfs, path: string, loader: () => Uint8Array, mode = 0o644): File {
       live();
       const at = path.lastIndexOf('/'), dir = vfs.mkdirp(path.slice(0, at));
-      const inode = lazy(mode, 0, loader);
-      dir.entries.set(path.slice(at + 1), inode);
-      return inode;
+      const {file, inode} = lazy(mode, 0, loader);
+      try { dir.entries.set(path.slice(at + 1), inode); return inode; }
+      catch (error) { held.delete(file); file.close(); throw error; }
     },
     dispose(): void {
       if (closed) return;
