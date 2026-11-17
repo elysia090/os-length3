@@ -52,7 +52,24 @@ test('unlinked prebuilt image retains a deferred source even without namespace o
     const image = p.kernel.images.get(file)!.image;
     p.bytes.set(enc.encode('/tmp/image\0'), 1024);
     assert.equal(call(p, 87, 1024), 0n); assert.equal(file.nlink, 0); assert.equal(loads, 0);
+    // Worker keeps Image observers separately from Kernel.images. Cache deletion
+    // and ended() therefore cannot be used as deferred-source release events.
+    p.kernel.images.delete(file); p.kernel.ended();
+    assert.equal(p.kernel.images.size, 0);
     assert.equal(dec.decode(image.source!()), 'deferred'); assert.equal(loads, 1);
     assert.equal(dec.decode(image.source!()), 'deferred'); assert.equal(loads, 1);
+  } finally { scope.dispose(); }
+});
+
+
+test('raw namespace changes are not a reliable link-count ownership ledger', {skip: !wasm}, async () => {
+  const scope = await loadFileScope(readFileSync(wasm!), 8), vfs = scope.createVfs();
+  try {
+    const file = vfs.writeFile('/tmp/a', 'old'), dir = vfs.dir('/tmp');
+    dir.entries.set('b', file);
+    assert.equal(file.nlink, 1); // Two actual namespace edges, one POSIX metadata value.
+    dir.entries.delete('a'); assert.equal(vfs.file('/tmp/b'), file);
+    dir.entries.clear(); assert.equal(file.nlink, 1); // No namespace edge remains.
+    assert.equal(dec.decode(file.bytes()), 'old'); // Raw embedding ownership still exists.
   } finally { scope.dispose(); }
 });

@@ -124,3 +124,50 @@ must also preserve pending-read/load identities and stale completion rejection.
 No new public promise of unlimited operation or shrinking Wasm memory follows.
 The next comparison must include these retained metadata costs and failure modes,
 not select reuse solely because a counter test reports fewer allocated payloads.
+
+## Actual caller audit before a managed entrance
+
+The first candidate is the existing ricebox Worker command boundary, not a new
+runner API. Messages carry copied values/modules, not File or Kernel objects.
+Inside that realm, however, current code still has the following raw consumers:
+
+| Actual caller | Required operation/result | Ownership that must not be lost |
+| --- | --- | --- |
+| `prepared-tree.prepareTree` | Mount root, apply given files, install muk; currently return raw Vfs + dispose | Public callers retain an unrestricted graph. Preserve this API as finite/raw; do not silently make its files collectible. |
+| Worker `ready` / `rehearse` | One prepared tree shared across rehearsal and subsequent execution | `readied` owns tree across runs. A kernel borrows it, not owns it. Rehearsal error is caught; a timer/failed notification is not proof every kernel reference ended. |
+| Worker `follow` / `runs` | Install ready translation, adopt extra modules, observe future code | `kept[]` retains Image independently of the kernel image cache. An observer has a lifetime and cannot be reduced to a path: the path may now name a replacement inode. |
+| Worker `told` | Observe newly translated root code and later modules; send bytes and origin/path identity | Needs a prepared publication and explicit consumption outcome, not raw Image fields. Current code changes `wasm/mainTold` before sending; transfer/send failure and retry must be defined before introducing an owner release there. |
+| Worker idle consolidation | Is work due? Consolidate idle translations, then publish observations | Needs a query/operation, not mutable `due` Map. Old images can still be running/observed after consolidation. |
+| Worker `Mirror` / `given` | Observe file changes; apply files/hot programs | Returned bytes can cross the boundary as copies. Mirror's retained File identities and replaced hot images remain roots until observer retirement. |
+| Independent sods tarball example | Explicit scope+Vfs, linux returns Kernel, run, then dispose | Valid finite-owner path; it does not certify the future managed entrance. Keep it working and explicit. |
+
+Consequently, adding a `managed` boolean to the public Vfs or wrapping linux() while
+still returning Kernel would hide, not close, the graph. Avoid both. The existing
+Worker's private implementation may later own a managed tree, but only after its
+raw uses above have been replaced by the required operations and ownership events.
+No new public managed type or parallel runner is introduced now.
+
+For the private owner protocol, the tree owner survives every run; each kernel,
+translation observer and active operation acquires a separate borrow before use.
+A stop request changes admission first, rejects new borrows, then waits for actual
+termination/operation retirement. It does not infer drainage from status, a sent
+error message, `ended()`, or RemoteKernel.close(). Namespace roots survive run end.
+At realm termination the whole graph is discarded, currently the only already
+closed Worker-wide boundary. Before then, final inode release requires all of the
+edge transitions in the table above and the earlier root table, including cycle
+cleanup and mapping split guards. A borrow count around just `spawn()` is not enough.
+
+Additional actual-Wasm counterexamples now remove an image from Kernel.images and
+call ended(), then read its still-valid deferred source; raw Entries mutations also
+show two or zero real namespace edges with an unchanged nlink of one. These tests
+reject premature last-owner rules. They do not establish final-owner reclamation.
+
+Next implementation gate: make translation observation an explicit private owner
+with prepared output, success/failure disposition and close, then migrate Worker
+follow/told without changing its messages or losing late code. Test path replacement,
+consolidated old/new images, send failure, observer close and lazy source retention.
+This closes a real escaping consumer before introducing an inode root counter;
+namespace/fd/map/operation owners must still be connected before automatic close.
+The observer's send-success boundary means local send acceptance, not receiver
+persistence. Retaining state on rejected send does not itself authorize automatic
+retry or promise exactly-once delivery; those are separate caller policies.
