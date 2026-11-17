@@ -107,5 +107,5 @@ test('build artifact validation uses only the public sods entry and compression 
   assert.equal(allowed('module/ricebox/build/prepare.ts','../../sods/runtime/linux.ts'),false);
   assert.equal(allowed('module/ricebox/build/compress.worker.ts','node:zlib'),true);
   assert.equal(allowed('module/ricebox/build/compress.worker.ts','node:fs'),false);
-  assert.deepEqual(violations({'module/ricebox/build/distribution.ts':"new Worker(new URL('./compress.worker.ts', import.meta.url))"}),[]);
+  assert.deepEqual(violations({'module/ricebox/build/compression-pool.ts':"new Worker(new URL('./compress.worker.ts', import.meta.url))"}),[]);
 });

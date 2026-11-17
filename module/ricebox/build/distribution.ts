@@ -10,7 +10,7 @@ import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {Worker} from 'node:worker_threads';
+import {withCompression} from './compression-pool.ts';
 import {gzipSync} from 'node:zlib';
 import {packOf} from '../distribution/pack.ts';
 import {translateWhole} from './aot-cache.ts';
@@ -81,31 +81,24 @@ if (release.VERSION_ID !== version) throw new Error(`${basename(rootFile)}: its 
 // Second pass: every file's bytes to its package's pack, compressed in threads (below), placed in path order.
 // Three compressions at a time, each in a thread of its own and done synchronously there, so what one
 // holds while it runs (tens of megabytes at level 19) goes back as it ends, not when a collector gets to it.
-const POOL = 3;
-const pool = Array.from({length: POOL}, () => new Worker(new URL('./compress.worker.ts', import.meta.url)));
-const waiting = new Map<number, (z: Buffer) => void>();
-const idle = [...pool];
-const queue: (() => void)[] = [];
-let ids = 0;
-for (const w of pool) w.on('message', ({id, z}: {id: number; z: Uint8Array}) => { waiting.get(id)?.(Buffer.from(z)); waiting.delete(id); idle.push(w); queue.shift()?.(); });
-const compress = (bytes: Buffer) => new Promise<Buffer>((resolve) => {
-  const go = () => { const w = idle.pop(); const id = ids++; waiting.set(id, resolve); w?.postMessage({id, bytes}); };
-  if (idle.length) go(); else queue.push(go);
-});
 /** A file's bytes as its pack keeps them: compressed when that is smaller, else raw. */
 type Stored = {z: Buffer; raw?: undefined} | {raw: Buffer; z?: undefined};
 const hotBytes = new Map<string, Buffer>();
-const stored: {path: string; bytes: Promise<Stored>}[] = [];
-const {entries, manifest} = await readTarball(rootFile, (e, bytes) => {
-  if (!bytes) return; // a second name of a file: the file's bytes
-  if (hot.includes(e.path)) hotBytes.set(e.path, bytes);
-  stored.push({path: e.path, bytes: bytes.length ? compress(bytes).then((z): Stored => (z.length < bytes.length ? {z} : {raw: bytes})) : Promise.resolve({raw: bytes})});
+const {entries,manifest,packed}=await withCompression(async compress=>{
+  const stored: {path:string;bytes:Promise<Stored>}[]=[];
+  const {entries,manifest}=await readTarball(rootFile,(e,bytes)=>{
+    if(!bytes)return;
+    if(hot.includes(e.path))hotBytes.set(e.path,bytes);
+    const pending:Promise<Stored>=bytes.length?compress(bytes).then(z=>z.length<bytes.length?{z}:{raw:bytes}):Promise.resolve({raw:bytes});
+    // Observe the derived promise too, before the stream can fail or suspend.
+    void pending.catch(()=>{});
+    stored.push({path:e.path,bytes:pending});
+  });
+  if(!chosenHot)for(let i=hot.length-1;i>=0;i--)if(!hotBytes.has(hot[i]))hot.splice(i,1);
+  for(const p of hot)if(!hotBytes.has(p))throw new Error(`${p} is not a file of this root`);
+  const packed=new Map(await Promise.all(stored.map(async s=>[s.path,await s.bytes] as const)));
+  return {entries,manifest,packed};
 });
-// A deployment may remove optional tools. Only an explicitly requested hot set is mandatory.
-if (!chosenHot) for (let i = hot.length - 1; i >= 0; i--) if (!hotBytes.has(hot[i])) hot.splice(i, 1);
-for (const p of hot) if (!hotBytes.has(p)) throw new Error(`${p} is not a file of this root`);
-const packed = new Map(await Promise.all(stored.map(async (s) => [s.path, await s.bytes] as const)));
-for (const w of pool) void w.terminate();
 /** Where a file is: its package's pack, its line in the pack's table (-1: empty, stored nowhere), its stored length. */
 interface Place { who: string; entry: number; len: number; raw: boolean }
 const packs = new Map<string, Buffer[]>();

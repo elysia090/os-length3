@@ -145,9 +145,15 @@ workflows. None of these belongs to the runtime's loading/cache policy.
 Compression has a real `build/compress.worker.ts` entry, copied with the source
 builder into the npm package. Composition still invokes the builder's TypeScript
 with Node; this is not a newly promised standalone JavaScript builder API. The pool
-size, compression settings, input cloning and output transfer are unchanged. Its
-error/exit rejection and abnormal-path Worker cleanup remain a separate lifecycle
-limitation; the entry extraction does not claim to fix those failures.
+size, compression settings, input cloning and output transfer are unchanged. The private compression scope now rejects queued/in-flight jobs on worker failure,
+checks response ownership, and awaits every created Worker's termination on success
+or failure, including partial startup. Original and cleanup failures remain visible;
+a rejected termination is not reported as confirmed retirement. This is a Node
+build-time guarantee, not a browser/runtime Worker guarantee. Worker failure starts
+retirement but does not cancel the owner's archive read; the scope still waits for
+that read to settle. Archive streaming,
+queued byte retention and packing still have their existing costs; no speedup or
+new bounded-memory claim follows from lifecycle cleanup.
 
 ## Source packages and local npm output
 
