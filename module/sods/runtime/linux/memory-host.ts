@@ -1,3 +1,4 @@
+import {utf8} from './flow.ts';
 import {fixedTranslatedModule, fixedTranslatedModuleAsync} from './translated-image.ts';
 import {prepare} from '../translation/share.ts';
 import {loadTranslator} from '../translation/translator.ts';
@@ -493,7 +494,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         check();
         const sections = WebAssembly.Module.customSections(originalModule, 'sods.facts');
         if (sections.length !== 1) throw new Error('Expected one translator facts section');
-        const facts = JSON.parse(new TextDecoder().decode(sections[0])) as Record<string, unknown>;
+        const facts = JSON.parse(utf8(sections[0])) as Record<string, unknown>;
         const fact = (name: string): number => {
           const value = facts[name];
           if (typeof value !== 'number') throw new TypeError('Invalid translator facts');
