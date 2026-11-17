@@ -37,8 +37,8 @@ const idBy = (p: Proc, n: number): number => byNr(p.pidns, n);
  * any other by one that may administer the user namespace it is in (the new one, where one is made: whoever makes
  * a user namespace has every capability in it).
  */
-function spaces(p: Proc, flags: number): {ns: Spaces; cred: Cred; made: Map<object, object> | null} {
-  let c = p.cred, ns = p.ns, made: Map<object, object> | null = null;
+function namespaceCredentials(p: Proc, flags: number): Cred {
+  let c = p.cred;
   if (flags & NS.user) {
     if (c.ns.level >= 32) fail(E.USERS);
     if (idIn(c.ns, c.euid) < 0 || idIn(c.ns, c.egid, true) < 0) fail(E.PERM);
@@ -48,6 +48,14 @@ function spaces(p: Proc, flags: number): {ns: Spaces; cred: Cred; made: Map<obje
     c = inNew(c, new UserNs(c.ns, c.euid, c.egid));
   }
   if (flags & NEW & ~NS.user && !capable(c, CAP.SYS_ADMIN, c.ns)) fail(E.PERM);
+  return c;
+}
+
+/** Construct only after caller-specific refusal checks. A copied mount tree
+ * registers covered/propagation edges immediately; abandoning a local variable
+ * after EAGAIN is not rollback. Validation remains before resource refusal. */
+function spaces(p: Proc, flags: number, c = namespaceCredentials(p, flags)): {ns: Spaces; cred: Cred; made: Map<object, object> | null} {
+  let ns = p.ns, made: Map<object, object> | null = null;
   const owner = c.ns;
   if (flags & NS.mnt) { const copied = copySpace(ns.mnt, owner); ns = withSpaces(ns, {mnt: copied.space}); made = copied.made; }
   if (flags & NS.uts) ns = withSpaces(ns, {uts: new Uts(owner, ns.uts.hostname, ns.uts.domainname)});
@@ -202,8 +210,9 @@ function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number
     if (flags & (NS.user | NS.pid) || p.ns.children !== p.pidns) fail(E.INVAL);
     if (flags & NS.mnt && flags & CLONE.FS) fail(E.INVAL);
     // (a thread may be made in namespaces of its own, but for the users' and the processes')
-    const how = flags & NEW ? spaces(p, flags) : null;
+    const c = flags & NEW ? namespaceCredentials(p, flags) : null;
     if (!room(p.cgroup)) fail(E.AGAIN);
+    const how = c ? spaces(p, flags, c) : null;
     const nt = p.newThread(t.resumeAt, stack, flags & CLONE.SETTLS ? tls : null);
     if (!(flags & CLONE.FS)) { const own = nt.fs.copy(); nt.fs.drop(); nt.fs = own; }
     if (how) { nt.ns = how.ns; if (how.made) { const made = how.made, to = (m: object) => (made.get(m) ?? m) as typeof nt.fs.root.mnt; nt.fs.turn({mnt: to(nt.fs.root.mnt), node: nt.fs.root.node}); nt.fs.go({mnt: to(nt.fs.pwd.mnt), node: nt.fs.pwd.node}); } }
@@ -219,9 +228,12 @@ function clone(p: Proc, flags: number, stack: bigint, ptid: number, ctid: number
     // user namespace of its own for a sibling (CLONE_PARENT).
     if (flags & (NS.user | NS.mnt) && flags & CLONE.FS) fail(E.INVAL);
     if (flags & CLONE.PARENT && (flags & (NS.user | NS.pid) || p.ns.children !== p.pidns)) fail(E.INVAL);
-    const how = flags & NEW ? spaces(p, flags) : null;
-    if ((how?.ns ?? p.ns).children.ended) fail(E.NOMEM);
+    const c = flags & NEW ? namespaceCredentials(p, flags) : null;
+    // A requested new PID namespace starts unended; otherwise preserve the
+    // existing namespace refusal before the cgroup check.
+    if (!(flags & NS.pid) && p.ns.children.ended) fail(E.NOMEM);
     if (!room(into ?? p.cgroup)) fail(E.AGAIN);
+    const how = c ? spaces(p, flags, c) : null;
     const child = p.forkProcess(t.resumeAt, {stack, vm: !!(flags & CLONE.VM), files: !!(flags & CLONE.FILES), fs: !!(flags & CLONE.FS), exitSignal: flags & 0xff,
       tls: flags & CLONE.SETTLS ? tls : null, clearTid: flags & CLONE.CHILD_CLEARTID ? ctid : 0, parent: !!(flags & CLONE.PARENT), ns: how?.ns ?? null, cred: how?.cred ?? null, cgroup: into});
     if (how) inCopy(child, how.made);

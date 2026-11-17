@@ -258,3 +258,34 @@ test('a pipe or a dup with too few descriptors left is EMFILE and leaves nothing
     assert.equal(open(), '0');
   }
 });
+
+for (const thread of [false, true]) test(`clone capacity rejection creates no namespace mount edges, thread=${thread}`, () => {
+  const p = first(), k = p.kernel;
+  const NEWNS = 0x20000, THREAD = 0x10000 | 0x800;
+  const proc = k.vfs.root.entries.get('proc')!, before = [...proc.covered!];
+  const state = [k.procs.size, k.tasks.size, p.tasks.size, p.children.size];
+  p.cgroup.most = 0;
+  const refused = p.cgroup.refused;
+  assert.equal(call(p, CLONE, CLONE_VM | NEWNS | (thread ? THREAD : SIGCHLD)), -11n);
+  assert.equal(p.cgroup.refused, refused + 1);
+  assert.deepEqual(proc.covered, before);
+  assert.deepEqual([k.procs.size, k.tasks.size, p.tasks.size, p.children.size], state);
+  // Permission refusal still precedes capacity refusal, as before the change.
+  p.cred = p.cred.with({effective: 0n});
+  assert.equal(call(p, CLONE, CLONE_VM | NEWNS | (thread ? THREAD : SIGCHLD)), EPERM);
+  assert.equal(p.cgroup.refused, refused + 1);
+  assert.deepEqual(proc.covered, before);
+});
+
+test('ended pid namespace refusal precedes cgroup capacity and mount creation', () => {
+  const p = first(), k = p.kernel, proc = k.vfs.root.entries.get('proc')!, before = [...proc.covered!];
+  p.ns.children.ended = true; p.cgroup.most = 0;
+  const refused = p.cgroup.refused;
+  assert.equal(call(p, CLONE, CLONE_VM | 0x20000 | SIGCHLD), -12n);
+  assert.equal(p.cgroup.refused, refused);
+  assert.deepEqual(proc.covered, before);
+  // A requested new PID namespace has the existing fresh/unended semantics.
+  assert.equal(call(p, CLONE, CLONE_VM | 0x20000 | 0x20000000 | SIGCHLD), -11n);
+  assert.equal(p.cgroup.refused, refused + 1);
+  assert.deepEqual(proc.covered, before);
+});

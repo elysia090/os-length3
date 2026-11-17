@@ -979,3 +979,44 @@ revoked behind callers; the boundary must first establish who can invoke it.
 No generic domain manager, automatic copied-namespace destruction, or used-tree
 disposal is introduced here. The sticky initial-namespace gate closes the proven
 hole without pretending the larger ownership contract has been implemented.
+
+### Minimal managed API decision and the next creation boundary
+
+Do not add a user-facing domain manager or a managed:true flag to the raw Kernel
+API. Returning Kernel/Vfs/Image still permits arbitrary aliases, so that flag
+would not establish closed ownership. The existing private Worker/run command
+entry is the appropriate place for future managed ownership: applications supply
+artifacts/declarations/inputs and receive captured values, not a namespace graph.
+The normal ricebox setup/deploy flow and standalone muk/sods entry points need no
+new ownership-management ceremony. Raw linux/prepareTree remain explicitly owned
+by their embedding caller. This is a design choice, not an implemented sealed
+runtime domain or final safe-close result.
+
+The required internal crossings are concrete: clone/unshare copy namespaces;
+setns adopts an existing namespace File; bind/open_tree and propagation can share
+Supers; SCM_RIGHTS holds Description objects in queues, not just fd tables.
+Image creation/prebuilt/consolidation, memory pools, readLater and observer tracks
+are a separate alias family. A private owner must record creation before
+publication, distinguish internal transfer from unknown imports/exports, and keep
+failure/unknown state. Completion must distinguish execution, host stop, output
+persistence and tree retirement; the existing retiring message remains admission
+acknowledgement only. No source callback is revoked to force these facts true.
+
+A real syscall counterexample identified an earlier necessary boundary: with
+cgroup capacity zero, clone(CLONE_VM|CLONE_NEWNS|SIGCHLD) returned EAGAIN with
+process/task counts unchanged but /proc.covered grew from 1 to 2. spaces() copied
+and registered the namespace before room() refused it; loss of the local variable
+was not rollback. The implementation now separates credential/capability checking
+from mount/other namespace construction. Clone retains permission checks first,
+then the existing PID-ended/cgroup checks, then constructs the requested spaces.
+Thus these known refusals do not allocate/register the abandoned mount tree.
+
+NEWUSER credential checking still constructs a UserNs, so this is not a claim of
+zero allocation before refusal or a pure validator. NEWPID keeps its prior fresh
+children semantics; unshare still validates and constructs through the ordinary
+path. Fork/newThread/Fs preparation can fail after this point and still require
+an explicit publication/rollback protocol. This fix is not that full transaction.
+The avoided work on rejected clone is the mount copy and its covered/propagation
+registrations, proportional to copied mounts; no extra payload copies or graph
+manager are introduced. Regressions preserve errno precedence and verify no new
+mount edges in both process and thread clone refusal paths.
