@@ -89,7 +89,13 @@ pub extern "C" fn files_create() -> i32 {
             return Err(Error::BadHandle);
         }
         s.input = false;
-        s.files.create(&s.scratch).map(|id| id as i32)
+        // Do not pin a historical high-water scratch allocation into a small
+        // long-lived file. Exact-capacity input can move with no payload copy.
+        if s.scratch.capacity() == s.scratch.len() {
+            s.files.create_take(&mut s.scratch).map(|id| id as i32)
+        } else {
+            s.files.create(&s.scratch).map(|id| id as i32)
+        }
     })
 }
 #[no_mangle]
@@ -181,12 +187,17 @@ pub extern "C" fn files_load_finish(id: u32, operation: u32, outcome: u32) -> i3
             return Err(Error::BadCompletion);
         }
         s.input = false;
-        s.files.load_finish(
-            id,
-            operation,
-            success,
-            if success { &s.scratch } else { &[] },
-        )?;
+        if success && s.scratch.capacity() == s.scratch.len() {
+            s.files
+                .load_finish_take(id, operation, true, &mut s.scratch)?;
+        } else {
+            s.files.load_finish(
+                id,
+                operation,
+                success,
+                if success { &s.scratch } else { &[] },
+            )?;
+        }
         if success {
             s.files.size(id).map(|n| n as i32)
         } else {

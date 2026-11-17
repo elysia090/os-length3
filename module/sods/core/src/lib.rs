@@ -1,7 +1,8 @@
 //! Portable execution-core contracts, independent of host and distribution glue.
 //!
-//! This first unit validates the private byte-effect representation. It does not
-//! yet implement the kernel, allocate exported slots, or enforce mapping pins.
+//! Byte-effect validation, owned regular-file payloads/lazy attempts and read
+//! leases. Namespace, process/FD state and mapping-pin enforcement remain outside
+//! this crate; these slices are not a complete migrated kernel.
 pub mod byte_effect;
 pub mod files;
 pub mod pending_read;

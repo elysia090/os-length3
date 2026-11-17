@@ -567,3 +567,42 @@ same boundary. No settings bypass or desktop/PC takeover was used. Real browser
 cold/warm cache, generation changes and missing-core behavior remain unverified;
 passing Node/Worker-handler tests are not substituted for those results. The
 experimental browser harness is not part of the committed regression suite.
+
+### Input ownership transfer (ABI4 semantics retained)
+
+New-file creation and a successful lazy completion can adopt the already-written
+input scratch allocation. Admission checks precede ownership transfer. Creation
+failure leaves the native caller's Vec intact. Lazy completion shares the existing
+validation/retirement helper: stale completion cannot retire another attempt;
+matching failure/poison retires for retry without publishing; a closed file rejects.
+Only the successful payload-producing step takes the Vec. Existing borrowed callers
+retain the copying path and the same failure semantics.
+
+The Wasm adapter chooses transfer only when scratch capacity equals length. A large
+historical scratch allocation followed by a small file instead takes the existing
+copy path, so the optimization does not pin that excess capacity into every small
+inode. This is Vec's reported capacity, not a claim about allocator size classes or
+RSS. A transfer empties scratch and consumes its input permission; subsequent input
+or reads obtain scratch independently. A rejected attempted completion still consumes
+the ABI input permission as before, while retaining the buffer. Read leases continue
+to prohibit competing mutations. Raw exported memory remains an unsafe private ABI:
+a caller retaining writable views across mutations is not a supported embedding.
+
+For n bytes entering the core facade, successful exact-capacity transfer removes the
+scratch-to-canonical n-byte copy. The facade's host snapshot and host-to-Wasm copy
+remain, so this portion changes from 3n to 2n copied bytes, not zero. Scope.writeFile
+may make an additional host capture, and pack decoding/integrity, read scratch,
+mapping baselines and output are separate costs. Write-in-place still copies. A new
+scratch allocation may be needed after transfer. `files_input` zero-initializes new
+scratch before the host fills it. For repeated equal-size inputs that previously
+reused scratch, those n zero writes can replace the removed n copy writes; copied-byte
+reduction alone is not a reduction of all memory traffic. Transfer avoids coexistence
+of separate scratch and newly copied payload at publication, but other live files,
+allocator retention and read scratch still count. Allocator work and process RSS are
+not inferred from copied-byte counts. The high-capacity fallback still uses 3n.
+
+Native tests verify pointer preservation (no payload relocation), empty/oversize
+input, borrowed/taken failure parity and retry. Actual Wasm tests verify scratch
+consumption, high-water fallback, stale/poison completion and independent inodes.
+This is evidence for the selected ownership mechanism, not a measured application
+speedup or proof that the whole runtime reaches a universal resource lower bound.

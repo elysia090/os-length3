@@ -97,3 +97,44 @@ test('previous files ABI is rejected rather than assumed compatible', async () =
   ]));
   await assert.rejects(loadCoreFiles(module, 8), /Unsupported core files ABI/);
 });
+
+test('real core transfers exact input scratch, consumes preparation, and avoids retaining oversized scratch per file', {skip: !wasm}, () => {
+  const exports = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(wasm!)), {}).exports;
+  const call = (name: string, ...args: number[]) => (exports[name] as (...n: number[]) => number)(...args);
+  const memory = exports.memory as WebAssembly.Memory;
+  const input = (text: string) => { const bytes=enc.encode(text); assert.equal(call('files_input',bytes.length),0);new Uint8Array(memory.buffer,call('files_ptr'),bytes.length).set(bytes); };
+  const read = (id: number) => { const op=call('files_read_begin',id,0,64);assert.ok(op>0);const length=call('files_len'),value=dec.decode(new Uint8Array(memory.buffer,call('files_ptr'),length));assert.equal(call('files_read_finish',op,0,length),length);return value; };
+  assert.equal(call('files_init',64),0);
+  input('first'); const first=call('files_create');assert.ok(first>0);
+  assert.equal(call('files_len'),0); // The selected allocator's exact allocation was transferred.
+  assert.equal(call('files_create'),-1); // No reusable input permission remains.
+  input('other');const second=call('files_create');assert.ok(second>first);
+  assert.equal(read(first),'first');assert.equal(read(second),'other');
+  assert.equal(call('files_input',64),0);input('x');const small=call('files_create');
+  assert.equal(call('files_len'),1); // Oversized capacity remains reusable scratch, not a tiny inode's backing.
+  assert.equal(read(small),'x');assert.equal(read(first),'first');
+});
+
+test('real core lazy scratch transfer preserves stale/poison retry and independent payloads', {skip: !wasm}, () => {
+  const exports = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(wasm!)), {}).exports;
+  const call = (name: string, ...args: number[]) => (exports[name] as (...n: number[]) => number)(...args);
+  const memory = exports.memory as WebAssembly.Memory;
+  const input = (text: string) => {const b=enc.encode(text);assert.equal(call('files_input',b.length),0);new Uint8Array(memory.buffer,call('files_ptr'),b.length).set(b);};
+  assert.equal(call('files_init',64),0);
+  const id=call('files_create_lazy',1,0), op=call('files_load_begin',id);
+  input('abc');assert.equal(call('files_load_finish',id,op+1,0),-7);
+  assert.equal(call('files_len'),3); // Rejected completion did not move scratch.
+  // ABI input permission is consumed on an attempted completion, as before.
+  assert.equal(call('files_load_finish',id,op,0),-7);
+  input('abc');assert.equal(call('files_load_finish',id,op,0),3);assert.equal(call('files_len'),0);
+  const other=call('files_create_lazy',2,0), next=call('files_load_begin',other);
+  input('def');assert.equal(call('files_load_check',other),-8);
+  assert.equal(call('files_load_finish',other,next,0),-8);assert.equal(call('files_len'),3);
+  const retry=call('files_load_begin',other);assert.ok(retry>next);
+  input('def');assert.equal(call('files_load_finish',other,retry,0),3);assert.equal(call('files_len'),0);
+  for(const [file,text] of [[id,'abc'],[other,'def']] as const) {
+    const read=call('files_read_begin',file,0,3);
+    assert.equal(dec.decode(new Uint8Array(memory.buffer,call('files_ptr'),3)),text);
+    assert.equal(call('files_read_finish',read,0,3),3);
+  }
+});

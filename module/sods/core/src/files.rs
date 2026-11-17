@@ -57,6 +57,24 @@ impl Files {
         }));
         Ok(self.files.len() as u32)
     }
+    /// Transfer one already-owned payload only after all fallible admission work.
+    /// On failure the caller retains its buffer, pointer and capacity unchanged.
+    pub fn create_take(&mut self, input: &mut Vec<u8>) -> Result<u32, Error> {
+        if input.len() > self.max_file {
+            return Err(Error::TooLarge);
+        }
+        if self.files.len() >= i32::MAX as usize {
+            return Err(Error::Exhausted);
+        }
+        self.files.try_reserve(1).map_err(|_| Error::NoMemory)?;
+        let logical_size = input.len();
+        self.files.push(Some(Slot {
+            bytes: std::mem::take(input),
+            logical_size,
+            source: None,
+        }));
+        Ok(self.files.len() as u32)
+    }
     fn slot_mut(&mut self, id: u32) -> Result<&mut Slot, Error> {
         self.files
             .get_mut(id.wrapping_sub(1) as usize)
@@ -137,6 +155,36 @@ impl Files {
         success: bool,
         input: &[u8],
     ) -> Result<(), Error> {
+        self.finish_payload(id, operation, success, input.len(), || {
+            let mut bytes = Vec::new();
+            bytes
+                .try_reserve_exact(input.len())
+                .map_err(|_| Error::NoMemory)?;
+            bytes.extend_from_slice(input);
+            Ok(bytes)
+        })
+    }
+    /// A rejected/stale completion never consumes input. A matching failed or
+    /// poisoned attempt retires exactly as the borrowed completion does.
+    pub fn load_finish_take(
+        &mut self,
+        id: u32,
+        operation: u32,
+        success: bool,
+        input: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        self.finish_payload(id, operation, success, input.len(), || {
+            Ok(std::mem::take(input))
+        })
+    }
+    fn finish_payload(
+        &mut self,
+        id: u32,
+        operation: u32,
+        success: bool,
+        length: usize,
+        payload: impl FnOnce() -> Result<Vec<u8>, Error>,
+    ) -> Result<(), Error> {
         let limit = self.max_file;
         let slot = self.slot_mut(id)?;
         let source = slot.source.as_mut().ok_or(Error::BadCompletion)?;
@@ -151,16 +199,11 @@ impl Files {
         if poisoned {
             return Err(Error::LoadConflict);
         }
-        if input.len() > limit {
+        if length > limit {
             return Err(Error::TooLarge);
         }
-        let mut bytes = Vec::new();
-        bytes
-            .try_reserve_exact(input.len())
-            .map_err(|_| Error::NoMemory)?;
-        bytes.extend_from_slice(input);
-        slot.bytes = bytes;
-        slot.logical_size = input.len();
+        slot.bytes = payload()?;
+        slot.logical_size = length;
         source.loaded = true;
         Ok(())
     }
@@ -240,6 +283,91 @@ impl Files {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn take_creation_preserves_allocation_and_rejected_input() {
+        let mut f = Files::new(8);
+        let mut input = b"owned".to_vec();
+        let pointer = input.as_ptr();
+        let id = f.create_take(&mut input).unwrap();
+        assert_eq!(input.capacity(), 0);
+        assert_eq!(f.read(id, 0, 8).unwrap().as_ptr(), pointer);
+        assert_eq!(f.read(id, 0, 8).unwrap(), b"owned");
+        let mut large = vec![1; 9];
+        let pointer = large.as_ptr();
+        assert_eq!(f.create_take(&mut large), Err(Error::TooLarge));
+        assert_eq!(large.as_ptr(), pointer);
+        assert_eq!(large.len(), 9);
+        assert_eq!(f.size(id), Ok(5));
+        let empty = f.create_take(&mut Vec::new()).unwrap();
+        assert_eq!(f.size(empty), Ok(0));
+    }
+    #[test]
+    fn borrowed_and_taken_lazy_completions_share_failure_and_retry_contract() {
+        for take in [false, true] {
+            let mut f = Files::new(8);
+            let id = f.create_lazy(1, 3).unwrap();
+            let op = f.load_begin(id).unwrap();
+            let mut input = b"new".to_vec();
+            let pointer = input.as_ptr();
+            let finish = |f: &mut Files, operation, success, input: &mut Vec<u8>| {
+                if take {
+                    f.load_finish_take(id, operation, success, input)
+                } else {
+                    f.load_finish(id, operation, success, input)
+                }
+            };
+            assert_eq!(
+                finish(&mut f, op + 1, true, &mut input),
+                Err(Error::BadCompletion)
+            );
+            assert_eq!(input.as_ptr(), pointer);
+            assert_eq!(f.load_check(id), Err(Error::LoadConflict)); // poisons only matching active attempt
+            assert_eq!(
+                finish(&mut f, op, true, &mut input),
+                Err(Error::LoadConflict)
+            );
+            assert_eq!(input, b"new");
+            let op = f.load_begin(id).unwrap();
+            assert_eq!(finish(&mut f, op, false, &mut input), Ok(()));
+            assert_eq!(input, b"new");
+            let op = f.load_begin(id).unwrap();
+            assert_eq!(
+                finish(&mut f, op, true, &mut vec![1; 9]),
+                Err(Error::TooLarge)
+            );
+            let op = f.load_begin(id).unwrap();
+            assert_eq!(finish(&mut f, op, true, &mut input), Ok(()));
+            assert_eq!(f.read(id, 0, 8).unwrap(), b"new");
+            if take {
+                assert_eq!(input.capacity(), 0);
+                assert_eq!(f.read(id, 0, 8).unwrap().as_ptr(), pointer);
+            } else {
+                assert_eq!(input, b"new");
+            }
+            f.release(id).unwrap();
+            let op = f.load_begin(id).unwrap();
+            f.close(id).unwrap();
+            let mut last = b"last".to_vec();
+            assert_eq!(finish(&mut f, op, true, &mut last), Err(Error::BadHandle));
+            assert_eq!(last, b"last");
+        }
+    }
+    #[test]
+    fn allocation_failure_after_matching_completion_retires_for_retry() {
+        let mut f = Files::new(8);
+        let id = f.create_lazy(1, 3).unwrap();
+        let op = f.load_begin(id).unwrap();
+        assert_eq!(
+            f.finish_payload(id, op, true, 3, || Err(Error::NoMemory)),
+            Err(Error::NoMemory)
+        );
+        assert_eq!(f.size(id), Ok(3));
+        let next = f.load_begin(id).unwrap();
+        assert_ne!(next, op);
+        f.load_finish_take(id, next, true, &mut b"ok".to_vec())
+            .unwrap();
+        assert_eq!(f.read(id, 0, 8).unwrap(), b"ok");
+    }
     #[test]
     fn reload_preserves_source_and_logical_size_but_not_residency() {
         let mut f = Files::new(8);
