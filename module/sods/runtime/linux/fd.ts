@@ -7,6 +7,13 @@ declare module './fs.ts' {
   interface Fifo { pipe: Pipe | null }
 }
 
+/** Preserve a single failure's identity; multiple independent failures remain visible. */
+function retirementFailed(errors: unknown[] | undefined): void {
+  if (!errors?.length) return;
+  if (errors.length === 1) throw errors[0];
+  throw new AggregateError(errors, 'Descriptor retirement failed');
+}
+
 /** Bytes a write of at most this many lands whole or not at all (POSIX PIPE_BUF). */
 export const PIPE_BUF = 4096;
 /** A pipe's room, as Linux gives one (16 pages); F_SETPIPE_SZ changes it. */
@@ -207,6 +214,7 @@ export class Description {
   }
   retain(): this { this.refs++; return this; }
   release(): void {
+    if (this.closed) return; // A terminal callback may reenter release.
     if (--this.refs > 0) {
       // A local socket still held, perhaps only by descriptors in flight that no one can receive any more (sys-net.ts).
       if (this.kind === 'socket') this.sock?.released();
@@ -214,12 +222,16 @@ export class Description {
     }
     this.closed = true;
     if (this.mnt) this.mnt.refs--;
-    this.gone?.();
-    unflock(this);
-    if (this.pipe && (this.kind === 'pipe-r' || this.kind === 'pipe-rw')) { this.pipe.readers--; this.pipe.changes++; }
-    if (this.pipe && (this.kind === 'pipe-w' || this.kind === 'pipe-rw')) { this.pipe.writers--; this.pipe.changes++; }
-    // A local socket's last descriptor gone: it is closed (sys-net.ts).
-    if (this.kind === 'socket') this.sock?.close();
+    let errors: unknown[] | undefined;
+    try { this.gone?.(); } catch (error) { (errors ??= []).push(error); }
+    try { unflock(this); } catch (error) { (errors ??= []).push(error); }
+    try { if (this.pipe && (this.kind === 'pipe-r' || this.kind === 'pipe-rw')) { this.pipe.readers--; this.pipe.changes++; } }
+    catch (error) { (errors ??= []).push(error); }
+    try { if (this.pipe && (this.kind === 'pipe-w' || this.kind === 'pipe-rw')) { this.pipe.writers--; this.pipe.changes++; } }
+    catch (error) { (errors ??= []).push(error); }
+    // A local socket's last descriptor gone: it is closed even if another finalizer failed.
+    try { if (this.kind === 'socket') this.sock?.close(); } catch (error) { (errors ??= []).push(error); }
+    retirementFailed(errors);
   }
 }
 
@@ -305,6 +317,17 @@ export class FdTable {
     return mine;
   }
   /** exec closes descriptors marked close-on-exec. */
-  exec(): void { for (const [fd, s] of [...this.slots]) if (s.cloexec) this.close(fd); }
-  closeAll(): void { for (const fd of [...this.slots.keys()]) this.close(fd); }
+  exec(): void { this.retireSlots(true); }
+  closeAll(): void { this.retireSlots(false); }
+  private retireSlots(cloexec: boolean): void {
+    let errors: unknown[] | undefined;
+    // A callback can close/reuse a later fd. Retire the selected slot identities,
+    // never a newly installed description merely sharing their old number.
+    const selected = [...this.slots].filter(([, slot]) => !cloexec || slot.cloexec);
+    for (const [fd, slot] of selected) {
+      if (this.slots.get(fd) !== slot) continue;
+      try { this.close(fd); } catch (error) { (errors ??= []).push(error); }
+    }
+    retirementFailed(errors);
+  }
 }

@@ -231,3 +231,30 @@ or long-lived default is enabled until these ownership transitions are connected
 The capture regression also passes the former cached-view behavior; it protects
 functional compatibility, not a measurement of reference collection. Removal of
 the pending edge is established by the explicit nullable state change in source.
+
+## Descriptor retirement is not inode destruction
+
+The next bounded step uses existing explicit retirement, not a new root counter.
+Description terminal release now marks closed before callbacks and is idempotent
+on reentry. Each independent finalizer is attempted despite another failing;
+multiple failures are reported together, with a single original error preserved.
+FdTable closeAll/exec capture slot identities, attempt all selected retirements,
+and report failures afterwards. A finalizer may close and reuse a later fd number;
+that newly installed slot is not part of the original selection and is not closed
+by mistake. No unbounded loop tries to drain arbitrary callback-created slots.
+
+This preserves dup/shared-table ownership: no final release before the last real
+Description reference and last table holder. Existing SCM_RIGHTS retain/release
+and cycle handling still apply. It does not clear a closed Description's raw node
+field, close any File payload, or claim that a caller retaining a raw Description
+has relinquished it. Namespace/mapping/image/source and external roots are separate.
+The change adds only slot-identity snapshot checking and lazy error arrays; it adds
+no payload scan/copy and does not change syscall lookup into Rust. Aggregate errors
+are an exceptional outcome, not silent successful retirement.
+
+Process-level cleanup remains a separate gate: exitProcess marks a process zombie
+before unmapShared and subsequent fd cleanup; a failing dirty publication can still
+interrupt that wider sequence. Making fd-table finalizers robust alone does not
+prove process/tree quiescence or authorize managed/default inode reclamation.
+An attempted finalizer can itself stop partway (for example inside socket.close);
+this step does not repair every nested finalizer or certify complete drain.
