@@ -812,12 +812,16 @@ export class Vfs {
     return new File(bytes, mode);
   }
 
+  /** Internal creation transaction; legacy raw createFile remains scope-owned. */
+  prepareFile(bytes: Uint8Array = new Uint8Array(0), mode = 0o644): PendingFile {
+    return new PendingFile(this.createFile(bytes, mode));
+  }
+
   writeFile(path: string, bytes: Uint8Array | string, mode = 0o644): File {
     const at = path.lastIndexOf('/');
     const dir = this.mkdirp(path.slice(0, at));
-    const file = this.createFile(typeof bytes === 'string' ? new TextEncoder().encode(bytes) : bytes, mode);
-    dir.entries.set(path.slice(at + 1), file);
-    return file;
+    const pending = this.prepareFile(typeof bytes === 'string' ? new TextEncoder().encode(bytes) : bytes, mode);
+    return pending.publish(dir, path.slice(at + 1));
   }
 
   /** The file at `path` (as readFile fails where something else is). */
@@ -864,8 +868,37 @@ export function detach(m: Mount): void {
   m.parent = m.point = m.pointDir = null;
 }
 
+/** Internal creation owner. A failed unpublished value is invalid; successful
+ * namespace publication transfers ownership and cannot be undone by abort.
+ * Publication must not move the value elsewhere and then throw. */
+export class PendingFile {
+  private state: 'pending' | 'published' | 'aborted' = 'pending';
+  readonly file: File;
+  private readonly retire: () => void;
+  constructor(file: File, retire: () => void = () => {}) { this.file = file; this.retire = retire; }
+  publish(dir: Dir, name: string): File {
+    if (this.state !== 'pending') throw new Error('File creation is already resolved');
+    try {
+      dir.entries.set(name, this.file);
+      this.state = 'published';
+      return this.file;
+    } catch (error) { return this.reject(error); }
+  }
+  /** Fail preparation or publication without hiding a retirement failure. */
+  reject(error: unknown): never {
+    try { this.abort(); }
+    catch (cleanup) { throw new AggregateError([error, cleanup], 'File creation and retirement failed'); }
+    throw error;
+  }
+  abort(): void {
+    if (this.state !== 'pending') return;
+    this.state = 'aborted';
+    this.retire();
+  }
+}
+
 /** Image mounting through ordinary file operations, supplied by the caller to an image reader. */
-export type MountedFileFactory = (mode: number, size: number, read: () => Uint8Array) => File;
+export type MountedFileFactory = (mode: number, size: number, read: () => Uint8Array) => File | PendingFile;
 export function mountTarget(vfs: Vfs, makeFile: MountedFileFactory = (mode, size, read) => {
   const file = new File(new Uint8Array(0), mode, read); file.size = size; return file;
 }) {
@@ -882,10 +915,9 @@ export function mountTarget(vfs: Vfs, makeFile: MountedFileFactory = (mode, size
     symlink(target: string, path: string): void { vfs.symlink(target, path); },
     file(path: string, mode: number, size: number, read: () => Uint8Array, origin: string): File {
       const [dir, name] = place(path);
-      const file = makeFile(mode, size, read);
-      file.origin = origin;
-      dir.entries.set(name, file);
-      return file;
+      const made = makeFile(mode, size, read), pending = made instanceof PendingFile ? made : new PendingFile(made);
+      try { pending.file.origin = origin; return pending.publish(dir, name); }
+      catch (error) { return pending.reject(error); }
     },
     hardlink(file: File, path: string): void {
       const [dir, name] = place(path);

@@ -65,3 +65,33 @@ test('explicit lazy creation retires its source when namespace publication is re
     assert.equal(loads, 0); assert.equal(dir.entries.has('refused'), false);
   } finally { dir.entries.set = set; scope.dispose(); }
 });
+
+for (const route of ['writeFile', 'open', 'mknod', 'mount'] as const) {
+  test(`pending Rust inode is retired on rejected ${route} publication`, {skip: !wasm}, async () => {
+    const scope = await loadFileScope(readFileSync(wasm!), 8), vfs = scope.createVfs(), p = processFor(vfs), dir = vfs.dir('/tmp');
+    const set = dir.entries.set; let rejected: ReturnType<Vfs['writeFile']> | undefined, loads = 0;
+    dir.entries.set = function(_name, node) { rejected = node as typeof rejected; throw Error('entry refused'); };
+    p.bytes.set(enc.encode('/tmp/refused\0'), 1024);
+    try {
+      assert.throws(() => {
+        if (route === 'writeFile') vfs.writeFile('/tmp/refused', 'abc');
+        if (route === 'open') call(p, 2, 1024, 0x42, 0o600);
+        if (route === 'mknod') call(p, 133, 1024, 0o100600, 0);
+        if (route === 'mount') scope.mountTarget(vfs).file('/tmp/refused', 0o644, 3, () => { loads++; return enc.encode('abc'); }, 'fixture');
+      }, /entry refused/);
+      assert.ok(rejected); assert.throws(() => rejected!.bytes(), /closed/);
+      assert.equal(loads, 0); assert.equal(dir.entries.has('refused'), false);
+    } finally { dir.entries.set = set; scope.dispose(); }
+  });
+}
+
+test('a published inode survives failure of the later open operation', {skip: !wasm}, async () => {
+  const scope = await loadFileScope(readFileSync(wasm!), 8), vfs = scope.createVfs(), p = processFor(vfs);
+  try {
+    p.bytes.set(enc.encode('/tmp/created\0'), 1024);
+    // Preserve current runtime semantics: publication precedes O_DIRECTORY check.
+    assert.equal(call(p, 2, 1024, 0x40 | 0x10000, 0o600), -20n);
+    const file = vfs.file('/tmp/created'); file.write(0, enc.encode('ok'));
+    assert.equal(dec.decode(file.bytes()), 'ok');
+  } finally { scope.dispose(); }
+});

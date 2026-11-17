@@ -3,7 +3,7 @@
  */
 import {CoreFileError, loadCoreFiles, type CoreFile} from '../core/files.ts';
 import {epoch} from '../host.ts';
-import {File, Vfs, E, FsError, FILE_MOST, counted, mountTarget, type Mapping} from './fs.ts';
+import {File, PendingFile, Vfs, E, FsError, FILE_MOST, counted, mountTarget, type Mapping} from './fs.ts';
 
 function payload<T>(action: () => T): T {
   try { return action(); }
@@ -155,10 +155,13 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
       held.set(file, inode); return {file, inode};
     } catch (error) { held.delete(file); file.close(); throw error; }
   };
+  const pending = ({file, inode}: {file: CoreFile; inode: OwnedFile}): PendingFile =>
+    new PendingFile(inode, () => { held.delete(file); file.close(); });
   // This concrete policy does not invoke an embedding factory callback. It owns
   // payload placement only; pathname/mount/permission semantics remain in Vfs.
   class ScopedVfs extends Vfs {
     override createFile(bytes: Uint8Array = new Uint8Array(0), mode = 0o644): File { return create(bytes, mode).inode; }
+    override prepareFile(bytes: Uint8Array = new Uint8Array(0), mode = 0o644): PendingFile { return pending(create(bytes, mode)); }
     override writeFile(path: string, input: Uint8Array | string, mode = 0o644): File {
       live();
       const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
@@ -171,23 +174,19 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
      * this scope until dispose, including unlinked/replaced inodes. */
     createVfs(): Vfs { live(); return new ScopedVfs(); },
     /** All pack files use this scope, without coupling the pack reader to Rust. */
-    mountTarget(vfs: Vfs) { live(); return mountTarget(vfs, (mode, size, read) => lazy(mode, size, read).inode); },
+    mountTarget(vfs: Vfs) { live(); return mountTarget(vfs, (mode, size, read) => pending(lazy(mode, size, read))); },
     writeFile(vfs: Vfs, path: string, input: Uint8Array | string, mode = 0o644): File {
       live();
       const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
       if (bytes.length > maxFileBytes) throw new FsError(E.FBIG);
       const at = path.lastIndexOf('/'), dir = vfs.mkdirp(path.slice(0, at));
-      const {file, inode} = create(bytes, mode);
-      try { dir.entries.set(path.slice(at + 1), inode); return inode; }
-      catch (error) { held.delete(file); file.close(); throw error; }
+      return pending(create(bytes, mode)).publish(dir, path.slice(at + 1));
     },
     /** Explicit lazy entrance. Rust owns source/attempt state; TS keeps only the host capability. */
     lazyFile(vfs: Vfs, path: string, loader: () => Uint8Array, mode = 0o644): File {
       live();
       const at = path.lastIndexOf('/'), dir = vfs.mkdirp(path.slice(0, at));
-      const {file, inode} = lazy(mode, 0, loader);
-      try { dir.entries.set(path.slice(at + 1), inode); return inode; }
-      catch (error) { held.delete(file); file.close(); throw error; }
+      return pending(lazy(mode, 0, loader)).publish(dir, path.slice(at + 1));
     },
     dispose(): void {
       if (closed) return;

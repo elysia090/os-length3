@@ -46,9 +46,16 @@ successfully created file. Explicit writeFile already aborts rejected publicatio
 explicit lazyFile now follows the same rule and retires its source callback.
 This covers rejection before insertion. An embedding override that inserts or
 moves the inode and then throws is not a supported transactional publication
-contract. General O_CREAT/mknod, scoped Vfs.writeFile and pack mounting still need
-one common owned publication entrance before long-lived defaults. Avoid adding
-arbitrary host callbacks inside that core operation.
+contract. O_CREAT/regular mknod, scoped Vfs.writeFile and pack mounting now use the same
+internal PendingFile transaction as explicit writeFile/lazyFile. PendingFile is
+not added to the public linux entrance. The legacy factory still returns a File
+and is wrapped without taking away its existing owner; the Rust factory carries
+a retirement action. abort changes state before cleanup, is idempotent, and
+cannot retire a successfully published file. Publication plus cleanup failure
+preserves both errors. This proves neither reference ownership after publication
+nor safety of arbitrary overriding createFile implementations. The transaction adds
+one O(1) short-lived host owner object per creation, without scanning other inodes
+or copying payload bytes. It does not lower the scope's published-inode retention.
 
 Then implement the managed root transitions, including install-before-release
 for rename/mapping split, pending read ownership through cancellation, and
@@ -81,3 +88,27 @@ These gates apply to independent sods and ricebox equally. memfd/SCM_RIGHTS and
 shared anonymous mapping remain separate admission/lifetime work. They matter
 for a future guest Wayland buffer path, but do not prove native everyday session
 compatibility or turn terminal artwork into a product architecture requirement.
+
+## Managed entrance and slot-index decisions still to make
+
+A future managed caller must not obtain Vfs, File, Kernel.images or mutable
+namespace Maps. Its commands should return copied data or explicit owner handles;
+closing a handle invalidates it, not a file still owned by another handle/name/map.
+The worker owns the session; separate sessions sharing a tree acquire a tree owner
+before use and release it after their operations, mappings and images finish.
+Admission failure cannot publish a half-open handle. A delayed load completion
+must carry both inode identity and operation identity, not just a recycled slot.
+Legacy raw escape is sticky, not undone by closing an unrelated managed handle.
+This entrance is a proposal, not a second runtime API implemented in this change.
+
+For C total creations and L currently live payloads, the present slot vector uses
+O(C) records even if every close succeeds. Live-only monotonic-ID indexing can use
+O(L) records with no stale-ID alias, but still exhausts the finite ID space and
+changes lookup cost. A reusable slot plus generation can use O(L) active records
+only if historical vacant slots can be bounded; a monotonically growing vacant
+list still has a high water. Generation wrap must reject rather than alias an old
+handle, so finite-width reuse does not permit unlimited churn. Any index strategy
+must also preserve pending-read/load identities and stale completion rejection.
+No new public promise of unlimited operation or shrinking Wasm memory follows.
+The next comparison must include these retained metadata costs and failure modes,
+not select reuse solely because a counter test reports fewer allocated payloads.
