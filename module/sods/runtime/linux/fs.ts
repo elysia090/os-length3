@@ -806,10 +806,16 @@ export class Vfs {
     return at.node as Dir;
   }
 
+  /** New ordinary file payload under this tree's creation policy. Devices,
+   * generated files and anonymous-memory mappings retain their own contracts. */
+  createFile(bytes: Uint8Array = new Uint8Array(0), mode = 0o644): File {
+    return new File(bytes, mode);
+  }
+
   writeFile(path: string, bytes: Uint8Array | string, mode = 0o644): File {
     const at = path.lastIndexOf('/');
     const dir = this.mkdirp(path.slice(0, at));
-    const file = new File(typeof bytes === 'string' ? new TextEncoder().encode(bytes) : bytes, mode);
+    const file = this.createFile(typeof bytes === 'string' ? new TextEncoder().encode(bytes) : bytes, mode);
     dir.entries.set(path.slice(at + 1), file);
     return file;
   }

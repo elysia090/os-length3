@@ -298,7 +298,7 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
     if (!(f & O.CREAT)) return -E.NOENT;
     if (ending(name).slash) fail(E.ISDIR);
     const dir = making(p, r);
-    node = owned(p, dir, new File(new Uint8Array(0), N(mode) & ~p.umask & 0o7777));
+    node = owned(p, dir, p.kernel.vfs.createFile(new Uint8Array(0), N(mode) & ~p.umask & 0o7777));
     dir.entries.set(r.name, node);
     made = true;
   } else if ((f & O.CREAT) && (f & O.EXCL)) {
@@ -955,7 +955,7 @@ function makeNode(p: Proc, dirfd: bigint, address: bigint, mode: bigint, dev: bi
   // (a device's number as mknod is given it: its major above its minor's low byte, the rest of its minor above that)
   const d = Number(BigInt.asUintN(64, dev)), rdev = ((d >>> 8) & 0xfff) << 8 | (d & 0xff) | ((Math.floor(d / 4096) & 0xfff00) << 8);
   const node = type === S_IFIFO ? new Fifo(perm) : type === S_IFSOCK ? new SocketName(perm) : type === S_IFCHR || type === S_IFBLK ? device(rdev, perm, type === S_IFBLK)
-    : new File(new Uint8Array(0), perm);
+    : p.kernel.vfs.createFile(new Uint8Array(0), perm);
   dir.entries.set(r.name, owned(p, dir, node));
   return 0;
 }

@@ -146,7 +146,30 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
       held.set(file, inode); return inode;
     } catch (e) { file.close(); throw e; }
   };
+  const create = (bytes: Uint8Array, mode: number): {file: CoreFile; inode: OwnedFile} => {
+    live();
+    if (bytes.length > maxFileBytes) throw new FsError(E.FBIG);
+    const file = payload(() => store.create(bytes));
+    try {
+      const inode = new OwnedFile(file, bytes.length, mode, live, maxFileBytes);
+      held.set(file, inode); return {file, inode};
+    } catch (error) { held.delete(file); file.close(); throw error; }
+  };
+  // This concrete policy does not invoke an embedding factory callback. It owns
+  // payload placement only; pathname/mount/permission semantics remain in Vfs.
+  class ScopedVfs extends Vfs {
+    override createFile(bytes: Uint8Array = new Uint8Array(0), mode = 0o644): File { return create(bytes, mode).inode; }
+    override writeFile(path: string, input: Uint8Array | string, mode = 0o644): File {
+      live();
+      const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+      if (bytes.length > maxFileBytes) throw new FsError(E.FBIG);
+      return super.writeFile(path, bytes, mode);
+    }
+  }
   return {
+    /** Explicit finite-lifetime tree. All its path-created regular files stay in
+     * this scope until dispose, including unlinked/replaced inodes. */
+    createVfs(): Vfs { live(); return new ScopedVfs(); },
     /** All pack files use this scope, without coupling the pack reader to Rust. */
     mountTarget(vfs: Vfs) { live(); return mountTarget(vfs, lazy); },
     writeFile(vfs: Vfs, path: string, input: Uint8Array | string, mode = 0o644): File {
@@ -154,13 +177,9 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
       const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
       if (bytes.length > maxFileBytes) throw new FsError(E.FBIG);
       const at = path.lastIndexOf('/'), dir = vfs.mkdirp(path.slice(0, at));
-      const file = payload(() => store.create(bytes));
-      try {
-        const inode = new OwnedFile(file, bytes.length, mode, live, maxFileBytes);
-        held.set(file, inode);
-        dir.entries.set(path.slice(at + 1), inode);
-        return inode;
-      } catch (e) { held.delete(file); file.close(); throw e; }
+      const {file, inode} = create(bytes, mode);
+      try { dir.entries.set(path.slice(at + 1), inode); return inode; }
+      catch (error) { held.delete(file); file.close(); throw error; }
     },
     /** Explicit lazy entrance. Rust owns source/attempt state; TS keeps only the host capability. */
     lazyFile(vfs: Vfs, path: string, loader: () => Uint8Array, mode = 0o644): File {

@@ -40,15 +40,15 @@ test('installed package runs real ELF inline and in Node CPU Worker with explici
   const work=mkdtempSync(join(tmpdir(),'sods-execution-'));
   try {
     const consumer=unpack(work);
-    writeFileSync(join(work,'exit.s'),'.global _start\n.text\n_start:\n mov $60,%rax\n mov $42,%rdi\n syscall\n');
+    writeFileSync(join(work,'exit.s'),'.global _start\n.text\n_start:\n mov $2,%rax\n lea path(%rip),%rdi\n mov $66,%rsi\n mov $420,%rdx\n syscall\n mov %rax,%r12\n mov %rax,%rdi\n mov $1,%rax\n lea message(%rip),%rsi\n mov $3,%rdx\n syscall\n mov $3,%rax\n mov %r12,%rdi\n syscall\n mov $60,%rax\n mov $42,%rdi\n syscall\n.section .rodata\npath: .asciz "/created"\nmessage: .ascii "new"\n');
     execFileSync('cc',['-nostdlib','-static','-Wl,--build-id=none',join(work,'exit.s'),'-o',join(work,'exit')]);
     writeFileSync(join(consumer,'run.mjs'),`
       import assert from 'node:assert/strict'; import {readFileSync} from 'node:fs';
-      import {Vfs,linux,RemoteKernel,prepareFileCore,loadFileScope} from 'sods/linux';
+      import {linux,RemoteKernel,prepareFileCore,loadFileScope} from 'sods/linux';
       import {loadTranslator} from 'sods/translate';
       const module=await prepareFileCore(readFileSync(${JSON.stringify(core)}),1048576);
       for(const inline of [true,false]) {
-        const scope=await loadFileScope(module,1048576),vfs=new Vfs();
+        const scope=await loadFileScope(module,1048576),vfs=scope.createVfs();
         const file=scope.writeFile(vfs,'/bin/exit',readFileSync(${JSON.stringify(join(work,'exit'))}),0o755);
         const translate=await loadTranslator(readFileSync(${JSON.stringify(translator)}));
         const k=linux({vfs,translate,inline,console:{write(){},read:()=>null}});
@@ -56,6 +56,8 @@ test('installed package runs real ELF inline and in Node CPU Worker with explici
         // spawn drives the selected scheduler, including the RemoteKernel door.
         // Failure destroys this test's child realm, never a live scope in place.
         assert.equal(await k.spawn('/bin/exit',['/bin/exit'],[],'/'),42 << 8);
+        assert.equal(new TextDecoder().decode(vfs.file('/created').bytes()),'new');
+        assert.throws(()=>vfs.file('/created').data);
         scope.dispose();
         assert.throws(()=>file.bytes(),/scope is closed/);
       }

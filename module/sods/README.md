@@ -56,8 +56,8 @@ import {linux, Vfs, prepareFileCore, loadFileScope} from 'sods/linux';
 const translate = await loadTranslator(translatorBytes);
 const module = await prepareFileCore(fileCoreBytes, 16 * 1024 * 1024);
 const scope = await loadFileScope(module, 16 * 1024 * 1024);
-const vfs = new Vfs();
-scope.writeFile(vfs, '/bin/program', programBytes, 0o755);
+const vfs = scope.createVfs();
+vfs.writeFile('/bin/program', programBytes, 0o755);
 const kernel = linux({vfs, translate, inline: true, console: hostConsole});
 const status = await kernel.spawn('/bin/program', ['/bin/program'], [], '/');
 // status is a Linux wait status, not a decoded exit code.
@@ -69,9 +69,16 @@ scope.dispose();
 reusable module. It is neither an integrity check nor a sandbox for untrusted Wasm.
 Each `loadFileScope` creates independent payload ownership; disposing one does not
 dispose another. The selected limit bounds each file's logical size, not all retained
-memory. The scope must outlive the tree's users, not merely one execution. Ordinary
-files created outside the scope still use their existing storage; this interface does
-not claim migration of all kernel/namespace state. There is no implicit fallback when
+memory. `createVfs()` explicitly selects Rust payloads for path-created regular
+files (`writeFile`, guest O_CREAT and regular mknod), including creation through the
+kernel's mounted namespaces. It does not convert existing inodes, devices, generated
+files, memfd or shared-anonymous mappings. A normal `new Vfs()` remains unchanged.
+
+Use a finite-lifetime scope: unlinked and replaced inodes remain retained until its
+disposal, even after fd close. There is no total-byte/count bound or automatic inode
+reclamation yet. This choice is not enabled by default for long-lived ricebox Workers.
+The scope must outlive every user, including other kernels accessing a shared mount;
+this interface does not claim migration of namespace/FD ownership or the whole kernel. There is no implicit fallback when
 an explicitly supplied core is invalid.
 
 The package test extracts the actual tarball and checks its public JavaScript and

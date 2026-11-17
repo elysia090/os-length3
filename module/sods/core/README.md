@@ -606,3 +606,29 @@ input, borrowed/taken failure parity and retry. Actual Wasm tests verify scratch
 consumption, high-water fallback, stale/poison completion and independent inodes.
 This is evidence for the selected ownership mechanism, not a measured application
 speedup or proof that the whole runtime reaches a universal resource lower bound.
+
+### Explicit finite-lifetime regular-file creation
+
+`scope.createVfs()` selects Rust payload creation for host `writeFile` and guest
+O_CREAT/regular mknod in that kernel's pathname namespaces. This is a concrete
+internal Vfs policy, not a callback factory supplied to core syscalls. Default Vfs,
+Worker preparation, devices/Fifo/generated files, memfd and shared-anonymous mmap
+are unchanged. No existing inode is silently converted. Creation through a mounted
+namespace follows the creating kernel/Vfs policy, so the selected scope must outlive
+other kernels or host users that acquire those inodes.
+
+This explicitly advances independent sods use, not whole-kernel ownership. The scope
+still retains unlinked/replaced inodes until disposal; fd close is not inode death.
+There is no aggregate capacity or count budget. Do not enable this by default in a
+long-lived Worker before namespace/FD/mapping/image references and failed unpublished
+creation have deterministic retirement. Shared-anonymous mmap separately needs payload
+admission before its destructive reserve/zero step; memfd/SCM_RIGHTS needs the full
+sender/receiver lifetime contract. Those paths are not opted in by this change.
+
+Tests exercise limit/closed rejection, previous fd after path replacement, regular
+mknod and Fifo exclusion, and failed explicit-helper namespace publication cleanup.
+The independent npm tarball test now executes an ELF doing open/write/close through
+both inline and Node CPU Worker schedulers and verifies the created Rust-backed file.
+It uses the explicitly selected historical translator, not a current-source translator
+build. The full existing runtime suite has separate skipped cases needing unavailable
+compiled programs/toolchains; focused success must not hide those skips.
