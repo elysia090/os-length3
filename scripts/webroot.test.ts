@@ -14,7 +14,7 @@ import {dirname, join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
-import {makeWebroot, standIn} from '../module/ricebox/make/standin.ts';
+import {makeWebroot, standIn} from '../module/ricebox/test/fixtures/distribution.ts';
 import type {Index} from '../module/ricebox/distribution/manifest.ts';
 
 const os = fileURLToPath(new URL('..', import.meta.url));
@@ -103,7 +103,7 @@ test('one entry pins why for both: the root, and the index the browser reads it 
 });
 
 function copyPromptSources(tree: string) {
-  for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'public', 'module/ricebox/runtime', 'module/ricebox/make']) mkdirSync(join(tree, d), {recursive: true});
+  for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'public', 'module/ricebox/runtime', 'module/ricebox/build']) mkdirSync(join(tree, d), {recursive: true});
   // And what both of those check packs by, where the repository has it (module/ricebox/runtime).
   for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'module/ricebox/host/node/tar.ts', 'module/ricebox/host/node/hash.ts', 'module/ricebox/distribution/inventory.ts', 'module/ricebox/distribution/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
     'module/ricebox/distribution/pack.ts']) {

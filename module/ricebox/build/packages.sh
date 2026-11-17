@@ -4,7 +4,7 @@
 # (x86_64-alpine-linux-musl, the root's target), with one libc (Alpine's musl, at the version the root's own musl is
 # made from, with the same security fixes), static, hardened, stripped, and nothing done to it after the linker.
 #
-#   sh module/ricebox/make/build.sh OUT [NAME...]
+#   sh module/ricebox/build/packages.sh OUT [NAME...]
 #
 # Each package is made only when what it is made of changed. Its key is the digest of its recipe, the pins it
 # names, its patches and other inputs, this script, the compiler, linker and libc it is built with, and the keys of
@@ -28,7 +28,7 @@
 #   departs="WHAT..."   what of the hardening every unit is compiled with its own build turns off (stack-protector,
 #                       stack-clash, auto-var-init, fortify), a comment saying why
 #   lifts="SPEC=V..."   crates or Go modules its lockfile holds at versions with advisories, taken to the versions
-#                       their makers fixed them in before it is built (lift.sh), a comment saying which advisories
+#                       their makers fixed them in before it is built (lift-dependencies.sh), a comment saying which advisories
 #   build() { ... }     run in the unpacked source; installs into $dest as the root lays it out (/usr, /etc)
 #   check() { ... }     optional: run after it is made, against what is in $dest (with what it needs in $deps); a
 #                       package that does not do what it is for is not made
@@ -55,8 +55,8 @@ out=$1; shift
 here=$(cd "$(dirname "$0")/.." && pwd)
 recipes="$here/packages"
 pins_file="$here/pins/sources.env"
-. "$here/make/lift.sh"
-. "$here/make/fetch.sh"
+. "$here/build/lift-dependencies.sh"
+. "$here/build/fetch-sources.sh"
 . "$pins_file"
 say() { echo "root-build: $*" >&2; }
 grep -q '^3\.24\.' /etc/alpine-release 2>/dev/null || { say "run on Alpine 3.24 (the root's target)"; exit 2; }
@@ -108,7 +108,7 @@ offered() { apk search -x "$1" | while read -r l; do echo "${l#"$1"-}"; done; }
 libc=$(installed musl-dev)
 case $libc in "$MUSL_VERSION"-r*) ;; *) say "Alpine's musl is ${libc:-not installed}, the root's $MUSL_VERSION: pin them alike"; exit 2 ;; esac
 # What a build's output follows from beyond its recipe: this script, and the compiler, linker, libc and kernel headers.
-machine=$({ cat "$0" "$here/make/lift.sh" "$here/make/fetch.sh"; for p in gcc binutils musl-dev linux-headers make fortify-headers; do echo "$p $(installed "$p")"; done; } |
+machine=$({ cat "$0" "$here/build/lift-dependencies.sh" "$here/build/fetch-sources.sh"; for p in gcc binutils musl-dev linux-headers make fortify-headers; do echo "$p $(installed "$p")"; done; } |
   sha256sum | cut -d' ' -f1)
 
 mkdir -p "$out"

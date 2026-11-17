@@ -2,7 +2,7 @@
 
 As BusyBox is one, and as thin: the root, and the command line #80 lists, ordinary POSIX with no window. This
 folder is all of it: its version (`RELEASE`), what it is made from (`pins/`), a folder per package with its recipe
-and its patches (`packages/NAME/recipe.sh`), its own files (`etc/`, `usr/`), what makes it (`make/`: each
+and its patches (`packages/NAME/recipe.sh`), its own files (`etc/`, `usr/`), what makes it (`build/`: each
 package on one pinned Alpine, then the root and its package database; and the root as layers), the stored distribution format (`distribution/`), the root as a
 page reads and runs it (`runtime/`), and the root where it is used (`src/`: on a device, in a box).
 
@@ -65,8 +65,7 @@ runtime/root-types.ts rather than serialized-manifest types.
 Comparison harnesses live in `verification/`, not in the production runtime or
 package entry points. They consume the distribution readers and execute matched
 native/sods cases. Their child executor is private to those checks. Language workloads are readable
-shell fixtures, fed byte-for-byte to both roots, not host-runner imports. The remaining
-`make/` source-package and npm producers are being reviewed separately:
+shell fixtures, fed byte-for-byte to both roots, not host-runner imports. Package and artifact production stays under `build/`; test fixtures stay outside it:
 
 
 ```
@@ -78,7 +77,7 @@ verification/test/            harness contracts and release-selected file-store 
 build/distribution.ts       root archive converted to packs, blobs and translations
 build/distribution.sh       source-toolchain wrapper; builds translator and box maker
 build/muk-artifact.ts       the box maker put beside the layers (muk.json, a blob)
-make/standin.ts               a small root for tests
+test/fixtures/distribution.ts a small release root and translator for tests
 ```
 
 A release of ricebox is whole without a product: the root, its layers, and beside them `muk` and `sods` (the
@@ -92,8 +91,8 @@ working directory. It does not replace the pins or build the distribution.
 `maintenance/advisories.sh` temporarily extracts pinned Rust/Go sources, applies
 the same dependency lifts as the builder, and queries vulnerability data. It can
 fetch and modify that temporary workspace; it is not a side-effect-free check.
-Both remain separate from package generation and the runtime. Shared build
-source/lift helpers remain under `make/` until their producer contracts are split.
+Both remain separate from package generation and the runtime. The scanner shares `build/lift-dependencies.sh` with `build/packages.sh`, so it
+checks the same dependency adjustments the builder applies.
 
 ## Composition and deployment
 
@@ -149,3 +148,17 @@ with Node; this is not a newly promised standalone JavaScript builder API. The p
 size, compression settings, input cloning and output transfer are unchanged. Its
 error/exit rejection and abnormal-path Worker cleanup remain a separate lifecycle
 limitation; the entry extraction does not claim to fix those failures.
+
+## Source packages and local npm output
+
+`build/packages.sh` produces the pinned source-package cache. Its
+`fetch-sources.sh` helper verifies downloads before replacing cached sources;
+`lift-dependencies.sh` applies recipe-specified dependency updates. Build fingerprints
+include both helper bodies. Moving these sources changes fingerprints, not the
+pinned source versions or the download verification rules.
+
+`build/npm.ts` emits a private local npm directory from the public module closure
+and the required source builders. It neither publishes a registry package nor
+includes maintenance, verification harnesses or `test/fixtures/`. Test fixtures
+supply synthetic archives/translators to both repository and product tests; they
+are not an alternate production builder.

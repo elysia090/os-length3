@@ -63,8 +63,8 @@ muk        module/muk        the machine: src/ (C: a box on Linux), make/, test/
              module/prompt   a terminal attached, with nothing of a product in it: src/ (Rust), test/
 sods       module/sods       src/ (Rust: the translator, a translation's identity, the cache), runtime/ (its four
                              files; translation/, linux/), lib/ (C, private), test/
-ricebox    module/ricebox    the distribution, 0.6.4 (RELEASE): pins/, packages/, etc/, usr/, make/ (the root, and its
-                             layers), layers/ (the root as a page reads and runs it), src/ (Rust: a root on a
+ricebox    module/ricebox    the distribution, 0.6.4 (RELEASE): pins/, packages/, etc/, usr/, build/ (package caches and
+                             distributions), runtime/ (the root as a page reads and runs it), src/ (Rust: a root on a
                              device, a root run in a box)
              module/you      its command line's own programs, each one file of C: z, rg, fd, fzf
              module/otter    help, and what each thing is
@@ -97,7 +97,7 @@ inside out, so that nothing of a product is left further in than the product.
 | xlat | was sods' crate, its program and its wasm, `XLAT_*`, the jobs' names; 338 mentions | sods, and where it meant what runs a box, muk | `sods`, `SODS_*`; `MUK_*`: done |
 | length3, Length³ OS, os-length3, OS Length3 Linux, l3 | the crates (`length3-core`, `length3-os`), `LENGTH3_*`, `/etc/length3` and the hostname in ricebox, the releases' names; 1,111 mentions | why where it is the product; ricebox where it is the root; nothing where it is muk's | `why-*`, `WHY_*`; `/etc/ricebox`; `ricebox-0.6.4-…`, `why-0.0.1-…` |
 | the core | was `why/core`, 15,687 lines, fourteen parts that take from each other in rings | what why says of a repo, its history, Home, a device; with a box run (muk's) and the Remote's client (shipto's) in it | a folder of why to each part (`why/<part>`, the crate's root `why/lib.rs`); the bundle is ricebox's to write; `compute` gone: done |
-| the web root | was `scripts/webroot*.ts`; `public/webroot`, `…-l3-web.tar` | ricebox as layers | ricebox's layers: read by `module/ricebox/runtime`, made by `module/ricebox/make`: done |
+| the web root | was `scripts/webroot*.ts`; `public/webroot`, `…-l3-web.tar` | ricebox as layers | ricebox's layers: read by `module/ricebox/runtime`, made by `module/ricebox/build`: done |
 | the Remote, remote, shipto | was `why/remote`, the core's `remote`, the page's `app/remote`; the command's `remote`, `sync`, `git` | what a service wants | `why/shipto`, one folder (the Remote in it, `why/shipto/remote`): done, but for the command's three files |
 | scripts | `scripts/`, 4,798 lines of every unit's making and checking | each unit's own | in the unit it makes; what checks the whole stays |
 | tests | was `tests/` | why's, driven as a person drives it | `why/test`: done |
@@ -181,7 +181,7 @@ What was why's and is ricebox's, since it is the distribution's own to do:
 | the Worker that runs the root in a page (`why/app/host/prompt/kernel.worker.ts`), one readied ahead | `module/ricebox/runtime/worker.ts`, `root.ts` |
 | which programs a first start waits for, and which are translated ahead (`why/app/prompt/first.ts`, `ahead.ts`) | `module/ricebox/runtime/startup-programs.ts`, `ahead.ts` |
 | the root's tree for a page, and what at its top is the kernel's or starts empty (`why/app/prompt/system.ts`) | `module/ricebox/runtime/directory-tree.ts` |
-| the layers written, checked against the root, the root's programs run under muk here and on Linux, the box's maker put beside the layers (`scripts/webroot*.ts`, `commands.ts`, `muk.ts`) | `module/ricebox/make/` (`layers.ts`, `layers.sh`, `standin.ts`, `muk.ts`); comparisons in `module/ricebox/verification/` (`distribution.ts`, `programs.ts`, `commands.ts`) |
+| the layers written, checked against the root, the root's programs run under muk here and on Linux, the box's maker put beside the layers (`scripts/webroot*.ts`, `commands.ts`, `muk.ts`) | `module/ricebox/build/` (`distribution.ts`, `distribution.sh`, `muk-artifact.ts`); fixtures in `module/ricebox/test/fixtures/`; comparisons in `module/ricebox/verification/` (`distribution.ts`, `programs.ts`, `commands.ts`) |
 
 What stays why's, because it is a product's choice or its words:
 
@@ -289,7 +289,7 @@ link reaches no address that is Cloudflare's own, so a host served through Cloud
   call the filter was not written against) and is checked beside runc and against 255 such config.jsons; it makes
   the box's terminal and gives its other end away. It does not make a filter of config.json's own, or set a
   cgroup's limits itself (they are the lender's, on the cgroup lent).
-- **What makes ricebox's layers is ricebox's** (`module/ricebox/make`), with what reads them.
+- **What makes ricebox's layers is ricebox's** (`module/ricebox/build`), with what reads them.
 - **shipto is in two places**: `why/shipto` (the Remote in it, 8,403 lines; the client, the core's 2,479 and the
   page's) and three of the command's files (1,095).
 
@@ -344,7 +344,7 @@ Names first, from the inside out, since a wrong name is paid at every reading; t
    verified or excluded with its reason, a box made by muk and a terminal held by prompt wherever it runs, sods
    answering the Linux they ask for. `node module/sods/runtime/targets.ts --owed` counts what is owed, and
    `scripts/release.sh` makes no release of that line while the count is not nothing. What is left besides: the
-   scripts that write the layers are in `module/ricebox/make` (done), and `/etc/length3` and the release's names lose
+   scripts that write the layers are in `module/ricebox/build` (done), and `/etc/length3` and the release's names lose
    the old name. Until ricebox is released from this tree, the root a web build takes is the one pinned (0.6.4),
    whose translator is the one before these names.
 
@@ -358,4 +358,4 @@ over everything there is (Linux, runc, ripgrep, the one before it), byte for byt
 it must be (what runs as wasm beside sods). The one before it deleted in the change that puts it in its place:
 nothing kept beside. Its bound stays a test.
 
-Ricebox stored-format inventories live in `module/ricebox/distribution/inventory.ts`; Node archive/directory readers in `module/ricebox/host/node/`; local prepared-distribution reading and full inventory in `module/ricebox/deployment/`. Comparison and command/program execution harnesses live in `module/ricebox/verification/`; they are not production runtime or npm entry points. Producers remain in `make/` pending their own responsibility review.
+Ricebox stored-format inventories live in `module/ricebox/distribution/inventory.ts`; Node archive/directory readers in `module/ricebox/host/node/`; local prepared-distribution reading and full inventory in `module/ricebox/deployment/`. Comparison and command/program execution harnesses live in `module/ricebox/verification/`; they are not production runtime or npm entry points. Production tools live under `build/`, dependency checks under `maintenance/`, and synthetic test roots under `test/fixtures/`.

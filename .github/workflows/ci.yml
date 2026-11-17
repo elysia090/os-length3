@@ -443,7 +443,7 @@ jobs:
       - name: prompt, at a terminal
         run: sh module/prompt/test/prompt.sh
 
-  # The root as a release builds it (module/ricebox/make/build.sh, module/ricebox/build/assemble.sh), then used inside as a Prompt uses it and
+  # The root as a release builds it (module/ricebox/build/packages.sh, module/ricebox/build/assemble.sh), then used inside as a Prompt uses it and
   # under muk. Runs only when what the root is made of changed (what makes its layers, beside those in make/, is not).
   root:
     name: Root
@@ -455,7 +455,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Source download fallback and digest checks
-        run: sh module/ricebox/make/fetch.test.sh
+        run: sh module/ricebox/build/test/fetch-sources.test.sh
       - id: key
         run: echo "key=root-${{ hashFiles('why/**', 'Cargo.toml', 'Cargo.lock', '.cargo/**', '.github/workflows/ci.yml', 'module/**', '.github/actions/root-packages/**') }}" >> "$GITHUB_OUTPUT"
       - id: kept

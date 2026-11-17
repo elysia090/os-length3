@@ -1,7 +1,7 @@
 #!/bin/sh
 # Exercise the builder's actual downloader without public network access or time spent on retries.
 set -eu
-. "$(dirname "$0")/fetch.sh"
+. "$(dirname "$0")/../fetch-sources.sh"
 work=$(mktemp -d)
 trap 'rm -f "$work/file" "$work/file.part" "$work/calls"; rmdir "$work"' EXIT
 sleep() { :; }

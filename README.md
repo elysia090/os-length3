@@ -65,7 +65,7 @@ and its build are in [`why/app/`](why/app/) (`index.html`, `vite.config.ts`); wh
 ricebox is [`module/ricebox/`](module/ricebox/), the root: its version (`RELEASE`, the
 release it is made as next), what it is made from (`pins/`: `sources.env`, and `advisories.toml`), a folder per
 package with its recipe and its patches (`packages/NAME/recipe.sh`), its own files (`etc/`, `usr/`), and what makes
-it (`make/`: `build.sh`, each package on Alpine 3.24 at one digest; `assemble.sh`, the root and its package
+it (`build/`: `packages.sh`, each package on Alpine 3.24 at one digest; `assemble.sh`, the root and its package
 database; `next.py`, every source's newest release).
 
 ## Units
@@ -126,7 +126,7 @@ only when what it is made of changed):
 
 ```sh
 docker run --rm -v "$PWD:/w" alpine@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d \
-  sh /w/module/ricebox/make/build.sh /w/target/root-packages
+  sh /w/module/ricebox/build/packages.sh /w/target/root-packages
 sh module/ricebox/build/assemble.sh target/root-packages target/root-made
 ```
 

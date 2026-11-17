@@ -109,4 +109,4 @@ request passes, and the one secret") and are tested in
   protection, zeroed locals, `_FORTIFY_SOURCE=3`): each program and library
   is checked, unit by unit, to have been compiled so, and to be a static PIE
   with full RELRO and no executable stack; nothing is setuid or setgid
-  (`module/ricebox/make/build.sh`).
+  (`module/ricebox/build/packages.sh`).

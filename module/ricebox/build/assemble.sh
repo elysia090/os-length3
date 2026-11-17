@@ -12,7 +12,7 @@ echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo
 here=$(cd "$(dirname "$0")/.." && pwd)
 pkgs=$(cd "$pkgs" && pwd)
 say() { echo "root-assemble: $*" >&2; }
-[ -s "$pkgs/record" ] || { say "$pkgs has no record: run module/ricebox/make/build.sh first"; exit 1; }
+[ -s "$pkgs/record" ] || { say "$pkgs has no record: run module/ricebox/build/packages.sh first"; exit 1; }
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/ricebox-root.XXXXXX")
 trap 'rm -rf "${work:?}"' EXIT

@@ -110,7 +110,7 @@ test('the same neutral root becomes static layers without requiring why or optio
 test('layers keep identical translated artifacts when the build cache is reused', async () => {
   const at = mkdtempSync(join(tmpdir(), 'ricebox-layers-test-'));
   try {
-    const {standIn, makeWebroot} = await import('../module/ricebox/make/standin.ts');
+    const {standIn, makeWebroot} = await import('../module/ricebox/test/fixtures/distribution.ts');
     const archive = standIn(at, '9.9.9');
     const one = join(at, 'one'), two = join(at, 'two');
     for (const out of [one, two]) { const r = makeWebroot(archive, out, at); assert.equal(r.status, 0, r.stderr); }

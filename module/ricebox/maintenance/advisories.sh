@@ -3,7 +3,7 @@
 # (Cargo.lock; go.mod), taken from the very archive its pin names and checked against the pin's digest, with what its
 # recipe lifts past advisories taken as the builder takes it (lift.sh: cargo update, go get), asked of OSV
 # (osv-scanner: RustSec's advisories and Go's vulnerability database among them). A Go program's standard library is
-# the one it is built with, the build machine's Go (Alpine's, at the version module/ricebox/make/build.sh's Alpine has: module/ricebox/maintenance/updates.py
+# the one it is built with, the build machine's Go (Alpine's, at the version module/ricebox/build/packages.sh's Alpine has: module/ricebox/maintenance/updates.py
 # finds it), not the version its go.mod asks for at least: that Go is asked of OSV itself, by its version (osv-scanner
 # matches the standard library by go.mod's version, whatever it is told the toolchain is). An advisory that is known
 # and does not reach the root, or has nothing to raise to yet, is named in module/ricebox/pins/advisories.toml with why, and until
@@ -22,7 +22,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/length3-advisories.XXXXXX")
 # (Go keeps the modules it fetches read-only: they are made writable again to be removed.)
 trap 'chmod -R u+w "${work:?}" 2>/dev/null; rm -rf "${work:?}"' EXIT
 
-. "$here/make/lift.sh"
+. "$here/build/lift-dependencies.sh"
 export CARGO_HOME="$work/cargo" GOPATH="$work/go" GOMODCACHE="$work/go/mod"
 set --
 for recipe in "$here"/packages/*/recipe.sh; do

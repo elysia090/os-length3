@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zstdCompressSync} from 'node:zlib';
 
-const os = fileURLToPath(new URL('../../..', import.meta.url));
+const os = fileURLToPath(new URL('../../../..', import.meta.url));
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
 /** A release root of a few files: a program and its links (one a hard link), set-id and sticky bits, an empty file, the package db. */

@@ -10,7 +10,7 @@ against it: a maker that changed a file (PIN BROKEN) or a pin that cannot be had
 run ends 1 by either. A newest release that could not be looked up or taken is said too, its pin checked as any that
 stays, and does not fail the run. It prints the table and writes, in the current folder, NAME.next: the file as it
 would be with every newer release in it. Nothing in the tree is changed: a person reads the table and moves the file
-over (module/ricebox/make/build.sh checks every archive against it, as before).
+over (module/ricebox/build/packages.sh checks every archive against it, as before).
 
 Rules beyond "the newest release, not a candidate":
   BusyBox            only a release its makers call stable (1.37 and 1.38 have been called unstable).
@@ -51,7 +51,7 @@ from pathlib import Path
 def source_urls(url):
     """GNU's documented HTTPS mirrors, then the original; preserve the complete path and the pin.
 
-    https://www.gnu.org/prep/ftp.html (also module/ricebox/make/fetch.sh, used by the builder).
+    https://www.gnu.org/prep/ftp.html (also module/ricebox/build/fetch-sources.sh, used by the builder).
     """
     prefix = 'https://ftp.gnu.org/gnu/'
     if url.startswith(prefix):
@@ -102,8 +102,8 @@ def github(repo, prefix='v', line='', back=0):
 
 @functools.lru_cache(maxsize=None)
 def alpine(package, repo):
-    """The version of an Alpine package the builder installs: its Alpine (module/ricebox/make/build.sh's), the repository's index."""
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'make', 'build.sh')) as f:
+    """The version of an Alpine package the builder installs: its Alpine (module/ricebox/build/packages.sh's), the repository's index."""
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'packages.sh')) as f:
         release = '.'.join(re.search(r"grep -q '\^(\d+)\\\.(\d+)\\\.' /etc/alpine-release", f.read()).groups())
     index = get(f'https://dl-cdn.alpinelinux.org/alpine/v{release}/{repo}/x86_64/APKINDEX.tar.gz', binary=True)
     with tarfile.open(fileobj=io.BytesIO(index)) as t:
@@ -118,7 +118,7 @@ def alpine(package, repo):
 def aports(path):
     """A file of Alpine's musl-utils (aports' main/musl/) as the builder's Alpine has it: (its package's version, the
     file at the head of that Alpine's stable branch)."""
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'make', 'build.sh')) as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'packages.sh')) as f:
         release = '.'.join(re.search(r"grep -q '\^(\d+)\\\.(\d+)\\\.' /etc/alpine-release", f.read()).groups())
     refs = get('https://git.alpinelinux.org/aports/info/refs?service=git-upload-pack')
     commit = re.search(rf'([0-9a-f]{{40}}) refs/heads/{re.escape(release)}-stable$', refs, re.M).group(1)

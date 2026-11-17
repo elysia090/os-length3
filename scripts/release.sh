@@ -2,7 +2,7 @@
 # Everything a release of OS Length3 Linux holds, made from this tree, into OUT:
 #
 #   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
-#                                                  recipe (module/ricebox/make/build.sh), with this tree's why (module/ricebox/build/assemble.sh)
+#                                                  recipe (module/ricebox/build/packages.sh), with this tree's why (module/ricebox/build/assemble.sh)
 #   os-length3-linux-X.Y.Z-webroot.tar               the same root as the browser reads it (webroot.sh), checked
 #                                                  to be the same tree (webroot-parity.ts)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that why (web-release.sh)
@@ -21,7 +21,7 @@
 #   sh scripts/release.sh OUT
 #
 # The version is module/ricebox/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
-# ROOT_PACKAGES, what module/ricebox/make/build.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
+# ROOT_PACKAGES, what module/ricebox/build/packages.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
 # keeps them from release to release; by hand, as the top README says). Needs Rust with the targets
 # x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, the Tauri
 # build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
@@ -44,7 +44,7 @@ cd "$here"
 case "$version" in 0.[0-5].*) node module/sods/runtime/targets.ts --owed ;; esac
 
 # The root: its packages, made from this tree's pins, with this tree's why.
-sh why/make/root.sh "${ROOT_PACKAGES:?the root's packages, as module/ricebox/make/build.sh made them}" "$out" "$version"
+sh why/make/root.sh "${ROOT_PACKAGES:?the root's packages, as module/ricebox/build/packages.sh made them}" "$out" "$version"
 root=$(ls "$out"/os-length3-linux-"$version"-x86_64-*.tar.zst)
 
 # The film of the release, from the branch that holds it (kept out of main's history), checked against its digest.

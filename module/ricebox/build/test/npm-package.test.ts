@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join, dirname, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
-const builder = fileURLToPath(new URL('npm.ts', import.meta.url));
+const builder = fileURLToPath(new URL('../npm.ts', import.meta.url));
 function files(dir: string): string[] {
   return readdirSync(dir, {withFileTypes:true}).flatMap(e=>e.isDirectory()?files(join(dir,e.name)):[join(dir,e.name)]);
 }
@@ -15,6 +15,7 @@ test('built npm package contains builder dependencies and imports public JS with
     execFileSync(process.execPath,[builder,out],{encoding:'utf8',timeout:30_000});
     const pkg=JSON.parse(readFileSync(join(out,'package.json'),'utf8'));
     assert.equal(pkg.private,true);
+    for(const path of ['make','maintenance','test/fixtures']) assert.equal(existsSync(join(out,'module/ricebox',path)),false,path+' is not package content');
     assert.equal(existsSync(join(out,'module/ricebox/verification')),false,'comparison harnesses are not package entries');
     assert.equal(existsSync(join(out,'module/otter')),false);
     assert.equal(existsSync(join(out,'module/ricebox/npm')),false);

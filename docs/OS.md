@@ -246,7 +246,7 @@ the same thing for the desktop app and for the web.
   it is committed; nothing else pins why.
 - **What it holds.** Sixty-three packages, each made from the source this
   tree pins (`module/ricebox/pins/sources.env`) by its recipe
-  (`module/ricebox/packages/NAME/recipe.sh`, made by `module/ricebox/make/build.sh` on
+  (`module/ricebox/packages/NAME/recipe.sh`, made by `module/ricebox/build/packages.sh` on
   Alpine 3.24 at one digest, with one libc: its musl, at the root's own
   musl's version and with the same security fixes; a package's own build
   tools are there for its build alone), and `/usr/bin/why`, put together by
@@ -281,7 +281,7 @@ the same thing for the desktop app and for the web.
   is built against it. A Rust or Go program is built from its makers'
   lockfile, with what its recipe lifts: a crate or module its makers have
   fixed an advisory in, taken to that version where the program asks for
-  it at all (`lifts=`, `module/ricebox/make/lift.sh`); what those programs are made of is
+  it at all (`lifts=`, `module/ricebox/build/lift-dependencies.sh`); what those programs are made of is
   asked of OSV with every change and every week (`module/ricebox/maintenance/advisories.sh`), and
   what no lift answers is written down with why and until when
   (`module/ricebox/pins/advisories.toml`). For the web it also holds the translator

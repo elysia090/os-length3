@@ -2,7 +2,7 @@
 // Build the installable JS boundary from the existing implementation. The package
 // carries the complete relative module closure, never why or a second runtime.
 // No downloads, install hook, credentials, or publication. Supply a NEW output path.
-// node module/ricebox/make/npm.ts OUT
+// node module/ricebox/build/npm.ts OUT
 import {stripTypeScriptTypes} from 'node:module';
 import {readFileSync, mkdirSync, writeFileSync, existsSync} from 'node:fs';
 import {resolve, join, dirname, relative} from 'node:path';
@@ -12,7 +12,7 @@ import {fileURLToPath} from 'node:url';
 const transform = stripTypeScriptTypes as (source: string, options: {mode: 'strip' | 'transform'}) => string;
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const out = process.argv[2] && resolve(process.argv[2]);
-if (!out) throw new Error('usage: node module/ricebox/make/npm.ts OUT');
+if (!out) throw new Error('usage: node module/ricebox/build/npm.ts OUT');
 if (existsSync(out)) throw new Error(`Refusing to replace an existing directory: ${out}`);
 const entry = 'module/ricebox/runtime/root.ts';
 const closure = new Map<string, {source: string; javascript: string}>();
