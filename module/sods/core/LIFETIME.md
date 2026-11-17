@@ -1059,3 +1059,58 @@ instantiation. Before the change, the runtime failure test returned 1 instead of
 The grow case verifies that restoration reacquires the current buffer; reentrant
 host callbacks are not tested here. Tests stub x87 allocation and run no translated
 FPU code. No namespace/Image lifetime or whole-fork completion is inferred.
+
+### Remote child preparation owns a lock before it owns a published Thread
+
+The actual CPU Worker had the same snapshot-on-success-only defect, and a second
+owner leak: Thread construction acquires the process GIL before `start()` returns
+and publishes into `task`/`kept`. A constructor trap escaped to the message error
+handler, which has no reference to that unpublished Thread. An actual Node CPU
+Worker test observed parent byte 1 (expected 99) and GIL owner 21 (expected 0).
+
+The constructor now catches preparation failure across take/lock/instantiate/
+attach/begin. It restores the existing keep range on instantiate failure only
+while the captured GIL still names this tid. Cleanup uses compareExchange on the
+captured GIL/tid, never an unconditional unlock of a different owner. Its x87
+handle is cleared before release through the captured allocator. Original and
+cleanup failures are preserved together, including in the message text (the
+Worker's existing stack serialization does not serialize AggregateError.errors).
+No channel LEFT/host-stop success is invented. Failure reporting still goes
+through the existing host path. If ownership was lost, restoration is refused;
+this is not a successful memory recovery. Again/reused Thread failure and raw
+start-function side effects remain separate gates.
+
+Focused verification: 6 tests pass, including real Node CPU start-trap recovery
+and a second failed construction with a different tid using the same lock. A
+separate actual Node Worker test injects lock replacement at the Instance
+boundary and verifies that owner 99 remains untouched and the original failure
+and cleanup uncertainty reach the error message. That is boundary fault
+injection, not an actual guest scheduler race. Historical translator supplies
+x87; the test module is real small Wasm, not current-source translation.
+
+Remaining transaction obligations (not discharged by this constructor change):
+
+- namespace: record exact newly created mount/propagation edges, distinguish
+  external/adopted spaces; no teardown while a surviving Fs/namespace alias can
+  reach them. Avoid new copies before sync failure in the first place.
+- FD/Fs: undo only the new owner share/copy; close failures need independent
+  cleanup and original-error preservation. Constructor failure before return
+  currently has no returned owner token. Parent tables and locations survive.
+- PID: number reservations and provisional namespace init need distinct commit
+  points; do not mark a namespace ended or notify a parent for an unpublished
+  child. A number consumed need not be reused to undo a registration.
+- memory: a shared owner decrement differs from retiring the live parent's
+  generation. Never reuse a private memory without proving all backend readers
+  stopped; failed preparation is not by itself that evidence.
+- publication: child.tasks, parent.children, procs/tasks and scheduling are
+  separate writes. `go` may invoke backend work, so a catch around the whole fork
+  is not proof that the child stayed unpublished. Ordinary exit is not rollback.
+
+No new public manager or raw ownership inference was introduced. Normal CPU
+initialization retains the same snapshot/copy byte count, with bounded lock
+checks and failure-only diagnostics. Full managed tree disposal is still gated
+on these remaining ownership proofs, not this local recovery test.
+Independent source review found no blocking issue for this constructor scope.
+Tid equality follows the existing cooperative lock protocol; it is not an epoch
+or proof that the lock was never released/reacquired. Actual inline and Node
+rehearsal regressions also pass (2), as does focused strict TypeScript checking.

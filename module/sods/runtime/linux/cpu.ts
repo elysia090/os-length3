@@ -87,21 +87,51 @@ class Thread {
     this.memoryId = m.memoryId; // (what remote.ts numbers them: the objects posted are new each time)
     this.imageId = m.imageId;
     this.fpu = 0;
-    this.take(m);
-    this.lock();
-    const at = m.keep, keep = at ? new Uint8Array(this.memory.buffer).slice(at[0], at[1]) : null;
-    this.instance = new WebAssembly.Instance(m.module, this.imports());
-    this.low = this.exports.low ?? null; // (a translation made before it had one: not known)
-    if (at && keep) new Uint8Array(this.memory.buffer).set(keep, at[0]);
-    // Its globals as they start, for a run of the program after this one on this memory (again).
-    this.initial = [];
-    for (const g of Object.values(this.instance.exports)) {
-      if (!(g instanceof WebAssembly.Global)) continue;
-      try { this.initial.push([g, g.value]); } catch { /* a vector register: none is kept across a call */ }
+    const gil = new Int32Array(m.gil), tid = m.tid, fpuOwner = theX87();
+    let locked = false;
+    try {
+      this.take(m);
+      this.lock();
+      locked = true;
+      const at = m.keep, keep = at ? new Uint8Array(this.memory.buffer).slice(at[0], at[1]) : null;
+      const restore = (): void => {
+        if (!at || !keep) return;
+        // A start that called out and lost the lock is not a recoverable byte
+        // transaction. Do not overwrite another guest's newer stores.
+        if (Atomics.load(gil, 0) !== tid) throw new Error('child preparation lost its memory lock before restoration');
+        new Uint8Array(this.memory.buffer).set(keep, at[0]);
+      };
+      try { this.instance = new WebAssembly.Instance(m.module, this.imports()); }
+      catch (error) {
+        try { restore(); }
+        catch (restoration) { throw new AggregateError([error, restoration], `child instantiation and restoration failed: ${String(error)}; ${String(restoration)}`); }
+        throw error;
+      }
+      restore();
+      this.low = this.exports.low ?? null; // (a translation made before it had one: not known)
+      // Its globals as they start, for a run of the program after this one on this memory (again).
+      this.initial = [];
+      for (const g of Object.values(this.instance.exports)) {
+        if (!(g instanceof WebAssembly.Global)) continue;
+        try { this.initial.push([g, g.value]); } catch { /* a vector register: none is kept across a call */ }
+      }
+      this.attached = 0;
+      this.attach();
+      this.begin(m);
+    } catch (error) {
+      // This Thread has not entered kept/task. Retire only its own preparation
+      // resources; ordinary thread/process exit has unrelated public effects.
+      const failures = [error];
+      if (locked) {
+        const owner = Atomics.compareExchange(gil, 0, tid, 0);
+        if (owner === tid) { if (Atomics.load(gil, 1)) Atomics.notify(gil, 0); }
+        else failures.push(new Error('failed child preparation no longer owns its memory lock'));
+      }
+      const fpu = this.fpu; this.fpu = 0;
+      try { if (fpu) fpuOwner.free(fpu); } catch (cleanup) { failures.push(cleanup); }
+      if (failures.length > 1) throw new AggregateError(failures, `child preparation and cleanup failed: ${failures.map(String).join('; ')}`);
+      throw error;
     }
-    this.attached = 0;
-    this.attach();
-    this.begin(m);
   }
 
   /** What a run brings: its thread, its channel and the kernel's words, the modules known, its x87. */
