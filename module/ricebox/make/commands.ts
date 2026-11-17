@@ -23,7 +23,7 @@ import {availableParallelism} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {builtMuk, nativeBox, type Asked} from './runnable.ts';
-import {openWeb} from './tree.ts';
+import {openDistribution} from '../deployment/local.ts';
 import {LANGUAGE_LINES} from './language-cases.ts';
 
 const OS = fileURLToPath(new URL('../../..', import.meta.url));
@@ -286,7 +286,7 @@ async function main() {
   if (!web || !root) { console.error('usage: node module/ricebox/make/commands.ts WEB ROOT_DIR [--only REGEX] [--jobs N] [--seconds N] [--write | --check]'); process.exit(2); }
   const only = values.only ? new RegExp(values.only) : null;
   const jobs = Number(values.jobs ?? Math.max(1, availableParallelism() - 1)), seconds = Number(values.seconds ?? 60);
-  const w = openWeb(web);
+  const w = openDistribution(web);
   const programs = new Set([...w.index.files, ...w.index.links].map((f) => f.path).filter((p) => /^\/usr\/s?bin\/[^/]+$/.test(p)).map((p) => p.slice(p.lastIndexOf('/') + 1)));
   w.close();
   const lines = LINES.filter((l) => !only || l.uses.some((u) => only.test(u)));

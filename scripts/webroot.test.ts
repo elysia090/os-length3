@@ -10,12 +10,12 @@ import {createHash} from 'node:crypto';
 import {copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {after, before, test} from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
 import {makeWebroot, standIn} from '../module/ricebox/make/standin.ts';
-import type {Index} from '../module/ricebox/make/tree.ts';
+import type {Index} from '../module/ricebox/distribution/manifest.ts';
 
 const os = fileURLToPath(new URL('..', import.meta.url));
 const sha = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex');
@@ -102,13 +102,27 @@ test('one entry pins why for both: the root, and the index the browser reads it 
   assert.match(node([join(os, 'scripts/pin-root.ts'), rootFile, other, '--rs', rs]).stderr, /a released index is never changed/);
 });
 
+function copyPromptSources(tree: string) {
+  for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'public', 'module/ricebox/runtime', 'module/ricebox/make']) mkdirSync(join(tree, d), {recursive: true});
+  // And what both of those check packs by, where the repository has it (module/ricebox/runtime).
+  for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'module/ricebox/host/node/tar.ts', 'module/ricebox/host/node/hash.ts', 'module/ricebox/distribution/inventory.ts', 'module/ricebox/distribution/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
+    'module/ricebox/distribution/pack.ts']) {
+    mkdirSync(dirname(join(tree,f)),{recursive:true});
+    copyFileSync(join(os,f),join(tree,f));
+  }
+}
+
+test('release downloader fixture includes the archive reader dependency closure',()=>{
+  const tree=join(work,'reader-closure');
+  copyPromptSources(tree);
+  const result=node(['--input-type=module','-e',`const reader=await import(${JSON.stringify(pathToFileURL(join(tree,'module/ricebox/host/node/tar.ts')).href)}); if(typeof reader.tarMembers!=='function') throw Error('missing reader');`]);
+  assert.equal(result.status,0,result.stderr);
+});
+
 test('a Node-only build takes why from its release only at the pin, and refuses anything else', async () => {
   // A tree as prompt-files.ts reads it: the pins, newest 9.9.9, and the scripts; and a release that has why's tar.
   const tree = join(work, 'repo');
-  for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'public', 'module/ricebox/runtime', 'module/ricebox/make']) mkdirSync(join(tree, d), {recursive: true});
-  // And what both of those check packs by, where the repository has it (module/ricebox/runtime).
-  for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'module/ricebox/make/tree.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
-    'module/ricebox/distribution/pack.ts', 'module/ricebox/runtime/root-types.ts']) copyFileSync(join(os, f), join(tree, f));
+  copyPromptSources(tree);
   assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', join(tree, 'why/prompt/roots/pins.rs')]).status, 0);
 
   const tarOf = (dir: string) => execFileSync('tar', ['-C', dir, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax', '-cf', '-', '.'], {maxBuffer: 1 << 28});

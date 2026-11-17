@@ -100,7 +100,8 @@ test('the same neutral root becomes static layers without requiring why or optio
     const index = JSON.parse(readFileSync(join(out, about.index.path), 'utf8'));
     assert.equal(index.translations.length, 0);
     assert.ok(index.files.some((f: {path: string}) => f.path === '/usr/bin/tool'));
-    const {nativeTree, webTree} = await import('../module/ricebox/make/tree.ts');
+    const {nativeTree} = await import('../module/ricebox/host/node/inventory.ts');
+    const {webTree} = await import('../module/ricebox/deployment/inventory.ts');
     assert.deepEqual((await webTree(out)).entries, (await nativeTree(archive)).entries);
     assert.deepEqual(readFileSync(join(stage, 'sods.wasm')), readFileSync(wasm));
   } finally { rmSync(at, {recursive: true, force: true}); }

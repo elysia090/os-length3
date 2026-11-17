@@ -18,7 +18,7 @@ const entry = 'module/ricebox/runtime/root.ts';
 const closure = new Map<string, {source: string; javascript: string}>();
 function visit(path: string): void {
   if (closure.has(path)) return;
-  if (!/^module\/(ricebox\/(?:runtime|distribution|build|deployment|integrations)|sods\/runtime)\//.test(path) || !path.endsWith('.ts')) {
+  if (!/^module\/(ricebox\/(?:runtime|distribution|build|deployment|integrations|host\/node)|sods\/runtime)\//.test(path) || !path.endsWith('.ts')) {
     throw new Error(`Unexpected dependency outside ricebox and sods: ${path}`);
   }
   const source = readFileSync(join(repository, path), 'utf8');
@@ -34,6 +34,7 @@ function visit(path: string): void {
 visit(entry);
 visit('module/ricebox/integrations/vite.ts');
 visit('module/ricebox/build/prepare.ts');
+visit('module/ricebox/host/node/tar.ts');
 mkdirSync(out, {recursive: true});
 for (const [path, {source, javascript}] of closure) {
   const destination = join(out, path);
@@ -42,7 +43,7 @@ for (const [path, {source, javascript}] of closure) {
   writeFileSync(destination.slice(0, -3) + '.js', javascript.replace(/(['"])(\.[^'"\n]+)\.ts\1/g, '$1$2.js$1'));
 }
 // The distribution builder is the same implementation, not a second npm assembler.
-for (const path of ['make/assemble.sh', 'make/db.ts', 'make/scripts.ts', 'make/layers.ts', 'make/file-store.ts', 'make/tree.ts', 'make/aot-cache.ts', 'etc/os-release', 'pins/sources.env']) {
+for (const path of ['make/assemble.sh', 'make/db.ts', 'make/scripts.ts', 'make/layers.ts', 'make/file-store.ts', 'make/aot-cache.ts', 'etc/os-release', 'pins/sources.env']) {
   const name = 'module/ricebox/' + path;
   mkdirSync(dirname(join(out, name)), {recursive: true});
   writeFileSync(join(out, name), readFileSync(join(repository, name)));

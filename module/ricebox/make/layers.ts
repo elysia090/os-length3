@@ -15,7 +15,9 @@ import {gzipSync} from 'node:zlib';
 import {packOf} from '../distribution/pack.ts';
 import {translateWhole} from './aot-cache.ts';
 import {fileStoreOptions, validateFileStore, fileStoreDescriptor} from './file-store.ts';
-import {readTarball, sha256, type Index} from './tree.ts';
+import {readTarball} from '../host/node/tar.ts';
+import {sha256} from '../host/node/hash.ts';
+import type {Index} from '../distribution/manifest.ts';
 
 const here = fileURLToPath(new URL('../../..', import.meta.url));
 const repo = here;

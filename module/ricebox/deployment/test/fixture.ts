@@ -14,7 +14,7 @@ export function fixture(t: TestContext) {
   const translator = blob('translator'), muk = blob('maker');
   const pack = packOf([Buffer.from('file contents')], b => createHash('sha256').update(b).digest());
   writeFileSync(join(root, 'packs', pack.name), pack.bytes);
-  const index = {sha256: 'root', version: '0.0.1', translator, translations: [], packs: [{name:pack.name,bytes:pack.bytes.length}], files: [{pack:0,at:pack.at[0],len:13}]};
+  const index = {sha256: 'root', version: '0.0.1',codec:'zstd',dirs:[],links:[], translator, translations: [], packs: [{name:pack.name,bytes:pack.bytes.length}], files: [{path:"/file",mode:0o644,size:13,raw:true,pack:0,at:pack.at[0],len:13}]};
   const bytes = Buffer.from(JSON.stringify(index)), sha256 = hash(bytes), path = `index-${sha256}.json`;
   writeFileSync(join(root, path), bytes);
   writeFileSync(join(root, 'webroot.json'), JSON.stringify({sha256:'root', version:'0.0.1', index: {path, sha256, size:bytes.length}}));

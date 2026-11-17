@@ -35,7 +35,8 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {Kernel} from '../../sods/runtime/linux.ts';
 import {buildMuk} from './muk.ts';
-import {openWeb, type Index} from './tree.ts';
+import {openDistribution} from '../deployment/local.ts';
+import type {Index} from '../distribution/manifest.ts';
 
 /** What one program run under muk says: its wait status, its output, and how long it took. */
 interface Ran { status: number | null; stdout: string; stderr: string; error: string | null; ms: number }
@@ -121,7 +122,7 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   const {prepareTree} = await import('../runtime/prepared-tree.ts');
   const {releaseFileStore} = await import('../runtime/file-store.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
-  const w = openWeb(web);
+  const w = openDistribution(web);
   const {requireFileStoreName} = await import('../runtime/root-types.ts');
   requireFileStoreName(w.index);
   // --fresh: this checkout's translator, translating everything as it runs (what the next why will be).
@@ -260,7 +261,7 @@ async function main() {
   const kept = warm ? mkdtempSync('/tmp/webroot-kept-') : null;
   const [web, rootDir] = args;
   if (!web || !rootDir) { console.error('usage: runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]'); process.exit(2); }
-  const w = openWeb(web);
+  const w = openDistribution(web);
   const translator = new URL('../../sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url).pathname;
   if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: why names none, and ${translator} is not built`);
   // What each file is, by its first bytes (ELF, a script and its interpreter).

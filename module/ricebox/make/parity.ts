@@ -12,7 +12,10 @@
 // --manifests DIR  writes native.txt and web.txt there, one line a path
 import {mkdirSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
-import {counts, differences, manifestOf, nativeTree, sha256, webTree} from './tree.ts';
+import {counts,differences,manifestOf} from '../distribution/inventory.ts';
+import {nativeTree} from '../host/node/inventory.ts';
+import {webTree} from '../deployment/inventory.ts';
+import {sha256} from '../host/node/hash.ts';
 import {readFileSync} from 'node:fs';
 
 const args = process.argv.slice(2);

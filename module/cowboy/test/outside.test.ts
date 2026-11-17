@@ -7,7 +7,7 @@ import {test} from 'node:test';
 import {Kernel, Vfs, mountTarget, provide} from '../../sods/runtime/linux.ts';
 import {loadTranslator} from '../../sods/runtime/translate.ts';
 import {mountPack} from '../../ricebox/distribution/mount.ts';
-import {openWeb} from '../../ricebox/make/tree.ts';
+import {openDistribution} from '../../ricebox/deployment/local.ts';
 import {outside, type Dial} from '../host/outside.ts';
 
 // cowboy with a real program on sods' Linux in node: the root's own curl asks a name, is given an address of
@@ -21,7 +21,7 @@ const have = existsSync(`${web}webroot.json`) && existsSync(wasm);
 
 /** `argv` run on the root with cowboy as its outside, every link dialled to `port` of this machine whatever its name: what it wrote, how it ended, and where it dialled. */
 async function run(argv: string[], port: number): Promise<{out: string; status: number | null; dialled: string[]}> {
-  const w = openWeb(web);
+  const w = openDistribution(web);
   const translate = await loadTranslator(w.blob(w.index.translator!));
   const vfs = new Vfs();
   mountPack(mountTarget(vfs), w.index, {

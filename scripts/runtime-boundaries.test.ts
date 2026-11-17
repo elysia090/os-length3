@@ -82,3 +82,11 @@ test('deployment is independent of composition and integrations',()=>{
   assert.equal(allowed('module/ricebox/build/prepare.ts','../integrations/vite.ts'),false);
   assert.equal(allowed('module/ricebox/runtime/root.ts','../deployment/assets.ts'),false);
 });
+
+test('Node readers cannot depend on execution or deployment orchestration',()=>{
+  const reader='module/ricebox/host/node/tar.ts';
+  for(const target of ['../../runtime/root.ts','../../deployment/local.ts','../../build/prepare.ts','../../../sods/runtime/linux.ts']) assert.equal(allowed(reader,target),false,target);
+  assert.equal(allowed(reader,'../../distribution/inventory.ts'),true);
+  assert.equal(allowed('module/ricebox/deployment/local.ts','../host/node/hash.ts'),true);
+  assert.equal(allowed('module/ricebox/distribution/inventory.ts','../host/node/hash.ts'),false);
+});

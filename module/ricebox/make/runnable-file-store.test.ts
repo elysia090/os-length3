@@ -8,14 +8,14 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {execFileSync} from 'node:child_process';
-import {openWeb} from './tree.ts';
+import {openDistribution} from '../deployment/local.ts';
 import {validateFileStore,fileStoreDescriptor} from './file-store.ts';
 const source=process.env.RICEBOX_RELEASE_DIR,muk=process.env.RICEBOX_MUK_FILE,mukHash=process.env.RICEBOX_MUK_SHA256,core=process.env.SODS_FILE_STORE_WASM;
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 test('historical full release runs muk and shell with a release-selected Rust file owner',{skip:!source||!muk||!mukHash||!core},async()=>{
   assert.equal(hash(readFileSync(muk!)),mukHash);
   const sourceRoot=resolve(source!);
-  const original=openWeb(sourceRoot),out=mkdtempSync(join(tmpdir(),'ricebox-runnable-core-'));
+  const original=openDistribution(sourceRoot),out=mkdtempSync(join(tmpdir(),'ricebox-runnable-core-'));
   try{
     assert.equal(original.index.fileStore,undefined,'baseline fixture must be a legacy release');
     original.checkAll(); // All pack tables and stored files, not just paths used by this program.

@@ -25,7 +25,8 @@ import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
 import {checkPacks} from '../module/ricebox/distribution/pack.ts';
-import {tarMembers, type About, type Index} from '../module/ricebox/make/tree.ts';
+import {tarMembers} from '../module/ricebox/host/node/tar.ts';
+import type {About, Index} from '../module/ricebox/distribution/manifest.ts';
 
 const here = new URL('..', import.meta.url).pathname;
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';

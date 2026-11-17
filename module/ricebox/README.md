@@ -70,7 +70,6 @@ separately; it is not a proposed generic build/runtime abstraction:
 ```
 make/layers.sh, layers.ts   a release root written as layers: its index, packs and blobs, the hot programs
                             translated ahead
-make/tree.ts                a root's archive and a web root read, to compare
 make/parity.ts              the layers are the root: the same paths, modes, links and bytes
 make/muk.ts                 the box's maker put beside the layers (muk.json, a blob)
 make/runnable.ts            each program of the root run in a box muk makes, on sods' Linux and on this machine's
@@ -101,3 +100,21 @@ still returns a Map retaining all selected stored bytes, and its limit is per as
 not an aggregate memory bound. It verifies mutable host files again; prior acquisition
 is not proof that those files remain unchanged. Neither the Vite adapter nor local
 package construction publishes a release or installs missing native tools.
+
+## Inventory and local readers
+
+- `distribution/inventory.ts` contains normalized entries and pure inventory comparison.
+  It holds no Buffer, filesystem operation or execution object.
+- `host/node/tar.ts` reads native archive streams and constructs their inventory;
+  `host/node/inventory.ts` reads installed directories or selects the archive reader.
+- `deployment/local.ts` opens a local prepared distribution lazily. Its caller owns
+  pack descriptors and calls `close()` after success or failure. This releases the
+  current descriptors; later reads can reopen them, as before the separation.
+- `deployment/inventory.ts` reads and verifies the complete distribution for
+  comparison, preserving its `finally` close.
+
+Local lazy reading is not asset staging: it does not inherit `assets.ts`'s eager
+retention or symlink refusal contract. Verification still checks whole packs and
+then reads individual files; this change does not reduce those reads or hashes.
+The existing comparison and program-execution tools in make are the next boundary
+being separated, not production runtime API additions.
