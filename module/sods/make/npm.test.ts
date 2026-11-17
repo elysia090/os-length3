@@ -42,25 +42,64 @@ test('installed package runs real ELF inline and in Node CPU Worker with explici
     const consumer=unpack(work);
     writeFileSync(join(work,'exit.s'),'.global _start\n.text\n_start:\n mov $2,%rax\n lea path(%rip),%rdi\n mov $66,%rsi\n mov $420,%rdx\n syscall\n mov %rax,%r12\n mov %rax,%rdi\n mov $1,%rax\n lea message(%rip),%rsi\n mov $3,%rdx\n syscall\n mov $3,%rax\n mov %r12,%rdi\n syscall\n mov $60,%rax\n mov $42,%rdi\n syscall\n.section .rodata\npath: .asciz "/created"\nmessage: .ascii "new"\n');
     execFileSync('cc',['-nostdlib','-static','-Wl,--build-id=none',join(work,'exit.s'),'-o',join(work,'exit')]);
+    writeFileSync(join(work,'zero.s'),readFileSync(join(work,'exit.s'),'utf8').replace('mov $42,%rdi','mov $0,%rdi'));
+    execFileSync('cc',['-nostdlib','-static','-Wl,--build-id=none',join(work,'zero.s'),'-o',join(work,'zero')]);
     writeFileSync(join(consumer,'run.mjs'),`
-      import assert from 'node:assert/strict'; import {readFileSync} from 'node:fs';
+      import assert from 'node:assert/strict'; import {readFileSync,writeFileSync} from 'node:fs';
       import {linux,RemoteKernel,prepareFileCore,loadFileScope} from 'sods/linux';
       import {loadTranslator} from 'sods/translate';
       const module=await prepareFileCore(readFileSync(${JSON.stringify(core)}),1048576);
-      for(const inline of [true,false]) {
+      const quarantined=[];
+      for(const inline of [true,false]) for(const code of [0,42]) for(const refusal of (!inline && code===0 ? ['none','sink','stop','preparation'] : ['none'])) {
         const scope=await loadFileScope(module,1048576),vfs=scope.createVfs();
-        const file=scope.writeFile(vfs,'/bin/exit',readFileSync(${JSON.stringify(join(work,'exit'))}),0o755);
+        const file=scope.writeFile(vfs,'/bin/exit',readFileSync(code ? ${JSON.stringify(join(work,'exit'))} : ${JSON.stringify(join(work,'zero'))}),0o755);
         const translate=await loadTranslator(readFileSync(${JSON.stringify(translator)}));
-        const k=linux({vfs,translate,inline,console:{write(){},read:()=>null}});
+        const k=linux({vfs,translate,inline,passOn:false,console:{write(){},read:()=>null}});
         assert.equal(k instanceof RemoteKernel,!inline);
+        const adopted=[];
+        if(k instanceof RemoteKernel) {
+          const adopt=k.adoptWorker.bind(k);
+          k.adoptWorker=hand=>{adopted.push(hand);return adopt(hand);}; // Observe actual host adoption, without changing ownership.
+        }
         // spawn drives the selected scheduler, including the RemoteKernel door.
         // Failure destroys this test's child realm, never a live scope in place.
-        assert.equal(await k.spawn('/bin/exit',['/bin/exit'],[],'/'),42 << 8);
+        assert.equal(await k.spawn('/bin/exit',['/bin/exit'],[],'/'),code << 8);
         assert.equal(new TextDecoder().decode(vfs.file('/created').bytes()),'new');
         assert.throws(()=>vfs.file('/created').data);
+        // This finite caller owns the complete graph and publishes only copied bytes.
+        // Guest exit, host-stop evidence and sink acknowledgement are separate gates.
+        const result=vfs.file('/created').bytes(); // Rust File.bytes already returns an owned snapshot.
+        let accepted=false;
+        await Promise.resolve().then(()=>{if(refusal!=='sink'){writeFileSync('result.bin',result);accepted=true;}});
+        if(accepted) assert.deepEqual(readFileSync('result.bin'),Buffer.from('new'));
+        assert.equal(k.tasks.size,0); assert.equal(k.runq.length,0); assert.equal(k.blocked.size,0);
+        assert.equal(k.current,null); assert.equal(k.failedPreparations?.size ?? 0,0);
+        let stopped=inline;
+        if(k instanceof RemoteKernel) {
+          k.close(); // synchronous request, not by itself a stop barrier
+          const evidence=await k.snapshotWorkerStops();
+          assert.ok(adopted.length>0); // Real Node execution, independent of remaining snapshot size.
+          const allStops=await Promise.all(adopted.map(hand=>hand.stop.evidence()));
+          assert.ok(allStops.every(result=>result.stopped && !('requestFailure' in result) && !('notificationFailure' in result)));
+          assert.equal(evidence.unconfirmed,0);
+          assert.equal(evidence.observedStopped,evidence.captured); assert.deepEqual(evidence.failures,[]);
+          stopped=refusal!=='stop'; // Explicit evidence-loss injection, after real Node stop.
+        }
+        if(refusal==='preparation') k.failedPreparations=new Set([{}]); // Inject unresolved evidence, not a real failed fork.
+        if(!accepted || !stopped || k.failedPreparations?.size) {
+          assert.notEqual(refusal,'none');
+          assert.deepEqual(vfs.file('/created').bytes(),result); // scope remains live, not disposed
+          quarantined.push({scope,k});
+          continue; // This finite test realm owns the retained graph until process exit.
+        }
+        assert.equal(refusal,'none');
+        // No rehearsal, passOn, continuing callbacks or external raw graph users.
+        // After this point the caller promises no further use of this graph.
         scope.dispose();
+        assert.deepEqual(result,new TextEncoder().encode('new'));
         assert.throws(()=>file.bytes(),/scope is closed/);
       }
+      assert.equal(quarantined.length,3);
       console.log('execution-ok');
     `);
     const env={...process.env};delete env.SODS_INLINE;

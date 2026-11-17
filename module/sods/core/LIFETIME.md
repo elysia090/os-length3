@@ -1594,3 +1594,53 @@ remain outside this boundary. No claim of atomic publication or PID rollback.
 Actual current-muk inline/Node rehearsal and unresolved-root retention gate:
 3 pass, using the historical translator as before. Independent source review
 reported no blocking issue for this evidence-only scope.
+
+### Whole-system checkpoint: finite independent Node caller
+
+Do not make complete rollback of arbitrary raw overrides a prerequisite for the
+portable core. Standard allocation/instantiate/grow and host-stop failures matter;
+Map/getter effect-then-throw probes delimit the embedding contract, not an endless
+requirement to reconstruct unobservable aliases. Keep uncertain evidence retained.
+
+The next acceptance gate returns to the existing independent sods npm caller:
+install the local tarball, supply trusted translator/core artifacts, execute a real
+ELF against Rust-backed Vfs, copy the result to the caller's sink, and explicitly
+finish the finite scope. No rehearsal, passOn, other kernels or external raw graph
+users participate. Guest exit status, sink acceptance and Node Worker-stop evidence
+are checked separately. Successful and nonzero guest exits both use this sequence.
+The sink test writes/reads a file but does not claim fsync durability. The package
+README now explains these ownership obligations rather than offering a new manager.
+
+Three explicitly injected refusal cases retain their scope/Kernel roots: sink not
+accepted, withheld stop evidence, and unresolved preparation. Real Node Workers
+are stopped before those injected checks; these are disposal-decision tests, not
+reproductions of an unkillable Worker. Scope disposal is not automatic tree/alias
+reclamation and does not authorize arbitrary later use of the raw graph.
+
+Priority after this gate: use the existing cost ledger to choose a real core/host
+boundary improvement and preserve this complete caller as its regression. Kernel
+state still in TS is a substantive migration gap. Automatic long-lived collection
+and standard pre-load allocation failure remain open ownership work. Arbitrary
+raw override rollback is lower priority than those and independent introduction.
+Native everyday and real browser execution require their separate environment
+proof; neither a green npm caller nor Rust payload work establishes them.
+Local package acceptance: 2 tests pass, including seven executed ELF scenarios
+(four exit/backend combinations, three disposal-refusal injections); total about
+5.2 seconds. Cost-ledger regression also passes with previous measured values:
+warm read 9 crossings, fragmented 2,048-byte mapping update 10,241 crossings.
+These counters belong to the separate 4-KiB pack/mapping fixture, not the ELF
+caller, and are not elapsed-time speedups or universal lower bounds. Artifacts:
+current core/package, historical translator; no registry publication/install.
+The result uses Rust File.bytes' existing owned snapshot directly, avoiding an
+additional slice copy; its contents remain valid after scope disposal. Final
+package rerun after this adjustment: 2 tests pass (~9 s). No timing improvement is
+inferred from variation between runs.
+Review caught a timing assumption: stopped Hands can already have left the
+Kernel's workerOwners set, so remaining snapshot captured>0 is not a valid proof
+of Node execution. The harness now independently observes actual Hand adoptions
+and checks positive stop evidence for every adopted Hand, then also checks the
+remaining snapshot. Empty remaining snapshots are not treated as all-owner proof
+on their own. This observer is test instrumentation, not a new production manager.
+Final independent source review: no blocking issue. Failure evidence is tested by
+property presence (including false/null rejection reasons), not truthiness. Final
+package rerun: 2 pass (~5.7 s); focused package strict TypeScript also passes.
