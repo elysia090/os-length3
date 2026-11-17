@@ -1020,3 +1020,42 @@ The avoided work on rejected clone is the mount copy and its covered/propagation
 registrations, proportional to copied mounts; no extra payload copies or graph
 manager are introduced. Regressions preserve errno precedence and verify no new
 mount edges in both process and thread clone refusal paths.
+
+### Fork preparation: preserve the live memory before retiring child owners
+
+The next transaction cannot be implemented as `catch { exitProcess(child) }`:
+process exit publishes wait/signal/PID-namespace effects, whereas a failed fork
+has not published a child. Current acquisition order is:
+
+1. clone permission and PID/cgroup refusal, then namespace copy (covered and
+   propagation registrations already visible);
+2. fork shared-mapping synchronization (successful writeback is not undoable);
+3. Process FD share/copy, Fs owner, and cgroup membership;
+4. Task PID numbering and transfer of Fs ownership, then provisional PID init;
+5. Image alias, memory ownership, x87/instance preparation, mapping owners;
+6. parent children, process/task maps, and run queue publication.
+
+A failure at 2 must not blindly retire all copied namespaces after a later
+failure at 5: the latter may already have a live Fs/task/backend alias. Proper
+unpublished-owner cleanup remains unfinished, as does thread creation cleanup.
+The minimal next ordering seam is internal synchronization before namespace
+construction, retaining direct forkProcess behavior and exactly one sync; do not
+add a public `alreadySynced` boolean or duplicate the mapping scan. Callback
+identity changes and partial successful writeback require explicit treatment.
+
+Before attempting that owner transaction, an actual Wasm counterexample exposed
+parent corruption at step 5: active data initialization writes imported memory
+before a trapping start function fails. Task.load's existing snapshot was only
+restored after successful instantiation. Restore it in finally, into the supplied
+memory's current buffer, without revoking Image.source or other Image aliases.
+The existing snapshot/copy range and normal-path byte work are unchanged. This
+is not arbitrary start-function rollback, concurrent SAB writer protection, or
+release of partially acquired child owners. Writes outside the declared image
+range and other start side effects remain outside this narrow guarantee.
+
+Validation: the real Wasm control demonstrates the overwritten byte after failed
+instantiation. Before the change, the runtime failure test returned 1 instead of
+99; afterwards success, start trap, and grow-then-trap preserve the parent bytes.
+The grow case verifies that restoration reacquires the current buffer; reentrant
+host callbacks are not tested here. Tests stub x87 allocation and run no translated
+FPU code. No namespace/Image lifetime or whole-fork completion is inferred.

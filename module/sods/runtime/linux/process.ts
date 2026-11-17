@@ -2191,8 +2191,13 @@ export class Task implements Thread {
     // child's), what the image holds now is put back.
     const keep = from && !image.segments && from.memory === memory ? this.bytes.slice(image.facts.imageStart ?? 0, image.facts.imageEnd) : null;
     this.slot = {task: this, initial: []};
-    this.instance = new WebAssembly.Instance(image.module, this.imports());
-    if (keep) this.bytes.set(keep, image.facts.imageStart ?? 0);
+    try { this.instance = new WebAssembly.Instance(image.module, this.imports()); }
+    finally {
+      // Data initialization precedes start: a trapping start may already have
+      // overwritten the live parent's image. Restore even without an instance,
+      // into the supplied memory (and its current buffer after possible grow).
+      if (keep) new Uint8Array(memory.buffer).set(keep, image.facts.imageStart ?? 0);
+    }
     // Its globals as they start, for when it goes on under another task (a vector register is not read from here,
     // nor need be: none is kept across a call into the kernel).
     for (const g of Object.values(this.instance.exports)) {
