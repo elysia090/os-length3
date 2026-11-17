@@ -323,9 +323,9 @@ the same thing for the desktop app and for the web.
 - **The same content.** The web's tree is the root's: every path, type,
   mode, link target and sha256 the same as the root why installs
   (directories at least 0700, files without set-id bits, as the installer
-  makes them). `module/ricebox/make/parity.ts` proves it on every release and in CI;
+  makes them). `module/ricebox/verification/distribution.ts` proves it on every release and in CI;
   a program that muk cannot run yet still ships, and
-  `module/ricebox/make/runnable.ts` says which, against the same root run natively.
+  `module/ricebox/verification/programs.ts` says which, against the same root run natively.
 - **One release, one pin.** The release makes the root, then why for the
   browser from it (checked by the parity), pins both in one entry, and only
   then builds the web app and the desktop app, which both trust that entry.

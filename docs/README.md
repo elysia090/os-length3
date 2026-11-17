@@ -83,7 +83,7 @@ tracked in issue #20.
   reads it rather than translating it again. Make it
   with `npm run webroot` (`scripts/webroot.sh`: the translator from this tree and the
   newest root `why/prompt/roots/pins.rs` pins), and check it against that root
-  with `npm run webroot:parity -- ROOT public/webroot`; `node module/ricebox/make/runnable.ts
+  with `npm run webroot:parity -- ROOT public/webroot`; `node module/ricebox/verification/programs.ts
   public/webroot ROOT_DIR` says which programs of it run under muk today.
 
 ## why: the same OS on the command line

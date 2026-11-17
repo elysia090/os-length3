@@ -181,7 +181,7 @@ What was why's and is ricebox's, since it is the distribution's own to do:
 | the Worker that runs the root in a page (`why/app/host/prompt/kernel.worker.ts`), one readied ahead | `module/ricebox/runtime/worker.ts`, `root.ts` |
 | which programs a first start waits for, and which are translated ahead (`why/app/prompt/first.ts`, `ahead.ts`) | `module/ricebox/runtime/startup-programs.ts`, `ahead.ts` |
 | the root's tree for a page, and what at its top is the kernel's or starts empty (`why/app/prompt/system.ts`) | `module/ricebox/runtime/directory-tree.ts` |
-| the layers written, checked against the root, the root's programs run under muk here and on Linux, the box's maker put beside the layers (`scripts/webroot*.ts`, `commands.ts`, `muk.ts`) | `module/ricebox/make/` (`layers.ts`, `layers.sh`, `parity.ts`, `standin.ts`, `runnable.ts`, `commands.ts`, `muk.ts`) |
+| the layers written, checked against the root, the root's programs run under muk here and on Linux, the box's maker put beside the layers (`scripts/webroot*.ts`, `commands.ts`, `muk.ts`) | `module/ricebox/make/` (`layers.ts`, `layers.sh`, `standin.ts`, `muk.ts`); comparisons in `module/ricebox/verification/` (`distribution.ts`, `programs.ts`, `commands.ts`) |
 
 What stays why's, because it is a product's choice or its words:
 
@@ -357,4 +357,4 @@ over everything there is (Linux, runc, ripgrep, the one before it), byte for byt
 it must be (what runs as wasm beside sods). The one before it deleted in the change that puts it in its place:
 nothing kept beside. Its bound stays a test.
 
-Ricebox stored-format inventories live in `module/ricebox/distribution/inventory.ts`; Node archive/directory readers in `module/ricebox/host/node/`; local prepared-distribution reading and full inventory in `module/ricebox/deployment/`. Those are separate from the make comparison and execution tools.
+Ricebox stored-format inventories live in `module/ricebox/distribution/inventory.ts`; Node archive/directory readers in `module/ricebox/host/node/`; local prepared-distribution reading and full inventory in `module/ricebox/deployment/`. Comparison and command/program execution harnesses live in `module/ricebox/verification/`; they are not production runtime or npm entry points. Producers remain in `make/` pending their own responsibility review.

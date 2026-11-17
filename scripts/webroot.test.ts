@@ -36,7 +36,7 @@ before(() => {
 after(() => rmSync(work, {recursive: true, force: true}));
 
 test('the web root is the root: every path, type, mode, link target and sha256', () => {
-  const r = node([join(os, 'module/ricebox/make/parity.ts'), rootFile, out, '--manifests', join(work, 'm')]);
+  const r = node([join(os, 'module/ricebox/verification/distribution.ts'), rootFile, out, '--manifests', join(work, 'm')]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^same: /m);
   const native = readFileSync(join(work, 'm/native.txt'), 'utf8');
@@ -62,7 +62,7 @@ test('a pack or an index that is not the root is caught', () => {
   cpSync(out, bad, {recursive: true});
   const pack = join(bad, 'packs', readdirSync(join(bad, 'packs'))[0] ?? '');
   const b = readFileSync(pack); b[b.length - 1] ^= 1; writeFileSync(pack, b);
-  let r = node([join(os, 'module/ricebox/make/parity.ts'), rootFile, bad]);
+  let r = node([join(os, 'module/ricebox/verification/distribution.ts'), rootFile, bad]);
   assert.equal(r.status, 1);
   assert.match(r.stderr + r.stdout, /not the file its table names/);
 
@@ -77,7 +77,7 @@ test('a pack or an index that is not the root is caught', () => {
   const json = Buffer.from(JSON.stringify(index));
   writeFileSync(join(bad, about.index.path), json);
   writeFileSync(join(bad, 'webroot.json'), JSON.stringify({...about, index: {...about.index, sha256: sha(json), size: json.length}}));
-  r = node([join(os, 'module/ricebox/make/parity.ts'), rootFile, bad]);
+  r = node([join(os, 'module/ricebox/verification/distribution.ts'), rootFile, bad]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /different \(1\):\n {2}\/usr\/bin\/busybox\tfile\t0755/);
 });

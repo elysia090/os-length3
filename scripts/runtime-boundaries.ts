@@ -3,12 +3,16 @@
 import {readdirSync, readFileSync} from 'node:fs';
 import {posix} from 'node:path';
 
-export const ROOTS = ['module/ricebox/host/node', 'module/ricebox/build', 'module/ricebox/deployment', 'module/ricebox/integrations', 'module/ricebox/distribution', 'module/ricebox/runtime', 'module/sods/runtime', 'module/cowboy/host', 'module/disk'];
+export const ROOTS = ['module/ricebox/verification', 'module/ricebox/host/node', 'module/ricebox/build', 'module/ricebox/deployment', 'module/ricebox/integrations', 'module/ricebox/distribution', 'module/ricebox/runtime', 'module/sods/runtime', 'module/cowboy/host', 'module/disk'];
 const inside = (path: string, root: string) => path.startsWith(root + '/');
 const publicSods = new Set(['module/sods/runtime/host.ts', 'module/sods/runtime/linux.ts', 'module/sods/runtime/translate.ts']);
 // Adapters are allowed host facilities explicitly, not forbidden. Add a new adapter and its facilities here
 // when its contract lands; do not allow node:* throughout the core to accommodate one adapter.
 const hostImports: Record<string, readonly string[]> = {
+  'module/ricebox/verification/language-cases.ts': ['node:fs'],
+  'module/ricebox/verification/distribution.ts': ['node:fs','node:path'],
+  'module/ricebox/verification/programs.ts': ['node:child_process','node:crypto','node:fs','node:os','node:path','node:url'],
+  'module/ricebox/verification/commands.ts': ['node:child_process','node:fs','node:os','node:url','node:util'],
   'module/ricebox/host/node/hash.ts': ['node:crypto'],
   'module/ricebox/host/node/tar.ts': ['node:fs','node:zlib','node:stream'],
   'module/ricebox/host/node/inventory.ts': ['node:fs','node:path'],
@@ -74,6 +78,7 @@ export function allowed(from: string, specifier: string): boolean {
   const owner = ROOTS.find(root => inside(from, root));
   if (!owner || target === 'module/sods/runtime/run.ts' || target.includes('/test/') || /\.(test|spec)\./.test(target)) return false;
   if (inside(target, owner)) return true;
+  if (owner === 'module/ricebox/verification') return ['module/ricebox/distribution','module/ricebox/deployment','module/ricebox/host/node','module/ricebox/runtime'].some(root => inside(target,root)) || publicSods.has(target) || target === 'module/ricebox/make/muk.ts';
   if (owner === 'module/ricebox/integrations') return inside(target, 'module/ricebox/build') || inside(target, 'module/ricebox/deployment');
   if (owner === 'module/ricebox/host/node') return inside(target, 'module/ricebox/distribution');
   if (owner === 'module/ricebox/build' || owner === 'module/ricebox/deployment') return inside(target, 'module/ricebox/distribution') || inside(target, 'module/ricebox/host/node');

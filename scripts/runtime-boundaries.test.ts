@@ -90,3 +90,12 @@ test('Node readers cannot depend on execution or deployment orchestration',()=>{
   assert.equal(allowed('module/ricebox/deployment/local.ts','../host/node/hash.ts'),true);
   assert.equal(allowed('module/ricebox/distribution/inventory.ts','../host/node/hash.ts'),false);
 });
+
+
+test('verification consumes production contracts without becoming a production dependency',()=>{
+  const programs='module/ricebox/verification/programs.ts';
+  for(const target of ['../runtime/prepared-tree.ts','../deployment/local.ts','../make/muk.ts','../../sods/runtime/linux.ts','node:child_process']) assert.equal(allowed(programs,target),true,target);
+  for(const target of ['../make/layers.ts','../../sods/runtime/linux/kernel.ts','../../../why/api/host.ts','node:net']) assert.equal(allowed(programs,target),false,target);
+  for(const from of ['runtime/root.ts','distribution/manifest.ts','deployment/local.ts','build/prepare.ts','integrations/vite.ts']) assert.equal(allowed('module/ricebox/'+from,'../verification/programs.ts'),false,from);
+  assert.equal(allowed('module/ricebox/verification/language-cases.ts','node:child_process'),false);
+});

@@ -15,6 +15,7 @@ test('built npm package contains builder dependencies and imports public JS with
     execFileSync(process.execPath,[builder,out],{encoding:'utf8',timeout:30_000});
     const pkg=JSON.parse(readFileSync(join(out,'package.json'),'utf8'));
     assert.equal(pkg.private,true);
+    assert.equal(existsSync(join(out,'module/ricebox/verification')),false,'comparison harnesses are not package entries');
     assert.equal(existsSync(join(out,'module/otter')),false);
     assert.equal(existsSync(join(out,'module/ricebox/npm')),false);
     assert.equal(pkg.exports['./vite'].import,'./module/ricebox/integrations/vite.js');

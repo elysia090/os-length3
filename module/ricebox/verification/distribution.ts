@@ -3,7 +3,7 @@
 // a device and the web root, file by file from its packs, and
 // says where they differ; exits 1 when they do.
 //
-//   node module/ricebox/make/parity.ts ROOT WEB [--manifests DIR]
+//   node module/ricebox/verification/distribution.ts ROOT WEB [--manifests DIR]
 //
 // ROOT  the release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst),
 //       or a root installed from it (<data>/system/<sha256>/root)
@@ -22,7 +22,7 @@ const args = process.argv.slice(2);
 const flag = (name: string) => { const i = args.indexOf(name); if (i < 0) return null; const v = args[i + 1]; args.splice(i, 2); return v; };
 const manifests = flag('--manifests');
 const [rootAt, webAt] = args;
-if (!rootAt || !webAt) { console.error('usage: webroot-parity.ts ROOT WEB [--manifests DIR]'); process.exit(2); }
+if (!rootAt || !webAt) { console.error('usage: distribution.ts ROOT WEB [--manifests DIR]'); process.exit(2); }
 
 const native = await nativeTree(rootAt);
 const web = webTree(webAt);

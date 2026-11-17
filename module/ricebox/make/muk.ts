@@ -7,7 +7,7 @@
 //   node module/ricebox/make/muk.ts [WEB]     WEB: the web root (public/webroot)
 //
 // By the Vite plugin (why/app/vite.config.ts) at each dev-server start and build, where there is a web root; and by
-// what checks the root's programs in node (runnable.ts).
+// what checks the root's programs in node (../verification/programs.ts).
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync} from 'node:fs';

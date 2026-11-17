@@ -138,8 +138,8 @@ Linux.
 same program as on Linux) inside sods: the same Rust prompt, translated, in front of one terminal this kernel makes
 and given another, its signals read as a file (signalfd).
 
-**A box in node is made by muk.** What compares the root's programs here and on Linux (`module/ricebox/make/runnable.ts`,
-`module/ricebox/make/commands.ts`) runs each in one box, `muk run` of one config.json, made by the same muk on both: 554 of the
+**A box in node is made by muk.** What compares the root's programs here and on Linux (`module/ricebox/verification/programs.ts`,
+`module/ricebox/verification/commands.ts`) runs each in one box, `muk run` of one config.json, made by the same muk on both: 554 of the
 root's 555 programs and every line of work say the same (the one apart says which processor it runs on).
 
 **A box is made by muk on every host, and a terminal held by prompt or by the page that is one.** In a page's

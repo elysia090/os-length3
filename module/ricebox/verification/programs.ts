@@ -17,7 +17,7 @@
 // A program that cannot run yet still ships: this says which, and why, for
 // the translator's work.
 //
-//   node module/ricebox/make/runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]
+//   node module/ricebox/verification/programs.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]
 //
 // --fresh: this checkout's translator (../module/sods' wasm build), every program translated as it runs, not what WEB carries.
 // --muk MUK: the box's maker, made already for this machine (else made here of module/muk, by module/lib/build.sh).
@@ -34,7 +34,7 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {Kernel} from '../../sods/runtime/linux.ts';
-import {buildMuk} from './muk.ts';
+import {buildMuk} from '../make/muk.ts';
 import {openDistribution} from '../deployment/local.ts';
 import type {Index} from '../distribution/manifest.ts';
 
@@ -260,7 +260,7 @@ async function main() {
   const warm = args.includes('--warm') && !!args.splice(args.indexOf('--warm'), 1);
   const kept = warm ? mkdtempSync('/tmp/webroot-kept-') : null;
   const [web, rootDir] = args;
-  if (!web || !rootDir) { console.error('usage: runnable.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]'); process.exit(2); }
+  if (!web || !rootDir) { console.error('usage: programs.ts WEB ROOT_DIR [--out FILE.md] [--json FILE] [--jobs N] [--only REGEX] [--work-only] [--seconds N] [--fresh] [--warm] [--muk MUK]'); process.exit(2); }
   const w = openDistribution(web);
   const translator = new URL('../../sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url).pathname;
   if (!w.index.translator && !existsSync(translator)) throw new Error(`no translator: why names none, and ${translator} is not built`);
@@ -285,7 +285,7 @@ async function main() {
   const md = [
     `# Which programs of why the browser's Prompt runs`,
     '',
-    `${about}. Each program is run in a box on sods' Linux in node (the root mounted from why's packs as the browser mounts it, with its translations made ahead of time) and in the same box natively, each made by the same muk of the same config.json (its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node module/ricebox/make/runnable.ts\`.`,
+    `${about}. Each program is run in a box on sods' Linux in node (the root mounted from why's packs as the browser mounts it, with its translations made ahead of time) and in the same box natively, each made by the same muk of the same config.json (its own /, /dev, /proc, as a Prompt on the device has it), and the two are compared. Made by \`node module/ricebox/verification/programs.ts\`.`,
     '',
     `- **runs**: the same exit status and output as native (or, as native, no end)`,
     `- **not yet**: present, not yet runnable under muk: it ends otherwise than native (what differs, the system calls it was answered ENOSYS), box said why, or no end within the time`,

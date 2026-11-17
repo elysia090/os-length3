@@ -8,8 +8,8 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {execFileSync} from 'node:child_process';
-import {openDistribution} from '../deployment/local.ts';
-import {validateFileStore,fileStoreDescriptor} from './file-store.ts';
+import {openDistribution} from '../../deployment/local.ts';
+import {validateFileStore,fileStoreDescriptor} from '../../make/file-store.ts';
 const source=process.env.RICEBOX_RELEASE_DIR,muk=process.env.RICEBOX_MUK_FILE,mukHash=process.env.RICEBOX_MUK_SHA256,core=process.env.SODS_FILE_STORE_WASM;
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 test('historical full release runs muk and shell with a release-selected Rust file owner',{skip:!source||!muk||!mukHash||!core},async()=>{
@@ -26,7 +26,7 @@ test('historical full release runs muk and shell with a release-selected Rust fi
     const descriptor=fileStoreDescriptor(selected,bytes=>{const gz=gzipSync(bytes),sha256=hash(gz),path=`blobs/${sha256}.bin`;if(existingBlobs.has(path.slice(6)))assert.deepEqual(readFileSync(join(out,path)),gz);else writeFileSync(join(out,path),gz);return {path,sha256,size:gz.length,bytes:bytes.length};});
     const index={...original.index,fileStore:descriptor},bytes=Buffer.from(JSON.stringify(index)),sha256=hash(bytes),path=`index-${sha256}.json`;
     writeFileSync(join(out,path),bytes);writeFileSync(join(out,'webroot.json'),JSON.stringify({...original.about,index:{path,sha256,size:bytes.length}}));
-    const run=(web:string,program:string,args:string[])=>JSON.parse(execFileSync(process.execPath,[fileURLToPath(new URL('runnable.ts',import.meta.url)),'--child',JSON.stringify({web,path:program,args,translator:'',fresh:false,kept:null,muk})],{env:{...process.env,SODS_INLINE:'1'},encoding:'utf8',timeout:60_000,maxBuffer:1<<20}));
+    const run=(web:string,program:string,args:string[])=>JSON.parse(execFileSync(process.execPath,[fileURLToPath(new URL('../programs.ts',import.meta.url)),'--child',JSON.stringify({web,path:program,args,translator:'',fresh:false,kept:null,muk})],{env:{...process.env,SODS_INLINE:'1'},encoding:'utf8',timeout:60_000,maxBuffer:1<<20}));
     const baseline=run(sourceRoot,'/usr/bin/true',[]);assert.equal(baseline.status,0);assert.equal(baseline.error,null);
     const rust=run(out,'/usr/bin/sh',['-c','printf core-ok']);assert.equal(rust.status,0);assert.equal(rust.stdout,'core-ok');assert.equal(rust.stderr,'');assert.equal(rust.error,null);
     // An obsolete selected index must fail, not run the same root with TS storage.

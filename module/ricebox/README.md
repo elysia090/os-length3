@@ -62,19 +62,22 @@ product code. Runtime consumes it; producers and deployment tools use the same
 stored-format contract. Execution objects such as WebAssembly modules are kept in
 runtime/root-types.ts rather than serialized-manifest types.
 
-The existing make directory still contains producers, native/web comparison and
-execution tooling. Its remaining mixed responsibilities are being reviewed
-separately; it is not a proposed generic build/runtime abstraction:
+Comparison harnesses live in `verification/`, not in the production runtime or
+package entry points. They consume the distribution readers and execute matched
+native/sods cases. Their child executor is private to those checks. Language workloads are readable
+shell fixtures, fed byte-for-byte to both roots, not host-runner imports. The remaining
+`make/` producers and maintenance tools are being reviewed separately:
 
 
 ```
-make/layers.sh, layers.ts   a release root written as layers: its index, packs and blobs, the hot programs
-                            translated ahead
-make/parity.ts              the layers are the root: the same paths, modes, links and bytes
-make/muk.ts                 the box's maker put beside the layers (muk.json, a blob)
-make/runnable.ts            each program of the root run in a box muk makes, on sods' Linux and on this machine's
-make/commands.ts            the command line #80 lists, each command seen to run; the table `help` reads
-make/standin.ts             a small root for tests
+verification/distribution.ts  the layers match the root: paths, modes, links and bytes
+verification/programs.ts      programs run in matching native and sods boxes
+verification/commands.ts      command workloads compared; the evidence table `help` reads
+verification/workloads/       offline language projects as literal shell input
+verification/test/            harness contracts and release-selected file-store regression
+make/layers.sh, layers.ts      release root written as layers; hot programs translated ahead
+make/muk.ts                   the box maker put beside the layers (muk.json, a blob)
+make/standin.ts               a small root for tests
 ```
 
 A release of ricebox is whole without a product: the root, its layers, and beside them `muk` and `sods` (the
