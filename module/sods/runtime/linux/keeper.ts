@@ -14,28 +14,49 @@ import {taken, type Taken} from '../translation/kept.ts';
 export interface Kept { cache: string; at: Record<string, {main: string; more: string | null}> }
 /** A keeper reading from what the host keeps: what a kernel asks of it, and how many reads are under way (what waits, waits for them). */
 export interface Reading { has(origin: string): boolean; take(origin: string): Taken | null | undefined; reading(): number }
+/** Closing suppresses future delivery, not the underlying host read. Previously
+ * returned Taken values remain the caller's; callback failures are inspectable. */
+export interface RetirableReading extends Reading { close(): void; readonly failures: readonly unknown[] }
 
 /**
  * {has(origin), take(origin)} for a Kernel: take starts reading what is kept for `origin` and says undefined until it
  * is read, then gives it once, or null for good if it could not be had. `ready` is called
  * whenever a read ends (the kernel looks again); `read(urls)` hears what was read, for the page to count as used.
+ * Notifications are synchronous: returned promises are not awaited or observed.
  */
-export function keeper(kept: Kept, ready: () => void, read: (urls: string[]) => void = () => {}): Reading {
-  const state = new Map<string, 'reading' | Taken | null>(); // origin -> 'reading' | what was read | null
+export function keeper(kept: Kept, ready: () => void, read: (urls: string[]) => void = () => {}): RetirableReading {
+  const state = new Map<string, 'reading' | Taken | null>();
+  const failures: unknown[] = [];
+  let callbacks: {ready: () => void; read: (urls: string[]) => void} | null = {ready, read};
+  let closed = false, pending = 0;
   return {
-    has: (origin) => Object.hasOwn(kept.at, origin) && state.get(origin) !== null,
-    /** How many are being read now. */
-    reading: () => [...state.values()].filter((s) => s === 'reading').length,
+    failures,
+    close() { closed = true; callbacks = null; state.clear(); },
+    has: (origin) => !closed && Object.hasOwn(kept.at, origin) && state.get(origin) !== null,
+    // Closing cannot cancel an already-issued Cache Storage read.
+    reading: () => pending,
     take(origin) {
+      if (closed) return null;
       const s = state.get(origin);
       if (s === 'reading') return undefined;
       if (s === null) return null;
-      // Given once: freed later (Kernel.free), it is read again rather than held here.
       if (s !== undefined) { state.delete(origin); return s; }
-      state.set(origin, 'reading');
+      state.set(origin, 'reading'); pending++;
       const urls = kept.at[origin];
-      load(kept.cache, urls).then((v) => { state.set(origin, v); if (v) read([urls.main, ...(urls.more ? [urls.more] : [])]); },
-        () => state.set(origin, null)).finally(ready);
+      const finish = (value: Taken | null): void => {
+        pending--;
+        if (closed) return;
+        state.set(origin, value);
+        if (value) {
+          try { callbacks?.read([urls.main, ...(urls.more ? [urls.more] : [])]); }
+          catch (failure) { failures.push(failure); }
+        }
+        // read may close reentrantly. A failing diagnostic must not skip wake,
+        // whereas explicit close must suppress it. Never leave a finally chain
+        // rejected solely because a notification callback threw.
+        try { callbacks?.ready(); } catch (failure) { failures.push(failure); }
+      };
+      void load(kept.cache, urls).then(finish, () => finish(null));
       return undefined;
     },
   };

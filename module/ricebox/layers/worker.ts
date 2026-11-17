@@ -89,7 +89,7 @@
 import {WorkerLifetime} from './worker-lifetime.ts';
 import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
 import {Mirror, RemoteKernel, Vfs, keeper, linux, provide, said, warmThreads,
-  type Console, type File, type Kept, type Kernel, type Pumped, type Reading, type Said} from '../../sods/runtime/linux.ts';
+  type Console, type File, type Kept, type Kernel, type Pumped, type RetirableReading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
 import {type Given, type Packed} from './mount.ts';
 import {prepareTree, type FileCore, type PreparedTree} from './prepared-tree.ts';
@@ -169,7 +169,7 @@ const observerOwner = lifetime.observe('translation-observer', observations);
 let mirrorOwner: {release(): void} | null = null;
 let warmOwner: {release(): void} | null = null;
 /** Translations kept from earlier Prompts (keeper.ts), when the page has any. */
-let keep: Reading | null = null;
+let keep: RetirableReading | null = null;
 /** What is kept, by origin, as 'start' said it: a program translated ahead later ({type: 'kept', at}) is put here. */
 let keptAt: Kept['at'] | null = null;
 
@@ -418,6 +418,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
   if (data.type === 'retire') {
     if (!lifetime.accepting) { self.postMessage({type: 'retiring', owners: lifetime.snapshot()}); return; }
     lifetime.freeze(); // Before callbacks, including synchronous message reentry.
+    keep?.close(); // Detach late cache notifications; in-flight host reads may remain.
     clearTimeout(idle); clearTimeout(waking);
     for (const timer of rehearsalTimers) clearTimeout(timer);
     rehearsalTimers.clear();

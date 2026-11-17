@@ -785,3 +785,35 @@ idempotence bit in each operation token. Existing observation records still cost
 O(active or unresolved observations); no claim of fully bounded root collection or
 lower RSS follows. Tests separately cover pending operations, duplicate release,
 late unknown observations and failed-but-settled work.
+
+### Retire outstanding translation-cache delivery, not its host I/O
+
+The concrete unregistered callback path is keeper: a Cache Storage read completes
+later, stores a Taken translation, reports used URLs and wakes a kernel. It owns
+no File directly, but a supplied callback can capture a Kernel, and late delivery
+must not revive a retired private root. keeper now returns RetirableReading, an
+additive capability over the unchanged Reading interface. close is idempotent,
+rejects new consumption (has false, take null), clears undelivered cached results,
+and disconnects ready/read callbacks. It does not cancel an issued host read;
+reading reports the actual pending count until settlement, even after close.
+Late results are discarded. A Taken value already returned remains caller-owned.
+
+Read notification and wake exceptions are now recorded separately in failures;
+they do not turn a successful capture into a load failure, skip the independent
+wake, or leave a detached finally promise rejected. Reentrant close from read
+suppresses the subsequent wake. Private Worker closes its keeper immediately
+following admission freeze, before requests/drain. The raw standalone caller need
+not close: existing take-once/reload behavior remains.
+
+Tests use a controlled host cache returning a digest-verified real Wasm module,
+including delayed completion, reentrant close, both notification failures and
+normal repeat reads. This is not real-browser Cache Storage validation. A first
+test incorrectly assumed one microtask meant match had started; it failed and was
+corrected to await explicit match entry, not by loosening the ownership assertion.
+No read abort, collected RSS, FileScope disposal or Kernel/Image.source revocation
+is inferred. In particular a previously returned Taken and raw public Image alias
+cannot be invalidated by closing this delivery owner. Image/source retirement is
+still a distinct gate after private operation/callback ownership is closed.
+Notification functions here have a synchronous contract; returned asynchronous
+promises are not observed. Disconnecting callback slots is not a measurement or
+guarantee of physical GC of all lexical environments.

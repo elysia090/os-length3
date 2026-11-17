@@ -22,7 +22,7 @@ export {loadFileScope, prepareFileCore, type FileScope} from './linux/core-files
 export {Mirror} from './linux/mirror.ts';
 export {Kernel, type Image, type Pumped} from './linux/process.ts';
 export {RemoteKernel, warmThreads} from './linux/remote.ts';
-export {keeper, type Kept, type Reading} from './linux/keeper.ts';
+export {keeper, type Kept, type Reading, type RetirableReading} from './linux/keeper.ts';
 export {said, type Said} from './linux/waiting.ts';
 export type {Console, Far, Outside} from './linux/parts.ts';
 
