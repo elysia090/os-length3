@@ -10,6 +10,11 @@ use crate::inode::{Inode, Tree};
 use crate::lease::{Domain, Error};
 use crate::read::{ReadCapacity, Reads};
 use crate::syscall::{Continuation, Step};
+use crate::{
+    credentials::Credentials,
+    fs_context, mount,
+    startup::{Facts, Startup},
+};
 use std::cell::RefCell;
 const DOMAIN: u64 = 1;
 const TREE: u64 = 2;
@@ -21,12 +26,17 @@ struct Builder {
     limits: descriptor::Limits,
     capacity: Option<ReadCapacity>,
     file_limit: usize,
+    profile: Option<Profile>,
+    root_view: Option<mount::Ticket>,
     name: Vec<u8>,
     input: Vec<u8>,
 }
 struct Sealed {
     files: Files,
-    table: Table,
+    table: Option<Table>,
+    root: Option<mount::Place>,
+    root_view: Option<mount::Ticket>,
+    fd_limit: u32,
     reads: Reads,
     input: Vec<u8>,
     file_limit: usize,
@@ -34,20 +44,100 @@ struct Sealed {
 enum Resources {
     MemoryOnly,
     Diagnostic(Table),
+    Normal {
+        table: Option<Table>,
+        fs: Option<fs_context::Ticket>,
+        executable: Option<descriptor::Executable>,
+        decision: crate::credentials::Decision,
+        facts: Facts,
+    },
     Retired,
 }
 impl Resources {
     fn table(&self) -> Result<&Table, i32> {
         match self {
             Self::Diagnostic(table) => Ok(table),
+            Self::Normal {
+                table: Some(table), ..
+            } => Ok(table),
             _ => Err(-11),
         }
     }
 }
 struct ExecutionSlot {
+    normal: bool,
     resources: Resources,
     execution: Execution,
     continuation: Option<Continuation>,
+}
+struct Profile {
+    views: usize,
+    holds: usize,
+    policy: mount::ViewPolicy,
+}
+struct Preparing {
+    startup: Option<Startup>,
+    program: Option<descriptor::Program>,
+    failed_image: Option<Execution>,
+    fs: Option<fs_context::Ticket>,
+    table: Option<Table>,
+    random: [u8; 16],
+}
+enum Slot {
+    Preparing(Preparing),
+    Live(ExecutionSlot),
+    Retired(Option<Execution>),
+}
+impl Slot {
+    fn live(&self) -> Result<&ExecutionSlot, i32> {
+        match self {
+            Self::Live(v) => Ok(v),
+            _ => Err(-11),
+        }
+    }
+    fn live_mut(&mut self) -> Result<&mut ExecutionSlot, i32> {
+        match self {
+            Self::Live(v) => Ok(v),
+            _ => Err(-11),
+        }
+    }
+    fn preparing_mut(&mut self) -> Result<&mut Preparing, i32> {
+        match self {
+            Self::Preparing(v) => Ok(v),
+            _ => Err(-11),
+        }
+    }
+    fn binding(&self) -> Option<u64> {
+        match self {
+            Self::Preparing(p) => p
+                .startup
+                .as_ref()
+                .and_then(|v| v.binding())
+                .or_else(|| p.failed_image.as_ref().map(|v| v.binding())),
+            Self::Live(v) => Some(v.execution.binding()),
+            Self::Retired(v) => v.as_ref().map(|e| e.binding()),
+        }
+    }
+    fn owns(&self, t: Token) -> bool {
+        match self {
+            Self::Preparing(p) => p.startup.as_ref().is_some_and(|v| v.owns(t)),
+            Self::Live(v) => v.execution.owns(t),
+            Self::Retired(_) => false,
+        }
+    }
+    fn normal_binding(&self, b: u64) -> bool {
+        match self {
+            Self::Preparing(p) => {
+                p.startup
+                    .as_ref()
+                    .and_then(|v| v.binding())
+                    .or_else(|| p.failed_image.as_ref().map(|v| v.binding()))
+                    == Some(b)
+            }
+            Self::Live(v) => v.normal && v.execution.binding() == b,
+            Self::Retired(v) => v.as_ref().is_some_and(|e| e.binding() == b),
+        }
+    }
 }
 struct StackTransport {
     owner: u64,
@@ -56,9 +146,10 @@ struct StackTransport {
     output: Option<crate::stack::Stack>,
 }
 struct State {
+    startup_input: Vec<u8>,
     stack: Option<StackTransport>,
     domain: Domain,
-    executions: Vec<ExecutionSlot>,
+    executions: Vec<Slot>,
     execution_limit: usize,
     result: u64,
     length: u64,
@@ -122,7 +213,7 @@ fn generic(sequence: u64, f: impl FnOnce(&mut Domain, Token) -> Result<u64, Erro
     with_state(false, |s| {
         let t = token(sequence);
         if s.sealed.as_ref().is_some_and(|r| r.reads.owns(t))
-            || s.executions.iter().any(|e| e.execution.owns(t))
+            || s.executions.iter().any(|e| e.owns(t))
         {
             return Err(-4);
         }
@@ -159,6 +250,7 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             Err(e) => return code(e),
         };
         *outer = Some(State {
+            startup_input: Vec::new(),
             stack: None,
             domain,
             executions: Vec::new(),
@@ -201,17 +293,22 @@ pub extern "C" fn linux_binding_room() -> i32 {
 }
 #[no_mangle]
 pub extern "C" fn linux_span(binding: u64, offset: u64, length: u64) -> i32 {
-    with(|d| d.span(binding, offset, length).map(|t| t.sequence()))
+    with_state(false, |s| {
+        if s.executions.iter().any(|e| e.normal_binding(binding)) {
+            return Err(-4);
+        }
+        s.domain
+            .span(binding, offset, length)
+            .map(|t| t.sequence())
+            .map_err(code)
+    })
 }
 #[no_mangle]
 pub extern "C" fn linux_change(binding: u64, extent: u64) -> i32 {
     with_state(false, |s| {
         // An execution owns its image incarnation. Generic physical growth must
         // not silently leave that owner pointing at a retired binding.
-        if s.executions
-            .iter()
-            .any(|e| e.execution.binding() == binding)
-        {
+        if s.executions.iter().any(|e| e.binding() == Some(binding)) {
             return Err(-4);
         }
         s.domain
@@ -281,6 +378,8 @@ pub extern "C" fn linux_files_prepare(
             },
             capacity: Some(capacity),
             file_limit: file_bytes as usize,
+            profile: None,
+            root_view: None,
             name: Vec::new(),
             input: Vec::new(),
         });
@@ -364,12 +463,45 @@ pub extern "C" fn linux_files_seal(fd_limit: u32) -> i32 {
         if let Some(tree) = b.tree.take() {
             b.sealing = Some(Files::new(FILES, tree, b.limits));
         }
-        let table = b
-            .sealing
-            .as_mut()
-            .ok_or(-9)?
-            .table(fd_limit)
-            .map_err(|_| -10)?;
+        if let Some(profile) = &b.profile {
+            if b.root_view.is_none() {
+                b.root_view = Some(
+                    b.sealing
+                        .as_mut()
+                        .ok_or(-9)?
+                        .bootstrap_mount(
+                            inode(1),
+                            mount::Limits {
+                                views: profile.views,
+                                holds: profile.holds,
+                            },
+                            profile.policy,
+                        )
+                        .map_err(|_| -10)?,
+                );
+            }
+        }
+        let root = match &b.root_view {
+            Some(view) => Some(
+                b.sealing
+                    .as_ref()
+                    .ok_or(-9)?
+                    .view_root(view)
+                    .map_err(|_| -10)?,
+            ),
+            None => None,
+        };
+        let table = if b.profile.is_none() {
+            Some(
+                b.sealing
+                    .as_mut()
+                    .ok_or(-9)?
+                    .table(fd_limit)
+                    .map_err(|_| -10)?,
+            )
+        } else {
+            None
+        };
         // Capacity was acquired in prepare, before ownership moved into Files.
         let files = b.sealing.take().unwrap();
         let capacity = b.capacity.take().unwrap();
@@ -377,6 +509,9 @@ pub extern "C" fn linux_files_seal(fd_limit: u32) -> i32 {
         s.sealed = Some(Sealed {
             files,
             table,
+            root,
+            root_view: b.root_view.take(),
+            fd_limit,
             reads,
             input: Vec::new(),
             file_limit: b.file_limit,
@@ -390,7 +525,7 @@ pub extern "C" fn linux_open(node: u64) -> i32 {
     with_state(false, |s| {
         let r = s.sealed.as_mut().ok_or(-9)?;
         r.files
-            .open(&r.table, inode(node), false)
+            .open(r.table.as_ref().ok_or(-11)?, inode(node), false)
             .map(|fd| fd as u64)
             .map_err(|_| -10)
     })
@@ -400,7 +535,7 @@ pub extern "C" fn linux_dup(fd: u32) -> i32 {
     with_state(false, |s| {
         let r = s.sealed.as_mut().ok_or(-9)?;
         r.files
-            .dup(&r.table, fd, 0, false)
+            .dup(r.table.as_ref().ok_or(-11)?, fd, 0, false)
             .map(|fd| fd as u64)
             .map_err(|_| -10)
     })
@@ -409,14 +544,20 @@ pub extern "C" fn linux_dup(fd: u32) -> i32 {
 pub extern "C" fn linux_close(fd: u32) -> i32 {
     with_state(false, |s| {
         let r = s.sealed.as_mut().ok_or(-9)?;
-        r.files.close(&r.table, fd).map(|_| 0).map_err(|_| -10)
+        r.files
+            .close(r.table.as_ref().ok_or(-11)?, fd)
+            .map(|_| 0)
+            .map_err(|_| -10)
     })
 }
 #[no_mangle]
 pub extern "C" fn linux_offset(fd: u32) -> i32 {
     with_state(true, |s| {
         let r = s.sealed.as_ref().ok_or(-9)?;
-        r.files.offset(&r.table, fd).map(|v| v.0).map_err(|_| -10)
+        r.files
+            .offset(r.table.as_ref().ok_or(-11)?, fd)
+            .map(|v| v.0)
+            .map_err(|_| -10)
     })
 }
 #[no_mangle]
@@ -424,7 +565,7 @@ pub extern "C" fn linux_seek(fd: u32, offset: u64) -> i32 {
     with_state(false, |s| {
         let r = s.sealed.as_mut().ok_or(-9)?;
         r.files
-            .set_offset(&r.table, fd, offset)
+            .set_offset(r.table.as_ref().ok_or(-11)?, fd, offset)
             .map(|_| 0)
             .map_err(|_| -10)
     })
@@ -436,7 +577,7 @@ pub extern "C" fn linux_read_begin(fd: u32, binding: u64, at: u64, requested: u6
         r.reads
             .begin(
                 &mut r.files,
-                &r.table,
+                r.table.as_ref().ok_or(-11)?,
                 &mut s.domain,
                 fd,
                 binding,
@@ -502,10 +643,10 @@ pub extern "C" fn linux_read_query(id: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn linux_read_retire(id: u64) -> i32 {
     with_state(false, |s| {
-        if s.executions
-            .iter()
-            .any(|e| e.continuation.as_ref().is_some_and(|c| c.owns_read(id)))
-        {
+        if s.executions.iter().any(|e| {
+            e.live()
+                .is_ok_and(|v| v.continuation.as_ref().is_some_and(|c| c.owns_read(id)))
+        }) {
             return Err(-4);
         }
         s.sealed
@@ -522,7 +663,7 @@ pub extern "C" fn linux_read_retire(id: u64) -> i32 {
 // neither identity nor image/run state is reconstructed by the host.
 fn execution_index(s: &State, id: u64) -> Result<usize, i32> {
     let n = usize::try_from(id.checked_sub(1).ok_or(-11)?).map_err(|_| -11)?;
-    if n < s.executions.len() && !matches!(s.executions[n].resources, Resources::Retired) {
+    if n < s.executions.len() && !matches!(s.executions[n].live()?.resources, Resources::Retired) {
         Ok(n)
     } else {
         Err(-11)
@@ -531,11 +672,13 @@ fn execution_index(s: &State, id: u64) -> Result<usize, i32> {
 #[no_mangle]
 pub extern "C" fn linux_execution_create(binding: u64) -> i32 {
     with_state(false, |s| {
-        s.domain.range(binding, 0, 0).map_err(code)?;
-        if s.executions
-            .iter()
-            .any(|e| e.execution.binding() == binding)
+        if s.builder.as_ref().is_some_and(|b| b.profile.is_some())
+            || s.sealed.as_ref().is_some_and(|r| r.root.is_some())
         {
+            return Err(-11);
+        }
+        s.domain.range(binding, 0, 0).map_err(code)?;
+        if s.executions.iter().any(|e| e.binding() == Some(binding)) {
             return Err(-4);
         }
         if s.executions.len() == s.execution_limit {
@@ -544,14 +687,19 @@ pub extern "C" fn linux_execution_create(binding: u64) -> i32 {
         s.executions.try_reserve(1).map_err(|_| -1)?;
         let id = s.executions.len() as u64 + 1;
         let resources = match &mut s.sealed {
-            Some(r) => Resources::Diagnostic(r.files.share(&r.table).map_err(|_| -10)?),
+            Some(r) => Resources::Diagnostic(
+                r.files
+                    .share(r.table.as_ref().ok_or(-11)?)
+                    .map_err(|_| -10)?,
+            ),
             None => Resources::MemoryOnly,
         };
-        s.executions.push(ExecutionSlot {
+        s.executions.push(Slot::Live(ExecutionSlot {
+            normal: false,
             resources,
             execution: Execution::new(id, binding),
             continuation: None,
-        });
+        }));
         Ok(id)
     })
 }
@@ -559,7 +707,11 @@ pub extern "C" fn linux_execution_create(binding: u64) -> i32 {
 pub extern "C" fn linux_image_begin(id: u64, extent: u64) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
+        if matches!(s.executions[i].live()?.resources, Resources::Normal { .. }) {
+            return Err(-11);
+        }
         s.executions[i]
+            .live_mut()?
             .execution
             .image_begin(&mut s.domain, extent)
             .map_err(|_| -11)?;
@@ -573,6 +725,9 @@ pub extern "C" fn linux_image_begin(id: u64, extent: u64) -> i32 {
 pub extern "C" fn linux_image_finish(id: u64, outcome: u32) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
+        if matches!(s.executions[i].live()?.resources, Resources::Normal { .. }) {
+            return Err(-11);
+        }
         let outcome = match outcome {
             0 => ImageResult::Installed,
             1 => ImageResult::Untouched,
@@ -581,13 +736,14 @@ pub extern "C" fn linux_image_finish(id: u64, outcome: u32) -> i32 {
             _ => return Err(-5),
         };
         s.executions[i]
+            .live_mut()?
             .execution
             .image_finish(&mut s.domain, outcome)
             .map_err(|_| -11)?;
         if s.stack.as_ref().is_some_and(|stack| stack.owner == id) {
             s.stack = None;
         }
-        Ok(s.executions[i].execution.binding())
+        Ok(s.executions[i].live_mut()?.execution.binding())
     })
 }
 #[no_mangle]
@@ -625,9 +781,9 @@ pub extern "C" fn linux_managed_read_begin(
         r.reads
             .begin_managed(
                 &mut r.files,
-                s.executions[i].resources.table()?,
+                s.executions[i].live()?.resources.table()?,
                 &mut s.domain,
-                &s.executions[i].execution,
+                &s.executions[i].live()?.execution,
                 fd,
                 at,
                 requested,
@@ -642,7 +798,7 @@ pub extern "C" fn linux_read_load_start(execution: u64, id: u64) -> i32 {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let (source, attempt) = r
             .reads
-            .load_start(&mut r.files, &s.executions[i].execution, id)
+            .load_start(&mut r.files, &s.executions[i].live()?.execution, id)
             .map_err(read_code)?;
         s.length = attempt as u64;
         Ok(source as u64)
@@ -679,7 +835,7 @@ fn finish_source(
         return Err(-5);
     }
     let i = execution_index(s, execution)?;
-    let slot = &mut s.executions[i];
+    let slot = s.executions[i].live_mut()?;
     if syscall && !slot.continuation.as_ref().is_some_and(|c| c.owns_read(id)) {
         return Err(-12);
     }
@@ -735,7 +891,12 @@ pub extern "C" fn linux_managed_read_start(execution: u64, id: u64) -> i32 {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let (pointer, length) = r
             .reads
-            .start_managed(&mut r.files, &mut s.domain, &s.executions[i].execution, id)
+            .start_managed(
+                &mut r.files,
+                &mut s.domain,
+                &s.executions[i].live()?.execution,
+                id,
+            )
             .map_err(read_code)?;
         s.length = length;
         Ok(pointer as u64)
@@ -781,8 +942,13 @@ fn step(s: &mut State, command: Step) -> u64 {
 pub extern "C" fn linux_run_start(id: u64) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
-        let slot = &mut s.executions[i];
-        if slot.continuation.is_none() && matches!(slot.resources, Resources::Diagnostic(_)) {
+        let slot = s.executions[i].live_mut()?;
+        if slot.continuation.is_none()
+            && matches!(
+                slot.resources,
+                Resources::Diagnostic(_) | Resources::Normal { .. }
+            )
+        {
             slot.continuation = Some(Continuation::new(&slot.execution).map_err(|_| -11)?);
         }
         slot.execution
@@ -795,7 +961,7 @@ pub extern "C" fn linux_run_start(id: u64) -> i32 {
 pub extern "C" fn linux_run_receipt(id: u64, invocation: u64, outcome: u32, next: u64) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
-        let e = &mut s.executions[i].execution;
+        let e = &mut s.executions[i].live_mut()?.execution;
         let invocation = e.invocation(invocation).map_err(|_| -11)?;
         let unwind = match outcome {
             0 => Unwind::Yield(next),
@@ -824,7 +990,7 @@ pub extern "C" fn linux_syscall(
 ) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
-        let slot = &mut s.executions[i];
+        let slot = s.executions[i].live_mut()?;
         let invocation = slot.execution.invocation(invocation).map_err(|_| -11)?;
         let r = s.sealed.as_mut().ok_or(-9)?;
         let command = slot
@@ -850,7 +1016,7 @@ pub extern "C" fn linux_syscall(
 pub extern "C" fn linux_syscall_complete(id: u64) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
-        let slot = &mut s.executions[i];
+        let slot = s.executions[i].live_mut()?;
         let r = s.sealed.as_mut().ok_or(-9)?;
         let command = slot
             .continuation
@@ -868,7 +1034,7 @@ pub extern "C" fn linux_syscall_resumed(id: u64, stopped: u32, success: u32) -> 
             return Err(-5);
         }
         let i = execution_index(s, id)?;
-        let slot = &mut s.executions[i];
+        let slot = s.executions[i].live_mut()?;
         slot.continuation
             .as_mut()
             .ok_or(-11)?
@@ -881,7 +1047,7 @@ pub extern "C" fn linux_syscall_resumed(id: u64, stopped: u32, success: u32) -> 
 pub extern "C" fn linux_syscall_abandon(id: u64) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
-        let slot = &mut s.executions[i];
+        let slot = s.executions[i].live_mut()?;
         let r = s.sealed.as_mut().ok_or(-9)?;
         slot.continuation
             .as_mut()
@@ -906,7 +1072,14 @@ pub extern "C" fn linux_stack_input(id: u64, length: u32) -> i32 {
             return Err(-5);
         }
         let i = execution_index(s, id)?;
-        let (generation, _) = s.executions[i].execution.initialization().ok_or(-11)?;
+        if matches!(s.executions[i].live()?.resources, Resources::Normal { .. }) {
+            return Err(-11);
+        }
+        let (generation, _) = s.executions[i]
+            .live_mut()?
+            .execution
+            .initialization()
+            .ok_or(-11)?;
         let owner = id;
         if s.stack.as_ref().is_some_and(|stack| stack.owner != id) {
             return Err(-4);
@@ -927,7 +1100,14 @@ pub extern "C" fn linux_stack_input(id: u64, length: u32) -> i32 {
 pub extern "C" fn linux_stack_build(id: u64) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
-        let (generation, extent) = s.executions[i].execution.initialization().ok_or(-11)?;
+        if matches!(s.executions[i].live()?.resources, Resources::Normal { .. }) {
+            return Err(-11);
+        }
+        let (generation, extent) = s.executions[i]
+            .live_mut()?
+            .execution
+            .initialization()
+            .ok_or(-11)?;
         let transport = s.stack.as_mut().ok_or(-9)?;
         if transport.owner != id || transport.generation != generation {
             return Err(-11);
@@ -961,7 +1141,7 @@ pub extern "C" fn linux_stack_clear() -> i32 {
 pub extern "C" fn linux_execution_retire(id: u64) -> i32 {
     with_state(true, |s| {
         let i = usize::try_from(id.checked_sub(1).ok_or(-11)?).map_err(|_| -11)?;
-        let slot = s.executions.get_mut(i).ok_or(-11)?;
+        let slot = s.executions.get_mut(i).ok_or(-11)?.live_mut()?;
         if matches!(slot.resources, Resources::Retired) {
             return Ok(1);
         }
@@ -989,6 +1169,33 @@ pub extern "C" fn linux_execution_retire(id: u64) -> i32 {
         {
             return Ok(0);
         }
+        if let Resources::Normal {
+            table,
+            fs,
+            executable,
+            ..
+        } = &mut slot.resources
+        {
+            let r = s.sealed.as_mut().ok_or(-9)?;
+            if let Some(v) = table.take() {
+                if let Err((_, v)) = r.files.let_go(v) {
+                    *table = Some(v);
+                    return Err(-10);
+                }
+            }
+            if let Some(v) = fs.take() {
+                if let Err((_, v)) = r.files.release_fs(v) {
+                    *fs = Some(v);
+                    return Err(-10);
+                }
+            }
+            if let Some(v) = executable.take() {
+                if let Err((_, v)) = r.files.release_executable(v) {
+                    *executable = Some(v);
+                    return Err(-10);
+                }
+            }
+        }
         // No callback or fallible operation between holder extraction and release.
         let resources = std::mem::replace(&mut slot.resources, Resources::Retired);
         if let Resources::Diagnostic(table) = resources {
@@ -1012,9 +1219,428 @@ pub extern "C" fn linux_execution_unstarted_stopped(id: u64) -> i32 {
     with_state(false, |s| {
         let i = execution_index(s, id)?;
         s.executions[i]
+            .live_mut()?
             .execution
             .unstarted_stopped()
             .map_err(|_| -11)?;
         Ok(0)
+    })
+}
+
+/// Explicit prepared-root profile. No diagnostic table is created at seal.
+#[no_mangle]
+pub extern "C" fn linux_prepared_files(
+    inodes: u32,
+    entries: u32,
+    file_bytes: u32,
+    tables: u32,
+    descriptions: u32,
+    slots: u32,
+    reads: u32,
+    contexts: u32,
+    views: u32,
+    holds: u32,
+    policy: u32,
+) -> i32 {
+    with_state(false, |s| {
+        if s.builder.is_some() || s.sealed.is_some() || !s.executions.is_empty() {
+            return Err(-9);
+        }
+        if policy & !7 != 0 || contexts == 0 || views == 0 || holds == 0 {
+            return Err(-5);
+        }
+        let tree = Tree::new(
+            TREE,
+            inodes as usize,
+            entries as usize,
+            file_bytes as usize,
+            crate::inode::Creation {
+                mode: 0o755,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .map_err(|_| -10)?;
+        let capacity = ReadCapacity::new(reads as usize).map_err(read_code)?;
+        s.builder = Some(Builder {
+            tree: Some(tree),
+            sealing: None,
+            limits: descriptor::Limits {
+                contexts: contexts as usize,
+                tables: tables as usize,
+                descriptions: descriptions as usize,
+                slots: slots as usize,
+            },
+            capacity: Some(capacity),
+            file_limit: file_bytes as usize,
+            profile: Some(Profile {
+                views: views as usize,
+                holds: holds as usize,
+                policy: mount::ViewPolicy {
+                    no_exec: policy & 1 != 0,
+                    no_suid: policy & 2 != 0,
+                    no_symfollow: policy & 4 != 0,
+                },
+            }),
+            root_view: None,
+            name: Vec::new(),
+            input: Vec::new(),
+        });
+        Ok(1)
+    })
+}
+const STARTUP_WIRE_MAX: usize = 2 * 1024 * 1024;
+fn startup_limits() -> crate::stack::Limits {
+    crate::stack::Limits {
+        max_string_bytes: 128 * 1024,
+        max_input_bytes: STARTUP_WIRE_MAX as u64,
+        max_pointers: 65536,
+    }
+}
+fn startup_word(bytes: &[u8], at: &mut usize) -> Result<u64, i32> {
+    let end = at.checked_add(8).ok_or(-5)?;
+    let b = bytes.get(*at..end).ok_or(-5)?;
+    *at = end;
+    Ok(u64::from_le_bytes(b.try_into().unwrap()))
+}
+fn startup_string<'a>(bytes: &'a [u8], at: &mut usize, n: u64) -> Result<&'a [u8], i32> {
+    let n = usize::try_from(n).map_err(|_| -5)?;
+    if n >= 128 * 1024 {
+        return Err(-5);
+    }
+    let end = at.checked_add(n).ok_or(-5)?;
+    let b = bytes.get(*at..end).ok_or(-5)?;
+    if b.contains(&0) {
+        return Err(-5);
+    }
+    *at = end;
+    Ok(b)
+}
+fn slot_index(s: &State, id: u64) -> Result<usize, i32> {
+    let i = usize::try_from(id.checked_sub(1).ok_or(-11)?).map_err(|_| -11)?;
+    if i < s.executions.len() {
+        Ok(i)
+    } else {
+        Err(-11)
+    }
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_input(length: u32) -> i32 {
+    with_state(false, |s| {
+        if length as usize > STARTUP_WIRE_MAX {
+            return Err(-5);
+        }
+        let mut b = Vec::new();
+        b.try_reserve_exact(length as usize).map_err(|_| -1)?;
+        b.resize(length as usize, 0);
+        s.startup_input = b;
+        Ok(if length == 0 {
+            0
+        } else {
+            s.startup_input.as_mut_ptr() as u64
+        })
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_begin() -> i32 {
+    with_state(false, |s| {
+        let wire = &s.startup_input;
+        let mut at = 0;
+        if startup_word(wire, &mut at)? != 1 {
+            return Err(-5);
+        }
+        let argc = usize::try_from(startup_word(wire, &mut at)?).map_err(|_| -5)?;
+        let envc = usize::try_from(startup_word(wire, &mut at)?).map_err(|_| -5)?;
+        let pathlen = startup_word(wire, &mut at)?;
+        let count = argc.checked_add(envc).filter(|n| *n <= 65536).ok_or(-5)?;
+        let random: [u8; 16] = wire.get(at..at + 16).ok_or(-5)?.try_into().unwrap();
+        at += 16;
+        let path = startup_string(wire, &mut at, pathlen)?;
+        let mut strings = Vec::new();
+        strings.try_reserve_exact(count).map_err(|_| -1)?;
+        for _ in 0..count {
+            let n = startup_word(wire, &mut at)?;
+            strings.push(startup_string(wire, &mut at, n)?);
+        }
+        if at != wire.len() {
+            return Err(-5);
+        }
+        crate::stack::validate_arguments(
+            path,
+            &strings[..argc],
+            &strings[argc..],
+            startup_limits(),
+        )
+        .map_err(|_| -5)?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let root = r.root.as_ref().ok_or(-11)?;
+        if s.executions.len() >= s.execution_limit {
+            return Err(-1);
+        }
+        s.executions.try_reserve(1).map_err(|_| -1)?;
+        let id = s.executions.len() as u64 + 1;
+        s.executions.push(Slot::Preparing(Preparing {
+            startup: None,
+            program: None,
+            failed_image: None,
+            fs: None,
+            table: None,
+            random,
+        }));
+        s.result = id; // Failure after admission leaves an addressable cleanup owner.
+        let p = s.executions.last_mut().unwrap().preparing_mut()?;
+        p.fs = Some(r.files.create_fs(root, root, 0o022).map_err(|_| -10)?);
+        p.table = Some(r.files.table(r.fd_limit).map_err(|_| -10)?);
+        p.program = Some(
+            r.files
+                .prepare_program(p.fs.as_ref().unwrap(), &Credentials::initial_root(), path)
+                .map_err(|_| -10)?,
+        );
+        match Startup::new(
+            id,
+            &r.files,
+            p.program.take().unwrap(),
+            &strings[..argc],
+            &strings[argc..],
+            startup_limits(),
+        ) {
+            Ok(v) => p.startup = Some(v),
+            Err((_, v)) => {
+                p.program = Some(v);
+                return Err(-10);
+            }
+        }
+        s.startup_input = Vec::new();
+        Ok(id)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_check(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = slot_index(s, id)?;
+        let p = s.executions[i].preparing_mut()?;
+        if !p.startup.as_ref().is_some_and(|v| v.continuable()) {
+            return Err(-11);
+        }
+        Ok(0)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_source_start(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = slot_index(s, id)?;
+        let p = s.executions[i].preparing_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        match p
+            .startup
+            .as_mut()
+            .ok_or(-11)?
+            .source_start(&mut r.files)
+            .map_err(|_| -10)?
+        {
+            Some(v) => {
+                s.auxiliary = v.attempt as u64;
+                Ok(v.source as u64)
+            }
+            None => Ok(0),
+        }
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_source_finish(id: u64, attempt: u32, success: u32) -> i32 {
+    with_state(false, |s| {
+        if success > 1 {
+            return Err(-5);
+        }
+        let i = slot_index(s, id)?;
+        let p = s.executions[i].preparing_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        p.startup
+            .as_mut()
+            .ok_or(-11)?
+            .source_finish(&mut r.files, id, attempt, success == 1, &mut r.input)
+            .map_err(|_| -10)?;
+        Ok(0)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_bytes(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = slot_index(s, id)?;
+        let p = s.executions[i].preparing_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let bytes = p
+            .startup
+            .as_mut()
+            .ok_or(-11)?
+            .translation_start(&mut r.files)
+            .map_err(|_| -10)?;
+        s.length = bytes.len() as u64;
+        Ok(bytes.as_ptr() as u64)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_translation_finish(
+    id: u64,
+    success: u32,
+    entry: u64,
+    phdr: u64,
+    phent: u64,
+    phnum: u64,
+    extent: u64,
+) -> i32 {
+    with_state(false, |s| {
+        if success > 1 {
+            return Err(-5);
+        }
+        let i = slot_index(s, id)?;
+        s.executions[i]
+            .preparing_mut()?
+            .startup
+            .as_mut()
+            .ok_or(-11)?
+            .translation_finish(
+                id,
+                if success == 1 {
+                    Some(Facts {
+                        entry,
+                        phdr,
+                        phent,
+                        phnum,
+                        extent,
+                    })
+                } else {
+                    None
+                },
+            )
+            .map_err(|_| -10)?;
+        Ok(0)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_image_begin(id: u64, binding: u64, low: u64, top: u64) -> i32 {
+    with_state(false, |s| {
+        let i = slot_index(s, id)?;
+        if s.executions.iter().any(|v| v.binding() == Some(binding)) {
+            return Err(-4);
+        }
+        let p = s.executions[i].preparing_mut()?;
+        p.startup
+            .as_mut()
+            .ok_or(-11)?
+            .image_begin(&mut s.domain, binding, low, top, &p.random)
+            .map_err(|_| -11)?;
+        Ok(0)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_stack(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = slot_index(s, id)?;
+        let p = s.executions[i].preparing_mut()?;
+        let stack = p.startup.as_ref().ok_or(-11)?.stack().map_err(|_| -11)?;
+        s.length = stack.bytes.len() as u64;
+        s.auxiliary = stack.pointer;
+        Ok(stack.bytes.as_ptr() as u64)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_image_finish(id: u64, outcome: u32) -> i32 {
+    with_state(false, |s| {
+        let i = slot_index(s, id)?;
+        let p = s.executions[i].preparing_mut()?;
+        let outcome = match outcome {
+            0 => ImageResult::Installed,
+            1 => ImageResult::Untouched,
+            2 => ImageResult::PoisonedStopped,
+            3 => ImageResult::Unknown,
+            _ => return Err(-5),
+        };
+        let startup = p.startup.as_mut().ok_or(-11)?;
+        startup
+            .image_finish(&mut s.domain, outcome)
+            .map_err(|_| -11)?;
+        let binding = startup.binding().ok_or(-11)?;
+        if let Some(live) = startup.take_live() {
+            let resources = Resources::Normal {
+                table: p.table.take(),
+                fs: p.fs.take(),
+                executable: Some(live.executable),
+                decision: live.decision,
+                facts: live.facts,
+            };
+            s.executions[i] = Slot::Live(ExecutionSlot {
+                normal: true,
+                resources,
+                execution: live.execution,
+                continuation: None,
+            });
+        }
+        Ok(binding)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_failed_image(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = slot_index(s, id)?;
+        let p = s.executions[i].preparing_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        if p.failed_image.is_none() {
+            p.failed_image = p
+                .startup
+                .as_mut()
+                .ok_or(-11)?
+                .take_failed_image(&mut r.files)
+                .map_err(|_| -10)?;
+        }
+        Ok(p.failed_image.as_ref().ok_or(-11)?.binding())
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_cancel(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = slot_index(s, id)?;
+        if matches!(s.executions[i], Slot::Retired(_)) {
+            return Ok(1);
+        }
+        let p = s.executions[i].preparing_mut()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        if let Some(v) = p.startup.as_mut() {
+            if !v.cancel(&mut r.files).map_err(|_| -10)? {
+                return Ok(0);
+            }
+        }
+        if let Some(v) = p.program.take() {
+            if let Err((_, v)) = r.files.release_program(v) {
+                p.program = Some(v);
+                return Err(-10);
+            }
+        }
+        if let Some(v) = p.table.take() {
+            if let Err((_, v)) = r.files.let_go(v) {
+                p.table = Some(v);
+                return Err(-10);
+            }
+        }
+        if let Some(v) = p.fs.take() {
+            if let Err((_, v)) = r.files.release_fs(v) {
+                p.fs = Some(v);
+                return Err(-10);
+            }
+        }
+        // Retain failed physical binding identity, not a physical reclamation claim.
+        let evidence = p.failed_image.take();
+        s.executions[i] = Slot::Retired(evidence);
+        Ok(1)
+    })
+}
+#[no_mangle]
+pub extern "C" fn linux_startup_entry(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        match &s.executions[i].live()?.resources {
+            Resources::Normal { facts, .. } => Ok(facts.entry),
+            _ => Err(-11),
+        }
     })
 }

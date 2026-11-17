@@ -7,6 +7,7 @@ use crate::{
     descriptor::{self, Executable, Files, LoadRequest, Program, ReadyProgram},
     execution::{self, Execution, ImageResult},
     lease::Domain,
+    stack,
 };
 
 #[derive(Debug)]
@@ -14,6 +15,7 @@ pub(crate) enum Error {
     Identity,
     State,
     Facts,
+    Arguments(stack::Error),
     Source(descriptor::Error),
     Execution(execution::Error),
 }
@@ -53,6 +55,82 @@ impl Facts {
         Ok(())
     }
 }
+struct Arguments {
+    bytes: Vec<u8>,
+    ranges: Vec<std::ops::Range<usize>>,
+    argc: usize,
+    limits: stack::Limits,
+}
+impl Arguments {
+    fn capture(
+        execfn: &[u8],
+        argv: &[&[u8]],
+        env: &[&[u8]],
+        limits: stack::Limits,
+    ) -> Result<Self, stack::Error> {
+        stack::validate_arguments(execfn, argv, env, limits)?;
+        let count = argv
+            .len()
+            .checked_add(env.len())
+            .ok_or(stack::Error::Overflow)?;
+        let bytes_len = argv.iter().chain(env).try_fold(0usize, |n, s| {
+            n.checked_add(s.len()).ok_or(stack::Error::Overflow)
+        })?;
+        let mut bytes = Vec::new();
+        let mut ranges = Vec::new();
+        bytes
+            .try_reserve_exact(bytes_len)
+            .map_err(|_| stack::Error::Capacity)?;
+        ranges
+            .try_reserve_exact(count)
+            .map_err(|_| stack::Error::Capacity)?;
+        for s in argv.iter().chain(env) {
+            let at = bytes.len();
+            bytes.extend_from_slice(s);
+            ranges.push(at..bytes.len());
+        }
+        Ok(Self {
+            bytes,
+            ranges,
+            argc: argv.len(),
+            limits,
+        })
+    }
+    fn build(
+        &self,
+        p: &ReadyProgram,
+        f: Facts,
+        low: u64,
+        top: u64,
+        random: &[u8],
+    ) -> Result<stack::Stack, stack::Error> {
+        let mut refs = Vec::new();
+        refs.try_reserve_exact(self.ranges.len())
+            .map_err(|_| stack::Error::Capacity)?;
+        for r in &self.ranges {
+            refs.push(&self.bytes[r.clone()]);
+        }
+        stack::build(stack::Input {
+            execfn: p.execfn(),
+            argv: &refs[..self.argc],
+            env: &refs[self.argc..],
+            facts: stack::Facts {
+                entry: f.entry,
+                phdr: f.phdr,
+                phent: f.phent,
+                phnum: f.phnum,
+            },
+            credentials: p.stack_credentials(),
+            random,
+            region: stack::Region {
+                low,
+                top,
+                extent: f.extent,
+            },
+            limits: self.limits,
+        })
+    }
+}
 pub(crate) struct Live {
     pub execution: Execution,
     pub executable: Executable,
@@ -65,7 +143,7 @@ enum State {
     Ready(ReadyProgram),
     Translating(ReadyProgram),
     Translated(ReadyProgram, Facts),
-    Image(ReadyProgram, Facts, Execution, bool),
+    Image(ReadyProgram, Facts, Execution, bool, stack::Stack),
     FailedProgram(Program),
     FailedReady(ReadyProgram),
     FailedImage(ReadyProgram, Execution),
@@ -78,22 +156,61 @@ pub(crate) struct Startup {
     id: u64,
     owner: u64,
     cancelled: bool,
+    arguments: Arguments,
     state: State,
 }
 impl Startup {
-    pub(crate) fn new(id: u64, files: &Files, program: Program) -> Result<Self, (Error, Program)> {
+    pub(crate) fn new(
+        id: u64,
+        files: &Files,
+        program: Program,
+        argv: &[&[u8]],
+        env: &[&[u8]],
+        limits: stack::Limits,
+    ) -> Result<Self, (Error, Program)> {
         if id == 0 {
             return Err((Error::Identity, program));
         }
         if let Err(e) = files.check_unstarted_program(&program) {
             return Err((e.into(), program));
         }
+        let arguments = match Arguments::capture(program.execfn(), argv, env, limits) {
+            Ok(a) => a,
+            Err(e) => return Err((Error::Arguments(e), program)),
+        };
         Ok(Self {
+            arguments,
             id,
             owner: files.owner(),
             cancelled: false,
             state: State::Source(program),
         })
+    }
+    pub(crate) fn binding(&self) -> Option<u64> {
+        match &self.state {
+            State::Image(_, _, e, _, _) | State::FailedImage(_, e) => Some(e.binding()),
+            State::Live(live) => Some(live.execution.binding()),
+            _ => None,
+        }
+    }
+    pub(crate) fn owns(&self, token: crate::effect::Token) -> bool {
+        match &self.state {
+            State::Image(_, _, e, _, _) => e.owns(token),
+            _ => false,
+        }
+    }
+    /// Admission query only: not evidence that a source/translator has stopped.
+    pub(crate) fn continuable(&self) -> bool {
+        !self.cancelled
+            && matches!(
+                self.state,
+                State::Source(_)
+                    | State::Loading(_)
+                    | State::Ready(_)
+                    | State::Translating(_)
+                    | State::Translated(_, _)
+                    | State::Image(_, _, _, false, _)
+            )
     }
     fn check(&self, files: &Files, id: u64) -> Result<(), Error> {
         if self.id != id || self.owner != files.owner() {
@@ -230,27 +347,51 @@ impl Startup {
             }
         }
     }
-    pub(crate) fn image_begin(&mut self, domain: &mut Domain, binding: u64) -> Result<(), Error> {
+    pub(crate) fn image_begin(
+        &mut self,
+        domain: &mut Domain,
+        binding: u64,
+        low: u64,
+        top: u64,
+        random: &[u8],
+    ) -> Result<(), Error> {
         if self.cancelled {
             return Err(Error::State);
         }
-        let State::Translated(_, facts) = &self.state else {
+        let State::Translated(program, facts) = &self.state else {
             return Err(Error::State);
         };
+        let stack = self
+            .arguments
+            .build(program, *facts, low, top, random)
+            .map_err(Error::Arguments)?;
         let mut execution = Execution::new(self.id, binding);
         execution.image_begin(domain, facts.extent)?;
+        // The complete owned stack now replaces the input snapshot. Keep no
+        // duplicate argv/env payload across physical initialization or host await.
+        self.arguments.bytes = Vec::new();
+        self.arguments.ranges = Vec::new();
+        self.arguments.argc = 0;
         let State::Translated(p, f) = std::mem::replace(&mut self.state, State::Done) else {
             unreachable!()
         };
-        self.state = State::Image(p, f, execution, false);
+        self.state = State::Image(p, f, execution, false, stack);
         Ok(())
+    }
+    /// Short immutable borrow for physical initialization only. No reuse after
+    /// cancellation/Unknown; never exposed while a guest can run.
+    pub(crate) fn stack(&self) -> Result<&stack::Stack, Error> {
+        match &self.state {
+            State::Image(_, _, _, false, stack) if !self.cancelled => Ok(stack),
+            _ => Err(Error::State),
+        }
     }
     pub(crate) fn image_finish(
         &mut self,
         domain: &mut Domain,
         outcome: ImageResult,
     ) -> Result<(), Error> {
-        let State::Image(_, _, execution, uncertain) = &mut self.state else {
+        let State::Image(_, _, execution, uncertain, _) = &mut self.state else {
             return Err(Error::State);
         };
         // Installed only attests initialization, not actual Worker shutdown.
@@ -265,7 +406,8 @@ impl Startup {
             *uncertain = true;
             return Ok(());
         }
-        let State::Image(p, facts, execution, _) = std::mem::replace(&mut self.state, State::Done)
+        let State::Image(p, facts, execution, _, _) =
+            std::mem::replace(&mut self.state, State::Done)
         else {
             unreachable!()
         };
@@ -322,6 +464,11 @@ impl Startup {
             return Err(Error::State);
         }
         self.cancelled = true;
+        // No further stack may be built after cancellation. Source/translation
+        // obligations own executable bytes, not this argument snapshot.
+        self.arguments.bytes = Vec::new();
+        self.arguments.ranges = Vec::new();
+        self.arguments.argc = 0;
         let old = std::mem::replace(&mut self.state, State::Done);
         match old {
             State::Loading(p) => match files.release_program(p) {
@@ -355,8 +502,8 @@ impl Startup {
                 self.state = State::Translating(p);
                 Ok(false)
             }
-            State::Image(p, f, e, uncertain) => {
-                self.state = State::Image(p, f, e, uncertain);
+            State::Image(p, f, e, uncertain, stack) => {
+                self.state = State::Image(p, f, e, uncertain, stack);
                 Ok(false)
             }
             State::FailedImage(p, e) => {
@@ -378,6 +525,13 @@ mod tests {
         inode::{Creation, Tree},
         mount,
     };
+    fn limits() -> stack::Limits {
+        stack::Limits {
+            max_string_bytes: 1024,
+            max_input_bytes: 4096,
+            max_pointers: 64,
+        }
+    }
     fn setup(owner: u64, lazy: bool) -> (Files, fs_context::Ticket, Startup) {
         let mut tree = Tree::new(
             owner,
@@ -430,7 +584,8 @@ mod tests {
         let program = files
             .prepare_program(&fs, &Credentials::initial_root(), b"/p")
             .unwrap();
-        let startup = Startup::new(1, &files, program).unwrap_or_else(|_| panic!("new"));
+        let startup =
+            Startup::new(1, &files, program, &[], &[], limits()).unwrap_or_else(|_| panic!("new"));
         (files, fs, startup)
     }
     fn facts() -> Facts {
@@ -451,14 +606,20 @@ mod tests {
     fn successful_admission_moves_credentials_and_hold_only_after_installed() {
         let (mut f, fs, mut s) = setup(300, false);
         f.release_fs(fs).unwrap(); // Program is now the only retained view.
+        assert!(s.continuable());
+        assert_eq!(s.binding(), None);
         translate(&mut f, &mut s);
         let mut d = Domain::new(400, 1, 4).unwrap();
         let b = d.bind(65536).unwrap();
         assert!(s.take_live().is_none());
-        s.image_begin(&mut d, b).unwrap();
+        s.image_begin(&mut d, b, 4096, 65536, &[7; 16]).unwrap();
         assert!(s.take_live().is_none());
         s.image_finish(&mut d, ImageResult::Installed).unwrap();
+        assert!(!s.continuable());
+        let installed_binding = s.binding().unwrap();
         let live = s.take_live().unwrap();
+        assert_eq!(installed_binding, live.execution.binding());
+        assert_eq!(s.binding(), None);
         assert_eq!(live.decision.credentials.user().effective, 1000);
         assert!(live.decision.secure);
         assert_eq!(live.execution.phase(), execution::Phase::Ready);
@@ -495,7 +656,7 @@ mod tests {
         s.translation_finish(1, Some(facts())).unwrap();
         let mut d = Domain::new(420, 1, 4).unwrap();
         let b = d.bind(65536).unwrap();
-        assert!(s.image_begin(&mut d, b).is_err());
+        assert!(s.image_begin(&mut d, b, 4096, 65536, &[7; 16]).is_err());
         assert!(s.cancel(&mut f).unwrap());
         f.release_fs(fs).unwrap();
         let (mut f, fs, mut s) = setup(330, false);
@@ -513,7 +674,7 @@ mod tests {
         translate(&mut f, &mut s);
         let mut d = Domain::new(440, 1, 4).unwrap();
         let b = d.bind(65536).unwrap();
-        s.image_begin(&mut d, b).unwrap();
+        s.image_begin(&mut d, b, 4096, 65536, &[7; 16]).unwrap();
         assert!(!s.cancel(&mut f).unwrap());
         assert!(s.image_finish(&mut d, ImageResult::Installed).is_err());
         s.image_finish(&mut d, ImageResult::Unknown).unwrap();
@@ -538,8 +699,10 @@ mod tests {
         translate(&mut f, &mut s);
         let mut d = Domain::new(470, 1, 4).unwrap();
         let b = d.bind(65536).unwrap();
-        s.image_begin(&mut d, b).unwrap();
+        s.image_begin(&mut d, b, 4096, 65536, &[7; 16]).unwrap();
         s.image_finish(&mut d, ImageResult::Unknown).unwrap();
+        assert!(!s.continuable());
+        assert!(s.binding().is_some());
         assert!(s.image_finish(&mut d, ImageResult::Installed).is_err());
         assert!(s.image_finish(&mut d, ImageResult::Untouched).is_err());
         assert!(s.take_live().is_none());
@@ -556,7 +719,7 @@ mod tests {
         translate(&mut f, &mut s);
         let mut d = Domain::new(490, 1, 4).unwrap();
         let b = d.bind(65536).unwrap();
-        s.image_begin(&mut d, b).unwrap();
+        s.image_begin(&mut d, b, 4096, 65536, &[7; 16]).unwrap();
         s.image_finish(&mut d, ImageResult::Untouched).unwrap();
         assert!(!s.cancel(&mut f).unwrap());
         let failed = s.take_failed_image(&mut f).unwrap().unwrap();
@@ -580,12 +743,14 @@ mod tests {
         let other = f
             .prepare_program(&fs, &Credentials::initial_root(), b"/p")
             .unwrap();
-        let mut a = Startup::new(2, &f, other).unwrap_or_else(|_| panic!("new"));
+        let mut a =
+            Startup::new(2, &f, other, &[], &[], limits()).unwrap_or_else(|_| panic!("new"));
         let req = a.source_start(&mut f).unwrap().unwrap();
         let other = f
             .prepare_program(&fs, &Credentials::initial_root(), b"/p")
             .unwrap();
-        let mut b = Startup::new(3, &f, other).unwrap_or_else(|_| panic!("new"));
+        let mut b =
+            Startup::new(3, &f, other, &[], &[], limits()).unwrap_or_else(|_| panic!("new"));
         assert!(b.source_start(&mut f).is_err());
         assert!(b.cancel(&mut f).unwrap());
         let mut bytes = b"elf".to_vec();
@@ -605,10 +770,14 @@ mod tests {
             .prepare_program(&fs, &Credentials::initial_root(), b"/p")
             .unwrap();
         let req = f.prepare_program_source(&mut p).unwrap().unwrap();
-        let (_, mut p) = Startup::new(2, &f, p).err().expect("Loading rejected");
+        let (_, mut p) = Startup::new(2, &f, p, &[], &[], limits())
+            .err()
+            .expect("Loading rejected");
         f.finish_program_source(&mut p, req.attempt, false, &mut Vec::new())
             .unwrap();
-        let (_, mut p) = Startup::new(2, &f, p).err().expect("Failed rejected");
+        let (_, mut p) = Startup::new(2, &f, p, &[], &[], limits())
+            .err()
+            .expect("Failed rejected");
         // Failed remains releasable by the original owner, not stranded in Startup.
         f.release_program(p).unwrap();
         p = f
@@ -617,8 +786,78 @@ mod tests {
         let req = f.prepare_program_source(&mut p).unwrap().unwrap();
         f.finish_program_source(&mut p, req.attempt, true, &mut b"elf".to_vec())
             .unwrap();
-        let (_, p) = Startup::new(2, &f, p).err().expect("Ready rejected");
+        let (_, p) = Startup::new(2, &f, p, &[], &[], limits())
+            .err()
+            .expect("Ready rejected");
         assert_eq!(f.program_bytes(&p).unwrap(), b"elf");
+        f.release_program(p).unwrap();
+        f.release_fs(fs).unwrap();
+    }
+    fn word(stack: &stack::Stack, index: usize) -> u64 {
+        u64::from_le_bytes(stack.bytes[index * 8..index * 8 + 8].try_into().unwrap())
+    }
+    fn text<'a>(stack: &'a stack::Stack, at: u64) -> &'a [u8] {
+        let bytes = &stack.bytes[(at - stack.pointer) as usize..];
+        &bytes[..bytes.iter().position(|b| *b == 0).unwrap()]
+    }
+    #[test]
+    fn captured_arguments_program_path_credentials_and_unknown_share_one_image() {
+        let (mut f, fs, mut unused) = setup(410, false);
+        unused.cancel(&mut f).unwrap();
+        let p = f
+            .prepare_program(&fs, &Credentials::initial_root(), b"/p")
+            .unwrap();
+        let mut argument = b"alias".to_vec();
+        let mut env = b"A=1".to_vec();
+        let mut s = Startup::new(2, &f, p, &[&argument], &[&env], limits())
+            .unwrap_or_else(|_| panic!("new"));
+        argument.fill(b'x');
+        env.fill(b'x');
+        s.source_start(&mut f).unwrap();
+        s.translation_start(&mut f).unwrap();
+        s.translation_finish(2, Some(facts())).unwrap();
+        let mut d = Domain::new(510, 1, 4).unwrap();
+        let b = d.bind(65536).unwrap();
+        assert!(s.image_begin(&mut d, b, 65535, 65536, &[7; 16]).is_err());
+        assert!(s.stack().is_err());
+        s.image_begin(&mut d, b, 4096, 65536, &[7; 16]).unwrap();
+        let stack = s.stack().unwrap();
+        assert_eq!(text(stack, word(stack, 1)), b"alias");
+        assert_eq!(text(stack, word(stack, 3)), b"A=1");
+        let aux = 5; // argc/argv/null/env/null
+        assert_eq!(word(stack, aux + 5 * 2 + 1), 0); // AT_UID
+        assert_eq!(word(stack, aux + 6 * 2 + 1), 1000); // AT_EUID from Program Decision
+        assert_eq!(word(stack, aux + 9 * 2 + 1), 1); // AT_SECURE
+        assert_eq!(text(stack, word(stack, aux + 11 * 2 + 1)), b"/p"); // not argv[0]
+        s.image_finish(&mut d, ImageResult::Unknown).unwrap();
+        assert!(s.stack().is_err());
+        s.image_finish(&mut d, ImageResult::PoisonedStopped)
+            .unwrap();
+        s.take_failed_image(&mut f).unwrap();
+        f.release_fs(fs).unwrap();
+    }
+    #[test]
+    fn bad_arguments_reject_before_source_and_return_original_program() {
+        let (mut f, fs, mut unused) = setup(420, true);
+        unused.cancel(&mut f).unwrap();
+        let p = f
+            .prepare_program(&fs, &Credentials::initial_root(), b"/p")
+            .unwrap();
+        let (_, p) = Startup::new(2, &f, p, &[b"bad\0arg"], &[], limits())
+            .err()
+            .expect("NUL rejected");
+        assert!(f.check_unstarted_program(&p).is_ok());
+        let mut small = limits();
+        small.max_pointers = 0;
+        let (_, p) = Startup::new(2, &f, p, &[], &[], small)
+            .err()
+            .expect("normalized empty argv counted");
+        let mut small = limits();
+        small.max_input_bytes = 1;
+        let (_, p) = Startup::new(2, &f, p, &[], &[], small)
+            .err()
+            .expect("path counts toward budget");
+        assert!(f.check_unstarted_program(&p).is_ok());
         f.release_program(p).unwrap();
         f.release_fs(fs).unwrap();
     }

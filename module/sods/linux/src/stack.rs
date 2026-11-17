@@ -80,6 +80,35 @@ fn string_size(s: &[u8], limits: Limits) -> Result<u64, Error> {
     }
     Ok(n)
 }
+/// Validate launch strings before any source/translation work or snapshot allocation.
+/// Returns normalized argc, pointer count, and total NUL-terminated string bytes.
+pub(crate) fn validate_arguments(
+    execfn: &[u8],
+    argv: &[&[u8]],
+    env: &[&[u8]],
+    limits: Limits,
+) -> Result<(u64, u64, u64), Error> {
+    if execfn.is_empty() {
+        return Err(Error::EmptyPath);
+    }
+    let argc = u64::try_from(argv.len().max(1)).map_err(|_| Error::Overflow)?;
+    let envc = u64::try_from(env.len()).map_err(|_| Error::Overflow)?;
+    let pointers = add(argc, envc)?;
+    if pointers > limits.max_pointers {
+        return Err(Error::Limit);
+    }
+    let mut strings = string_size(execfn, limits)?;
+    if argv.is_empty() {
+        strings = add(strings, string_size(b"", limits)?)?;
+    }
+    for s in argv.iter().chain(env.iter()) {
+        strings = add(strings, string_size(s, limits)?)?;
+    }
+    if strings > limits.max_input_bytes {
+        return Err(Error::Limit);
+    }
+    Ok((argc, pointers, strings))
+}
 /// Preflight all caller input and arithmetic before allocating output. The output
 /// owns bytes and contains absolute guest pointers; the host only copies it at
 /// `pointer`. Entropy generation and physical memory lifetime are host duties.
@@ -109,22 +138,7 @@ pub(crate) fn build(input: Input<'_>) -> Result<Stack, Error> {
     {
         return Err(Error::Range);
     }
-    let argc = u64::try_from(argv.len().max(1)).map_err(|_| Error::Overflow)?;
-    let envc = u64::try_from(env.len()).map_err(|_| Error::Overflow)?;
-    let pointers = add(argc, envc)?;
-    if pointers > limits.max_pointers {
-        return Err(Error::Limit);
-    }
-    let mut strings = string_size(execfn, limits)?;
-    if argv.is_empty() {
-        strings = add(strings, string_size(b"", limits)?)?;
-    }
-    for s in argv.iter().chain(env.iter()) {
-        strings = add(strings, string_size(s, limits)?)?;
-    }
-    if strings > limits.max_input_bytes {
-        return Err(Error::Limit);
-    }
+    let (argc, pointers, strings) = validate_arguments(execfn, argv, env, limits)?;
     let strings_at = sub(r.top, strings)?;
     let random_at = sub(strings_at, 16)?;
     let words = add(add(pointers, 3)?, mul(AUX_PAIRS, 2)?)?;

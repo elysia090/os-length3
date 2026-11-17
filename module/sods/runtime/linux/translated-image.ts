@@ -3,16 +3,29 @@
  * The host must keep the resulting instance and its Memory private, instantiate
  * under image-change admission, and allow no guest reentry during a short copy.
  */
-const Module = WebAssembly.Module;
+const Module = WebAssembly.Module, compile = WebAssembly.compile;
 const importsOf = WebAssembly.Module.imports;
 const Bytes = Uint8Array;
 const functions = new Set(['syscall', 'trap', 'div128', 'clock', 'fpu', 'trace', 'miss', 'time']);
 
-export function fixedTranslatedModule(input: Uint8Array, {externalData = false}: {externalData?: boolean} = {}): WebAssembly.Module {
-  // Own the exact bytes inspected and compiled; callers cannot change a section
-  // after the engine has validated it. Shared input is not an atomic snapshot.
+type AdmissionOptions = {externalData?: boolean};
+
+export function fixedTranslatedModule(input: Uint8Array, {externalData = false}: AdmissionOptions = {}): WebAssembly.Module {
   const bytes = new Bytes(input);
-  const module = new Module(bytes);
+  return validateFixed(bytes, new Module(bytes), externalData);
+}
+
+export async function fixedTranslatedModuleAsync(input: Uint8Array, {externalData = false}: AdmissionOptions = {}): Promise<WebAssembly.Module> {
+  // Own one snapshot before yielding. The engine and framing/import checks use
+  // that exact snapshot; no caller-supplied precompiled module can be substituted.
+  // Shared input is still not an atomic snapshot of concurrent writes.
+  const bytes = new Bytes(input);
+  const module = await compile(bytes);
+  return validateFixed(bytes, module, externalData);
+}
+
+/** Only these two owned-byte constructors call this private validator. */
+function validateFixed(bytes: Uint8Array, module: WebAssembly.Module, externalData: boolean): WebAssembly.Module {
   let at = 8;
   const size = (): number => {
     let value = 0;

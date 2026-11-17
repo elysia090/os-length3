@@ -104,10 +104,18 @@ pub(crate) struct ReadPreparation {
 /// replacement and eviction are not exposed; those require an additional pin gate.
 #[must_use = "finish a dispatched source before releasing the program"]
 pub(crate) struct Program {
+    selected_path: Vec<u8>,
     owner: u64,
     place: mount::Hold,
     decision: crate::credentials::Decision,
     phase: PreparationPhase,
+}
+impl Program {
+    /// Startup-only execfn proposal: exact selection bytes, not canonicalized or
+    /// derived from argv[0]. The caller must not supply a replacement execfn.
+    pub(crate) fn execfn(&self) -> &[u8] {
+        &self.selected_path
+    }
 }
 impl std::fmt::Debug for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -121,6 +129,7 @@ impl std::fmt::Debug for Program {
 /// execution identity. No mutable source/eviction API currently exists.
 #[must_use = "publish into a live execution or release through Files"]
 pub(crate) struct ReadyProgram {
+    selected_path: Vec<u8>,
     owner: u64,
     place: mount::Hold,
     decision: crate::credentials::Decision,
@@ -147,6 +156,10 @@ impl std::fmt::Debug for Executable {
     }
 }
 impl ReadyProgram {
+    /// The same owned path used for selection, moved without another copy.
+    pub(crate) fn execfn(&self) -> &[u8] {
+        &self.selected_path
+    }
     /// Aux-vector proposal only, not permission to change live credentials.
     pub(crate) fn stack_credentials(&self) -> crate::stack::Credentials {
         self.decision.stack_credentials()
@@ -896,6 +909,14 @@ impl Files {
         let decision = credentials
             .program(&metadata, policy.no_exec, policy.no_suid)
             .map_err(ProgramError::Credentials)?;
+        // resolve already bounded the original path to 4095 bytes. Capture only
+        // after authorization, before acquiring any hold/source; allocation
+        // failure leaves both unchanged. Vec spare capacity is allocator-owned.
+        let mut selected_path = Vec::new();
+        selected_path
+            .try_reserve_exact(path.len())
+            .map_err(|_| ProgramError::Files(Error::Capacity))?;
+        selected_path.extend_from_slice(path);
         let hold = self
             .mounts
             .as_mut()
@@ -903,6 +924,7 @@ impl Files {
             .hold(&place)
             .map_err(|e| ProgramError::Files(Error::Mount(e)))?;
         Ok(Program {
+            selected_path,
             owner: self.owner,
             place: hold,
             decision,
@@ -1024,6 +1046,7 @@ impl Files {
             return Err((Error::State, program));
         }
         Ok(ReadyProgram {
+            selected_path: program.selected_path,
             owner: program.owner,
             place: program.place,
             decision: program.decision,
@@ -2445,6 +2468,10 @@ mod program_tests {
             .unwrap();
         tree.file_take(root, b"denied", creation(0o644), &mut vec![])
             .unwrap();
+        tree.symlink(root, b"alias", b"resident", creation(0o777))
+            .unwrap();
+        tree.symlink(root, &[255, 254], b"resident", creation(0o777))
+            .unwrap();
         let mut files = Files::new(
             owner + 1,
             tree,
@@ -2758,5 +2785,24 @@ mod program_tests {
         assert!(f.view_policy(&mounted).is_ok());
         f.release_executable(executable).unwrap();
         assert!(f.view_policy(&mounted).is_err());
+    }
+    #[test]
+    fn selected_path_snapshot_survives_caller_changes_and_ready_move() {
+        let (mut f, fs) = setup(4501, allowed());
+        let c = Credentials::initial_root();
+        for original in [b"./alias".as_slice(), b"/alias", &[255, 254]] {
+            let mut caller_path = original.to_vec();
+            let mut p = f.prepare_program(&fs, &c, &caller_path).unwrap();
+            let stored = p.execfn().as_ptr();
+            caller_path.fill(b'x');
+            assert_eq!(p.execfn(), original);
+            assert_eq!(f.prepare_program_source(&mut p), Ok(None));
+            let ready = f.ready_program(p).unwrap();
+            assert_eq!(ready.execfn(), original);
+            assert_eq!(ready.execfn().as_ptr(), stored); // ownership move, no copy
+            assert_eq!(f.ready_program_bytes(&ready).unwrap(), b"elf");
+            let (executable, _) = ready.publish();
+            f.release_executable(executable).unwrap();
+        }
     }
 }

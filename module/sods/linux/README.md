@@ -584,8 +584,7 @@ symlink traversals are permitted; trailing separators
 require a directory. `no_symfollow` is checked on the traversed link's view. The
 result is a nonholding Place, not authorization to execute or a safe asynchronous
 source reference. Final regular-file/execute/noexec checks and a retained program
-must precede loading and translation; that complete startup transaction is not
-connected by this change.
+must precede loading and translation; the bounded initial-start profile below connects that transaction.
 
 Credentials are initial-user-namespace root or exec-derived private values. The
 limited profile uses mode-only DAC and default securebits, excluding ACLs, file
@@ -599,9 +598,8 @@ Path processing borrows symlink targets in at most 41 frames instead of building
 repeated concatenated paths. Existing mount coverage still scans the view table;
 work is proportional to visited bytes plus components times that scan, and Place
 provenance still allocates. No namespace snapshot, hidden FD table, duplicated
-payload or host-provided permission decision is introduced. Normal Node startup,
-program/source retention, process-owned Fs/credentials and deletion of the old TS
-Linux authority remain migration gates, not completed capabilities.
+payload or host-provided permission decision is introduced. The default Node entry and deletion of the old TS Linux authority remain migration
+gates; the private initial-start profile below owns its Fs and credentials.
 
 The next private acquisition primitive retains the authorized Program's exact
 mount/inode and credential proposal, without creating a file descriptor or an
@@ -618,12 +616,11 @@ not decide whether a callback was dispatched, cancellation is safe, or execution
 has become stale. The startup coordinator must establish those facts before a
 failure completion. It is not enough that cancellation was requested.
 
-The Program's proposed credentials remain unpublished. Translation identity,
-initial-start slot ownership, physical image installation and atomic credential
-adoption are still unconnected. In particular, no normal Node startup or legacy TS
-semantic-authority deletion is claimed by these source-lifetime tests.
+The Program's proposed credentials remain unpublished. The source primitive alone does not establish translation identity, slot ownership
+or image acceptance; the initial-start coordinator below connects them. This does
+not claim default Node startup or legacy TS semantic-authority deletion.
 
-### Initial-start ownership coordinator (native internal)
+### Initial-start ownership coordinator (private migration profile)
 
 `startup.rs` connects the retained Program to the existing Execution image
 admission protocol. It does not create an Execution or a placeholder memory binding
@@ -640,11 +637,44 @@ Execution, including any new binding incarnation, until explicit transfer to the
 outer owner. That transfer is image-change completion evidence, not proof of Worker
 termination or physical memory reclamation. Domain capacity is not reclaimed here.
 
-This is a native internal coordinator, not a new public launch API. Its outer bounded
-slot must enforce unique startup IDs and fresh, uniquely owned physical bindings.
-The actual Wasm/Node slot wiring, original execfn/argv/env ownership, Rust stack from
-these credentials, trusted Module/facts/segments association, complete FD/Fs
-bootstrap and diagnostic-entry bypass prevention remain required before normal
-startup can switch. Numeric facts bounds do not prove ELF authenticity, executable
-segment membership or arbitrary translated Module correctness. The profile remains
-initial-start only, not fork or exec replacement.
+The private Wasm boundary now owns bounded, non-reused startup slots, independently
+owned Fs and empty descriptor tables, and unique physical-memory bindings. Original
+path bytes (including the selected symlink name), argv, env and random input are
+captured before asynchronous source work. Rust builds the initial stack from the
+retained program's credential proposal. Prepared roots cannot use diagnostic
+execution, image, stack or descriptor-table entry points to bypass authorization.
+Retired bindings remain unavailable to generic mutation; physical-memory capacity
+is not recycled by holder retirement.
+
+The Node adapter's private `pathExecution` follows resolve/authorize/hold, source
+completion, translation, bounded image admission, actual Worker initialization and
+atomic image/credential adoption. The compiled module, facts and segment data come
+from one translator result. Numeric bounds do not establish arbitrary translated
+Module correctness: this profile trusts the supplied translator. `runPath` uses
+Rust's committed entry rather than a second caller-supplied entry. Cancellation
+stops admission but does not invent completion of a loader or Worker; late source
+success is discarded, and uncertain image ownership remains retained.
+
+This is an initial-root-credentials, fixed-memory, static-program profile with an
+empty FD table, not fork or exec replacement. Full standard-device bootstrap,
+interpreter/shebang handling, the ordinary `runtime/run.ts` caller switch and
+removal of the old TS Linux state are still required. Actual Node Worker exit is
+separate from output completion or full Tree/engine memory reclamation. Host
+allocation failure at intermediate registration points is not proven leak-free;
+unknown ownership is retained rather than treated as safe to reclaim.
+
+The path-startup fixture independently checks original execfn, byte argv, duplicate
+env order, Rust credential aux values, random bytes and stack alignment before
+exit. Tests cover resident and lazy starts, repeat start with one Fs/Table slot,
+pre-loader authorization failure, input mutation, loader failure/retry, late
+completion after cancellation and diagnostic-ABI bypass attempts. CI requests the
+current-source translator. A local explicit external translator is a separately
+labelled compatibility check, not evidence that the current translator was built.
+
+The path and argument capture work is proportional to their byte lengths; source
+loading stages an owned copy across the host/Wasm boundary. Translation still
+copies the source into translator memory, and image/stack bytes into guest memory.
+These separate memory owners impose work that is not removed by moving the
+semantic authority to Rust. This is neither a zero-copy claim nor a measurement
+of the final lower bound; fixed memory, bounded append-only history and mount-view
+scan costs remain explicit limitations.

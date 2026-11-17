@@ -1,5 +1,6 @@
-import {fixedTranslatedModule} from './translated-image.ts';
+import {fixedTranslatedModule, fixedTranslatedModuleAsync} from './translated-image.ts';
 import {prepare} from '../translation/share.ts';
+import {loadTranslator} from '../translation/translator.ts';
 import type {createGuest} from '../host/node/execution.ts';
 /** Private managed-memory adapter. Rust decides admission and lifetime; this file
  * holds engine objects, performs short synchronous memory operations, and
@@ -7,6 +8,20 @@ import type {createGuest} from '../host/node/execution.ts';
  * Not exported by linux.ts. The translated runner is a fixed diagnostic profile,
  * not the Node caller, ELF loader or complete Linux syscall implementation. */
 interface Admission extends WebAssembly.Exports {
+  linux_prepared_files(inodes: number, entries: number, fileBytes: number, tables: number, descriptions: number, slots: number, reads: number, contexts: number, views: number, holds: number, policy: number): number;
+  linux_startup_input(length: number): number;
+  linux_startup_begin(): number;
+  linux_startup_source_start(id: bigint): number;
+  linux_startup_source_finish(id: bigint, attempt: number, success: number): number;
+  linux_startup_bytes(id: bigint): number;
+  linux_startup_translation_finish(id: bigint, success: number, entry: bigint, phdr: bigint, phent: bigint, phnum: bigint, extent: bigint): number;
+  linux_startup_image_begin(id: bigint, binding: bigint, low: bigint, top: bigint): number;
+  linux_startup_stack(id: bigint): number;
+  linux_startup_image_finish(id: bigint, outcome: number): number;
+  linux_startup_cancel(id: bigint): number;
+  linux_startup_failed_image(id: bigint): number;
+  linux_startup_entry(id: bigint): number;
+  linux_startup_check(id: bigint): number;
   linux_stack_input(execution: bigint, length: number): number;
   linux_stack_build(execution: bigint): number;
   linux_stack_clear(): number;
@@ -73,6 +88,11 @@ const mapGet = Map.prototype.get, mapSet = Map.prototype.set, mapDelete = Map.pr
 const bufferOf = (memory: WebAssembly.Memory): ArrayBufferLike => apply(memoryBuffer, memory, []);
 const typedLength = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'length')!.get!;
 const lengthOf = (bytes: Uint8Array): number => apply(typedLength, bytes, []);
+const signalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!;
+const signalReason = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'reason')!.get!;
+const addListener = EventTarget.prototype.addEventListener, removeListener = EventTarget.prototype.removeEventListener;
+const aborted = (signal?: AbortSignal): boolean => signal !== undefined && apply(signalAborted, signal, []);
+const abortReason = (signal?: AbortSignal): unknown => signal === undefined ? new Error('Startup aborted') : apply(signalReason, signal, []);
 const extentOf = (memory: WebAssembly.Memory): bigint => wide(lengthOf(new Bytes(bufferOf(memory))));
 export interface MemoryBinding { readonly kind: 'managed-memory' }
 export interface InodeBinding { readonly kind: 'managed-inode' }
@@ -82,7 +102,19 @@ export interface FileLimits {
   inodes: number; entries: number; fileBytes: number; tables: number;
   descriptions: number; slots: number; reads: number;
 }
-const required = ['linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
+export interface PreparedFileLimits extends FileLimits {
+  contexts: number; views: number; holds: number;
+  policy: {noExec: boolean; noSuid: boolean; noSymfollow: boolean};
+}
+export interface PathExecutionOptions {
+  translator: WebAssembly.Module;
+  load?: (source: number) => Uint8Array | Promise<Uint8Array>;
+  random: Uint8Array;
+  stackBytes?: number;
+  /** Startup-only cooperative cancellation; source callbacks remain observed. */
+  signal?: AbortSignal;
+}
+const required = ['linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
   'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
   'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file',
@@ -133,6 +165,24 @@ function stackWire(input: InitialStack, extent: bigint): Uint8Array {
     const s = strings[i];
     if (i) { view.setBigUint64(at, wide(lengthOf(s)), true); at += 8; }
     apply(setBytes, bytes, [s, at]); at += lengthOf(s);
+  }
+  return bytes;
+}
+
+/** Transport snapshot only. Rust validates strings, budgets, and selected execfn. */
+function startupWire(path: Uint8Array, argv: readonly Uint8Array[], env: readonly Uint8Array[], random: Uint8Array): Uint8Array {
+  if (argv.length + env.length > 65536 || lengthOf(random) !== 16) throw new RangeError('Startup transport exceeds profile');
+  const strings = [path, ...argv, ...env];
+  const size = strings.reduce((n, bytes, i) => integer(n + lengthOf(bytes) + (i ? 8 : 0)), 48);
+  if (size > 2 * 1024 * 1024) throw new RangeError('Startup transport exceeds profile');
+  const bytes = new Bytes(size), view = new DataView(bytes.buffer);
+  for (const [i, value] of [1, argv.length, env.length, lengthOf(path)].entries()) view.setBigUint64(i * 8, wide(value), true);
+  apply(setBytes, bytes, [random, 32]);
+  let at = 48;
+  for (let i = 0; i < strings.length; i++) {
+    const value = strings[i];
+    if (i) { view.setBigUint64(at, wide(lengthOf(value)), true); at += 8; }
+    apply(setBytes, bytes, [value, at]); at += lengthOf(value);
   }
   return bytes;
 }
@@ -290,7 +340,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     id: bigint; memory: WebAssembly.Memory; bridge: ReturnType<typeof createGuest>;
     invocation: bigint; receipt: boolean; imagePending: boolean; active: boolean;
     failureCount: number; firstFailure?: unknown;
-    resourcesRetired: boolean;
+    resourcesRetired: boolean; entry?: bigint;
   };
   const workers = new Map<ExecutionBinding, WorkerState>();
   const workerOf = (handle: ExecutionBinding): WorkerState => {
@@ -312,7 +362,242 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
     try { checked(core.linux_syscall_abandon(w.id)); retireWorker(w); }
     catch (error) { workerFailure(w, error); }
   };
+  const runWorker = async (handle: ExecutionBinding, entry: bigint, load?: Loader): Promise<{status: number; sourceFailures: number}> => {
+      const w = workerOf(handle);
+      if (w.entry !== undefined && entry !== w.entry) throw new Error('Entry differs from Rust committed startup');
+      if (w.active || w.invocation || w.imagePending || w.bridge.diagnostics().exited || w.bridge.diagnostics().stopping) throw new Error('Worker run unavailable');
+      w.invocation = result(core.linux_run_start(w.id));
+      w.active = true;
+      let failures = 0, exit = false;
+      try {
+        const outcome = await w.bridge.run(w.invocation, entry, async request => {
+          try {
+            const c = command(core.linux_syscall(w.id, request.invocation, request.nr, ...request.args, request.next));
+            if (c.tag === 0) return {kind: 'return', value: c.value};
+            if (c.tag === 2) { exit = true; return {kind: 'leave'}; }
+            if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag}`);
+            const completed = await finishRead(w.id, c.value, c.target, w.memory, load, () => { failures++; });
+            if (completed.tag !== 0) throw new Error(`Worker read did not return: ${completed.tag}`);
+            return {kind: 'return', value: completed.value};
+          } catch (error) {
+            // A callback can finish after exit; settle its source before trying
+            // abandonment again. Unknown obligations remain owned in Rust.
+            try { checked(core.linux_syscall_abandon(w.id)); retireWorker(w); }
+            catch (cleanup) { workerFailure(w, cleanup); throw new AggregateError([error, cleanup], 'Worker source and cleanup failed'); }
+            throw error;
+          }
+        });
+        if (outcome.kind !== 'left' || !outcome.unwound || !exit) {
+          throw outcome.kind === 'failed' ? outcome.error : new Error('Worker did not unwind an exit command');
+        }
+        w.receipt = true;
+        const status = numeric(result(core.linux_run_receipt(w.id, w.invocation, 1, 0n)));
+        w.bridge.requestStop();
+        const evidence = await w.bridge.stopEvidence();
+        if (!evidence.stopped) throw new Error('Worker stop remains unconfirmed');
+        retireWorker(w);
+        if (w.failureCount || w.bridge.diagnostics().failureCount) throw w.firstFailure ?? w.bridge.diagnostics().firstFailure;
+        return {status, sourceFailures: failures};
+      } catch (error) {
+        workerFailure(w, error);
+        w.bridge.requestStop();
+        // A host error/termination request is not a stopped-stack certificate.
+        // The exit callback above is responsible for the fault receipt.
+        throw error;
+      } finally { w.active = false; }
+    };
   return {
+    /** Initial prepared-path profile: empty FD table, fixed memory, one runner.
+     * Not default Node/muk startup or a complete Linux syscall environment. */
+    async pathExecution(path: Uint8Array, argv: readonly Uint8Array[], env: readonly Uint8Array[], options: PathExecutionOptions): Promise<ExecutionBinding> {
+      if ('credentials' in options || 'execfn' in options) throw new TypeError('Path startup derives credentials and execfn in Rust');
+      const {translator: translatorModule, load, signal} = options;
+      const stackBytes = u32(options.stackBytes ?? 1024 * 1024);
+      if (!stackBytes || stackBytes % 65536) throw new RangeError('Stack backing must be a positive whole number of Wasm pages');
+      const wire = startupWire(path, argv, env, options.random);
+      if (aborted(signal)) throw abortReason(signal);
+      put(result(core.linux_startup_input(wire.length)), wire);
+      const begun = core.linux_startup_begin();
+      const id = unsigned(64, core.linux_result());
+      checked(core.linux_startup_input(0));
+      if (begun !== 0) {
+        const failure = new Error(`Linux startup admission failed: ${begun}`);
+        try { if (id) checked(core.linux_startup_cancel(id)); }
+        catch (cleanup) { throw new AggregateError([failure, cleanup], 'Startup admission and cleanup failed'); }
+        throw failure;
+      }
+      let cancelled = false, translating = false, imagePending = false;
+      let memory: WebAssembly.Memory | undefined, bridge: ReturnType<typeof createGuest> | undefined;
+      let admittedMemory: MemoryBinding | undefined;
+      let physicalOwner: {id: bigint; memory: WebAssembly.Memory} | undefined;
+      let w: WorkerState | undefined, cancellationFailure: unknown;
+      const cancel = (): void => {
+        cancelled = true;
+        try { checked(core.linux_startup_cancel(id)); }
+        catch (error) { cancellationFailure = error; }
+        bridge?.requestStop();
+      };
+      const check = (): void => {
+        if (cancelled || aborted(signal)) throw abortReason(signal);
+        checked(core.linux_startup_check(id));
+      };
+      const retireFailedImage = (): void => {
+        // Retain physical memory under the returned incarnation; this is not a
+        // memory-disposal proof. Only actual stop/synchronous unwinding calls it.
+        if (physicalOwner) {
+          const replacement = result(core.linux_startup_failed_image(id));
+          physicalOwner.id = replacement;
+        }
+        const retired = result(core.linux_startup_cancel(id)) === 1n;
+        if (w) w.resourcesRetired = retired;
+      };
+      try {
+        if (signal) apply(addListener, signal, ['abort', cancel, {once: true}]);
+        if (aborted(signal)) cancel();
+        check();
+        const source = numeric(result(core.linux_startup_source_start(id)));
+        const attempt = numeric(core.linux_result_auxiliary());
+        if (source) {
+          let success = false, failed = false, failure: unknown;
+          try {
+            if (!load) throw new Error('No program source loader');
+            const returned = await load(source);
+            // A cancelled callback still completes exactly once, without
+            // adopting its late bytes. Cancellation never asserts callback stop.
+            if (!cancelled && !aborted(signal)) {
+              const bytes = new Bytes(returned);
+              put(result(core.linux_load_input(u32(lengthOf(bytes)))), bytes);
+              success = true;
+            }
+          } catch (error) { failed = true; failure = error; }
+          const failures: unknown[] = failed ? [failure] : [];
+          // One matching receipt attempt only, even if it reports failure after
+          // changing Rust state. Staging cleanup never hides the loader error.
+          try { checked(core.linux_startup_source_finish(id, attempt, success ? 1 : 0)); }
+          catch (error) { failures.push(error); }
+          try { checked(core.linux_load_input(0)); }
+          catch (error) { failures.push(error); }
+          if (failures.length === 1) throw failures[0];
+          if (failures.length) throw new AggregateError(failures, 'Program source and completion cleanup failed');
+          check();
+        }
+        const translator = await loadTranslator(translatorModule);
+        check();
+        const pointer = result(core.linux_startup_bytes(id));
+        const length = numeric(core.linux_result_length());
+        translating = true;
+        // whole synchronously copies the canonical bytes into translator memory.
+        // No view is stored across an export, callback or await in this adapter.
+        const wasm = translator.whole(new Bytes(bufferOf(core.memory), numeric(pointer), length));
+        const originalModule = await fixedTranslatedModuleAsync(wasm);
+        check();
+        const sections = WebAssembly.Module.customSections(originalModule, 'sods.facts');
+        if (sections.length !== 1) throw new Error('Expected one translator facts section');
+        const facts = JSON.parse(new TextDecoder().decode(sections[0])) as Record<string, unknown>;
+        const fact = (name: string): number => {
+          const value = facts[name];
+          if (typeof value !== 'number') throw new TypeError('Invalid translator facts');
+          return integer(value);
+        };
+        const entry = fact('entry'), phdr = fact('phdr'), phent = fact('phent'), phnum = fact('phnum');
+        const low = integer(Math.ceil(fact('imageEnd') / 65536) * 65536), top = integer(low + stackBytes);
+        if (top > 0x100000000) throw new RangeError('Startup memory exceeds wasm32');
+        const prepared = prepare(wasm, {shared: true});
+        if (prepared.segments === null) throw new Error('Worker image requires external data');
+        const translated = fixedTranslatedModule(prepared.wasm, {externalData: true});
+        for (const segment of prepared.segments) {
+          const end = integer(segment.offset + lengthOf(segment.bytes));
+          if (!Number.isSafeInteger(segment.offset) || segment.offset < 0 || end > top) throw new RangeError('Worker image segment exceeds memory');
+          if (lengthOf(segment.bytes) && segment.offset < top && end > low) throw new RangeError('Stack overlaps image segment');
+        }
+        translating = false; // Matching receipt is attempted only once.
+        checked(core.linux_startup_translation_finish(id, 1, wide(entry), wide(phdr), wide(phent), wide(phnum), wide(top)));
+        const guestHost = await import('../host/node/execution.ts');
+        check();
+        checked(core.linux_binding_room());
+        memory = new Memory({initial: top / 65536, maximum: top / 65536, shared: true});
+        const binding = result(core.linux_bind(wide(top)));
+        // Bind succeeds before image admission, which may still fail. Keep the
+        // physical owner associated with every admitted incarnation, including
+        // quarantined pre-image failures; this does not claim memory reclamation.
+        // This opaque handle is never returned by the path API. Its private
+        // record survives incarnation changes without post-publication allocation.
+        physicalOwner = {id: binding, memory};
+        admittedMemory = freeze({kind: 'managed-memory' as const});
+        apply(mapSet, objects, [admittedMemory, physicalOwner]);
+        checked(core.linux_startup_image_begin(id, binding, wide(low), wide(top)));
+        imagePending = true;
+        const stackPointer = result(core.linux_startup_stack(id));
+        const stackLength = numeric(core.linux_result_length()), rsp = core.linux_result_auxiliary();
+        apply(setBytes, new Bytes(bufferOf(memory), numeric(rsp), stackLength),
+          [new Bytes(bufferOf(core.memory), numeric(stackPointer), stackLength)]);
+        for (const segment of prepared.segments) apply(setBytes, new Bytes(bufferOf(memory), segment.offset, lengthOf(segment.bytes)), [segment.bytes]);
+        bridge = guestHost.createGuest({module: translated, memory, stackPointer: rsp});
+        const handle = freeze({kind: 'managed-execution' as const});
+        w = {id, memory, bridge, invocation: 0n, receipt: false, imagePending: true, active: false, failureCount: 0, resourcesRetired: false};
+        const owned = w;
+        void bridge.stopped.then(() => {
+          if (owned.imagePending) {
+            try {
+              checked(core.linux_startup_image_finish(id, 2));
+              owned.imagePending = false; imagePending = false;
+              retireFailedImage();
+            } catch (error) { workerFailure(owned, error); }
+            return;
+          }
+          if (owned.invocation && !owned.receipt) {
+            owned.receipt = true;
+            try { checked(core.linux_run_receipt(id, owned.invocation, 2, 0n)); }
+            catch (error) { workerFailure(owned, error); }
+            abandonWorker(owned);
+          } else if (!owned.invocation) {
+            try { checked(core.linux_execution_unstarted_stopped(id)); }
+            catch (error) { workerFailure(owned, error); }
+          }
+          try { retireWorker(owned); } catch (error) { workerFailure(owned, error); }
+        }).catch(error => workerFailure(owned, error));
+        // Reserve every host owner entry before Rust can publish Live. Register
+        // stop evidence first so even a Map allocation failure retains cleanup.
+        // This handle stays private until installation and entry validation.
+        apply(mapSet, workers, [handle, owned]);
+        apply(mapSet, executions, [handle, {id, binding: admittedMemory}]);
+        await bridge.ready;
+        check();
+        if (bridge.diagnostics().exited) throw new Error('Worker exited during initialization');
+        checked(core.linux_startup_image_finish(id, 0));
+        // Rust is Live now. These plain private-field assignments cannot invoke
+        // callbacks or allocate, so any later failure follows normal Live stop.
+        imagePending = false; owned.imagePending = false;
+        physicalOwner.id = unsigned(64, core.linux_result());
+        owned.entry = result(core.linux_startup_entry(id));
+        return handle;
+      } catch (error) {
+        const cleanup: unknown[] = [];
+        if (w) workerFailure(w, error);
+        if (translating) {
+          translating = false;
+          try { checked(core.linux_startup_translation_finish(id, 0, 0n, 0n, 0n, 0n, 0n)); }
+          catch (failure) { cleanup.push(failure); }
+        }
+        if (imagePending) {
+          if (bridge) {
+            try { checked(core.linux_startup_image_finish(id, 3)); }
+            catch (failure) { cleanup.push(failure); }
+            bridge.requestStop(); // The actual exit listener owns stopped receipt.
+          } else {
+            try { checked(core.linux_startup_image_finish(id, 2)); imagePending = false; retireFailedImage(); }
+            catch (failure) { cleanup.push(failure); }
+          }
+        } else if (!w || w.imagePending || w.resourcesRetired) {
+          try { checked(core.linux_startup_cancel(id)); }
+          catch (failure) { cleanup.push(failure); }
+        }
+        bridge?.requestStop();
+        if (cancellationFailure !== undefined) cleanup.push(cancellationFailure);
+        if (cleanup.length) throw new AggregateError([error, ...cleanup], 'Path startup and cleanup failed');
+        throw error;
+      } finally { if (signal) apply(removeListener, signal, ['abort', cancel]); }
+    },
     /** Fixed shared-memory diagnostic. No default Node caller cutover. */
     async workerExecution(input: Uint8Array, pages: number, stack?: InitialStack): Promise<ExecutionBinding> {
       u32(pages);
@@ -409,48 +694,11 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         resourcesRetired: w.resourcesRetired};
     },
     workerSettled(handle: ExecutionBinding): Promise<void> { return workerOf(handle).bridge.requestsSettled(); },
-    async runWorker(handle: ExecutionBinding, entry: bigint, load?: Loader): Promise<{status: number; sourceFailures: number}> {
+    runWorker,
+    runPath(handle: ExecutionBinding): Promise<{status: number; sourceFailures: number}> {
       const w = workerOf(handle);
-      if (w.active || w.invocation || w.imagePending || w.bridge.diagnostics().exited || w.bridge.diagnostics().stopping) throw new Error('Worker run unavailable');
-      w.invocation = result(core.linux_run_start(w.id));
-      w.active = true;
-      let failures = 0, exit = false;
-      try {
-        const outcome = await w.bridge.run(w.invocation, entry, async request => {
-          try {
-            const c = command(core.linux_syscall(w.id, request.invocation, request.nr, ...request.args, request.next));
-            if (c.tag === 0) return {kind: 'return', value: c.value};
-            if (c.tag === 2) { exit = true; return {kind: 'leave'}; }
-            if (c.tag !== 1) throw new Error(`Unsupported Rust Worker command: ${c.tag}`);
-            const completed = await finishRead(w.id, c.value, c.target, w.memory, load, () => { failures++; });
-            if (completed.tag !== 0) throw new Error(`Worker read did not return: ${completed.tag}`);
-            return {kind: 'return', value: completed.value};
-          } catch (error) {
-            // A callback can finish after exit; settle its source before trying
-            // abandonment again. Unknown obligations remain owned in Rust.
-            try { checked(core.linux_syscall_abandon(w.id)); retireWorker(w); }
-            catch (cleanup) { workerFailure(w, cleanup); throw new AggregateError([error, cleanup], 'Worker source and cleanup failed'); }
-            throw error;
-          }
-        });
-        if (outcome.kind !== 'left' || !outcome.unwound || !exit) {
-          throw outcome.kind === 'failed' ? outcome.error : new Error('Worker did not unwind an exit command');
-        }
-        w.receipt = true;
-        const status = numeric(result(core.linux_run_receipt(w.id, w.invocation, 1, 0n)));
-        w.bridge.requestStop();
-        const evidence = await w.bridge.stopEvidence();
-        if (!evidence.stopped) throw new Error('Worker stop remains unconfirmed');
-        retireWorker(w);
-        if (w.failureCount || w.bridge.diagnostics().failureCount) throw w.firstFailure ?? w.bridge.diagnostics().firstFailure;
-        return {status, sourceFailures: failures};
-      } catch (error) {
-        workerFailure(w, error);
-        w.bridge.requestStop();
-        // A host error/termination request is not a stopped-stack certificate.
-        // The exit callback above is responsible for the fault receipt.
-        throw error;
-      } finally { w.active = false; }
+      if (w.entry === undefined) throw new Error('Not a Rust path startup');
+      return runWorker(handle, w.entry);
     },
     /** Diagnostic only: fresh fixed memory, one runner, preopened files. */
     translatedExecution(input: Uint8Array, pages: number): ExecutionBinding {
@@ -554,6 +802,14 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
         catch (cleanup) { throw new AggregateError([error, cleanup], 'Translated execution failed and cleanup could not be confirmed'); }
         throw error;
       } finally { state.active = false; }
+    },
+    /** Prepared namespace, not diagnostic preopened-table fallback. */
+    preparePreparedFiles(limits: PreparedFileLimits): InodeBinding {
+      const {inodes, entries, fileBytes, tables, descriptions, slots, reads, contexts, views, holds, policy} = limits;
+      if ([policy.noExec, policy.noSuid, policy.noSymfollow].some(v => typeof v !== 'boolean')) throw new TypeError('Expected immutable view policy');
+      const flags = (policy.noExec ? 1 : 0) | (policy.noSuid ? 2 : 0) | (policy.noSymfollow ? 4 : 0);
+      return rememberInode(result(core.linux_prepared_files(u32(inodes), u32(entries), u32(fileBytes),
+        u32(tables), u32(descriptions), u32(slots), u32(reads), u32(contexts), u32(views), u32(holds), flags)));
     },
     prepareFiles(limits: FileLimits): InodeBinding {
       const {inodes, entries, fileBytes, tables, descriptions, slots, reads} = limits;
