@@ -546,3 +546,24 @@ historical translator fixture with no hot AOT work. This is not a full distribut
 build, browser-cache/Worker end-to-end test or runnable muk guest run. No artifact
 has been published or registered. Full generation-aware browser integration and
 production release/deployment remain verification work, not completed claims.
+
+### Stage 12: historical full-root runnable verification; browser gate blocked
+
+An opt-in runnable integration now verifies a supplied historical release's full
+pack set, creates a separate descriptor-augmented fixture, and invokes the actual
+runnable child. It neither rewrites the source release nor publishes the fixture.
+The local v0.6.5 fixture passed all 68 packs / 11,568 files (141,327,582 stored
+bytes). A descriptor-verified muk ran `/usr/bin/true` on the legacy root, and ran
+`/usr/bin/sh -c 'printf core-ok'` on the Rust-selected root with status 0, exact
+stdout and no stderr/error. Both runs were inline and sequential. Different
+commands and historical binaries do not establish a performance comparison or a
+new-source full distribution build. The fixture's core was this branch's ABI4;
+translator/muk provenance is the existing distribution metadata, not a rebuild.
+
+A real headless-browser Cache Storage harness was attempted separately. Chromium
+failed before opening a page because its internal socket syscall was denied by
+the execution environment. The approved expanded-execution attempt failed at the
+same boundary. No settings bypass or desktop/PC takeover was used. Real browser
+cold/warm cache, generation changes and missing-core behavior remain unverified;
+passing Node/Worker-handler tests are not substituted for those results. The
+experimental browser harness is not part of the committed regression suite.
