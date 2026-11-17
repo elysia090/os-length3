@@ -483,3 +483,33 @@ one n-byte copy without weakening capture; direct bounded canonical staging coul
 remove another only after exclusive input/lifetime constraints are established.
 Neither is implemented here. Reload repeats verified reading and these costs;
 keeping the source avoids retaining duplicate canonical bytes, not all host buffers.
+
+### Stage 10: explicit artifact injection into Worker root preparation
+
+The root caller may supply `RootConfig.fileCore = {module, maxFileBytes}`. It is
+carried by Webroot into both ready-ahead and first-start messages. The Worker uses
+one prepared-tree owner to mount all pack files through the selected storage.
+Omission preserves legacy storage; an invalid explicitly selected artifact fails,
+never falls back. The first preparation selects ownership. A subsequent request
+that supplies fileCore again is rejected rather than silently ignoring a new
+selection; starts borrowing the prepared root omit it.
+
+The prepared tree survives rehearsal and kernel exit/free. Worker termination is
+its final realm lifetime; there is no new partial-disposal message. Preparation
+failure disposes its unpublished file scope, not every translator/transport
+resource. Worker memoized failure is not an independent retry guarantee. The
+standalone helper can be called anew after a failed preparation.
+
+Verification includes actual Worker-handler rejection paths (with a host message
+stub), borrowed tree lifetime across kernel owners, and execution of a minimal
+x86-64 ELF from a Rust-backed pack through a real translator. This is not full
+muk/container, guest rehearsal, browser Worker or desktop validation. The
+translator fixture is an existing historical release artifact whose release
+metadata/compressed blob/expanded hash were verified; it is not a build of this
+checkout. Tests accept it explicitly via SODS_TRANSLATOR_WASM. The previously
+unavailable translator SHA/zstd pack tests pass with that fixture.
+
+Release-index descriptors, generation-aware fetch/cache/progress, build artifact
+production and runnable/default deployment selection are not switched yet. No
+product receives an unverified hard-coded artifact URL. Copy costs remain stage9's
+3n; no optimization or end-to-end performance improvement is claimed by this step.

@@ -13,6 +13,8 @@ export type Stage =
   | {at: 'failed'; message: string};
 interface Plan { sha256: string; index: About['index']; translator: Index['translator']; first: {t: Translation; mode: number}[] }
 export interface RootConfig {
+  /** Explicit matching file-core artifact; invalid artifacts fail in the Worker. */
+  fileCore?: import('./prepared-tree.ts').FileCore;
   base: string;
   /** The hot programs a first start waits for (first.ts, unless said). */
   first?: readonly string[];
@@ -667,7 +669,7 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
     localStorage.setItem(PLAN, JSON.stringify(next));
   } catch { /* not remembered: the next start reads as webroot.json says */ }
   tell({at: 'ready'});
-  return {about: a, index, translator, files: files.map(taken), url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
+  return {about: a, index, translator, fileCore: config.fileCore, files: files.map(taken), url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
 })().catch((e) => {
   loading = null;
   tell({at: 'failed', message: config.errorText(e)});
@@ -698,7 +700,7 @@ const withMore = (f: Webroot['files'][number]): Webroot['files'][number] => ({..
     if (spare) return;
     const worker = rootWorker(), files = filesNow(webroot);
     worker.postMessage({type: 'warm'});
-    worker.postMessage({type: 'ready', translator: webroot.translator, files, root: {index: webroot.index, url: webroot.url}, muk: webroot.muk, rehearse});
+    worker.postMessage({type: 'ready', fileCore: webroot.fileCore, translator: webroot.translator, files, root: {index: webroot.index, url: webroot.url}, muk: webroot.muk, rehearse});
     spare = {worker, given: new Set(files.map((f) => f.path))};
   }
   function takeReady(): {worker: Worker; given: Set<string>} | null {

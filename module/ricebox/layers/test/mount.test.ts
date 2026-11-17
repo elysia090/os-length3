@@ -10,7 +10,7 @@ import {checkPacks, packOf} from '../table.ts';
 
 const enc = new TextEncoder(), dec = new TextDecoder();
 
-const translator = new URL('../../../sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url);
+const translator = process.env.SODS_TRANSLATOR_WASM ?? new URL('../../../sods/target/wasm32-unknown-unknown/release/sods.wasm', import.meta.url);
 
 test('the translator decodes what zstd encoded, at every level and size, as the browser reads a pack', async () => {
   const translate = await loadTranslator(readFileSync(translator));

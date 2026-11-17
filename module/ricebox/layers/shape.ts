@@ -22,6 +22,7 @@ export interface Index {
   translations: Translation[];
 }
 export interface Webroot {
+  fileCore?: import('./prepared-tree.ts').FileCore;
   about: About;
   index: Index;
   translator: WebAssembly.Module;

@@ -87,10 +87,11 @@
 // was read of what is kept, {type: 'used', urls}, for the page to count.
 
 import {canRunApart, rangeNow} from '../../sods/runtime/host.ts';
-import {Mirror, RemoteKernel, Vfs, keeper, linux, mountTarget, provide, said, warmThreads,
+import {Mirror, RemoteKernel, Vfs, keeper, linux, provide, said, warmThreads,
   type Console, type File, type Image, type Kept, type Kernel, type Pumped, type Reading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
-import {mountPack, type Given, type Packed} from './mount.ts';
+import {type Given, type Packed} from './mount.ts';
+import {prepareTree, type FileCore, type PreparedTree} from './prepared-tree.ts';
 import {syncRange} from './pack.ts';
 
 /** A module of code a run reached later: its first table slot and bytes (Image.adopt). */
@@ -100,7 +101,7 @@ interface Program extends Given { module?: WebAssembly.Module; segments?: Segmen
 /** A box as it is written for muk (../src/bundle.rs): config.json, and the words muk is run with. */
 interface Box { config: string; words: string[] }
 /** What every start has the same ('ready', or 'start' where none came first). `muk`: the box's maker, served beside the root. */
-interface Ready { translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
+interface Ready { fileCore?: FileCore; translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
 /** What 'start' brings of its own: the box to make, and where in the tree the repo's copy is. */
 interface Start extends Ready {
   type: 'start';
@@ -126,7 +127,7 @@ type Posted =
   | (Ready & {type: 'ready'})
   | Start;
 /** What was readied: the translator loaded, the files given and the root put around them, the box's maker beside it. */
-interface Readied { translate: Translate; vfs: Vfs; files: Program[] }
+interface Readied { translate: Translate; vfs: Vfs; files: Program[]; tree: PreparedTree }
 
 /** Where the bundle is in the tree (BOX, as whoever asks for the bundle names it), under the tmpfs the box has at /run: its maker and its config.json. */
 const BOX = '/run/box';
@@ -171,16 +172,20 @@ function read(n: number): Uint8Array | null {
 
 /** The translator loaded, `files` written and the root put around them: what every start has the same. */
 function ready(data: Ready): Promise<Readied> {
+  if (readied && data.fileCore !== undefined) {
+    throw new Error('File-core ownership was selected by the first preparation; omit fileCore when using that prepared root');
+  }
   readied ??= (async () => {
     const translate = await loadTranslator(data.translator);
-    const vfs = new Vfs();
-    if (data.root) mountPack(mountTarget(vfs), data.root.index, {range: packRange = syncRange(data.root.url, rangeNow, new Map(data.root.index.packs.map(p => [p.name, p.bytes]))), decode: translate.unzstd, sha256: translate.sha256});
-    // Over the root, so what was given (why, its BusyBox) is what runs: a hot program in the root's own node.
-    for (const f of data.files ?? []) provide(vfs, f);
-    // The box's maker, beside the root it makes boxes of. A root served with none has no way to run its programs.
-    if (!data.muk) throw new Error('This root is served with no muk beside it (module/ricebox/make/muk.ts puts it there)');
-    vfs.writeFile(`${BOX}/muk`, data.muk, 0o755);
-    const r: Readied = {translate, vfs, files: data.files ?? []};
+    const tree = await prepareTree({core: data.fileCore, muk: data.muk, files: data.files,
+      root: data.root ? {index: data.root.index, reading: {
+        range: packRange = syncRange(data.root.url, rangeNow, new Map(data.root.index.packs.map(p => [p.name, p.bytes]))),
+        decode: translate.unzstd, sha256: translate.sha256,
+      }} : undefined,
+    });
+    // This owner survives rehearsal and ordinary kernel exit. Worker termination
+    // releases the realm; no per-run path may dispose a tree borrowed by another run.
+    const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree};
     if (data.rehearse) await rehearse(r, data.rehearse).catch(() => { /* only a start that is not faster */ });
     return r;
   })();
@@ -405,7 +410,10 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
   // A program translated ahead by the page since this Prompt started (ahead.ts): read when it is run.
   if (data.type === 'kept') { if (keptAt) Object.assign(keptAt, data.at); return; }
   // (A failure is said by the 'start' that waits for it.)
-  if (data.type === 'ready') { ready(data).catch(() => {}); return; }
+  if (data.type === 'ready') {
+    try { ready(data).catch(() => {}); } catch (error) { failed(error); }
+    return;
+  }
   if (data.type !== 'start') return;
   try {
     // Readied before, or now: then this start's files are those readied, put before the root.
