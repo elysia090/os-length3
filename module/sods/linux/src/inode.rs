@@ -7,19 +7,22 @@
 //! pending lazy source. Domain shutdown/source lifetime still needs integration.
 //! Each operation preserves already published entries on failure; mounting a whole
 //! archive is NOT a transaction. Lookup never creates parents (unlike legacy has).
-//! Directory nlink starts at POSIX-style 2 plus child directories, an intentional
-//! difference from the current TS base value; guest stat is not implemented here.
+//! Directory nlink starts at 2 plus child directories, as the current TS Dir does.
+//! Guest stat is not implemented here.
 //! This constructor admits names up to 255 bytes and nonempty, NUL-free symlink
 //! targets up to 4095 bytes. It is a restricted preparation contract, not a claim
 //! of full legacy path compatibility. Root overlay/given, inode origin, timestamps,
 //! credentials/permission checks and guest path resolution remain separate work.
-//! Directory entries currently use reserved Vec storage so publication has no
-//! allocation after payload acquisition. Lookup is O(entries in that directory),
-//! so constructing N siblings requires O(N^2) component comparisons. This is not
-//! a near-lower-bound namespace index; large-manifest admission/indexing is a
-//! performance gate before production root/caller migration. Inode and entry
-//! counts are separately bounded; hardlinks cannot bypass the entry budget.
+//! A single HashMap owns each directory's names and inode references. Capacity and
+//! name ownership are acquired before payloads, so publication does not allocate.
+//! Expected construction work is O(total name bytes + entries), not a worst-case
+//! guarantee: adversarial collisions can still cause quadratic work within the
+//! entry budget. RandomState's seed unpredictability on the Wasm target has not
+//! been established. No enumeration order or guest getdents contract is exposed.
+//! Inode and entry counts are separately bounded; hardlinks cannot bypass the
+//! entry budget. This remains an internal prepared-root constructor.
 use sods_file_store::store::{self, Store};
+use std::collections::HashMap;
 
 const NAME_MAX: usize = 255;
 const TARGET_MAX: usize = 4095;
@@ -61,12 +64,8 @@ impl From<store::Error> for Error {
         Self::Payload(error)
     }
 }
-struct Entry {
-    name: Vec<u8>,
-    inode: Inode,
-}
 enum Kind {
-    Directory(Vec<Entry>),
+    Directory(HashMap<Vec<u8>, Inode>),
     Regular(u32),
     Symlink(Vec<u8>),
 }
@@ -134,7 +133,7 @@ impl Tree {
                 gid: 0,
                 nlink: 2,
             },
-            kind: Kind::Directory(Vec::new()),
+            kind: Kind::Directory(HashMap::new()),
         });
         Ok(Self {
             owner,
@@ -170,10 +169,7 @@ impl Tree {
         let Kind::Directory(entries) = &self.nodes[self.index(parent)?].kind else {
             return Err(Error::NotDirectory);
         };
-        Ok(entries
-            .iter()
-            .find(|e| e.name == component)
-            .map(|e| e.inode))
+        Ok(entries.get(component).copied())
     }
     /// Perform fallible name/capacity/allocation work before acquiring payloads.
     fn prepare(&mut self, parent: Inode, component: &[u8], inode: bool) -> Result<Place, Error> {
@@ -191,7 +187,7 @@ impl Tree {
         entries.try_reserve(1).map_err(|_| Error::Capacity)?;
         Ok(Place { parent, name })
     }
-    /// Only pre-reserved Vec pushes remain; no callbacks or payload acquisition.
+    /// Only reserved insertion/push remain; no callbacks or payload acquisition.
     fn publish(&mut self, place: Place, node: Node) -> Inode {
         let inode = Inode {
             owner: self.owner,
@@ -205,10 +201,10 @@ impl Tree {
         let Kind::Directory(entries) = &mut self.nodes[place.parent].kind else {
             unreachable!()
         };
-        entries.push(Entry {
-            name: place.name,
-            inode,
-        });
+        // prepare checked absence and reserved one slot. Exclusive Tree access
+        // and no intervening callbacks keep that admission valid through insert.
+        let previous = entries.insert(place.name, inode);
+        debug_assert!(previous.is_none());
         self.entries += 1;
     }
     pub(crate) fn directory(
@@ -242,7 +238,7 @@ impl Tree {
                     gid: 0,
                     nlink: 2,
                 },
-                kind: Kind::Directory(Vec::new()),
+                kind: Kind::Directory(HashMap::new()),
             },
         );
         self.nodes[parent_index].metadata.nlink = links;
@@ -399,6 +395,63 @@ mod tests {
                 .unwrap(),
             b"payload"
         );
+    }
+    #[test]
+    fn many_siblings_keep_identity_and_payload_through_growth_and_rejection() {
+        const COUNT: usize = 4096;
+        let mut t = Tree::new(31, COUNT + 2, COUNT + 1, 8).unwrap();
+        let root = t.root();
+        let mut original = b"kept".to_vec();
+        let pointer = original.as_ptr();
+        let file = t.file_take(root, b"file", 0o640, &mut original).unwrap();
+        for i in 0..COUNT {
+            let name = format!("sibling-{i:04}");
+            t.hardlink(root, name.as_bytes(), file).unwrap();
+        }
+        for i in (0..COUNT).rev() {
+            let name = format!("sibling-{i:04}");
+            assert_eq!(t.lookup(root, name.as_bytes()), Ok(Some(file)));
+        }
+        let mut rejected = b"new".to_vec();
+        let rejected_pointer = rejected.as_ptr();
+        assert_eq!(
+            t.file_take(root, b"sibling-2048", 0o777, &mut rejected),
+            Err(Error::Exists)
+        );
+        assert_eq!(
+            t.file_take(root, b"extra", 0o777, &mut rejected),
+            Err(Error::Capacity)
+        );
+        assert_eq!(t.hardlink(root, b"extra", file), Err(Error::Capacity));
+        assert_eq!(rejected, b"new");
+        assert_eq!(rejected.as_ptr(), rejected_pointer);
+        assert_eq!(t.lookup(root, b"extra"), Ok(None));
+        assert_eq!(t.metadata(file).unwrap().nlink, (COUNT + 1) as u64);
+        assert_eq!(t.metadata(file).unwrap().mode, REGULAR | 0o640);
+        assert_eq!(t.read(file, 0, 8).unwrap().as_ptr(), pointer);
+        assert_eq!(t.read(file, 0, 8).unwrap(), b"kept");
+    }
+    #[test]
+    fn many_distinct_siblings_keep_payload_and_inode_identity() {
+        const COUNT: usize = 2048;
+        let mut t = Tree::new(32, COUNT + 1, COUNT, 8).unwrap();
+        let root = t.root();
+        let mut identities = Vec::new();
+        for i in 0..COUNT {
+            let name = format!("file-{i:04}");
+            let mut payload = (i as u64).to_le_bytes().to_vec();
+            identities.push(
+                t.file_take(root, name.as_bytes(), 0o600, &mut payload)
+                    .unwrap(),
+            );
+            assert!(payload.is_empty());
+        }
+        for i in (0..COUNT).rev() {
+            let name = format!("file-{i:04}");
+            let inode = t.lookup(root, name.as_bytes()).unwrap().unwrap();
+            assert_eq!(inode, identities[i]);
+            assert_eq!(t.read(inode, 0, 8).unwrap(), &(i as u64).to_le_bytes());
+        }
     }
     #[test]
     fn collisions_and_capacity_preserve_input_and_existing_identity() {

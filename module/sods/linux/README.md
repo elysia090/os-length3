@@ -73,13 +73,19 @@ Root overlay/origin hydration, permission resolution, FD/mapping/Image reference
 source-registry retirement, and Node/muk caller switching are still absent.
 The future Rust domain must uniquely allocate Tree owner IDs before connection.
 
-Directory nlink uses 2 plus child directories (unlike the legacy TS base of 1).
+Directory nlink uses 2 plus child directories, matching the current TS Dir.
 Lookup is side-effect-free, unlike the old mount has operation that may create
-parents. Neither difference is presented as transparent legacy compatibility.
+parents. This lookup difference is not presented as transparent legacy compatibility.
 
 Counts bound inode/entry records, not total heap usage. Payload length limits do
 not bound total payload bytes or Vec capacity; ownership transfer can retain spare
-capacity. Node storage reserves max_inodes initially. Directory Vec lookup makes
-N-sibling construction O(N²) comparisons; that known cost must be resolved or
-justified against actual prepared manifests before promoting a caller/default.
+capacity. Node storage reserves max_inodes initially. Directory hash indexing avoids the
+previous unconditional quadratic sibling scans: expected construction is O(B + N)
+for N entries and B name bytes, with O(B + N) retained name/entry storage. Reservation
+and name allocation precede payload acquisition; publication does not allocate.
+These are expected hash-table costs, not adversarial worst-case guarantees. The
+Wasm target's RandomState entropy strength is not established; colliding names can
+still cause quadratic work within admission limits. No directory enumeration API
+is provided here. Legacy getdents sorts names and resumes after the last name, not
+insertion order; its sort cost and string-versus-byte ordering need separate review.
 This is a semantic migration unit, not an optimized or usable Linux replacement.
