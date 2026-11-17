@@ -356,3 +356,25 @@ separate step, including same-inode load reentry and remaining transfer callers.
 The stage-5 guard does not newly cover direct consolidateDue() or Image.more()
 execution. Those later-code paths retain their existing contracts and require
 separate review before any wider source-lifetime guarantee.
+
+### Materialization stage 6: bounded file transfers
+
+copy_file_range captures owned source bytes before destination materialization.
+Both callbacks validate the original process and both descriptor-offset revisions,
+on success and throw, before payload or offset publication. An invalidated process
+uses the existing fatal no-writeback retirement. Source settling/callback effects
+are not rolled back. The transient source retention is the accepted range length;
+Rust snapshots reuse their owned result, while legacy TS ranges require a copy.
+This is not a minimal-copy claim or protection against concurrent shared mutation.
+
+fallocate now derives KEEP_SIZE clipping and expansion from loaded bytes, not a
+lazy size hint. Existing mode/access and over-limit expansion refusals remain
+before callbacks where the previous truncate path refused them. Ordinary loader
+failure leaves offsets and the operation's payload mutation uncommitted; source
+callbacks can still have independent effects.
+
+The remaining sendfile path can wait after partial output and needs its own
+accepted-prefix/offset contract; it is deliberately not covered by this change.
+Review also identified separate same-inode loading reentry and deferred-image
+revision/adoption gates. Rust lazy is still disabled. These guards are migration
+prerequisites, not a second TS implementation of Rust-owned lazy state.

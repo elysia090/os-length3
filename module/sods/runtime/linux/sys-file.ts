@@ -1468,8 +1468,14 @@ export const FILE_CALLS: Calls = {
     if (at < 0 || n <= 0) fail(E.INVAL);
     const KEEP_SIZE = 1, PUNCH_HOLE = 2, ZERO_RANGE = 0x10, node = fileOf(d);
     if (m & ~(KEEP_SIZE | PUNCH_HOLE | ZERO_RANGE)) fail(E.OPNOTSUPP);
+    if ((m & PUNCH_HOLE) && !(m & KEEP_SIZE)) fail(E.INVAL);
+    // Preserve the existing truncate refusal before a lazy callback can run.
+    if (m === 0 && at + n > node.size) {
+      if (!Number.isInteger(at + n)) fail(E.INVAL);
+      if (at + n > FILE_MOST) fail(E.FBIG);
+    }
+    materializeFor(this, node);
     if (m & (PUNCH_HOLE | ZERO_RANGE)) {
-      if ((m & PUNCH_HOLE) && !(m & KEEP_SIZE)) fail(E.INVAL);
       const end = m & KEEP_SIZE ? Math.min(at + n, node.size) : at + n;
       if (end > at) node.write(at, new Uint8Array(end - at));
       return 0;
@@ -1497,9 +1503,22 @@ export const FILE_CALLS: Calls = {
     const from = N(inAt) ? Number(this.view.getBigInt64(N(inAt), true)) : din.offset;
     const to = N(outAt) ? Number(this.view.getBigInt64(N(outAt), true)) : dout.offset;
     if (from < 0 || to < 0) fail(E.INVAL);
-    const data = fileOf(din).read(from, from + Math.min(N(len), 1 << 30));
+    const identity = this.readIdentity(), inputRevision = din.offsetRevision, outputRevision = dout.offsetRevision;
+    const ready = () => {
+      identity();
+      if (din.offsetRevision !== inputRevision || dout.offsetRevision !== outputRevision) throw new ReadLifetimeError();
+    };
+    let data: Uint8Array;
+    // Retain owned source bytes across destination loading; no guest or offset effects yet.
+    try { data = fileOf(din).snapshot(from, from + Math.min(N(len), 1 << 30)); }
+    finally { ready(); }
     if (din.node === dout.node && from < to + data.length && to < from + data.length) fail(E.INVAL);
-    if (data.length) fileOf(dout).write(to, data.slice());
+    if (data.length) {
+      const target = fileOf(dout);
+      try { target.materialize(); }
+      finally { ready(); }
+      target.write(to, data);
+    }
     if (N(inAt)) this.view.setBigInt64(N(inAt), BigInt(from + data.length), true); else din.offset = from + data.length;
     if (N(outAt)) this.view.setBigInt64(N(outAt), BigInt(to + data.length), true); else dout.offset = to + data.length;
     return data.length;
