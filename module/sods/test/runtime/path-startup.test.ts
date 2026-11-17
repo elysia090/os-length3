@@ -252,3 +252,32 @@ test('real stream ABI prevents generic receipt bypass and retains unknown host e
   assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
   assert.ok(r.call('linux_stream_receipt', id, action, 2n, 0) < 0);
 });
+
+test('cwd resolution rejects missing, file and looping paths before source and releases partial startup owners', {skip: !artifact}, async () => {
+  const host = memoryHost(new WebAssembly.Module(readFileSync(artifact!)), 8, 16);
+  const root = host.preparePreparedFiles({inodes: 8, entries: 8, fileBytes: 64,
+    tables: 1, descriptions: 1, slots: 3, reads: 2, contexts: 1, views: 1, holds: 8,
+    policy: {noExec: false, noSuid: false, noSymfollow: false}});
+  const work = host.directory(root, bytes('work'));
+  host.lazyFile(work, bytes('program'), 7, 3, 0o755);
+  host.symlink(work, bytes('alias'), bytes('program'));
+  host.symlink(root, bytes('cwd'), bytes('work'));
+  host.symlink(root, bytes('loop'), bytes('loop'));
+  assert.throws(() => host.symlink(root, bytes('bad'), new Uint8Array([0])));
+  host.sealFiles(3);
+  assert.throws(() => host.symlink(root, bytes('late'), bytes('work')));
+  const translator = new WebAssembly.Module(new Uint8Array([0,97,115,109,1,0,0,0]));
+  let loads = 0;
+  const load = () => { loads++; throw new Error('expected source stop'); };
+  for (const cwd of ['/missing', '/work/program', '/loop']) {
+    await assert.rejects(host.pathExecution(bytes('alias'), [], [], {
+      translator, random: new Uint8Array(16), cwd: bytes(cwd), load,
+    }));
+    assert.equal(loads, 0);
+  }
+  // With one Fs slot, this also proves failed cwd owners were retired.
+  await assert.rejects(host.pathExecution(bytes('alias'), [], [], {
+    translator, random: new Uint8Array(16), cwd: bytes('/cwd'), load,
+  }), /expected source stop/);
+  assert.equal(loads, 1);
+});

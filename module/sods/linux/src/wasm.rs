@@ -438,6 +438,29 @@ pub extern "C" fn linux_tree_directory(parent: u64, mode: u32) -> i32 {
             .map_err(|_| -10)
     })
 }
+/// Builder-only symbolic link. Name and target are validated and copied by Tree
+/// before namespace publication; a failed call leaves input and tree unchanged.
+#[no_mangle]
+pub extern "C" fn linux_tree_symlink(parent: u64) -> i32 {
+    with_state(false, |s| {
+        let b = s.builder.as_mut().ok_or(-9)?;
+        b.tree
+            .as_mut()
+            .ok_or(-9)?
+            .symlink(
+                inode(parent),
+                &b.name,
+                &b.input,
+                crate::inode::Creation {
+                    mode: 0o777,
+                    uid: 0,
+                    gid: 0,
+                },
+            )
+            .map(|n| n.number())
+            .map_err(|_| -10)
+    })
+}
 #[no_mangle]
 pub extern "C" fn linux_tree_file(parent: u64, mode: u32) -> i32 {
     with_state(false, |s| {
@@ -1425,7 +1448,8 @@ fn startup_begin(stdio: bool) -> i32 {
     with_state(false, |s| {
         let wire = &s.startup_input;
         let mut at = 0;
-        if startup_word(wire, &mut at)? != 1 {
+        let version = startup_word(wire, &mut at)?;
+        if version != 1 && version != 2 {
             return Err(-5);
         }
         let argc = usize::try_from(startup_word(wire, &mut at)?).map_err(|_| -5)?;
@@ -1434,6 +1458,15 @@ fn startup_begin(stdio: bool) -> i32 {
         let count = argc.checked_add(envc).filter(|n| *n <= 65536).ok_or(-5)?;
         let random: [u8; 16] = wire.get(at..at + 16).ok_or(-5)?.try_into().unwrap();
         at += 16;
+        let cwd = if version == 2 {
+            let length = startup_word(wire, &mut at)?;
+            if length == 0 || length > 4095 {
+                return Err(-5);
+            }
+            startup_string(wire, &mut at, length)?
+        } else {
+            b"/".as_slice()
+        };
         let path = startup_string(wire, &mut at, pathlen)?;
         let mut strings = Vec::new();
         strings.try_reserve_exact(count).map_err(|_| -1)?;
@@ -1469,6 +1502,9 @@ fn startup_begin(stdio: bool) -> i32 {
         s.result = id; // Failure after admission leaves an addressable cleanup owner.
         let p = s.executions.last_mut().unwrap().preparing_mut()?;
         p.fs = Some(r.files.create_fs(root, root, 0o022).map_err(|_| -10)?);
+        r.files
+            .select_cwd(p.fs.as_ref().unwrap(), &Credentials::initial_root(), cwd)
+            .map_err(|_| -10)?;
         p.table = Some(
             if stdio {
                 r.files.stdio([1, 2, 3], r.fd_limit)

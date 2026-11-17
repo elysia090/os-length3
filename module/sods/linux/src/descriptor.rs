@@ -413,6 +413,26 @@ impl Files {
             .copy(self.mounts.as_mut().ok_or(Error::BadHandle)?, ticket)
             .map_err(Error::Fs)
     }
+    /// Select an existing prepared cwd. No implicit mkdir or host-path lookup.
+    /// Resolve and authorize synchronously before the single position exchange;
+    /// failure leaves the old cwd owned by this FsContext.
+    pub(crate) fn select_cwd(
+        &mut self,
+        fs: &fs_context::Ticket,
+        credentials: &crate::credentials::Credentials,
+        path: &[u8],
+    ) -> Result<(), crate::path::Error> {
+        let place = crate::path::resolve(self, fs, credentials, path)?;
+        let metadata = self.place_metadata(&place)?;
+        if metadata.mode & 0o170000 != 0o040000 {
+            return Err(crate::path::Error::NotDirectory);
+        }
+        if !credentials.may(&metadata, crate::credentials::Access::Search) {
+            return Err(crate::path::Error::Access);
+        }
+        self.change_fs(fs, Base::Cwd, &place)?;
+        Ok(())
+    }
     /// Internal position exchange, not guest chdir/chroot authorization.
     pub(crate) fn change_fs(
         &mut self,
@@ -3066,5 +3086,108 @@ mod program_tests {
             let (executable, _) = ready.publish();
             f.release_executable(executable).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod cwd_selection_tests {
+    use super::*;
+    use crate::credentials::Credentials;
+    use crate::inode::{Creation, Metadata};
+    fn setup() -> (Files, fs_context::Ticket, Inode) {
+        let metadata = Creation {
+            mode: 0o755,
+            uid: 0,
+            gid: 0,
+        };
+        let mut tree = Tree::new(990, 8, 8, 64, metadata).unwrap();
+        let root = tree.root();
+        let dir = tree.directory(root, b"work", metadata).unwrap();
+        tree.directory(
+            root,
+            b"private",
+            Creation {
+                mode: 0o700,
+                ..metadata
+            },
+        )
+        .unwrap();
+        tree.file_take(dir, b"program", metadata, &mut b"ELF".to_vec())
+            .unwrap();
+        tree.symlink(root, b"alias", b"work", metadata).unwrap();
+        let mut files = Files::new(
+            991,
+            tree,
+            Limits {
+                contexts: 2,
+                tables: 1,
+                descriptions: 1,
+                slots: 1,
+            },
+        );
+        let view = files
+            .bootstrap_mount(
+                root,
+                mount::Limits { views: 2, holds: 8 },
+                mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false,
+                },
+            )
+            .unwrap();
+        let place = files.view_root(&view).unwrap();
+        let fs = files.create_fs(&place, &place, 0o022).unwrap();
+        assert!(files.release_view(view).is_ok());
+        (files, fs, dir)
+    }
+    #[test]
+    fn selected_symlink_cwd_resolves_relative_program_and_failures_preserve_it() {
+        let (mut f, fs, dir) = setup();
+        let cred = Credentials::initial_root();
+        f.select_cwd(&fs, &cred, b"/alias").unwrap();
+        assert_eq!(f.fs_start(&fs, Base::Cwd).unwrap().inode(), dir);
+        let p = f.prepare_program(&fs, &cred, b"program").unwrap();
+        assert_eq!(p.execfn(), b"program");
+        f.release_program(p).unwrap();
+        assert!(matches!(
+            f.select_cwd(&fs, &cred, b"absent"),
+            Err(crate::path::Error::NotFound)
+        ));
+        assert!(matches!(
+            f.select_cwd(&fs, &cred, b"program"),
+            Err(crate::path::Error::NotDirectory)
+        ));
+        assert_eq!(f.fs_start(&fs, Base::Cwd).unwrap().inode(), dir);
+        f.release_fs(fs).unwrap();
+    }
+    #[test]
+    fn final_search_uses_actual_credentials_and_root_boundary_is_retained() {
+        let (mut f, fs, dir) = setup();
+        let user = Credentials::initial_root()
+            .program(
+                &Metadata {
+                    mode: 0o104755,
+                    uid: 1000,
+                    gid: 1000,
+                    nlink: 1,
+                },
+                false,
+                false,
+            )
+            .unwrap()
+            .credentials;
+        assert!(matches!(
+            f.select_cwd(&fs, &user, b"/private"),
+            Err(crate::path::Error::Access)
+        ));
+        let before = f.fs_start(&fs, Base::Cwd).unwrap().inode();
+        assert_ne!(before, dir);
+        f.select_cwd(&fs, &user, b"/work").unwrap();
+        let root = f.fs_start(&fs, Base::Cwd).unwrap();
+        f.change_fs(&fs, Base::Root, &root).unwrap();
+        f.select_cwd(&fs, &user, b"../../..").unwrap();
+        assert_eq!(f.fs_start(&fs, Base::Cwd).unwrap().inode(), dir);
+        f.release_fs(fs).unwrap();
     }
 }

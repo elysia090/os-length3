@@ -722,3 +722,23 @@ standard descriptors and translated guest code, plus raw Wasm receipts proving
 unknown host effects cannot be retired using guest-stop evidence alone. Local
 current-source Linux-core tests passed; local translated execution still used an
 explicit external translator. The CI path requests the current-source translator.
+
+### Prepared cwd and symlink ingress
+
+Private builder symlinks carry copied name and target bytes into Tree before seal;
+the host neither normalizes nor resolves the target. Invalid input leaves existing
+entries unchanged. Startup wire v1 retains its root-cwd behavior; v2 carries a
+bounded explicit cwd path captured before asynchronous host work. Rust resolves
+that path from the prepared root, checks the final directory/search permission and
+updates the Fs hold before acquiring the Program or dispatching a source. Failure
+keeps the prior cwd and exposes any partially acquired startup owner for cleanup.
+The original program path, not its resolved target, still supplies AT_EXECFN.
+
+There is deliberately no implicit mkdir in path lookup or startup. This is not yet
+the old Node runner's import policy: that runner creates a missing cwd, supplies
+synthetic devices, maps host directories to default guest modes and root ownership,
+and follows captured host pathnames again for lazy content. Neither the old mirror
+nor keeping an open host FD proves immutable file contents. A live-root importer,
+content identity/reload policy, directory bootstrap and whole/seeded translation
+compatibility remain separate migration gates. These inputs serve prepared trees;
+they do not claim a completed host-filesystem snapshot or ordinary CLI cutover.

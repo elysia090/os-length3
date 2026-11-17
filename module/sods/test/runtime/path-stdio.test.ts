@@ -21,14 +21,16 @@ test(`${provenance} translated path guest uses Rust stdio authority and real Nod
       '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
     ], {stdio: 'pipe', timeout: 30_000});
     const input = Buffer.from([0, 255, 65, 10]);
-    const result = spawnSync(process.execPath, [runner, core!, translator!, program], {
-      input, timeout: 20_000, maxBuffer: 1024 * 1024,
-      env: {...process.env, NODE_NO_WARNINGS: '1'},
-    });
-    assert.equal(result.error, undefined);
-    assert.equal(result.signal, null);
-    assert.equal(result.status, 23, result.stderr.toString());
-    assert.deepEqual(result.stdout, input);
-    assert.equal(result.stderr.toString(), 'err\n');
+    for (const selection of ['absolute', 'relative']) {
+      const result = spawnSync(process.execPath, [runner, core!, translator!, program, selection], {
+        input, timeout: 20_000, maxBuffer: 1024 * 1024,
+        env: {...process.env, NODE_NO_WARNINGS: '1'},
+      });
+      assert.equal(result.error, undefined);
+      assert.equal(result.signal, null);
+      assert.equal(result.status, 23, result.stderr.toString());
+      assert.deepEqual(result.stdout, input);
+      assert.equal(result.stderr.toString(), 'err\n');
+    }
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });

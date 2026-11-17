@@ -55,6 +55,7 @@ interface Admission extends WebAssembly.Exports {
   linux_input(length: number): number;
   linux_tree_directory(parent: bigint, mode: number): number;
   linux_tree_file(parent: bigint, mode: number): number;
+  linux_tree_symlink(parent: bigint): number;
   linux_files_seal(fdLimit: number): number;
   linux_open(inode: bigint): number;
   linux_dup(fd: number): number;
@@ -117,6 +118,8 @@ export interface PathExecutionOptions {
   load?: (source: number) => Uint8Array | Promise<Uint8Array>;
   random: Uint8Array;
   stackBytes?: number;
+  /** Guest cwd bytes. Rust resolves and requires an existing directory; no implicit creation. */
+  cwd?: Uint8Array;
   /** Explicit borrowed Linux non-TTY host standards; absent keeps an empty FD table. */
   stdio?: true;
   /** Startup-only cooperative cancellation; source callbacks remain observed. */
@@ -125,7 +128,7 @@ export interface PathExecutionOptions {
 const required = ['linux_prepared_files', 'linux_startup_input', 'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_stream_start', 'linux_stream_receipt', 'linux_result_endpoint', 'linux_startup_source_start', 'linux_startup_source_finish', 'linux_startup_bytes', 'linux_startup_translation_finish', 'linux_startup_image_begin', 'linux_startup_stack', 'linux_startup_image_finish', 'linux_startup_cancel', 'linux_startup_failed_image', 'linux_startup_entry', 'linux_startup_check', 'linux_stack_input', 'linux_stack_build', 'linux_stack_clear', 'linux_run_start', 'linux_run_receipt', 'linux_syscall', 'linux_syscall_complete',
   'linux_syscall_resumed', 'linux_syscall_abandon', 'linux_syscall_load_finish', 'linux_result_auxiliary', 'linux_abi_version', 'linux_init', 'linux_result', 'linux_bind', 'linux_span',
   'linux_binding_room', 'linux_change', 'linux_start', 'linux_receipt', 'linux_retire',
-  'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file',
+  'linux_files_prepare', 'linux_name', 'linux_input', 'linux_tree_directory', 'linux_tree_file', 'linux_tree_symlink',
   'linux_files_seal', 'linux_open', 'linux_dup', 'linux_close', 'linux_offset', 'linux_seek',
   'linux_read_begin', 'linux_read_start', 'linux_read_receipt', 'linux_read_query',
   'linux_read_cancel', 'linux_read_retire', 'linux_result_length', 'linux_result_state',
@@ -178,15 +181,20 @@ function stackWire(input: InitialStack, extent: bigint): Uint8Array {
 }
 
 /** Transport snapshot only. Rust validates strings, budgets, and selected execfn. */
-function startupWire(path: Uint8Array, argv: readonly Uint8Array[], env: readonly Uint8Array[], random: Uint8Array): Uint8Array {
+function startupWire(path: Uint8Array, argv: readonly Uint8Array[], env: readonly Uint8Array[], random: Uint8Array, cwd?: Uint8Array): Uint8Array {
   if (argv.length + env.length > 65536 || lengthOf(random) !== 16) throw new RangeError('Startup transport exceeds profile');
   const strings = [path, ...argv, ...env];
-  const size = strings.reduce((n, bytes, i) => integer(n + lengthOf(bytes) + (i ? 8 : 0)), 48);
+  const size = strings.reduce((n, bytes, i) => integer(n + lengthOf(bytes) + (i ? 8 : 0)),
+    cwd === undefined ? 48 : integer(56 + lengthOf(cwd)));
   if (size > 2 * 1024 * 1024) throw new RangeError('Startup transport exceeds profile');
   const bytes = new Bytes(size), view = new DataView(bytes.buffer);
-  for (const [i, value] of [1, argv.length, env.length, lengthOf(path)].entries()) view.setBigUint64(i * 8, wide(value), true);
+  for (const [i, value] of [cwd === undefined ? 1 : 2, argv.length, env.length, lengthOf(path)].entries()) view.setBigUint64(i * 8, wide(value), true);
   apply(setBytes, bytes, [random, 32]);
   let at = 48;
+  if (cwd !== undefined) {
+    view.setBigUint64(at, wide(lengthOf(cwd)), true); at += 8;
+    apply(setBytes, bytes, [cwd, at]); at += lengthOf(cwd);
+  }
   for (let i = 0; i < strings.length; i++) {
     const value = strings[i];
     if (i) { view.setBigUint64(at, wide(lengthOf(value)), true); at += 8; }
@@ -454,7 +462,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       if (useStdio !== undefined && useStdio !== true) throw new TypeError('Expected explicit stdio profile');
       const stackBytes = u32(options.stackBytes ?? 1024 * 1024);
       if (!stackBytes || stackBytes % 65536) throw new RangeError('Stack backing must be a positive whole number of Wasm pages');
-      const wire = startupWire(path, argv, env, options.random);
+      const wire = startupWire(path, argv, env, options.random, options.cwd);
       if (aborted(signal)) throw abortReason(signal);
       const stdio = useStdio ? (await import('../host/node/stdio.ts')).captureStdio() : undefined;
       if (aborted(signal)) throw abortReason(signal);
@@ -869,6 +877,13 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
       put(result(core.linux_name(u32(lengthOf(component)))), component);
       put(result(core.linux_input(u32(lengthOf(bytes)))), bytes);
       return rememberInode(result(core.linux_tree_file(id, mode)));
+    },
+    /** Prepared symlink bytes only; Rust owns metadata and guest resolution. */
+    symlink(parent: InodeBinding, name: Uint8Array, target: Uint8Array): InodeBinding {
+      const id = inodeOf(parent), component = new Bytes(name), bytes = new Bytes(target);
+      put(result(core.linux_name(u32(lengthOf(component)))), component);
+      put(result(core.linux_input(u32(lengthOf(bytes)))), bytes);
+      return rememberInode(result(core.linux_tree_symlink(id)));
     },
     lazyFile(parent: InodeBinding, name: Uint8Array, source: number, size: number, mode = 0o644): InodeBinding {
       const id = inodeOf(parent), component = new Bytes(name); u32(source); u32(size); u32(mode);
