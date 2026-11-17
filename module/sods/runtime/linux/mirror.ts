@@ -48,7 +48,7 @@ export class Mirror {
    */
   changes(): Changes | null {
     if (counted.changes === this.at && !counted.mapped) return null;
-    this.at = counted.changes;
+    const at = counted.changes;
     const now = this.now();
     const dirs: string[] = [], files: Changes['files'] = [], removed: string[] = [];
     for (const [rel, e] of now) {
@@ -64,8 +64,12 @@ export class Mirror {
       if (parent && this.seen.has(parent) && !now.has(parent)) continue;
       removed.push(rel);
     }
+    const changes = dirs.length || files.length || removed.length ? {dirs, files, removed} : null;
+    // Commit only after every capture succeeds. Keep the starting counter: a loader or
+    // capture can change the tree, and that later change must remain observable.
     this.seen = now;
-    return dirs.length || files.length || removed.length ? {dirs, files, removed} : null;
+    this.at = at;
+    return changes;
   }
 
   /** Put an outside change in: bytes for a file, null to remove, 'dir' for a directory. */

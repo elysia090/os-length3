@@ -44,3 +44,38 @@ test('git metadata is ordinary guest data; traversal remains rejected', () => {
   m.put('../b/x', enc.encode('out'));
   assert.throws(() => v.readFile('/root/b/x'));
 });
+
+test('failed file capture does not acknowledge the observation', () => {
+  const v = new Vfs();
+  v.writeFile('/work/a', 'old');
+  v.writeFile('/work/b', 'old');
+  const m = new Mirror(v, '/work');
+  v.file('/work/a').write(0, enc.encode('new'));
+  const b = v.file('/work/b');
+  b.write(0, enc.encode('new'));
+  const bytes = b.bytes.bind(b);
+  let fail = true;
+  b.bytes = () => { if (fail) { fail = false; throw new Error('capture failed'); } return bytes(); };
+
+  assert.throws(() => m.changes(), /capture failed/);
+  assert.deepEqual(m.changes()?.files.map((f) => [f.path, dec.decode(f.bytes)]), [['a', 'new'], ['b', 'new']]);
+  assert.equal(m.changes(), null);
+});
+
+test('a mutation during capture remains eligible for the next observation', () => {
+  const v = new Vfs();
+  const a = v.writeFile('/work/a', 'old');
+  const b = v.writeFile('/work/b', 'old');
+  const m = new Mirror(v, '/work');
+  a.write(0, enc.encode('one'));
+  b.write(0, enc.encode('two'));
+  const bytes = b.bytes.bind(b);
+  let mutate = true;
+  b.bytes = () => { if (mutate) { mutate = false; a.write(0, enc.encode('end')); } return bytes(); };
+
+  const first = m.changes()!;
+  assert.deepEqual(first.files.map((f) => [f.path, dec.decode(f.bytes)]), [['a', 'one'], ['b', 'two']]);
+  assert.deepEqual(m.changes()?.files.map((f) => [f.path, dec.decode(f.bytes)]), [['a', 'end']]);
+  assert.equal(dec.decode(first.files[0].bytes), 'one');
+  assert.equal(m.changes(), null);
+});
