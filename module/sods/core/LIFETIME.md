@@ -817,3 +817,35 @@ still a distinct gate after private operation/callback ownership is closed.
 Notification functions here have a synchronous contract; returned asynchronous
 promises are not observed. Disconnecting callback slots is not a measurement or
 guarantee of physical GC of all lexical environments.
+
+### Release one proven inactive private foreground reference
+
+Do not null Image.source to simulate owner release: old aliases can still depend
+on deferred translation. Besides images/due, inline spare memories can retain
+pooled Images, instances and slots leading back to Tasks/Kernel. Translator close
+also has its own opened/known ownership and failure semantics; shared rehearsal
+translator resources cannot be blindly closed through free(0). This step leaves
+those objects and their behavior unchanged.
+
+Instead the private foreground field can be dropped only after registered operation
+drain, with no retirement or recorded lifecycle failure, null current task, empty
+tasks/procs/runq/blocked, and absent Vfs keeper registration. For RemoteKernel,
+the captured stop snapshot must additionally have no unknown Workers or failures.
+After that await, field and token identity, failures and inactive state are
+rechecked. Pending stop or thrown/failed/unknown evidence retains the reference;
+exceptions are recorded, not abandoned as an unhandled promise. The separate
+foreground-reference observation tracks this field only. The historical
+foreground-kernel observation and prepared-tree owner remain: releasing a field
+is not claiming every Image/source owner released, nor authorizing tree disposal.
+
+Late paused callbacks now return without looking up the global kernel or calling
+held after freeze. Pump does not reschedule a timer after retirement. These
+boundaries allow the field to become null without making a late idle callback
+read a removed global root. Keeper delivery is already explicitly closed.
+
+Real-muk tests cover successful inline and actual Node-host paths, injected halt
+failure, and an injected unconfirmed Node snapshot. The latter tests the rejection
+condition, not real browser termination. Mirror reentry tests also count held
+calls after freeze. Captured Image.source function identities and file readability
+remain intact after field release. None of this measures GC/RSS or claims source
+alias enumeration, historical rehearsal disposal or full root collection.

@@ -149,6 +149,7 @@ const moved = (...views: {buffer: ArrayBufferLike}[]): {transfer: ArrayBuffer[]}
 const lifetime = new WorkerLifetime();
 const executionOwners = new Set<WeakRef<Kernel>>();
 let kernel: Kernel | null = null;
+let foregroundReference: {release(): void} | null = null;
 let mirror: Mirror | null = null;
 /** What 'ready' readied ({translate, vfs, files}), or 'start' itself where none came first. */
 let readied: Promise<Readied> | null = null;
@@ -268,15 +269,16 @@ const consolidateLater = (ms: number): void => { clearTimeout(idle); idle = setT
 let rawKeys = false;
 
 /** The kernel paused (here: every thread waits or it ended, `r` as pump says): what the shell changed, and why it waits. */
-function paused(r: Pumped): Said {
+function paused(r: Pumped): Said | null {
+  if (!lifetime.accepting) return null;
   if (publishingOutput) throw new Error('Output publication is already active; cannot establish a final boundary');
-  if (!lifetime.accepting) return said(r, withPacks(kernel!.held()), performance.now(), false);
   const k = kernel!;
   // What the shell changed goes before what it printed (send reports it first): a page that has the prompt back has
   // what the line wrote.
   report();
   send();
   told();
+  if (!lifetime.accepting) return null;
   const m = said(r, withPacks(k.held()), performance.now(), (keep?.reading() ?? 0) > 0);
   if (!lifetime.accepting) return m;
   if (m.type === 'exit' && !outputBoundarySent) {
@@ -322,7 +324,7 @@ function pump(): void {
     const m = paused(kernel!.pump());
     // A process that sleeps goes on when its time comes, input or not.
     clearTimeout(waking);
-    if (m.type === 'waiting' && m.for === 'time') waking = setTimeout(pump, m.ms);
+    if (lifetime.accepting && m?.type === 'waiting' && m.for === 'time') waking = setTimeout(pump, m.ms);
   } catch (e) {
     failed(e);
   }
@@ -437,7 +439,23 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
     // pending. Drop only our redundant promise root after those operations settle.
     // preparedOwner and Kernel/Image/source roots remain quarantined: neither
     // this drain nor admission acknowledgement authorizes their disposal.
-    void lifetime.settledOperations().then(() => { readied = null; });
+    void lifetime.settledOperations().then(async () => {
+      readied = null;
+      const k = kernel, reference = foregroundReference;
+      if (!k || errors.length || lifetime.failures.length) return;
+      // This is only this private global reference, not every Image/source or
+      // a FileScope disposal barrier. Do not mutate shared Image objects.
+      const inactive = (): boolean => k.current === null && k.tasks.size === 0 && k.procs.size === 0
+        && k.runq.length === 0 && k.blocked.size === 0 && !k.vfs.loaded.keepers.has(k);
+      if (!inactive()) return;
+      if (k instanceof RemoteKernel) {
+        const evidence = await k.snapshotWorkerStops();
+        if (evidence.unconfirmed || evidence.failures.length || k.stopFailures.length) return;
+      }
+      if (kernel !== k || foregroundReference !== reference || errors.length || lifetime.failures.length || !inactive()) return;
+      kernel = null;
+      foregroundReference?.release(); foregroundReference = null;
+    }).catch(error => { lifetime.failures.push(error); });
     // This acknowledges admission closure, not stopped Workers or tree disposal.
     self.postMessage({type: 'retiring', owners: lifetime.snapshot(), failures: errors.map(error => error instanceof Error ? `${error.name}: ${error.message}` : String(error))});
     if (errors.length) failed(new AggregateError(errors, 'Worker retirement failed'));
@@ -525,6 +543,7 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
       // Each thread in a Worker of its own, all at once, where memory can be shared and every ready translation was made
       // for shared memory; otherwise they take turns here (sods' linux.ts decides, by the host it is on).
       const k = kernel = linux({vfs, translate, console, keeper: keep, onIdle: (r) => paused(r), consolidateIdle: true, translated: files});
+      foregroundReference?.release(); foregroundReference = lifetime.observe('foreground-reference', k);
       executionOwners.add(new WeakRef(k)); lifetime.observe('foreground-kernel', k);
       apart = k instanceof RemoteKernel;
       for (const f of files) if (f.module) follow(k, vfs.file(f.path), f);

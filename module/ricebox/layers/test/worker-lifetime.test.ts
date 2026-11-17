@@ -170,13 +170,15 @@ test('output-send reentry cannot establish a boundary before the send commits it
 for (const phase of ['construction', 'capture'] as const) {
   test(`Mirror ${phase} reentry cannot publish after retirement`, {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
     const {readFileSync} = await import('node:fs');
-    const {Mirror} = await import('../../../sods/runtime/linux.ts');
+    const {Mirror, Kernel} = await import('../../../sods/runtime/linux.ts');
     const messages: {type: string; owners?: Record<string, number>; message?: string}[] = [];
     const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) { messages.push(message); }};
     const previous = Object.getOwnPropertyDescriptor(globalThis, 'self');
-    const now = Mirror.prototype.now, changes = Mirror.prototype.changes;
+    const now = Mirror.prototype.now, changes = Mirror.prototype.changes, held = Kernel.prototype.held;
+    let frozen = false, lateHeldReads = 0;
+    Kernel.prototype.held = function () { if (frozen) lateHeldReads++; return held.call(this); };
     let retiring: Promise<void> | undefined;
-    const retire = () => { retiring ??= host.onmessage!({data: {type: 'retire'}}); };
+    const retire = () => { frozen = true; retiring ??= host.onmessage!({data: {type: 'retire'}}); };
     Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
     try {
       await import(new URL(`../worker.ts?mirror-retirement-${phase}`, import.meta.url).href);
@@ -195,8 +197,9 @@ for (const phase of ['construction', 'capture'] as const) {
       await host.onmessage!({data: {type: 'retire'}});
       assert.equal(messages.at(-1)?.owners?.mirror, undefined);
       assert.equal(messages.at(-1)?.owners?.['prepared-tree'], 1); // still quarantined, not disposed
+      assert.equal(lateHeldReads, 0); // late paused callbacks cannot inspect a retired kernel
     } finally {
-      Mirror.prototype.now = now; Mirror.prototype.changes = changes;
+      Mirror.prototype.now = now; Mirror.prototype.changes = changes; Kernel.prototype.held = held;
       if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
     }
   });
@@ -239,3 +242,50 @@ test('operation finally after failure drains but does not erase the failure or t
   assert.deepEqual(lifetime.failures, [error]);
   assert.deepEqual(lifetime.snapshot(), {kernel: 1});
 });
+
+for (const mode of ['inline', 'inline-failure', 'node', 'node-unconfirmed'] as const) {
+  test(`used ${mode} root drops only a proven inactive foreground reference`, {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
+    const {readFileSync} = await import('node:fs');
+    const {Kernel, RemoteKernel} = await import('../../../sods/runtime/linux.ts');
+    const messages: {type: string; owners?: Record<string, number>; message?: string}[] = [];
+    let exited!: () => void;
+    const done = new Promise<void>(resolve => { exited = resolve; });
+    const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) {
+      messages.push(message); if (message.type === 'exit' || message.type === 'error') exited();
+    }};
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'self'), inline = process.env.SODS_INLINE;
+    const held = Kernel.prototype.held, halt = Kernel.prototype.halt, stops = RemoteKernel.prototype.snapshotWorkerStops;
+    let captured: InstanceType<typeof Kernel> | undefined, timer: ReturnType<typeof setTimeout> | undefined;
+    Kernel.prototype.held = function () { captured = this; return held.call(this); };
+    if (mode.startsWith('node')) delete process.env.SODS_INLINE; else process.env.SODS_INLINE = '1';
+    Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
+    try {
+      await import(new URL(`../worker.ts?foreground-release-${mode}`, import.meta.url).href);
+      await host.onmessage!({data: {type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), box: {config: '{}', words: []}, cwd: '/'}});
+      await Promise.race([done, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('guest did not exit')), 10_000); })]);
+      assert.ok(messages.some(m => m.type === 'exit'), JSON.stringify(messages));
+      assert.ok(captured);
+      const sources = [...captured.images.values()].map(entry => [entry.image, entry.image.source] as const);
+      if (mode === 'inline-failure') Kernel.prototype.halt = () => { throw new Error('injected halt failure'); };
+      if (mode === 'node-unconfirmed') RemoteKernel.prototype.snapshotWorkerStops = async () => ({captured: 1, observedStopped: 0, unconfirmed: 1, failures: []});
+      await host.onmessage!({data: {type: 'retire'}});
+      // Snapshot only the private field token. Unknown graph/tree owners must
+      // survive regardless of whether this one reference is removed.
+      for (let i = 0; i < 100; i++) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        await host.onmessage!({data: {type: 'retire'}});
+        if (mode === 'inline-failure' || mode === 'node-unconfirmed' || !messages.at(-1)?.owners?.['foreground-reference']) break;
+      }
+      const owners = messages.at(-1)?.owners;
+      assert.equal(owners?.['foreground-reference'], mode === 'inline-failure' || mode === 'node-unconfirmed' ? 1 : undefined);
+      assert.equal(owners?.['foreground-kernel'], 1);
+      assert.equal(owners?.['prepared-tree'], 1);
+      for (const [image, source] of sources) assert.equal(image.source, source); // no alias invalidation
+      assert.ok(captured.vfs.file('/run/box/muk').bytes().length);
+    } finally {
+      clearTimeout(timer); Kernel.prototype.held = held; Kernel.prototype.halt = halt; RemoteKernel.prototype.snapshotWorkerStops = stops;
+      if (inline === undefined) delete process.env.SODS_INLINE; else process.env.SODS_INLINE = inline;
+      if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+    }
+  });
+}
