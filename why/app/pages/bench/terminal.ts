@@ -111,7 +111,7 @@ function startMessage(repo: string, webroot: Webroot, copy: Awaited<ReturnType<t
     files: [...filesNow(webroot).filter((f) => !given?.has(f.path)), ...dotfiles.asFiles(), ...copy.files],
     dirs: copy.dirs,
     // The whole root around them: the same programs, files and links as the app's Prompt, each file read when a program first opens it.
-    ...(given ? {} : {fileCore: webroot.fileCore, translator: webroot.translator, root: {index: webroot.index, url: webroot.url}, muk: webroot.muk}),
+    ...(given ? {} : {fileStore: webroot.fileStore, translator: webroot.translator, root: {index: webroot.index, url: webroot.url}, muk: webroot.muk}),
     box,
     // It is a terminal, shown as a screen as wide as a box on the desk (80 columns) and 24 rows tall: a listing comes in
     // columns, and a whole-screen program (vi, less, top) has all of it.
@@ -138,7 +138,6 @@ export class Session implements Prompt {
   private worker: Worker | null = null;
   private readonly consumption = new Consumption();
   private consumptionBoundary: Promise<ConsumptionResult> | null = null;
-  private consumptionResult: ConsumptionResult | null = null;
   private repo: string;
   /** What was run here, newest last. */
   readonly runs: Run[] = [];
@@ -777,7 +776,6 @@ export class Session implements Prompt {
       });
     }
     if (this.consumptionBoundary) void this.consumptionBoundary.then(result => {
-      this.consumptionResult = result;
       if (generation !== this.retirementGeneration || this.restarting) return;
       if (result.prefixReceived && result.storeAccepted) return;
       const detail = !result.prefixReceived ? 'Final output prefix was not received completely' : 'Repository writeback did not complete successfully';

@@ -66,3 +66,13 @@ test('rejects a pack with changed bytes using the shared pack verifier', t => {
   writeFileSync(join(root,'packs',pack.name),pack.bytes);
   assert.throws(() => distributionAssets(root), /not the file its table names/);
 });
+
+test('staging rejects old selected indexes and mixed names instead of omitting the store', t => {
+  const {root}=fixture(t),about=JSON.parse(readFileSync(join(root,'webroot.json'),'utf8'));
+  const original=JSON.parse(readFileSync(join(root,about.index.path),'utf8'));
+  for(const selection of [{fileCore:null},{fileCore:false},{fileCore:{}},{fileCore:{},fileStore:{}}]) {
+    const bytes=Buffer.from(JSON.stringify({...original,...selection})),sha256=createHash('sha256').update(bytes).digest('hex'),path=`index-${sha256}.json`;
+    writeFileSync(join(root,path),bytes);writeFileSync(join(root,'webroot.json'),JSON.stringify({...about,index:{path,sha256,size:bytes.length}}));
+    assert.throws(()=>distributionAssets(root),/fileCore.*regenerate/);
+  }
+});

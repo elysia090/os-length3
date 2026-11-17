@@ -12,14 +12,14 @@ export interface About {
   translator: {name: string; version: string};
 }
 export interface Translation { path: string; sha256: string; elf: Blob; wasm: Blob }
-export interface CoreDescriptor extends Blob {
+export interface FileStoreDescriptor extends Blob {
   abi: 4;
   wasm: string;
   maxFileBytes: number;
 }
 export interface Index {
   /** When present this release requires the matching Rust file owner. */
-  fileCore?: CoreDescriptor;
+  fileStore?: FileStoreDescriptor;
   name: string; version: string; sha256: string; codec: string;
   packs: {name: string; owner: string; bytes: number}[];
   dirs: {path: string; mode: number}[];
@@ -29,7 +29,7 @@ export interface Index {
   translations: Translation[];
 }
 export interface Webroot {
-  fileCore?: import('./prepared-tree.ts').FileCore;
+  fileStore?: import('./prepared-tree.ts').FileStoreArtifact;
   about: About;
   index: Index;
   translator: WebAssembly.Module;
@@ -50,3 +50,9 @@ export interface Webroot {
   muk: Uint8Array | null;
 }
 export interface More { module: WebAssembly.Module; bytes: Uint8Array; base: number }
+
+/** Reject the unreleased old selection name before it can silently downgrade
+ * a selected Rust store to the legacy payload path. Rebuild those distributions. */
+export function requireFileStoreName(input: object): void {
+  if ('fileCore' in input) throw new Error('fileCore is an obsolete selection name; use fileStore and regenerate the prepared distribution');
+}

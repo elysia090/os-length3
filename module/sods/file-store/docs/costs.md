@@ -1,10 +1,10 @@
-# File-core resource ledger
+# File-store resource ledger
 
 This is an operation ledger, not an elapsed-time benchmark or a browser result.
 Run with the selected real core:
 
 ```
-SODS_CORE_WASM=/path/to/sods_core.wasm node --test module/sods/test/runtime/core-cost.test.ts
+SODS_FILE_STORE_WASM=/path/to/sods_file_store.wasm node --test module/sods/test/runtime/file-store-cost.test.ts
 ```
 
 ## Conditions and identical work

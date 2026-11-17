@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {loadFileScope} from '../../runtime/linux/core-files.ts';
+import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {Kernel, Process, SHARES, type Task} from '../../runtime/linux/process.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {Vfs} from '../../runtime/linux/fs.ts';
@@ -10,8 +10,8 @@ function kernel(vfs=new Vfs()){return new Kernel({vfs,translate(){throw Error('u
 function processFor(k:Kernel){const p=new Process(k,null);p.fixed=[];p.mapBase=8192;p.mapEnd=65536;p.stackLow=4096;p.stackTop=8192;return p;}
 function memory(users=1){return Object.assign(new WebAssembly.Memory({initial:1}),{users,written:[],keeps:false,imageOf:null});}
 
-test('failed Rust mapping writeback still retires own maps/fds and preserves shared process owners', {skip:!process.env.SODS_CORE_WASM},async()=>{
-  const scope=await loadFileScope(readFileSync(process.env.SODS_CORE_WASM!),32),vfs=scope.createVfs(),k=kernel(vfs);
+test('failed Rust mapping writeback still retires own maps/fds and preserves shared process owners', {skip:!process.env.SODS_FILE_STORE_WASM},async()=>{
+  const scope=await loadFileScope(readFileSync(process.env.SODS_FILE_STORE_WASM!),32),vfs=scope.createVfs(),k=kernel(vfs);
   const p=processFor(k),q=processFor(k),mem=memory(2);
   p.pid=2;q.pid=3;k.procs.set(2,p);k.procs.set(3,q);p.memory=mem;q.memory=mem;
   const bad=vfs.writeFile('/bad','aaaa'),good=vfs.writeFile('/good','bbbb');

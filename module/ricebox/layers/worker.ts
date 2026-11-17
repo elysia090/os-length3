@@ -1,3 +1,4 @@
+import {requireFileStoreName} from './shape.ts';
 // The root run in a page's Worker: its layers mounted (mount.ts), the Linux that runs it (sods: the tree, the
 // kernel, what the translator makes and what was kept of it) and the box its programs run in, which muk makes here
 // as it does on a Linux machine: the same program, run on this Linux with the bundle written for it (../src/bundle.rs,
@@ -92,7 +93,7 @@ import {Mirror, RemoteKernel, Vfs, keeper, linux, provide, said, warmThreads,
   type Console, type File, type Kept, type Kernel, type Pumped, type RetirableReading, type Said} from '../../sods/runtime/linux.ts';
 import {loadTranslator, type Segment, type Translate} from '../../sods/runtime/translate.ts';
 import {type Given, type Packed} from './mount.ts';
-import {prepareTree, type FileCore, type PreparedTree} from './prepared-tree.ts';
+import {prepareTree, type FileStoreArtifact, type PreparedTree} from './prepared-tree.ts';
 import {syncRange} from './pack.ts';
 import {TranslationObserver} from './translation-observer.ts';
 
@@ -103,7 +104,7 @@ interface Program extends Given { module?: WebAssembly.Module; segments?: Segmen
 /** A box as it is written for muk (../src/bundle.rs): config.json, and the words muk is run with. */
 interface Box { config: string; words: string[] }
 /** What every start has the same ('ready', or 'start' where none came first). `muk`: the box's maker, served beside the root. */
-interface Ready { fileCore?: FileCore; translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
+interface Ready { fileStore?: FileStoreArtifact; translator: WebAssembly.Module | BufferSource; files?: Program[]; root?: {index: Packed; url: string}; muk?: Uint8Array | null; rehearse?: Box }
 /** What 'start' brings of its own: the box to make, and where in the tree the repo's copy is. */
 interface Start extends Ready {
   type: 'start';
@@ -184,15 +185,15 @@ function read(n: number): Uint8Array | null {
 
 /** The translator loaded, `files` written and the root put around them: what every start has the same. */
 function ready(data: Ready): Promise<Readied> {
-  if (readied && data.fileCore !== undefined) {
-    throw new Error('File-core ownership was selected by the first preparation; omit fileCore when using that prepared root');
+  if (readied && data.fileStore !== undefined) {
+    throw new Error('File-store ownership was selected by the first preparation; omit fileStore when using that prepared root');
   }
   readied ??= (async () => {
     const preparing = lifetime.enter('preparation');
     try {
       const translate = await loadTranslator(data.translator);
       lifetime.check();
-      const tree = await prepareTree({core: data.fileCore, muk: data.muk, files: data.files,
+      const tree = await prepareTree({fileStore: data.fileStore, muk: data.muk, files: data.files,
         root: data.root ? {index: data.root.index, reading: {
           range: packRange = syncRange(data.root.url, rangeNow, new Map(data.root.index.packs.map(p => [p.name, p.bytes]))),
           decode: translate.unzstd, sha256: translate.sha256,
@@ -486,6 +487,10 @@ self.onmessage = async ({data}: MessageEvent<Posted>) => {
   }
   if (!lifetime.accepting) { failed(new Error('Worker is retiring; new work is not accepted')); return; }
   if (outputBoundarySent && data.type !== 'drained') { failed(new Error('Worker output boundary is closed; new work is not accepted')); return; }
+  try {
+    requireFileStoreName(data);
+    if ('root' in data && data.root) requireFileStoreName(data.root.index);
+  } catch (error) { failed(error); return; }
   const command = lifetime.enter(`command:${data.type}`);
   try {
     if (data.type === 'drained') {

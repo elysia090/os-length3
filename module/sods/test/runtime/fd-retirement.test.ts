@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {Description, FdTable, Pipe} from '../../runtime/linux/fd.ts';
-import {loadFileScope} from '../../runtime/linux/core-files.ts';
+import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import '../../runtime/linux.ts';
 
 test('terminal Description release is reentry-safe and continues independent cleanup', () => {
@@ -30,8 +30,8 @@ for(const operation of ['closeAll','exec'] as const)test(`${operation} does not 
   table.closeAll();assert.equal(replacement.closed,true);
 });
 
-test('shared table and dup retain Rust inode access until the actual fd owners leave', {skip:!process.env.SODS_CORE_WASM},async()=>{
-  const scope=await loadFileScope(readFileSync(process.env.SODS_CORE_WASM!),8),vfs=scope.createVfs(),file=vfs.writeFile('/a','payload');
+test('shared table and dup retain Rust inode access until the actual fd owners leave', {skip:!process.env.SODS_FILE_STORE_WASM},async()=>{
+  const scope=await loadFileScope(readFileSync(process.env.SODS_FILE_STORE_WASM!),8),vfs=scope.createVfs(),file=vfs.writeFile('/a','payload');
   try{
     const table=new FdTable(), d=new Description('file',{node:file});let calls=0;
     d.gone=()=>{calls++;throw Error('last owner');};

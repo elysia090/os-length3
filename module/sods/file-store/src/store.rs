@@ -26,7 +26,7 @@ struct Slot {
     source: Option<Source>,
 }
 #[derive(Debug)]
-pub struct Files {
+pub struct Store {
     // Live-only index. Deterministic std hashing needs no host entropy capability;
     // keys are our monotonic IDs, not externally supplied file names.
     files: HashMap<u32, Slot, BuildHasherDefault<DefaultHasher>>,
@@ -34,7 +34,7 @@ pub struct Files {
     next_load: u32,
     max_file: usize,
 }
-impl Files {
+impl Store {
     pub fn new(max_file: usize) -> Self {
         Self {
             files: HashMap::default(),
@@ -298,7 +298,7 @@ mod tests {
     use super::*;
     #[test]
     fn churn_reuses_index_capacity_without_reusing_identity() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let first = f.create(b"x").unwrap();
         let capacity = f.files.capacity();
         f.close(first).unwrap();
@@ -317,7 +317,7 @@ mod tests {
     }
     #[test]
     fn rolling_live_set_does_not_retain_historical_slots() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let mut live = std::collections::VecDeque::new();
         for _ in 0..64 {
             live.push_back(f.create(b"live").unwrap());
@@ -338,7 +338,7 @@ mod tests {
     }
     #[test]
     fn file_ids_exhaust_without_consuming_input_or_retargeting_old_handles() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let old = f.create(b"old").unwrap();
         f.close(old).unwrap();
         f.next_file = i32::MAX as u32 - 1;
@@ -357,7 +357,7 @@ mod tests {
     }
     #[test]
     fn take_creation_preserves_allocation_and_rejected_input() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let mut input = b"owned".to_vec();
         let pointer = input.as_ptr();
         let id = f.create_take(&mut input).unwrap();
@@ -376,12 +376,12 @@ mod tests {
     #[test]
     fn borrowed_and_taken_lazy_completions_share_failure_and_retry_contract() {
         for take in [false, true] {
-            let mut f = Files::new(8);
+            let mut f = Store::new(8);
             let id = f.create_lazy(1, 3).unwrap();
             let op = f.load_begin(id).unwrap();
             let mut input = b"new".to_vec();
             let pointer = input.as_ptr();
-            let finish = |f: &mut Files, operation, success, input: &mut Vec<u8>| {
+            let finish = |f: &mut Store, operation, success, input: &mut Vec<u8>| {
                 if take {
                     f.load_finish_take(id, operation, success, input)
                 } else {
@@ -426,7 +426,7 @@ mod tests {
     }
     #[test]
     fn allocation_failure_after_matching_completion_retires_for_retry() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let id = f.create_lazy(1, 3).unwrap();
         let op = f.load_begin(id).unwrap();
         assert_eq!(
@@ -442,7 +442,7 @@ mod tests {
     }
     #[test]
     fn reload_preserves_source_and_logical_size_but_not_residency() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let id = f.create_lazy(7, 5).unwrap();
         assert_eq!(f.size(id), Ok(5));
         assert_eq!(f.resident(id), Ok(0));
@@ -470,7 +470,7 @@ mod tests {
     }
     #[test]
     fn mutation_detaches_source_only_on_success() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         for action in 0..3 {
             let id = f.create_lazy(1, 3).unwrap();
             let op = f.load_begin(id).unwrap();
@@ -491,7 +491,7 @@ mod tests {
     }
     #[test]
     fn empty_loaded_source_can_be_released_and_loading_release_poisons() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let id = f.create_lazy(1, 0).unwrap();
         let op = f.load_begin(id).unwrap();
         assert_eq!(f.release(id), Err(Error::LoadConflict));
@@ -504,7 +504,7 @@ mod tests {
     }
     #[test]
     fn lazy_load_poison_retry_and_stale_completion() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let id = f.create_lazy(12, 0).unwrap();
         assert_eq!(f.read(id, 0, 1), Err(Error::LoadConflict));
         assert_eq!(f.load_check(id), Ok(()));
@@ -530,7 +530,7 @@ mod tests {
     }
     #[test]
     fn lazy_mutation_conflicts_and_failure_retry() {
-        let mut f = Files::new(4);
+        let mut f = Store::new(4);
         let id = f.create_lazy(1, 0).unwrap();
         for action in 0..3 {
             let op = f.load_begin(id).unwrap();
@@ -552,7 +552,7 @@ mod tests {
     }
     #[test]
     fn independent_loads_and_closed_source_cannot_publish() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let a = f.create_lazy(1, 0).unwrap();
         let b = f.create_lazy(2, 0).unwrap();
         let oa = f.load_begin(a).unwrap();
@@ -567,7 +567,7 @@ mod tests {
     }
     #[test]
     fn load_operations_do_not_wrap() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let id = f.create_lazy(1, 0).unwrap();
         f.next_load = i32::MAX as u32;
         assert_eq!(f.load_begin(id), Err(Error::Exhausted));
@@ -575,7 +575,7 @@ mod tests {
     }
     #[test]
     fn payload_and_failure_semantics() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let a = f.create(b"abc").unwrap();
         f.write(a, 5, b"z").unwrap();
         assert_eq!(f.read(a, 0, 99).unwrap(), b"abc\0\0z");
@@ -589,7 +589,7 @@ mod tests {
     }
     #[test]
     fn empty_payload_write_retains_current_file_primitive_growth() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let id = f.create(b"a").unwrap();
         f.write(id, 4, b"").unwrap();
         assert_eq!(f.read(id, 0, 8).unwrap(), b"a\0\0\0");
@@ -598,7 +598,7 @@ mod tests {
     }
     #[test]
     fn closed_handle_never_retargets() {
-        let mut f = Files::new(8);
+        let mut f = Store::new(8);
         let a = f.create(b"old").unwrap();
         f.close(a).unwrap();
         f.close(a).unwrap();

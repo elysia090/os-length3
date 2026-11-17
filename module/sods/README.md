@@ -29,7 +29,7 @@ changing.
 | File | What it gives |
 | --- | --- |
 | `runtime/translate.ts` | the translator loaded (`loadTranslator`: a program's bytes in, a module's out; `NotAProgram` is the file's fault), a program translated ahead of its run (`aheadOf`), a translation as a Linux here runs it (`prepare`), the form it is kept in (`packMain`, `packMore`, `taken`) and the name it is kept under (`madeBy`) |
-| `runtime/linux.ts` | a Linux here (`linux(options)`: its threads apart or in turn, by the host), its tree and the port an image is mounted through (`Vfs`, `mountTarget`, `provide`), translations kept from earlier runs (`keeper`), what a program changed (`Mirror`), a kernel's pause said (`said`), explicitly selected Rust file payloads (`prepareFileCore`, `loadFileScope`) |
+| `runtime/linux.ts` | a Linux here (`linux(options)`: its threads apart or in turn, by the host), its tree and the port an image is mounted through (`Vfs`, `mountTarget`, `provide`), translations kept from earlier runs (`keeper`), what a program changed (`Mirror`), a kernel's pause said (`said`), explicitly selected Rust file payloads (`prepareFileStore`, `loadFileScope`) |
 | `runtime/host.ts` | the host, asked in one place: which it is, its threads and shared memory, clocks, random bytes, memory and room, a digest, what it keeps, how it fetches |
 | `runtime/targets.ts` | what runs where, and how far each is |
 
@@ -46,15 +46,15 @@ compiler or a registry download. Generated JavaScript includes the CPU Worker en
 browser applications still need a module-Worker-aware bundler. No ricebox or why is
 included. This is not a public registry release.
 
-The caller supplies trusted, integrity-verified translator bytes. A file core is a
+The caller supplies trusted, integrity-verified translator bytes. A file store is a
 separate explicit selection, not a translator replacement or an implicit download:
 
 ```ts
 import {loadTranslator} from 'sods/translate';
-import {linux, Vfs, prepareFileCore, loadFileScope} from 'sods/linux';
+import {linux, Vfs, prepareFileStore, loadFileScope} from 'sods/linux';
 
 const translate = await loadTranslator(translatorBytes);
-const module = await prepareFileCore(fileCoreBytes, 16 * 1024 * 1024);
+const module = await prepareFileStore(fileStoreBytes, 16 * 1024 * 1024);
 const scope = await loadFileScope(module, 16 * 1024 * 1024);
 const vfs = scope.createVfs();
 vfs.writeFile('/bin/program', programBytes, 0o755);
@@ -65,7 +65,7 @@ const status = await kernel.spawn('/bin/program', ['/bin/program'], [], '/');
 scope.dispose();
 ```
 
-`prepareFileCore` checks the expected ABI with a temporary instance and returns a
+`prepareFileStore` checks the expected ABI with a temporary instance and returns a
 reusable module. It is neither an integrity check nor a sandbox for untrusted Wasm.
 Each `loadFileScope` creates independent payload ownership; disposing one does not
 dispose another. The selected limit bounds each file's logical size, not all retained
@@ -82,7 +82,7 @@ this interface does not claim migration of namespace/FD ownership or the whole k
 an explicitly supplied core is invalid.
 
 The package test extracts the actual tarball and checks its public JavaScript and
-Worker dependency closure without Node's TypeScript loader. With `SODS_CORE_WASM` and
+Worker dependency closure without Node's TypeScript loader. With `SODS_FILE_STORE_WASM` and
 `SODS_TRANSLATOR_WASM`, it also runs a small real ELF inline and through a Node CPU
 Worker. These checks do not establish browser execution or all-current-source artifact
 compatibility when a historical translator is selected.

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {Vfs,FsError,E,type Mapping} from '../../runtime/linux/fs.ts';
-import {loadFileScope} from '../../runtime/linux/core-files.ts';
-const wasm=process.env.SODS_CORE_WASM;
+import {loadFileScope} from '../../runtime/linux/file-scope.ts';
+const wasm=process.env.SODS_FILE_STORE_WASM;
 
 test('Rust resident publication preserves alias observation order',{skip:!wasm},async()=>{
   const scope=await loadFileScope(readFileSync(wasm!),8),vfs=new Vfs(),file=scope.writeFile(vfs,'/a',new Uint8Array(8));

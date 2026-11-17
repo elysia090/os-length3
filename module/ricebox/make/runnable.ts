@@ -119,13 +119,15 @@ async function child({web, path, args, translator, fresh, kept: keptDir, env = E
   const {RemoteKernel, keeper, linux, provide} = await import('../../sods/runtime/linux.ts');
   const {loadTranslator} = await import('../../sods/runtime/translate.ts');
   const {prepareTree} = await import('../layers/prepared-tree.ts');
-  const {releaseFileCore} = await import('../layers/file-core.ts');
+  const {releaseFileStore} = await import('../layers/file-store.ts');
   const store = keptDir ? await keptIn(keptDir) : null;
   const w = openWeb(web);
+  const {requireFileStoreName} = await import('../layers/shape.ts');
+  requireFileStoreName(w.index);
   // --fresh: this checkout's translator, translating everything as it runs (what the next why will be).
   const translate = await loadTranslator(w.index.translator && !fresh ? w.blob(w.index.translator) : readFileSync(translator));
-  const core = await releaseFileCore(w.index.fileCore, async (descriptor) => new Uint8Array(w.blob(descriptor)));
-  const tree = await prepareTree({core, muk: new Uint8Array(readFileSync(muk)), root: {index: w.index, reading: {
+  const fileStore = await releaseFileStore(w.index.fileStore, async (descriptor) => new Uint8Array(w.blob(descriptor)));
+  const tree = await prepareTree({fileStore, muk: new Uint8Array(readFileSync(muk)), root: {index: w.index, reading: {
     range: (pack, at, len) => { const b = Buffer.alloc(len); w.readRange(pack, at, len, b); return new Uint8Array(b); },
     decode: (b) => new Uint8Array(w.unzstd(b)),
     sha256: (b) => new Uint8Array(createHash('sha256').update(b).digest()),

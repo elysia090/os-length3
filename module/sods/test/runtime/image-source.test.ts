@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
-import {loadFileScope} from '../../runtime/linux/core-files.ts';
+import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {File, FsError, E} from '../../runtime/linux/fs.ts';
 import {Kernel, Process, ImageSourceChangedError} from '../../runtime/linux/process.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
@@ -79,7 +79,7 @@ test('exec head source replacement then throw is not returned as EIO to a new im
   assert.equal(p.state, 'zombie'); assert.equal(p.image, undefined);
 });
 
-const coreWasm = process.env.SODS_CORE_WASM;
+const coreWasm = process.env.SODS_FILE_STORE_WASM;
 test('Rust-backed executable source is checked after completed copy and translation callback', {skip: !coreWasm}, async () => {
   const scope = await loadFileScope(readFileSync(coreWasm!), 32);
   let file: File, change = true;

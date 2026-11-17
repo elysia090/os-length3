@@ -78,8 +78,8 @@ test('same path old/new images stay independent; keeper seed and changed suppres
   assert.equal(seed.told,2); assert.equal(consolidated.mainTold,true); o.close();
 });
 
-test('observer close releases only observation, not a Rust-backed deferred source', {skip: !process.env.SODS_CORE_WASM}, async () => {
-  const scope = await loadFileScope(readFileSync(process.env.SODS_CORE_WASM!),32), vfs=scope.createVfs();
+test('observer close releases only observation, not a Rust-backed deferred source', {skip: !process.env.SODS_FILE_STORE_WASM}, async () => {
+  const scope = await loadFileScope(readFileSync(process.env.SODS_FILE_STORE_WASM!),32), vfs=scope.createVfs();
   try {
     let loads=0; const file=scope.lazyFile(vfs,'/image',()=>{loads++;return enc.encode('source');});
     const k=new Kernel({vfs,translate(){throw Error('unused');},console:{write(){},read:()=>null}});

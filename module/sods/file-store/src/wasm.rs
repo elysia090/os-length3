@@ -1,15 +1,15 @@
 //! No host imports or callbacks. Read scratch is leased until matching finish;
 //! pointer/length queries do not end it. Input scratch is transient until the
 //! next mutation. Raw memory exports are not a safe public embedding API.
-use crate::files::{Error, Files};
-use crate::pending_read::{CopyResult, Reads};
+use crate::store::{Error, Store};
+use crate::read_lease::{CopyResult, ReadLeases};
 use std::cell::RefCell;
 struct State {
-    files: Files,
+    files: Store,
     scratch: Vec<u8>,
     limit: usize,
     input: bool,
-    reads: Reads,
+    reads: ReadLeases,
 }
 thread_local! { static STATE: RefCell<Option<State>> = const { RefCell::new(None) }; }
 fn error(e: Error) -> i32 {
@@ -47,11 +47,11 @@ pub extern "C" fn files_init(limit: u32) -> i32 {
             return -5;
         }
         *s = Some(State {
-            files: Files::new(limit as usize),
+            files: Store::new(limit as usize),
             scratch: Vec::new(),
             limit: limit as usize,
             input: false,
-            reads: Reads::default(),
+            reads: ReadLeases::default(),
         });
         0
     })

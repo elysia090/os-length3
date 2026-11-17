@@ -1,24 +1,24 @@
 /** Explicit migration entrance: existing inode/namespace/mapping semantics with
  * Rust-owned payloads. This is not a replacement of the portable kernel yet.
  */
-import {CoreFileError, loadCoreFiles, type CoreFile} from '../core/files.ts';
+import {FileStoreError, loadFileStore, type FilePayload} from '../file-store.ts';
 import {epoch} from '../host.ts';
 import {File, PendingFile, Vfs, E, FsError, FILE_MOST, counted, mountTarget, type Mapping} from './fs.ts';
 
 function payload<T>(action: () => T): T {
   try { return action(); }
   catch (e) {
-    if (!(e instanceof CoreFileError) || e.code === -6 || e.code === -7) throw e;
+    if (!(e instanceof FileStoreError) || e.code === -6 || e.code === -7) throw e;
     // Only failures reported before a Rust payload mutation are normal errnos.
     throw new FsError(e.code === -2 ? E.FBIG : e.code === -3 ? E.NOSPC : e.code === -4 ? E.NOMEM : E.IO);
   }
 }
 
 class OwnedFile extends File {
-  private readonly owned: CoreFile;
+  private readonly owned: FilePayload;
   private readonly live: () => void;
   private readonly limit: number;
-  constructor(owned: CoreFile, size: number, mode: number, live: () => void, limit: number) {
+  constructor(owned: FilePayload, size: number, mode: number, live: () => void, limit: number) {
     super(new Uint8Array(0), mode);
     this.owned = owned; this.live = live; this.limit = limit;
     this.size = size;
@@ -72,7 +72,7 @@ class OwnedFile extends File {
     this.live(); if (this.maps) this.settle(start, start + length);
     try { this.materialize(); }
     catch (error) { ready?.(); throw error; }
-    ready?.(); // After loading, before core read scratch. No callback crosses the lease.
+    ready?.(); // After loading, before file-store read scratch. No callback crosses the lease.
     return payload(() => this.owned.readInto(start, into, at, length));
   }
   override write(at: number, bytes: Uint8Array): void {
@@ -111,19 +111,6 @@ class OwnedFile extends File {
   }
 }
 
-/** Check an explicitly selected trusted core with the same consumer ABI.
- * This creates a temporary instance, not a sandbox or an integrity verifier.
- * The returned compiled module can be reused across separately owned scopes. */
-export async function prepareFileCore(source: WebAssembly.Module | BufferSource, maxFileBytes: number): Promise<WebAssembly.Module> {
-  const module = source instanceof WebAssembly.Module ? source : await WebAssembly.compile(source);
-  if (WebAssembly.Module.imports(module).length) throw new Error('File core must not import host capabilities');
-  const store = await loadCoreFiles(module, maxFileBytes);
-  const file = store.create(new Uint8Array(0));
-  try {
-    if (file.read(0, 0).length !== 0) throw new Error('File core empty-read smoke failed');
-  } finally { file.close(); }
-  return module;
-}
 /** A scope outlives every kernel, mapping and embedding user of its files.
  * dispose is explicit and final; this is not per-run cleanup. */
 export type FileScope = Awaited<ReturnType<typeof loadFileScope>>;
@@ -132,10 +119,10 @@ export type FileScope = Awaited<ReturnType<typeof loadFileScope>>;
  * live until then; closing an fd does not close a payload. No automatic fallback.
  */
 export async function loadFileScope(source: WebAssembly.Module | BufferSource, maxFileBytes: number) {
-  const store = await loadCoreFiles(source, maxFileBytes), held = new Map<CoreFile, OwnedFile>();
+  const store = await loadFileStore(source, maxFileBytes), held = new Map<FilePayload, OwnedFile>();
   let closed = false;
   const live = () => { if (closed) throw new Error('Rust file scope is closed'); };
-  const lazy = (mode: number, size: number, loader: () => Uint8Array): {file: CoreFile; inode: OwnedFile} => {
+  const lazy = (mode: number, size: number, loader: () => Uint8Array): {file: FilePayload; inode: OwnedFile} => {
     live();
     const file = payload(() => store.createLazy(() => {
       try { return loader(); }
@@ -146,7 +133,7 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
       held.set(file, inode); return {file, inode};
     } catch (e) { file.close(); throw e; }
   };
-  const create = (bytes: Uint8Array, mode: number): {file: CoreFile; inode: OwnedFile} => {
+  const create = (bytes: Uint8Array, mode: number): {file: FilePayload; inode: OwnedFile} => {
     live();
     if (bytes.length > maxFileBytes) throw new FsError(E.FBIG);
     const file = payload(() => store.create(bytes));
@@ -155,7 +142,7 @@ export async function loadFileScope(source: WebAssembly.Module | BufferSource, m
       held.set(file, inode); return {file, inode};
     } catch (error) { held.delete(file); file.close(); throw error; }
   };
-  const pending = ({file, inode}: {file: CoreFile; inode: OwnedFile}): PendingFile =>
+  const pending = ({file, inode}: {file: FilePayload; inode: OwnedFile}): PendingFile =>
     new PendingFile(inode, () => { held.delete(file); file.close(); });
   // This concrete policy does not invoke an embedding factory callback. It owns
   // payload placement only; pathname/mount/permission semantics remain in Vfs.

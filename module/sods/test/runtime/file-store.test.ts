@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {loadCoreFiles} from '../../runtime/core/files.ts';
+import {loadFileStore} from '../../runtime/file-store.ts';
 
-const wasm = process.env.SODS_CORE_WASM;
+const wasm = process.env.SODS_FILE_STORE_WASM;
 const enc = new TextEncoder(), dec = new TextDecoder();
-// Explicit artifact input: no downloads, builds, fake core or silent native fallback.
+// Explicit artifact input: no downloads, builds, fake store or silent native fallback.
 test('real Rust Wasm owns payloads across growth, failure and closed handles', {skip: !wasm}, async () => {
-  const files = await loadCoreFiles(readFileSync(wasm!), 200000);
+  const files = await loadFileStore(readFileSync(wasm!), 200000);
   const input = enc.encode('old');
   const a = files.create(input);
   input.fill(120);
@@ -39,11 +39,11 @@ test('real Rust Wasm owns payloads across growth, failure and closed handles', {
   large.close(); b.close();
 });
 
-test('unshared file core does not require SharedArrayBuffer global', {skip: !wasm}, async () => {
+test('unshared file store does not require SharedArrayBuffer global', {skip: !wasm}, async () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'SharedArrayBuffer');
   try {
     Object.defineProperty(globalThis, 'SharedArrayBuffer', {value: undefined, configurable: true});
-    const files = await loadCoreFiles(readFileSync(wasm!), 8);
+    const files = await loadFileStore(readFileSync(wasm!), 8);
     const f = files.create(enc.encode('a'));
     f.write(4, new Uint8Array(0));
     assert.deepEqual(f.read(0, 8), new Uint8Array([97, 0, 0, 0]));
@@ -56,10 +56,10 @@ test('unshared file core does not require SharedArrayBuffer global', {skip: !was
 
 test('unversioned modules are rejected before file operations', async () => {
   const empty = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
-  await assert.rejects(loadCoreFiles(empty, 8), /Unsupported core files ABI/);
+  await assert.rejects(loadFileStore(empty, 8), /Unsupported file-store ABI/);
 });
 
-test('real core owns the read lease and rejects overwrite and invalid completion', {skip: !wasm}, () => {
+test('real file store owns the read lease and rejects overwrite and invalid completion', {skip: !wasm}, () => {
   const exports = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(wasm!)), {}).exports;
   const call = (name: string, ...args: number[]) => (exports[name] as (...n: number[]) => number)(...args);
   const memory = exports.memory as WebAssembly.Memory;
@@ -95,10 +95,10 @@ test('previous files ABI is rejected rather than assumed compatible', async () =
     ...section(1, [1, 0x60, 0, 1, 0x7f]), ...section(3, [1, 0]),
     ...section(7, [1, name.length, ...name, 0, 0]), ...section(10, [1, 4, 0, 0x41, 1, 0x0b]),
   ]));
-  await assert.rejects(loadCoreFiles(module, 8), /Unsupported core files ABI/);
+  await assert.rejects(loadFileStore(module, 8), /Unsupported file-store ABI/);
 });
 
-test('real core transfers exact input scratch, consumes preparation, and avoids retaining oversized scratch per file', {skip: !wasm}, () => {
+test('real file store transfers exact input scratch, consumes preparation, and avoids retaining oversized scratch per file', {skip: !wasm}, () => {
   const exports = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(wasm!)), {}).exports;
   const call = (name: string, ...args: number[]) => (exports[name] as (...n: number[]) => number)(...args);
   const memory = exports.memory as WebAssembly.Memory;
@@ -115,7 +115,7 @@ test('real core transfers exact input scratch, consumes preparation, and avoids 
   assert.equal(read(small),'x');assert.equal(read(first),'first');
 });
 
-test('real core lazy scratch transfer preserves stale/poison retry and independent payloads', {skip: !wasm}, () => {
+test('real file store lazy scratch transfer preserves stale/poison retry and independent payloads', {skip: !wasm}, () => {
   const exports = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(wasm!)), {}).exports;
   const call = (name: string, ...args: number[]) => (exports[name] as (...n: number[]) => number)(...args);
   const memory = exports.memory as WebAssembly.Memory;
@@ -140,26 +140,26 @@ test('real core lazy scratch transfer preserves stale/poison retry and independe
 });
 
 test('resident mapping operations reject unloaded/loading/closed files without invoking a loader',{skip:!wasm},async()=>{
-  const store=await loadCoreFiles(readFileSync(wasm!),8);let loads=0;
-  const file=store.createLazy(()=>{loads++;assert.throws(()=>file.ownResident(),/core file error -8/);return enc.encode('abc');});
-  assert.throws(()=>file.ownResident(),/core file error -8/);
-  assert.throws(()=>file.writeResident(0,enc.encode('x')),/core file error -8/);
+  const store=await loadFileStore(readFileSync(wasm!),8);let loads=0;
+  const file=store.createLazy(()=>{loads++;assert.throws(()=>file.ownResident(),{code:-8});return enc.encode('abc');});
+  assert.throws(()=>file.ownResident(),{code:-8});
+  assert.throws(()=>file.writeResident(0,enc.encode('x')),{code:-8});
   assert.equal(loads,0);
-  assert.throws(()=>file.materialize(),/core file error -8/);assert.equal(loads,1);
+  assert.throws(()=>file.materialize(),{code:-8});assert.equal(loads,1);
   file.close();assert.throws(()=>file.ownResident(),/closed/);assert.throws(()=>file.writeResident(0,enc.encode('x')),/closed/);
 });
 test('resident own precedes preparation/write failure and permanently retires the reload source',{skip:!wasm},async()=>{
-  const store=await loadCoreFiles(readFileSync(wasm!),8);let loads=0;
+  const store=await loadFileStore(readFileSync(wasm!),8);let loads=0;
   const file=store.createLazy(()=>{loads++;return enc.encode('abc');});
   file.materialize();file.ownResident();
   assert.equal(file.source(),0);
   assert.throws(()=>file.writeResident(0,new Uint8Array(9)),/limit/);
-  assert.throws(()=>file.writeResident(8,enc.encode('x')),/core file error -2/);
+  assert.throws(()=>file.writeResident(8,enc.encode('x')),{code:-2});
   assert.equal(file.release(),0);assert.equal(dec.decode(file.read(0,8)),'abc');assert.equal(loads,1);
   file.writeResident(1,enc.encode('Z'));assert.equal(dec.decode(file.read(0,8)),'aZc');file.close();
 });
 
-test('real core churn reuses storage without retargeting stale file/load/read identities', {skip: !wasm}, (t) => {
+test('real file store churn reuses storage without retargeting stale file/load/read identities', {skip: !wasm}, (t) => {
   const module = new WebAssembly.Module(readFileSync(wasm!));
   assert.deepEqual(WebAssembly.Module.imports(module), []);
   const exports = new WebAssembly.Instance(module, {}).exports;

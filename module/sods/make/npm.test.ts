@@ -26,6 +26,10 @@ test('standalone tarball exposes only sods entrances and complete JS/Worker clos
     assert.equal(manifest.private,true);assert.equal(manifest.dependencies,undefined);
     assert.deepEqual(Object.keys(manifest.exports),['./translate','./linux','./host','./targets']);
     assert.ok(existsSync(join(pkg,'runtime/linux/cpu.js')));
+    assert.ok(existsSync(join(pkg,'runtime/file-store.js')));
+    assert.ok(existsSync(join(pkg,'runtime/linux/file-scope.js')));
+    assert.equal(existsSync(join(pkg,'runtime/core')),false);
+    assert.doesNotMatch(readFileSync(join(pkg,'runtime/file-store.js'),'utf8'), /\b(?:from\s*['"]|import\s*\()/, 'portable file store has no host, Linux or distribution dependency');
     for(const path of files(pkg).filter(p=>/\.(ts|js)$/.test(p))) {
       const source=readFileSync(path,'utf8');
       for(const m of source.matchAll(/['"](\.[^'"\n]+\.(?:ts|js))['"]/g)) assert.ok(existsSync(resolve(dirname(path),m[1])),`${path}: ${m[1]}`);
@@ -35,7 +39,7 @@ test('standalone tarball exposes only sods entrances and complete JS/Worker clos
     assert.throws(()=>execFileSync(process.execPath,[builder,join(work,'built')],{stdio:'pipe'}),/Refusing to replace/);
   } finally {rmSync(work,{recursive:true,force:true});}
 });
-const core=process.env.SODS_CORE_WASM,translator=process.env.SODS_TRANSLATOR_WASM;
+const core=process.env.SODS_FILE_STORE_WASM,translator=process.env.SODS_TRANSLATOR_WASM;
 test('installed package runs real ELF inline and in Node CPU Worker with explicit Rust file scope',{skip:!core||!translator},()=>{
   const work=mkdtempSync(join(tmpdir(),'sods-execution-'));
   try {
@@ -46,9 +50,9 @@ test('installed package runs real ELF inline and in Node CPU Worker with explici
     execFileSync('cc',['-nostdlib','-static','-Wl,--build-id=none',join(work,'zero.s'),'-o',join(work,'zero')]);
     writeFileSync(join(consumer,'run.mjs'),`
       import assert from 'node:assert/strict'; import {readFileSync,writeFileSync} from 'node:fs';
-      import {linux,RemoteKernel,prepareFileCore,loadFileScope} from 'sods/linux';
+      import {linux,RemoteKernel,prepareFileStore,loadFileScope} from 'sods/linux';
       import {loadTranslator} from 'sods/translate';
-      const module=await prepareFileCore(readFileSync(${JSON.stringify(core)}),1048576);
+      const module=await prepareFileStore(readFileSync(${JSON.stringify(core)}),1048576);
       const quarantined=[];
       for(const inline of [true,false]) for(const code of [0,42]) for(const refusal of (!inline && code===0 ? ['none','sink','stop','preparation'] : ['none'])) {
         const scope=await loadFileScope(module,1048576),vfs=scope.createVfs();

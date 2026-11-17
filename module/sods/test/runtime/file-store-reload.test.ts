@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {loadFileScope} from '../../runtime/linux/core-files.ts';
+import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {Vfs, provide, FsError, E} from '../../runtime/linux/fs.ts';
 import {Kernel} from '../../runtime/linux/process.ts';
 import {mountPack} from '../../../ricebox/layers/mount.ts';
 import {packOf} from '../../../ricebox/layers/table.ts';
-const wasm = process.env.SODS_CORE_WASM, enc = new TextEncoder(), dec = new TextDecoder();
+const wasm = process.env.SODS_FILE_STORE_WASM, enc = new TextEncoder(), dec = new TextDecoder();
 const sha256 = (bytes: Uint8Array) => new Uint8Array(createHash('sha256').update(bytes).digest());
 const kernel = (vfs: Vfs) => new Kernel({vfs,translate() { throw new Error('unused'); }, console:{write(){},read:()=>new Uint8Array(0)}});
 async function setup() {

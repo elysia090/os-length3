@@ -15,7 +15,7 @@ const distribution = await prepareDistribution({...selected, output: newOutputDi
 For Vite, an async configuration can return `ricebox({build: {...selected, output}})`
 after acquisition. There is no additional provider callback or adapter protocol.
 If the catalog supplies no tools, pass either explicit pinned `tools` or a source
-`toolchain`. `fileCore` remains an optional separate pinned selection; it is not
+`toolchain`. `fileStore` remains an optional separate pinned selection; it is not
 inferred from a translator artifact.
 
 This changes the private, pre-release `prepareDistribution({catalog, ...})` form.

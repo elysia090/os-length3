@@ -1,9 +1,9 @@
 [package]
-name = "sods-core"
+name = "sods-file-store"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Portable execution-core contracts for sods"
+description = "Owned regular-file payloads and read leases for sods"
 
 [workspace]
 

@@ -80,18 +80,18 @@ test('pinned prebuilt tools compose real layers without cargo or a C build', asy
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,output:join(at,'bad')}),/integrity mismatch/);
   assert.equal(existsSync(join(at,'bad')),false);
 });
-test('pinned file core reaches real composition and deployment assets',{skip:!process.env.SODS_CORE_WASM},async t=>{
+test('pinned file store reaches real composition and deployment assets',{skip:!process.env.SODS_FILE_STORE_WASM},async t=>{
   const {createHash}=await import('node:crypto');const {distributionAssets}=await import('./vite.ts');
   const {at,cache}=fixture(t);
   const artifact=(name:string,bytes:Uint8Array)=>{const path=join(at,name);writeFileSync(path,bytes);return {path,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};};
   const tools={translator:artifact('translator.wasm',new Uint8Array([0,97,115,109,1,0,0,0])),sods:artifact('sods',Buffer.from('unused')),muk:artifact('muk',Buffer.from('fixture'))};
-  const fileCore={...artifact('core.wasm',readFileSync(process.env.SODS_CORE_WASM!)),maxFileBytes:8192},output=join(at,'core-release');
-  await prepareDistribution({packages:['base'],packageCache:cache,tools,fileCore,output,cache:''});
+  const fileStore={...artifact('core.wasm',readFileSync(process.env.SODS_FILE_STORE_WASM!)),maxFileBytes:8192},output=join(at,'core-release');
+  await prepareDistribution({packages:['base'],packageCache:cache,tools,fileStore,output,cache:''});
   const about=JSON.parse(readFileSync(join(output,'webroot.json'),'utf8')),index=JSON.parse(readFileSync(join(output,about.index.path),'utf8'));
-  assert.equal(index.fileCore.abi,4);assert.equal(index.fileCore.maxFileBytes,8192);
-  assert.ok(distributionAssets(output).has('ricebox/'+index.fileCore.path));
-  rmSync(join(output,index.fileCore.path));assert.throws(()=>distributionAssets(output),/ENOENT/);
-  const bad=join(at,'bad-core');await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,fileCore:{...fileCore,sha256:'0'.repeat(64)},output:bad}),/integrity mismatch/);assert.equal(existsSync(bad),false);
+  assert.equal(index.fileStore.abi,4);assert.equal(index.fileStore.maxFileBytes,8192);
+  assert.ok(distributionAssets(output).has('ricebox/'+index.fileStore.path));
+  rmSync(join(output,index.fileStore.path));assert.throws(()=>distributionAssets(output),/ENOENT/);
+  const bad=join(at,'bad-core');await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,tools,fileStore:{...fileStore,sha256:'0'.repeat(64)},output:bad}),/integrity mismatch/);assert.equal(existsSync(bad),false);
 });
 
 test('former catalog option fails explicitly before any IO even with usable tools', async t => {
@@ -107,4 +107,12 @@ test('acquired package metadata without tools requires an explicit toolchain', a
   await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,output}),/provide pinned tools/);
   assert.equal(existsSync(output),false);
   assert.equal(readdirSync(at).some(n=>n.startsWith('.ricebox-build-')),false);
+});
+
+test('obsolete fileCore configuration is rejected before output acquisition', async t => {
+  const {at,cache}=fixture(t),output=join(at,'must-not-exist');
+  for(const value of [null,false,{},undefined]) {
+    await assert.rejects(prepareDistribution({packages:['base'],packageCache:cache,output,fileCore:value} as unknown as Parameters<typeof prepareDistribution>[0]),/fileCore.*regenerate/);
+    assert.equal(existsSync(output),false);
+  }
 });

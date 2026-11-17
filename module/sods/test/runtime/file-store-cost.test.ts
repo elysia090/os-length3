@@ -9,7 +9,7 @@ import {Vfs,mountTarget,loadFileScope} from '../../runtime/linux.ts';
 import type {Mapping} from '../../runtime/linux/fs.ts';
 import {mountPack} from '../../../ricebox/layers/mount.ts';
 import {packOf} from '../../../ricebox/layers/table.ts';
-const wasm=process.env.SODS_CORE_WASM;
+const wasm=process.env.SODS_FILE_STORE_WASM;
 const hash=(b:Uint8Array)=>new Uint8Array(createHash('sha256').update(b).digest());
 interface Meter {calls:Record<string,number>;preparedInputBytes:number;readBytes:number;rangeBytes:number;hashBytes:number}
 const meter=():Meter=>({calls:{},preparedInputBytes:0,readBytes:0,rangeBytes:0,hashBytes:0});

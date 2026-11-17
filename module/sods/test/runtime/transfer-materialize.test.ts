@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
-import {loadFileScope} from '../../runtime/linux/core-files.ts';
+import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {File, FILE_MOST} from '../../runtime/linux/fs.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
@@ -50,9 +50,9 @@ for (const operation of ['fallocate', 'copy']) test(`${operation} destination lo
   assert.equal(p.fds.get(input)!.offset, 0); assert.equal(p.fds.get(output)!.offset, 0);
   fail = false; assert.equal(run(), operation === 'copy' ? 3n : 0n);
 });
-test('copy explicit offsets and fallocate use actual Rust payload', {skip: !process.env.SODS_CORE_WASM}, async () => {
+test('copy explicit offsets and fallocate use actual Rust payload', {skip: !process.env.SODS_FILE_STORE_WASM}, async () => {
   const {k, p, fd} = setup();
-  const scope = await loadFileScope(readFileSync(process.env.SODS_CORE_WASM!), 64);
+  const scope = await loadFileScope(readFileSync(process.env.SODS_FILE_STORE_WASM!), 64);
   try {
     const source = scope.writeFile(k.vfs, '/tmp/source', 'abcdef');
     const target = scope.writeFile(k.vfs, '/tmp/target', '------');
@@ -75,6 +75,7 @@ test('fallocate invalid expansion is refused before loading', () => {
 });
 test('copy destination replacement and throw leave explicit offsets untouched', () => {
   const {p, fd} = setup(), original = p.memory, replacement = memory();
+  assert.ok(original);
   p.view.setBigInt64(128, 1n, true); p.view.setBigInt64(136, 2n, true);
   const target = new File(new Uint8Array(0), 0o644, () => { p.memory = replacement; throw new Error('target changed process'); });
   assert.throws(() => call(p, 326, fd(new File(enc.encode('abc'))), 128, fd(target), 136, 2, 0), ReadLifetimeError);

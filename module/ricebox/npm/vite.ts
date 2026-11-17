@@ -6,7 +6,7 @@ import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
 import {prepareDistribution, type PrepareOptions} from './prepare.ts';
 import {gunzipSync} from 'node:zlib';
-import type {Index, About, Blob} from '../layers/shape.ts';
+import {requireFileStoreName, type Index, type About, type Blob} from '../layers/shape.ts';
 import {checkPacks} from '../layers/table.ts';
 
 export function distributionAssets(directory: string, {base = 'ricebox', maxAssetBytes = Infinity}: {base?: string; maxAssetBytes?: number} = {}) {
@@ -33,17 +33,18 @@ export function distributionAssets(directory: string, {base = 'ricebox', maxAsse
   const about = JSON.parse(read('webroot.json').toString('utf8')) as About;
   if (!about.index || !/^[0-9a-f]{64}$/.test(about.index.sha256) || about.index.path !== `index-${about.index.sha256}.json` || !Number.isSafeInteger(about.index.size)) throw new Error('ricebox: invalid index descriptor');
   const index = JSON.parse(read(about.index.path, about.index.sha256, about.index.size).toString('utf8')) as Index;
+  requireFileStoreName(index);
   if (index.sha256 !== about.sha256 || index.version !== about.version) throw new Error('ricebox: distribution and index disagree');
   const blob = (b: Blob) => {
     if (!b || !/^[0-9a-f]{64}$/.test(b.sha256) || !Number.isSafeInteger(b.size) || b.size < 0 || b.path !== `blobs/${b.sha256}.bin`) throw new Error('ricebox: invalid blob descriptor');
     return read(b.path, b.sha256, b.size);
   };
   blob(index.translator);
-  if (index.fileCore !== undefined) {
-    const core = index.fileCore;
-    if (!core || core.abi !== 4 || !Number.isInteger(core.maxFileBytes) || core.maxFileBytes < 0 || core.maxFileBytes > 0x7fffffff || !/^[0-9a-f]{64}$/.test(core.wasm)) throw new Error('ricebox: invalid file core descriptor');
+  if (index.fileStore !== undefined) {
+    const core = index.fileStore;
+    if (!core || core.abi !== 4 || !Number.isInteger(core.maxFileBytes) || core.maxFileBytes < 0 || core.maxFileBytes > 0x7fffffff || !/^[0-9a-f]{64}$/.test(core.wasm)) throw new Error('ricebox: invalid file store descriptor');
     const bytes = gunzipSync(blob(core));
-    if (bytes.length !== core.bytes || createHash('sha256').update(bytes).digest('hex') !== core.wasm) throw new Error('ricebox: file core expanded content mismatch');
+    if (bytes.length !== core.bytes || createHash('sha256').update(bytes).digest('hex') !== core.wasm) throw new Error('ricebox: file store expanded content mismatch');
   }
   for (const translation of index.translations ?? []) { blob(translation.elf); blob(translation.wasm); }
   const packs = new Map(index.packs.map(pack => [pack.name, read(`packs/${pack.name}`, undefined, pack.bytes)]));

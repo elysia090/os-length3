@@ -1,6 +1,6 @@
 //! One synchronous exported read at a time. This lease owns core scratch, not
 //! guest memory or a descriptor offset. IDs are never reused in this instance.
-use crate::files::Error;
+use crate::store::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Read {
     pub operation: u32,
@@ -15,11 +15,11 @@ pub enum CopyResult {
     Unknown,
 }
 #[derive(Debug, Default)]
-pub struct Reads {
+pub struct ReadLeases {
     next: u32,
     pending: Option<Read>,
 }
-impl Reads {
+impl ReadLeases {
     pub fn idle(&self) -> Result<(), Error> {
         if self.pending.is_some() {
             Err(Error::Busy)
@@ -75,7 +75,7 @@ mod tests {
     use super::*;
     #[test]
     fn only_matching_complete_copy_releases_a_read() {
-        let mut reads = Reads::default();
+        let mut reads = ReadLeases::default();
         let op = reads.begin(7, 12, 99, 3).unwrap();
         assert_eq!(reads.pending.unwrap().file, 7);
         assert_eq!(reads.begin(8, 0, 1, 1), Err(Error::Busy));
@@ -100,7 +100,7 @@ mod tests {
     }
     #[test]
     fn identities_do_not_wrap() {
-        let mut reads = Reads {
+        let mut reads = ReadLeases {
             next: i32::MAX as u32,
             pending: None,
         };

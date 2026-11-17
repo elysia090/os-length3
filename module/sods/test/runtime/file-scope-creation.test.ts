@@ -3,8 +3,8 @@ import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {Vfs,FsError,E} from '../../runtime/linux/fs.ts';
 import {Kernel,Process} from '../../runtime/linux/process.ts';
-import {loadFileScope} from '../../runtime/linux/core-files.ts';
-const wasm=process.env.SODS_CORE_WASM,enc=new TextEncoder(),dec=new TextDecoder();
+import {loadFileScope} from '../../runtime/linux/file-scope.ts';
+const wasm=process.env.SODS_FILE_STORE_WASM,enc=new TextEncoder(),dec=new TextDecoder();
 const call=(p:Process,nr:number,...args:number[])=>p.syscall(BigInt(nr),...([...args,0,0,0,0,0,0].slice(0,6).map(BigInt) as [bigint,bigint,bigint,bigint,bigint,bigint]));
 const errno=(n:number)=>(e:unknown)=>e instanceof FsError&&e.errno===n;
 function processFor(vfs:Vfs) {

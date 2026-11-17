@@ -82,9 +82,9 @@ test('retire reentry from threads publication does not start serve or reject the
   } finally { if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self'); }
 });
 
-test('real core preparation completing after freeze disposes only its unpublished tree', {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.SODS_CORE_WASM, timeout: 15_000}, async () => {
+test('real core preparation completing after freeze disposes only its unpublished tree', {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.SODS_FILE_STORE_WASM, timeout: 15_000}, async () => {
   const {readFileSync} = await import('node:fs');
-  const core = readFileSync(process.env.SODS_CORE_WASM!);
+  const core = readFileSync(process.env.SODS_FILE_STORE_WASM!);
   const messages: {type: string; owners?: Record<string, number>; message?: string}[] = [];
   const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) { messages.push(message); }};
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'self'), compile = WebAssembly.compile;
@@ -96,7 +96,7 @@ test('real core preparation completing after freeze disposes only its unpublishe
       if (source === core) retiring = host.onmessage!({data: {type: 'retire'}});
       return compile(source);
     };
-    await host.onmessage!({data: {type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), fileCore: {module: core, maxFileBytes: 4096}, root: {url: '/unused/', index: {codec: 'zstd', dirs: [], links: [], packs: [{name: 'unused-pack', bytes: 3}], files: [{path: '/lazy', mode: 420, size: 3, pack: 0, at: 0, len: 3, raw: true}]}}, muk: new Uint8Array([1]), box: {config: '{}', words: []}, cwd: '/'}});
+    await host.onmessage!({data: {type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), fileStore: {module: core, maxFileBytes: 4096}, root: {url: '/unused/', index: {codec: 'zstd', dirs: [], links: [], packs: [{name: 'unused-pack', bytes: 3}], files: [{path: '/lazy', mode: 420, size: 3, pack: 0, at: 0, len: 3, raw: true}]}}, muk: new Uint8Array([1]), box: {config: '{}', words: []}, cwd: '/'}});
     await retiring;
     await host.onmessage!({data: {type: 'retire'}});
     assert.equal(messages.at(-1)?.owners?.['prepared-tree'], undefined);

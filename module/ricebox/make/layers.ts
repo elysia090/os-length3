@@ -2,7 +2,7 @@
 // delivery form of the same tree, not a separate product or package selection.
 // node module/ricebox/make/layers.ts ROOT OUT [--translator SODS.wasm] [--sods SODS]
 //   [--hot PATH,…] [--name NAME] [--stage DIR] [--cache DIR]
-//   [--file-core CORE.wasm] [--file-core-limit BYTES]
+//   [--file-store FILE_STORE.wasm] [--file-store-limit BYTES]
 // The root's filename binds its version and digest. Each pack is checked by its
 // digest; files are fetched only when read. Product-specific hot programs and
 // compatibility names are supplied by the caller.
@@ -14,16 +14,16 @@ import {Worker} from 'node:worker_threads';
 import {gzipSync} from 'node:zlib';
 import {packOf} from '../layers/table.ts';
 import {translateWhole} from './aot-cache.ts';
-import {fileCoreOptions, validateFileCore, fileCoreDescriptor} from './file-core.ts';
+import {fileStoreOptions, validateFileStore, fileStoreDescriptor} from './file-store.ts';
 import {readTarball, sha256, type Index} from './tree.ts';
 
 const here = fileURLToPath(new URL('../../..', import.meta.url));
 const repo = here;
 
 const args = process.argv.slice(2);
-const coreOptions = fileCoreOptions(args);
+const coreOptions = fileStoreOptions(args);
 // Validate explicit input before reading the root or writing release artifacts.
-const selectedCore = coreOptions ? await validateFileCore(readFileSync(coreOptions.path), coreOptions.maxFileBytes) : null;
+const selectedCore = coreOptions ? await validateFileStore(readFileSync(coreOptions.path), coreOptions.maxFileBytes) : null;
 /** The value given after `name` (taken out of the arguments), else `d`. */
 function flag(name: string, d: string): string;
 function flag(name: string): string | null;
@@ -42,7 +42,7 @@ const distributionName = flag('--name');
 const stage = flag('--stage');
 const aotCache = flag('--cache', join(repo, 'target/ricebox-aot'));
 const [rootFile, out] = args;
-if (!rootFile || !out) { console.error('usage: webroot.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR] [--file-core CORE.wasm] [--file-core-limit BYTES]'); process.exit(2); }
+if (!rootFile || !out) { console.error('usage: webroot.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR] [--file-store FILE_STORE.wasm] [--file-store-limit BYTES]'); process.exit(2); }
 
 // A root is a few hundred megabytes: past a few gigabytes held, something is wrong, and it stops before the machine does.
 setInterval(() => { const rss = process.memoryUsage().rss; if (rss > 3e9) { console.error(`webroot.ts: holding ${(rss / 1e9).toFixed(1)} GB; stopped`); process.exit(1); } }, 500).unref();
@@ -159,7 +159,7 @@ const blob = (bytes: Uint8Array) => {
   return {path, sha256: sha, size: gz.length, bytes: bytes.length};
 };
 
-const fileCore = selectedCore ? fileCoreDescriptor(selectedCore, blob) : undefined;
+const fileStore = selectedCore ? fileStoreDescriptor(selectedCore, blob) : undefined;
 
 const crate = (file: string) => /^version = "(.*)"/m.exec(readFileSync(file, 'utf8'))?.[1] ?? '';
 /** A wasm module without its custom sections (names, debug info, producers): what runs, and nothing a browser fetches only to skip. */
@@ -197,7 +197,7 @@ const index: Index = {
   packs: packList,
   dirs: entries.filter((e) => e.type === 'dir').map((e) => ({path: e.path, mode: e.mode})),
   links: entries.filter((e) => e.type === 'link').map((e) => ({path: e.path, target: e.target ?? ''})),
-  files, translator, translations, ...(fileCore ? {fileCore} : {}),
+  files, translator, translations, ...(fileStore ? {fileStore} : {}),
 };
 const json = Buffer.from(JSON.stringify(index));
 const indexSha = sha256(json);
@@ -213,7 +213,7 @@ const about = {
 writeFileSync(join(out, 'webroot.json'), `${JSON.stringify(about, null, 2)}\n`);
 
 // Artifacts a previous distribution left here, and this one does not name, go (only names this script makes).
-const keep = new Set([indexPath, 'webroot.json', ...packList.map((p) => `packs/${p.name}`), translator.path, ...(fileCore ? [fileCore.path] : []), ...translations.flatMap((t) => [t.elf.path, t.wasm.path])]);
+const keep = new Set([indexPath, 'webroot.json', ...packList.map((p) => `packs/${p.name}`), translator.path, ...(fileStore ? [fileStore.path] : []), ...translations.flatMap((t) => [t.elf.path, t.wasm.path])]);
 for (const f of readdirSync(out)) if (/^index-[0-9a-f]{64}\.json$/.test(f) && !keep.has(f)) rmSync(join(out, f));
 for (const [dir, re] of [['packs', /^[0-9a-f]{64}\.pack$/], ['blobs', /^[0-9a-f]{64}\.bin$/]] as const) {
   for (const f of readdirSync(join(out, dir))) if (re.test(f) && !keep.has(`${dir}/${f}`)) rmSync(join(out, dir, f));

@@ -1,29 +1,29 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {loadCoreFiles, CoreFileError, type CoreFile} from '../../runtime/core/files.ts';
-import {loadFileScope} from '../../runtime/linux/core-files.ts';
+import {loadFileStore, FileStoreError, type FilePayload} from '../../runtime/file-store.ts';
+import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
 import {Description} from '../../runtime/linux/fd.ts';
 import {ReadLifetimeError} from '../../runtime/linux/read-lifetime.ts';
-const wasm = process.env.SODS_CORE_WASM, enc = new TextEncoder(), dec = new TextDecoder();
+const wasm = process.env.SODS_FILE_STORE_WASM, enc = new TextEncoder(), dec = new TextDecoder();
 const memory = () => Object.assign(new WebAssembly.Memory({initial: 1}), {users: 1, written: [], keeps: false, imageOf: null});
 const call = (p: Process, nr: number, ...args: number[]) => p.syscall(BigInt(nr), ...([...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]));
-const conflict = (e: unknown) => e instanceof CoreFileError && e.code === -8;
+const conflict = (e: unknown) => e instanceof FileStoreError && e.code === -8;
 test('Rust lazy attempt rejects swallowed reentry and retries once for all readers', {skip: !wasm}, async () => {
-  const store = await loadCoreFiles(readFileSync(wasm!), 64); let loads = 0, nested = true;
-  const file: CoreFile = store.createLazy(() => { loads++; if (nested) { nested = false; assert.throws(() => file.read(0,3), conflict); } return enc.encode('abc'); });
+  const store = await loadFileStore(readFileSync(wasm!), 64); let loads = 0, nested = true;
+  const file: FilePayload = store.createLazy(() => { loads++; if (nested) { nested = false; assert.throws(() => file.read(0,3), conflict); } return enc.encode('abc'); });
   assert.throws(() => file.read(0,3), conflict); assert.equal(loads, 1);
   assert.equal(dec.decode(file.read(0,3)), 'abc'); assert.equal(dec.decode(file.read(0,3)), 'abc'); assert.equal(loads, 2);
   file.close();
 });
 test('Rust lazy other-inode nesting, failure retry and close-stale', {skip: !wasm}, async () => {
-  const store = await loadCoreFiles(readFileSync(wasm!), 64); let fail = true;
+  const store = await loadFileStore(readFileSync(wasm!), 64); let fail = true;
   const b = store.createLazy(() => enc.encode('B'));
   const a = store.createLazy(() => { const bytes = b.read(0,2); if (fail) throw new Error('source'); return bytes; });
   assert.throws(() => a.read(0,2), /source/); fail = false;
   assert.equal(dec.decode(a.read(0,2)), 'B');
-  const closing: CoreFile = store.createLazy(() => { closing.close(); return enc.encode('bad'); });
+  const closing: FilePayload = store.createLazy(() => { closing.close(); return enc.encode('bad'); });
   assert.throws(() => closing.read(0,3), /closed/); assert.throws(() => closing.read(0,3), /closed/);
   a.close(); b.close();
 });
@@ -63,9 +63,9 @@ test('Rust lazy syscall loader throw returns EIO without offset change and can r
   fail = false; assert.equal(call(p,0,0,1024,3),3n); scope.dispose();
 });
 test('Rust lazy oversized source retires attempt and scope disposal during load cannot adopt', {skip: !wasm}, async () => {
-  const store = await loadCoreFiles(readFileSync(wasm!),3); let large = true;
+  const store = await loadFileStore(readFileSync(wasm!),3); let large = true;
   const file = store.createLazy(() => enc.encode(large ? 'large' : 'ok'));
-  assert.throws(() => file.read(0,3),(e: unknown) => e instanceof CoreFileError && e.code === -2); large = false;
+  assert.throws(() => file.read(0,3),(e: unknown) => e instanceof FileStoreError && e.code === -2); large = false;
   assert.equal(dec.decode(file.read(0,3)),'ok'); file.close();
   const scope = await loadFileScope(readFileSync(wasm!),64);
   const {Vfs} = await import('../../runtime/linux/fs.ts');

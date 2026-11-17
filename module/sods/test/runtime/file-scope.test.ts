@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {loadFileScope} from '../../runtime/linux/core-files.ts';
+import {loadFileScope} from '../../runtime/linux/file-scope.ts';
 import {Vfs, FsError, E, type Mapping} from '../../runtime/linux/fs.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
 import {Mirror} from '../../runtime/linux/mirror.ts';
-const wasm = process.env.SODS_CORE_WASM, enc = new TextEncoder(), dec = new TextDecoder();
+const wasm = process.env.SODS_FILE_STORE_WASM, enc = new TextEncoder(), dec = new TextDecoder();
 const call = (p: Process, nr: number, ...args: number[]) =>
   p.syscall(BigInt(nr), ...([...args, 0, 0, 0, 0, 0, 0].slice(0, 6).map(BigInt) as [bigint, bigint, bigint, bigint, bigint, bigint]));
 const errno = (n: number) => (e: unknown) => e instanceof FsError && e.errno === n;
