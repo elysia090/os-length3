@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "sods-file-store"
+version = "0.1.0"
+
+[[package]]
 name = "sods-linux"
 version = "0.1.0"
+dependencies = [
+ "sods-file-store",
+]

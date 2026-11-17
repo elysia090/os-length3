@@ -20,7 +20,7 @@ const setBytes = Uint8Array.prototype.set;
 const growMemory = WebAssembly.Memory.prototype.grow;
 const memoryBuffer = Object.getOwnPropertyDescriptor(WebAssembly.Memory.prototype, 'buffer')!.get!;
 const mapGet = Map.prototype.get, mapSet = Map.prototype.set, mapDelete = Map.prototype.delete;
-const bufferOf = (memory: WebAssembly.Memory): ArrayBuffer => apply(memoryBuffer, memory, []);
+const bufferOf = (memory: WebAssembly.Memory): ArrayBufferLike => apply(memoryBuffer, memory, []);
 const typedLength = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'length')!.get!;
 const lengthOf = (bytes: Uint8Array): number => apply(typedLength, bytes, []);
 const extentOf = (memory: WebAssembly.Memory): bigint => BigInt(lengthOf(new Bytes(bufferOf(memory))));

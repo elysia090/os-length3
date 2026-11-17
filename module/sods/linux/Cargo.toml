@@ -9,3 +9,6 @@ description = "Linux execution-domain authority for sods"
 
 [lib]
 crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+sods-file-store = { path = "../file-store", default-features = false }

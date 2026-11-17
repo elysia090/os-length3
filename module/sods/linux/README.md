@@ -55,3 +55,31 @@ SODS_LINUX_WASM=<path-to-sods_linux.wasm> node --test module/sods/test/runtime/m
 
 The real-engine tests cover shared and unshared memory objects, not concurrent guest
 writers or cross-Worker visibility. Missing artifact skips those tests explicitly.
+
+## Prepared-root inode ownership (internal)
+
+`inode.rs` now owns directory entries, inode identity and basic metadata while
+embedding the existing file-store payload library. Hardlinks share an inode and
+one payload. Sizes and lazy-attempt state are queried from that payload owner,
+not copied into a mutable Linux shadow. Byte-component names keep the future
+Linux boundary independent of UTF-8 path encoding. The payload's standalone Wasm
+ABI is disabled for this dependency, but remains enabled for standalone builds.
+
+The builder operates on parent inode plus one component, not guest paths. Each
+operation preserves published logical state/input ownership on failure; a whole
+mount is not a transaction and failed allocation may leave reserved capacity.
+Existing directory modes can update; files/symlinks cannot replace existing names.
+Root overlay/origin hydration, permission resolution, FD/mapping/Image references,
+source-registry retirement, and Node/muk caller switching are still absent.
+The future Rust domain must uniquely allocate Tree owner IDs before connection.
+
+Directory nlink uses 2 plus child directories (unlike the legacy TS base of 1).
+Lookup is side-effect-free, unlike the old mount has operation that may create
+parents. Neither difference is presented as transparent legacy compatibility.
+
+Counts bound inode/entry records, not total heap usage. Payload length limits do
+not bound total payload bytes or Vec capacity; ownership transfer can retain spare
+capacity. Node storage reserves max_inodes initially. Directory Vec lookup makes
+N-sibling construction O(N²) comparisons; that known cost must be resolved or
+justified against actual prepared manifests before promoting a caller/default.
+This is a semantic migration unit, not an optimized or usable Linux replacement.

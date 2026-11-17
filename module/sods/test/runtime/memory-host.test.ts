@@ -68,6 +68,10 @@ test('real ABI rejects duplicate starts, stale tokens, premature retire and rein
   assert.equal(result(), 0n);
 });
 
+test('Linux embedding excludes the standalone file-store ABI and its extra state', {skip: !artifact}, () => {
+  assert.deepEqual(WebAssembly.Module.exports(moduleOf()).filter(e => e.name.startsWith('files_')), []);
+});
+
 test('unmatched Wasm artifact is rejected before host memory creation', () => {
   const empty = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
   assert.throws(() => memoryHost(empty, 1, 1), /Unsupported/);
