@@ -102,6 +102,22 @@ class OwnedFile extends File {
   }
 }
 
+/** Check an explicitly selected trusted core with the same consumer ABI.
+ * This creates a temporary instance, not a sandbox or an integrity verifier.
+ * The returned compiled module can be reused across separately owned scopes. */
+export async function prepareFileCore(source: WebAssembly.Module | BufferSource, maxFileBytes: number): Promise<WebAssembly.Module> {
+  const module = source instanceof WebAssembly.Module ? source : await WebAssembly.compile(source);
+  if (WebAssembly.Module.imports(module).length) throw new Error('File core must not import host capabilities');
+  const store = await loadCoreFiles(module, maxFileBytes);
+  const file = store.create(new Uint8Array(0));
+  try {
+    if (file.read(0, 0).length !== 0) throw new Error('File core empty-read smoke failed');
+  } finally { file.close(); }
+  return module;
+}
+/** A scope outlives every kernel, mapping and embedding user of its files.
+ * dispose is explicit and final; this is not per-run cleanup. */
+export type FileScope = Awaited<ReturnType<typeof loadFileScope>>;
 /** Caller owns the scope. Dispose only after every process, mapping, image and
  * embedding handle using its files has ended. Unlinked/replaced files remain
  * live until then; closing an fd does not close a payload. No automatic fallback.

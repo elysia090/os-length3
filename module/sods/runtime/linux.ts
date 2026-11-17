@@ -18,6 +18,7 @@ import {RemoteKernel, type Apart} from './linux/remote.ts';
 import type {Segment} from './translation/share.ts';
 
 export {Vfs, mountTarget, provide, type File} from './linux/fs.ts';
+export {loadFileScope, prepareFileCore, type FileScope} from './linux/core-files.ts';
 export {Mirror} from './linux/mirror.ts';
 export {Kernel, type Image, type Pumped} from './linux/process.ts';
 export {RemoteKernel, warmThreads} from './linux/remote.ts';

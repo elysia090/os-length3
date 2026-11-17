@@ -3,7 +3,7 @@
 import type {CoreDescriptor} from './shape.ts';
 import type {FileCore} from './prepared-tree.ts';
 import {digest} from './fetch.ts';
-import {loadCoreFiles} from '../../sods/runtime/core/files.ts';
+import {prepareFileCore} from '../../sods/runtime/linux.ts';
 export async function releaseFileCore(
   descriptor: CoreDescriptor | undefined,
   read: (descriptor: CoreDescriptor) => Promise<Uint8Array>,
@@ -21,8 +21,6 @@ export async function releaseFileCore(
   // executable bytes and size before compile; no guessing an adjacent artifact.
   const bytes = await read(descriptor);
   if (bytes.length !== descriptor.bytes || await digest(bytes) !== descriptor.wasm) throw new Error('Release file-core content mismatch');
-  const module = await WebAssembly.compile(bytes as BufferSource);
-  if (WebAssembly.Module.imports(module).length) throw new Error('Release file core must not import host capabilities');
-  await loadCoreFiles(module, descriptor.maxFileBytes); // Matching ABI before a Worker receives it.
+  const module = await prepareFileCore(bytes as BufferSource, descriptor.maxFileBytes);
   return {module, maxFileBytes: descriptor.maxFileBytes};
 }

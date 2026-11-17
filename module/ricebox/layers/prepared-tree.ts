@@ -1,6 +1,5 @@
 /** Prepared root ownership: the tree outlives individual rehearsals/runs. */
-import {Vfs, mountTarget, provide} from '../../sods/runtime/linux/fs.ts';
-import {loadFileScope} from '../../sods/runtime/linux/core-files.ts';
+import {Vfs, mountTarget, provide, loadFileScope} from '../../sods/runtime/linux.ts';
 import {mountPack, type Given, type Packed, type Reading} from './mount.ts';
 
 /** Explicit artifact selection. Omission uses legacy storage; a supplied invalid

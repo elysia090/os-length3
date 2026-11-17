@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {prepareTree} from '../prepared-tree.ts';
 import {packOf} from '../table.ts';
-import {Kernel} from '../../../sods/runtime/linux/process.ts';
+import {Kernel} from '../../../sods/runtime/linux.ts';
 const wasm=process.env.SODS_CORE_WASM, enc=new TextEncoder(), dec=new TextDecoder();
 const sha256=(b:Uint8Array)=>new Uint8Array(createHash('sha256').update(b).digest());
 function root(){

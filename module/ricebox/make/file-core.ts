@@ -1,6 +1,6 @@
 /** Opt-in release artifact validation. Not a sandbox for untrusted Wasm. */
 import {createHash} from 'node:crypto';
-import {loadCoreFiles, CORE_FILE_FUNCTIONS} from '../../sods/runtime/core/files.ts';
+import {prepareFileCore} from '../../sods/runtime/linux.ts';
 
 export const FILE_CORE_ABI = 4;
 export const FILE_CORE_LIMIT = 0x7fffffff;
@@ -27,18 +27,8 @@ export function fileCoreOptions(args: string[]): {path: string; maxFileBytes: nu
 }
 export async function validateFileCore(input: Uint8Array, maxFileBytes: number) {
   if (!Number.isInteger(maxFileBytes) || maxFileBytes < 0 || maxFileBytes > FILE_CORE_LIMIT) throw new Error('Invalid file-core limit');
-  const bytes = new Uint8Array(input), module = await WebAssembly.compile(bytes);
-  if (WebAssembly.Module.imports(module).length) throw new Error('File core must not import host capabilities');
-  const exports = new Map(WebAssembly.Module.exports(module).map(x => [x.name, x.kind]));
-  if (exports.get('memory') !== 'memory' || CORE_FILE_FUNCTIONS.some(name => exports.get(name) !== 'function')) {
-    throw new Error('File core is missing required ABI exports');
-  }
-  // One instance, selected ABI checked by the same facade the consumer uses.
-  const store = await loadCoreFiles(module, maxFileBytes);
-  const file = store.create(new Uint8Array(0));
-  try {
-    if (file.read(0, 0).length !== 0) throw new Error('File core empty-read smoke failed');
-  } finally { file.close(); }
+  const bytes = new Uint8Array(input);
+  await prepareFileCore(bytes, maxFileBytes);
   return {bytes, abi: 4 as const, maxFileBytes, wasm: createHash('sha256').update(bytes).digest('hex')};
 }
 /** Reuse the release builder's content-addressed gzip writer. */
