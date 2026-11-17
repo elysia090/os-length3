@@ -202,6 +202,16 @@ const u64s = (module: WebAssembly.Module, name: string): BigUint64Array => {
   return s ? new BigUint64Array(s.slice(0)) : new BigUint64Array(0);
 };
 
+/** A version-managed executable changed during preparation. Never retry a
+ * callback automatically or label its old bytes with the new inode revision.
+ */
+export class ImageSourceChangedError extends Error {
+  constructor() { super('Executable source changed during image preparation'); this.name = 'ImageSourceChangedError'; }
+}
+function sourceRevision(node: File, revision: number): void {
+  if (node.version !== revision) throw new ImageSourceChangedError();
+}
+
 /**
  * A loaded program: its first module, its loader facts, and the code reached
  * later. A jump to code the first translation did not find asks the host
@@ -455,14 +465,24 @@ export class Kernel implements Kern {
    * translation kept from an earlier run to be read (Wait is thrown, and the call is made again once it is).
    */
   image(node: File, wait = false): Image {
+    if (node.maps) node.settle(); // Normal mapping observation precedes the source revision.
+    const revision = node.version;
     const cached = this.images.get(node);
-    if (cached && cached.version === node.version) {
+    if (cached && cached.version === revision) {
       cached.used = ++this.uses;
-      this.consolidateIfDue(node, cached);
+      try { this.consolidateIfDue(node, cached); }
+      finally { sourceRevision(node, revision); }
       return cached.image;
     }
-    if (wait && this.keeper && node.origin && this.keptFor(node)) {
-      const got = this.keeper.take(node.origin);
+    let kept = false;
+    if (wait && this.keeper && node.origin) {
+      try { kept = this.keptFor(node); }
+      finally { sourceRevision(node, revision); }
+    }
+    if (kept && this.keeper && node.origin) {
+      let got: Taken | null | undefined;
+      try { got = this.keeper.take(node.origin); }
+      finally { sourceRevision(node, revision); }
       if (got === undefined) throw new Wait();
       if (got) {
         // The file's bytes only if code it never reached before is reached now.
@@ -475,15 +495,19 @@ export class Kernel implements Kern {
         image.told = image.adopt(got.more);
         image.mainTold = true;
         PROFILE.kept++;
-        const entry: Kept = {version: node.version, image, used: ++this.uses, kept: false};
+        sourceRevision(node, revision);
+        const entry: Kept = {version: revision, image, used: ++this.uses, kept: false};
         this.remember(node, entry);
         // Kept from an earlier run: it is run again, so the code that run reached later is gathered now.
-        this.consolidateIfDue(node, entry);
+        try { this.consolidateIfDue(node, entry); }
+        finally { sourceRevision(node, revision); }
         return entry.image;
       }
     }
     // A view of the file, not a copy: a later write to it changes a copy (File.share).
-    const bytes = node.share();
+    let bytes: Uint8Array;
+    try { bytes = node.share(); }
+    finally { sourceRevision(node, revision); }
     if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) throw new FsError(E.NOEXEC);
     if (!this.translate) throw new FsError(E.NOEXEC);
     let t = steady();
@@ -491,15 +515,24 @@ export class Kernel implements Kern {
     // the file's fault and the exec's failure, as a file with no ELF header's is: ENOEXEC. What else it throws is
     // its own fault, and stays the host's error.
     let translated: Uint8Array;
-    try { translated = this.translate(bytes); } catch (e) { if (this.translate.notProgram?.(e)) throw new FsError(E.NOEXEC); throw e; }
+    try { translated = this.translate(bytes); }
+    catch (error) {
+      sourceRevision(node, revision); // Do not run an error classifier on an already-invalid source.
+      let rejected: boolean | undefined;
+      try { rejected = this.translate.notProgram?.(error); }
+      finally { sourceRevision(node, revision); }
+      if (rejected) throw new FsError(E.NOEXEC);
+      throw error;
+    } finally { sourceRevision(node, revision); }
     const {wasm, segments} = this.prepare(translated);
     PROFILE.translate += steady() - t; t = steady();
     // Code reached later is read from the very bytes this was translated from (and the translator keeps them parsed by identity).
     const image = new Image(new WebAssembly.Module(wasm), () => bytes, wasm.length, segments);
     PROFILE.compile += steady() - t; PROFILE.images++;
     // A root file unchanged: its translation can be kept (the host hears of it once the kernel pauses: module/ricebox/layers/worker.ts).
-    if (node.version === 0 && node.origin) { image.origin = node.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
-    this.remember(node, {version: node.version, image, used: ++this.uses, kept: false});
+    sourceRevision(node, revision);
+    if (revision === 0 && node.origin) { image.origin = node.origin; image.wasm = wasm; image.told = 0; image.mainTold = false; }
+    this.remember(node, {version: revision, image, used: ++this.uses, kept: false});
     return image;
   }
 
@@ -1745,14 +1778,22 @@ export class Process implements Proc {
     if (!(node.mode & 0o111) || !may(this.cred, node, MAY.EXEC) || at.mnt.flags & MNT.NOEXEC) throw new FsError(E.ACCES);
     // A program translated already (this version of it), or whose translation is kept, is an ELF, and is not read to
     // be run (a compiler's is tens of megabytes; a shell's commands are run again and again).
-    const head = this.kernel.translated(node) || this.kernel.keptFor(node) ? null : node.read(0, 128);
+    const identity = this.readIdentity();
+    try { if (node.maps) node.settle(); }
+    finally { identity(); }
+    const revision = node.version;
+    let head: Uint8Array | null;
+    try { head = this.kernel.translated(node) || this.kernel.keptFor(node) ? null : node.read(0, 128); }
+    finally { identity(); sourceRevision(node, revision); }
     if (head && head[0] === 0x23 && head[1] === 0x21) {
       // #!interpreter [arg]
       const line = utf8(head).split('\n')[0].slice(2).trim();
       const [interpreter = '', ...rest] = line.split(/\s+/);
       return this.execve(interpreter, [interpreter, ...rest.slice(0, 1), path, ...argv.slice(1)], env);
     }
-    const image = this.kernel.image(node, !!this.call);
+    let image: Image;
+    try { image = this.kernel.image(node, !!this.call); }
+    finally { identity(); sourceRevision(node, revision); }
     const f = image.facts;
     // The point of no return: the other threads go (Linux's de_thread), and so does a memory shared with a vfork parent.
     const t = this.task, written = this.memory ? this.written() : null;

@@ -327,3 +327,32 @@ overlap, rather than a proven minimal working set. Rust-backed reads use their
 existing owned result without a second JS copy. Normal shared guest writes are
 settled before restoration, so this is not a rollback of dirty file data. Source
 settling itself can have effects even when a later snapshot fails.
+
+### Materialization stage 5: executable source and process identity
+
+Image preparation now distinguishes the version-managed source from the process
+that may execute it. Ordinary shared-file settling precedes source revision
+capture. Source/share, keeper and translator/error-classifier callbacks must leave
+that revision unchanged before the result is adopted. Cache entries are stamped
+with the captured revision, never a new revision read after translating old bytes.
+Changed sources raise ImageSourceChangedError; callbacks are not automatically
+retried. An existing old-revision cache may remain but cannot match a new revision.
+
+exec checks the original process identity after head/source and image preparation,
+on success and throw, before its destructive image transition. A process-changing
+callback is fatal via the established no-writeback retirement path. Source change
+alone is a host preparation failure, not a claim that a different process image
+was installed or that callback side effects were rolled back.
+
+Tests use valid minimal Wasm image metadata for cache/preparation, not a translated
+program execution claim. They include the reproduced old-bytes/new-stamp mismatch,
+normal dirty executable settling, keeper/classifier/consolidation changes,
+unchanged ENOEXEC, actual exec syscall rejection before installation, and the real
+Rust-backed source-copy path. This guards version-managed write/truncate/settle;
+legacy raw aliases or a translator mutating its supplied view bypass versioning
+and are not made immutable by this check. Rust lazy loader integration remains a
+separate step, including same-inode load reentry and remaining transfer callers.
+
+The stage-5 guard does not newly cover direct consolidateDue() or Image.more()
+execution. Those later-code paths retain their existing contracts and require
+separate review before any wider source-lifetime guarantee.
