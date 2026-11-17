@@ -672,3 +672,30 @@ finish storing after host retirement, but that does not certify guest-tree relea
 Consequently no automatic preparedOwner.dispose is added in this step. Unknown
 owners remain isolated under the finite scope/realm boundary rather than being
 converted into successful completion by an empty snapshot.
+
+### First disposal case: unpublished late preparation only
+
+A prepared tree that completes after admission freeze can be disposed before
+publication: at that exact checkpoint no Readied result has resolved, no rehearsal
+or foreground kernel has received its Vfs, and no Image/Mirror/translation observer
+has acquired it. Other commands awaiting readied receive the rejection, not the
+tree. The preparing operation itself performs the rollback synchronously; this is
+not a claim that weak observations proved all historical owners gone.
+
+After successful disposal the single preparedOwner reference and its observation
+are removed. If disposal throws, the original cancellation and cleanup error are
+preserved together, the owner remains quarantined, and repeated retirement does
+not retry possibly partial disposal. The raw public PreparedTree API and every
+previously published/borrowed tree keep their previous finite lifetime. A rehearsal
+ending or a stopped-Worker snapshot still does not authorize their disposal.
+
+The focused late-result test uses the real file-core and a lazy pack inode, with
+no payload read required. Existing Rust and legacy tests still verify that a tree
+survives the end of a rehearsal borrower. This establishes only the unpublished
+rollback case, not general managed tree collection or an RSS-reclamation bound.
+
+The two host-only tests now pass their test cancellation signal to events.once.
+A test deadline therefore rejects that wait and reaches its finally termination
+request rather than leaving a message/exit waiter indefinitely pending. The
+10-second deadline is unchanged. Abort of the waiter itself is not stop evidence;
+the cleanup still awaits Node termination separately.

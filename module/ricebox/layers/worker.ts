@@ -198,8 +198,21 @@ function ready(data: Ready): Promise<Readied> {
         }} : undefined,
       });
       preparedOwner = tree;
-      lifetime.observe('prepared-tree', preparedOwner);
-      lifetime.check();
+      const preparedObservation = lifetime.observe('prepared-tree', preparedOwner);
+      if (!lifetime.accepting) {
+        // No Readied result, rehearsal, kernel, Image or observer has received
+        // this tree. This is an unpublished preparation rollback, not disposal
+        // of a formerly running tree based on weak observations or host timeout.
+        const retired = new Error('Worker is retiring; unpublished preparation was cancelled');
+        try { tree.dispose(); }
+        catch (cleanup) {
+          lifetime.failures.push(cleanup); // Keep preparedOwner quarantined; do not retry disposal.
+          throw new AggregateError([retired, cleanup], 'Unpublished preparation cleanup failed');
+        }
+        preparedOwner = null;
+        preparedObservation.release();
+        throw retired;
+      }
       // This owner survives rehearsal and ordinary kernel exit. Worker termination
       // releases the realm; no per-run path may dispose a tree borrowed by another run.
       const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree};
