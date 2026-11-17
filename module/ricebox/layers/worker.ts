@@ -217,7 +217,11 @@ function ready(data: Ready): Promise<Readied> {
       // This owner survives rehearsal and ordinary kernel exit. Worker termination
       // releases the realm; no per-run path may dispose a tree borrowed by another run.
       const r: Readied = {translate, vfs: tree.vfs, files: data.files ?? [], tree};
-      if (data.rehearse) await rehearse(r, data.rehearse).catch(() => { /* only a start that is not faster */ });
+      if (data.rehearse) await rehearse(r, data.rehearse).catch(error => {
+        // Rehearsal is optional for startup speed, not optional ownership
+        // evidence. A later successful foreground run cannot erase its failure.
+        lifetime.failures.push(error);
+      });
       return r;
     } finally { preparing.release(); }
   })();
@@ -234,7 +238,9 @@ async function rehearse({translate, vfs, files}: Readied, box: Box): Promise<voi
   const k = linux({vfs, translate, console: quiet, passOn: true, unownedWorkerFailure: failed, translated: files});
   executionOwners.add(new WeakRef(k)); lifetime.observe('rehearsal-kernel', k);
   const operation = lifetime.enter('rehearsal-operation');
-  const timer = setTimeout(() => k.halt(), REHEARSAL_MS);
+  const timer = setTimeout(() => {
+    try { k.halt(); } catch (error) { lifetime.failures.push(error); }
+  }, REHEARSAL_MS);
   rehearsalTimers.add(timer);
   try {
     if (k instanceof RemoteKernel) { await k.spawn(argv[0], argv, env, cwd); return; }

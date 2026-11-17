@@ -849,3 +849,45 @@ condition, not real browser termination. Mirror reentry tests also count held
 calls after freeze. Captured Image.source function identities and file readability
 remain intact after field release. None of this measures GC/RSS or claims source
 alias enumeration, historical rehearsal disposal or full root collection.
+
+### Used-root ownership: explicit raw owner versus managed private admission
+
+The raw public API is not intrinsically unsafe: prepareTree's caller explicitly
+owns when its Vfs/File/Kernel/Image aliases stop being used, as dispose documents.
+It does not supply machine-verifiable release receipts for arbitrary external
+aliases. Existing raw callers cannot silently be promoted to automatic collection
+by counting only the library's internal references. Adding managed collection must
+keep that raw ownership contract distinct, not revoke Image.source behind users.
+
+The private Worker has a narrower input/output contract: messages transfer program
+bytes/modules, inputs and captured outputs, not live host File/Vfs/JS Image graphs.
+It can therefore eventually establish a closed admission boundary, but current
+records still have the following different meanings:
+
+| Holder | What is already closed | What is not yet disposal evidence |
+| --- | --- | --- |
+| readied | own promise reference removed after registered operations drain | preparedOwner still owns tree |
+| foreground field | conditional inactive/reference release with Node evidence | other JS aliases and historical kernels |
+| rehearsal operation | finally settles registered operation/timer | no success receipt for all File/source aliases |
+| observer/Mirror | no new publication after close/freeze | already captured local references until stack returns |
+| keeper | late read delivery detached, outstanding read count preserved | host read completion/cancellation or caller-returned Taken |
+| warm/detached CPU | matching Node stop evidence only where available | CPU memory retention does not prove host File retention |
+| public raw aliases | explicit caller lifetime responsibility | no automatic library-wide last-owner knowledge |
+
+For historical rehearsal the next receipt must separately record execution
+settled, failure/unknown versus normal completion, timer/callback closure and any
+host ownership still outstanding. It must not retain every old Kernel graph to
+make bookkeeping easier. Conversely WeakRef disappearance cannot synthesize a
+success receipt. Rehearsal is optional for startup speed, but its failure is not
+optional ownership evidence: rejection is now latched in lifetime.failures even
+though startup continues. A rehearsal timer halt exception is also caught and
+latched. That exception does not release the operation; it may remain pending
+until a separate private freeze lets the loop unwind, or indefinitely for an
+unsettled host run. No time limit turns it into successful retirement.
+
+Two real-muk handler regressions cover optional rehearsal failure followed by a
+successful foreground run (failure still blocks reference release), and a real
+initialized inline kernel whose pump/stop are injected to exercise the production
+timer failure callback (deadline accelerated in the test). The latter keeps the
+operation pending until explicit retirement and does not claim the guest executed
+to completion. Both preserve the tree and historical unknown observation.

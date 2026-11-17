@@ -243,7 +243,7 @@ test('operation finally after failure drains but does not erase the failure or t
   assert.deepEqual(lifetime.snapshot(), {kernel: 1});
 });
 
-for (const mode of ['inline', 'inline-failure', 'node', 'node-unconfirmed'] as const) {
+for (const mode of ['inline', 'inline-rehearsal', 'inline-failure', 'node', 'node-unconfirmed'] as const) {
   test(`used ${mode} root drops only a proven inactive foreground reference`, {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
     const {readFileSync} = await import('node:fs');
     const {Kernel, RemoteKernel} = await import('../../../sods/runtime/linux.ts');
@@ -261,7 +261,7 @@ for (const mode of ['inline', 'inline-failure', 'node', 'node-unconfirmed'] as c
     Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
     try {
       await import(new URL(`../worker.ts?foreground-release-${mode}`, import.meta.url).href);
-      await host.onmessage!({data: {type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), box: {config: '{}', words: []}, cwd: '/'}});
+      await host.onmessage!({data: {rehearse: mode === 'inline-rehearsal' ? {config: '{}', words: []} : undefined, type: 'start', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), box: {config: '{}', words: []}, cwd: '/'}});
       await Promise.race([done, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('guest did not exit')), 10_000); })]);
       assert.ok(messages.some(m => m.type === 'exit'), JSON.stringify(messages));
       assert.ok(captured);
@@ -289,3 +289,80 @@ for (const mode of ['inline', 'inline-failure', 'node', 'node-unconfirmed'] as c
     }
   });
 }
+
+test('failed optional rehearsal cannot become successful ownership evidence after a later run', {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
+  const {readFileSync} = await import('node:fs');
+  const {Kernel} = await import('../../../sods/runtime/linux.ts');
+  const messages: {type: string; owners?: Record<string, number>; message?: string}[] = [];
+  let exited!: () => void;
+  const done = new Promise<void>(resolve => { exited = resolve; });
+  const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) {
+    messages.push(message); if (message.type === 'exit' || message.type === 'error') exited();
+  }};
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'self'), inline = process.env.SODS_INLINE, pump = Kernel.prototype.pump;
+  let injected = false, timer: ReturnType<typeof setTimeout> | undefined;
+  Kernel.prototype.pump = function () {
+    const result = pump.call(this);
+    if (!injected && result.status !== undefined) { injected = true; throw new Error('rehearsal completion failed'); }
+    return result;
+  };
+  process.env.SODS_INLINE = '1';
+  Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
+  try {
+    await import(new URL('../worker.ts?rehearsal-failure-owner', import.meta.url).href);
+    const box = {config: '{}', words: []};
+    await host.onmessage!({data: {type: 'ready', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), rehearse: box}});
+    await host.onmessage!({data: {type: 'start', box, cwd: '/'}});
+    await Promise.race([done, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('guest did not exit')), 10_000); })]);
+    assert.equal(injected, true);
+    assert.ok(messages.some(m => m.type === 'exit'), JSON.stringify(messages));
+    await host.onmessage!({data: {type: 'retire'}});
+    await new Promise(resolve => setTimeout(resolve, 10));
+    await host.onmessage!({data: {type: 'retire'}});
+    const owners = messages.at(-1)?.owners;
+    assert.equal(owners?.['rehearsal-operation'], undefined); // settled != successful
+    assert.equal(owners?.['foreground-reference'], 1); // failure remains a closed gate
+    assert.equal(owners?.['rehearsal-kernel'], 1);
+    assert.equal(owners?.['prepared-tree'], 1);
+  } finally {
+    clearTimeout(timer); Kernel.prototype.pump = pump;
+    if (inline === undefined) delete process.env.SODS_INLINE; else process.env.SODS_INLINE = inline;
+    if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+  }
+});
+
+test('rehearsal timer stop failure is retained without pretending the pending operation ended', {skip: !process.env.SODS_TRANSLATOR_WASM || !process.env.RICEBOX_MUK_FILE, timeout: 15_000}, async () => {
+  const {readFileSync} = await import('node:fs');
+  const {Kernel} = await import('../../../sods/runtime/linux.ts');
+  const messages: {type: string; owners?: Record<string, number>}[] = [];
+  const host = {onmessage: null as null | ((event: {data: unknown}) => Promise<void>), postMessage(message: typeof messages[number]) { messages.push(message); }};
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'self'), inline = process.env.SODS_INLINE;
+  const pump = Kernel.prototype.pump, halt = Kernel.prototype.halt, schedule = globalThis.setTimeout;
+  let captured: InstanceType<typeof Kernel> | undefined, fired!: () => void, timeout: ReturnType<typeof setTimeout> | undefined;
+  const stopped = new Promise<void>(resolve => { fired = resolve; });
+  // Keep a real initialized inline kernel waiting, and accelerate only its
+  // rehearsal deadline. The timer's stop callback is the production callback.
+  Kernel.prototype.pump = function () { captured = this; return {waiting: true}; };
+  Kernel.prototype.halt = function () { captured = this; fired(); throw new Error('timer stop failed'); };
+  globalThis.setTimeout = ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => schedule(callback, ms === 2000 ? 1 : ms, ...args)) as typeof setTimeout;
+  process.env.SODS_INLINE = '1';
+  Object.defineProperty(globalThis, 'self', {value: host, configurable: true});
+  try {
+    await import(new URL('../worker.ts?rehearsal-timer-failure', import.meta.url).href);
+    await host.onmessage!({data: {type: 'ready', translator: readFileSync(process.env.SODS_TRANSLATOR_WASM!), muk: readFileSync(process.env.RICEBOX_MUK_FILE!), rehearse: {config: '{}', words: []}}});
+    await Promise.race([stopped, new Promise((_, reject) => { timeout = schedule(() => reject(new Error('rehearsal timer did not fire')), 10_000); })]);
+    await host.onmessage!({data: {type: 'retire'}});
+    // Freeze stops the private loop later; timer failure itself did not release it.
+    assert.equal(messages.find(m => m.type === 'retiring')?.owners?.['rehearsal-operation'], 1);
+    await new Promise(resolve => schedule(resolve, 10));
+    await host.onmessage!({data: {type: 'retire'}});
+    assert.equal(messages.at(-1)?.owners?.['rehearsal-operation'], undefined);
+    assert.equal(messages.at(-1)?.owners?.['prepared-tree'], 1);
+    assert.equal(messages.at(-1)?.owners?.['rehearsal-kernel'], 1);
+  } finally {
+    clearTimeout(timeout); globalThis.setTimeout = schedule; Kernel.prototype.pump = pump; Kernel.prototype.halt = halt;
+    if (captured) halt.call(captured); // test-owned cleanup, not managed disposal
+    if (inline === undefined) delete process.env.SODS_INLINE; else process.env.SODS_INLINE = inline;
+    if (previous) Object.defineProperty(globalThis, 'self', previous); else Reflect.deleteProperty(globalThis, 'self');
+  }
+});
