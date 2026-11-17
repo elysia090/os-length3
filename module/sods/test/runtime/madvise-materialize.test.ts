@@ -28,7 +28,7 @@ test('madvise preserves shared bytes whose canonical TS payload aliases the advi
 });
 test('later source failure does not zero any part of the advised range', () => {
   const p = setup(), first = new File(new Uint8Array(4096).fill(7)); map(p, first);
-  class Later extends File { override snapshot() { throw new FsError(E.IO); } }
+  class Later extends File { override snapshotRange(): never { throw new FsError(E.IO); } }
   p.mapShared(new Later(new Uint8Array(4096).fill(8)), 8192, 4096, 0);
   assert.equal(call(p, 28, 8192, 4096, 4), -5n);
   assert.equal(p.bytes[8192], 7); assert.equal(p.maps.length, 2);
@@ -41,7 +41,7 @@ test('overlapping records retain their previous restoration order', () => {
 });
 test('madvise source replacement followed by throw retires without unrelated writeback', () => {
   const p = setup(), file = new File(new Uint8Array(4096).fill(7)); map(p, file);
-  file.snapshot = () => { p.memory = memory(); throw new FsError(E.IO); };
+  file.snapshotRange = () => { p.memory = memory(); throw new FsError(E.IO); };
   assert.throws(() => call(p, 28, 8192, 4096, 4), ReadLifetimeError);
   assert.equal(p.state, 'zombie'); assert.equal(file.bytes()[0], 7);
 });

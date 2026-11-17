@@ -182,7 +182,7 @@ export class File extends Node {
     return this.range(start, end);
   }
   /** A retained range, independent of subsequent file or mapping changes. */
-  snapshot(start: number, end: number): Uint8Array { return this.read(start, end).slice(); }
+  snapshotRange(start: number, end: number): Uint8Array { return this.read(start, end).slice(); }
   /** Internal payload access. Mapping visibility remains owned by this inode. */
   protected range(start: number, end: number): Uint8Array { return this.data.subarray(start, Math.min(end, this.size)); }
   protected replaceRange(at: number, bytes: Uint8Array): void { this.data.set(bytes, at); }

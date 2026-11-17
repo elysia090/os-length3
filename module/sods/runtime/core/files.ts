@@ -135,7 +135,7 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
             const result = view().slice();
             check(core.files_read_finish(operation, 0, result.length));
             return result;
-          } catch (error) { abort(operation, error); }
+          } catch (error) { return abort(operation, error); }
         },
         readInto(start, into, at, length) {
           uint(start); uint(at); uint(length); materialize();
@@ -145,7 +145,7 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
             // No host callback or escaping scratch view between export and copy.
             Uint8Array.prototype.set.call(into, bytes, at);
             return check(core.files_read_finish(operation, 0, bytes.length));
-          } catch (error) { abort(operation, error); }
+          } catch (error) { return abort(operation, error); }
         },
         write(at, bytes) { live(); uint(at); materialize(); input(bytes); live(); const source = check(core.files_load_source(id)); check(core.files_write(id, at)); if (source) sources.delete(source); },
         truncate(length) { live(); uint(length); materialize(); const source = check(core.files_load_source(id)); check(core.files_truncate(id, length)); if (source) sources.delete(source); },

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {Made} from '../../runtime/linux/made.ts';
 import {File} from '../../runtime/linux/fs.ts';
 import {Kernel, Process} from '../../runtime/linux/process.ts';
 
@@ -60,4 +61,17 @@ test('first lazy read loads before clipping to the resulting file length', () =>
     assert.equal(loads, 1);
     assert.equal(file.size, 3);
   }
+});
+
+
+test('made-file open snapshots and retained byte ranges are distinct contracts', () => {
+  let text = 'before';
+  const made = new Made(() => text);
+  const opened: File = made.snapshot();
+  const captured = opened.snapshotRange(0, 6);
+  text = 'after';
+  opened.write(0, enc.encode('change'));
+  assert.equal(dec.decode(captured), 'before');
+  assert.equal(dec.decode(opened.bytes()), 'change');
+  assert.equal(dec.decode(made.snapshot().bytes()), 'after');
 });

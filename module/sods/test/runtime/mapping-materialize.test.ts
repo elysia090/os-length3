@@ -40,7 +40,7 @@ test('MAP_FIXED snapshots an embedding source before zeroing an aliased destinat
 test('mremap tail capture failure precedes reserve, unmap and publication', () => {
   const {p} = setup(); let refuse = true;
   class Tail extends File {
-    override snapshot(start: number, end: number) { if (start === 4096 && refuse) throw new FsError(E.IO); return super.snapshot(start, end); }
+    override snapshotRange(start: number, end: number) { if (start === 4096 && refuse) throw new FsError(E.IO); return super.snapshotRange(start, end); }
   }
   const file = new Tail(new Uint8Array(8192).fill(7)), fd = open(p, file);
   assert.equal(call(p, 9, 8192, 4096, 3, 0x11, fd, 0), 8192n);
@@ -66,7 +66,7 @@ test('a later tail failure leaves all old mappings published and reserves no des
   const {p} = setup();
   const first = new File(new Uint8Array(8192).fill(7));
   class Later extends File {
-    override snapshot(start: number, end: number) { if (start === 4096) throw new FsError(E.IO); return super.snapshot(start, end); }
+    override snapshotRange(start: number, end: number) { if (start === 4096) throw new FsError(E.IO); return super.snapshotRange(start, end); }
   }
   const later = new Later(new Uint8Array(8192).fill(7)), fd = open(p, first);
   assert.equal(call(p, 9, 8192, 4096, 3, 0x11, fd, 0), 8192n);

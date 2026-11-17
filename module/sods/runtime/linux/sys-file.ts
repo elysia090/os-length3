@@ -1510,7 +1510,7 @@ export const FILE_CALLS: Calls = {
     };
     let data: Uint8Array;
     // Retain owned source bytes across destination loading; no guest or offset effects yet.
-    try { data = fileOf(din).snapshot(from, from + Math.min(N(len), 1 << 30)); }
+    try { data = fileOf(din).snapshotRange(from, from + Math.min(N(len), 1 << 30)); }
     finally { ready(); }
     if (din.node === dout.node && from < to + data.length && to < from + data.length) fail(E.INVAL);
     if (data.length) {

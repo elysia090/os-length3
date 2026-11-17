@@ -31,7 +31,7 @@ class OwnedFile extends File {
   }
   override heldBytes(): number { this.live(); return payload(() => this.owned.resident()); }
   override releasableBytes(): number { return this.maps ? 0 : this.heldBytes(); }
-  override snapshot(start: number, end: number): Uint8Array { return this.read(start, end); }
+  override snapshotRange(start: number, end: number): Uint8Array { return this.read(start, end); }
   override get data(): Uint8Array { throw new FsError(E.OPNOTSUPP); }
   protected override range(start: number, end: number): Uint8Array {
     this.materialize();

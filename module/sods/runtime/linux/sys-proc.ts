@@ -632,7 +632,7 @@ export const PROC_CALLS: Calls = {
     let initial: Uint8Array | null = null;
     if (node) {
       const identity = this.readIdentity();
-      try { initial = node.snapshot(N(off), N(off) + length); }
+      try { initial = node.snapshotRange(N(off), N(off) + length); }
       finally { identity(); }
     }
     const start = fixed ? N(addr) : this.reserve(length);
@@ -670,7 +670,7 @@ export const PROC_CALLS: Calls = {
     const tails: Uint8Array[] = [];
     if (N(newLength) > N(oldLength)) {
       const identity = this.readIdentity();
-      try { for (const m of moved) tails.push(m.node.snapshot(m.off + N(oldLength), m.off + N(newLength))); }
+      try { for (const m of moved) tails.push(m.node.snapshotRange(m.off + N(oldLength), m.off + N(newLength))); }
       finally { identity(); }
     }
     const start = this.reserve(N(newLength));
@@ -697,7 +697,7 @@ export const PROC_CALLS: Calls = {
         for (const m of maps) m.node.settle(m.off, m.off + m.length, m);
         for (const m of maps) {
           const from = Math.max(a, m.start), to = Math.min(b, m.start + m.length);
-          restore.push([from, m.node.snapshot(m.off + from - m.start, m.off + to - m.start)]);
+          restore.push([from, m.node.snapshotRange(m.off + from - m.start, m.off + to - m.start)]);
         }
       } finally { identity(); }
     }
