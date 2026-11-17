@@ -53,8 +53,8 @@ SODS_CORE_WASM=module/sods/core/target/wasm32-unknown-unknown/debug/sods_core.wa
 ```
 
 The integration test is explicitly skipped without its artifact variable. A skipped
-case is not evidence that the Wasm integration passes. Scratch views are private
-and only valid until the next export; callbacks and asynchronous effects are absent
+case is not evidence that the Wasm integration passes. Scratch views are private; input scratch is transient, while a pending read
+leases its scratch until matching finish; callbacks and asynchronous effects are absent
 from this first slice. Raw exports are not a supported safe embedding API.
 
 Compatibility details: these are File **payload primitives**, not Linux read/write
@@ -68,7 +68,7 @@ These are deliberately conservative first-integration costs, not minimal copies.
 The facade checks the input byte length before snapshotting and again afterward;
 this is not a quota against arbitrary hostile embedding objects or allocations.
 
-Use an artifact built from the same matching crate revision. The v1 export check
+Use an artifact built from the same matching crate revision. The v2 file-export check
 rejects unknown versions but is not code authentication or exhaustive export/schema
 validation. This API is not a sandbox for arbitrary supplied Wasm modules.
 
@@ -191,3 +191,49 @@ per read, with short-lived closure/token allocations; these are implementation
 costs, not a proven lower bound. No extra payload snapshot is introduced by the
 guard. Moving pending operation state into Rust must preserve these rejection,
 copy/offset ordering and cleanup contracts rather than add a second mutable offset.
+
+## Core-owned pending read: private files ABI v2
+
+The ready-payload path now runs `readTo → OwnedFile → read_begin → host copy →
+read_finish → Description.offset`. Rust owns one pending record containing file
+identity, requested range, actual output length, operation ID and scratch lease.
+The core accepts the trusted host adapter’s matching completion report once; it
+does not independently verify that host copying occurred. Only that successful
+acceptance returns the count used by the real syscall for its offset update. The TS Description remains the sole offset authority.
+
+During the lease, input/create/write/truncate/close/another read are rejected.
+Wrong identity/count or duplicate completion cannot release a different operation.
+The facade aborts a failed copy as **unknown effect**, not rollback, and propagates
+the failure. If abort also fails both errors survive. Protocol errors are host
+failures rather than ordinary filesystem errnos. EOF still has a zero-length
+completion. The private files ABI is now v2; v1 artifacts are rejected.
+
+This stores one constant-size record and uses existing scratch; it does not make
+an extra payload copy or per-operation Rust heap allocation. Maximum in-flight is
+one per core instance, matching its single scratch. IDs never wrap: signed-u32
+positive IDs exhaust after 2^31−1 starts and fail explicitly. This finite limit
+and one extra completion crossing per read are current design costs, not a final
+performance or lifetime target. The host's existing identity closures/tokens also
+remain costs to revisit, not theoretical necessities. Concurrent independent
+operations may eventually justify multiple slots; no speculative queue is added.
+
+Tests exercise the actual Wasm lease, invalid/duplicate completions, prior-ABI
+rejection, and a failed destination copy through the real syscall adapter followed
+by a successful retry. They also check pread offset independence, readv and EOF.
+Guest destination identity remains the host guard's responsibility, not something
+this core record can prove. Lazy host effects and descriptor state are not ported.
+
+### Finite lazy-materialization order gate
+
+| Current entrance | Work that must not be prematurely committed before loading/identity validation |
+|---|---|
+| file read/readv | destination copy and descriptor offset; current guard supplies the synchronous rejection order |
+| write/append | append position currently chosen from file.size before File.write; loaded size must be known before selecting it |
+| truncate/open O_TRUNC | own/reload retention and size/content effects must follow successful materialization |
+| mmap/mremap | address reservation, old mapping retirement, guest initialization and mapping publication require ordered failure handling |
+| share/bytes/image preparation | retained source snapshot and source revision must match; source callbacks cannot silently replace the accepted image |
+
+Before lazy core entry is enabled, each entrance needs success, source-throw,
+same-inode reentry and close/stale outcomes. Read-only lazy demos would hide these
+mutation-order issues and are not introduced. The next step is this finite order
+contract, not a claim that pending ready reads have already solved lazy IO.

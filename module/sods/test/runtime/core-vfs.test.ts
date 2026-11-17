@@ -114,3 +114,33 @@ test('two real processes retain one Rust inode across replacement, failure and m
   assert.equal(call(a, 11, 8192, 4096), 0n);
   scope.dispose();
 });
+
+test('actual syscall offset commits only after core copy completion, and failed copy releases its lease', {skip: !wasm}, async () => {
+  const scope = await loadFileScope(readFileSync(wasm!), 32), vfs = new Vfs();
+  const file = scope.writeFile(vfs, '/tmp/a', 'abcdef');
+  const k = new Kernel({vfs, translate() { throw new Error('unused'); }, console: {write() {}, read: () => new Uint8Array(0)}});
+  const p = new Process(k, null);
+  p.memory = Object.assign(new WebAssembly.Memory({initial: 1}), {users: 1, written: [], keeps: false, imageOf: null});
+  p.bytes.set(enc.encode('/tmp/a\0'), 1024);
+  const fd = Number(call(p, 2, 1024, 0)), description = p.fds.get(fd)!;
+  const readInto = file.readInto.bind(file);
+  // Fault injection at the real adapter's copy destination, not a mocked core.
+  file.readInto = (start, _into, _at, length, ready) => readInto(start, new Uint8Array(0), 0, length, ready);
+  assert.throws(() => call(p, 0, fd, 4096, 2), RangeError);
+  assert.equal(description.offset, 0);
+  assert.deepEqual([...p.bytes.subarray(4096, 4098)], [0, 0]);
+  file.readInto = readInto;
+  assert.equal(call(p, 0, fd, 4096, 2), 2n);
+  assert.equal(description.offset, 2);
+  assert.equal(dec.decode(p.bytes.subarray(4096, 4098)), 'ab');
+  assert.equal(call(p, 17, fd, 4096, 2, 4), 2n);
+  assert.equal(description.offset, 2);
+  for (const [at, value] of [[2048, 4096], [2056, 2], [2064, 8192], [2072, 2]]) p.view.setBigUint64(at, BigInt(value), true);
+  assert.equal(call(p, 19, fd, 2048, 2), 4n);
+  assert.equal(description.offset, 6);
+  assert.equal(dec.decode(p.bytes.subarray(4096, 4098)), 'cd');
+  assert.equal(dec.decode(p.bytes.subarray(8192, 8194)), 'ef');
+  assert.equal(call(p, 0, fd, 4096, 2), 0n);
+  assert.equal(call(p, 3, fd), 0n);
+  scope.dispose();
+});

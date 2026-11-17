@@ -10,7 +10,8 @@ interface Core extends WebAssembly.Exports {
   files_len(): number;
   files_create(): number;
   files_write(id: number, at: number): number;
-  files_read(id: number, at: number, length: number): number;
+  files_read_begin(id: number, at: number, length: number): number;
+  files_read_finish(operation: number, outcome: number, count: number): number;
   files_truncate(id: number, length: number): number;
   files_close(id: number): number;
 }
@@ -39,7 +40,7 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
   if (maxFileBytes > 0x7fffffff) throw new RangeError('File limit exceeds supported length');
   const module = source instanceof WebAssembly.Module ? source : await WebAssembly.compile(source);
   const core = new WebAssembly.Instance(module, {}).exports as Core;
-  if (typeof core.files_abi_version !== 'function' || core.files_abi_version() !== 1) throw new Error('Unsupported core files ABI');
+  if (typeof core.files_abi_version !== 'function' || core.files_abi_version() !== 2) throw new Error('Unsupported core files ABI');
   check(core.files_init(maxFileBytes));
   const view = (): Uint8Array<ArrayBuffer> => {
     const offset = core.files_ptr() >>> 0, length = core.files_len() >>> 0;
@@ -57,6 +58,12 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
     check(core.files_input(owned.length));
     view().set(owned);
   };
+  const abort = (operation: number, error: unknown): never => {
+    // A failed copy is not a rollback claim. Retire the lease before propagating.
+    try { check(core.files_read_finish(operation, 1, 0)); }
+    catch (cleanup) { throw new AggregateError([error, cleanup], 'Core read failed and its lease could not be retired'); }
+    throw error;
+  };
   return {
     create(bytes: Uint8Array): CoreFile {
       input(bytes);
@@ -64,14 +71,24 @@ export async function loadCoreFiles(source: WebAssembly.Module | BufferSource, m
       let closed = false;
       const live = () => { if (closed) throw new Error('File handle is closed'); };
       return {
-        read(at, length) { live(); check(core.files_read(id, uint(at), uint(length))); return view().slice(); },
+        read(at, length) {
+          live();
+          const operation = check(core.files_read_begin(id, uint(at), uint(length)));
+          try {
+            const result = view().slice();
+            check(core.files_read_finish(operation, 0, result.length));
+            return result;
+          } catch (error) { abort(operation, error); }
+        },
         readInto(start, into, at, length) {
           live(); uint(start); uint(at); uint(length);
-          check(core.files_read(id, start, length));
-          const bytes = view();
-          // No host callback or escaping scratch view between export and copy.
-          Uint8Array.prototype.set.call(into, bytes, at);
-          return bytes.length;
+          const operation = check(core.files_read_begin(id, start, length));
+          try {
+            const bytes = view();
+            // No host callback or escaping scratch view between export and copy.
+            Uint8Array.prototype.set.call(into, bytes, at);
+            return check(core.files_read_finish(operation, 0, bytes.length));
+          } catch (error) { abort(operation, error); }
         },
         write(at, bytes) { live(); uint(at); input(bytes); live(); check(core.files_write(id, at)); },
         truncate(length) { live(); check(core.files_truncate(id, uint(length))); },

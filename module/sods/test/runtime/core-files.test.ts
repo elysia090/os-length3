@@ -58,3 +58,42 @@ test('unversioned modules are rejected before file operations', async () => {
   const empty = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
   await assert.rejects(loadCoreFiles(empty, 8), /Unsupported core files ABI/);
 });
+
+test('real core owns the read lease and rejects overwrite and invalid completion', {skip: !wasm}, () => {
+  const exports = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(wasm!)), {}).exports;
+  const call = (name: string, ...args: number[]) => (exports[name] as (...n: number[]) => number)(...args);
+  const memory = exports.memory as WebAssembly.Memory;
+  assert.equal(call('files_abi_version'), 2);
+  assert.equal(call('files_init', 32), 0);
+  assert.equal(call('files_input', 3), 0);
+  new Uint8Array(memory.buffer, call('files_ptr'), 3).set(enc.encode('abc'));
+  const id = call('files_create'); assert.ok(id > 0);
+  const operation = call('files_read_begin', id, 0, 8); assert.ok(operation > 0);
+  assert.equal(call('files_input', 2), -6);
+  assert.equal(call('files_create'), -6);
+  assert.equal(call('files_write', id, 0), -6);
+  assert.equal(call('files_read_begin', id, 0, 2), -6);
+  assert.equal(call('files_truncate', id, 1), -6);
+  assert.equal(call('files_close', id), -6);
+  assert.equal(dec.decode(new Uint8Array(memory.buffer, call('files_ptr'), call('files_len'))), 'abc');
+  assert.equal(call('files_read_finish', operation + 1, 0, 3), -7);
+  assert.equal(call('files_read_finish', operation, 0, 2), -7);
+  assert.equal(call('files_read_finish', operation, 2, 0), -7);
+  assert.equal(call('files_close', id), -6);
+  assert.equal(call('files_read_finish', operation, 0, 3), 3);
+  assert.equal(call('files_read_finish', operation, 0, 3), -7);
+  const next = call('files_read_begin', id, 0, 1); assert.ok(next > operation);
+  assert.equal(call('files_read_finish', next, 1, 0), 0);
+  assert.equal(call('files_close', id), 0);
+});
+
+test('previous files ABI is rejected rather than assumed compatible', async () => {
+  const name = [...enc.encode('files_abi_version')];
+  const section = (id: number, data: number[]) => [id, data.length, ...data];
+  const module = new WebAssembly.Module(new Uint8Array([
+    0, 97, 115, 109, 1, 0, 0, 0,
+    ...section(1, [1, 0x60, 0, 1, 0x7f]), ...section(3, [1, 0]),
+    ...section(7, [1, name.length, ...name, 0, 0]), ...section(10, [1, 4, 0, 0x41, 1, 0x0b]),
+  ]));
+  await assert.rejects(loadCoreFiles(module, 8), /Unsupported core files ABI/);
+});

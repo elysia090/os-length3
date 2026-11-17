@@ -4,5 +4,6 @@
 //! yet implement the kernel, allocate exported slots, or enforce mapping pins.
 pub mod byte_effect;
 pub mod files;
+pub mod pending_read;
 #[cfg(target_arch = "wasm32")]
 mod web_files;

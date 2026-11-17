@@ -6,6 +6,8 @@ pub enum Error {
     TooLarge,
     NoMemory,
     Exhausted,
+    Busy,
+    BadCompletion,
 }
 #[derive(Debug)]
 pub struct Files {

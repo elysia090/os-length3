@@ -8,7 +8,7 @@ import {File, Vfs, E, FsError, FILE_MOST, counted, type Mapping} from './fs.ts';
 function payload<T>(action: () => T): T {
   try { return action(); }
   catch (e) {
-    if (!(e instanceof CoreFileError)) throw e;
+    if (!(e instanceof CoreFileError) || e.code === -6 || e.code === -7) throw e;
     // Only failures reported before a Rust payload mutation are normal errnos.
     throw new FsError(e.code === -2 ? E.FBIG : e.code === -3 ? E.NOSPC : e.code === -4 ? E.NOMEM : E.IO);
   }
