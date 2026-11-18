@@ -1,0 +1,95 @@
+# Captured output cutover plan (not an enabled profile)
+
+The existing fixture proves a narrow in-memory acceptance path. It does
+not install a product adapter, honor every Linux write/sendfile behavior, or
+certify physical delivery. The ordinary host must keep rejecting fixture
+markers. Production selection needs its own reviewed adapter and artifact.
+
+## Where each responsibility belongs
+
+- The Rust Core chooses the supported output profile, binds the exact output
+  OFD to a bounded FIFO, validates invocation/sequence/length, and owns cursor
+  and publication semantics. No output in a selected captured lane silently
+  goes to borrowed physical stdio. Unsupported modes and pressure need an
+  explicit contract; promising general nonblocking, pipe, signal or terminal
+  behavior would require separate proof.
+- The host constructs Node Workers/physical memories, transports the Rust
+  command and original request, and observes actual unwind, exit and lexical
+  access. These are engine operations, not duplicate Linux policies to move
+  to Rust. Default borrowed stdio and the existing Kernel/RemoteKernel remain
+  available until their actual callers migrate.
+- A captured session owns Core, Files and lanes across producer retirement.
+  Receiver authority is issued for the session/lane, not the guest FD or
+  Worker. Closing admission is not discarding or returning EOF; accepted
+  records and live reservations still belong to their owners. Temporary
+  emptiness does not certify that all producers have stopped.
+
+The first eligible host result is an independently owned byte array, with no
+external I/O. Use a scalar peek of exact head identity and length, pre-admit
+the final host allocation, then revalidate that head for one exclusive lexical
+view. The trusted adapter copies once into the final allocation and settles
+the same identity before notifying an application. No callback, growth,
+await or other allocating Core call can execute while a view is exposed.
+Uncertain access retains backing; known ended access with an unpublished
+local copy may leave the original record available without claiming delivery.
+No record can bypass an unresolved earlier head. A captured guest write then
+needs a guest-to-Core and Core-to-host transfer, while an immutable file pin
+needs only the latter. A one-transfer writable-host architecture would
+require a different owner/cross-boundary commit contract, not a hidden copy.
+
+## External sink is a different operation
+
+Select and document what the sink can actually promise. For a narrow first
+adapter, consider a synchronous operation on a handle owned and retained by
+the sink session. A reported native accepted prefix is not disk durability,
+peer arrival or terminal flush. A borrowed FD that can be closed/reused by
+another owner is not such a proof. Do not hand an asynchronous sink a naked
+view into Core. It needs its own independently owned backing before start.
+
+One sink/session/lane/head/attempt identity owns the pending effect. Start
+uses its permission once. Evidence scopes cumulative progress to that
+offered range and separately proves ended access and no further effects.
+Only the exact terminal combination can settle. Unknown, even at the full
+byte count, keeps the applicable storage/credits/identity and blocks a
+second offer or later head. Stop request, Worker exit, abort, empty capture
+and drain callback are not interchangeable certificates. An exact stopped
+partial result leaves a distinct unaccepted suffix; any policy to offer it
+later needs a new, explicitly admitted operation. Never rewind the input
+cursor or retroactively fabricate guest errno after capture acceptance.
+
+Counterexamples for enabling any adapter: concurrent/reentrant caller,
+stale head or attempt, allocation cancellation before copy, stop/exit during
+copy, closure after acceptance, partial/zero/full progress without ended
+access, ended access without stopped effects, late exact settlement after
+cancellation, and later requests forbidden to overtake the pending head.
+The fixture's real Worker exit and retained ABC are not substitutes.
+
+## Removing TypeScript is gated by callers, not line count
+
+Current capture work does not make a runtime TypeScript file unnecessary.
+The existing now-duplicated-looking code must remain until the corresponding
+set of entry points is retired or redirected with equivalent tests.
+
+- Old Worker-only transport: `cpu.ts`, `channel.ts`, `worker-stop.ts`.
+  Remove the group only after the current RemoteKernel consumers, Worker
+  shims and old transport tests migrate or are explicitly removed. Moving
+  one Node captured run does not migrate default browser/remote execution.
+  `remote.ts` itself also has public and application consumers; retaining
+  a compatibility facade means it was not deleted as a whole file.
+- File operations and descriptor ownership: `sys-file.ts` and `fd.ts`
+  still drive the legacy process and shared open descriptions. Migrate
+  remaining file/namespace/error behavior, aliases and fork, sockets,
+  pipes and terminals before removing whole files. Remove dispatch entries
+  only once all applicable callers are routed to their proven Rust owners, not
+  after just the bounded resident example.
+- `memory-host.ts` and the current Node bridge retain physical transport and
+  lifetime responsibilities. The negative-only sendfile relay may become
+  removable after the rejection/cancellation rule and exact Rust cleanup
+  are equivalent on the ordinary route. That would still not remove the
+  host file. Keep physical stream helpers until their users are migrated.
+
+For each actual removal, inventory import/export, dynamic Worker URL,
+published package and host/test references; run the existing control and
+negative tests as well as the new profile on its supported hosts. Do not
+turn unknown Workerd/browser or public ABI callers into dead code by
+assuming the Node diagnostic represents them.
