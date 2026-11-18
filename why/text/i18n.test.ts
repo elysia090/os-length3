@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {test} from 'node:test';
+import {DOWNLOAD_MESSAGES} from '../../ricebox/distribution/runtime/download.ts';
 import {missing, setLang, t, tn} from './i18n.ts';
 
 /** why's own folder: its parts, each with what a page runs of it and what the core does, and its window. */
@@ -33,7 +34,7 @@ function texts(out: string[] = []): string[] {
 }
 
 test('every English text has its Japanese', async () => {
-  const all = [...new Set(texts())];
+  const all = [...new Set([...texts(), ...DOWNLOAD_MESSAGES])];
   assert.deepEqual(await missing(all), []);
 });
 
@@ -121,10 +122,11 @@ test('a name is a space apart from Japanese only when it is Latin', async () => 
 
 test('no Japanese is kept for a text nothing says', () => {
   // Every source that may say a text: the app's (t() and the words it hands to t()), the Remote's (its refusals) and
-  // the core's (what it says as the app's own words).
+  // the core's (what it says as the app's own words). Ricebox supplies its keys explicitly.
   const said = [...sources('.ts', true), ...sources('.rs')].map((p) => readFileSync(p, 'utf8')).join('\n');
   // As written in a source: an apostrophe escaped in a single-quoted literal, or not.
   const ways = (en: string) => [en, en.replace(/\\'/g, "'"), en.replace(/'/g, "\\'")];
-  const unsaid = catalog().filter((e) => !ways(e.en).some((w) => said.includes(w))).map((e) => `${e.file}: ${e.en}`);
+  const external = new Set<string>(DOWNLOAD_MESSAGES);
+  const unsaid = catalog().filter((e) => !external.has(e.en) && !ways(e.en).some((w) => said.includes(w))).map((e) => `${e.file}: ${e.en}`);
   assert.deepEqual(unsaid, []);
 });

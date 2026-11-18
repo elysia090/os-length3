@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {test} from 'node:test';
-import {digest, download, Fatal} from './webroot-fetch.ts';
+import {digest, download, Fatal} from '../download.ts';
 
 // A server that behaves like the proxies in between: it cuts, stalls,
 // errors for a while, ignores Range or changes the file between tries.
@@ -20,6 +20,7 @@ async function serve(body: Uint8Array, steps: Step[]) {
     const m = /bytes=(\d+)-/.exec(req.headers.range ?? '');
     const resume = m && step !== 'norange' && req.headers['if-range'] === etag;
     const start = resume ? Number(m![1]) : 0;
+    if (resume && start >= file.length) { res.writeHead(416, {'Content-Range': `bytes */${file.length}`}).end(); return; }
     const rest = file.subarray(start);
     res.writeHead(resume ? 206 : 200, {
       'Content-Length': rest.length, ETag: etag,
@@ -106,4 +107,21 @@ test('a quiet line is said each second before it counts as broken', async () => 
   assert.deepEqual(got, body);
   // Said while quiet, from the second second, counting up (a tick may land late under load).
   assert.ok(quiet.length >= 1 && quiet.every((n, i) => n >= 2 && n < 4 && (i === 0 || n > quiet[i - 1])), String(quiet));
+});
+
+test('a completed but unchecked transfer retries from the beginning', async t => {
+  const s = await serve(body, []);
+  t.after(s.close);
+  let checks = 0;
+  const sha256 = await digest(body);
+  const got = await download(s.url, {size: body.length, sha256}, undefined, {
+    ...fast, attempts: 2,
+    async check(bytes) {
+      if (++checks === 1) throw new Error('the checker did not return the lent bytes');
+      return {bytes, sha256: await digest(bytes)};
+    },
+  });
+  assert.deepEqual(got, body);
+  assert.equal(checks, 2);
+  assert.deepEqual(s.seen, [undefined, undefined]);
 });

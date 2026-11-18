@@ -32,9 +32,6 @@ const ALONE = new Set([
   // The Worker as an isolate has it: its app is made once a process, from the first env it is given, and Neon's
   // driver is pointed at this file's bridge. Another file's Worker (service.test.ts's sweep) would meet both.
   'why/shipto/remote/serve/worker.test.ts',
-  // Transfers over sockets, timed: seconds of waiting for stalls and retries, which would hold up the files after
-  // it in a shared process, and an interval of prompt/webroot-fetch.ts's own.
-  'why/prompt/webroot-fetch.test.ts',
   // Builds why with child processes, and waits for them.
   'why/build/webroot.test.ts',
 ]);

@@ -5,7 +5,13 @@
 // reached (a Range request, guarded so two versions are never spliced), and
 // accepts the result only when it is exactly the file the manifest names.
 
-export type DownloadMessage = 'Failed to receive remainder' | 'Size mismatch' | 'Content mismatch' | 'Connection timed out' | 'Connection lost' | 'Failed to load';
+const messages = {
+  remainder: 'Failed to receive remainder', size: 'Size mismatch', content: 'Content mismatch',
+  timeout: 'Connection timed out', connection: 'Connection lost', load: 'Failed to load',
+} as const;
+/** Download messages available for the application to translate. */
+export const DOWNLOAD_MESSAGES = Object.values(messages);
+export type DownloadMessage = (typeof DOWNLOAD_MESSAGES)[number];
 
 interface Expect { size?: number; sha256?: string }
 
@@ -95,7 +101,7 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
       const r = await get(url, {headers, signal: abort.signal, cache: 'no-store'});
       if (r.status === 206) {
         const start = Number(/bytes (\d+)-/.exec(r.headers.get('Content-Range') ?? '')?.[1]);
-        if (start !== state.got) { reset(); why = t('Failed to receive remainder'); await r.body?.cancel(); continue; }
+        if (start !== state.got) { reset(); why = t(messages.remainder); await r.body?.cancel(); continue; }
       } else if (r.ok) {
         if (state.got) reset();
       } else if (transient(r.status)) {
@@ -120,17 +126,24 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
       }
       clearTimeout(timer);
       let bytes: Uint8Array = join(state.parts, state.got);
-      if (expect.size !== undefined && bytes.length !== expect.size) { reset(); why = t('Size mismatch'); continue; }
+      if (expect.size !== undefined && bytes.length !== expect.size) { reset(); why = t(messages.size); continue; }
       if (expect.sha256) {
-        const c = await check(bytes);
-        bytes = c.bytes;
-        if (c.sha256 !== expect.sha256) { reset(); why = t('Content mismatch'); continue; }
+        let checked: Awaited<ReturnType<Check>>;
+        try { checked = await check(bytes); }
+        catch (error) {
+          // The complete transfer was not verified. An HTTP range from EOF
+          // cannot recover bytes that may have been lent to a failed checker.
+          reset();
+          throw error;
+        }
+        bytes = checked.bytes;
+        if (checked.sha256 !== expect.sha256) { reset(); why = t(messages.content); continue; }
       }
       partials.delete(url);
       return bytes;
     } catch (e) {
       if (e instanceof Fatal) { partials.delete(url); throw e; }
-      why = abort.signal.aborted ? t('Connection timed out') : t('Connection lost');
+      why = abort.signal.aborted ? t(messages.timeout) : t(messages.connection);
     } finally {
       // Every way out of a try (done, continue, broken) stops its clocks.
       clearTimeout(timer);
@@ -139,5 +152,5 @@ export async function download(url: string, expect: Expect = {}, progress?: Prog
   }
   // What came is kept: the next try in this page continues from it.
   partials.set(url, state);
-  throw new Error(why || t('Failed to load'));
+  throw new Error(why || t(messages.load));
 }

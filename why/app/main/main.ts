@@ -10,7 +10,6 @@ import {FileTree} from '../pages/file/tree.ts';
 import {onRenamed} from '../../repo/repos.ts';
 import {begin} from '../../shipto/lifecycle.ts';
 import {writeLeftBack} from '../pages/bench/repo-copy.ts';
-import {forgetExcept} from '../../prompt/webroot-fetch.ts';
 import {keepFocus} from '../ui/focus.ts';
 import {onPlugins, pluginsOpen, setPluginsOpen} from '../host/plugins.ts';
 import {learnHome} from '../../shipto/inbox.ts';
@@ -554,8 +553,8 @@ if (asking.has('device')) {
     // Busy until what the Remote has is taken in and the page drawn from it (the first look). Signed out, that look
     // reads the repos' names alone, and what shows where a repo stands follows it (onSync): the page drawn as the OS
     // opened is the page, not drawn whole a second time.
-    // What an earlier build kept of why goes; why now keeps its own copies, by digest, and lets them go itself (userland.ts).
-    void forgetExcept(new Set());
+    // Discard the derived cache used by older Why builds; userland owns the digest-keyed cache.
+    void Promise.resolve().then(() => globalThis.caches?.delete('why-userland')).catch(() => {});
     // What the shell of a page reloaded mid-write left to write back, written before the repos are read (repo-copy.ts).
     void writeLeftBack().then(() => begin()).then(() => brought(current)).then(() => { if (connection()) return render(); }).finally(() => {
       $('page').removeAttribute('aria-busy');
