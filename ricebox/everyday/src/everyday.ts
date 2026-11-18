@@ -67,8 +67,43 @@ function plain(value: string): Pick<Thing, 'kind' | 'least' | 'most'> | undefine
   return undefined;
 }
 
-/** A sheet's text with its notes taken out of the way: each `/* … *\/` made spaces, so places in it stay where they were. */
-const unnoted = (sheet: string) => sheet.replace(/\/\*[\s\S]*?\*\//g, (note) => note.replace(/[^\n]/g, ' '));
+/** One lexical pass owns comments, quoted strings and escapes for both structural scans.
+ * Comments become spaces without moving offsets; strings keep their original values.
+ * A note belongs only to the following declaration, with no other token in between. */
+function lexSheet(sheet: string) {
+  const parts: string[] = [], skip = new Map<number, number>(), notes = new Map<number, string>();
+  const start = /\/\*|["'\\]/g, space = /\s*/y;
+  let copied = 0;
+  for (let hit: RegExpExecArray | null; (hit = start.exec(sheet));) {
+    const at = hit.index, token = hit[0];
+    if (token === '/*') {
+      const end = sheet.indexOf('*/', at + 2);
+      const until = end < 0 ? sheet.length : end + 2;
+      parts.push(sheet.slice(copied, at), sheet.slice(at, until).replace(/[^\r\n]+/g, (run) => ' '.repeat(run.length)));
+      copied = start.lastIndex = until;
+      if (end >= 0) {
+        space.lastIndex = until;
+        space.exec(sheet);
+        const next = space.lastIndex;
+        if (sheet.startsWith('--', next)) {
+          notes.set(next, sheet.slice(at + 2, end).replace(/\s+/g, ' ').trim());
+        }
+      }
+    } else {
+      let end = at + 1;
+      if (token !== '\\') {
+        for (; end < sheet.length; end++) {
+          if (sheet[end] === '\\') end++; // escaped quote, backslash, or line continuation
+          else if (sheet[end] === token) break;
+        }
+      }
+      skip.set(at, Math.min(end, sheet.length - 1));
+      start.lastIndex = end + 1;
+    }
+  }
+  if (copied) parts.push(sheet.slice(copied));
+  return {text: copied ? parts.join('') : sheet, skip, notes};
+}
 
 /**
  * What may be changed, read from a sheet (a stylesheet's text, or several one after another): every custom
@@ -77,43 +112,42 @@ const unnoted = (sheet: string) => sheet.replace(/\/\*[\s\S]*?\*\//g, (note) => 
  * whose value is made of others follows them.
  */
 export function things(sheet: string): Thing[] {
-  const text = unnoted(sheet);
+  const {text, skip, notes} = lexSheet(sheet);
   const found = new Map<string, {value: string; at: number; times: number}>();
   // Each rule's opening brace, with the selector before it and how deep it stands.
   let depth = 0, from = 0;
   const open: {root: boolean; nested: boolean}[] = [];
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"' || c === "'") { // (a string: to its end, whatever is in it)
-      const end = text.indexOf(c, i + 1);
-      i = end < 0 ? text.length : end;
-    } else if (c === '{') {
+  const structure = /[{};"'\\]/g;
+  for (let hit: RegExpExecArray | null; (hit = structure.exec(text));) {
+    const i = hit.index, c = hit[0];
+    if (c === '"' || c === "'" || c === '\\') structure.lastIndex = (skip.get(i) ?? i) + 1;
+    else if (c === '{') {
       const selector = text.slice(from, i).trim();
       open.push({root: selector === ':root', nested: depth > 0});
       depth++, from = i + 1;
     } else if (c === '}') {
       const rule = open.pop();
-      if (rule?.root) declarations(text, from, i, rule.nested, found);
+      if (rule?.root) declarations(text, skip, from, i, rule.nested, found);
       depth = Math.max(0, depth - 1), from = i + 1;
     } else if (c === ';' && !open.at(-1)?.root) from = i + 1;
   }
   const all: Thing[] = [];
   for (const [name, {value, at, times}] of found) {
     const kind = times === 1 ? plain(value) : undefined;
-    if (kind) all.push({name, usual: value, ...kind, says: note(sheet, at)});
+    if (kind) all.push({name, usual: value, ...kind, says: notes.get(at) ?? ''});
   }
   return all;
 }
 
 /** The declarations of one `:root` rule (from `from` to `to` in `text`), each custom property counted. */
-function declarations(text: string, from: number, to: number, nested: boolean, found: Map<string, {value: string; at: number; times: number}>): void {
+function declarations(text: string, skip: ReadonlyMap<number, number>, from: number, to: number, nested: boolean, found: Map<string, {value: string; at: number; times: number}>): void {
   let start = from, round = 0;
-  for (let i = from; i <= to; i++) {
-    const c = text[i];
-    if (c === '"' || c === "'") {
-      const end = text.indexOf(c, i + 1);
-      i = end < 0 || end > to ? to : end;
-    } else if (c === '(') round++;
+  const structure = /[();}"'\\]/g;
+  structure.lastIndex = from;
+  for (let hit: RegExpExecArray | null; (hit = structure.exec(text)) && hit.index <= to;) {
+    const i = hit.index, c = hit[0];
+    if (c === '"' || c === "'" || c === '\\') structure.lastIndex = (skip.get(i) ?? i) + 1;
+    else if (c === '(') round++;
     else if (c === ')') round--;
     else if ((c === ';' && round <= 0) || i === to) {
       const said = /^(\s*)--([a-z][a-z0-9-]*)\s*:([\s\S]*)$/.exec(text.slice(start, i));
@@ -125,13 +159,6 @@ function declarations(text: string, from: number, to: number, nested: boolean, f
       start = i + 1, round = 0;
     }
   }
-}
-
-/** The note written over the declaration at `at`: the one that ends just before it, with nothing between. */
-function note(sheet: string, at: number): string {
-  const before = sheet.slice(0, at), end = before.lastIndexOf('*/');
-  if (end < 0 || before.slice(end + 2).trim()) return '';
-  return before.slice(before.lastIndexOf('/*', end) + 2, end).replace(/\s+/g, ' ').trim();
 }
 
 /** A colour's red, green and blue, each 0 to 255. */

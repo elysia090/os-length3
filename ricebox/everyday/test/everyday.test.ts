@@ -106,3 +106,36 @@ test('words stay read on their grounds: while a pair would fail, the line writte
   made = change(all, 'ink: #f0f0f0\nground: #e0e0e0\npaper: #000000', pairs);
   assert.deepEqual(made.values, {});
 });
+
+test('quoted comment markers and escaped quotes do not consume later declarations or their notes', () => {
+  for (const value of [
+    'url("assets/*")',
+    String.raw`url("a\\")`,
+    String.raw`url("a\"b")`,
+    String.raw`url('a\'b; } :root { --ink:#fff; /* not a note */')`,
+    String.raw`url("a\"b; } :root { --ink:#fff; /* not a note */")`,
+  ]) {
+    const sheet = `:root { --image: ${value};\n/* Real ink\n   note. */ --ink: #123456; --space: 12px; }`;
+    assert.deepEqual(things(sheet).map(({name, usual, says}) => ({name, usual, says})), [
+      {name: 'ink', usual: '#123456', says: 'Real ink note.'},
+      {name: 'space', usual: '12px', says: ''},
+    ], value);
+  }
+});
+
+test('lexical skips keep escaped delimiters out of scope and only real adjacent comments are notes', () => {
+  const sheet = String.raw`
+:root {
+  --image: url(a\;b\}c);
+  /* first */ /* actual /* note */ --ink: #123456;
+  --quote: "/* pretend */";
+  --space: 12px;
+  --sans: "Noto Serif", sans-serif;
+}
+@media (width: 10px) { :root { --space: 13px; } }
+`;
+  assert.deepEqual(things(sheet).map(({name, usual, says}) => ({name, usual, says})), [
+    {name: 'ink', usual: '#123456', says: 'actual /* note'},
+    {name: 'sans', usual: '"Noto Serif", sans-serif', says: ''},
+  ]);
+});
