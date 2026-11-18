@@ -169,3 +169,17 @@ test('quota eviction stops once the oldest asset makes room for a new one', asyn
   assert.equal(f.entries.has(recent), true);
   assert.equal(f.entries.has(adding), true);
 });
+
+test('both execution profiles require the Muk descriptor to name its digest', async t => {
+  const base = '/layers/', f = fixture(t, base);
+  f.publish();
+  const bytes = new TextEncoder().encode('fixture maker');
+  const path = `blobs/${'c'.repeat(64)}.bin`;
+  f.assets.set(f.url(base + path), bytes);
+  f.assets.set(f.url(base + 'muk.json'), json({path, sha256: hash(bytes), size: bytes.length}));
+  const root = f.root();
+  for (const read of [root.loadWebroot, root.execution.load]) {
+    await assert.rejects(read(), /invalid blob descriptor/);
+  }
+  assert.equal(f.requests.includes(f.url(base + path)), false);
+});

@@ -4,7 +4,7 @@ import {openSync,readFileSync,readSync,closeSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 import {gunzipSync,zstdDecompressSync} from 'node:zlib';
 import {checkPacks,checkedRange} from '../format/pack.ts';
-import {releaseIndexAsset,readReleaseIndex,type About,type Index,type Blob} from '../format/manifest.ts';
+import {blobAsset,releaseIndexAsset,readReleaseIndex,type About,type Index,type Blob} from '../format/manifest.ts';
 import {sha256,digest} from '../host/node/hash.ts';
 
 type IndexFile = Index['files'][number];
@@ -29,9 +29,12 @@ export function openDistribution(dir: string) {
   };
   /** A blob (the translator, a translation): its gzip'd bytes checked against its name, then unpacked. */
   const blob = (b: Blob) => {
-    const bytes = readFileSync(join(dir, b.path));
-    if (sha256(bytes) !== b.sha256) throw new Error(`${b.path}: sha256 ${sha256(bytes)}, its index says ${b.sha256}`);
-    return gunzipSync(bytes);
+    const asset = blobAsset(b), bytes = readFileSync(join(dir, asset.path));
+    const actual = sha256(bytes);
+    if (bytes.length !== asset.size || actual !== asset.sha256) throw new Error(`${asset.path}: not the stored blob its index names (sha256 ${actual})`);
+    const decoded = gunzipSync(bytes);
+    if (decoded.length !== b.bytes) throw new Error(`${asset.path}: wrong decoded size`);
+    return decoded;
   };
   const unzstd = (bytes: Uint8Array) => zstdDecompressSync(bytes);
   const close = () => { for (const f of fds.values()) closeSync(f); fds.clear(); };

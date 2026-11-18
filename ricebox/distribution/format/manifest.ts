@@ -1,5 +1,6 @@
 // Stored distribution descriptors. No execution objects or runtime dependencies.
-export interface Blob { path: string; sha256: string; size: number; bytes: number }
+export interface StoredBlob { path: string; sha256: string; size: number }
+export interface Blob extends StoredBlob { bytes: number }
 export interface About {
   name: string; version: string;
   /** Digest and size of the native root archive from which these layers were built. */
@@ -62,4 +63,15 @@ export function readReleaseIndex(bytes: Uint8Array, about: Pick<About, 'sha256' 
     throw new Error('ricebox: distribution and index disagree');
   }
   return value as Index;
+}
+
+
+/** A release blob's path names its stored-byte digest, independent of decompression. */
+export function blobAsset(value: unknown): StoredBlob {
+  if (!value || typeof value !== 'object' || !('sha256' in value) || typeof value.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(value.sha256) || !('path' in value) || value.path !== `blobs/${value.sha256}.bin` ||
+      !('size' in value) || typeof value.size !== 'number' || !Number.isSafeInteger(value.size) || value.size <= 0) {
+    throw new Error('ricebox: invalid blob descriptor');
+  }
+  return {path: value.path, sha256: value.sha256, size: value.size};
 }

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {createHash} from 'node:crypto';
+import {gzipSync} from 'node:zlib';
 import {openDistribution} from '../local.ts';
 import {distributionAssets} from '../assets.ts';
 import {fixture} from './fixture.ts';
@@ -38,4 +40,17 @@ test('local and deployment readers reject a valid index attached to another rele
   writeFileSync(file, JSON.stringify({...about, version: 'another version'}));
   assert.throws(() => openDistribution(root), /distribution and index disagree/);
   assert.throws(() => distributionAssets(root), /distribution and index disagree/);
+});
+
+
+test('the local reader checks both the stored and decoded blob sizes', t => {
+  const {root} = fixture(t), reader = openDistribution(root);
+  t.after(() => reader.close());
+  const decoded = Buffer.from('guest program'), stored = gzipSync(decoded);
+  const sha256 = createHash('sha256').update(stored).digest('hex'), path = `blobs/${sha256}.bin`;
+  const blob = {path, sha256, size: stored.length, bytes: decoded.length};
+  writeFileSync(join(root, path), stored);
+  assert.deepEqual(reader.blob(blob), decoded);
+  assert.throws(() => reader.blob({...blob, size: blob.size + 1}), /not the stored blob/);
+  assert.throws(() => reader.blob({...blob, bytes: blob.bytes + 1}), /wrong decoded size/);
 });

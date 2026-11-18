@@ -3,7 +3,7 @@ import {createExecutionProfile} from './execution-profile.ts';
 import {executableKey, canonicalHotSources} from './prepared-executable.ts';
 import {canonicalExecutableSource} from '../format/executable-source.ts';
 import {createAhead} from './pretranslate.ts';
-import {readReleaseIndex, releaseIndexAsset, requireStandardFileOwner} from '../format/manifest.ts';
+import {blobAsset, readReleaseIndex, releaseIndexAsset, requireStandardFileOwner} from '../format/manifest.ts';
 import {download as fetchFile, Fatal, type Check} from './download.ts';
 import {createAssetCache} from './asset-cache.ts';
 import {FIRST} from './startup-programs.ts';
@@ -93,7 +93,8 @@ export function createRoot(config: RootConfig) {
   /** A translation's blob, unpacked, checked against what it says it is, and given back as the kernel runs it (prepare), off the page's thread. */
   async function translation(b: Blob, shared: boolean, progress?: Parameters<typeof download>[2], step = atOnce, keptOnly = false): Promise<{wasm: Uint8Array; segments: Segment[] | null}> {
     await step();
-    const {bytes, size, segments} = await checked(await bytesOf(b.path, b, progress, keptOnly), true, false, {shared});
+    const asset = blobAsset(b);
+    const {bytes, size, segments} = await checked(await bytesOf(asset.path, asset, progress, keptOnly), true, false, {shared});
     await step();
     if (size !== b.bytes) throw new Fatal(`webroot: ${b.path} is not what its index says`);
     return {wasm: bytes, segments};
@@ -103,7 +104,8 @@ export function createRoot(config: RootConfig) {
   async function unblob(b: Blob, progress?: Parameters<typeof download>[2], sha256?: string, step = atOnce, keptOnly = false): Promise<Uint8Array> {
     await step();
     // Unpacked and checked off the page's thread; a copy goes, as what was fetched may be on its way to be kept.
-    const {bytes, sha256: is} = await checked(await bytesOf(b.path, b, progress, keptOnly), true, false);
+    const asset = blobAsset(b);
+    const {bytes, sha256: is} = await checked(await bytesOf(asset.path, asset, progress, keptOnly), true, false);
     await step();
     if (bytes.length !== b.bytes || (sha256 && is !== sha256)) throw new Fatal(`webroot: ${b.path} is not what its index says`);
     return bytes;
@@ -348,8 +350,11 @@ export function createRoot(config: RootConfig) {
   /** A release may not provide Muk. If its listed blob fails verification, loading fails. */
   function loadMaker(): Promise<{bytes: Uint8Array; path: string} | null> {
     const maker = download(`${BASE}muk.json`, {}, undefined, {attempts: 2})
-      .then(bytes => JSON.parse(new TextDecoder().decode(bytes)) as {path: string; sha256: string; size: number})
-      .then(m => /^blobs\/[0-9a-f]{64}\.bin$/.test(m.path) ? bytesOf(m.path, m).then(bytes => ({bytes, path: m.path})) : null, () => null);
+      .then(bytes => JSON.parse(new TextDecoder().decode(bytes)) as unknown)
+      .then(async value => {
+        const asset = blobAsset(value);
+        return {bytes: await bytesOf(asset.path, asset), path: asset.path};
+      }, () => null);
     // The other release inputs load in parallel. An integrity failure still
     // propagates when awaited, even if another input has already failed.
     void maker.catch(() => {});

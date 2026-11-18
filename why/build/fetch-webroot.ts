@@ -12,7 +12,7 @@ import {Readable} from 'node:stream';
 import {pinnedRoots} from '../shipto/release-pins.ts';
 import {checkPacks} from '../../ricebox/distribution/format/pack.ts';
 import {tarMembers} from '../../ricebox/distribution/host/node/tar.ts';
-import {readReleaseIndex, releaseIndexAsset, type About} from '../../ricebox/distribution/format/manifest.ts';
+import {blobAsset, readReleaseIndex, releaseIndexAsset, type About} from '../../ricebox/distribution/format/manifest.ts';
 
 const here = fileURLToPath(new URL('../..', import.meta.url));
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
@@ -61,22 +61,16 @@ if (!indexBytes || indexBytes.length !== descriptor.size || sha(indexBytes) !== 
   throw new Error(`${asset}: ${descriptor.path} is not the index this tree pins (${pin.web})`);
 }
 const index = readReleaseIndex(indexBytes, about);
-const named = [[index.translator.path, index.translator.sha256], ...index.translations.flatMap((t) => [[t.elf.path, t.elf.sha256], [t.wasm.path, t.wasm.sha256]])];
-// Some releases carry the box maker beside the root, rather than inside its index.
-// The archive checksum covers this descriptor; bind its blob's name, digest and size too.
+const named = [index.translator, ...index.translations.flatMap(t => [t.elf, t.wasm])].map(blobAsset);
+// The archive may carry Muk beside the index. It uses the same stored-blob
+// descriptor as the translator and AOT artifacts, without a decoded size.
 const mukBytes = members.get('muk.json');
-if (mukBytes) {
-  const muk = JSON.parse(mukBytes.toString('utf8'));
-  if (!muk || !/^[0-9a-f]{64}$/.test(muk.sha256) || muk.path !== `blobs/${muk.sha256}.bin`
-      || !Number.isSafeInteger(muk.size) || muk.size <= 0) throw new Error(`${asset}: invalid muk.json`);
-  const bytes = members.get(muk.path);
-  if (!bytes || bytes.length !== muk.size) throw new Error(`${asset}: muk.json names a missing or wrongly sized blob`);
-  named.push([muk.path, muk.sha256]);
-}
-for (const [path, digest] of named) {
+if (mukBytes) named.push(blobAsset(JSON.parse(mukBytes.toString('utf8'))));
+for (const {path, sha256, size} of named) {
   const bytes = members.get(path);
-  if (!bytes) throw new Error(`${asset} has no ${path}, which its index names`);
-  if (sha(bytes) !== digest) throw new Error(`${asset}: ${path} is sha256 ${sha(bytes)}, its index says ${digest}`);
+  if (!bytes || bytes.length !== size) throw new Error(`${asset}: ${path} is missing or not the size its index says`);
+  const actual = sha(bytes);
+  if (actual !== sha256) throw new Error(`${asset}: ${path} is sha256 ${actual}, its index says ${sha256}`);
 }
 // Each pack whole: its table against its name, each file it stores against its table, nothing else in it.
 const pack = (name: string): Buffer => {
@@ -86,7 +80,7 @@ const pack = (name: string): Buffer => {
 };
 checkPacks(index, (name, at, len) => pack(name).subarray(at, at + len), name => pack(name).length,
   b => createHash('sha256').update(b).digest());
-const known = new Set(['webroot.json', ...(mukBytes ? ['muk.json'] : []), descriptor.path, ...named.map(([path]) => path), ...index.packs.map((p) => `packs/${p.name}`)]);
+const known = new Set(['webroot.json', ...(mukBytes ? ['muk.json'] : []), descriptor.path, ...named.map(({path}) => path), ...index.packs.map((p) => `packs/${p.name}`)]);
 const unnamed = [...members.keys()].filter((name) => !known.has(name));
 if (unnamed.length) throw new Error(`${asset} holds ${unnamed.join(', ')}, which its index does not name`);
 

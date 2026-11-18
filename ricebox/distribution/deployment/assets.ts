@@ -3,7 +3,7 @@
 import {createHash} from 'node:crypto';
 import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
-import {releaseIndexAsset, readReleaseIndex, type About, type Blob} from '../format/manifest.ts';
+import {blobAsset, releaseIndexAsset, readReleaseIndex, type About} from '../format/manifest.ts';
 import {checkPacks} from '../format/pack.ts';
 
 export function distributionAssets(directory: string, {base = 'ricebox', maxAssetBytes = Infinity}: {base?: string; maxAssetBytes?: number} = {}) {
@@ -30,8 +30,8 @@ export function distributionAssets(directory: string, {base = 'ricebox', maxAsse
   const about = JSON.parse(read('webroot.json').toString('utf8')) as About;
   const asset = releaseIndexAsset(about);
   const index = readReleaseIndex(read(asset.path, asset.sha256, asset.size), about);
-  const blob = (b: Blob) => {
-    if (!b || !/^[0-9a-f]{64}$/.test(b.sha256) || !Number.isSafeInteger(b.size) || b.size < 0 || b.path !== `blobs/${b.sha256}.bin`) throw new Error('ricebox: invalid blob descriptor');
+  const blob = (value: unknown) => {
+    const b = blobAsset(value);
     return read(b.path, b.sha256, b.size);
   };
   blob(index.translator);
@@ -40,8 +40,7 @@ export function distributionAssets(directory: string, {base = 'ricebox', maxAsse
   checkPacks(index, (name, at, len) => packs.get(name)!.subarray(at, at + len), name => packs.get(name)!.length, bytes => createHash('sha256').update(bytes).digest());
   // The maker is required for a deployable root. Do not produce a seemingly valid
   // deployment whose first launch fails because muk was omitted.
-  const muk = JSON.parse(read('muk.json').toString('utf8')) as Blob;
-  blob(muk);
+  blob(JSON.parse(read('muk.json').toString('utf8')));
   return result;
 }
 

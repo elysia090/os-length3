@@ -7,15 +7,13 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {openDistribution} from '../../deployment/local.ts';
-import type {Blob} from '../../format/manifest.ts';
+import {blobAsset} from '../../format/manifest.ts';
 
 test('a release root runs its shell through Muk', {timeout: 60_000}, () => {
   const source = process.env.RICEBOX_RELEASE_DIR;
   assert.ok(source, 'Set RICEBOX_RELEASE_DIR to a prepared web root');
   const web = resolve(source);
-  const descriptor: Blob = JSON.parse(readFileSync(join(web, 'muk.json'), 'utf8'));
-  assert.match(descriptor.sha256, /^[a-f0-9]{64}$/);
-  assert.equal(descriptor.path, `blobs/${descriptor.sha256}.bin`);
+  const descriptor = blobAsset(JSON.parse(readFileSync(join(web, 'muk.json'), 'utf8')));
   const muk = join(web, descriptor.path);
   const bytes = readFileSync(muk);
   assert.equal(bytes.length, descriptor.size);
