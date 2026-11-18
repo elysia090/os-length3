@@ -121,6 +121,13 @@ test('build artifact validation uses only the public sods entry and compression 
   assert.equal(allowed('module/ricebox/build/file-store-artifact.ts','../../sods/runtime/linux.ts'),true);
   assert.equal(allowed('module/ricebox/build/file-store-artifact.ts','../../sods/runtime/file-store.ts'),false);
   assert.equal(allowed('module/ricebox/build/prepare.ts','../../sods/runtime/linux.ts'),false);
+  const capture = 'module/ricebox/build/capture-result-artifact.ts';
+  assert.equal(allowed(capture,'../../sods/runtime/linux/admission-wire.ts'),true);
+  for (const entry of ['../../sods/runtime/linux/memory-host.ts', '../runtime/root.ts', 'node:worker_threads']) {
+    assert.equal(allowed(capture,entry),false,entry);
+  }
+  assert.equal(allowed('module/ricebox/runtime/root.ts','../../sods/runtime/linux/admission-wire.ts'),false);
+
   assert.equal(allowed('module/ricebox/build/compress.worker.ts','node:zlib'),true);
   assert.equal(allowed('module/ricebox/build/compress.worker.ts','node:fs'),false);
   assert.deepEqual(violations({'module/ricebox/build/compression-pool.ts':"new Worker(new URL('./compress.worker.ts', import.meta.url))"}),[]);

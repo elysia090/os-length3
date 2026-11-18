@@ -40,11 +40,11 @@ export function standIn(dir: string, version: string) {
 }
 
 /** webroot.ts into `dir` with a stand-in translator (kept in `work`): a wasm module with nothing in it, and a "translation" that is the same. */
-export function makeWebroot(root: string, dir: string, work: string) {
+export function makeWebroot(root: string, dir: string, work: string, extra: readonly string[] = []) {
   const wasm = join(work, 'sods.wasm');
   writeFileSync(wasm, Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
   const sods = join(work, 'sods');
   writeFileSync(sods, `#!${process.execPath}\nrequire('fs').copyFileSync(${JSON.stringify(wasm)}, process.argv.at(-1));\n`);
   chmodSync(sods, 0o755);
-  return spawnSync(process.execPath, [join(os, 'module/ricebox/build/distribution.ts'), root, dir, '--translator', wasm, '--sods', sods, '--hot', '/usr/bin/busybox', '--name', 'why', '--cache', join(work, 'aot-cache')], {encoding: 'utf8'});
+  return spawnSync(process.execPath, [join(os, 'module/ricebox/build/distribution.ts'), root, dir, '--translator', wasm, '--sods', sods, '--hot', '/usr/bin/busybox', '--name', 'why', '--cache', join(work, 'aot-cache'), ...extra], {encoding: 'utf8'});
 }

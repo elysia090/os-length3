@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import {execFile, execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {gzipSync} from 'node:zlib';
+import {gunzipSync, gzipSync} from 'node:zlib';
 import {copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
@@ -17,6 +17,8 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
 import {makeWebroot, standIn} from '../module/ricebox/test/fixtures/distribution.ts';
 import type {Index} from '../module/ricebox/distribution/manifest.ts';
+import {readCapturedResultRelease} from '../module/ricebox/deployment/capture-result.ts';
+import {capturedResultHost} from '../module/sods/runtime/linux/memory-host.ts';
 
 const os = fileURLToPath(new URL('..', import.meta.url));
 const sha = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex');
@@ -35,6 +37,51 @@ before(() => {
   make(rootFile, out);
 });
 after(() => rmSync(work, {recursive: true, force: true}));
+
+const captureArtifact = process.env.SODS_CAPTURE_RESULT_WASM;
+test('explicit capture builder emits only the pinned private artifact and ordinary rebuild removes it', {
+  skip: captureArtifact ? false : 'Requires the separately built private capture artifact',
+}, async () => {
+  const wasm = readFileSync(captureArtifact!);
+  const approved = process.env.SODS_CAPTURE_RESULT_SHA256;
+  assert.equal(sha(wasm), approved, 'the test approves the prior CI build, not the package result');
+  const flags = ['--capture-result', captureArtifact!, '--capture-result-sha256', approved!];
+  const captureOut = join(work, 'capture-builder');
+  const badOut = join(work, 'failed-capture-builder');
+  const admitBad = (args: readonly string[], re: RegExp) => {
+    const r = makeWebroot(join(work, 'must-not-read'), badOut, work, args);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, re);
+    assert.throws(() => statSync(badOut), /ENOENT/);
+  };
+  admitBad(flags.slice(0, 2), /capture-result-sha256/);
+  admitBad([...flags, ...flags.slice(0, 2)], /Duplicate --capture-result/);
+  admitBad([...flags.slice(0, -1), '0'.repeat(64)], /capture result artifact digest mismatch/i);
+  const ordinaryWasm = readFileSync(join(work, 'sods.wasm')); // The fixture translator, not a captured Core.
+  admitBad(['--capture-result', join(work, 'sods.wasm'), '--capture-result-sha256', sha(ordinaryWasm)], /artifact identity/);
+
+  const made = makeWebroot(rootFile, captureOut, work, flags);
+  assert.equal(made.status, 0, made.stderr);
+  const about = JSON.parse(readFileSync(join(captureOut, 'webroot.json'), 'utf8'));
+  const indexBytes = readFileSync(join(captureOut, about.index.path));
+  const index: Index = JSON.parse(indexBytes.toString('utf8'));
+  assert.equal(index.captureResult?.kind, 'sods-linux-capture-result-v3');
+  assert.equal(index.captureResult?.wasm, approved);
+  const capturePath = index.captureResult!.path;
+  assert.deepEqual(gunzipSync(readFileSync(join(captureOut, capturePath))), wasm);
+  const selected = await readCapturedResultRelease({sha256: sha(indexBytes), size: indexBytes.length},
+    indexBytes, async path => readFileSync(join(captureOut, path)));
+  assert.equal(selected.pin.sha256, approved);
+  assert.deepEqual(selected.bytes, new Uint8Array(wasm));
+  if (process.platform === 'linux' && process.arch === 'x64' && [22, 24].includes(Number(process.versions.node.split('.')[0]))) {
+    const privateHost = await capturedResultHost(selected.bytes, selected.pin, 1, 4);
+    assert.throws(() => privateHost.takeOutput(), /Linux memory admission failed: -9/, 'the packaged pin installs no receiver or Worker');
+  }
+
+  make(rootFile, captureOut);
+  assert.throws(() => statSync(join(captureOut, capturePath)), /ENOENT/);
+  assert.deepEqual(files(captureOut), files(out));
+});
 
 test('the web root is the root: every path, type, mode, link target and sha256', () => {
   const r = node([join(os, 'module/ricebox/verification/distribution.ts'), rootFile, out, '--manifests', join(work, 'm')]);
@@ -190,7 +237,7 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     cpSync(out, withCapture, {recursive: true});
     const aboutCapture = JSON.parse(readFileSync(join(withCapture, 'webroot.json'), 'utf8'));
     const indexCapture = JSON.parse(readFileSync(join(withCapture, aboutCapture.index.path), 'utf8'));
-    const captureWasm = Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
+    const captureWasm = captureArtifact ? readFileSync(captureArtifact) : Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
     const storedCapture = gzipSync(captureWasm), storedSha = sha(storedCapture);
     const capture = {kind: 'sods-linux-capture-result-v3', host: 'linux-x64-node22-24', wasm: sha(captureWasm),
       bytes: captureWasm.byteLength, size: storedCapture.byteLength, sha256: storedSha, path: `blobs/${storedSha}.bin`};

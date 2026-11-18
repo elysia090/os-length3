@@ -320,8 +320,13 @@ in pins.rs. It and the local distribution asset collector verify a declared
 capture member's exact stored and expanded identities and bounds before
 including it. The collector's same-source metadata check is only integrity,
 not authorization to instantiate. A missing or incompatible selected member
-fails collection; omission remains an ordinary archive. No release job or
-default caller selects the private result fixture.
+fails collection; omission remains an ordinary archive. The distribution
+builder can include the exact code only by explicit artifact path and trusted
+digest, checked before reading the root or writing the archive. It preserves
+the private Wasm marker and uses the normal content-addressed gzip writer;
+an ordinary rebuild drops the optional blob and restores the ordinary index.
+Offline inclusion is not a publication or a host selection. No release job
+or default caller selects the private result fixture.
 
 The candidate's Rust selector is a one-way admission latch, not output
 initialization. A wrong selection does not unlock any file or execution

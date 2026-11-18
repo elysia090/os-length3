@@ -3,6 +3,7 @@
 // node module/ricebox/build/distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS]
 //   [--hot PATH,…] [--name NAME] [--stage DIR] [--cache DIR]
 //   [--file-store FILE_STORE.wasm] [--file-store-limit BYTES]
+//   [--capture-result CORE.wasm --capture-result-sha256 DIGEST]
 // The root's filename binds its version and digest. Each pack is checked by its
 // digest; files are fetched only when read. Product-specific hot programs and
 // compatibility names are supplied by the caller.
@@ -16,6 +17,7 @@ import {packOf} from '../distribution/pack.ts';
 import {canonicalExecutableSource} from '../distribution/executable-source.ts';
 import {translateWhole} from './aot-cache.ts';
 import {fileStoreOptions, validateFileStore, fileStoreDescriptor} from './file-store-artifact.ts';
+import {CAPTURE_RESULT_ARTIFACT_LIMIT, captureResultDescriptor, captureResultOptions, validateCaptureResultArtifact} from './capture-result-artifact.ts';
 import {readTarball} from '../host/node/tar.ts';
 import {sha256} from '../host/node/hash.ts';
 import type {Index} from '../distribution/manifest.ts';
@@ -24,9 +26,16 @@ const here = fileURLToPath(new URL('../../..', import.meta.url));
 const repo = here;
 
 const args = process.argv.slice(2);
-const coreOptions = fileStoreOptions(args);
+const coreOptions = fileStoreOptions(args), captureOptions = captureResultOptions(args);
 // Validate explicit input before reading the root or writing release artifacts.
 const selectedCore = coreOptions ? await validateFileStore(readFileSync(coreOptions.path), coreOptions.maxFileBytes) : null;
+const selectedCapture = captureOptions ? (() => {
+  const stat = statSync(captureOptions.path);
+  if (!stat.isFile() || stat.size < 8 || stat.size > CAPTURE_RESULT_ARTIFACT_LIMIT) {
+    throw new Error('Invalid capture result artifact size');
+  }
+  return validateCaptureResultArtifact(readFileSync(captureOptions.path), captureOptions.sha256);
+})() : undefined;
 /** The value given after `name` (taken out of the arguments), else `d`. */
 function flag(name: string, d: string): string;
 function flag(name: string): string | null;
@@ -45,7 +54,7 @@ const distributionName = flag('--name');
 const stage = flag('--stage');
 const aotCache = flag('--cache', join(repo, 'target/ricebox-aot'));
 const [rootFile, out] = args;
-if (!rootFile || !out) { console.error('usage: distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR] [--file-store FILE_STORE.wasm] [--file-store-limit BYTES]'); process.exit(2); }
+if (!rootFile || !out) { console.error('usage: distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR] [--file-store FILE_STORE.wasm] [--file-store-limit BYTES] [--capture-result CORE.wasm --capture-result-sha256 DIGEST]'); process.exit(2); }
 
 // A root is a few hundred megabytes: past a few gigabytes held, something is wrong, and it stops before the machine does.
 setInterval(() => { const rss = process.memoryUsage().rss; if (rss > 3e9) { console.error(`distribution.ts: holding ${(rss / 1e9).toFixed(1)} GB; stopped`); process.exit(1); } }, 500).unref();
@@ -148,6 +157,7 @@ const blob = (bytes: Uint8Array) => {
 };
 
 const fileStore = selectedCore ? fileStoreDescriptor(selectedCore, blob) : undefined;
+const captureResult = selectedCapture ? captureResultDescriptor(selectedCapture, blob) : undefined;
 
 const crate = (file: string) => /^version = "(.*)"/m.exec(readFileSync(file, 'utf8'))?.[1] ?? '';
 /** A wasm module without its custom sections (names, debug info, producers): what runs, and nothing a browser fetches only to skip. */
@@ -190,7 +200,7 @@ const index: Index = {
   packs: packList,
   dirs: entries.filter((e) => e.type === 'dir').map((e) => ({path: e.path, mode: e.mode})),
   links: entries.filter((e) => e.type === 'link').map((e) => ({path: e.path, target: e.target ?? ''})),
-  files, translator, translations, ...(fileStore ? {fileStore} : {}),
+  files, translator, translations, ...(fileStore ? {fileStore} : {}), ...(captureResult ? {captureResult} : {}),
 };
 const json = Buffer.from(JSON.stringify(index));
 const indexSha = sha256(json);
@@ -206,7 +216,7 @@ const about = {
 writeFileSync(join(out, 'webroot.json'), `${JSON.stringify(about, null, 2)}\n`);
 
 // Artifacts a previous distribution left here, and this one does not name, go (only names this script makes).
-const keep = new Set([indexPath, 'webroot.json', ...packList.map((p) => `packs/${p.name}`), translator.path, ...(fileStore ? [fileStore.path] : []), ...translations.flatMap((t) => [t.elf.path, t.wasm.path])]);
+const keep = new Set([indexPath, 'webroot.json', ...packList.map((p) => `packs/${p.name}`), translator.path, ...(fileStore ? [fileStore.path] : []), ...(captureResult ? [captureResult.path] : []), ...translations.flatMap((t) => [t.elf.path, t.wasm.path])]);
 for (const f of readdirSync(out)) if (/^index-[0-9a-f]{64}\.json$/.test(f) && !keep.has(f)) rmSync(join(out, f));
 for (const [dir, re] of [['packs', /^[0-9a-f]{64}\.pack$/], ['blobs', /^[0-9a-f]{64}\.bin$/]] as const) {
   for (const f of readdirSync(join(out, dir))) if (re.test(f) && !keep.has(`${dir}/${f}`)) rmSync(join(out, dir, f));

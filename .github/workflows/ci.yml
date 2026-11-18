@@ -372,8 +372,10 @@ jobs:
           SODS_LINUX_WASM: module/sods/linux/target/wasm32-unknown-unknown/debug/sods_linux.wasm
         run: |
           CARGO_TARGET_DIR=module/sods/linux/target/capture-result-v1 cargo build --locked --release --target wasm32-unknown-unknown --features capture-result-v1 --manifest-path module/sods/linux/Cargo.toml
-          SODS_CAPTURE_RESULT_SHA256="$(sha256sum "$SODS_CAPTURE_RESULT_WASM" | cut -d' ' -f1)" SODS_CAPTURE_RESULT_BYTES="$(wc -c < "$SODS_CAPTURE_RESULT_WASM")" node --test --test-name-pattern='non-probe capture result|pinned captured result' module/sods/test/runtime/managed-sendfile-abi.test.ts module/ricebox/runtime/test/managed-root-current.test.ts
+          export SODS_CAPTURE_RESULT_SHA256="$(sha256sum "$SODS_CAPTURE_RESULT_WASM" | cut -d' ' -f1)" SODS_CAPTURE_RESULT_BYTES="$(wc -c < "$SODS_CAPTURE_RESULT_WASM")"
+          node --test --test-name-pattern='non-probe capture result|pinned captured result' module/sods/test/runtime/managed-sendfile-abi.test.ts module/ricebox/runtime/test/managed-root-current.test.ts
           node --test module/ricebox/deployment/test/capture-result.test.ts
+          node --test --test-name-pattern='explicit capture builder|a Node-only build takes' scripts/webroot.test.ts
       # What stands beside sods and is checked with what it builds: ricebox's layers mounted in sods' tree (the
       # translator's wasm decodes and digests them), and muk's C parser beside its model over every config.json.
       - name: Layers, and muk's parser beside its model
