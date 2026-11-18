@@ -36,12 +36,21 @@ destination owner must finish all other admission checks before requesting it.
 
 ## Coarse retention and finite publication
 
-The disconnected Rust destination owns Files by value. Its pin registry
-retains just the prefix witness, not another reference to the OFD or a pointer
-into storage. The queue keeps the original backing alive by retaining the
-whole Files owner. It does not reclaim an individual backing, or promise access
-after Files/Core destruction. A Rust slice borrows the owner and precludes
-concurrent discard; there is no host/ABI view, drain or separate receiver here.
+One disconnected Rust root owns Files by value and retains the original
+backing for all its finite destination lanes. A queue's pin retains just the
+prefix witness, not another OFD reference or a pointer into storage. The root
+does not reclaim individual backing or promise access after Files/Core
+destruction. A Rust slice borrows the owner and precludes concurrent discard;
+there is no host/ABI view or drain here.
+
+Each lane has separately minted producer and consumer tickets. A scoped
+producer borrows only the matching root and destination for admission; a
+consumer can take or discard only its own lane's accepted data. Source table
+retirement and closure of admission do not end consumer access. A queue
+ticket binds both its Files and lane incarnation: equal local pin/entry slots
+in two queues are not interchangeable. Lanes append within a fixed cap, with
+no replacement/reuse or independent teardown in this slice. Dropping a ticket
+is not host stopped-use evidence and does not reclaim a lane.
 
 The destination reserves exact nonzero Q payload bytes and one K entry, and
 prepares one R pin independently. Q includes reserved and accepted bytes until
@@ -76,6 +85,10 @@ execution may still own a cleanup obligation. This check neither changes that
 obligation nor proves that the continuation was not cancelled. Cancellation
 before first publication must not create output; after acceptance it must not
 rewind input or erase the queue's ownership of accepted bytes.
+The existing register first-effect gate now uses these two checks before
+Domain start. The sequence belongs to the exact pending operation; an old
+admission watermark alone cannot authorize any effect. This does not connect
+the queue to that register operation or to any guest output path.
 
 ## Synchronous owned receiver
 

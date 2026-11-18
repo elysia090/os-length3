@@ -12,6 +12,7 @@ pub(super) enum Error {
     Closed,
     BadPin,
     BadReservation,
+    BadDestination,
     Length,
     ReceiverNotEmpty,
     ReceiverCapacity,
@@ -34,8 +35,13 @@ struct Key {
     generation: u64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Ticket {
+struct DestinationId {
     owner: u64,
+    lane: usize,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ticket {
+    destination: DestinationId,
     key: Key,
 }
 #[derive(Debug)]
@@ -173,13 +179,10 @@ impl Head<'_> {
     }
 }
 
-/// Coarse ownership: Files is moved in and cannot be taken back or replaced.
-/// No pin owns an OFD or a pointer. A live borrowed slice prevents concurrent
-/// discard or owner destruction. Leaked tickets retain finite credits, not an
-/// extra host-visible lifetime. The entire destination must stay reachable for
-/// as long as accepted data is needed.
-pub(super) struct Owner {
-    files: Files,
+// No lane or ticket owns backing by itself. Root retains Files and keeps
+// queue records resolvable after an individual producer or OFD retires.
+struct Queue {
+    id: DestinationId,
     pins: Arena<Range>,
     entries: Arena<Entry>,
     head: Option<usize>,
@@ -188,17 +191,12 @@ pub(super) struct Owner {
     used: usize,
     closed: bool,
 }
-impl Owner {
-    pub(super) fn new(files: Files, limits: Limits) -> Result<Self, (Error, Files)> {
-        let storage = (|| Ok((Arena::new(limits.pins)?, Arena::new(limits.entries)?)))();
-        let (pins, entries) = match storage {
-            Ok(storage) => storage,
-            Err(error) => return Err((error, files)),
-        };
+impl Queue {
+    fn new(id: DestinationId, limits: Limits) -> Result<Self, Error> {
         Ok(Self {
-            files,
-            pins,
-            entries,
+            id,
+            pins: Arena::new(limits.pins)?,
+            entries: Arena::new(limits.entries)?,
             head: None,
             tail: None,
             byte_limit: limits.bytes,
@@ -206,27 +204,16 @@ impl Owner {
             closed: false,
         })
     }
-    pub(super) fn begin_resident(
+    fn pin_prefix(
         &mut self,
-        table: &Table,
-        fd: u32,
-        requested: u64,
-    ) -> Result<ReadHold, Error> {
-        Ok(self.files.reserve_read(table, fd, requested)?)
-    }
-    pub(super) fn abort_source(&mut self, source: ReadHold) -> Result<(), (Error, ReadHold)> {
-        if let Err(error) = self.files.check_read_hold(&source) {
-            return Err((error.into(), source));
-        }
-        self.files.abort_read(source);
-        Ok(())
-    }
-    pub(super) fn pin_prefix(
-        &mut self,
+        files: &mut Files,
         source: &ReadHold,
         length: NonZeroUsize,
     ) -> Result<Pin, Error> {
-        let prefix = self.files.read_prefix(source, length)?;
+        if self.closed {
+            return Err(Error::Closed);
+        }
+        let prefix = files.read_prefix(source, length)?;
         let key = self
             .pins
             .add(Range {
@@ -235,19 +222,18 @@ impl Owner {
             })
             .ok_or(Error::Capacity)?;
         Ok(Pin(Ticket {
-            owner: self.files.owner(),
+            destination: self.id,
             key,
         }))
     }
-    pub(super) fn release(&mut self, pin: Pin) -> Result<(), (Error, Pin)> {
-        if pin.0.owner != self.files.owner() || !self.pins.get(pin.0.key).is_some_and(|p| !p.queued)
-        {
+    fn release(&mut self, pin: Pin) -> Result<(), (Error, Pin)> {
+        if pin.0.destination != self.id || !self.pins.get(pin.0.key).is_some_and(|p| !p.queued) {
             return Err((Error::BadPin, pin));
         }
         self.pins.remove(pin.0.key.index);
         Ok(())
     }
-    pub(super) fn reserve(&mut self, length: NonZeroUsize) -> Result<Reservation, Error> {
+    fn reserve(&mut self, length: NonZeroUsize) -> Result<Reservation, Error> {
         if self.closed {
             return Err(Error::Closed);
         }
@@ -261,19 +247,19 @@ impl Owner {
             .ok_or(Error::Full)?;
         self.used = used;
         Ok(Reservation(Ticket {
-            owner: self.files.owner(),
+            destination: self.id,
             key,
         }))
     }
     fn reserved(&self, r: &Reservation) -> Result<NonZeroUsize, Error> {
-        if r.0.owner == self.files.owner() {
+        if r.0.destination == self.id {
             if let Some(Entry::Reserved(length)) = self.entries.get(r.0.key) {
                 return Ok(*length);
             }
         }
         Err(Error::BadReservation)
     }
-    pub(super) fn cancel(&mut self, reservation: Reservation) -> Result<(), (Error, Reservation)> {
+    fn cancel(&mut self, reservation: Reservation) -> Result<(), (Error, Reservation)> {
         let length = match self.reserved(&reservation) {
             Ok(length) => length,
             Err(error) => return Err((error, reservation)),
@@ -290,7 +276,7 @@ impl Owner {
             return Err(Error::Closed);
         }
         let length = self.reserved(reservation)?;
-        if pin.0.owner != self.files.owner() {
+        if pin.0.destination != self.id {
             return Err(Error::BadPin);
         }
         let range = self
@@ -305,8 +291,9 @@ impl Owner {
     }
     /// An outer coordinator must exclude cancelled/lost guest calls before this
     /// transition. All errors return the source and both tickets unchanged.
-    pub(super) fn publish(
+    fn publish(
         &mut self,
+        files: &mut Files,
         reservation: Reservation,
         pin: Pin,
         source: ReadHold,
@@ -323,7 +310,7 @@ impl Owner {
             }
         };
         let range = self.pins.live_mut(pin.0.key.index);
-        let commit = match self.files.prepare_prefix_commit(source, &range.prefix) {
+        let commit = match files.prepare_prefix_commit(source, &range.prefix) {
             Ok(commit) => commit,
             Err((error, source)) => {
                 return Err(Rejected {
@@ -369,11 +356,11 @@ impl Owner {
             prefix: &range.prefix,
         })
     }
-    pub(super) fn front_bytes(&mut self) -> Result<Option<&[u8]>, Error> {
+    fn front_bytes<'a>(&self, files: &'a mut Files) -> Result<Option<&'a [u8]>, Error> {
         let Some(head) = Self::head(self.head, &self.entries, &self.pins) else {
             return Ok(None);
         };
-        Ok(Some(self.files.prefix_bytes(head.prefix)?))
+        Ok(Some(files.prefix_bytes(head.prefix)?))
     }
     fn remove_head(&mut self, removal: Removal) {
         self.used = removal.remaining;
@@ -388,8 +375,9 @@ impl Owner {
     /// receiver must already have room; no allocation or zeroing pass here.
     /// Failure holds both sides unchanged. Empty is not EOF or a flush receipt.
     /// No view escapes and no external delivery or stopped-access is implied.
-    pub(super) fn take_front_into(
+    fn take_front_into(
         &mut self,
+        files: &mut Files,
         receiver: &mut Vec<u8>,
         logical_limit: usize,
     ) -> Result<Option<NonZeroUsize>, Error> {
@@ -404,13 +392,13 @@ impl Owner {
             return Err(Error::ReceiverCapacity);
         }
         let removal = head.removal(self.used);
-        let bytes = self.files.prefix_bytes(head.prefix)?;
+        let bytes = files.prefix_bytes(head.prefix)?;
         receiver.extend_from_slice(bytes);
         self.remove_head(removal);
         Ok(Some(length))
     }
     /// Internal discard, not consumer delivery or stopped external access.
-    pub(super) fn discard_front(&mut self) -> bool {
+    fn discard_front(&mut self) -> bool {
         let Some(head) = Self::head(self.head, &self.entries, &self.pins) else {
             return false;
         };
@@ -418,8 +406,129 @@ impl Owner {
         true
     }
     /// Admission closure does not erase accepted data or cancel pending tickets.
-    pub(super) fn close_admission(&mut self) {
+    fn close_admission(&mut self) {
         self.closed = true;
+    }
+}
+
+/// Authority for a single destination's admission, not source ownership or
+/// permission to consume. Dropping this ticket does not mean producer stop.
+#[derive(Debug)]
+pub(super) struct Producer(DestinationId);
+/// Authority to take or discard exactly one lane's accepted work. Independent
+/// of any producer's current call/table/Execution. Not a stopped host receipt.
+#[derive(Debug)]
+pub(super) struct Consumer(DestinationId);
+
+/// One coarse Files owner shared by bounded independent queues. Lanes append
+/// without replacement, so the index identifies a unique lifetime in this
+/// root. No queue or consumer can take Files out or replace its backing.
+pub(super) struct Root {
+    files: Files,
+    lanes: Vec<Queue>,
+    limit: usize,
+}
+impl Root {
+    pub(super) fn new(files: Files, limit: usize) -> Result<Self, (Error, Files)> {
+        let mut lanes = Vec::new();
+        if lanes.try_reserve_exact(limit).is_err() {
+            return Err((Error::Capacity, files));
+        }
+        Ok(Self {
+            files,
+            lanes,
+            limit,
+        })
+    }
+    pub(super) fn destination(&mut self, limits: Limits) -> Result<(Producer, Consumer), Error> {
+        let lane = self.lanes.len();
+        if lane == self.limit {
+            return Err(Error::Capacity);
+        }
+        let id = DestinationId {
+            owner: self.files.owner(),
+            lane,
+        };
+        let queue = Queue::new(id, limits)?;
+        // Root reserved this index's storage before taking Files. Failed
+        // queue construction changes no lane, capability or source ownership.
+        self.lanes.push(queue);
+        Ok((Producer(id), Consumer(id)))
+    }
+    fn lane(&mut self, id: DestinationId) -> Result<(&mut Files, &mut Queue), Error> {
+        if id.owner != self.files.owner() {
+            return Err(Error::BadDestination);
+        }
+        let queue = self.lanes.get_mut(id.lane).ok_or(Error::BadDestination)?;
+        Ok((&mut self.files, queue))
+    }
+    pub(super) fn writer<'a>(&'a mut self, producer: &'a Producer) -> Result<Writer<'a>, Error> {
+        let (files, queue) = self.lane(producer.0)?;
+        Ok(Writer { files, queue })
+    }
+    pub(super) fn reader<'a>(&'a mut self, consumer: &'a Consumer) -> Result<Reader<'a>, Error> {
+        let (files, queue) = self.lane(consumer.0)?;
+        Ok(Reader { files, queue })
+    }
+}
+
+/// Short synchronous loan of matching storage and destination. No writer
+/// method grants consumer authority; retaining the producer is not needed
+/// once accepted records have moved to the lane.
+pub(super) struct Writer<'a> {
+    files: &'a mut Files,
+    queue: &'a mut Queue,
+}
+impl Writer<'_> {
+    pub(super) fn pin_prefix(
+        &mut self,
+        source: &ReadHold,
+        length: NonZeroUsize,
+    ) -> Result<Pin, Error> {
+        self.queue.pin_prefix(self.files, source, length)
+    }
+    pub(super) fn reserve(&mut self, length: NonZeroUsize) -> Result<Reservation, Error> {
+        self.queue.reserve(length)
+    }
+    pub(super) fn release(&mut self, pin: Pin) -> Result<(), (Error, Pin)> {
+        self.queue.release(pin)
+    }
+    pub(super) fn cancel(&mut self, reservation: Reservation) -> Result<(), (Error, Reservation)> {
+        self.queue.cancel(reservation)
+    }
+    pub(super) fn publish(
+        &mut self,
+        reservation: Reservation,
+        pin: Pin,
+        source: ReadHold,
+    ) -> Result<NonZeroUsize, Rejected> {
+        self.queue.publish(self.files, reservation, pin, source)
+    }
+    pub(super) fn close_admission(&mut self) {
+        self.queue.close_admission();
+    }
+}
+
+/// Short synchronous loan. One live peek view prevents another operation on
+/// this Root. No raw view crosses an ABI, callback or await.
+pub(super) struct Reader<'a> {
+    files: &'a mut Files,
+    queue: &'a mut Queue,
+}
+impl Reader<'_> {
+    pub(super) fn front_bytes(&mut self) -> Result<Option<&[u8]>, Error> {
+        self.queue.front_bytes(self.files)
+    }
+    pub(super) fn take_front_into(
+        &mut self,
+        receiver: &mut Vec<u8>,
+        logical_limit: usize,
+    ) -> Result<Option<NonZeroUsize>, Error> {
+        self.queue
+            .take_front_into(self.files, receiver, logical_limit)
+    }
+    pub(super) fn discard_front(&mut self) -> bool {
+        self.queue.discard_front()
     }
 }
 
@@ -428,6 +537,74 @@ mod tests {
     use super::*;
     use crate::descriptor::Limits as FilesLimits;
     use crate::inode::{Creation, Inode, Tree};
+
+    // Legacy one-lane counterexamples exercise the same private Queue. The
+    // multi-lane cases below use Root's actual Writer/Reader separation.
+    struct Owner {
+        files: Files,
+        queue: Queue,
+    }
+    impl std::ops::Deref for Owner {
+        type Target = Queue;
+        fn deref(&self) -> &Queue {
+            &self.queue
+        }
+    }
+    impl std::ops::DerefMut for Owner {
+        fn deref_mut(&mut self) -> &mut Queue {
+            &mut self.queue
+        }
+    }
+    impl Owner {
+        fn new(files: Files, limits: Limits) -> Result<Self, (Error, Files)> {
+            let id = DestinationId {
+                owner: files.owner(),
+                lane: 0,
+            };
+            match Queue::new(id, limits) {
+                Ok(queue) => Ok(Self { files, queue }),
+                Err(error) => Err((error, files)),
+            }
+        }
+        fn begin_resident(
+            &mut self,
+            table: &Table,
+            fd: u32,
+            requested: u64,
+        ) -> Result<ReadHold, Error> {
+            Ok(self.files.reserve_read(table, fd, requested)?)
+        }
+        fn abort_source(&mut self, source: ReadHold) -> Result<(), (Error, ReadHold)> {
+            if let Err(error) = self.files.check_read_hold(&source) {
+                return Err((error.into(), source));
+            }
+            self.files.abort_read(source);
+            Ok(())
+        }
+        fn pin_prefix(&mut self, source: &ReadHold, length: NonZeroUsize) -> Result<Pin, Error> {
+            self.queue.pin_prefix(&mut self.files, source, length)
+        }
+        fn publish(
+            &mut self,
+            reservation: Reservation,
+            pin: Pin,
+            source: ReadHold,
+        ) -> Result<NonZeroUsize, Rejected> {
+            self.queue
+                .publish(&mut self.files, reservation, pin, source)
+        }
+        fn front_bytes(&mut self) -> Result<Option<&[u8]>, Error> {
+            self.queue.front_bytes(&mut self.files)
+        }
+        fn take_front_into(
+            &mut self,
+            receiver: &mut Vec<u8>,
+            logical_limit: usize,
+        ) -> Result<Option<NonZeroUsize>, Error> {
+            self.queue
+                .take_front_into(&mut self.files, receiver, logical_limit)
+        }
+    }
 
     fn n(length: usize) -> NonZeroUsize {
         NonZeroUsize::new(length).unwrap()
@@ -871,6 +1048,131 @@ mod tests {
                 assert_eq!(receiver, b"bo");
             }
         }
+    }
+
+    #[test]
+    fn two_destinations_share_source_storage_but_not_tickets_credits_or_consumer() {
+        let (files, _, _, table, fd) = files(502);
+        let mut root = Root::new(files, 2).ok().unwrap();
+        let limits = || Limits {
+            pins: 1,
+            entries: 1,
+            bytes: 2,
+        };
+        let (a, read_a) = root.destination(limits()).unwrap();
+        let (b, read_b) = root.destination(limits()).unwrap();
+        assert_eq!(root.destination(limits()).unwrap_err(), Error::Capacity);
+
+        let source = root.files.reserve_read(&table, fd, 2).unwrap();
+        let mut lane = root.writer(&a).unwrap();
+        let ra = lane.reserve(n(2)).unwrap();
+        let pa = lane.pin_prefix(&source, n(2)).unwrap();
+        assert_eq!(lane.reserve(n(1)).unwrap_err(), Error::Full);
+        let mut lane = root.writer(&b).unwrap();
+        let rb = lane.reserve(n(2)).unwrap();
+        assert_eq!(ra.0.key, rb.0.key, "equal local slots in two queues");
+        let rejected = lane.publish(ra, pa, source).unwrap_err();
+        assert_eq!(rejected.error, Error::BadReservation);
+        let Rejected {
+            reservation: ra,
+            pin: pa,
+            source,
+            ..
+        } = rejected;
+        let rejected = lane.publish(rb, pa, source).unwrap_err();
+        assert_eq!(rejected.error, Error::BadPin);
+        let Rejected {
+            reservation: rb,
+            pin: pa,
+            source,
+            ..
+        } = rejected;
+        assert_eq!(root.files.offset(&table, fd), Ok((0, 0)));
+        assert_eq!(root.reader(&read_a).unwrap().front_bytes(), Ok(None));
+        assert_eq!(root.reader(&read_b).unwrap().front_bytes(), Ok(None));
+
+        let mut lane = root.writer(&a).unwrap();
+        lane.publish(ra, pa, source).unwrap();
+        lane.close_admission();
+        assert_eq!(lane.reserve(n(1)).unwrap_err(), Error::Closed);
+        let source = root.files.reserve_read(&table, fd, 2).unwrap();
+        let mut lane = root.writer(&b).unwrap();
+        let pb = lane.pin_prefix(&source, n(2)).unwrap();
+        lane.publish(rb, pb, source).unwrap();
+        assert_eq!(root.files.offset(&table, fd), Ok((4, 2)));
+        root.files.let_go(table).unwrap();
+
+        let mut result_b = Vec::with_capacity(2);
+        assert_eq!(
+            root.reader(&read_b)
+                .unwrap()
+                .take_front_into(&mut result_b, 2),
+            Ok(Some(n(2)))
+        );
+        assert_eq!(
+            root.reader(&read_a).unwrap().front_bytes(),
+            Ok(Some(&b"bo"[..]))
+        );
+        let b_credit = root.writer(&b).unwrap().reserve(n(2)).unwrap();
+        root.writer(&b).unwrap().cancel(b_credit).unwrap();
+        let mut result_a = Vec::with_capacity(2);
+        assert_eq!(
+            root.reader(&read_a)
+                .unwrap()
+                .take_front_into(&mut result_a, 2),
+            Ok(Some(n(2)))
+        );
+        assert!(!root.reader(&read_a).unwrap().discard_front());
+        drop(root);
+        assert_eq!(result_a, b"bo");
+        assert_eq!(result_b, b"dy");
+    }
+
+    #[test]
+    fn failed_lane_allocation_does_not_spend_an_incarnation_and_foreign_root_rejects_access() {
+        let (a_files, _, _, a_table, a_fd) = files(502);
+        let Err((error, mut a_files)) = Root::new(a_files, usize::MAX) else {
+            panic!("oversized lane arena must return Files")
+        };
+        assert_eq!(error, Error::Capacity);
+        let hold = a_files.reserve_read(&a_table, a_fd, 1).unwrap();
+        a_files.abort_read(hold);
+        let mut a = Root::new(a_files, 1).ok().unwrap();
+        let (b_files, _, _, b_table, b_fd) = files(504);
+        let mut b = Root::new(b_files, 1).ok().unwrap();
+        assert_eq!(
+            a.destination(Limits {
+                pins: 1,
+                entries: usize::MAX,
+                bytes: 1
+            })
+            .unwrap_err(),
+            Error::Capacity
+        );
+        assert!(a.lanes.is_empty());
+        let limits = || Limits {
+            pins: 1,
+            entries: 1,
+            bytes: 1,
+        };
+        let (ap, ac) = a.destination(limits()).unwrap();
+        let (bp, bc) = b.destination(limits()).unwrap();
+        assert_eq!(ap.0.lane, bp.0.lane);
+        assert_eq!(a.writer(&bp).err().unwrap(), Error::BadDestination);
+        assert_eq!(b.reader(&ac).err().unwrap(), Error::BadDestination);
+        let foreign = b.files.reserve_read(&b_table, b_fd, 1).unwrap();
+        assert_eq!(
+            a.writer(&ap)
+                .unwrap()
+                .pin_prefix(&foreign, n(1))
+                .unwrap_err(),
+            Error::Source(FilesError::BadHandle)
+        );
+        b.files.abort_read(foreign);
+        assert_eq!(a.reader(&ac).unwrap().front_bytes(), Ok(None));
+        assert_eq!(b.reader(&bc).unwrap().front_bytes(), Ok(None));
+        a.files.let_go(a_table).unwrap();
+        b.files.let_go(b_table).unwrap();
     }
 
     #[test]
