@@ -1,7 +1,6 @@
 # Read-only openat caller slice
 
-The original stage below is preserved; the later open(2) normalization section
-extends the same owner without changing its readonly proof domain.
+This profile handles read-only `openat(2)` and normalized `open(2)` through the same owner.
 
 ## Purpose and proof domain
 
@@ -38,7 +37,7 @@ ordinary process-memory compatibility.
 ## Admitted syscall subset
 
 Add x86-64 openat (257) and close (3) beside the existing read, host-stream write
-and exit route. This does not add open(2), O_PATH, create/truncate/write access,
+and exit route. The profile does not support O_PATH, create/truncate/write access,
 mutable status flags, mmap, signals or multiple guest runners.
 
 Open flags are decoded as the ABI's low 32-bit int. Admit read-only access with
@@ -47,9 +46,9 @@ O_LARGEFILE bit are admitted no-ops for these regular/directory kinds. Other
 flags remain an explicitly unsupported managed profile, not a fabricated Linux
 errno or a silent downgrade. CLOEXEC belongs to the new slot.
 
-The managed CLI's existing three stdio slots currently exhaust its limit. Give
-this explicit finite profile 64 slots/descriptions/FD positions, two FsContext
-records and 71 mount holds. Sparse records allocate as needed; these logical
+The finite profile allows 64 slots, descriptions and FD positions, two
+FsContext records, and 71 mount holds. The three standard descriptors count
+toward those limits. Sparse records allocate as needed; these logical
 limits are not exact heap ceilings. The 71-hold budget includes the bootstrap
 root ticket, live Fs root/cwd, executable, up to 64 independently opened file
 positions, the temporary copied Fs root/cwd and a captured dirfd position. Per-table FD exhaustion is distinguished
@@ -185,7 +184,7 @@ Its new TS code must be physical transport only. Default caller migration and
 removal of that default TS authority remain explicit later gates.
 
 
-## Local work and instruction checkpoint
+## Fixture workload and measurement scope
 
 The actual quiet ELF probe records **27 guest requests**: nine openat (one NULL
 rejected before capture), ten read, seven close and one exit. For its managed

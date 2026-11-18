@@ -20,9 +20,10 @@ arbitrary Wasm provenance. The current managed caller remains static/non-TTY and
 is not an ordinary utility, shell, muk box, full VM or terminal compatibility
 claim. The low-address Worker FS subround is covered by
 [TLS-CALLER.md](TLS-CALLER.md); the single-task218/231 contract is covered by
-[TASK-CALLER.md](TASK-CALLER.md). Shared guest mm and accepted physical sendfile remain
-separate implementation gates; [SENDFILE-OWNER.md](SENDFILE-OWNER.md) documents
-the negative-capability protocol and segregated synthetic ABI probes.
+[TASK-CALLER.md](TASK-CALLER.md). Shared guest address spaces are outside this
+profile. Ordinary stdio does not accept a physical sendfile destination; the
+explicit owned-stdout profile and its different capability contract are described
+in [Output profiles](OUTPUT-PROFILES.md).
 
 ## Input and ownership
 

@@ -1,11 +1,11 @@
-# Canonical-source transfer protocol, physical capability still absent
+# Sendfile ownership and completion
 
-`src/sendfile.rs` is retained by the syscall Continuation and private Linux ABI7.
-The real Node Worker caller now completes a **negative capability subround** and
-stops as Unsupported40, without source dispatch, physical output or a fabricated
-zero return. There is no accepted production physical capability yet. Ordinary
-cat still does not succeed; default Kernel, browser and terminal selection are
-unchanged. Synthetic native/raw-Wasm evidence is separate from physical output.
+The Linux core owns the syscall, source cursor and exact output description.
+Ordinary managed stdio rejects this capability before loading source bytes.
+The explicit owned-stdout profile accepts it only for its pinned, invocation-owned
+file endpoint; captured output publishes to its selected logical lane instead.
+Neither profile establishes generic sendfile, socket or terminal compatibility.
+See [output profiles](OUTPUT-PROFILES.md) for selection and host support.
 
 ## Selected contract and authority
 
@@ -39,12 +39,11 @@ the exact captured endpoint, owner, sequence and action. It neither grants an
 output offer nor exposes source bytes. A rejected request closes this operation
 as Unsupported40 without starting a source attempt.
 
-There is deliberately no production constructor for an accepted capability
-receipt yet. The production host retains the exact request metadata and settles
-rejection once, with no qualifier, source callback or output call. Acceptance is
-synthetic only in unit tests or an explicit `sendfile-probe` feature artifact.
-Those tests do not certify socket kind/flags/lifetime, native behavior or
-sendfile/write equivalence. An application boolean cannot fill that boundary.
+An accepted owned-file receipt comes from the qualified Node host for the
+exact open file description held by this invocation. The ordinary host retains
+the request metadata and settles rejection without a source callback or output
+call. The raw probe validates state transitions but is not trusted as a runtime
+artifact. Endpoint-kind labels and an application boolean are not receipts.
 
 Even count0 and source EOF require destination qualification. Native Linux
 observations show that full/broken FIFOs can fail at zero/EOF, so a generic
@@ -172,18 +171,9 @@ startup to reject all source output could reject immediately under a different
 capability/error-ordering contract. This stage does not optimize that different
 profile or infer positive transfer performance from a zero-output measurement.
 
-The actual accepted physical capability, positive host source/output transport
-and successful ordinary-cat closure remain absent. Exact ABI view/ownership
-checks are connected and tested with synthetic raw evidence; real Worker
-negative-capability rejection and retirement are tested separately. Positive
-source-await/lost-output behavior cannot be claimed from the negative path.
-General non-TTY stdio and WASI filetype labels are not socket family/type proof. A proc-based candidate has restrictive framing/namespace
-conditions; a new native host artifact would add ABI, platform, distribution and
-lifetime obligations and is not assumed or silently installed here.
-
-Required next evidence includes real physical short/Unknown/lost-return cases
-and actual current-core/Worker ordinary cat
-with authenticated identical input bytes, stdout/status, source-load counts,
-independent Worker stop/resource retirement and a fresh next run. Strict types,
-package/runtime CI and new-head browser6MB remain independent gates. Synthetic
-owner tests do not establish any of them.
+Unresolved physical output is not retried: the host retains the file and core
+until their work is known to have stopped. Node tests for the explicit owned
+profile cover a physical append, an unresolved write failure and a fresh run.
+A fixed-file capability does not establish generic physical sendfile, shared
+stdio, POSIX pipe/socket behavior, or terminal support. Raw owner tests are
+separate from end-to-end execution and browser measurements.

@@ -33,7 +33,7 @@ test('pinned non-probe owned stdout runs the actual Worker synchronously without
     const pin: OwnedStdoutPin = {kind: 'sods-linux-owned-stdout-v1', byteLength: Number(process.env.SODS_OWNED_STDOUT_BYTES),
       sha256: process.env.SODS_OWNED_STDOUT_SHA256!};
     const module = new WebAssembly.Module(candidate);
-    assert.throws(() => memoryHost(module, 1, 1), /owned stdout is not this admission role/);
+    assert.throws(() => memoryHost(module, 1, 1), /Owned stdout artifact requires owned-stdout admission/);
     const exports = WebAssembly.Module.exports(module).map(v => v.name);
     for (const name of ['linux_startup_begin_stdio', 'linux_sendfile_cap_start', 'linux_sendfile_cap_finish', 'linux_sendfile_probe']) {
       assert.ok(!exports.includes(name), name);

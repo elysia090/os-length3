@@ -48,7 +48,7 @@ uses the existing TypeScript runtime.
   independently pinned bounded result artifact. It is available on Linux
   x86-64 with Node 22 or 24; the application takes labelled owned output
   separately. It does not provide synchronous physical-output semantics.
-- The [owned stdout profile](CAPTURE-MIGRATION.md#synchronous-owned-stdout)
+- The [owned stdout profile](OUTPUT-PROFILES.md#synchronous-owned-stdout)
   is a private Node integration, not a public package entry point or
   default CLI flag. A single output action may use a separately owned
   non-append file. No borrowed descriptor is promoted to that role.
@@ -57,7 +57,7 @@ The private Linux Wasm ABI is **7**, independent of the file-store
 artifact's ABI. Entry points do not expose the Core instance, raw engine
 memory, diagnostic inode operations, or generic memory mutation. An
 unsupported artifact is rejected; shape checking alone does not establish
-provenance. See [Linux output profiles](CAPTURE-MIGRATION.md) for limits,
+provenance. See [Linux output profiles](OUTPUT-PROFILES.md) for limits,
 ownership, and distribution selection.
 
 ## Resource ownership

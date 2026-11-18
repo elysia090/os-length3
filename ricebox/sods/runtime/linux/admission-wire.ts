@@ -69,7 +69,7 @@ export function validateLinuxMemorySurface(module: WebAssembly.Module, role: Mem
   const capture = role === 'captured', owned = role === 'owned-stdout';
   const ownedWire = Module.customSections(module, ownedSection);
   const ownedExport = exports.some(e => e.name.startsWith('linux_owned_'));
-  if (!owned && (ownedWire.length || ownedExport)) throw new Error('Linux owned stdout is not this admission role');
+  if (!owned && (ownedWire.length || ownedExport)) throw new Error('Owned stdout artifact requires owned-stdout admission');
   if (!capture && names.has('linux_capture_candidate')) {
     throw new Error('Linux capture candidate is not an ordinary Linux admission module');
   }

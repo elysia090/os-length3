@@ -1,8 +1,9 @@
 # Private source-range publication foundation
 
-This is an internal foundation, not a captured-output API, Linux pipe, accepted
-physical sendfile capability or terminal compatibility. The production Worker
-still rejects sendfile before source/output. No new native artifact is selected.
+The source-range ledger and finite publication queue belong to the Rust core.
+They retain only the range and lane supplied by an admitted operation. They are
+not a Linux pipe, physical endpoint or terminal. The [output profiles](OUTPUT-PROFILES.md)
+describe where captured and owned physical output are selected.
 
 ## Read reservation incarnation
 
@@ -113,7 +114,7 @@ JavaScript storage after guest retirement. Its exact head observation, start
 and settlement each inspect one lane without scanning queue slots. The current
 Wasm wrapper still visits execution slots to exclude other raw view owners;
 the whole call is not constant in the Core's execution high water. See the
-[capture cutover plan](CAPTURE-MIGRATION.md) for the private receipt and the
+[capture cutover plan](OUTPUT-PROFILES.md) for the private receipt and the
 separate external sink contract.
 
 ## Isolated Core ownership probe
@@ -143,13 +144,11 @@ copied A, pinned b, and copied C in order despite reverse reservation order,
 mutate the input buffers, retire the source table and producer, and read AbC
 through an independent consumer.
 
-This does not route guest writes. A real captured stream must resolve write
-and sendfile through the same held destination identity, including fd aliases,
-and reject operations it cannot route without bypassing that destination.
-The current managed physical write and negative-only sendfile are unchanged.
-The relay/session would have to retain the Core for the consumer independently
-of the guest Worker. Copying into Core then into an independent host buffer
-would move mutable write bytes twice; no one-copy host-write claim is made.
+The queue itself does not route guest calls. The captured-output caller
+resolves write and sendfile through the same held destination identity,
+including FD aliases. Its consumer retains the core independently of the
+guest Worker. Ordinary stdio does not enter this lane. Copying mutable bytes
+to the core and then to an independent host buffer moves them twice.
 
 Worker exit proves that Worker's guest access ended. It proves neither that an
 external drain stopped nor that any bytes reached a sink. Queue admission
@@ -270,4 +269,4 @@ The actual Worker checks argc, the first byte of argv0 and the accepted lengths
 before ABC, and the same stop boundary retains AB. A malformed canonical
 ELF fails before Worker construction. The stronger Core is still rejected
 by the ordinary host, and no external sink or delivery evidence is exercised.
-See [CAPTURE-MIGRATION.md](CAPTURE-MIGRATION.md) for the planned boundary.
+See [output profiles](OUTPUT-PROFILES.md) for the supported caller contracts.
