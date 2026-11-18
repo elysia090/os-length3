@@ -26,7 +26,8 @@ import {Readable} from 'node:stream';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
 import {checkPacks} from '../module/ricebox/distribution/pack.ts';
 import {tarMembers} from '../module/ricebox/host/node/tar.ts';
-import type {About, Index} from '../module/ricebox/distribution/manifest.ts';
+import {checkedCaptureResultDescriptor, type About, type Index} from '../module/ricebox/distribution/manifest.ts';
+import {verifyCaptureResultBlob} from '../module/ricebox/deployment/capture-result.ts';
 
 const here = new URL('..', import.meta.url).pathname;
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
@@ -90,11 +91,19 @@ for (const [path, digest] of named) {
   if (!bytes) throw new Error(`${asset} has no ${path}, which its index names`);
   if (sha(bytes) !== digest) throw new Error(`${asset}: ${path} is sha256 ${sha(bytes)}, its index says ${digest}`);
 }
+let capturePath: string | undefined;
+if (index.captureResult !== undefined) {
+  const capture = checkedCaptureResultDescriptor(index.captureResult);
+  const stored = members.get(capture.path);
+  if (!stored) throw new Error(`${asset} has no ${capture.path}, which its index names`);
+  verifyCaptureResultBlob(capture, stored);
+  capturePath = capture.path;
+}
 // Each pack whole: its table against its name, each file it stores against its table, nothing else in it.
 for (const p of index.packs) if (!members.has(`packs/${p.name}`)) throw new Error(`${asset} has no packs/${p.name}, which its index names`);
 checkPacks(index, (name, at, len) => members.get(`packs/${name}`).subarray(at, at + len), (name) => members.get(`packs/${name}`).length,
   (b) => createHash('sha256').update(b).digest());
-const known = new Set(['webroot.json', ...(mukBytes ? ['muk.json'] : []), about.index.path, ...named.map(([path]) => path), ...index.packs.map((p) => `packs/${p.name}`)]);
+const known = new Set(['webroot.json', ...(mukBytes ? ['muk.json'] : []), ...(capturePath ? [capturePath] : []), about.index.path, ...named.map(([path]) => path), ...index.packs.map((p) => `packs/${p.name}`)]);
 const unnamed = [...members.keys()].filter((name) => !known.has(name));
 if (unnamed.length) throw new Error(`${asset} holds ${unnamed.join(', ')}, which its index does not name`);
 

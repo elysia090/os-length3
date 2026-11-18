@@ -313,8 +313,15 @@ checks the exact expanded snapshot against the index's pin before
 compiling that same snapshot. Neither a cache plan nor a blob reader
 can change the selected role, digest or limits. This is not a signature
 or rollback policy: the current index pin must come from the deployment
-owner, not from the same untrusted provider. The fixture is not emitted
-by the release builder, and no default or production caller selects it.
+owner, not from the same untrusted provider.
+
+The actual archive intake uses the independently reviewed web index digest
+in pins.rs. It and the local distribution asset collector verify a declared
+capture member's exact stored and expanded identities and bounds before
+including it. The collector's same-source metadata check is only integrity,
+not authorization to instantiate. A missing or incompatible selected member
+fails collection; omission remains an ordinary archive. No release job or
+default caller selects the private result fixture.
 
 The candidate's Rust selector is a one-way admission latch, not output
 initialization. A wrong selection does not unlock any file or execution

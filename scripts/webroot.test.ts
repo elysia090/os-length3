@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import {execFile, execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {gzipSync} from 'node:zlib';
 import {copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
@@ -106,7 +107,7 @@ function copyPromptSources(tree: string) {
   for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'public', 'module/ricebox/runtime', 'module/ricebox/build']) mkdirSync(join(tree, d), {recursive: true});
   // And what both of those check packs by, where the repository has it (module/ricebox/runtime).
   for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'module/ricebox/host/node/tar.ts', 'module/ricebox/host/node/hash.ts', 'module/ricebox/distribution/inventory.ts', 'module/ricebox/distribution/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
-    'module/ricebox/distribution/pack.ts']) {
+    'module/ricebox/distribution/pack.ts', 'module/ricebox/deployment/capture-result.ts']) {
     mkdirSync(dirname(join(tree,f)),{recursive:true});
     copyFileSync(join(os,f),join(tree,f));
   }
@@ -183,6 +184,47 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     // A release with no sidecar remains supported.
     tar = tarOf(out); r = await go();
     assert.equal(r.status, 0, r.stderr);
+
+    // A separately pinned archive may include an optional Node capture asset.
+    const withCapture = join(work, 'with-capture');
+    cpSync(out, withCapture, {recursive: true});
+    const aboutCapture = JSON.parse(readFileSync(join(withCapture, 'webroot.json'), 'utf8'));
+    const indexCapture = JSON.parse(readFileSync(join(withCapture, aboutCapture.index.path), 'utf8'));
+    const captureWasm = Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
+    const storedCapture = gzipSync(captureWasm), storedSha = sha(storedCapture);
+    const capture = {kind: 'sods-linux-capture-result-v3', host: 'linux-x64-node22-24', wasm: sha(captureWasm),
+      bytes: captureWasm.byteLength, size: storedCapture.byteLength, sha256: storedSha, path: `blobs/${storedSha}.bin`};
+    const oldIndex = aboutCapture.index.path;
+    rmSync(join(withCapture, oldIndex));
+    const current = (captureResult: unknown) => {
+      const bytes = Buffer.from(JSON.stringify({...indexCapture, captureResult})), sha256 = sha(bytes);
+      const path = `index-${sha256}.json`;
+      writeFileSync(join(withCapture, path), bytes);
+      writeFileSync(join(withCapture, 'webroot.json'), JSON.stringify({...aboutCapture, index: {path, sha256, size: bytes.length}}));
+      return {path, sha256};
+    };
+    const captureIndex = current(capture);
+    writeFileSync(join(withCapture, capture.path), storedCapture);
+    tar = tarOf(withCapture);
+    r = await go();
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /this tree pins/, 'rewriting both archive index and descriptor is not authority');
+    const pinFile = join(tree, 'why/prompt/roots/pins.rs'), pinned = readFileSync(pinFile, 'utf8');
+    const choose = (sha256: string) => writeFileSync(pinFile, pinned.replace(aboutCapture.index.sha256, sha256));
+    choose(captureIndex.sha256); // The policy is deliberately chosen outside the supplied archive.
+    r = await go();
+    assert.equal(r.status, 0, r.stderr);
+    const capturedFiles = files(join(tree, 'public/webroot'));
+    assert.deepEqual(capturedFiles, files(withCapture));
+    rmSync(join(withCapture, captureIndex.path));
+    const mismatch = current({...capture, wasm: '0'.repeat(64)});
+    choose(mismatch.sha256);
+    tar = tarOf(withCapture);
+    r = await go();
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /expanded Wasm digest mismatch/);
+    assert.deepEqual(files(join(tree, 'public/webroot')), capturedFiles);
+    writeFileSync(pinFile, pinned);
 
     // A release from before the web root had its name: -l3-web.tar, its webroot.json as l3.json. Taken the same.
     const old = join(work, 'old-release');

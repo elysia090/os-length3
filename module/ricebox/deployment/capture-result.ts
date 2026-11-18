@@ -2,12 +2,10 @@
 // install a Worker. The deployment caller, not its blob reader or startup
 // cache, supplies the pin of the current index.
 import {gunzipSync} from 'node:zlib';
-import type {CaptureResultDescriptor} from '../distribution/manifest.ts';
+import {checkedCaptureResultDescriptor, type CaptureResultDescriptor} from '../distribution/manifest.ts';
 import {sha256} from '../host/node/hash.ts';
 
 const maximum = 32 * 1024 * 1024;
-const kind = 'sods-linux-capture-result-v3';
-const host = 'linux-x64-node22-24';
 const hash = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const extent = (value: unknown, min: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= maximum;
@@ -44,15 +42,25 @@ export async function readCapturedResultRelease(
 
   const index: unknown = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(indexBytes));
   const raw = record(index) && Object.hasOwn(index, 'captureResult') ? index.captureResult : undefined;
-  if (!record(raw) || raw.kind !== kind || raw.host !== host || !hash(raw.sha256) || !hash(raw.wasm) ||
-      raw.path !== `blobs/${raw.sha256}.bin` || !extent(raw.size, 1) || !extent(raw.bytes, 8)) {
-    throw new Error('Invalid or missing capture result descriptor');
-  }
-  const descriptor: CaptureResultDescriptor = {
-    kind, host, path: raw.path, sha256: raw.sha256, wasm: raw.wasm, size: raw.size, bytes: raw.bytes,
-  };
+  const descriptor = checkedCaptureResultDescriptor(raw);
+  const bytes = expand(descriptor, await readStored(descriptor.path, descriptor.size));
+  // The Sods admission adapter checks the expanded digest of the exact
+  // snapshot it compiles. Do not hash it twice or return a compiled module.
+  // Node 24 can place a small result in the same slab as a caller Buffer.
+  // Never expose the slab, even if the two logical regions do not overlap.
+  const owned = new Uint8Array(bytes);
+  return {indexSha256, bytes: owned, pin: Object.freeze({kind: descriptor.kind, byteLength: descriptor.bytes, sha256: descriptor.wasm})};
+}
+
+/** Catalog ingestion validates a named stored member without loading a Core.
+ * This is integrity, not independent authority or executable admission. */
+export function verifyCaptureResultBlob(descriptor: CaptureResultDescriptor, stored: Uint8Array): void {
+  if (sha256(expand(descriptor, stored)) !== descriptor.wasm) throw new Error('Capture release expanded Wasm digest mismatch');
+}
+
+function expand(descriptor: CaptureResultDescriptor, input: Uint8Array): Uint8Array {
   const mismatch = 'Capture release stored blob content mismatch';
-  const stored = localView(await readStored(descriptor.path, descriptor.size), descriptor.size, mismatch);
+  const stored = localView(input, descriptor.size, mismatch);
   if (sha256(stored) !== descriptor.sha256) throw new Error(mismatch);
   let bytes: Uint8Array;
   try { bytes = gunzipSync(stored, {maxOutputLength: descriptor.bytes}); }
@@ -63,10 +71,5 @@ export async function readCapturedResultRelease(
     throw new Error('Invalid capture release gzip', {cause});
   }
   if (bytes.length !== descriptor.bytes) throw new Error('Capture release expanded Wasm length mismatch');
-  // The Sods admission adapter checks the expanded digest of the exact
-  // snapshot it compiles. Do not hash it twice or return a compiled module.
-  // Node 24 can place a small result in the same slab as a caller Buffer.
-  // Never expose the slab, even if the two logical regions do not overlap.
-  const owned = new Uint8Array(bytes);
-  return {indexSha256, bytes: owned, pin: Object.freeze({kind, byteLength: descriptor.bytes, sha256: descriptor.wasm})};
+  return bytes;
 }

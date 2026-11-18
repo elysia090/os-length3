@@ -4,8 +4,9 @@ import {createHash} from 'node:crypto';
 import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
 import {gunzipSync} from 'node:zlib';
-import {requireFileStoreName, type Index, type About, type Blob} from '../distribution/manifest.ts';
+import {checkedCaptureResultDescriptor, requireFileStoreName, type Index, type About, type Blob} from '../distribution/manifest.ts';
 import {checkPacks} from '../distribution/pack.ts';
+import {verifyCaptureResultBlob} from './capture-result.ts';
 
 export function distributionAssets(directory: string, {base = 'ricebox', maxAssetBytes = Infinity}: {base?: string; maxAssetBytes?: number} = {}) {
   if (!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(base)) throw new Error('ricebox: base must be a relative asset directory');
@@ -43,6 +44,10 @@ export function distributionAssets(directory: string, {base = 'ricebox', maxAsse
     if (!store || store.abi !== 4 || !Number.isInteger(store.maxFileBytes) || store.maxFileBytes < 0 || store.maxFileBytes > 0x7fffffff || !/^[0-9a-f]{64}$/.test(store.wasm)) throw new Error('ricebox: invalid file store descriptor');
     const bytes = gunzipSync(blob(store));
     if (bytes.length !== store.bytes || createHash('sha256').update(bytes).digest('hex') !== store.wasm) throw new Error('ricebox: file store expanded content mismatch');
+  }
+  if (index.captureResult !== undefined) {
+    const capture = checkedCaptureResultDescriptor(index.captureResult);
+    verifyCaptureResultBlob(capture, read(capture.path, undefined, capture.size));
   }
   for (const translation of index.translations ?? []) { blob(translation.elf); blob(translation.wasm); }
   const packs = new Map(index.packs.map(pack => [pack.name, read(`packs/${pack.name}`, undefined, pack.bytes)]));

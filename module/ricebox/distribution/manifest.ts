@@ -33,6 +33,26 @@ export interface CaptureResultDescriptor extends Blob {
   /** Expanded executable digest, independent of the content-addressed gzip. */
   wasm: string;
 }
+const captureOutputArtifactLimit = 32 * 1024 * 1024;
+const captureDigest = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+const captureExtent = (value: unknown, min: number): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= captureOutputArtifactLimit;
+
+/** Shape only. Trusted index selection and byte verification belong to the
+ * caller. Absence is handled by policy, not a fallback on malformed input. */
+export function checkedCaptureResultDescriptor(input: unknown): CaptureResultDescriptor {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Invalid or missing capture result descriptor');
+  }
+  const {kind, host, path, sha256, size, bytes, wasm} = input as Partial<CaptureResultDescriptor>;
+  if (kind !== 'sods-linux-capture-result-v3' || host !== 'linux-x64-node22-24' ||
+      !captureDigest(sha256) || !captureDigest(wasm) || path !== `blobs/${sha256}.bin` ||
+      !captureExtent(size, 1) || !captureExtent(bytes, 8)) {
+    throw new Error('Invalid or missing capture result descriptor');
+  }
+  return {kind, host, path, sha256, wasm, size, bytes};
+}
+
 export interface Index {
   captureResult?: CaptureResultDescriptor;
   /** When present this release requires the matching Rust file owner. */
