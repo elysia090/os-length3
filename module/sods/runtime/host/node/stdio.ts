@@ -1,4 +1,4 @@
-import {readSync, writeSync} from 'node:fs';
+import {closeSync, openSync, readSync, writeSync} from 'node:fs';
 import {isatty} from 'node:tty';
 
 /** Borrowed standard descriptors, not guest FD numbers. The embedding must not
@@ -6,7 +6,7 @@ import {isatty} from 'node:tty';
  * No ownership transfer, host close, generic FD input, retry or async callback.
  * Initial profile is Linux/non-TTY only; terminal/job-control is not implemented.
  */
-const read = readSync, write = writeSync, terminal = isatty;
+const read = readSync, write = writeSync, open = openSync, close = closeSync, terminal = isatty;
 const own = Object.getOwnPropertyDescriptor, freeze = Object.freeze, define = Object.defineProperty;
 const isInteger = Number.isInteger, isSafeInteger = Number.isSafeInteger;
 const apply = Reflect.apply;
@@ -62,15 +62,17 @@ function prepareView(bytes: Uint8Array): void {
   define(bytes, 'byteLength', {value: length, writable: false, configurable: false});
 }
 
-function transfer(endpoint: Endpoint, bytes: Uint8Array): PhysicalResult {
-  // Construct and range-check this view before Rust stream_start. This
-  // synchronous operation borrows it only until return and never retains it.
+function transfer(endpoint: Endpoint, bytes: Uint8Array, ownedFd?: number): PhysicalResult {
+  // A guest stream view is prepared before stream_start. A canonical
+  // sendfile view appears only after sendfile_start. The transfer borrows
+  // either view synchronously and never retains it.
   const length: number = apply(typedLength, bytes, []);
   if (!isSafeInteger(length) || length > 0x7ffff000) throw new RangeError('Unsupported physical IO span');
   if (own(bytes, 'byteLength')?.value !== length) throw new TypeError('Physical IO view was not prepared');
   if (endpoint !== 1 && endpoint !== 2 && endpoint !== 3) throw new TypeError('Unknown standard endpoint');
+  const fd = ownedFd ?? endpoint - 1;
   try {
-    const count = endpoint === 1 ? read(0, bytes, 0, length, null) : write(endpoint - 1, bytes, 0, length, null);
+    const count = endpoint === 1 ? read(fd, bytes, 0, length, null) : write(fd, bytes, 0, length, null);
     if (!isInteger(count) || count < 0 || count > length) return {kind: 'unknown', error: new Error('Invalid native IO count')};
     return {kind: 'count', count};
   } catch (error) { return failure(error, endpoint === 1 ? 'read' : 'write'); }
@@ -79,7 +81,9 @@ function transfer(endpoint: Endpoint, bytes: Uint8Array): PhysicalResult {
 export function captureStdio() {
   checkHost();
   if (terminal(0) || terminal(1) || terminal(2)) throw new Error('Synchronous stdio profile does not support TTYs');
-  return freeze({prepareView, transfer});
+  return freeze({prepareView, transfer(endpoint: Endpoint, bytes: Uint8Array) {
+    return transfer(endpoint, bytes); // Never accept a host fd from a caller.
+  }});
 }
 
 /** Same exact borrowed read, no physical output authority. Do not even
@@ -90,5 +94,23 @@ export function captureStdin(): ReturnType<typeof captureStdio> {
   return freeze({prepareView, transfer(endpoint: Endpoint, bytes: Uint8Array) {
     if (endpoint !== 1) throw new Error('Borrowed stdin does not grant physical output');
     return transfer(1, bytes);
+  }});
+}
+
+/** Internal trusted acquisition: no fd, pre-existing path, append or borrowed
+ * output. The caller retains this object until exact stopped use is proved. */
+export function acquireOwnedStdout(path: string) {
+  checkHost();
+  if (typeof path !== 'string' || !path) throw new TypeError('Owned stdout requires a new path');
+  const fd = open(path, 'wx', 0o600);
+  let stopped = false;
+  const io = freeze({prepareView, transfer(endpoint: Endpoint, bytes: Uint8Array) {
+    if (stopped || endpoint !== 2) throw new Error('Unknown owned stdout endpoint');
+    return transfer(2, bytes, fd);
+  }});
+  return freeze({io, close() {
+    if (stopped) throw new Error('Owned stdout already stopped');
+    stopped = true;
+    close(fd); // A failed close is not authority to retry the same fd.
   }});
 }

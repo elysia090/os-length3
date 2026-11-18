@@ -155,10 +155,10 @@ pub(crate) struct StreamHold(Id);
 /// Private installation token for one owned physical stdout OFD. It names
 /// the description, not a numeric guest/host fd, and grants no byte access,
 /// file offset, extra refcount or evidence of stopped external access.
-#[cfg(any(test, feature = "queued-worker-probe"))]
+#[cfg(any(test, feature = "queued-worker-probe", feature = "owned-stdout-v1"))]
 #[derive(Debug)]
 pub(crate) struct OwnedStdout(Id);
-#[cfg(any(test, feature = "queued-worker-probe"))]
+#[cfg(any(test, feature = "queued-worker-probe", feature = "owned-stdout-v1"))]
 impl OwnedStdout {
     pub(crate) fn matches(&self, hold: &StreamHold) -> bool {
         self.0 == hold.0
@@ -1251,7 +1251,7 @@ impl Files {
         if endpoints.contains(&0) {
             return Err(Error::BadHandle);
         }
-        self.stdio_targets(limit, 0, |i| DescriptionTarget::HostStream {
+        self.stdio_targets(limit, 0..3, |i| DescriptionTarget::HostStream {
             endpoint: endpoints[i],
             direction: if i == 0 {
                 StreamDirection::Read
@@ -1276,6 +1276,18 @@ impl Files {
         Ok((table, OwnedStdout(stdout)))
     }
 
+    /// Scope only fd 1. No stdin/stderr loans, even if the embedder has
+    /// process standards. Endpoint 2 denotes the undisclosed owned File.
+    #[cfg(any(test, feature = "owned-stdout-v1"))]
+    pub(crate) fn owned_stdout(&mut self, limit: u32) -> Result<(Table, OwnedStdout), Error> {
+        let table = self.stdio_targets(limit, 1..2, |_| DescriptionTarget::HostStream {
+            endpoint: 2,
+            direction: StreamDirection::Write,
+        })?;
+        let stdout = self.description(&table, 1).expect("private installed stdout");
+        Ok((table, OwnedStdout(stdout)))
+    }
+
     /// Only the matching registry calls this with its already validated lanes.
     /// Captured descriptions contain no fallback physical endpoint.
     #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
@@ -1287,7 +1299,7 @@ impl Files {
     ) -> Result<Table, Error> {
         // With no installed input, preserve both output FD numbers but
         // leave fd 0 free for a later ordinary open. Never mint a dead loan.
-        self.stdio_targets(limit, usize::from(stdin.is_none()), |i| {
+        self.stdio_targets(limit, usize::from(stdin.is_none())..3, |i| {
             if i == 0 {
                 DescriptionTarget::HostStream {
                     endpoint: stdin.expect("admitted stdin").get(),
@@ -1308,14 +1320,14 @@ impl Files {
     fn stdio_targets(
         &mut self,
         limit: u32,
-        first: usize,
+        standards: std::ops::Range<usize>,
         target: impl Fn(usize) -> DescriptionTarget,
     ) -> Result<Table, Error> {
-        if limit < 3 {
+        if u32::try_from(standards.end).map_err(|_| Error::Capacity)? > limit {
             return Err(Error::Capacity);
         }
         let table = self.table(limit)?;
-        for i in first..3 {
+        for i in standards {
             let result = (|| {
                 let fd = self.admit_fd(&table, i as u32)?;
                 let id = prepare(&mut self.descriptions, self.limits.descriptions, self.owner)?;
@@ -2198,6 +2210,23 @@ mod tests {
         assert!(!owned.matches(&fresh), "a borrowed reuse does not inherit authority");
         f.release_stream(fresh).unwrap();
         f.let_go(borrowed).unwrap();
+    }
+
+    #[test]
+    fn owned_stdout_only_reserves_one_slot_and_no_process_loans() {
+        let (mut files, inode) = setup(16);
+        assert_eq!(files.owned_stdout(1).unwrap_err(), Error::Capacity);
+        let (table, output) = files.owned_stdout(2).unwrap();
+        assert_eq!(files.target(&table, 0), Err(Error::BadFd));
+        assert_eq!(files.target(&table, 2), Err(Error::BadFd));
+        assert_eq!(files.live_slots, 1);
+        let hold = files.hold_stream(&table, 1, StreamDirection::Write).unwrap();
+        assert!(output.matches(&hold));
+        assert_eq!(files.stream(&hold), Ok((2, StreamDirection::Write)));
+        assert_eq!(files.open(&table, inode, false), Ok(0));
+        files.release_stream(hold).unwrap();
+        files.let_go(table).unwrap();
+        assert_eq!(files.live_slots, 0);
     }
 
     #[test]

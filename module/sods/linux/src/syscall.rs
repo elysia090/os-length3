@@ -1011,6 +1011,37 @@ impl Continuation {
             |send, request| send.approve_owned_stdout(request, output),
         )
     }
+    /// In this private profile the only trusted proof is already installed.
+    /// Admission and qualification remain in one callback-free Rust turn.
+    /// The non-Copy service request never crosses the host boundary.
+    #[cfg(all(feature = "owned-stdout-v1", not(feature = "capture-v1")))]
+    pub(crate) fn sendfile_qualify_installed(
+        &mut self,
+        files: &mut Files,
+        domain: &mut Domain,
+        execution: &mut Execution,
+        sequence: u32,
+        action: Token,
+        output: Option<&descriptor::OwnedStdout>,
+    ) -> Result<Step, Error> {
+        self.owner(execution)?;
+        let p = self.sendfile_mut().ok_or(Error::State)?;
+        if p.cap_request.is_some() {
+            return Err(Error::State);
+        }
+        let started = p.owner.cap_start(files, domain, execution, sequence, action);
+        let result = started.and_then(|request| {
+            let receipt = match output {
+                Some(output) => p.owner.approve_owned_stdout(request, output),
+                None => Err(request),
+            };
+            let receipt = receipt.unwrap_or_else(CapabilityReceipt::rejected);
+            p.owner.cap_finish(files, domain, execution, receipt)
+        });
+        self.sync_sendfile_closed();
+        result?;
+        self.sendfile_step(execution)
+    }
     #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_load_start(
         &mut self,

@@ -29,6 +29,10 @@ const DOMAIN: u64 = 1;
 const TREE: u64 = 2;
 const FILES: u64 = 3;
 const WASM32_BYTES: u64 = 1u64 << 32;
+#[cfg(feature = "owned-stdout-v1")]
+#[used]
+#[link_section = "sods.linux.owned-stdout"]
+static OWNED_STDOUT_ID: [u8; 12] = *b"SODSOUT\0\x07\x01\x01\x00";
 struct Builder {
     tree: Option<Tree>,
     sealing: Option<Files>,
@@ -73,7 +77,7 @@ enum Resources {
         executable: Option<descriptor::Executable>,
         decision: crate::credentials::Decision,
         facts: Facts,
-        #[cfg(feature = "queued-worker-probe")]
+        #[cfg(any(feature = "queued-worker-probe", feature = "owned-stdout-v1"))]
         owned_stdout: Option<descriptor::OwnedStdout>,
     },
     Retired,
@@ -106,7 +110,7 @@ struct Preparing {
     failed_image: Option<Execution>,
     fs: Option<fs_context::Ticket>,
     table: Option<Table>,
-    #[cfg(feature = "queued-worker-probe")]
+    #[cfg(any(feature = "queued-worker-probe", feature = "owned-stdout-v1"))]
     owned_stdout: Option<descriptor::OwnedStdout>,
     random: [u8; 16],
 }
@@ -951,7 +955,7 @@ fn execution_index(s: &State, id: u64) -> Result<usize, i32> {
         Err(-11)
     }
 }
-#[cfg(not(feature = "capture-v1"))]
+#[cfg(not(any(feature = "capture-v1", feature = "owned-stdout-v1")))]
 #[no_mangle]
 pub extern "C" fn linux_execution_create(binding: u64) -> i32 {
     with_state(false, |s| {
@@ -1476,6 +1480,28 @@ fn syscall_enter(
         )
     }
     .map_err(|_| -12)?;
+    #[cfg(all(feature = "owned-stdout-v1", not(feature = "capture-v1")))]
+    let command = match command {
+        Step::SendfileCapability {
+            action, sequence, ..
+        } => {
+            let output = match &slot.resources {
+                Resources::Normal { owned_stdout, .. } => owned_stdout.as_ref(),
+                _ => None,
+            };
+            continuation
+                .sendfile_qualify_installed(
+                    &mut r.files,
+                    &mut s.domain,
+                    &mut slot.execution,
+                    sequence,
+                    action,
+                    output,
+                )
+                .map_err(|_| -12)?
+        }
+        command => command,
+    };
     Ok(step(s, command))
 }
 /// Read-only task metadata observer, not a guest pointer/host TID capability.
@@ -1550,7 +1576,7 @@ pub extern "C" fn linux_register_receipt(
 
 /// Read-only capability subround; no source view or output permission. The
 /// continuation stores the non-Copy request before its metadata crosses ABI.
-#[cfg(not(feature = "capture-v1"))]
+#[cfg(not(any(feature = "capture-v1", feature = "owned-stdout-v1")))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_cap_start(id: u64, sequence: u32, action: u64) -> i32 {
     with_state(false, |s| {
@@ -1577,7 +1603,7 @@ pub extern "C" fn linux_sendfile_cap_start(id: u64, sequence: u32, action: u64) 
 /// Production can only reject until a reviewed physical construction exists.
 /// Code1 is synthetic evidence in the segregated probe artifact ONLY. Shape-
 /// complete raw exports are not a security boundary against a lying embedder.
-#[cfg(not(feature = "capture-v1"))]
+#[cfg(not(any(feature = "capture-v1", feature = "owned-stdout-v1")))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_cap_finish(
     id: u64,
@@ -2518,15 +2544,21 @@ pub extern "C" fn linux_startup_input(length: u32) -> i32 {
         })
     })
 }
-#[cfg(not(feature = "capture-v1"))]
+#[cfg(not(any(feature = "capture-v1", feature = "owned-stdout-v1")))]
 #[no_mangle]
 pub extern "C" fn linux_startup_begin() -> i32 {
     startup_begin(StartupTable::Empty)
 }
-#[cfg(not(feature = "capture-v1"))]
+#[cfg(not(any(feature = "capture-v1", feature = "owned-stdout-v1")))]
 #[no_mangle]
 pub extern "C" fn linux_startup_begin_stdio() -> i32 {
     startup_begin(StartupTable::Physical)
+}
+/// Private non-probe admission. No inherited standards are installed.
+#[cfg(all(feature = "owned-stdout-v1", not(feature = "capture-v1")))]
+#[no_mangle]
+pub extern "C" fn linux_owned_stdout_startup() -> i32 {
+    startup_begin(StartupTable::OwnedStdoutOnly)
 }
 /// The trusted fixture must acquire its exclusive non-append File before
 /// this startup and retain that exact handle through physical settlement.
@@ -2568,12 +2600,14 @@ pub extern "C" fn linux_capture_result_startup(input: u32) -> i32 {
 #[cfg(any(not(feature = "capture-v1"), feature = "capture-result-v1"))]
 #[derive(Clone, Copy)]
 enum StartupTable {
-    #[cfg(not(feature = "capture-v1"))]
+    #[cfg(not(any(feature = "capture-v1", feature = "owned-stdout-v1")))]
     Empty,
-    #[cfg(not(feature = "capture-v1"))]
+    #[cfg(not(any(feature = "capture-v1", feature = "owned-stdout-v1")))]
     Physical,
     #[cfg(all(feature = "queued-worker-probe", not(feature = "capture-v1")))]
     OwnedStdout,
+    #[cfg(all(feature = "owned-stdout-v1", not(feature = "capture-v1")))]
+    OwnedStdoutOnly,
     #[cfg(feature = "queued-output-probe")]
     CaptureProbe { shared_output: bool },
     #[cfg(feature = "capture-result-v1")]
@@ -2645,7 +2679,7 @@ fn startup_begin(table: StartupTable) -> i32 {
             failed_image: None,
             fs: None,
             table: None,
-            #[cfg(feature = "queued-worker-probe")]
+            #[cfg(any(feature = "queued-worker-probe", feature = "owned-stdout-v1"))]
             owned_stdout: None,
             random,
         }));
@@ -2656,9 +2690,9 @@ fn startup_begin(table: StartupTable) -> i32 {
             .select_cwd(p.fs.as_ref().unwrap(), &Credentials::initial_root(), cwd)
             .map_err(|_| -10)?;
         p.table = Some(match table {
-            #[cfg(not(feature = "capture-v1"))]
+            #[cfg(not(any(feature = "capture-v1", feature = "owned-stdout-v1")))]
             StartupTable::Empty => r.files.table(r.fd_limit).map_err(|_| -10)?,
-            #[cfg(not(feature = "capture-v1"))]
+            #[cfg(not(any(feature = "capture-v1", feature = "owned-stdout-v1")))]
             StartupTable::Physical => r.files.stdio([1, 2, 3], r.fd_limit).map_err(|_| -10)?,
             #[cfg(all(feature = "queued-worker-probe", not(feature = "capture-v1")))]
             StartupTable::OwnedStdout => {
@@ -2666,6 +2700,12 @@ fn startup_begin(table: StartupTable) -> i32 {
                     .files
                     .stdio_with_owned_stdout([1, 2, 3], r.fd_limit)
                     .map_err(|_| -10)?;
+                p.owned_stdout = Some(output);
+                table
+            }
+            #[cfg(all(feature = "owned-stdout-v1", not(feature = "capture-v1")))]
+            StartupTable::OwnedStdoutOnly => {
+                let (table, output) = r.files.owned_stdout(r.fd_limit).map_err(|_| -10)?;
                 p.owned_stdout = Some(output);
                 table
             }
@@ -2928,7 +2968,7 @@ pub extern "C" fn linux_startup_image_finish(id: u64, outcome: u32) -> i32 {
                 executable: Some(live.executable),
                 decision: live.decision,
                 facts: live.facts,
-                #[cfg(feature = "queued-worker-probe")]
+                #[cfg(any(feature = "queued-worker-probe", feature = "owned-stdout-v1"))]
                 owned_stdout: p.owned_stdout.take(),
             };
             s.executions[i] = Slot::Live(ExecutionSlot {

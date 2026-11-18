@@ -6,6 +6,11 @@
 //! The legacy TypeScript runtime is not replaced by this crate.
 #[cfg(all(feature = "capture-v1", feature = "sendfile-probe"))]
 compile_error!("capture-v1 cannot be built with synthetic probe features");
+#[cfg(all(
+    feature = "owned-stdout-v1",
+    any(feature = "capture-v1", feature = "sendfile-probe")
+))]
+compile_error!("owned-stdout-v1 cannot compose with capture or synthetic probe features");
 
 mod effect;
 

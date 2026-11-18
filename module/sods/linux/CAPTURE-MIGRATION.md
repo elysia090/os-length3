@@ -783,8 +783,8 @@ evidence still cannot be omitted.
 
 ### Select an owned synchronous caller without replacing borrowed or captured output
 
-No current caller owns such a file by construction. The Node managed CLI
-borrows process stdio. The Ricebox Worker publishes labelled browser
+None of the pre-existing callers owns such a file by construction. The
+Node managed CLI borrows process stdio. The Ricebox Worker publishes labelled browser
 messages, with a flush epoch and acknowledged final output boundary.
 RemoteKernel drains its Outbox into a Console and separately observes
 Worker termination. None of these proves ownership of a writable physical
@@ -823,3 +823,55 @@ and exact Worker retirement on each supported host. Only then remove the
 superseded TS owners and their imports together. In particular
 `cpu.ts`, `channel.ts` and `worker-stop.ts` remain live today; a Node
 owned-file success does not qualify any of those files for removal.
+
+
+The first private non-probe candidate is implemented as `owned-stdout-v1`.
+Its selected Node entry verifies an independent byte-length and SHA-256
+pin, role marker, export surface and initialization before exclusively
+creating the File. This role installs only guest fd 1; no physical stdin
+or stderr is borrowed. The first ordinary open may use fd 0. The old
+borrowed CLI and asynchronous capture profiles reject this artifact.
+This is a rootless resident-ELF caller, not a new CLI default, browser or
+release role. A guest failure after a valid exclusive create can leave an
+empty output file; it does not authorize unlinking that path.
+
+For a matching installed OFD, the sequenced Rust syscall qualifies the
+exact Sendfile owner inside the same turn. The artifact does not export
+the two capability service calls. It still shares the actual span,
+prefix, retirement and error accounting with the single Sendfile owner.
+The Node bridge performs only synchronous transfer and reports one
+exact result. It does not convert unknown effects into a guest errno.
+Only the candidate waits for both request settlement and actual Worker
+exit before giving its File back after confirmed retirement. A single
+unresolved session retains its File and Core instead of retrying,
+reopening or using process stdout.
+
+The current-translator Node 22 and 24 real Worker verifies ordered
+`A 0x7f C`, the input OFD's remaining ELF magic suffix, absence of
+borrowed fd 0/2 and confirmed close. Wrong pin/role leaves no new file;
+existing paths and symlinks cannot be truncated. Pin reentry cannot claim
+a second native owner. A real one-byte Linux file-size limit produced
+unclassified EFBIG on the next physical transfer: only A existed, the
+same native File and Core obligation remained retained, and a second
+allocation failed without creating a path. The borrowed `--managed`
+control still returned the correct full-pipe, short-prefix and
+closed-peer results and appended through inherited append stdout on both
+reviewed Node versions. Separately, 37 Node Remote/Ricebox lifecycle and
+output cases ran with the current translator and actual BusyBox/muk
+fixtures. This is not a browser or Workerd compatibility claim.
+
+For a positive resident send, one physical output effect and its
+observable completion must precede the matching guest reply. No extra
+payload copy or host qualification turn is required with an installed
+stable File; the remaining separate start and receipt exports describe
+this implementation, not a general instruction bound. Release wasm32
+keeps State at 1312 and Sendfile at 432 bytes; the owned slot is 1784
+rather than 1752. On Node 22 Liftoff the sequenced ingress wrapper
+remains 412 instruction bytes, but its internal dispatcher is 2628
+rather than 2140 and the installed qualification helper is another
+1264. These are static sizes, not latency or dynamic instruction counts.
+An end-to-end one-byte-send fixture (3 warmups, 16 observations per Node
+version) measured median 108.3 ms on Node 22 and 108.7 ms on Node 24 in
+this environment. That includes pin verification, Core startup,
+translation, Worker, I/O and retirement; it is neither a per-byte
+benchmark nor evidence of a speedup.

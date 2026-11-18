@@ -21,9 +21,13 @@ export interface CaptureResultPolicy {
   readonly borrowStdin?: true;
 }
 
-const ordinaryOnly = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish', 'linux_sendfile_load_start', 'linux_sendfile_load_finish',
-  'linux_sendfile_start', 'linux_sendfile_receipt', 'linux_sendfile_cleanup', 'linux_sendfile_query',
+const sendfileTransport = ['linux_sendfile_load_start', 'linux_sendfile_load_finish', 'linux_sendfile_start',
+  'linux_sendfile_receipt', 'linux_sendfile_cleanup', 'linux_sendfile_query'];
+const borrowedOnly = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish',
   'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create'];
+const ordinaryOnly = [...sendfileTransport, ...borrowedOnly];
+const ownedRequired = ['linux_owned_stdout_startup', ...sendfileTransport];
+const ownedSection = 'sods.linux.owned-stdout';
 const resultOnly = ['linux_capture_candidate', 'linux_capture_select', 'linux_capture_result_init', 'linux_capture_result_startup',
   'linux_capture_result_resume', 'linux_capture_result_write_start', 'linux_capture_result_write_finish', 'linux_capture_result_head',
   'linux_capture_result_copy_start', 'linux_capture_result_copy_finish'];
@@ -46,7 +50,9 @@ export function validateCaptureResultIdentity(module: WebAssembly.Module): void 
   }
 }
 
-export function validateLinuxMemorySurface(module: WebAssembly.Module, captureResult: boolean): void {
+type MemoryRole = 'ordinary' | 'captured' | 'owned-stdout';
+
+export function validateLinuxMemorySurface(module: WebAssembly.Module, role: MemoryRole): void {
   const exports = Module.exports(module);
   const names = new Map(exports.map(e => [e.name, e.kind]));
   // A probe has synthetic physical truth, never a usable host capability. Reject
@@ -54,14 +60,28 @@ export function validateLinuxMemorySurface(module: WebAssembly.Module, captureRe
   if (names.has('linux_sendfile_probe') || names.has('linux_sendfile_probe_access_ended')) {
     throw new Error('Synthetic sendfile probe is not a production Linux admission module');
   }
-  if (!captureResult && names.has('linux_capture_candidate')) {
+  const capture = role === 'captured', owned = role === 'owned-stdout';
+  const ownedWire = Module.customSections(module, ownedSection);
+  const ownedExport = exports.some(e => e.name.startsWith('linux_owned_'));
+  if (!owned && (ownedWire.length || ownedExport)) throw new Error('Linux owned stdout is not this admission role');
+  if (!capture && names.has('linux_capture_candidate')) {
     throw new Error('Linux capture candidate is not an ordinary Linux admission module');
   }
+  if (owned) {
+    const identity = [83, 79, 68, 83, 79, 85, 84, 0, 7, 1, 1, 0];
+    if (ownedWire.length !== 1 || ownedWire[0]!.byteLength !== identity.length ||
+        !new Bytes(ownedWire[0]!).every((byte, i) => byte === identity[i])) {
+      throw new Error('Unsupported Linux owned stdout artifact identity');
+    }
+  }
+  const requiredForRole = capture ? resultOnly : owned ? ownedRequired : ordinaryOnly;
   if (Module.imports(module).length || names.get('memory') !== 'memory' ||
       required.some(name => names.get(name) !== 'function') ||
-      (captureResult ? resultOnly : ordinaryOnly).some(name => names.get(name) !== 'function') ||
-      (captureResult && (ordinaryOnly.some(name => names.has(name)) ||
-        exports.some(e => e.name.startsWith('linux_queued_') || e.name.startsWith('linux_sendfile_'))))) {
+      requiredForRole.some(name => names.get(name) !== 'function') ||
+      (capture && ordinaryOnly.some(name => names.has(name))) ||
+      (owned && (borrowedOnly.some(name => names.has(name)) || Module.customSections(module, 'sods.linux.capture').length)) ||
+      ((capture || owned) && exports.some(e => e.name.startsWith('linux_queued_') || e.name.startsWith('linux_sendfile_probe') ||
+        (capture && e.name.startsWith('linux_sendfile_')) || (owned && e.name.startsWith('linux_capture_'))))) {
     throw new Error('Unsupported Linux admission module');
   }
 }
@@ -70,5 +90,5 @@ export function validateLinuxMemorySurface(module: WebAssembly.Module, captureRe
  * constructor are exposed by the Sods Linux entry. */
 export function validateCaptureResultModule(module: WebAssembly.Module): void {
   validateCaptureResultIdentity(module);
-  validateLinuxMemorySurface(module, true);
+  validateLinuxMemorySurface(module, 'captured');
 }

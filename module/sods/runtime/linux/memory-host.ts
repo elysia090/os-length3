@@ -103,6 +103,9 @@ interface Admission extends WebAssembly.Exports {
   linux_read_load_finish(execution: bigint, read: bigint, attempt: number, success: number): number;
   linux_managed_read_start(execution: bigint, read: bigint): number;
 }
+interface OwnedAdmission extends WebAssembly.Exports {
+  linux_owned_stdout_startup(): number;
+}
 interface ResultAdmission extends WebAssembly.Exports {
   linux_capture_candidate(): number;
   linux_capture_select(profile: number): number;
@@ -258,7 +261,7 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
  * the marker before this module is imported. Do not re-export this constructor. */
 export function createCapturedResultHost(module: WebAssembly.Module, memories: number, actions: number,
   policy: CaptureResultPolicy) {
-  const host = memoryHostFor(module, memories, actions, policy);
+  const host = memoryHostFor(module, memories, actions, {capture: policy});
   return freeze({prepareRoot: host.prepareRoot, rootSource: host.rootSource, pathExecution: host.pathExecution,
     runPath: host.runPath, stopWorker: host.stopWorker, workerSettled: host.workerSettled,
     workerEvidence: host.workerEvidence, takeOutput: host.takeOutput,
@@ -266,20 +269,35 @@ export function createCapturedResultHost(module: WebAssembly.Module, memories: n
     waitForCaptureOutput: host.waitForCaptureOutput});
 }
 
-function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, resultPolicy?: CaptureResultPolicy) {
+/** Internal Node-only role; the trusted caller must own one exact File.
+ * Do not expose a caller-supplied physical callback at the public Linux entry. */
+export function createOwnedStdoutHost(module: WebAssembly.Module, acquire: () => ReturnType<typeof captureStdio>) {
+  const host = memoryHostFor(module, 1, 1, {acquire});
+  return freeze({preparePreparedFiles: host.preparePreparedFiles, directory: host.directory, file: host.file,
+    sealFiles: host.sealFiles, pathExecution: host.pathExecution, runPath: host.runPath, stopWorker: host.stopWorker,
+    workerSettled: host.workerSettled, workerStopped: host.workerStopped, workerEvidence: host.workerEvidence});
+}
+type Profile = {capture: CaptureResultPolicy} | {acquire: () => ReturnType<typeof captureStdio>};
+
+function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, profile?: Profile) {
+  const resultPolicy = profile && 'capture' in profile ? profile.capture : undefined;
+  const acquire = profile && 'acquire' in profile ? profile.acquire : undefined;
   integer(memories); integer(actions);
   if (memories > 0xffffffff || actions > 0xffffffff) throw new RangeError('Capacity exceeds u32');
-  validateLinuxMemorySurface(module, resultPolicy !== undefined);
+  validateLinuxMemorySurface(module, resultPolicy ? 'captured' : acquire ? 'owned-stdout' : 'ordinary');
   // Only a trusted matching artifact is accepted by the eventual artifact loader;
   // export-shape checks are not validation of arbitrary Wasm behavior.
   const core = new Instance(module).exports as Admission;
   const capture = resultPolicy ? core as unknown as ResultAdmission : undefined;
+  const owned = acquire ? core as unknown as OwnedAdmission : undefined;
   if (core.linux_abi_version() !== 7) throw new Error('Unsupported Linux admission ABI');
   checked(core.linux_init(memories, actions));
   if (capture) {
     if (capture.linux_capture_candidate() !== 2) throw new Error('Unsupported captured result artifact profile');
     checked(capture.linux_capture_select(2));
   }
+  // Only after the pinned role passed shape, instantiation and ABI/init.
+  const ownedStdout = acquire?.();
   const safeNumber = (value: bigint): number => {
     const number = integer(numeric(value));
     if (wide(number) !== value) throw new RangeError('Transport coordinate exceeds safe integer');
@@ -518,10 +536,16 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       throw error;
     }
   };
+  const physicalEvidence = (observed: PhysicalResult): {count: bigint; code: number} => ({
+    count: observed.kind === 'count' ? wide(observed.count) : 0n,
+    code: observed.kind === 'count' ? 0 : observed.kind === 'unknown' ? 6 :
+      observed.code === 'EAGAIN' ? 1 : observed.code === 'EINTR' ? 2 : observed.code === 'EBADF' ? 3 : observed.code === 'EPIPE' ? 4 : 5,
+  });
   const transferStream = (w: WorkerState, c: ReturnType<typeof command>): ReturnType<typeof command> => {
     if (!w.stdio) throw new Error('No physical standard-stream capability');
     const reading = c.tag === 7;
-    if (!(reading ? c.endpoint === 1 : !capture && c.tag === 263 && (c.endpoint === 2 || c.endpoint === 3))) {
+    if (!(owned ? c.tag === 263 && c.endpoint === 2
+      : reading ? c.endpoint === 1 : !capture && c.tag === 263 && (c.endpoint === 2 || c.endpoint === 3))) {
       throw new Error('Unsupported physical stream endpoint');
     }
     // Construct the view before start; afterward only the captured synchronous
@@ -532,9 +556,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     let observed: PhysicalResult;
     try { observed = w.stdio.transfer(c.endpoint as Endpoint, bytes); }
     catch (error) { observed = {kind: 'unknown', error}; }
-    const code = observed.kind === 'count' ? 0 : observed.kind === 'unknown' ? 6 :
-      observed.code === 'EAGAIN' ? 1 : observed.code === 'EINTR' ? 2 : observed.code === 'EBADF' ? 3 : observed.code === 'EPIPE' ? 4 : 5;
-    const count = observed.kind === 'count' ? wide(observed.count) : 0n;
+    const {count, code} = physicalEvidence(observed);
     let completed: ReturnType<typeof command>;
     try { completed = command(core.linux_stream_receipt(w.id, c.value, count, code)); }
     catch (receipt) {
@@ -543,6 +565,33 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     }
     if (observed.kind === 'unknown') throw observed.error;
     return completed;
+  };
+  const transferOwnedSendfile = (w: WorkerState, sequence: number, c: ReturnType<typeof command>) => {
+    if (!ownedStdout || c.endpoint !== 2 || c.target !== wide(sequence)) {
+      throw new Error('Owned source-output identity mismatch');
+    }
+    const action = c.value, length = safeNumber(c.next);
+    const pointer = result(core.linux_sendfile_start(w.id, sequence, action));
+    let observed: PhysicalResult;
+    try {
+      // The only Core view exists inside this synchronous scope. No user
+      // callback, loader, await or native fd discovery after start.
+      if (core.linux_result_length() !== c.next || core.linux_result_auxiliary() !== c.target ||
+          core.linux_result_endpoint() !== 2n) throw new Error('Owned source-output offer changed');
+      const view = new Bytes(bufferOf(core.memory), safeNumber(pointer), length);
+      ownedStdout.prepareView(view);
+      observed = ownedStdout.transfer(2, view);
+    } catch (error) { observed = {kind: 'unknown', error}; }
+    const {count, code} = physicalEvidence(observed);
+    let completed: ReturnType<typeof command>;
+    try { completed = command(core.linux_sendfile_receipt(w.id, sequence, action, count, code, 1)); }
+    catch (receipt) {
+      if (observed.kind === 'unknown') throw new AggregateError([observed.error, receipt], 'Unknown owned output and receipt failure');
+      throw receipt;
+    }
+    if (observed.kind === 'unknown') throw observed.error;
+    if (completed.tag !== 0) throw new Error(`Owned source-output did not return: ${completed.tag}`);
+    return completed.value;
   };
   const capturePath = (w: WorkerState, c: ReturnType<typeof command>): ReturnType<typeof command> => {
     const pointer = numeric(result(core.linux_syscall_path_start(w.id, c.value)));
@@ -673,8 +722,10 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
               if (completed.tag !== 0) throw new Error(`Worker register application failed or remains uncertain: ${physical}`);
               return {kind: 'return', value: completed.value};
             }
+            if (c.tag === 12 && owned) return {kind: 'return', value: transferOwnedSendfile(w, request.sequence, c)};
             if (c.tag === 10) {
               if (capture) throw new Error('Captured result rejects physical output');
+              if (owned) throw new Error('Unexpected external physical qualification');
               const completed = rejectSourceOutput(w, request.sequence, c);
               // No accepted production physical capability exists yet. Never
               // turn a rejected/unknown stage into a successful zero result.
@@ -762,16 +813,18 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       if (artifactLoader === undefined && translatorModule === undefined) throw new TypeError('Fresh startup requires a translator');
       if (useStdio !== undefined && useStdio !== true) throw new TypeError('Expected explicit stdio profile');
       if (capture && useStdio !== undefined) throw new TypeError('Captured result does not borrow physical stdio');
+      if (owned && useStdio !== undefined) throw new TypeError('Owned stdout does not borrow physical stdio');
       const stackBytes = u32(options.stackBytes ?? 1024 * 1024);
       if (!stackBytes || stackBytes % 65536) throw new RangeError('Stack backing must be a positive whole number of Wasm pages');
       const wire = startupWire(path, argv, env, options.random, options.cwd);
       if (aborted(signal)) throw abortReason(signal);
       const physical = useStdio || resultPolicy?.borrowStdin ? await import('../host/node/stdio.ts') : undefined;
-      const stdio = useStdio ? physical!.captureStdio() : physical?.captureStdin();
+      const stdio = ownedStdout ?? (useStdio ? physical!.captureStdio() : physical?.captureStdin());
       if (aborted(signal)) throw abortReason(signal);
       put(result(core.linux_startup_input(wire.length)), wire);
       const begun = capture ? capture.linux_capture_result_startup(stdio ? 1 : 0)
-        : stdio ? core.linux_startup_begin_stdio() : core.linux_startup_begin();
+        : owned ? owned.linux_owned_stdout_startup()
+          : stdio ? core.linux_startup_begin_stdio() : core.linux_startup_begin();
       const id = unsigned(64, core.linux_result());
       checked(core.linux_startup_input(0));
       if (begun !== 0) {
@@ -1077,6 +1130,8 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
         resourcesRetired: w.resourcesRetired};
     },
     workerSettled(handle: ExecutionBinding): Promise<void> { return workerOf(handle).bridge.requestsSettled(); },
+    // Only an actual Node exit settles this; requests can settle sooner.
+    workerStopped(handle: ExecutionBinding): Promise<{code: number}> { return workerOf(handle).bridge.stopped; },
     runWorker,
     runPath(handle: ExecutionBinding, load?: Loader): Promise<{status: number; sourceFailures: number}> {
       const w = workerOf(handle);

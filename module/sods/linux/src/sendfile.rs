@@ -454,7 +454,7 @@ impl Sendfile {
     /// Qualification for a startup-installed owned stdout. Return a
     /// foreign/stale request intact; neither a matching endpoint number nor
     /// a capability receipt is permission to rediscover the guest fd.
-    #[cfg(any(test, feature = "queued-worker-probe"))]
+    #[cfg(any(test, feature = "queued-worker-probe", feature = "owned-stdout-v1"))]
     pub(crate) fn approve_owned_stdout(
         &self,
         request: CapabilityRequest,

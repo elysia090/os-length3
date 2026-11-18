@@ -40,6 +40,18 @@ test('borrowed stdio uses SAB views, exact prefixes and EOF without closing desc
   assert.equal(result.err.toString(), 'ef');
 });
 
+test('the borrowed adapter ignores an extra fd and rejects endpoint coercion', {skip: process.platform !== 'linux'}, () => {
+  const result = child(`
+    const io = captureStdio(), bytes = new Uint8Array([65]);
+    io.prepareView(bytes);
+    assert.deepEqual(io.transfer(2, bytes, 2), {kind:'count',count:1});
+    const unrelated = {valueOf() { assert.fail('no endpoint coercion'); }};
+    assert.throws(() => io.transfer(unrelated, bytes), /Unknown standard endpoint/);
+  `, new Uint8Array());
+  assert.equal(result.out.toString(), 'A');
+  assert.equal(result.err.length, 0, 'the foreign descriptor never received the byte');
+});
+
 test('native bad descriptor is known-zero and no adapter retry occurs', {skip: process.platform !== 'linux'}, () => {
   child(`
     const io = captureStdio();

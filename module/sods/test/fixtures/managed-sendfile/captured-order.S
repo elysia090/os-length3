@@ -8,8 +8,26 @@ _start:
   cmpq $1, (%rsp)
   jne bad
   mov 8(%rsp), %rax
+#ifdef SODS_OWNED_STDOUT_ONLY
+  cmpb $47, (%rax)
+  jne bad
+  /* No inherited stdin or stderr even when the host process has both. */
+  xor %eax, %eax
+  xor %edi, %edi
+  lea first(%rip), %rsi
+  mov $1, %edx
+  syscall
+  cmp $-9, %rax
+  jne bad
+  mov $1, %eax
+  mov $2, %edi
+  syscall
+  cmp $-9, %rax
+  jne bad
+#else
   cmpb $109, (%rax)
   jne bad
+#endif
 
   mov $2, %eax
   lea input(%rip), %rdi
@@ -18,6 +36,10 @@ _start:
   syscall
   test %rax, %rax
   js bad
+#ifdef SODS_OWNED_STDOUT_ONLY
+  test %rax, %rax /* The first ordinary open uses the absent fd 0. */
+  jne bad
+#endif
   mov %eax, %r12d
 
   movb $65, first(%rip)
@@ -53,7 +75,7 @@ _start:
   movb $88, first(%rip)
   movb $67, last(%rip)
   mov $1, %eax
-#ifdef SODS_PHYSICAL_ONE_ENDPOINT
+#if defined(SODS_PHYSICAL_ONE_ENDPOINT) || defined(SODS_OWNED_STDOUT_ONLY)
   mov $1, %edi
 #else
   mov $2, %edi
@@ -65,6 +87,23 @@ _start:
   jne bad
   movb $89, last(%rip)
 
+#ifdef SODS_OWNED_STDOUT_ONLY
+  /* sendfile wrote the ELF magic's 0x7f; the original OFD now reads ELF. */
+  xor %eax, %eax
+  mov %r12d, %edi
+  lea suffix(%rip), %rsi
+  mov $3, %edx
+  syscall
+  cmp $3, %rax
+  jne bad
+  cmpb $69, suffix(%rip)
+  jne bad
+  cmpb $76, suffix+1(%rip)
+  jne bad
+  cmpb $70, suffix+2(%rip)
+  jne bad
+#endif
+
   mov $42, %edi
   jmp finish
 bad:
@@ -75,8 +114,15 @@ finish:
   ud2
 
 .section .rodata
+#ifdef SODS_OWNED_STDOUT_ONLY
+input: .asciz "/bin/owned.elf"
+#else
 input: .asciz "/source"
+#endif
 .section .data
 first: .byte 0
 last: .byte 0
+#ifdef SODS_OWNED_STDOUT_ONLY
+suffix: .space 3
+#endif
 .section .note.GNU-stack,"",@progbits
