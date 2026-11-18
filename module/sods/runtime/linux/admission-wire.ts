@@ -12,6 +12,13 @@ export const ownedInput = (input: Uint8Array): Uint8Array<ArrayBuffer> => {
   return new Bytes(input);
 };
 
+/** Independently chosen by the trusted caller. The artifact/blob reader and
+ * guest do not set retention or the largest indivisible request. */
+export interface CaptureResultCapacity {
+  readonly maximumRequest: number;
+  readonly queueBytes: number;
+}
+
 const ordinaryOnly = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish', 'linux_sendfile_load_start', 'linux_sendfile_load_finish',
   'linux_sendfile_start', 'linux_sendfile_receipt', 'linux_sendfile_cleanup', 'linux_sendfile_query',
   'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create'];

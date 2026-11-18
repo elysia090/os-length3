@@ -1,5 +1,4 @@
-import {ownedInput, validateLinuxMemorySurface} from './admission-wire.ts';
-import type {CaptureResultCapacity} from './capture-result.ts';
+import {ownedInput, validateLinuxMemorySurface, type CaptureResultCapacity} from './admission-wire.ts';
 import {utf8} from './flow.ts';
 import {fixedTranslatedModule, fixedTranslatedModuleAsync} from './translated-image.ts';
 import {prepare} from '../translation/share.ts';

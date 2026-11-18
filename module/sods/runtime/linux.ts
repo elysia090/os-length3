@@ -31,8 +31,8 @@ export async function managedRoot(module: WebAssembly.Module, capacity: ManagedR
 
 // Explicit capture does not change ordinary linux()/managedRoot() or enable
 // browser/Workerd execution. The Sods entry owns its preflight and startup.
-export {capturedResultHost, type CaptureResultPin, type CaptureResultCapacity} from './linux/capture-result.ts';
-export {validateCaptureResultModule} from './linux/admission-wire.ts';
+export {capturedResultHost, type CaptureResultPin} from './linux/capture-result.ts';
+export {validateCaptureResultModule, type CaptureResultCapacity} from './linux/admission-wire.ts';
 
 export {Vfs, mountTarget, provide, type File} from './linux/fs.ts';
 export {loadFileScope, type FileScope} from './linux/file-scope.ts';

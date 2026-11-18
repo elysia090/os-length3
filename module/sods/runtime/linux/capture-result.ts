@@ -1,6 +1,6 @@
 // The Linux entry snapshots the selected input before its first await.
 import {isNode, sha256} from '../host.ts';
-import {ownedInput, validateCaptureResultIdentity} from './admission-wire.ts';
+import {ownedInput, validateCaptureResultIdentity, type CaptureResultCapacity} from './admission-wire.ts';
 
 const Module = WebAssembly.Module, apply = Reflect.apply;
 const length = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'length')!.get!;
@@ -11,12 +11,6 @@ export interface CaptureResultPin {
   readonly kind: 'sods-linux-capture-result-v5';
   readonly byteLength: number;
   readonly sha256: string;
-}
-/** Independently chosen by the trusted caller. The artifact/blob reader and
- * guest do not set retention or the largest indivisible request. */
-export interface CaptureResultCapacity {
-  readonly maximumRequest: number;
-  readonly queueBytes: number;
 }
 /** Explicit experimental opt-in, not the default managedRoot or product terminal.
  * The independent pin and exact owned snapshot are verified before any Core
