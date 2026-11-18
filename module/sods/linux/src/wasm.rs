@@ -34,6 +34,8 @@ struct Builder {
 }
 struct Sealed {
     files: Files,
+    #[cfg(feature = "queued-output-probe")]
+    queue_probe: Option<descriptor::QueueProbe>,
     table: Option<Table>,
     root: Option<mount::Place>,
     root_view: Option<mount::Ticket>,
@@ -318,6 +320,86 @@ pub extern "C" fn linux_abi_version() -> u32 {
 #[no_mangle]
 pub extern "C" fn linux_sendfile_probe() -> u32 {
     1
+}
+#[cfg(feature = "queued-output-probe")]
+fn queue_probe_error(error: descriptor::QueueProbeError) -> i32 {
+    match error {
+        descriptor::QueueProbeError::Capacity => -1,
+        descriptor::QueueProbeError::Range => -5,
+        descriptor::QueueProbeError::Owner => -10,
+    }
+}
+/// Diagnostic-only admission under the synthetic artifact sentinel. The normal
+/// host refuses this entire feature artifact before instantiation.
+#[cfg(feature = "queued-output-probe")]
+#[no_mangle]
+pub extern "C" fn linux_queued_output_probe_init() -> i32 {
+    with_state(false, |s| {
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        if r.queue_probe.is_some() {
+            return Err(-4);
+        }
+        r.queue_probe = Some(descriptor::QueueProbe::new(&r.files).map_err(queue_probe_error)?);
+        Ok(0)
+    })
+}
+/// Synthetic publisher on one real live execution's resident table. This is
+/// not a selected syscall, lazy continuation, Worker producer or host write.
+#[cfg(feature = "queued-output-probe")]
+#[no_mangle]
+pub extern "C" fn linux_queued_output_probe_publish(
+    id: u64,
+    invocation: u64,
+    fd: u32,
+    lane: u32,
+    count: u32,
+) -> i32 {
+    with_state(false, |s| {
+        let index = execution_index(s, id)?;
+        let slot = s.executions[index].live_mut()?;
+        if !matches!(slot.resources, Resources::Normal { .. }) {
+            return Err(-11);
+        }
+        let table = slot.resources.table()?;
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let queue = r.queue_probe.as_mut().ok_or(-9)?;
+        let invocation = slot.execution.invocation(invocation).map_err(|_| -11)?;
+        slot.execution.hold_call(invocation).map_err(|_| -11)?;
+        let publication = queue.publish(&mut r.files, table, fd, lane as usize, count as usize);
+        slot.execution
+            .finish_call(invocation)
+            .expect("diagnostic synchronous call owner");
+        publication.map(|n| n as u64).map_err(queue_probe_error)
+    })
+}
+/// Scalar inspection only: no pointer, stopped access claim, or delivery.
+#[cfg(feature = "queued-output-probe")]
+#[no_mangle]
+pub extern "C" fn linux_queued_output_probe_peek(lane: u32, index: u32) -> i32 {
+    with_state(false, |s| {
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let (length, byte) = r
+            .queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .peek(&mut r.files, lane as usize, index as usize)
+            .map_err(queue_probe_error)?;
+        s.length = length as u64;
+        Ok(u64::from(byte))
+    })
+}
+#[cfg(feature = "queued-output-probe")]
+#[no_mangle]
+pub extern "C" fn linux_queued_output_probe_discard(lane: u32) -> i32 {
+    with_state(false, |s| {
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        r.queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .discard(&mut r.files, lane as usize)
+            .map(u64::from)
+            .map_err(queue_probe_error)
+    })
 }
 #[no_mangle]
 pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
@@ -621,6 +703,8 @@ pub extern "C" fn linux_files_seal(fd_limit: u32) -> i32 {
         let reads = Reads::new(&files, capacity);
         s.sealed = Some(Sealed {
             files,
+            #[cfg(feature = "queued-output-probe")]
+            queue_probe: None,
             table,
             root,
             root_view: b.root_view.take(),
@@ -2115,6 +2199,8 @@ pub extern "C" fn linux_prepared_root(
         let reads = Reads::new(&files, capacity);
         s.sealed = Some(Sealed {
             files,
+            #[cfg(feature = "queued-output-probe")]
+            queue_probe: None,
             table: None,
             root: Some(root),
             root_view: Some(view),

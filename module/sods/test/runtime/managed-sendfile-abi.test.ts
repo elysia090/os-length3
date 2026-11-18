@@ -8,13 +8,15 @@ import {memoryHost} from '../../runtime/linux/memory-host.ts';
 // is proved here. A probe-feature core must never enter the production host.
 const normalArtifact = process.env.SODS_LINUX_WASM;
 const probeArtifact = process.env.SODS_SENDFILE_PROBE_WASM;
+const queueArtifact = process.env.SODS_QUEUED_OUTPUT_PROBE_WASM;
 const normalSkip = normalArtifact ? false : 'Requires explicit SODS_LINUX_WASM production ABI7 artifact';
 const probeSkip = probeArtifact ? false : 'Requires explicit SODS_SENDFILE_PROBE_WASM feature artifact; normal core cannot accept proof1';
+const queueSkip = queueArtifact ? false : 'Requires the isolated SODS_QUEUED_OUTPUT_PROBE_WASM feature artifact';
 const bytes = (value: string) => new TextEncoder().encode(value);
 type Owner = {id: bigint; invocation: bigint; sequence: number};
 type Send = {owner: Owner; action: bigint; sequence: number; endpoint: bigint; offered: bigint};
 
-function raw(path: string, probe: boolean, lazyData = false) {
+function raw(path: string, probe: boolean, lazyData = false, queued = false) {
   const wasm = new Uint8Array(readFileSync(path)), module = new WebAssembly.Module(wasm);
   assert.equal(WebAssembly.Module.imports(module).length, 0);
   const e = new WebAssembly.Instance(module).exports;
@@ -37,6 +39,9 @@ function raw(path: string, probe: boolean, lazyData = false) {
   assert.equal(call('linux_abi_version'), 7, 'Explicit artifacts must be fresh ABI7, not silently skipped ABI6');
   assert.equal(Object.hasOwn(e, 'linux_sendfile_probe'), probe, 'Normal/probe artifacts must not be interchanged');
   assert.equal(Object.hasOwn(e, 'linux_sendfile_probe_access_ended'), probe);
+  for (const name of ['init', 'publish', 'peek', 'discard']) {
+    assert.equal(Object.hasOwn(e, `linux_queued_output_probe_${name}`), queued);
+  }
   if (probe) assert.equal(call('linux_sendfile_probe'), 1);
   assert.equal(call('linux_init', 16, 64), 0);
   assert.equal(call('linux_prepared_files', 8, 8, 4096, 16, 128, 256, 16, 32, 1, 192, 0), 0);
@@ -427,4 +432,56 @@ test('actual resident EOF stays qualified offered0 and returns0 without closing 
   assert.equal(close.tag, 0); assert.equal(close.value, 0n, 'qualified EOF did not close continuation admission');
   assert.equal(r.call('linux_run_receipt', owner.id, owner.invocation, 2, 0n), 0);
   assert.equal(r.call('linux_execution_retire', owner.id), 0); assert.equal(r.result(), 1n);
+});
+
+test('isolated queue probe retains distinct resident prefixes in actual Sealed after producer resource retirement', {skip: queueSkip}, () => {
+  const r = raw(queueArtifact!, true, false, true);
+  assert.throws(() => memoryHost(r.module, 2, 8), /Synthetic sendfile probe/);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  assert.ok(r.call('linux_queued_output_probe_init') < 0);
+  const owner = r.live(), fd = r.open(owner);
+  const publish = (lane: number, length: number, invocation = owner.invocation) =>
+    r.call('linux_queued_output_probe_publish', owner.id, invocation, Number(fd), lane, length);
+  const peek = (lane: number, index: number) => {
+    assert.equal(r.call('linux_queued_output_probe_peek', lane, index), 0);
+    return {length: r.length(), byte: r.result()};
+  };
+  for (const [lane, length, invocation] of [[2, 2, owner.invocation], [0, 0, owner.invocation], [0, 2, owner.invocation + 1n]] as const) {
+    assert.ok(publish(lane, length, invocation) < 0);
+  }
+  assert.deepEqual(r.remaining(owner, fd), bytes('abcdef'));
+  assert.equal(publish(0, 2), 0); assert.equal(r.result(), 2n);
+  assert.ok(publish(0, 1) < 0, 'one full lane must refuse without moving the shared cursor');
+  assert.equal(publish(1, 2), 0); assert.equal(r.result(), 2n);
+  assert.equal(publish(0, 4), -5, 'partial resident tail is not an exact four-byte publication');
+  assert.deepEqual(r.remaining(owner, fd), bytes('ef'));
+  assert.deepEqual(peek(0, 0), {length: 2n, byte: 97n});
+  assert.deepEqual(peek(1, 0), {length: 2n, byte: 99n});
+  assert.equal(r.call('linux_queued_output_probe_peek', 1, 2), -5);
+  const path = r.openReady(owner), pathBytes = r.capturePath(owner, path, '/app');
+  assert.equal(publish(0, 1), -4);
+  assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), -4);
+  assert.equal(r.call('linux_queued_output_probe_discard', 0), -4);
+  assert.equal(r.call('linux_syscall_path_finish', owner.id, path, BigInt(pathBytes.length), 0), 0);
+  // Advance the diagnostic read cursor using a synthetic stopped read receipt.
+  // This only sets up real resident EOF; it is not a delivery signal.
+  assert.equal(r.call('linux_managed_read_begin', owner.id, Number(fd), 0n, 2n), 0);
+  const tail = r.result();
+  assert.equal(r.call('linux_managed_read_start', owner.id, tail), 0);
+  assert.equal(r.length(), 2n);
+  assert.equal(r.call('linux_read_receipt', tail, 2n, 0), 0);
+  assert.equal(r.call('linux_read_retire', tail), 0);
+  assert.equal(publish(0, 1), -5, 'resident EOF must not publish another chunk');
+  assert.deepEqual(r.remaining(owner, fd), bytes(''));
+  assert.equal(r.request(owner, 3n, [fd, 0n, 0n, 0n, 0n, 0n]).value, 0n);
+  assert.equal(r.call('linux_execution_retire', owner.id), 0); assert.equal(r.result(), 0n);
+  // Synthetic Run Fault receipt, then actual resource retirement in this Core.
+  assert.equal(r.call('linux_run_receipt', owner.id, owner.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', owner.id), 0); assert.equal(r.result(), 1n);
+  assert.ok(publish(0, 1) < 0);
+  assert.deepEqual([peek(0, 0), peek(0, 1), peek(1, 0), peek(1, 1)], [97n, 98n, 99n, 100n].map(byte => ({length: 2n, byte})));
+  assert.equal(r.call('linux_queued_output_probe_discard', 0), 0); assert.equal(r.result(), 1n);
+  assert.deepEqual(peek(0, 0), {length: 0n, byte: 0n});
+  assert.deepEqual(peek(1, 0), {length: 2n, byte: 99n});
+  assert.equal(r.call('linux_queued_output_probe_discard', 1), 0); assert.equal(r.result(), 1n);
 });

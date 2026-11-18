@@ -1,6 +1,8 @@
 //! Private coarse source retention and finite prefix publication. Not a guest
 //! pipe, an execution/cancellation gate, or an external output/drain adapter.
-use super::{Error as FilesError, Files, ReadHold, ReadPrefix, Table};
+#[cfg(any(test, feature = "queued-output-probe"))]
+use super::Table;
+use super::{Error as FilesError, Files, ReadHold, ReadPrefix};
 use std::num::NonZeroUsize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -420,55 +422,92 @@ pub(super) struct Producer(DestinationId);
 #[derive(Debug)]
 pub(super) struct Consumer(DestinationId);
 
-/// One coarse Files owner shared by bounded independent queues. Lanes append
-/// without replacement, so the index identifies a unique lifetime in this
-/// root. No queue or consumer can take Files out or replace its backing.
-pub(super) struct Root {
-    files: Files,
+// The existing Core and disconnected Root can each own one registry *beside*
+// one Files. The registry acquires no separately replaceable backing.
+struct LaneRegistry {
+    owner: u64,
     lanes: Vec<Queue>,
     limit: usize,
 }
-impl Root {
-    pub(super) fn new(files: Files, limit: usize) -> Result<Self, (Error, Files)> {
+impl LaneRegistry {
+    fn new(files: &Files, limit: usize) -> Result<Self, Error> {
         let mut lanes = Vec::new();
-        if lanes.try_reserve_exact(limit).is_err() {
-            return Err((Error::Capacity, files));
-        }
+        lanes
+            .try_reserve_exact(limit)
+            .map_err(|_| Error::Capacity)?;
         Ok(Self {
-            files,
+            owner: files.owner(),
             lanes,
             limit,
         })
     }
-    pub(super) fn destination(&mut self, limits: Limits) -> Result<(Producer, Consumer), Error> {
+    fn destination(&mut self, limits: Limits) -> Result<(Producer, Consumer), Error> {
         let lane = self.lanes.len();
         if lane == self.limit {
             return Err(Error::Capacity);
         }
         let id = DestinationId {
-            owner: self.files.owner(),
+            owner: self.owner,
             lane,
         };
         let queue = Queue::new(id, limits)?;
-        // Root reserved this index's storage before taking Files. Failed
-        // queue construction changes no lane, capability or source ownership.
+        // Index storage was reserved at registry construction. Failure above
+        // changes neither lane admission nor source ownership.
         self.lanes.push(queue);
         Ok((Producer(id), Consumer(id)))
     }
-    fn lane(&mut self, id: DestinationId) -> Result<(&mut Files, &mut Queue), Error> {
-        if id.owner != self.files.owner() {
+    fn lane<'a>(
+        &'a mut self,
+        files: &'a mut Files,
+        id: DestinationId,
+    ) -> Result<(&'a mut Files, &'a mut Queue), Error> {
+        if id.owner != self.owner || id.owner != files.owner() {
             return Err(Error::BadDestination);
         }
         let queue = self.lanes.get_mut(id.lane).ok_or(Error::BadDestination)?;
-        Ok((&mut self.files, queue))
+        Ok((files, queue))
     }
-    pub(super) fn writer<'a>(&'a mut self, producer: &'a Producer) -> Result<Writer<'a>, Error> {
-        let (files, queue) = self.lane(producer.0)?;
+    fn writer<'a>(
+        &'a mut self,
+        files: &'a mut Files,
+        producer: &'a Producer,
+    ) -> Result<Writer<'a>, Error> {
+        let (files, queue) = self.lane(files, producer.0)?;
         Ok(Writer { files, queue })
     }
-    pub(super) fn reader<'a>(&'a mut self, consumer: &'a Consumer) -> Result<Reader<'a>, Error> {
-        let (files, queue) = self.lane(consumer.0)?;
+    fn reader<'a>(
+        &'a mut self,
+        files: &'a mut Files,
+        consumer: &'a Consumer,
+    ) -> Result<Reader<'a>, Error> {
+        let (files, queue) = self.lane(files, consumer.0)?;
         Ok(Reader { files, queue })
+    }
+}
+
+/// One coarse Files owner shared by bounded independent queues. Lanes append
+/// without replacement, so the index identifies a unique lifetime in this
+/// root. No queue or consumer can take Files out or replace its backing.
+pub(super) struct Root {
+    files: Files,
+    registry: LaneRegistry,
+}
+impl Root {
+    pub(super) fn new(files: Files, limit: usize) -> Result<Self, (Error, Files)> {
+        let registry = match LaneRegistry::new(&files, limit) {
+            Ok(registry) => registry,
+            Err(error) => return Err((error, files)),
+        };
+        Ok(Self { files, registry })
+    }
+    pub(super) fn destination(&mut self, limits: Limits) -> Result<(Producer, Consumer), Error> {
+        self.registry.destination(limits)
+    }
+    pub(super) fn writer<'a>(&'a mut self, producer: &'a Producer) -> Result<Writer<'a>, Error> {
+        self.registry.writer(&mut self.files, producer)
+    }
+    pub(super) fn reader<'a>(&'a mut self, consumer: &'a Consumer) -> Result<Reader<'a>, Error> {
+        self.registry.reader(&mut self.files, consumer)
     }
 }
 
@@ -529,6 +568,122 @@ impl Reader<'_> {
     }
     pub(super) fn discard_front(&mut self) -> bool {
         self.queue.discard_front()
+    }
+}
+
+/// Isolated raw Core diagnostic only, deliberately not a producer syscall or
+/// host drain. Fixed small lanes keep this probe independent of runtime limits.
+#[cfg(feature = "queued-output-probe")]
+pub(crate) struct QueueProbe {
+    registry: LaneRegistry,
+    producers: [Producer; 2],
+    consumers: [Consumer; 2],
+}
+#[cfg(feature = "queued-output-probe")]
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum QueueProbeError {
+    Capacity,
+    Range,
+    Owner,
+}
+#[cfg(feature = "queued-output-probe")]
+impl From<Error> for QueueProbeError {
+    fn from(error: Error) -> Self {
+        match error {
+            Error::Capacity | Error::Full => Self::Capacity,
+            Error::Length => Self::Range,
+            _ => Self::Owner,
+        }
+    }
+}
+#[cfg(feature = "queued-output-probe")]
+impl QueueProbe {
+    pub(crate) fn new(files: &Files) -> Result<Self, QueueProbeError> {
+        let mut registry = LaneRegistry::new(files, 2)?;
+        let limits = || Limits {
+            pins: 1,
+            entries: 1,
+            bytes: 4,
+        };
+        let (a, read_a) = registry.destination(limits())?;
+        let (b, read_b) = registry.destination(limits())?;
+        Ok(Self {
+            registry,
+            producers: [a, b],
+            consumers: [read_a, read_b],
+        })
+    }
+    pub(crate) fn publish(
+        &mut self,
+        files: &mut Files,
+        table: &Table,
+        fd: u32,
+        lane: usize,
+        count: usize,
+    ) -> Result<usize, QueueProbeError> {
+        let length = NonZeroUsize::new(count)
+            .filter(|n| n.get() <= 4)
+            .ok_or(QueueProbeError::Range)?;
+        let producer = self.producers.get(lane).ok_or(QueueProbeError::Range)?;
+        let (files, queue) = self.registry.lane(files, producer.0)?;
+        let source = files
+            .reserve_read(table, fd, count as u64)
+            .map_err(Error::Source)?;
+        if source.length() != count {
+            files.abort_read(source);
+            return Err(QueueProbeError::Range);
+        }
+        let reservation = match queue.reserve(length) {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                files.abort_read(source);
+                return Err(error.into());
+            }
+        };
+        let pin = match queue.pin_prefix(files, &source, length) {
+            Ok(pin) => pin,
+            Err(error) => {
+                queue.cancel(reservation).expect("same private reservation");
+                files.abort_read(source);
+                return Err(error.into());
+            }
+        };
+        match queue.publish(files, reservation, pin, source) {
+            Ok(accepted) => Ok(accepted.get()),
+            Err(Rejected {
+                error,
+                reservation,
+                pin,
+                source,
+            }) => {
+                queue.cancel(reservation).expect("same private reservation");
+                queue.release(pin).expect("same private prepared pin");
+                files.abort_read(source);
+                Err(error.into())
+            }
+        }
+    }
+    pub(crate) fn peek(
+        &mut self,
+        files: &mut Files,
+        lane: usize,
+        index: usize,
+    ) -> Result<(usize, u8), QueueProbeError> {
+        let consumer = self.consumers.get(lane).ok_or(QueueProbeError::Range)?;
+        let mut reader = self.registry.reader(files, consumer)?;
+        let Some(bytes) = reader.front_bytes()? else {
+            return Ok((0, 0));
+        };
+        let byte = *bytes.get(index).ok_or(QueueProbeError::Range)?;
+        Ok((bytes.len(), byte))
+    }
+    pub(crate) fn discard(
+        &mut self,
+        files: &mut Files,
+        lane: usize,
+    ) -> Result<bool, QueueProbeError> {
+        let consumer = self.consumers.get(lane).ok_or(QueueProbeError::Range)?;
+        Ok(self.registry.reader(files, consumer)?.discard_front())
     }
 }
 
@@ -1149,7 +1304,7 @@ mod tests {
             .unwrap_err(),
             Error::Capacity
         );
-        assert!(a.lanes.is_empty());
+        assert!(a.registry.lanes.is_empty());
         let limits = || Limits {
             pins: 1,
             entries: 1,
@@ -1173,6 +1328,26 @@ mod tests {
         assert_eq!(b.reader(&bc).unwrap().front_bytes(), Ok(None));
         a.files.let_go(a_table).unwrap();
         b.files.let_go(b_table).unwrap();
+    }
+
+    #[cfg(feature = "queued-output-probe")]
+    #[test]
+    fn a_probe_registry_cannot_be_paired_with_foreign_files_even_at_equal_slots() {
+        let (mut a, _, _, at, af) = files(502);
+        let (mut b, _, _, bt, bf) = files(504);
+        let mut probe = QueueProbe::new(&a).unwrap();
+        assert_eq!(af, bf);
+        assert_eq!(
+            probe.publish(&mut b, &bt, bf, 0, 2),
+            Err(QueueProbeError::Owner)
+        );
+        assert_eq!(b.offset(&bt, bf), Ok((0, 0)));
+        assert_eq!(probe.publish(&mut a, &at, af, 0, 2), Ok(2));
+        assert_eq!(probe.peek(&mut b, 0, 0), Err(QueueProbeError::Owner));
+        assert_eq!(probe.discard(&mut b, 0), Err(QueueProbeError::Owner));
+        assert_eq!(probe.peek(&mut a, 0, 0), Ok((2, b'b')));
+        assert_eq!(probe.discard(&mut a, 0), Ok(true));
+        assert_eq!(a.offset(&at, af), Ok((2, 1)));
     }
 
     #[test]

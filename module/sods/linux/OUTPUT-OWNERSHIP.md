@@ -104,3 +104,14 @@ independent of Files; discarding or destroying the native owner cannot change
 its bytes. Inside Wasm, an owned Rust allocation still cannot outlive the
 instance's linear memory. Take is neither a borrowed view nor evidence of
 external delivery or a stopped host drain. No guest cursor is changed here.
+
+## Isolated Core ownership probe
+
+The explicit `queued-output-probe` feature puts two fixed, bounded lanes next
+to the one Files owner in the actual Wasm Sealed state. Its synthetic publisher
+uses a live normal execution's resident table, and only scalar byte/length
+inspection or explicit diagnostic discard follows. It can check retention
+after actual Rust execution resource retirement without exposing a host pointer
+or claiming a real Worker producer, source-load callback or delivery receipt.
+The feature implies the existing rejected synthetic probe marker. Its state and
+exports are absent from both normal builds and the older sendfile-only probe.

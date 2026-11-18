@@ -14,6 +14,8 @@ crate-type = ["rlib", "cdylib"]
 # Explicitly synthetic raw-ABI test artifact. The production host refuses its
 # sentinel before instantiation; never install it as a selected caller artifact.
 sendfile-probe = []
+# Internal sealed-owner/queue diagnostics, rejected by the same host marker.
+queued-output-probe = ["sendfile-probe"]
 
 [dependencies]
 sods-file-store = { path = "../file-store", default-features = false }
