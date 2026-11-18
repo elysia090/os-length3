@@ -53,8 +53,9 @@ no replacement/reuse or independent teardown in this slice. Dropping a ticket
 is not host stopped-use evidence and does not reclaim a lane.
 
 The destination reserves exact nonzero Q payload bytes and one K entry, and
-prepares one R pin independently. Q includes reserved and accepted bytes until
-cancellation or explicit discard. K or R can be exhausted with byte room left.
+prepares one R pin independently for each file prefix. Q includes reserved and
+accepted bytes until cancellation, take or explicit discard. K or R can be
+exhausted with byte room left.
 Both record arenas reserve capacity at construction, then initialize slots on
 first use. Private free lists and linked publication order avoid a scan of
 either queue arena. Slot generations never wrap; saturated slots
@@ -74,8 +75,8 @@ host. Dropped tickets retain their credits while the destination is retained.
 
 Guest-call and cancellation admission, lazy source coordination, drain
 binding, captured delivery and Linux pipe algorithms remain unselected gates.
-This owner is not installed in the Core or Worker and creates no positive
-physical capability, guest result or new ABI.
+Except for the isolated diagnostic below, this owner is not installed in the
+Core or Worker and creates no positive physical capability or guest result.
 
 Before first publication, a future continuation must check both its exact
 held invocation and its own open sequence in the same non-reentrant turn.
@@ -99,10 +100,10 @@ the queue, credits and receiver unchanged. An absent published head is not EOF:
 reservations may still be live. Closing admission does not discard accepted work.
 
 After checking the entire head and its credit update, take performs one bulk
-copy and releases only that head's Q/K/R in the same turn. The receiver is
-independent of Files; discarding or destroying the native owner cannot change
-its bytes. Inside Wasm, an owned Rust allocation still cannot outlive the
-instance's linear memory. Take is neither a borrowed view nor evidence of
+copy and releases only that head's Q/K and any R pin in the same turn. The
+receiver is independent of Files; discarding or destroying the native owner
+cannot change its bytes. Inside Wasm, an owned Rust allocation still cannot
+outlive the instance's linear memory. Take is neither a borrowed view nor evidence of
 external delivery or a stopped host drain. No guest cursor is changed here.
 
 ## Isolated Core ownership probe
@@ -115,3 +116,34 @@ after actual Rust execution resource retirement without exposing a host pointer
 or claiming a real Worker producer, source-load callback or delivery receipt.
 The feature implies the existing rejected synthetic probe marker. Its state and
 exports are absent from both normal builds and the older sendfile-only probe.
+
+## Ordering native owned copies and file ranges
+
+A private writer can now snapshot a stable input loan into lane-owned storage.
+It first validates admission and exact nonzero Q/K reservation, then performs
+one input copy into privately allocated storage. The lane retains no spare Vec
+capacity relative to the reservation and does not accept a caller's allocation.
+Allocator rounding, other Files backing, and metadata remain outside Q. A
+failed copy admission returns the reservation unchanged. The copied record uses
+no R pin. It shares the same FIFO link, reader, and credit release as a pinned
+file prefix, whose publication still copies no bytes. After a producer's pin
+ticket is consumed, the record keeps only a lane-local index: queued pins
+cannot be released or reused before removal of that record. Native checks publish
+copied A, pinned b, and copied C in order despite reverse reservation order,
+mutate the input buffers, retire the source table and producer, and read AbC
+through an independent consumer.
+
+This does not route guest writes. A real captured stream must resolve write
+and sendfile through the same held destination identity, including fd aliases,
+and reject operations it cannot route without bypassing that destination.
+The current managed physical write and negative-only sendfile are unchanged.
+The relay/session would have to retain the Core for the consumer independently
+of the guest Worker. Copying into Core then into an independent host buffer
+would move mutable write bytes twice; no one-copy host-write claim is made.
+
+Worker exit proves that Worker's guest access ended. It proves neither that an
+external drain stopped nor that any bytes reached a sink. Queue admission
+closure, emptiness, discarded records, a stop request and a reported count
+cannot replace a matching sink receipt. Unknown external effects or access
+must retain their pending backing and cannot be retried. None is started by
+these private operations.

@@ -1,5 +1,5 @@
-//! Private coarse source retention and finite prefix publication. Not a guest
-//! pipe, an execution/cancellation gate, or an external output/drain adapter.
+//! Private finite publication of retained file prefixes and owned copies.
+//! Not a guest pipe, cancellation gate, or external output/drain adapter.
 #[cfg(any(test, feature = "queued-output-probe"))]
 use super::Table;
 use super::{Error as FilesError, Files, ReadHold, ReadPrefix};
@@ -130,6 +130,12 @@ impl<T> Arena<T> {
     }
     // Internal links cannot outlive their live cells. Call only after checked
     // external handle admission or following a link owned by this arena user.
+    fn live(&self, index: usize) -> &T {
+        let State::Live(value) = &self.cells[index].state else {
+            unreachable!("live arena index")
+        };
+        value
+    }
     fn live_mut(&mut self, index: usize) -> &mut T {
         let State::Live(value) = &mut self.cells[index].state else {
             unreachable!("live arena index")
@@ -154,29 +160,53 @@ struct Range {
 }
 enum Entry {
     Reserved(NonZeroUsize),
-    Queued { pin: Pin, next: Option<usize> },
+    Queued { chunk: Chunk, next: Option<usize> },
+}
+enum Chunk {
+    // An admitted, lane-local link, not the producer's ticket. A queued pin
+    // cannot be released or reused until this record is removed.
+    Pinned(usize),
+    Copied(Vec<u8>),
+}
+enum HeadBytes<'a> {
+    Pinned { pin: usize, prefix: &'a ReadPrefix },
+    Copied(&'a [u8]),
+}
+impl<'a> HeadBytes<'a> {
+    fn len(&self) -> NonZeroUsize {
+        match self {
+            Self::Pinned { prefix, .. } => prefix.length,
+            Self::Copied(bytes) => NonZeroUsize::new(bytes.len()).expect("nonempty copied entry"),
+        }
+    }
+    fn bytes(self, files: &'a mut Files) -> Result<&'a [u8], Error> {
+        Ok(match self {
+            Self::Pinned { prefix, .. } => files.prefix_bytes(prefix)?,
+            Self::Copied(bytes) => bytes,
+        })
+    }
 }
 struct Head<'a> {
     index: usize,
-    pin: usize,
     next: Option<usize>,
-    prefix: &'a ReadPrefix,
+    bytes: HeadBytes<'a>,
 }
 struct Removal {
     index: usize,
-    pin: usize,
+    pin: Option<usize>,
     next: Option<usize>,
     remaining: usize,
 }
 impl Head<'_> {
-    fn removal(&self, used: usize) -> Removal {
+    fn removal(&self, used: usize, length: NonZeroUsize) -> Removal {
         Removal {
             index: self.index,
-            pin: self.pin,
+            pin: match self.bytes {
+                HeadBytes::Pinned { pin, .. } => Some(pin),
+                HeadBytes::Copied(_) => None,
+            },
             next: self.next,
-            remaining: used
-                .checked_sub(self.prefix.length.get())
-                .expect("queued byte credit"),
+            remaining: used.checked_sub(length.get()).expect("queued byte credit"),
         }
     }
 }
@@ -311,7 +341,8 @@ impl Queue {
                 })
             }
         };
-        let range = self.pins.live_mut(pin.0.key.index);
+        let pinned = pin.0.key.index;
+        let range = self.pins.live_mut(pinned);
         let commit = match files.prepare_prefix_commit(source, &range.prefix) {
             Ok(commit) => commit,
             Err((error, source)) => {
@@ -323,11 +354,51 @@ impl Queue {
                 })
             }
         };
-        // No allocation, optional admission, callbacks, or external effects
-        // here. FIFO links follow acceptance order, not reservation order.
-        let index = reservation.0.key.index;
         range.queued = true;
-        *self.entries.live_mut(index) = Entry::Queued { pin, next: None };
+        self.link(reservation, Chunk::Pinned(pinned));
+        commit.commit();
+        Ok(length)
+    }
+    /// Snapshots a stable loan, after the caller's execution/cancel checks.
+    /// The exact reservation is returned on failure, without taking input
+    /// ownership or keeping additional capacity. No file pin is required.
+    fn publish_copy(
+        &mut self,
+        reservation: Reservation,
+        input: &[u8],
+    ) -> Result<NonZeroUsize, (Error, Reservation)> {
+        let admission = self.copy_length(&reservation, input.len());
+        let length = match admission {
+            Ok(length) => length,
+            Err(error) => return Err((error, reservation)),
+        };
+        let mut bytes = Vec::new();
+        if bytes.try_reserve_exact(length.get()).is_err() || bytes.capacity() != input.len() {
+            return Err((Error::Capacity, reservation));
+        }
+        bytes.extend_from_slice(input);
+        self.link(reservation, Chunk::Copied(bytes));
+        Ok(length)
+    }
+    fn copy_length(
+        &self,
+        reservation: &Reservation,
+        offered: usize,
+    ) -> Result<NonZeroUsize, Error> {
+        if self.closed {
+            return Err(Error::Closed);
+        }
+        let length = self.reserved(reservation)?;
+        if length.get() != offered {
+            return Err(Error::Length);
+        }
+        Ok(length)
+    }
+    // No allocation, callbacks or effects at this shared acceptance point.
+    // FIFO links follow acceptance order, not reservation order.
+    fn link(&mut self, reservation: Reservation, chunk: Chunk) {
+        let index = reservation.0.key.index;
+        *self.entries.live_mut(index) = Entry::Queued { chunk, next: None };
         if let Some(tail) = self.tail {
             let Entry::Queued { next, .. } = self.entries.live_mut(tail) else {
                 unreachable!("queued tail")
@@ -337,32 +408,38 @@ impl Queue {
             self.head = Some(index);
         }
         self.tail = Some(index);
-        commit.commit();
-        Ok(length)
     }
     fn head<'a>(
         index: Option<usize>,
-        entries: &Arena<Entry>,
+        entries: &'a Arena<Entry>,
         pins: &'a Arena<Range>,
     ) -> Option<Head<'a>> {
         let index = index?;
-        let State::Live(Entry::Queued { pin, next }) = &entries.cells[index].state else {
+        let State::Live(Entry::Queued { chunk, next }) = &entries.cells[index].state else {
             unreachable!("queued head")
         };
-        let range = pins.get(pin.0.key).expect("queued pin");
-        assert!(range.queued);
+        let bytes = match chunk {
+            Chunk::Pinned(pin) => {
+                let range = pins.live(*pin);
+                assert!(range.queued);
+                HeadBytes::Pinned {
+                    pin: *pin,
+                    prefix: &range.prefix,
+                }
+            }
+            Chunk::Copied(bytes) => HeadBytes::Copied(bytes),
+        };
         Some(Head {
             index,
-            pin: pin.0.key.index,
             next: *next,
-            prefix: &range.prefix,
+            bytes,
         })
     }
-    fn front_bytes<'a>(&self, files: &'a mut Files) -> Result<Option<&'a [u8]>, Error> {
+    fn front_bytes<'a>(&'a self, files: &'a mut Files) -> Result<Option<&'a [u8]>, Error> {
         let Some(head) = Self::head(self.head, &self.entries, &self.pins) else {
             return Ok(None);
         };
-        Ok(Some(files.prefix_bytes(head.prefix)?))
+        Ok(Some(head.bytes.bytes(files)?))
     }
     fn remove_head(&mut self, removal: Removal) {
         self.used = removal.remaining;
@@ -370,7 +447,9 @@ impl Queue {
         if self.head.is_none() {
             self.tail = None;
         }
-        self.pins.remove(removal.pin);
+        if let Some(pin) = removal.pin {
+            self.pins.remove(pin);
+        }
         self.entries.remove(removal.index);
     }
     /// Transfer one entire head to separate caller-owned Rust storage. The
@@ -389,12 +468,12 @@ impl Queue {
         if !receiver.is_empty() {
             return Err(Error::ReceiverNotEmpty);
         }
-        let length = head.prefix.length;
+        let length = head.bytes.len();
         if length.get() > logical_limit || length.get() > receiver.capacity() {
             return Err(Error::ReceiverCapacity);
         }
-        let removal = head.removal(self.used);
-        let bytes = files.prefix_bytes(head.prefix)?;
+        let removal = head.removal(self.used, length);
+        let bytes = head.bytes.bytes(files)?;
         receiver.extend_from_slice(bytes);
         self.remove_head(removal);
         Ok(Some(length))
@@ -404,7 +483,7 @@ impl Queue {
         let Some(head) = Self::head(self.head, &self.entries, &self.pins) else {
             return false;
         };
-        self.remove_head(head.removal(self.used));
+        self.remove_head(head.removal(self.used, head.bytes.len()));
         true
     }
     /// Admission closure does not erase accepted data or cancel pending tickets.
@@ -542,6 +621,13 @@ impl Writer<'_> {
         source: ReadHold,
     ) -> Result<NonZeroUsize, Rejected> {
         self.queue.publish(self.files, reservation, pin, source)
+    }
+    pub(super) fn publish_copy(
+        &mut self,
+        reservation: Reservation,
+        input: &[u8],
+    ) -> Result<NonZeroUsize, (Error, Reservation)> {
+        self.queue.publish_copy(reservation, input)
     }
     pub(super) fn close_admission(&mut self) {
         self.queue.close_admission();
@@ -1063,6 +1149,171 @@ mod tests {
         assert!(out.discard_front());
         assert_eq!(out.used, 0);
         assert_eq!(out.reserve(n(1)).unwrap_err(), Error::Closed);
+    }
+
+    #[test]
+    fn copied_writes_and_a_pinned_prefix_share_acceptance_order_after_producer_retirement() {
+        let (files, _, _, table, fd) = files(502);
+        let mut root = Root::new(files, 2).ok().unwrap();
+        let (producer, consumer) = root
+            .destination(Limits {
+                bytes: 3,
+                entries: 3,
+                pins: 1,
+            })
+            .unwrap();
+        let (other, other_consumer) = root
+            .destination(Limits {
+                bytes: 1,
+                entries: 1,
+                pins: 0,
+            })
+            .unwrap();
+        let source = root.files.reserve_read(&table, fd, 1).unwrap();
+        let canonical = root.files.read_bytes(&source).as_ptr();
+        let other_reservation = root.writer(&other).unwrap().reserve(n(1)).unwrap();
+        let mut writer = root.writer(&producer).unwrap();
+        // Reservations are deliberately opposite to publication order.
+        let last = writer.reserve(n(1)).unwrap();
+        assert_eq!(last.0.key, other_reservation.0.key);
+        let middle = writer.reserve(n(1)).unwrap();
+        let first = writer.reserve(n(1)).unwrap();
+        let pin = writer.pin_prefix(&source, n(1)).unwrap();
+        let mut guest = [b'A'];
+        let (error, other_reservation) =
+            writer.publish_copy(other_reservation, &guest).unwrap_err();
+        assert_eq!(error, Error::BadReservation);
+        assert_eq!(writer.publish_copy(first, &guest).unwrap(), n(1));
+        guest[0] = b'C';
+        assert_eq!(writer.publish(middle, pin, source).unwrap(), n(1));
+        assert_eq!(writer.publish_copy(last, &guest).unwrap(), n(1));
+        guest[0] = b'!';
+        assert_eq!(writer.reserve(n(1)).unwrap_err(), Error::Full);
+
+        root.writer(&other)
+            .unwrap()
+            .publish_copy(other_reservation, &guest)
+            .unwrap();
+        assert_eq!(root.files.offset(&table, fd), Ok((1, 1)));
+        root.files.let_go(table).unwrap();
+        drop(producer);
+        drop(other);
+
+        let mut reader = root.reader(&consumer).unwrap();
+        let at = reader.front_bytes().unwrap().unwrap();
+        assert_eq!(at, b"A");
+        assert_ne!(at.as_ptr(), guest.as_ptr());
+        assert!(reader.discard_front());
+        let at = reader.front_bytes().unwrap().unwrap();
+        assert_eq!(at, b"b");
+        assert_eq!(at.as_ptr(), canonical);
+        assert!(reader.discard_front());
+        assert_eq!(reader.front_bytes(), Ok(Some(&b"C"[..])));
+        assert!(reader.discard_front());
+        assert_eq!(reader.front_bytes(), Ok(None));
+        assert_eq!(
+            root.reader(&other_consumer).unwrap().front_bytes(),
+            Ok(Some(&b"!"[..])),
+        );
+    }
+
+    #[test]
+    fn rejected_copies_check_the_exact_ticket_length_and_close_before_owning_bytes() {
+        let (mut a, table, fd) = owner(502, 4, 1, 1);
+        let (mut b, _, _) = owner(504, 4, 1, 1);
+        let first = a.reserve(n(2)).unwrap();
+        let old = first.0;
+        a.cancel(first).unwrap();
+        let live = a.reserve(n(2)).unwrap();
+        assert_eq!(old.key.index, live.0.key.index);
+        let their = b.reserve(n(2)).unwrap();
+        let guest = [b'X', b'Y'];
+        let (error, their) = a.publish_copy(their, &guest).unwrap_err();
+        assert_eq!(error, Error::BadReservation);
+        b.cancel(their).unwrap();
+        let (error, _) = a.publish_copy(Reservation(old), &guest).unwrap_err();
+        assert_eq!(error, Error::BadReservation);
+        let (error, live) = a.publish_copy(live, &guest[..1]).unwrap_err();
+        assert_eq!(error, Error::Length);
+        let (error, live) = a.publish_copy(live, &[]).unwrap_err();
+        assert_eq!(error, Error::Length);
+        assert_eq!(a.reserve(n(1)).unwrap_err(), Error::Full);
+        a.close_admission();
+        let (error, live) = a.publish_copy(live, &guest).unwrap_err();
+        assert_eq!(error, Error::Closed);
+        assert_eq!(a.used, 2);
+        assert_eq!(a.front_bytes(), Ok(None));
+        assert_eq!(a.files.offset(&table, fd), Ok((0, 0)));
+        a.cancel(live).unwrap();
+        assert_eq!(a.used, 0);
+    }
+
+    #[test]
+    fn owned_head_releases_q_and_k_not_the_pinned_heads_r() {
+        let (mut out, table, fd) = owner(502, 3, 2, 1);
+        let mut guest = Vec::with_capacity(4096);
+        guest.extend_from_slice(b"hi");
+        let copied = out.reserve(n(2)).unwrap();
+        let key = copied.0.key;
+        out.publish_copy(copied, &guest).unwrap();
+        drop(guest);
+        let State::Live(Entry::Queued {
+            chunk: Chunk::Copied(bytes),
+            ..
+        }) = &out.entries.cells[key.index].state
+        else {
+            panic!("copied record")
+        };
+        assert_eq!((bytes.len(), bytes.capacity()), (2, 2));
+        let source = out.begin_resident(&table, fd, 1).unwrap();
+        let pin = out.pin_prefix(&source, n(1)).unwrap();
+        let pinned = pin.0.key;
+        let reservation = out.reserve(n(1)).unwrap();
+        let pinned_entry = reservation.0.key;
+        out.publish(reservation, pin, source).unwrap();
+        assert_eq!(out.reserve(n(1)).unwrap_err(), Error::Full);
+
+        let mut receiver = Vec::with_capacity(2);
+        let address = receiver.as_ptr();
+        assert_eq!(
+            out.take_front_into(&mut receiver, 1),
+            Err(Error::ReceiverCapacity)
+        );
+        assert!(receiver.is_empty());
+        assert_eq!(out.used, 3);
+        assert!(out.entries.get(key).is_some());
+        assert!(out.pins.get(pinned).is_some());
+        assert_eq!(out.take_front_into(&mut receiver, 2), Ok(Some(n(2))));
+        assert_eq!(receiver.as_ptr(), address);
+        assert_eq!(out.used, 1);
+        assert!(out.entries.get(key).is_none());
+        assert!(out.pins.get(pinned).is_some());
+        let allowed = out.reserve(n(2)).unwrap();
+        out.cancel(allowed).unwrap();
+        assert_eq!(out.files.offset(&table, fd), Ok((1, 1)));
+        assert_eq!(out.front_bytes(), Ok(Some(&b"b"[..])));
+        assert!(out.discard_front());
+        assert!(out.pins.get(pinned).is_none());
+        assert_eq!(out.used, 0);
+
+        let source = out.begin_resident(&table, fd, 1).unwrap();
+        let pin = out.pin_prefix(&source, n(1)).unwrap();
+        assert_eq!(pin.0.key.index, pinned.index);
+        assert_ne!(pin.0.key.generation, pinned.generation);
+        let reservation = out.reserve(n(1)).unwrap();
+        assert_eq!(reservation.0.key.index, pinned_entry.index);
+        assert_ne!(reservation.0.key.generation, pinned_entry.generation);
+        out.publish(reservation, pin, source).unwrap();
+        let reservation = out.reserve(n(2)).unwrap();
+        assert_eq!(reservation.0.key.index, key.index);
+        out.publish_copy(reservation, b"ok").unwrap();
+        assert_eq!(out.front_bytes(), Ok(Some(&b"o"[..])));
+        assert!(out.discard_front());
+        assert_eq!(out.front_bytes(), Ok(Some(&b"ok"[..])));
+        assert!(out.discard_front());
+        assert_eq!(out.used, 0);
+        drop(out);
+        assert_eq!(receiver, b"hi");
     }
 
     #[test]
