@@ -82,6 +82,49 @@ access, ended access without stopped effects, late exact settlement after
 cancellation, and later requests forbidden to overtake the pending head.
 The fixture's real Worker exit and retained ABC are not substitutes.
 
+### First sink experiment: keep one head charged
+
+Use a single externally held head per lane, not an independently growing
+host queue. The application-result path above consumes a head when it returns
+owned bytes. A sink path instead needs a distinct copy settlement: after the
+exact lexical copy ends, keep a frontier record and its Q/K charged until
+the sink obligation resolves. It can release the Core payload and any R pin
+at this point, because the sink only receives a private, already admitted host
+allocation. Reject the handoff before exposing a view if that allocation or
+its retained owner cannot be installed. At most one full head is temporarily
+duplicated per lexical transfer. Allocator overhead and Files ownership are
+not included in Q. Core emptiness or guest exit is never sink completion.
+
+Keep sink policy in Rust: distinguish an unstarted buffered head, one active
+offer, and an exact stopped suffix. For each offer keep the original head,
+lane and nonreused attempt, associated with one stable owned sink in the
+session. A receipt's progress is an absolute byte boundary in that head,
+never a delta or an offset into the operating-system file. It must remain
+between the offer's start and end and may not retreat. Even monotonic full
+progress cannot remove the frontier until a single exact terminal receipt
+confirms both ended access to the offered allocation and no later sink
+effects for that attempt. A cancel request is not either fact. Incomplete or
+contradictory evidence cannot release credits, replace the sink, close an
+active handle, destroy backing, or start another offer.
+
+An exact terminal partial receipt retains the full allocation and charge;
+the suffix can use its original bytes and a new range, without compaction or
+another payload copy. First report a stopped suffix, not an automatic retry.
+Only a subsequent explicitly admitted offer may start at the confirmed
+boundary, or an explicit policy may discard the residual. Later records
+do not overtake either. Finish after an ambiguous start or result must be
+reconciled through the exact owner, never by reissuing the native write.
+
+The narrow candidate is a Node synchronous byte write to a private regular
+file handle opened, held and closed by this sink session, with no exposed
+numeric FD, competing writer, callback or async retention. An ordinary
+successful native return can report its count plus ended access and no more
+calls issuing effects for that offer; it says nothing about durability.
+Unknown on exception is conservative until the chosen adapter can prove more.
+Short results must be exercised with controlled test receipts even if a
+small real file write is always full on this machine. This candidate does
+not select stdout, sockets, pipes, Workerd or general Linux compatibility.
+
 ## Removing TypeScript is gated by callers, not line count
 
 Current capture work does not make a runtime TypeScript file unnecessary.
