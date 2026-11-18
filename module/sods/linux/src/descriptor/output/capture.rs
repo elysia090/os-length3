@@ -968,6 +968,67 @@ mod tests {
     }
 
     #[test]
+    fn joined_capture_preserves_original_stdio_roles_across_wait_close_and_fd_reuse() {
+        use super::super::OutputOrigin;
+        let mut g = Guest::with_limits(Limits {
+            bytes: 1,
+            entries: 1,
+            pins: 1,
+        });
+        let original = g.root.files.hold_output(&g.table, 1).unwrap();
+        let first = g
+            .root
+            .held_writer(&original)
+            .unwrap()
+            .stage_write(n(1))
+            .unwrap();
+        let first = first.copy_from(b"A").unwrap();
+        g.root.files.close(&g.table, 1).unwrap();
+        assert_eq!(g.root.files.dup(&g.table, 2, 1, false), Ok(1));
+        assert_eq!(
+            g.root
+                .held_writer(&original)
+                .unwrap()
+                .publish_staged(first)
+                .unwrap(),
+            n(1)
+        );
+        g.root.files.release_output(original).unwrap();
+
+        let input = g.root.files.open(&g.table, g.source, false).unwrap();
+        let invocation = g.invocation;
+        let ResidentTurn::Waiting(mut waiting) = Resident::admit(
+            &mut Context {
+                files: &mut g.root.files,
+                lanes: &mut g.root.registry,
+                domain: &mut g.domain,
+                execution: &mut g.execution,
+            },
+            &g.table,
+            1,
+            input,
+            n(1),
+            invocation,
+        )
+        .unwrap() else {
+            panic!("the accepted stdout record blocks the stderr alias");
+        };
+        let id = waiting.id().unwrap();
+        g.root.files.close(&g.table, 1).unwrap();
+        assert_eq!(g.root.files.dup(&g.table, 0, 1, false), Ok(1));
+        let mut reader = g.root.reader(&g.receiver).unwrap();
+        assert_eq!(reader.front_origin(), Some(OutputOrigin::Stdout));
+        assert_eq!(reader.front_bytes(), Ok(Some(&b"A"[..])));
+        assert!(reader.discard_front());
+
+        assert_eq!(waiting.resume(&mut g.context(), id), Ok(Some(n(1))));
+        g.root.files.let_go(g.table).unwrap();
+        let mut reader = g.root.reader(&g.receiver).unwrap();
+        assert_eq!(reader.front_origin(), Some(OutputOrigin::Stderr));
+        assert_eq!(reader.front_bytes(), Ok(Some(&b"b"[..])));
+    }
+
+    #[test]
     fn resident_rejection_cannot_consume_the_last_free_entry_generation() {
         let mut g = Guest::with_limits(Limits {
             bytes: 4,

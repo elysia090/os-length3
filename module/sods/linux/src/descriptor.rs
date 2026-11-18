@@ -168,7 +168,10 @@ enum DescriptionTarget {
         direction: StreamDirection,
     },
     #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
-    CapturedOutput(output::DestinationId),
+    CapturedOutput {
+        lane: output::DestinationId,
+        origin: output::OutputOrigin,
+    },
 }
 struct FileDescription {
     place: Option<mount::Hold>,
@@ -1264,7 +1267,14 @@ impl Files {
                     direction: StreamDirection::Read,
                 }
             } else {
-                DescriptionTarget::CapturedOutput(outputs[i - 1])
+                DescriptionTarget::CapturedOutput {
+                    lane: outputs[i - 1],
+                    origin: if i == 1 {
+                        output::OutputOrigin::Stdout
+                    } else {
+                        output::OutputOrigin::Stderr
+                    },
+                }
             }
         })
     }
@@ -1323,7 +1333,7 @@ impl Files {
                 direction: *direction,
             },
             #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
-            DescriptionTarget::CapturedOutput(_) => Target::CapturedOutput,
+            DescriptionTarget::CapturedOutput { .. } => Target::CapturedOutput,
         })
     }
     pub(crate) fn hold_stream(
@@ -1365,7 +1375,7 @@ impl Files {
     pub(crate) fn hold_output(&mut self, table: &Table, fd: u32) -> Result<OutputHold, Error> {
         let id = self.description(table, fd)?;
         let d = get(&self.descriptions, self.owner, id)?;
-        if !matches!(d.target, DescriptionTarget::CapturedOutput(_)) {
+        if !matches!(d.target, DescriptionTarget::CapturedOutput { .. }) {
             return Err(Error::NotSupported);
         }
         let refs = d.refs.checked_add(1).ok_or(Error::Overflow)?;
@@ -1373,9 +1383,12 @@ impl Files {
         Ok(OutputHold(id))
     }
     #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
-    fn held_output(&self, hold: &OutputHold) -> Result<output::DestinationId, Error> {
+    fn held_output(
+        &self,
+        hold: &OutputHold,
+    ) -> Result<(output::DestinationId, output::OutputOrigin), Error> {
         match get(&self.descriptions, self.owner, hold.0)?.target {
-            DescriptionTarget::CapturedOutput(lane) => Ok(lane),
+            DescriptionTarget::CapturedOutput { lane, origin } => Ok((lane, origin)),
             _ => Err(Error::BadHandle),
         }
     }

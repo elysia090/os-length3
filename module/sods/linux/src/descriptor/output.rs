@@ -214,13 +214,29 @@ impl<T> Arena<T> {
     }
 }
 
+/// Logical origin of a captured output OFD. This is not a physical fd or
+/// a routing capability and cannot be reconstructed from the syscall fd.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum OutputOrigin {
+    Stdout = 1,
+    Stderr = 2,
+}
+
 struct Range {
     prefix: ReadPrefix,
     queued: bool,
 }
 enum Entry {
-    Reserved(NonZeroUsize),
-    Queued { chunk: Chunk, next: Option<usize> },
+    Reserved {
+        length: NonZeroUsize,
+        origin: Option<OutputOrigin>,
+    },
+    Queued {
+        chunk: Chunk,
+        next: Option<usize>,
+        origin: Option<OutputOrigin>,
+    },
 }
 enum Chunk {
     // An admitted, lane-local link, not the producer's ticket. A queued pin
@@ -260,6 +276,7 @@ impl<'a> HeadBytes<'a> {
 struct Head<'a> {
     index: usize,
     next: Option<usize>,
+    origin: Option<OutputOrigin>,
     bytes: HeadBytes<'a>,
 }
 struct Removal {
@@ -354,9 +371,13 @@ impl Queue {
         Ok(())
     }
     fn reserve(&mut self, length: NonZeroUsize) -> Result<Reservation, Error> {
-        self.reserve_for::<false>(length)
+        self.reserve_for::<false>(length, None)
     }
-    fn reserve_for<const PIN: bool>(&mut self, length: NonZeroUsize) -> Result<Reservation, Error> {
+    fn reserve_for<const PIN: bool>(
+        &mut self,
+        length: NonZeroUsize,
+        origin: Option<OutputOrigin>,
+    ) -> Result<Reservation, Error> {
         let used = self.bytes_after(length)?;
         if PIN && !self.pins.has_room() {
             return Err(if self.entries.has_room() {
@@ -365,7 +386,7 @@ impl Queue {
                 Error::Full
             });
         }
-        self.reserve_entry(length, used)
+        self.reserve_entry(length, used, origin)
     }
     fn bytes_after(&self, length: NonZeroUsize) -> Result<usize, Error> {
         if self.closed {
@@ -377,10 +398,15 @@ impl Queue {
         }
         Ok(used)
     }
-    fn reserve_entry(&mut self, length: NonZeroUsize, used: usize) -> Result<Reservation, Error> {
+    fn reserve_entry(
+        &mut self,
+        length: NonZeroUsize,
+        used: usize,
+        origin: Option<OutputOrigin>,
+    ) -> Result<Reservation, Error> {
         let key = self
             .entries
-            .add(Entry::Reserved(length))
+            .add(Entry::Reserved { length, origin })
             .ok_or(Error::Full)?;
         self.used = used;
         Ok(Reservation(Ticket {
@@ -390,7 +416,7 @@ impl Queue {
     }
     fn reserved(&self, r: &Reservation) -> Result<NonZeroUsize, Error> {
         if r.0.destination == self.id {
-            if let Some(Entry::Reserved(length)) = self.entries.get(r.0.key) {
+            if let Some(Entry::Reserved { length, .. }) = self.entries.get(r.0.key) {
                 return Ok(*length);
             }
         }
@@ -524,8 +550,12 @@ impl Queue {
         Ok(bytes)
     }
     /// Allocate only after bounded admission. The zeros are not captured data.
-    fn stage_write(&mut self, length: NonZeroUsize) -> Result<WriteStage<Unfilled>, Error> {
-        let reservation = self.reserve(length)?;
+    fn stage_write(
+        &mut self,
+        length: NonZeroUsize,
+        origin: Option<OutputOrigin>,
+    ) -> Result<WriteStage<Unfilled>, Error> {
+        let reservation = self.reserve_for::<false>(length, origin)?;
         let mut bytes = match Self::copy_storage(length) {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -591,7 +621,15 @@ impl Queue {
     // FIFO links follow acceptance order, not reservation order.
     fn link(&mut self, reservation: Reservation, chunk: Chunk) {
         let index = reservation.0.key.index;
-        *self.entries.live_mut(index) = Entry::Queued { chunk, next: None };
+        let entry = self.entries.live_mut(index);
+        let Entry::Reserved { origin, .. } = *entry else {
+            unreachable!("checked reservation");
+        };
+        *entry = Entry::Queued {
+            chunk,
+            next: None,
+            origin,
+        };
         if let Some(tail) = self.tail {
             let Entry::Queued { next, .. } = self.entries.live_mut(tail) else {
                 unreachable!("queued tail")
@@ -608,7 +646,12 @@ impl Queue {
         pins: &'a Arena<Range>,
     ) -> Option<Head<'a>> {
         let index = index?;
-        let State::Live(Entry::Queued { chunk, next }) = &entries.cells[index].state else {
+        let State::Live(Entry::Queued {
+            chunk,
+            next,
+            origin,
+        }) = &entries.cells[index].state
+        else {
             unreachable!("queued head")
         };
         let bytes = match chunk {
@@ -627,6 +670,7 @@ impl Queue {
         Some(Head {
             index,
             next: *next,
+            origin: *origin,
             bytes,
         })
     }
@@ -771,9 +815,13 @@ impl LaneRegistry {
         files: &'a mut Files,
         hold: &'a OutputHold,
     ) -> Result<Writer<'a>, Error> {
-        let id = files.held_output(hold)?;
+        let (id, origin) = files.held_output(hold)?;
         let (files, queue) = self.lane(files, id)?;
-        Ok(Writer { files, queue })
+        Ok(Writer {
+            files,
+            queue,
+            origin: Some(origin),
+        })
     }
     fn writer<'a>(
         &'a mut self,
@@ -781,7 +829,11 @@ impl LaneRegistry {
         producer: &'a Producer,
     ) -> Result<Writer<'a>, Error> {
         let (files, queue) = self.lane(files, producer.0)?;
-        Ok(Writer { files, queue })
+        Ok(Writer {
+            files,
+            queue,
+            origin: None,
+        })
     }
     fn reader<'a>(
         &'a mut self,
@@ -837,6 +889,7 @@ impl Root {
 pub(super) struct Writer<'a> {
     files: &'a mut Files,
     queue: &'a mut Queue,
+    origin: Option<OutputOrigin>,
 }
 /// Same-turn preflight, not a reservation or an across-await token. Nothing
 /// can return/consume credits between the check and publication through the
@@ -855,7 +908,7 @@ impl Writer<'_> {
         self.queue.pin_prefix(self.files, source, length)
     }
     pub(super) fn reserve(&mut self, length: NonZeroUsize) -> Result<Reservation, Error> {
-        self.queue.reserve(length)
+        self.queue.reserve_for::<false>(length, self.origin)
     }
     pub(super) fn release(&mut self, pin: Pin) -> Result<(), (Error, Pin)> {
         self.queue.release(pin)
@@ -881,7 +934,7 @@ impl Writer<'_> {
     ) -> Result<NonZeroUsize, Error> {
         // R pressure must not consume even a K generation. A no-op
         // reserve/cancel may permanently retire its last generation.
-        let reservation = self.queue.reserve_for::<true>(length)?;
+        let reservation = self.queue.reserve_for::<true>(length, self.origin)?;
         self.publish_reserved_resident(table, fd, length, reservation)
     }
     fn reserve_resident_source(
@@ -973,7 +1026,7 @@ impl Writer<'_> {
     ) -> Result<NonZeroUsize, Error> {
         let reservation = self
             .queue
-            .reserve_entry(credit.length, credit.used)
+            .reserve_entry(credit.length, credit.used, self.origin)
             .expect("same-turn resident queue credit");
         self.queue
             .accept_resident_prefix(self.files, reservation, source, credit.length)
@@ -989,7 +1042,7 @@ impl Writer<'_> {
         &mut self,
         length: NonZeroUsize,
     ) -> Result<WriteStage<Unfilled>, Error> {
-        self.queue.stage_write(length)
+        self.queue.stage_write(length, self.origin)
     }
     pub(super) fn stage_when_room(
         &mut self,
@@ -1030,6 +1083,10 @@ pub(super) struct Reader<'a> {
     queue: &'a mut Queue,
 }
 impl Reader<'_> {
+    #[cfg(test)]
+    pub(super) fn front_origin(&self) -> Option<OutputOrigin> {
+        Queue::head(self.queue.head, &self.queue.entries, &self.queue.pins)?.origin
+    }
     pub(super) fn front_bytes(&mut self) -> Result<Option<&[u8]>, Error> {
         self.queue.front_bytes(self.files)
     }
@@ -2666,13 +2723,13 @@ mod tests {
     fn staged_capture_rejects_short_input_foreign_owner_and_closed_publication() {
         let (mut a, _, _) = owner(502, 2, 1, 0);
         let (mut b, _, _) = owner(504, 2, 1, 0);
-        let stage = a.stage_write(n(2)).unwrap();
+        let stage = a.stage_write(n(2), None).unwrap();
         let key = stage.reservation.0.key;
         assert_eq!(a.reserve(n(1)).unwrap_err(), Error::Full);
         let (error, stage) = stage.copy_from(b"A").unwrap_err();
         assert_eq!(error, Error::Length);
         assert_eq!(stage.bytes, b"\0\0");
-        let local = b.stage_write(n(2)).unwrap();
+        let local = b.stage_write(n(2), None).unwrap();
         assert_eq!(local.reservation.0.key, key);
         let (error, ready) = b
             .publish_staged(stage.copy_from(b"AB").unwrap())
@@ -2699,7 +2756,7 @@ mod tests {
         use crate::lease::Domain;
         let (mut out, _, _) = owner(502, usize::MAX, 1, 0);
         assert_eq!(
-            out.stage_write(n(isize::MAX as usize + 1)).unwrap_err(),
+            out.stage_write(n(isize::MAX as usize + 1), None).unwrap_err(),
             Error::Capacity
         );
         assert_eq!(out.used, 0);
@@ -2712,7 +2769,7 @@ mod tests {
             .unwrap();
         let invocation = execution.start(&mut domain).unwrap();
         execution.hold_call(invocation).unwrap();
-        let stage = out.stage_write(n(1)).unwrap();
+        let stage = out.stage_write(n(1), None).unwrap();
         let old = stage.reservation.0.key;
         assert_eq!((old.index, old.generation), (0, 2));
         execution.check_held_call_live(invocation).unwrap();
@@ -2727,7 +2784,7 @@ mod tests {
             .receipt(&mut domain, invocation, Unwind::Exit)
             .unwrap();
         assert_eq!(out.front_bytes(), Ok(None));
-        let fresh = out.stage_write(n(1)).unwrap();
+        let fresh = out.stage_write(n(1), None).unwrap();
         assert_eq!(fresh.reservation.0.key.index, old.index);
         assert_ne!(fresh.reservation.0.key.generation, old.generation);
         assert_eq!(
@@ -2751,7 +2808,7 @@ mod tests {
                 .unwrap();
             let invocation = execution.start(&mut domain).unwrap();
             execution.hold_call(invocation).unwrap();
-            let stage = out.stage_write(n(1)).unwrap();
+            let stage = out.stage_write(n(1), None).unwrap();
             if accepted {
                 execution.check_held_call_live(invocation).unwrap();
                 let ready = stage.copy_from(b"A").unwrap();

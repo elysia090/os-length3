@@ -506,6 +506,16 @@ must not relabel an accepted record. One ordered queue with per-record
 origin preserves ordering without separate Q/K/R pools and an arbitration
 layer. A successful owned read is still not a physical receipt.
 
+Native capture now stores the logical origin on the original captured OFD
+and moves it with the exact reservation into its FIFO record. This is the
+same question the current RemoteKernel's console description answers after
+dup or close, not the outgoing guest FD number. The native control fills a
+joined lane with stdout, redirects fd 1 to stderr, waits on a resident
+prefix, and reuses fd 1 as input before resumption. The two outputs remain
+stdout then stderr after closing the table, with one lane and no origin
+lookup through a retired descriptor. No host reader policy has been
+enabled by this metadata change alone.
+
 Treat ready-only file capture as a separate policy. A cold file must not
 start or disturb another load until a real caller selects a cold-source
 contract with its own completion/stop evidence. The normal prepared
