@@ -56,26 +56,37 @@ fn a_root_unpacks_with_its_links_and_modes() {
 
 #[test]
 fn nothing_lands_outside_or_through_a_link() {
+    let work = fresh("outside");
+    let outside = work.join("outside");
+    fs::create_dir(&outside).unwrap();
+    let kept = outside.join("kept");
+    fs::write(&kept, b"unchanged").unwrap();
+    let outside = fs::canonicalize(outside).unwrap();
+    let outside_file = outside.join("kept");
+    let outside_dir = outside.to_str().unwrap();
+    let outside_file = outside_file.to_str().unwrap();
     for (tag, members, said) in [
         ("up", vec![("../x", b'0', &b"x"[..], "", 0o644)], "leaves the tree"),
         ("up-inside", vec![("a/../../x", b'0', &b"x"[..], "", 0o644)], "leaves the tree"),
         // A link made earlier in the archive leads nothing through it: not a file, not a directory, not another name.
-        ("through", vec![("out", b'2', &b""[..], "/tmp", 0o777), ("out/x", b'0', &b"x"[..], "", 0o644)], "out"),
-        ("through-dir", vec![("out", b'2', &b""[..], "/tmp", 0o777), ("out/d/", b'5', &b""[..], "", 0o755)], "out"),
-        ("over", vec![("f", b'2', &b""[..], "/etc/passwd", 0o777), ("f", b'0', &b"x"[..], "", 0o644)], "f"),
-        ("hard", vec![("l", b'2', &b""[..], "/etc/passwd", 0o777), ("h", b'1', &b""[..], "l", 0o644)], "not a file"),
-        ("hard-through", vec![("l", b'2', &b""[..], "/etc", 0o777), ("h", b'1', &b""[..], "l/passwd", 0o644)], "l"),
+        ("through", vec![("out", b'2', &b""[..], outside_dir, 0o777), ("out/x", b'0', &b"x"[..], "", 0o644)], "out"),
+        ("through-dir", vec![("out", b'2', &b""[..], outside_dir, 0o777), ("out/d/", b'5', &b""[..], "", 0o755)], "out"),
+        ("over", vec![("f", b'2', &b""[..], outside_file, 0o777), ("f", b'0', &b"x"[..], "", 0o644)], "f"),
+        ("hard", vec![("l", b'2', &b""[..], outside_file, 0o777), ("h", b'1', &b""[..], "l", 0o644)], "not a file"),
+        ("hard-through", vec![("l", b'2', &b""[..], outside_dir, 0o777), ("h", b'1', &b""[..], "l/kept", 0o644)], "l"),
         ("device", vec![("null", b'3', &b""[..], "", 0o666)], "not part of a root"),
     ] {
-        let top = fresh(tag);
-        let before: Vec<_> = fs::read_dir(std::env::temp_dir()).unwrap().flatten().map(|e| e.file_name()).collect();
+        let top = work.join(tag);
+        fs::create_dir(&top).unwrap();
         let e = unpack(&tar(&members)[..], &top).expect_err(tag);
         assert!(e.to_string().contains(said), "{tag}: {e}");
-        assert!(!top.parent().unwrap().join("x").exists(), "{tag}");
-        let after: Vec<_> = fs::read_dir(std::env::temp_dir()).unwrap().flatten().map(|e| e.file_name()).collect();
-        assert!(after.iter().all(|n| before.contains(n) || n.to_string_lossy().starts_with("ricebox-test-")), "{tag}: something was made outside");
-        let _ = fs::remove_dir_all(&top);
+        assert!(!work.join("x").exists(), "{tag}");
+        // Observe the only directory these entries could write through,
+        // rather than treating unrelated writes elsewhere in /tmp as escapes.
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 1, "{tag}: something was made outside");
+        assert_eq!(fs::read(&kept).unwrap(), b"unchanged", "{tag}: the outside file changed");
     }
+    let _ = fs::remove_dir_all(&work);
 }
 
 #[test]
