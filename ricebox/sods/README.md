@@ -40,7 +40,7 @@ additional JavaScript package exports.
 
 ## Local JavaScript package
 
-`node ricebox/sods/make/npm.ts NEW_DIRECTORY` emits a private package with four explicit
+`node ricebox/sods/package/npm.ts NEW_DIRECTORY` emits a private package with four explicit
 exports: `sods/translate`, `sods/linux`, `sods/host`, `sods/targets`. `npm pack` in that
 directory produces an installable local tarball. Building uses Node 24, not a new
 compiler or a registry download. Generated JavaScript includes the CPU Worker entry;

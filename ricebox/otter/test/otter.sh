@@ -111,9 +111,13 @@ nothing-at-all: nothing appropriate." "$t/whatis" ls vim nothing-at-all
 ends 16 "$t/whatis" nothing-at-all
 ends 0 "$t/whatis" ls
 says "ls (1) - List directory contents." "$otter" -f ls
-# apropos reads the programs this machine has (ls is one) and their pages' first lines, as man-db's reads NAME.
-says "ls (1) - List directory contents." "$t/apropos" DIRECTORY
-says "ls (1) - List directory contents." "$otter" -k directory
+# Apropos scans the real command directories, so use a unique word in the
+# fixture summary rather than a word that can match unrelated host commands.
+keyword=otterfixture$$
+summary="List directory contents ($keyword)."
+printf '# ls\n\n> %s\n> Zebracolumns are shown with -C.\n' "$summary" > "$t/pages/pages.en/common/ls.md"
+says "ls (1) - $summary" "$t/apropos" "$(printf '%s' "$keyword" | tr '[:lower:]' '[:upper:]')"
+says "ls (1) - $summary" "$otter" -k "$keyword"
 says "zebracolumns: nothing appropriate." "$otter" -k zebracolumns
 says "no-such-word-anywhere: nothing appropriate." "$t/apropos" no-such-word-anywhere
 ends 16 "$t/apropos" no-such-word-anywhere

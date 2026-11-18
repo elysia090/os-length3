@@ -7,7 +7,7 @@ import {resolve, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = process.argv[2] && resolve(process.argv[2]);
-if (!out) throw new Error('usage: node ricebox/sods/make/npm.ts NEW_DIRECTORY');
+if (!out) throw new Error('usage: node ricebox/sods/package/npm.ts NEW_DIRECTORY');
 if (existsSync(out)) throw new Error(`Refusing to replace an existing directory: ${out}`);
 const entries = ['translate', 'linux', 'host', 'targets'];
 packageTypeScript(root, out, entries.map(entry => `runtime/${entry}.ts`), path => {

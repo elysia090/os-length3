@@ -3,7 +3,9 @@
 ricebox composes an explicitly selected package cache into a distribution. It
 does not resolve catalogs or download packages during composition. The caller
 may acquire packages through [otter](../../otter/), another trusted provider or
-an existing local cache.
+an existing local cache. Otter’s repository entry is
+[`catalog/artifacts.ts`](../../otter/catalog/artifacts.ts); Ricebox does not
+include it in its npm package.
 
 ## Prerequisites
 

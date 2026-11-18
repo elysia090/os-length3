@@ -13,7 +13,8 @@ translate a program with Sods independently of Why.
 | `ricebox/distribution/` | The neutral distribution: package recipes, native archive, web layers, and their execution and delivery adapters. See the [distribution guide](../ricebox/distribution/README.md). |
 | `ricebox/sods/` | The translator and its ABI, the guest Linux services, and porting interfaces. See the [public entry points and target table](../ricebox/sods/README.md). |
 | `ricebox/muk/` | The native Linux OCI runner. Its external interface is an OCI bundle and a process, not a library or a root distribution. |
-| `ricebox/you/`, `ricebox/otter/` | Command-line tools and package acquisition. The distribution may select their outputs; they do not select or start the distribution. |
+| `ricebox/you/` | Directory history and tree search commands. |
+| `ricebox/otter/` | Command help and pinned package acquisition. Catalogs and downloads are independent of distribution assembly. |
 | `ricebox/cowboy/`, `ricebox/everyday/` | Guest networking and independent theme-value processing. Why's device and service adapters stay in Why. |
 | `ricebox/toolchain/` | Shared build support for the freestanding C components. It is not a runtime package. |
 | `docs/` | Shared contracts and the reasoning behind them. Put component setup and API details beside their implementation. |

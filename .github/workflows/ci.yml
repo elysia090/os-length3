@@ -353,13 +353,20 @@ jobs:
           mkdir -p target/muk
           sh ricebox/toolchain/build.sh ricebox/muk/src/muk.c "$RICEBOX_MUK_FILE"
           node --test ricebox/distribution/runtime/test/*.test.ts ricebox/distribution/build/test/native-association.integration.ts
-      - name: Test the Sods package, Muk parser and Otter composition
+      - name: Test the Muk parser and Otter catalog composition
+        if: matrix.part == 'native'
+        run: |
+          node --test ricebox/muk/test/*.test.ts ricebox/otter/catalog/*.test.ts
+          sh ricebox/muk/test/same.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: matrix.part == 'native'
+        with:
+          node-version: 24
+      - name: Test the standalone Sods package on its supported Node version
         if: matrix.part == 'native'
         env:
           SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
-        run: |
-          node --test ricebox/sods/make/npm.test.ts ricebox/muk/test/*.test.ts ricebox/otter/make/*.test.ts
-          sh ricebox/muk/test/same.sh
+        run: node --test ricebox/sods/package/npm.test.ts
 
       # The one muk on every host: muk's own corpus (ricebox/muk/test/muk.sh, hostile.sh) run whole inside sods, the
       # same C muk translated, each box made by the calls it makes on Linux (a static busybox its shell and tools).
