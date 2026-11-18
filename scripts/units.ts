@@ -4,6 +4,7 @@
 import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {references, relativeReferences} from './imports.ts';
 
 /** The repository's root. */
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -85,8 +86,6 @@ export function codeFiles(dir = ROOT): string[] {
   return out;
 }
 
-const IMPORT = /(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?['"](\.[^'"]+)['"]|import\(\s*['"](\.[^'"]+)['"]\s*\)/g;
-
 /** Imports that cross a forbidden ownership boundary: [from, to, file]. */
 export function dependencyViolations(sources: Iterable<readonly [string, string]>): [string, string, string][] {
   const crossings: [string, string, string][] = [];
@@ -94,8 +93,13 @@ export function dependencyViolations(sources: Iterable<readonly [string, string]
     const from = unitOf(file);
     if (!from) continue;
     const seen = new Set<string>();
-    for (const m of source.matchAll(IMPORT)) {
-      let target = relative(ROOT, resolve(ROOT, dirname(file), m[1] ?? m[2] ?? '')).split(sep).join('/');
+    for (const reference of references(source)) {
+      if (reference.startsWith('<')) {
+        crossings.push([from.name, reference, file]);
+        continue;
+      }
+      if (!reference.startsWith('./') && !reference.startsWith('../')) continue;
+      let target = relative(ROOT, resolve(ROOT, dirname(file), reference.split(/[?#]/)[0]!)).split(sep).join('/');
       try { if (statSync(join(ROOT, target)).isDirectory()) target += '/index.ts'; } catch { /* a file, as written */ }
       const to = notUnit(target) ? null : unitOf(target);
       if (!to || to === from || from.takes.includes(to.name) || seen.has(to.name)) continue;
@@ -139,8 +143,8 @@ export function entryViolations(
   const found: [string, string][] = [];
   for (const [file, source] of sources) {
     const from = unitOf(file, units);
-    for (const m of source.matchAll(IMPORT)) {
-      const target = relative(ROOT, resolve(ROOT, dirname(file), m[1] ?? m[2] ?? '')).split(sep).join('/');
+    for (const specifier of relativeReferences(source)) {
+      const target = relative(ROOT, resolve(ROOT, dirname(file), specifier)).split(sep).join('/');
       const owner = unitOf(target, units);
       if (owner?.entries && owner !== from && !owner.entries.includes(target)) found.push([file, target]);
     }

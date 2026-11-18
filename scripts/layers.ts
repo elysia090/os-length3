@@ -9,6 +9,7 @@
 import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {relativeReferences} from './imports.ts';
 
 const OS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -24,8 +25,6 @@ export const TREES: {root: string; order: string[]; skip?: string[]; build?: str
   {root: 'why/app/pages', order: ['kit', 'bench', 'git', 'forge', 'file', 'remote', 'runtime', 'server', 'inbox', 'home', 'new-repo',
     'me']},
 ];
-
-const IMPORT = /(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?['"](\.[^'"]+)['"]|import\(\s*['"](\.[^'"]+)['"]\s*\)/g;
 
 function files(dir: string): string[] {
   const out: string[] = [];
@@ -51,8 +50,7 @@ export function violations(): [string, string, string, string, string][] {
     for (const file of files(root)) {
       const from = moduleOf(tree, file);
       const src = readFileSync(file, 'utf8');
-      for (const m of src.matchAll(IMPORT)) {
-        const spec = m[1] ?? m[2] ?? '';
+      for (const spec of relativeReferences(src)) {
         const target = resolve(dirname(file), spec);
         if (!target.startsWith(root + sep)) continue;
         const to = moduleOf(tree, target);
@@ -85,8 +83,8 @@ export function cycles(): string[][] {
   const all = ACYCLIC.flatMap((root) => files(join(OS, root)));
   const takes = new Map(all.map((f) => [f, new Set<string>()]));
   for (const f of all) {
-    for (const m of readFileSync(f, 'utf8').matchAll(IMPORT)) {
-      const t = resolve(dirname(f), m[1] ?? m[2] ?? '');
+    for (const specifier of relativeReferences(readFileSync(f, 'utf8'))) {
+      const t = resolve(dirname(f), specifier);
       if (takes.has(t)) takes.get(f)?.add(t);
     }
   }

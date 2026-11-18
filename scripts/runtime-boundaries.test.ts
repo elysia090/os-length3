@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import {references} from './imports.ts';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {ROOTS, allowed, references, runtimeSources, violations} from './runtime-boundaries.ts';
+import {ROOTS, allowed, runtimeSources, violations} from './runtime-boundaries.ts';
 
 test('runtime module boundaries hold in the actual source tree', () => {
   const sources = runtimeSources(fileURLToPath(new URL('..', import.meta.url)));

@@ -74,7 +74,7 @@ registry publication or support for every JavaScript host.
 
 ## Checks
 
-[`scripts/units.ts`](../scripts/units.ts) checks TypeScript ownership and
+[`scripts/units.ts`](../scripts/units.ts) checks TypeScript ownership, Worker module URLs and
 public entry points without inferring them from folder names.
 [`scripts/runtime-boundaries.ts`](../scripts/runtime-boundaries.ts) also
 checks host facilities and dependencies encoded as Worker URLs. Cargo and

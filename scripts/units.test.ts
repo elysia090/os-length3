@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {existsSync} from 'node:fs';
+import {references} from './imports.ts';
 import {RICEBOX_UNITS, UNITS, check, dependencyViolations, entryViolations, reaches, unitOf} from './units.ts';
 
 test('every file of code is one unit\'s, or a test, a script or something made (scripts/units.ts)', () => {
@@ -100,4 +101,17 @@ test('Ricebox can be used without the Why product', () => {
   }
   assert.deepEqual(check().crossings.filter(([from, to]) => RICEBOX_UNITS.includes(from) && !RICEBOX_UNITS.includes(to)), []);
   assert.deepEqual(UNITS.find(unit => unit.name === 'muk')?.takes, ['toolchain']);
+});
+
+
+test('ownership sees side-effect imports, Worker entry points and unresolved module sources', () => {
+  const server = 'why/shipto/remote/serve/fixture.ts';
+  for (const source of [
+    "import '../../connection.ts';",
+    "const worker = new Worker(new URL('../../connection.ts?worker', import.meta.url));",
+  ]) assert.deepEqual(dependencyViolations([[server, source]]), [['remote', 'app', server]]);
+  assert.deepEqual(dependencyViolations([[server, 'const path = "../client.ts"; void import(path);']]),
+    [['remote', '<computed or escaped module reference>', server]]);
+  assert.deepEqual(references("new Worker(new URL(import.meta.url), {workerData});"), []);
+  assert.deepEqual(references('`waiting for the new Worker`'), []);
 });
