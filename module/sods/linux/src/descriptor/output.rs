@@ -958,10 +958,15 @@ impl QueueProbe {
             sink_lane: None,
         })
     }
-    pub(crate) fn stdio(&self, files: &mut Files, limit: u32) -> Result<Table, QueueProbeError> {
-        Ok(self
-            .registry
-            .queued_stdio(files, 1, self.producers.each_ref(), limit)?)
+    pub(crate) fn stdio(
+        &self,
+        files: &mut Files,
+        limit: u32,
+        shared_output: bool,
+    ) -> Result<Table, QueueProbeError> {
+        let [stdout, stderr] = self.producers.each_ref();
+        let outputs = [stdout, if shared_output { stdout } else { stderr }];
+        Ok(self.registry.queued_stdio(files, 1, outputs, limit)?)
     }
     #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
     pub(crate) fn capture_context<'a>(

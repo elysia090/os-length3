@@ -2402,7 +2402,18 @@ pub extern "C" fn linux_startup_begin_stdio() -> i32 {
 #[cfg(all(feature = "queued-output-probe", not(feature = "capture-v1")))]
 #[no_mangle]
 pub extern "C" fn linux_queued_output_probe_startup() -> i32 {
-    startup_begin(StartupTable::CaptureProbe)
+    startup_begin(StartupTable::CaptureProbe {
+        shared_output: false,
+    })
+}
+/// Deliberate stdout/stderr alias for the stronger, still rejected fixture.
+/// The actual captured profile does not expose this diagnostic entry.
+#[cfg(all(feature = "queued-worker-probe", not(feature = "capture-v1")))]
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_startup_shared() -> i32 {
+    startup_begin(StartupTable::CaptureProbe {
+        shared_output: true,
+    })
 }
 #[cfg(not(feature = "capture-v1"))]
 #[derive(Clone, Copy)]
@@ -2410,7 +2421,9 @@ enum StartupTable {
     Empty,
     Physical,
     #[cfg(feature = "queued-output-probe")]
-    CaptureProbe,
+    CaptureProbe {
+        shared_output: bool,
+    },
 }
 #[cfg(not(feature = "capture-v1"))]
 fn startup_begin(table: StartupTable) -> i32 {
@@ -2456,7 +2469,7 @@ fn startup_begin(table: StartupTable) -> i32 {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let root = r.root.as_ref().ok_or(-11)?;
         #[cfg(feature = "queued-output-probe")]
-        if matches!(table, StartupTable::CaptureProbe) && r.queue_probe.is_none() {
+        if matches!(table, StartupTable::CaptureProbe { .. }) && r.queue_probe.is_none() {
             return Err(-9);
         }
         if s.executions.len() >= s.execution_limit {
@@ -2482,11 +2495,11 @@ fn startup_begin(table: StartupTable) -> i32 {
             StartupTable::Empty => r.files.table(r.fd_limit).map_err(|_| -10)?,
             StartupTable::Physical => r.files.stdio([1, 2, 3], r.fd_limit).map_err(|_| -10)?,
             #[cfg(feature = "queued-output-probe")]
-            StartupTable::CaptureProbe => r
+            StartupTable::CaptureProbe { shared_output } => r
                 .queue_probe
                 .as_ref()
                 .expect("validated capture probe")
-                .stdio(&mut r.files, r.fd_limit)
+                .stdio(&mut r.files, r.fd_limit, shared_output)
                 .map_err(queue_probe_error)?,
         });
         p.program = Some(

@@ -1,5 +1,6 @@
 /* Actual x86-64 source for the marker-rejected mixed capture fixture.
- * Verify the real Rust-built stack, then write A, sendfile B, and write C.
+ * Verify the real Rust-built stack, then stdout write A and sendfile B,
+ * followed by stderr write C. Startup must deliberately join both lanes.
  * No operation here expects a physical descriptor or external sink. */
 .global _start
 .section .text
@@ -39,7 +40,7 @@ _start:
   movb $88, first(%rip)
   movb $67, last(%rip)
   mov $1, %eax
-  mov $1, %edi
+  mov $2, %edi
   lea last(%rip), %rsi
   mov $1, %edx
   syscall

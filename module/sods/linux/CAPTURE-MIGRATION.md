@@ -148,8 +148,13 @@ the owned fixture handle only after all charged bytes are resolved. A live
 reservation, external offer or stopped suffix keeps it open even if no view
 or guest Worker remains. The fixture exercises an actual Node-owned temporary
 file, a deliberately short write, and the currently translated Worker writing
-ABC in FIFO order. It does not select a host profile, claim general Linux
-compatibility or imply flush/durability.
+ABC in FIFO order. That Worker writes A and uses resident sendfile for B on
+stdout, then writes C on stderr. Only the stronger fixture's explicit joined
+startup routes both logical descriptors to the same validated lane. A missing
+registry does not admit an execution; failure after table installation leaves
+the existing preparing owner to cancel without closing the shared lane.
+Ordinary and separate-lane fixture startup are unchanged. This does not select
+a host profile, claim general Linux compatibility or imply flush/durability.
 
 ## Gate for a real opt-in profile
 

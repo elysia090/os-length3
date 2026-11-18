@@ -35,6 +35,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   const wasm = new Uint8Array(readFileSync(path)), module = new WebAssembly.Module(wasm);
   assert.equal(WebAssembly.Module.imports(module).length, 0);
   const e = new WebAssembly.Instance(module).exports;
+  assert.equal(typeof e.linux_queued_worker_probe_startup_shared, workerQueue ? 'function' : 'undefined');
   const call = (name: string, ...args: (number | bigint)[]): number => {
     assert.equal(typeof e[name], 'function', `Missing ABI7 export ${name}`);
     return (e[name] as (...values: (number | bigint)[]) => number)(...args);
@@ -1117,7 +1118,7 @@ async function prepareCurrentCapture(
   const translate = await loadTranslator(translator);
   const core = r.e.memory as WebAssembly.Memory;
   r.stageStartup('/app', ['mixed']);
-  const begun = r.call('linux_queued_output_probe_startup'), id = r.result();
+  const begun = r.call('linux_queued_worker_probe_startup_shared'), id = r.result();
   assert.equal(r.call('linux_startup_input', 0), 0);
   if (begun !== 0) {
     if (id) assert.equal(r.call('linux_startup_cancel', id), 0);
@@ -1213,6 +1214,29 @@ test('current-source mixed capture keeps cancelled initialization until stopped 
   // Worker. Local accesses have ended; this is not inferred from cancellation.
   cancelPreparedImage(r, prepared.id);
   assert.ok(r.call('linux_run_start', prepared.id) < 0);
+});
+
+test('strong capture probe joined startup owns only admitted failure and never falls back', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, false, true, true);
+  const begin = () => r.call('linux_queued_worker_probe_startup_shared');
+  r.stageStartup();
+  assert.equal(begin(), -9);
+  assert.equal(r.result(), 0n, 'missing registry is not admission');
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  r.stageStartup('/not-present');
+  assert.ok(begin() < 0);
+  const cleanup = r.result();
+  assert.equal(cleanup, 1n, 'failure after table installation retains the exact cleanup owner');
+  assert.ok(r.call('linux_run_start', cleanup) < 0);
+  assert.equal(r.call('linux_startup_cancel', cleanup), 0);
+  assert.equal(r.result(), 1n);
+  for (const lane of [0, 1]) assert.equal(r.receive(lane), undefined);
+  r.stageStartup();
+  assert.equal(begin(), 0);
+  const next = r.result();
+  assert.equal(next, 2n, 'later preparation never adopts the cancelled identity');
+  assert.equal(r.call('linux_startup_cancel', next), 0);
+  assert.equal(r.result(), 1n);
 });
 
 for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-while-unconfirmed'] as const) {
@@ -1412,7 +1436,8 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
         assert.equal(command.tag, 13);
         assert.equal(request.nr, 1n);
         const [fd, at, length] = request.args;
-        assert.equal(fd, 1n); assert.equal(length, 1n);
+        assert.equal(fd, current && writeAddresses.length === 1 ? 2n : 1n);
+        assert.equal(length, 1n);
         writeAddresses.push(Number(at));
         const action = command.value;
         assert.deepEqual([command.tag, command.target, command.next, command.endpoint], [13, at, 1n, 0n]);
@@ -1460,6 +1485,7 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
         assert.equal(sink.writeOne(), 'empty');
         assert.equal(sink.closeIfDrained(), true);
         assert.deepEqual(new Uint8Array(readFileSync(join(sinkDirectory!, 'output'))), bytes('ABC'));
+        assert.equal(r.receive(1), undefined, 'stderr did not create an undrained record on the separate lane');
       } else {
         const received: Uint8Array[] = [];
         for (const expected of stopBeforeFileReply ? ['A', 'B'] : ['A', 'B', 'C']) {
