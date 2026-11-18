@@ -1,34 +1,36 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {File, Dir, PendingFile} from '../../runtime/linux/fs.ts';
+import {File, Vfs, mountTarget} from '../../runtime/linux/fs.ts';
 
-test('creation abort retires once even on reentry and publication is terminal', () => {
-  let calls = 0;
-  const pending = new PendingFile(new File(), () => { calls++; pending.abort(); });
-  pending.abort(); pending.abort(); assert.equal(calls, 1);
-  assert.throws(() => pending.publish(new Dir(), 'a'), /resolved/);
-  const dir = new Dir(), published = new PendingFile(new File(), () => { throw Error('must not retire'); });
-  assert.equal(published.publish(dir, 'a'), published.file);
-  published.abort(); assert.equal(dir.entries.get('a'), published.file);
-  assert.throws(() => published.publish(dir, 'b'), /resolved/);
+test('a new file has its bytes and mode when published', () => {
+  const vfs = new Vfs();
+  const dir = vfs.mkdirp('/new'), set = dir.entries.set.bind(dir.entries);
+  dir.entries.set = (name, inode) => {
+    assert.equal(name, 'file');
+    assert.ok(inode instanceof File);
+    assert.deepEqual(inode.bytes(), Uint8Array.of(3, 7));
+    assert.equal(inode.mode & 0o7777, 0o640);
+    return set(name, inode);
+  };
+  assert.equal(vfs.writeFile('/new/file', Uint8Array.of(3, 7), 0o640), vfs.file('/new/file'));
 });
 
-test('failed publication retains both errors and does not retry retirement', () => {
-  const failed = Error('publish'), cleanup = Error('cleanup'), dir = new Dir(); let calls = 0;
-  dir.entries.set = () => { throw failed; };
-  const pending = new PendingFile(new File(), () => { calls++; throw cleanup; });
-  assert.throws(() => pending.publish(dir, 'a'), (error: unknown) => error instanceof AggregateError &&
-    error.errors[0] === failed && error.errors[1] === cleanup);
-  pending.abort(); assert.equal(calls, 1);
+test('a rejected publication reports the original failure and creates no file', () => {
+  const vfs = new Vfs(), failure = new Error('publication refused');
+  const dir = vfs.mkdirp('/new');
+  dir.entries.set = () => { throw failure; };
+  assert.throws(() => vfs.writeFile('/new/file', 'data'), error => error === failure);
+  assert.equal(dir.entries.has('file'), false);
 });
 
-
-test('prepublication preparation failure retains its error when retirement also fails', () => {
-  const failed = Error('prepare'), cleanup = Error('cleanup'); let calls = 0;
-  const pending = new PendingFile(new File(), () => { calls++; throw cleanup; });
-  assert.throws(() => {
-    try { throw failed; }
-    catch (error) { pending.reject(error); }
-  }, (error: unknown) => error instanceof AggregateError && error.errors[0] === failed && error.errors[1] === cleanup);
-  pending.abort(); assert.equal(calls, 1);
+test('mounting publishes size and origin without materializing payload', () => {
+  const vfs = new Vfs();
+  let reads = 0;
+  const file = mountTarget(vfs).file('/file', 0o644, 1, () => { reads++; return Uint8Array.of(7); }, 'origin');
+  assert.equal(vfs.file('/file'), file);
+  assert.equal(file.size, 1);
+  assert.equal(file.origin, 'origin');
+  assert.equal(reads, 0);
+  assert.deepEqual(file.bytes(), Uint8Array.of(7));
+  assert.equal(reads, 1);
 });

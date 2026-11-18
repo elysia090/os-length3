@@ -298,9 +298,8 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
     if (!(f & O.CREAT)) return -E.NOENT;
     if (ending(name).slash) fail(E.ISDIR);
     const dir = making(p, r);
-    const pending = p.kernel.vfs.prepareFile(new Uint8Array(0), N(mode) & ~p.umask & 0o7777);
-    try { owned(p, dir, pending.file); node = pending.publish(dir, r.name); }
-    catch (error) { return pending.reject(error); }
+    node = owned(p, dir, new File(undefined, N(mode) & ~p.umask & 0o7777));
+    dir.entries.set(r.name, node);
     made = true;
   } else if ((f & O.CREAT) && (f & O.EXCL)) {
     fail(E.EXIST);
@@ -953,16 +952,19 @@ function makeNode(p: Proc, dirfd: bigint, address: bigint, mode: bigint, dev: bi
   if (typeof r === 'number') return fail(r);
   const dir = making(p, r);
   if ((type === S_IFCHR || type === S_IFBLK) && !capable(p.cred, CAP.MKNOD)) fail(E.PERM);
-  // (a device's number as mknod is given it: its major above its minor's low byte, the rest of its minor above that)
-  const d = Number(BigInt.asUintN(64, dev)), rdev = ((d >>> 8) & 0xfff) << 8 | (d & 0xff) | ((Math.floor(d / 4096) & 0xfff00) << 8);
-  if (type === 0 || type === S_IFREG) {
-    const pending = p.kernel.vfs.prepareFile(new Uint8Array(0), perm);
-    try { owned(p, dir, pending.file); pending.publish(dir, r.name); }
-    catch (error) { return pending.reject(error); }
-  } else {
-    const node = type === S_IFIFO ? new Fifo(perm) : type === S_IFSOCK ? new SocketName(perm) : device(rdev, perm, type === S_IFBLK);
-    dir.entries.set(r.name, owned(p, dir, node));
+  let node: File | Fifo | SocketName | Device;
+  switch (type) {
+    case 0: case S_IFREG: node = new File(undefined, perm); break;
+    case S_IFIFO: node = new Fifo(perm); break;
+    case S_IFSOCK: node = new SocketName(perm); break;
+    default: {
+      // Linux encodes the major number above the low byte of the minor number.
+      const d = Number(BigInt.asUintN(64, dev));
+      const rdev = ((d >>> 8) & 0xfff) << 8 | (d & 0xff) | ((Math.floor(d / 4096) & 0xfff00) << 8);
+      node = device(rdev, perm, type === S_IFBLK);
+    }
   }
+  dir.entries.set(r.name, owned(p, dir, node));
   return 0;
 }
 
