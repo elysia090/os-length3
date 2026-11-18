@@ -862,3 +862,13 @@ See [ROOT-AOT.md](ROOT-AOT.md) for trusted-artifact requirements, typed ownershi
 local SourceId scope, finite admission history, cancellation and retirement. This
 connects a selected fixed static caller, not the ordinary BusyBox/shell/muk/TTY
 profile. TLS, clear-tid, sendfile and Linux signal/VM compatibility remain gates.
+
+### Non-byte effect reservation foundation
+
+The domain also reserves non-byte Effects in the same finite action arena and
+single token namespace as spans and lifetime changes. An Effect retains its exact
+binding incarnation but grants no guest byte span. Started Unknown effects remain
+owned after guest unwind and prevent rebinding until matching stopped evidence.
+This internal primitive does not yet implement Worker TLS or canonical-source
+sendfile. See [NONBYTE-EFFECTS.md](NONBYTE-EFFECTS.md) for its scope and the next
+physical apply/ack/return boundary.
