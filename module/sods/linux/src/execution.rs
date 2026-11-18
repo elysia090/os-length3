@@ -321,7 +321,14 @@ impl Execution {
     /// separately exclude a cancelled/closed sequence in the same Core turn.
     /// This neither acquires nor ends a call, and is not a stop receipt.
     pub(crate) fn check_held_call_live(&self, invocation: Invocation) -> Result<(), Error> {
-        if self.pending_call != Some(invocation) {
+        let held = self.pending_call.ok_or(Error::Identity)?;
+        // Invocation is opaque and start never reuses its number within a
+        // domain/execution pair, even across an image change. These three
+        // fields already identify the image and binding of this invocation.
+        if held.number != invocation.number
+            || held.identity.domain != invocation.identity.domain
+            || held.identity.execution != invocation.identity.execution
+        {
             return Err(Error::Identity);
         }
         // Admission captured the current invocation and a pending call blocks
@@ -641,6 +648,40 @@ mod retirement_tests {
             assert!(!e.retireable());
             e.finish_call(invocation).unwrap();
             assert!(e.retireable());
+        }
+    }
+
+    #[test]
+    fn equal_local_invocation_numbers_do_not_join_foreign_domains_or_peer_executions() {
+        fn running(domain: &mut Domain, id: u64) -> (Execution, Invocation) {
+            let binding = domain.bind(65536).unwrap();
+            let mut execution = Execution::new(id, binding);
+            execution.image_begin(domain, 65536).unwrap();
+            execution
+                .image_finish(domain, ImageResult::Installed)
+                .unwrap();
+            let invocation = execution.start(domain).unwrap();
+            execution.hold_call(invocation).unwrap();
+            (execution, invocation)
+        }
+
+        let mut x = Domain::new(90, 2, 4).unwrap();
+        let mut y = Domain::new(91, 1, 4).unwrap();
+        let (mut a, ai) = running(&mut x, 1);
+        let (mut b, bi) = running(&mut y, 1);
+        let (mut peer, pi) = running(&mut x, 2);
+        assert_eq!(ai.number(), bi.number());
+        assert_eq!(ai.number(), pi.number());
+        assert_eq!(ai.identity.binding, bi.identity.binding);
+        assert_eq!(ai.identity.image, bi.identity.image);
+        for foreign in [bi, pi] {
+            assert_eq!(a.check_held_call_live(foreign), Err(Error::Identity));
+        }
+        assert_eq!(b.check_held_call_live(ai), Err(Error::Identity));
+        assert_eq!(peer.check_held_call_live(ai), Err(Error::Identity));
+        for (execution, own) in [(&mut a, ai), (&mut b, bi), (&mut peer, pi)] {
+            assert_eq!(execution.check_held_call_live(own), Ok(()));
+            execution.finish_call(own).unwrap();
         }
     }
 }
