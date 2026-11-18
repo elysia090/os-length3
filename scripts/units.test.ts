@@ -1,15 +1,27 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {existsSync} from 'node:fs';
-import {OWED, RICEBOX_UNITS, UNITS, check, entryViolations, reaches, unitOf} from './units.ts';
+import {RICEBOX_UNITS, UNITS, check, dependencyViolations, entryViolations, reaches, unitOf} from './units.ts';
 
 test('every file of code is one unit\'s, or a test, a script or something made (scripts/units.ts)', () => {
   assert.deepEqual(check().homeless, []);
 });
 
-test('a unit takes only from the units the table lets it, besides what is owed with the step that ends it', () => {
-  const owed = new Set(OWED.map((o) => o.join(' ')));
-  assert.deepEqual(check().crossings.map((c) => c.join(' ')).filter((c) => !owed.has(c)), []);
+test('every unit follows the dependency table without exceptions', () => {
+  assert.deepEqual(check().crossings, []);
+});
+
+test('the hosted Remote depends on shared contracts, not product adapters', () => {
+  const server = 'why/shipto/remote/serve/fixture.ts';
+  assert.equal(unitOf(server)?.name, 'remote');
+  for (const name of ['connection', 'inbox', 'lifecycle', 'news', 'passkeys.desktop', 'plan', 'policy', 'servers', 'settings']) {
+    assert.equal(unitOf(`why/shipto/${name}.ts`)?.name, 'app');
+  }
+  assert.deepEqual(dependencyViolations([[server, "import {SCOPES} from '../../../api/ssh-scope.ts';"]]), []);
+  assert.deepEqual(dependencyViolations([[server, "import pins from '../../desktop-releases.json' with {type: 'json'};"]]), []);
+  assert.deepEqual(dependencyViolations([[server, "import {api} from '../../connection.ts';"]]), [['remote', 'app', server]]);
+  assert.deepEqual(dependencyViolations([['why/api/ssh-scope.ts', "import {core} from './host.ts';"]]),
+    [['remote-contracts', 'app', 'why/api/ssh-scope.ts']]);
 });
 
 test('the distribution owns native and web execution; Why owns its product adapters', () => {
@@ -26,18 +38,11 @@ test('the distribution owns native and web execution; Why owns its product adapt
   assert.equal(unitOf('why/device/storage/free.rs')?.name, 'app');
 });
 
-test('what is owed is still made: one no longer made is struck from OWED', () => {
-  const made = new Set(check().crossings.map((c) => c.join(' ')));
-  assert.deepEqual(OWED.map((o) => o.join(' ')).filter((o) => !made.has(o)), []);
-});
-
-test('muk and sods have no implementation dependencies or waived crossings', () => {
+test('Muk and Sods have no internal dependency on one another', () => {
   const unit = (name: string) => UNITS.find((u) => u.name === name)!;
   assert.ok(!unit('muk').takes.includes('sods'));
   assert.ok(!unit('sods').takes.includes('muk'));
   assert.deepEqual(check().crossings.filter(([from, to]) =>
-    (from === 'muk' && to === 'sods') || (from === 'sods' && to === 'muk')), []);
-  assert.deepEqual(OWED.filter(([from, to]) =>
     (from === 'muk' && to === 'sods') || (from === 'sods' && to === 'muk')), []);
 });
 
@@ -76,7 +81,7 @@ test('the table is one: each name once, each path held by one unit, each unit ta
   assert.equal(new Set(names).size, names.length);
   assert.equal(new Set(paths).size, paths.length);
   for (const u of UNITS) for (const t of u.takes) assert.ok(t === '*' || names.includes(t), `${u.name} takes ${t}`);
-  // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (why/shipto in why).
+  // A unit's folder is its own; the longest path decides where one unit holds part of another's folder (the hosted Remote inside Why).
   assert.equal(unitOf('ricebox/sods/runtime/translation/translator.ts')?.name, 'sods');
   assert.equal(unitOf('ricebox/sods/runtime/linux/process.ts')?.name, 'sods');
   assert.equal(unitOf('ricebox/distribution/build/package-database.ts')?.name, 'ricebox');

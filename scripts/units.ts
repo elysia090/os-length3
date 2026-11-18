@@ -41,9 +41,10 @@ export const UNITS: Unit[] = [
     holds: ['ricebox/otter'], takes: ['toolchain']},
   {name: 'cowboy', says: 'Guest networking and relay protocol, without Why account or service policy',
     holds: ['ricebox/cowboy'], takes: ['sods']},
-  {name: 'shipto', says: 'The Why service, identity, policy, synchronization and deliveries',
-    holds: ['why/shipto', 'why/api/ssh-scope.ts', 'why/cli/src/cmd/sync.rs', 'why/cli/src/cmd/git.rs', 'why/cli/src/cmd/remote.rs'],
-    takes: ['ricebox', 'muk', 'cowboy']},
+  {name: 'remote-contracts', says: 'SSH scope values and desktop release pins shared by Why and its Remote',
+    holds: ['why/api/ssh-scope.ts', 'why/shipto/desktop-releases.json'], takes: []},
+  {name: 'remote', says: 'The hosted Why service: identity, synchronization, links and release delivery',
+    holds: ['why/shipto/remote'], takes: ['remote-contracts']},
   {name: 'app', says: 'Why product core, platform adapters, and app surfaces',
     holds: ['why'], takes: ['*']},
   {name: 'why', says: 'The Why command-line frontend',
@@ -58,12 +59,6 @@ export const NOT_UNITS = ['scripts', 'why/test', 'ricebox/sods/test', 'ricebox/m
   'why/api/web/src/tests', 'node_modules', 'target', 'dist', 'why/app/public', 'ricebox/sods/target', 'ricebox/distribution/terminal/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
-
-/** Existing product service imports that are exceptions to the allowed dependency table. */
-export const OWED: [string, string, string][] = [
-  ...['connection', 'inbox', 'lifecycle', 'news', 'passkeys.desktop', 'plan', 'policy', 'servers', 'settings']
-    .map((name): [string, string, string] => ['shipto', 'app', `why/shipto/${name}.ts`]),
-];
 
 /** The unit of a file (a path from the root): the unit holding the longest path that holds it, or null. */
 export function unitOf(rel: string, units: readonly Unit[] = UNITS): Unit | null {
@@ -90,24 +85,32 @@ export function codeFiles(dir = ROOT): string[] {
 
 const IMPORT = /(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?['"](\.[^'"]+)['"]|import\(\s*['"](\.[^'"]+)['"]\s*\)/g;
 
-/** Files no unit holds, and every import from one unit to another the table does not allow: [from, to, file]. */
-export function check(): {homeless: string[]; crossings: [string, string, string][]} {
-  const homeless: string[] = [], crossings: [string, string, string][] = [];
-  for (const rel of codeFiles()) {
-    const from = unitOf(rel);
-    if (!from) { homeless.push(rel); continue; }
-    if (!rel.endsWith('.ts')) continue;
+/** Imports that cross a forbidden ownership boundary: [from, to, file]. */
+export function dependencyViolations(sources: Iterable<readonly [string, string]>): [string, string, string][] {
+  const crossings: [string, string, string][] = [];
+  for (const [file, source] of sources) {
+    const from = unitOf(file);
+    if (!from) continue;
     const seen = new Set<string>();
-    for (const m of readFileSync(join(ROOT, rel), 'utf8').matchAll(IMPORT)) {
-      let target = relative(ROOT, resolve(ROOT, dirname(rel), m[1] ?? m[2] ?? '')).split(sep).join('/');
+    for (const m of source.matchAll(IMPORT)) {
+      let target = relative(ROOT, resolve(ROOT, dirname(file), m[1] ?? m[2] ?? '')).split(sep).join('/');
       try { if (statSync(join(ROOT, target)).isDirectory()) target += '/index.ts'; } catch { /* a file, as written */ }
       const to = notUnit(target) ? null : unitOf(target);
-      if (!to || to === from || from.takes.includes('*') || from.takes.includes(to.name)) continue;
-      const key = `${from.name}>${to.name}`;
-      if (!seen.has(key)) seen.add(key), crossings.push([from.name, to.name, rel]);
+      if (!to || to === from || from.takes.includes('*') || from.takes.includes(to.name) || seen.has(to.name)) continue;
+      seen.add(to.name);
+      crossings.push([from.name, to.name, file]);
     }
   }
-  return {homeless, crossings};
+  return crossings;
+}
+
+export function check(): {homeless: string[]; crossings: [string, string, string][]} {
+  const files = codeFiles();
+  return {
+    homeless: files.filter(file => !unitOf(file)),
+    crossings: dependencyViolations(files.filter(file => file.endsWith('.ts')).map(file =>
+      [file, readFileSync(join(ROOT, file), 'utf8')] as const)),
+  };
 }
 
 /** Every TypeScript file under the root, a unit's or not (tests and scripts too), but for what is made or fetched. */
@@ -151,9 +154,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const [file, target] of reaches()) console.log(`NOT AN ENTRY: ${file} -> ${target}`);
   const {homeless, crossings} = check();
   for (const f of homeless) console.log(`no unit's: ${f}`);
-  const owed = new Set(OWED.map((o) => o.join(' ')));
-  for (const c of crossings) console.log(`${owed.has(c.join(' ')) ? 'owed' : 'NOT ALLOWED'}: ${c[0]} -> ${c[1]}\t${c[2]}`);
-  for (const o of OWED) if (!crossings.some((c) => c.join(' ') === o.join(' '))) console.log(`owed, but no longer made (strike it): ${o.join(' ')}`);
+  for (const c of crossings) console.log(`NOT ALLOWED: ${c[0]} -> ${c[1]}\t${c[2]}`);
   const counts = new Map<string, number>();
   for (const f of codeFiles()) { const u = unitOf(f)?.name ?? '-'; counts.set(u, (counts.get(u) ?? 0) + 1); }
   console.log([...counts].map(([u, n]) => `${u} ${n}`).join(', '));
