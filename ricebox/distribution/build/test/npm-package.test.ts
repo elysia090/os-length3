@@ -22,7 +22,6 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.equal(pkg.exports['./vite'].import,'./ricebox/distribution/integrations/vite.js');
     assert.equal(pkg.exports['./prepare'].types,'./ricebox/distribution/build/prepare.ts');
     for(const name of ['ricebox/distribution/format/executable-source.ts','ricebox/distribution/build/distribution.ts','ricebox/distribution/build/file-store-artifact.ts','ricebox/sods/runtime/file-store.ts',
-      'ricebox/distribution/build/capture-result-artifact.ts','ricebox/distribution/build/capture-result-artifact.js',
       'ricebox/distribution/deployment/assets.ts','ricebox/distribution/deployment/assets.js',
       'ricebox/distribution/integrations/vite.ts','ricebox/distribution/integrations/vite.js','ricebox/distribution/build/prepare.ts','ricebox/distribution/build/prepare.js']) {
       assert.ok(existsSync(join(out,name)),`missing ${name}`);

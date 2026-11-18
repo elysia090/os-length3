@@ -3,7 +3,6 @@
 //
 // Run a static x86-64 program translated by sods, on node. PROGRAM is a host path
 // (placed at /bin/<name>) or, with --root, a path inside that tree (a root unpacked).
-// --managed PROGRAM [args...] selects the explicit rootless, non-TTY Rust profile.
 // stdin/stdout/stderr attach to this process. A root still in its layers is run by
 // what reads layers (ricebox: ricebox/distribution/verification/programs.ts), over the same linux.ts.
 import {execFileSync, spawnSync} from 'node:child_process';
@@ -19,23 +18,23 @@ const here = dirname(fileURLToPath(import.meta.url));
 const translator = join(here, '..', 'target', 'release', 'sods');
 const wasmTranslator = join(here, '..', 'target', 'wasm32-unknown-unknown', 'release', 'sods.wasm');
 
-// Explicit migration profile, never an automatic fallback for the ordinary CLI.
-// Reject incompatible modes before loading a program, translator or standard input.
-if (process.argv[2] === '--managed') {
-  const [program, ...args] = process.argv.slice(3);
-  if (!program || program.startsWith('-')) throw new Error('--managed requires a host PROGRAM and accepts no runner options');
-  for (const name of ['SODS_RUN', 'SODS_BUDGET', 'SODS_BLOCKS', 'SODS_INLINE', 'SODS_TIMING', 'SODS_FREE', 'SODS_UNSUPPORTED']) {
-    if (process.env[name] !== undefined) throw new Error(`--managed does not support ${name}`);
-  }
-  const core = process.env.SODS_LINUX_WASM;
-  if (!core) throw new Error('--managed requires SODS_LINUX_WASM');
-  const selectedTranslator = process.env.SODS_CURRENT_TRANSLATOR_WASM ?? process.env.SODS_PATH_TRANSLATOR_WASM ?? wasmTranslator;
-  const {runManagedProgram} = await import('./host/node/run.ts');
-  // The helper only returns a guest status after observed Worker stop and retirement.
-  process.exit(await runManagedProgram(program, args, core, selectedTranslator));
+const args = process.argv.slice(2);
+let root: string | null = null, cwd = '/root', tty = false;
+const optionValue = (flag: string): string => {
+  const value = args.shift();
+  if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`);
+  return value;
+};
+while (args[0]?.startsWith('--')) {
+  const flag = args.shift()!;
+  if (flag === '--root') root = optionValue(flag);
+  else if (flag === '--cwd') cwd = optionValue(flag);
+  else if (flag === '--tty') tty = true;
+  else throw new Error(`Unknown runner option: ${flag}`);
 }
+const [program, ...rest] = args;
+if (!program) throw new Error('Expected a program to run');
 
-// Keep the legacy semantic graph out of the selected managed caller.
 const {File, Link, Vfs} = await import('./linux/fs.ts');
 const {PROFILE} = await import('./linux/process.ts');
 const {linux} = await import('./linux.ts');
@@ -150,17 +149,6 @@ function mount(vfs: InstanceType<typeof Vfs>, host: string, at: string): void {
   }
 }
 
-const args = process.argv.slice(2);
-let root: string | null = null, cwd = '/root', tty = false;
-while (args[0]?.startsWith('--')) {
-  const flag = args.shift();
-  if (flag === '--managed') throw new Error('--managed must be the first runner option');
-  else if (flag === '--root') root = args.shift() ?? null;
-  else if (flag === '--cwd') cwd = args.shift() ?? cwd;
-  // Its console a terminal, 80 by 24, as a Prompt has it: what reads keys reads them from one.
-  else if (flag === '--tty') tty = true;
-}
-const [program = '', ...rest] = args;
 const vfs = new Vfs();
 if (root) mount(vfs, root, '/');
 let path = program;

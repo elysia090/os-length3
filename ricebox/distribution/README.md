@@ -79,8 +79,7 @@ does not. Linux permission and mount decisions remain with sods.
 Retirement closes admission but does not itself prove that a Worker or host access
 has stopped. See the [runtime foundation](../../docs/runtime-foundation.md) for
 compatibility and browser-transfer constraints. Node integration results are not
-browser cold-start measurements. Optional Rust-root and captured-result interfaces
-do not change the default Worker, terminal or persistent-storage contract.
+browser cold-start measurements.
 
 ## Build, deploy and verify
 

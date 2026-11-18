@@ -332,68 +332,11 @@ jobs:
       - name: Test sods
         if: matrix.part == 'native'
         run: cargo test --locked --release --manifest-path ricebox/sods/Cargo.toml
-      - name: Test Linux memory admission and real Wasm host boundary
-        if: matrix.part == 'native'
-        run: |
-          cargo test --locked --manifest-path ricebox/sods/linux/Cargo.toml
-          cargo build --locked --target wasm32-unknown-unknown --manifest-path ricebox/sods/linux/Cargo.toml
-          # Isolated synthetic ABI guard probe, never a selected production artifact.
-          CARGO_TARGET_DIR=ricebox/sods/linux/target/sendfile-probe cargo build --locked --target wasm32-unknown-unknown --features sendfile-probe --manifest-path ricebox/sods/linux/Cargo.toml
-          # Separate scalar-only queued Core ownership diagnostic. The production host rejects it.
-          CARGO_TARGET_DIR=ricebox/sods/linux/target/queued-output-probe cargo build --locked --target wasm32-unknown-unknown --features queued-output-probe --manifest-path ricebox/sods/linux/Cargo.toml
-          SODS_QUEUED_OUTPUT_PROBE_WASM=ricebox/sods/linux/target/queued-output-probe/wasm32-unknown-unknown/debug/sods_linux.wasm SODS_SENDFILE_PROBE_WASM=ricebox/sods/linux/target/sendfile-probe/wasm32-unknown-unknown/debug/sods_linux.wasm SODS_LINUX_WASM=ricebox/sods/linux/target/wasm32-unknown-unknown/debug/sods_linux.wasm SODS_CURRENT_TRANSLATOR_WASM=ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm node --test ricebox/sods/test/runtime/branch-counter-current.test.ts ricebox/sods/test/runtime/call-flags-current.test.ts ricebox/sods/test/runtime/memory-host.test.ts ricebox/sods/test/runtime/translated-image.test.ts ricebox/sods/test/runtime/translated-current.test.ts ricebox/sods/test/runtime/path-startup.test.ts ricebox/sods/test/runtime/path-stdio.test.ts ricebox/sods/test/runtime/managed-cli.test.ts ricebox/sods/test/runtime/managed-open.test.ts ricebox/sods/test/runtime/managed-open-abi.test.ts ricebox/sods/test/runtime/managed-sendfile-abi.test.ts ricebox/sods/test/runtime/managed-sendfile.test.ts ricebox/distribution/runtime/test/managed-root-wire.test.ts ricebox/distribution/runtime/test/managed-root-current.test.ts ricebox/sods/test/runtime/worker-memory.test.ts ricebox/sods/test/runtime/node-guest.test.ts ricebox/sods/test/runtime/node-register.test.ts ricebox/sods/test/runtime/managed-register.test.ts ricebox/sods/test/runtime/managed-task.test.ts
-      - name: Test the rejected lexical capture fixture with a real Node Worker
+      - name: Test current translator branches and call flags
         if: matrix.part == 'native'
         env:
-          SODS_QUEUED_WORKER_PROBE_WASM: ricebox/sods/linux/target/queued-worker-probe/wasm32-unknown-unknown/debug/sods_linux.wasm
           SODS_CURRENT_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
-        run: |
-          CARGO_TARGET_DIR=ricebox/sods/linux/target/queued-worker-probe cargo build --locked --target wasm32-unknown-unknown --features queued-worker-probe --manifest-path ricebox/sods/linux/Cargo.toml
-          node --test --test-name-pattern='strong capture probe|real Node Worker capture fixture|current-source mixed capture|owned capability cannot' ricebox/sods/test/runtime/managed-sendfile-abi.test.ts
-      - name: Test the separate Linux capture candidate admission
-        if: matrix.part == 'native'
-        env:
-          SODS_CAPTURE_CANDIDATE_WASM: ricebox/sods/linux/target/capture-v1/wasm32-unknown-unknown/release/sods_linux.wasm
-          SODS_LINUX_WASM: ricebox/sods/linux/target/wasm32-unknown-unknown/debug/sods_linux.wasm
-          SODS_QUEUED_WORKER_PROBE_WASM: ricebox/sods/linux/target/queued-worker-probe/wasm32-unknown-unknown/debug/sods_linux.wasm
-        run: |
-          CARGO_TARGET_DIR=ricebox/sods/linux/target/capture-v1 cargo build --locked --release --target wasm32-unknown-unknown --features capture-v1 --manifest-path ricebox/sods/linux/Cargo.toml
-          if CARGO_TARGET_DIR=ricebox/sods/linux/target/capture-v1-conflict cargo check --locked --target wasm32-unknown-unknown --features capture-v1,queued-worker-probe --manifest-path ricebox/sods/linux/Cargo.toml >ricebox/sods/linux/target/capture-v1-conflict.log 2>&1; then
-            echo 'Capture candidate must not compose with probe features' >&2; exit 1
-          fi
-          grep -q 'capture-v1 cannot be built with synthetic probe features' ricebox/sods/linux/target/capture-v1-conflict.log
-          # Pin the trusted local build before exercising the artifact reader.
-          SODS_CAPTURE_CANDIDATE_SHA256="$(sha256sum "$SODS_CAPTURE_CANDIDATE_WASM" | cut -d' ' -f1)" SODS_CAPTURE_CANDIDATE_BYTES="$(wc -c < "$SODS_CAPTURE_CANDIDATE_WASM")" node --test ricebox/sods/test/runtime/managed-capture-selection.test.ts
-      - name: Test private non-probe capture startup and owned result
-        if: matrix.part == 'native'
-        env:
-          SODS_CAPTURE_RESULT_WASM: ricebox/sods/linux/target/capture-result-v1/wasm32-unknown-unknown/release/sods_linux.wasm
-          SODS_CURRENT_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
-          SODS_LINUX_WASM: ricebox/sods/linux/target/wasm32-unknown-unknown/debug/sods_linux.wasm
-        run: |
-          CARGO_TARGET_DIR=ricebox/sods/linux/target/capture-result-v1 cargo build --locked --release --target wasm32-unknown-unknown --features capture-result-v1 --manifest-path ricebox/sods/linux/Cargo.toml
-          export SODS_CAPTURE_RESULT_SHA256="$(sha256sum "$SODS_CAPTURE_RESULT_WASM" | cut -d' ' -f1)" SODS_CAPTURE_RESULT_BYTES="$(wc -c < "$SODS_CAPTURE_RESULT_WASM")"
-          node --test --test-name-pattern='non-probe capture result|pinned captured result' ricebox/sods/test/runtime/managed-sendfile-abi.test.ts ricebox/distribution/runtime/test/managed-root-current.test.ts
-          node --test ricebox/distribution/deployment/test/capture-result.test.ts
-          node --test --test-name-pattern='explicit capture builder|a Node-only build takes' scripts/webroot.test.ts
-      - name: Test the separate non-probe owned stdout host
-        if: matrix.part == 'native'
-        env:
-          SODS_OWNED_STDOUT_WASM: ricebox/sods/linux/target/owned-stdout-v1/wasm32-unknown-unknown/release/sods_linux.wasm
-          SODS_CURRENT_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
-          SODS_LINUX_WASM: ricebox/sods/linux/target/wasm32-unknown-unknown/debug/sods_linux.wasm
-          SODS_QUEUED_WORKER_PROBE_WASM: ricebox/sods/linux/target/queued-worker-probe/wasm32-unknown-unknown/debug/sods_linux.wasm
-          SODS_CAPTURE_RESULT_WASM: ricebox/sods/linux/target/capture-result-v1/wasm32-unknown-unknown/release/sods_linux.wasm
-        run: |
-          CARGO_TARGET_DIR=ricebox/sods/linux/target/owned-stdout-v1 cargo build --locked --release --target wasm32-unknown-unknown --features owned-stdout-v1 --manifest-path ricebox/sods/linux/Cargo.toml
-          for conflict in capture-v1 sendfile-probe; do
-            if CARGO_TARGET_DIR=ricebox/sods/linux/target/owned-stdout-conflict cargo check --locked --features "owned-stdout-v1,$conflict" --manifest-path ricebox/sods/linux/Cargo.toml >ricebox/sods/linux/target/owned-stdout-conflict.log 2>&1; then
-              echo "Owned stdout must not compose with $conflict" >&2; exit 1
-            fi
-            grep -q 'owned-stdout-v1 cannot compose' ricebox/sods/linux/target/owned-stdout-conflict.log
-          done
-          export SODS_OWNED_STDOUT_SHA256="$(sha256sum "$SODS_OWNED_STDOUT_WASM" | cut -d' ' -f1)" SODS_OWNED_STDOUT_BYTES="$(wc -c < "$SODS_OWNED_STDOUT_WASM")"
-          node --test ricebox/sods/test/runtime/managed-owned-stdout.test.ts
+        run: node --test ricebox/sods/test/runtime/branch-counter-current.test.ts ricebox/sods/test/runtime/call-flags-current.test.ts
       # What stands beside sods and is checked with what it builds: ricebox's layers mounted in sods' tree (the
       # translator's wasm decodes and digests them), and muk's C parser beside its model over every config.json.
       - name: Layers, and muk's parser beside its model

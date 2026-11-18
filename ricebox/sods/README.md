@@ -88,27 +88,6 @@ Worker dependency closure without Node's TypeScript loader. With `SODS_FILE_STOR
 Worker. These checks do not establish browser execution or all-current-source artifact
 compatibility when a historical translator is selected.
 
-## Optional Rust execution and output profiles
-
-The ordinary `linux()` runtime remains distinct from `managedRoot()`, the
-explicit read-only Rust-root profile exported by `sods/linux`. `managedRoot()`
-requires Linux with Node 22 or 24 and a trusted matching Linux Core artifact;
-it is not a browser, terminal, or general Linux compatibility replacement.
-See [`linux/README.md`](linux/README.md) for the supported caller contract.
-
-`capturedResultHost`, also exported by `sods/linux`, is an experimental opt-in
-for an independently owned captured result. It requires Linux x64, Node 22 or
-24, and an independently trusted exact artifact pin. Its request and queue
-limits are explicit; they do not bound all retained Core or source memory.
-It does not enable capture on ordinary `linux()` or `managedRoot()`, or promise
-host stdout, terminal rendering, or browser support.
-
-The separately pinned owned-stdout implementation is an internal Node adapter,
-not an npm export or a default CLI mode. Its presence does not change the
-released distribution's output policy. Test-only Wasm probe features are not
-production artifacts. Guest exit, observed Worker stop, accepted output, and
-completed consumer delivery remain separate events in these profiles.
-
 ## Source-bound prepared executables
 
 `runtime/linux.ts` additionally exports `captureExecutableSource`,

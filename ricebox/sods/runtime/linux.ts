@@ -18,22 +18,6 @@ import {RemoteKernel, type Apart} from './linux/remote.ts';
 import {Vfs, type File} from './linux/fs.ts';
 import {executableSourceFor, type ExecutableSource} from './linux/executable-source.ts';
 import type {Segment} from './translation/share.ts';
-import type {ManagedRootCapacity, ManagedRootHost} from './linux/managed-root.ts';
-export type {ManagedRootCapacity, ManagedRootHost, ExecutionBinding, PreparedArtifactRequest, PreparedFileLimits, PathExecutionOptions} from './linux/managed-root.ts';
-
-/** Additive opt-in readonly Rust root caller. module must be the trusted matching
- * Linux core; export shape/ABI checks are not provenance validation. Deferred so
- * ordinary Node/browser consumers do not eagerly initialize the private adapter. */
-export async function managedRoot(module: WebAssembly.Module, capacity: ManagedRootCapacity): Promise<ManagedRootHost> {
-  const {createManagedRoot} = await import('./linux/managed-root.ts');
-  return createManagedRoot(module, capacity);
-}
-
-// Explicit capture does not change ordinary linux()/managedRoot() or enable
-// browser/Workerd execution. The Sods entry owns its preflight and startup.
-export {capturedResultHost, type CaptureResultPin} from './linux/capture-result.ts';
-export {validateCaptureResultModule, type CaptureResultPolicy} from './linux/admission-wire.ts';
-
 export {Vfs, mountTarget, provide, type File} from './linux/fs.ts';
 export {loadFileScope, type FileScope} from './linux/file-scope.ts';
 export {captureExecutableSource, type ExecutableSource} from './linux/executable-source.ts';

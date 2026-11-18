@@ -50,18 +50,6 @@ test('computed imports cannot bypass the allowlist; Node facilities stay in the 
   assert.equal(allowed('ricebox/sods/runtime/host.ts', 'node:worker_threads'), true);
   assert.equal(allowed('ricebox/sods/runtime/linux.ts', 'node:worker_threads'), false);
   assert.equal(allowed('ricebox/sods/runtime/host.ts', 'node:child_process'), false);
-  for (const file of ['execution.ts', 'guest.ts']) {
-    const adapter = 'ricebox/sods/runtime/host/node/' + file;
-    assert.equal(allowed(adapter, 'node:worker_threads'), true);
-    for (const facility of ['node:fs', 'node:child_process', 'node:net']) assert.equal(allowed(adapter, facility), false);
-  }
-  for (const file of ['linux/memory-host.ts', 'host/node/protocol.ts']) {
-    assert.equal(allowed('ricebox/sods/runtime/' + file, 'node:worker_threads'), false);
-  }
-  const capture = 'ricebox/sods/runtime/host/node/capture-artifact.ts';
-  assert.equal(allowed(capture, 'node:crypto'), true);
-  for (const facility of ['node:fs', 'node:worker_threads', 'node:net']) assert.equal(allowed(capture, facility), false);
-  assert.equal(allowed('ricebox/sods/runtime/linux/capture-artifact.ts', 'node:crypto'), false);
   assert.equal(allowed('ricebox/sods/runtime/run.ts', 'node:child_process'), true);
 });
 
@@ -88,10 +76,6 @@ test('distribution format is below execution, without host or product capabiliti
 
 test('deployment is independent of composition and integrations',()=>{
   const assets='ricebox/distribution/deployment/assets.ts';
-  const capture='ricebox/distribution/deployment/capture-result.ts';
-  assert.equal(allowed(capture,'node:zlib'),true);
-  for(const target of ['node:fs','node:worker_threads','../runtime/root.ts','../../sods/runtime/linux/memory-host.ts']) assert.equal(allowed(capture,target),false,target);
-  assert.equal(allowed('ricebox/distribution/runtime/root.ts','../deployment/capture-result.ts'),false);
   for(const target of ['../build/prepare.ts','../integrations/vite.ts','../runtime/root.ts','../../sods/runtime/linux.ts','node:child_process']) assert.equal(allowed(assets,target),false,target);
   assert.equal(allowed(assets,'../format/manifest.ts'),true);
   assert.equal(allowed(assets,'node:fs'),true);
@@ -123,13 +107,6 @@ test('build artifact validation uses only the public sods entry and compression 
   assert.equal(allowed('ricebox/distribution/build/file-store-artifact.ts','../../sods/runtime/linux.ts'),true);
   assert.equal(allowed('ricebox/distribution/build/file-store-artifact.ts','../../sods/runtime/file-store.ts'),false);
   assert.equal(allowed('ricebox/distribution/build/prepare.ts','../../sods/runtime/linux.ts'),false);
-  const capture = 'ricebox/distribution/build/capture-result-artifact.ts';
-  assert.equal(allowed(capture,'../../sods/runtime/linux.ts'),true);
-  for (const entry of ['../../sods/runtime/linux/admission-wire.ts', '../../sods/runtime/linux/memory-host.ts', '../runtime/root.ts', 'node:worker_threads']) {
-    assert.equal(allowed(capture,entry),false,entry);
-  }
-  assert.equal(allowed('ricebox/distribution/runtime/root.ts','../../sods/runtime/linux/admission-wire.ts'),false);
-
   assert.equal(allowed('ricebox/distribution/build/compress.worker.ts','node:zlib'),true);
   assert.equal(allowed('ricebox/distribution/build/compress.worker.ts','node:fs'),false);
   assert.deepEqual(violations({'ricebox/distribution/build/compression-pool.ts':"new Worker(new URL('./compress.worker.ts', import.meta.url))"}),[]);

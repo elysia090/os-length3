@@ -10,8 +10,7 @@ import {Kernel} from '../../runtime/linux/process.ts';
 import {loadTranslator} from '../../runtime/translation/translator.ts';
 
 // Source-built translator supplied by CI, never a historical fixture fallback.
-// Existing Kernel/Image.more/Task.attach exercise real incremental integration;
-// this does not claim the new Rust-managed runner supports incremental code yet.
+// Kernel, Image.more and Task.attach exercise the incremental path.
 const artifact = process.env.SODS_CURRENT_TRANSLATOR_WASM;
 for (const [caseIndex, scenario] of ['preserved', 'callee output', 'partial CF', 'incoming CF',
   'AF preserved', 'AF callee output', 'AF INC preserves CF', 'AF ADC input', 'AF POPFQ preserved', 'AF recursive depth unwind',

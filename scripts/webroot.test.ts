@@ -7,7 +7,6 @@
 import assert from 'node:assert/strict';
 import {execFile, execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {gunzipSync, gzipSync} from 'node:zlib';
 import {copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
@@ -17,8 +16,6 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
 import {makeWebroot, standIn} from '../ricebox/distribution/test/fixtures/distribution.ts';
 import type {Index} from '../ricebox/distribution/format/manifest.ts';
-import {readCapturedResultRelease} from '../ricebox/distribution/deployment/capture-result.ts';
-import {capturedResultHost} from '../ricebox/sods/runtime/linux.ts';
 
 const os = fileURLToPath(new URL('..', import.meta.url));
 const sha = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex');
@@ -38,49 +35,12 @@ before(() => {
 });
 after(() => rmSync(work, {recursive: true, force: true}));
 
-const captureArtifact = process.env.SODS_CAPTURE_RESULT_WASM;
-test('explicit capture builder emits only the pinned private artifact and ordinary rebuild removes it', {
-  skip: captureArtifact ? false : 'Requires the separately built private capture artifact',
-}, async () => {
-  const wasm = readFileSync(captureArtifact!);
-  const approved = process.env.SODS_CAPTURE_RESULT_SHA256;
-  assert.equal(sha(wasm), approved, 'the test approves the prior CI build, not the package result');
-  const flags = ['--capture-result', captureArtifact!, '--capture-result-sha256', approved!];
-  const captureOut = join(work, 'capture-builder');
-  const badOut = join(work, 'failed-capture-builder');
-  const admitBad = (args: readonly string[], re: RegExp) => {
-    const r = makeWebroot(join(work, 'must-not-read'), badOut, work, args);
-    assert.notEqual(r.status, 0);
-    assert.match(r.stderr, re);
-    assert.throws(() => statSync(badOut), /ENOENT/);
-  };
-  admitBad(flags.slice(0, 2), /capture-result-sha256/);
-  admitBad([...flags, ...flags.slice(0, 2)], /Duplicate --capture-result/);
-  admitBad([...flags.slice(0, -1), '0'.repeat(64)], /capture result artifact digest mismatch/i);
-  const ordinaryWasm = readFileSync(join(work, 'sods.wasm')); // The fixture translator, not a captured Core.
-  admitBad(['--capture-result', join(work, 'sods.wasm'), '--capture-result-sha256', sha(ordinaryWasm)], /artifact identity/);
-
-  const made = makeWebroot(rootFile, captureOut, work, flags);
-  assert.equal(made.status, 0, made.stderr);
-  const about = JSON.parse(readFileSync(join(captureOut, 'webroot.json'), 'utf8'));
-  const indexBytes = readFileSync(join(captureOut, about.index.path));
-  const index: Index = JSON.parse(indexBytes.toString('utf8'));
-  assert.equal(index.captureResult?.kind, 'sods-linux-capture-result-v6');
-  assert.equal(index.captureResult?.wasm, approved);
-  const capturePath = index.captureResult!.path;
-  assert.deepEqual(gunzipSync(readFileSync(join(captureOut, capturePath))), wasm);
-  const selected = await readCapturedResultRelease({sha256: sha(indexBytes), size: indexBytes.length},
-    indexBytes, async path => readFileSync(join(captureOut, path)));
-  assert.equal(selected.pin.sha256, approved);
-  assert.deepEqual(selected.bytes, new Uint8Array(wasm));
-  if (process.platform === 'linux' && process.arch === 'x64' && [22, 24].includes(Number(process.versions.node.split('.')[0]))) {
-    const privateHost = await capturedResultHost(selected.bytes, selected.pin, 1, 4, {maximumRequest: 4, queueBytes: 4});
-    assert.throws(() => privateHost.takeOutput(), /Linux memory admission failed: -9/, 'the packaged pin installs no receiver or Worker');
-  }
-
-  make(rootFile, captureOut);
-  assert.throws(() => statSync(join(captureOut, capturePath)), /ENOENT/);
-  assert.deepEqual(files(captureOut), files(out));
+test('unknown distributor options do not create a web root', () => {
+  const invalid = join(work, 'invalid-options');
+  const result = makeWebroot(rootFile, invalid, work, ['--unknown', 'value']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /usage: distribution.ts ROOT OUT/);
+  assert.throws(() => statSync(invalid), /ENOENT/);
 });
 
 test('the web root is the root: every path, type, mode, link target and sha256', () => {
@@ -160,7 +120,7 @@ function copyPromptSources(tree: string) {
   for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'why/app/public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
   // And what both of those check packs by, where the repository has it (ricebox/distribution/runtime).
   for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'ricebox/distribution/host/node/tar.ts', 'ricebox/distribution/host/node/hash.ts', 'ricebox/distribution/format/inventory.ts', 'ricebox/distribution/format/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
-    'ricebox/distribution/format/pack.ts', 'ricebox/distribution/deployment/capture-result.ts']) {
+    'ricebox/distribution/format/pack.ts']) {
     mkdirSync(dirname(join(tree,f)),{recursive:true});
     copyFileSync(join(os,f),join(tree,f));
   }
@@ -237,47 +197,6 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     // A release with no sidecar remains supported.
     tar = tarOf(out); r = await go();
     assert.equal(r.status, 0, r.stderr);
-
-    // A separately pinned archive may include an optional Node capture asset.
-    const withCapture = join(work, 'with-capture');
-    cpSync(out, withCapture, {recursive: true});
-    const aboutCapture = JSON.parse(readFileSync(join(withCapture, 'webroot.json'), 'utf8'));
-    const indexCapture = JSON.parse(readFileSync(join(withCapture, aboutCapture.index.path), 'utf8'));
-    const captureWasm = captureArtifact ? readFileSync(captureArtifact) : Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
-    const storedCapture = gzipSync(captureWasm), storedSha = sha(storedCapture);
-    const capture = {kind: 'sods-linux-capture-result-v6', host: 'linux-x64-node22-24', wasm: sha(captureWasm),
-      bytes: captureWasm.byteLength, size: storedCapture.byteLength, sha256: storedSha, path: `blobs/${storedSha}.bin`};
-    const oldIndex = aboutCapture.index.path;
-    rmSync(join(withCapture, oldIndex));
-    const current = (captureResult: unknown) => {
-      const bytes = Buffer.from(JSON.stringify({...indexCapture, captureResult})), sha256 = sha(bytes);
-      const path = `index-${sha256}.json`;
-      writeFileSync(join(withCapture, path), bytes);
-      writeFileSync(join(withCapture, 'webroot.json'), JSON.stringify({...aboutCapture, index: {path, sha256, size: bytes.length}}));
-      return {path, sha256};
-    };
-    const captureIndex = current(capture);
-    writeFileSync(join(withCapture, capture.path), storedCapture);
-    tar = tarOf(withCapture);
-    r = await go();
-    assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /this tree pins/, 'rewriting both archive index and descriptor is not authority');
-    const pinFile = join(tree, 'why/prompt/roots/pins.rs'), pinned = readFileSync(pinFile, 'utf8');
-    const choose = (sha256: string) => writeFileSync(pinFile, pinned.replace(aboutCapture.index.sha256, sha256));
-    choose(captureIndex.sha256); // The policy is deliberately chosen outside the supplied archive.
-    r = await go();
-    assert.equal(r.status, 0, r.stderr);
-    const capturedFiles = files(join(tree, 'why/app/public/webroot'));
-    assert.deepEqual(capturedFiles, files(withCapture));
-    rmSync(join(withCapture, captureIndex.path));
-    const mismatch = current({...capture, wasm: '0'.repeat(64)});
-    choose(mismatch.sha256);
-    tar = tarOf(withCapture);
-    r = await go();
-    assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /expanded Wasm digest mismatch/);
-    assert.deepEqual(files(join(tree, 'why/app/public/webroot')), capturedFiles);
-    writeFileSync(pinFile, pinned);
 
     // A release from before the web root had its name: -l3-web.tar, its webroot.json as l3.json. Taken the same.
     const old = join(work, 'old-release');

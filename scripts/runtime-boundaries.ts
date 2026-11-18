@@ -17,7 +17,6 @@ const hostImports: Record<string, readonly string[]> = {
   'ricebox/distribution/host/node/hash.ts': ['node:crypto'],
   'ricebox/distribution/host/node/tar.ts': ['node:fs','node:zlib','node:stream'],
   'ricebox/distribution/verification/inventory.ts': ['node:fs','node:path'],
-  'ricebox/distribution/deployment/capture-result.ts': ['node:zlib'],
   'ricebox/distribution/deployment/local.ts': ['node:fs','node:path','node:zlib'],
   'ricebox/distribution/build/npm.ts': ['node:fs','node:path','node:url'],
   'ricebox/distribution/build/distribution.ts': ['node:crypto','node:fs','node:path','node:url','node:zlib'],
@@ -31,11 +30,6 @@ const hostImports: Record<string, readonly string[]> = {
   'ricebox/distribution/build/prepare.ts': ['node:fs','node:path','node:child_process','node:crypto','node:url'],
   'ricebox/distribution/deployment/assets.ts': ['node:crypto','node:fs','node:path','node:zlib'],
   'ricebox/sods/runtime/host.ts': ['node:worker_threads', 'node:os', 'node:fs'],
-  'ricebox/sods/runtime/host/node/execution.ts': ['node:worker_threads'],
-  'ricebox/sods/runtime/host/node/stdio.ts': ['node:fs', 'node:tty'],
-  'ricebox/sods/runtime/host/node/run.ts': ['node:crypto', 'node:fs', 'node:path'],
-  'ricebox/sods/runtime/host/node/guest.ts': ['node:worker_threads'],
-  'ricebox/sods/runtime/host/node/capture-artifact.ts': ['node:crypto'],
   // The existing CLI is executable but must not become an importable runtime dependency.
   'ricebox/sods/runtime/run.ts': ['node:child_process', 'node:crypto', 'node:fs', 'node:path', 'node:url'],
 };
@@ -101,7 +95,6 @@ export function allowed(from: string, specifier: string): boolean {
   if (owner === 'ricebox/distribution/host/node') return inside(target, 'ricebox/distribution/format');
   if (from === 'ricebox/distribution/build/npm.ts' && target === 'ricebox/toolchain/package-typescript.ts') return true;
   if (from === 'ricebox/distribution/build/file-store-artifact.ts' && target === 'ricebox/sods/runtime/linux.ts') return true;
-  if (from === 'ricebox/distribution/build/capture-result-artifact.ts' && target === 'ricebox/sods/runtime/linux.ts') return true;
   if (owner === 'ricebox/distribution/build' || owner === 'ricebox/distribution/deployment') return inside(target, 'ricebox/distribution/format') || inside(target, 'ricebox/distribution/host/node');
   if (owner === 'ricebox/distribution/runtime') return inside(target, 'ricebox/distribution/format') || publicSods.has(target);
   return owner === 'ricebox/cowboy/host' && target === 'ricebox/sods/runtime/linux.ts';
