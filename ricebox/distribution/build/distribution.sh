@@ -15,7 +15,19 @@ root=$1
 out=$2
 shift 2
 target=${CARGO_TARGET_DIR:-$sods/target}
+case "$target" in /*) ;; *) target="$PWD/$target" ;; esac
+if [ -n "${CARGO_TARGET_DIR:-}" ]; then export CARGO_TARGET_DIR="$target"; fi
 (cd "$sods" && cargo build -q --locked --release --target wasm32-unknown-unknown --lib && cargo build -q --locked --release --bin sods)
-node "$build/distribution.ts" "$root" "$out" --translator "$target/wasm32-unknown-unknown/release/sods.wasm" --sods "$target/release/sods" "$@"
-node "$build/muk-artifact.ts" "$out"
 
+# Compose both pieces privately. The publisher keeps recoverable old files in
+# a sibling directory, outside the disposable workspace and published tree.
+parent=${RICEBOX_STAGE_PARENT:-$(dirname "$out")}
+mkdir -p "$parent"
+work=$(mktemp -d "$parent/.ricebox-webroot.XXXXXX")
+trap 'rm -rf -- "$work"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+node "$build/distribution.ts" "$root" "$work/next" --translator "$target/wasm32-unknown-unknown/release/sods.wasm" --sods "$target/release/sods" "$@"
+node "$build/muk-artifact.ts" "$work/next"
+node "$build/publish-tree.ts" "$work/next" "$out" "$parent"
+printf 'Web root is in %s\n' "$out"

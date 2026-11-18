@@ -95,8 +95,11 @@ browser cold-start measurements.
 - `build/prepare.ts` composes a supplied cache with pinned tools or a source
   toolchain, publishing the output only after successful composition.
 - `build/distribution.ts` produces packs, blobs and translations.
-  `build/distribution.sh` builds the source translators and box maker before
-  invoking it; this requires Cargo, the Wasm target and a C compiler.
+  `build/distribution.sh` builds the source translators, stages the layers
+  with the box maker, and only then replaces the output. This requires Cargo,
+  the Wasm target and a C compiler. Replacing an existing directory is not an
+  atomic exchange: pause readers during replacement. On a failed restore the
+  previous tree remains in the reported recovery directory.
 - `deployment/assets.ts` validates and collects assets without building or
   executing them. It retains selected stored bytes in a Map; its size limit is
   per asset, not an aggregate memory bound.

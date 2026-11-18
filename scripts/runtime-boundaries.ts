@@ -20,6 +20,7 @@ const hostImports: Record<string, readonly string[]> = {
   'ricebox/distribution/verification/inventory.ts': ['node:fs','node:path'],
   'ricebox/distribution/deployment/local.ts': ['node:fs','node:path','node:zlib'],
   'ricebox/distribution/build/npm.ts': ['node:fs','node:path','node:url'],
+  'ricebox/distribution/build/publish-tree.ts': ['node:fs','node:path','node:url'],
   'ricebox/distribution/build/distribution.ts': ['node:crypto','node:fs','node:path','node:url','node:zlib'],
   'ricebox/distribution/build/compression-pool.ts': ['node:worker_threads'],
   'ricebox/distribution/build/compress.worker.ts': ['node:worker_threads','node:zlib'],

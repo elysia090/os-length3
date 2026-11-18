@@ -27,6 +27,8 @@ agent-key
 /target/
 /why/app/public/webroot/
 /why/app/.webroot-*/
+/why/app/.ricebox-webroot.*/
+/why/app/.ricebox-recovery-*/
 /why-web.zip
 /why-web.zip.sha256
 /.wrangler/

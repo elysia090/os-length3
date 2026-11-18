@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {execFile, execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
@@ -42,6 +42,22 @@ test('the Why launcher delegates to Ricebox from outside the checkout', () => {
   const delegated = spawnSync('sh', [launcher, rootFile, output], {cwd: work, encoding: 'utf8'});
   assert.equal(delegated.status, 0, delegated.stderr);
   assert.deepEqual(delegated.stdout.trimEnd().split('\n'), [rootFile, output, '--name', 'why', '--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/l3,/usr/bin/git']);
+});
+
+test('the Why launcher keeps staging outside public with both app output forms', () => {
+  const tree = join(work, 'checkout for application output');
+  const launcher = join(tree, 'why/build/webroot.sh');
+  const distribution = join(tree, 'ricebox/distribution/build/distribution.sh');
+  for (const file of [launcher, distribution]) mkdirSync(dirname(file), {recursive: true});
+  const app = join(tree, 'why/app');
+  mkdirSync(join(app, 'public'), {recursive: true});
+  copyFileSync(join(os, 'why/build/webroot.sh'), launcher);
+  writeFileSync(distribution, '#!/bin/sh\nprintf "%s\\n" "$RICEBOX_STAGE_PARENT" "$2"\n');
+  for (const output of [[], ['why/app/public/webroot']]) {
+    const delegated = spawnSync('sh', [launcher, rootFile, ...output], {cwd: tree, encoding: 'utf8'});
+    assert.equal(delegated.status, 0, delegated.stderr);
+    assert.deepEqual(delegated.stdout.trimEnd().split('\n'), [realpathSync(app), output[0] ?? join(realpathSync(app), 'public/webroot')]);
+  }
 });
 
 test('the Why launcher does not delegate an invalid root archive', () => {
@@ -158,7 +174,7 @@ function copyPromptSources(tree: string) {
   for (const d of ['why/prompt/roots', 'why/build', 'why/shipto', 'why/app/public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
   // Run the downloader in a minimal checkout with its real import closure.
   for (const f of ['why/prompt/roots/pins.rs', 'why/build/fetch-webroot.ts', 'ricebox/distribution/host/node/tar.ts', 'ricebox/distribution/host/node/hash.ts', 'ricebox/distribution/format/inventory.ts', 'ricebox/distribution/format/manifest.ts', 'why/shipto/release-pins.ts', 'why/shipto/desktop-releases.json',
-    'ricebox/distribution/format/pack.ts']) {
+    'ricebox/distribution/format/pack.ts', 'ricebox/distribution/build/publish-tree.ts']) {
     mkdirSync(dirname(join(tree,f)),{recursive:true});
     copyFileSync(join(os,f),join(tree,f));
   }
@@ -219,7 +235,7 @@ syncBuiltinESMExports();
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /injected publication failure/);
     assert.deepEqual(files(installed), files(out), 'failed installation keeps the previous verified release');
-    assert.equal(readdirSync(join(tree, 'why/app')).some(name => name.startsWith('.webroot-')), false);
+    assert.equal(readdirSync(join(tree, 'why/app')).some(name => name.startsWith('.webroot-') || name.startsWith('.ricebox-recovery-')), false);
 
     const wrongIndex = join(work, 'wrong-index-size');
     cpSync(out, wrongIndex, {recursive: true});

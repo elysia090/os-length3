@@ -5,12 +5,13 @@
 // when it is unset, GITHUB_REPOSITORY selects the repository.
 
 import {createHash} from 'node:crypto';
-import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Readable} from 'node:stream';
 import {pinnedRoots} from '../shipto/release-pins.ts';
 import {checkPacks} from '../../ricebox/distribution/format/pack.ts';
+import {publishTree} from '../../ricebox/distribution/build/publish-tree.ts';
 import {tarMembers} from '../../ricebox/distribution/host/node/tar.ts';
 import {blobAsset, readReleaseIndex, releaseIndexAsset, type About} from '../../ricebox/distribution/format/manifest.ts';
 
@@ -87,34 +88,12 @@ if (unnamed.length) throw new Error(`${asset} holds ${unnamed.join(', ')}, which
 // Stage outside public so an interrupted build cannot serve the old copy
 // or partial files. Moving a nonempty directory is not an atomic exchange.
 const work = mkdtempSync(join(here, 'why/app', '.webroot-'));
-const next = join(work, 'next'), previous = join(work, 'previous');
-const installed = join(here, 'why/app/public/webroot');
-let keepBackup = false;
+const next = join(work, 'next');
 try {
   for (const [name, bytes] of members) {
     mkdirSync(join(next, name, '..'), {recursive: true});
     writeFileSync(join(next, name), bytes);
   }
-  let backedUp = false;
-  try {
-    renameSync(installed, previous);
-    backedUp = true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
-  try {
-    renameSync(next, installed);
-  } catch (error) {
-    if (backedUp) {
-      try { renameSync(previous, installed); }
-      catch (restore) {
-        keepBackup = true;
-        throw new AggregateError([error, restore], `Could not replace or restore the web root; its previous copy is at ${previous}`);
-      }
-    }
-    throw error;
-  }
-} finally {
-  if (!keepBackup) rmSync(work, {recursive: true, force: true});
-}
+  publishTree(next, join(here, 'why/app/public/webroot'), dirname(work));
+} finally { rmSync(work, {recursive: true, force: true}); }
 console.log(`why ${version} for the browser (root ${pin.sha256.slice(0, 12)}…, index ${pin.web.slice(0, 12)}…, ${(tar.length / 1e6).toFixed(1)} MB) is in why/app/public/webroot`);
