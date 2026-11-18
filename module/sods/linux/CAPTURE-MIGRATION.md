@@ -125,13 +125,61 @@ Short results must be exercised with controlled test receipts even if a
 small real file write is always full on this machine. This candidate does
 not select stdout, sockets, pipes, Workerd or general Linux compatibility.
 
-The test-only native fixture exercises that ordering with the real Rust FIFO,
+The native fixture exercises that ordering with the real Rust FIFO,
 the existing one-shot `effect::Action`, and an independently retained native
 payload. One witness writes to its own temporary regular file, bounds the
 first call to an intentionally short prefix, and verifies that an explicit
 second offer produces only the suffix. This is not physical delivery from
-the Wasm/Node adapter. No adapter yet stores the external frontier in a
-selected Core artifact.
+the Wasm/Node adapter.
+
+For the marker-rejected Wasm connection, bind one lane once to one sink
+owner in the Core instance. Binding makes that lane ineligible for the
+application receive and diagnostic discard routes; other lanes are not
+selected. Sink copy obtains the same exclusive lexical view as application
+receive, but settlement places the exact head in external escrow instead of
+consuming it. During an external offer no raw Core view remains: unrelated
+Core or Worker retirement can proceed. Sink receipts must match the bound
+lane, exact head and nonreused attempt. The owner of the physical handle
+and independent JS allocation is the private Node adapter, not the Rust
+guest, and Rust owns the turn, prefix and settlement rules.
+
+Shutdown closes the lane's future admission and grants permission to close
+the owned fixture handle only after all charged bytes are resolved. A live
+reservation, external offer or stopped suffix keeps it open even if no view
+or guest Worker remains. The fixture exercises an actual Node-owned temporary
+file, a deliberately short write, and the currently translated Worker writing
+ABC in FIFO order. It does not select a host profile, claim general Linux
+compatibility or imply flush/durability.
+
+## Gate for a real opt-in profile
+
+Select the profile once, before constructing the session or Worker. Use a
+separate lazy entry beside `managedRoot` in `runtime/linux.ts`; keep default
+`managedRoot`, `memoryHost` and the default Worker's dispatcher unchanged by
+this selection. Do not turn a fixture feature into a production profile by
+allowing its marker through `memoryHost`. Build a separate non-fixture caller
+artifact, reject combinations with probe features, and check exact catalog
+provenance, a dedicated capture profile version, and its complete required ABI
+before instantiation. A module can imitate export names; shape is not
+provenance. Missing, wrong-version, ordinary and probe modules must fail before
+any Worker construction, file creation or borrowed-stdio fallback.
+
+Reuse validated translation/stack/Worker transport rather than maintaining a
+second bootstrap. A capture-only startup path makes the Rust file descriptions
+select captured output. Select the command handler once as well: the Rust
+continuation owns which syscalls can reach the captured lane; the adapter
+performs the guest copy and the bounded external sink transfer. Do not make
+the default dispatch scan an optional capture lane on every syscall. Verify
+the unchanged borrowed-stdio path and its generated work separately from the
+explicit profile. Start with the proven Node owned-file behavior; Workerd and
+browser retain their current paths until a replacement is verified there.
+
+A product sink session must retain the whole exact Core and native/JS owners
+through an ambiguous state and expose a bounded failure/retirement API. The
+diagnostic helper is not that API: it simply refuses reuse on ambiguity.
+Before any eventual deletion, confirm each migrated caller, including aliases
+and failure cleanups, no longer references the old implementation. An opt-in
+alone does not make any TypeScript file listed below unused.
 
 ## Removing TypeScript is gated by callers, not line count
 
