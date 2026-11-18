@@ -119,3 +119,35 @@ test('runtime does not fetch an index from a noncanonical path', async t => {
   }
   assert.equal(f.requests.includes(f.url(base + path)), false);
 });
+
+test('a saved startup plan cannot substitute its translator for the authenticated index', async t => {
+  const base = '/layers/', f = fixture(t, base), about = f.publish(), root = f.root();
+  const changedWasm = Uint8Array.of(...emptyWasm, 0, 2, 1, 120); // one custom section named x
+  const bytes = new Uint8Array(gzipSync(changedWasm)), sha256 = hash(bytes);
+  const changed = {...f.index.translator, path: `blobs/${sha256}.bin`, sha256, size: bytes.length, bytes: changedWasm.length};
+  const index = f.assets.get(f.url(base + about.index.path))!;
+  await f.cache.put(base + about.index.path, new Response(new Uint8Array(index)));
+  await f.cache.put(base + changed.path, new Response(bytes));
+  f.prefs.set('plan', JSON.stringify({sha256: about.sha256, index: about.index, translator: changed, first: []}));
+
+  const loaded = await root.loadWebroot();
+  assert.equal(WebAssembly.Module.customSections(loaded.translator, 'x').length, 0);
+  assert.ok(f.requests.includes(f.url(base + f.index.translator.path)), 'fetch translation named by the verified index');
+});
+
+test('a malformed saved startup plan is discarded without blocking a fresh load', async t => {
+  const f = fixture(t, '/layers/'), about = f.publish();
+  for (const first of [null, [null]]) {
+    f.prefs.set('plan', JSON.stringify({sha256: about.sha256, index: about.index, translator: f.index.translator, first}));
+    const loaded = await f.root().loadWebroot();
+    assert.equal(loaded.index.sha256, about.sha256);
+  }
+});
+
+test('cached bytes must still match the current release descriptor size', async t => {
+  const base = '/layers/', f = fixture(t, base), about = f.publish();
+  const bytes = f.assets.get(f.url(base + about.index.path))!;
+  await f.cache.put(base + about.index.path, new Response(new Uint8Array(bytes)));
+  f.publish({index: {...about.index, size: about.index.size + 1}});
+  await assert.rejects(f.root().rootIndex(), /wrong size/);
+});

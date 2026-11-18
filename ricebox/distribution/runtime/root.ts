@@ -334,7 +334,11 @@ async function forgetOthers(live: (url: string) => boolean) {
 async function bytesOf(path: string, expect: {sha256: string; size: number}, progress?: Parameters<typeof download>[2], keptOnly = false): Promise<Uint8Array> {
   const url = `${BASE}${path}`;
   const have = await kept(url, expect.sha256);
-  if (have) { progress?.bytes(expect.size); return have; }
+  if (have) {
+    if (have.byteLength !== expect.size) throw new Fatal(`webroot: ${path} has the wrong size`);
+    progress?.bytes(have.byteLength);
+    return have;
+  }
   if (keptOnly) throw new Error(`webroot: ${path} is not kept`);
   const bytes = await download(url, expect, progress, {check: offThread});
   void keep(url, bytes);
@@ -657,7 +661,8 @@ const PLAN = config.planKey;
 const planned = (): Plan | null => {
   try {
     const plan: Plan | null = JSON.parse(localStorage.getItem(PLAN) ?? 'null');
-    if (plan) releaseIndexAsset(plan);
+    if (!plan || !plan.translator || !Array.isArray(plan.first) || plan.first.some(part => !part?.t)) return null;
+    releaseIndexAsset(plan);
     return plan;
   } catch { return null; }
 };
@@ -673,17 +678,22 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
   // The worker that checks what is read, started now rather than at the first check.
   worker();
   const plan = planned();
-  const ahead = plan ? Promise.all([
+  const ahead = plan ? (async () => Promise.all([
     bytesOf(plan.index.path, plan.index, undefined, true),
-    unblob(plan.translator, undefined, undefined, atOnce, true).then((w) => WebAssembly.compile(w as BufferSource)),
+    unblob(plan.translator, undefined, undefined, atOnce, true).then(w => WebAssembly.compile(w as BufferSource)),
     ...plan.first.map(({t: p, mode}) => hot(p, mode, plan.translator.sha256, undefined, atOnce, true)),
-  ]).catch(() => null) : null;
+  ]))().catch(() => null) : null;
   const a = await loadAbout(), asset = releaseIndexAsset(a);
   const maker = loadMaker();
-  const read = plan && plan.sha256 === a.sha256 && plan.index.sha256 === asset.sha256 ? await ahead : null;
+  const read = plan && plan.sha256 === a.sha256 && plan.index.sha256 === asset.sha256 && plan.index.size === asset.size
+    ? await ahead : null;
   const index = readReleaseIndex(read ? read[0] as Uint8Array : await bytesOf(asset.path, asset), a);
   const modeOf = (path: string) => index.files.find((f) => f.path === path)?.mode ?? 0o755;
-  const first = index.translations.filter((t) => first0.includes(t.path));
+  const first = index.translations.filter(t => first0.includes(t.path));
+  const current: Plan = {
+    sha256: a.sha256, index: asset, translator: index.translator,
+    first: first.map(t => ({t, mode: modeOf(t.path)})),
+  };
   const muk = await maker;
   keepReleaseFiles(a, index, muk?.path);
   // Progress over everything this start waits for: the translator and each program it is given now.
@@ -699,7 +709,10 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
   // plan supplied translator/hot caches. Do not mix descriptor generations.
   tell({at: 'fetch', got: 0, of});
   let translator: WebAssembly.Module, files: Hot[];
-  if (read) [translator, ...files] = read.slice(1) as [WebAssembly.Module, ...Hot[]];
+  // The plan can accelerate reads but is not a source of release identity.
+  if (read && JSON.stringify(plan) === JSON.stringify(current)) {
+    [translator, ...files] = read.slice(1) as [WebAssembly.Module, ...Hot[]];
+  }
   else {
     const [translatorWasm, ...hots] = await Promise.all([
       unblob(index.translator, progress(index.translator)),
@@ -710,8 +723,7 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
     files = hots as Hot[];
   }
   try {
-    const next: Plan = {sha256: a.sha256, index: a.index, translator: index.translator, first: first.map((x) => ({t: x, mode: modeOf(x.path)}))};
-    localStorage.setItem(PLAN, JSON.stringify(next));
+    localStorage.setItem(PLAN, JSON.stringify(current));
   } catch { /* not remembered: the next start reads as webroot.json says */ }
   tell({at: 'ready'});
   return {about: a, index, translator, files: files.map(taken), url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
