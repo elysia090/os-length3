@@ -1,5 +1,6 @@
 import type {Locator} from '@playwright/test';
 import {expect, test} from './fixtures.ts';
+import {desktopPolicy} from '../../shipto/policy.ts';
 
 // Runtime: dotfiles are rows of one box (name, size); a dotfile saved is one,
 // opens with its text under it, and is still there when the app is opened again.
@@ -345,17 +346,41 @@ test('signed in, a repo on the Remote is deleted from its gear as turning it off
 // sheets let be changed and to the words that must stay read). Worn as it is saved and when the app is opened
 // again; a line that would not be read, or is no change, is left out and the rest stands; with the file gone, the
 // page is as its sheets have it.
-test('a look changed in .everyday is worn, what would not be read left out, and gone with the file', async ({app, page}) => {
+for (const strict of [false, true]) test(`a look changed in .everyday is worn, what would not be read left out, and gone with the file${strict ? ' under desktop CSP' : ''}`, async ({app, page}) => {
+  if (strict) {
+    // Apply the actual desktop policy as a document response header, not a
+    // permissive test page. The web meta policy cannot relax this header.
+    await page.route(new URL('/', page.url()).href, async route => {
+      if (route.request().resourceType() !== 'document') return route.fallback();
+      const response = await route.fetch();
+      await route.fulfill({response, headers: {...response.headers(), 'content-security-policy': desktopPolicy('')}});
+    });
+    await app.open();
+    const inline = await page.evaluate(() => {
+      const blocked = document.createElement('style');
+      blocked.textContent = ':root { --everyday-csp-probe: blocked; }';
+      document.head.append(blocked);
+      const value = getComputedStyle(document.documentElement).getPropertyValue('--everyday-csp-probe');
+      blocked.remove();
+      return value;
+    });
+    expect(inline).toBe('');
+  }
   const colour = (token: string) => page.evaluate((name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim(), token);
   const ground = () => colour('--ground');
-  const worn = () => page.evaluate(() => document.getElementById('everyday')?.textContent ?? null);
+  const worn = () => page.evaluate(() => {
+    const style = document.documentElement.style;
+    return {ground: style.getPropertyValue('--ground'), pace: style.getPropertyValue('--pace')};
+  });
   expect(await ground()).toBe('#dcd9d4');
-  expect(await worn()).toBeNull();
+  expect(await worn()).toEqual({ground: '', pace: ''});
+  await page.evaluate(() => document.documentElement.style.setProperty('--everyday-unrelated', 'kept'));
 
   // The ground warmer and moves half as long; terminal text the same colour as its own background, and a line that says nothing.
   const ink = await colour('--ink');
   await app.runtime.makeDotfile('.everyday', `ground: #e9e4d8\npace: 0.5\ngreen: ${ink}\nnonsense; } body { display: none\n`);
-  await expect.poll(worn).toBe(':root { --ground: #e9e4d8; --pace: 0.5; }');
+  await expect.poll(worn).toEqual({ground: '#e9e4d8', pace: '0.5'});
+  expect(await colour('--everyday-unrelated')).toBe('kept');
   expect(await ground()).toBe('#e9e4d8');
   const notes = app.runtime.dotfiles.getByRole('status').filter({hasText: 'Theme lines not applied'});
   await expect(notes).toContainText('Line 3: green would not be read on ink');
@@ -372,8 +397,10 @@ test('a look changed in .everyday is worn, what would not be read left out, and 
   await expect(notes).toHaveCount(0);
   expect(await ground()).toBe('#e9e4d8');
 
+  await page.evaluate(() => document.documentElement.style.setProperty('--everyday-unrelated', 'kept'));
   const ask = await app.runtime.askRemove('.everyday');
   await app.answer(ask.getByRole('button', {name: 'Remove', exact: true}), ask);
-  await expect.poll(worn).toBeNull();
+  await expect.poll(worn).toEqual({ground: '', pace: ''});
+  expect(await colour('--everyday-unrelated')).toBe('kept');
   expect(await ground()).toBe('#dcd9d4');
 });

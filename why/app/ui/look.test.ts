@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import {contrast, things} from '../../../ricebox/everyday/src/everyday.ts';
 import {sheets, table} from '../../build/styles/look.ts';
 import {THINGS} from './look-things.ts';
-import {PAIRS, worn} from './look.ts';
+import {PAIRS, wear, worn} from './look.ts';
 
 test('the table of what may be changed is the one the sheets give', () => {
   assert.equal(readFileSync(new URL('./look-things.ts', import.meta.url), 'utf8'), table(things(sheets())), 'node why/build/styles/look.ts writes it again');
@@ -68,4 +68,32 @@ test('an unreadable Prompt pair drops its last change, including a background ch
     assert.deepEqual(foregroundLast.values, {ink: '#444444'});
     assert.deepEqual(foregroundLast.left.map(line => line.line), [2]);
   }
+});
+
+test('wear changes only its validated root properties and leaves other CSSOM state alone', t => {
+  const values = new Map([['--box-drop', '2px']]), writes: string[] = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', {configurable: true, value: {documentElement: {style: {
+    getPropertyValue: (name: string) => values.get(name) ?? '',
+    setProperty: (name: string, value: string) => { writes.push(name); values.set(name, value); },
+    removeProperty: (name: string) => { writes.push(name); values.delete(name); },
+  }}}});
+  t.after(() => {
+    wear(undefined);
+    if (previous) Object.defineProperty(globalThis, 'document', previous);
+    else Reflect.deleteProperty(globalThis, 'document');
+  });
+  assert.deepEqual(wear('ground: #e9e4d8\npace: 0.5'), []);
+  assert.equal(values.get('--ground'), '#e9e4d8');
+  assert.equal(values.get('--pace'), '0.5');
+  writes.length = 0;
+  wear('ground: #e9e4d8\npace: 0.5');
+  assert.deepEqual(writes, [], 'unchanged values need no CSSOM writes');
+  const left = wear('ground: #e9e4d8\ngreen: #171615');
+  assert.deepEqual(left.map(line => line.line), [2]);
+  assert.equal(values.has('--green'), false);
+  assert.equal(values.has('--pace'), false, 'removed managed value returns to the sheet');
+  assert.equal(values.get('--box-drop'), '2px');
+  wear(undefined);
+  assert.deepEqual([...values], [['--box-drop', '2px']]);
 });
