@@ -1,4 +1,7 @@
-/** Storage mechanics only. The caller opens and authorizes a volume; this module never chooses one by itself. */
+/**
+ * Transactions for the browser worker's local volume. The caller opens and authorizes it.
+ * Strict durability requests do not prevent browser eviction.
+ */
 export interface Layout {nodes: string; data: string; meta: string; generation: IDBValidKey}
 export interface Entry {path: string; kind: string; data?: Uint8Array; size?: number}
 export interface Changes {put: Entry[]; removed: string[]}

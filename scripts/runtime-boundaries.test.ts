@@ -36,7 +36,9 @@ test('runtime cannot reach products, build tools, tests or private sods internal
   }
   assert.equal(allowed('module/sods/runtime/linux.ts', '../../ricebox/runtime/root.ts'), false);
   assert.equal(allowed('module/sods/runtime/linux.ts', './run.ts'), false);
-  assert.equal(allowed('module/disk/indexeddb.ts', '../sods/runtime/linux.ts'), false);
+  assert.equal(allowed('why/api/indexeddb.ts', '../../module/sods/runtime/linux.ts'), false);
+  assert.equal(allowed('why/api/indexeddb.ts', './worker.ts'), false);
+  assert.equal(allowed('why/api/indexeddb.ts', 'node:fs'), false);
   assert.equal(allowed('module/cowboy/host/outside.ts', '../../sods/runtime/linux.ts'), true);
   assert.equal(allowed('module/ricebox/runtime/root.ts', '../../sods/runtime/translate.ts'), true);
 });

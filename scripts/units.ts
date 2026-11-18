@@ -48,8 +48,6 @@ export const UNITS: Unit[] = [
     holds: ['module/sods'],
     takes: ['lib'],
     entries: ['module/sods/runtime/translate.ts', 'module/sods/runtime/linux.ts', 'module/sods/runtime/host.ts', 'module/sods/runtime/targets.ts']},
-  {name: 'disk', says: 'storage mechanics on an explicitly opened volume: atomic reads and writes; no owner, persistence policy or product known to it',
-    holds: ['module/disk'], takes: [], entries: ['module/disk/indexeddb.ts']},
   {name: 'ricebox', says: 'the neutral distribution, as BusyBox is one and as thin: the root, each package from its pinned source by its recipe, the command line #80 lists, the root as layers (their form, what writes and what reads them), and the root where it is used: unpacked and held on a device, and run in a box (the bundle muk is given, the box started, in a page its Worker); no window, ordinary POSIX, and no service or product known to it',
     holds: ['module/ricebox'],
     takes: ['lib', 'muk', 'sods', 'everyday']},
@@ -74,7 +72,7 @@ export const UNITS: Unit[] = [
 ];
 
 /** ricebox and the units under it: what is cut out with it. None takes from a unit over them. */
-export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'disk', 'everyday', 'ricebox'];
+export const UNDER_RICEBOX = ['lib', 'muk', 'sods', 'everyday', 'ricebox'];
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
 export const NOT_UNITS = ['scripts', 'why/test', 'module/sods/test', 'module/muk/test', 'module/sods/examples', 'module/otter/test', 'module/cowboy/test', 'module/cowboy/target',

@@ -99,14 +99,3 @@ test('ricebox can be cut out with the units under it: none of them takes from a 
   const folders = UNITS.flatMap((u) => u.holds.filter((h) => h.startsWith('module/')).map((h) => [u.name, h.split('/').slice(0, 2).join('/')]));
   for (const [a, fa] of folders) for (const [b, fb] of folders) assert.ok(a === b || fa !== fb, `${a} and ${b} share ${fa}`);
 });
-
-test('disk owns storage mechanics without product or runtime implementation dependencies', () => {
-  const disk = UNITS.find((u) => u.name === 'disk')!;
-  assert.equal(unitOf('module/disk/indexeddb.ts'), disk);
-  assert.deepEqual(disk.holds, ['module/disk']);
-  assert.deepEqual(disk.takes, []);
-  assert.deepEqual(disk.entries, ['module/disk/indexeddb.ts']);
-  assert.ok(UNDER_RICEBOX.includes('disk'));
-  assert.deepEqual(check().crossings.filter(([from]) => from === 'disk'), []);
-  assert.deepEqual(OWED.filter(([from]) => from === 'disk'), []);
-});

@@ -3,7 +3,8 @@
 import {readdirSync, readFileSync} from 'node:fs';
 import {posix} from 'node:path';
 
-export const ROOTS = ['module/ricebox/verification', 'module/ricebox/host/node', 'module/ricebox/build', 'module/ricebox/deployment', 'module/ricebox/integrations', 'module/ricebox/distribution', 'module/ricebox/runtime', 'module/sods/runtime', 'module/cowboy/host', 'module/disk'];
+export const ROOTS = ['module/ricebox/verification', 'module/ricebox/host/node', 'module/ricebox/build', 'module/ricebox/deployment', 'module/ricebox/integrations', 'module/ricebox/distribution', 'module/ricebox/runtime', 'module/sods/runtime', 'module/cowboy/host'];
+const indexedDb = 'why/api/indexeddb.ts';
 const inside = (path: string, root: string) => path.startsWith(root + '/');
 const publicSods = new Set(['module/sods/runtime/host.ts', 'module/sods/runtime/linux.ts', 'module/sods/runtime/translate.ts']);
 // Adapters are allowed host facilities explicitly, not forbidden. Add a new adapter and its facilities here
@@ -86,7 +87,9 @@ export function references(source: string): string[] {
 }
 
 export function allowed(from: string, specifier: string): boolean {
-  // Host facilities belong only to the concrete host entrances listed above, never portable format or disk logic.
+  // The storage adapter uses only the database supplied by its caller.
+  if (from === indexedDb) return false;
+  // Host facilities belong only to the concrete host entrances listed above, never the portable formats.
   if (hostImports[from]?.includes(specifier)) return true;
   if (!specifier.startsWith('./') && !specifier.startsWith('../')) return false;
   const target = posix.normalize(posix.join(posix.dirname(from), specifier.split(/[?#]/)[0]!));
@@ -119,5 +122,6 @@ export function runtimeSources(repository: string): Record<string, string> {
     }
   };
   for (const root of ROOTS) walk(root);
+  sources[indexedDb] = readFileSync(posix.join(repository, indexedDb), 'utf8');
   return sources;
 }
