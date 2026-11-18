@@ -7,6 +7,8 @@ use std::num::{NonZeroU64, NonZeroUsize};
 pub(crate) mod capture;
 #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
 mod receive;
+#[cfg(test)]
+mod sink;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Error {
@@ -21,6 +23,8 @@ pub(crate) enum Error {
     Length,
     ReceiverNotEmpty,
     ReceiverCapacity,
+    #[cfg(test)]
+    ExternalHead,
 }
 impl From<FilesError> for Error {
     fn from(error: FilesError) -> Self {
@@ -207,22 +211,30 @@ enum Chunk {
     // cannot be released or reused until this record is removed.
     Pinned(usize),
     Copied(Vec<u8>),
+    #[cfg(test)]
+    Escrowed(NonZeroUsize),
 }
 enum HeadBytes<'a> {
     Pinned { pin: usize, prefix: &'a ReadPrefix },
     Copied(&'a [u8]),
+    #[cfg(test)]
+    Escrowed(NonZeroUsize),
 }
 impl<'a> HeadBytes<'a> {
     fn len(&self) -> NonZeroUsize {
         match self {
             Self::Pinned { prefix, .. } => prefix.length,
             Self::Copied(bytes) => NonZeroUsize::new(bytes.len()).expect("nonempty copied entry"),
+            #[cfg(test)]
+            Self::Escrowed(length) => *length,
         }
     }
     fn bytes(self, files: &'a mut Files) -> Result<&'a [u8], Error> {
         Ok(match self {
             Self::Pinned { prefix, .. } => files.prefix_bytes(prefix)?,
             Self::Copied(bytes) => bytes,
+            #[cfg(test)]
+            Self::Escrowed(_) => return Err(Error::ExternalHead),
         })
     }
 }
@@ -244,6 +256,8 @@ impl Head<'_> {
             pin: match self.bytes {
                 HeadBytes::Pinned { pin, .. } => Some(pin),
                 HeadBytes::Copied(_) => None,
+                #[cfg(test)]
+                HeadBytes::Escrowed(_) => None,
             },
             next: self.next,
             remaining: used.checked_sub(length.get()).expect("queued byte credit"),
@@ -262,6 +276,8 @@ struct Queue {
     byte_limit: usize,
     used: usize,
     closed: bool,
+    #[cfg(test)]
+    external: sink::Drain,
 }
 impl Queue {
     fn new(id: DestinationId, limits: Limits) -> Result<Self, Error> {
@@ -274,6 +290,8 @@ impl Queue {
             byte_limit: limits.bytes,
             used: 0,
             closed: false,
+            #[cfg(test)]
+            external: sink::Drain::default(),
         })
     }
     fn pin_prefix(
@@ -556,6 +574,8 @@ impl Queue {
                 }
             }
             Chunk::Copied(bytes) => HeadBytes::Copied(bytes),
+            #[cfg(test)]
+            Chunk::Escrowed(length) => HeadBytes::Escrowed(*length),
         };
         Some(Head {
             index,
@@ -611,6 +631,10 @@ impl Queue {
         let Some(head) = Self::head(self.head, &self.entries, &self.pins) else {
             return false;
         };
+        #[cfg(test)]
+        if matches!(head.bytes, HeadBytes::Escrowed(_)) {
+            return false;
+        }
         self.remove_head(head.removal(self.used, head.bytes.len()));
         true
     }

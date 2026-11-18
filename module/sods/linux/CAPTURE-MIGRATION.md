@@ -125,6 +125,14 @@ Short results must be exercised with controlled test receipts even if a
 small real file write is always full on this machine. This candidate does
 not select stdout, sockets, pipes, Workerd or general Linux compatibility.
 
+The test-only native fixture exercises that ordering with the real Rust FIFO,
+the existing one-shot `effect::Action`, and an independently retained native
+payload. One witness writes to its own temporary regular file, bounds the
+first call to an intentionally short prefix, and verifies that an explicit
+second offer produces only the suffix. This is not physical delivery from
+the Wasm/Node adapter. No adapter yet stores the external frontier in a
+selected Core artifact.
+
 ## Removing TypeScript is gated by callers, not line count
 
 Current capture work does not make a runtime TypeScript file unnecessary.

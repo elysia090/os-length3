@@ -389,6 +389,8 @@ pub(crate) struct Files {
     next_read_reservation: Option<NonZeroU64>,
     #[cfg(any(test, feature = "queued-output-probe"))]
     next_output_registry: Option<NonZeroU64>,
+    #[cfg(test)]
+    output_effects: crate::effect::Issuer,
 }
 fn prepare<T>(arena: &mut Vec<Cell<T>>, cap: usize, owner: u64) -> Result<Id, Error> {
     for (slot, cell) in arena.iter().enumerate() {
@@ -455,6 +457,8 @@ impl Files {
             next_read_reservation: Some(NonZeroU64::MIN),
             #[cfg(any(test, feature = "queued-output-probe"))]
             next_output_registry: Some(NonZeroU64::MIN),
+            #[cfg(test)]
+            output_effects: crate::effect::Issuer::new(owner),
         }
     }
     #[cfg(any(test, feature = "queued-output-probe"))]
