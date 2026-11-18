@@ -32,6 +32,9 @@ const descriptions = {
   lazy: 'root AOT startup leaves canonical ELF lazy, then the actual guest opens/reads/closes it',
   capture: 'pinned captured result uses the current release, prepared root and actual Worker without physical output',
   'capture-pressure': 'pinned captured result preserves the first write through full-queue refusal and stop',
+  'capture-paced': 'pinned captured result resumes the actual suspended Worker after receipt',
+  'capture-paced-stop': 'pinned captured result stops the suspended Worker without accepting its pending write',
+  'capture-paced-race': 'pinned captured result stop wins over a just-freed credit before resume',
   cancel: 'cancelled artifact late shared/valid success and rejection publish no Worker and permit root reuse',
   invalid: 'invalid artifact byte classes fail before source/Worker publication and permit root reuse',
   size: 'wrong decoded source length fails the exact Rust source, retires, and retries without metadata drift',
@@ -39,6 +42,8 @@ const descriptions = {
 } as const;
 type Scenario = keyof typeof descriptions;
 type Host = Awaited<ReturnType<typeof managedRoot>>;
+const pacedScenario = (s: Scenario) => s.startsWith('capture-paced');
+const refusedScenario = (s: Scenario) => s === 'capture-pressure' || s === 'capture-paced-stop' || s === 'capture-paced-race';
 
 async function stopped(host: Host, execution: ExecutionBinding): Promise<void> {
   host.stopWorker(execution);
@@ -80,7 +85,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     translator: {...blob(translatorBytes), name: 'sods', version: 'current-fixture', wasm: hash(translatorBytes)},
     translations: [translation]};
   let storedCapture: ReturnType<typeof gzipSync> | undefined;
-  if (scenario === 'capture' || scenario === 'capture-pressure') {
+  if (scenario.startsWith('capture')) {
     assert.ok(resultPath);
     storedCapture = gzipSync(readFileSync(resultPath));
     const sha256 = hash(storedCapture);
@@ -143,7 +148,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
   const host = captured ?? await managedRoot(core, {memories: scenario === 'invalid' ? 5 : 4, actions: 16});
   assert.equal(Object.isFrozen(host), true);
   assert.deepEqual(Object.keys(host).sort(), ['prepareRoot', 'rootSource', 'pathExecution', 'runPath',
-    'stopWorker', 'workerSettled', 'workerEvidence', ...(captured ? ['takeOutput'] : [])].sort(),
+    'stopWorker', 'workerSettled', 'workerEvidence', ...(captured ? ['takeOutput', 'runPathPaced', 'waitForCapturePressure'] : [])].sort(),
   'no diagnostic memory/read/grow or bare-inode entrance');
   if (scenario === 'malformed') {
     const malformed = new Uint8Array(prepared.wire.length + 1);
@@ -297,7 +302,36 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       assert.equal(loads, 1);
       assert.equal(host.rootSource(1).size, elf.length, 'failed delivery cannot replace sealed decoded-size metadata');
     }
-    if (scenario === 'capture-pressure') {
+    let takenBeforeEnd: Uint8Array | undefined;
+    if (pacedScenario(scenario)) {
+      assert.ok(captured);
+      const execution = await start();
+      let left = false;
+      const run = captured.runPathPaced(execution, load);
+      void run.then(() => { left = true; }, () => { left = true; });
+      const pressure = captured.waitForCapturePressure(execution);
+      await assert.rejects(captured.waitForCapturePressure(execution), /already has a pressure observer/);
+      await pressure;
+      try {
+        assert.equal(left, false);
+        assert.equal(captured.workerEvidence(execution).pendingRequest, true);
+        assert.equal(captured.workerEvidence(execution).exited, false);
+        if (scenario !== 'capture-paced-stop') {
+          takenBeforeEnd = captured.takeOutput();
+          assert.deepEqual(takenBeforeEnd, Uint8Array.of(127, 69, 76, 70));
+          assert.equal(left, false, 'a receipt wakes later, not reentrantly from a held view');
+          assert.equal(captured.takeOutput(), undefined);
+        }
+        if (scenario !== 'capture-paced') {
+          captured.stopWorker(execution);
+          await assert.rejects(run);
+        } else {
+          assert.deepEqual(await run, {status: 0, sourceFailures: 0});
+          runs++;
+        }
+      } finally { await stopped(host, execution); }
+      await assert.rejects(captured.waitForCapturePressure(execution), /not available/);
+    } else if (scenario === 'capture-pressure') {
       const execution = await start();
       assert.equal(loads, 0);
       try {
@@ -308,18 +342,20 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     }
     if (captured) {
       const output = captured.takeOutput();
-      assert.deepEqual(output, Uint8Array.of(127, 69, 76, 70));
-      assert.ok(output?.buffer instanceof ArrayBuffer && output.byteOffset === 0 && output.buffer.byteLength === 4);
+      assert.deepEqual(output, scenario === 'capture-paced' ? Uint8Array.of(127)
+        : scenario === 'capture-paced-race' ? undefined : Uint8Array.of(127, 69, 76, 70));
+      const first = takenBeforeEnd ?? output;
+      assert.ok(first?.buffer instanceof ArrayBuffer && first.byteOffset === 0 && first.buffer.byteLength === 4);
       assert.equal(captured.takeOutput(), undefined);
-      assert.deepEqual(output, Uint8Array.of(127, 69, 76, 70), 'result outlives Worker retirement and later polling');
+      assert.deepEqual(first, Uint8Array.of(127, 69, 76, 70), 'result outlives Worker retirement and later polling');
     }
     if (scenario === 'invalid') {
       const before = {loads, artifacts, workers, runs};
       await assert.rejects(start(), /Linux startup admission failed: -1/);
       assert.deepEqual({loads, artifacts, workers, runs}, before, 'sixth admission exceeds the five-ID history before callbacks or Worker creation');
     }
-    const successfulRuns = scenario === 'capture-pressure' ? 0 : scenario === 'cancel' ? 3 : 1;
-    const executions = scenario === 'size' ? 2 : scenario === 'capture-pressure' ? 1 : successfulRuns;
+    const successfulRuns = refusedScenario(scenario) ? 0 : scenario === 'cancel' ? 3 : 1;
+    const executions = scenario === 'size' ? 2 : refusedScenario(scenario) ? 1 : successfulRuns;
     assert.equal(loads, executions, 'one canonical load per root, not per open or independent OFD');
     assert.equal(workers, executions, 'positive control confirms actual Worker observation');
     assert.equal(runs, successfulRuns);
@@ -336,7 +372,9 @@ if (process.argv[2] === '--managed-root-child') {
   await child(scenario as Scenario, program);
 } else {
   for (const scenario of Object.keys(descriptions) as Scenario[]) test(`${provenance} ${descriptions[scenario]}`, {
-    skip: translatorPath === undefined || process.platform !== 'linux' || (scenario.startsWith('capture') && !resultPath), timeout: 45_000,
+    skip: translatorPath === undefined || process.platform !== 'linux' || (scenario.startsWith('capture') &&
+      (!resultPath || process.arch !== 'x64' || ![22, 24].includes(Number(process.versions.node.split('.')[0])))),
+    timeout: 45_000,
   }, () => {
     assert.ok(corePath, 'SODS_LINUX_WASM is required for the actual root integration');
     assert.ok(translatorPath, 'an explicitly missing artifact is a failure');
@@ -347,7 +385,7 @@ if (process.argv[2] === '--managed-root-child') {
       const source = fileURLToPath(new URL('../../../sods/test/fixtures/managed-open/program.S', import.meta.url));
       const program = join(directory, 'program.elf');
       execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
-        ...(scenario === 'capture-pressure' ? ['-DSODS_OPEN_SECOND_OUTPUT'] : []),
+        ...(scenario.startsWith('capture') && scenario !== 'capture' ? ['-DSODS_OPEN_SECOND_OUTPUT'] : []),
         '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
       ], {stdio: 'pipe', timeout: 30_000, env: {...process.env, TMPDIR: directory}});
       const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--managed-root-child', scenario, program], {
@@ -357,8 +395,8 @@ if (process.argv[2] === '--managed-root-child') {
       assert.equal(result.error, undefined);
       assert.equal(result.signal, null);
       assert.equal(result.status, 0, result.stderr?.toString());
-      const successfulRuns = scenario === 'capture-pressure' ? 0 : scenario === 'cancel' ? 3 : 1;
-      const executions = scenario === 'size' ? 2 : scenario === 'capture-pressure' ? 1 : successfulRuns;
+      const successfulRuns = refusedScenario(scenario) ? 0 : scenario === 'cancel' ? 3 : 1;
+      const executions = scenario === 'size' ? 2 : refusedScenario(scenario) ? 1 : successfulRuns;
       assert.deepEqual(result.stdout, scenario.startsWith('capture') ? Buffer.alloc(0)
         : Buffer.concat(Array.from({length: successfulRuns}, () => Buffer.from([127, 69, 76, 70]))));
       assert.equal(result.stderr.length, 0);

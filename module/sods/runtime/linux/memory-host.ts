@@ -306,7 +306,8 @@ export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPi
   const host = memoryHostFor(module, memories, actions, true);
   return freeze({prepareRoot: host.prepareRoot, rootSource: host.rootSource, pathExecution: host.pathExecution,
     runPath: host.runPath, stopWorker: host.stopWorker, workerSettled: host.workerSettled,
-    workerEvidence: host.workerEvidence, takeOutput: host.takeOutput});
+    workerEvidence: host.workerEvidence, takeOutput: host.takeOutput,
+    runPathPaced: host.runPathPaced, waitForCapturePressure: host.waitForCapturePressure});
 }
 
 function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, captureResult: boolean) {
@@ -500,6 +501,24 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     failureCount: number; firstFailure?: unknown;
     resourcesRetired: boolean; entry?: bigint; stdio?: ReturnType<typeof captureStdio>;
   };
+  // One selected lane, one active captured Worker, one blocked producer and
+  // one optional observer. The observer sees pressure, not EOF or a buffer.
+  let captureRun: {worker: WorkerState; paced: boolean} | undefined;
+  let pausedOutput: {worker: WorkerState; wake: () => void} | undefined;
+  let pressureObserver: {worker: WorkerState; ready: () => void; cancel: (error: Error) => void} | undefined;
+  const wakeOutput = (worker?: WorkerState): void => {
+    if (!pausedOutput || (worker && pausedOutput.worker !== worker)) return;
+    const {wake} = pausedOutput;
+    pausedOutput = undefined;
+    wake();
+  };
+  const closePressure = (worker: WorkerState): void => {
+    wakeOutput(worker);
+    if (pressureObserver?.worker !== worker) return;
+    const {cancel} = pressureObserver;
+    pressureObserver = undefined;
+    cancel(new Error('Captured result pressure is not available'));
+  };
   const workers = new Map<ExecutionBinding, WorkerState>();
   const workerOf = (handle: ExecutionBinding): WorkerState => {
     const w = apply(mapGet, workers, [handle]);
@@ -514,6 +533,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     // checks its own pending reads/copies before returning the execution's holder.
     if (!w.resourcesRetired && w.bridge.diagnostics().exited) {
       w.resourcesRetired = result(core.linux_execution_retire(w.id)) === 1n;
+      if (w.resourcesRetired && !w.active && captureRun?.worker === w) captureRun = undefined;
     }
   };
   const abandonWorker = (w: WorkerState): void => {
@@ -649,20 +669,23 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       throw new Error('Captured result publication remains unconfirmed');
     }
     unsettledOutput = undefined;
+    wakeOutput(); // Only exact committed receive returns credit to the lane.
     return output;
   };
-  const runWorker = async (handle: ExecutionBinding, entry: bigint, load?: Loader): Promise<{status: number; sourceFailures: number}> => {
+  const runWorker = async (handle: ExecutionBinding, entry: bigint, load?: Loader, paced = false): Promise<{status: number; sourceFailures: number}> => {
       ensureResultUsable();
       const w = workerOf(handle);
       if (w.entry !== undefined && entry !== w.entry) throw new Error('Entry differs from Rust committed startup');
       if (w.active || w.invocation || w.imagePending || w.bridge.diagnostics().exited || w.bridge.diagnostics().stopping) throw new Error('Worker run unavailable');
+      if (capture && captureRun) throw new Error('Captured result lane already has a Worker');
       w.invocation = result(core.linux_run_start(w.id));
       w.active = true;
+      if (capture) captureRun = {worker: w, paced};
       let failures = 0, exit = false;
       try {
         const outcome = await w.bridge.run(w.invocation, entry, async request => {
           try {
-            const c = command(core.linux_syscall_sequenced(w.id, request.invocation, request.sequence, request.nr, ...request.args, request.next));
+            let c = command(core.linux_syscall_sequenced(w.id, request.invocation, request.sequence, request.nr, ...request.args, request.next));
             if (c.tag === 0) return {kind: 'return', value: c.value};
             if (c.tag === 2) { exit = true; return {kind: 'leave'}; }
             if ((c.tag & 255) === 7) {
@@ -700,7 +723,30 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
               throw new Error(`Unsupported Rust Worker command: ${completed.tag} (value ${completed.value}, syscall ${request.nr})`);
             }
             if (c.tag !== 1) {
-              if (c.tag === 14 && capture) throw new Error('Captured result queue is full and no draining consumer is attached');
+              if (c.tag === 14 && capture) {
+                if (!paced) throw new Error('Captured result queue is full and no draining consumer is attached');
+                const action = c.value, sequence = request.sequence;
+                const active = () => {
+                  const state = w.bridge.diagnostics();
+                  if (state.stopping || state.exited) throw new Error('Captured result Worker stopped before resume');
+                };
+                do {
+                  if (c.value !== action || c.target !== wide(sequence) || c.next !== 0n || c.endpoint !== 0 || pausedOutput) {
+                    throw new Error('Captured result pressure identity mismatch');
+                  }
+                  active();
+                  await new Promise<void>(wake => {
+                    pausedOutput = {worker: w, wake};
+                    if (pressureObserver?.worker === w) {
+                      const {ready} = pressureObserver;
+                      pressureObserver = undefined;
+                      ready();
+                    }
+                  });
+                  active(); // Stops in the same turn as a consume still win.
+                  c = command(capture.linux_capture_result_write_resume(w.id, sequence, action));
+                } while (c.tag === 14);
+              }
               if (c.tag === 13 && captureWrite) {
                 const completed = captureWrite(w, request.sequence, c);
                 if (completed.tag !== 0) throw new Error(`Captured write did not return: ${completed.tag}`);
@@ -714,7 +760,9 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
           } catch (error) {
             // A callback can finish after exit; settle its source before trying
             // abandonment again. Unknown obligations remain owned in Rust.
-            try { checked(core.linux_syscall_abandon(w.id)); retireWorker(w); }
+            try {
+              if (!w.resourcesRetired) { checked(core.linux_syscall_abandon(w.id)); retireWorker(w); }
+            }
             catch (cleanup) { workerFailure(w, cleanup); throw new AggregateError([error, cleanup], 'Worker source and cleanup failed'); }
             throw error;
           }
@@ -736,7 +784,13 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
         // A host error/termination request is not a stopped-stack certificate.
         // The exit callback above is responsible for the fault receipt.
         throw error;
-      } finally { w.active = false; }
+      } finally {
+        w.active = false;
+        if (captureRun?.worker === w) {
+          closePressure(w);
+          if (w.resourcesRetired) captureRun = undefined;
+        }
+      }
     };
   return {
     takeOutput,
@@ -897,6 +951,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
         w = {id, memory, bridge, invocation: 0n, receipt: false, imagePending: true, active: false, failureCount: 0, resourcesRetired: false, stdio};
         const owned = w;
         void bridge.stopped.then(() => {
+          if (captureRun?.worker === owned) closePressure(owned);
           if (owned.imagePending) {
             try {
               checked(core.linux_startup_image_finish(id, 2));
@@ -1049,7 +1104,11 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
         throw error;
       }
     },
-    stopWorker(handle: ExecutionBinding): void { workerOf(handle).bridge.requestStop(); },
+    stopWorker(handle: ExecutionBinding): void {
+      const w = workerOf(handle);
+      w.bridge.requestStop();
+      if (captureRun?.worker === w) closePressure(w);
+    },
     /** Observations only: neither method proves tree disposal or full owner release. */
     workerEvidence(handle: ExecutionBinding) {
       const w = workerOf(handle), evidence = w.bridge.diagnostics();
@@ -1064,6 +1123,22 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       const w = workerOf(handle);
       if (w.entry === undefined) throw new Error('Not a Rust path startup');
       return runWorker(handle, w.entry, load);
+    },
+    /** Private opt-in pressure witness, not a delivery or terminal API.
+     * The caller takes from this session's lane, which is not a Worker FD. */
+    runPathPaced(handle: ExecutionBinding, load?: Loader): Promise<{status: number; sourceFailures: number}> {
+      const w = workerOf(handle);
+      if (!capture || w.entry === undefined) return Promise.reject(new Error('Paced capture requires selected prepared startup'));
+      return runWorker(handle, w.entry, load, true);
+    },
+    async waitForCapturePressure(handle: ExecutionBinding): Promise<void> {
+      const w = workerOf(handle);
+      if (captureRun?.worker !== w || !captureRun.paced || !w.active || w.bridge.diagnostics().stopping) {
+        throw new Error('Captured result pressure is not available');
+      }
+      if (pressureObserver) throw new Error('Captured result already has a pressure observer');
+      if (pausedOutput?.worker === w) return;
+      return new Promise<void>((ready, cancel) => { pressureObserver = {worker: w, ready, cancel}; });
     },
     /** Diagnostic only: fresh fixed memory, one runner, preopened files. */
     translatedExecution(input: Uint8Array, pages: number): ExecutionBinding {

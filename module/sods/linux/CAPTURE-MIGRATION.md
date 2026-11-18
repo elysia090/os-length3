@@ -256,8 +256,22 @@ there really is Q/K room. A confirmed owned receive frees capacity; a peek,
 an active view or an ended-but-unpublished receive cannot. A first live
 view still excludes other Core operations. Artifact wire version 1 cannot
 be replayed as matching the new command surface, even with a correct digest.
-The non-draining private Worker host still refuses at capacity and closes the
-exact held request; no consumer is scheduled by this raw connection.
+The non-draining private Worker host still refuses at capacity and closes
+the exact held request.
+
+The separate paced entry opts one active Worker into waiting, with at most
+one blocked relay and one pressure observer on the selected session lane.
+The caller waits for a pressure signal, then takes the regular owned result.
+Only a confirmed consumer receipt wakes a blocked writer to recheck room.
+The relay never resends the guest request or polls the Core or the Worker.
+Stop request/observed exit can also wake it to cancel; neither is drain
+credit. Recheck stopping after wake, before calling resume: a stop in the
+same turn as a consume must not stage another write. Worker settlement and
+FD retirement are observed separately; neither takes accepted result bytes
+away. The signal reports pressure, not readiness of every queued result
+or EOF. This is a pull-during-pressure witness, not a product streaming
+subscription or a physical sink adapter. It does not suspend resident
+sendfile, whose source/cursor lifetimes require a different proof.
 
 The private Linux x64 Node 22/24 distribution reader exercises the pin
 chain end to end with a current-source result artifact and Worker. The
