@@ -357,13 +357,7 @@ impl Queue {
         self.reserve_for::<false>(length)
     }
     fn reserve_for<const PIN: bool>(&mut self, length: NonZeroUsize) -> Result<Reservation, Error> {
-        if self.closed {
-            return Err(Error::Closed);
-        }
-        let used = self.used.checked_add(length.get()).ok_or(Error::Overflow)?;
-        if used > self.byte_limit {
-            return Err(Error::Full);
-        }
+        let used = self.bytes_after(length)?;
         if PIN && !self.pins.has_room() {
             return Err(if self.entries.has_room() {
                 Error::Capacity
@@ -371,6 +365,19 @@ impl Queue {
                 Error::Full
             });
         }
+        self.reserve_entry(length, used)
+    }
+    fn bytes_after(&self, length: NonZeroUsize) -> Result<usize, Error> {
+        if self.closed {
+            return Err(Error::Closed);
+        }
+        let used = self.used.checked_add(length.get()).ok_or(Error::Overflow)?;
+        if used > self.byte_limit {
+            return Err(Error::Full);
+        }
+        Ok(used)
+    }
+    fn reserve_entry(&mut self, length: NonZeroUsize, used: usize) -> Result<Reservation, Error> {
         let key = self
             .entries
             .add(Entry::Reserved(length))
@@ -831,6 +838,14 @@ pub(super) struct Writer<'a> {
     files: &'a mut Files,
     queue: &'a mut Queue,
 }
+/// Same-turn preflight, not a reservation or an across-await token. Nothing
+/// can return/consume credits between the check and publication through the
+/// exclusive Writer loan; source validation touches only Files.
+#[cfg(any(test, feature = "capture-result-v1"))]
+struct ResidentCredit {
+    length: NonZeroUsize,
+    used: usize,
+}
 impl Writer<'_> {
     pub(super) fn pin_prefix(
         &mut self,
@@ -876,6 +891,19 @@ impl Writer<'_> {
         length: NonZeroUsize,
     ) -> Result<ReadHold, Error> {
         let source = self.files.reserve_read(table, fd, length.get() as u64)?;
+        self.exact_source(source, length)
+    }
+    #[cfg(any(test, feature = "capture-result-v1"))]
+    fn reserve_materialized_source(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        length: NonZeroUsize,
+    ) -> Result<ReadHold, Error> {
+        let source = self.files.reserve_materialized_read(table, fd, length)?;
+        self.exact_source(source, length)
+    }
+    fn exact_source(&mut self, source: ReadHold, length: NonZeroUsize) -> Result<ReadHold, Error> {
         if source.length() != length.get() {
             self.files.abort_read(source);
             return Err(Error::Length);
@@ -902,12 +930,18 @@ impl Writer<'_> {
             .accept_resident_prefix(self.files, reservation, source, length)
     }
     #[cfg(any(test, feature = "capture-result-v1"))]
-    fn reserve_resident_when_room(
-        &mut self,
-        length: NonZeroUsize,
-    ) -> Result<Option<Reservation>, Error> {
-        let queue = &mut self.queue;
-        match queue.reserve_for::<true>(length) {
+    fn resident_room(&self, length: NonZeroUsize) -> Result<Option<ResidentCredit>, Error> {
+        let queue = &self.queue;
+        let ready = queue.bytes_after(length).and_then(|used| {
+            if !queue.entries.has_room() {
+                Err(Error::Full)
+            } else if !queue.pins.has_room() {
+                Err(Error::Capacity)
+            } else {
+                Ok(ResidentCredit { length, used })
+            }
+        });
+        match ready {
             // A queue-consuming receiver can return Q, but K/R may be
             // permanently exhausted by the last generation or by limits.
             // Identify a reclaimable published cell only on pressure.
@@ -929,6 +963,20 @@ impl Writer<'_> {
             }
             result => result.map(Some),
         }
+    }
+
+    #[cfg(any(test, feature = "capture-result-v1"))]
+    fn publish_ready_resident(
+        &mut self,
+        credit: ResidentCredit,
+        source: ReadHold,
+    ) -> Result<NonZeroUsize, Error> {
+        let reservation = self
+            .queue
+            .reserve_entry(credit.length, credit.used)
+            .expect("same-turn resident queue credit");
+        self.queue
+            .accept_resident_prefix(self.files, reservation, source, credit.length)
     }
     pub(super) fn publish_copy(
         &mut self,

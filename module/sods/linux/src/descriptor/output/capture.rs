@@ -968,6 +968,50 @@ mod tests {
     }
 
     #[test]
+    fn resident_rejection_cannot_consume_the_last_free_entry_generation() {
+        let mut g = Guest::with_limits(Limits {
+            bytes: 4,
+            entries: 1,
+            pins: 1,
+        });
+        let mut input = g.admit(1, 5).unwrap();
+        let id = input.id();
+        g.fill(&mut input, id, b"AB");
+        input
+            .finish(&mut g.context(), id, receipt(Some(2), Access::BothEnded))
+            .unwrap();
+        assert!(g.root.reader(&g.receiver).unwrap().discard_front());
+        let held = g.root.files.hold_output(&g.table, 1).unwrap();
+        let writer = g.root.held_writer(&held).unwrap();
+        let slot = writer.queue.entries.free.unwrap();
+        writer.queue.entries.cells[slot].generation = u64::MAX - 1;
+        let sequence = g.root.files.next_read_reservation;
+        let result = Resident::admit(
+            &mut Context {
+                files: &mut g.root.files,
+                lanes: &mut g.root.registry,
+                domain: &mut g.domain,
+                execution: &mut g.execution,
+            },
+            &g.table,
+            1,
+            99,
+            n(1),
+            g.invocation,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Output(OutputError::Source(FilesError::BadFd)))
+        ));
+        assert_eq!(g.root.files.next_read_reservation, sequence);
+        assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+        let writer = g.root.held_writer(&held).unwrap();
+        assert_eq!(writer.queue.entries.free, Some(slot));
+        assert_eq!(writer.queue.entries.cells[slot].generation, u64::MAX - 1);
+        g.root.files.release_output(held).unwrap();
+    }
+
+    #[test]
     fn resident_pressure_without_reclaimable_pin_does_not_touch_the_file() {
         let mut g = Guest::new(); // R=0
         let mut write = g.admit(1, 5).unwrap();

@@ -20,6 +20,15 @@
 #endif
  syscall
 .endm
+.macro send_resident_byte
+ mov $40,%eax
+ mov $2,%edi
+ mov %r15d,%esi
+ xor %edx,%edx
+ mov $1,%r10d
+ syscall
+ want 1
+.endm
 _start:
  mov 8(%rsp),%r12
  mov $257,%eax
@@ -30,6 +39,10 @@ _start:
  cwd_syscall
  nonnegative
  mov %rax,%r15
+#ifdef SODS_CAPTURE_COLD_SOURCE
+ send_resident_byte
+ mov %r15,%rax
+#endif
  mov %rax,%rdi
  xor %eax,%eax
  lea buffer(%rip),%rsi
@@ -38,14 +51,19 @@ _start:
  want 4
  cmpl $0x464c457f,buffer(%rip)
  jne bad
-#ifndef SODS_OPEN_NO_OUTPUT
+#if defined SODS_CAPTURE_READY_ONLY
+ send_resident_byte
+#elif !defined SODS_OPEN_NO_OUTPUT
  mov $1,%eax
  mov $1,%edi
  lea buffer(%rip),%rsi
  mov $4,%edx
  syscall
  want 4
-#ifdef SODS_OPEN_SECOND_OUTPUT
+#if defined SODS_CAPTURE_READY_SOURCE
+ /* The normal read already loaded this canonical file. Q is still full. */
+ send_resident_byte
+#elif defined SODS_OPEN_SECOND_OUTPUT
  /* This overflows the private Q=4 result profile if no receiver drains.
   * A refusal must not retract the already accepted ELF header. */
  mov $1,%eax
@@ -78,7 +96,11 @@ _start:
  mov $1,%edx
  syscall
  want 1
+#if defined SODS_CAPTURE_READY_SOURCE || defined SODS_CAPTURE_READY_ONLY
+ cmpb $1,buffer(%rip) /* sendfile advanced the original alias from offset 4 */
+#else
  cmpb $2,buffer(%rip)
+#endif
  jne bad
  mov $3,%eax
  mov %r15,%rdi

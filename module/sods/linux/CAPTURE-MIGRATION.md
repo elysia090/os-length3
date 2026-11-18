@@ -278,7 +278,7 @@ output OFD with its lane hold. It does not retain a numeric FD lookup, a view,
 a staged payload, Q/K/R credits or a guest-memory lease. Reclaimable pressure
 must name published capacity, including a pin cell whose generation can
 actually be reused; an absent or permanently exhausted credit is not a reason
-to park. Invalid or lazy sources still fail, never trigger a host load.
+to park. Invalid, cold or loading sources fail, never trigger a host load.
 Matching acceptance takes Q/K/R, links one immutable prefix and commits the
 same cursor in one synchronous turn. Cancellation returns both exact holds
 without advancing either cursor or queue. The native controls replace both
@@ -291,7 +291,7 @@ sequence identifies the arm even if token numbers overlap. The actual
 translated Worker sends A, resident B, resident D and C; the second send
 waits for R, not just byte credit. Taking copied A cannot advance it; taking
 pinned B allows exactly D and one cursor advance. Stopping first leaves
-AB. This resident-source proof does not promote a lazy packaged file or
+AB. This resident-source proof alone did not cover a lazy packaged file or
 alter Linux's general sendfile or terminal semantics.
 
 A new Store readiness observation does not call read or load_begin; probing
@@ -302,6 +302,20 @@ that interface does not expose mutation, eviction or replacement after one
 matching load commits. Ready-only cursor admission leaves a cold or loading
 inode's source, cursor and reservation sequence unchanged. Existing ordinary
 read/load and the old resident-only read ABI keep their source policy.
+
+The selected result transport also checks lane capacity without spending a
+K generation before the exact source is ready. A same-turn credit plan can
+be consumed only through the exclusive writer; it does not survive a wait.
+A bad source cannot allocate and cancel the last generation of an otherwise
+free queue cell. Raw controls preserve source and destination ownership on
+a waited send. On the normal prepared root, the actual translated Worker
+reads its canonical ELF once before sending its fifth byte. That source can
+then publish without a second load, including after Q is released; the
+subsequent read observes the original OFD advanced once. One ready byte
+also notifies without pressure. A cold send with no preceding read refuses,
+starts no loader and publishes nothing. Cancellation leaves the first
+already accepted chunk. This is ready-only equivalence, not readiness from
+source availability, a general asynchronous loader or a default cutover.
 
 The separate availability observer watches the selected lane, not the
 producer's numerical FD or a pressure event. Rust marks an acceptance only

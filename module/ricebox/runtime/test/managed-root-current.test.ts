@@ -35,6 +35,10 @@ const descriptions = {
   'capture-paced': 'pinned captured result resumes the actual suspended Worker after receipt',
   'capture-paced-stop': 'pinned captured result stops the suspended Worker without accepting its pending write',
   'capture-paced-race': 'pinned captured result stop wins over a just-freed credit before resume',
+  'capture-ready': 'pinned captured result resumes a previously loaded prepared-root source',
+  'capture-ready-stop': 'pinned captured result stops before transferring the held prepared-root source',
+  'capture-ready-only': 'pinned captured result notifies on one resident byte without pressure',
+  'capture-cold': 'pinned captured result declines a cold prepared-root source without starting a loader',
   cancel: 'cancelled artifact late shared/valid success and rejection publish no Worker and permit root reuse',
   invalid: 'invalid artifact byte classes fail before source/Worker publication and permit root reuse',
   size: 'wrong decoded source length fails the exact Rust source, retires, and retries without metadata drift',
@@ -42,8 +46,10 @@ const descriptions = {
 } as const;
 type Scenario = keyof typeof descriptions;
 type Host = Awaited<ReturnType<typeof managedRoot>>;
-const pacedScenario = (s: Scenario) => s.startsWith('capture-paced');
-const refusedScenario = (s: Scenario) => s === 'capture-pressure' || s === 'capture-paced-stop' || s === 'capture-paced-race';
+const pacedScenario = (s: Scenario) => s.startsWith('capture-paced') || s === 'capture-ready' || s === 'capture-ready-stop';
+const stoppedWait = (s: Scenario) => s === 'capture-paced-stop' || s === 'capture-paced-race' || s === 'capture-ready-stop';
+const refusedScenario = (s: Scenario) => s === 'capture-pressure' || s === 'capture-cold' || stoppedWait(s);
+const coldScenario = (s: Scenario) => s === 'capture-cold';
 
 async function stopped(host: Host, execution: ExecutionBinding): Promise<void> {
   host.stopWorker(execution);
@@ -303,7 +309,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       assert.equal(host.rootSource(1).size, elf.length, 'failed delivery cannot replace sealed decoded-size metadata');
     }
     let takenBeforeEnd: Uint8Array | undefined;
-    if (scenario === 'capture') {
+    if (scenario === 'capture' || scenario === 'capture-ready-only') {
       assert.ok(captured);
       await assert.rejects(captured.waitForCaptureOutput(), /no active producer/);
       const execution = await start();
@@ -332,13 +338,13 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
         assert.equal(left, false);
         assert.equal(captured.workerEvidence(execution).pendingRequest, true);
         assert.equal(captured.workerEvidence(execution).exited, false);
-        if (scenario !== 'capture-paced-stop') {
+        if (scenario !== 'capture-paced-stop' && scenario !== 'capture-ready-stop') {
           takenBeforeEnd = captured.takeOutput();
           assert.deepEqual(takenBeforeEnd, Uint8Array.of(127, 69, 76, 70));
           assert.equal(left, false, 'a receipt wakes later, not reentrantly from a held view');
           assert.equal(captured.takeOutput(), undefined);
         }
-        if (scenario !== 'capture-paced') {
+        if (stoppedWait(scenario)) {
           captured.stopWorker(execution);
           await assert.rejects(run);
         } else {
@@ -347,6 +353,13 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
         }
       } finally { await stopped(host, execution); }
       await assert.rejects(captured.waitForCapturePressure(execution), /not available/);
+    } else if (scenario === 'capture-cold') {
+      const execution = await start();
+      assert.equal(loads, 0);
+      try {
+        await assert.rejects(host.runPath(execution, load), /Linux memory admission failed: -12/);
+      } finally { await stopped(host, execution); }
+      assert.equal(loads, 0, 'capture does not dispatch a cold source load');
     } else if (scenario === 'capture-pressure') {
       const execution = await start();
       assert.equal(loads, 0);
@@ -358,13 +371,16 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     }
     if (captured) {
       const output = captured.takeOutput();
-      assert.deepEqual(output, scenario === 'capture-paced' ? Uint8Array.of(127)
-        : scenario === 'capture-paced-race' ? undefined : Uint8Array.of(127, 69, 76, 70));
+      const expected = scenario === 'capture-paced' ? Uint8Array.of(127)
+        : scenario === 'capture-ready' || scenario === 'capture-ready-only' ? Uint8Array.of(2)
+        : scenario === 'capture-paced-race' || scenario === 'capture-cold' ? undefined : Uint8Array.of(127, 69, 76, 70);
+      assert.deepEqual(output, expected);
       const first = takenBeforeEnd ?? output;
-      assert.ok(first?.buffer instanceof ArrayBuffer && first.byteOffset === 0 && first.buffer.byteLength === 4);
+      if (first) assert.ok(first.buffer instanceof ArrayBuffer && first.byteOffset === 0 && first.buffer.byteLength === first.length);
       assert.equal(captured.takeOutput(), undefined);
       await assert.rejects(captured.waitForCaptureOutput(), /no active producer/, 'empty after one Worker is not caller-independent EOF');
-      assert.deepEqual(first, Uint8Array.of(127, 69, 76, 70), 'result outlives Worker retirement and later polling');
+      assert.deepEqual(first, takenBeforeEnd ? Uint8Array.of(127, 69, 76, 70) : expected,
+        'result outlives Worker retirement and later polling');
     }
     if (scenario === 'invalid') {
       const before = {loads, artifacts, workers, runs};
@@ -373,7 +389,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     }
     const successfulRuns = refusedScenario(scenario) ? 0 : scenario === 'cancel' ? 3 : 1;
     const executions = scenario === 'size' ? 2 : refusedScenario(scenario) ? 1 : successfulRuns;
-    assert.equal(loads, executions, 'one canonical load per root, not per open or independent OFD');
+    assert.equal(loads, coldScenario(scenario) ? 0 : executions, 'the ordinary read loads once, not the resident send');
     assert.equal(workers, executions, 'positive control confirms actual Worker observation');
     assert.equal(runs, successfulRuns);
     assert.equal(lateControls, scenario === 'cancel' ? 2 : 0);
@@ -402,7 +418,10 @@ if (process.argv[2] === '--managed-root-child') {
       const source = fileURLToPath(new URL('../../../sods/test/fixtures/managed-open/program.S', import.meta.url));
       const program = join(directory, 'program.elf');
       execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
-        ...(scenario.startsWith('capture') && scenario !== 'capture' ? ['-DSODS_OPEN_SECOND_OUTPUT'] : []),
+        ...(scenario === 'capture-ready' || scenario === 'capture-ready-stop' ? ['-DSODS_CAPTURE_READY_SOURCE']
+          : scenario === 'capture-ready-only' ? ['-DSODS_CAPTURE_READY_ONLY']
+          : scenario === 'capture-cold' ? ['-DSODS_CAPTURE_COLD_SOURCE']
+          : scenario === 'capture-pressure' || scenario.startsWith('capture-paced') ? ['-DSODS_OPEN_SECOND_OUTPUT'] : []),
         '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
       ], {stdio: 'pipe', timeout: 30_000, env: {...process.env, TMPDIR: directory}});
       const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--managed-root-child', scenario, program], {
@@ -419,10 +438,18 @@ if (process.argv[2] === '--managed-root-child') {
       assert.equal(result.stderr.length, 0);
       const report = result.output[3];
       assert.ok(report);
-      assert.deepEqual(JSON.parse(report.toString()), {scenario, loads: executions,
+      assert.deepEqual(JSON.parse(report.toString()), {scenario, loads: coldScenario(scenario) ? 0 : executions,
         artifacts: scenario === 'invalid' ? 5 : scenario === 'cancel' ? 6 : scenario === 'size' ? 2 : 1,
         workers: executions, runs: successfulRuns,
         lateControls: scenario === 'cancel' ? 2 : 0, retired: true});
+      if (scenario === 'capture-ready' || scenario === 'capture-ready-only') {
+        const native = spawnSync(program, [], {input: '', timeout: 10_000});
+        assert.equal(native.error, undefined);
+        assert.equal(native.signal, null);
+        assert.equal(native.status, result.status, native.stderr.toString());
+        assert.deepEqual(native.stdout, scenario === 'capture-ready' ? Buffer.from([127, 69, 76, 70]) : Buffer.alloc(0));
+        assert.deepEqual(native.stderr, Buffer.from([2]), 'same original OFD cursor result on native Linux');
+      }
       if (scenario === 'lazy') {
         const native = spawnSync(program, [], {input: '', timeout: 10_000});
         assert.equal(native.error, undefined); assert.equal(native.signal, null);

@@ -45,12 +45,16 @@ impl Resident {
         };
         let attempt = (|| -> Result<Outcome, Error> {
             let mut writer = ctx.lanes.held_writer(ctx.files, &destination)?;
-            let Some(reservation) = writer.reserve_resident_when_room(length)? else {
-                let source = writer.reserve_resident_source(table, input, length)?;
-                return Ok(Outcome::Waiting(source));
-            };
-            let count = writer.publish_reserved_resident(table, input, length, reservation)?;
-            Ok(Outcome::Accepted(count))
+            let room = writer.resident_room(length)?;
+            // A cold/loading inode is refused before allocating a K record,
+            // claiming a cursor, touching the loader or retaining a waiter.
+            let source = writer.reserve_materialized_source(table, input, length)?;
+            match room {
+                None => Ok(Outcome::Waiting(source)),
+                Some(credit) => Ok(Outcome::Accepted(
+                    writer.publish_ready_resident(credit, source)?,
+                )),
+            }
         })();
         match attempt {
             Ok(Outcome::Waiting(source)) => Ok(Turn::Waiting(Self {
@@ -106,14 +110,11 @@ impl Resident {
             ctx.files,
             self.destination.as_ref().expect("pending output"),
         )?;
-        let Some(reservation) = writer.reserve_resident_when_room(length)? else {
+        let Some(credit) = writer.resident_room(length)? else {
             return Ok(None);
         };
         let source = self.source.take().expect("matching retained cursor");
-        let accepted =
-            writer
-                .queue
-                .accept_resident_prefix(writer.files, reservation, source, length);
+        let accepted = writer.publish_ready_resident(credit, source);
         self.release_destination(ctx);
         accepted.map(Some).map_err(Into::into)
     }
