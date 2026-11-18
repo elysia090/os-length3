@@ -7,16 +7,12 @@ import {blobAsset, readReleaseIndex, releaseIndexAsset, requireStandardFileOwner
 import {download as fetchFile, Fatal, type Check} from './download.ts';
 import {createAssetCache} from './asset-cache.ts';
 import {FIRST} from './startup-programs.ts';
+import {trackTransfers, type AssetProgress, type Stage} from './load-progress.ts';
+export type {Stage} from './load-progress.ts';
 import {canRunApart} from '../../sods/runtime/host.ts';
 import {MORE, madeBy, packMain, packMore, unpackMore, type Segment} from '../../sods/runtime/translate.ts';
 export type {Segment, Blob, About, Translation, Index, Webroot, RootContext, PreparedRoot, PreparedExecutable, More} from './root-types.ts';
 import type {About, Blob, Index, More, Translation, Webroot, RootContext, PreparedExecutable} from './root-types.ts';
-export type Stage =
-  | {at: 'fetch'; got: number; of: number; quiet?: number}
-  | {at: 'retry'; attempt: number; why: string; got: number; of: number}
-  | {at: 'prepare'}
-  | {at: 'ready'}
-  | {at: 'failed'; message: string};
 interface Plan { sha256: string; index: About['index']; translator: Index['translator']; first: {t: Translation; mode: number}[] }
 export interface RootConfig {
   base: string;
@@ -76,22 +72,23 @@ export function createRoot(config: RootConfig) {
   const atOnce = async () => {};
 
   /** Read a verified asset from the cache or network. Speculation may use the cache only. */
-  async function bytesOf(path: string, expect: {sha256: string; size: number}, progress?: Parameters<typeof download>[2], keptOnly = false): Promise<Uint8Array> {
+  async function bytesOf(path: string, expect: {sha256: string; size: number}, progress?: AssetProgress, keptOnly = false): Promise<Uint8Array> {
     const url = `${BASE}${path}`;
     const have = await kept(url, expect.sha256);
     if (have) {
       if (have.byteLength !== expect.size) throw new Fatal(`webroot: ${path} has the wrong size`);
-      progress?.bytes(have.byteLength);
+      progress?.verified();
       return have;
     }
     if (keptOnly) throw new Error(`webroot: ${path} is not kept`);
     const bytes = await download(url, expect, progress, {check: offThread});
+    progress?.verified();
     void keep(url, bytes);
     return bytes;
   }
 
   /** A translation's blob, unpacked, checked against what it says it is, and given back as the kernel runs it (prepare), off the page's thread. */
-  async function translation(b: Blob, shared: boolean, progress?: Parameters<typeof download>[2], step = atOnce, keptOnly = false): Promise<{wasm: Uint8Array; segments: Segment[] | null}> {
+  async function translation(b: Blob, shared: boolean, progress?: AssetProgress, step = atOnce, keptOnly = false): Promise<{wasm: Uint8Array; segments: Segment[] | null}> {
     await step();
     const asset = blobAsset(b);
     const {bytes, size, segments} = await checked(await bytesOf(asset.path, asset, progress, keptOnly), true, false, {shared});
@@ -101,7 +98,7 @@ export function createRoot(config: RootConfig) {
   }
 
   /** A blob's bytes, unpacked and checked against what it says it is (a program's against its sha256). */
-  async function unblob(b: Blob, progress?: Parameters<typeof download>[2], sha256?: string, step = atOnce, keptOnly = false): Promise<Uint8Array> {
+  async function unblob(b: Blob, progress?: AssetProgress, sha256?: string, step = atOnce, keptOnly = false): Promise<Uint8Array> {
     await step();
     // Unpacked and checked off the page's thread; a copy goes, as what was fetched may be on its way to be kept.
     const asset = blobAsset(b);
@@ -284,15 +281,15 @@ export function createRoot(config: RootConfig) {
    * translation, and the code it reached later in Prompts before. A translation the engine will not compile is
    * made again by the translator when its program runs.
    */
-  async function hot(t: Translation, mode: number, translator: string, progress?: Parameters<typeof download>[2], step = atOnce, keptOnly = false) {
+  async function hot(t: Translation, mode: number, translator: string, progress?: (blob: Blob) => AssetProgress, step = atOnce, keptOnly = false) {
     // As the kernel runs it (sods/runtime/share.ts): its data kept beside it, its memory shared where the page may share memory.
     const shared = threadsApart();
     const url = moreURL(t, translator, shared);
     // What was reached later before: read as the program is, and given with it (taken).
     const reached = more.has(t.path) ? Promise.resolve([]) : keptMore(url).catch(() => []);
     // Waited for (a Prompt starting), both at once; readied quietly (`step` is idle), one after the other.
-    const [bytes, p] = step === atOnce ? await Promise.all([unblob(t.elf, progress, t.sha256, atOnce, keptOnly), translation(t.wasm, shared, progress, atOnce, keptOnly)])
-      : [await unblob(t.elf, progress, t.sha256, step), await translation(t.wasm, shared, progress, step)];
+    const [bytes, p] = step === atOnce ? await Promise.all([unblob(t.elf, progress?.(t.elf), t.sha256, atOnce, keptOnly), translation(t.wasm, shared, progress?.(t.wasm), atOnce, keptOnly)])
+      : [await unblob(t.elf, progress?.(t.elf), t.sha256, step, keptOnly), await translation(t.wasm, shared, progress?.(t.wasm), step, keptOnly)];
     await step();
     const module = await WebAssembly.compile(p.wasm as BufferSource).catch(() => null);
     return {path: t.path, bytes, module, mode, segments: module ? p.segments : null, shared, reached: module ? await reached : [], moreURL: url};
@@ -414,31 +411,21 @@ export function createRoot(config: RootConfig) {
     };
     const muk = await maker;
     keepReleaseFiles(a, index, muk?.path);
-    // Progress over everything this start waits for: the translator and each program it is given now.
-    const parts = [index.translator, ...first.flatMap((t) => [t.elf, t.wasm])];
-    const of = parts.reduce((n, p) => n + p.size, 0);
-    const got = new Map<string, number>();
-    const progress = (p: Blob) => ({
-      bytes(n: number) { got.set(p.path, n); tell({at: 'fetch', got: [...got.values()].reduce((x, y) => x + y, 0), of}); },
-      retry(attempt: number, why: string) { tell({at: 'retry', attempt, why, got: [...got.values()].reduce((x, y) => x + y, 0), of}); },
-      waiting(quiet: number) { tell({at: 'fetch', got: [...got.values()].reduce((x, y) => x + y, 0), of, quiet}); },
-    });
-    // Always resolve the current verified index's core, including when the old
-    // plan supplied translator/hot caches. Do not mix descriptor generations.
-    tell({at: 'fetch', got: 0, of});
     let translator: WebAssembly.Module, files: Hot[];
     // The plan can accelerate reads but is not a source of release identity.
     if (read && JSON.stringify(plan) === JSON.stringify(current)) {
       [translator, ...files] = read.slice(1) as [WebAssembly.Module, ...Hot[]];
     }
     else {
-      const [translatorWasm, ...hots] = await Promise.all([
-        unblob(index.translator, progress(index.translator)),
-        ...first.map((t) => hot(t, modeOf(t.path), index.translator.sha256, progress(t.wasm))),
-      ]);
-      tell({at: 'prepare'});
-      translator = await WebAssembly.compile(translatorWasm as BufferSource);
-      files = hots as Hot[];
+      const progress = trackTransfers([index.translator, ...first.flatMap(t => [t.elf, t.wasm])], tell);
+      try {
+        const [translatorWasm, ...hots] = await Promise.all([
+          unblob(index.translator, progress.forBlob(index.translator)),
+          ...first.map(t => hot(t, modeOf(t.path), index.translator.sha256, progress.forBlob)),
+        ]);
+        translator = await WebAssembly.compile(translatorWasm as BufferSource);
+        files = hots;
+      } finally { progress.stop(); }
     }
     try {
       localStorage.setItem(PLAN, JSON.stringify(current));
@@ -483,16 +470,19 @@ export function createRoot(config: RootConfig) {
 
   // A sibling profile: no call to hot/loadWebroot/filesNow may materialize its sources.
   const preparedJobs = new Map<string, Promise<{value: PreparedExecutable; moreURL: string; reached: More[]} | null>>();
-  function preparedHot(index: Index, generation: string, t: Translation, quiet: boolean) {
+  function preparedHot(index: Index, generation: string, t: Translation, quiet: boolean, progress?: AssetProgress) {
     const source = canonicalExecutableSource(index, t), shared = threadsApart();
     const key = executableKey(generation, source, t, index.translator.sha256, shared);
     const existing = preparedJobs.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (progress) void existing.then(() => progress.verified(), () => {});
+      return existing;
+    }
     const job = (async () => {
       const step = quiet ? idle : atOnce;
       // Integrity and decode errors propagate. Only engine compilation has the
       // established fallback to ordinary execution of the lazy canonical file.
-      const p = await translation(t.wasm, shared, undefined, step);
+      const p = await translation(t.wasm, shared, progress, step);
       await step();
       const module = await WebAssembly.compile(p.wasm as BufferSource).catch(() => null);
       if (!module) return null;
@@ -517,23 +507,17 @@ export function createRoot(config: RootConfig) {
       // Check every hot association before source capture or asynchronous image work.
       canonicalHotSources(index);
       const first = index.translations.filter(t => startupPrograms.includes(t.path));
-      const parts = [index.translator, ...first.map(t => t.wasm)];
-      const of = parts.reduce((n, p) => n + p.size, 0), got = new Map<string, number>();
-      const progress = (p: Blob) => ({
-        bytes(n: number) { got.set(p.path, n); tell({at: 'fetch', got: [...got.values()].reduce((a, b) => a + b, 0), of}); },
-        retry(attempt: number, why: string) { tell({at: 'retry', attempt, why, got: [...got.values()].reduce((a, b) => a + b, 0), of}); },
-        waiting(quiet: number) { tell({at: 'fetch', quiet, got: [...got.values()].reduce((a, b) => a + b, 0), of}); },
-      });
-      tell({at: 'fetch', got: 0, of});
-      for (const t of first) void preparedHot(index, a.index.sha256, t, false).then(() => progress(t.wasm).bytes(t.wasm.size), () => {});
-      const [translatorBytes, muk] = await Promise.all([
-        unblob(index.translator, progress(index.translator)), maker,
-      ]);
-      tell({at: 'prepare'});
-      const translator = await WebAssembly.compile(translatorBytes as BufferSource);
-      keepReleaseFiles(a, index, muk?.path);
-      return {profile: 'canonical-aot-v1' as const, generation: a.index.sha256, about: a, index,
-        translator, url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
+      const progress = trackTransfers([index.translator, ...first.map(t => t.wasm)], tell);
+      try {
+        const [translator, muk] = await Promise.all([
+          unblob(index.translator, progress.forBlob(index.translator)).then(bytes => WebAssembly.compile(bytes as BufferSource)),
+          maker,
+          ...first.map(t => preparedHot(index, a.index.sha256, t, false, progress.forBlob(t.wasm))),
+        ]);
+        keepReleaseFiles(a, index, muk?.path);
+        return {profile: 'canonical-aot-v1' as const, generation: a.index.sha256, about: a, index,
+          translator, url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
+      } finally { progress.stop(); }
     },
   });
 

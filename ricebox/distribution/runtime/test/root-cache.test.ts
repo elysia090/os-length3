@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {test, type TestContext} from 'node:test';
 import {gzipSync} from 'node:zlib';
 import {madeBy} from '../../../sods/runtime/translate.ts';
-import {createRoot} from '../root.ts';
+import {createRoot, type Stage} from '../root.ts';
 import {createAssetCache} from '../asset-cache.ts';
 import type {About, Index} from '../root-types.ts';
 
@@ -33,10 +33,11 @@ function fixture(t: TestContext, base: string) {
     setItem(key: string, value: string) { prefs.set(key, value); },
   });
   const requests: string[] = [], assets = new Map<string, Uint8Array>();
+  const streams = new Map<string, () => ReadableStream<Uint8Array<ArrayBuffer>>>();
   t.mock.method(globalThis, 'fetch', async (input: string) => {
     const path = url(input); requests.push(path);
     const bytes = assets.get(path);
-    return new Response(bytes && new Uint8Array(bytes), {status: bytes ? 200 : 404, headers: {'content-type': 'application/json'}});
+    return new Response(streams.get(path)?.() ?? (bytes && new Uint8Array(bytes)), {status: bytes ? 200 : 404, headers: {'content-type': 'application/json'}});
   });
   const translator = new Uint8Array(gzipSync(emptyWasm)), sha256 = hash(translator);
   const pack = 'b'.repeat(64);
@@ -57,7 +58,13 @@ function fixture(t: TestContext, base: string) {
   };
   const root = () => createRoot({base, usedKey: 'used', planKey: 'plan', message: key => key,
     missing: () => 'missing release', errorText: String});
-  return {assets, requests, index, pack, entries, prefs, cache, root, publish, url, install};
+  const blob = (bytes: Uint8Array) => {
+    const stored = new Uint8Array(gzipSync(bytes));
+    const sha256 = hash(stored), path = `blobs/${sha256}.bin`;
+    assets.set(url(base + path), stored);
+    return {path, sha256, size: stored.length, bytes: bytes.length};
+  };
+  return {assets, streams, requests, index, pack, entries, prefs, cache, root, publish, url, install, blob};
 }
 
 for (const base of ['layers/', 'https://assets.example.test/webroot/']) {
@@ -239,4 +246,53 @@ test('a lost Worker reply fails the lent check without reusing detached bytes', 
   assert.equal(stopped, 1);
   const usable = Uint8Array.of(3, 4);
   assert.deepEqual(await storage.checked(usable, false, false), {bytes: usable, sha256: hash(usable)});
+});
+
+function addStartup(f: ReturnType<typeof fixture>, path: string, source: Uint8Array, wasm: Uint8Array) {
+  const elf = f.blob(source), translated = f.blob(wasm);
+  f.index.files.push({path, pack: 0, mode: 0o755, size: source.length, at: 32, len: source.length, raw: true});
+  f.index.translations.push({path, elf, wasm: translated, sha256: hash(source)});
+  return {elf, translated};
+}
+
+function phases(root: ReturnType<typeof createRoot>, t: TestContext): Stage[] {
+  const stages: Stage[] = [];
+  t.after(root.watchLoad(stage => stages.push(stage)));
+  stages.length = 0; // Do not count the initial snapshot before this load.
+  return stages;
+}
+
+test('legacy progress includes ELF bytes and counts identical content once', async t => {
+  const base = '/layers/', f = fixture(t, base), source = new Uint8Array(24).map((_, i) => i);
+  const {elf} = addStartup(f, '/usr/bin/bash', source, emptyWasm);
+  addStartup(f, '/usr/bin/busybox', source, emptyWasm);
+  f.publish();
+  const root = f.root(), stages = phases(root, t), of = elf.size + f.index.translator.size;
+  const loaded = await root.loadWebroot();
+  assert.equal(loaded.files.length, 2);
+  assert.deepEqual(stages[0], {at: 'fetch', got: 0, of});
+  assert.deepEqual(stages.filter(stage => stage.at === 'fetch').at(-1), {at: 'fetch', got: of, of});
+  assert.deepEqual(stages.slice(-2), [{at: 'prepare'}, {at: 'ready'}]);
+});
+
+test('prepared progress reports AOT chunks and never counts the lazy ELF', async t => {
+  const base = '/layers/', f = fixture(t, base);
+  const distinct = Uint8Array.of(...emptyWasm, 0, 2, 1, 120);
+  const {elf, translated} = addStartup(f, '/usr/bin/bash', Uint8Array.of(1, 2, 3, 4), distinct);
+  const translationUrl = f.url(base + translated.path), blob = f.assets.get(translationUrl)!;
+  f.streams.set(translationUrl, () => new ReadableStream({start(controller) {
+    controller.enqueue(new Uint8Array(blob.subarray(0, 3)));
+    controller.enqueue(new Uint8Array(blob.subarray(3)));
+    controller.close();
+  }}));
+  f.publish();
+  const root = f.root(), stages = phases(root, t), of = f.index.translator.size + translated.size;
+  const loaded = await root.execution.load();
+  assert.equal(loaded.executables.length, 1);
+  assert.equal(f.requests.includes(f.url(base + elf.path)), false);
+  assert.deepEqual(stages[0], {at: 'fetch', got: 0, of});
+  const fetches = stages.filter(stage => stage.at === 'fetch');
+  assert.ok(fetches.some(({got}) => got === 3 || got === f.index.translator.size + 3), 'the first AOT chunk was counted');
+  assert.deepEqual(fetches.at(-1), {at: 'fetch', got: of, of});
+  assert.deepEqual(stages.slice(-2), [{at: 'prepare'}, {at: 'ready'}]);
 });
