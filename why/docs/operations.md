@@ -460,7 +460,7 @@ to this repository, and its Settings → Build say, once:
 
 The Prompt the web serves is a released one: a newer one ships by releasing
 it (a new version in `ricebox/distribution/RELEASE`, `.github/workflows/release.yml`; without
-Actions, `scripts/release.sh` and `scripts/publish-release.ts` by hand), then merging the pins
+Actions, `why/build/release.sh` and `why/build/publish-release.ts` by hand), then merging the pins
 the release proposes (Pin vX.Y.Z): why's one entry in `why/prompt/roots/pins.rs`
 (the root, and the index the web reads it by) and the desktop app in
 `why/shipto/desktop-releases.json`. A build

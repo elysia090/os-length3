@@ -1,20 +1,22 @@
-// Publish what scripts/release.sh made: the release os-length3-linux-vX.Y.Z at the commit it was made
+// Publish what why/build/release.sh made: the release os-length3-linux-vX.Y.Z at the commit it was made
 // from, its notes OUT/../notes.md and every file in OUT. A version published already is left as it is
 // (exit 0), and only a commit main has is released.
 //
-//   GITHUB_TOKEN=… node scripts/publish-release.ts OUT
+//   GITHUB_TOKEN=… node why/build/publish-release.ts OUT
 //
 // The version is ricebox/distribution/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_REPOSITORY
 // names the repository when it is not this one (and GITHUB_API_URL the API, as on GitHub Actions).
 import {execFileSync} from 'node:child_process';
 import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {join, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
-const here = new URL('..', import.meta.url).pathname;
+const here = fileURLToPath(new URL('../..', import.meta.url));
 const [outArg] = process.argv.slice(2);
-if (!outArg) { console.error('usage: node scripts/publish-release.ts OUT'); process.exit(2); }
+if (!outArg) { console.error('usage: node why/build/publish-release.ts OUT'); process.exit(2); }
 const out = resolve(outArg);
-const version = process.env.VERSION || readFileSync(join(here, 'module', 'ricebox', 'RELEASE'), 'utf8').trim();
+const version = process.env.VERSION || readFileSync(join(here, 'ricebox/distribution/RELEASE'), 'utf8').trim();
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(version)) throw new Error(`Not a release version: ${version}`);
 const sha = process.env.GITHUB_SHA || execFileSync('git', ['-C', here, 'rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';
 const api = process.env.GITHUB_API_URL || 'https://api.github.com';
@@ -37,7 +39,7 @@ if (on !== 'identical' && on !== 'behind') throw new Error(`${sha} is not on mai
 
 const files = readdirSync(out).filter((f) => statSync(join(out, f)).isFile()).sort();
 for (const want of [`-${version}-web.zip`, `-${version}-webroot.tar`, `-${version}-desktop-amd64.deb`, `-${version}-desktop-x86_64.AppImage`, 'SHA256SUMS', 'manifest']) {
-  if (!files.some((f) => f.endsWith(want))) throw new Error(`${out} holds no …${want}: run scripts/release.sh first`);
+  if (!files.some((f) => f.endsWith(want))) throw new Error(`${out} holds no …${want}: run why/build/release.sh first`);
 }
 const notes = readFileSync(join(out, '..', 'notes.md'), 'utf8');
 const made = await (await must(await ask('/releases', {method: 'POST', headers: {'content-type': 'application/json'},

@@ -175,7 +175,7 @@ same bundle is run by the same muk on its kernel (`ricebox/distribution/src/run.
 terminal the box has one of its own, its other end held by `prompt attach`. In a page the terminal is the page
 itself: this kernel's console, lent to the box by its name (it is the box's /dev/console). `node
 ricebox/sods/runtime/targets.ts --owed` lists every line owed (every row above that is not verified or excluded),
-and ends 1 while there is one: a release of ricebox under its own name is held to it (`scripts/release.sh`), and is
+and ends 1 while there is one: a release of ricebox under its own name is held to it (`why/build/release.sh`), and is
 not made while anything is owed.
 
 The implementation-ownership summary from `targets.ts --one` is:

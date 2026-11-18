@@ -84,7 +84,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ROOT_PACKAGES: ${{ github.workspace }}/target/root-packages
-        run: sh scripts/release.sh "$GITHUB_WORKSPACE/out"
+        run: sh why/build/release.sh "$GITHUB_WORKSPACE/out"
       # SLSA build provenance for every file, signed through Sigstore: `gh attestation verify FILE -R OWNER/REPO`.
       - name: Attest provenance
         if: env.SKIP != '1'
@@ -95,7 +95,7 @@ jobs:
         if: env.SKIP != '1'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/publish-release.ts "$GITHUB_WORKSPACE/out"
+        run: node why/build/publish-release.ts "$GITHUB_WORKSPACE/out"
       # Merged, releases the pins no longer name are deleted (prune-releases.yml). A pull request opened with this
       # token runs no workflow: the pins are checked where they are read (the web build, the deploy). Where Actions
       # may not open pull requests, the branch is pushed and its link printed.

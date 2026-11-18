@@ -111,7 +111,7 @@ export function table(): string {
 // node targets.ts          the table of what runs where
 // node targets.ts --one    the calls owed and the branches
 // node targets.ts --owed   everything owed, a line each; it ends 1 while anything is (what a release that may owe
-//                          nothing is held to: scripts/release.sh, for ricebox's own line)
+//                          nothing is held to: why/build/release.sh, for ricebox's own line)
 if (typeof process !== 'undefined' && process.argv[1]?.endsWith('/targets.ts')) {
   if (process.argv.includes('--owed')) {
     const list = owed();

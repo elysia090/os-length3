@@ -2,7 +2,7 @@
 # Everything a release of OS Length3 Linux holds, made from this tree, into OUT:
 #
 #   os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst  the root: every package made from this tree's pins by its
-#                                                  recipe (ricebox/distribution/build/packages.sh), with this tree's why (ricebox/distribution/build/assemble.sh)
+#                                                  recipe (ricebox/distribution/build/packages.sh), with this tree's Why CLI (why/build/guest-root.sh)
 #   os-length3-linux-X.Y.Z-webroot.tar               the same root as the browser reads it (webroot.sh), checked
 #                                                  to be the same tree (ricebox/distribution/verification/distribution.ts)
 #   os-length3-linux-X.Y.Z-web.zip                  the web build, with that why (web-release.sh)
@@ -18,17 +18,17 @@
 # one: release.yml proposes them to main. The release itself is made by publish-release.ts (or
 # .github/workflows/release.yml, which runs this script).
 #
-#   sh scripts/release.sh OUT
+#   sh why/build/release.sh OUT
 #
 # The version is ricebox/distribution/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). The root's packages are
 # ROOT_PACKAGES, what ricebox/distribution/build/packages.sh made on Alpine 3.24 (release.yml makes them through the root-packages action and
-# keeps them from release to release; by hand, as the top README says). Needs Rust with the targets
+# keeps them from release to release; see why/docs/operations.md for the manual build). Needs Rust with the targets
 # x86_64-unknown-linux-musl, wasm32-unknown-unknown and wasm32-wasip1, Node 22, musl-gcc, zstd, zip, the Tauri
 # build's packages (libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
 # libgles2), and for the AppImage's smoke test bubblewrap, xvfb and imagemagick.
 set -eu
-here=$(cd "$(dirname "$0")/.." && pwd)
-[ $# -eq 1 ] || { echo "usage: sh scripts/release.sh OUT" >&2; exit 2; }
+here=$(cd "$(dirname "$0")/../.." && pwd)
+[ $# -eq 1 ] || { echo "usage: sh why/build/release.sh OUT" >&2; exit 2; }
 mkdir -p "$1"
 out=$(cd "$1" && pwd)
 version=${VERSION:-$(tr -d ' \n' < "$here/ricebox/distribution/RELEASE")}
