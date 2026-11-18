@@ -272,19 +272,44 @@ async function firstLoad(url: string, assets: string) {
       missingAsset: await page.evaluate(async () => (await fetch('/assets/none-0000.js')).status),
       list: list.map((x) => ({path: new URL(x.url).pathname, status: x.status, bytes: x.bytes, cache: x.cache, encoding: x.encoding})),
       repeat: {} as {requests?: number; revalidated?: number; fromCache?: number; wireBytes?: number}};
-    // Coming back to it: what is asked of the network again, what is answered 304, what comes from the cache.
-    seen.clear();
-    const cached = new Set<string>();
-    cdp.on('Network.requestServedFromCache', (e) => { cached.add(e.requestId); });
-    const fromCache = new Set<string>();
-    cdp.on('Network.responseReceived', (e) => { if (e.response.fromDiskCache || e.response.fromMemoryCache) fromCache.add(e.requestId); });
+    // Measure the return navigation, not the diagnostic fetch above or the blank page.
     await page.goto('about:blank');
+    seen.clear();
+    const cache = new Map<string, {hit: boolean; redirectStatuses: number; hasExtraInfo: boolean; wireStatuses: number[]}>();
+    const cacheState = (id: string) => {
+      let state = cache.get(id);
+      if (!state) cache.set(id, state = {hit: false, redirectStatuses: 0, hasExtraInfo: false, wireStatuses: []});
+      return state;
+    };
+    // Redirects reuse a request ID. `ExtraInfo` can arrive before or after the matching
+    // response, so index its status by the preceding hops that emitted it.
+    cdp.on('Network.requestWillBeSent', (e) => {
+      if (!e.redirectResponse) return;
+      const state = cacheState(e.requestId);
+      if (e.redirectHasExtraInfo && !state.hit) state.redirectStatuses++;
+      state.hit = false;
+    });
+    cdp.on('Network.requestServedFromCache', (e) => { cacheState(e.requestId).hit = true; });
+    cdp.on('Network.responseReceived', (e) => {
+      const state = cacheState(e.requestId);
+      state.hit ||= !!e.response.fromDiskCache;
+      state.hasExtraInfo = e.hasExtraInfo;
+    });
+    cdp.on('Network.responseReceivedExtraInfo', (e) => { cacheState(e.requestId).wireStatuses.push(e.statusCode); });
     await page.goto(url);
     await page.getByRole('navigation', {name: /^(Purposes|目的)$/}).waitFor();
     await page.waitForLoadState('networkidle');
     const again = [...seen.entries()].filter(([, x]) => !x.url.includes('/v1/') && !x.url.includes('/api/'));
-    out.repeat = {requests: again.length, revalidated: again.filter(([, x]) => x.status === 304).length,
-      fromCache: again.filter(([id]) => cached.has(id) || fromCache.has(id)).length, wireBytes: again.reduce((a, [, x]) => a + x.bytes, 0)};
+    let revalidated = 0, fromCache = 0;
+    for (const [id, response] of again) {
+      const state = cache.get(id);
+      // CDP reports a fulfilled conditional request as 200 in responseReceived,
+      // and its actual HTTP status (304) in responseReceivedExtraInfo.
+      const status = (state?.hasExtraInfo ? state.wireStatuses[state.redirectStatuses] : undefined) ?? response.status;
+      if (status === 304) revalidated++;
+      else if (state?.hit) fromCache++;
+    }
+    out.repeat = {requests: again.length, revalidated, fromCache, wireBytes: again.reduce((a, [, x]) => a + x.bytes, 0)};
     say(`first load: ${out.requests} requests (${out.appRequests} app files, ${out.apiRequests} to the Remote), ${out.wireBytes} B over the wire as wrangler serves it; the app's files ${out.appRawBytes} B raw, ${out.appGzipBytes} B gzip, ${out.appBrotliBytes} B brotli; usable in ${out.interactiveMs} ms`);
     say(`  index.html: ${JSON.stringify(out.indexHtml)}  hashed ${out.hashedAsset.path}: ${JSON.stringify({...out.hashedAsset, path: undefined})}  a hashed file not there: ${out.missingAsset}`);
     say(`  coming back: ${JSON.stringify(out.repeat)}`);

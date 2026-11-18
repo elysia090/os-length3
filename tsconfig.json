@@ -16,5 +16,6 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["why/text", "why/agent", "why/api", "why/repo", "why/home", "why/shipto", "why/prompt", "why/device", "why/cowboy", "why/app", "why/test/app/*.ts", "scripts", "ricebox/sods/runtime", "ricebox/sods/test", "ricebox/muk/make", "ricebox/muk/test", "ricebox/distribution/test", "ricebox/distribution/verification", "ricebox/distribution/runtime", "ricebox/distribution/format", "ricebox/distribution/build", "ricebox/distribution/host", "ricebox/distribution/deployment", "ricebox/distribution/integrations", "ricebox/you/make", "ricebox/otter/make", "ricebox/everyday"]
+  "include": ["why/**/*.ts", "ricebox/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["**/node_modules/**", "**/target/**", "**/dist/**", "why/test/app/.dist/**"]
 }

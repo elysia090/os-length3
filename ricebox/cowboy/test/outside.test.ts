@@ -43,7 +43,10 @@ async function run(argv: string[], port: number): Promise<{out: string; status: 
     dialled.push(where);
     const s = connect({host: '127.0.0.1', port});
     s.on('connect', () => heard.opened());
-    s.on('data', (b) => heard.bytes(new Uint8Array(b)));
+    s.on('data', (bytes) => {
+      assert.ok(Buffer.isBuffer(bytes), 'the dial must receive raw socket bytes');
+      heard.bytes(bytes);
+    });
     s.on('end', () => heard.ended());
     s.on('error', () => heard.failed(111));
     return {send: (b) => { s.write(b); }, finish: () => { s.end(); }, close: () => { s.destroy(); }};
