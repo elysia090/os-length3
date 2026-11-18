@@ -53,6 +53,11 @@ For a nonzero request, the existing Store may need to materialize the source
 before it can establish EOF; provisional metadata is not substituted for exact
 source state. A matching cancelled/lost load settles without adopting bytes;
 stale or foreign load evidence retains both holders and the supplied input.
+Starting capability/source work, accepting a loader's bytes and starting the
+first offer require the current exact held invocation in addition to the
+operation's matching identity and open state. A Running image with exit already
+requested does not qualify. Matching stopped evidence still settles the original
+operation and is not gated by permission to start another effect.
 
 Closing and reusing both numeric FDs during a delayed service cannot retarget
 the operation. Its held original source cursor and output endpoint survive;

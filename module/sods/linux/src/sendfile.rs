@@ -277,6 +277,13 @@ impl Sendfile {
             .is_some_and(|c| execution.check(c.snapshot).is_ok())
             && execution.phase() == execution::Phase::Running
     }
+    /// First-work permission is stronger than an unchanged running image.
+    /// Calls check exact operation identity, phase and local closure separately.
+    /// Do not use this to reject stopped receipts for effects already started.
+    fn can_begin_work(&self, execution: &Execution) -> bool {
+        self.capture
+            .is_some_and(|c| execution.check_held_call_live(c.invocation).is_ok())
+    }
     fn identity(&self) -> Result<Identity, Error> {
         Ok(Identity {
             owner: self.owner,
@@ -432,7 +439,7 @@ impl Sendfile {
         if self.phase != Phase::CapReady || self.closed {
             return Err(Error::State);
         }
-        if !self.live(execution) {
+        if !self.can_begin_work(execution) {
             self.closed = true;
             self.result = Some(ResultValue::GuestLost);
             self.cleanup_unstarted(files, domain, execution)?;
@@ -478,8 +485,9 @@ impl Sendfile {
         if self.phase != Phase::CapChecking || self.identity()? != i {
             return Err(Error::State);
         }
-        if self.closed || !self.live(execution) || !receipt.accepted {
-            if !self.live(execution) {
+        let live = self.can_begin_work(execution);
+        if self.closed || !live || !receipt.accepted {
+            if !live {
                 self.closed = true;
                 self.result = Some(ResultValue::GuestLost);
             }
@@ -547,7 +555,7 @@ impl Sendfile {
         if self.phase != Phase::LoadingReady || self.closed {
             return Err(Error::State);
         }
-        if !self.live(execution) {
+        if !self.can_begin_work(execution) {
             self.closed = true;
             self.result = Some(ResultValue::GuestLost);
             self.settle_undispatched_load(files)?;
@@ -597,7 +605,7 @@ impl Sendfile {
         if self.phase != Phase::Loading || self.load != Some(load) {
             return Err(Error::State);
         }
-        let live = self.live(execution);
+        let live = self.can_begin_work(execution);
         let adopt = success && !self.closed && live;
         let result = files.finish_load(
             self.preparation.as_mut().ok_or(Error::State)?,
@@ -639,7 +647,7 @@ impl Sendfile {
         if self.phase != Phase::OfferReady || self.closed || self.viewing {
             return Err(Error::State);
         }
-        if !self.live(execution) {
+        if !self.can_begin_work(execution) {
             self.closed = true;
             self.result = Some(ResultValue::GuestLost);
             self.cleanup_unstarted(files, domain, execution)?;
@@ -990,7 +998,142 @@ mod tests {
             assert!(self.s.load.is_none());
             assert!(!self.s.held_call);
         }
+        fn request_exit(&mut self) {
+            self.e.request_exit(self.invocation, 7).unwrap();
+            assert_eq!(self.e.phase(), execution::Phase::Running);
+        }
+        fn assert_exit_cleanup_without_progress(&mut self, action: Token) {
+            self.assert_released();
+            assert_eq!(self.s.result(), Some(ResultValue::GuestLost));
+            assert_eq!(self.f.offset(&self.t, self.fd), Ok((0, 0)));
+            assert_eq!(self.d.retire(action), Err(lease::Error::UnknownAction));
+            self.e
+                .receipt(&mut self.d, self.invocation, execution::Unwind::Exit)
+                .unwrap();
+            assert_eq!(self.e.status(), Some(7));
+            assert!(self.e.retireable());
+        }
     }
+
+    #[test]
+    fn synthetic_exit_request_before_capability_dispatch_closes_the_ready_call() {
+        let mut h = Harness::new(true, false, 1);
+        h.begin(6);
+        let action = h.token();
+        h.request_exit();
+        let result = h.s.cap_start(&mut h.f, &mut h.d, &mut h.e, 9, action);
+        assert!(
+            matches!(result, Err(Error::Execution(execution::Error::State))),
+            "{result:?}"
+        );
+        h.assert_exit_cleanup_without_progress(action);
+    }
+
+    #[test]
+    fn synthetic_exit_request_during_capability_completion_cannot_prepare_a_source() {
+        let mut h = Harness::new(true, false, 1);
+        h.begin(6);
+        let action = h.token();
+        let request = h.request();
+        h.request_exit();
+        h.s.cap_finish(
+            &mut h.f,
+            &mut h.d,
+            &mut h.e,
+            CapabilityReceipt::synthetic_accepted(request),
+        )
+        .unwrap();
+        h.assert_exit_cleanup_without_progress(action);
+        let mut prep = h.f.begin_read(&h.t, h.fd, 6).unwrap();
+        let load = h.f.prepare_read(&mut prep).unwrap().unwrap();
+        assert_eq!(
+            load.attempt, 1,
+            "capability completion after exit must not start Store"
+        );
+        h.f.finish_load(&mut prep, load.attempt, false, &mut Vec::new())
+            .unwrap();
+        h.f.abort_preparation(prep).unwrap();
+    }
+
+    #[test]
+    fn synthetic_exit_request_before_lazy_dispatch_settles_the_unstarted_store_attempt() {
+        let mut h = Harness::new(true, false, 1);
+        h.begin(6);
+        h.cap();
+        let action = h.token();
+        assert_eq!(h.s.phase(), Phase::LoadingReady);
+        let prior = h.s.load.unwrap();
+        h.request_exit();
+        assert_eq!(
+            h.s.load_start(&mut h.f, &mut h.d, &mut h.e, 9, action),
+            Err(Error::Execution(execution::Error::State))
+        );
+        h.assert_exit_cleanup_without_progress(action);
+        let mut prep = h.f.begin_read(&h.t, h.fd, 6).unwrap();
+        let load = h.f.prepare_read(&mut prep).unwrap().unwrap();
+        assert_ne!(
+            load, prior,
+            "old attempt settled and cannot be redispatched"
+        );
+        h.f.finish_load(&mut prep, load.attempt, false, &mut Vec::new())
+            .unwrap();
+        h.f.abort_preparation(prep).unwrap();
+    }
+
+    #[test]
+    fn synthetic_exit_request_after_lazy_dispatch_adopts_no_bytes_on_matching_stop() {
+        let mut h = Harness::new(true, false, 1);
+        h.begin(6);
+        h.cap();
+        let action = h.token();
+        let load =
+            h.s.load_start(&mut h.f, &mut h.d, &mut h.e, 9, action)
+                .unwrap();
+        h.request_exit();
+        let mut bytes = b"abcdef".to_vec();
+        let stale = LoadRequest {
+            attempt: load.attempt + 1,
+            ..load
+        };
+        assert_eq!(
+            h.s.load_finish(&mut h.f, &mut h.d, &mut h.e, 9, action, stale, true, &mut bytes),
+            Err(Error::State)
+        );
+        assert_eq!(h.s.phase(), Phase::Loading);
+        assert_eq!(bytes, b"abcdef");
+        assert_eq!(h.f.set_offset(&h.t, h.fd, 0), Err(descriptor::Error::Busy));
+        h.s.load_finish(
+            &mut h.f, &mut h.d, &mut h.e, 9, action, load, true, &mut bytes,
+        )
+        .unwrap();
+        assert_eq!(
+            bytes, b"abcdef",
+            "stopped after exit cannot give Store new bytes"
+        );
+        h.assert_exit_cleanup_without_progress(action);
+        let mut prep = h.f.begin_read(&h.t, h.fd, 6).unwrap();
+        let next = h.f.prepare_read(&mut prep).unwrap().unwrap();
+        assert_ne!(load, next);
+        h.f.finish_load(&mut prep, next.attempt, false, &mut Vec::new())
+            .unwrap();
+        h.f.abort_preparation(prep).unwrap();
+    }
+
+    #[test]
+    fn synthetic_exit_request_after_materialization_cannot_start_a_first_offer() {
+        let mut h = Harness::new(false, false, 0);
+        h.begin(6);
+        h.cap();
+        let action = h.token();
+        assert_eq!(h.s.phase(), Phase::OfferReady);
+        h.request_exit();
+        assert_eq!(
+            h.s.start(&mut h.f, &mut h.d, &mut h.e, 9, action),
+            Err(Error::Execution(execution::Error::State))
+        );
+        h.assert_exit_cleanup_without_progress(action);
+    }
+
     #[test]
     fn synthetic_capture_both_fd_reuse_during_lazy_load_commits_only_original_prefix() {
         let mut h = Harness::new(true, false, 0);
