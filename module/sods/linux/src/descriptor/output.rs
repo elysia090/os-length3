@@ -7,8 +7,10 @@ use std::num::{NonZeroU64, NonZeroUsize};
 pub(crate) mod capture;
 #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
 mod receive;
-#[cfg(test)]
+#[cfg(any(test, feature = "queued-worker-probe"))]
 mod sink;
+#[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+pub(crate) use sink::{Evidence as SinkEvidence, Outcome as SinkOutcome};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Error {
@@ -23,7 +25,7 @@ pub(crate) enum Error {
     Length,
     ReceiverNotEmpty,
     ReceiverCapacity,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "queued-worker-probe"))]
     ExternalHead,
 }
 impl From<FilesError> for Error {
@@ -211,13 +213,13 @@ enum Chunk {
     // cannot be released or reused until this record is removed.
     Pinned(usize),
     Copied(Vec<u8>),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "queued-worker-probe"))]
     Escrowed(NonZeroUsize),
 }
 enum HeadBytes<'a> {
     Pinned { pin: usize, prefix: &'a ReadPrefix },
     Copied(&'a [u8]),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "queued-worker-probe"))]
     Escrowed(NonZeroUsize),
 }
 impl<'a> HeadBytes<'a> {
@@ -225,7 +227,7 @@ impl<'a> HeadBytes<'a> {
         match self {
             Self::Pinned { prefix, .. } => prefix.length,
             Self::Copied(bytes) => NonZeroUsize::new(bytes.len()).expect("nonempty copied entry"),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "queued-worker-probe"))]
             Self::Escrowed(length) => *length,
         }
     }
@@ -233,7 +235,7 @@ impl<'a> HeadBytes<'a> {
         Ok(match self {
             Self::Pinned { prefix, .. } => files.prefix_bytes(prefix)?,
             Self::Copied(bytes) => bytes,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "queued-worker-probe"))]
             Self::Escrowed(_) => return Err(Error::ExternalHead),
         })
     }
@@ -256,7 +258,7 @@ impl Head<'_> {
             pin: match self.bytes {
                 HeadBytes::Pinned { pin, .. } => Some(pin),
                 HeadBytes::Copied(_) => None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "queued-worker-probe"))]
                 HeadBytes::Escrowed(_) => None,
             },
             next: self.next,
@@ -276,7 +278,7 @@ struct Queue {
     byte_limit: usize,
     used: usize,
     closed: bool,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "queued-worker-probe"))]
     external: sink::Drain,
 }
 impl Queue {
@@ -290,7 +292,7 @@ impl Queue {
             byte_limit: limits.bytes,
             used: 0,
             closed: false,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "queued-worker-probe"))]
             external: sink::Drain::default(),
         })
     }
@@ -574,7 +576,7 @@ impl Queue {
                 }
             }
             Chunk::Copied(bytes) => HeadBytes::Copied(bytes),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "queued-worker-probe"))]
             Chunk::Escrowed(length) => HeadBytes::Escrowed(*length),
         };
         Some(Head {
@@ -631,7 +633,7 @@ impl Queue {
         let Some(head) = Self::head(self.head, &self.entries, &self.pins) else {
             return false;
         };
-        #[cfg(test)]
+        #[cfg(any(test, feature = "queued-worker-probe"))]
         if matches!(head.bytes, HeadBytes::Escrowed(_)) {
             return false;
         }
@@ -910,6 +912,8 @@ pub(crate) struct QueueProbe {
     registry: LaneRegistry,
     producers: [Producer; 2],
     consumers: [Consumer; 2],
+    #[cfg(feature = "queued-worker-probe")]
+    sink_lane: Option<u32>,
 }
 #[cfg(feature = "queued-output-probe")]
 #[derive(Debug, PartialEq, Eq)]
@@ -917,6 +921,7 @@ pub(crate) enum QueueProbeError {
     Capacity,
     Range,
     Owner,
+    Busy,
 }
 #[cfg(feature = "queued-output-probe")]
 impl From<Error> for QueueProbeError {
@@ -924,6 +929,8 @@ impl From<Error> for QueueProbeError {
         match error {
             Error::Capacity | Error::Full => Self::Capacity,
             Error::Length => Self::Range,
+            #[cfg(any(test, feature = "queued-worker-probe"))]
+            Error::ExternalHead => Self::Busy,
             _ => Self::Owner,
         }
     }
@@ -947,6 +954,8 @@ impl QueueProbe {
             registry,
             producers: [a, b],
             consumers: [read_a, read_b],
+            #[cfg(feature = "queued-worker-probe")]
+            sink_lane: None,
         })
     }
     pub(crate) fn stdio(&self, files: &mut Files, limit: u32) -> Result<Table, QueueProbeError> {
@@ -1046,6 +1055,10 @@ impl QueueProbe {
         files: &mut Files,
         lane: usize,
     ) -> Result<bool, QueueProbeError> {
+        #[cfg(feature = "queued-worker-probe")]
+        if self.sink_lane.map(|selected| selected as usize) == Some(lane) {
+            return Err(QueueProbeError::Busy);
+        }
         let consumer = self.consumers.get(lane).ok_or(QueueProbeError::Range)?;
         Ok(self.registry.reader(files, consumer)?.discard_front())
     }

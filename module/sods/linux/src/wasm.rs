@@ -356,6 +356,7 @@ fn queue_probe_error(error: descriptor::QueueProbeError) -> i32 {
         descriptor::QueueProbeError::Capacity => -1,
         descriptor::QueueProbeError::Range => -5,
         descriptor::QueueProbeError::Owner => -10,
+        descriptor::QueueProbeError::Busy => -4,
     }
 }
 /// Diagnostic-only admission under the synthetic artifact sentinel. The normal

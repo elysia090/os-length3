@@ -1,8 +1,8 @@
-//! Native experiment for an exact external head. The filesystem Core keeps the
+//! Private ledger for an exact external head. The filesystem Core keeps the
 //! ordering/credit frontier; a separate owner holds the copied payload. The
 //! methods neither install a host handle nor manufacture stop evidence.
 
-use super::{Chunk, Entry, Error, HeadBytes, Key, Queue, Reader, Ticket};
+use super::{Chunk, Entry, Error, HeadBytes, Queue, Reader, Removal, Ticket};
 use crate::effect::{Action, Completion, Token};
 use std::num::NonZeroUsize;
 use std::ops::Range;
@@ -32,40 +32,43 @@ impl Drain {
 /// Host-owned backing in the native witness. Host transport must separately
 /// retain the matching owner object for every issued but unresolved offer.
 #[derive(Debug)]
+#[cfg(test)]
 struct Payload {
     head: Ticket,
     bytes: Vec<u8>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Attempt {
-    head: Ticket,
-    action: Token,
+pub(super) struct Attempt {
+    pub(super) head: Ticket,
+    pub(super) action: Token,
 }
 #[must_use = "an issued effect owns its offer until an exact receipt"]
-struct Offer {
-    id: Attempt,
-    range: Range<usize>,
+pub(super) struct Offer {
+    pub(super) id: Attempt,
+    pub(super) range: Range<usize>,
 }
+#[cfg(test)]
 impl Offer {
     fn bytes(self, payload: &Payload) -> Option<&[u8]> {
         (self.id.head == payload.head).then(|| &payload.bytes[self.range])
     }
 }
 #[derive(Clone, Copy, Debug)]
-enum Evidence {
+pub(crate) enum Evidence {
     Unknown,
     AccessEnded,
     EffectsStopped,
     AccessAndEffectsEnded,
 }
 #[derive(Debug, PartialEq, Eq)]
-enum Outcome {
+pub(crate) enum Outcome {
     Waiting,
     Suffix(Range<usize>),
     Complete,
 }
 
 impl Reader<'_> {
+    #[cfg(test)]
     fn handoff_to_sink(&mut self, mut buffer: Vec<u8>) -> Result<Payload, (Error, Vec<u8>)> {
         let q = &mut self.queue;
         if q.external.held.is_some() {
@@ -87,15 +90,19 @@ impl Reader<'_> {
             Err(error) => return Err((error, buffer)),
         };
         buffer.extend_from_slice(bytes);
-        let key = Key {
-            index: to_escrow.index,
-            generation: q.entries.cells[to_escrow.index].generation,
-        };
-        let head = Ticket {
-            destination: q.id,
-            key,
-        };
-        let Entry::Queued { chunk, .. } = q.entries.live_mut(key.index) else {
+        let head = self.escrow(to_escrow, length);
+        Ok(Payload {
+            head,
+            bytes: buffer,
+        })
+    }
+
+    /// After exact, stopped copy; the caller ensures the external allocation
+    /// is retained and that this removal names the current non-escrowed head.
+    pub(super) fn escrow(&mut self, to_escrow: Removal, length: NonZeroUsize) -> Ticket {
+        let q = &mut self.queue;
+        let head = q.front_ticket(to_escrow.index);
+        let Entry::Queued { chunk, .. } = q.entries.live_mut(to_escrow.index) else {
             unreachable!("own frontier");
         };
         *chunk = Chunk::Escrowed(length);
@@ -109,18 +116,20 @@ impl Reader<'_> {
             was_stopped: false,
             attempt: None,
         });
-        Ok(Payload {
-            head,
-            bytes: buffer,
-        })
+        head
     }
 
+    #[cfg(test)]
     fn offer(&mut self, payload: &Payload) -> Result<Offer, Error> {
+        self.offer_head(payload.head)
+    }
+
+    pub(super) fn offer_head(&mut self, head: Ticket) -> Result<Offer, Error> {
         let drain = &mut self.queue.external;
         let held = drain
             .held
             .as_mut()
-            .filter(|h| h.head == payload.head && h.attempt.is_none())
+            .filter(|h| h.head == head && h.attempt.is_none())
             .ok_or(Error::ExternalHead)?;
         let range = held.confirmed..held.length.get();
         let mut action = self
@@ -137,7 +146,7 @@ impl Reader<'_> {
         Ok(Offer { id, range })
     }
 
-    fn cancel_offer(&mut self, id: Attempt) -> Result<(), Error> {
+    pub(super) fn cancel_offer(&mut self, id: Attempt) -> Result<(), Error> {
         let held = self.queue.external.active(id)?;
         held.attempt
             .as_mut()
@@ -147,7 +156,7 @@ impl Reader<'_> {
         Ok(())
     }
 
-    fn sink_receipt(
+    pub(super) fn sink_receipt(
         &mut self,
         id: Attempt,
         confirmed: usize,
@@ -179,27 +188,44 @@ impl Reader<'_> {
         Ok(Outcome::Suffix(confirmed..held.length.get()))
     }
 
+    #[cfg(test)]
     fn discard_suffix(&mut self, payload: &Payload) -> Result<usize, Error> {
+        self.discard_suffix_head(payload.head)
+    }
+
+    pub(super) fn discard_suffix_head(&mut self, head: Ticket) -> Result<usize, Error> {
         let held = self
             .queue
             .external
             .held
             .as_ref()
-            .filter(|h| h.head == payload.head && h.was_stopped && h.attempt.is_none())
+            .filter(|h| h.head == head && h.was_stopped && h.attempt.is_none())
             .ok_or(Error::ExternalHead)?;
         let discarded = held.length.get() - held.confirmed;
-        self.remove_external(payload.head);
+        self.remove_external(head);
         Ok(discarded)
     }
 
     fn remove_external(&mut self, ticket: Ticket) {
         let q = &mut self.queue;
         let head = Queue::head(q.head, &q.entries, &q.pins).expect("owned frontier");
-        assert_eq!(head.index, ticket.key.index);
+        assert_eq!(q.front_ticket(head.index), ticket);
         assert!(matches!(head.bytes, HeadBytes::Escrowed(_)));
         let removal = head.removal(q.used, head.bytes.len());
         q.remove_head(removal);
         q.external.held = None;
+    }
+}
+
+impl Queue {
+    pub(super) fn front_ticket(&self, index: usize) -> Ticket {
+        Ticket {
+            destination: self.id,
+            key: super::Key {
+                index,
+                generation: self.entries.cells[index].generation,
+            },
+        }
     }
 }
 

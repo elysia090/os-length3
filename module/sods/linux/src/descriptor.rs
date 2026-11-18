@@ -33,6 +33,8 @@ mod output;
 pub(crate) use output::{QueueProbe, QueueProbeError};
 #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
 pub(crate) use output::capture;
+#[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+pub(crate) use output::{SinkEvidence, SinkOutcome};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Id {
@@ -389,7 +391,7 @@ pub(crate) struct Files {
     next_read_reservation: Option<NonZeroU64>,
     #[cfg(any(test, feature = "queued-output-probe"))]
     next_output_registry: Option<NonZeroU64>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "queued-worker-probe"))]
     output_effects: crate::effect::Issuer,
 }
 fn prepare<T>(arena: &mut Vec<Cell<T>>, cap: usize, owner: u64) -> Result<Id, Error> {
@@ -457,7 +459,7 @@ impl Files {
             next_read_reservation: Some(NonZeroU64::MIN),
             #[cfg(any(test, feature = "queued-output-probe"))]
             next_output_registry: Some(NonZeroU64::MIN),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "queued-worker-probe"))]
             output_effects: crate::effect::Issuer::new(owner),
         }
     }

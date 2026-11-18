@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
@@ -62,6 +62,9 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   }
   for (const name of ['head', 'start', 'finish']) {
     assert.equal(Object.hasOwn(e, `linux_queued_worker_probe_receive_${name}`), workerQueue);
+  }
+  for (const name of ['bind', 'head', 'copy_start', 'offer', 'receipt', 'cancel', 'discard', 'shutdown']) {
+    assert.equal(Object.hasOwn(e, `linux_queued_worker_probe_sink_${name}`), workerQueue);
   }
   if (probe) assert.equal(call('linux_sendfile_probe'), 1);
   assert.equal(call('linux_init', 16, 64), 0);
@@ -168,8 +171,10 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     assert.equal(call('linux_read_receipt', read, 0n, 0), 0); // Observe without advancing its cursor.
     assert.equal(call('linux_read_retire', read), 0); return value;
   };
+  const transfer = captureTransfer({e, call, result, length, auxiliary});
   return {wasm, module, e, call, result, state, length, auxiliary, endpoint, command, put,
-    receive: captureReceiver({e, call, result, length, auxiliary}),
+    receive: (lane: number, limit?: number) => transfer(lane, false, limit)?.bytes,
+    transferForSink: (lane: number) => transfer(lane, true),
     stageStartup, live, request, openReady, capturePath, open, begin, capStart, capFinish, qualify, start, finish, genericBlocked, remaining};
 }
 
@@ -810,22 +815,27 @@ type CaptureCore = {
   auxiliary(): bigint;
 };
 
+type CaptureRecord = {head: bigint; generation: bigint; bytes: Uint8Array<ArrayBuffer>};
+
 // Private diagnostic adapter bound to one Core (including any other lane). No
 // callback, await or other Core call receives the raw view or the local copy.
-function captureReceiver(r: CaptureCore) {
+function captureTransfer(r: CaptureCore) {
   const memory = r.e.memory as WebAssembly.Memory;
-  let poisoned = false;
-  return (lane: number, limit = 4): Uint8Array<ArrayBuffer> | undefined => {
-    if (poisoned) throw new Error('Capture receiver has unresolved Core access');
-    assert.equal(r.call('linux_queued_worker_probe_receive_head', lane), 0);
+  let unresolved: CaptureRecord | undefined;
+  return (lane: number, sink: boolean, limit = 4): CaptureRecord | undefined => {
+    if (unresolved) throw new Error('Capture receiver has unresolved Core access');
+    const route = sink ? 'sink' : 'receive';
+    assert.equal(r.call(`linux_queued_worker_probe_${route}_head`, lane), 0);
     const generation = r.result(), head = r.auxiliary(), length = Number(r.length());
     if (generation === 0n) return undefined; // Temporary empty, not EOF.
     assert.ok(length >= 1 && length <= limit, 'Capture receiver has insufficient capacity');
     const output = new FixtureBytes(length); // The one final allocation, before start.
-    poisoned = true; // A thrown start or finish can be ambiguous. Do not replay.
-    const start = r.call('linux_queued_worker_probe_receive_start', lane, head, generation);
+    const record = {head, generation, bytes: output};
+    unresolved = record; // Keep allocation on ambiguous start/finish. Do not replay.
+    const whichStart = sink ? 'sink_copy_start' : 'receive_start';
+    const start = r.call(`linux_queued_worker_probe_${whichStart}`, lane, head, generation);
     if (start !== 0) {
-      poisoned = false; // Known rejection, no loan issued.
+      unresolved = undefined; // Known rejection, no loan issued.
       throw new Error(`Capture receiver start: ${start}`);
     }
     const attempt = r.auxiliary(), pointer = Number(r.result());
@@ -837,13 +847,13 @@ function captureReceiver(r: CaptureCore) {
     } catch (error) {
       // The trusted lexical source view cannot survive synchronous unwind.
       assert.equal(r.call(finish, attempt, 1, 0), 0);
-      poisoned = false;
+      unresolved = undefined;
       throw error;
     }
     assert.equal(r.call(finish, attempt, 0, length), 0);
     assert.equal(r.result(), BigInt(length));
-    poisoned = false;
-    return output;
+    unresolved = undefined;
+    return record;
   };
 }
 
@@ -855,7 +865,7 @@ test('strong capture probe receiver never publishes or retries an ambiguous rece
     assert.equal(r.call('linux_queued_output_probe_publish', owner.id, owner.invocation, Number(fd), lane, 1), 0);
   }
   let finishes = 0;
-  const receive = captureReceiver({...r, call(name, ...args) {
+  const receive = captureTransfer({...r, call(name, ...args) {
     const status = r.call(name, ...args);
     if (name === 'linux_queued_worker_probe_receive_finish') {
       assert.equal(status, 0);
@@ -864,14 +874,188 @@ test('strong capture probe receiver never publishes or retries an ambiguous rece
     }
     return status;
   }});
-  assert.throws(() => receive(0), /outcome unavailable/);
-  assert.throws(() => receive(0), /unresolved/);
-  assert.throws(() => receive(1), /unresolved/);
+  assert.throws(() => receive(0, false), /outcome unavailable/);
+  assert.throws(() => receive(0, false), /unresolved/);
+  assert.throws(() => receive(1, false), /unresolved/);
   assert.equal(finishes, 1);
   // Raw diagnostic only; the poisoned adapter cannot infer the lost result
   // from empty or attempt to deliver the still-present other lane.
   assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.equal(r.length(), 0n);
   assert.equal(r.call('linux_queued_output_probe_peek', 1, 0), 0); assert.equal(r.result(), 98n);
+});
+
+test('strong capture probe sink keeps its escrowed frontier after full uncertain progress', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, false, true, true);
+  const bind = 'linux_queued_worker_probe_sink_bind', head = 'linux_queued_worker_probe_sink_head';
+  const start = 'linux_queued_worker_probe_sink_copy_start', offer = 'linux_queued_worker_probe_sink_offer';
+  const finish = 'linux_queued_worker_probe_receive_finish', receipt = 'linux_queued_worker_probe_sink_receipt';
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  assert.equal(r.call(bind, 0), 0);
+  assert.ok(r.call(bind, 1) < 0, 'a second physical owner may not substitute itself');
+  const owner = r.live(true), fd = r.open(owner);
+  for (const [lane, length] of [[0, 2], [1, 1]] as const) {
+    assert.equal(r.call('linux_queued_output_probe_publish', owner.id, owner.invocation, Number(fd), lane, length), 0);
+  }
+  assert.equal(r.call('linux_queued_worker_probe_write', owner.id, owner.invocation, ++owner.sequence, 1n, 32n, 1n), 0);
+  const write = r.result();
+  assert.equal(r.call('linux_queued_worker_probe_start', owner.id, owner.sequence, write), 0);
+  new FixtureBytes((r.e.memory as WebAssembly.Memory).buffer, Number(r.result()), 1)[0] = 100;
+  assert.equal(r.call('linux_queued_worker_probe_finish', owner.id, owner.sequence, write, 0, 1), 0);
+  assert.equal(r.call('linux_queued_worker_probe_receive_head', 0), -4);
+  assert.equal(r.call('linux_queued_output_probe_discard', 0), -4);
+  assert.deepEqual(r.receive(1), bytes('c'));
+  assert.equal(r.call(head, 0), 0);
+  const stamp = r.auxiliary(), generation = r.result(), size = Number(r.length());
+  const output = new FixtureBytes(size), memory = r.e.memory as WebAssembly.Memory;
+  assert.equal(r.call(start, 0, stamp, generation), 0);
+  const view = r.auxiliary(), pointer = Number(r.result());
+  fixtureApply(fixtureSet, output, [new FixtureBytes(fixtureApply(fixtureMemoryBuffer, memory, []), pointer, size)]);
+  assert.equal(r.call(finish, view, 0, size), 0);
+  assert.equal(r.result(), BigInt(size));
+  assert.deepEqual(output, bytes('ab'));
+  assert.equal(r.call(head, 0), -4, 'escrow is not empty or the next record');
+  assert.equal(r.call(offer, 0, stamp, generation), 0);
+  const action = r.result();
+  assert.deepEqual([r.auxiliary(), r.length()], [0n, 2n]);
+  assert.equal(r.call('linux_queued_worker_probe_sink_cancel', 0, stamp, generation, action), 0);
+  assert.equal(r.call(receipt, 0, stamp, generation, action, 2, 1), 0, 'unknown at full has no terminal permission');
+  assert.equal(r.state(), 0);
+  assert.equal(r.call('linux_run_receipt', owner.id, owner.invocation, 2, 0n), 0, 'independent producer can stop');
+  assert.equal(r.call('linux_execution_retire', owner.id), 0); assert.equal(r.result(), 1n);
+  assert.equal(r.call(offer, 0, stamp, generation), -4);
+  assert.equal(r.call('linux_queued_output_probe_discard', 0), -4);
+  assert.equal(r.call('linux_queued_worker_probe_sink_discard', 0, stamp, generation), -4);
+  assert.equal(r.call('linux_queued_worker_probe_sink_shutdown', 0), 0);
+  assert.equal(r.result(), 0n, 'admission closure does not close the handle or clear the frontier');
+  for (const oneSide of [2, 3]) {
+    assert.equal(r.call(receipt, 0, stamp, generation, action, 2, oneSide), 0);
+    assert.equal(r.state(), 0);
+  }
+  assert.equal(r.call(receipt, 0, stamp, generation, action, 1, 0), -4, 'progress cannot recede');
+  assert.equal(r.call(receipt, 0, stamp, generation, action, 2, 0), 0);
+  assert.equal(r.state(), 2);
+  assert.equal(r.call(receipt, 0, stamp, generation, action, 2, 0), -4);
+  assert.equal(r.call(head, 0), 0);
+  assert.equal(r.length(), 1n);
+});
+
+test('strong capture probe sink shutdown distinguishes empty from a live producer reservation', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, false, true, true);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  assert.equal(r.call('linux_queued_worker_probe_sink_bind', 0), 0);
+  const owner = r.live(true);
+  assert.equal(r.call('linux_queued_worker_probe_write', owner.id, owner.invocation, ++owner.sequence, 1n, 32n, 1n), 0);
+  const action = r.result();
+  assert.equal(r.call('linux_queued_worker_probe_sink_head', 0), 0);
+  assert.equal(r.length(), 0n, 'no published head yet');
+  assert.equal(r.call('linux_queued_worker_probe_sink_shutdown', 0), 0);
+  assert.equal(r.result(), 0n, 'outstanding reservation precludes drained certificate');
+  assert.ok(r.call('linux_queued_worker_probe_start', owner.id, owner.sequence, action) < 0,
+    'after closure not even the earlier reservation starts its guest copy');
+  assert.equal(r.call('linux_run_receipt', owner.id, owner.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_syscall_abandon', owner.id), 0);
+  assert.equal(r.call('linux_execution_retire', owner.id), 0); assert.equal(r.result(), 1n);
+  assert.equal(r.call('linux_queued_worker_probe_sink_shutdown', 0), 0);
+  assert.equal(r.result(), 1n);
+});
+
+// Owns the only file handle and final byte allocation for a bound Core/lane.
+// Exposing a number/Buffer to another caller would invalidate this witness.
+// The private test knobs bound one actual call and withhold its known receipt.
+function ownedNodeSink(r: ReturnType<typeof raw>, lane: number, path: string) {
+  const fd = openSync(path, 'wx', 0o600);
+  try { assert.equal(r.call('linux_queued_worker_probe_sink_bind', lane), 0); }
+  catch (error) { closeSync(fd); throw error; }
+  let pending: CaptureRecord | undefined;
+  let active: {action: bigint; stoppedAt?: number} | undefined;
+  let ambiguous = false, closed = false;
+
+  const report = (record: CaptureRecord, action: bigint, boundary: number, proof: number) => {
+    // A trap after Core accepted the receipt cannot authorize replay or a new
+    // effect. Leave both the allocation and native handle in this owner.
+    ambiguous = true;
+    assert.equal(r.call('linux_queued_worker_probe_sink_receipt', lane, record.head, record.generation,
+      action, boundary, proof), 0);
+    const state = r.state();
+    assert.ok(state === 0 || state === 1 || state === 2);
+    ambiguous = false;
+    return state;
+  };
+  const acknowledge = () => {
+    if (ambiguous || !pending || !active || active.stoppedAt === undefined) throw new Error('No exact stopped Node receipt');
+    const state = report(pending, active.action, active.stoppedAt, 0);
+    assert.ok(state === 1 || state === 2);
+    active = undefined;
+    if (state === 2) pending = undefined;
+    return state === 2 ? 'complete' as const : 'suffix' as const;
+  };
+
+  return {
+    writeOne(limit = 4, withholdStopped = false) {
+      if (closed || ambiguous || active) throw new Error('Node sink has an unresolved or closed offer');
+      assert.ok(Number.isSafeInteger(limit) && limit > 0);
+      if (!pending) {
+        ambiguous = true;
+        pending = r.transferForSink(lane);
+        ambiguous = false;
+      }
+      if (!pending) return 'empty' as const;
+      ambiguous = true;
+      assert.equal(r.call('linux_queued_worker_probe_sink_offer', lane, pending.head, pending.generation), 0);
+      const action = r.result(), begin = Number(r.auxiliary()), end = Number(r.length());
+      assert.ok(begin >= 0 && begin < end && end === pending.bytes.length);
+      active = {action};
+      ambiguous = false;
+      let count: number;
+      try { count = writeSync(fd, pending.bytes, begin, Math.min(end - begin, limit)); }
+      catch (error) {
+        assert.equal(report(pending, action, begin, 1), 0);
+        throw error; // No guessed stopped evidence, no retry and no handle close.
+      }
+      // Real synchronous return, not a cancellation or Worker-exit guess.
+      active.stoppedAt = begin + count;
+      if (!withholdStopped) return acknowledge();
+      assert.equal(report(pending, action, active.stoppedAt, 1), 0);
+      return 'waiting' as const;
+    },
+    acknowledge,
+    closeIfDrained() {
+      if (closed) return true;
+      if (ambiguous) throw new Error('Cannot close an unresolved Node sink');
+      ambiguous = true;
+      assert.equal(r.call('linux_queued_worker_probe_sink_shutdown', lane), 0);
+      if (r.result() === 0n) { ambiguous = false; return false; }
+      assert.equal(r.result(), 1n);
+      assert.equal(pending, undefined);
+      assert.equal(active, undefined);
+      closeSync(fd);
+      closed = true;
+      ambiguous = false;
+      return true;
+    },
+  };
+}
+
+test('strong capture probe real Node sink writes a new absolute suffix without replay', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, false, true, true);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  const directory = mkdtempSync(join(tmpdir(), 'sods-private-sink-'));
+  const path = join(directory, 'output');
+  const sink = ownedNodeSink(r, 0, path);
+  const owner = r.live(), fd = r.open(owner);
+  assert.equal(r.call('linux_queued_output_probe_publish', owner.id, owner.invocation, Number(fd), 0, 4), 0);
+  assert.equal(sink.writeOne(2, true), 'waiting');
+  assert.deepEqual(new Uint8Array(readFileSync(path)), bytes('ab'));
+  assert.throws(() => sink.writeOne(), /unresolved/);
+  assert.equal(sink.closeIfDrained(), false, 'effects at the sink do not permit a close while unconfirmed');
+  assert.equal(sink.acknowledge(), 'suffix');
+  assert.equal(sink.closeIfDrained(), false, 'a stopped partial suffix is still owned');
+  assert.equal(sink.writeOne(), 'complete');
+  assert.equal(sink.writeOne(), 'empty');
+  assert.ok(r.call('linux_queued_output_probe_publish', owner.id, owner.invocation, Number(fd), 0, 2) < 0);
+  assert.equal(sink.closeIfDrained(), true);
+  try { assert.deepEqual(new Uint8Array(readFileSync(path)), bytes('abcd')); }
+  finally { rmSync(directory, {recursive: true, force: true}); }
 });
 
 let compiledCapture: {elf: Uint8Array<ArrayBuffer>; translator: WebAssembly.Module; sha: string} | undefined;
@@ -1121,8 +1305,10 @@ for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-whi
   });
 }
 
-for (const useCurrent of [false, true]) for (const stopBeforeFileReply of [false, true]) {
-  test(`real Node Worker capture fixture: ${useCurrent ? 'current-source translated ' : ''}same lane ${stopBeforeFileReply ? 'AB then observed stop before file reply' : 'write, resident sendfile, write yields ABC'}`, {
+for (const [useCurrent, stopBeforeFileReply, withSink] of [
+  [false, false, false], [false, true, false], [true, false, false], [true, true, false], [true, false, true],
+] as const) {
+  test(`real Node Worker capture fixture: ${useCurrent ? 'current-source translated ' : ''}same lane ${stopBeforeFileReply ? 'AB then observed stop before file reply' : withSink ? 'ABC reaches the owned Node file only through exact sink settlement' : 'write, resident sendfile, write yields ABC'}`, {
     skip: useCurrent ? currentMixedSkip : workerQueueSkip, timeout: 30_000,
   }, async t => {
     const current = useCurrent ? currentCaptureProgram() : undefined;
@@ -1134,8 +1320,14 @@ for (const useCurrent of [false, true]) for (const stopBeforeFileReply of [false
     const onAbort = () => bridge.requestStop();
     t.signal.addEventListener('abort', onAbort, {once: true});
     let attemptedImageReceipt = false;
+    let sinkDirectory: string | undefined;
+    let sink: ReturnType<typeof ownedNodeSink> | undefined;
     try {
       await bridge.ready;
+      if (withSink) {
+        sinkDirectory = mkdtempSync(join(tmpdir(), 'sods-worker-sink-'));
+        sink = ownedNodeSink(r, 0, join(sinkDirectory, 'output'));
+      }
       let owner: Owner;
       const entry = prepared?.entry ?? 4096n;
       if (prepared) {
@@ -1229,16 +1421,28 @@ for (const useCurrent of [false, true]) for (const stopBeforeFileReply of [false
       }
       assert.equal(bridge.diagnostics().exited, true);
       assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
-      const received: Uint8Array[] = [];
-      for (const expected of stopBeforeFileReply ? ['A', 'B'] : ['A', 'B', 'C']) {
-        const buffer = r.receive(0);
-        assert.deepEqual(buffer, bytes(expected));
-        assert.notEqual(buffer?.buffer, core.buffer, 'the exposed result is not the borrowed Core memory');
-        received.push(buffer!);
+      if (sink) {
+        assert.equal(sink.writeOne(1, true), 'waiting');
+        assert.deepEqual(new Uint8Array(readFileSync(join(sinkDirectory!, 'output'))), bytes('A'));
+        assert.equal(sink.closeIfDrained(), false, 'observed Worker exit is not sink stop');
+        assert.equal(sink.acknowledge(), 'complete');
+        assert.equal(sink.writeOne(), 'complete');
+        assert.equal(sink.writeOne(), 'complete');
+        assert.equal(sink.writeOne(), 'empty');
+        assert.equal(sink.closeIfDrained(), true);
+        assert.deepEqual(new Uint8Array(readFileSync(join(sinkDirectory!, 'output'))), bytes('ABC'));
+      } else {
+        const received: Uint8Array[] = [];
+        for (const expected of stopBeforeFileReply ? ['A', 'B'] : ['A', 'B', 'C']) {
+          const buffer = r.receive(0);
+          assert.deepEqual(buffer, bytes(expected));
+          assert.notEqual(buffer?.buffer, core.buffer, 'the exposed result is not the borrowed Core memory');
+          received.push(buffer!);
+        }
+        assert.equal(r.receive(0), undefined);
+        assert.equal(r.receive(1), undefined);
+        assert.equal(received.map(value => new TextDecoder().decode(value)).join(''), stopBeforeFileReply ? 'AB' : 'ABC');
       }
-      assert.equal(r.receive(0), undefined);
-      assert.equal(r.receive(1), undefined);
-      assert.equal(received.map(value => new TextDecoder().decode(value)).join(''), stopBeforeFileReply ? 'AB' : 'ABC');
       if (current) t.diagnostic(JSON.stringify({translatorSha256: current.sha, elfBytes: current.elf.length,
         elfSha256: createHash('sha256').update(current.elf).digest('hex'), entry: String(entry),
         stack: 'Rust-created, guest checked argc and first byte of argv0'}));
@@ -1255,6 +1459,7 @@ for (const useCurrent of [false, true]) for (const stopBeforeFileReply of [false
         // creation is not an exit receipt: request cancellation and retain.
         assert.equal(r.call('linux_startup_cancel', prepared.id), 0); assert.equal(r.result(), 0n);
       }
+      if (sinkDirectory && (!sink || sink.closeIfDrained())) rmSync(sinkDirectory, {recursive: true, force: true});
     }
   });
 }

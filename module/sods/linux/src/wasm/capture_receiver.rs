@@ -1,6 +1,7 @@
 //! Trusted diagnostic relay only; the normal host rejects this artifact.
 //! Successful settlement means one independently owned host copy, not I/O.
 use super::{queue_probe_error, with_state, with_state_access, Access};
+use crate::descriptor::{SinkEvidence, SinkOutcome};
 
 #[derive(Default)]
 pub(super) struct Receiver {
@@ -13,6 +14,7 @@ struct View {
     generation: u64,
     length: u32,
     uncertain: bool,
+    sink: bool,
 }
 impl Receiver {
     pub(super) fn blocks(&self, access: Access) -> bool {
@@ -22,11 +24,20 @@ impl Receiver {
 
 #[no_mangle]
 pub extern "C" fn linux_queued_worker_probe_receive_head(lane: u32) -> i32 {
+    head(lane, false)
+}
+
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sink_head(lane: u32) -> i32 {
+    head(lane, true)
+}
+
+fn head(lane: u32, sink: bool) -> i32 {
     with_state(false, |s| {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let q = r.queue_probe.as_mut().ok_or(-9)?;
         let Some((head, generation, length)) = q
-            .receive_head(&mut r.files, lane)
+            .receive_head(&mut r.files, lane, sink)
             .map_err(queue_probe_error)?
         else {
             return Ok(0); // Temporary empty; not EOF or stopped.
@@ -43,12 +54,25 @@ pub extern "C" fn linux_queued_worker_probe_receive_start(
     head: u64,
     generation: u64,
 ) -> i32 {
+    start(lane, head, generation, false)
+}
+
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sink_copy_start(
+    lane: u32,
+    head: u64,
+    generation: u64,
+) -> i32 {
+    start(lane, head, generation, true)
+}
+
+fn start(lane: u32, head: u64, generation: u64, sink: bool) -> i32 {
     with_state(false, |s| {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let q = r.queue_probe.as_mut().ok_or(-9)?;
         let attempt = s.capture_receiver.sequence.checked_add(1).ok_or(-6)?;
         let (pointer, length) = q
-            .receive_start(&mut r.files, lane, head, generation)
+            .receive_start(&mut r.files, lane, head, generation, sink)
             .map_err(queue_probe_error)?;
         s.capture_receiver.active = Some(View {
             lane,
@@ -56,6 +80,7 @@ pub extern "C" fn linux_queued_worker_probe_receive_start(
             generation,
             length: length as u32,
             uncertain: false,
+            sink,
         });
         s.capture_receiver.sequence = attempt;
         s.length = length as u64;
@@ -79,8 +104,14 @@ pub extern "C" fn linux_queued_worker_probe_receive_finish(
                 }
                 let r = s.sealed.as_mut().ok_or(-9)?;
                 let q = r.queue_probe.as_mut().ok_or(-9)?;
-                q.receive_commit(&mut r.files, view.lane, view.head, view.generation)
-                    .map_err(queue_probe_error)?;
+                q.receive_commit(
+                    &mut r.files,
+                    view.lane,
+                    view.head,
+                    view.generation,
+                    view.sink,
+                )
+                .map_err(queue_probe_error)?;
                 let length = view.length;
                 s.capture_receiver.active = None;
                 Ok(u64::from(length))
@@ -97,5 +128,133 @@ pub extern "C" fn linux_queued_worker_probe_receive_finish(
             }
             _ => Err(-5),
         }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sink_bind(lane: u32) -> i32 {
+    with_state(false, |s| {
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        r.queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .sink_bind(lane)
+            .map_err(queue_probe_error)?;
+        Ok(0)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sink_offer(
+    lane: u32,
+    head: u64,
+    generation: u64,
+) -> i32 {
+    with_state(false, |s| {
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let (action, range) = r
+            .queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .sink_offer(&mut r.files, lane, head, generation)
+            .map_err(queue_probe_error)?;
+        s.auxiliary = range.start as u64;
+        s.length = range.end as u64;
+        Ok(action)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sink_receipt(
+    lane: u32,
+    head: u64,
+    generation: u64,
+    action: u64,
+    confirmed: u32,
+    evidence: u32,
+) -> i32 {
+    with_state(false, |s| {
+        let evidence = match evidence {
+            0 => SinkEvidence::AccessAndEffectsEnded,
+            1 => SinkEvidence::Unknown,
+            2 => SinkEvidence::AccessEnded,
+            3 => SinkEvidence::EffectsStopped,
+            _ => return Err(-5),
+        };
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        match r
+            .queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .sink_receipt(
+                &mut r.files,
+                lane,
+                head,
+                generation,
+                action,
+                confirmed,
+                evidence,
+            )
+            .map_err(queue_probe_error)?
+        {
+            SinkOutcome::Waiting => {}
+            SinkOutcome::Suffix(range) => {
+                s.state = 1;
+                s.auxiliary = range.start as u64;
+                s.length = range.end as u64;
+            }
+            SinkOutcome::Complete => s.state = 2,
+        }
+        Ok(0)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sink_cancel(
+    lane: u32,
+    head: u64,
+    generation: u64,
+    action: u64,
+) -> i32 {
+    with_state(false, |s| {
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        r.queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .sink_cancel(&mut r.files, lane, head, generation, action)
+            .map_err(queue_probe_error)?;
+        Ok(0)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sink_discard(
+    lane: u32,
+    head: u64,
+    generation: u64,
+) -> i32 {
+    with_state(false, |s| {
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let count = r
+            .queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .sink_discard(&mut r.files, lane, head, generation)
+            .map_err(queue_probe_error)?;
+        Ok(count as u64)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_sink_shutdown(lane: u32) -> i32 {
+    with_state(false, |s| {
+        let r = s.sealed.as_mut().ok_or(-9)?;
+        let ended = r
+            .queue_probe
+            .as_mut()
+            .ok_or(-9)?
+            .sink_shutdown(&mut r.files, lane)
+            .map_err(queue_probe_error)?;
+        Ok(u64::from(ended))
     })
 }
