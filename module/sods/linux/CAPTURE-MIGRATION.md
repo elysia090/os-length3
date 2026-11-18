@@ -212,6 +212,22 @@ the call; generic retirement cannot retire a pending captured call without
 its original lane context. No new owner or ABI is selected in `capture-v1`
 by this step.
 
+The stronger artifact's integration fixture now gives Rust the whole original
+sequenced Worker request once. Rust chooses the narrow captured write or
+resident sendfile branch and returns typed Write, Return, Path, or Exit; the
+Node fixture no longer selects a syscall implementation by number. The
+direct diagnostic exports remain only for independent raw counterexamples.
+The selected ready path still needs to bind that dispatch to its captured
+startup profile and remove the unused probe-only bridge when superseded.
+
+Do not confuse one logical owner with an inline allocation requirement. In
+the stronger wasm32 fixture, moving the 216-byte `WriteCall` inline raises
+each `ExecutionSlot` from 1,888 to 2,104 bytes, while the single global State
+shrinks by 192 bytes. Before scaling a ready artifact, compare a mutually
+exclusive continuation owner layout or a bounded exact-ticket pool against
+this fixture. Neither can be selected merely from the size estimate: late
+settlement and pre-start closure must still retain the same exact owner.
+
 A product sink session must retain the whole exact Core and native/JS owners
 through an ambiguous state and expose a bounded failure/retirement API. The
 diagnostic helper is not that API: it simply refuses reuse on ambiguity.

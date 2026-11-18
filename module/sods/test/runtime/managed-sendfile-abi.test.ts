@@ -57,7 +57,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   for (const name of ['init', 'publish', 'peek', 'discard', 'startup']) {
     assert.equal(Object.hasOwn(e, `linux_queued_output_probe_${name}`), queued);
   }
-  for (const name of ['write', 'start', 'finish', 'sendfile']) {
+  for (const name of ['write', 'start', 'finish', 'sendfile', 'request']) {
     assert.equal(Object.hasOwn(e, `linux_queued_worker_probe_${name}`), workerQueue);
   }
   for (const name of ['head', 'start', 'finish']) {
@@ -730,6 +730,32 @@ const fixtureSet = FixtureBytes.prototype.set;
 const fixtureApply = Reflect.apply;
 const fixtureMemoryBuffer = Object.getOwnPropertyDescriptor(WebAssembly.Memory.prototype, 'buffer')!.get!;
 
+test('strong capture probe Rust dispatcher decides without borrowing physical output', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, false, true, true);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  const ordinary = r.live(), captured = r.live(true);
+  const name = 'linux_queued_worker_probe_request';
+  const write = [1n, 32n, 1n, 0n, 0n, 0n] as const;
+  assert.ok(r.call(name, ordinary.id, ordinary.invocation, 1, 1n, ...write, 4096n) < 0,
+    'this selected ingress cannot silently use an ordinary physical output');
+  assert.equal(r.request(ordinary, 1n, write).tag, 0x107, 'separate ordinary Worker entrance still issues its physical command');
+  assert.equal(r.call(name, captured.id, captured.invocation, 1, 999n, 0n, 0n, 0n, 0n, 0n, 0n, 4096n), 0);
+  assert.deepEqual([r.state(), r.result()], [3, 999n]);
+  assert.ok(r.call(name, captured.id, captured.invocation, 1, 1n, ...write, 4096n) < 0);
+  assert.equal(r.call(name, captured.id, captured.invocation, 2, 1n, ...write, 4096n), 0);
+  const action = r.result();
+  assert.deepEqual([r.state(), r.auxiliary(), r.length(), r.endpoint()], [13, 32n, 1n, 0n]);
+  assert.ok(r.call(name, captured.id, captured.invocation, 3, 60n, 0n, 0n, 0n, 0n, 0n, 0n, 4096n) < 0,
+    'ordinary Rust path cannot overtake the admitted WriteCall');
+  assert.equal(r.call('linux_queued_worker_probe_start', captured.id, 2, action), 0);
+  const memory = r.e.memory as WebAssembly.Memory;
+  new FixtureBytes(memory.buffer, Number(r.result()), 1)[0] = 65;
+  assert.equal(r.call('linux_queued_worker_probe_finish', captured.id, 2, action, 0, 1), 0);
+  assert.deepEqual(r.receive(0), bytes('A'));
+  assert.equal(r.call(name, captured.id, captured.invocation, 3, 60n, 0n, 0n, 0n, 0n, 0n, 0n, 4096n), 0);
+  assert.equal(r.state(), 2);
+});
+
 test('strong capture probe receiver rejects stale heads and same-head stale attempts', {skip: workerQueueSkip}, () => {
   const r = raw(workerQueueArtifact!, true, false, true, true);
   assert.equal(r.call('linux_queued_output_probe_init'), 0);
@@ -1347,9 +1373,15 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
         assert.equal(request.sequence, owner.sequence + 1);
         assert.equal(bridge.diagnostics().exited, false);
         guestCalls.push(request.nr);
-        if (request.nr === 2n) {
-          const command = r.request(owner, request.nr, request.args, request.next);
-          assert.deepEqual([command.tag, command.target], [8, request.args[0]]);
+        // The original request crosses once. The fixture now responds to the
+        // Rust-issued command; syscall numbers below are assertions only.
+        assert.equal(r.call('linux_queued_worker_probe_request', id, request.invocation, request.sequence,
+          request.nr, ...request.args, request.next), 0);
+        owner.sequence = request.sequence;
+        const command = r.command();
+        if (command.tag === 8) {
+          assert.equal(request.nr, 2n);
+          assert.equal(command.target, request.args[0]);
           const pathLength = bytes('/source\0').length;
           assert.equal(r.call('linux_syscall_path_start', id, command.value), 0);
           const pointer = Number(r.result());
@@ -1359,13 +1391,11 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
           assert.deepEqual([r.state(), r.result()], [0, 3n]);
           return {kind: 'return', value: r.result()} as const;
         }
-        if (request.nr === 40n) {
+        if (command.tag === 0) {
+          assert.equal(request.nr, 40n);
           const [out, fd, offset, length] = request.args;
           assert.deepEqual([out, fd, offset, length], [1n, 3n, 0n, 1n]);
-          assert.equal(r.call('linux_queued_worker_probe_sendfile', id, request.invocation, request.sequence, out, fd, offset, length), 0);
-          owner.sequence = request.sequence;
-          const outStep = r.command();
-          assert.deepEqual(outStep, {tag: 0, value: 1n, next: 0n, target: 0n, endpoint: 0n});
+          assert.deepEqual(command, {tag: 0, value: 1n, next: 0n, target: 0n, endpoint: 0n});
           if (stopBeforeFileReply) {
             assert.deepEqual(r.remaining(owner, fd), bytes('D'));
             inputCursorChecked = true;
@@ -1373,19 +1403,18 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
             assert.equal(bridge.diagnostics().pendingRequest, true);
             assert.equal(r.call('linux_run_receipt', id, request.invocation, 2, 0n), 0);
           }
-          return {kind: 'return', value: outStep.value} as const;
+          return {kind: 'return', value: command.value} as const;
         }
-        if (request.nr === 60n) {
-          assert.equal(r.request(owner, request.nr, request.args, request.next).tag, 2);
+        if (command.tag === 2) {
+          assert.equal(request.nr, 60n);
           return {kind: 'leave'} as const;
         }
+        assert.equal(command.tag, 13);
         assert.equal(request.nr, 1n);
         const [fd, at, length] = request.args;
         assert.equal(fd, 1n); assert.equal(length, 1n);
         writeAddresses.push(Number(at));
-        assert.equal(r.call('linux_queued_worker_probe_write', id, request.invocation, request.sequence, fd, at, length), 0);
-        owner.sequence = request.sequence;
-        const command = r.command(), action = command.value;
+        const action = command.value;
         assert.deepEqual([command.tag, command.target, command.next, command.endpoint], [13, at, 1n, 0n]);
         if (firstWriteAction === undefined) firstWriteAction = action;
         else assert.equal(action, firstWriteAction + 1n, 'resident file acceptance did not issue another Domain action');

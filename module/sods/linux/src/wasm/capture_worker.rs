@@ -46,6 +46,32 @@ fn fixture_length(length: u64) -> Result<NonZeroUsize, i32> {
         .ok_or(-5)
 }
 
+/// Sequenced ingress for the selected captured fixture. The adapter transports
+/// the original request and handles only the returned command. The two narrow
+/// producer branches verify captured targets and never try borrowed output.
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_request(
+    execution: u64,
+    invocation: u64,
+    sequence: u32,
+    nr: u64,
+    a: u64,
+    b: u64,
+    c: u64,
+    d: u64,
+    e: u64,
+    f: u64,
+    next: u64,
+) -> i32 {
+    match nr {
+        1 => linux_queued_worker_probe_write(execution, invocation, sequence, a, b, c),
+        40 => linux_queued_worker_probe_sendfile(execution, invocation, sequence, a, b, c, d),
+        _ => super::linux_syscall_sequenced(
+            execution, invocation, sequence, nr, a, b, c, d, e, f, next,
+        ),
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn linux_queued_worker_probe_write(
     execution: u64,
