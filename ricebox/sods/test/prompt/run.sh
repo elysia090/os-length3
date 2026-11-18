@@ -1,7 +1,7 @@
 #!/bin/sh
 # prompt on this Linux: the same Rust prompt that stands at a terminal's other end on Linux, translated, in front
 # of a terminal this kernel makes and given another (linux/pty.ts), its signals read as a file (signalfd), by
-# prompt's own check of it (../../../prompt/test/attach.c), which is the same program on both.
+# prompt's own check of it (../../../distribution/terminal/test/attach.c), which is the same program on both.
 #
 #   sh ricebox/sods/test/prompt/run.sh
 #
@@ -10,7 +10,7 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 sods=$(cd "$here/../.." && pwd)
-prompt=$(cd "$sods/../prompt" && pwd)
+prompt=$(cd "$sods/../distribution/terminal" && pwd)
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
 RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static -C link-arg=-no-pie -C link-arg=-Wl,--emit-relocs" \

@@ -26,5 +26,5 @@ test("ricebox's own line (0.0.1 on; 0.6.x is the line before the name) is begun 
   // made twice (ricebox/sods/runtime/targets.ts). scripts/release.sh holds a release to the same.
   const [major, minor] = read('ricebox/distribution/RELEASE').trim().split('.').map(Number);
   if (major === 0 && minor < 6) assert.deepEqual(owed(), []);
-  assert.match(read('scripts/release.sh'), /0\.\[0-5\]\.\*\) node module\/sods\/runtime\/targets\.ts --owed/);
+  assert.match(read('scripts/release.sh'), /0\.\[0-5\]\.\*\) node ricebox\/sods\/runtime\/targets\.ts --owed/);
 });
