@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Error {
+pub(crate) enum Error {
     Identity,
     State,
     Length,
@@ -41,26 +41,26 @@ impl From<lease::Error> for Error {
     }
 }
 
-pub(super) struct Context<'a> {
+pub(crate) struct Context<'a> {
     pub(super) files: &'a mut Files,
     pub(super) lanes: &'a mut LaneRegistry,
     pub(super) domain: &'a mut Domain,
     pub(super) execution: &'a mut Execution,
 }
-pub(super) struct Request {
-    pub(super) invocation: Invocation,
-    pub(super) sequence: u32,
-    pub(super) fd: u32,
-    pub(super) at: u64,
-    pub(super) length: NonZeroUsize,
+pub(crate) struct Request {
+    pub(crate) invocation: Invocation,
+    pub(crate) sequence: u32,
+    pub(crate) fd: u32,
+    pub(crate) at: u64,
+    pub(crate) length: NonZeroUsize,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct CallId {
-    pub(super) sequence: u32,
-    pub(super) action: Token,
+pub(crate) struct CallId {
+    pub(crate) sequence: u32,
+    pub(crate) action: Token,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Access {
+pub(crate) enum Access {
     /// Neither source nor staging access may be assumed to have ended.
     Unknown,
     SourceEnded,
@@ -68,14 +68,14 @@ pub(super) enum Access {
     /// The trusted caller ended both accesses; not an external sink receipt.
     BothEnded,
 }
-pub(super) struct Receipt {
+pub(crate) struct Receipt {
     /// None offers no complete input. Even an exact count is not completion
     /// without the native fill witness and independently ended access.
-    pub(super) complete: Option<usize>,
-    pub(super) access: Access,
+    pub(crate) complete: Option<usize>,
+    pub(crate) access: Access,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Finished {
+pub(crate) enum Finished {
     Waiting,
     Discarded,
     Accepted(NonZeroUsize),
@@ -94,7 +94,7 @@ enum Phase {
 /// One initialized provisional buffer and the admitted guest base. Native
 /// callers can fill it once but cannot use mere view drop to prove a copy.
 pub(super) struct CopyGuard<'a> {
-    pub(super) at: u64,
+    pub(crate) at: u64,
     bytes: &'a mut [u8],
     filled: &'a mut bool,
 }
@@ -112,7 +112,7 @@ impl CopyGuard<'_> {
 /// The transport owns the captured sequence; this call owns its only span,
 /// retained OFD and Q/K stage until exact release or acceptance.
 #[must_use = "retain through acceptance or stopped cleanup"]
-pub(super) struct WriteCall {
+pub(crate) struct WriteCall {
     id: CallId,
     invocation: Invocation,
     execution: Snapshot,
@@ -128,7 +128,7 @@ pub(super) struct WriteCall {
 impl WriteCall {
     /// The parent must already have admitted this exact Worker sequence.
     /// Everything below is a single native turn with no callbacks.
-    pub(super) fn admit(ctx: &mut Context<'_>, table: &Table, req: Request) -> Result<Self, Error> {
+    pub(crate) fn admit(ctx: &mut Context<'_>, table: &Table, req: Request) -> Result<Self, Error> {
         if req.sequence == 0 || req.sequence > i32::MAX as u32 {
             return Err(Error::Identity);
         }
@@ -183,7 +183,7 @@ impl WriteCall {
             cancelled: false,
         })
     }
-    pub(super) fn id(&self) -> CallId {
+    pub(crate) fn id(&self) -> CallId {
         self.id
     }
     fn check(&self, domain: &Domain, execution: &Execution, id: CallId) -> Result<(), Error> {
@@ -231,6 +231,37 @@ impl WriteCall {
         id: CallId,
         receipt: Receipt,
     ) -> Result<Finished, Error> {
+        self.settle(ctx, id, receipt, false)
+    }
+    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+    pub(crate) fn raw_start(
+        &mut self,
+        ctx: Context<'_>,
+        id: CallId,
+    ) -> Result<(usize, u64, usize), Error> {
+        let guard = self.start(ctx, id)?;
+        Ok((
+            guard.bytes.as_mut_ptr() as usize,
+            guard.at,
+            guard.bytes.len(),
+        ))
+    }
+    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+    pub(crate) fn raw_finish(
+        &mut self,
+        ctx: &mut Context<'_>,
+        id: CallId,
+        trusted: crate::wasm::FinishEvidence,
+    ) -> Result<Finished, Error> {
+        self.settle(ctx, id, trusted.receipt(), true)
+    }
+    fn settle(
+        &mut self,
+        ctx: &mut Context<'_>,
+        id: CallId,
+        receipt: Receipt,
+        trusted_raw: bool,
+    ) -> Result<Finished, Error> {
         self.check_owner(ctx, id)?;
         if !matches!(self.phase, Phase::Started | Phase::Unknown) {
             return Err(Error::State);
@@ -247,7 +278,7 @@ impl WriteCall {
             return Ok(Finished::Waiting);
         }
         let complete = receipt.complete.is_some();
-        if complete && !self.filled {
+        if complete && !self.filled && !trusted_raw {
             return Err(Error::Incomplete);
         }
         let accept = complete
@@ -286,7 +317,7 @@ impl WriteCall {
         self.release_owner(ctx);
         Ok(finished)
     }
-    pub(super) fn cancel(&mut self, ctx: &mut Context<'_>, id: CallId) -> Result<bool, Error> {
+    pub(crate) fn cancel(&mut self, ctx: &mut Context<'_>, id: CallId) -> Result<bool, Error> {
         self.check_owner(ctx, id)?;
         match self.phase {
             Phase::Terminal => return Ok(true),

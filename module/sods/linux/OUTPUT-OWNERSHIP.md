@@ -216,5 +216,14 @@ explicit terminal result, distinct from an invalid receipt.
 
 This native owner neither exposes a raw view nor admits a guest syscall. Its
 caller must still bind the trusted input slice to the admitted source and
-enforce sequence admission; a future raw relay needs a separately guarded
-lexical interval. No Worker or external consumer is connected by this step.
+enforce sequence admission; it does not itself expose raw access.
+
+The stronger, rejected `queued-worker-probe` artifact now offers a fixture
+handoff for one bounded nonzero captured write. It uses the held OFD and
+existing sequenced continuation/Domain action. Its scalar guard blocks
+unrelated Core exports before their view scans. Only matching finish can
+settle it; an invalid, unknown or one-sided receipt leaves the guard live.
+The raw completion claim is trusted fixture-relay evidence, not independent
+inference from a count. Admission failure after the sequence is consumed
+cannot be retried under that sequence. Ordinary artifacts cannot select this
+path, and no external output or stopped sink capability is added.

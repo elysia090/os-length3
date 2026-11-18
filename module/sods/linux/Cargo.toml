@@ -16,6 +16,8 @@ crate-type = ["rlib", "cdylib"]
 sendfile-probe = []
 # Internal sealed-owner/queue diagnostics, rejected by the same host marker.
 queued-output-probe = ["sendfile-probe"]
+# Stronger explicit fixture: one lexical captured write, not production host IO.
+queued-worker-probe = ["queued-output-probe"]
 
 [dependencies]
 sods-file-store = { path = "../file-store", default-features = false }

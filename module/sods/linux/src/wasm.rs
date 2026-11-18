@@ -17,6 +17,10 @@ use crate::{
     startup::{Facts, Startup},
 };
 use std::cell::RefCell;
+#[cfg(feature = "queued-worker-probe")]
+mod capture_worker;
+#[cfg(feature = "queued-worker-probe")]
+pub(crate) use capture_worker::FinishEvidence;
 const DOMAIN: u64 = 1;
 const TREE: u64 = 2;
 const FILES: u64 = 3;
@@ -166,6 +170,8 @@ struct State {
     state: u32,
     builder: Option<Builder>,
     sealed: Option<Sealed>,
+    #[cfg(feature = "queued-worker-probe")]
+    capture_write: Option<capture_worker::Active>,
 }
 thread_local! { static STATE: RefCell<Option<State>> = const { RefCell::new(None) }; }
 fn code(error: Error) -> i32 {
@@ -203,6 +209,11 @@ enum Access {
         sequence: u32,
         action: Token,
     },
+    #[cfg(feature = "queued-worker-probe")]
+    CaptureFinish {
+        execution: u64,
+        call: descriptor::capture::CallId,
+    },
 }
 fn with_state(allow_view: bool, f: impl FnOnce(&mut State) -> Result<u64, i32>) -> i32 {
     with_state_access(
@@ -225,6 +236,10 @@ fn with_state_access(access: Access, f: impl FnOnce(&mut State) -> Result<u64, i
         s.auxiliary = 0;
         s.endpoint = 0;
         s.state = 0;
+        #[cfg(feature = "queued-worker-probe")]
+        if s.capture_write.as_ref().is_some_and(|pending| pending.blocks(access)) {
+            return -4;
+        }
         // Canonical source views exclude every old Read exception too. Only
         // one exact owner/sequence/action may submit evidence. Another valid
         // Unknown owner's late completion is not permission to allocate here.
@@ -293,6 +308,10 @@ fn token(sequence: u64) -> Token {
 fn generic(sequence: u64, f: impl FnOnce(&mut Domain, Token) -> Result<u64, Error>) -> i32 {
     with_state(false, |s| {
         let t = token(sequence);
+        #[cfg(feature = "queued-worker-probe")]
+        if s.capture_write.as_ref().is_some_and(|pending| pending.owns(t)) {
+            return Err(-4);
+        }
         if s.sealed.as_ref().is_some_and(|r| r.reads.owns(t))
             || s.executions.iter().any(|e| e.owns(t))
         {
@@ -433,6 +452,8 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             state: 0,
             builder: None,
             sealed: None,
+            #[cfg(feature = "queued-worker-probe")]
+            capture_write: None,
         });
         0
     })
@@ -1865,6 +1886,10 @@ pub extern "C" fn linux_syscall_resumed(id: u64, stopped: u32, success: u32) -> 
 #[no_mangle]
 pub extern "C" fn linux_syscall_abandon(id: u64) -> i32 {
     with_state(false, |s| {
+        #[cfg(feature = "queued-worker-probe")]
+        if !capture_worker::abandon(s, id)? {
+            return Ok(0);
+        }
         let i = execution_index(s, id)?;
         let slot = s.executions[i].live_mut()?;
         let r = s.sealed.as_mut().ok_or(-9)?;
@@ -1967,6 +1992,13 @@ pub extern "C" fn linux_execution_retire(id: u64) -> i32 {
         if s.sealed.as_ref().is_some_and(|r| r.reads.viewing()) || !slot.execution.stopped() {
             return Ok(0);
         }
+        #[cfg(feature = "queued-worker-probe")]
+        let slot = {
+            if !capture_worker::abandon(s, id)? {
+                return Ok(0);
+            }
+            s.executions[i].live_mut()?
+        };
         if let Some(call) = &mut slot.continuation {
             let r = s.sealed.as_mut().ok_or(-9)?;
             if !call

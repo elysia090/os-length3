@@ -9,14 +9,16 @@ import {memoryHost} from '../../runtime/linux/memory-host.ts';
 const normalArtifact = process.env.SODS_LINUX_WASM;
 const probeArtifact = process.env.SODS_SENDFILE_PROBE_WASM;
 const queueArtifact = process.env.SODS_QUEUED_OUTPUT_PROBE_WASM;
+const workerQueueArtifact = process.env.SODS_QUEUED_WORKER_PROBE_WASM;
 const normalSkip = normalArtifact ? false : 'Requires explicit SODS_LINUX_WASM production ABI7 artifact';
 const probeSkip = probeArtifact ? false : 'Requires explicit SODS_SENDFILE_PROBE_WASM feature artifact; normal core cannot accept proof1';
 const queueSkip = queueArtifact ? false : 'Requires the isolated SODS_QUEUED_OUTPUT_PROBE_WASM feature artifact';
+const workerQueueSkip = workerQueueArtifact ? false : 'Requires the stronger SODS_QUEUED_WORKER_PROBE_WASM feature artifact';
 const bytes = (value: string) => new TextEncoder().encode(value);
 type Owner = {id: bigint; invocation: bigint; sequence: number};
 type Send = {owner: Owner; action: bigint; sequence: number; endpoint: bigint; offered: bigint};
 
-function raw(path: string, probe: boolean, lazyData = false, queued = false) {
+function raw(path: string, probe: boolean, lazyData = false, queued = false, workerQueue = false) {
   const wasm = new Uint8Array(readFileSync(path)), module = new WebAssembly.Module(wasm);
   assert.equal(WebAssembly.Module.imports(module).length, 0);
   const e = new WebAssembly.Instance(module).exports;
@@ -41,6 +43,9 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false) {
   assert.equal(Object.hasOwn(e, 'linux_sendfile_probe_access_ended'), probe);
   for (const name of ['init', 'publish', 'peek', 'discard', 'startup']) {
     assert.equal(Object.hasOwn(e, `linux_queued_output_probe_${name}`), queued);
+  }
+  for (const name of ['write', 'start', 'finish']) {
+    assert.equal(Object.hasOwn(e, `linux_queued_worker_probe_${name}`), workerQueue);
   }
   if (probe) assert.equal(call('linux_sendfile_probe'), 1);
   assert.equal(call('linux_init', 16, 64), 0);
@@ -532,4 +537,64 @@ test('tagged captured stdio in the sealed core refuses physical fallback', {skip
   assert.equal(r.call('linux_syscall_abandon', physical.id), 0);
   assert.equal(r.call('linux_run_receipt', physical.id, physical.invocation, 2, 0n), 0);
   assert.equal(r.call('linux_execution_retire', physical.id), 0); assert.equal(r.result(), 1n);
+});
+
+test('strong capture probe admits an exact guarded lexical write without allowing physical fallback', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, false, true, true);
+  assert.throws(() => memoryHost(r.module, 2, 8), /Synthetic sendfile probe/);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  const physical = r.live();
+  assert.ok(r.call('linux_queued_worker_probe_write', physical.id, physical.invocation, 1, 1n, 32n, 2n) < 0);
+  assert.deepEqual(r.request(physical, 1n, [1n, 32n, 2n, 0n, 0n, 0n]).tag, 263);
+  assert.equal(r.call('linux_syscall_abandon', physical.id), 0);
+  const owner = r.live(true);
+  const enter = (sequence: number) => r.call('linux_queued_worker_probe_write', owner.id, owner.invocation, sequence, 1n, 32n, 2n);
+  assert.ok(enter(2) < 0);
+  assert.equal(enter(1), 0);
+  const c = r.command(), id = owner.id, start = 'linux_queued_worker_probe_start', finish = 'linux_queued_worker_probe_finish';
+  assert.deepEqual([c.tag, c.target, c.next, c.endpoint], [13, 32n, 2n, 0n]);
+  r.genericBlocked(c.value);
+  assert.ok(r.call(start, id, 2, c.value) < 0);
+  assert.ok(r.call(start, physical.id, 1, c.value) < 0);
+  assert.equal(r.call(start, id, 1, c.value), 0);
+  const pointer = r.result();
+  assert.deepEqual([r.auxiliary(), r.length()], [32n, 2n]);
+  const readOnly = new Set(['linux_abi_version', 'linux_sendfile_probe', 'linux_result', 'linux_result_length',
+    'linux_result_state', 'linux_result_auxiliary', 'linux_result_endpoint']);
+  for (const [name, types] of signatures(r.wasm)) {
+    if (!readOnly.has(name)) assert.ok(r.call(name, ...types.map(type => type === 0x7e ? 0n : 0)) < 0, name);
+  }
+  assert.ok(r.call(finish, id, 1, c.value, 0, 1) < 0, 'short complete claim is invalid');
+  assert.ok(r.call('linux_queued_output_probe_peek', 0, 0) < 0, 'invalid evidence left the guard live');
+  // Test-only trusted lexical input; no real Worker or sink in this case.
+  new Uint8Array((r.e.memory as WebAssembly.Memory).buffer, Number(pointer), 2).set([65, 66]);
+  assert.equal(r.call(finish, id, 1, c.value, 0, 2), 0);
+  assert.deepEqual([r.state(), r.result()], [0, 2n]);
+  assert.ok(r.call(finish, id, 1, c.value, 0, 2) < 0);
+  assert.equal(r.call('linux_run_receipt', id, owner.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
+  assert.equal(r.call('linux_queued_output_probe_peek', 0, 1), 0);
+  assert.deepEqual([r.length(), r.result()], [2n, 66n]);
+});
+
+test('strong capture probe retains exclusive access after full count or only one side ends', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, false, true, true);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  const owner = r.live(true), id = owner.id;
+  const write = 'linux_queued_worker_probe_write', start = 'linux_queued_worker_probe_start', finish = 'linux_queued_worker_probe_finish';
+  assert.equal(r.call(write, id, owner.invocation, 1, 1n, 32n, 2n), 0);
+  const action = r.result();
+  assert.equal(r.call(start, id, 1, action), 0);
+  for (const access of [2, 3, 4]) {
+    assert.equal(r.call(finish, id, 1, action, access, 2), 0);
+    assert.deepEqual([r.state(), r.result()], [4, 0n]);
+    assert.ok(r.call('linux_run_receipt', id, owner.invocation, 2, 0n) < 0);
+    assert.ok(r.call('linux_syscall_abandon', id) < 0);
+  }
+  assert.ok(r.call(finish, id, 1, action + 1n, 1, 0) < 0);
+  assert.equal(r.call(finish, id, 1, action, 1, 0), 0);
+  assert.deepEqual([r.state(), r.result()], [4, 0n]);
+  assert.equal(r.call('linux_run_receipt', id, owner.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
+  assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.equal(r.length(), 0n);
 });

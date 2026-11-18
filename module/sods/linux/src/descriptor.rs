@@ -31,6 +31,8 @@ use std::num::{NonZeroU64, NonZeroUsize};
 mod output;
 #[cfg(all(target_arch = "wasm32", feature = "queued-output-probe"))]
 pub(crate) use output::{QueueProbe, QueueProbeError};
+#[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+pub(crate) use output::capture;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Id {

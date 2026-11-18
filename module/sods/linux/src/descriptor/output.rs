@@ -4,10 +4,10 @@ use super::{Error as FilesError, Files, OutputHold, ReadHold, ReadPrefix, Table}
 use std::marker::PhantomData;
 use std::num::{NonZeroU64, NonZeroUsize};
 
-mod capture;
+pub(crate) mod capture;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Error {
+pub(crate) enum Error {
     Source(FilesError),
     Capacity,
     Full,
@@ -856,6 +856,20 @@ impl QueueProbe {
         Ok(self
             .registry
             .queued_stdio(files, 1, self.producers.each_ref(), limit)?)
+    }
+    #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
+    pub(crate) fn capture_context<'a>(
+        &'a mut self,
+        files: &'a mut Files,
+        domain: &'a mut crate::lease::Domain,
+        execution: &'a mut crate::execution::Execution,
+    ) -> capture::Context<'a> {
+        capture::Context {
+            files,
+            lanes: &mut self.registry,
+            domain,
+            execution,
+        }
     }
     pub(crate) fn publish(
         &mut self,
