@@ -96,12 +96,15 @@ struct Capture {
     sequence: u32,
     args: [u64; 6],
 }
+/// Compact routing stamp. The Action is a non-reused Domain ticket for this
+/// exact call; the retained Sendfile alone owns Capture. A receipt never
+/// replays arguments or supplies the execution snapshot used by check().
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Identity {
     owner: u64,
-    capture: Capture,
     action: Token,
     endpoint: u64,
+    sequence: u32,
 }
 /// Read-only service request. It neither grants output nor exposes source bytes.
 /// The physical proof must establish the selected live endpoint kind/flags and
@@ -113,7 +116,7 @@ impl CapabilityRequest {
         self.0.endpoint
     }
     pub(crate) fn sequence(&self) -> u32 {
-        self.0.capture.sequence
+        self.0.sequence
     }
     pub(crate) fn action(&self) -> Token {
         self.0.action
@@ -286,9 +289,9 @@ impl Sendfile {
     fn identity(&self) -> Result<Identity, Error> {
         Ok(Identity {
             owner: self.owner,
-            capture: self.capture.ok_or(Error::State)?,
             action: self.action.ok_or(Error::State)?,
             endpoint: self.endpoint.ok_or(Error::State)?,
+            sequence: self.sequence().ok_or(Error::State)?,
         })
     }
     /// Reserve both descriptions, one finite action and the exact invocation
@@ -501,7 +504,7 @@ impl Sendfile {
         receipt: CapabilityReceipt,
     ) -> Result<(), Error> {
         let i = receipt.identity;
-        self.check(files, domain, execution, i.capture.sequence, i.action)?;
+        self.check(files, domain, execution, i.sequence, i.action)?;
         if self.phase != Phase::CapChecking || self.identity()? != i {
             return Err(Error::State);
         }
@@ -696,7 +699,7 @@ impl Sendfile {
         receipt: AccessEnded,
     ) -> Result<(), Error> {
         let i = receipt.0;
-        self.check(files, domain, execution, i.capture.sequence, i.action)?;
+        self.check(files, domain, execution, i.sequence, i.action)?;
         if self.identity()? != i
             || !self.viewing
             || !matches!(self.phase, Phase::Started | Phase::Unknown)
@@ -1036,6 +1039,55 @@ mod tests {
             assert_eq!(self.e.status(), Some(7));
             assert!(self.e.retireable());
         }
+    }
+
+    #[test]
+    fn old_capability_cannot_arm_a_new_identical_offer() {
+        let mut h = Harness::new(false, false, 0);
+        h.begin(6);
+        let first = h.request();
+        let stale = first.0; // Copy intentionally only inside the owner tests.
+        h.s.cap_finish(
+            &mut h.f,
+            &mut h.d,
+            &mut h.e,
+            CapabilityReceipt::rejected(first),
+        )
+        .unwrap();
+        h.assert_released();
+
+        // Same root, endpoint, invocation, request sequence and arguments.
+        // The older effect ticket is still never recycled.
+        h.s = Sendfile::new(&h.f);
+        h.begin(6);
+        let fresh = h.request();
+        assert_eq!(fresh.0.owner, stale.owner);
+        assert_eq!(fresh.0.endpoint, stale.endpoint);
+        assert_eq!(fresh.0.sequence, stale.sequence);
+        assert_ne!(fresh.0.action, stale.action);
+        assert_eq!(
+            h.s.cap_finish(
+                &mut h.f,
+                &mut h.d,
+                &mut h.e,
+                CapabilityReceipt::synthetic_accepted(CapabilityRequest(stale)),
+            ),
+            Err(Error::State),
+        );
+        assert_eq!(h.s.phase(), Phase::CapChecking);
+        assert_eq!(h.s.offered(), 0);
+        assert!(!h.s.viewing());
+        h.s.cap_finish(
+            &mut h.f,
+            &mut h.d,
+            &mut h.e,
+            CapabilityReceipt::synthetic_accepted(fresh),
+        )
+        .unwrap();
+        assert_eq!(h.s.phase(), Phase::OfferReady);
+        assert!(h.cancel());
+        h.assert_released();
+        assert_eq!(h.f.offset(&h.t, h.fd), Ok((0, 0)));
     }
 
     #[test]
@@ -1573,14 +1625,13 @@ mod tests {
         foreign
             .image_finish(&mut foreign_domain, execution::ImageResult::Installed)
             .unwrap();
-        let invocation = foreign.start(&mut foreign_domain).unwrap();
-        for field in 0..5 {
+        foreign.start(&mut foreign_domain).unwrap();
+        for field in 0..4 {
             let mut bad = request.0;
             match field {
-                0 => bad.capture.args[3] = 5,
-                1 => bad.capture.snapshot = foreign.stamp().unwrap(),
-                2 => bad.capture.invocation = invocation,
-                3 => bad.capture.sequence = 10,
+                0 => bad.owner += 1,
+                1 => bad.action = Token::from_parts(11, 999),
+                2 => bad.sequence = 10,
                 _ => bad.endpoint = 21,
             }
             assert_eq!(
@@ -1596,6 +1647,27 @@ mod tests {
                 Err(Error::State)
             );
         }
+        // An authentic ticket cannot substitute a foreign execution image
+        // or Domain. Those are checked against the ledger's retained Capture.
+        assert_eq!(
+            h.s.cap_finish(
+                &mut h.f,
+                &mut h.d,
+                &mut foreign,
+                CapabilityReceipt::synthetic_accepted(CapabilityRequest(request.0)),
+            ),
+            Err(Error::Execution(execution::Error::Identity)),
+        );
+        assert_eq!(
+            h.s.cap_finish(
+                &mut h.f,
+                &mut foreign_domain,
+                &mut h.e,
+                CapabilityReceipt::synthetic_accepted(CapabilityRequest(request.0)),
+            ),
+            Err(Error::State),
+        );
+        assert_eq!(h.s.arguments(), Some([1, h.fd as u64, 0, 6, 0x55, 0x66]));
         assert_eq!(h.s.phase(), Phase::CapChecking);
         assert!(h.s.preparation.is_some());
         assert!(h.s.destination.is_some());
@@ -1982,7 +2054,7 @@ mod tests {
             .access_ended(&foreign.f, &h.d, &h.e, AccessEnded(id))
             .is_err());
         let mut bad = id;
-        bad.capture.args[0] += 1;
+        bad.owner += 1;
         assert!(h
             .s
             .access_ended(&h.f, &h.d, &h.e, AccessEnded(bad))

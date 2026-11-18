@@ -726,3 +726,25 @@ handle separately through actual settlement; neither token destruction
 nor table retirement can claim its external effects have ended. This
 binding is still native-test-only; the Node probe's synthetic
 qualification is not an enabled default or a trusted physical host ABI.
+
+The capability and access-ended receipts no longer copy the whole request
+capture. Narrow their stamp to Files owner, the non-reused Domain action,
+Worker sequence and held endpoint. The original invocation, image
+snapshot, both OFDs, input arguments and cursor stay in the one Sendfile
+owner. Validation still checks the live Domain and retained image before
+permitting new work; a late stopped receipt keeps that same retained
+owner. Resupplying all identical arguments or reusing the endpoint number
+cannot recreate the old action. Controls reject a stale but otherwise
+identical offer, a forged routing scalar and an authentic stamp paired
+with a foreign Domain or image, without starting or losing the source.
+
+On the measured wasm32 build the full captured call stays 144 bytes and the
+Sendfile owner stays 432 bytes. The routing stamp is 176 to 40 bytes,
+so the pending continuation and each ExecutionSlot save 136 bytes
+(1888 to 1752 for the slot); global State is unchanged. Under Node 22 x64
+Liftoff the exported wrappers for capability start/finish remain 180/220
+instruction bytes. The internal continuation start shrinks 900 to 840,
+the rejection adapter grows 1056 to 1480, and the ledger's finish shrinks
+1696 to 864. These are static sizes, not dynamic instruction counts or a
+time claim. A matching non-reused identity is still necessary; copying
+the immutable argument/image bundle was not.
