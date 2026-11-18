@@ -1969,4 +1969,183 @@ mod tests {
             // no fabricated late completion attempts to reconstruct the owner.
         }
     }
+
+    #[test]
+    fn synthetic_live_foreign_execution_and_issued_action_cannot_finish_another_owner() {
+        let mut h = Harness::new(false, false, 0);
+        h.begin(6);
+        h.cap();
+        let action_a = h.token();
+        let inode = h.f.inode(&h.t, h.fd).unwrap();
+        let fd_b = h.f.open(&h.t, inode, false).unwrap();
+        let binding_b = h.d.bind(1).unwrap();
+        let mut execution_b = Execution::new(77, binding_b);
+        execution_b.image_begin(&mut h.d, 1).unwrap();
+        execution_b
+            .image_finish(&mut h.d, execution::ImageResult::Installed)
+            .unwrap();
+        let invocation_b = execution_b.start(&mut h.d).unwrap();
+        let mut b = Sendfile::new(&h.f);
+        b.begin(
+            &mut h.f,
+            &h.t,
+            &mut h.d,
+            &mut execution_b,
+            invocation_b,
+            9,
+            [1, fd_b as u64, 0, 6, 0x77, 0x88],
+        )
+        .unwrap();
+        let action_b = b.action().unwrap();
+        assert_ne!(action_a, action_b); // Actually issued by the same Domain issuer.
+        let request_b = b
+            .cap_start(&mut h.f, &mut h.d, &mut execution_b, 9, action_b)
+            .unwrap();
+        let identity_b = request_b.0;
+        b.cap_finish(
+            &mut h.f,
+            &mut h.d,
+            &mut execution_b,
+            CapabilityReceipt {
+                identity: request_b.0,
+                accepted: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(b.phase(), Phase::OfferReady);
+        assert_eq!(execution_b.phase(), execution::Phase::Running);
+        assert_eq!(h.f.inode(&h.t, fd_b).unwrap(), inode);
+        b.start(&mut h.f, &mut h.d, &mut execution_b, 9, action_b)
+            .unwrap();
+        b.receipt(
+            &mut h.f,
+            &mut h.d,
+            &mut execution_b,
+            9,
+            action_b,
+            0,
+            Outcome::Unknown,
+        )
+        .unwrap();
+        b.access_ended(&h.f, &h.d, &execution_b, AccessEnded(identity_b))
+            .unwrap();
+        assert_eq!(b.phase(), Phase::Unknown);
+        assert!(!b.viewing());
+
+        // Both owners and B's token/identity are real admitted component values;
+        // capability/access evidence is synthetic. B's action can really accept
+        // late Stopped, so a missing owner check cannot pass merely because
+        // Domain rejects a Ready token as NotExecuting. This tests misdelivery
+        // to A, NOT global ABI exclusion: B's own receipt is called only after
+        // A ends its view, and their canonical views never overlap.
+        h.start();
+        let identity_a = h.s.identity().unwrap();
+        assert_eq!(
+            h.s.receipt(
+                &mut h.f,
+                &mut h.d,
+                &mut h.e,
+                9,
+                action_b,
+                3,
+                Outcome::Transferred,
+            ),
+            Err(Error::State)
+        );
+        assert_eq!(
+            h.s.receipt(
+                &mut h.f,
+                &mut h.d,
+                &mut execution_b,
+                9,
+                action_a,
+                3,
+                Outcome::Transferred,
+            ),
+            Err(Error::Execution(execution::Error::Identity))
+        );
+        assert_eq!(
+            h.s.access_ended(&h.f, &h.d, &h.e, AccessEnded(identity_b)),
+            Err(Error::State)
+        );
+        assert_eq!(
+            h.s.access_ended(&h.f, &h.d, &execution_b, AccessEnded(identity_a)),
+            Err(Error::Execution(execution::Error::Identity))
+        );
+        assert_eq!(h.s.phase(), Phase::Started);
+        assert!(h.s.viewing());
+        assert_eq!(h.s.confirmed(), 0);
+        assert!(h.s.source.is_some());
+        assert!(h.s.destination.is_some());
+        assert!(h.s.held_call);
+        assert_eq!(h.s.action(), Some(action_a));
+        assert_eq!(b.phase(), Phase::Unknown);
+        assert!(!b.viewing());
+        assert!(b.closed());
+        assert_eq!(b.confirmed(), 0);
+        assert!(b.source.is_some());
+        assert!(b.destination.is_some());
+        assert!(b.held_call);
+        assert_eq!(b.action(), Some(action_b));
+        assert_eq!(h.f.offset(&h.t, h.fd).unwrap(), (0, 0));
+        assert_eq!(h.f.offset(&h.t, fd_b).unwrap(), (0, 0));
+        assert!(h.e.syscall_allowed(h.invocation).is_err());
+        assert!(execution_b.syscall_allowed(invocation_b).is_err());
+        assert_eq!(h.d.retire(action_a), Err(lease::Error::Incomplete));
+        assert_eq!(h.d.retire(action_b), Err(lease::Error::Incomplete));
+
+        h.receipt(3, Outcome::Transferred).unwrap();
+        h.assert_released();
+        assert_eq!(h.s.result(), Some(ResultValue::Return(3)));
+        assert_eq!(h.f.offset(&h.t, h.fd).unwrap(), (3, 1));
+        assert_eq!(h.f.offset(&h.t, fd_b).unwrap(), (0, 0));
+        assert_eq!(b.phase(), Phase::Unknown);
+        // Only B's own late Stopped evidence can now retire its actual action.
+        b.receipt(
+            &mut h.f,
+            &mut h.d,
+            &mut execution_b,
+            9,
+            action_b,
+            0,
+            Outcome::Transferred,
+        )
+        .unwrap();
+        assert!(b.finished());
+        assert!(b.closed());
+        assert_eq!(b.result(), Some(ResultValue::TransportFailed));
+        assert!(b.source.is_none());
+        assert!(b.destination.is_none());
+        assert!(b.action().is_none());
+        assert!(!b.held_call);
+        assert!(h.e.syscall_allowed(h.invocation).is_ok());
+        assert!(execution_b.syscall_allowed(invocation_b).is_ok());
+        assert_eq!(h.d.retire(action_a), Err(lease::Error::UnknownAction));
+        assert_eq!(h.d.retire(action_b), Err(lease::Error::UnknownAction));
+        assert!(h
+            .s
+            .receipt(
+                &mut h.f,
+                &mut h.d,
+                &mut h.e,
+                9,
+                action_a,
+                3,
+                Outcome::Transferred,
+            )
+            .is_err());
+        assert!(b
+            .receipt(
+                &mut h.f,
+                &mut h.d,
+                &mut execution_b,
+                9,
+                action_b,
+                0,
+                Outcome::Transferred,
+            )
+            .is_err());
+        assert_eq!(h.f.offset(&h.t, h.fd).unwrap(), (3, 1));
+        assert_eq!(h.f.offset(&h.t, fd_b).unwrap(), (0, 1));
+    }
 }
