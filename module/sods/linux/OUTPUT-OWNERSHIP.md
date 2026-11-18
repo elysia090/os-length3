@@ -246,3 +246,12 @@ a source copy, raw view, or new Domain action. Short tail, EOF, lazy sources
 and pressure fail without publishing or moving the cursor. The stronger
 artifact has three entries, one pin and four logical bytes per lane. The
 older diagnostic limits and the ordinary guest sendfile route are unchanged.
+
+The actual Node Worker fixture now opens a resident source and submits
+write(A), captured sendfile(B), write(C) to fd1. The independent diagnostic
+consumer sees exactly ABC after observed exit and Rust resource retirement.
+When the Worker is stopped after the resident acceptance but before its
+reply, the queue still holds AB and C was never requested. The source cursor
+advanced by B only; the two writes' adjacent action IDs show that resident
+acceptance did not allocate a Domain action. This remains a hand-written
+guest and rejected fixture, not a current-translator or external sink proof.

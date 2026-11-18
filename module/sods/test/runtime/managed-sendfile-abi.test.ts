@@ -654,7 +654,7 @@ test('strong capture probe resident sendfile rejects unsupported shapes and pres
   assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.equal(r.length(), 0n);
 });
 
-function captureGuest() {
+function captureGuest(mixed = false) {
   // Hand-written fixture only; the real Node Worker executes a Wasm store and
   // syscall. This is not a currently translated ELF or an installed profile.
   const unsigned = (n: number) => {
@@ -676,9 +676,19 @@ function captureGuest() {
   const store = (at: number, value: number) => [0x41, ...signed(at), 0x41, ...signed(value), 0x3a, 0, 0];
   const syscall = (nr: number, args: number[]) =>
     [nr, ...args, ...Array(7 - args.length).fill(0)].flatMap(n => [0x42, ...signed(n)]).concat(0x10, 0);
-  const code = [0, ...store(32, 65), ...store(33, 66), ...syscall(1, [1, 32, 2]),
-    0x42, 2, 0x52, 0x04, 0x40, 0x00, 0x0b, // trap unless accepted write returned exactly 2
-    ...store(32, 88), ...store(33, 89), ...syscall(60, [42]), 0x1a, 0x0b];
+  const expect = (n: number) => [0x42, ...signed(n), 0x52, 0x04, 0x40, 0x00, 0x0b];
+  const operations = mixed ? [
+    ...Array.from(bytes('/source\0')).flatMap((b, i) => store(64 + i, b)),
+    ...syscall(2, [64, 0]), ...expect(3),
+    ...store(32, 65), ...syscall(1, [1, 32, 1]), ...expect(1),
+    ...syscall(40, [1, 3, 0, 1]), ...expect(1),
+    ...store(32, 88), ...store(33, 67), ...syscall(1, [1, 33, 1]), ...expect(1),
+    ...store(33, 89),
+  ] : [
+    ...store(32, 65), ...store(33, 66), ...syscall(1, [1, 32, 2]), ...expect(2),
+    ...store(32, 88), ...store(33, 89),
+  ];
+  const code = [0, ...operations, ...syscall(60, [42]), 0x1a, 0x0b];
   const wasm = new Uint8Array([
     0, 97, 115, 109, 1, 0, 0, 0,
     ...section(1, [2, 0x60, 8, ...Array(8).fill(0x7e), 1, 0x7e, 0x60, 1, 0x7e, 0]),
@@ -796,6 +806,118 @@ for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-whi
       if (bridge.diagnostics().created) {
         const cleanup = await bridge.stopEvidence();
         assert.equal(cleanup.stopped, true, 'cleanup requires observed Worker exit');
+        await bridge.requestsSettled();
+      }
+    }
+  });
+}
+
+for (const stopBeforeFileReply of [false, true]) {
+  test(`real Node Worker capture fixture: same lane ${stopBeforeFileReply ? 'AB then observed stop before file reply' : 'write, resident sendfile, write yields ABC'}`, {
+    skip: workerQueueSkip, timeout: 30_000,
+  }, async t => {
+    const r = raw(workerQueueArtifact!, true, false, true, true);
+    assert.equal(r.call('linux_queued_output_probe_init'), 0);
+    const input = captureGuest(true), bridge = createGuest(input);
+    const onAbort = () => bridge.requestStop();
+    t.signal.addEventListener('abort', onAbort, {once: true});
+    try {
+      await bridge.ready;
+      const owner = r.live(true), id = owner.id, guestCalls: bigint[] = [];
+      const core = r.e.memory as WebAssembly.Memory;
+      let firstWriteAction: bigint | undefined, inputCursorChecked = false;
+      const outcome = await bridge.run(owner.invocation, 4096n, async request => {
+        assert.equal(request.invocation, owner.invocation);
+        assert.equal(request.sequence, owner.sequence + 1);
+        assert.equal(bridge.diagnostics().exited, false);
+        guestCalls.push(request.nr);
+        if (request.nr === 2n) {
+          const command = r.request(owner, request.nr, request.args);
+          assert.deepEqual([command.tag, command.target], [8, 64n]);
+          const pathLength = bytes('/source\0').length;
+          assert.equal(r.call('linux_syscall_path_start', id, command.value), 0);
+          const pointer = Number(r.result());
+          assert.ok(r.length() >= BigInt(pathLength));
+          copyWorkerInput(input.memory, core, Number(command.target), pointer, pathLength);
+          assert.equal(r.call('linux_syscall_path_finish', id, command.value, BigInt(pathLength), 0), 0);
+          assert.deepEqual([r.state(), r.result()], [0, 3n]);
+          return {kind: 'return', value: r.result()} as const;
+        }
+        if (request.nr === 40n) {
+          const [out, fd, offset, length] = request.args;
+          assert.deepEqual([out, fd, offset, length], [1n, 3n, 0n, 1n]);
+          assert.equal(r.call('linux_queued_worker_probe_sendfile', id, request.invocation, request.sequence, out, fd, offset, length), 0);
+          owner.sequence = request.sequence;
+          const outStep = r.command();
+          assert.deepEqual(outStep, {tag: 0, value: 1n, next: 0n, target: 0n, endpoint: 0n});
+          if (stopBeforeFileReply) {
+            assert.deepEqual(r.remaining(owner, fd), bytes('D'));
+            inputCursorChecked = true;
+            bridge.requestStop(); await bridge.stopped;
+            assert.equal(bridge.diagnostics().pendingRequest, true);
+            assert.equal(r.call('linux_run_receipt', id, request.invocation, 2, 0n), 0);
+          }
+          return {kind: 'return', value: outStep.value} as const;
+        }
+        if (request.nr === 60n) {
+          assert.equal(r.request(owner, request.nr, request.args).tag, 2);
+          return {kind: 'leave'} as const;
+        }
+        assert.equal(request.nr, 1n);
+        const [fd, at, length] = request.args;
+        assert.equal(fd, 1n); assert.equal(length, 1n);
+        assert.equal(r.call('linux_queued_worker_probe_write', id, request.invocation, request.sequence, fd, at, length), 0);
+        owner.sequence = request.sequence;
+        const command = r.command(), action = command.value;
+        assert.deepEqual([command.tag, command.target, command.next, command.endpoint], [13, at, 1n, 0n]);
+        if (firstWriteAction === undefined) firstWriteAction = action;
+        else assert.equal(action, firstWriteAction + 1n, 'resident file acceptance did not issue another Domain action');
+        assert.equal(r.call('linux_queued_worker_probe_start', id, request.sequence, action), 0);
+        const pointer = Number(r.result()), source = Number(r.auxiliary()), extent = Number(r.length());
+        assert.deepEqual([source, extent], [Number(at), 1]);
+        try { copyWorkerInput(input.memory, core, source, pointer, extent); }
+        catch (error) {
+          assert.equal(r.call('linux_queued_worker_probe_finish', id, request.sequence, action, 1, 0), 0);
+          throw error;
+        }
+        assert.equal(r.call('linux_queued_worker_probe_finish', id, request.sequence, action, 0, extent), 0);
+        const step = r.command();
+        assert.deepEqual([step.tag, step.value], [0, 1n]);
+        if (at === 33n) {
+          assert.deepEqual(r.remaining(owner, 3n), bytes('D'));
+          inputCursorChecked = true;
+        }
+        return {kind: 'return', value: step.value} as const;
+      });
+      await bridge.requestsSettled();
+      assert.equal(bridge.diagnostics().failureCount, 0);
+      assert.equal(inputCursorChecked, true);
+      if (stopBeforeFileReply) {
+        assert.equal(outcome.kind, 'failed');
+        assert.deepEqual(guestCalls, [2n, 1n, 40n]);
+      } else {
+        assert.deepEqual(outcome, {kind: 'left', unwound: true});
+        assert.deepEqual(guestCalls, [2n, 1n, 40n, 1n, 60n]);
+        assert.equal(r.call('linux_run_receipt', id, owner.invocation, 1, 0n), 0); assert.equal(r.result(), 42n);
+        bridge.requestStop(); await bridge.stopped;
+        assert.deepEqual(Array.from(new Uint8Array(input.memory.buffer, 32, 2)), [88, 89]);
+      }
+      assert.equal(bridge.diagnostics().exited, true);
+      assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
+      for (const expected of stopBeforeFileReply ? [65n, 66n] : [65n, 66n, 67n]) {
+        assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0);
+        assert.deepEqual([r.length(), r.result()], [1n, expected]);
+        assert.equal(r.call('linux_queued_output_probe_discard', 0), 0); assert.equal(r.result(), 1n);
+      }
+      for (const lane of [0, 1]) {
+        assert.equal(r.call('linux_queued_output_probe_peek', lane, 0), 0); assert.equal(r.length(), 0n);
+      }
+    } finally {
+      t.signal.removeEventListener('abort', onAbort);
+      bridge.requestStop();
+      if (bridge.diagnostics().created) {
+        const stopped = await bridge.stopEvidence();
+        assert.equal(stopped.stopped, true);
         await bridge.requestsSettled();
       }
     }
