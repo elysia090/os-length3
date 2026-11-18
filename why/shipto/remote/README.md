@@ -115,7 +115,7 @@ main has made it Cloudflare refuses another branch's `versions upload`.
 | News | `talk/news.ts` | `GET /v1/news` | reads `message`, `contact`, `board_post`, `board_seen` | page |
 | SSH, per device | `repos/ssh.ts` | `GET /v1/ssh`, `POST /v1/ssh/:device/off` (any session); `PUT/DELETE /v1/ssh/this`, `POST /v1/ssh/this/beat` (the device itself: refused with an Origin; with the tag its last answer gave, answered by the mark) | `ssh` (one row a session: its scope, `device` or `network`, and when; never an address, port or repo) | core (the listener), page (see, stop) |
 | What moved, without the database | `serve/mark.ts` (`MarkObject`, `serve/worker.ts` exports it) | (none of its own: it answers `GET /v1/moved`, `/v1/news`, `/v1/inbox/threads`, `/v1/boards/:id/posts`, `/v1/boards/:id/todos` and the beat, given their tags, and every other write moves it) | (none: the Durable Object's own storage, its mark and the beats it heard) | page, core |
-| A link carried | `links/relay.ts` (who is admitted, the link itself), `links/where.ts` (to where), `links/relay.worker.ts` and `links/relay.node.ts` (whose socket: the runtime's, node's) | `GET /v1/link`, a WebSocket (no route of the app's: `serve/worker.ts` and `serve/dev.ts` answer it before the app) | reads `session` and nothing else; nothing is written | page (a box's programs, through cowboy: `module/cowboy/host/relay.ts`) |
+| A link carried | `links/relay.ts` (who is admitted, the link itself), `links/where.ts` (to where), `links/relay.worker.ts` and `links/relay.node.ts` (whose socket: the runtime's, node's) | `GET /v1/link`, a WebSocket (no route of the app's: `serve/worker.ts` and `serve/dev.ts` answer it before the app) | reads `session` and nothing else; nothing is written | page (a box's programs, through cowboy: `ricebox/cowboy/host/relay.ts`) |
 | The sweep | `repos/sweep.ts`, `serve/worker.ts` `scheduled` | (none: once a day, and when `serve/dev.ts` starts) | every table above (Stripe's events 30 days old; each changed room counted again from its rows); the bucket's unnamed blobs; then the mark moves, and lets go of beats heard a day ago | |
 
 `GET /v1/repos/gone` is asked by no client today (a device learns a repo
@@ -125,7 +125,7 @@ read the sweep through it.
 ### A link carried
 
 A box in a page has no network of its own: a browser gives a page no TCP. What its programs connect to is decided
-on the device (cowboy, `module/cowboy`: a name is answered there, a link is known by the name it was meant for),
+on the device (cowboy, `ricebox/cowboy`: a name is answered there, a link is known by the name it was meant for),
 and a link to a host that no page's own request reaches (git, SSH, anything that is not HTTP with CORS) is carried
 here: one WebSocket in, one TCP connection out, bytes copied each way. What is said over it is sealed between the
 box and the host (TLS, SSH); the Remote reads none of it and keeps none of it.

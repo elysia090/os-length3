@@ -5,8 +5,7 @@
 
 import {isNative, native} from '../api/host.ts';
 
-/** To whom a device listens: from itself only, or from its network's PCs too. */
-export type Scope = 'device' | 'network';
+import type {Scope} from '../api/ssh-scope.ts';
 
 /** An address listened on besides loopback, and the interface it is on (`wlan0`, `tailscale0`). */
 export interface Taken { addr: string; interface: string }

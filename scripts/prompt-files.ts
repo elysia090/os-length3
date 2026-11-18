@@ -1,6 +1,6 @@
 // The web root (public/webroot): why for the browser's Prompt, taken from the release of the
 // newest why this tree pins: the same root the desktop app installs, as the browser reads it
-// (module/ricebox/build/distribution.ts). It is made where Rust is, by the release
+// (ricebox/distribution/build/distribution.ts). It is made where Rust is, by the release
 // (.github/workflows/release.yml), and is the OS that version is; a build
 // that only has Node (Cloudflare's Workers Builds) takes it from it, and
 // takes only the why this tree pins: why/prompt/roots/pins.rs
@@ -10,7 +10,7 @@
 // root and that index; the index must be that digest, and every pack and
 // blob it names the digest its name is. Anything else is refused, and
 // nothing is put in public/webroot. Shipping a newer Prompt is releasing it (a
-// new version in module/ricebox/RELEASE): the release proposes the entry it pinned to main.
+// new version in ricebox/distribution/RELEASE): the release proposes the entry it pinned to main.
 //
 //   node scripts/prompt-files.ts
 //
@@ -24,10 +24,10 @@ import {mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync}
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
-import {checkPacks} from '../module/ricebox/distribution/pack.ts';
-import {tarMembers} from '../module/ricebox/host/node/tar.ts';
-import {checkedCaptureResultDescriptor, type About, type Index} from '../module/ricebox/distribution/manifest.ts';
-import {verifyCaptureResultBlob} from '../module/ricebox/deployment/capture-result.ts';
+import {checkPacks} from '../ricebox/distribution/format/pack.ts';
+import {tarMembers} from '../ricebox/distribution/host/node/tar.ts';
+import {checkedCaptureResultDescriptor, type About, type Index} from '../ricebox/distribution/format/manifest.ts';
+import {verifyCaptureResultBlob} from '../ricebox/distribution/deployment/capture-result.ts';
 
 const here = new URL('..', import.meta.url).pathname;
 const repo = process.env.GITHUB_REPOSITORY || 'elysia090/os-length3';

@@ -3,7 +3,7 @@
 # ricebox's own Rust (a root on a device, a root run in a box), which the core
 # is made with: it takes nothing of them, and is tested alone (cargo test -p ricebox).
 [workspace]
-members = ["why", "why/api/web", "why/cli", "why/desktop", "module/ricebox"]
+members = ["why", "why/api/web", "why/cli", "why/desktop", "ricebox/distribution"]
 resolver = "2"
 
 # Builds made while working (tests, checks, debug runs): this workspace's own code keeps its debug info, for a

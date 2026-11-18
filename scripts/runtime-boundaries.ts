@@ -3,41 +3,41 @@
 import {readdirSync, readFileSync} from 'node:fs';
 import {posix} from 'node:path';
 
-export const ROOTS = ['module/ricebox/verification', 'module/ricebox/host/node', 'module/ricebox/build', 'module/ricebox/deployment', 'module/ricebox/integrations', 'module/ricebox/distribution', 'module/ricebox/runtime', 'module/sods/runtime', 'module/cowboy/host'];
+export const ROOTS = ['ricebox/distribution/verification', 'ricebox/distribution/host/node', 'ricebox/distribution/build', 'ricebox/distribution/deployment', 'ricebox/distribution/integrations', 'ricebox/distribution/format', 'ricebox/distribution/runtime', 'ricebox/sods/runtime', 'ricebox/cowboy/host'];
 const indexedDb = 'why/api/indexeddb.ts';
 const inside = (path: string, root: string) => path.startsWith(root + '/');
-const publicSods = new Set(['module/sods/runtime/host.ts', 'module/sods/runtime/linux.ts', 'module/sods/runtime/translate.ts']);
+const publicSods = new Set(['ricebox/sods/runtime/host.ts', 'ricebox/sods/runtime/linux.ts', 'ricebox/sods/runtime/translate.ts']);
 // Adapters are allowed host facilities explicitly, not forbidden. Add a new adapter and its facilities here
 // when its contract lands; do not allow node:* throughout the core to accommodate one adapter.
 const hostImports: Record<string, readonly string[]> = {
-  'module/ricebox/verification/language-cases.ts': ['node:fs'],
-  'module/ricebox/verification/distribution.ts': ['node:fs','node:path'],
-  'module/ricebox/verification/programs.ts': ['node:child_process','node:crypto','node:fs','node:os','node:path','node:url'],
-  'module/ricebox/verification/commands.ts': ['node:child_process','node:fs','node:os','node:url','node:util'],
-  'module/ricebox/host/node/hash.ts': ['node:crypto'],
-  'module/ricebox/host/node/tar.ts': ['node:fs','node:zlib','node:stream'],
-  'module/ricebox/verification/inventory.ts': ['node:fs','node:path'],
-  'module/ricebox/deployment/capture-result.ts': ['node:zlib'],
-  'module/ricebox/deployment/local.ts': ['node:fs','node:path','node:zlib'],
-  'module/ricebox/build/npm.ts': ['node:module','node:fs','node:path','node:url'],
-  'module/ricebox/build/distribution.ts': ['node:crypto','node:fs','node:path','node:url','node:zlib'],
-  'module/ricebox/build/compression-pool.ts': ['node:worker_threads'],
-  'module/ricebox/build/compress.worker.ts': ['node:worker_threads','node:zlib'],
-  'module/ricebox/build/aot-cache.ts': ['node:child_process','node:crypto','node:fs','node:os','node:path'],
-  'module/ricebox/build/file-store-artifact.ts': ['node:crypto'],
-  'module/ricebox/build/muk-artifact.ts': ['node:child_process','node:crypto','node:fs','node:path','node:url'],
-  'module/ricebox/build/package-database.ts': ['node:crypto','node:fs','node:path'],
-  'module/ricebox/build/script-interpreters.ts': ['node:fs','node:path','node:url'],
-  'module/ricebox/build/prepare.ts': ['node:fs','node:path','node:child_process','node:crypto','node:url'],
-  'module/ricebox/deployment/assets.ts': ['node:crypto','node:fs','node:path','node:zlib'],
-  'module/sods/runtime/host.ts': ['node:worker_threads', 'node:os', 'node:fs'],
-  'module/sods/runtime/host/node/execution.ts': ['node:worker_threads'],
-  'module/sods/runtime/host/node/stdio.ts': ['node:fs', 'node:tty'],
-  'module/sods/runtime/host/node/run.ts': ['node:crypto', 'node:fs', 'node:path'],
-  'module/sods/runtime/host/node/guest.ts': ['node:worker_threads'],
-  'module/sods/runtime/host/node/capture-artifact.ts': ['node:crypto'],
+  'ricebox/distribution/verification/language-cases.ts': ['node:fs'],
+  'ricebox/distribution/verification/distribution.ts': ['node:fs','node:path'],
+  'ricebox/distribution/verification/programs.ts': ['node:child_process','node:crypto','node:fs','node:os','node:path','node:url'],
+  'ricebox/distribution/verification/commands.ts': ['node:child_process','node:fs','node:os','node:url','node:util'],
+  'ricebox/distribution/host/node/hash.ts': ['node:crypto'],
+  'ricebox/distribution/host/node/tar.ts': ['node:fs','node:zlib','node:stream'],
+  'ricebox/distribution/verification/inventory.ts': ['node:fs','node:path'],
+  'ricebox/distribution/deployment/capture-result.ts': ['node:zlib'],
+  'ricebox/distribution/deployment/local.ts': ['node:fs','node:path','node:zlib'],
+  'ricebox/distribution/build/npm.ts': ['node:fs','node:path','node:url'],
+  'ricebox/distribution/build/distribution.ts': ['node:crypto','node:fs','node:path','node:url','node:zlib'],
+  'ricebox/distribution/build/compression-pool.ts': ['node:worker_threads'],
+  'ricebox/distribution/build/compress.worker.ts': ['node:worker_threads','node:zlib'],
+  'ricebox/distribution/build/aot-cache.ts': ['node:child_process','node:crypto','node:fs','node:os','node:path'],
+  'ricebox/distribution/build/file-store-artifact.ts': ['node:crypto'],
+  'ricebox/distribution/build/muk-artifact.ts': ['node:child_process','node:crypto','node:fs','node:path','node:url'],
+  'ricebox/distribution/build/package-database.ts': ['node:crypto','node:fs','node:path'],
+  'ricebox/distribution/build/script-interpreters.ts': ['node:fs','node:path','node:url'],
+  'ricebox/distribution/build/prepare.ts': ['node:fs','node:path','node:child_process','node:crypto','node:url'],
+  'ricebox/distribution/deployment/assets.ts': ['node:crypto','node:fs','node:path','node:zlib'],
+  'ricebox/sods/runtime/host.ts': ['node:worker_threads', 'node:os', 'node:fs'],
+  'ricebox/sods/runtime/host/node/execution.ts': ['node:worker_threads'],
+  'ricebox/sods/runtime/host/node/stdio.ts': ['node:fs', 'node:tty'],
+  'ricebox/sods/runtime/host/node/run.ts': ['node:crypto', 'node:fs', 'node:path'],
+  'ricebox/sods/runtime/host/node/guest.ts': ['node:worker_threads'],
+  'ricebox/sods/runtime/host/node/capture-artifact.ts': ['node:crypto'],
   // The existing CLI is executable but must not become an importable runtime dependency.
-  'module/sods/runtime/run.ts': ['node:child_process', 'node:crypto', 'node:fs', 'node:path', 'node:url'],
+  'ricebox/sods/runtime/run.ts': ['node:child_process', 'node:crypto', 'node:fs', 'node:path', 'node:url'],
 };
 
 // Preserve quoted strings but skip comments. Templates stay opaque: a computed import must not conceal an edge.
@@ -94,16 +94,17 @@ export function allowed(from: string, specifier: string): boolean {
   if (!specifier.startsWith('./') && !specifier.startsWith('../')) return false;
   const target = posix.normalize(posix.join(posix.dirname(from), specifier.split(/[?#]/)[0]!));
   const owner = ROOTS.find(root => inside(from, root));
-  if (!owner || target === 'module/sods/runtime/run.ts' || target.includes('/test/') || /\.(test|spec)\./.test(target)) return false;
+  if (!owner || target === 'ricebox/sods/runtime/run.ts' || target.includes('/test/') || /\.(test|spec)\./.test(target)) return false;
   if (inside(target, owner)) return true;
-  if (owner === 'module/ricebox/verification') return ['module/ricebox/distribution','module/ricebox/deployment','module/ricebox/host/node','module/ricebox/runtime'].some(root => inside(target,root)) || publicSods.has(target) || target === 'module/ricebox/build/muk-artifact.ts';
-  if (owner === 'module/ricebox/integrations') return inside(target, 'module/ricebox/build') || inside(target, 'module/ricebox/deployment');
-  if (owner === 'module/ricebox/host/node') return inside(target, 'module/ricebox/distribution');
-  if (from === 'module/ricebox/build/file-store-artifact.ts' && target === 'module/sods/runtime/linux.ts') return true;
-  if (from === 'module/ricebox/build/capture-result-artifact.ts' && target === 'module/sods/runtime/linux.ts') return true;
-  if (owner === 'module/ricebox/build' || owner === 'module/ricebox/deployment') return inside(target, 'module/ricebox/distribution') || inside(target, 'module/ricebox/host/node');
-  if (owner === 'module/ricebox/runtime') return inside(target, 'module/ricebox/distribution') || publicSods.has(target);
-  return owner === 'module/cowboy/host' && target === 'module/sods/runtime/linux.ts';
+  if (owner === 'ricebox/distribution/verification') return ['ricebox/distribution/format','ricebox/distribution/deployment','ricebox/distribution/host/node','ricebox/distribution/runtime'].some(root => inside(target,root)) || publicSods.has(target) || target === 'ricebox/distribution/build/muk-artifact.ts';
+  if (owner === 'ricebox/distribution/integrations') return inside(target, 'ricebox/distribution/build') || inside(target, 'ricebox/distribution/deployment');
+  if (owner === 'ricebox/distribution/host/node') return inside(target, 'ricebox/distribution/format');
+  if (from === 'ricebox/distribution/build/npm.ts' && target === 'ricebox/toolchain/package-typescript.ts') return true;
+  if (from === 'ricebox/distribution/build/file-store-artifact.ts' && target === 'ricebox/sods/runtime/linux.ts') return true;
+  if (from === 'ricebox/distribution/build/capture-result-artifact.ts' && target === 'ricebox/sods/runtime/linux.ts') return true;
+  if (owner === 'ricebox/distribution/build' || owner === 'ricebox/distribution/deployment') return inside(target, 'ricebox/distribution/format') || inside(target, 'ricebox/distribution/host/node');
+  if (owner === 'ricebox/distribution/runtime') return inside(target, 'ricebox/distribution/format') || publicSods.has(target);
+  return owner === 'ricebox/cowboy/host' && target === 'ricebox/sods/runtime/linux.ts';
 }
 
 export function violations(sources: Record<string, string>): string[] {

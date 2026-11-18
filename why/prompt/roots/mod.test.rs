@@ -1,5 +1,5 @@
 //! The tests of why's part of a root: which it takes, from where, made ready for a Prompt, said in its words. What
-//! a root is on a device is ricebox's, and tested there (module/ricebox/src).
+//! a root is on a device is ricebox's, and tested there (ricebox/distribution/src).
 use super::*;
 use std::fs;
 use std::io::Write;

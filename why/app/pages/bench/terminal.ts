@@ -83,7 +83,7 @@ function zone(): string {
   } catch { return 'UTC'; }
 }
 /**
- * The box a page's Prompt runs in: the bundle ricebox writes for muk (module/ricebox/src/bundle.rs, the one writer
+ * The box a page's Prompt runs in: the bundle ricebox writes for muk (ricebox/distribution/src/bundle.rs, the one writer
  * for every host, asked through the core: prompt/mod.rs), its shell and what it runs with said there, as for the
  * app's Prompts on the machine. What is
  * said here is what this host lends: the tree the Worker's kernel is given, whole and its own to write (the root is
@@ -250,7 +250,7 @@ export class Session implements Prompt {
     this.worker?.postMessage({type: 'input', bytes}, [bytes.buffer]);
   }
 
-  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (module/ricebox/runtime/worker.ts). */
+  /** Keys pressed on the page: its kernel waits for them to be still before work that would hold up the page (ricebox/distribution/runtime/worker.ts). */
   typing() { this.worker?.postMessage({type: 'typing'}); }
 
   /** `sig` to what runs in front (a key that makes a signal). */
@@ -261,7 +261,7 @@ export class Session implements Prompt {
 
   /**
    * A key that makes a signal flushes what was written and not yet shown, as a terminal's line discipline does (unless
-   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (module/ricebox/runtime/worker.ts), so ^C
+   * the program set NOFLSH): what comes from the worker of an epoch before this one is dropped (ricebox/distribution/runtime/worker.ts), so ^C
    * stands where the run was cut, not under the megabyte a flood had on its way.
    */
   private flush(): {flush?: number} {

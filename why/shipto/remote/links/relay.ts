@@ -1,4 +1,4 @@
-// A link carried: one WebSocket from a box in a page (module/cowboy/host/relay.ts) to one TCP connection from here.
+// A link carried: one WebSocket from a box in a page (ricebox/cowboy/host/relay.ts) to one TCP connection from here.
 // The page's first message is where to, as cowboy writes it (`name:port\n`); the first back is one byte: 0, the link
 // is made, else why not, as Linux numbers it. Then nothing but the bytes each way, a message whatever came at a
 // time; an empty message says no more will be sent that way. What is said over it is sealed between the box and the

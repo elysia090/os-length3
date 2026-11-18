@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, dirname} from 'node:path';
-import {checkScripts} from '../module/ricebox/build/script-interpreters.ts';
+import {checkScripts} from '../ricebox/distribution/build/script-interpreters.ts';
 
 function fixture(t: import('node:test').TestContext) {
   const root = mkdtempSync(join(tmpdir(), 'ricebox-interpreters-'));

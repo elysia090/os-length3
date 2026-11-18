@@ -1,7 +1,7 @@
 // The product supplies its words; transfer, resumption and integrity are the distribution's (ricebox's layers).
-import {download as fetchFile, type DownloadMessage} from '../../module/ricebox/runtime/download.ts';
+import {download as fetchFile, type DownloadMessage} from '../../ricebox/distribution/runtime/download.ts';
 import {t} from '../text/i18n.ts';
-export * from '../../module/ricebox/runtime/download.ts';
+export * from '../../ricebox/distribution/runtime/download.ts';
 
 /** Every word a download may say, said here as the app's own: each is in its catalog, and none is missing (the type holds the list whole). */
 export const DOWNLOAD_WORDS: Record<DownloadMessage, true> = {

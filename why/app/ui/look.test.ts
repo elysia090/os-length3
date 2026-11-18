@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {contrast, things} from '../../../module/everyday/src/everyday.ts';
+import {contrast, things} from '../../../ricebox/everyday/src/everyday.ts';
 import {sheets, table} from '../../../scripts/look.ts';
 import {THINGS} from './look-things.ts';
 import {PAIRS, worn} from './look.ts';

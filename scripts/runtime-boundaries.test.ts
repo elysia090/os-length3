@@ -8,7 +8,7 @@ test('runtime module boundaries hold in the actual source tree', () => {
   for (const root of ROOTS) assert.ok(Object.keys(sources).some(path => path.startsWith(root + '/')), `no runtime sources checked in ${root}`);
   assert.deepEqual(violations(sources), []);
   // Prove that this is checking repository content, not only the parser's synthetic examples.
-  const file = 'module/ricebox/runtime/root.ts';
+  const file = 'ricebox/distribution/runtime/root.ts';
   assert.equal(typeof sources[file], 'string');
   assert.deepEqual(violations({...sources, [file]: sources[file] + '\nimport type {Product} from "../../../why/api/host.ts";'}),
     [file + ' -> ../../../why/api/host.ts']);
@@ -32,41 +32,41 @@ test('type imports, re-exports, dynamic imports and worker source URLs are depen
 
 test('runtime cannot reach products, build tools, tests or private sods internals', () => {
   for (const target of ['../../../why/api/host.ts', '../../../shipto/client.ts', '../build/distribution.ts', './test/helper.ts', '../../otter/make/artifacts.ts', '../../sods/runtime/linux/process.ts', 'node:fs', 'why', 'https://example.com/code.js']) {
-    assert.equal(allowed('module/ricebox/runtime/root.ts', target), false, target);
+    assert.equal(allowed('ricebox/distribution/runtime/root.ts', target), false, target);
   }
-  assert.equal(allowed('module/sods/runtime/linux.ts', '../../ricebox/runtime/root.ts'), false);
-  assert.equal(allowed('module/sods/runtime/linux.ts', './run.ts'), false);
-  assert.equal(allowed('why/api/indexeddb.ts', '../../module/sods/runtime/linux.ts'), false);
+  assert.equal(allowed('ricebox/sods/runtime/linux.ts', '../../distribution/runtime/root.ts'), false);
+  assert.equal(allowed('ricebox/sods/runtime/linux.ts', './run.ts'), false);
+  assert.equal(allowed('why/api/indexeddb.ts', '../../ricebox/sods/runtime/linux.ts'), false);
   assert.equal(allowed('why/api/indexeddb.ts', './worker.ts'), false);
   assert.equal(allowed('why/api/indexeddb.ts', 'node:fs'), false);
-  assert.equal(allowed('module/cowboy/host/outside.ts', '../../sods/runtime/linux.ts'), true);
-  assert.equal(allowed('module/ricebox/runtime/root.ts', '../../sods/runtime/translate.ts'), true);
+  assert.equal(allowed('ricebox/cowboy/host/outside.ts', '../../sods/runtime/linux.ts'), true);
+  assert.equal(allowed('ricebox/distribution/runtime/root.ts', '../../sods/runtime/translate.ts'), true);
 });
 
 test('computed imports cannot bypass the allowlist; Node facilities stay in the host adapter', () => {
   for (const source of ['import(name)', 'import("./a" + name)', 'import(`./${name}.ts`)', 'require(name)']) {
-    assert.ok(violations({'module/ricebox/runtime/root.ts': source}).length, source);
+    assert.ok(violations({'ricebox/distribution/runtime/root.ts': source}).length, source);
   }
-  assert.equal(allowed('module/sods/runtime/host.ts', 'node:worker_threads'), true);
-  assert.equal(allowed('module/sods/runtime/linux.ts', 'node:worker_threads'), false);
-  assert.equal(allowed('module/sods/runtime/host.ts', 'node:child_process'), false);
+  assert.equal(allowed('ricebox/sods/runtime/host.ts', 'node:worker_threads'), true);
+  assert.equal(allowed('ricebox/sods/runtime/linux.ts', 'node:worker_threads'), false);
+  assert.equal(allowed('ricebox/sods/runtime/host.ts', 'node:child_process'), false);
   for (const file of ['execution.ts', 'guest.ts']) {
-    const adapter = 'module/sods/runtime/host/node/' + file;
+    const adapter = 'ricebox/sods/runtime/host/node/' + file;
     assert.equal(allowed(adapter, 'node:worker_threads'), true);
     for (const facility of ['node:fs', 'node:child_process', 'node:net']) assert.equal(allowed(adapter, facility), false);
   }
   for (const file of ['linux/memory-host.ts', 'host/node/protocol.ts']) {
-    assert.equal(allowed('module/sods/runtime/' + file, 'node:worker_threads'), false);
+    assert.equal(allowed('ricebox/sods/runtime/' + file, 'node:worker_threads'), false);
   }
-  const capture = 'module/sods/runtime/host/node/capture-artifact.ts';
+  const capture = 'ricebox/sods/runtime/host/node/capture-artifact.ts';
   assert.equal(allowed(capture, 'node:crypto'), true);
   for (const facility of ['node:fs', 'node:worker_threads', 'node:net']) assert.equal(allowed(capture, facility), false);
-  assert.equal(allowed('module/sods/runtime/linux/capture-artifact.ts', 'node:crypto'), false);
-  assert.equal(allowed('module/sods/runtime/run.ts', 'node:child_process'), true);
+  assert.equal(allowed('ricebox/sods/runtime/linux/capture-artifact.ts', 'node:crypto'), false);
+  assert.equal(allowed('ricebox/sods/runtime/run.ts', 'node:child_process'), true);
 });
 
 test('bundler worker queries and computed worker sources cannot hide a forbidden dependency', () => {
-  const from = 'module/ricebox/runtime/root.ts';
+  const from = 'ricebox/distribution/runtime/root.ts';
   for (const source of [
     "new Worker(new URL('../../../why/api/worker.ts?worker', import.meta.url))",
     "import Worker from '../../../why/api/worker.ts?worker'",
@@ -80,68 +80,74 @@ test('bundler worker queries and computed worker sources cannot hide a forbidden
 });
 
 test('distribution format is below execution, without host or product capabilities', () => {
-  const format='module/ricebox/distribution/manifest.ts';
+  const format='ricebox/distribution/format/manifest.ts';
   for (const target of ['../runtime/root-types.ts','../runtime/root.ts','../build/distribution.ts','../../sods/runtime/linux.ts','node:fs']) assert.equal(allowed(format,target),false,target);
-  assert.equal(allowed('module/ricebox/runtime/root.ts','../distribution/manifest.ts'),true);
-  assert.equal(allowed('module/ricebox/distribution/mount.ts','./pack.ts'),true);
+  assert.equal(allowed('ricebox/distribution/runtime/root.ts','../format/manifest.ts'),true);
+  assert.equal(allowed('ricebox/distribution/format/mount.ts','./pack.ts'),true);
 });
 
 test('deployment is independent of composition and integrations',()=>{
-  const assets='module/ricebox/deployment/assets.ts';
-  const capture='module/ricebox/deployment/capture-result.ts';
+  const assets='ricebox/distribution/deployment/assets.ts';
+  const capture='ricebox/distribution/deployment/capture-result.ts';
   assert.equal(allowed(capture,'node:zlib'),true);
   for(const target of ['node:fs','node:worker_threads','../runtime/root.ts','../../sods/runtime/linux/memory-host.ts']) assert.equal(allowed(capture,target),false,target);
-  assert.equal(allowed('module/ricebox/runtime/root.ts','../deployment/capture-result.ts'),false);
+  assert.equal(allowed('ricebox/distribution/runtime/root.ts','../deployment/capture-result.ts'),false);
   for(const target of ['../build/prepare.ts','../integrations/vite.ts','../runtime/root.ts','../../sods/runtime/linux.ts','node:child_process']) assert.equal(allowed(assets,target),false,target);
-  assert.equal(allowed(assets,'../distribution/manifest.ts'),true);
+  assert.equal(allowed(assets,'../format/manifest.ts'),true);
   assert.equal(allowed(assets,'node:fs'),true);
-  assert.equal(allowed('module/ricebox/integrations/vite.ts','../deployment/assets.ts'),true);
-  assert.equal(allowed('module/ricebox/integrations/vite.ts','../build/prepare.ts'),true);
-  assert.equal(allowed('module/ricebox/build/prepare.ts','../integrations/vite.ts'),false);
-  assert.equal(allowed('module/ricebox/runtime/root.ts','../deployment/assets.ts'),false);
+  assert.equal(allowed('ricebox/distribution/integrations/vite.ts','../deployment/assets.ts'),true);
+  assert.equal(allowed('ricebox/distribution/integrations/vite.ts','../build/prepare.ts'),true);
+  assert.equal(allowed('ricebox/distribution/build/prepare.ts','../integrations/vite.ts'),false);
+  assert.equal(allowed('ricebox/distribution/runtime/root.ts','../deployment/assets.ts'),false);
 });
 
 test('Node readers cannot depend on execution or deployment orchestration',()=>{
-  const reader='module/ricebox/host/node/tar.ts';
+  const reader='ricebox/distribution/host/node/tar.ts';
   for(const target of ['../../runtime/root.ts','../../deployment/local.ts','../../build/prepare.ts','../../../sods/runtime/linux.ts']) assert.equal(allowed(reader,target),false,target);
-  assert.equal(allowed(reader,'../../distribution/inventory.ts'),true);
-  assert.equal(allowed('module/ricebox/deployment/local.ts','../host/node/hash.ts'),true);
-  assert.equal(allowed('module/ricebox/distribution/inventory.ts','../host/node/hash.ts'),false);
+  assert.equal(allowed(reader,'../../format/inventory.ts'),true);
+  assert.equal(allowed('ricebox/distribution/deployment/local.ts','../host/node/hash.ts'),true);
+  assert.equal(allowed('ricebox/distribution/format/inventory.ts','../host/node/hash.ts'),false);
 });
 
 
 test('verification consumes production contracts without becoming a production dependency',()=>{
-  const programs='module/ricebox/verification/programs.ts';
+  const programs='ricebox/distribution/verification/programs.ts';
   for(const target of ['../runtime/prepared-tree.ts','../deployment/local.ts','../build/muk-artifact.ts','../../sods/runtime/linux.ts','node:child_process']) assert.equal(allowed(programs,target),true,target);
   for(const target of ['../build/distribution.ts','../../sods/runtime/linux/kernel.ts','../../../why/api/host.ts','node:net']) assert.equal(allowed(programs,target),false,target);
-  for(const from of ['runtime/root.ts','distribution/manifest.ts','deployment/local.ts','build/prepare.ts','integrations/vite.ts']) assert.equal(allowed('module/ricebox/'+from,'../verification/programs.ts'),false,from);
-  assert.equal(allowed('module/ricebox/verification/language-cases.ts','node:child_process'),false);
+  for(const from of ['runtime/root.ts','format/manifest.ts','deployment/local.ts','build/prepare.ts','integrations/vite.ts']) assert.equal(allowed('ricebox/distribution/'+from,'../verification/programs.ts'),false,from);
+  assert.equal(allowed('ricebox/distribution/verification/language-cases.ts','node:child_process'),false);
 });
 
 
 test('build artifact validation uses only the public sods entry and compression is host-specific',()=>{
-  assert.equal(allowed('module/ricebox/build/file-store-artifact.ts','../../sods/runtime/linux.ts'),true);
-  assert.equal(allowed('module/ricebox/build/file-store-artifact.ts','../../sods/runtime/file-store.ts'),false);
-  assert.equal(allowed('module/ricebox/build/prepare.ts','../../sods/runtime/linux.ts'),false);
-  const capture = 'module/ricebox/build/capture-result-artifact.ts';
+  assert.equal(allowed('ricebox/distribution/build/file-store-artifact.ts','../../sods/runtime/linux.ts'),true);
+  assert.equal(allowed('ricebox/distribution/build/file-store-artifact.ts','../../sods/runtime/file-store.ts'),false);
+  assert.equal(allowed('ricebox/distribution/build/prepare.ts','../../sods/runtime/linux.ts'),false);
+  const capture = 'ricebox/distribution/build/capture-result-artifact.ts';
   assert.equal(allowed(capture,'../../sods/runtime/linux.ts'),true);
   for (const entry of ['../../sods/runtime/linux/admission-wire.ts', '../../sods/runtime/linux/memory-host.ts', '../runtime/root.ts', 'node:worker_threads']) {
     assert.equal(allowed(capture,entry),false,entry);
   }
-  assert.equal(allowed('module/ricebox/runtime/root.ts','../../sods/runtime/linux/admission-wire.ts'),false);
+  assert.equal(allowed('ricebox/distribution/runtime/root.ts','../../sods/runtime/linux/admission-wire.ts'),false);
 
-  assert.equal(allowed('module/ricebox/build/compress.worker.ts','node:zlib'),true);
-  assert.equal(allowed('module/ricebox/build/compress.worker.ts','node:fs'),false);
-  assert.deepEqual(violations({'module/ricebox/build/compression-pool.ts':"new Worker(new URL('./compress.worker.ts', import.meta.url))"}),[]);
+  assert.equal(allowed('ricebox/distribution/build/compress.worker.ts','node:zlib'),true);
+  assert.equal(allowed('ricebox/distribution/build/compress.worker.ts','node:fs'),false);
+  assert.deepEqual(violations({'ricebox/distribution/build/compression-pool.ts':"new Worker(new URL('./compress.worker.ts', import.meta.url))"}),[]);
 });
 
 test('release inventory verification owns filesystem access without granting it to distribution or runtime', () => {
-  const inventory = 'module/ricebox/verification/inventory.ts';
-  for (const target of ['node:fs', 'node:path', '../deployment/local.ts', '../host/node/tar.ts', '../distribution/inventory.ts']) {
+  const inventory = 'ricebox/distribution/verification/inventory.ts';
+  for (const target of ['node:fs', 'node:path', '../deployment/local.ts', '../host/node/tar.ts', '../format/inventory.ts']) {
     assert.equal(allowed(inventory, target), true, target);
   }
-  for (const from of ['module/ricebox/runtime/root.ts', 'module/ricebox/distribution/inventory.ts']) {
+  for (const from of ['ricebox/distribution/runtime/root.ts', 'ricebox/distribution/format/inventory.ts']) {
     assert.equal(allowed(from, '../verification/inventory.ts'), false);
   }
   assert.equal(allowed(inventory, 'node:child_process'), false);
+});
+
+test('the npm script may use the shared emitter, but it is not a runtime dependency', () => {
+  const helper = '../../toolchain/package-typescript.ts';
+  assert.equal(allowed('ricebox/distribution/build/npm.ts', helper), true);
+  assert.equal(allowed('ricebox/distribution/runtime/root.ts', helper), false);
 });

@@ -1,13 +1,13 @@
-// The root as a page runs it is ricebox's, all of it (module/ricebox/runtime: its layers fetched, kept and mounted, the
+// The root as a page runs it is ricebox's, all of it (ricebox/distribution/runtime: its layers fetched, kept and mounted, the
 // Worker that runs it in a box muk makes, what is translated ahead). What is said here is the product's: where its
 // root is served from, the names its page keeps things by, and its words.
-import {createRoot} from '../../module/ricebox/runtime/root.ts';
+import {createRoot} from '../../ricebox/distribution/runtime/root.ts';
 import {errorText} from '../api/errors.ts';
 import {isNative} from '../api/host.ts';
 import {REMOTE_URL} from '../shipto/connection.ts';
 import {t} from '../text/i18n.ts';
-export {retireRootWorker, BOX, type Segment, type Blob, type About, type Box, type Index, type Webroot, type PreparedRoot, type More, type Stage} from '../../module/ricebox/runtime/root.ts';
-export {aheadFor} from '../../module/ricebox/runtime/pretranslate.ts';
+export {retireRootWorker, BOX, type Segment, type Blob, type About, type Box, type Index, type Webroot, type PreparedRoot, type More, type Stage} from '../../ricebox/distribution/runtime/root.ts';
+export {aheadFor} from '../../ricebox/distribution/runtime/pretranslate.ts';
 
 const root = createRoot({
   base: isNative ? `${REMOTE_URL}/webroot/` : '/webroot/',

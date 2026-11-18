@@ -3,7 +3,7 @@
 // reached, are that device's own (why/cowboy/ssh.ts).
 
 import {json} from './connection.ts';
-import type {Scope} from '../cowboy/ssh.ts';
+import type {Scope} from '../api/ssh-scope.ts';
 
 /** A device listening: its session, its user agent, to whom, when it was turned on and last heard from. */
 export interface Listening { device: string; agent: string | null; scope: Scope; since: number; seen: number; current: boolean }

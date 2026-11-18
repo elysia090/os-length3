@@ -72,7 +72,7 @@ tracked in issue #20.
   what is saved anywhere else is put into the shell's copy, so the shell,
   File, Forge and Git see one repo. Its one dependency is why (OS.md,
   why: the one base): in a browser, `public/webroot`, made from the release root
-  by `module/ricebox/build/distribution.ts`: `webroot.json` (which why, and the root's digest), an index
+  by `ricebox/distribution/build/distribution.ts`: `webroot.json` (which why, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
   first opens it, and the translator with BusyBox, why and git translated
   ahead of time. A first Prompt fetches about 0.8 MB (the index, the translator,
@@ -83,7 +83,7 @@ tracked in issue #20.
   reads it rather than translating it again. Make it
   with `npm run webroot` (`scripts/webroot.sh`: the translator from this tree and the
   newest root `why/prompt/roots/pins.rs` pins), and check it against that root
-  with `npm run webroot:parity -- ROOT public/webroot`; `node module/ricebox/verification/programs.ts
+  with `npm run webroot:parity -- ROOT public/webroot`; `node ricebox/distribution/verification/programs.ts
   public/webroot ROOT_DIR` says which programs of it run under muk today.
 
 ## why: the same OS on the command line
@@ -435,7 +435,7 @@ the app.
 
 The webview has no other host access: it reads nothing outside the app's
 data directory, runs no shell and launches no root. The app starts no host
-program for a repo; its own tools run inside the root, in a box muk makes (`why/prompt/start.rs` lends, `module/ricebox/src/run.rs` runs).
+program for a repo; its own tools run inside the root, in a box muk makes (`why/prompt/start.rs` lends, `ricebox/distribution/src/run.rs` runs).
 
 The Remote (`service/`): Hono with Better Auth (provider sign-in, then
 passkeys; device authorization; bearer sessions) on Drizzle; Neon in
@@ -535,7 +535,7 @@ to this repository, and its Settings → Build say, once:
 | Branch control | main deploys; other branches build previews, each with the Prompt the tree ships (`scripts/prompt-files.ts`, from the public release) |
 
 The Prompt the web serves is a released one: a newer one ships by releasing
-it (a new version in `module/ricebox/RELEASE`, `.github/workflows/release.yml`; without
+it (a new version in `ricebox/distribution/RELEASE`, `.github/workflows/release.yml`; without
 Actions, `scripts/release.sh` and `scripts/publish-release.ts` by hand), then merging the pins
 the release proposes (Pin vX.Y.Z): why's one entry in `why/prompt/roots/pins.rs`
 (the root, and the index the web reads it by) and the desktop app in

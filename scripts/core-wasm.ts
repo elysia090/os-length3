@@ -17,7 +17,7 @@ const BUILD = ['build', '--profile', PROFILE, '-p', 'why-core-web', '--target', 
 // changes nothing here), the door built for a browser (why/api/web), and ricebox's own Rust, which the core is made
 // with: the bundle a page asks it for is ricebox's to write. A part's .json is compiled in (repo/templates.rs
 // include_str!).
-const SOURCES = ['why/lib.rs', 'why/Cargo.toml', ...CORE_PARTS.map((part) => `why/${part}`), 'module/ricebox/src', 'module/ricebox/Cargo.toml', 'Cargo.toml', 'Cargo.lock']
+const SOURCES = ['why/lib.rs', 'why/Cargo.toml', ...CORE_PARTS.map((part) => `why/${part}`), 'ricebox/distribution/src', 'ricebox/distribution/Cargo.toml', 'Cargo.toml', 'Cargo.lock']
   .map((p) => join(OS, p));
 /** What of a part makes the core: its Rust, what Rust compiles in, a manifest. */
 const MAKES = /\.(rs|json|toml|lock)$/;

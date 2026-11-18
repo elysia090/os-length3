@@ -5,13 +5,13 @@ import {fileURLToPath} from 'node:url';
 import {defineConfig, type Plugin} from 'vite';
 import {bootScript} from '../../scripts/boot.ts';
 import {buildCoreWasm, coreWasmPath} from '../../scripts/core-wasm.ts';
-import {putMuk} from '../../module/ricebox/build/muk-artifact.ts';
+import {putMuk} from '../../ricebox/distribution/build/muk-artifact.ts';
 import {DEFAULT_REMOTE, headersOf, webPolicy} from '../shipto/policy.ts';
 import {shipped} from '../shipto/remote/ship/releases.ts';
 
 // Tauri serves the built files from dist/ and points its dev webview at this
 // fixed port, so the port must not drift to a free one. The Terminal's kernel
-// lives in module/sods (the translator, and the Linux its programs ask for) and module/ricebox (the root's layers).
+// lives in ricebox/sods (the translator, and the Linux its programs ask for) and ricebox/distribution (the root's layers).
 
 // The web build's policy is why/shipto/policy.ts's: its own origin and the Remote. Tauri applies its own
 // policy (with its ipc: channel) to the desktop build, so the meta tag is only for the web.
@@ -28,7 +28,7 @@ const DEV_REMOTE = process.env.WHY_DEV_REMOTE;
 const WRANGLER = readFileSync(new URL('../../wrangler.toml', import.meta.url), 'utf8');
 const ASSETS = /^directory\s*=\s*"([^"]+)"/m.exec(WRANGLER)![1];
 const WORKER_FIRST = (JSON.parse(/^run_worker_first\s*=\s*(\[.*\])$/m.exec(WRANGLER)![1]) as string[]).map((p) => p.replace(/\/\*$/, ''));
-// The release this tree ships (why/shipto/remote/ship/releases.ts shipped, the newest pinned; not module/ricebox/RELEASE, which names the one being
+// The release this tree ships (why/shipto/remote/ship/releases.ts shipped, the newest pinned; not ricebox/distribution/RELEASE, which names the one being
 // made): the web's Runtime offers that version's desktop app, as the deploy puts it on the Remote (why/shipto/remote/bytes/mirror.ts).
 process.env.VITE_LENGTH3_RELEASE ??= shipped();
 const WEB_POLICY = webPolicy(REMOTE);
@@ -87,7 +87,7 @@ const coreWasm = (): Plugin => ({
 });
 
 /**
- * The box's maker beside the web root (module/ricebox/build/muk-artifact.ts: muk.json and its blob in public/webroot), built from this tree
+ * The box's maker beside the web root (ricebox/distribution/build/muk-artifact.ts: muk.json and its blob in public/webroot), built from this tree
  * when its sources changed, once per dev-server start and per build: a page's Prompt runs the root's programs in a
  * box muk makes, as the app's does on Linux. Only where this build carries a web root (the web's; the desktop app
  * reads the Remote's), which is where muk can be built too.

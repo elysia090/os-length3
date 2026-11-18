@@ -237,7 +237,7 @@ is a dependency: not a BusyBox, a userland or a toolchain of its own. It is
 the same thing for the desktop app and for the web.
 
 - **Name and version.** `why X.Y.Z` is the release `os-length3-linux-vX.Y.Z`
-  (the version in `module/ricebox/RELEASE`).
+  (the version in `ricebox/distribution/RELEASE`).
 - **Digest.** Its identity is the sha256 of its root,
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
   `why/prompt/roots/pins.rs` RELEASES pins it, for both ways in: `sha256` and
@@ -245,12 +245,12 @@ the same thing for the desktop app and for the web.
   same root by. The release writes that entry (`scripts/pin-root.ts`) and
   it is committed; nothing else pins why.
 - **What it holds.** Sixty-three packages, each made from the source this
-  tree pins (`module/ricebox/pins/sources.env`) by its recipe
-  (`module/ricebox/packages/NAME/recipe.sh`, made by `module/ricebox/build/packages.sh` on
+  tree pins (`ricebox/distribution/pins/sources.env`) by its recipe
+  (`ricebox/distribution/packages/NAME/recipe.sh`, made by `ricebox/distribution/build/packages.sh` on
   Alpine 3.24 at one digest, with one libc: its musl, at the root's own
   musl's version and with the same security fixes; a package's own build
   tools are there for its build alone), and `/usr/bin/why`, put together by
-  `module/ricebox/build/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
+  `ricebox/distribution/build/assemble.sh`: BusyBox (sh and the small tools), the C toolchain
   (GCC, binutils, make, musl with fortify-headers, Linux's headers; its
   `cc` makes a static PIE, hardened as the root's own programs are,
   unasked), git with delta and Git LFS, curl, wget, OpenSSL, OpenSSH's
@@ -281,24 +281,24 @@ the same thing for the desktop app and for the web.
   is built against it. A Rust or Go program is built from its makers'
   lockfile, with what its recipe lifts: a crate or module its makers have
   fixed an advisory in, taken to that version where the program asks for
-  it at all (`lifts=`, `module/ricebox/build/lift-dependencies.sh`); what those programs are made of is
-  asked of OSV with every change and every week (`module/ricebox/maintenance/advisories.sh`), and
+  it at all (`lifts=`, `ricebox/distribution/build/lift-dependencies.sh`); what those programs are made of is
+  asked of OSV with every change and every week (`ricebox/distribution/maintenance/advisories.sh`), and
   what no lift answers is written down with why and until when
-  (`module/ricebox/pins/advisories.toml`). For the web it also holds the translator
+  (`ricebox/distribution/pins/advisories.toml`). For the web it also holds the translator
   (sods, as WebAssembly) and the translations of the hot programs made
   ahead of time.
 - **On a device**, the app and `why` install the root by its digest: from the
   device's Remote, then the publisher's (each deploy mirrors every pinned
   root to its bucket), then the release itself.
 - **In a browser**, the same root is read through muk (`public/webroot`, made
-  from the root itself by `module/ricebox/build/distribution.ts`, never from anything built
+  from the root itself by `ricebox/distribution/build/distribution.ts`, never from anything built
   beside it): `webroot.json` (which why: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes
   are), a pack per package of the root, each file a zstd frame, and blobs
   for the translator and the hot programs (BusyBox, why and git) with their
   translations. Everything but `webroot.json` is named by its digest; a pack by
   the digest of its table, the SHA-256 of each file it stores, at its head
-  (`module/ricebox/distribution/pack.ts`), so a file read alone from it is checked as
+  (`ricebox/distribution/format/pack.ts`), so a file read alone from it is checked as
   the whole pack would be, and one that is not what its table says is not
   used (its read fails with EIO, and says why). A Prompt fetches the index,
   the translator and BusyBox with its translation; every other file comes
@@ -323,9 +323,9 @@ the same thing for the desktop app and for the web.
 - **The same content.** The web's tree is the root's: every path, type,
   mode, link target and sha256 the same as the root why installs
   (directories at least 0700, files without set-id bits, as the installer
-  makes them). `module/ricebox/verification/distribution.ts` proves it on every release and in CI;
+  makes them). `ricebox/distribution/verification/distribution.ts` proves it on every release and in CI;
   a program that muk cannot run yet still ships, and
-  `module/ricebox/verification/programs.ts` says which, against the same root run natively.
+  `ricebox/distribution/verification/programs.ts` says which, against the same root run natively.
 - **One release, one pin.** The release makes the root, then why for the
   browser from it (checked by the parity), pins both in one entry, and only
   then builds the web app and the desktop app, which both trust that entry.
@@ -820,12 +820,12 @@ What leaves this system is kept to what is said here:
   descriptors passed between processes) and TCP, UDP and ICMP to this
   machine's own addresses (127.0.0.0/8, ::1; a server and its client, as
   `openssl s_server` and curl are; ping) are channels inside its kernel
-  (module/sods/runtime/linux/sys-net.ts), and what it is told of its network (netlink as
+  (ricebox/sods/runtime/linux/sys-net.ts), and what it is told of its network (netlink as
   `ip` and `ss` read it, the interface ioctls, /proc/net) is that machine's:
-  lo alone (module/sods/runtime/linux/net-view.ts). Every other address is no one's to
+  lo alone (ricebox/sods/runtime/linux/net-view.ts). Every other address is no one's to
   bind (EADDRNOTAVAIL) and unreachable (ENETUNREACH), and every other family
   is refused as a host without it refuses it (EAFNOSUPPORT).
-  module/sods/test/runtime/boundary.test.ts holds the line, and module/sods/test/programs/inet.c and
+  ricebox/sods/test/runtime/boundary.test.ts holds the line, and ricebox/sods/test/programs/inet.c and
   icmp.c compare with native. The page itself
   may reach its own origin, the Remote and, for the box's Agent, the APIs of
   the models' makers whose keys it knows (agent/makers.ts), nothing else: the
@@ -841,7 +841,7 @@ What leaves this system is kept to what is said here:
   beside the bundled ones).
 - **The root.** In the app a Prompt is the distribution's root in a box
   muk makes (`why prompt` says what it lends, why/prompt/start.rs;
-  ricebox writes the bundle and runs `muk run` on it, module/ricebox/src; module/muk), by this machine's
+  ricebox writes the bundle and runs `muk run` on it, ricebox/distribution/src; ricebox/muk), by this machine's
   kernel without privilege: a user namespace makes the user root inside
   it only; its own mount, pid, ipc, uts and network namespaces (no
   network unless granted); the root read-only, the repo the only
@@ -849,7 +849,7 @@ What leaves this system is kept to what is said here:
   `/dev` with terminals of its own (a devpts made for each Prompt,
   holding only the ptys opened in it, none of the host's sessions); an
   environment set, not inherited (no host home, keys, agent or
-  variables); and muk's filter (module/muk/src/filter.h) over all of it,
+  variables); and muk's filter (ricebox/muk/src/filter.h) over all of it,
   from its program's first instruction, so the kernel answers none of what a
   sandboxed program has no use for and escapes are found through: ptrace,
   mounting, new namespaces, modules, kexec, bpf, perf, keys, userfaultfd,

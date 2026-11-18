@@ -8,7 +8,7 @@
 import {readdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {things, type Thing} from '../module/everyday/src/everyday.ts';
+import {things, type Thing} from '../ricebox/everyday/src/everyday.ts';
 
 const OS = fileURLToPath(new URL('..', import.meta.url));
 const STYLES = join(OS, 'why', 'app', 'styles');
@@ -20,9 +20,9 @@ export const sheets = () => readdirSync(STYLES).filter((f) => f.endsWith('.css')
 /** The table as it is written: each thing's name, kind, usual value and bounds (what is said of it stays in the sheet). */
 export function table(all: Thing[]): string {
   const row = (t: Thing) => `  {name: ${JSON.stringify(t.name)}, kind: ${JSON.stringify(t.kind)}, usual: ${JSON.stringify(t.usual)}, least: ${t.least}, most: ${t.most}, says: ''},`;
-  return `// What of the OS's look a person may change: read off the stylesheets by everyday (module/everyday), written here by
+  return `// What of the OS's look a person may change: read off the stylesheets by everyday (ricebox/everyday), written here by
 // scripts/look.ts and checked against the sheets by look.test.ts. Not written by hand.
-import type {Thing} from '../../../module/everyday/src/everyday.ts';
+import type {Thing} from '../../../ricebox/everyday/src/everyday.ts';
 
 export const THINGS: readonly Thing[] = [
 ${all.map(row).join('\n')}

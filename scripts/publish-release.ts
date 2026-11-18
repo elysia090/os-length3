@@ -4,7 +4,7 @@
 //
 //   GITHUB_TOKEN=… node scripts/publish-release.ts OUT
 //
-// The version is module/ricebox/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_REPOSITORY
+// The version is ricebox/distribution/RELEASE ($VERSION overrides); the commit is HEAD ($GITHUB_SHA overrides). GITHUB_REPOSITORY
 // names the repository when it is not this one (and GITHUB_API_URL the API, as on GitHub Actions).
 import {execFileSync} from 'node:child_process';
 import {readdirSync, readFileSync, statSync} from 'node:fs';

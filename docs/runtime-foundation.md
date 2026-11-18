@@ -27,9 +27,9 @@ Current module/public-import checks in `scripts/units.ts` and `scripts/runtime-b
 - **Production browser/ricebox:** checked distribution, compiled translator/AOT modules, prepared lazy Vfs, translated muk, then guest programs through `Kernel`/`RemoteKernel`. Broad Linux authority is still TypeScript. Shared-memory pages use CPU Workers with one Linux owner; the alternative runs guest threads in turn.
 - **Ordinary Node:** the same legacy Linux graph with Node host adapters. Do not describe it as the Rust-managed profile.
 - **Opt-in `run.ts --managed`:** a real Rust-owned path/credential/Program/stack/image/OFD/stdio caller, one Node Worker and observed stop/holder retirement. Its syscall profile admits read-only openat/close, regular read, host-stream I/O and exit. It is static, fixed-memory, rootless, non-TTY and does not run a whole ordinary shell or muk environment.
-- **Everyday:** the current implementation is a theme-value parser. The borrowed native Wayland-session profile in `module/everyday/DISPLAY-INPUT.md` remains a compatibility gate, not a completed compositor/session.
+- **Everyday:** the current implementation is a theme-value parser. The borrowed native Wayland-session profile in `ricebox/everyday/DISPLAY-INPUT.md` remains a compatibility gate, not a completed compositor/session.
 
-See `module/{ricebox,sods,muk,prompt,everyday}/README.md`, `module/sods/linux/README.md`, `module/sods/runtime/host/node/run.ts` and `module/ricebox/runtime/worker.ts`.
+See `module/{ricebox,sods,muk,prompt,everyday}/README.md`, `ricebox/sods/linux/README.md`, `ricebox/sods/runtime/host/node/run.ts` and `ricebox/distribution/runtime/worker.ts`.
 
 ## API and ownership target
 
@@ -55,7 +55,7 @@ Host adapters still own actual WebAssembly/Worker objects, bounded fresh views/c
 
 ### Existing capability
 
-`module/sods/src/image.rs` puts loadable ELF bytes in standard Wasm data segments, followed by `sods.facts` and `sods.starts`. `runtime/translation/share.ts` can hold segments outside the module for controlled guest initialization.
+`ricebox/sods/src/image.rs` puts loadable ELF bytes in standard Wasm data segments, followed by `sods.facts` and `sods.starts`. `runtime/translation/share.ts` can hold segments outside the module for controlled guest initialization.
 
 `Image`, `Kernel.prebuilt` and `Process.execve` in `runtime/linux/process.ts` already support preparing and running a translated inode without reading its payload. The source is retained through `readLater` for later demand. `test/runtime/kept.test.ts` includes a whole-AOT lazy-root case asserting zero source reads.
 
@@ -63,7 +63,7 @@ This does **not** reconstruct the complete ELF. Non-loadable sections and origin
 
 ### Avoidable work above that capability
 
-`module/ricebox/runtime/root.ts::hot` eagerly downloads both the original ELF and its translation. `Webroot.files`, Worker `Program extends Given` and `prepareTree` then require/provide those bytes before attaching the image.
+`ricebox/distribution/runtime/root.ts::hot` eagerly downloads both the original ELF and its translation. `Webroot.files`, Worker `Program extends Given` and `prepareTree` then require/provide those bytes before attaching the image.
 
 For root 0.6.5 pinned in [`why/prompt/roots/pins.rs`](../why/prompt/roots/pins.rs), the original ELF blobs total **1,291,445 gzip bytes** (Node 24.22.1, gzip level 9, no HTTP headers). The archive is 115,302,848 bytes, SHA-256 `ec84d6a4f34359f322726e323e294b03987a19b1aa544563c846ca1a83060ee3`; `node scripts/root-file.ts DIR` fetches and verifies that pin.
 
@@ -168,7 +168,7 @@ view guards, captured bases, uncertain access, FD-publication/response-loss and
 observed-stop retirement remain separate obligations. The profile is sealed,
 static, fixed-memory and non-TTY, not an ordinary shell or whole Linux VM.
 Physical linear bounds do not model virtual mapping holes. See
-[`module/sods/linux/OPEN-CALLER.md`](../module/sods/linux/OPEN-CALLER.md) for the
+[`ricebox/sods/linux/OPEN-CALLER.md`](../ricebox/sods/linux/OPEN-CALLER.md) for the
 admitted flags, native error ordering, finite limits, ownership and acceptance
 cases. This slice needs its own final full-regression/CI gate; the preceding AOT
 CI is not substituted for new-code verification.

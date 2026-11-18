@@ -341,7 +341,7 @@ test('signed in, a repo on the Remote is deleted from its gear as turning it off
   await expect(app.remote.card('hello')).toContainText('Disabled · Recoverable until');
 });
 
-// The look, changed by the one at it: the lines of a dotfile, .everyday (module/everyday holds each to what the
+// The look, changed by the one at it: the lines of a dotfile, .everyday (ricebox/everyday holds each to what the
 // sheets let be changed and to the words that must stay read). Worn as it is saved and when the app is opened
 // again; a line that would not be read, or is no change, is left out and the rest stands; with the file gone, the
 // page is as its sheets have it.

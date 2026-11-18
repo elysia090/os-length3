@@ -1,5 +1,5 @@
 // The web root against the root it is made from, on a stand-in
-// release root (a few files of each kind a root has): made by module/ricebox/build/distribution.ts,
+// release root (a few files of each kind a root has): made by ricebox/distribution/build/distribution.ts,
 // it is the root (webroot-parity.ts), the same twice, and anything changed in it
 // is caught; pin-root.ts pins both in one entry, and prompt-files.ts takes
 // it from a stand-in release only at that pin. The real root is checked the
@@ -15,10 +15,10 @@ import {dirname, join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
-import {makeWebroot, standIn} from '../module/ricebox/test/fixtures/distribution.ts';
-import type {Index} from '../module/ricebox/distribution/manifest.ts';
-import {readCapturedResultRelease} from '../module/ricebox/deployment/capture-result.ts';
-import {capturedResultHost} from '../module/sods/runtime/linux.ts';
+import {makeWebroot, standIn} from '../ricebox/distribution/test/fixtures/distribution.ts';
+import type {Index} from '../ricebox/distribution/format/manifest.ts';
+import {readCapturedResultRelease} from '../ricebox/distribution/deployment/capture-result.ts';
+import {capturedResultHost} from '../ricebox/sods/runtime/linux.ts';
 
 const os = fileURLToPath(new URL('..', import.meta.url));
 const sha = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex');
@@ -84,7 +84,7 @@ test('explicit capture builder emits only the pinned private artifact and ordina
 });
 
 test('the web root is the root: every path, type, mode, link target and sha256', () => {
-  const r = node([join(os, 'module/ricebox/verification/distribution.ts'), rootFile, out, '--manifests', join(work, 'm')]);
+  const r = node([join(os, 'ricebox/distribution/verification/distribution.ts'), rootFile, out, '--manifests', join(work, 'm')]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^same: /m);
   const native = readFileSync(join(work, 'm/native.txt'), 'utf8');
@@ -110,7 +110,7 @@ test('a pack or an index that is not the root is caught', () => {
   cpSync(out, bad, {recursive: true});
   const pack = join(bad, 'packs', readdirSync(join(bad, 'packs'))[0] ?? '');
   const b = readFileSync(pack); b[b.length - 1] ^= 1; writeFileSync(pack, b);
-  let r = node([join(os, 'module/ricebox/verification/distribution.ts'), rootFile, bad]);
+  let r = node([join(os, 'ricebox/distribution/verification/distribution.ts'), rootFile, bad]);
   assert.equal(r.status, 1);
   assert.match(r.stderr + r.stdout, /not the file its table names/);
 
@@ -125,7 +125,7 @@ test('a pack or an index that is not the root is caught', () => {
   const json = Buffer.from(JSON.stringify(index));
   writeFileSync(join(bad, about.index.path), json);
   writeFileSync(join(bad, 'webroot.json'), JSON.stringify({...about, index: {...about.index, sha256: sha(json), size: json.length}}));
-  r = node([join(os, 'module/ricebox/verification/distribution.ts'), rootFile, bad]);
+  r = node([join(os, 'ricebox/distribution/verification/distribution.ts'), rootFile, bad]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /different \(1\):\n {2}\/usr\/bin\/busybox\tfile\t0755/);
 });
@@ -151,10 +151,10 @@ test('one entry pins why for both: the root, and the index the browser reads it 
 });
 
 function copyPromptSources(tree: string) {
-  for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'public', 'module/ricebox/runtime', 'module/ricebox/build']) mkdirSync(join(tree, d), {recursive: true});
-  // And what both of those check packs by, where the repository has it (module/ricebox/runtime).
-  for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'module/ricebox/host/node/tar.ts', 'module/ricebox/host/node/hash.ts', 'module/ricebox/distribution/inventory.ts', 'module/ricebox/distribution/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
-    'module/ricebox/distribution/pack.ts', 'module/ricebox/deployment/capture-result.ts']) {
+  for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
+  // And what both of those check packs by, where the repository has it (ricebox/distribution/runtime).
+  for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'ricebox/distribution/host/node/tar.ts', 'ricebox/distribution/host/node/hash.ts', 'ricebox/distribution/format/inventory.ts', 'ricebox/distribution/format/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
+    'ricebox/distribution/format/pack.ts', 'ricebox/distribution/deployment/capture-result.ts']) {
     mkdirSync(dirname(join(tree,f)),{recursive:true});
     copyFileSync(join(os,f),join(tree,f));
   }
@@ -163,7 +163,7 @@ function copyPromptSources(tree: string) {
 test('release downloader fixture includes the archive reader dependency closure',()=>{
   const tree=join(work,'reader-closure');
   copyPromptSources(tree);
-  const result=node(['--input-type=module','-e',`const reader=await import(${JSON.stringify(pathToFileURL(join(tree,'module/ricebox/host/node/tar.ts')).href)}); if(typeof reader.tarMembers!=='function') throw Error('missing reader');`]);
+  const result=node(['--input-type=module','-e',`const reader=await import(${JSON.stringify(pathToFileURL(join(tree,'ricebox/distribution/host/node/tar.ts')).href)}); if(typeof reader.tarMembers!=='function') throw Error('missing reader');`]);
   assert.equal(result.status,0,result.stderr);
 });
 

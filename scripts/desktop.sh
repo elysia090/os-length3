@@ -3,12 +3,12 @@
 # (on the PATH, beside /usr/bin/why-desktop), usr/bin/why inside the AppImage. why is the command line (`why app`
 # opens the window; `why prompt`, `why address`), and it is what the app itself runs for a Prompt and for SSH
 # (why/prompt/running.rs why_path: the why beside the app), so an app without it opens neither. Beside why,
-# the two programs it starts a box with (why/prompt/start.rs): muk, which makes it (module/muk), and prompt,
-# which holds the other end of its terminal (module/prompt).
+# the two programs it starts a box with (why/prompt/start.rs): muk, which makes it (ricebox/muk), and prompt,
+# which holds the other end of its terminal (ricebox/distribution/terminal).
 #
 #   sh scripts/desktop.sh [VERSION]
 #
-# The version is module/ricebox/RELEASE's unless given. why is static (musl) and has SSH, so it runs on any x86-64 Linux
+# The version is ricebox/distribution/RELEASE's unless given. why is static (musl) and has SSH, so it runs on any x86-64 Linux
 # whatever its libc; the root's own why (root-assemble.sh) is another build, without SSH. Needs Rust with the
 # target x86_64-unknown-linux-musl, musl-gcc, Node 22, libgles2 and the Tauri build's packages (release.sh names
 # them).
@@ -16,7 +16,7 @@
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"
-version=${1:-$(tr -d ' \n' < module/ricebox/RELEASE)}
+version=${1:-$(tr -d ' \n' < ricebox/distribution/RELEASE)}
 
 # The prompt profile: a musl build keeps its relocations (.cargo/config.toml), which a full strip cannot.
 cargo build -q --locked --profile prompt -p why --target x86_64-unknown-linux-musl
@@ -24,10 +24,10 @@ cargo build -q --locked --profile prompt -p why --target x86_64-unknown-linux-mu
 host=$(rustc -vV | sed -n 's/^host: //p')
 mkdir -p why/desktop/binaries
 install -m 0755 target/x86_64-unknown-linux-musl/prompt/why "why/desktop/binaries/why-$host"
-# muk is one unit of C with no library (module/lib/build.sh makes and checks it); prompt is static too, of its own
-# cargo (module/prompt is no member of this workspace).
-sh module/lib/build.sh module/muk/src/muk.c "why/desktop/binaries/muk-$host"
-cargo build -q --locked --release --manifest-path module/prompt/Cargo.toml --target x86_64-unknown-linux-musl --target-dir target/prompt
+# muk is one unit of C with no library (ricebox/toolchain/build.sh makes and checks it); prompt is static too, of its own
+# cargo (ricebox/distribution/terminal is no member of this workspace).
+sh ricebox/toolchain/build.sh ricebox/muk/src/muk.c "why/desktop/binaries/muk-$host"
+cargo build -q --locked --release --manifest-path ricebox/distribution/terminal/Cargo.toml --target x86_64-unknown-linux-musl --target-dir target/prompt
 install -m 0755 target/prompt/x86_64-unknown-linux-musl/release/prompt "why/desktop/binaries/prompt-$host"
 
 # WebKitGTK draws through libepoxy, which opens libGLESv2 itself while the app runs: no binary names it, so the

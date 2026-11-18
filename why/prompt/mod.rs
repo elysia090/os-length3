@@ -1,5 +1,5 @@
-//! A Prompt: a repo in a box of the root. The root in a box is ricebox's to run and muk's to make (module/ricebox,
-//! module/muk); what is here is why's part: what it lends and tells a box (start.rs on this machine; `asked`, for a
+//! A Prompt: a repo in a box of the root. The root in a box is ricebox's to run and muk's to make (ricebox/distribution,
+//! ricebox/muk); what is here is why's part: what it lends and tells a box (start.rs on this machine; `asked`, for a
 //! page that runs muk itself), what a Prompt writes outside its repo and how long each part lives (writes.rs), and
 //! the Prompts running here as the host's /proc tells (running.rs).
 

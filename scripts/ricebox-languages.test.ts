@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {spawnSync} from 'node:child_process';
-import {LANGUAGE_LINES} from '../module/ricebox/verification/language-cases.ts';
+import {LANGUAGE_LINES} from '../ricebox/distribution/verification/language-cases.ts';
 
 // Tests the workloads themselves on the test machine. Actual distribution
 // support is measured by commands.ts in native and translated copies of a root.

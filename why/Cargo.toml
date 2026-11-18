@@ -23,7 +23,7 @@ serde_json = "1"
 sha2 = "0.11"
 # A root on a device (its bundle unpacked, the roots held, the one in use) is ricebox's: prompt/roots/ says only which roots
 # why trusts and where one comes from.
-ricebox = { path = "../module/ricebox" }
+ricebox = { path = "../ricebox/distribution" }
 
 # The host's own calls (a filesystem's room, a rename that never replaces one, a signal, the host's name, a sync) through
 # a safe interface: the core's own code says no unsafe for them.

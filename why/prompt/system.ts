@@ -6,7 +6,7 @@
 // nothing (/tmp, /run start empty), which ricebox says; or the person's
 // repos (/root), which is why's to say.
 
-import {devices, madeBy, treeOf, type TreeEntry} from '../../module/ricebox/runtime/directory-tree.ts';
+import {devices, madeBy, treeOf, type TreeEntry} from '../../ricebox/distribution/runtime/directory-tree.ts';
 import {native, rootHere} from '../api/host.ts';
 import {t} from '../text/i18n.ts';
 import {shownTree, store} from '../repo/repos.ts';

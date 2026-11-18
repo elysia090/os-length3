@@ -1,4 +1,4 @@
-import {change, type Changed, type Pair} from '../../../module/everyday/src/everyday.ts';
+import {change, type Changed, type Pair} from '../../../ricebox/everyday/src/everyday.ts';
 import {THINGS} from './look-things.ts';
 
 // The OS's look as the person at it has changed it: the lines of their `.everyday` (a dotfile, kept with the

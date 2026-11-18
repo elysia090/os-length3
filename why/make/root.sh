@@ -29,4 +29,4 @@ printf '%s\n' "$sha" > "$work/why/key"
 printf '%s\n' 'https://github.com/elysia090/os-length3' > "$work/why/url"
 printf 'why %s %s\n' "$version" "$source" >> "$work/record"
 printf 'why.sha256=%s\nwhy.source=%s\n' "$sha" "$source" > "$work/manifest"
-sh "$here/module/ricebox/build/assemble.sh" "$work" "$out" "$version" os-length3-linux
+sh "$here/ricebox/distribution/build/assemble.sh" "$work" "$out" "$version" os-length3-linux

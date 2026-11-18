@@ -75,7 +75,7 @@ export function violations(): [string, string, string, string, string][] {
  * too, what a file stands on is under it.
  */
 /** Where no file may reach back to itself: why (its parts, its window, the Remote), these scripts, sods' runtime and ricebox's layers. */
-export const ACYCLIC = [...TREES[0]!.order.map((part) => `why/${part}`), ...(TREES[0]!.build ?? []).map((part) => `why/${part}`), 'scripts', 'module/sods/runtime', 'module/ricebox/runtime'];
+export const ACYCLIC = [...TREES[0]!.order.map((part) => `why/${part}`), ...(TREES[0]!.build ?? []).map((part) => `why/${part}`), 'scripts', 'ricebox/sods/runtime', 'ricebox/distribution/runtime'];
 
 export function cycles(): string[][] {
   const all = ACYCLIC.flatMap((root) => files(join(OS, root)));

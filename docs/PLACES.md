@@ -1685,7 +1685,7 @@ or goes).
   after the environments, on one row (what this device runs on, and can be
   reached by or become), its card the SSH card's size, the cards ending
   level; where the row has no room, it goes under. Few words: its title,
-  `why*`, and the version `module/ricebox/RELEASE` names apart from it in the mono face (a
+  `why*`, and the version `ricebox/distribution/RELEASE` names apart from it in the mono face (a
   name and a number are two things); quietly, x86-64 Linux, which file and
   its size (what it is goes without saying). At its bottom left, Download
   (ダウンロード), the one download: a primary button a size smaller than a

@@ -1,4 +1,4 @@
-// npm test: every test file (why's parts and its window, module/everyday, scripts/*.test.ts) under node:test, each
+// npm test: every test file (why's parts and its window, ricebox/everyday, scripts/*.test.ts) under node:test, each
 // process with the core a page runs (why/app/testing/core.ts), reported as node --test reports.
 //
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
@@ -60,7 +60,7 @@ process.chdir(OS);
 // why's parts and its window: not what drives it whole (why/test, its own runs), nor the faces written in Rust.
 const WHY = readdirSync('why', {withFileTypes: true}).filter((e) => e.isDirectory() && !['test', 'cli', 'desktop'].includes(e.name)).map((e) => join('why', e.name));
 let files = named.length ? named : [...WHY.flatMap((dir) => under(dir, (n) => n.endsWith('.test.ts'), true)),
-  ...under('module/everyday', (n) => n.endsWith('.test.ts'), true), ...under('scripts', (n) => n.endsWith('.test.ts'))].sort();
+  ...under('ricebox/everyday', (n) => n.endsWith('.test.ts'), true), ...under('scripts', (n) => n.endsWith('.test.ts'))].sort();
 
 // A shard: every n-th file from the i-th, as node --test gives one.
 const shard = values['test-shard'] ?? /--test-shard[= ](\S+)/.exec(process.env.NODE_OPTIONS ?? '')?.[1];

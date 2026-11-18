@@ -21,7 +21,7 @@ function fixture() {
   return {at, pkgs, add};
 }
 function assemble(pkgs: string, out: string) {
-  const result = spawnSync('sh', [join(repo, 'module/ricebox/build/assemble.sh'), pkgs, out, '0.0.1'], {encoding: 'utf8'});
+  const result = spawnSync('sh', [join(repo, 'ricebox/distribution/build/assemble.sh'), pkgs, out, '0.0.1'], {encoding: 'utf8'});
   assert.equal(result.status, 0, result.stderr);
   const archive = readdirSync(out).find((p) => p.endsWith('.tar.zst'))!;
   assert.match(archive, /^ricebox-0\.0\.1-x86_64-[0-9a-f]{64}\.tar\.zst$/);
@@ -65,7 +65,7 @@ test('why composes its CLI, identity and shell extension without putting them in
   try {
     writeFileSync(join(pkgs, 'record'), 'base 1.0 base-source\n');
     const root = join(at, 'source');
-    for (const path of ['why/make/root.sh', 'why/make/shell.sh', 'module/ricebox/build/assemble.sh', 'module/ricebox/build/package-database.ts', 'module/ricebox/build/script-interpreters.ts', 'module/ricebox/etc/os-release', 'module/ricebox/pins/sources.env']) {
+    for (const path of ['why/make/root.sh', 'why/make/shell.sh', 'ricebox/distribution/build/assemble.sh', 'ricebox/distribution/build/package-database.ts', 'ricebox/distribution/build/script-interpreters.ts', 'ricebox/distribution/etc/os-release', 'ricebox/distribution/pins/sources.env']) {
       mkdirSync(join(root, path, '..'), {recursive: true}); writeFileSync(join(root, path), readFileSync(join(repo, path)));
     }
     const bin = join(at, 'bin'); mkdirSync(bin);
@@ -93,14 +93,14 @@ test('the same neutral root becomes static layers without requiring why or optio
     const wasm = join(at, 'translator.wasm');
     writeFileSync(wasm, new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
     const out = join(at, 'site'), stage = join(at, 'stage');
-    const r = spawnSync(process.execPath, [join(repo, 'module/ricebox/build/distribution.ts'), archive, out, '--translator', wasm, '--stage', stage], {encoding: 'utf8', timeout: 30000});
+    const r = spawnSync(process.execPath, [join(repo, 'ricebox/distribution/build/distribution.ts'), archive, out, '--translator', wasm, '--stage', stage], {encoding: 'utf8', timeout: 30000});
     assert.equal(r.status, 0, r.stderr);
     const about = JSON.parse(readFileSync(join(out, 'webroot.json'), 'utf8'));
     assert.equal(about.name, 'ricebox');
     const index = JSON.parse(readFileSync(join(out, about.index.path), 'utf8'));
     assert.equal(index.translations.length, 0);
     assert.ok(index.files.some((f: {path: string}) => f.path === '/usr/bin/tool'));
-    const {nativeTree, webTree} = await import('../module/ricebox/verification/inventory.ts');
+    const {nativeTree, webTree} = await import('../ricebox/distribution/verification/inventory.ts');
     const web = webTree(out);
     assert.deepEqual(web.entries, (await nativeTree(archive)).entries);
     const extracted = join(at, 'extracted'); mkdirSync(extracted);
@@ -110,7 +110,7 @@ test('the same neutral root becomes static layers without requiring why or optio
     assert.deepEqual((await nativeTree(nativeRoot)).entries, web.entries);
     // Same path, size and mode: parity must compare the actual body digest.
     writeFileSync(join(nativeRoot, 'usr/bin/tool'), 'a mutated tool\n');
-    const {differences} = await import('../module/ricebox/distribution/inventory.ts');
+    const {differences} = await import('../ricebox/distribution/format/inventory.ts');
     const changed = differences(await nativeTree(nativeRoot), web);
     assert.equal(changed.same, false);
     assert.deepEqual(changed.missing, []);
@@ -123,7 +123,7 @@ test('the same neutral root becomes static layers without requiring why or optio
 test('layers keep identical translated artifacts when the build cache is reused', async () => {
   const at = mkdtempSync(join(tmpdir(), 'ricebox-layers-test-'));
   try {
-    const {standIn, makeWebroot} = await import('../module/ricebox/test/fixtures/distribution.ts');
+    const {standIn, makeWebroot} = await import('../ricebox/distribution/test/fixtures/distribution.ts');
     const archive = standIn(at, '9.9.9');
     const one = join(at, 'one'), two = join(at, 'two');
     for (const out of [one, two]) { const r = makeWebroot(archive, out, at); assert.equal(r.status, 0, r.stderr); }
