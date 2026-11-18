@@ -58,7 +58,7 @@ test('collects only the capture asset selected by the distribution index', t => 
   const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
   const expanded = Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
   const stored = gzipSync(expanded), sha256 = digest(stored);
-  const selected = {kind: 'sods-linux-capture-result-v3', host: 'linux-x64-node22-24',
+  const selected = {kind: 'sods-linux-capture-result-v4', host: 'linux-x64-node22-24',
     path: `blobs/${sha256}.bin`, size: stored.length, sha256, bytes: expanded.length, wasm: digest(expanded)};
   const publish = (captureResult: unknown) => {
     const bytes = Buffer.from(JSON.stringify({...original, captureResult})), sha256 = digest(bytes);

@@ -487,9 +487,12 @@ keeps its borrowed stdout, stderr and stdin independent. The same five-byte
 native ELF completes through that CLI and refuses before publishing any
 result through the private capture host. On the actual shared RemoteKernel
 Worker, whole-AOT commands retain a 13-byte output record, and copying the
-fixture's canonical executable delivers records of 4096, 4096 and 1064
-bytes. These controlled sizes are positive compatibility requirements, not
-a workload distribution or a justification for choosing 4096 as a limit.
+fixture's canonical executable submits writes of up to 4096 bytes. The
+legacy outbox can coalesce neighboring deliveries; console callback sizes
+are not a syscall histogram. Its 64 KiB outbox accepts at most 16 KiB
+per fast-path call and falls back to the kernel for larger calls. These
+controlled sizes are positive compatibility requirements, not a workload
+distribution or a justification for choosing 4096 as a limit.
 
 Choose the first real caller before specifying separate byte (Q), record (K)
 and pinned-range (R) limits. At minimum an exact-acceptance profile must fit
@@ -498,6 +501,13 @@ make that requirement disappear. Returning a short prefix or splitting an
 oversized request changes the guest contract and requires its own proof
 under cancellation and real endpoint behavior. Buffered acceptance alone
 is not a substitute for the managed CLI's external I/O or errno behavior.
+Keep the maximum admitted request separate from retention: exact acceptance
+requires max request <= Q; K also bounds the number of retained records,
+and R is admission for canonical prefixes, not host-owned buffers.
+A larger private policy needs an independently selected bound before Core
+or Worker startup, and adversarial tests at zero, the bound and one over,
+including short/error/no-progress controls. Neither one successful output
+sample nor a larger Q selects a caller's semantics.
 
 The output origin lost by a joined byte stream is an independent blocker
 for both current callers. Preserve the immutable stdout/stderr destination
@@ -513,8 +523,22 @@ dup or close, not the outgoing guest FD number. The native control fills a
 joined lane with stdout, redirects fd 1 to stderr, waits on a resident
 prefix, and reuses fd 1 as input before resumption. The two outputs remain
 stdout then stderr after closing the table, with one lane and no origin
-lookup through a retired descriptor. No host reader policy has been
-enabled by this metadata change alone.
+lookup through a retired descriptor. The actual RemoteKernel control swaps
+the stdio targets with dup/dup2: the first byte still reports stderr, and
+the second reports the original stdout.
+
+Private wire 4 returns the logical role with the exact head and its
+matching copy loan; neither an unlabelled synthetic head nor the wrong
+head identity can be reported as a named stream. The host checks metadata
+again before the lexical copy, keeps one final owned record until receipt
+and exposes its original role without a consumer-side FD lookup. The
+private result reader now returns a record rather than retaining a byte-only
+fallback. Guest dup/dup2, physical output, general size and the usual
+caller switches are still separate gates. With the measured wasm32 compiler,
+the in-arena cell stayed 32 bytes (the entry itself grew 20 to 24 bytes);
+queue, file-description and execution-slot sizes also stayed the same.
+This is a layout observation, not a new fixed representation contract.
+No payload copy was added.
 
 Treat ready-only file capture as a separate policy. A cold file must not
 start or disturb another load until a real caller selects a cold-source

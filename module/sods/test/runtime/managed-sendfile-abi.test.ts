@@ -49,7 +49,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   if (resultProfile) {
     const marker = WebAssembly.Module.customSections(module, 'sods.linux.capture');
     assert.equal(marker.length, 1);
-    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 3, 2, 0]);
+    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 4, 2, 0]);
     assert.ok(!Object.keys(e).some(name => name.startsWith('linux_queued_') || name.startsWith('linux_sendfile_')));
     for (const name of ['linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create']) assert.equal(e[name], undefined);
   }
@@ -197,9 +197,10 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     assert.equal(call('linux_read_receipt', read, 0n, 0), 0); // Observe without advancing its cursor.
     assert.equal(call('linux_read_retire', read), 0); return value;
   };
-  const transfer = captureTransfer({e, call, result, length, auxiliary}, resultProfile);
+  const transfer = captureTransfer({e, call, result, length, auxiliary, endpoint}, resultProfile);
   return {wasm, module, e, call, result, state, length, auxiliary, endpoint, command, put,
     receive: (lane: number, limit?: number) => transfer(lane, false, limit)?.bytes,
+    receiveRecord: (lane: number, limit?: number) => transfer(lane, false, limit),
     transferForSink: (lane: number) => transfer(lane, true),
     stageStartup, live, request, openReady, capturePath, open, begin, capStart, capFinish, qualify, start, finish, genericBlocked, remaining};
 }
@@ -865,9 +866,10 @@ type CaptureCore = {
   result(): bigint;
   length(): bigint;
   auxiliary(): bigint;
+  endpoint(): bigint;
 };
 
-type CaptureRecord = {head: bigint; generation: bigint; bytes: Uint8Array<ArrayBuffer>};
+type CaptureRecord = {head: bigint; generation: bigint; bytes: Uint8Array<ArrayBuffer>; origin?: bigint};
 
 // Private diagnostic adapter bound to one Core (including any other lane). No
 // callback, await or other Core call receives the raw view or the local copy.
@@ -881,9 +883,11 @@ function captureTransfer(r: CaptureCore, resultProfile = false) {
     assert.equal(resultProfile ? r.call('linux_capture_result_head') : r.call(`linux_queued_worker_probe_${route}_head`, lane), 0);
     const generation = r.result(), head = r.auxiliary(), length = Number(r.length());
     if (generation === 0n) return undefined; // Temporary empty, not EOF.
+    const origin = resultProfile ? r.endpoint() : undefined;
+    if (resultProfile) assert.ok(origin === 1n || origin === 2n, 'the result head has a logical origin');
     assert.ok(length >= 1 && length <= limit, 'Capture receiver has insufficient capacity');
     const output = new FixtureBytes(length); // The one final allocation, before start.
-    const record = {head, generation, bytes: output};
+    const record = {head, generation, bytes: output, ...(origin === undefined ? {} : {origin})};
     unresolved = record; // Keep allocation on ambiguous start/finish. Do not replay.
     const whichStart = sink ? 'sink_copy_start' : 'receive_start';
     const start = resultProfile ? r.call('linux_capture_result_copy_start', Number(head), generation)
@@ -895,7 +899,7 @@ function captureTransfer(r: CaptureCore, resultProfile = false) {
     const attempt = r.auxiliary(), pointer = Number(r.result());
     const finish = resultProfile ? 'linux_capture_result_copy_finish' : 'linux_queued_worker_probe_receive_finish';
     try {
-      if (Number(r.length()) !== length) throw new Error('Capture receiver extent changed');
+      if (Number(r.length()) !== length || (resultProfile && r.endpoint() !== origin)) throw new Error('Capture receiver metadata changed');
       fixtureApply(fixtureSet, output,
         [new FixtureBytes(fixtureApply(fixtureMemoryBuffer, memory, []), pointer, length)]);
     } catch (error) {
@@ -1410,8 +1414,8 @@ for (const cancel of [false, true]) test(`non-probe capture result ${cancel ? 'a
       assert.equal(r.call(resume, id, request.sequence, c.value + 1n), -4);
       assert.equal(r.call(resume, id, request.sequence, c.value), 0);
       assert.deepEqual(r.command(), c, 'nothing released yet');
-      const first = r.receive(0);
-      assert.deepEqual(first, bytes('A'));
+      const first = r.receiveRecord(0);
+      assert.deepEqual([first?.bytes, first?.origin], [bytes('A'), 1n]);
       consumed.push('A');
       assert.equal(r.call(resume, id, request.sequence, c.value), 0);
       assert.deepEqual(r.command(), c, 'receiving copied A returns Q/K, not the held R');
@@ -1423,7 +1427,8 @@ for (const cancel of [false, true]) test(`non-probe capture result ${cancel ? 'a
         assert.equal(r.call('linux_syscall_abandon', id), 0);
         assert.equal(r.call(resume, id, request.sequence, c.value), -4);
       } else {
-        assert.deepEqual(r.receive(0), bytes('B'));
+        const firstPin = r.receiveRecord(0);
+        assert.deepEqual([firstPin?.bytes, firstPin?.origin], [bytes('B'), 1n]);
         consumed.push('B');
         assert.equal(r.call(resume, id, request.sequence, c.value), 0);
         assert.deepEqual([r.state(), r.result()], [15, 1n]);
@@ -1448,7 +1453,8 @@ for (const cancel of [false, true]) test(`non-probe capture result ${cancel ? 'a
     assert.equal(r.call('linux_execution_retire', id), 0);
     assert.equal(r.result(), 1n);
     for (const expected of cancel ? ['B'] : ['D', 'C']) {
-      assert.deepEqual(r.receive(0), bytes(expected));
+      const record = r.receiveRecord(0);
+      assert.deepEqual([record?.bytes, record?.origin], [bytes(expected), cancel ? 1n : 2n]);
       consumed.push(expected);
     }
     assert.equal(r.receive(0), undefined);

@@ -182,10 +182,16 @@ export interface PathExecutionOptions {
 }
 /** Supplied by the trusted build/deployment owner, not by the artifact source. */
 export interface CaptureResultPin {
-  readonly kind: 'sods-linux-capture-result-v3';
+  readonly kind: 'sods-linux-capture-result-v4';
   readonly byteLength: number;
   readonly sha256: string;
 }
+type CapturedOutputRecord = Readonly<{stream: 'stdout' | 'stderr'; bytes: Uint8Array<ArrayBuffer>}>;
+const resultStream = (origin: bigint): CapturedOutputRecord['stream'] => {
+  if (origin === 1n) return 'stdout';
+  if (origin === 2n) return 'stderr';
+  throw new Error('Unsupported captured output origin');
+};
 const checkedResultExtent = (length: number): number => {
   if (length < 1 || length > 4) throw new Error('Unsupported captured result extent');
   return length; // The pinned profile 2 wire envelope, not a Linux write limit.
@@ -272,7 +278,7 @@ export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPi
     throw new Error('Captured result requires reviewed Linux x64 Node 22 or 24');
   }
   const {kind, byteLength, sha256: expected} = pin;
-  if (kind !== 'sods-linux-capture-result-v3' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
+  if (kind !== 'sods-linux-capture-result-v4' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
       byteLength > 32 * 1024 * 1024 || typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected)) {
     throw new TypeError('Invalid trusted captured result pin');
   }
@@ -615,18 +621,19 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     // A failure can have committed already. Never replay a success receipt.
     return command(capture.linux_capture_result_write_finish(w.id, sequence, c.value, 0, count));
   });
-  let unsettledOutput: Uint8Array<ArrayBuffer> | undefined;
+  let unsettledOutput: CapturedOutputRecord | undefined;
   const ensureResultUsable = (): void => {
     if (unsettledOutput) throw new Error('Captured result access remains unconfirmed');
   };
-  const takeOutput = (): Uint8Array<ArrayBuffer> | undefined => {
+  const takeOutput = (): CapturedOutputRecord | undefined => {
     if (!capture) throw new Error('This host has no captured result');
     ensureResultUsable();
     const generation = result(capture.linux_capture_result_head());
     if (generation === 0n) return undefined; // Temporarily empty, not EOF or stop evidence.
     const slot = u32(safeNumber(core.linux_result_auxiliary()));
     const length = checkedResultExtent(safeNumber(core.linux_result_length()));
-    const output = new Bytes(length);
+    const origin = core.linux_result_endpoint();
+    const output = freeze({stream: resultStream(origin), bytes: new Bytes(length)});
     unsettledOutput = output;
     const start = capture.linux_capture_result_copy_start(slot, generation);
     if (start !== 0) {
@@ -636,8 +643,10 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     }
     const attempt = unsigned(64, core.linux_result_auxiliary()), pointer = unsigned(64, core.linux_result());
     try {
-      if (core.linux_result_length() !== wide(length)) throw new Error('Captured result extent changed');
-      apply(setBytes, output, [new Bytes(bufferOf(core.memory), numeric(pointer), length)]);
+      if (core.linux_result_length() !== wide(length) || core.linux_result_endpoint() !== origin) {
+        throw new Error('Captured result metadata changed');
+      }
+      apply(setBytes, output.bytes, [new Bytes(bufferOf(core.memory), numeric(pointer), length)]);
     } catch (error) {
       try { checked(capture.linux_capture_result_copy_finish(attempt, 1, 0)); unsettledOutput = undefined; }
       catch (receipt) { throw new AggregateError([error, receipt], 'Captured result copy and stopped receipt failed'); }

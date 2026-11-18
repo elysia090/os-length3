@@ -21,7 +21,7 @@ const required = ['linux_task_registration', 'linux_syscall_sequenced', 'linux_r
   'linux_read_load_finish', 'linux_managed_read_start'];
 export function validateCaptureResultIdentity(module: WebAssembly.Module): void {
   const wire = Module.customSections(module, 'sods.linux.capture');
-  const identity = [83, 79, 68, 83, 67, 65, 80, 0, 7, 3, 2, 0];
+  const identity = [83, 79, 68, 83, 67, 65, 80, 0, 7, 4, 2, 0];
   if (wire.length !== 1 || wire[0]!.byteLength !== identity.length ||
       !new Bytes(wire[0]!).every((byte, i) => byte === identity[i])) {
     throw new Error('Unsupported captured result artifact identity');

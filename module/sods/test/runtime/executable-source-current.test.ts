@@ -23,12 +23,51 @@ _start:
   cmp $123, %r14
   jne failed
   cmpq $1, (%rsp)
-  ja copy
+  jbe say
+  mov 16(%rsp), %rax
+  cmpb $114, (%rax)
+  je redirect
+  jmp copy
+say:
   mov $1, %eax
   mov $1, %edi
   lea message(%rip), %rsi
   mov $13, %edx
   syscall
+  jmp done
+redirect:
+  // Preserve stdout, then redirect fd 1 to stderr and fd 2 to old stdout.
+  mov $32, %eax
+  mov $1, %edi
+  syscall
+  cmp $3, %rax
+  jne failed
+  mov $33, %eax
+  mov $2, %edi
+  mov $1, %esi
+  syscall
+  cmp $1, %rax
+  jne failed
+  mov $33, %eax
+  mov $3, %edi
+  mov $2, %esi
+  syscall
+  cmp $2, %rax
+  jne failed
+  mov $1, %eax
+  mov $1, %edi
+  lea tags(%rip), %rsi
+  mov $1, %edx
+  syscall
+  cmp $1, %rax
+  jne failed
+  mov $1, %eax
+  mov $2, %edi
+  lea tags+1(%rip), %rsi
+  mov $1, %edx
+  syscall
+  cmp $1, %rax
+  jne failed
   jmp done
 copy:
   mov $2, %eax
@@ -71,6 +110,7 @@ cold:
 target: .quad cold
 .section .rodata
 message: .ascii "source-bound\n"
+tags: .ascii "AB"
 executable: .asciz "/proc/self/exe"
 .section .bss
 .balign 16
@@ -141,11 +181,28 @@ test('whole AOT later /proc/self/exe and ordinary reads demand the exact complet
       assert.equal(r.reads(), 0);
       assert.equal(await kernel.spawn('/bin/program', ['/bin/program', 'copy'], [], '/'), 0);
       assert.deepEqual(new Uint8Array(Buffer.concat(chunks)), elf); assert.equal(r.reads(), 1);
-      assert.ok(chunks.some(chunk => chunk.length === 4096), 'a real output record can carry a page');
-      if (!profile.inline) t.diagnostic(JSON.stringify({profile: profile.name, acceptedOutputExtents: chunks.map(chunk => chunk.length)}));
+      assert.ok(chunks.some(chunk => chunk.length >= 4096), 'a real console delivery carries at least a page');
+      if (!profile.inline) t.diagnostic(JSON.stringify({profile: profile.name, consoleDeliveryExtents: chunks.map(chunk => chunk.length)}));
       assert.deepEqual(r.vfs.readFile('/bin/program'), elf); assert.equal(r.reads(), 1);
     } finally { await stopped(kernel); }
   });
+});
+
+test('the real RemoteKernel console origin follows the OFD, not the guest fd number', {
+  skip: !artifact || !canRunApart(),
+}, async () => {
+  const {elf, translator} = await fixture();
+  const r = root(elf, true), records: {fd: number; text: string}[] = [];
+  const {wasm, segments} = prepare(translator.whole(elf), {shared: true});
+  const {kernel} = preparedLinux({vfs: r.vfs, inline: false, spares: 0, x87: translator.module,
+    console: {write(fd, bytes) { records.push({fd, text: new TextDecoder().decode(bytes)}); }, read: () => new Uint8Array(0)},
+    executables: [{key: 'program', source: r.source, module: new WebAssembly.Module(wasm), segments, shared: true}]});
+  try {
+    assert.ok(kernel instanceof RemoteKernel);
+    assert.equal(await kernel.spawn('/bin/program', ['/bin/program', 'redirect'], [], '/'), 0);
+    assert.deepEqual(records, [{fd: 2, text: 'A'}, {fd: 1, text: 'B'}]);
+    assert.equal(r.reads(), 0);
+  } finally { await stopped(kernel); }
 });
 
 test('source-bound incremental miss uses normal readLater once and attaches the newly translated code', {skip: !artifact}, async () => {

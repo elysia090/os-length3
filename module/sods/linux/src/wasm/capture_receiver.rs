@@ -54,20 +54,24 @@ fn head(_lane: u32, _sink: bool) -> i32 {
             .as_mut()
             .ok_or(-9)?
             .receive_head(&mut r.files, _lane, _sink)
-            .map_err(queue_probe_error)?;
+            .map_err(queue_probe_error)?
+            .map(|(head, generation, length)| (head, generation, length, 0));
         #[cfg(feature = "capture-result-v1")]
         let chunk = {
             let (files, output) = r.capture_parts()?;
             output
                 .result_head(files)
                 .map_err(|_| -10)?
-                .map(|(slot, generation, length)| (u64::from(slot), generation, length))
+                .map(|(slot, generation, length, origin)| {
+                    (u64::from(slot), generation, length, origin as u64)
+                })
         };
-        let Some((head, generation, length)) = chunk else {
+        let Some((head, generation, length, origin)) = chunk else {
             return Ok(0); // Temporary empty; not EOF or stopped.
         };
         s.auxiliary = head;
         s.length = length as u64;
+        s.endpoint = origin;
         Ok(generation)
     })
 }
@@ -103,18 +107,20 @@ fn start(_lane: u32, head: u64, generation: u64, _sink: bool) -> i32 {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let attempt = s.capture_receiver.sequence.checked_add(1).ok_or(-6)?;
         #[cfg(feature = "queued-worker-probe")]
-        let (pointer, length) = r
+        let (pointer, length, origin) = r
             .queue_probe
             .as_mut()
             .ok_or(-9)?
             .receive_start(&mut r.files, _lane, head, generation, _sink)
-            .map_err(queue_probe_error)?;
+            .map_err(queue_probe_error)
+            .map(|(pointer, length)| (pointer, length, 0))?;
         #[cfg(feature = "capture-result-v1")]
-        let (pointer, length) = {
+        let (pointer, length, origin) = {
             let (files, output) = r.capture_parts()?;
-            output
+            let (pointer, length, origin) = output
                 .result_copy(files, head as u32, generation)
-                .map_err(|_| -10)?
+                .map_err(|_| -10)?;
+            (pointer, length, origin as u64)
         };
         s.capture_receiver.active = Some(View {
             #[cfg(feature = "queued-worker-probe")]
@@ -129,6 +135,7 @@ fn start(_lane: u32, head: u64, generation: u64, _sink: bool) -> i32 {
         s.capture_receiver.sequence = attempt;
         s.length = length as u64;
         s.auxiliary = attempt;
+        s.endpoint = origin;
         Ok(pointer as u64)
     })
 }

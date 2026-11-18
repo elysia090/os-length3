@@ -7,7 +7,7 @@ use super::CaptureOutput;
 use super::HeadBytes;
 #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
 use super::{sink, QueueProbe, QueueProbeError};
-use super::{Error, Head, Queue, Reader, Ticket};
+use super::{Error, Head, OutputOrigin, Queue, Reader, Ticket};
 #[cfg(any(
     feature = "capture-result-v1",
     all(target_arch = "wasm32", feature = "queued-worker-probe")
@@ -32,7 +32,7 @@ impl Reader<'_> {
         Ok(Queue::head(Some(index), &queue.entries, &queue.pins).expect("exact live head"))
     }
 
-    fn receive_head(&self) -> Result<Option<(Ticket, NonZeroUsize)>, Error> {
+    fn receive_head(&self) -> Result<Option<(Ticket, NonZeroUsize, Option<OutputOrigin>)>, Error> {
         let queue = &self.queue;
         let Some(head) = Queue::head(queue.head, &queue.entries, &queue.pins) else {
             return Ok(None);
@@ -41,7 +41,11 @@ impl Reader<'_> {
         if matches!(head.bytes, HeadBytes::Escrowed(_)) {
             return Err(Error::ExternalHead);
         }
-        Ok(Some((queue.front_ticket(head.index), head.bytes.len())))
+        Ok(Some((
+            queue.front_ticket(head.index),
+            head.bytes.len(),
+            head.origin,
+        )))
     }
 
     fn receive_bytes(&mut self, ticket: Ticket) -> Result<&[u8], Error> {
@@ -76,14 +80,16 @@ impl CaptureOutput {
     pub(crate) fn result_head(
         &mut self,
         files: &mut Files,
-    ) -> Result<Option<(u32, u64, usize)>, Error> {
-        Ok(self.receiver(files)?.receive_head()?.map(|(ticket, len)| {
-            (
-                u32::try_from(ticket.key.index).expect("wasm32 index"),
-                ticket.key.generation,
-                len.get(),
-            )
-        }))
+    ) -> Result<Option<(u32, u64, usize, OutputOrigin)>, Error> {
+        let Some((ticket, len, origin)) = self.receiver(files)?.receive_head()? else {
+            return Ok(None);
+        };
+        Ok(Some((
+            u32::try_from(ticket.key.index).expect("wasm32 index"),
+            ticket.key.generation,
+            len.get(),
+            origin.ok_or(Error::BadHead)?,
+        )))
     }
 
     pub(crate) fn result_copy(
@@ -91,11 +97,13 @@ impl CaptureOutput {
         files: &mut Files,
         slot: u32,
         generation: u64,
-    ) -> Result<(*const u8, usize), Error> {
-        let mut reader = self.receiver(files)?;
+    ) -> Result<(*const u8, usize, OutputOrigin), Error> {
+        let reader = self.receiver(files)?;
         let ticket = result_ticket(&reader, slot, generation);
-        let bytes = reader.receive_bytes(ticket)?;
-        Ok((bytes.as_ptr(), bytes.len()))
+        let head = Reader::selected_head(reader.queue, ticket)?;
+        let origin = head.origin.ok_or(Error::BadHead)?;
+        let bytes = head.bytes.bytes(reader.files)?;
+        Ok((bytes.as_ptr(), bytes.len(), origin))
     }
 
     pub(crate) fn result_commit(
@@ -170,7 +178,7 @@ impl QueueProbe {
         Ok(self
             .receiver(files, lane as usize)?
             .receive_head()?
-            .map(|(ticket, length)| {
+            .map(|(ticket, length, _)| {
                 (
                     stamp(lane, ticket.key.index),
                     ticket.key.generation,
@@ -324,14 +332,14 @@ mod tests {
             let reservation = writer.reserve(n(1)).unwrap();
             writer.publish_copy(reservation, byte).unwrap();
         }
-        let (alien, _) = left
+        let (alien, _, _) = left
             .reader(&mut files, &lc)
             .unwrap()
             .receive_head()
             .unwrap()
             .unwrap();
         let mut reader = right.reader(&mut files, &rc).unwrap();
-        let (old, len) = reader.receive_head().unwrap().unwrap();
+        let (old, len, _) = reader.receive_head().unwrap().unwrap();
         assert_eq!(alien.key, old.key);
         assert_ne!(alien.destination, old.destination);
         assert_eq!(len, n(1));
@@ -349,7 +357,7 @@ mod tests {
         let replacement = writer.reserve(n(1)).unwrap();
         writer.publish_copy(replacement, b"C").unwrap();
         let mut reader = right.reader(&mut files, &rc).unwrap();
-        let (head, _) = reader.receive_head().unwrap().unwrap();
+        let (head, _, _) = reader.receive_head().unwrap().unwrap();
         assert_eq!(head.key.index, old.key.index);
         assert_ne!(head.key.generation, old.key.generation);
         assert_eq!(

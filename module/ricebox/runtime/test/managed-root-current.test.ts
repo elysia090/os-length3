@@ -96,7 +96,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     assert.ok(resultPath);
     storedCapture = gzipSync(readFileSync(resultPath));
     const sha256 = hash(storedCapture);
-    index.captureResult = {kind: 'sods-linux-capture-result-v3', host: 'linux-x64-node22-24',
+    index.captureResult = {kind: 'sods-linux-capture-result-v4', host: 'linux-x64-node22-24',
       path: `blobs/${sha256}.bin`, sha256, size: storedCapture.length,
       bytes: Number(process.env.SODS_CAPTURE_RESULT_BYTES), wasm: process.env.SODS_CAPTURE_RESULT_SHA256!};
   }
@@ -136,9 +136,9 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       mutated[mutated.length - 1] ^= 1;
       await assert.rejects(capturedResultHost(mutated, pin, 4, 16), /digest mismatch/);
       const oldWire = Buffer.from(bytes);
-      const marker = oldWire.lastIndexOf(Buffer.from([83, 79, 68, 83, 67, 65, 80, 0, 7, 3, 2, 0]));
+      const marker = oldWire.lastIndexOf(Buffer.from([83, 79, 68, 83, 67, 65, 80, 0, 7, 4, 2, 0]));
       assert.notEqual(marker, -1);
-      oldWire[marker + 9] = 2;
+      oldWire[marker + 9] = 3;
       await assert.rejects(capturedResultHost(oldWire, {...pin, sha256: hash(oldWire)}, 4, 16),
         /artifact identity/, 'a valid digest for the closed old wire is not a resume-capable artifact');
       const ordinary = new Uint8Array(readFileSync(corePath));
@@ -309,7 +309,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       assert.equal(loads, 1);
       assert.equal(host.rootSource(1).size, elf.length, 'failed delivery cannot replace sealed decoded-size metadata');
     }
-    let takenBeforeEnd: Uint8Array | undefined;
+    let takenBeforeEnd: ReturnType<NonNullable<typeof captured>['takeOutput']>;
     if (scenario === 'capture' || scenario === 'capture-ready-only') {
       assert.ok(captured);
       await assert.rejects(captured.waitForCaptureOutput(), /no active producer/);
@@ -341,7 +341,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
         assert.equal(captured.workerEvidence(execution).exited, false);
         if (scenario !== 'capture-paced-stop' && scenario !== 'capture-ready-stop') {
           takenBeforeEnd = captured.takeOutput();
-          assert.deepEqual(takenBeforeEnd, Uint8Array.of(127, 69, 76, 70));
+          assert.deepEqual(takenBeforeEnd, {stream: 'stdout', bytes: Uint8Array.of(127, 69, 76, 70)});
           assert.equal(left, false, 'a receipt wakes later, not reentrantly from a held view');
           assert.equal(captured.takeOutput(), undefined);
         }
@@ -382,8 +382,13 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       const expected = scenario === 'capture-paced' ? Uint8Array.of(127)
         : scenario === 'capture-ready' || scenario === 'capture-ready-only' ? Uint8Array.of(2)
         : scenario === 'capture-paced-race' || scenario === 'capture-wide' || scenario === 'capture-cold' ? undefined : Uint8Array.of(127, 69, 76, 70);
-      assert.deepEqual(output, expected);
-      const first = takenBeforeEnd ?? output;
+      assert.deepEqual(output?.bytes, expected);
+      if (output) {
+        assert.equal(output.stream, scenario === 'capture-paced' || scenario === 'capture-ready' || scenario === 'capture-ready-only'
+          ? 'stderr' : 'stdout');
+        assert.ok(Object.isFrozen(output));
+      }
+      const first = (takenBeforeEnd ?? output)?.bytes;
       if (first) assert.ok(first.buffer instanceof ArrayBuffer && first.byteOffset === 0 && first.buffer.byteLength === first.length);
       assert.equal(captured.takeOutput(), undefined);
       await assert.rejects(captured.waitForCaptureOutput(), /no active producer/, 'empty after one Worker is not caller-independent EOF');
