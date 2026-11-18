@@ -205,6 +205,13 @@ closure and exhausted Q/K/R must not dispatch a physical command or prepare
 the source. Probe-only syscall arbitration should then be removed from tests
 that exercise the real adapter; independent raw rejection witnesses remain.
 
+The rejected Worker artifact already places the admitted `WriteCall` in
+the exact `Continuation`. Its raw fixture adapter retains only identifiers
+and the lexical fence. Only the continuation may issue, settle or cancel
+the call; generic retirement cannot retire a pending captured call without
+its original lane context. No new owner or ABI is selected in `capture-v1`
+by this step.
+
 A product sink session must retain the whole exact Core and native/JS owners
 through an ambiguous state and expose a bounded failure/retirement API. The
 diagnostic helper is not that API: it simply refuses reuse on ambiguity.

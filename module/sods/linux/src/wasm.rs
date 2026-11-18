@@ -1216,6 +1216,13 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.length = length;
             action.sequence()
         }
+        #[cfg(any(test, feature = "queued-worker-probe"))]
+        Step::CaptureWrite { call, at, length } => {
+            s.state = 13;
+            s.auxiliary = at;
+            s.length = length;
+            call.action.sequence()
+        }
         Step::Path {
             action,
             target,

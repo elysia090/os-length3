@@ -2,7 +2,7 @@
 //! trusted relay code. No view or fixture selection is exposed in memoryHost.
 use super::{execution_index, step, token, with_state, with_state_access, Access, State};
 use crate::descriptor::{
-    capture::{Access as CopyAccess, CallId, Finished, Receipt, Request, WriteCall},
+    capture::{Access as CopyAccess, CallId, Finished, Receipt, Request},
     Target,
 };
 use crate::effect::Token;
@@ -11,7 +11,7 @@ use std::num::NonZeroUsize;
 
 pub(super) struct Active {
     execution: u64,
-    call: WriteCall,
+    call: CallId,
     viewing: bool,
 }
 impl Active {
@@ -19,12 +19,12 @@ impl Active {
         self.viewing && access != self.finish_access()
     }
     pub(super) fn owns(&self, action: Token) -> bool {
-        self.call.id().action == action
+        self.call.action == action
     }
     fn finish_access(&self) -> Access {
         Access::CaptureFinish {
             execution: self.execution,
-            call: self.call.id(),
+            call: self.call,
         }
     }
 }
@@ -72,33 +72,31 @@ pub extern "C" fn linux_queued_worker_probe_write(
         let length = fixture_length(length)?;
         // Reuse the exact continuation gate, not a physical command or an
         // earlier raw Unsupported sentinel.
-        slot.continuation
+        let command = slot
+            .continuation
             .as_mut()
             .ok_or(-11)?
-            .admit_request(&s.domain, &slot.execution, invocation, Some(sequence))
+            .admit_capture_write(
+                queue.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
+                table,
+                Request {
+                    invocation,
+                    sequence,
+                    fd,
+                    at,
+                    length,
+                },
+            )
             .map_err(|_| -12)?;
-        let call = WriteCall::admit(
-            &mut queue.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
-            table,
-            Request {
-                invocation,
-                sequence,
-                fd,
-                at,
-                length,
-            },
-        )
-        .map_err(|_| -12)?;
-        let action = call.id().action;
+        let Step::CaptureWrite { call, .. } = command else {
+            unreachable!("installed exact write")
+        };
         s.capture_write = Some(Active {
             execution,
             call,
             viewing: false,
         });
-        s.state = 13;
-        s.auxiliary = at;
-        s.length = length.get() as u64;
-        Ok(action.sequence())
+        Ok(step(s, command))
     })
 }
 
@@ -172,9 +170,11 @@ pub extern "C" fn linux_queued_worker_probe_start(
             .filter(|p| p.execution == execution)
             .ok_or(-4)?;
         let q = r.queue_probe.as_mut().ok_or(-9)?;
-        let (pointer, at, length) = p
-            .call
-            .raw_start(
+        let (pointer, at, length) = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .start_raw_capture(
                 q.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
                 id,
             )
@@ -208,9 +208,8 @@ pub extern "C" fn linux_queued_worker_probe_finish(
         let index = execution_index(s, execution)?;
         let slot = s.executions[index].live_mut()?;
         let r = s.sealed.as_mut().ok_or(-9)?;
-        let p = s
-            .capture_write
-            .as_mut()
+        s.capture_write
+            .as_ref()
             .filter(|p| p.viewing && p.finish_access() == access)
             .ok_or(-4)?;
         let (complete, access) = match evidence {
@@ -229,9 +228,11 @@ pub extern "C" fn linux_queued_worker_probe_finish(
         };
         let receipt = FinishEvidence(Receipt { complete, access });
         let q = r.queue_probe.as_mut().ok_or(-9)?;
-        let finish = p
-            .call
-            .raw_finish(
+        let finish = slot
+            .continuation
+            .as_mut()
+            .ok_or(-11)?
+            .finish_raw_capture(
                 &mut q.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
                 id,
                 receipt,
@@ -255,17 +256,16 @@ pub(super) fn abandon(s: &mut State, execution: u64) -> Result<bool, i32> {
     else {
         return Ok(true);
     };
-    let id = p.call.id();
+    let id = p.call;
     let index = execution_index(s, execution)?;
     let slot = s.executions[index].live_mut()?;
     let r = s.sealed.as_mut().ok_or(-9)?;
     let q = r.queue_probe.as_mut().ok_or(-9)?;
-    let ended = s
-        .capture_write
+    let ended = slot
+        .continuation
         .as_mut()
-        .expect("same exact active capture")
-        .call
-        .cancel(
+        .ok_or(-11)?
+        .cancel_capture(
             &mut q.capture_context(&mut r.files, &mut s.domain, &mut slot.execution),
             id,
         )

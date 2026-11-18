@@ -18,6 +18,10 @@ use crate::read::{self, Reads};
 use crate::sendfile::{self, AccessEvidence, CapabilityReceipt, CapabilityRequest, Sendfile};
 use crate::single_task::SingleTask;
 use crate::{credentials::Credentials, fs_context::Ticket};
+#[cfg(any(test, feature = "queued-worker-probe"))]
+mod captured_write;
+#[cfg(any(test, feature = "queued-worker-probe"))]
+use descriptor::capture;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Error {
@@ -28,6 +32,8 @@ pub(crate) enum Error {
     Lease(lease::Error),
     Files(descriptor::Error),
     Sendfile(sendfile::Error),
+    #[cfg(any(test, feature = "queued-worker-probe"))]
+    Capture(capture::Error),
 }
 impl From<execution::Error> for Error {
     fn from(e: execution::Error) -> Self {
@@ -92,6 +98,12 @@ pub(crate) enum Step {
         action: Token,
         sequence: u32,
         endpoint: u64,
+        length: u64,
+    },
+    #[cfg(any(test, feature = "queued-worker-probe"))]
+    CaptureWrite {
+        call: capture::CallId,
+        at: u64,
         length: u64,
     },
     Exit,
@@ -231,6 +243,8 @@ pub(crate) struct Continuation {
     opening: Option<Opening>,
     register: Option<RegisterPending>,
     sendfile: Option<SendfilePending>,
+    #[cfg(any(test, feature = "queued-worker-probe"))]
+    captured_write: Option<capture::WriteCall>,
     path_input: Vec<u8>,
     closed: bool,
     last_sequence: u32,
@@ -245,6 +259,8 @@ impl Continuation {
             opening: None,
             register: None,
             sendfile: None,
+            #[cfg(any(test, feature = "queued-worker-probe"))]
+            captured_write: None,
             path_input: Vec::new(),
             closed: false,
             last_sequence: 0,
@@ -342,6 +358,10 @@ impl Continuation {
         self.owner(execution)?;
         execution.check_domain(domain)?;
         execution.syscall_allowed(invocation)?;
+        #[cfg(any(test, feature = "queued-worker-probe"))]
+        if self.captured_write.is_some() {
+            return Err(Error::State);
+        }
         if self.closed
             || self.pending.is_some()
             || self.stream.is_some()
@@ -670,6 +690,10 @@ impl Continuation {
         }
     }
     pub(crate) fn owns(&self, token: Token) -> bool {
+        #[cfg(any(test, feature = "queued-worker-probe"))]
+        if self.captured_write.as_ref().is_some_and(|p| p.id().action == token) {
+            return true;
+        }
         self.stream.as_ref().is_some_and(|p| p.action == token)
             || self.opening.as_ref().is_some_and(|p| p.action == token)
             || self.register.as_ref().is_some_and(|p| p.action == token)
@@ -1310,6 +1334,12 @@ impl Continuation {
     ) -> Result<bool, Error> {
         self.owner(execution)?;
         execution.check_domain(domain)?;
+        #[cfg(any(test, feature = "queued-worker-probe"))]
+        if self.captured_write.is_some() {
+            // Captured cancellation needs the exact lane/registry context.
+            // This generic path cannot certify retirement of that owner.
+            return Ok(false);
+        }
         if self.sendfile.is_some() {
             self.closed = true;
             let p = self.sendfile.as_mut().unwrap();

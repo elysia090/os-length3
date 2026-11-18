@@ -47,6 +47,11 @@ pub(crate) struct Context<'a> {
     pub(super) domain: &'a mut Domain,
     pub(super) execution: &'a mut Execution,
 }
+impl Context<'_> {
+    pub(crate) fn admission_owners(&self) -> (&Domain, &Execution) {
+        (self.domain, self.execution)
+    }
+}
 pub(crate) struct Request {
     pub(crate) invocation: Invocation,
     pub(crate) sequence: u32,
@@ -225,7 +230,21 @@ impl WriteCall {
             filled: &mut self.filled,
         })
     }
-    pub(super) fn finish(
+    #[cfg(test)]
+    pub(crate) fn fill_native(
+        &mut self,
+        ctx: Context<'_>,
+        id: CallId,
+        input: &[u8],
+    ) -> Result<u64, Error> {
+        let guard = self.start(ctx, id)?;
+        let at = guard.at;
+        guard.copy_from_exact(input)?;
+        Ok(at)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn finish(
         &mut self,
         ctx: &mut Context<'_>,
         id: CallId,
@@ -437,6 +456,91 @@ mod tests {
     }
     const fn receipt(complete: Option<usize>, access: Access) -> Receipt {
         Receipt { complete, access }
+    }
+
+    #[test]
+    fn continuation_owns_the_exact_write_and_cancels_without_a_stale_return() {
+        use crate::syscall::{Continuation, Step};
+        let mut g = Guest::new();
+        let mut continuation = Continuation::new(&g.execution).unwrap();
+        let request = |invocation, sequence, at| Request {
+            invocation,
+            sequence,
+            fd: 1,
+            at,
+            length: n(2),
+        };
+        let invocation = g.invocation;
+        // A fully admitted sequence with invalid physical range is not reusable.
+        for at in [15, 5] {
+            let ctx = Context {
+                files: &mut g.root.files,
+                lanes: &mut g.root.registry,
+                domain: &mut g.domain,
+                execution: &mut g.execution,
+            };
+            assert!(continuation
+                .admit_capture_write(ctx, &g.table, request(invocation, 1, at))
+                .is_err());
+        }
+        let ctx = Context {
+            files: &mut g.root.files,
+            lanes: &mut g.root.registry,
+            domain: &mut g.domain,
+            execution: &mut g.execution,
+        };
+        let Step::CaptureWrite {
+            call,
+            at: 5,
+            length: 2,
+        } = continuation
+            .admit_capture_write(ctx, &g.table, request(invocation, 2, 5))
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(continuation.owns(call.action));
+        let stale = CallId {
+            sequence: 1,
+            ..call
+        };
+        assert!(continuation
+            .fill_native_capture(g.context(), stale, b"AB")
+            .is_err());
+        assert!(continuation
+            .admit_request(&g.domain, &g.execution, invocation, Some(3))
+            .is_err());
+        assert_eq!(
+            continuation
+                .fill_native_capture(g.context(), call, b"AB")
+                .unwrap(),
+            5
+        );
+        assert!(
+            !continuation.cancel_capture(&mut g.context(), call).unwrap(),
+            "cancel is not ended access"
+        );
+        assert_eq!(
+            continuation
+                .finish_native_capture(&mut g.context(), call, receipt(Some(2), Access::Unknown))
+                .unwrap(),
+            Finished::Waiting
+        );
+        assert!(continuation.owns(call.action));
+        assert_eq!(
+            continuation
+                .finish_native_capture(&mut g.context(), call, receipt(Some(2), Access::BothEnded))
+                .unwrap(),
+            Finished::Discarded
+        );
+        assert!(!continuation.owns(call.action));
+        assert_eq!(g.front(), None);
+        assert!(continuation
+            .finish_native_capture(&mut g.context(), call, receipt(Some(2), Access::BothEnded))
+            .is_err());
+        assert!(continuation
+            .admit_request(&g.domain, &g.execution, invocation, Some(3))
+            .is_err());
     }
 
     #[test]
