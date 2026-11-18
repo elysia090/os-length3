@@ -2,7 +2,7 @@
 // capture host by itself. Retain the artifact's marker and exact bytes.
 import {sha256} from '../host/node/hash.ts';
 import type {Blob, CaptureResultDescriptor} from '../distribution/manifest.ts';
-import {validateCaptureResultIdentity, validateLinuxMemorySurface} from '../../sods/runtime/linux/admission-wire.ts';
+import {validateCaptureResultModule} from '../../sods/runtime/linux.ts';
 
 export const CAPTURE_RESULT_ARTIFACT_LIMIT = 32 * 1024 * 1024;
 const digest = (value: string) => /^[a-f0-9]{64}$/.test(value);
@@ -32,8 +32,7 @@ export function validateCaptureResultArtifact(input: Uint8Array, expected: strin
   const bytes = new Uint8Array(input);
   if (sha256(bytes) !== expected) throw new Error('Capture result artifact digest mismatch');
   const module = new WebAssembly.Module(bytes);
-  validateCaptureResultIdentity(module);
-  validateLinuxMemorySurface(module, true);
+  validateCaptureResultModule(module);
   return {bytes, wasm: expected};
 }
 

@@ -18,7 +18,7 @@ import {pinnedRoots} from '../why/shipto/remote/ship/releases.ts';
 import {makeWebroot, standIn} from '../module/ricebox/test/fixtures/distribution.ts';
 import type {Index} from '../module/ricebox/distribution/manifest.ts';
 import {readCapturedResultRelease} from '../module/ricebox/deployment/capture-result.ts';
-import {capturedResultHost} from '../module/sods/runtime/linux/memory-host.ts';
+import {capturedResultHost} from '../module/sods/runtime/linux.ts';
 
 const os = fileURLToPath(new URL('..', import.meta.url));
 const sha = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex');

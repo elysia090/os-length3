@@ -97,7 +97,7 @@ export function allowed(from: string, specifier: string): boolean {
   if (owner === 'module/ricebox/integrations') return inside(target, 'module/ricebox/build') || inside(target, 'module/ricebox/deployment');
   if (owner === 'module/ricebox/host/node') return inside(target, 'module/ricebox/distribution');
   if (from === 'module/ricebox/build/file-store-artifact.ts' && target === 'module/sods/runtime/linux.ts') return true;
-  if (from === 'module/ricebox/build/capture-result-artifact.ts' && target === 'module/sods/runtime/linux/admission-wire.ts') return true;
+  if (from === 'module/ricebox/build/capture-result-artifact.ts' && target === 'module/sods/runtime/linux.ts') return true;
   if (owner === 'module/ricebox/build' || owner === 'module/ricebox/deployment') return inside(target, 'module/ricebox/distribution') || inside(target, 'module/ricebox/host/node');
   if (owner === 'module/ricebox/runtime') return inside(target, 'module/ricebox/distribution') || publicSods.has(target);
   return owner === 'module/cowboy/host' && target === 'module/sods/runtime/linux.ts';

@@ -1,9 +1,9 @@
-import {validateCaptureResultIdentity, validateLinuxMemorySurface} from './admission-wire.ts';
+import {ownedInput, validateLinuxMemorySurface} from './admission-wire.ts';
+import type {CaptureResultCapacity} from './capture-result.ts';
 import {utf8} from './flow.ts';
 import {fixedTranslatedModule, fixedTranslatedModuleAsync} from './translated-image.ts';
 import {prepare} from '../translation/share.ts';
 import {loadTranslator} from '../translation/translator.ts';
-import {isNode, sha256} from '../host.ts';
 import type {createGuest} from '../host/node/execution.ts';
 import type {captureStdio, Endpoint, PhysicalResult} from '../host/node/stdio.ts';
 /** Private managed-memory adapter. Rust decides admission and lifetime; this file
@@ -121,22 +121,13 @@ interface ResultAdmission extends WebAssembly.Exports {
 const Bytes = Uint8Array, Memory = WebAssembly.Memory, apply = Reflect.apply, freeze = Object.freeze;
 const numeric = Number, wide = BigInt, unsigned = BigInt.asUintN;
 const setBytes = Uint8Array.prototype.set, findByte = Uint8Array.prototype.indexOf;
-const Instance = WebAssembly.Instance, Module = WebAssembly.Module, Global = WebAssembly.Global;
+const Instance = WebAssembly.Instance, Global = WebAssembly.Global;
 const globalValue = Object.getOwnPropertyDescriptor(WebAssembly.Global.prototype, 'value')!.set!;
 const growMemory = WebAssembly.Memory.prototype.grow;
 const memoryBuffer = Object.getOwnPropertyDescriptor(WebAssembly.Memory.prototype, 'buffer')!.get!;
 const mapGet = Map.prototype.get, mapSet = Map.prototype.set, mapDelete = Map.prototype.delete;
 const bufferOf = (memory: WebAssembly.Memory): ArrayBufferLike => apply(memoryBuffer, memory, []);
 const typedLength = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'length')!.get!;
-const typedBuffer = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer')!.get!;
-const arrayByteLength = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength')!.get!;
-// Stronger selected ingress: reject shared backing rather than claiming an
-// atomic snapshot of concurrent writes. Built-in conversion also avoids Buffer.slice.
-const ownedInput = (input: Uint8Array): Uint8Array<ArrayBuffer> => {
-  apply(arrayByteLength, apply(typedBuffer, input, []), []);
-  return new Bytes(input);
-};
-
 const lengthOf = (bytes: Uint8Array): number => apply(typedLength, bytes, []);
 const signalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!;
 const signalReason = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'reason')!.get!;
@@ -179,18 +170,6 @@ export interface PathExecutionOptions {
   stdio?: true;
   /** Startup-only cooperative cancellation; source callbacks remain observed. */
   signal?: AbortSignal;
-}
-/** Supplied by the trusted build/deployment owner, not by the artifact source. */
-export interface CaptureResultPin {
-  readonly kind: 'sods-linux-capture-result-v5';
-  readonly byteLength: number;
-  readonly sha256: string;
-}
-/** Independently chosen by the trusted caller. The artifact/blob reader and
- * guest do not set retention or the largest indivisible request. */
-export interface CaptureResultCapacity {
-  readonly maximumRequest: number;
-  readonly queueBytes: number;
 }
 type CapturedOutputRecord = Readonly<{stream: 'stdout' | 'stderr'; bytes: Uint8Array<ArrayBuffer>}>;
 const resultStream = (origin: bigint): CapturedOutputRecord['stream'] => {
@@ -276,33 +255,11 @@ export function memoryHost(module: WebAssembly.Module, memories: number, actions
   return memoryHostFor(module, memories, actions);
 }
 
-/** Internal opt-in, not the default managedRoot or the product's terminal.
- * The independent pin and exact owned snapshot are verified before any Core
- * instance exists. No raw Module or structural "verified" value can enter. */
-export async function capturedResultHost(input: Uint8Array, pin: CaptureResultPin, memories: number, actions: number,
+/** Internal trusted admission. The Linux entry hashes its snapshot and checks
+ * the marker before this module is imported. Do not re-export this constructor. */
+export function createCapturedResultHost(module: WebAssembly.Module, memories: number, actions: number,
   capacity: CaptureResultCapacity) {
-  if (!isNode || process.platform !== 'linux' || process.arch !== 'x64' || ![22, 24].includes(Number(process.versions.node.split('.')[0]))) {
-    throw new Error('Captured result requires reviewed Linux x64 Node 22 or 24');
-  }
-  const {kind, byteLength, sha256: expected} = pin;
-  if (kind !== 'sods-linux-capture-result-v5' || !Number.isSafeInteger(byteLength) || byteLength < 8 ||
-      byteLength > 32 * 1024 * 1024 || typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected)) {
-    throw new TypeError('Invalid trusted captured result pin');
-  }
-  // Snapshot scalars before either artifact hashing or future callbacks.
-  const {maximumRequest, queueBytes} = capacity;
-  if (!Number.isSafeInteger(maximumRequest) || !Number.isSafeInteger(queueBytes) ||
-      maximumRequest < 1 || maximumRequest > queueBytes || queueBytes > 64 * 1024) {
-    throw new RangeError('Invalid trusted captured result capacity');
-  }
-  if (lengthOf(input) !== byteLength) throw new Error('Captured result artifact length mismatch');
-  const bytes = ownedInput(input);
-  if (lengthOf(bytes) !== byteLength) throw new Error('Captured result artifact length changed');
-  const actual = Array.from(await sha256(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
-  if (actual !== expected) throw new Error('Captured result artifact digest mismatch');
-  const module = new Module(bytes);
-  validateCaptureResultIdentity(module);
-  const host = memoryHostFor(module, memories, actions, {maximumRequest, queueBytes});
+  const host = memoryHostFor(module, memories, actions, capacity);
   return freeze({prepareRoot: host.prepareRoot, rootSource: host.rootSource, pathExecution: host.pathExecution,
     runPath: host.runPath, stopWorker: host.stopWorker, workerSettled: host.workerSettled,
     workerEvidence: host.workerEvidence, takeOutput: host.takeOutput,

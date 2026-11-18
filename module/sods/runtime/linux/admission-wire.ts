@@ -1,7 +1,16 @@
 // Private static Wasm wire checks used by the current host and trusted builder.
 // This inspects bytes already selected by their own policy. No execution,
 // import resolution, guest memory, result owner or Node facility is created.
-const Module = WebAssembly.Module, Bytes = Uint8Array;
+const Module = WebAssembly.Module, Bytes = Uint8Array, apply = Reflect.apply;
+
+const arrayByteLength = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength')!.get!;
+const typedBuffer = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer')!.get!;
+// Stronger selected ingress: reject shared backing rather than claiming an
+// atomic snapshot of concurrent writes. Built-in conversion also avoids Buffer.slice.
+export const ownedInput = (input: Uint8Array): Uint8Array<ArrayBuffer> => {
+  apply(arrayByteLength, apply(typedBuffer, input, []), []);
+  return new Bytes(input);
+};
 
 const ordinaryOnly = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish', 'linux_sendfile_load_start', 'linux_sendfile_load_finish',
   'linux_sendfile_start', 'linux_sendfile_receipt', 'linux_sendfile_cleanup', 'linux_sendfile_query',
@@ -46,4 +55,11 @@ export function validateLinuxMemorySurface(module: WebAssembly.Module, captureRe
         exports.some(e => e.name.startsWith('linux_queued_') || e.name.startsWith('linux_sendfile_'))))) {
     throw new Error('Unsupported Linux admission module');
   }
+}
+
+/** Explicit artifact-only validation. No Core, host resources or private
+ * constructor are exposed by the Sods Linux entry. */
+export function validateCaptureResultModule(module: WebAssembly.Module): void {
+  validateCaptureResultIdentity(module);
+  validateLinuxMemorySurface(module, true);
 }
