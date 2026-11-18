@@ -223,6 +223,24 @@ pub(crate) struct ReadyProgram {
     place: mount::Hold,
     decision: crate::credentials::Decision,
 }
+/// Exact metadata-only selection. Payload residency/loading is not part of this
+/// identity; the immutable Files owner retains the canonical source incarnation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ProgramIdentity {
+    pub inode: Inode,
+    pub source: u32,
+    pub size: usize,
+}
+/// Authorized program ready for image construction, NOT a claim that canonical
+/// bytes are resident. Constructed from completed fresh delivery or an exact
+/// prepared-artifact receipt; it cannot be used by ready_program_bytes.
+#[must_use = "publish into an execution or release through Files"]
+pub(crate) struct ImageProgram {
+    selected_path: Vec<u8>,
+    owner: u64,
+    place: mount::Hold,
+    decision: crate::credentials::Decision,
+}
 /// Live execution ownership. Dropping retains the hold until Files ends; the
 /// execution coordinator must release only after its own stopped-use proof.
 #[must_use = "retain for the live execution, then release through Files"]
@@ -255,6 +273,25 @@ impl ReadyProgram {
     }
     /// Infallible ownership move for the coordinator's publication commit.
     /// No allocation, callback, source access or mount release occurs here.
+    pub(crate) fn into_image(self) -> ImageProgram {
+        ImageProgram {
+            selected_path: self.selected_path,
+            owner: self.owner,
+            place: self.place,
+            decision: self.decision,
+        }
+    }
+    pub(crate) fn publish(self) -> (Executable, crate::credentials::Decision) {
+        self.into_image().publish()
+    }
+}
+impl ImageProgram {
+    pub(crate) fn execfn(&self) -> &[u8] {
+        &self.selected_path
+    }
+    pub(crate) fn stack_credentials(&self) -> crate::stack::Credentials {
+        self.decision.stack_credentials()
+    }
     pub(crate) fn publish(self) -> (Executable, crate::credentials::Decision) {
         (
             Executable {
@@ -1344,6 +1381,35 @@ impl Files {
             .map(|p| p.inode())
             .map_err(Error::Mount)
     }
+    /// Metadata only: never load_begin/read, never source-ready promotion.
+    pub(crate) fn program_identity(&mut self, program: &Program) -> Result<ProgramIdentity, Error> {
+        self.check_unstarted_program(program)?;
+        let inode = self.program_inode(program)?;
+        Ok(ProgramIdentity {
+            inode,
+            source: self.filesystems.source(inode).map_err(Error::Source)?,
+            size: self.filesystems.size(inode).map_err(Error::Source)?,
+        })
+    }
+    /// A trusted artifact coordinator has settled its exact preparation job.
+    /// The source remains lazy; this is deliberately distinct from ready_program.
+    pub(crate) fn prepared_image_program(
+        &mut self,
+        program: Program,
+        expected: ProgramIdentity,
+    ) -> Result<ImageProgram, (Error, Program)> {
+        match self.program_identity(&program) {
+            Ok(actual) if actual == expected => (),
+            Ok(_) => return Err((Error::BadHandle, program)),
+            Err(error) => return Err((error, program)),
+        }
+        Ok(ImageProgram {
+            selected_path: program.selected_path,
+            owner: program.owner,
+            place: program.place,
+            decision: program.decision,
+        })
+    }
     pub(crate) fn prepare_program_source(
         &mut self,
         program: &mut Program,
@@ -1481,6 +1547,19 @@ impl Files {
     ) -> Result<(), (Error, ReadyProgram)> {
         if let Err(e) = self.held_program_inode(program.owner, &program.place) {
             return Err((e, program));
+        }
+        self.mounts
+            .as_mut()
+            .expect("validated mount owner")
+            .release_hold(program.place);
+        Ok(())
+    }
+    pub(crate) fn release_image_program(
+        &mut self,
+        program: ImageProgram,
+    ) -> Result<(), (Error, ImageProgram)> {
+        if let Err(error) = self.held_program_inode(program.owner, &program.place) {
+            return Err((error, program));
         }
         self.mounts
             .as_mut()

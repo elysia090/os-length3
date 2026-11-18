@@ -4,7 +4,9 @@
 //! never cloned/reclaimed by this coordinator.
 use crate::{
     credentials::Decision,
-    descriptor::{self, Executable, Files, LoadRequest, Program, ReadyProgram},
+    descriptor::{
+        self, Executable, Files, ImageProgram, LoadRequest, Program, ProgramIdentity, ReadyProgram,
+    },
     execution::{self, Execution, ImageResult},
     lease::Domain,
     stack,
@@ -98,7 +100,7 @@ impl Arguments {
     }
     fn build(
         &self,
-        p: &ReadyProgram,
+        p: &ImageProgram,
         f: Facts,
         low: u64,
         top: u64,
@@ -142,11 +144,13 @@ enum State {
     Loading(Program),
     Ready(ReadyProgram),
     Translating(ReadyProgram),
-    Translated(ReadyProgram, Facts),
-    Image(ReadyProgram, Facts, Execution, bool, stack::Stack),
+    Artifact(Program, ProgramIdentity, u32),
+    Translated(ImageProgram, Facts),
+    Image(ImageProgram, Facts, Execution, bool, stack::Stack),
     FailedProgram(Program),
     FailedReady(ReadyProgram),
-    FailedImage(ReadyProgram, Execution),
+    FailedAdmitted(ImageProgram),
+    FailedImage(ImageProgram, Execution),
     Live(Live),
     Done,
 }
@@ -208,6 +212,7 @@ impl Startup {
                     | State::Loading(_)
                     | State::Ready(_)
                     | State::Translating(_)
+                    | State::Artifact(_, _, _)
                     | State::Translated(_, _)
                     | State::Image(_, _, _, false, _)
             )
@@ -334,7 +339,7 @@ impl Startup {
         };
         match valid {
             Ok(Some(f)) if !self.cancelled => {
-                self.state = State::Translated(p, f);
+                self.state = State::Translated(p.into_image(), f);
                 Ok(())
             }
             Ok(_) => {
@@ -344,6 +349,77 @@ impl Startup {
             Err(e) => {
                 self.state = State::FailedReady(p);
                 Err(e)
+            }
+        }
+    }
+    /// AOT selection is metadata-only. The outer root catalog must additionally
+    /// authenticate this exact inode/source against its registered association.
+    pub(crate) fn selected_identity(&self, files: &mut Files) -> Result<ProgramIdentity, Error> {
+        self.check(files, self.id)?;
+        if self.cancelled {
+            return Err(Error::State);
+        }
+        let State::Source(program) = &self.state else {
+            return Err(Error::State);
+        };
+        files.program_identity(program).map_err(Into::into)
+    }
+    pub(crate) fn artifact_start(
+        &mut self,
+        files: &mut Files,
+        artifact: u32,
+        expected: ProgramIdentity,
+    ) -> Result<(), Error> {
+        if artifact == 0 || self.selected_identity(files)? != expected {
+            return Err(Error::Identity);
+        }
+        let State::Source(program) = std::mem::replace(&mut self.state, State::Done) else {
+            unreachable!()
+        };
+        self.state = State::Artifact(program, expected, artifact);
+        Ok(())
+    }
+    /// Exactly one stopped preparation receipt. Cancellation keeps the selected
+    /// owner until this job settles, and never promotes late success into Live.
+    pub(crate) fn artifact_finish(
+        &mut self,
+        files: &mut Files,
+        id: u64,
+        artifact: u32,
+        facts: Option<Facts>,
+    ) -> Result<(), Error> {
+        self.check(files, id)?;
+        let State::Artifact(_, _, expected_id) = &self.state else {
+            return Err(Error::State);
+        };
+        if artifact != *expected_id {
+            return Err(Error::Identity);
+        }
+        let valid = facts.map(|f| f.validate().map(|_| f)).transpose();
+        let State::Artifact(program, expected, _) = std::mem::replace(&mut self.state, State::Done)
+        else {
+            unreachable!()
+        };
+        match valid {
+            Ok(Some(facts)) if !self.cancelled => {
+                match files.prepared_image_program(program, expected) {
+                    Ok(program) => {
+                        self.state = State::Translated(program, facts);
+                        Ok(())
+                    }
+                    Err((error, program)) => {
+                        self.state = State::FailedProgram(program);
+                        Err(error.into())
+                    }
+                }
+            }
+            Ok(_) => {
+                self.state = State::FailedProgram(program);
+                Ok(())
+            }
+            Err(error) => {
+                self.state = State::FailedProgram(program);
+                Err(error)
             }
         }
     }
@@ -441,7 +517,7 @@ impl Startup {
         else {
             unreachable!()
         };
-        match files.release_ready(p) {
+        match files.release_image_program(p) {
             Ok(()) => Ok(Some(execution)),
             Err((e, p)) => {
                 self.state = State::FailedImage(p, execution);
@@ -489,14 +565,25 @@ impl Startup {
                     Err(e.into())
                 }
             },
-            State::Ready(p) | State::Translated(p, _) | State::FailedReady(p) => {
-                match files.release_ready(p) {
+            State::Ready(p) | State::FailedReady(p) => match files.release_ready(p) {
+                Ok(()) => Ok(true),
+                Err((e, p)) => {
+                    self.state = State::FailedReady(p);
+                    Err(e.into())
+                }
+            },
+            State::Translated(p, _) | State::FailedAdmitted(p) => {
+                match files.release_image_program(p) {
                     Ok(()) => Ok(true),
-                    Err((e, p)) => {
-                        self.state = State::FailedReady(p);
-                        Err(e.into())
+                    Err((error, p)) => {
+                        self.state = State::FailedAdmitted(p);
+                        Err(error.into())
                     }
                 }
+            }
+            State::Artifact(p, identity, artifact) => {
+                self.state = State::Artifact(p, identity, artifact);
+                Ok(false)
             }
             State::Translating(p) => {
                 self.state = State::Translating(p);
@@ -601,6 +688,250 @@ mod tests {
         assert!(s.source_start(files).unwrap().is_none());
         assert_eq!(s.translation_start(files).unwrap(), b"elf");
         s.translation_finish(1, Some(facts())).unwrap();
+    }
+    fn release_unloaded_probe(files: &mut Files, fs: &fs_context::Ticket) {
+        let mut program = files
+            .prepare_program(fs, &Credentials::initial_root(), b"/p")
+            .unwrap();
+        let request = files
+            .prepare_program_source(&mut program)
+            .unwrap()
+            .expect("AOT must leave source unloaded");
+        assert_eq!(
+            request.attempt, 1,
+            "AOT must not even start a source attempt"
+        );
+        files
+            .finish_program_source(&mut program, request.attempt, false, &mut Vec::new())
+            .unwrap();
+        files.release_program(program).unwrap();
+    }
+    #[test]
+    fn prepared_artifact_reaches_live_without_source_ready_or_loader_attempt() {
+        let (mut files, fs, mut startup) = setup(1000, true);
+        let identity = startup.selected_identity(&mut files).unwrap();
+        assert_eq!((identity.source, identity.size), (7, 2));
+        startup.artifact_start(&mut files, 1, identity).unwrap();
+        assert!(startup.source_start(&mut files).is_err());
+        assert!(startup.translation_start(&mut files).is_err());
+        startup
+            .artifact_finish(&mut files, 1, 1, Some(facts()))
+            .unwrap();
+        assert!(startup
+            .artifact_finish(&mut files, 1, 1, Some(facts()))
+            .is_err());
+        let mut domain = Domain::new(1100, 1, 4).unwrap();
+        let binding = domain.bind(65536).unwrap();
+        startup
+            .image_begin(&mut domain, binding, 4096, 65536, &[7; 16])
+            .unwrap();
+        startup
+            .image_finish(&mut domain, ImageResult::Installed)
+            .unwrap();
+        let live = startup.take_live().unwrap();
+        assert_eq!(live.decision.credentials.user().effective, 1000);
+        release_unloaded_probe(&mut files, &fs);
+        files.release_executable(live.executable).unwrap();
+        files.release_fs(fs).unwrap();
+    }
+    #[test]
+    fn prepared_artifact_cancel_keeps_exact_job_until_stopped_and_discards_late_success() {
+        let (mut files, fs, mut startup) = setup(1010, true);
+        let identity = startup.selected_identity(&mut files).unwrap();
+        startup.artifact_start(&mut files, 5, identity).unwrap();
+        assert!(!startup.cancel(&mut files).unwrap());
+        assert!(!startup.continuable());
+        assert!(startup
+            .artifact_finish(&mut files, 2, 5, Some(facts()))
+            .is_err());
+        assert!(startup
+            .artifact_finish(&mut files, 1, 4, Some(facts()))
+            .is_err());
+        assert!(!startup.cancel(&mut files).unwrap());
+        startup
+            .artifact_finish(&mut files, 1, 5, Some(facts()))
+            .unwrap();
+        assert!(startup.take_live().is_none());
+        assert!(startup.cancel(&mut files).unwrap());
+        release_unloaded_probe(&mut files, &fs);
+        files.release_fs(fs).unwrap();
+    }
+    #[test]
+    fn prepared_identity_cannot_cross_inode_source_size_or_owner() {
+        let (mut files, fs, mut startup) = setup(1020, true);
+        let expected = startup.selected_identity(&mut files).unwrap();
+        for wrong in [
+            ProgramIdentity {
+                source: expected.source + 1,
+                ..expected
+            },
+            ProgramIdentity {
+                size: expected.size + 1,
+                ..expected
+            },
+            ProgramIdentity {
+                inode: crate::inode::Inode::from_parts(
+                    expected.inode.owner(),
+                    expected.inode.number() + 1,
+                ),
+                ..expected
+            },
+            ProgramIdentity {
+                inode: crate::inode::Inode::from_parts(
+                    expected.inode.owner() + 1,
+                    expected.inode.number(),
+                ),
+                ..expected
+            },
+        ] {
+            assert!(startup.artifact_start(&mut files, 1, wrong).is_err());
+            assert_eq!(startup.selected_identity(&mut files).unwrap(), expected);
+        }
+        assert!(startup.artifact_start(&mut files, 0, expected).is_err());
+        let (mut foreign, foreign_fs, mut other) = setup(1030, true);
+        assert!(startup.selected_identity(&mut foreign).is_err());
+        assert!(other.artifact_start(&mut foreign, 1, expected).is_err());
+        assert!(other.cancel(&mut foreign).unwrap());
+        foreign.release_fs(foreign_fs).unwrap();
+        assert!(startup.cancel(&mut files).unwrap());
+        files.release_fs(fs).unwrap();
+    }
+    #[test]
+    fn invalid_artifact_facts_stop_the_job_without_promoting_or_loading_source() {
+        let (mut files, fs, mut startup) = setup(1040, true);
+        let identity = startup.selected_identity(&mut files).unwrap();
+        startup.artifact_start(&mut files, 2, identity).unwrap();
+        assert!(startup
+            .artifact_finish(
+                &mut files,
+                1,
+                2,
+                Some(Facts {
+                    extent: 3,
+                    ..facts()
+                })
+            )
+            .is_err());
+        assert!(!startup.continuable());
+        assert!(startup.cancel(&mut files).unwrap());
+        release_unloaded_probe(&mut files, &fs);
+        files.release_fs(fs).unwrap();
+    }
+    #[test]
+    fn active_source_delivery_cannot_be_reclassified_as_an_artifact_job() {
+        let (mut files, fs, mut startup) = setup(1050, true);
+        let identity = startup.selected_identity(&mut files).unwrap();
+        let request = startup.source_start(&mut files).unwrap().unwrap();
+        assert!(startup.artifact_start(&mut files, 1, identity).is_err());
+        assert!(startup
+            .artifact_finish(&mut files, 1, 1, Some(facts()))
+            .is_err());
+        assert!(!startup.cancel(&mut files).unwrap());
+        startup
+            .source_finish(&mut files, 1, request.attempt, false, &mut Vec::new())
+            .unwrap();
+        assert!(startup.cancel(&mut files).unwrap());
+        files.release_fs(fs).unwrap();
+    }
+    #[test]
+    fn translated_before_dispatch_cancels_both_fresh_and_prepared_image_owners() {
+        for prepared in [false, true] {
+            let (mut files, fs, mut startup) = setup(1070 + u64::from(prepared) * 10, prepared);
+            if prepared {
+                let identity = startup.selected_identity(&mut files).unwrap();
+                startup.artifact_start(&mut files, 1, identity).unwrap();
+                startup
+                    .artifact_finish(&mut files, 1, 1, Some(facts()))
+                    .unwrap();
+            } else {
+                translate(&mut files, &mut startup);
+            }
+            assert!(startup.cancel(&mut files).unwrap());
+            let mut domain = Domain::new(1170, 1, 4).unwrap();
+            let binding = domain.bind(65536).unwrap();
+            assert!(startup
+                .image_begin(&mut domain, binding, 4096, 65536, &[7; 16])
+                .is_err());
+            if prepared {
+                release_unloaded_probe(&mut files, &fs);
+            }
+            files.release_fs(fs).unwrap();
+        }
+    }
+    #[test]
+    fn artifact_failure_and_cancelled_invalid_receipts_settle_once_without_a_source_attempt() {
+        for (i, (cancel, outcome)) in [
+            (false, None),
+            (true, None),
+            (
+                true,
+                Some(Facts {
+                    extent: 3,
+                    ..facts()
+                }),
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (mut files, fs, mut startup) = setup(1100 + i as u64 * 10, true);
+            let identity = startup.selected_identity(&mut files).unwrap();
+            startup.artifact_start(&mut files, 1, identity).unwrap();
+            if cancel {
+                assert!(!startup.cancel(&mut files).unwrap());
+            }
+            let result = startup.artifact_finish(&mut files, 1, 1, outcome);
+            assert_eq!(result.is_err(), outcome.is_some());
+            assert!(startup.artifact_finish(&mut files, 1, 1, None).is_err());
+            assert!(startup.take_live().is_none());
+            assert!(startup.cancel(&mut files).unwrap());
+            release_unloaded_probe(&mut files, &fs);
+            files.release_fs(fs).unwrap();
+        }
+    }
+    #[test]
+    fn foreign_files_cannot_finish_an_artifact_or_consume_the_matching_job() {
+        let (mut files, fs, mut startup) = setup(1130, true);
+        let identity = startup.selected_identity(&mut files).unwrap();
+        startup.artifact_start(&mut files, 1, identity).unwrap();
+        let (mut foreign, foreign_fs, mut other) = setup(1140, false);
+        assert!(startup.artifact_finish(&mut foreign, 1, 1, None).is_err());
+        assert!(!startup.cancel(&mut files).unwrap());
+        startup.artifact_finish(&mut files, 1, 1, None).unwrap();
+        assert!(startup.cancel(&mut files).unwrap());
+        release_unloaded_probe(&mut files, &fs);
+        files.release_fs(fs).unwrap();
+        assert!(other.cancel(&mut foreign).unwrap());
+        foreign.release_fs(foreign_fs).unwrap();
+    }
+    #[test]
+    fn prepared_image_unknown_still_needs_the_actual_stopped_image_receipt() {
+        let (mut files, fs, mut startup) = setup(1060, true);
+        let identity = startup.selected_identity(&mut files).unwrap();
+        startup.artifact_start(&mut files, 1, identity).unwrap();
+        startup
+            .artifact_finish(&mut files, 1, 1, Some(facts()))
+            .unwrap();
+        let mut domain = Domain::new(1160, 1, 4).unwrap();
+        let binding = domain.bind(65536).unwrap();
+        startup
+            .image_begin(&mut domain, binding, 4096, 65536, &[7; 16])
+            .unwrap();
+        startup
+            .image_finish(&mut domain, ImageResult::Unknown)
+            .unwrap();
+        assert!(!startup.cancel(&mut files).unwrap());
+        assert!(startup
+            .image_finish(&mut domain, ImageResult::Installed)
+            .is_err());
+        assert!(startup.take_failed_image(&mut files).unwrap().is_none());
+        startup
+            .image_finish(&mut domain, ImageResult::PoisonedStopped)
+            .unwrap();
+        assert!(startup.take_failed_image(&mut files).unwrap().is_some());
+        assert!(startup.take_live().is_none());
+        release_unloaded_probe(&mut files, &fs);
+        files.release_fs(fs).unwrap();
     }
     #[test]
     fn successful_admission_moves_credentials_and_hold_only_after_installed() {
