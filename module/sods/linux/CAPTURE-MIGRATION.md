@@ -237,6 +237,19 @@ into a streaming consumer. To admit one, specify the bounded consumer
 handoff or resumption mechanism, signal pressure without claiming success,
 and prove that cancellation cannot renew a used request or discard output.
 
+A native test now admits one waitable mutable write. It holds its original
+invocation, Worker sequence, source action/span and exact output OFD without
+a staged allocation or borrowed view. Only recoverable Q/K pressure may wait:
+a request larger than Q, or a full but unpublished lane, cannot rely on a
+consumer advancing. A matching resume rechecks capacity without resending
+the syscall or resolving the numeric FD again. Cancellation before staging
+releases that exact unstarted action and hold; it neither revokes accepted
+heads nor asserts that the Worker stopped. Rust also checks R before
+reserving a K record for resident sends, so a pin shortage cannot consume
+its last generation on a reserve/cancel round trip. A waiting resident send
+needs its own exact source/cursor contract; no raw or host wake is wired by
+the native tests.
+
 The private Linux x64 Node 22/24 distribution reader exercises the pin
 chain end to end with a current-source result artifact and Worker. The
 deployment owner must independently choose the current index SHA-256 and

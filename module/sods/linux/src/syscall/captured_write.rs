@@ -8,6 +8,25 @@ use capture::{CallId, Context, Finished, Request, WriteCall};
 impl Continuation {
     pub(crate) fn admit_capture_write(
         &mut self,
+        ctx: Context<'_>,
+        table: &Table,
+        request: Request,
+    ) -> Result<Step, Error> {
+        self.admit_capture::<false>(ctx, table, request)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn admit_waitable_capture_write(
+        &mut self,
+        ctx: Context<'_>,
+        table: &Table,
+        request: Request,
+    ) -> Result<Step, Error> {
+        self.admit_capture::<true>(ctx, table, request)
+    }
+
+    fn admit_capture<const WAIT: bool>(
+        &mut self,
         mut ctx: Context<'_>,
         table: &Table,
         request: Request,
@@ -20,8 +39,10 @@ impl Continuation {
             Some(request.sequence),
         )?;
         let (at, length) = (request.at, request.length.get() as u64);
-        let pending = WriteCall::admit(&mut ctx, table, request).map_err(Error::Capture)?;
+        let pending = WriteCall::admit::<WAIT>(&mut ctx, table, request).map_err(Error::Capture)?;
         let call = pending.id();
+        #[cfg(test)]
+        let waiting = WAIT && pending.awaiting_room();
         assert!(
             !self.has_byte_output(),
             "admitted captured owner requires an empty slot"
@@ -29,7 +50,27 @@ impl Continuation {
         #[cfg(not(feature = "capture-v1"))]
         let pending = OutputOwner::Captured(pending);
         self.output = Some(pending);
+        #[cfg(test)]
+        if waiting {
+            return Ok(Step::CapturePressure { call });
+        }
         Ok(Step::CaptureWrite { call, at, length })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resume_capture_write(
+        &mut self,
+        ctx: Context<'_>,
+        call: CallId,
+    ) -> Result<Step, Error> {
+        let stage = self
+            .capture_call_mut(call)?
+            .resume_room(ctx, call)
+            .map_err(Error::Capture)?;
+        Ok(match stage {
+            Some((at, length)) => Step::CaptureWrite { call, at, length },
+            None => Step::CapturePressure { call },
+        })
     }
 
     fn capture_call_mut(&mut self, id: CallId) -> Result<&mut WriteCall, Error> {

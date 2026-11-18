@@ -112,6 +112,10 @@ pub(crate) enum Step {
         at: u64,
         length: u64,
     },
+    #[cfg(test)]
+    CapturePressure {
+        call: capture::CallId,
+    },
     Exit,
     Unsupported(u64),
     Waiting,

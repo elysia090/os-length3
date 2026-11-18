@@ -899,6 +899,21 @@ impl Writer<'_> {
     ) -> Result<WriteStage<Unfilled>, Error> {
         self.queue.stage_write(length)
     }
+    pub(super) fn stage_when_room(
+        &mut self,
+        length: NonZeroUsize,
+    ) -> Result<Option<WriteStage<Unfilled>>, Error> {
+        match self.stage_write(length) {
+            // No unrelated capacity or allocation error is retryable. A
+            // queued head must exist and the request must fit an empty lane.
+            Err(Error::Full)
+                if self.queue.head.is_some() && length.get() <= self.queue.byte_limit =>
+            {
+                Ok(None)
+            }
+            result => result.map(Some),
+        }
+    }
     pub(super) fn publish_staged(
         &mut self,
         stage: WriteStage<Filled>,

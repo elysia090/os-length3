@@ -90,6 +90,7 @@ pub(crate) enum Finished {
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
+    WaitingRoom,
     Ready,
     Started,
     Unknown,
@@ -133,7 +134,11 @@ pub(crate) struct WriteCall {
 impl WriteCall {
     /// The parent must already have admitted this exact Worker sequence.
     /// Everything below is a single native turn with no callbacks.
-    pub(crate) fn admit(ctx: &mut Context<'_>, table: &Table, req: Request) -> Result<Self, Error> {
+    pub(crate) fn admit<const WAIT: bool>(
+        ctx: &mut Context<'_>,
+        table: &Table,
+        req: Request,
+    ) -> Result<Self, Error> {
         if req.sequence == 0 || req.sequence > i32::MAX as u32 {
             return Err(Error::Identity);
         }
@@ -156,7 +161,13 @@ impl WriteCall {
         let stage = ctx
             .lanes
             .held_writer(ctx.files, &destination)
-            .and_then(|mut writer| writer.stage_write(req.length));
+            .and_then(|mut writer| {
+                if WAIT {
+                    writer.stage_when_room(req.length)
+                } else {
+                    writer.stage_write(req.length).map(Some)
+                }
+            });
         let stage = match stage {
             Ok(stage) => stage,
             Err(error) => {
@@ -182,14 +193,44 @@ impl WriteCall {
             at: req.at,
             length: req.length,
             destination: Some(destination),
-            stage: Some(stage),
-            phase: Phase::Ready,
+            phase: if stage.is_some() {
+                Phase::Ready
+            } else {
+                Phase::WaitingRoom
+            },
+            stage,
             filled: false,
             cancelled: false,
         })
     }
     pub(crate) fn id(&self) -> CallId {
         self.id
+    }
+    pub(crate) fn awaiting_room(&self) -> bool {
+        self.phase == Phase::WaitingRoom
+    }
+    /// No new syscall, pointer or OFD lookup. The exact owner may test the
+    /// credit frontier after a consumer settles a head. Testing it early
+    /// cannot create a reservation or make the wrong request eligible.
+    #[cfg(test)]
+    pub(crate) fn resume_room(
+        &mut self,
+        ctx: Context<'_>,
+        id: CallId,
+    ) -> Result<Option<(u64, u64)>, Error> {
+        self.check_owner(&ctx, id)?;
+        if !self.awaiting_room() {
+            return Err(Error::State);
+        }
+        ctx.execution.check_held_call_live(self.invocation)?;
+        let stage = ctx
+            .lanes
+            .held_writer(ctx.files, self.destination.as_ref().expect("waiting hold"))?
+            .stage_when_room(self.length)?;
+        let Some(stage) = stage else { return Ok(None) };
+        self.stage = Some(stage);
+        self.phase = Phase::Ready;
+        Ok(Some((self.at, self.length.get() as u64)))
     }
     fn check(&self, domain: &Domain, execution: &Execution, id: CallId) -> Result<(), Error> {
         if id != self.id || !execution.retains_snapshot(self.execution) {
@@ -351,6 +392,12 @@ impl WriteCall {
                 self.cancelled = true;
                 return Ok(false);
             }
+            Phase::WaitingRoom => {
+                ctx.domain.cancel(id.action)?;
+                ctx.domain.retire(id.action).expect("no copy dispatched");
+                self.release_owner(ctx);
+                return Ok(true);
+            }
             Phase::Ready => {}
         }
         let mut writer = ctx
@@ -423,7 +470,7 @@ mod tests {
             }
         }
         fn admit(&mut self, sequence: u32, at: u64) -> Result<WriteCall, Error> {
-            WriteCall::admit(
+            WriteCall::admit::<false>(
                 &mut Context {
                     files: &mut self.root.files,
                     lanes: &mut self.root.registry,
@@ -795,6 +842,140 @@ mod tests {
         assert!(continuation
             .admit_request(&g.domain, &g.execution, invocation, Some(3))
             .is_err());
+    }
+
+    #[test]
+    fn impossible_or_unpublished_capacity_is_not_waitable() {
+        let mut g = Guest::new();
+        let mut accepted = g.admit(1, 5).unwrap();
+        let id = accepted.id();
+        g.fill(&mut accepted, id, b"AB");
+        accepted
+            .finish(&mut g.context(), id, receipt(Some(2), Access::BothEnded))
+            .unwrap();
+        let output = g.root.files.hold_output(&g.table, 1).unwrap();
+        assert!(matches!(
+            g.root.held_writer(&output).unwrap().stage_when_room(n(3)),
+            Err(OutputError::Full)
+        ));
+        assert!(g.root.reader(&g.receiver).unwrap().discard_front());
+        let mut writer = g.root.held_writer(&output).unwrap();
+        let pending = writer.reserve(n(2)).unwrap();
+        assert!(matches!(
+            writer.stage_when_room(n(2)),
+            Err(OutputError::Full)
+        ));
+        writer.cancel(pending).unwrap();
+        g.root.files.release_output(output).unwrap();
+    }
+
+    #[test]
+    fn pressure_holds_the_original_call_and_ofd_until_a_real_take_creates_room() {
+        use crate::syscall::{Continuation, Step};
+        for cancel in [false, true] {
+            let mut g = Guest::new();
+            let mut c = Continuation::new(&g.execution).unwrap();
+            let invocation = g.invocation;
+            let request = |sequence, at| Request {
+                invocation,
+                sequence,
+                fd: 1,
+                at,
+                length: n(2),
+            };
+            let ctx = Context {
+                files: &mut g.root.files,
+                lanes: &mut g.root.registry,
+                domain: &mut g.domain,
+                execution: &mut g.execution,
+            };
+            let Step::CaptureWrite { call: first, .. } =
+                c.admit_capture_write(ctx, &g.table, request(1, 5)).unwrap()
+            else {
+                panic!("initial credit")
+            };
+            assert_eq!(c.fill_native_capture(g.context(), first, b"AB"), Ok(5));
+            assert_eq!(
+                c.finish_native_capture(
+                    &mut g.context(),
+                    first,
+                    receipt(Some(2), Access::BothEnded)
+                ),
+                Ok(Finished::Accepted(n(2)))
+            );
+            let ctx = Context {
+                files: &mut g.root.files,
+                lanes: &mut g.root.registry,
+                domain: &mut g.domain,
+                execution: &mut g.execution,
+            };
+            let Step::CapturePressure { call } = c
+                .admit_waitable_capture_write(ctx, &g.table, request(2, 6))
+                .unwrap()
+            else {
+                panic!("no copy may start while the queue is full")
+            };
+            assert!(c.owns(call.action));
+            assert!(c.fill_native_capture(g.context(), call, b"CD").is_err());
+            assert!(c
+                .admit_request(&g.domain, &g.execution, invocation, Some(3))
+                .is_err());
+            assert!(c.resume_capture_write(g.context(), first).is_err());
+            assert_eq!(
+                c.resume_capture_write(g.context(), call),
+                Ok(Step::CapturePressure { call }),
+                "a wake or peek alone cannot create room"
+            );
+            assert_eq!(g.front().as_deref(), Some(&b"AB"[..]));
+            // The numeric FD can now name an input endpoint. Resume must never
+            // look it up again: the exact original output OFD survives.
+            g.root.files.close(&g.table, 1).unwrap();
+            assert_eq!(g.root.files.dup(&g.table, 0, 1, false), Ok(1));
+            if cancel {
+                assert!(c.cancel_capture(&mut g.context(), call).unwrap());
+                assert!(!c.owns(call.action));
+            }
+            let mut received = Vec::with_capacity(2);
+            assert_eq!(
+                g.root
+                    .reader(&g.receiver)
+                    .unwrap()
+                    .take_front_into(&mut received, 2),
+                Ok(Some(n(2)))
+            );
+            assert_eq!(received, b"AB");
+            if cancel {
+                assert!(c.resume_capture_write(g.context(), call).is_err());
+                assert_eq!(g.front(), None);
+                assert!(
+                    !g.execution.stopped(),
+                    "settling unopened leases is not a Worker stop receipt"
+                );
+                continue;
+            }
+            assert_eq!(
+                c.resume_capture_write(g.context(), call),
+                Ok(Step::CaptureWrite {
+                    call,
+                    at: 6,
+                    length: 2
+                })
+            );
+            assert!(c.resume_capture_write(g.context(), call).is_err());
+            assert_eq!(c.fill_native_capture(g.context(), call, b"CD"), Ok(6));
+            assert_eq!(
+                c.finish_native_capture(
+                    &mut g.context(),
+                    call,
+                    receipt(Some(2), Access::BothEnded)
+                ),
+                Ok(Finished::Accepted(n(2)))
+            );
+            assert_eq!(g.front().as_deref(), Some(&b"CD"[..]));
+            assert!(c
+                .admit_request(&g.domain, &g.execution, invocation, Some(3))
+                .is_ok());
+        }
     }
 
     #[test]
