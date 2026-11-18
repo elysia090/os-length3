@@ -56,6 +56,10 @@ test('computed imports cannot bypass the allowlist; Node facilities stay in the 
   for (const file of ['linux/memory-host.ts', 'host/node/protocol.ts']) {
     assert.equal(allowed('module/sods/runtime/' + file, 'node:worker_threads'), false);
   }
+  const capture = 'module/sods/runtime/host/node/capture-artifact.ts';
+  assert.equal(allowed(capture, 'node:crypto'), true);
+  for (const facility of ['node:fs', 'node:worker_threads', 'node:net']) assert.equal(allowed(capture, facility), false);
+  assert.equal(allowed('module/sods/runtime/linux/capture-artifact.ts', 'node:crypto'), false);
   assert.equal(allowed('module/sods/runtime/run.ts', 'node:child_process'), true);
 });
 

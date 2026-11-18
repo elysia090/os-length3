@@ -33,6 +33,7 @@ const hostImports: Record<string, readonly string[]> = {
   'module/sods/runtime/host/node/stdio.ts': ['node:fs', 'node:tty'],
   'module/sods/runtime/host/node/run.ts': ['node:crypto', 'node:fs', 'node:path'],
   'module/sods/runtime/host/node/guest.ts': ['node:worker_threads'],
+  'module/sods/runtime/host/node/capture-artifact.ts': ['node:crypto'],
   // The existing CLI is executable but must not become an importable runtime dependency.
   'module/sods/runtime/run.ts': ['node:child_process', 'node:crypto', 'node:fs', 'node:path', 'node:url'],
 };

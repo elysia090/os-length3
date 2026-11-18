@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {verifiedCaptureCandidate, type CaptureCandidatePin} from '../../runtime/linux/capture-artifact.ts';
+import {verifiedCaptureCandidate, type CaptureCandidatePin} from '../../runtime/host/node/capture-artifact.ts';
 import {memoryHost} from '../../runtime/linux/memory-host.ts';
 
 const candidate = process.env.SODS_CAPTURE_CANDIDATE_WASM;
