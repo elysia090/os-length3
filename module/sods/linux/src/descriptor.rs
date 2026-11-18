@@ -27,6 +27,8 @@ use super::mount::{self, Mounts, Place, Ticket};
 use std::collections::HashMap;
 use std::num::{NonZeroU64, NonZeroUsize};
 
+mod output;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Id {
     owner: u64,

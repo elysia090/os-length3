@@ -34,8 +34,36 @@ the same bytes after abort. It consumes that hold and exclusively borrows Files
 until the infallible cursor update. It is the last fallible step: the future
 destination owner must finish all other admission checks before requesting it.
 
-The range-pin/finite queue connection is a separate next slice. Pin preparation
-must not commit the source cursor or create output. Only publication of its exact
-held source prefix into a real owned destination may do that. Public delivery,
-consumer/drain binding and Linux pipe algorithms remain unselected gates; no
-test-only physical success can substitute for them.
+## Coarse retention and finite publication
+
+The disconnected Rust destination owns Files by value. Its pin registry
+retains just the prefix witness, not another reference to the OFD or a pointer
+into storage. The queue keeps the original backing alive by retaining the
+whole Files owner. It does not reclaim an individual backing, or promise access
+after Files/Core destruction. A Rust slice borrows the owner and precludes
+concurrent discard; there is no host/ABI view, drain or separate receiver here.
+
+The destination reserves exact nonzero Q payload bytes and one K entry, and
+prepares one R pin independently. Q includes reserved and accepted bytes until
+cancellation or explicit discard. K or R can be exhausted with byte room left.
+Both record arenas reserve capacity at construction, then initialize slots on
+first use. Private free lists and linked publication order avoid a scan of
+either queue arena. Slot generations never wrap; saturated slots
+retire. These bounds do not charge the source backing, spare allocation or the
+rest of Files/Core, and do not imply a total-memory bound.
+
+After validating current admission, both tickets, exact length and exact
+source, publication links the pin into its destination and commits the source
+cursor in one callback-free, allocation-free Rust turn. The existing last-OFD
+cleanup can still inspect/release detached mount metadata; no constant bound on
+that unrelated lookup is implied. No additional receipt
+or publication serial is needed for this private FIFO. Rejection returns all
+three inputs without releasing their obligations. Closing admission bars new
+publication but retains accepted data. Explicit discard releases only the
+queue record and its claimed credits; it proves neither delivery nor a stopped
+host. Dropped tickets retain their credits while the destination is retained.
+
+Guest-call and cancellation admission, lazy source coordination, drain
+binding, captured delivery and Linux pipe algorithms remain unselected gates.
+This owner is not installed in the Core or Worker and creates no positive
+physical capability, guest result or new ABI.
