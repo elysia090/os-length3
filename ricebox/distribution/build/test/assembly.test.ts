@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {packageCache, readArchive} from '../../test/fixtures/package-cache.ts';
+import {openDistribution} from '../../deployment/local.ts';
 
 function assemble(pkgs: string, out: string) {
   const result = spawnSync('sh', [fileURLToPath(new URL('../assemble.sh', import.meta.url)), pkgs, out, '0.0.1'], {encoding: 'utf8'});
@@ -50,8 +51,8 @@ test('the same neutral root becomes static layers without requiring why or optio
     const {archive} = assemble(pkgs, join(at, 'root'));
     const wasm = join(at, 'translator.wasm');
     writeFileSync(wasm, new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
-    const out = join(at, 'site'), stage = join(at, 'stage');
-    const r = spawnSync(process.execPath, [fileURLToPath(new URL('../distribution.ts', import.meta.url)), archive, out, '--translator', wasm, '--stage', stage], {encoding: 'utf8', timeout: 30000});
+    const out = join(at, 'site');
+    const r = spawnSync(process.execPath, [fileURLToPath(new URL('../distribution.ts', import.meta.url)), archive, out, '--translator', wasm], {encoding: 'utf8', timeout: 30000});
     assert.equal(r.status, 0, r.stderr);
     const about = JSON.parse(readFileSync(join(out, 'webroot.json'), 'utf8'));
     assert.equal(about.name, 'ricebox');
@@ -74,7 +75,9 @@ test('the same neutral root becomes static layers without requiring why or optio
     assert.deepEqual(changed.missing, []);
     assert.deepEqual(changed.extra, []);
     assert.deepEqual(changed.changed.map(entry => entry.path), ['/usr/bin/tool']);
-    assert.deepEqual(readFileSync(join(stage, 'sods.wasm')), readFileSync(wasm));
+    const release = openDistribution(out);
+    try { assert.deepEqual(release.blob(release.index.translator), readFileSync(wasm)); }
+    finally { release.close(); }
   } finally { rmSync(at, {recursive: true, force: true}); }
 });
 

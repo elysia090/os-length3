@@ -7,14 +7,13 @@
 // that holds its shell shows there). Prints a Markdown table; exits 1 if
 // any case differs. It takes the ELF from the staged userland fixture.
 import {spawn} from 'node:child_process';
-import {existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {constants, tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {userland} from '../fixtures/runtime.ts';
+import {requireUserland} from '../fixtures/runtime.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const BUSYBOX = userland.busybox;
 const RUN = join(here, '..', '..', 'runtime', 'run.ts');
 
 /** A case: what runs, and whether it is slow (left out unless PARITY_SLOW). */
@@ -52,15 +51,16 @@ function sh(argv: string[], env: NodeJS.ProcessEnv): Promise<Ran> {
 }
 
 export async function runCase(c: Case, bin: string): Promise<{native: Ran; box: Ran; same: boolean}> {
+  const {busybox} = requireUserland();
   const env = {PATH: `${bin}:/usr/bin:/bin`, HOME: '/root', LANG: 'C.UTF-8'};
-  const native = await sh([BUSYBOX, 'sh', '-c', c.script], env);
-  const box = await sh([process.execPath, RUN, BUSYBOX, 'sh', '-c', c.script], env);
+  const native = await sh([busybox, 'sh', '-c', c.script], env);
+  const box = await sh([process.execPath, RUN, busybox, 'sh', '-c', c.script], env);
   return {native, box, same: native.out === box.out && native.status === box.status};
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
-  if (!existsSync(BUSYBOX)) { console.error(`no BusyBox at ${BUSYBOX} (see the Sods test fixture instructions)`); process.exit(2); }
+  const {busybox} = requireUserland();
   const args = process.argv.slice(2);
   let table = null;
   if (args[0] === '--table') { args.shift(); table = args.shift(); }
@@ -68,7 +68,7 @@ if (isMain) {
   const want = args.length ? CASES.filter((c) => args.some((a) => c.name.includes(a))) : CASES.filter((c) => slow || !c.slow);
   // Native BusyBox finds its applets the way the Prompt's does: busybox on the PATH.
   const bin = mkdtempSync(join(tmpdir(), 'proc-parity-'));
-  symlinkSync(BUSYBOX, join(bin, 'busybox'));
+  symlinkSync(busybox, join(bin, 'busybox'));
   const f = (ms: number | null): string => (ms === null ? '-' : `${(ms / 1000).toFixed(3)} s`);
   const rows = ['| case | native | Sods | same | first line native / Sods |', '|---|---|---|---|---|'];
   let bad = 0;

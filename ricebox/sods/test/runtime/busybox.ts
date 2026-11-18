@@ -7,13 +7,14 @@ import {Kernel} from '../../runtime/linux/process.ts';
 import type {Termios} from '../../runtime/linux/parts.ts';
 import {loadTranslator} from '../../runtime/translation/translator.ts';
 
-import {userland} from '../fixtures/runtime.ts';
+import {requireUserland} from '../fixtures/runtime.ts';
 export {hasUserland as have} from '../fixtures/runtime.ts';
 
 /** A shell run: its kernel, what is to be typed, how its terminal was set at each change, and what it wrote. */
 export interface Shell { kernel: Kernel; input: Uint8Array[]; modes: Pick<Termios, 'iflag' | 'oflag' | 'lflag'>[]; out: () => string }
 
 export async function shell(script: string, applets = ['sh', 'cat', 'sleep'], {interactive = false, argv = null}: {interactive?: boolean; argv?: string[] | null} = {}): Promise<Shell> {
+  const userland = requireUserland();
   const vfs = new Vfs();
   const busybox = vfs.writeFile('/bin/busybox', readFileSync(userland.busybox), 0o755);
   for (const a of applets) vfs.symlink('busybox', `/bin/${a}`);

@@ -1,7 +1,7 @@
 // One distribution root as content-addressed layers for any static host. This is a
 // delivery form of the same tree, not a separate product or package selection.
 // node ricebox/distribution/build/distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS]
-//   [--hot PATH,…] [--name NAME] [--stage DIR] [--cache DIR]
+//   [--hot PATH,…] [--name NAME] [--cache DIR]
 // The root's filename binds its version and digest. Each pack is checked by its
 // digest; files are fetched only when read. Product-specific hot programs and
 // compatibility names are supplied by the caller.
@@ -37,10 +37,9 @@ const sods = flag('--sods', join(repo, 'ricebox/sods/target/release/sods'));
 const chosenHot = flag('--hot');
 const hot = (chosenHot || '/usr/bin/bash,/usr/bin/busybox,/usr/bin/git').split(',').filter(Boolean);
 const distributionName = flag('--name');
-const stage = flag('--stage');
 const aotCache = flag('--cache', join(repo, 'target/ricebox-aot'));
 const [rootFile, out] = args;
-if (args.length !== 2 || !rootFile || !out || args.some(arg => arg.startsWith('--'))) { console.error('usage: distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--stage DIR]'); process.exit(2); }
+if (args.length !== 2 || !rootFile || !out || args.some(arg => arg.startsWith('--'))) { console.error('usage: distribution.ts ROOT OUT [--translator SODS.wasm] [--sods SODS] [--hot PATH,…] [--name NAME] [--cache DIR]'); process.exit(2); }
 
 
 // A root is a few hundred megabytes: past a few gigabytes held, something is wrong, and it stops before the machine does.
@@ -172,13 +171,7 @@ for (const path of hot) {
   const source = canonicalExecutableSource({packs: packList, files}, translation);
   translation.association = {version: 1, origin: source.origin, sourceSha256: source.sha256, sourceBytes: bytes.length, mode: 'whole'};
   translations.push(translation);
-  if (stage && path === '/usr/bin/busybox') {
-    mkdirSync(stage, {recursive: true});
-    writeFileSync(join(stage, 'busybox'), bytes);
-    writeFileSync(join(stage, 'busybox.wasm'), made);
-  }
 }
-if (stage) { mkdirSync(stage, {recursive: true}); writeFileSync(join(stage, 'sods.wasm'), wasm); }
 
 const index: Index = {
   name: release.NAME ?? 'ricebox', version, sha256: rootSha, codec: 'zstd',

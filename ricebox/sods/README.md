@@ -242,6 +242,8 @@ SODS_SYSCALLS=1 SODS_FAULTS=1 SODS_TIMING=1 node runtime/run.ts PROGRAM
 # Optional syscall, fault and timing diagnostics.
 ```
 
+### Runtime tests
+
 The runtime tests can run without a guest root. Build the translator and the
 native fixtures with `test/programs/run.sh` for the executable integration
 cases. To use translators built in another directory, set `SODS_NATIVE`,
@@ -258,9 +260,8 @@ SODS_TEST_USERLAND_DIR=target/sods-release-fixture node --test --test-concurrenc
 ```
 
 An explicitly selected fixture must contain `busybox`, `busybox.wasm`, and
-`sods.wasm`. A developer checkout with an existing `target/userland/` can
-use it without the environment variable. If neither is present, only the
-BusyBox-dependent cases skip.
+`sods.wasm`. Omit the variable to run without the BusyBox-dependent cases.
+Building a web root does not prepare or select a test fixture.
 
 ### Arithmetic flags across calls
 

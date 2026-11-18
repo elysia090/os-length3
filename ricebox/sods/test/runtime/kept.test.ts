@@ -5,7 +5,7 @@ import {File, Vfs} from '../../runtime/linux/fs.ts';
 import {Kernel, PROFILE, type Image, type Keeper} from '../../runtime/linux/process.ts';
 import type {Taken} from '../../runtime/translation/kept.ts';
 import {loadTranslator} from '../../runtime/translation/translator.ts';
-import {hasUserland as have, userland} from '../fixtures/runtime.ts';
+import {hasUserland as have, requireUserland} from '../fixtures/runtime.ts';
 
 // What one run translated, kept for the next: the code a program reached later (Image.adopt), and a whole program's
 // translation taken from a keeper (Kernel.image) instead of being made again. The next run says the same and
@@ -21,6 +21,7 @@ const SCRIPT = 'echo one; for x in a b c; do echo $x; done | while read l; do ec
  * translated when run).
  */
 async function kernel({keeper = null}: {keeper?: Keeper | null} = {}): Promise<{k: Kernel; vfs: Vfs; reads: {n: number}; out: () => string}> {
+  const userland = requireUserland();
   const vfs = new Vfs();
   const elf = readFileSync(userland.busybox);
   const busybox = vfs.writeFile('/bin/busybox', elf, 0o755);
@@ -104,6 +105,7 @@ test('kept: a root program translated once is taken from the keeper by the next 
 
 test('kept: a root program translated ahead (ahead.ts, as the page does while a person reads) is run from that, never translated or read', {skip: !have}, async () => {
   const {translatedAhead} = await import('../../runtime/translation/ahead.ts');
+  const userland = requireUserland();
   const elf = readFileSync(userland.busybox);
   // As its pack holds it, zstd's frame or as it is: here as it is.
   const {wasm, segments} = await translatedAhead(readFileSync(userland.translator), new Uint8Array(elf), {raw: true, size: elf.length, shared: false});

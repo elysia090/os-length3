@@ -7,7 +7,7 @@ import {CH, OP, Outbox, REPLY} from '../../runtime/linux/channel.ts';
 import {Process} from '../../runtime/linux/process.ts';
 import {prepare} from '../../runtime/translation/share.ts';
 import {loadTranslator} from '../../runtime/translation/translator.ts';
-import {hasUserland as have, userland} from '../fixtures/runtime.ts';
+import {hasUserland as have, requireUserland} from '../fixtures/runtime.ts';
 
 // Each thread in a Worker of its own, memory shared: what a cross-origin
 // isolated page runs. Here a thread that never makes a call cannot hold
@@ -16,6 +16,7 @@ import {hasUserland as have, userland} from '../fixtures/runtime.ts';
 
 async function shell(script: string, {input = null, said = null, files = {}, observe}: {input?: string | null; said?: [number, string][] | null;
   files?: Record<string, Uint8Array>; observe?: (kernel: RemoteKernel) => void} = {}): Promise<{status: number; out: string; ms: number}> {
+  const userland = requireUserland();
   const vfs = new Vfs();
   for (const [path, bytes] of Object.entries(files)) vfs.writeFile(path, bytes, 0o755);
   const busybox = vfs.writeFile('/bin/busybox', readFileSync(userland.busybox), 0o755);

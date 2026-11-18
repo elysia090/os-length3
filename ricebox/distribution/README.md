@@ -134,6 +134,8 @@ RICEBOX_RELEASE_DIR=/path/to/webroot \
 
 The release shell test uses the Muk named by the prepared web root, checks its
 digest and runs the release’s shell through Sods. It does not publish anything.
+For BusyBox-based Sods tests, [stage the verified release fixture](../sods/README.md#runtime-tests)
+explicitly; the distribution producer does not write test outputs.
 
 ## Dependency maintenance
 
