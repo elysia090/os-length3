@@ -8,7 +8,7 @@
 # Needs cargo with the wasm32-unknown-unknown target, and a C compiler for muk.
 set -eu
 [ "$#" -ge 2 ] || { echo "usage: sh ricebox/distribution/build/distribution.sh ROOT.tar.zst OUT" >&2; exit 2; }
-build=$(cd "$(dirname "$0")" && pwd)
+build=$(cd "$(dirname "$0")" && pwd -P)
 here=$(cd "$build/../../.." && pwd)
 sods=$(cd "$here/ricebox/sods" && pwd)
 root=$1

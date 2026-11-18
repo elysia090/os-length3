@@ -21,4 +21,3 @@ if [ "$out" = "$here/why/app/public/webroot" ] ||
   export RICEBOX_STAGE_PARENT="$here/why/app"
 fi
 sh "$here/ricebox/distribution/build/distribution.sh" "$root" "$out" --name why --hot "/usr/bin/bash,/usr/bin/busybox,$cli,/usr/bin/git"
-
