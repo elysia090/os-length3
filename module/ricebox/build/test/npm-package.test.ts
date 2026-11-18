@@ -22,12 +22,14 @@ test('built npm package contains builder dependencies and imports public JS with
     assert.equal(pkg.exports['./vite'].import,'./module/ricebox/integrations/vite.js');
     assert.equal(pkg.exports['./prepare'].types,'./module/ricebox/build/prepare.ts');
     for(const name of ['module/ricebox/distribution/executable-source.ts','module/ricebox/build/distribution.ts','module/ricebox/build/file-store-artifact.ts','module/sods/runtime/file-store.ts',
+      'module/ricebox/build/capture-result-artifact.ts','module/ricebox/build/capture-result-artifact.js',
       'module/ricebox/deployment/assets.ts','module/ricebox/deployment/assets.js',
       'module/ricebox/integrations/vite.ts','module/ricebox/integrations/vite.js','module/ricebox/build/prepare.ts','module/ricebox/build/prepare.js']) {
       assert.ok(existsSync(join(out,name)),`missing ${name}`);
     }
     // Cover the copied builder as well as the root's transitive runtime closure.
     for(const path of files(out).filter(p=>/\.(ts|js|mjs)$/.test(p))) {
+      assert.doesNotMatch(path.slice(out.length), /\/(?:test|verification)\/|\.(?:test|spec)\.[cm]?[jt]s$/, 'tests and verification are not package content');
       const source=readFileSync(path,'utf8');
       for(const m of source.matchAll(/(?:from\s*|import\s*\(\s*|new URL\(\s*)['"](\.[^'"\n]+\.(?:ts|js|mjs))['"]/g)) {
         assert.ok(existsSync(resolve(dirname(path),m[1])),`${path} lacks ${m[1]}`);

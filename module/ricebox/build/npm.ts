@@ -18,7 +18,7 @@ const entry = 'module/ricebox/runtime/root.ts';
 const closure = new Map<string, {source: string; javascript: string}>();
 function visit(path: string): void {
   if (closure.has(path)) return;
-  if (!/^module\/(ricebox\/(?:runtime|distribution|build|deployment|integrations|host\/node)|sods\/runtime)\//.test(path) || !path.endsWith('.ts')) {
+  if (!/^module\/(ricebox\/(?:runtime|distribution|build|deployment|integrations|host\/node)|sods\/runtime)\//.test(path) || !path.endsWith('.ts') || /\/(?:test|verification)\/|\.(?:test|spec)\.ts$/.test(path)) {
     throw new Error(`Unexpected dependency outside ricebox and sods: ${path}`);
   }
   const source = readFileSync(join(repository, path), 'utf8');
@@ -34,7 +34,11 @@ function visit(path: string): void {
 visit(entry);
 visit('module/ricebox/integrations/vite.ts');
 visit('module/ricebox/build/prepare.ts');
-visit('module/ricebox/host/node/tar.ts');
+// CLI roots invoked by prepare.ts and assemble.sh, not static imports. Their
+// TypeScript dependencies use the same closure traversal as the public entries.
+visit('module/ricebox/build/distribution.ts');
+visit('module/ricebox/build/package-database.ts');
+visit('module/ricebox/build/script-interpreters.ts');
 mkdirSync(out, {recursive: true});
 for (const [path, {source, javascript}] of closure) {
   const destination = join(out, path);
@@ -42,8 +46,8 @@ for (const [path, {source, javascript}] of closure) {
   writeFileSync(destination, source);
   writeFileSync(destination.slice(0, -3) + '.js', javascript.replace(/(['"])(\.[^'"\n]+)\.ts\1/g, '$1$2.js$1'));
 }
-// The distribution builder is the same implementation, not a second npm assembler.
-for (const path of ['distribution/executable-source.ts', 'build/assemble.sh', 'build/package-database.ts', 'build/script-interpreters.ts', 'build/distribution.ts', 'build/compress.worker.ts', 'build/compression-pool.ts', 'build/file-store-artifact.ts', 'build/aot-cache.ts', 'etc/os-release', 'pins/sources.env']) {
+// Shell and data inputs are not TypeScript graph edges.
+for (const path of ['build/assemble.sh', 'etc/os-release', 'pins/sources.env']) {
   const name = 'module/ricebox/' + path;
   mkdirSync(dirname(join(out, name)), {recursive: true});
   writeFileSync(join(out, name), readFileSync(join(repository, name)));
