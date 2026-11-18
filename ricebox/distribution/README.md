@@ -46,7 +46,7 @@ Native build prerequisites are not installed by this package.
 | `runtime/worker.ts` | Execution through sods and muk |
 | `runtime/pack-range.ts`, `runtime/download.ts` | Range reads, downloads and integrity |
 | `runtime/pretranslate.ts`, `runtime/translate.worker.ts` | Background translation |
-| `runtime/check.worker.ts` | Off-thread digest and copy work |
+| `runtime/asset-cache.ts`, `runtime/check.worker.ts` | Browser cache storage and off-thread integrity checks |
 | `runtime/directory-tree.ts` | Directory listing projection |
 | `build/` | Package assembly, source builds and artifact production |
 | `deployment/` | Local readers and asset collection |
