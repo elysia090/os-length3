@@ -900,3 +900,12 @@ AT_FDCWD openat route. Path capture, held cwd/root, credentials, canonical inode
 OFD, slot publication and Unknown cleanup are shared, not copied into a new TS
 implementation. Unsupported results preserve the original syscall number.
 See [OPEN-CALLER.md](OPEN-CALLER.md) for the normalization counterexamples.
+
+### Canonical-source transfer ownership, not yet a caller
+
+`sendfile.rs` independently models one finite source-OFD/output-description call,
+capability-before-load, exact prefix commit and Unknown/late ownership. Its
+physical trust receipts are synthetic unit-test evidence only; syscall40 remains
+Unsupported and the Wasm ABI/Node Worker are not wired to it. See
+[SENDFILE-OWNER.md](SENDFILE-OWNER.md) for the selected scope, necessary work and
+remaining physical/ABI/actual-caller gates.

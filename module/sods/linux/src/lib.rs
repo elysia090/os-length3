@@ -19,6 +19,8 @@ mod descriptor;
 
 mod read;
 
+mod sendfile;
+
 mod filesystem;
 
 mod mount;
