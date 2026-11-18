@@ -339,7 +339,7 @@ pub extern "C" fn linux_queued_output_probe_init() -> i32 {
         if r.queue_probe.is_some() {
             return Err(-4);
         }
-        r.queue_probe = Some(descriptor::QueueProbe::new(&r.files).map_err(queue_probe_error)?);
+        r.queue_probe = Some(descriptor::QueueProbe::new(&mut r.files).map_err(queue_probe_error)?);
         Ok(0)
     })
 }

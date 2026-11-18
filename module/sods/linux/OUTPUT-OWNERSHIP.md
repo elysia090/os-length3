@@ -47,8 +47,10 @@ Each lane has separately minted producer and consumer tickets. A scoped
 producer borrows only the matching root and destination for admission; a
 consumer can take or discard only its own lane's accepted data. Source table
 retirement and closure of admission do not end consumer access. A queue
-ticket binds both its Files and lane incarnation: equal local pin/entry slots
-in two queues are not interchangeable. Lanes append within a fixed cap, with
+ticket binds its Files, exact registry incarnation, and lane: equal local
+slots within two registries on the same Files are not interchangeable.
+Files never reissues a registry identity, even after its destruction.
+Lanes append within a fixed cap, with
 no replacement/reuse or independent teardown in this slice. Dropping a ticket
 is not host stopped-use evidence and does not reclaim a lane.
 

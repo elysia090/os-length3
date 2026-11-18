@@ -1,9 +1,7 @@
 //! Private finite publication of retained file prefixes and owned copies.
 //! Not a guest pipe, cancellation gate, or external output/drain adapter.
-#[cfg(any(test, feature = "queued-output-probe"))]
-use super::Table;
-use super::{Error as FilesError, Files, ReadHold, ReadPrefix};
-use std::num::NonZeroUsize;
+use super::{Error as FilesError, Files, ReadHold, ReadPrefix, Table};
+use std::num::{NonZeroU64, NonZeroUsize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Error {
@@ -37,8 +35,13 @@ struct Key {
     generation: u64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RegistryId {
+    files: u64,
+    serial: NonZeroU64,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct DestinationId {
-    owner: u64,
+    registry: RegistryId,
     lane: usize,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -504,18 +507,21 @@ pub(super) struct Consumer(DestinationId);
 // The existing Core and disconnected Root can each own one registry *beside*
 // one Files. The registry acquires no separately replaceable backing.
 struct LaneRegistry {
-    owner: u64,
+    id: RegistryId,
     lanes: Vec<Queue>,
     limit: usize,
 }
 impl LaneRegistry {
-    fn new(files: &Files, limit: usize) -> Result<Self, Error> {
+    fn new(files: &mut Files, limit: usize) -> Result<Self, Error> {
         let mut lanes = Vec::new();
         lanes
             .try_reserve_exact(limit)
             .map_err(|_| Error::Capacity)?;
         Ok(Self {
-            owner: files.owner(),
+            id: RegistryId {
+                files: files.owner(),
+                serial: files.issue_output_registry()?,
+            },
             lanes,
             limit,
         })
@@ -526,7 +532,7 @@ impl LaneRegistry {
             return Err(Error::Capacity);
         }
         let id = DestinationId {
-            owner: self.owner,
+            registry: self.id,
             lane,
         };
         let queue = Queue::new(id, limits)?;
@@ -540,7 +546,7 @@ impl LaneRegistry {
         files: &'a mut Files,
         id: DestinationId,
     ) -> Result<(&'a mut Files, &'a mut Queue), Error> {
-        if id.owner != self.owner || id.owner != files.owner() {
+        if id.registry != self.id || id.registry.files != files.owner() {
             return Err(Error::BadDestination);
         }
         let queue = self.lanes.get_mut(id.lane).ok_or(Error::BadDestination)?;
@@ -572,8 +578,8 @@ pub(super) struct Root {
     registry: LaneRegistry,
 }
 impl Root {
-    pub(super) fn new(files: Files, limit: usize) -> Result<Self, (Error, Files)> {
-        let registry = match LaneRegistry::new(&files, limit) {
+    pub(super) fn new(mut files: Files, limit: usize) -> Result<Self, (Error, Files)> {
+        let registry = match LaneRegistry::new(&mut files, limit) {
             Ok(registry) => registry,
             Err(error) => return Err((error, files)),
         };
@@ -684,7 +690,7 @@ impl From<Error> for QueueProbeError {
 }
 #[cfg(feature = "queued-output-probe")]
 impl QueueProbe {
-    pub(crate) fn new(files: &Files) -> Result<Self, QueueProbeError> {
+    pub(crate) fn new(files: &mut Files) -> Result<Self, QueueProbeError> {
         let mut registry = LaneRegistry::new(files, 2)?;
         let limits = || Limits {
             pins: 1,
@@ -799,7 +805,10 @@ mod tests {
     impl Owner {
         fn new(files: Files, limits: Limits) -> Result<Self, (Error, Files)> {
             let id = DestinationId {
-                owner: files.owner(),
+                registry: RegistryId {
+                    files: files.owner(),
+                    serial: NonZeroU64::MIN,
+                },
                 lane: 0,
             };
             match Queue::new(id, limits) {
@@ -1586,7 +1595,7 @@ mod tests {
     fn a_probe_registry_cannot_be_paired_with_foreign_files_even_at_equal_slots() {
         let (mut a, _, _, at, af) = files(502);
         let (mut b, _, _, bt, bf) = files(504);
-        let mut probe = QueueProbe::new(&a).unwrap();
+        let mut probe = QueueProbe::new(&mut a).unwrap();
         assert_eq!(af, bf);
         assert_eq!(
             probe.publish(&mut b, &bt, bf, 0, 2),
@@ -1599,6 +1608,87 @@ mod tests {
         assert_eq!(probe.peek(&mut a, 0, 0), Ok((2, b'b')));
         assert_eq!(probe.discard(&mut a, 0), Ok(true));
         assert_eq!(a.offset(&at, af), Ok((2, 1)));
+    }
+
+    #[test]
+    fn same_files_registries_do_not_share_destinations_even_at_equal_local_slots() {
+        let (mut files, _, _, table, _) = files(502);
+        let mut first = LaneRegistry::new(&mut files, 1).unwrap();
+        let mut second = LaneRegistry::new(&mut files, 1).unwrap();
+        let limits = || Limits {
+            bytes: 1,
+            entries: 1,
+            pins: 1,
+        };
+        let (old, old_reader) = first.destination(limits()).unwrap();
+        let (live, live_reader) = second.destination(limits()).unwrap();
+        assert_eq!(old.0.lane, live.0.lane);
+        assert!(matches!(
+            second.writer(&mut files, &old),
+            Err(Error::BadDestination)
+        ));
+        assert!(matches!(
+            first.reader(&mut files, &live_reader),
+            Err(Error::BadDestination)
+        ));
+
+        let old_r = first
+            .writer(&mut files, &old)
+            .unwrap()
+            .reserve(n(1))
+            .unwrap();
+        let live_r = second
+            .writer(&mut files, &live)
+            .unwrap()
+            .reserve(n(1))
+            .unwrap();
+        assert_eq!(old_r.0.key, live_r.0.key);
+        let mut write = second.writer(&mut files, &live).unwrap();
+        let (error, old_r) = write.publish_copy(old_r, b"Z").unwrap_err();
+        assert_eq!(error, Error::BadReservation);
+        write.publish_copy(live_r, b"A").unwrap();
+        first
+            .writer(&mut files, &old)
+            .unwrap()
+            .cancel(old_r)
+            .unwrap();
+        assert_eq!(
+            first.reader(&mut files, &old_reader).unwrap().front_bytes(),
+            Ok(None)
+        );
+        drop(first);
+        assert!(matches!(
+            second.reader(&mut files, &old_reader),
+            Err(Error::BadDestination)
+        ));
+        assert_eq!(
+            second
+                .reader(&mut files, &live_reader)
+                .unwrap()
+                .front_bytes(),
+            Ok(Some(&b"A"[..])),
+        );
+        files.let_go(table).unwrap();
+    }
+
+    #[test]
+    fn registry_issuance_does_not_wrap_or_spend_serial_on_allocation_rejection() {
+        let (mut files, _, _, table, _) = files(502);
+        files.next_output_registry = NonZeroU64::new(u64::MAX);
+        assert!(matches!(
+            LaneRegistry::new(&mut files, usize::MAX),
+            Err(Error::Capacity)
+        ));
+        let last = LaneRegistry::new(&mut files, 1).unwrap();
+        assert_eq!(last.id.serial.get(), u64::MAX);
+        drop(last);
+        for _ in 0..2 {
+            assert!(matches!(
+                LaneRegistry::new(&mut files, 1),
+                Err(Error::Source(FilesError::Overflow))
+            ));
+        }
+        files.let_go(table).unwrap();
     }
 
     #[test]

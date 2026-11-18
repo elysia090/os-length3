@@ -27,6 +27,7 @@ use super::mount::{self, Mounts, Place, Ticket};
 use std::collections::HashMap;
 use std::num::{NonZeroU64, NonZeroUsize};
 
+#[cfg(any(test, feature = "queued-output-probe"))]
 mod output;
 #[cfg(all(target_arch = "wasm32", feature = "queued-output-probe"))]
 pub(crate) use output::{QueueProbe, QueueProbeError};
@@ -375,6 +376,8 @@ pub(crate) struct Files {
     // Every read admission, including a later abort/count0, gets a distinct
     // incarnation. Offset revision alone cannot identify an aborted attempt.
     next_read_reservation: Option<NonZeroU64>,
+    #[cfg(any(test, feature = "queued-output-probe"))]
+    next_output_registry: Option<NonZeroU64>,
 }
 fn prepare<T>(arena: &mut Vec<Cell<T>>, cap: usize, owner: u64) -> Result<Id, Error> {
     for (slot, cell) in arena.iter().enumerate() {
@@ -439,7 +442,15 @@ impl Files {
             descriptions: Vec::new(),
             live_slots: 0,
             next_read_reservation: Some(NonZeroU64::MIN),
+            #[cfg(any(test, feature = "queued-output-probe"))]
+            next_output_registry: Some(NonZeroU64::MIN),
         }
+    }
+    #[cfg(any(test, feature = "queued-output-probe"))]
+    fn issue_output_registry(&mut self) -> Result<NonZeroU64, Error> {
+        let serial = self.next_output_registry.ok_or(Error::Overflow)?;
+        self.next_output_registry = serial.get().checked_add(1).and_then(NonZeroU64::new);
+        Ok(serial)
     }
     /// Transfer storage only after admission; failure returns its entire ownership.
     pub(crate) fn admit_tree(&mut self, tree: Tree) -> Result<Inode, (AdmissionError, Tree)> {
