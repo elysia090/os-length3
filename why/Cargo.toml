@@ -15,7 +15,6 @@ path = "api/tests/api.rs"
 
 [dependencies]
 base64 = "0.23"
-libc = "0.2"
 # A file read for this device's own secret before it is sent (device/secrets.rs): the search serde_json links already.
 memchr = "2"
 serde = { version = "1", features = ["derive"] }
@@ -53,6 +52,8 @@ windows-native-keyring-store = { version = "1.1.0", default-features = false }
 
 # The Secret Service over D-Bus from Rust alone (zbus, and its crypto in Rust): the static why reaches it as the app does.
 [target.'cfg(target_os = "linux")'.dependencies]
+# Netlink route messages and the native Prompt's subprocess tests.
+libc = "0.2"
 zbus-secret-service-keyring-store = { version = "1.0.1", features = ["rt-async-io-crypto-rust"] }
 
 # A distribution's archive made for a test of what why does with one (prompt/roots/mod.test.rs).
