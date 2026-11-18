@@ -44,11 +44,11 @@ function fixture(t: TestContext, base: string) {
     packs: [{name: `${pack}.pack`, owner: 'fixture', bytes: 100}], files: [], dirs: [], links: [], translations: [],
     translator: {path: `blobs/${sha256}.bin`, sha256, size: translator.length, bytes: emptyWasm.length, name: 'sods', version: '1', wasm: hash(emptyWasm)},
   };
-  const publish = () => {
+  const publish = (metadata: Partial<About> = {}) => {
     const body = json(index), id = hash(body), path = `index-${id}.json`;
     const about: About = {name: index.name, version: '1', sha256: index.sha256, bytes: 1, file: 'root.tar.zst',
       root: {name: 'fixture', profile: 'fixture'}, index: {path, sha256: id, size: body.length},
-      translator: {name: index.translator.name, version: index.translator.version}};
+      translator: {name: index.translator.name, version: index.translator.version}, ...metadata};
     assets.set(url(base + 'webroot.json'), json(about));
     assets.set(url(base + path), body);
     assets.set(url(base + index.translator.path), translator);
@@ -90,3 +90,32 @@ for (const base of ['layers/', 'https://assets.example.test/webroot/']) {
     assert.deepEqual(new Set(f.requests), new Set([f.url(base + 'webroot.json'), f.url(base + 'muk.json')]));
   });
 }
+
+test('all runtime readers bind an authenticated index to this release', async t => {
+  const f = fixture(t, '/layers/');
+  f.index.version = 'another version';
+  f.publish();
+  const root = f.root();
+  for (const read of [root.rootIndex, root.loadWebroot, root.execution.load]) {
+    await assert.rejects(read(), /distribution and index disagree/);
+  }
+});
+
+test('the read-only index does not accept a retired file owner', async t => {
+  const f = fixture(t, '/layers/');
+  Object.assign(f.index, {fileStore: null});
+  f.publish();
+  await assert.rejects(f.root().rootIndex(), /Unsupported file owner/);
+});
+
+test('runtime does not fetch an index from a noncanonical path', async t => {
+  const base = '/layers/', f = fixture(t, base), about = f.publish();
+  const path = 'index.json';
+  f.assets.set(f.url(base + path), f.assets.get(f.url(base + about.index.path))!);
+  f.publish({index: {...about.index, path}});
+  const root = f.root();
+  for (const read of [root.rootIndex, root.loadWebroot, root.execution.load]) {
+    await assert.rejects(read(), /invalid index descriptor/);
+  }
+  assert.equal(f.requests.includes(f.url(base + path)), false);
+});

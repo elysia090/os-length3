@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {openDistribution} from '../local.ts';
+import {distributionAssets} from '../assets.ts';
 import {fixture} from './fixture.ts';
 
 test('local distribution reader retains lazy range and explicit close semantics',t=>{
@@ -29,4 +30,12 @@ test('local reader rejects a changed index and allows caller close after file fa
   const about=JSON.parse(readFileSync(join(root,'webroot.json'),'utf8'));
   writeFileSync(join(root,about.index.path),'{}');
   assert.throws(()=>openDistribution(root),/not the index/);
+});
+
+test('local and deployment readers reject a valid index attached to another release', t => {
+  const {root} = fixture(t), file = join(root, 'webroot.json');
+  const about = JSON.parse(readFileSync(file, 'utf8'));
+  writeFileSync(file, JSON.stringify({...about, version: 'another version'}));
+  assert.throws(() => openDistribution(root), /distribution and index disagree/);
+  assert.throws(() => distributionAssets(root), /distribution and index disagree/);
 });

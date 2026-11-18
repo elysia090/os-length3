@@ -3,7 +3,7 @@ import {createExecutionProfile} from './execution-profile.ts';
 import {executableKey, canonicalHotSources} from './prepared-executable.ts';
 import {canonicalExecutableSource} from '../format/executable-source.ts';
 import {createAhead} from './pretranslate.ts';
-import {requireStandardFileOwner} from '../format/manifest.ts';
+import {readReleaseIndex, releaseIndexAsset, requireStandardFileOwner} from '../format/manifest.ts';
 import {digest, download as fetchFile, Fatal, type Check} from './download.ts';
 import {FIRST} from './startup-programs.ts';
 import {canRunApart} from '../../sods/runtime/host.ts';
@@ -621,12 +621,31 @@ function hearLater(hear: (f: Webroot['files'][number]) => void): () => void {
   return () => { hearing.delete(hear); };
 }
 
-/** why's index, for what only reads it (File's "/"): from what is kept or fetched; null when this build carries none. */
+/** The release metadata required by either execution profile. */
+async function loadAbout(): Promise<About> {
+  const bytes = await download(`${BASE}webroot.json`, {}, undefined, {attempts: 4});
+  try { return JSON.parse(new TextDecoder().decode(bytes)) as About; }
+  catch { throw new Fatal(config.missing()); }
+}
+
+/** A release may not provide Muk. If its listed blob fails verification, loading fails. */
+function loadMaker(): Promise<{bytes: Uint8Array; path: string} | null> {
+  const maker = download(`${BASE}muk.json`, {}, undefined, {attempts: 2})
+    .then(bytes => JSON.parse(new TextDecoder().decode(bytes)) as {path: string; sha256: string; size: number})
+    .then(m => /^blobs\/[0-9a-f]{64}\.bin$/.test(m.path) ? bytesOf(m.path, m).then(bytes => ({bytes, path: m.path})) : null, () => null);
+  // The other release inputs load in parallel. An integrity failure still
+  // propagates when awaited, even if another input has already failed.
+  void maker.catch(() => {});
+  return maker;
+}
+
+/** The authenticated index for consumers that do not start a guest. */
 let indexing: Promise<Index | null> | null = null;
 const rootIndex = (): Promise<Index | null> => (indexing ??= (async () => {
   const a = await about();
   if (!a) return null;
-  return JSON.parse(new TextDecoder().decode(await bytesOf(a.index.path, a.index))) as Index;
+  const asset = releaseIndexAsset(a);
+  return readReleaseIndex(await bytesOf(asset.path, asset), a);
 })().catch((e) => { indexing = null; throw e; }));
 
 /**
@@ -635,7 +654,13 @@ const rootIndex = (): Promise<Index | null> => (indexing ??= (async () => {
  */
 
 const PLAN = config.planKey;
-const planned = (): Plan | null => { try { return JSON.parse(localStorage.getItem(PLAN) ?? 'null') as Plan | null; } catch { return null; } };
+const planned = (): Plan | null => {
+  try {
+    const plan: Plan | null = JSON.parse(localStorage.getItem(PLAN) ?? 'null');
+    if (plan) releaseIndexAsset(plan);
+    return plan;
+  } catch { return null; }
+};
 
 let loading: Promise<Webroot> | null = null;
 /**
@@ -653,19 +678,10 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
     unblob(plan.translator, undefined, undefined, atOnce, true).then((w) => WebAssembly.compile(w as BufferSource)),
     ...plan.first.map(({t: p, mode}) => hot(p, mode, plan.translator.sha256, undefined, atOnce, true)),
   ]).catch(() => null) : null;
-  const a = await download(`${BASE}webroot.json`, {}, undefined, {attempts: 4}).then((b) => {
-    // Not JSON is a build without why (the host answered with the page): said so, never the parser's words.
-    try { return JSON.parse(new TextDecoder().decode(b)) as About; } catch { throw new Fatal(config.missing()); }
-  });
-  // The box's maker, served beside the root: asked for while the rest comes, and kept by its digest as a blob is.
-  const maker = download(`${BASE}muk.json`, {}, undefined, {attempts: 2})
-    .then((b) => JSON.parse(new TextDecoder().decode(b)) as {path: string; sha256: string; size: number})
-    .then((m) => (/^blobs\/[0-9a-f]{64}\.bin$/.test(m.path) ? bytesOf(m.path, m).then((bytes) => ({bytes, path: m.path})) : null), () => null);
-  const read = plan && plan.sha256 === a.sha256 && plan.index.sha256 === a.index.sha256 ? await ahead : null;
-  const index0 = read ? read[0] as Uint8Array : await bytesOf(a.index.path, a.index);
-  const index = JSON.parse(new TextDecoder().decode(index0)) as Index;
-  requireStandardFileOwner(index);
-  if (index.sha256 !== a.sha256 || index.version !== a.version) throw new Fatal(`webroot: its index is of another root (${index.version})`);
+  const a = await loadAbout(), asset = releaseIndexAsset(a);
+  const maker = loadMaker();
+  const read = plan && plan.sha256 === a.sha256 && plan.index.sha256 === asset.sha256 ? await ahead : null;
+  const index = readReleaseIndex(read ? read[0] as Uint8Array : await bytesOf(asset.path, asset), a);
   const modeOf = (path: string) => index.files.find((f) => f.path === path)?.mode ?? 0o755;
   const first = index.translations.filter((t) => first0.includes(t.path));
   const muk = await maker;
@@ -766,16 +782,9 @@ const withMore = (f: Webroot['files'][number]): Webroot['files'][number] => ({..
     executable: (root, t, quiet) => preparedHot(root.index, root.generation, t, quiet),
     async load() {
       worker();
-      const a = await download(`${BASE}webroot.json`, {}, undefined, {attempts: 4}).then(bytes => {
-        try { return JSON.parse(new TextDecoder().decode(bytes)) as About; } catch { throw new Fatal(config.missing()); }
-      });
-      const maker = download(`${BASE}muk.json`, {}, undefined, {attempts: 2})
-        .then(bytes => JSON.parse(new TextDecoder().decode(bytes)) as {path: string; sha256: string; size: number})
-        .then(m => /^blobs\/[0-9a-f]{64}\.bin$/.test(m.path) ? bytesOf(m.path, m).then(bytes => ({bytes, path: m.path})) : null, () => null);
-      const bytes = await bytesOf(a.index.path, a.index);
-      const index = JSON.parse(new TextDecoder().decode(bytes)) as Index;
-      requireStandardFileOwner(index);
-      if (index.sha256 !== a.sha256 || index.version !== a.version) throw new Fatal('webroot: its index is of another root');
+      const a = await loadAbout(), asset = releaseIndexAsset(a);
+      const maker = loadMaker();
+      const index = readReleaseIndex(await bytesOf(asset.path, asset), a);
       // Check every hot association before source capture or asynchronous image work.
       canonicalHotSources(index);
       const first = index.translations.filter(t => first0.includes(t.path));

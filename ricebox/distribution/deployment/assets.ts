@@ -3,7 +3,7 @@
 import {createHash} from 'node:crypto';
 import {readFileSync, lstatSync} from 'node:fs';
 import {resolve, join} from 'node:path';
-import {requireStandardFileOwner, type Index, type About, type Blob} from '../format/manifest.ts';
+import {releaseIndexAsset, readReleaseIndex, type About, type Blob} from '../format/manifest.ts';
 import {checkPacks} from '../format/pack.ts';
 
 export function distributionAssets(directory: string, {base = 'ricebox', maxAssetBytes = Infinity}: {base?: string; maxAssetBytes?: number} = {}) {
@@ -28,10 +28,8 @@ export function distributionAssets(directory: string, {base = 'ricebox', maxAsse
     return bytes;
   };
   const about = JSON.parse(read('webroot.json').toString('utf8')) as About;
-  if (!about.index || !/^[0-9a-f]{64}$/.test(about.index.sha256) || about.index.path !== `index-${about.index.sha256}.json` || !Number.isSafeInteger(about.index.size)) throw new Error('ricebox: invalid index descriptor');
-  const index = JSON.parse(read(about.index.path, about.index.sha256, about.index.size).toString('utf8')) as Index;
-  requireStandardFileOwner(index);
-  if (index.sha256 !== about.sha256 || index.version !== about.version) throw new Error('ricebox: distribution and index disagree');
+  const asset = releaseIndexAsset(about);
+  const index = readReleaseIndex(read(asset.path, asset.sha256, asset.size), about);
   const blob = (b: Blob) => {
     if (!b || !/^[0-9a-f]{64}$/.test(b.sha256) || !Number.isSafeInteger(b.size) || b.size < 0 || b.path !== `blobs/${b.sha256}.bin`) throw new Error('ricebox: invalid blob descriptor');
     return read(b.path, b.sha256, b.size);

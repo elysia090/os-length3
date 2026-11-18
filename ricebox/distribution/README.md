@@ -56,6 +56,8 @@ Native build prerequisites are not installed by this package.
 `format/` has no execution, sods, host-API or product dependency. Producers,
 readers and runtime use this shared stored-format contract. Compiled modules and
 other execution objects belong to `runtime/root-types.ts`, not the manifest.
+The browser, local reader and deployment adapter bind the authenticated index
+to the release’s root digest and version before using it.
 
 ## Prepared execution
 

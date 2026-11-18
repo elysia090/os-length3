@@ -4,7 +4,7 @@ import {openSync,readFileSync,readSync,closeSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 import {gunzipSync,zstdDecompressSync} from 'node:zlib';
 import {checkPacks,checkedRange} from '../format/pack.ts';
-import {requireStandardFileOwner,type About,type Index,type Blob} from '../format/manifest.ts';
+import {releaseIndexAsset,readReleaseIndex,type About,type Index,type Blob} from '../format/manifest.ts';
 import {sha256,digest} from '../host/node/hash.ts';
 
 type IndexFile = Index['files'][number];
@@ -12,10 +12,10 @@ type IndexFile = Index['files'][number];
 /** The web root, opened: {about (webroot.json), index, dir, packs (where its packs are), read(file), blob(name)}. */
 export function openDistribution(dir: string) {
   const about: About = JSON.parse(readFileSync(join(dir, 'webroot.json'), 'utf8'));
-  const bytes = readFileSync(join(dir, about.index.path));
-  if (sha256(bytes) !== about.index.sha256) throw new Error(`${about.index.path}: not the index webroot.json names (sha256 ${sha256(bytes)})`);
-  const index: Index = JSON.parse(bytes.toString('utf8'));
-  requireStandardFileOwner(index);
+  const asset = releaseIndexAsset(about);
+  const bytes = readFileSync(join(dir, asset.path)), actual = sha256(bytes);
+  if (bytes.length !== asset.size || actual !== asset.sha256) throw new Error(`${asset.path}: not the index webroot.json names (sha256 ${actual})`);
+  const index = readReleaseIndex(bytes, about);
   const fds = new Map<string, number>();
   const fd = (name: string) => { let f = fds.get(name); if (f === undefined) { f = openSync(join(dir, 'packs', name), 'r'); fds.set(name, f); } return f; };
   /** Bytes [at, at+len) of the pack named `pack`, into `into` (as the browser's Range request gives them). */

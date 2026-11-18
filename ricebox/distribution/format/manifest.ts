@@ -2,7 +2,7 @@
 export interface Blob { path: string; sha256: string; size: number; bytes: number }
 export interface About {
   name: string; version: string;
-  /** The root this why was made from, by the digest why/prompt/roots pins: the same as the app's. */
+  /** Digest and size of the native root archive from which these layers were built. */
   sha256: string; bytes: number; file: string;
   root: {name: string; profile: string};
   index: {path: string; sha256: string; size: number};
@@ -38,4 +38,28 @@ export function requireStandardFileOwner(input: object): void {
   if ('fileStore' in input || 'fileCore' in input) {
     throw new Error('Unsupported file owner; use a distribution built for the standard VFS');
   }
+}
+
+/** The canonical, content-addressed index descriptor carried by a release. */
+export function releaseIndexAsset(about: unknown): About['index'] {
+  if (!about || typeof about !== 'object' || !('index' in about)) throw new Error('ricebox: invalid index descriptor');
+  const asset = about.index;
+  if (!asset || typeof asset !== 'object' || !('sha256' in asset) || typeof asset.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(asset.sha256) || !('path' in asset) || asset.path !== `index-${asset.sha256}.json` ||
+      !('size' in asset) || typeof asset.size !== 'number' || !Number.isSafeInteger(asset.size) || asset.size < 0) {
+    throw new Error('ricebox: invalid index descriptor');
+  }
+  return {path: asset.path, sha256: asset.sha256, size: asset.size};
+}
+
+/** Bind already authenticated index bytes to this release and the standard VFS. */
+export function readReleaseIndex(bytes: Uint8Array, about: Pick<About, 'sha256' | 'version'>): Index {
+  const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('ricebox: invalid distribution index');
+  requireStandardFileOwner(value);
+  if (!('sha256' in value) || typeof value.sha256 !== 'string' || value.sha256 !== about.sha256 ||
+      !('version' in value) || typeof value.version !== 'string' || value.version !== about.version) {
+    throw new Error('ricebox: distribution and index disagree');
+  }
+  return value as Index;
 }
