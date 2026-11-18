@@ -162,8 +162,13 @@ stdout, then writes C on stderr. Only the stronger fixture's explicit joined
 startup routes both logical descriptors to the same validated lane. A missing
 registry does not admit an execution; failure after table installation leaves
 the existing preparing owner to cancel without closing the shared lane.
-Ordinary and separate-lane fixture startup are unchanged. This does not select
-a host profile, claim general Linux compatibility or imply flush/durability.
+Joined initialization admits only one queue and one independent receiver;
+the old split control can still admit two. The split startup request on a
+joined owner cannot claim an execution slot or create a physical fallback.
+The consumer borrows the same sealed Files after the producer table retires.
+Ordinary and separate-lane fixture startup remain available as controls.
+This does not select a host profile, claim general Linux compatibility or
+imply flush/durability.
 
 ## Gate for a real opt-in profile
 

@@ -83,9 +83,9 @@ impl QueueProbe {
         if self.sink_lane.is_some() {
             return Err(QueueProbeError::Busy);
         }
-        self.consumers
-            .get(lane as usize)
-            .ok_or(QueueProbeError::Range)?;
+        if lane > 1 || (lane == 1 && self.separate.is_none()) {
+            return Err(QueueProbeError::Range);
+        }
         self.sink_lane = Some(lane);
         Ok(())
     }
@@ -97,18 +97,6 @@ impl QueueProbe {
         Ok(())
     }
 
-    fn receiver<'a>(
-        &'a mut self,
-        files: &'a mut Files,
-        lane: u32,
-    ) -> Result<Reader<'a>, QueueProbeError> {
-        let consumer = self
-            .consumers
-            .get(lane as usize)
-            .ok_or(QueueProbeError::Range)?;
-        Ok(self.registry.reader(files, consumer)?)
-    }
-
     pub(crate) fn receive_head(
         &mut self,
         files: &mut Files,
@@ -117,7 +105,7 @@ impl QueueProbe {
     ) -> Result<Option<(u64, u64, usize)>, QueueProbeError> {
         self.check_route(lane, sink)?;
         Ok(self
-            .receiver(files, lane)?
+            .receiver(files, lane as usize)?
             .receive_head()?
             .map(|(ticket, length)| {
                 (
@@ -137,7 +125,7 @@ impl QueueProbe {
         sink: bool,
     ) -> Result<(*const u8, usize), QueueProbeError> {
         self.check_route(lane, sink)?;
-        let mut reader = self.receiver(files, lane)?;
+        let mut reader = self.receiver(files, lane as usize)?;
         let ticket = probe_ticket(&reader, lane, tag, generation)?;
         let bytes = reader.receive_bytes(ticket)?;
         Ok((bytes.as_ptr(), bytes.len()))
@@ -152,7 +140,7 @@ impl QueueProbe {
         sink: bool,
     ) -> Result<(), QueueProbeError> {
         self.check_route(lane, sink)?;
-        let mut reader = self.receiver(files, lane)?;
+        let mut reader = self.receiver(files, lane as usize)?;
         let ticket = probe_ticket(&reader, lane, tag, generation)?;
         let disposition = if sink {
             CopyDisposition::SinkEscrow
@@ -170,7 +158,7 @@ impl QueueProbe {
         generation: u64,
     ) -> Result<(Reader<'a>, super::Ticket), QueueProbeError> {
         self.check_route(lane, true)?;
-        let reader = self.receiver(files, lane)?;
+        let reader = self.receiver(files, lane as usize)?;
         // The external ledger independently matches the exact retained
         // frontier ticket and action; it never consumes a copied result.
         let ticket =
@@ -238,7 +226,7 @@ impl QueueProbe {
         lane: u32,
     ) -> Result<bool, QueueProbeError> {
         self.check_route(lane, true)?;
-        let queue = self.receiver(files, lane)?.queue;
+        let queue = self.receiver(files, lane as usize)?.queue;
         queue.close_admission();
         Ok(queue.used == 0)
     }

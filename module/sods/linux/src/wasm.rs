@@ -377,12 +377,24 @@ fn queue_probe_error(error: descriptor::QueueProbeError) -> i32 {
 #[cfg(feature = "queued-output-probe")]
 #[no_mangle]
 pub extern "C" fn linux_queued_output_probe_init() -> i32 {
+    init_probe(true)
+}
+/// The rejected joined fixture admits only one queue and receiver. This does
+/// not grant guest startup, a host-owned result, or a stopped file effect.
+#[cfg(feature = "queued-worker-probe")]
+#[no_mangle]
+pub extern "C" fn linux_queued_worker_probe_init_joined() -> i32 {
+    init_probe(false)
+}
+#[cfg(feature = "queued-output-probe")]
+fn init_probe(separate: bool) -> i32 {
     with_state(false, |s| {
         let r = s.sealed.as_mut().ok_or(-9)?;
         if r.queue_probe.is_some() {
             return Err(-4);
         }
-        r.queue_probe = Some(descriptor::QueueProbe::new(&mut r.files).map_err(queue_probe_error)?);
+        r.queue_probe =
+            Some(descriptor::QueueProbe::new(&mut r.files, separate).map_err(queue_probe_error)?);
         Ok(0)
     })
 }
@@ -2469,8 +2481,12 @@ fn startup_begin(table: StartupTable) -> i32 {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let root = r.root.as_ref().ok_or(-11)?;
         #[cfg(feature = "queued-output-probe")]
-        if matches!(table, StartupTable::CaptureProbe { .. }) && r.queue_probe.is_none() {
-            return Err(-9);
+        if let StartupTable::CaptureProbe { shared_output } = table {
+            r.queue_probe
+                .as_ref()
+                .ok_or(-9)?
+                .check_stdio(shared_output)
+                .map_err(queue_probe_error)?;
         }
         if s.executions.len() >= s.execution_limit {
             return Err(-1);

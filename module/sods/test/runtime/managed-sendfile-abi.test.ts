@@ -36,6 +36,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   assert.equal(WebAssembly.Module.imports(module).length, 0);
   const e = new WebAssembly.Instance(module).exports;
   assert.equal(typeof e.linux_queued_worker_probe_startup_shared, workerQueue ? 'function' : 'undefined');
+  assert.equal(typeof e.linux_queued_worker_probe_init_joined, workerQueue ? 'function' : 'undefined');
   const call = (name: string, ...args: (number | bigint)[]): number => {
     assert.equal(typeof e[name], 'function', `Missing ABI7 export ${name}`);
     return (e[name] as (...values: (number | bigint)[]) => number)(...args);
@@ -1222,7 +1223,12 @@ test('strong capture probe joined startup owns only admitted failure and never f
   r.stageStartup();
   assert.equal(begin(), -9);
   assert.equal(r.result(), 0n, 'missing registry is not admission');
-  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  assert.equal(r.call('linux_queued_worker_probe_init_joined'), 0);
+  assert.equal(r.call('linux_queued_output_probe_init'), -4, 'cannot replace the admitted receiver');
+  assert.equal(r.call('linux_queued_worker_probe_init_joined'), -4);
+  assert.equal(r.call('linux_queued_worker_probe_sink_bind', 1), -5);
+  assert.equal(r.call('linux_queued_output_probe_startup'), -5);
+  assert.equal(r.result(), 0n, 'an unavailable split route must not reserve an execution');
   r.stageStartup('/not-present');
   assert.ok(begin() < 0);
   const cleanup = r.result();
@@ -1230,7 +1236,8 @@ test('strong capture probe joined startup owns only admitted failure and never f
   assert.ok(r.call('linux_run_start', cleanup) < 0);
   assert.equal(r.call('linux_startup_cancel', cleanup), 0);
   assert.equal(r.result(), 1n);
-  for (const lane of [0, 1]) assert.equal(r.receive(lane), undefined);
+  assert.equal(r.receive(0), undefined);
+  assert.equal(r.call('linux_queued_worker_probe_receive_head', 1), -5);
   r.stageStartup();
   assert.equal(begin(), 0);
   const next = r.result();
@@ -1364,7 +1371,7 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
     const current = useCurrent ? currentCaptureProgram() : undefined;
     const r = raw(workerQueueArtifact!, true, false, true, true, current?.elf);
     assert.throws(() => memoryHost(r.module, 2, 8), /Synthetic sendfile probe/);
-    assert.equal(r.call('linux_queued_output_probe_init'), 0);
+    assert.equal(r.call(current ? 'linux_queued_worker_probe_init_joined' : 'linux_queued_output_probe_init'), 0);
     const prepared = current ? await prepareCurrentCapture(r, current.translator, current.elf) : undefined;
     const input = prepared ?? captureGuest(true), bridge = createGuest(input);
     const onAbort = () => bridge.requestStop();
@@ -1485,7 +1492,8 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
         assert.equal(sink.writeOne(), 'empty');
         assert.equal(sink.closeIfDrained(), true);
         assert.deepEqual(new Uint8Array(readFileSync(join(sinkDirectory!, 'output'))), bytes('ABC'));
-        assert.equal(r.receive(1), undefined, 'stderr did not create an undrained record on the separate lane');
+        assert.equal(r.call('linux_queued_worker_probe_receive_head', 1), -5,
+          'joined initialization allocated no spare receiver');
       } else {
         const received: Uint8Array[] = [];
         for (const expected of stopBeforeFileReply ? ['A', 'B'] : ['A', 'B', 'C']) {
@@ -1495,7 +1503,8 @@ for (const [useCurrent, stopBeforeFileReply, withSink] of [
           received.push(buffer!);
         }
         assert.equal(r.receive(0), undefined);
-        assert.equal(r.receive(1), undefined);
+        if (current) assert.equal(r.call('linux_queued_worker_probe_receive_head', 1), -5);
+        else assert.equal(r.receive(1), undefined);
         assert.equal(received.map(value => new TextDecoder().decode(value)).join(''), stopBeforeFileReply ? 'AB' : 'ABC');
       }
       if (current) t.diagnostic(JSON.stringify({translatorSha256: current.sha, elfBytes: current.elf.length,

@@ -907,13 +907,27 @@ impl Reader<'_> {
     }
 }
 
-/// Isolated raw Core diagnostic only, deliberately not a producer syscall or
-/// host drain. Fixed small lanes keep this probe independent of runtime limits.
+/// Primary lane and the only receiver allowed to borrow it. Files is shared
+/// beside this owner, not acquired or replaced by either endpoint.
+#[cfg(feature = "queued-output-probe")]
+struct CaptureOutput {
+    registry: LaneRegistry,
+    producer: Producer,
+    consumer: Consumer,
+}
+#[cfg(feature = "queued-output-probe")]
+impl CaptureOutput {
+    fn receiver<'a>(&'a mut self, files: &'a mut Files) -> Result<Reader<'a>, Error> {
+        self.registry.reader(files, &self.consumer)
+    }
+}
+
+/// Isolated raw Core diagnostic. The secondary lane exists only for the
+/// separate-output control; a joined startup owns one real primary receiver.
 #[cfg(feature = "queued-output-probe")]
 pub(crate) struct QueueProbe {
-    registry: LaneRegistry,
-    producers: [Producer; 2],
-    consumers: [Consumer; 2],
+    capture: CaptureOutput,
+    separate: Option<(Producer, Consumer)>,
     #[cfg(feature = "queued-worker-probe")]
     sink_lane: Option<u32>,
 }
@@ -939,8 +953,7 @@ impl From<Error> for QueueProbeError {
 }
 #[cfg(feature = "queued-output-probe")]
 impl QueueProbe {
-    pub(crate) fn new(files: &mut Files) -> Result<Self, QueueProbeError> {
-        let mut registry = LaneRegistry::new(files, 2)?;
+    pub(crate) fn new(files: &mut Files, second: bool) -> Result<Self, QueueProbeError> {
         let limits = || Limits {
             pins: 1,
             entries: if cfg!(feature = "queued-worker-probe") {
@@ -950,15 +963,29 @@ impl QueueProbe {
             },
             bytes: 4,
         };
-        let (a, read_a) = registry.destination(limits())?;
-        let (b, read_b) = registry.destination(limits())?;
+        let mut registry = LaneRegistry::new(files, if second { 2 } else { 1 })?;
+        let (producer, consumer) = registry.destination(limits())?;
+        let separate = if second {
+            Some(registry.destination(limits())?)
+        } else {
+            None
+        };
         Ok(Self {
-            registry,
-            producers: [a, b],
-            consumers: [read_a, read_b],
+            capture: CaptureOutput {
+                registry,
+                producer,
+                consumer,
+            },
+            separate,
             #[cfg(feature = "queued-worker-probe")]
             sink_lane: None,
         })
+    }
+    pub(crate) fn check_stdio(&self, shared_output: bool) -> Result<(), QueueProbeError> {
+        if !shared_output && self.separate.is_none() {
+            return Err(QueueProbeError::Range);
+        }
+        Ok(())
     }
     pub(crate) fn stdio(
         &self,
@@ -966,9 +993,16 @@ impl QueueProbe {
         limit: u32,
         shared_output: bool,
     ) -> Result<Table, QueueProbeError> {
-        let [stdout, stderr] = self.producers.each_ref();
-        let outputs = [stdout, if shared_output { stdout } else { stderr }];
-        Ok(self.registry.queued_stdio(files, 1, outputs, limit)?)
+        let stdout = &self.capture.producer;
+        let stderr = if shared_output {
+            stdout
+        } else {
+            &self.separate.as_ref().ok_or(QueueProbeError::Range)?.0
+        };
+        Ok(self
+            .capture
+            .registry
+            .queued_stdio(files, 1, [stdout, stderr], limit)?)
     }
     #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
     pub(crate) fn capture_context<'a>(
@@ -979,7 +1013,7 @@ impl QueueProbe {
     ) -> capture::Context<'a> {
         capture::Context {
             files,
-            lanes: &mut self.registry,
+            lanes: &mut self.capture.registry,
             domain,
             execution,
         }
@@ -1003,6 +1037,7 @@ impl QueueProbe {
         // The held invocation is live at this boundary. The following
         // synchronous preparation/commit does not reenter or touch the host.
         let outcome = self
+            .capture
             .registry
             .held_writer(files, &hold)
             .and_then(|mut writer| writer.publish_resident(table, input, length));
@@ -1023,8 +1058,12 @@ impl QueueProbe {
         let length = NonZeroUsize::new(count)
             .filter(|n| n.get() <= 4)
             .ok_or(QueueProbeError::Range)?;
-        let producer = self.producers.get(lane).ok_or(QueueProbeError::Range)?;
-        let (files, queue) = self.registry.lane(files, producer.0)?;
+        let producer = match lane {
+            0 => &self.capture.producer,
+            1 => &self.separate.as_ref().ok_or(QueueProbeError::Range)?.0,
+            _ => return Err(QueueProbeError::Range),
+        };
+        let (files, queue) = self.capture.registry.lane(files, producer.0)?;
         let source = files
             .reserve_read(table, fd, count as u64)
             .map_err(Error::Source)?;
@@ -1049,8 +1088,7 @@ impl QueueProbe {
         lane: usize,
         index: usize,
     ) -> Result<(usize, u8), QueueProbeError> {
-        let consumer = self.consumers.get(lane).ok_or(QueueProbeError::Range)?;
-        let mut reader = self.registry.reader(files, consumer)?;
+        let mut reader = self.receiver(files, lane)?;
         let Some(bytes) = reader.front_bytes()? else {
             return Ok((0, 0));
         };
@@ -1066,8 +1104,22 @@ impl QueueProbe {
         if self.sink_lane.map(|selected| selected as usize) == Some(lane) {
             return Err(QueueProbeError::Busy);
         }
-        let consumer = self.consumers.get(lane).ok_or(QueueProbeError::Range)?;
-        Ok(self.registry.reader(files, consumer)?.discard_front())
+        Ok(self.receiver(files, lane)?.discard_front())
+    }
+
+    fn receiver<'a>(
+        &'a mut self,
+        files: &'a mut Files,
+        lane: usize,
+    ) -> Result<Reader<'a>, QueueProbeError> {
+        match lane {
+            0 => Ok(self.capture.receiver(files)?),
+            1 => {
+                let (_, consumer) = self.separate.as_ref().ok_or(QueueProbeError::Range)?;
+                Ok(self.capture.registry.reader(files, consumer)?)
+            }
+            _ => Err(QueueProbeError::Range),
+        }
     }
 }
 
@@ -1887,7 +1939,7 @@ mod tests {
     fn a_probe_registry_cannot_be_paired_with_foreign_files_even_at_equal_slots() {
         let (mut a, _, _, at, af) = files(502);
         let (mut b, _, _, bt, bf) = files(504);
-        let mut probe = QueueProbe::new(&mut a).unwrap();
+        let mut probe = QueueProbe::new(&mut a, true).unwrap();
         assert_eq!(af, bf);
         assert_eq!(
             probe.publish(&mut b, &bt, bf, 0, 2),
@@ -1900,6 +1952,64 @@ mod tests {
         assert_eq!(probe.peek(&mut a, 0, 0), Ok((2, b'b')));
         assert_eq!(probe.discard(&mut a, 0), Ok(true));
         assert_eq!(a.offset(&at, af), Ok((2, 1)));
+    }
+
+    #[cfg(feature = "queued-worker-probe")]
+    #[test]
+    fn sole_capture_receiver_retains_accepted_bytes_after_table_retirement() {
+        let (mut files, _, _, original, _) = files(1939);
+        files.let_go(original).unwrap();
+        let mut joined = QueueProbe::new(&mut files, false).unwrap();
+        assert_eq!(joined.capture.registry.lanes.len(), 1);
+        assert_eq!(joined.capture.registry.limit, 1);
+        assert!(joined.separate.is_none());
+        assert_eq!(joined.check_stdio(false), Err(QueueProbeError::Range));
+        assert_eq!(
+            joined.receiver(&mut files, 1).err(),
+            Some(QueueProbeError::Range)
+        );
+        let table = joined.stdio(&mut files, 8, true).unwrap();
+        for (fd, bytes) in [(1, b"A"), (2, b"B")] {
+            let held = files.hold_output(&table, fd).unwrap();
+            let mut writer = joined
+                .capture
+                .registry
+                .held_writer(&mut files, &held)
+                .unwrap();
+            let r = writer.reserve(n(1)).unwrap();
+            writer.publish_copy(r, bytes).unwrap();
+            files.release_output(held).unwrap();
+        }
+        files.let_go(table).unwrap();
+        let (mut foreign, _, _, foreign_table, _) = self::files(1940);
+        assert_eq!(
+            joined.receiver(&mut foreign, 0).err(),
+            Some(QueueProbeError::Owner)
+        );
+        foreign.let_go(foreign_table).unwrap();
+        let mut result = Vec::with_capacity(1);
+        let allocation = result.as_ptr();
+        for bytes in [b"A", b"B"] {
+            assert_eq!(
+                joined
+                    .receiver(&mut files, 0)
+                    .unwrap()
+                    .take_front_into(&mut result, 1),
+                Ok(Some(n(1)))
+            );
+            assert_eq!(
+                (result.as_slice(), result.as_ptr()),
+                (&bytes[..], allocation)
+            );
+            result.clear();
+        }
+        assert_eq!(
+            joined
+                .receiver(&mut files, 0)
+                .unwrap()
+                .take_front_into(&mut result, 1),
+            Ok(None)
+        );
     }
 
     #[test]
