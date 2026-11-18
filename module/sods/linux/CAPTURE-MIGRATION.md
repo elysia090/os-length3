@@ -37,6 +37,24 @@ needs a guest-to-Core and Core-to-host transfer, while an immutable file pin
 needs only the latter. A one-transfer writable-host architecture would
 require a different owner/cross-boundary commit contract, not a hidden copy.
 
+The marker-rejected Worker fixture can test this boundary without selecting
+a product adapter. Compare the exact lane, entry slot and nonreused entry
+generation at start, with the JS adapter bound to one Core instance. Mint
+a different nonreused attempt for each view, including a retry of the same
+head. An earlier attempt's late receipt cannot unlock a new view. A global
+guard must protect both the borrowed Files range and a copied queue entry:
+discarding either head while its pointer is exposed is invalid. Unknown or
+one-sided access is not a successful copy even at full count. After either,
+only an exact explicit both-ended unpublished receipt can release the view;
+it leaves the original head untouched. An ambiguous start or finish traps
+the receive adapter for the whole Core, not just the affected lane. It must
+not expose a result, infer a successful copy from emptiness or replay the
+operation. A production adapter also needs to fence the rest of the affected
+session; the fixture still exposes raw diagnostic operations for tests.
+Raw Wasm view callers are trusted to exclude direct memory growth
+and not to copy further after admitting uncertainty. This fixture does not
+mint a stop fact about arbitrary code holding a Wasm buffer.
+
 ## External sink is a different operation
 
 Select and document what the sink can actually promise. For a narrow first

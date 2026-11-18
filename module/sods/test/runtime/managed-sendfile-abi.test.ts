@@ -60,6 +60,9 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   for (const name of ['write', 'start', 'finish', 'sendfile']) {
     assert.equal(Object.hasOwn(e, `linux_queued_worker_probe_${name}`), workerQueue);
   }
+  for (const name of ['head', 'start', 'finish']) {
+    assert.equal(Object.hasOwn(e, `linux_queued_worker_probe_receive_${name}`), workerQueue);
+  }
   if (probe) assert.equal(call('linux_sendfile_probe'), 1);
   assert.equal(call('linux_init', 16, 64), 0);
   assert.equal(call('linux_prepared_files', 8, 8, Math.max(4096, program.length), 16, 128, 256, 16, 32, 1, 192, 0), 0);
@@ -166,6 +169,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
     assert.equal(call('linux_read_retire', read), 0); return value;
   };
   return {wasm, module, e, call, result, state, length, auxiliary, endpoint, command, put,
+    receive: captureReceiver({e, call, result, length, auxiliary}),
     stageStartup, live, request, openReady, capturePath, open, begin, capStart, capFinish, qualify, start, finish, genericBlocked, remaining};
 }
 
@@ -720,12 +724,155 @@ const FixtureBytes = Uint8Array;
 const fixtureSet = FixtureBytes.prototype.set;
 const fixtureApply = Reflect.apply;
 const fixtureMemoryBuffer = Object.getOwnPropertyDescriptor(WebAssembly.Memory.prototype, 'buffer')!.get!;
+
+test('strong capture probe receiver rejects stale heads and same-head stale attempts', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, false, true, true);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  const head = (lane = 0) => {
+    assert.equal(r.call('linux_queued_worker_probe_receive_head', lane), 0);
+    return {stamp: r.auxiliary(), generation: r.result(), length: Number(r.length())};
+  };
+  assert.deepEqual(head(), {stamp: 0n, generation: 0n, length: 0}, 'empty is not a record');
+  const owner = r.live(), fd = r.open(owner);
+  const publish = (lane: number, length = 2) =>
+    assert.equal(r.call('linux_queued_output_probe_publish', owner.id, owner.invocation, Number(fd), lane, length), 0);
+  publish(0);
+  const old = head();
+  assert.equal(r.call('linux_queued_output_probe_discard', 0), 0);
+  publish(0); publish(1, 1);
+  assert.equal(r.call('linux_queued_output_probe_discard', 1), 0);
+  publish(1, 1);
+  const current = head(), other = head(1);
+  assert.equal(current.stamp, old.stamp, 'reuse the exact entry arena slot');
+  assert.equal(current.length, old.length);
+  assert.notEqual(current.generation, old.generation);
+  assert.equal(current.generation, other.generation, 'lane-local generations do collide');
+  const start = (h: ReturnType<typeof head>, lane = 0) =>
+    r.call('linux_queued_worker_probe_receive_start', lane, h.stamp, h.generation);
+  const finish = (attempt: bigint, proof: number, count: number) =>
+    r.call('linux_queued_worker_probe_receive_finish', attempt, proof, count);
+  assert.ok(start(old) < 0);
+  assert.ok(start(other, 0) < 0, 'different lane stamp cannot retarget a head even with equal generation');
+  assert.deepEqual(head(), current);
+  const destination = new FixtureBytes(current.length);
+  const core = r.e.memory as WebAssembly.Memory;
+  assert.equal(start(current), 0);
+  const oldAttempt = r.auxiliary();
+  assert.equal(finish(oldAttempt, 1, 0), 0, 'ended unpublished abort retains the head');
+  assert.deepEqual(head(), current);
+  assert.equal(start(current), 0);
+  const attempt = r.auxiliary(), pointer = Number(r.result());
+  assert.notEqual(attempt, oldAttempt);
+  const copy = () => fixtureApply(fixtureSet, destination,
+    [new FixtureBytes(fixtureApply(fixtureMemoryBuffer, core, []), pointer, current.length)]);
+  copy();
+  assert.deepEqual(destination, bytes('cd'));
+  assert.equal(finish(oldAttempt, 1, 0), -4);
+  assert.equal(finish(attempt, 0, current.length - 1), -5);
+  for (const proof of [2, 3, 4]) {
+    assert.equal(finish(attempt, proof, current.length), 0);
+    assert.equal(r.result(), 0n, 'full count cannot certify access');
+    assert.equal(r.call('linux_queued_output_probe_discard', 0), -4);
+    assert.equal(r.call('linux_queued_output_probe_peek', 1, 0), -4);
+    assert.equal(start(current), -4);
+    assert.equal(r.call('linux_run_receipt', owner.id, owner.invocation, 2, 0n), -4);
+    assert.equal(r.call('linux_execution_retire', owner.id), -4);
+  }
+  assert.equal(finish(attempt, 0, current.length), -4, 'uncertain copies can no longer be published');
+  assert.equal(finish(attempt, 1, 0), 0);
+  assert.deepEqual(head(), current);
+  assert.deepEqual(head(1), other);
+  assert.equal(r.call('linux_run_receipt', owner.id, owner.invocation, 2, 0n), 0);
+  assert.equal(r.call('linux_execution_retire', owner.id), 0); assert.equal(r.result(), 1n);
+  assert.equal(start(current), 0);
+  const last = r.auxiliary(), source = Number(r.result());
+  fixtureApply(fixtureSet, destination, [new FixtureBytes(fixtureApply(fixtureMemoryBuffer, core, []), source, current.length)]);
+  assert.equal(finish(last, 0, current.length), 0);
+  assert.equal(r.result(), 2n);
+  assert.equal(finish(last, 0, current.length), -4);
+  assert.equal(head().generation, 0n);
+  assert.deepEqual(destination, bytes('cd'));
+  assert.deepEqual(head(1), other);
+});
+
 function copyWorkerInput(guest: WebAssembly.Memory, core: WebAssembly.Memory, at: number, pointer: number, length: number) {
   const input = new FixtureBytes(fixtureApply(fixtureMemoryBuffer, guest, []), at, length);
   const output = new FixtureBytes(fixtureApply(fixtureMemoryBuffer, core, []), pointer, length);
   // No callback, species lookup, await, export, grow, or view escaping here.
   fixtureApply(fixtureSet, output, [input]);
 }
+
+type CaptureCore = {
+  e: WebAssembly.Exports;
+  call(name: string, ...args: (number | bigint)[]): number;
+  result(): bigint;
+  length(): bigint;
+  auxiliary(): bigint;
+};
+
+// Private diagnostic adapter bound to one Core (including any other lane). No
+// callback, await or other Core call receives the raw view or the local copy.
+function captureReceiver(r: CaptureCore) {
+  const memory = r.e.memory as WebAssembly.Memory;
+  let poisoned = false;
+  return (lane: number, limit = 4): Uint8Array<ArrayBuffer> | undefined => {
+    if (poisoned) throw new Error('Capture receiver has unresolved Core access');
+    assert.equal(r.call('linux_queued_worker_probe_receive_head', lane), 0);
+    const generation = r.result(), head = r.auxiliary(), length = Number(r.length());
+    if (generation === 0n) return undefined; // Temporary empty, not EOF.
+    assert.ok(length >= 1 && length <= limit, 'Capture receiver has insufficient capacity');
+    const output = new FixtureBytes(length); // The one final allocation, before start.
+    poisoned = true; // A thrown start or finish can be ambiguous. Do not replay.
+    const start = r.call('linux_queued_worker_probe_receive_start', lane, head, generation);
+    if (start !== 0) {
+      poisoned = false; // Known rejection, no loan issued.
+      throw new Error(`Capture receiver start: ${start}`);
+    }
+    const attempt = r.auxiliary(), pointer = Number(r.result());
+    const finish = 'linux_queued_worker_probe_receive_finish';
+    try {
+      if (Number(r.length()) !== length) throw new Error('Capture receiver extent changed');
+      fixtureApply(fixtureSet, output,
+        [new FixtureBytes(fixtureApply(fixtureMemoryBuffer, memory, []), pointer, length)]);
+    } catch (error) {
+      // The trusted lexical source view cannot survive synchronous unwind.
+      assert.equal(r.call(finish, attempt, 1, 0), 0);
+      poisoned = false;
+      throw error;
+    }
+    assert.equal(r.call(finish, attempt, 0, length), 0);
+    assert.equal(r.result(), BigInt(length));
+    poisoned = false;
+    return output;
+  };
+}
+
+test('strong capture probe receiver never publishes or retries an ambiguous receipt', {skip: workerQueueSkip}, () => {
+  const r = raw(workerQueueArtifact!, true, false, true, true);
+  assert.equal(r.call('linux_queued_output_probe_init'), 0);
+  const owner = r.live(), fd = r.open(owner);
+  for (const lane of [0, 1]) {
+    assert.equal(r.call('linux_queued_output_probe_publish', owner.id, owner.invocation, Number(fd), lane, 1), 0);
+  }
+  let finishes = 0;
+  const receive = captureReceiver({...r, call(name, ...args) {
+    const status = r.call(name, ...args);
+    if (name === 'linux_queued_worker_probe_receive_finish') {
+      assert.equal(status, 0);
+      finishes++;
+      throw new Error('Receipt outcome unavailable to adapter');
+    }
+    return status;
+  }});
+  assert.throws(() => receive(0), /outcome unavailable/);
+  assert.throws(() => receive(0), /unresolved/);
+  assert.throws(() => receive(1), /unresolved/);
+  assert.equal(finishes, 1);
+  // Raw diagnostic only; the poisoned adapter cannot infer the lost result
+  // from empty or attempt to deliver the still-present other lane.
+  assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0); assert.equal(r.length(), 0n);
+  assert.equal(r.call('linux_queued_output_probe_peek', 1, 0), 0); assert.equal(r.result(), 98n);
+});
 
 let compiledCapture: {elf: Uint8Array<ArrayBuffer>; translator: WebAssembly.Module; sha: string} | undefined;
 function currentCaptureProgram() {
@@ -948,6 +1095,19 @@ for (const mode of ['accept', 'stop-before-copy', 'stop-after-accept', 'stop-whi
       if (accepted) {
         assert.equal(r.call('linux_queued_output_probe_peek', 0, 1), 0);
         assert.deepEqual([r.length(), r.result()], [2n, 66n]);
+        assert.equal(r.call('linux_queued_worker_probe_receive_head', 0), 0);
+        assert.equal(r.call('linux_queued_worker_probe_receive_start', 0, r.auxiliary(), r.result()), 0);
+        const attempt = r.auxiliary();
+        assert.equal(r.call('linux_queued_worker_probe_receive_finish', attempt, 2, 0), 0);
+        // Producer exit does not authorize freeing a copied head's Vec while
+        // the independent receiver holds an unresolved view of that Vec.
+        assert.equal(r.call('linux_queued_output_probe_discard', 0), -4);
+        assert.equal(r.call('linux_queued_worker_probe_receive_finish', attempt, 1, 0), 0);
+        assert.throws(() => r.receive(0, 1), /insufficient capacity/);
+        const retained = r.receive(0);
+        assert.deepEqual(retained, bytes('AB'), 'copied head survives rejected pre-admission and producer retirement');
+        assert.notEqual(retained?.buffer, (r.e.memory as WebAssembly.Memory).buffer);
+        assert.equal(r.receive(0), undefined);
       }
     } finally {
       t.signal.removeEventListener('abort', onAbort);
@@ -1069,14 +1229,16 @@ for (const useCurrent of [false, true]) for (const stopBeforeFileReply of [false
       }
       assert.equal(bridge.diagnostics().exited, true);
       assert.equal(r.call('linux_execution_retire', id), 0); assert.equal(r.result(), 1n);
-      for (const expected of stopBeforeFileReply ? [65n, 66n] : [65n, 66n, 67n]) {
-        assert.equal(r.call('linux_queued_output_probe_peek', 0, 0), 0);
-        assert.deepEqual([r.length(), r.result()], [1n, expected]);
-        assert.equal(r.call('linux_queued_output_probe_discard', 0), 0); assert.equal(r.result(), 1n);
+      const received: Uint8Array[] = [];
+      for (const expected of stopBeforeFileReply ? ['A', 'B'] : ['A', 'B', 'C']) {
+        const buffer = r.receive(0);
+        assert.deepEqual(buffer, bytes(expected));
+        assert.notEqual(buffer?.buffer, core.buffer, 'the exposed result is not the borrowed Core memory');
+        received.push(buffer!);
       }
-      for (const lane of [0, 1]) {
-        assert.equal(r.call('linux_queued_output_probe_peek', lane, 0), 0); assert.equal(r.length(), 0n);
-      }
+      assert.equal(r.receive(0), undefined);
+      assert.equal(r.receive(1), undefined);
+      assert.equal(received.map(value => new TextDecoder().decode(value)).join(''), stopBeforeFileReply ? 'AB' : 'ABC');
       if (current) t.diagnostic(JSON.stringify({translatorSha256: current.sha, elfBytes: current.elf.length,
         elfSha256: createHash('sha256').update(current.elf).digest('hex'), entry: String(entry),
         stack: 'Rust-created, guest checked argc and first byte of argv0'}));

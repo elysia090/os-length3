@@ -18,6 +18,8 @@ use crate::{
 };
 use std::cell::RefCell;
 #[cfg(feature = "queued-worker-probe")]
+mod capture_receiver;
+#[cfg(feature = "queued-worker-probe")]
 mod capture_worker;
 #[cfg(feature = "queued-worker-probe")]
 pub(crate) use capture_worker::FinishEvidence;
@@ -172,6 +174,8 @@ struct State {
     sealed: Option<Sealed>,
     #[cfg(feature = "queued-worker-probe")]
     capture_write: Option<capture_worker::Active>,
+    #[cfg(feature = "queued-worker-probe")]
+    capture_receiver: capture_receiver::Receiver,
 }
 thread_local! { static STATE: RefCell<Option<State>> = const { RefCell::new(None) }; }
 fn code(error: Error) -> i32 {
@@ -214,6 +218,8 @@ enum Access {
         execution: u64,
         call: descriptor::capture::CallId,
     },
+    #[cfg(feature = "queued-worker-probe")]
+    ReceiveFinish(u64),
 }
 fn with_state(allow_view: bool, f: impl FnOnce(&mut State) -> Result<u64, i32>) -> i32 {
     with_state_access(
@@ -236,6 +242,10 @@ fn with_state_access(access: Access, f: impl FnOnce(&mut State) -> Result<u64, i
         s.auxiliary = 0;
         s.endpoint = 0;
         s.state = 0;
+        #[cfg(feature = "queued-worker-probe")]
+        if s.capture_receiver.blocks(access) {
+            return -4;
+        }
         #[cfg(feature = "queued-worker-probe")]
         if s.capture_write.as_ref().is_some_and(|pending| pending.blocks(access)) {
             return -4;
@@ -454,6 +464,8 @@ pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
             sealed: None,
             #[cfg(feature = "queued-worker-probe")]
             capture_write: None,
+            #[cfg(feature = "queued-worker-probe")]
+            capture_receiver: capture_receiver::Receiver::default(),
         });
         0
     })

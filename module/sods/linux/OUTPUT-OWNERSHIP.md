@@ -108,6 +108,14 @@ cannot change its bytes. Inside Wasm, an owned Rust allocation still cannot
 outlive the instance's linear memory. Take is neither a borrowed view nor evidence of
 external delivery or a stopped host drain. No guest cursor is changed here.
 
+The stronger, host-rejected Worker fixture can also copy to final independent
+JavaScript storage after guest retirement. Its exact head observation, start
+and settlement each inspect one lane without scanning queue slots. The current
+Wasm wrapper still visits execution slots to exclude other raw view owners;
+the whole call is not constant in the Core's execution high water. See the
+[capture cutover plan](CAPTURE-MIGRATION.md) for the private receipt and the
+separate external sink contract.
+
 ## Isolated Core ownership probe
 
 The explicit `queued-output-probe` feature puts two fixed, bounded lanes next
