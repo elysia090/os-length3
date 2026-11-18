@@ -2491,8 +2491,15 @@ pub extern "C" fn linux_queued_worker_probe_startup_shared() -> i32 {
 }
 #[cfg(feature = "capture-result-v1")]
 #[no_mangle]
-pub extern "C" fn linux_capture_result_startup() -> i32 {
-    startup_begin(StartupTable::CaptureResult)
+pub extern "C" fn linux_capture_result_startup(input: u32) -> i32 {
+    let borrow_stdin = match input {
+        0 => false,
+        1 => true,
+        // Match the lexical state gate and clear the shared result fields
+        // on a non-admission, just as ordinary startup does on bad wire.
+        _ => return with_state(false, |_| Err(-5)),
+    };
+    startup_begin(StartupTable::CaptureResult { borrow_stdin })
 }
 #[cfg(any(not(feature = "capture-v1"), feature = "capture-result-v1"))]
 #[derive(Clone, Copy)]
@@ -2504,7 +2511,7 @@ enum StartupTable {
     #[cfg(feature = "queued-output-probe")]
     CaptureProbe { shared_output: bool },
     #[cfg(feature = "capture-result-v1")]
-    CaptureResult,
+    CaptureResult { borrow_stdin: bool },
 }
 #[cfg(any(not(feature = "capture-v1"), feature = "capture-result-v1"))]
 fn startup_begin(table: StartupTable) -> i32 {
@@ -2550,7 +2557,7 @@ fn startup_begin(table: StartupTable) -> i32 {
         let r = s.sealed.as_mut().ok_or(-9)?;
         let root = r.root.as_ref().ok_or(-11)?;
         #[cfg(feature = "capture-result-v1")]
-        if matches!(table, StartupTable::CaptureResult) && r.capture_output.is_none() {
+        if matches!(table, StartupTable::CaptureResult { .. }) && r.capture_output.is_none() {
             return Err(-9);
         }
         #[cfg(feature = "queued-output-probe")]
@@ -2593,11 +2600,11 @@ fn startup_begin(table: StartupTable) -> i32 {
                 .stdio(&mut r.files, r.fd_limit, shared_output)
                 .map_err(queue_probe_error)?,
             #[cfg(feature = "capture-result-v1")]
-            StartupTable::CaptureResult => r
+            StartupTable::CaptureResult { borrow_stdin } => r
                 .capture_output
                 .as_ref()
                 .expect("admitted result receiver")
-                .joined_stdio(&mut r.files, r.fd_limit)
+                .joined_stdio(&mut r.files, borrow_stdin, r.fd_limit)
                 .map_err(|_| -10)?,
         });
         p.program = Some(

@@ -14,9 +14,11 @@ export const ownedInput = (input: Uint8Array): Uint8Array<ArrayBuffer> => {
 
 /** Independently chosen by the trusted caller. The artifact/blob reader and
  * guest do not set retention or the largest indivisible request. */
-export interface CaptureResultCapacity {
+export interface CaptureResultPolicy {
   readonly maximumRequest: number;
   readonly queueBytes: number;
+  /** Explicit Linux non-TTY fd 0 loan. Never owns or qualifies fd 1/2. */
+  readonly borrowStdin?: true;
 }
 
 const ordinaryOnly = ['linux_sendfile_cap_start', 'linux_sendfile_cap_finish', 'linux_sendfile_load_start', 'linux_sendfile_load_finish',
@@ -37,7 +39,7 @@ const required = ['linux_task_registration', 'linux_syscall_sequenced', 'linux_r
   'linux_read_load_finish', 'linux_managed_read_start'];
 export function validateCaptureResultIdentity(module: WebAssembly.Module): void {
   const wire = Module.customSections(module, 'sods.linux.capture');
-  const identity = [83, 79, 68, 83, 67, 65, 80, 0, 7, 5, 2, 0];
+  const identity = [83, 79, 68, 83, 67, 65, 80, 0, 7, 6, 2, 0];
   if (wire.length !== 1 || wire[0]!.byteLength !== identity.length ||
       !new Bytes(wire[0]!).every((byte, i) => byte === identity[i])) {
     throw new Error('Unsupported captured result artifact identity');

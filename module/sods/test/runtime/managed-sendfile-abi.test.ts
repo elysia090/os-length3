@@ -49,7 +49,7 @@ function raw(path: string, probe: boolean, lazyData = false, queued = false, wor
   if (resultProfile) {
     const marker = WebAssembly.Module.customSections(module, 'sods.linux.capture');
     assert.equal(marker.length, 1);
-    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 5, 2, 0]);
+    assert.deepEqual([...new Uint8Array(marker[0]!)], [83, 79, 68, 83, 67, 65, 80, 0, 7, 6, 2, 0]);
     assert.ok(!Object.keys(e).some(name => name.startsWith('linux_queued_') || name.startsWith('linux_sendfile_')));
     for (const name of ['linux_startup_begin', 'linux_startup_begin_stdio', 'linux_execution_create']) assert.equal(e[name], undefined);
   }
@@ -1152,7 +1152,8 @@ async function prepareCurrentCapture(
   const translate = await loadTranslator(translator);
   const core = r.e.memory as WebAssembly.Memory;
   r.stageStartup('/app', ['mixed']);
-  const begun = r.call(resultProfile ? 'linux_capture_result_startup' : 'linux_queued_worker_probe_startup_shared'), id = r.result();
+  const begun = resultProfile ? r.call('linux_capture_result_startup', 0) : r.call('linux_queued_worker_probe_startup_shared');
+  const id = r.result();
   assert.equal(r.call('linux_startup_input', 0), 0);
   if (begun !== 0) {
     if (id) assert.equal(r.call('linux_startup_cancel', id), 0);
@@ -1294,20 +1295,22 @@ test('non-probe capture result cannot start or borrow before its exact receiver'
   assert.equal(call('linux_files_seal', 8), 0);
   assert.equal(call('linux_capture_result_init', 4, 4), -11, 'an unmounted diagnostic Files is not the startup owner');
   r.stageStartup();
-  assert.equal(r.call('linux_capture_result_startup'), -9);
+  assert.equal(r.call('linux_capture_result_startup', 2), -5);
+  assert.equal(r.result(), 0n, 'unsupported input permission cannot reserve startup');
+  assert.equal(r.call('linux_capture_result_startup', 0), -9);
   assert.equal(r.result(), 0n);
   assert.equal(r.call('linux_capture_result_head'), -9);
   for (const [m, q] of [[0, 4], [5, 4], [1, 65537], [4, -1]]) {
     assert.equal(r.call('linux_capture_result_init', m!, q!), -5);
     assert.equal(r.call('linux_capture_result_head'), -9, 'invalid width did not install a receiver');
-    assert.equal(r.call('linux_capture_result_startup'), -9);
+    assert.equal(r.call('linux_capture_result_startup', 0), -9);
   }
   assert.equal(r.call('linux_capture_result_init', 4, 4), 0);
   assert.equal(r.call('linux_capture_result_init', 4, 4), -4);
   assert.equal(r.call('linux_capture_result_copy_start', 0, 1n), -10);
   assert.equal(r.receive(0), undefined);
   r.stageStartup('/not-present');
-  assert.ok(r.call('linux_capture_result_startup') < 0);
+  assert.ok(r.call('linux_capture_result_startup', 0) < 0);
   const failed = r.result();
   assert.equal(failed, 1n, 'missing receiver previously admitted no execution');
   assert.ok(r.call('linux_run_start', failed) < 0);
@@ -1428,8 +1431,8 @@ for (const cancel of [false, true]) test(`non-probe capture result ${cancel ? 'a
         assert.equal(r.call('linux_syscall_path_start', id, c.value), 0);
         copyWorkerInput(memory, core, Number(c.target), Number(r.result()), length);
         assert.equal(r.call('linux_syscall_path_finish', id, c.value, BigInt(length), 0), 0);
-        assert.deepEqual([r.state(), r.result()], [0, 3n]);
-        return {kind: 'return', value: 3n};
+        assert.deepEqual([r.state(), r.result()], [0, 0n]);
+        return {kind: 'return', value: 0n};
       }
       if (c.tag === 13) {
         assert.equal(r.call('linux_capture_result_write_start', id, request.sequence, c.value), 0);
@@ -1467,7 +1470,7 @@ for (const cancel of [false, true]) test(`non-probe capture result ${cancel ? 'a
         assert.equal(r.call(resume, id, request.sequence, c.value), 0);
         assert.deepEqual([r.state(), r.result()], [15, 1n]);
         assert.equal(r.call(resume, id, request.sequence, c.value), -4);
-        assert.deepEqual(r.remaining({id, invocation, sequence: request.sequence}, 3n), Uint8Array.of(),
+        assert.deepEqual(r.remaining({id, invocation, sequence: request.sequence}, 0n), Uint8Array.of(),
           'the retained source advanced exactly once from original B to the end of D');
       }
       return {kind: 'return', value: 1n};
@@ -1622,6 +1625,7 @@ for (const [useCurrent, stopBeforeFileReply, withSink, resultProfile] of [
   test(`real Node Worker capture fixture: ${resultProfile ? 'non-probe capture result ' : ''}${useCurrent ? 'current-source translated ' : ''}same lane ${stopBeforeFileReply ? 'AB then observed stop before file reply' : withSink ? 'ABC reaches the owned Node file only through exact sink settlement' : 'write, resident sendfile, write yields ABC'}`, {
     skip: resultProfile ? currentResultSkip : useCurrent ? currentMixedSkip : workerQueueSkip, timeout: 30_000,
   }, async t => {
+    const inputFd = resultProfile ? 0n : 3n;
     const current = useCurrent ? currentCaptureProgram() : undefined;
     const r = resultProfile ? raw(resultArtifact!, false, false, false, false, current!.elf, true)
       : raw(workerQueueArtifact!, true, false, true, true, current?.elf);
@@ -1675,13 +1679,13 @@ for (const [useCurrent, stopBeforeFileReply, withSink, resultProfile] of [
           assert.ok(r.length() >= BigInt(pathLength));
           copyWorkerInput(input.memory, core, Number(command.target), pointer, pathLength);
           assert.equal(r.call('linux_syscall_path_finish', id, command.value, BigInt(pathLength), 0), 0);
-          assert.deepEqual([r.state(), r.result()], [0, 3n]);
+          assert.deepEqual([r.state(), r.result()], [0, inputFd]);
           return {kind: 'return', value: r.result()} as const;
         }
         if (command.tag === (resultProfile ? 15 : 0)) {
           assert.equal(request.nr, 40n);
           const [out, fd, offset, length] = request.args;
-          assert.deepEqual([out, fd, offset, length], [1n, 3n, 0n, 1n]);
+          assert.deepEqual([out, fd, offset, length], [1n, inputFd, 0n, 1n]);
           assert.deepEqual(command, {tag: resultProfile ? 15 : 0, value: 1n, next: 0n, target: 0n, endpoint: 0n});
           if (stopBeforeFileReply) {
             assert.deepEqual(r.remaining(owner, fd), bytes('D'));
@@ -1720,7 +1724,7 @@ for (const [useCurrent, stopBeforeFileReply, withSink, resultProfile] of [
         const step = r.command();
         assert.deepEqual([step.tag, step.value], [resultProfile ? 15 : 0, 1n]);
         if (writeAddresses.length === 2) {
-          assert.deepEqual(r.remaining(owner, 3n), bytes('D'));
+          assert.deepEqual(r.remaining(owner, inputFd), bytes('D'));
           inputCursorChecked = true;
         }
         return {kind: 'return', value: step.value} as const;

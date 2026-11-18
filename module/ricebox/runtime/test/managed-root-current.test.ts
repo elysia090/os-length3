@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {createHook} from 'node:async_hooks';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {closeSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
@@ -39,6 +39,9 @@ const descriptions = {
   'capture-ready-only': 'pinned captured result notifies on one resident byte without pressure',
   'capture-cold': 'pinned captured result declines a cold prepared-root source without starting a loader',
   'capture-wide': 'pinned captured result refuses a valid five-byte native write rather than silently losing it',
+  'capture-stdin': 'pinned captured result borrows only actual stdin with short read, EOF and guest close',
+  'capture-stdin-bad-fd': 'pinned captured result returns the known zero read errno from a real borrowed descriptor',
+  'capture-no-stdin': 'pinned captured result without a loan leaves inherited input unconsumed',
   'capture-selected-width': 'pinned captured result with explicit M and Q accepts actual Worker writes of 5, 32 and 4096 bytes',
   cancel: 'cancelled artifact late shared/valid success and rejection publish no Worker and permit root reuse',
   invalid: 'invalid artifact byte classes fail before source/Worker publication and permit root reuse',
@@ -50,7 +53,8 @@ type Host = Awaited<ReturnType<typeof managedRoot>>;
 const pacedScenario = (s: Scenario) => s.startsWith('capture-paced') || s === 'capture-ready' || s === 'capture-ready-stop';
 const stoppedWait = (s: Scenario) => s === 'capture-paced-stop' || s === 'capture-paced-race' || s === 'capture-ready-stop';
 const refusedScenario = (s: Scenario) => s === 'capture-pressure' || s === 'capture-cold' || s === 'capture-wide' || stoppedWait(s);
-const coldScenario = (s: Scenario) => s === 'capture-cold';
+const stdinScenario = (s: Scenario) => s === 'capture-stdin' || s === 'capture-stdin-bad-fd' || s === 'capture-no-stdin';
+const noLoads = (s: Scenario) => s === 'capture-cold' || stdinScenario(s);
 
 async function stopped(host: Host, execution: ExecutionBinding): Promise<void> {
   host.stopWorker(execution);
@@ -92,13 +96,14 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     translator: {...blob(translatorBytes), name: 'sods', version: 'current-fixture', wasm: hash(translatorBytes)},
     translations: [translation]};
   const width = scenario === 'capture-selected-width';
-  const capacity = width ? {maximumRequest: 4096, queueBytes: 8192} : {maximumRequest: 4, queueBytes: 4};
+  const capacity = {...(width ? {maximumRequest: 4096, queueBytes: 8192} : {maximumRequest: 4, queueBytes: scenario === 'capture-stdin' ? 8 : 4}),
+    borrowStdin: scenario === 'capture-stdin' || scenario === 'capture-stdin-bad-fd' ? true as const : undefined};
   let storedCapture: ReturnType<typeof gzipSync> | undefined;
   if (scenario.startsWith('capture')) {
     assert.ok(resultPath);
     storedCapture = gzipSync(readFileSync(resultPath));
     const sha256 = hash(storedCapture);
-    index.captureResult = {kind: 'sods-linux-capture-result-v5', host: 'linux-x64-node22-24',
+    index.captureResult = {kind: 'sods-linux-capture-result-v6', host: 'linux-x64-node22-24',
       path: `blobs/${sha256}.bin`, sha256, size: storedCapture.length,
       bytes: Number(process.env.SODS_CAPTURE_RESULT_BYTES), wasm: process.env.SODS_CAPTURE_RESULT_SHA256!};
   }
@@ -138,11 +143,11 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       mutated[mutated.length - 1] ^= 1;
       await assert.rejects(capturedResultHost(mutated, pin, 4, 16, capacity), /digest mismatch/);
       const oldWire = Buffer.from(bytes);
-      const marker = oldWire.lastIndexOf(Buffer.from([83, 79, 68, 83, 67, 65, 80, 0, 7, 5, 2, 0]));
+      const marker = oldWire.lastIndexOf(Buffer.from([83, 79, 68, 83, 67, 65, 80, 0, 7, 6, 2, 0]));
       assert.notEqual(marker, -1);
-      oldWire[marker + 9] = 4;
+      oldWire[marker + 9] = 5;
       await assert.rejects(capturedResultHost(oldWire, {...pin, sha256: hash(oldWire)}, 4, 16, capacity),
-        /artifact identity/, 'a valid digest for the fixed-width artifact is not an admission with selected capacity');
+        /artifact identity/, 'a valid digest for the previous wire does not grant the new stdin policy');
       const ordinary = new Uint8Array(readFileSync(corePath));
       await assert.rejects(capturedResultHost(ordinary, {...pin, byteLength: ordinary.byteLength, sha256: hash(ordinary)}, 4, 16, capacity),
         /artifact identity/, 'a matching hash for the wrong role is not admission');
@@ -391,6 +396,14 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
         {stream: 'stdout', bytes: new Uint8Array(4096).fill(0xa6)}];
       for (const record of expected) assert.deepEqual(captured.takeOutput(), record);
       assert.equal(captured.takeOutput(), undefined);
+    } else if (captured && stdinScenario(scenario)) {
+      // Even guest close is against the Rust table, never the inherited fd.
+      assert.ok(fstatSync(0).isFile());
+      if (scenario === 'capture-stdin') {
+        assert.deepEqual(captured.takeOutput(), {stream: 'stdout', bytes: encode('abc')});
+        assert.deepEqual(captured.takeOutput(), {stream: 'stderr', bytes: encode('def')});
+      }
+      assert.equal(captured.takeOutput(), undefined);
     } else if (captured) {
       const output = captured.takeOutput();
       const expected = scenario === 'capture-paced' ? Uint8Array.of(127)
@@ -416,7 +429,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
     }
     const successfulRuns = refusedScenario(scenario) ? 0 : scenario === 'cancel' ? 3 : 1;
     const executions = scenario === 'size' ? 2 : refusedScenario(scenario) ? 1 : successfulRuns;
-    assert.equal(loads, coldScenario(scenario) ? 0 : executions, 'the ordinary read loads once, not the resident send');
+    assert.equal(loads, noLoads(scenario) ? 0 : executions, 'the ordinary read loads once, not the resident send');
     assert.equal(workers, executions, 'positive control confirms actual Worker observation');
     assert.equal(runs, successfulRuns);
     assert.equal(lateControls, scenario === 'cancel' ? 2 : 0);
@@ -442,21 +455,41 @@ if (process.argv[2] === '--managed-root-child') {
     mkdirSync(target, {recursive: true});
     const directory = mkdtempSync(join(target, 'managed-root-current-'));
     try {
-      const source = fileURLToPath(new URL('../../../sods/test/fixtures/managed-open/program.S', import.meta.url));
+      const assembly = stdinScenario(scenario) ? 'managed-stdio/capture-stdin.S' : 'managed-open/program.S';
+      const source = fileURLToPath(new URL(`../../../sods/test/fixtures/${assembly}`, import.meta.url));
       const program = join(directory, 'program.elf');
       execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
         ...(scenario === 'capture-ready' || scenario === 'capture-ready-stop' ? ['-DSODS_CAPTURE_READY_SOURCE']
           : scenario === 'capture-ready-only' ? ['-DSODS_CAPTURE_READY_ONLY']
           : scenario === 'capture-cold' ? ['-DSODS_CAPTURE_COLD_SOURCE']
+          : scenario === 'capture-no-stdin' ? ['-DSODS_STDIN_ABSENT']
+          : scenario === 'capture-stdin-bad-fd' ? ['-DSODS_STDIN_BAD_FD']
           : scenario === 'capture-wide' ? ['-DSODS_CAPTURE_WIDE_OUTPUT']
           : scenario === 'capture-selected-width' ? ['-DSODS_CAPTURE_WIDE_OUTPUT', '-DSODS_CAPTURE_SELECT_WIDTH']
           : scenario === 'capture-pressure' || scenario.startsWith('capture-paced') ? ['-DSODS_OPEN_SECOND_OUTPUT'] : []),
         '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
       ], {stdio: 'pipe', timeout: 30_000, env: {...process.env, TMPDIR: directory}});
-      const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--managed-root-child', scenario, program], {
-        input: '', timeout: 30_000, maxBuffer: 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
-        env: {...process.env, NODE_NO_WARNINGS: '1'},
-      });
+      const inputFile = join(directory, 'stdin');
+      let inherited: number | undefined;
+      if (stdinScenario(scenario)) {
+        writeFileSync(inputFile, 'abcdef');
+        inherited = openSync(inputFile, scenario === 'capture-stdin-bad-fd' ? 'a' : 'r');
+      }
+      const result = (() => {
+        try {
+          const ran = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--managed-root-child', scenario, program], {
+            input: inherited === undefined ? '' : undefined, timeout: 30_000, maxBuffer: 1024 * 1024,
+            stdio: [inherited ?? 'pipe', 'pipe', 'pipe', 'pipe'], env: {...process.env, NODE_NO_WARNINGS: '1'},
+          });
+          if (scenario === 'capture-no-stdin' || scenario === 'capture-stdin') {
+            const bytes = Buffer.alloc(6);
+            const count = readSync(inherited!, bytes);
+            assert.equal(count, scenario === 'capture-no-stdin' ? 6 : 0);
+            if (count) assert.equal(bytes.toString(), 'abcdef');
+          }
+          return ran;
+        } finally { if (inherited !== undefined) closeSync(inherited); }
+      })();
       assert.equal(result.error, undefined);
       assert.equal(result.signal, null);
       assert.equal(result.status, 0, result.stderr?.toString());
@@ -467,7 +500,7 @@ if (process.argv[2] === '--managed-root-child') {
       assert.equal(result.stderr.length, 0);
       const report = result.output[3];
       assert.ok(report);
-      assert.deepEqual(JSON.parse(report.toString()), {scenario, loads: coldScenario(scenario) ? 0 : executions,
+      assert.deepEqual(JSON.parse(report.toString()), {scenario, loads: noLoads(scenario) ? 0 : executions,
         artifacts: scenario === 'invalid' ? 5 : scenario === 'cancel' ? 6 : scenario === 'size' ? 2 : 1,
         workers: executions, runs: successfulRuns,
         lateControls: scenario === 'cancel' ? 2 : 0, retired: true});
@@ -489,6 +522,33 @@ if (process.argv[2] === '--managed-root-child') {
         assert.equal(ordinary.status, native.status, ordinary.stderr.toString());
         assert.deepEqual(ordinary.stdout, native.stdout);
         assert.deepEqual(ordinary.stderr, native.stderr);
+      }
+      if (scenario === 'capture-stdin' || scenario === 'capture-stdin-bad-fd') {
+        const cli = fileURLToPath(new URL('../../../sods/runtime/run.ts', import.meta.url));
+        const compare = (native: boolean, output: number | 'pipe' = 'pipe') => {
+          const fd = openSync(inputFile, scenario === 'capture-stdin-bad-fd' ? 'a' : 'r');
+          try {
+            return spawnSync(native ? program : process.execPath, native ? [] : [cli, '--managed', program],
+              {stdio: [fd, output, 'pipe'], timeout: 10_000, env: {...process.env, NODE_NO_WARNINGS: '1'}});
+          } finally { closeSync(fd); }
+        };
+        for (const native of [false, true]) {
+          const ran = compare(native);
+          assert.equal(ran.error, undefined);
+          assert.equal(ran.signal, null);
+          assert.equal(ran.status, 0, ran.stderr.toString());
+          const echo: boolean = scenario === 'capture-stdin';
+          assert.equal(ran.stdout.toString(), echo ? 'abc' : '');
+          assert.equal(ran.stderr.toString(), echo ? 'def' : '');
+          if (!echo) continue;
+          const unwritable = openSync(inputFile, 'r');
+          try {
+            const rejected = compare(native, unwritable);
+            assert.equal(rejected.error, undefined);
+            assert.equal(rejected.status, 42, rejected.stderr.toString());
+            assert.equal(rejected.stderr.length, 0, 'guest does not reach the next write after physical EBADF');
+          } finally { closeSync(unwritable); }
+        }
       }
       if (scenario === 'capture-ready' || scenario === 'capture-ready-only') {
         const native = spawnSync(program, [], {input: '', timeout: 10_000});

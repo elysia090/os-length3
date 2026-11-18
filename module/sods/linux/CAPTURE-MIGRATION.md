@@ -588,3 +588,38 @@ ready-resident prefix skips the first movement but not the second. Choosing
 M/Q adds no payload movement; staging still zeroes mutable storage before
 its one guest copy and is not claimed to reach the initialization lower
 bound. Failure before M admission requires neither payload movement.
+
+### Physical input loan is not sink selection
+
+Private wire 6 installs a physical input description only when the trusted
+Linux x64 Node 22/24 embedding explicitly borrows its non-TTY fd 0. With
+no loan, guest fd 0 is absent and may be used by a later open; captured
+fd 1 and fd 2 keep their original identities. No synthetic stdin or
+borrowed output description is created. The input adapter qualifies only
+fd 0 and refuses both host outputs independently of guest FD state. The
+embedding must not close, reuse or concurrently consume the native fd.
+Guest close releases only a Rust slot. Blocking read has no asynchronous
+stop claim before the one synchronous native call actually returns.
+
+For a read, Rust checks the full target span before any irreversible
+transfer, then borrows the exact native read into the paused guest view.
+Short counts, EOF and the reviewed known-zero errno are distinguished
+from unknown. No retry or additional payload copy is introduced by the
+adapter; one Node call is not a promise about the number of OS syscalls.
+An unclassifiable outcome does not authorize replay or reclamation. Actual
+Node, native Linux and the current CLI agree on the known-zero bad input,
+fault, zero length, six-byte short read, EOF and guest close controls.
+Without a loan, an inherited input file retains its offset and contents.
+
+An unwritable native stdout gives the same fixture EBADF on Linux and the
+current CLI, which prevents the following stderr write. The captured result
+accepts both records because it never performs that physical operation.
+The real CLI has borrowing, return and flush/stop semantics this profile
+does not inherit: no after-exit replay to stdout/stderr can replace exact
+guest-visible outcome. A future explicit sink needs its own admitted
+endpoint and effect token, finite host retention, exact count/errno/unknown
+receipt, plus independent external access-ended evidence before reuse.
+Separate accepted (Rust FIFO), detached (owned receiver), delivered (native
+effect), and stopped (no further effect) when considering that design.
+No default route or retained TS implementation can be switched on this
+input-only result.

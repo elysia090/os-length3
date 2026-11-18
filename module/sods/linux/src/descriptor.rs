@@ -1239,7 +1239,7 @@ impl Files {
         if endpoints.contains(&0) {
             return Err(Error::BadHandle);
         }
-        self.stdio_targets(limit, |i| DescriptionTarget::HostStream {
+        self.stdio_targets(limit, 0, |i| DescriptionTarget::HostStream {
             endpoint: endpoints[i],
             direction: if i == 0 {
                 StreamDirection::Read
@@ -1253,17 +1253,16 @@ impl Files {
     #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
     fn queued_stdio(
         &mut self,
-        stdin: u64,
+        stdin: Option<NonZeroU64>,
         outputs: [output::DestinationId; 2],
         limit: u32,
     ) -> Result<Table, Error> {
-        if stdin == 0 {
-            return Err(Error::BadHandle);
-        }
-        self.stdio_targets(limit, |i| {
+        // With no installed input, preserve both output FD numbers but
+        // leave fd 0 free for a later ordinary open. Never mint a dead loan.
+        self.stdio_targets(limit, usize::from(stdin.is_none()), |i| {
             if i == 0 {
                 DescriptionTarget::HostStream {
-                    endpoint: stdin,
+                    endpoint: stdin.expect("admitted stdin").get(),
                     direction: StreamDirection::Read,
                 }
             } else {
@@ -1281,15 +1280,16 @@ impl Files {
     fn stdio_targets(
         &mut self,
         limit: u32,
+        first: usize,
         target: impl Fn(usize) -> DescriptionTarget,
     ) -> Result<Table, Error> {
         if limit < 3 {
             return Err(Error::Capacity);
         }
         let table = self.table(limit)?;
-        for i in 0..3 {
+        for i in first..3 {
             let result = (|| {
-                let fd = self.admit_fd(&table, 0)?;
+                let fd = self.admit_fd(&table, i as u32)?;
                 let id = prepare(&mut self.descriptions, self.limits.descriptions, self.owner)?;
                 publish(
                     &mut self.descriptions,

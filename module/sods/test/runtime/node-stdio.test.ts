@@ -111,3 +111,27 @@ test('unclassified native failure stays Unknown, rather than fabricated zero', {
     assert.equal(result.status, 0, result.stderr.toString());
   } finally { closeSync(full); }
 });
+
+test('borrowed stdin never qualifies or grants either physical output', {skip: process.platform !== 'linux'}, t => {
+  let tty: number;
+  try { tty = openSync('/dev/ptmx', 'r+'); }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'EACCES') { t.skip('No accessible PTY master'); return; }
+    throw error;
+  }
+  try {
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import assert from 'node:assert/strict';
+      import {captureStdin, captureStdio} from ${JSON.stringify(adapter)};
+      assert.throws(() => captureStdio(), /does not support TTYs/);
+      const io = captureStdin(), bytes = new Uint8Array(4);
+      io.prepareView(bytes);
+      for (const endpoint of [2, 3]) assert.throws(() => io.transfer(endpoint, bytes), /does not grant physical output/);
+      assert.deepEqual(io.transfer(1, bytes), {kind: 'count', count: 3});
+      assert.deepEqual(Array.from(bytes), [97, 98, 99, 0]);
+    `], {input: 'abc', stdio: ['pipe', tty, 'pipe'], timeout: 10_000});
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stderr.toString());
+  } finally { closeSync(tty); }
+});

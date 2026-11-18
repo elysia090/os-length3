@@ -16,8 +16,9 @@ _start:
   xor %esi, %esi
   xor %edx, %edx
   syscall
-  cmp $3, %rax
-  jne bad
+  test %rax, %rax
+  js bad
+  mov %eax, %r12d
 
   movb $65, first(%rip)
   mov $1, %eax
@@ -30,7 +31,7 @@ _start:
 
   mov $40, %eax
   mov $1, %edi
-  mov $3, %esi
+  mov %r12d, %esi
   xor %edx, %edx
   mov $1, %r10d
   syscall
@@ -41,7 +42,7 @@ _start:
   /* Q/K still have room, but the first send owns the only R pin. */
   mov $40, %eax
   mov $2, %edi
-  mov $3, %esi
+  mov %r12d, %esi
   xor %edx, %edx
   mov $1, %r10d
   syscall

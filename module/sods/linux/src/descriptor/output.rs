@@ -805,7 +805,7 @@ impl LaneRegistry {
     fn queued_stdio(
         &self,
         files: &mut Files,
-        stdin: u64,
+        stdin: Option<NonZeroU64>,
         outputs: [&Producer; 2],
         limit: u32,
     ) -> Result<Table, Error> {
@@ -880,7 +880,12 @@ impl Root {
         limit: u32,
     ) -> Result<Table, Error> {
         self.registry
-            .queued_stdio(&mut self.files, stdin, outputs, limit)
+            .queued_stdio(
+                &mut self.files,
+                Some(NonZeroU64::new(stdin).ok_or(FilesError::BadHandle)?),
+                outputs,
+                limit,
+            )
     }
     pub(super) fn held_writer<'a>(&'a mut self, hold: &'a OutputHold) -> Result<Writer<'a>, Error> {
         self.registry.held_writer(&mut self.files, hold)
@@ -1147,9 +1152,18 @@ impl CaptureOutput {
     }
 
     #[cfg(feature = "capture-result-v1")]
-    pub(crate) fn joined_stdio(&self, files: &mut Files, limit: u32) -> Result<Table, Error> {
-        self.registry
-            .queued_stdio(files, 1, [&self.producer, &self.producer], limit)
+    pub(crate) fn joined_stdio(
+        &self,
+        files: &mut Files,
+        borrow_stdin: bool,
+        limit: u32,
+    ) -> Result<Table, Error> {
+        self.registry.queued_stdio(
+            files,
+            borrow_stdin.then_some(NonZeroU64::MIN),
+            [&self.producer, &self.producer],
+            limit,
+        )
     }
 
     fn receiver<'a>(&'a mut self, files: &'a mut Files) -> Result<Reader<'a>, Error> {
@@ -1291,7 +1305,7 @@ impl QueueProbe {
         Ok(self
             .capture
             .registry
-            .queued_stdio(files, 1, [stdout, stderr], limit)?)
+            .queued_stdio(files, Some(NonZeroU64::MIN), [stdout, stderr], limit)?)
     }
     pub(crate) fn publish(
         &mut self,

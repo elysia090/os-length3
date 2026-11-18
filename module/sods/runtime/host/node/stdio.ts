@@ -46,33 +46,49 @@ function failure(error: unknown, syscall: 'read' | 'write'): PhysicalResult {
  * https://github.com/nodejs/node/blob/v24.22.1/lib/fs.js
  * https://github.com/libuv/libuv/blob/v1.52.1/src/unix/fs.c
  */
-export function captureStdio() {
+function checkHost(): void {
   if (platform !== 'linux') throw new Error('Synchronous stdio profile requires Linux');
   if (nodeMajor !== 22 && nodeMajor !== 24) throw new Error('Synchronous stdio profile requires reviewed Node 22 or 24');
+}
+
+/** Before stream_start. Node's JS wrapper reads buffer.byteLength; an own
+ * immutable data property closes that wrapper property-read path. With the
+ * five primitive arguments used here, Node 22/24 native Buffer::Data/Length
+ * access backing-store slots, not JS buffer/byteOffset getters. This is a
+ * scoped trusted-runtime guarantee, not arbitrary monkeypatched-Node safety. */
+function prepareView(bytes: Uint8Array): void {
+  const length: number = apply(typedLength, bytes, []);
+  if (!isSafeInteger(length) || length > 0x7ffff000) throw new RangeError('Unsupported physical IO span');
+  define(bytes, 'byteLength', {value: length, writable: false, configurable: false});
+}
+
+function transfer(endpoint: Endpoint, bytes: Uint8Array): PhysicalResult {
+  // Construct and range-check this view before Rust stream_start. This
+  // synchronous operation borrows it only until return and never retains it.
+  const length: number = apply(typedLength, bytes, []);
+  if (!isSafeInteger(length) || length > 0x7ffff000) throw new RangeError('Unsupported physical IO span');
+  if (own(bytes, 'byteLength')?.value !== length) throw new TypeError('Physical IO view was not prepared');
+  if (endpoint !== 1 && endpoint !== 2 && endpoint !== 3) throw new TypeError('Unknown standard endpoint');
+  try {
+    const count = endpoint === 1 ? read(0, bytes, 0, length, null) : write(endpoint - 1, bytes, 0, length, null);
+    if (!isInteger(count) || count < 0 || count > length) return {kind: 'unknown', error: new Error('Invalid native IO count')};
+    return {kind: 'count', count};
+  } catch (error) { return failure(error, endpoint === 1 ? 'read' : 'write'); }
+}
+
+export function captureStdio() {
+  checkHost();
   if (terminal(0) || terminal(1) || terminal(2)) throw new Error('Synchronous stdio profile does not support TTYs');
-  return freeze({
-    /** Before stream_start. Node's JS wrapper reads buffer.byteLength; an own
-     * immutable data property closes that wrapper property-read path. With the
-     * five primitive arguments used here, Node 22/24 native Buffer::Data/Length
-     * access backing-store slots, not JS buffer/byteOffset getters. This is a
-     * scoped trusted-runtime guarantee, not arbitrary monkeypatched-Node safety. */
-    prepareView(bytes: Uint8Array): void {
-      const length: number = apply(typedLength, bytes, []);
-      if (!isSafeInteger(length) || length > 0x7ffff000) throw new RangeError('Unsupported physical IO span');
-      define(bytes, 'byteLength', {value: length, writable: false, configurable: false});
-    },
-    transfer(endpoint: Endpoint, bytes: Uint8Array): PhysicalResult {
-      // Construct and range-check this view before Rust stream_start. This
-      // synchronous method borrows it only until return and never retains it.
-      const length: number = apply(typedLength, bytes, []);
-      if (!isSafeInteger(length) || length > 0x7ffff000) throw new RangeError('Unsupported physical IO span');
-      if (own(bytes, 'byteLength')?.value !== length) throw new TypeError('Physical IO view was not prepared');
-      if (endpoint !== 1 && endpoint !== 2 && endpoint !== 3) throw new TypeError('Unknown standard endpoint');
-      try {
-        const count = endpoint === 1 ? read(0, bytes, 0, length, null) : write(endpoint - 1, bytes, 0, length, null);
-        if (!isInteger(count) || count < 0 || count > length) return {kind: 'unknown', error: new Error('Invalid native IO count')};
-        return {kind: 'count', count};
-      } catch (error) { return failure(error, endpoint === 1 ? 'read' : 'write'); }
-    },
-  });
+  return freeze({prepareView, transfer});
+}
+
+/** Same exact borrowed read, no physical output authority. Do not even
+ * qualify the process's unrelated output descriptors for this profile. */
+export function captureStdin(): ReturnType<typeof captureStdio> {
+  checkHost();
+  if (terminal(0)) throw new Error('Synchronous stdin profile does not support TTY input');
+  return freeze({prepareView, transfer(endpoint: Endpoint, bytes: Uint8Array) {
+    if (endpoint !== 1) throw new Error('Borrowed stdin does not grant physical output');
+    return transfer(1, bytes);
+  }});
 }

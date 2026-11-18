@@ -65,7 +65,7 @@ test('explicit capture builder emits only the pinned private artifact and ordina
   const about = JSON.parse(readFileSync(join(captureOut, 'webroot.json'), 'utf8'));
   const indexBytes = readFileSync(join(captureOut, about.index.path));
   const index: Index = JSON.parse(indexBytes.toString('utf8'));
-  assert.equal(index.captureResult?.kind, 'sods-linux-capture-result-v5');
+  assert.equal(index.captureResult?.kind, 'sods-linux-capture-result-v6');
   assert.equal(index.captureResult?.wasm, approved);
   const capturePath = index.captureResult!.path;
   assert.deepEqual(gunzipSync(readFileSync(join(captureOut, capturePath))), wasm);
@@ -239,7 +239,7 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     const indexCapture = JSON.parse(readFileSync(join(withCapture, aboutCapture.index.path), 'utf8'));
     const captureWasm = captureArtifact ? readFileSync(captureArtifact) : Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
     const storedCapture = gzipSync(captureWasm), storedSha = sha(storedCapture);
-    const capture = {kind: 'sods-linux-capture-result-v5', host: 'linux-x64-node22-24', wasm: sha(captureWasm),
+    const capture = {kind: 'sods-linux-capture-result-v6', host: 'linux-x64-node22-24', wasm: sha(captureWasm),
       bytes: captureWasm.byteLength, size: storedCapture.byteLength, sha256: storedSha, path: `blobs/${storedSha}.bin`};
     const oldIndex = aboutCapture.index.path;
     rmSync(join(withCapture, oldIndex));
