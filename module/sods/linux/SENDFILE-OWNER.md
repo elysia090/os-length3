@@ -80,8 +80,9 @@ are rejected before guard or Domain mutation.
 
 Stopped evidence includes both ended access and no further effect beyond the
 confirmed prefix. It commits the held OFD once, including a late prefix after
-cancellation or guest fault. A closed/lost guest never receives a resurrected
-successful return. A short positive result is not retransmitted internally.
+cancellation or guest fault. A closed/lost or exit-requested invocation does
+not receive successful return even when the stopped effect and cursor commit
+are known. A short positive result is not retransmitted internally.
 Known stopped zero with a **nonempty offered source** still settles the physical
 prefix0 and releases the operation once, but closes as TransportFailed rather
 than returning a guessed EOF to the guest. Only qualified offered0 (count0 or

@@ -272,10 +272,9 @@ impl Sendfile {
         }
         Ok(())
     }
-    fn live(&self, execution: &Execution) -> bool {
+    fn can_return_to_guest(&self, execution: &Execution) -> bool {
         self.capture
-            .is_some_and(|c| execution.check(c.snapshot).is_ok())
-            && execution.phase() == execution::Phase::Running
+            .is_some_and(|c| execution.invocation_accepts_result(c.invocation))
     }
     /// First-work permission is stronger than an unchanged running image.
     /// Calls check exact operation identity, phase and local closure separately.
@@ -421,7 +420,7 @@ impl Sendfile {
         {
             return Err(Error::State);
         }
-        if !self.live(execution) {
+        if !self.can_return_to_guest(execution) {
             self.closed = true;
             self.result = Some(ResultValue::GuestLost);
         }
@@ -760,7 +759,7 @@ impl Sendfile {
         };
         domain.receipt(action, confirmed, completion)?;
         self.confirmed = confirmed;
-        if !self.live(execution) {
+        if !self.can_return_to_guest(execution) {
             self.closed = true;
             self.result = Some(ResultValue::GuestLost);
         }
@@ -1132,6 +1131,26 @@ mod tests {
             Err(Error::Execution(execution::Error::State))
         );
         h.assert_exit_cleanup_without_progress(action);
+    }
+
+    #[test]
+    fn synthetic_exit_after_start_settles_the_stopped_prefix_but_suppresses_guest_success() {
+        let mut h = Harness::new(false, false, 0);
+        h.begin(6);
+        h.cap();
+        h.start();
+        let action = h.token();
+        h.request_exit();
+        h.receipt(3, Outcome::Transferred).unwrap();
+        h.assert_released();
+        assert_eq!(h.f.offset(&h.t, h.fd), Ok((3, 1)));
+        assert_eq!(h.d.retire(action), Err(lease::Error::UnknownAction));
+        assert_eq!(h.s.result(), Some(ResultValue::GuestLost));
+        assert!(h.s.closed());
+        h.e.receipt(&mut h.d, h.invocation, execution::Unwind::Exit)
+            .unwrap();
+        assert_eq!(h.e.status(), Some(7));
+        assert!(h.e.retireable());
     }
 
     #[test]

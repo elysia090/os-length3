@@ -43,6 +43,13 @@ impl Invocation {
     pub(crate) fn number(self) -> u64 {
         self.number
     }
+    // Only start mints invocations, and does not reuse numbers within a
+    // domain/execution pair, even across image changes.
+    fn same_incarnation(self, other: Self) -> bool {
+        self.number == other.number
+            && self.identity.domain == other.identity.domain
+            && self.identity.execution == other.identity.execution
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ImageResult {
@@ -322,13 +329,7 @@ impl Execution {
     /// This neither acquires nor ends a call, and is not a stop receipt.
     pub(crate) fn check_held_call_live(&self, invocation: Invocation) -> Result<(), Error> {
         let held = self.pending_call.ok_or(Error::Identity)?;
-        // Invocation is opaque and start never reuses its number within a
-        // domain/execution pair, even across an image change. These three
-        // fields already identify the image and binding of this invocation.
-        if held.number != invocation.number
-            || held.identity.domain != invocation.identity.domain
-            || held.identity.execution != invocation.identity.execution
-        {
+        if !held.same_incarnation(invocation) {
             return Err(Error::Identity);
         }
         // Admission captured the current invocation and a pending call blocks
@@ -337,6 +338,16 @@ impl Execution {
             return Err(Error::State);
         }
         Ok(())
+    }
+    /// Guest-result eligibility, independent of whether stopped cleanup has
+    /// already ended its call hold. Never use this to reject stopped evidence.
+    pub(crate) fn invocation_accepts_result(&self, invocation: Invocation) -> bool {
+        self.phase == Phase::Running
+            && self.exit_requested.is_none()
+            && self
+                .running
+                .as_ref()
+                .is_some_and(|(current, _)| current.same_incarnation(invocation))
     }
     pub(crate) fn finish_call(&mut self, invocation: Invocation) -> Result<(), Error> {
         if self.pending_call != Some(invocation) {
@@ -608,6 +619,7 @@ mod retirement_tests {
         e.image_begin(&mut d, 65536).unwrap();
         e.image_finish(&mut d, ImageResult::Installed).unwrap();
         let first = e.start(&mut d).unwrap();
+        assert!(e.invocation_accepts_result(first));
         assert_eq!(e.check_held_call_live(first), Err(Error::Identity));
         e.hold_call(first).unwrap();
         assert_eq!(e.check_held_call_live(first), Ok(()));
@@ -620,8 +632,10 @@ mod retirement_tests {
         assert_ne!(first.number(), second.number());
         e.hold_call(second).unwrap();
         assert_eq!(e.check_held_call_live(first), Err(Error::Identity));
+        assert!(!e.invocation_accepts_result(first));
         assert_eq!(e.check_held_call_live(second), Ok(()));
         e.finish_call(second).unwrap();
+        assert!(e.invocation_accepts_result(second));
         assert_eq!(e.check_held_call_live(second), Err(Error::Identity));
     }
 
