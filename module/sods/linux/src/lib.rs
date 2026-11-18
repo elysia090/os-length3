@@ -27,6 +27,8 @@ mod fs_context;
 
 mod execution;
 
+mod single_task;
+
 mod syscall;
 
 mod stack;

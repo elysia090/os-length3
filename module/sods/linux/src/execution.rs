@@ -170,6 +170,16 @@ impl Execution {
     pub(crate) fn owns_snapshot(&self, snapshot: Snapshot) -> bool {
         self.domain == Some(snapshot.domain) && self.id == snapshot.execution
     }
+    /// Exact retained metadata identity, including stopped/uncertain phases.
+    /// This is not admission to run or access memory. New operations must still
+    /// use check/syscall_allowed; an in-progress or installed reimage rejects.
+    pub(crate) fn retains_snapshot(&self, snapshot: Snapshot) -> bool {
+        self.changing.is_none()
+            && self.domain == Some(snapshot.domain)
+            && self.id == snapshot.execution
+            && self.image == snapshot.image
+            && self.binding == snapshot.binding
+    }
     pub(crate) fn check(&self, identity: Snapshot) -> Result<(), Error> {
         if self.identity()? == identity {
             Ok(())
