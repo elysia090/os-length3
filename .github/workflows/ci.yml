@@ -349,7 +349,7 @@ jobs:
           SODS_CURRENT_TRANSLATOR_WASM: module/sods/target/wasm32-unknown-unknown/release/sods.wasm
         run: |
           CARGO_TARGET_DIR=module/sods/linux/target/queued-worker-probe cargo build --locked --target wasm32-unknown-unknown --features queued-worker-probe --manifest-path module/sods/linux/Cargo.toml
-          node --test --test-name-pattern='strong capture probe|real Node Worker capture fixture|current-source mixed capture' module/sods/test/runtime/managed-sendfile-abi.test.ts
+          node --test --test-name-pattern='strong capture probe|real Node Worker capture fixture|current-source mixed capture|owned capability cannot' module/sods/test/runtime/managed-sendfile-abi.test.ts
       - name: Test the separate Linux capture candidate admission
         if: matrix.part == 'native'
         env:
@@ -376,6 +376,24 @@ jobs:
           node --test --test-name-pattern='non-probe capture result|pinned captured result' module/sods/test/runtime/managed-sendfile-abi.test.ts module/ricebox/runtime/test/managed-root-current.test.ts
           node --test module/ricebox/deployment/test/capture-result.test.ts
           node --test --test-name-pattern='explicit capture builder|a Node-only build takes' scripts/webroot.test.ts
+      - name: Test the separate non-probe owned stdout host
+        if: matrix.part == 'native'
+        env:
+          SODS_OWNED_STDOUT_WASM: module/sods/linux/target/owned-stdout-v1/wasm32-unknown-unknown/release/sods_linux.wasm
+          SODS_CURRENT_TRANSLATOR_WASM: module/sods/target/wasm32-unknown-unknown/release/sods.wasm
+          SODS_LINUX_WASM: module/sods/linux/target/wasm32-unknown-unknown/debug/sods_linux.wasm
+          SODS_QUEUED_WORKER_PROBE_WASM: module/sods/linux/target/queued-worker-probe/wasm32-unknown-unknown/debug/sods_linux.wasm
+          SODS_CAPTURE_RESULT_WASM: module/sods/linux/target/capture-result-v1/wasm32-unknown-unknown/release/sods_linux.wasm
+        run: |
+          CARGO_TARGET_DIR=module/sods/linux/target/owned-stdout-v1 cargo build --locked --release --target wasm32-unknown-unknown --features owned-stdout-v1 --manifest-path module/sods/linux/Cargo.toml
+          for conflict in capture-v1 sendfile-probe; do
+            if CARGO_TARGET_DIR=module/sods/linux/target/owned-stdout-conflict cargo check --locked --features "owned-stdout-v1,$conflict" --manifest-path module/sods/linux/Cargo.toml >module/sods/linux/target/owned-stdout-conflict.log 2>&1; then
+              echo "Owned stdout must not compose with $conflict" >&2; exit 1
+            fi
+            grep -q 'owned-stdout-v1 cannot compose' module/sods/linux/target/owned-stdout-conflict.log
+          done
+          export SODS_OWNED_STDOUT_SHA256="$(sha256sum "$SODS_OWNED_STDOUT_WASM" | cut -d' ' -f1)" SODS_OWNED_STDOUT_BYTES="$(wc -c < "$SODS_OWNED_STDOUT_WASM")"
+          node --test module/sods/test/runtime/managed-owned-stdout.test.ts
       # What stands beside sods and is checked with what it builds: ricebox's layers mounted in sods' tree (the
       # translator's wasm decodes and digests them), and muk's C parser beside its model over every config.json.
       - name: Layers, and muk's parser beside its model
