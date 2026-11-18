@@ -40,6 +40,8 @@ test('exact pinned candidate admits Rust selection, never ordinary or captured s
   source.fill(0); // Verification compiled the owned, exact snapshot.
   assert.throws(() => memoryHost(verified, 1, 1), /capture candidate/i);
   const names = new Set(WebAssembly.Module.exports(verified).map(x => x.name));
+  assert.deepEqual([...names].filter(name => name.startsWith('linux_sendfile_')), [],
+    'the capture-only candidate exposes no physical sendfile route, not even a negative qualifier');
   for (const forbidden of ['linux_sendfile_probe', 'linux_queued_worker_probe_write',
     'linux_startup_begin', 'linux_startup_begin_stdio', 'linux_capture_startup',
     'linux_execution_create']) assert.ok(!names.has(forbidden));

@@ -214,6 +214,7 @@ enum Access {
         execution: u64,
         action: Token,
     },
+    #[cfg(not(feature = "capture-v1"))]
     SendFinish {
         execution: u64,
         sequence: u32,
@@ -263,6 +264,7 @@ fn with_state_access(access: Access, f: impl FnOnce(&mut State) -> Result<u64, i
         // Canonical source views exclude every old Read exception too. Only
         // one exact owner/sequence/action may submit evidence. Another valid
         // Unknown owner's late completion is not permission to allocate here.
+        #[cfg(not(feature = "capture-v1"))]
         let mut send_views = s
             .executions
             .iter()
@@ -275,6 +277,7 @@ fn with_state_access(access: Access, f: impl FnOnce(&mut State) -> Result<u64, i
                     .map(|(sequence, action)| (i as u64 + 1, sequence, action)),
                 _ => None,
             });
+        #[cfg(not(feature = "capture-v1"))]
         if let Some((execution, sequence, action)) = send_views.next() {
             if send_views.next().is_some()
                 || access
@@ -1189,6 +1192,7 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.length = u64::from(sequence);
             action.sequence()
         }
+        #[cfg(not(feature = "capture-v1"))]
         Step::SendfileCapability {
             action,
             sequence,
@@ -1199,11 +1203,13 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.endpoint = endpoint;
             action.sequence()
         }
+        #[cfg(not(feature = "capture-v1"))]
         Step::SendfileLoad { action, sequence } => {
             s.state = 11;
             s.auxiliary = u64::from(sequence);
             action.sequence()
         }
+        #[cfg(not(feature = "capture-v1"))]
         Step::SendfileOffer {
             action,
             sequence,
@@ -1216,7 +1222,7 @@ fn step(s: &mut State, command: Step) -> u64 {
             s.length = length;
             action.sequence()
         }
-        #[cfg(any(test, feature = "queued-worker-probe"))]
+        #[cfg(any(test, feature = "queued-worker-probe", feature = "capture-v1"))]
         Step::CaptureWrite { call, at, length } => {
             s.state = 13;
             s.auxiliary = at;
@@ -1471,6 +1477,7 @@ pub extern "C" fn linux_register_receipt(
 
 /// Read-only capability subround; no source view or output permission. The
 /// continuation stores the non-Copy request before its metadata crosses ABI.
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_cap_start(id: u64, sequence: u32, action: u64) -> i32 {
     with_state(false, |s| {
@@ -1497,6 +1504,7 @@ pub extern "C" fn linux_sendfile_cap_start(id: u64, sequence: u32, action: u64) 
 /// Production can only reject until a reviewed physical construction exists.
 /// Code1 is synthetic evidence in the segregated probe artifact ONLY. Shape-
 /// complete raw exports are not a security boundary against a lying embedder.
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_cap_finish(
     id: u64,
@@ -1547,6 +1555,7 @@ pub extern "C" fn linux_sendfile_cap_finish(
         Ok(step(s, command))
     })
 }
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_load_start(id: u64, sequence: u32, action: u64) -> i32 {
     with_state(false, |s| {
@@ -1573,6 +1582,7 @@ pub extern "C" fn linux_sendfile_load_start(id: u64, sequence: u32, action: u64)
 /// The global source staging turn is synchronous through this exact finish.
 /// Source and attempt are both checked before input adoption; failed/cancelled
 /// delivery is not a capability or output receipt.
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_load_finish(
     id: u64,
@@ -1607,6 +1617,7 @@ pub extern "C" fn linux_sendfile_load_finish(
         Ok(step(s, command))
     })
 }
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_start(id: u64, sequence: u32, action: u64) -> i32 {
     with_state(false, |s| {
@@ -1638,6 +1649,7 @@ pub extern "C" fn linux_sendfile_start(id: u64, sequence: u32, action: u64) -> i
 /// Ended access is separate from prefix certainty. Every shape check and the
 /// exact owner/action guard precedes any Domain, cursor or view transition.
 /// Known zero errors settle ownership but never become guest errno here.
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_receipt(
     id: u64,
@@ -1693,7 +1705,7 @@ pub extern "C" fn linux_sendfile_receipt(
     )
 }
 /// Synthetic independent lexical-end certificate, absent from normal builds.
-#[cfg(feature = "sendfile-probe")]
+#[cfg(all(feature = "sendfile-probe", not(feature = "capture-v1")))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_probe_access_ended(id: u64, sequence: u32, action: u64) -> i32 {
     with_state_access(
@@ -1723,6 +1735,7 @@ pub extern "C" fn linux_sendfile_probe_access_ended(id: u64, sequence: u32, acti
 }
 /// Closing cleanup needs no action token that may already have retired. It
 /// never restarts an offer or recommits a source prefix.
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_cleanup(id: u64, sequence: u32) -> i32 {
     with_state(false, |s| {
@@ -1740,6 +1753,7 @@ pub extern "C" fn linux_sendfile_cleanup(id: u64, sequence: u32) -> i32 {
 }
 /// Private metadata only; cannot bypass a canonical/path/read view. No pending
 /// owner is state0xffff; otherwise state is phase | closed<<8 | finished<<9.
+#[cfg(not(feature = "capture-v1"))]
 #[no_mangle]
 pub extern "C" fn linux_sendfile_query(id: u64) -> i32 {
     with_state(false, |s| {
@@ -2047,10 +2061,15 @@ pub extern "C" fn linux_execution_retire(id: u64) -> i32 {
             }
         }
         if !slot.execution.retireable()
-            || slot
-                .continuation
-                .as_ref()
-                .is_some_and(|c| c.sendfile_pending() || c.sendfile_references(&slot.execution))
+            || {
+                #[cfg(not(feature = "capture-v1"))]
+                {
+                    slot.continuation.as_ref().is_some_and(|c|
+                        c.sendfile_pending() || c.sendfile_references(&slot.execution))
+                }
+                #[cfg(feature = "capture-v1")]
+                { false }
+            }
             || s.sealed
                 .as_ref()
                 .is_some_and(|r| r.reads.references(&slot.execution))

@@ -15,12 +15,13 @@ use crate::effect::{Completion, Token};
 use crate::execution::{self, Execution, Invocation, Phase, Snapshot};
 use crate::lease::{self, Domain};
 use crate::read::{self, Reads};
+#[cfg(not(feature = "capture-v1"))]
 use crate::sendfile::{self, AccessEvidence, CapabilityReceipt, CapabilityRequest, Sendfile};
 use crate::single_task::SingleTask;
 use crate::{credentials::Credentials, fs_context::Ticket};
-#[cfg(any(test, feature = "queued-worker-probe"))]
+#[cfg(any(test, feature = "queued-worker-probe", feature = "capture-v1"))]
 mod captured_write;
-#[cfg(any(test, feature = "queued-worker-probe"))]
+#[cfg(any(test, feature = "queued-worker-probe", feature = "capture-v1"))]
 use descriptor::capture;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -31,8 +32,9 @@ pub(crate) enum Error {
     Read(read::Error),
     Lease(lease::Error),
     Files(descriptor::Error),
+    #[cfg(not(feature = "capture-v1"))]
     Sendfile(sendfile::Error),
-    #[cfg(any(test, feature = "queued-worker-probe"))]
+    #[cfg(any(test, feature = "queued-worker-probe", feature = "capture-v1"))]
     Capture(capture::Error),
 }
 impl From<execution::Error> for Error {
@@ -50,6 +52,7 @@ impl From<lease::Error> for Error {
         Self::Lease(e)
     }
 }
+#[cfg(not(feature = "capture-v1"))]
 impl From<sendfile::Error> for Error {
     fn from(e: sendfile::Error) -> Self {
         Self::Sendfile(e)
@@ -85,22 +88,25 @@ pub(crate) enum Step {
         sequence: u32,
         base: u64,
     },
+    #[cfg(not(feature = "capture-v1"))]
     SendfileCapability {
         action: Token,
         sequence: u32,
         endpoint: u64,
     },
+    #[cfg(not(feature = "capture-v1"))]
     SendfileLoad {
         action: Token,
         sequence: u32,
     },
+    #[cfg(not(feature = "capture-v1"))]
     SendfileOffer {
         action: Token,
         sequence: u32,
         endpoint: u64,
         length: u64,
     },
-    #[cfg(any(test, feature = "queued-worker-probe"))]
+    #[cfg(any(test, feature = "queued-worker-probe", feature = "capture-v1"))]
     CaptureWrite {
         call: capture::CallId,
         at: u64,
@@ -166,6 +172,7 @@ pub(crate) enum PathOutcome {
     Failed,
     Unknown,
 }
+#[cfg(not(feature = "capture-v1"))]
 struct SendfilePending {
     owner: Sendfile,
     cap_request: Option<CapabilityRequest>,
@@ -173,14 +180,17 @@ struct SendfilePending {
 // The whole physical owner participates, including a terminal receipt whose
 // capability ticket has not yet been observed. Ordinary builds retain their
 // exact Option<SendfilePending> representation, with no additional tag.
-#[cfg(any(test, feature = "queued-worker-probe"))]
+#[cfg(all(not(feature = "capture-v1"), any(test, feature = "queued-worker-probe")))]
 enum OutputOwner {
     Physical(SendfilePending),
     Captured(capture::WriteCall),
 }
-#[cfg(not(any(test, feature = "queued-worker-probe")))]
+#[cfg(all(not(feature = "capture-v1"), not(any(test, feature = "queued-worker-probe"))))]
 type OutputOwner = SendfilePending;
+#[cfg(feature = "capture-v1")]
+type OutputOwner = capture::WriteCall;
 /// Private diagnostic scalars, not a physical capability or guest result.
+#[cfg(not(feature = "capture-v1"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SendfileStatus {
     pub phase: sendfile::Phase,
@@ -221,6 +231,7 @@ fn file_error(error: descriptor::Error) -> Result<i64, Error> {
 /// Only callback-free, fully rolled-back sendfile begin errors reach here.
 /// Keep this narrower than all file_error cases; Domain/Busy/identity/source
 /// failures are transport/internal failures, never invented Linux errno.
+#[cfg(not(feature = "capture-v1"))]
 fn sendfile_admission_error(error: sendfile::Error) -> Result<Step, Error> {
     match error {
         sendfile::Error::Unsupported40
@@ -292,6 +303,7 @@ impl Continuation {
         self.output.is_some()
     }
 
+    #[cfg(not(feature = "capture-v1"))]
     #[inline(always)]
     fn sendfile(&self) -> Option<&SendfilePending> {
         #[cfg(any(test, feature = "queued-worker-probe"))]
@@ -303,6 +315,7 @@ impl Continuation {
         self.output.as_ref()
     }
 
+    #[cfg(not(feature = "capture-v1"))]
     #[inline(always)]
     fn sendfile_mut(&mut self) -> Option<&mut SendfilePending> {
         #[cfg(any(test, feature = "queued-worker-probe"))]
@@ -314,6 +327,7 @@ impl Continuation {
         self.output.as_mut()
     }
 
+    #[cfg(not(feature = "capture-v1"))]
     #[inline(always)]
     fn install_sendfile(&mut self, owner: SendfilePending) {
         #[cfg(any(test, feature = "queued-worker-probe"))]
@@ -324,6 +338,7 @@ impl Continuation {
         self.output = Some(owner);
     }
 
+    #[cfg(not(feature = "capture-v1"))]
     #[inline(always)]
     fn clear_sendfile(&mut self) {
         #[cfg(any(test, feature = "queued-worker-probe"))]
@@ -443,6 +458,12 @@ impl Continuation {
         next: u64,
     ) -> Result<Step, Error> {
         self.admit_request(domain, execution, invocation, sequence)?;
+        #[cfg(feature = "capture-v1")]
+        if nr == 40 {
+            // The distinct captured ingress has not been selected yet.
+            return Ok(Step::Unsupported(40));
+        }
+        #[cfg(not(feature = "capture-v1"))]
         if nr == 40 {
             let Some(sequence) = sequence else {
                 return Ok(Step::Unsupported(40));
@@ -609,7 +630,7 @@ impl Continuation {
             // The staged captured target has no physical endpoint. Until a
             // real captured write route exists it cannot become a host command,
             // including zero-count writes. It is not readable.
-            #[cfg(any(test, feature = "queued-output-probe"))]
+            #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
             if target == descriptor::Target::CapturedOutput {
                 return Ok(if nr == 0 {
                     Step::Return(-9)
@@ -630,6 +651,12 @@ impl Continuation {
                 };
                 if direction != wanted {
                     return Ok(Step::Return(-9));
+                }
+                #[cfg(feature = "capture-v1")]
+                if write {
+                    // A malformed borrowed-output table cannot bypass capture.
+                    // Stdin still needs the physical read transport below.
+                    return Ok(Step::Unsupported(nr));
                 }
                 // Stream consumes irreversibly: unlike resident file clipping,
                 // validate the full requested range before any host command.
@@ -736,7 +763,11 @@ impl Continuation {
         }
     }
     pub(crate) fn owns(&self, token: Token) -> bool {
-        #[cfg(any(test, feature = "queued-worker-probe"))]
+        #[cfg(feature = "capture-v1")]
+        if self.output.as_ref().is_some_and(|owner| owner.id().action == token) {
+            return true;
+        }
+        #[cfg(all(not(feature = "capture-v1"), any(test, feature = "queued-worker-probe")))]
         if let Some(OutputOwner::Captured(owner)) = &self.output {
             if owner.id().action == token {
                 return true;
@@ -745,25 +776,34 @@ impl Continuation {
         self.stream.as_ref().is_some_and(|p| p.action == token)
             || self.opening.as_ref().is_some_and(|p| p.action == token)
             || self.register.as_ref().is_some_and(|p| p.action == token)
-            || self.sendfile().is_some_and(|p| p.owner.owns(token))
+            || {
+                #[cfg(not(feature = "capture-v1"))]
+                { self.sendfile().is_some_and(|p| p.owner.owns(token)) }
+                #[cfg(feature = "capture-v1")]
+                { false }
+            }
     }
     /// Includes terminal observations until removed; unfinished owners must not
     /// be dropped by execution retirement even if their core view has ended.
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_pending(&self) -> bool {
         #[cfg(any(test, feature = "queued-worker-probe"))]
         return matches!(&self.output, Some(OutputOwner::Physical(_)));
         #[cfg(not(any(test, feature = "queued-worker-probe")))]
         self.has_byte_output()
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_references(&self, execution: &Execution) -> bool {
         self.sendfile()
             .is_some_and(|p| p.owner.references(execution))
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_view(&self) -> Option<(u32, Token)> {
         self.sendfile()
             .filter(|p| p.owner.viewing())
             .and_then(|p| Some((p.owner.sequence()?, p.owner.action()?)))
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_query(
         &self,
         execution: &Execution,
@@ -780,6 +820,7 @@ impl Continuation {
             finished: p.owner.finished(),
         }))
     }
+    #[cfg(not(feature = "capture-v1"))]
     fn sync_sendfile_closed(&mut self) {
         if self
             .sendfile()
@@ -788,6 +829,7 @@ impl Continuation {
             self.closed = true;
         }
     }
+    #[cfg(not(feature = "capture-v1"))]
     fn sendfile_step(&mut self, execution: &Execution) -> Result<Step, Error> {
         self.sync_sendfile_closed();
         let p = self.sendfile().ok_or(Error::State)?;
@@ -837,6 +879,7 @@ impl Continuation {
             _ => Step::Waiting,
         })
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_cap_start(
         &mut self,
         files: &mut Files,
@@ -859,6 +902,7 @@ impl Continuation {
         self.sendfile_mut().unwrap().cap_request = Some(request);
         Ok(endpoint)
     }
+    #[cfg(not(feature = "capture-v1"))]
     fn finish_sendfile_cap(
         &mut self,
         files: &mut Files,
@@ -886,6 +930,7 @@ impl Continuation {
         result?;
         self.sendfile_step(execution)
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_cap_finish_rejected(
         &mut self,
         files: &mut Files,
@@ -906,6 +951,7 @@ impl Continuation {
         )
     }
     #[cfg(any(test, feature = "sendfile-probe"))]
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_cap_finish_synthetic(
         &mut self,
         files: &mut Files,
@@ -925,6 +971,7 @@ impl Continuation {
             CapabilityReceipt::synthetic_accepted,
         )
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_load_start(
         &mut self,
         files: &mut Files,
@@ -941,6 +988,7 @@ impl Continuation {
         self.sync_sendfile_closed();
         result.map_err(Into::into)
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_load_finish(
         &mut self,
         files: &mut Files,
@@ -963,6 +1011,7 @@ impl Continuation {
         result?;
         self.sendfile_step(execution)
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_start(
         &mut self,
         files: &mut Files,
@@ -979,6 +1028,7 @@ impl Continuation {
         self.sync_sendfile_closed();
         result.map_err(Into::into)
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_receipt(
         &mut self,
         files: &mut Files,
@@ -1002,6 +1052,7 @@ impl Continuation {
         self.sendfile_step(execution)
     }
     #[cfg(any(test, feature = "sendfile-probe"))]
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_access_ended_synthetic(
         &mut self,
         files: &Files,
@@ -1020,6 +1071,7 @@ impl Continuation {
             .access_ended(files, domain, execution, receipt)
             .map_err(Into::into)
     }
+    #[cfg(not(feature = "capture-v1"))]
     pub(crate) fn sendfile_cleanup_retry(
         &mut self,
         files: &mut Files,
@@ -1374,12 +1426,18 @@ impl Continuation {
     ) -> Result<bool, Error> {
         self.owner(execution)?;
         execution.check_domain(domain)?;
-        #[cfg(any(test, feature = "queued-worker-probe"))]
+        #[cfg(feature = "capture-v1")]
+        if self.output.is_some() {
+            // Captured cancellation needs the exact lane/registry context.
+            return Ok(false);
+        }
+        #[cfg(all(not(feature = "capture-v1"), any(test, feature = "queued-worker-probe")))]
         if matches!(&self.output, Some(OutputOwner::Captured(_))) {
             // Captured cancellation needs the exact lane/registry context.
             // This generic path cannot certify retirement of that owner.
             return Ok(false);
         }
+        #[cfg(not(feature = "capture-v1"))]
         if self.output.is_some() {
             self.closed = true;
             #[cfg(not(any(test, feature = "queued-worker-probe")))]
@@ -1554,6 +1612,7 @@ mod tests {
         let i = e.start(&mut d).unwrap();
         (f, table, r, d, e, c, i, fd)
     }
+    #[cfg(not(feature = "capture-v1"))]
     #[test]
     fn stream_admission_full_range_direction_and_zero() {
         let (mut f, t, mut r, mut d, mut e, mut c, i, _) = setup(false);
@@ -1666,6 +1725,7 @@ mod tests {
         );
         assert!(d.change(e.binding(), 32).is_ok());
     }
+    #[cfg(not(feature = "capture-v1"))]
     #[test]
     fn stream_known_zero_errors_and_short_success_are_rust_results() {
         let (mut f, t, mut r, mut d, mut e, mut c, i, _) = setup(false);
@@ -3501,7 +3561,7 @@ mod open_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "capture-v1")))]
 mod sendfile_continuation_tests {
     // SYNTHETIC capability/access receipts only. These are Continuation owner
     // probes, not native endpoint, Wasm global guard, Worker or syscall40 proof.

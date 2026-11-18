@@ -2253,7 +2253,7 @@ mod tests {
                 ),
                 Ok(expected)
             );
-            assert!(!continuation.sendfile_pending());
+            assert!(!continuation.has_byte_output());
             assert!(execution.syscall_allowed(invocation).is_ok());
             sequence += 1;
         }
@@ -2275,6 +2275,11 @@ mod tests {
                 0,
             )
             .is_err());
+        let (nr, fd, expected) = if cfg!(feature = "capture-v1") {
+            (0, 0, (1, false)) // The capture-only profile still needs physical stdin.
+        } else {
+            (1, 1, (2, true)) // Ordinary stdout is still a physical command.
+        };
         let Step::Stream {
             endpoint,
             action,
@@ -2290,18 +2295,16 @@ mod tests {
                 &mut execution,
                 invocation,
                 sequence,
-                1,
-                [1, 0, 1, 0, 0, 0],
+                nr,
+                [fd, 0, 1, 0, 0, 0],
                 0,
             )
             .unwrap()
         else {
             panic!("physical control");
         };
-        assert_eq!(
-            (endpoint, write, action.sequence()),
-            (2, true, marker.sequence() + 1)
-        );
+        assert_eq!((endpoint, write), expected);
+        assert_eq!(action.sequence(), marker.sequence() + 1);
         assert!(continuation
             .abandon(&mut root.files, &mut reads, &mut domain, &mut execution)
             .unwrap());

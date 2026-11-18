@@ -39,6 +39,7 @@ export function verifiedCaptureCandidate(input: Uint8Array, pin: CaptureCandidat
   const names = new Map(exports.map(e => [e.name, e.kind]));
   if (WebAssembly.Module.imports(module).length || names.get('memory') !== 'memory' ||
       required.some(name => names.get(name) !== 'function') ||
+      exports.some(e => e.name.startsWith('linux_sendfile_')) ||
       ['linux_startup_begin', 'linux_startup_begin_stdio', 'linux_capture_startup',
         'linux_execution_create'].some(name => names.has(name))) {
     throw new Error('Unsupported Linux capture candidate surface');

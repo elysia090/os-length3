@@ -27,11 +27,11 @@ use super::mount::{self, Mounts, Place, Ticket};
 use std::collections::HashMap;
 use std::num::{NonZeroU64, NonZeroUsize};
 
-#[cfg(any(test, feature = "queued-output-probe"))]
+#[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
 mod output;
 #[cfg(all(target_arch = "wasm32", feature = "queued-output-probe"))]
 pub(crate) use output::{QueueProbe, QueueProbeError};
-#[cfg(any(test, feature = "queued-worker-probe"))]
+#[cfg(any(test, feature = "queued-worker-probe", feature = "capture-v1"))]
 pub(crate) use output::capture;
 #[cfg(all(target_arch = "wasm32", feature = "queued-worker-probe"))]
 pub(crate) use output::{SinkEvidence, SinkOutcome};
@@ -141,14 +141,14 @@ pub(crate) enum Target {
         endpoint: u64,
         direction: StreamDirection,
     },
-    #[cfg(any(test, feature = "queued-output-probe"))]
+    #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
     CapturedOutput,
 }
 #[derive(Debug)]
 #[must_use = "release after host access has stopped; dropping retains the description"]
 pub(crate) struct StreamHold(Id);
 /// One retained captured OFD, not a consumer or an external access receipt.
-#[cfg(any(test, feature = "queued-output-probe"))]
+#[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
 #[derive(Debug)]
 #[must_use = "return the held output description through Files"]
 pub(crate) struct OutputHold(Id);
@@ -162,7 +162,7 @@ enum DescriptionTarget {
         endpoint: u64,
         direction: StreamDirection,
     },
-    #[cfg(any(test, feature = "queued-output-probe"))]
+    #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
     CapturedOutput(output::DestinationId),
 }
 struct FileDescription {
@@ -389,7 +389,7 @@ pub(crate) struct Files {
     // Every read admission, including a later abort/count0, gets a distinct
     // incarnation. Offset revision alone cannot identify an aborted attempt.
     next_read_reservation: Option<NonZeroU64>,
-    #[cfg(any(test, feature = "queued-output-probe"))]
+    #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
     next_output_registry: Option<NonZeroU64>,
     #[cfg(any(test, feature = "queued-worker-probe"))]
     output_effects: crate::effect::Issuer,
@@ -457,13 +457,13 @@ impl Files {
             descriptions: Vec::new(),
             live_slots: 0,
             next_read_reservation: Some(NonZeroU64::MIN),
-            #[cfg(any(test, feature = "queued-output-probe"))]
+            #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
             next_output_registry: Some(NonZeroU64::MIN),
             #[cfg(any(test, feature = "queued-worker-probe"))]
             output_effects: crate::effect::Issuer::new(owner),
         }
     }
-    #[cfg(any(test, feature = "queued-output-probe"))]
+    #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
     fn issue_output_registry(&mut self) -> Result<NonZeroU64, Error> {
         let serial = self.next_output_registry.ok_or(Error::Overflow)?;
         self.next_output_registry = serial.get().checked_add(1).and_then(NonZeroU64::new);
@@ -1242,7 +1242,7 @@ impl Files {
     }
     /// Only the matching registry calls this with its already validated lanes.
     /// Captured descriptions contain no fallback physical endpoint.
-    #[cfg(any(test, feature = "queued-output-probe"))]
+    #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
     fn queued_stdio(
         &mut self,
         stdin: u64,
@@ -1317,7 +1317,7 @@ impl Files {
                 endpoint: *endpoint,
                 direction: *direction,
             },
-            #[cfg(any(test, feature = "queued-output-probe"))]
+            #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
             DescriptionTarget::CapturedOutput(_) => Target::CapturedOutput,
         })
     }
@@ -1356,7 +1356,7 @@ impl Files {
         self.release(hold.0);
         Ok(())
     }
-    #[cfg(any(test, feature = "queued-output-probe"))]
+    #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
     pub(crate) fn hold_output(&mut self, table: &Table, fd: u32) -> Result<OutputHold, Error> {
         let id = self.description(table, fd)?;
         let d = get(&self.descriptions, self.owner, id)?;
@@ -1367,14 +1367,14 @@ impl Files {
         self.descriptions[id.slot].value.as_mut().unwrap().refs = refs;
         Ok(OutputHold(id))
     }
-    #[cfg(any(test, feature = "queued-output-probe"))]
+    #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
     fn held_output(&self, hold: &OutputHold) -> Result<output::DestinationId, Error> {
         match get(&self.descriptions, self.owner, hold.0)?.target {
             DescriptionTarget::CapturedOutput(lane) => Ok(lane),
             _ => Err(Error::BadHandle),
         }
     }
-    #[cfg(any(test, feature = "queued-output-probe"))]
+    #[cfg(any(test, feature = "queued-output-probe", feature = "capture-v1"))]
     pub(crate) fn release_output(&mut self, hold: OutputHold) -> Result<(), (Error, OutputHold)> {
         if let Err(error) = self.held_output(&hold) {
             return Err((error, hold));

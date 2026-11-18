@@ -247,6 +247,23 @@ slot is back to 1,888 bytes and the global lexical fence stays small. These
 are compiler layout observations, not serialized ABI promises. This finding
 does not select a pool or establish actual startup in the ready profile.
 
+The next isolated comparison uses the existing non-probe candidate, not a
+second runner or a new general abstraction. Compile its wasm32 continuation
+with only `Option<WriteCall>` and exclude physical sendfile commands, exports
+and view scans. Until captured ingress is wired, even a sequenced sendfile
+cannot prepare a source through that artifact; startup remains unavailable.
+Keep the mixed probe for the two-arm controls and the normal artifact for
+physical capability rejection. Do not infer readiness from a smaller slot.
+An accidentally supplied physical-output table must not cause a borrowed
+write either. Physical stdin is separate: its actual admission remains
+available, and a captured output is still not readable.
+
+The measured capture-only candidate slot is 1,488 bytes, 400 below the
+mixed slot. The optional captured write owner is 216 bytes and the complete
+continuation is 936 bytes. Captured startup, receiver installation, and
+host policy are not included in this observation. Before calling the ready
+profile small, measure again with the actual lane/consumer/session state.
+
 A product sink session must retain the whole exact Core and native/JS owners
 through an ambiguous state and expose a bounded failure/retirement API. The
 diagnostic helper is not that API: it simply refuses reuse on ambiguity.

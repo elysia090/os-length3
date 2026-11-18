@@ -1,6 +1,8 @@
 //! One sequenced continuation owns its captured call. The probe transport no
 //! longer stores the call itself; only an exact raw lexical-view fence.
-use super::{capture, Continuation, Error, OutputOwner, Step, Table};
+#[cfg(not(feature = "capture-v1"))]
+use super::OutputOwner;
+use super::{capture, Continuation, Error, Step, Table};
 use capture::{CallId, Context, Finished, Request, WriteCall};
 
 impl Continuation {
@@ -24,11 +26,20 @@ impl Continuation {
             !self.has_byte_output(),
             "admitted captured owner requires an empty slot"
         );
-        self.output = Some(OutputOwner::Captured(pending));
+        #[cfg(not(feature = "capture-v1"))]
+        let pending = OutputOwner::Captured(pending);
+        self.output = Some(pending);
         Ok(Step::CaptureWrite { call, at, length })
     }
 
     fn capture_call_mut(&mut self, id: CallId) -> Result<&mut WriteCall, Error> {
+        #[cfg(feature = "capture-v1")]
+        return self
+            .output
+            .as_mut()
+            .filter(|owner| owner.id() == id)
+            .ok_or(Error::State);
+        #[cfg(not(feature = "capture-v1"))]
         match &mut self.output {
             Some(OutputOwner::Captured(owner)) if owner.id() == id => Ok(owner),
             _ => Err(Error::State),
@@ -36,6 +47,7 @@ impl Continuation {
     }
 
     fn clear_capture(&mut self) {
+        #[cfg(not(feature = "capture-v1"))]
         assert!(matches!(&self.output, Some(OutputOwner::Captured(_))));
         self.output = None;
     }

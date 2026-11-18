@@ -460,6 +460,107 @@ mod tests {
         Receipt { complete, access }
     }
 
+    #[cfg(feature = "capture-v1")]
+    #[test]
+    fn capture_only_declines_physical_output_even_if_given_an_ordinary_table() {
+        use crate::read::{ReadCapacity, Reads};
+        use crate::syscall::{Continuation, Step};
+        let mut g = Guest::new();
+        let mut c = Continuation::new(&g.execution).unwrap();
+        let ordinary = g.root.files.stdio([1, 20, 30], 8).unwrap();
+        let source = g.root.files.open(&ordinary, g.source, false).unwrap();
+        let invocation = g.invocation;
+        let mut reads = Reads::new(&g.root.files, ReadCapacity::new(1).unwrap());
+        assert_eq!(
+            c.enter_sequenced(
+                &mut g.root.files,
+                &ordinary,
+                None,
+                &mut reads,
+                &mut g.domain,
+                &mut g.execution,
+                invocation,
+                1,
+                40,
+                [1, source.into(), 0, 2, 0, 0],
+                16
+            ),
+            Ok(Step::Unsupported(40))
+        );
+        assert!(!c.has_byte_output());
+        assert_eq!(g.root.files.offset(&ordinary, source), Ok((0, 0)));
+        assert_eq!(
+            c.enter_sequenced(
+                &mut g.root.files,
+                &ordinary,
+                None,
+                &mut reads,
+                &mut g.domain,
+                &mut g.execution,
+                invocation,
+                2,
+                1,
+                [1, 5, 2, 0, 0, 0],
+                16
+            ),
+            Ok(Step::Unsupported(1))
+        );
+        assert!(!c.has_byte_output());
+        let ctx = Context {
+            files: &mut g.root.files,
+            lanes: &mut g.root.registry,
+            domain: &mut g.domain,
+            execution: &mut g.execution,
+        };
+        let Step::CaptureWrite { call, .. } = c
+            .admit_capture_write(
+                ctx,
+                &g.table,
+                Request {
+                    invocation,
+                    sequence: 3,
+                    fd: 1,
+                    at: 5,
+                    length: n(2),
+                },
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(c.has_byte_output() && c.owns(call.action));
+        assert_eq!(c.fill_native_capture(g.context(), call, b"AB").unwrap(), 5);
+        assert_eq!(
+            c.finish_native_capture(&mut g.context(), call, receipt(Some(2), Access::BothEnded)),
+            Ok(Finished::Accepted(n(2)))
+        );
+        assert!(!c.has_byte_output() && !c.owns(call.action));
+        assert_eq!(g.front().as_deref(), Some(&b"AB"[..]));
+        // Input transport is a different obligation, not the removed output arm.
+        assert!(matches!(
+            c.enter_sequenced(
+                &mut g.root.files,
+                &ordinary,
+                None,
+                &mut reads,
+                &mut g.domain,
+                &mut g.execution,
+                invocation,
+                4,
+                0,
+                [0, 5, 1, 0, 0, 0],
+                16
+            ),
+            Ok(Step::Stream {
+                endpoint: 1,
+                length: 1,
+                write: false,
+                ..
+            })
+        ));
+    }
+
+    #[cfg(not(feature = "capture-v1"))]
     #[test]
     fn output_slot_switches_arms_only_after_exact_ownership_retires() {
         use crate::read::{ReadCapacity, Reads};

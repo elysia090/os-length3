@@ -22,6 +22,7 @@ mod descriptor;
 
 mod read;
 
+#[cfg(not(feature = "capture-v1"))]
 mod sendfile;
 
 mod filesystem;
