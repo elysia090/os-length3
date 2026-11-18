@@ -25,7 +25,7 @@ use super::fs_context::{self, Base, Contexts};
 use super::inode::{Inode, Tree};
 use super::mount::{self, Mounts, Place, Ticket};
 use std::collections::HashMap;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU64, NonZeroUsize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Id {
@@ -152,7 +152,7 @@ struct FileDescription {
     inode: Inode,
     offset: u64,
     revision: u64,
-    reading: bool,
+    reading: Option<NonZeroU64>,
 }
 impl Description {
     fn file(&self) -> Result<&FileDescription, Error> {
@@ -180,6 +180,7 @@ enum PreparationPhase {
 #[must_use = "capture or abort after any dispatched loader has stopped"]
 #[derive(Debug)]
 pub(crate) struct ReadPreparation {
+    reservation: NonZeroU64,
     description: Id,
     inode: Inode,
     offset: u64,
@@ -317,6 +318,7 @@ pub(crate) struct LoadRequest {
 /// Owned pending reference to one OFD, not an fd number. Only Files resolves it.
 #[must_use = "finish or abort the read reservation; dropping retains the OFD reference"]
 pub(crate) struct ReadHold {
+    reservation: NonZeroU64,
     description: Id,
     inode: Inode,
     offset: u64,
@@ -338,6 +340,9 @@ pub(crate) struct Files {
     tables: Vec<Cell<TableState>>,
     descriptions: Vec<Cell<Description>>,
     live_slots: usize,
+    // Every read admission, including a later abort/count0, gets a distinct
+    // incarnation. Offset revision alone cannot identify an aborted attempt.
+    next_read_reservation: Option<NonZeroU64>,
 }
 fn prepare<T>(arena: &mut Vec<Cell<T>>, cap: usize, owner: u64) -> Result<Id, Error> {
     for (slot, cell) in arena.iter().enumerate() {
@@ -401,6 +406,7 @@ impl Files {
             tables: Vec::new(),
             descriptions: Vec::new(),
             live_slots: 0,
+            next_read_reservation: Some(NonZeroU64::MIN),
         }
     }
     /// Transfer storage only after admission; failure returns its entire ownership.
@@ -1008,7 +1014,7 @@ impl Files {
                     inode,
                     offset: 0,
                     revision: 0,
-                    reading: false,
+                    reading: None,
                 }),
             },
         );
@@ -1266,7 +1272,11 @@ impl Files {
     }
     pub(crate) fn set_offset(&mut self, table: &Table, fd: u32, offset: u64) -> Result<(), Error> {
         let id = self.description(table, fd)?;
-        if get(&self.descriptions, self.owner, id)?.file()?.reading {
+        if get(&self.descriptions, self.owner, id)?
+            .file()?
+            .reading
+            .is_some()
+        {
             return Err(Error::Busy);
         }
         let revision = get(&self.descriptions, self.owner, id)?
@@ -1300,7 +1310,7 @@ impl Files {
         let d = get(&self.descriptions, self.owner, id)?;
         let refs = d.refs.checked_add(1).ok_or(Error::Overflow)?;
         let d = d.file()?;
-        if d.reading {
+        if d.reading.is_some() {
             return Err(Error::Busy);
         }
         let inode = d.inode;
@@ -1320,10 +1330,13 @@ impl Files {
         {
             return Err(Error::NotSupported);
         }
+        let reservation = self.next_read_reservation.ok_or(Error::Overflow)?;
         let d = self.descriptions[id.slot].value.as_mut().unwrap();
         d.refs = refs;
-        d.file_mut()?.reading = true;
+        d.file_mut().expect("validated file admission").reading = Some(reservation);
+        self.next_read_reservation = reservation.get().checked_add(1).and_then(NonZeroU64::new);
         Ok(ReadPreparation {
+            reservation,
             description: id,
             inode,
             offset,
@@ -1582,7 +1595,7 @@ impl Files {
     }
     fn check_preparation(&self, prep: &ReadPreparation) -> Result<(), Error> {
         let d = get(&self.descriptions, self.owner, prep.description)?.file()?;
-        if !d.reading || d.inode != prep.inode || d.offset != prep.offset {
+        if d.reading != Some(prep.reservation) || d.inode != prep.inode || d.offset != prep.offset {
             return Err(Error::State);
         }
         Ok(())
@@ -1681,6 +1694,7 @@ impl Files {
             return Err((Error::Overflow, prep));
         }
         Ok(ReadHold {
+            reservation: prep.reservation,
             description: prep.description,
             inode: prep.inode,
             offset: prep.offset,
@@ -1704,7 +1718,7 @@ impl Files {
             .unwrap()
             .file_mut()
             .expect("validated file preparation")
-            .reading = false;
+            .reading = None;
         self.release(prep.description);
         Ok(())
     }
@@ -1740,6 +1754,7 @@ impl Files {
     }
 
     pub(crate) fn read_bytes(&mut self, hold: &ReadHold) -> &[u8] {
+        self.check_read_hold(hold).expect("held read owner");
         if hold.length == 0 {
             return &[];
         }
@@ -1758,29 +1773,39 @@ impl Files {
     /// were reserved before any copy; no conflicting offset writer is admitted.
     pub(crate) fn finish_read(&mut self, hold: ReadHold, copied: u64) {
         assert!(copied <= hold.length as u64);
+        self.check_read_hold(&hold).expect("held read owner");
         let d = self.descriptions[hold.description.slot]
             .value
             .as_mut()
             .unwrap()
             .file_mut()
             .expect("held file description");
-        assert!(d.reading);
+        assert_eq!(d.reading, Some(hold.reservation));
         d.offset = hold.offset + copied;
         d.revision = hold.next_revision;
-        d.reading = false;
+        d.reading = None;
         self.release(hold.description);
     }
 
     pub(crate) fn abort_read(&mut self, hold: ReadHold) {
+        self.check_read_hold(&hold).expect("held read owner");
         let d = self.descriptions[hold.description.slot]
             .value
             .as_mut()
             .unwrap()
             .file_mut()
             .expect("held file description");
-        assert!(d.reading);
-        d.reading = false;
+        assert_eq!(d.reading, Some(hold.reservation));
+        d.reading = None;
         self.release(hold.description);
+    }
+
+    fn check_read_hold(&self, hold: &ReadHold) -> Result<(), Error> {
+        let d = get(&self.descriptions, self.owner, hold.description)?.file()?;
+        if d.reading != Some(hold.reservation) || d.inode != hold.inode || d.offset != hold.offset {
+            return Err(Error::State);
+        }
+        Ok(())
     }
 
     pub(crate) fn cloexec(&self, table: &Table, fd: u32) -> Result<bool, Error> {
@@ -3922,5 +3947,139 @@ mod open_route_tests {
             .prepare_open_route(&table, &fs, &Credentials::initial_root(), -100)
             .unwrap();
         a.release_open_route(route).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod read_reservation_tests {
+    use super::*;
+
+    fn setup(owner: u64, slots: usize) -> (Files, Inode) {
+        let made = |mode| crate::inode::Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        };
+        let mut tree = Tree::new(owner - 1, 4, 4, 16, made(0o755)).unwrap();
+        let inode = tree
+            .file_take(tree.root(), b"f", made(0o600), &mut b"body".to_vec())
+            .unwrap();
+        (
+            Files::new(
+                owner,
+                tree,
+                Limits {
+                    contexts: 2,
+                    tables: 2,
+                    descriptions: 4,
+                    slots,
+                },
+            ),
+            inode,
+        )
+    }
+
+    #[test]
+    fn read_reservation_identity_survives_capture_but_not_abort_and_same_offset_readmission() {
+        let (mut f, inode) = setup(1402, 8);
+        let table = f.table(8).unwrap();
+        let fd = f.open(&table, inode, false).unwrap();
+        let alias = f.dup(&table, fd, 0, false).unwrap();
+        let first = f.reserve_read(&table, fd, 2).unwrap();
+        let old = (first.reservation, first.offset, first.next_revision);
+        f.abort_read(first);
+        let mut next = f.reserve_read(&table, alias, 2).unwrap();
+        assert_eq!((next.offset, next.next_revision), (old.1, old.2));
+        assert_ne!(
+            next.reservation, old.0,
+            "abort is not a reusable reservation"
+        );
+        let exact = next.reservation;
+        next.reservation = old.0; // Test-only stale A presented while B is live.
+        assert_eq!(f.check_read_hold(&next), Err(Error::State));
+        next.reservation = exact;
+        assert_eq!(f.check_read_hold(&next), Ok(()));
+        assert_eq!(f.set_offset(&table, fd, 0), Err(Error::Busy));
+        let nonempty_id = next.reservation;
+        f.finish_read(next, 1);
+        assert_eq!(f.offset(&table, fd).unwrap(), (1, 1));
+        let zero = f.reserve_read(&table, fd, 0).unwrap();
+        assert_eq!(zero.length(), 0);
+        assert_ne!(zero.reservation, nonempty_id);
+        let zero_id = zero.reservation;
+        f.finish_read(zero, 0);
+        assert_eq!(f.offset(&table, alias).unwrap(), (1, 1));
+        let last = f.reserve_read(&table, fd, 1).unwrap();
+        assert_ne!(last.reservation, zero_id);
+        f.abort_read(last);
+    }
+
+    #[test]
+    fn wrong_preparation_reservation_cannot_dispatch_or_capture_another_live_read() {
+        let (mut f, inode) = setup(1402, 8);
+        let table = f.table(8).unwrap();
+        let fd = f.open(&table, inode, false).unwrap();
+        let mut prep = f.begin_read(&table, fd, 2).unwrap();
+        let exact = prep.reservation;
+        prep.reservation = NonZeroU64::new(exact.get() + 1).unwrap();
+        assert_eq!(f.prepare_read(&mut prep), Err(Error::State));
+        let (error, mut prep) = f.capture_read(prep).err().unwrap();
+        assert_eq!(error, Error::State);
+        assert_eq!(f.offset(&table, fd).unwrap(), (0, 0));
+        assert_eq!(f.set_offset(&table, fd, 0), Err(Error::Busy));
+        prep.reservation = exact;
+        assert_eq!(f.prepare_read(&mut prep), Ok(None));
+        let hold = f.capture_read(prep).ok().unwrap();
+        assert_eq!(hold.reservation, exact);
+        f.abort_read(hold);
+        assert_eq!(f.offset(&table, fd).unwrap(), (0, 0));
+    }
+
+    #[test]
+    fn read_reservation_exhaustion_never_wraps_or_leaks_admission() {
+        let (mut f, inode) = setup(1402, 8);
+        let table = f.table(8).unwrap();
+        let fd = f.open(&table, inode, false).unwrap();
+        f.next_read_reservation = NonZeroU64::new(u64::MAX);
+        assert!(matches!(
+            f.begin_read(&table, u32::MAX, 1),
+            Err(Error::BadFd)
+        ));
+        assert_eq!(f.next_read_reservation.unwrap().get(), u64::MAX);
+        let last = f.reserve_read(&table, fd, 1).unwrap();
+        assert_eq!(last.reservation.get(), u64::MAX);
+        assert_eq!(f.next_read_reservation, None);
+        assert!(matches!(f.begin_read(&table, fd, 1), Err(Error::Busy)));
+        f.abort_read(last);
+        assert!(matches!(f.begin_read(&table, fd, 1), Err(Error::Overflow)));
+        assert_eq!(f.offset(&table, fd).unwrap(), (0, 0));
+        // Failed exhaustion did not keep a description ref or a reading lock.
+        f.set_offset(&table, fd, 0).unwrap();
+        let id = f.description(&table, fd).unwrap();
+        assert_eq!(get(&f.descriptions, f.owner, id).unwrap().refs, 1);
+        f.close(&table, fd).unwrap();
+        assert_eq!(f.open(&table, inode, false).unwrap(), fd);
+    }
+
+    #[test]
+    fn equal_local_read_numbers_never_validate_a_foreign_files_hold() {
+        let (mut a, ai) = setup(1402, 8);
+        let at = a.table(8).unwrap();
+        let af = a.open(&at, ai, false).unwrap();
+        let ah = a.reserve_read(&at, af, 2).unwrap();
+        let (mut b, bi) = setup(1404, 8);
+        let bt = b.table(8).unwrap();
+        let bf = b.open(&bt, bi, false).unwrap();
+        let bh = b.reserve_read(&bt, bf, 2).unwrap();
+        assert_eq!(ah.reservation, bh.reservation);
+        assert_eq!(ah.description.slot, bh.description.slot);
+        assert_eq!(a.check_read_hold(&bh), Err(Error::BadHandle));
+        assert_eq!(b.check_read_hold(&ah), Err(Error::BadHandle));
+        assert_eq!(a.check_read_hold(&ah), Ok(()));
+        assert_eq!(b.check_read_hold(&bh), Ok(()));
+        a.abort_read(ah);
+        b.finish_read(bh, 1);
+        assert_eq!(a.offset(&at, af).unwrap(), (0, 0));
+        assert_eq!(b.offset(&bt, bf).unwrap(), (1, 1));
     }
 }
