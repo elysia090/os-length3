@@ -6,15 +6,15 @@
 # the two programs it starts a box with (why/prompt/start.rs): muk, which makes it (ricebox/muk), and prompt,
 # which holds the other end of its terminal (ricebox/distribution/terminal).
 #
-#   sh scripts/desktop.sh [VERSION]
+#   sh why/build/desktop.sh [VERSION]
 #
 # The version is ricebox/distribution/RELEASE's unless given. why is static (musl) and has SSH, so it runs on any x86-64 Linux
-# whatever its libc; the root's own why (root-assemble.sh) is another build, without SSH. Needs Rust with the
+# whatever its libc; the root's own why (why/build/guest-root.sh) is another build, without SSH. Needs Rust with the
 # target x86_64-unknown-linux-musl, musl-gcc, Node 22, libgles2 and the Tauri build's packages (release.sh names
 # them).
 # The bundles are in target/release/bundle/{deb,appimage}.
 set -eu
-here=$(cd "$(dirname "$0")/.." && pwd)
+here=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$here"
 version=${1:-$(tr -d ' \n' < ricebox/distribution/RELEASE)}
 

@@ -74,7 +74,7 @@ export function pinnedDistros(rootRs: string): Pinned[] {
 
 /**
  * The version this tree ships: the newest whose desktop app it pins (its root is pinned in the same change,
- * scripts/pin-root.ts and pin-desktop.ts). ricebox/distribution/RELEASE names the version being made, which is shipped once the
+ * why/build/pin-root.ts and pin-desktop.ts). ricebox/distribution/RELEASE names the version being made, which is shipped once the
  * release has pinned it: the web, its build and the deploy take this one, never ricebox/distribution/RELEASE.
  */
 export function shipped(pins: DesktopPins = desktopPins as DesktopPins): string {

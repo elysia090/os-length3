@@ -62,7 +62,7 @@ and a C compiler for Muk.
 For Linux desktop development, install the WebKitGTK 4.1 and GTK 3 development
 packages, librsvg, and Ayatana AppIndicator. An x86-64 Linux release bundle
 also needs the Rust `x86_64-unknown-linux-musl` target, `musl-gcc`, and
-`libgles2`; its entry point is `sh scripts/desktop.sh`.
+`libgles2`; its entry point is `sh why/build/desktop.sh`.
 
 | Check | Command |
 | --- | --- |

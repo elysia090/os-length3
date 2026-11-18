@@ -102,7 +102,7 @@ $ why app
 Opened the app. Its window's close button, or why app close, closes it
 ```
 
-The .deb and the AppImage carry why beside the app (`scripts/desktop.sh`): the
+The .deb and the AppImage carry why beside the app (`why/build/desktop.sh`): the
 .deb puts `/usr/bin/why` on the PATH beside `/usr/bin/why-desktop`, so after
 `sudo apt install ./os-length3-linux-X.Y.Z-desktop-amd64.deb` both `why` and
 `why app` work at once, and the app runs that why for its Prompts and SSH. It
@@ -114,7 +114,7 @@ Wayland desktop, and its graphics: libEGL with a driver (`libegl1` and Mesa's
 `libegl-mesa0` on Debian and Ubuntu, there with any desktop). Everything else
 the window needs is in the AppImage, `libGLESv2` with it, which WebKitGTK opens
 only once it runs (a Debian 13 desktop has none, #37); the .deb has its
-packages say theirs. `scripts/desktop-smoke.sh` starts the AppImage as such a
+packages say theirs. `why/build/desktop-smoke.sh` starts the AppImage as such a
 machine does (a display of its own, the host's `libGLESv2` out of sight) and
 passes only on a window that drew; `release.sh` runs it on what it ships.
 
@@ -542,7 +542,7 @@ npm run selftest:cli           # why end to end against a Remote of its own (why
 npm run verify:remote          # the Remote on a real Postgres: DATABASE_URL (see Cloudflare deployment)
 npx tauri dev                  # window against the Vite dev server
 npx tauri build --debug --no-bundle
-sh scripts/desktop.sh          # the .deb and the AppImage as they ship, why beside the app
+sh why/build/desktop.sh          # the .deb and the AppImage as they ship, why beside the app
 node why/build/styles/prune.ts  # take out of the stylesheet the rules no element can match (--dry: only say which)
 node why/build/styles/split.ts  # the stylesheet in parts by what each styles (why/app/styles/), in the cascade's order
 node why/build/styles/check.ts  # the stylesheet against HEAD's: the same rules in the same order, the same built CSS

@@ -364,7 +364,7 @@ jobs:
           echo "$out" | head -3
           echo "$out" | grep -q 'why issue new'
 
-  # The desktop app built and bundled on macOS, Windows and Linux on Arm, why beside it (as scripts/desktop.sh
+  # The desktop app built and bundled on macOS, Windows and Linux on Arm, why beside it (as why/build/desktop.sh
   # does on Linux x86-64). Prompts there run translated.
   desktop:
     name: Desktop (${{ matrix.target }})

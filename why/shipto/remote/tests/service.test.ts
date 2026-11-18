@@ -1280,7 +1280,7 @@ test('a release is public: its root by digest and the desktop app by its pinned 
   // Where the deploy puts a release: one folder a version, under names that say what each file is (releases.ts).
   const version = Object.keys(desktopPins)[0];
   await released(s, `release/${version}/os-length3-linux-${version}-x86_64.tar.zst`, sha, new Uint8Array(100).map((_, i) => i));
-  // The one version pinned (a release pins only itself: scripts/pin-desktop.ts).
+  // The one version pinned (a release pins only itself: why/build/pin-desktop.ts).
   const pinned = (desktopPins as Record<string, {deb: {file: string; sha256: string}; appimage: {file: string}}>)[version];
   const deb = pinned.deb.file, appimage = pinned.appimage.file;
   // With no budget (development), the desktop app is served at its pinned name whether the deploy recorded it or not.

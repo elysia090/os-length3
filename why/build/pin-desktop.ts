@@ -3,19 +3,20 @@
 // The release does it beside pin-root.ts, and both are proposed to main as one change (release.yml), so the
 // source says what was released. Only this version is pinned, as only its root is (pin-root.ts).
 //
-//   node scripts/pin-desktop.ts VERSION DEB APPIMAGE [--json FILE]
+//   node why/build/pin-desktop.ts VERSION DEB APPIMAGE [--json FILE]
 //
 // --json writes another file (for a test).
 
 import {createHash} from 'node:crypto';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {basename} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 const args = process.argv.slice(2);
-const at = args.includes('--json') ? args.splice(args.indexOf('--json'), 2)[1] : new URL('../why/shipto/desktop-releases.json', import.meta.url).pathname;
+const at = args.includes('--json') ? args.splice(args.indexOf('--json'), 2)[1] : fileURLToPath(new URL('../shipto/desktop-releases.json', import.meta.url));
 const [version, deb, appimage] = args;
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(version ?? '') || !deb || !appimage) {
-  console.error('node scripts/pin-desktop.ts VERSION DEB APPIMAGE [--json FILE]');
+  console.error('node why/build/pin-desktop.ts VERSION DEB APPIMAGE [--json FILE]');
   process.exit(2);
 }
 const pin = (file: string) => {

@@ -1,15 +1,13 @@
 #!/bin/sh
-# The AppImage as a machine without the build's extra libraries starts it (#37): unpacked, its AppRun is run on a
-# display of its own (Xvfb) inside a sandbox (bwrap) whose view of the host has no libGLESv2 (libgles2, which a
-# Debian 13 desktop does not have), so the GL that WebKitGTK opens while it runs, not only what ldd lists, has to
-# come from the AppImage. It passes when the app is still up after a while and its window has drawn something;
-# the screen is kept as smoke.png beside the AppImage. The host itself is not changed.
+# Start the unpacked AppImage in a sandbox without the host's libGLESv2.
+# A pass requires the application to remain open and draw a window. The
+# screenshot is written beside the AppImage.
 #
-#   sh scripts/desktop-smoke.sh path/to/os-length3-linux-X.Y.Z-desktop-x86_64.AppImage
+#   sh why/build/desktop-smoke.sh path/to/os-length3-linux-X.Y.Z-desktop-x86_64.AppImage
 #
 # Needs bubblewrap, Xvfb and ImageMagick (import, convert).
 set -eu
-[ $# -eq 1 ] || { echo "usage: sh scripts/desktop-smoke.sh APPIMAGE" >&2; exit 2; }
+[ $# -eq 1 ] || { echo "usage: sh why/build/desktop-smoke.sh APPIMAGE" >&2; exit 2; }
 image=$(readlink -f "$1")
 tmp=$(mktemp -d)
 app=''; x=''

@@ -102,7 +102,7 @@ test('mirror: a file its makers publish is taken from their URL, without the tok
 });
 
 test('the pins: every root why/prompt/roots/pins.rs pins, newest first, and the desktop app of a version, by its file', () => {
-  // One at least: main pins the newest release alone (scripts/pin-root.ts), which a release makes as it is made.
+  // One at least: main pins the newest release alone (why/build/pin-root.ts), which a release makes as it is made.
   const roots = pinnedRoots(readFileSync(new URL('../../../prompt/roots/pins.rs', import.meta.url), 'utf8'));
   assert.ok(roots.length >= 1);
   for (const r of roots) {

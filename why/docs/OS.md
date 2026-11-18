@@ -242,7 +242,7 @@ the same thing for the desktop app and for the web.
   `os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst`. One entry of
   `why/prompt/roots/pins.rs` RELEASES pins it, for both ways in: `sha256` and
   `bytes`, the root; `web`, the sha256 of the index the browser reads the
-  same root by. The release writes that entry (`scripts/pin-root.ts`) and
+  same root by. The release writes that entry (`why/build/pin-root.ts`) and
   it is committed; nothing else pins why.
 - **What it holds.** Sixty-three packages, each made from the source this
   tree pins (`ricebox/distribution/pins/sources.env`) by its recipe

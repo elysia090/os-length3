@@ -1,18 +1,16 @@
 #!/bin/sh
-# Build the web release of why* from source: the app's web build with
-# The web root (why/app/public/webroot: the release root itself, as the browser
-# reads it, with sods; why/build/webroot.sh). Nothing is built
-# beside the root: its BusyBox, why and /etc are the Prompt's. Output: dist/
-# and why-web.zip with its sha256.
+# Build the Why web application and bundle the selected guest root.
+# Outputs: dist/, why-web.zip and why-web.zip.sha256.
 #
-#   sh scripts/web-release.sh [ROOT.tar.zst]
+#   sh why/build/web-release.sh [ROOT.tar.zst]
 #
 # ROOT is the release root (by default the newest why/prompt/roots/pins.rs pins,
 # fetched by why/build/fetch-root.ts); with WEBROOT_READY=1, a why/app/public/webroot
-# made already from it is kept. Needs node 22, cargo with the
-# wasm32-unknown-unknown target, and zip.
+# already built from it is kept. Requires Node 22, zip, and Rust with the
+# wasm32-wasip1 target. Rebuilding the root also needs wasm32-unknown-unknown
+# and a C compiler for Muk.
 set -eu
-here=$(cd "$(dirname "$0")/.." && pwd)
+here=$(cd "$(dirname "$0")/../.." && pwd)
 
 if [ "${WEBROOT_READY:-}" = 1 ] && [ -f "$here/why/app/public/webroot/webroot.json" ]; then
   echo "keeping $here/why/app/public/webroot"

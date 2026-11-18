@@ -11,7 +11,7 @@
 // alone and keeps the root it had beside it, and the releases no longer
 // pinned are deleted (.github/workflows/prune-releases.yml).
 //
-//   node scripts/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]
+//   node why/build/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]
 //
 // WEB is the web root made from that root (why/app/public/webroot); its webroot.json
 // must name this root. --rs writes another root/ (for a test).
@@ -19,13 +19,14 @@
 import {createHash} from 'node:crypto';
 import {readFileSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 const args = process.argv.slice(2);
-const rsAt = args.includes('--rs') ? args.splice(args.indexOf('--rs'), 2)[1] : new URL('../why/prompt/roots/pins.rs', import.meta.url).pathname;
+const rsAt = args.includes('--rs') ? args.splice(args.indexOf('--rs'), 2)[1] : fileURLToPath(new URL('../prompt/roots/pins.rs', import.meta.url));
 const [file, web] = args;
 const name = file ? basename(file) : '';
 const m = /^os-length3-linux-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)-x86_64-[0-9a-f]{64}\.tar\.zst$/.exec(name);
-if (!m) { console.error('node scripts/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]'); process.exit(2); }
+if (!m) { console.error('node why/build/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]'); process.exit(2); }
 const version = m[1];
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const sha256 = sha(readFileSync(file));

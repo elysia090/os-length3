@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite --config why/app/vite.config.ts",
     "build": "tsc --noEmit && vite build --config why/app/vite.config.ts",
-    "build:cloudflare": ". scripts/rust.sh && node why/build/fetch-webroot.ts && VITE_LENGTH3_REMOTE= npm run build",
+    "build:cloudflare": ". why/build/rust.sh && node why/build/fetch-webroot.ts && VITE_LENGTH3_REMOTE= npm run build",
     "check": "tsc --noEmit && npm test",
     "test": "node scripts/tests.ts",
     "selftest:cli": "tsc -p why/test/cli && node --test \"why/test/cli/*.test.ts\"",
@@ -18,7 +18,7 @@
     "tauri": "tauri",
     "webroot": "sh why/build/webroot.sh",
     "webroot:parity": "node ricebox/distribution/verification/distribution.ts",
-    "web-release": "sh scripts/web-release.sh"
+    "web-release": "sh why/build/web-release.sh"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.16",

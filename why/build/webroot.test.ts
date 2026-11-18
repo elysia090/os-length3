@@ -102,7 +102,7 @@ test('a pack or an index that is not the root is caught', () => {
 test('one entry pins why for both: the root, and the index the browser reads it by', () => {
   const rs = join(work, 'root.rs');
   copyFileSync(join(os, 'why/prompt/roots/pins.rs'), rs);
-  const r = node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', rs]);
+  const r = node([join(os, 'why/build/pin-root.ts'), rootFile, out, '--rs', rs]);
   assert.equal(r.status, 0, r.stderr);
   const pinnedRicebox = readFileSync(rs, 'utf8');
   assert.match(pinnedRicebox, /name: "ricebox"/);
@@ -112,17 +112,17 @@ test('one entry pins why for both: the root, and the index the browser reads it 
   assert.equal(pins.length, 1);
   assert.deepEqual([pins[0]?.version, pins[0]?.sha256, pins[0]?.web, pins[0]?.bytes], ['9.9.9', about.sha256, about.index.sha256, statSync(rootFile).size]);
   // Again: nothing changes. Another index for a root pinned with one: refused, never changed.
-  assert.match(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', rs]).stdout, /pinned already/);
+  assert.match(node([join(os, 'why/build/pin-root.ts'), rootFile, out, '--rs', rs]).stdout, /pinned already/);
   const historical = pinnedRicebox.replace('name: "ricebox"', 'name: "OS Length3 Linux"');
   writeFileSync(rs, historical.replace(`web: "${about.index.sha256}"`, 'web: ""'));
-  assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', rs]).status, 0);
+  assert.equal(node([join(os, 'why/build/pin-root.ts'), rootFile, out, '--rs', rs]).status, 0);
   assert.equal(readFileSync(rs, 'utf8'), historical, 'adding a web pin does not rename a historical root');
   const other = join(work, 'other');
   cpSync(out, other, {recursive: true});
   const json = Buffer.concat([readFileSync(join(other, about.index.path)), Buffer.from(' ')]);
   writeFileSync(join(other, about.index.path), json);
   writeFileSync(join(other, 'webroot.json'), JSON.stringify({...about, index: {...about.index, sha256: sha(json)}}));
-  assert.match(node([join(os, 'scripts/pin-root.ts'), rootFile, other, '--rs', rs]).stderr, /a released index is never changed/);
+  assert.match(node([join(os, 'why/build/pin-root.ts'), rootFile, other, '--rs', rs]).stderr, /a released index is never changed/);
 });
 
 function copyPromptSources(tree: string) {
@@ -146,7 +146,7 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
   // A tree as fetch-webroot.ts reads it: the pins, newest 9.9.9, and the scripts; and a release that has why's tar.
   const tree = join(work, 'repo');
   copyPromptSources(tree);
-  assert.equal(node([join(os, 'scripts/pin-root.ts'), rootFile, out, '--rs', join(tree, 'why/prompt/roots/pins.rs')]).status, 0);
+  assert.equal(node([join(os, 'why/build/pin-root.ts'), rootFile, out, '--rs', join(tree, 'why/prompt/roots/pins.rs')]).status, 0);
 
   const tarOf = (dir: string) => execFileSync('tar', ['-C', dir, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax', '-cf', '-', '.'], {maxBuffer: 1 << 28});
   let tar = tarOf(out);

@@ -66,24 +66,24 @@ tar -C why/app/public/webroot --sort=name --mtime=@0 --owner=0 --group=0 --numer
   --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -cf "$out/$webroot" .
 
 # One entry pins both ways in, before anything that trusts it is built.
-node scripts/pin-root.ts "$root" why/app/public/webroot
+node why/build/pin-root.ts "$root" why/app/public/webroot
 
 # The web build (it checks the types and runs the tests) and the desktop app.
-WEBROOT_READY=1 sh scripts/web-release.sh
+WEBROOT_READY=1 sh why/build/web-release.sh
 web=os-length3-linux-$version-web.zip
 mv why-web.zip "$out/$web"
 rm -f why-web.zip.sha256
-# The app with why beside it (scripts/desktop.sh): the command line, and what its Prompt and SSH run. It runs its
+# The app with why beside it (why/build/desktop.sh): the command line, and what its Prompt and SSH run. It runs its
 # Prompt on the machine, from the root it installs: its build leaves the web root out (vite.config.ts).
-sh scripts/desktop.sh "$version"
+sh why/build/desktop.sh "$version"
 deb=os-length3-linux-$version-desktop-amd64.deb
 appimage=os-length3-linux-$version-desktop-x86_64.AppImage
 cp target/release/bundle/deb/*_"$version"_*.deb "$out/$deb"
 cp target/release/bundle/appimage/*_"$version"_*.AppImage "$out/$appimage"
 # Started as a machine without the build's extra libraries starts it (#37): a window, or no release.
-sh scripts/desktop-smoke.sh "$out/$appimage"
+sh why/build/desktop-smoke.sh "$out/$appimage"
 mv "$out/smoke.png" "$out/../smoke.png"
-node scripts/pin-desktop.ts "$version" "$out/$deb" "$out/$appimage"
+node why/build/pin-desktop.ts "$version" "$out/$deb" "$out/$appimage"
 
 cd "$out"
 sha256sum "$webroot" "$web" "$deb" "$appimage" $film >> SHA256SUMS
