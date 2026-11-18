@@ -1,8 +1,10 @@
-//! Synchronous prepared-namespace executable path lookup. Returns a nonholding
+//! Synchronous prepared-namespace path lookup. Returns a nonholding
 //! Place, not an executable authorization or a source pin. No callback/mutation
 //! may interleave this borrow; acquire the final hold before asynchronous work.
-//! No openat flags, missing-terminal creation, magic links, BENEATH, IN_ROOT or
-//! NO_XDEV contract is exposed. Root/cwd and mount ascent use Files' FsContext.
+//! The open caller may supply a pinned relative starting position and preserve
+//! a terminal symlink. Raw openat flags, missing-terminal creation, magic links,
+//! BENEATH, IN_ROOT and NO_XDEV are not implemented here. Root/cwd and mount ascent
+//! use Files' captured FsContext.
 //! Frames borrow targets instead of repeatedly concatenating target + suffix.
 //! At most 40 followed symlinks and 41 frames (three machine words each:
 //! 984 bytes on a 64-bit host, 492 on wasm32), plus the current Place. Each
@@ -59,6 +61,19 @@ pub(crate) fn resolve<'a>(
     cred: &Credentials,
     path: &'a [u8],
 ) -> Result<Place, Error> {
+    resolve_at(files, fs, cred, path, Ok(None), true)
+}
+
+/// A captured dirfd failure is applied only to a nonempty valid relative path.
+/// The supplied Place is held by the open operation, never resolved again by FD.
+pub(crate) fn resolve_at<'a>(
+    files: &'a Files,
+    fs: &Ticket,
+    cred: &Credentials,
+    path: &'a [u8],
+    relative: Result<Option<&Place>, descriptor::Error>,
+    follow_terminal: bool,
+) -> Result<Place, Error> {
     if path.is_empty() {
         return Err(Error::NotFound);
     }
@@ -68,14 +83,13 @@ pub(crate) fn resolve<'a>(
     if path.len() > 4095 {
         return Err(Error::NameTooLong);
     }
-    let mut current = files.fs_start(
-        fs,
-        if path[0] == b'/' {
-            Base::Root
-        } else {
-            Base::Cwd
-        },
-    )?;
+    let mut current = if path[0] == b'/' {
+        files.fs_start(fs, Base::Root)?
+    } else if let Some(start) = relative? {
+        files.copy_place(start)?
+    } else {
+        files.fs_start(fs, Base::Cwd)?
+    };
     let mut frames = [Frame { bytes: &[], at: 0 }; 41];
     frames[0] = Frame { bytes: path, at: 0 };
     let mut depth = 0;
@@ -100,6 +114,7 @@ pub(crate) fn resolve<'a>(
             frame.at += 1;
         }
         let component = &frame.bytes[start..frame.at];
+        let at_end = frame.at == frame.bytes.len();
         directory(files, &current, Some(cred))?;
         if component.len() > 255 {
             return Err(Error::NameTooLong);
@@ -117,6 +132,9 @@ pub(crate) fn resolve<'a>(
         if files.place_metadata(&next)?.mode & KIND != SYMLINK {
             current = next;
             continue;
+        }
+        if !follow_terminal && at_end && frames[..depth].iter().all(|f| f.at == f.bytes.len()) {
+            return Ok(next);
         }
         if followed == 40 || files.view_policy(&next)?.no_symfollow {
             return Err(Error::Loop);

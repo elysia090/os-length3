@@ -73,7 +73,10 @@ from allocation/domain-capacity failure before FD publication.
    the physical tail was shorter than 4096, or ENAMETOOLONG at 4096. A NUL first
    gives the owned path, at most 4095 bytes. Empty input is ENOENT before dirfd
    errors. Invalid/duplicate/stale receipts do not release another operation.
-6. Resolve synchronously in Rust. Absolute paths start at the captured root;
+6. After capture/empty/length validation, reserve the lowest free FD capacity
+   before relative-dirfd/lookup/DAC errors, matching native EMFILE precedence.
+   Reservation allocates capacity but publishes no slot; no callback can steal it.
+   Resolve synchronously in Rust. Absolute paths start at the captured root;
    relative paths apply the captured dirfd result or cwd. Search is checked on
    each directory traversed, with held mount topology and byte-component paths.
    No callback or namespace mutation interleaves lookup and final publication.

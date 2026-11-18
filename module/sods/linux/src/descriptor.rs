@@ -40,6 +40,8 @@ pub(crate) struct Table(Id);
 pub(crate) enum Error {
     BadHandle,
     BadFd,
+    FdLimit,
+    NotDirectory,
     Capacity,
     Overflow,
     NotSupported,
@@ -61,6 +63,53 @@ struct Cell<T> {
     generation: u64,
     value: Option<T>,
 }
+/// Exact namespace/credential inputs retained by one guest open operation.
+/// Dropping this route is not release; the owning continuation must return it.
+#[must_use = "release through Files::release_open_route after the operation ends"]
+pub(crate) struct OpenRoute {
+    owner: u64,
+    fs: fs_context::Ticket,
+    credentials: crate::credentials::Credentials,
+    base: OpenBase,
+}
+enum OpenBase {
+    Cwd,
+    Held(mount::Hold),
+    Failed(Error),
+}
+impl std::fmt::Debug for OpenRoute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenRoute")
+            .field("owner", &self.owner)
+            .finish_non_exhaustive()
+    }
+}
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct OpenOptions {
+    pub directory: bool,
+    pub follow_terminal: bool,
+    pub cloexec: bool,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum OpenError {
+    Path(crate::path::Error),
+    Files(Error),
+    Access,
+    NotDirectory,
+    Loop,
+    Unsupported,
+}
+impl From<Error> for OpenError {
+    fn from(error: Error) -> Self {
+        Self::Files(error)
+    }
+}
+impl From<crate::path::Error> for OpenError {
+    fn from(error: crate::path::Error) -> Self {
+        Self::Path(error)
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Slot {
     description: Id,
@@ -351,7 +400,10 @@ impl Files {
         while fd < state.limit && state.slots.contains_key(&fd) {
             fd += 1;
         }
-        if fd >= state.limit || self.live_slots >= self.limits.slots {
+        if fd >= state.limit {
+            return Err(Error::FdLimit);
+        }
+        if self.live_slots >= self.limits.slots {
             return Err(Error::Capacity);
         }
         self.tables[table.0.slot]
@@ -460,6 +512,167 @@ impl Files {
             .position_ref(mounts, ticket, base)
             .map_err(Error::Fs)?;
         mounts.copy_position(place).map_err(Error::Mount)
+    }
+    /// A nonholding copy only within a callback-free synchronous path walk.
+    pub(crate) fn copy_place(&self, place: &Place) -> Result<Place, Error> {
+        self.mounts
+            .as_ref()
+            .ok_or(Error::BadHandle)?
+            .copy_position(place)
+            .map_err(Error::Mount)
+    }
+    fn pin_directory_fd(&mut self, table: &Table, fd: u32) -> Result<mount::Hold, Error> {
+        let d = get(&self.descriptions, self.owner, self.description(table, fd)?)?;
+        let DescriptionTarget::File(file) = &d.target else {
+            return Err(Error::NotDirectory);
+        };
+        if self
+            .filesystems
+            .metadata(file.inode)
+            .map_err(|_| Error::BadHandle)?
+            .mode
+            & 0o170000
+            != 0o040000
+        {
+            return Err(Error::NotDirectory);
+        }
+        let hold = file.place.as_ref().ok_or(Error::NotSupported)?;
+        self.mounts
+            .as_mut()
+            .ok_or(Error::BadHandle)?
+            .copy_hold(hold)
+            .map_err(Error::Mount)
+    }
+    /// Capture all mutable lookup bases before admitting physical pathname work.
+    /// A bad/unsupported/capacity-limited dirfd candidate is not reported yet:
+    /// an absolute pathname must ignore it, while a relative one uses this result.
+    pub(crate) fn prepare_open_route(
+        &mut self,
+        table: &Table,
+        fs: &fs_context::Ticket,
+        credentials: &crate::credentials::Credentials,
+        dirfd: i32,
+    ) -> Result<OpenRoute, Error> {
+        self.state(table)?;
+        let fs = self.copy_fs(fs)?;
+        let base = if dirfd == -100 {
+            OpenBase::Cwd
+        } else {
+            match self.pin_directory_fd(table, dirfd as u32) {
+                Ok(hold) => OpenBase::Held(hold),
+                Err(error) => OpenBase::Failed(error),
+            }
+        };
+        Ok(OpenRoute {
+            owner: self.owner,
+            fs,
+            credentials: credentials.clone(),
+            base,
+        })
+    }
+    /// Resolve, authorize and publish one read-only OFD without a host callback.
+    /// No canonical payload is demanded. The route remains owned on every result.
+    pub(crate) fn open_read(
+        &mut self,
+        table: &Table,
+        route: &OpenRoute,
+        path: &[u8],
+        options: OpenOptions,
+    ) -> Result<u32, OpenError> {
+        if route.owner != self.owner {
+            return Err(Error::BadHandle.into());
+        }
+        // getname/empty/length precede FD admission; a full table precedes
+        // relative dirfd, lookup and DAC errors. Capacity reservation has no
+        // logical slot effect, and no callback can steal it before publication.
+        if path.is_empty() {
+            return Err(OpenError::Path(crate::path::Error::NotFound));
+        }
+        if path.len() > 4095 {
+            return Err(OpenError::Path(crate::path::Error::NameTooLong));
+        }
+        let fd = self.admit_fd(table, 0)?;
+        let relative = match &route.base {
+            OpenBase::Cwd => Ok(None),
+            OpenBase::Held(hold) => self
+                .mounts
+                .as_ref()
+                .ok_or(Error::BadHandle)?
+                .position_ref(hold)
+                .map(Some)
+                .map_err(Error::Mount),
+            OpenBase::Failed(error) => Err(*error),
+        };
+        let place = crate::path::resolve_at(
+            self,
+            &route.fs,
+            &route.credentials,
+            path,
+            relative,
+            options.follow_terminal,
+        )?;
+        let metadata = self.place_metadata(&place)?;
+        let kind = metadata.mode & 0o170000;
+        if options.directory && kind != 0o040000 {
+            return Err(OpenError::NotDirectory);
+        }
+        if kind == 0o120000 {
+            return Err(OpenError::Loop);
+        }
+        if kind != 0o100000 && kind != 0o040000 {
+            return Err(OpenError::Unsupported);
+        }
+        if !route
+            .credentials
+            .may(&metadata, crate::credentials::Access::Read)
+        {
+            return Err(OpenError::Access);
+        }
+        self.publish_file(table, fd, place.inode(), options.cloexec, Some(&place))
+            .map_err(Into::into)
+    }
+    /// Release only the same Files owner's route. Validation failure returns its
+    /// complete ownership; no mount/context ticket is silently dropped.
+    pub(crate) fn release_open_route(
+        &mut self,
+        route: OpenRoute,
+    ) -> Result<(), (Error, OpenRoute)> {
+        if route.owner != self.owner {
+            return Err((Error::BadHandle, route));
+        }
+        let OpenRoute {
+            owner,
+            fs,
+            credentials,
+            base,
+        } = route;
+        match self.release_fs(fs) {
+            Ok(()) => {
+                if let OpenBase::Held(hold) = base {
+                    self.mounts.as_mut().unwrap().release_hold(hold);
+                }
+                Ok(())
+            }
+            Err((error, fs)) => Err((
+                error,
+                OpenRoute {
+                    owner,
+                    fs,
+                    credentials,
+                    base,
+                },
+            )),
+        }
+    }
+    /// Metadata from the actual description source, not a pathname or TS shadow.
+    pub(crate) fn fd_kind(&self, table: &Table, fd: u32) -> Result<u32, Error> {
+        let inode = self.inode(table, fd)?;
+        Ok(self
+            .filesystems
+            .metadata(inode)
+            .map_err(|_| Error::BadHandle)?
+            .mode
+            & 0o170000)
     }
     pub(crate) fn place_metadata(&self, place: &Place) -> Result<crate::inode::Metadata, Error> {
         self.mounts
@@ -723,6 +936,19 @@ impl Files {
             return Err(Error::NotSupported);
         }
         let fd = self.admit_fd(table, 0)?;
+        self.publish_file(table, fd, inode, cloexec, place)
+    }
+    /// Caller has validated the inode/place and reserved this lowest free slot.
+    /// Lookup/authorization between admission and this call is callback-free.
+    fn publish_file(
+        &mut self,
+        table: &Table,
+        fd: u32,
+        inode: Inode,
+        cloexec: bool,
+        place: Option<&Place>,
+    ) -> Result<u32, Error> {
+        debug_assert_eq!(self.description(table, fd), Err(Error::BadFd));
         let id = prepare(&mut self.descriptions, self.limits.descriptions, self.owner)?;
         // Last fallible acquisition; publication below is reserved and callback-free.
         let place = match place {
@@ -1760,8 +1986,8 @@ mod tests {
         let (mut f, inode) = setup(8);
         let t = f.table(1).unwrap();
         let fd = f.open(&t, inode, false).unwrap();
-        assert_eq!(f.open(&t, inode, true), Err(Error::Capacity));
-        assert_eq!(f.dup(&t, fd, 1, true), Err(Error::Capacity));
+        assert_eq!(f.open(&t, inode, true), Err(Error::FdLimit));
+        assert_eq!(f.dup(&t, fd, 1, true), Err(Error::FdLimit));
         assert_eq!(f.live_slots, 1);
         let id = f.description(&t, fd).unwrap();
         f.descriptions[id.slot]
@@ -3189,5 +3415,433 @@ mod cwd_selection_tests {
         f.select_cwd(&fs, &user, b"../../..").unwrap();
         assert_eq!(f.fs_start(&fs, Base::Cwd).unwrap().inode(), dir);
         f.release_fs(fs).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod open_route_tests {
+    use super::*;
+    use crate::credentials::Credentials;
+    use crate::inode::{Creation, Metadata};
+    fn made(mode: u32) -> Creation {
+        Creation {
+            mode,
+            uid: 0,
+            gid: 0,
+        }
+    }
+    fn setup(holds: usize) -> (Files, Table, fs_context::Ticket, Place) {
+        let mut t = Tree::new(1101, 20, 20, 64, made(0o755)).unwrap();
+        let root = t.root();
+        let a = t.directory(root, b"a", made(0o755)).unwrap();
+        let b = t.directory(root, b"b", made(0o755)).unwrap();
+        t.directory(root, b"readable", made(0o444)).unwrap();
+        t.file_take(a, b"file", made(0o644), &mut b"first".to_vec())
+            .unwrap();
+        t.file_take(b, b"file", made(0o644), &mut b"other".to_vec())
+            .unwrap();
+        t.file_take(root, b"private", made(0o400), &mut vec![1])
+            .unwrap();
+        t.symlink(root, b"dirlink", b"a", made(0o777)).unwrap();
+        t.symlink(root, b"filelink", b"a/file", made(0o777))
+            .unwrap();
+        t.lazy_file(root, b"lazy", made(0o644), 91, 4).unwrap();
+        let mut f = Files::new(
+            1102,
+            t,
+            Limits {
+                contexts: 2,
+                tables: 1,
+                descriptions: 8,
+                slots: 8,
+            },
+        );
+        let view = f
+            .bootstrap_mount(
+                root,
+                mount::Limits { views: 2, holds },
+                mount::ViewPolicy {
+                    no_exec: false,
+                    no_suid: false,
+                    no_symfollow: false,
+                },
+            )
+            .unwrap();
+        let root = f.view_root(&view).unwrap();
+        // The sealed root owner deliberately retains its bootstrap ticket.
+        let fs = f.create_fs(&root, &root, 0o022).unwrap();
+        let table = f.table(8).unwrap();
+        (f, table, fs, root)
+    }
+    fn options() -> OpenOptions {
+        OpenOptions {
+            directory: false,
+            follow_terminal: true,
+            cloexec: false,
+        }
+    }
+    fn selected(f: &Files, fs: &fs_context::Ticket, path: &[u8]) -> Place {
+        crate::path::resolve(f, fs, &Credentials::initial_root(), path).unwrap()
+    }
+    #[test]
+    fn captured_directory_and_cwd_cannot_retarget_after_fd_reuse_or_fs_change() {
+        let (mut f, table, fs, root) = setup(20);
+        let a = selected(&f, &fs, b"/a");
+        let b = selected(&f, &fs, b"/b");
+        let dirfd = f.open_place(&table, &a, false).unwrap();
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), dirfd as i32)
+            .unwrap();
+        f.close(&table, dirfd).unwrap();
+        assert_eq!(f.open_place(&table, &b, false).unwrap(), dirfd);
+        f.change_fs(&fs, Base::Cwd, &b).unwrap();
+        f.change_fs(&fs, Base::Root, &b).unwrap();
+        let fd = f.open_read(&table, &route, b"file", options()).unwrap();
+        let read = f.reserve_read(&table, fd, 5).unwrap();
+        assert_eq!(f.read_bytes(&read), b"first");
+        f.finish_read(read, 5);
+        f.close(&table, fd).unwrap();
+        let absolute = f.open_read(&table, &route, b"/a/file", options()).unwrap();
+        f.close(&table, absolute).unwrap();
+        f.release_open_route(route).unwrap();
+        f.change_fs(&fs, Base::Root, &root).unwrap();
+        let cwd = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), -100)
+            .unwrap();
+        f.change_fs(&fs, Base::Cwd, &a).unwrap();
+        let fd = f.open_read(&table, &cwd, b"file", options()).unwrap();
+        let read = f.reserve_read(&table, fd, 5).unwrap();
+        assert_eq!(f.read_bytes(&read), b"other");
+        f.abort_read(read);
+        f.release_open_route(cwd).unwrap();
+    }
+    #[test]
+    fn bad_dirfd_and_nondirectory_results_are_captured_but_absolute_path_ignores_them() {
+        let (mut f, table, fs, _) = setup(20);
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), 0)
+            .unwrap();
+        let a = selected(&f, &fs, b"/a");
+        assert_eq!(f.open_place(&table, &a, false), Ok(0));
+        assert_eq!(
+            f.open_read(&table, &route, b"file", options()),
+            Err(OpenError::Path(crate::path::Error::Files(Error::BadFd)))
+        );
+        assert_eq!(
+            f.open_read(&table, &route, b"", options()),
+            Err(OpenError::Path(crate::path::Error::NotFound))
+        );
+        assert_eq!(
+            f.open_read(&table, &route, &vec![b'x'; 4096], options()),
+            Err(OpenError::Path(crate::path::Error::NameTooLong))
+        );
+        let fd = f.open_read(&table, &route, b"/a/file", options()).unwrap();
+        f.release_open_route(route).unwrap();
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), fd as i32)
+            .unwrap();
+        f.close(&table, fd).unwrap();
+        assert_eq!(f.open_place(&table, &a, false), Ok(fd));
+        assert_eq!(
+            f.open_read(&table, &route, b"file", options()),
+            Err(OpenError::Path(crate::path::Error::Files(
+                Error::NotDirectory
+            )))
+        );
+        f.release_open_route(route).unwrap();
+    }
+    #[test]
+    fn terminal_symlink_directory_and_trailing_rules_match_native_counterexamples() {
+        let (mut f, table, fs, _) = setup(20);
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), -100)
+            .unwrap();
+        let nofollow = OpenOptions {
+            follow_terminal: false,
+            ..options()
+        };
+        assert_eq!(
+            f.open_read(&table, &route, b"/dirlink", nofollow),
+            Err(OpenError::Loop)
+        );
+        assert_eq!(
+            f.open_read(
+                &table,
+                &route,
+                b"/dirlink",
+                OpenOptions {
+                    directory: true,
+                    ..nofollow
+                }
+            ),
+            Err(OpenError::NotDirectory)
+        );
+        for path in [b"/dirlink/".as_slice(), b"/dirlink/.", b"/dirlink/../a"] {
+            let fd = f
+                .open_read(
+                    &table,
+                    &route,
+                    path,
+                    OpenOptions {
+                        directory: true,
+                        ..nofollow
+                    },
+                )
+                .unwrap();
+            assert_eq!(f.fd_kind(&table, fd), Ok(0o040000));
+            f.close(&table, fd).unwrap();
+        }
+        assert_eq!(
+            f.open_read(&table, &route, b"/filelink/", nofollow),
+            Err(OpenError::Path(crate::path::Error::NotDirectory))
+        );
+        let fd = f
+            .open_read(&table, &route, b"/filelink", options())
+            .unwrap();
+        f.close(&table, fd).unwrap();
+        f.release_open_route(route).unwrap();
+    }
+    #[test]
+    fn search_and_final_read_permissions_are_distinct() {
+        let (mut f, table, fs, _) = setup(20);
+        let credentials = Credentials::initial_root()
+            .program(
+                &Metadata {
+                    mode: 0o104755,
+                    uid: 11,
+                    gid: 12,
+                    nlink: 1,
+                },
+                false,
+                false,
+            )
+            .unwrap()
+            .credentials;
+        let route = f
+            .prepare_open_route(&table, &fs, &credentials, -100)
+            .unwrap();
+        assert_eq!(
+            f.open_read(&table, &route, b"/private", options()),
+            Err(OpenError::Access)
+        );
+        let fd = f
+            .open_read(
+                &table,
+                &route,
+                b"/readable",
+                OpenOptions {
+                    directory: true,
+                    ..options()
+                },
+            )
+            .unwrap();
+        f.release_open_route(route).unwrap();
+        let route = f
+            .prepare_open_route(&table, &fs, &credentials, fd as i32)
+            .unwrap();
+        assert_eq!(
+            f.open_read(&table, &route, b".", options()),
+            Err(OpenError::Path(crate::path::Error::Access))
+        );
+        f.release_open_route(route).unwrap();
+    }
+    #[test]
+    fn lazy_source_independent_offsets_cloexec_and_read_hold_survive_close() {
+        let (mut f, table, fs, _) = setup(20);
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), -100)
+            .unwrap();
+        let lazy = f.open_read(&table, &route, b"/lazy", options()).unwrap();
+        assert_eq!(f.offset(&table, lazy), Ok((0, 0)));
+        let mut p = f.begin_read(&table, lazy, 4).unwrap();
+        let source = f.prepare_read(&mut p).unwrap().unwrap();
+        assert_eq!(source.source, 91);
+        f.finish_load(&mut p, source.attempt, false, &mut Vec::new())
+            .unwrap();
+        f.abort_preparation(p).unwrap();
+        f.close(&table, lazy).unwrap();
+        let first = f
+            .open_read(
+                &table,
+                &route,
+                b"/a/file",
+                OpenOptions {
+                    cloexec: true,
+                    ..options()
+                },
+            )
+            .unwrap();
+        let second = f.open_read(&table, &route, b"/a/file", options()).unwrap();
+        assert_eq!(f.cloexec(&table, first), Ok(true));
+        assert_eq!(f.cloexec(&table, second), Ok(false));
+        let read = f.reserve_read(&table, first, 2).unwrap();
+        f.close(&table, first).unwrap();
+        assert_eq!(
+            f.open_read(&table, &route, b"/b/file", options()),
+            Ok(first)
+        );
+        assert_eq!(f.read_bytes(&read), b"fi");
+        f.finish_read(read, 2);
+        assert_eq!(f.offset(&table, second), Ok((0, 0)));
+        assert_eq!(f.offset(&table, first), Ok((0, 0)));
+        f.release_open_route(route).unwrap();
+    }
+    #[test]
+    fn failed_snapshot_rolls_back_every_acquired_hold_and_context() {
+        let (mut f, table, fs, _) = setup(4);
+        for _ in 0..32 {
+            assert!(matches!(
+                f.prepare_open_route(&table, &fs, &Credentials::initial_root(), -100),
+                Err(Error::Fs(fs_context::Error::Mount(mount::Error::Capacity)))
+            ));
+        }
+        let place = selected(&f, &fs, b"/a/file");
+        let fd = f.open_place(&table, &place, false).unwrap();
+        f.close(&table, fd).unwrap();
+    }
+    #[test]
+    fn captured_dirfd_hold_failure_is_ignored_only_by_absolute_path() {
+        let (mut f, table, fs, _) = setup(6);
+        let place = selected(&f, &fs, b"/a");
+        let fd = f.open_place(&table, &place, false).unwrap();
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), fd as i32)
+            .unwrap();
+        f.close(&table, fd).unwrap();
+        let new = f.open_read(&table, &route, b"/a/file", options()).unwrap();
+        assert_eq!(
+            f.open_read(&table, &route, b"file", options()),
+            Err(OpenError::Path(crate::path::Error::Files(Error::Mount(
+                mount::Error::Capacity
+            ))))
+        );
+        f.close(&table, new).unwrap();
+        f.release_open_route(route).unwrap();
+    }
+    #[test]
+    fn full_fd_table_precedes_lookup_and_dirfd_but_not_empty_or_length() {
+        let (mut f, table, fs, _) = setup(24);
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), 99)
+            .unwrap();
+        for expected in 0..8 {
+            assert_eq!(
+                f.open_read(&table, &route, b"/a/file", options()),
+                Ok(expected)
+            );
+        }
+        for path in [b"/missing".as_slice(), b"file", b"/a/file"] {
+            assert_eq!(
+                f.open_read(&table, &route, path, options()),
+                Err(OpenError::Files(Error::FdLimit))
+            );
+        }
+        assert_eq!(
+            f.open_read(&table, &route, b"", options()),
+            Err(OpenError::Path(crate::path::Error::NotFound))
+        );
+        assert_eq!(
+            f.open_read(&table, &route, &vec![b'x'; 4096], options()),
+            Err(OpenError::Path(crate::path::Error::NameTooLong))
+        );
+        f.close(&table, 3).unwrap();
+        assert_eq!(
+            f.open_read(&table, &route, b"/missing", options()),
+            Err(OpenError::Path(crate::path::Error::NotFound))
+        );
+        assert_eq!(
+            f.open_read(&table, &route, b"file", options()),
+            Err(OpenError::Path(crate::path::Error::Files(Error::BadFd)))
+        );
+        assert_eq!(f.open_read(&table, &route, b"/a/file", options()), Ok(3));
+        f.release_open_route(route).unwrap();
+    }
+    #[test]
+    fn detached_route_and_new_ofd_keep_the_same_view_until_last_read_ends() {
+        let (mut f, table, fs, root) = setup(24);
+        let a = selected(&f, &fs, b"/a");
+        let b = selected(&f, &fs, b"/b");
+        let view = f.clone_view(&a).unwrap();
+        f.attach_view(&view, &b).unwrap();
+        let mounted = f.component(&root, b"b").unwrap().unwrap();
+        let file = f.component(&mounted, b"file").unwrap().unwrap();
+        let fd = f.open_place(&table, &mounted, false).unwrap();
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), fd as i32)
+            .unwrap();
+        assert!(f.release_view(view).is_ok());
+        f.detach_view(&mounted).unwrap();
+        f.close(&table, fd).unwrap();
+        let fd = f.open_read(&table, &route, b"file", options()).unwrap();
+        let read = f.reserve_read(&table, fd, 5).unwrap();
+        f.release_open_route(route).unwrap();
+        f.close(&table, fd).unwrap();
+        assert_eq!(f.read_bytes(&read), b"first");
+        f.finish_read(read, 5);
+        assert_eq!(
+            f.open_place(&table, &file, false),
+            Err(Error::Mount(mount::Error::BadPlace))
+        );
+    }
+    #[test]
+    fn slot_description_and_final_hold_failure_publish_no_fd_and_keep_route_owned() {
+        let (mut f, table, fs, _) = setup(5);
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), -100)
+            .unwrap();
+        assert_eq!(
+            f.open_read(&table, &route, b"/a/file", options()),
+            Err(OpenError::Files(Error::Mount(mount::Error::Capacity)))
+        );
+        assert_eq!(f.live_slots, 0);
+        assert_eq!(f.description(&table, 0), Err(Error::BadFd));
+        f.release_open_route(route).unwrap();
+        let place = selected(&f, &fs, b"/a/file");
+        assert_eq!(f.open_place(&table, &place, false), Ok(0));
+        let (mut f, table, fs, _) = setup(20);
+        let route = f
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), -100)
+            .unwrap();
+        f.limits.slots = 0;
+        assert_eq!(
+            f.open_read(&table, &route, b"/a/file", options()),
+            Err(OpenError::Files(Error::Capacity))
+        );
+        f.limits.slots = 8;
+        f.limits.descriptions = 0;
+        assert_eq!(
+            f.open_read(&table, &route, b"/a/file", options()),
+            Err(OpenError::Files(Error::Capacity))
+        );
+        assert_eq!(f.live_slots, 0);
+        assert_eq!(f.description(&table, 0), Err(Error::BadFd));
+        f.limits.descriptions = 8;
+        assert_eq!(f.open_read(&table, &route, b"/a/file", options()), Ok(0));
+        f.release_open_route(route).unwrap();
+    }
+    #[test]
+    fn route_release_rejects_foreign_owner_without_losing_ticket() {
+        let (mut a, table, fs, _) = setup(20);
+        let route = a
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), -100)
+            .unwrap();
+        let tree = Tree::new(2201, 1, 1, 1, made(0o755)).unwrap();
+        let mut b = Files::new(
+            2202,
+            tree,
+            Limits {
+                contexts: 1,
+                tables: 1,
+                descriptions: 1,
+                slots: 1,
+            },
+        );
+        let (error, route) = b.release_open_route(route).unwrap_err();
+        assert_eq!(error, Error::BadHandle);
+        a.release_open_route(route).unwrap();
+        let route = a
+            .prepare_open_route(&table, &fs, &Credentials::initial_root(), -100)
+            .unwrap();
+        a.release_open_route(route).unwrap();
     }
 }
