@@ -128,9 +128,19 @@ const about = async (): Promise<About | null> => {
 
 /** When each kept copy was last used (this browser's; lost, the oldest is simply unknown). */
 const USES = config.usedKey;
-const uses = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem(USES) ?? '{}'); } catch { return {}; } };
+const whole = (url: string) => new URL(url, location.href).href;
+const uses = (): Record<string, number> => {
+  try {
+    const entries: Record<string, number> = JSON.parse(localStorage.getItem(USES) ?? '{}');
+    // Older pages wrote both pathnames and absolute URLs. Resolve those
+    // pathnames against the distribution's origin, not the embedding page.
+    const base = whole(BASE);
+    return Object.fromEntries(Object.entries(entries).map(([url, at]) =>
+      [url.startsWith('/') ? new URL(url, base).href : whole(url), at]));
+  } catch { return {}; }
+};
 const used = (url: string, at = Date.now()) => {
-  try { const u = uses(); u[url] = at; localStorage.setItem(USES, JSON.stringify(u)); } catch { /* not remembered: it goes first */ }
+  try { const u = uses(); u[whole(url)] = at; localStorage.setItem(USES, JSON.stringify(u)); } catch { /* not remembered: it goes first */ }
 };
 /** What earlier builds kept under the names before (two caches and two notes) is let go, once a page: nothing reads it now. */
 let before: Promise<unknown> | null = null;
@@ -141,7 +151,6 @@ const forgetBefore = () => (before ??= (async () => {
 const open = async (): Promise<Cache | null> => {
   try { if (!('caches' in globalThis)) return null; await forgetBefore(); return await caches.open(cache()); } catch { return null; }
 };
-const whole = (url: string) => new URL(url, location.href).href;
 /**
  * The size of each kept copy, by its whole URL: read from what is kept once a page (each copy's head), then
  * followed as copies are kept and let go, so what is kept is counted without opening every copy each time.
@@ -269,8 +278,9 @@ async function roomFor(c: Cache, url: string, size: number): Promise<boolean> {
   let mine = await keptBytes(c);
   if (size > budget) return false;
   const u = uses();
-  const oldest = (await c.keys()).map((r) => r.url).filter((k) => k !== new URL(url, location.href).href)
-    .sort((a, b) => (u[new URL(a).pathname] ?? 0) - (u[new URL(b).pathname] ?? 0));
+  const key = whole(url);
+  const oldest = (await c.keys()).map((r) => r.url).filter(k => k !== key)
+    .sort((a, b) => (u[a] ?? 0) - (u[b] ?? 0));
   // Room is the share left, and what the origin as a whole may still take.
   const room = () => Math.min(budget - mine, e.quota! - (e.usage ?? 0));
   while (room() < size && oldest.length) {
@@ -306,10 +316,10 @@ async function keptWebroot(): Promise<{bytes: number; files: number}> {
 }
 
 /** Whatever the current why does not name goes: a why before, or what a browser kept of it. */
-async function forgetOthers(live: (path: string) => boolean) {
+async function forgetOthers(live: (url: string) => boolean) {
   const c = await open();
   if (!c) return;
-  for (const r of await c.keys()) if (!live(new URL(r.url).pathname)) { await c.delete(r).catch(() => false); gone(c, r.url); }
+  for (const r of await c.keys()) if (!live(r.url)) { await c.delete(r).catch(() => false); gone(c, r.url); }
   try {
     const u = uses();
     for (const k of Object.keys(u)) if (!live(k)) delete u[k];
@@ -416,23 +426,40 @@ const TRANSLATED = `${BASE}tr/`;
 /** What a kept translation was made by: this translator, for memory shared or not. */
 const keptTag = (index: Index) => madeBy(index.translator.sha256, threadsApart());
 const translatedURL = (origin: string, tag: string, part: 'wasm' | 'more') => `${TRANSLATED}${origin}-${tag}.${part}`;
-/** The origin a kept translation's path is of, when it was made with `tag`; null otherwise. */
-const keptOrigin = (path: string, tag: string): string | null => {
-  const m = /^(.+)-([^-]+-[su])\.(wasm|more)$/.exec(path.slice(TRANSLATED.length));
+/** The origin of a cached translation produced with this translator and memory mode. */
+const keptOrigin = (url: string, tag: string): string | null => {
+  const prefix = whole(TRANSLATED);
+  if (!url.startsWith(prefix)) return null;
+  const m = /^(.+)-([^-]+-[su])\.(wasm|more)$/.exec(url.slice(prefix.length));
   return m && m[2] === tag ? m[1] : null;
 };
+
+/** Keep only this release's inputs and translations for its current packs. */
+function keepReleaseFiles(about: About, index: Index, mukPath?: string): void {
+  // Prepared execution still ships the ELF blobs used by the legacy profile.
+  const live = new Set([
+    `${BASE}${about.index.path}`, `${BASE}${index.translator.path}`, ...(mukPath ? [`${BASE}${mukPath}`] : []),
+    ...index.translations.flatMap(t => [`${BASE}${t.elf.path}`, `${BASE}${t.wasm.path}`, moreURL(t, index.translator.sha256, threadsApart())]),
+  ].map(whole));
+  const packs = new Set(index.packs.map(p => p.name.replace(/\.pack$/, ''))), tag = keptTag(index);
+  void forgetOthers(url => {
+    if (live.has(url)) return true;
+    const origin = keptOrigin(url, tag);
+    return origin !== null && packs.has(origin.split('_')[0]!);
+  });
+}
 
 /** What a Prompt's kernel is told is kept ({cache, at: {[origin]: {main, more}}}, sods' keeper). */
 async function keptNow(webroot: RootContext): Promise<{cache: string; at: Record<string, {main: string; more: string | null}>} | null> {
   const c = await open();
   if (!c) return null;
   const tag = keptTag(webroot.index), at: Record<string, {main: string; more: string | null}> = {};
-  const paths = new Set((await c.keys()).map((r) => new URL(r.url).pathname).filter((p) => p.startsWith(TRANSLATED)));
-  for (const p of paths) {
-    const origin = keptOrigin(p, tag);
-    if (origin === null || !p.endsWith('.wasm')) continue;
-    const more = translatedURL(origin, tag, 'more');
-    at[origin] = {main: whole(p), more: paths.has(more) ? whole(more) : null};
+  const urls = new Set((await c.keys()).map(r => r.url));
+  for (const main of urls) {
+    const origin = keptOrigin(main, tag);
+    if (origin === null || !main.endsWith('.wasm')) continue;
+    const more = whole(translatedURL(origin, tag, 'more'));
+    at[origin] = {main, more: urls.has(more) ? more : null};
   }
   return {cache: cache(), at};
 }
@@ -531,7 +558,7 @@ function save(r: {list: {bytes: Uint8Array; base: number}[]; saved: number; time
 }
 
 /** Kept copies a Prompt's kernel read: used now, so they are not the first to go. */
-const usedKept = (urls: string[]) => { for (const u of urls) used(new URL(u).pathname); };
+const usedKept = (urls: string[]) => { for (const url of urls) used(url); };
 
 /**
  * What a Prompt is given for a hot program: its bytes and its compiled
@@ -642,12 +669,7 @@ const loadWebroot = (): Promise<Webroot> => (loading ??= (async () => {
   const modeOf = (path: string) => index.files.find((f) => f.path === path)?.mode ?? 0o755;
   const first = index.translations.filter((t) => first0.includes(t.path));
   const muk = await maker;
-  const live = new Set([`${BASE}${a.index.path}`, `${BASE}${index.translator.path}`, ...(muk ? [`${BASE}${muk.path}`] : []),
-    ...index.translations.flatMap((t) => [`${BASE}${t.elf.path}`, `${BASE}${t.wasm.path}`, moreURL(t, index.translator.sha256, threadsApart())])]);
-  // And the translations Prompts made of the root's programs, by this translator, of files in this root's packs.
-  const packs = new Set(index.packs.map((p) => p.name.replace(/\.pack$/, '')));
-  const tag = keptTag(index);
-  void forgetOthers((path) => live.has(path) || (path.startsWith(TRANSLATED) && keptOrigin(path, tag) !== null && packs.has(keptOrigin(path, tag)!.split('_')[0])));
+  keepReleaseFiles(a, index, muk?.path);
   // Progress over everything this start waits for: the translator and each program it is given now.
   const parts = [index.translator, ...first.flatMap((t) => [t.elf, t.wasm])];
   const of = parts.reduce((n, p) => n + p.size, 0);
@@ -771,13 +793,7 @@ const withMore = (f: Webroot['files'][number]): Webroot['files'][number] => ({..
       ]);
       tell({at: 'prepare'});
       const translator = await WebAssembly.compile(translatorBytes as BufferSource);
-      // Keep the same release/cache policy, including ELF blobs still used by
-      // legacy consumers. Deferring demand does not remove deployed sources.
-      const live = new Set([`${BASE}${a.index.path}`, `${BASE}${index.translator.path}`,
-        ...(muk ? [`${BASE}${muk.path}`] : []),
-        ...index.translations.flatMap(t => [`${BASE}${t.elf.path}`, `${BASE}${t.wasm.path}`, moreURL(t, index.translator.sha256, threadsApart())])]);
-      const packs = new Set(index.packs.map(p => p.name.replace(/\.pack$/, ''))), tag = keptTag(index);
-      void forgetOthers(path => live.has(path) || (path.startsWith(TRANSLATED) && keptOrigin(path, tag) !== null && packs.has(keptOrigin(path, tag)!.split('_')[0])));
+      keepReleaseFiles(a, index, muk?.path);
       return {profile: 'canonical-aot-v1' as const, generation: a.index.sha256, about: a, index,
         translator, url: new URL(BASE, location.href).href, muk: muk?.bytes ?? null};
     },
