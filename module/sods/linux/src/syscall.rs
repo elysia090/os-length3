@@ -955,6 +955,24 @@ impl Continuation {
     ) -> Result<crate::single_task::Registration, Error> {
         self.single_task.registration(execution).map_err(Into::into)
     }
+    /// First-effect admission only. The captured sequence must come from the
+    /// current pending operation, not the admission watermark or transport.
+    /// The caller separately checks that operation's identity and phase and
+    /// starts the effect in this same callback-free turn.
+    fn check_held_sequence_live(
+        &self,
+        execution: &Execution,
+        invocation: Invocation,
+        captured: u32,
+        presented: u32,
+    ) -> Result<(), Error> {
+        if self.closed || captured != presented {
+            return Err(Error::State);
+        }
+        execution
+            .check_held_call_live(invocation)
+            .map_err(Into::into)
+    }
     /// Consume the exact admitted apply permission once, before physical work.
     pub(crate) fn register_start(
         &mut self,
@@ -966,23 +984,13 @@ impl Continuation {
     ) -> Result<(), Error> {
         self.owner(execution)?;
         execution.check_domain(domain)?;
-        let p = self.register.as_mut().ok_or(Error::State)?;
-        if self.closed
-            || p.sequence != sequence
-            || p.action != action
-            || p.base != base
-            || p.started
-        {
+        let p = self.register.as_ref().ok_or(Error::State)?;
+        if p.action != action || p.base != base || p.started {
             return Err(Error::State);
         }
-        execution.check(p.snapshot)?;
-        if execution.phase() != Phase::Running
-            || execution.invocation(p.invocation.number())? != p.invocation
-        {
-            return Err(Error::State);
-        }
+        self.check_held_sequence_live(execution, p.invocation, p.sequence, sequence)?;
         domain.start(action)?;
-        p.started = true;
+        self.register.as_mut().expect("same register owner").started = true;
         Ok(())
     }
     /// Matching stopped evidence can settle an uncertain register action after
@@ -2331,6 +2339,27 @@ mod register_tests {
             assert!(g.execution.retireable());
             assert!(g.domain.change(g.execution.binding(), 16).is_ok());
         }
+    }
+
+    #[test]
+    fn exit_requested_with_exact_held_sequence_does_not_authorize_first_effect() {
+        let mut g = Guest::new(1605, 1);
+        let action = g.admit(1, 8);
+        g.execution.request_exit(g.invocation, 7).unwrap();
+        assert_eq!(g.execution.phase(), Phase::Running);
+        assert!(g.call.owns(action));
+        assert!(!g.call.closed);
+        assert_eq!(
+            g.start(1, action, 8),
+            Err(Error::Execution(execution::Error::State))
+        );
+        assert!(g.abandon().unwrap(), "rejected start left the action Ready");
+        assert_eq!(g.domain.retire(action), Err(lease::Error::UnknownAction));
+        g.execution
+            .receipt(&mut g.domain, g.invocation, Unwind::Exit)
+            .unwrap();
+        assert_eq!(g.execution.status(), Some(7));
+        assert!(g.execution.retireable());
     }
 
     #[test]
