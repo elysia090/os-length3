@@ -4,8 +4,9 @@
 
 This is an additive part of the explicit Linux Node22/24 managed caller, not a
 migration of the default Kernel, general arch_prctl/thread/signal compatibility,
-or an ordinary BusyBox/shell/terminal success claim. open(2), set_tid_address,
-clear-tid, exit_group and canonical-source sendfile remain separate gates.
+or an ordinary BusyBox/shell/terminal success claim. open(2), shared guest mm/clear-tid and canonical-source sendfile remain separate
+gates. The later selected single-task registration/group-exit contract is in
+[TASK-CALLER.md](TASK-CALLER.md).
 
 Rust accepts syscall158 only for exact ARCH_SET_FS0x1002 and a base in0..u32MAX.
 The base is a register value, not a dereferenced pointer or Memory byte-span:
@@ -14,7 +15,7 @@ Other operations/high bases stop as explicitly Unsupported, not invented Linux
 errno or a request for fallback into the TS Kernel. This is a deliberate selected
 fixed-low-address translation profile, not normative high-address Linux behavior.
 
-The actual Worker path uses private Linux ABI5's sequenced entrance. Rust owns
+The actual Worker path uses private Linux ABI6's sequenced entrance. Rust owns
 every request's snapshot, invocation and monotone1..i32MAX sequence before
 operation admission. A request passing the common owner/phase/pending/sequence
 checks consumes that sequence, including Unsupported or capacity failure, and

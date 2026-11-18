@@ -1,4 +1,4 @@
-//! Private wasm32 ABI5, one managed domain per instance. The read-only caller
+//! Private wasm32 ABI6, one managed domain per instance. The read-only caller
 //! is a limited fixed-memory profile, not the full Linux runtime.
 //! Prepared resident Tree is sealed once into Files; no source mutation afterward.
 //! The host reads result fields before making a fresh core view. Between read_start
@@ -276,7 +276,7 @@ fn inode(n: u64) -> Inode {
 }
 #[no_mangle]
 pub extern "C" fn linux_abi_version() -> u32 {
-    5
+    6
 }
 #[no_mangle]
 pub extern "C" fn linux_init(memories: u32, actions: u32) -> i32 {
@@ -1192,6 +1192,23 @@ fn syscall_enter(
     }
     .map_err(|_| -12)?;
     Ok(step(s, command))
+}
+/// Read-only task metadata observer, not a guest pointer/host TID capability.
+/// The record must remain exact through unwind/lost replies until retirement.
+#[no_mangle]
+pub extern "C" fn linux_task_registration(id: u64) -> i32 {
+    with_state(false, |s| {
+        let i = execution_index(s, id)?;
+        let slot = s.executions[i].live_mut()?;
+        let registration = slot
+            .continuation
+            .as_ref()
+            .ok_or(-11)?
+            .task_registration(&slot.execution)
+            .map_err(|_| -12)?;
+        s.length = u64::from(registration.tid);
+        Ok(registration.clear_child_tid)
+    })
 }
 #[no_mangle]
 pub extern "C" fn linux_register_start(id: u64, sequence: u32, action: u64, base: u64) -> i32 {

@@ -13,6 +13,7 @@ use crate::effect::{Completion, Token};
 use crate::execution::{self, Execution, Invocation, Phase, Snapshot};
 use crate::lease::{self, Domain};
 use crate::read::{self, Reads};
+use crate::single_task::SingleTask;
 use crate::{credentials::Credentials, fs_context::Ticket};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -178,6 +179,7 @@ pub(crate) struct Continuation {
     path_input: Vec<u8>,
     closed: bool,
     last_sequence: u32,
+    single_task: SingleTask,
 }
 impl Continuation {
     pub(crate) fn new(execution: &Execution) -> Result<Self, Error> {
@@ -190,6 +192,7 @@ impl Continuation {
             path_input: Vec::new(),
             closed: false,
             last_sequence: 0,
+            single_task: SingleTask::new(execution)?,
         })
     }
     /// Only Reading retains a live Reads record; Applying/Uncertain owns the
@@ -303,6 +306,24 @@ impl Continuation {
                 return Err(Error::State);
             }
             self.last_sequence = sequence;
+        }
+        if nr == 218 {
+            if sequence.is_none() {
+                return Ok(Step::Unsupported(nr));
+            }
+            return self
+                .single_task
+                .register(execution, invocation, args[0])
+                .map(|tid| Step::Return(i64::from(tid)))
+                .map_err(Into::into);
+        }
+        if nr == 231 {
+            if sequence.is_none() {
+                return Ok(Step::Unsupported(nr));
+            }
+            self.single_task
+                .exit_group(execution, invocation, args[0])?;
+            return Ok(Step::Exit);
         }
         if nr == 158 {
             let Some(sequence) = sequence else {
@@ -534,6 +555,12 @@ impl Continuation {
         self.stream.as_ref().is_some_and(|p| p.action == token)
             || self.opening.as_ref().is_some_and(|p| p.action == token)
             || self.register.as_ref().is_some_and(|p| p.action == token)
+    }
+    pub(crate) fn task_registration(
+        &self,
+        execution: &Execution,
+    ) -> Result<crate::single_task::Registration, Error> {
+        self.single_task.registration(execution).map_err(Into::into)
     }
     /// Consume the exact admitted apply permission once, before physical work.
     pub(crate) fn register_start(
@@ -1932,6 +1959,326 @@ mod register_tests {
             );
             assert!(g.abandon().unwrap());
             assert!(g.domain.change(g.execution.binding(), 16).is_ok());
+        }
+    }
+    mod task_cases {
+        use super::*;
+
+        fn observed(g: &Guest) -> (u32, u64) {
+            let record = g.call.task_registration(&g.execution).unwrap();
+            (record.tid, record.clear_child_tid)
+        }
+
+        #[test]
+        fn sequenced_set_tid_address_preserves_full_u64_values_without_access_or_effect_admission()
+        {
+            let mut g = Guest::new(2000, 1);
+            assert_eq!(observed(&g), (1, 0));
+            for (i, pointer) in [0, 1, 3, 16, 0x1_0000_0003, u64::MAX]
+                .into_iter()
+                .enumerate()
+            {
+                assert_eq!(
+                    g.request(
+                        i as u32 + 1,
+                        218,
+                        [pointer, u64::MAX, u64::MAX, u64::MAX, u64::MAX, u64::MAX]
+                    ),
+                    Ok(Step::Return(1))
+                );
+                assert_eq!(observed(&g), (1, pointer));
+                assert!(g.execution.syscall_allowed(g.invocation).is_ok());
+                assert_eq!(g.domain.extent(g.execution.binding()), Ok(16));
+                assert_eq!(g.files.offset(&g.table, g.fd), Ok((0, 0)));
+            }
+            let effect = g.domain.effect(g.execution.binding(), 1).unwrap();
+            g.domain.cancel(effect).unwrap();
+            g.domain.retire(effect).unwrap();
+            assert_eq!(g.call.last_sequence, 6);
+            assert_eq!(observed(&g), (1, u64::MAX));
+        }
+
+        #[test]
+        fn duplicate_gap_unsequenced_and_foreign_task_requests_cannot_replace_the_record() {
+            let mut g = Guest::new(2020, 1);
+            let mut foreign = Guest::new(2040, 1);
+            for nr in [218, 231] {
+                assert_eq!(
+                    g.call.enter(
+                        &mut g.files,
+                        &g.table,
+                        &mut g.reads,
+                        &mut g.domain,
+                        &mut g.execution,
+                        g.invocation,
+                        nr,
+                        [u64::MAX; 6],
+                        123
+                    ),
+                    Ok(Step::Unsupported(nr))
+                );
+                assert_eq!(
+                    g.call.enter_with_namespace(
+                        &mut g.files,
+                        &g.table,
+                        None,
+                        &mut g.reads,
+                        &mut g.domain,
+                        &mut g.execution,
+                        g.invocation,
+                        nr,
+                        [u64::MAX; 6],
+                        123
+                    ),
+                    Ok(Step::Unsupported(nr))
+                );
+            }
+            assert_eq!(g.call.last_sequence, 0);
+            assert_eq!(observed(&g), (1, 0));
+            assert_eq!(
+                g.request(1, 218, [u64::MAX, 0, 0, 0, 0, 0]),
+                Ok(Step::Return(1))
+            );
+            for sequence in [0, 1, 3, u32::MAX] {
+                assert_eq!(
+                    g.request(sequence, 218, [77, 0, 0, 0, 0, 0]),
+                    Err(Error::State)
+                );
+                assert_eq!(observed(&g), (1, u64::MAX));
+                assert_eq!(g.call.last_sequence, 1);
+            }
+            assert_eq!(
+                g.call.enter_sequenced(
+                    &mut g.files,
+                    &g.table,
+                    None,
+                    &mut g.reads,
+                    &mut g.domain,
+                    &mut g.execution,
+                    foreign.invocation,
+                    2,
+                    218,
+                    [77, 0, 0, 0, 0, 0],
+                    123
+                ),
+                Err(Error::Execution(execution::Error::Identity))
+            );
+            assert_eq!(
+                g.call.enter_sequenced(
+                    &mut g.files,
+                    &g.table,
+                    None,
+                    &mut g.reads,
+                    &mut foreign.domain,
+                    &mut foreign.execution,
+                    foreign.invocation,
+                    2,
+                    218,
+                    [77, 0, 0, 0, 0, 0],
+                    123
+                ),
+                Err(Error::Execution(execution::Error::Identity))
+            );
+            assert_eq!(g.call.last_sequence, 1);
+            assert_eq!(observed(&g), (1, u64::MAX));
+            assert_eq!(g.request(2, 218, [77, 0, 0, 0, 0, 0]), Ok(Step::Return(1)));
+            assert_eq!(observed(&g), (1, 77));
+        }
+
+        #[test]
+        fn pending_register_or_read_keeps_task_observable_but_blocks_new_task_operations() {
+            let mut g = Guest::new(2060, 1);
+            assert_eq!(g.request(1, 218, [77, 0, 0, 0, 0, 0]), Ok(Step::Return(1)));
+            let action = g.admit(2, 8);
+            for nr in [218, 231] {
+                assert!(g.request(3, nr, [88, 0, 0, 0, 0, 0]).is_err());
+                assert_eq!(observed(&g), (1, 77));
+                assert_eq!(g.call.last_sequence, 2);
+            }
+            g.start(2, action, 8).unwrap();
+            assert_eq!(
+                g.receipt(2, action, 8, RegisterOutcome::AppliedStopped),
+                Ok(Step::Return(0))
+            );
+            let Step::Read { id, .. } = g.request(3, 0, [g.fd as u64, 0, 1, 0, 0, 0]).unwrap()
+            else {
+                panic!()
+            };
+            for nr in [218, 231] {
+                assert!(g.request(4, nr, [88, 0, 0, 0, 0, 0]).is_err());
+                assert_eq!(observed(&g), (1, 77));
+                assert_eq!(g.call.last_sequence, 3);
+            }
+            g.reads
+                .start_managed(&mut g.files, &mut g.domain, &g.execution, id)
+                .unwrap();
+            g.reads
+                .receipt(&mut g.files, &mut g.domain, id, 1, Completion::Stopped)
+                .unwrap();
+            assert_eq!(
+                g.call.complete(&mut g.reads, &mut g.execution),
+                Ok(Step::Return(1))
+            );
+            assert_eq!(g.request(4, 218, [88, 0, 0, 0, 0, 0]), Ok(Step::Return(1)));
+            assert_eq!(observed(&g), (1, 88));
+        }
+
+        #[test]
+        fn unknown_register_abandon_and_unwind_do_not_clear_the_task_registration() {
+            let mut g = Guest::new(2080, 1);
+            assert_eq!(
+                g.request(1, 218, [u64::MAX, 0, 0, 0, 0, 0]),
+                Ok(Step::Return(1))
+            );
+            let action = g.admit(2, 8);
+            g.start(2, action, 8).unwrap();
+            assert_eq!(
+                g.receipt(2, action, 8, RegisterOutcome::Unknown),
+                Ok(Step::Waiting)
+            );
+            assert_eq!(observed(&g), (1, u64::MAX));
+            assert!(!g.abandon().unwrap());
+            g.fault();
+            assert_eq!(observed(&g), (1, u64::MAX));
+            assert!(!g.execution.retireable());
+            assert_eq!(
+                g.receipt(2, action, 8, RegisterOutcome::AppliedStopped),
+                Ok(Step::Waiting)
+            );
+            assert!(g.execution.retireable());
+            assert_eq!(observed(&g), (1, u64::MAX));
+            // The native test still retains the Continuation. A real resource
+            // slot drops this metadata only when it drops that owner, not here.
+        }
+
+        #[test]
+        fn stopped_or_uncertain_task_observation_is_not_permission_for_a_late_registration() {
+            for unwind in [Unwind::Fault, Unwind::Unknown, Unwind::Exit] {
+                let mut g = Guest::new(2100, 1);
+                assert_eq!(
+                    g.request(1, 218, [0x1_0000_0003, 0, 0, 0, 0, 0]),
+                    Ok(Step::Return(1))
+                );
+                if unwind == Unwind::Exit {
+                    assert_eq!(g.request(2, 231, [257, 0, 0, 0, 0, 0]), Ok(Step::Exit));
+                }
+                let last_sequence = g.call.last_sequence;
+                g.execution
+                    .receipt(&mut g.domain, g.invocation, unwind)
+                    .unwrap();
+                assert_eq!(observed(&g), (1, 0x1_0000_0003));
+                assert!(g.request(last_sequence + 1, 218, [0; 6]).is_err());
+                assert_eq!(g.call.last_sequence, last_sequence);
+                assert!(g.abandon().unwrap());
+                assert_eq!(observed(&g), (1, 0x1_0000_0003));
+                if unwind == Unwind::Unknown {
+                    g.fault();
+                    assert_eq!(observed(&g), (1, 0x1_0000_0003));
+                }
+            }
+        }
+
+        #[test]
+        fn task_observer_and_admission_retain_untouched_but_reject_installed_reimages() {
+            let mut g = Guest::new(2120, 1);
+            assert_eq!(g.request(1, 218, [91, 0, 0, 0, 0, 0]), Ok(Step::Return(1)));
+            g.execution
+                .receipt(&mut g.domain, g.invocation, Unwind::Yield(123))
+                .unwrap();
+            g.execution.image_begin(&mut g.domain, 16).unwrap();
+            assert_eq!(
+                g.call.task_registration(&g.execution).err(),
+                Some(Error::Execution(execution::Error::Identity))
+            );
+            g.execution
+                .image_finish(&mut g.domain, ImageResult::Untouched)
+                .unwrap();
+            assert_eq!(observed(&g), (1, 91));
+            g.invocation = g.execution.start(&mut g.domain).unwrap();
+            assert_eq!(g.request(2, 218, [92, 0, 0, 0, 0, 0]), Ok(Step::Return(1)));
+            g.fault();
+            g.execution.image_begin(&mut g.domain, 16).unwrap();
+            g.execution
+                .image_finish(&mut g.domain, ImageResult::Installed)
+                .unwrap();
+            assert_eq!(
+                g.call.task_registration(&g.execution).err(),
+                Some(Error::Execution(execution::Error::Identity))
+            );
+            g.invocation = g.execution.start(&mut g.domain).unwrap();
+            assert_eq!(
+                g.request(3, 218, [93, 0, 0, 0, 0, 0]),
+                Err(Error::Execution(execution::Error::Identity))
+            );
+            assert_eq!(
+                g.call.task_registration(&g.execution).err(),
+                Some(Error::Execution(execution::Error::Identity))
+            );
+            let mut fresh = Continuation::new(&g.execution).unwrap();
+            assert_eq!(
+                fresh.enter_sequenced(
+                    &mut g.files,
+                    &g.table,
+                    None,
+                    &mut g.reads,
+                    &mut g.domain,
+                    &mut g.execution,
+                    g.invocation,
+                    1,
+                    218,
+                    [0; 6],
+                    123
+                ),
+                Ok(Step::Return(1))
+            );
+            let record = fresh.task_registration(&g.execution).unwrap();
+            assert_eq!((record.tid, record.clear_child_tid), (1, 0));
+        }
+
+        #[test]
+        fn sequenced_group_exit_masks_status_waits_for_unwind_and_is_execution_local() {
+            for status in [0, 255, 256, 279, u64::MAX, 0x123456] {
+                let mut g = Guest::new(2140, 1);
+                assert_eq!(g.request(1, 218, [3, 0, 0, 0, 0, 0]), Ok(Step::Return(1)));
+                assert_eq!(
+                    g.execution
+                        .receipt(&mut g.domain, g.invocation, Unwind::Exit),
+                    Err(execution::Error::State)
+                );
+                assert_eq!(g.request(2, 231, [status, 0, 0, 0, 0, 0]), Ok(Step::Exit));
+                assert_eq!(g.execution.status(), None);
+                assert!(!g.execution.stopped());
+                assert_eq!(
+                    g.domain.change(g.execution.binding(), 16),
+                    Err(lease::Error::Busy)
+                );
+                for nr in [218, 231] {
+                    assert!(g.request(3, nr, [0; 6]).is_err());
+                }
+                assert_eq!(g.call.last_sequence, 2);
+                g.execution
+                    .receipt(&mut g.domain, g.invocation, Unwind::Exit)
+                    .unwrap();
+                assert_eq!(g.execution.status(), Some((status & 255) as u32));
+                assert_eq!(observed(&g), (1, 3));
+                assert!(g.request(3, 218, [4, 0, 0, 0, 0, 0]).is_err());
+            }
+            let mut a = Guest::new(2160, 1);
+            let mut b = Guest::new(2180, 1);
+            assert_eq!(a.request(1, 218, [11, 0, 0, 0, 0, 0]), Ok(Step::Return(1)));
+            assert_eq!(b.request(1, 218, [22, 0, 0, 0, 0, 0]), Ok(Step::Return(1)));
+            assert_eq!(
+                a.call.task_registration(&b.execution).err(),
+                Some(Error::Execution(execution::Error::Identity))
+            );
+            assert_eq!(a.request(2, 231, [0; 6]), Ok(Step::Exit));
+            a.execution
+                .receipt(&mut a.domain, a.invocation, Unwind::Exit)
+                .unwrap();
+            assert_eq!(observed(&a), (1, 11));
+            assert_eq!(b.request(2, 218, [33, 0, 0, 0, 0, 0]), Ok(Step::Return(1)));
+            assert_eq!(observed(&b), (1, 33));
+            assert_eq!(b.execution.status(), None);
         }
     }
 }

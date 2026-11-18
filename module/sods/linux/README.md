@@ -9,7 +9,7 @@ permission before host execution, retains uncertain completion, accepts cumulati
 prefix evidence, and refuses stale/duplicate actions. `Completion::Stopped` requires
 both no further effects and ended access; a confirmed byte count alone does not.
 
-The private wasm32 ABI (version 5) connects that table to `runtime/linux/memory-host.ts`, which
+The private wasm32 ABI (version 6) connects that table to `runtime/linux/memory-host.ts`, which
 creates and retains actual engine memories without exposing raw memory or callbacks.
 Capture/write/grow operations acquire admission before host access. Mutation reserves
 exclusively before execution; successful retirement publishes a new binding identity.
@@ -135,7 +135,7 @@ its original table. This is an internal misuse limitation, not a public recovery
 contract; a public release API must preserve recoverability before exposure.
 
 
-## Resident file to physical memory (private ABI 5)
+## Resident file to physical memory (private ABI 6)
 
 The following sections preserve successive integration stages. Earlier ABI2 or
 unconnected diagnostic limitations describe that stage; the later managed CLI
@@ -849,7 +849,7 @@ See [OPEN-CALLER.md](OPEN-CALLER.md) for the complete admission/failure contract
 The additive asynchronous `managedRoot` entrance in `sods/linux` exposes only a
 readonly root producer/transport and selected execution/lifetime facade. The
 private memory/grow/inode diagnostics are not public, and default Kernel/backend
-selection is unchanged. Its Linux ABI5 is distinct from file-store ABI4.
+selection is unchanged. Its Linux ABI6 is distinct from file-store ABI4.
 
 `prepared_root.rs` validates and seals a captured range-backed namespace/catalog
 without loading payloads. Hardlinks retain one canonical inode; exact root lazy
@@ -862,7 +862,8 @@ See [ROOT-AOT.md](ROOT-AOT.md) for trusted-artifact requirements, typed ownershi
 local SourceId scope, finite admission history, cancellation and retirement. This
 connects a selected fixed static caller, not the ordinary BusyBox/shell/muk/TTY
 profile. Low-address Worker FS is covered by [TLS-CALLER.md](TLS-CALLER.md);
-clear-tid, sendfile and Linux signal/VM compatibility remain gates.
+single-task218/231 is covered by [TASK-CALLER.md](TASK-CALLER.md);
+owned sendfile and Linux signal/VM compatibility remain gates.
 
 ### Non-byte effect reservation foundation
 
@@ -882,3 +883,12 @@ Worker setter, then ACK, matching Rust receipt and only then the final guest
 return. Unknown closes admission and retains resources even after observed exit;
 no generic stopped-zero or replay shortcut is supplied. See
 [TLS-CALLER.md](TLS-CALLER.md) for the complete selected scope and failure evidence.
+
+### Single guest task registration and group exit
+
+The sequenced selected caller retains full-u64 clear_child_tid metadata in a
+snapshot-bound SingleTask, with execution-local guest identity1. One guest mm
+user means no exit-time guest clear/wake; physical SAB sharing is not CLONE_VM.
+The same owned exit request/actual Worker stop/resource-retirement gates apply.
+See [TASK-CALLER.md](TASK-CALLER.md) for native counterexamples, private ABI6
+metadata observation, lost RETURN/LEAVE and the shared-mm compatibility gate.
