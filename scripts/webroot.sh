@@ -1,5 +1,5 @@
 #!/bin/sh
-# The web root this tree's app is built with (public/webroot): the root why pins newest (why/prompt/roots/pins.rs,
+# The web root this tree's app is built with (why/app/public/webroot): the root why pins newest (why/prompt/roots/pins.rs,
 # fetched by scripts/root-file.ts when it is not given), made into layers by ricebox itself
 # (ricebox/distribution/build/distribution.sh: its index, packs and blobs, and the box's maker beside them).
 #
@@ -7,7 +7,7 @@
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 root=${1:-}
-out=${2:-$here/public/webroot}
+out=${2:-$here/why/app/public/webroot}
 if [ -z "$root" ]; then root=$(node "$here/scripts/root-file.ts" "$here/target/root"); fi
 # Product-specific warm programs and the former CLI name belong here, not in ricebox.
 cli=/usr/bin/why

@@ -7,7 +7,7 @@
 //
 // ROOT  the release root (os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst),
 //       or a root installed from it (<data>/system/<sha256>/root)
-// WEB   the web root (public/webroot, ricebox/distribution/build/distribution.ts), each pack checked
+// WEB   the web root (why/app/public/webroot, ricebox/distribution/build/distribution.ts), each pack checked
 //       whole against its table (ricebox/distribution/format/pack.ts)
 // --manifests DIR  writes native.txt and web.txt there, one line a path
 import {mkdirSync, statSync, writeFileSync} from 'node:fs';

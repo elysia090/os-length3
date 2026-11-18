@@ -1,6 +1,6 @@
 /* The page and its elements as the OS has them everywhere: boxes, fields, the pointer, scrollbars, focus, words said
    quietly or small. */
-/* The name's face (Home's profile): Inter Display Black, its Latin letters, kept with the app (public/fonts, OFL);
+/* The name's face (Home's profile): Inter Display Black, its Latin letters, kept with the app (why/app/public/fonts, OFL);
    any other letters are the system's at the same weight. Not drawn until it is here (it is small and local), so the
    name never jumps from one face to the other. */
 @font-face {

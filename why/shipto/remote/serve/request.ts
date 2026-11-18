@@ -199,7 +199,7 @@ export const API_POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 
  * Nothing the Remote answers is kept by a cache (but what a route says may be kept: a file named by
  * its digest or its pinned name, files.ts), read as another type than it says, framed, taken by
  * another site's page as a resource, or reached again but by HTTPS; and a link followed from it
- * says nothing of where it came from (OWASP ASVS 14.4; the app's own files: public/_headers).
+ * says nothing of where it came from (OWASP ASVS 14.4; the app's own files: why/app/public/_headers).
  */
 export const unkept: MiddlewareHandler = async (c, next) => {
   await next();

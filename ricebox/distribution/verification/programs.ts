@@ -24,7 +24,7 @@
 // --warm: each line run once before the run timed, what it translated kept between runs as a browser keeps it (Cache
 // Storage, keeper.ts): the time of a Prompt that ran its programs before, not of the first one.
 //
-// WEB is the web root (public/webroot; a root of packs of before is read
+// WEB is the web root (why/app/public/webroot; a root of packs of before is read
 // too), ROOT_DIR the same root unpacked (for the native run). The translator
 // is why's own (its index names it), else ricebox/sods' wasm build.
 import {spawn} from 'node:child_process';

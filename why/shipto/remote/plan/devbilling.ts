@@ -634,14 +634,14 @@ const LOOK = {background: '#f9f8f5', button: '#2c2a27', hover: '#45423e', font: 
  */
 /**
  * The price set as Home sets a person's name, in the app's display face (Inter Display Black, its Latin letters: the
- * app's own file, public/fonts), read the first time a page shows it; without the file (a Worker), the page's own
+ * app's own file, why/app/public/fonts), read the first time a page shows it; without the file (a Worker), the page's own
  * face at the same weight.
  */
 let face: string | undefined;
 const faceOf = () => {
   if (face === undefined) {
     try {
-      const woff2 = readFileSync(new URL('../../../../public/fonts/inter-display-black.woff2', import.meta.url)).toString('base64');
+      const woff2 = readFileSync(new URL('../../../../why/app/public/fonts/inter-display-black.woff2', import.meta.url)).toString('base64');
       face = `@font-face{font-family:"Inter Display";font-weight:900;font-style:normal;font-display:block;src:url(data:font/woff2;base64,${woff2}) format("woff2")}`;
     } catch { face = ''; }
   }

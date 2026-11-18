@@ -1,4 +1,4 @@
-// The web root (public/webroot): why for the browser's Prompt, taken from the release of the
+// The web root (why/app/public/webroot): why for the browser's Prompt, taken from the release of the
 // newest why this tree pins: the same root the desktop app installs, as the browser reads it
 // (ricebox/distribution/build/distribution.ts). It is made where Rust is, by the release
 // (.github/workflows/release.yml), and is the OS that version is; a build
@@ -9,7 +9,7 @@
 // SHA256SUMS must say the same of the file it is in; webroot.json must name that
 // root and that index; the index must be that digest, and every pack and
 // blob it names the digest its name is. Anything else is refused, and
-// nothing is put in public/webroot. Shipping a newer Prompt is releasing it (a
+// nothing is put in why/app/public/webroot. Shipping a newer Prompt is releasing it (a
 // new version in ricebox/distribution/RELEASE): the release proposes the entry it pinned to main.
 //
 //   node scripts/prompt-files.ts
@@ -107,11 +107,11 @@ const known = new Set(['webroot.json', ...(mukBytes ? ['muk.json'] : []), ...(ca
 const unnamed = [...members.keys()].filter((name) => !known.has(name));
 if (unnamed.length) throw new Error(`${asset} holds ${unnamed.join(', ')}, which its index does not name`);
 
-// Checked, all of it: then it is what public/webroot is, in one rename.
-const work = mkdtempSync(join(here, 'public', '.webroot-'));
+// Checked, all of it: then it is what why/app/public/webroot is, in one rename.
+const work = mkdtempSync(join(here, 'why/app/public', '.webroot-'));
 try {
   for (const [name, bytes] of members) { mkdirSync(join(work, name, '..'), {recursive: true}); writeFileSync(join(work, name), bytes); }
-  rmSync(join(here, 'public', 'webroot'), {recursive: true, force: true});
-  renameSync(work, join(here, 'public', 'webroot'));
+  rmSync(join(here, 'why/app/public', 'webroot'), {recursive: true, force: true});
+  renameSync(work, join(here, 'why/app/public', 'webroot'));
 } catch (e) { rmSync(work, {recursive: true, force: true}); throw e; }
-console.log(`why ${version} for the browser (root ${pin.sha256.slice(0, 12)}…, index ${pin.web.slice(0, 12)}…, ${(tar.length / 1e6).toFixed(1)} MB) is in public/webroot`);
+console.log(`why ${version} for the browser (root ${pin.sha256.slice(0, 12)}…, index ${pin.web.slice(0, 12)}…, ${(tar.length / 1e6).toFixed(1)} MB) is in why/app/public/webroot`);

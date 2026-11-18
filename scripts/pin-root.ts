@@ -13,7 +13,7 @@
 //
 //   node scripts/pin-root.ts OUT/os-length3-linux-X.Y.Z-x86_64-<sha256>.tar.zst [WEB] [--rs FILE]
 //
-// WEB is the web root made from that root (public/webroot); its webroot.json
+// WEB is the web root made from that root (why/app/public/webroot); its webroot.json
 // must name this root. --rs writes another root/ (for a test).
 
 import {createHash} from 'node:crypto';

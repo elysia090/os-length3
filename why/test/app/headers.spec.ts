@@ -1,6 +1,6 @@
 import {expect, test} from './fixtures.ts';
 
-// The app under the headers Workers Assets serves it with (public/_headers, which the preview serves
+// The app under the headers Workers Assets serves it with (why/app/public/_headers, which the preview serves
 // too): the whole policy as a header, and no other page may frame it (security audit H1).
 
 test('the app runs under its header policy, and another page that frames it gets nothing', async ({app, page, baseURL}) => {

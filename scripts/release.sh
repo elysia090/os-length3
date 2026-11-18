@@ -59,14 +59,14 @@ else
 fi
 
 # The web root, the same root: every path, type, mode, link target and sha256 as the app installs.
-sh scripts/webroot.sh "$root" public/webroot
-node ricebox/distribution/verification/distribution.ts "$root" public/webroot
+sh scripts/webroot.sh "$root" why/app/public/webroot
+node ricebox/distribution/verification/distribution.ts "$root" why/app/public/webroot
 webroot=os-length3-linux-$version-webroot.tar
-tar -C public/webroot --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
+tar -C why/app/public/webroot --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=pax \
   --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime -cf "$out/$webroot" .
 
 # One entry pins both ways in, before anything that trusts it is built.
-node scripts/pin-root.ts "$root" public/webroot
+node scripts/pin-root.ts "$root" why/app/public/webroot
 
 # The web build (it checks the types and runs the tests) and the desktop app.
 WEBROOT_READY=1 sh scripts/web-release.sh

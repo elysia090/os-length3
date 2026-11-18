@@ -4,7 +4,7 @@
 // which. A root's programs run in a box muk makes, in a page as on Linux (the same program, translated there as
 // the root's own are); it is served beside the root until a root is released that carries it.
 //
-//   node ricebox/distribution/build/muk-artifact.ts [WEB]     WEB: the web root (public/webroot)
+//   node ricebox/distribution/build/muk-artifact.ts WEB
 //
 // By the Vite plugin (why/app/vite.config.ts) at each dev-server start and build, where there is a web root; and by
 // what checks the root's programs in node (../verification/programs.ts).
@@ -53,6 +53,8 @@ export function putMuk(web: string): {path: string; sha256: string; size: number
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const web = resolve(process.argv[2] ?? join(OS, 'public', 'webroot'));
+  const input = process.argv[2];
+  if (!input) throw new Error('Usage: muk-artifact.ts WEB_ROOT');
+  const web = resolve(input);
   console.log(`muk: ${putMuk(web).path} in ${web}`);
 }

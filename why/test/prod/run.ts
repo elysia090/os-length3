@@ -50,7 +50,7 @@ async function withRemote<T>(o: Omit<Parameters<typeof remote>[1], 'dir' | 'asse
   }
 }
 
-/** What public/_headers says of every file of the app (Workers Assets puts it there). */
+/** What why/app/public/_headers says of every file of the app (Workers Assets puts it there). */
 const exactly = (s: string) => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
 const APP_HEADERS: [string, RegExp][] = [['content-security-policy', exactly(`${webPolicy('')}; frame-ancestors 'none'`)], ['x-frame-options', /^DENY$/],
   ['strict-transport-security', /^max-age=31536000; includeSubDomains$/], ['referrer-policy', /^no-referrer$/], ['cross-origin-opener-policy', /^same-origin$/],
@@ -107,7 +107,7 @@ async function headers() {
     assert.equal(answers[7][1].headers.get('access-control-allow-origin'), r.url, 'preflight: the app\'s origin');
     const file = await (await fetch(`${r.url}/_headers`, {headers: {'Sec-Fetch-Mode': 'no-cors'}})).text();
     assert.ok(!file.includes('frame-ancestors'), '_headers is not served as a file');
-    say('headers: the app\'s files carry public/_headers as Workers Assets serves them; /v1, /api and /.well-known carry the Remote\'s own');
+    say('headers: the app\'s files carry why/app/public/_headers as Workers Assets serves them; /v1, /api and /.well-known carry the Remote\'s own');
   });
 }
 
@@ -200,7 +200,7 @@ try {
   const built = spawnSync(process.execPath, [join(OS, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--config', join(OS, 'why', 'app', 'vite.config.ts'), '--outDir', assets, '--logLevel', 'error'],
     {cwd: OS, stdio: 'inherit', env: {...process.env, VITE_LENGTH3_REMOTE: ''}});
   if (built.status !== 0) throw new Error('the app did not build');
-  assert.ok(existsSync(join(assets, '_headers')), 'the build carries public/_headers');
+  assert.ok(existsSync(join(assets, '_headers')), 'the build carries why/app/public/_headers');
   process.env.PROD_ASSETS = assets;
   for (const part of parts) {
     say(`— ${part}`);

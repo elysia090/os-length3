@@ -290,7 +290,7 @@ the same thing for the desktop app and for the web.
 - **On a device**, the app and `why` install the root by its digest: from the
   device's Remote, then the publisher's (each deploy mirrors every pinned
   root to its bucket), then the release itself.
-- **In a browser**, the same root is read through muk (`public/webroot`, made
+- **In a browser**, the same root is read through muk (`why/app/public/webroot`, made
   from the root itself by `ricebox/distribution/build/distribution.ts`, never from anything built
   beside it): `webroot.json` (which why: its version and the root's digest), an
   index of every path (type, mode, link target; where each file's bytes

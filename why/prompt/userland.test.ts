@@ -93,7 +93,7 @@ test('webroot.json names what why is: the version and the root digest why/prompt
 });
 
 // why this build carries, when it carries one (npm run webroot, or prompt-files.ts): what webroot.json names is beside it.
-const built = new URL('../../public/webroot/', import.meta.url);
+const built = new URL('../../why/app/public/webroot/', import.meta.url);
 test('the why in public/ is whole: its index is the digest webroot.json says, and names only what is there', {skip: !existsSync(new URL('webroot.json', built))}, () => {
   const about = JSON.parse(readFileSync(new URL('webroot.json', built), 'utf8')) as About;
   const bytes = readFileSync(new URL(about.index.path, built));

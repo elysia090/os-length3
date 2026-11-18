@@ -75,7 +75,7 @@ export function appSources(os: string): string[] {
     }
   };
   walk(join(os, 'why'));
-  const pub = join(os, 'public');
+  const pub = join(os, 'why/app/public');
   if (existsSync(pub)) for (const e of readdirSync(pub, {withFileTypes: true})) if (e.isFile() && /\.m?js$/.test(e.name)) out.push(join(pub, e.name));
   return out.sort();
 }

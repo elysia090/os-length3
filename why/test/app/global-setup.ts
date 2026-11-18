@@ -69,12 +69,12 @@ function newest(path: string): number {
 
 // What the build is made of: why's parts (their TypeScript, and the Rust the browser's core is built from by
 // vite.config.ts) and its window, what is shipped beside them, and the units under them that a page runs.
-const SOURCES = ['why/app', 'why/lib.rs', ...CORE_PARTS.map((part) => `why/${part}`), 'public', 'package-lock.json', 'scripts/core-wasm.ts', 'ricebox/sods/runtime',
+const SOURCES = ['why/app', 'why/lib.rs', ...CORE_PARTS.map((part) => `why/${part}`), 'package-lock.json', 'scripts/core-wasm.ts', 'ricebox/sods/runtime',
   'ricebox/everyday/src', 'ricebox/distribution/runtime', 'ricebox/distribution/src'];
 const STAMP = join(OUT, '.built');
 
-/** What the build carries besides the sources: the browser's Prompt, when public/ has it. */
-const carries = () => JSON.stringify({prompt: existsSync(join(OS, 'public', 'webroot', 'webroot.json'))});
+/** What the build carries besides the sources: the browser's Prompt, when the app has a web root to serve. */
+const carries = () => JSON.stringify({prompt: existsSync(join(OS, 'why/app/public', 'webroot', 'webroot.json'))});
 
 /** Build unless why/test/app/.dist is newer than everything it is made from, and carries the same. */
 async function build() {

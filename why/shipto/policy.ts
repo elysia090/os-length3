@@ -1,5 +1,5 @@
 // The web app's Content Security Policy, and the headers its own files are
-// served with (public/_headers): one source for the build's <meta> tag
+// served with (why/app/public/_headers): one source for the build's <meta> tag
 // (vite.config.ts), the preview the selftest runs against, and the test that
 // _headers says the same (headers.test.ts).
 

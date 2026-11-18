@@ -14,7 +14,7 @@
 //
 //   node ricebox/distribution/verification/commands.ts WEB ROOT_DIR [--only REGEX] [--jobs N] [--seconds N] [--write | --check]
 //
-// WEB is the web root (public/webroot), ROOT_DIR the same root unpacked; --write writes the table, --check fails
+// WEB is the web root (why/app/public/webroot), ROOT_DIR the same root unpacked; --write writes the table, --check fails
 // when the table kept is not what was seen (CI: so `help` never says more, or less, than is so); without either, the
 // lines and what each did are said, and nothing is written.
 import {spawn} from 'node:child_process';

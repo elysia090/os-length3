@@ -151,7 +151,7 @@ test('one entry pins why for both: the root, and the index the browser reads it 
 });
 
 function copyPromptSources(tree: string) {
-  for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
+  for (const d of ['why/prompt/roots', 'scripts', 'why/shipto/remote/ship', 'why/app/public', 'ricebox/distribution/runtime', 'ricebox/distribution/build']) mkdirSync(join(tree, d), {recursive: true});
   // And what both of those check packs by, where the repository has it (ricebox/distribution/runtime).
   for (const f of ['why/prompt/roots/pins.rs', 'scripts/prompt-files.ts', 'ricebox/distribution/host/node/tar.ts', 'ricebox/distribution/host/node/hash.ts', 'ricebox/distribution/format/inventory.ts', 'ricebox/distribution/format/manifest.ts', 'why/shipto/remote/ship/releases.ts', 'why/shipto/desktop-releases.json',
     'ricebox/distribution/format/pack.ts', 'ricebox/distribution/deployment/capture-result.ts']) {
@@ -195,7 +195,7 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
   try {
     let r = await go();
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(files(join(tree, 'public/webroot')), files(out));
+    assert.deepEqual(files(join(tree, 'why/app/public/webroot')), files(out));
 
 
     // The release may carry muk beside the indexed root. It is part of the
@@ -210,8 +210,8 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     tar = tarOf(withMuk);
     r = await go();
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(files(join(tree, 'public/webroot')), files(withMuk));
-    const accepted = files(join(tree, 'public/webroot'));
+    assert.deepEqual(files(join(tree, 'why/app/public/webroot')), files(withMuk));
+    const accepted = files(join(tree, 'why/app/public/webroot'));
     for (const broken of [
       {...said, size: said.size + 1},
       {...said, size: -1},
@@ -220,14 +220,14 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     ]) {
       describe(broken); tar = tarOf(withMuk); r = await go();
       assert.notEqual(r.status, 0);
-      assert.deepEqual(files(join(tree, 'public/webroot')), accepted);
+      assert.deepEqual(files(join(tree, 'why/app/public/webroot')), accepted);
     }
     describe(said);
     writeFileSync(join(withMuk, said.path), Buffer.alloc(muk.length));
     tar = tarOf(withMuk); r = await go();
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /its index says/);
-    assert.deepEqual(files(join(tree, 'public/webroot')), accepted);
+    assert.deepEqual(files(join(tree, 'why/app/public/webroot')), accepted);
     // A release with no sidecar remains supported.
     tar = tarOf(out); r = await go();
     assert.equal(r.status, 0, r.stderr);
@@ -261,7 +261,7 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     choose(captureIndex.sha256); // The policy is deliberately chosen outside the supplied archive.
     r = await go();
     assert.equal(r.status, 0, r.stderr);
-    const capturedFiles = files(join(tree, 'public/webroot'));
+    const capturedFiles = files(join(tree, 'why/app/public/webroot'));
     assert.deepEqual(capturedFiles, files(withCapture));
     rmSync(join(withCapture, captureIndex.path));
     const mismatch = current({...capture, wasm: '0'.repeat(64)});
@@ -270,7 +270,7 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     r = await go();
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /expanded Wasm digest mismatch/);
-    assert.deepEqual(files(join(tree, 'public/webroot')), capturedFiles);
+    assert.deepEqual(files(join(tree, 'why/app/public/webroot')), capturedFiles);
     writeFileSync(pinFile, pinned);
 
     // A release from before the web root had its name: -l3-web.tar, its webroot.json as l3.json. Taken the same.
@@ -280,13 +280,13 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     renameSync(join(old, 'webroot.json'), join(old, 'l3.json'));
     tar = tarOf(old);
     name = 'os-length3-linux-9.9.9-l3-web.tar';
-    rmSync(join(tree, 'public/webroot'), {recursive: true, force: true});
+    rmSync(join(tree, 'why/app/public/webroot'), {recursive: true, force: true});
     r = await go();
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(files(join(tree, 'public/webroot')), files(out));
+    assert.deepEqual(files(join(tree, 'why/app/public/webroot')), files(out));
     name = 'os-length3-linux-9.9.9-webroot.tar';
 
-    // A tar whose index is not the pinned one (a pack changed, its index renamed to match): refused, and public/webroot stays as it was.
+    // A tar whose index is not the pinned one (a pack changed, its index renamed to match): refused, and why/app/public/webroot stays as it was.
     const bad = join(work, 'bad-release');
     rmSync(bad, {recursive: true, force: true});
     cpSync(out, bad, {recursive: true});
@@ -303,7 +303,7 @@ test('a Node-only build takes why from its release only at the pin, and refuses 
     r = await go();
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /this tree pins/);
-    assert.deepEqual(files(join(tree, 'public/webroot')), files(out));
+    assert.deepEqual(files(join(tree, 'why/app/public/webroot')), files(out));
     // The pinned why, but not what the release's SHA256SUMS says of its file: refused too.
     tar = tarOf(out);
     sums = sha(Buffer.from('another'));

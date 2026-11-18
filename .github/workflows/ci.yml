@@ -4,7 +4,7 @@ name: CI
 # (on the merge it would make); a branch without one runs by hand.
 on:
   pull_request:
-    paths: ['why/**', 'ricebox/**', 'scripts/**', 'public/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
+    paths: ['why/**', 'ricebox/**', 'scripts/**', 'package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'tsconfig.json', 'wrangler.toml', '.github/workflows/ci.yml']
   workflow_dispatch:
 
 # Read-only token. Actions are pinned to full commits (tag beside); Dependabot proposes updates.
@@ -76,7 +76,7 @@ jobs:
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: public/webroot
+          path: why/app/public/webroot
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
       - if: steps.kept.outputs.cache-hit != 'true'
@@ -100,12 +100,12 @@ jobs:
         run: |
           npm ci
           root=$(node scripts/root-file.ts target/root)
-          sh scripts/webroot.sh "$root" public/webroot
-          node ricebox/distribution/verification/distribution.ts "$root" public/webroot
+          sh scripts/webroot.sh "$root" why/app/public/webroot
+          node ricebox/distribution/verification/distribution.ts "$root" why/app/public/webroot
       - if: steps.kept.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: public/webroot
+          path: why/app/public/webroot
           key: ${{ steps.key.outputs.key }}
 
   # Every command of issue #80 run under muk and natively in the pinned root; the table `help` reads
@@ -127,7 +127,7 @@ jobs:
       - name: Restore web root
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: public/webroot
+          path: why/app/public/webroot
           key: ${{ needs.webroot.outputs.key }}
           fail-on-cache-miss: true
       # Each line's box is made by muk on both sides (ricebox/distribution/verification/programs.ts), natively in a user namespace
@@ -141,7 +141,7 @@ jobs:
           npm ci
           root=$(node scripts/root-file.ts target/root)
           mkdir -p target/root-open && tar --zstd -xf "$root" -C target/root-open
-          node ricebox/distribution/verification/commands.ts public/webroot target/root-open/root --jobs 4 --check
+          node ricebox/distribution/verification/commands.ts why/app/public/webroot target/root-open/root --jobs 4 --check
 
   # cowboy: its Rust by itself (names answered on the device, the way to an address, a relay's one line), then as
   # wasm with a real program: the pinned root's curl on sods' Linux in node, asking a name and reaching a server by it.
@@ -162,7 +162,7 @@ jobs:
       - name: Restore web root
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: public/webroot
+          path: why/app/public/webroot
           key: ${{ needs.webroot.outputs.key }}
           fail-on-cache-miss: true
       - name: Its Rust, by itself
@@ -730,7 +730,7 @@ jobs:
       - name: Restore web root
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: public/webroot
+          path: why/app/public/webroot
           key: ${{ needs.webroot.outputs.key }}
           fail-on-cache-miss: true
       - name: Test

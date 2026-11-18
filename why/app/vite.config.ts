@@ -87,7 +87,7 @@ const coreWasm = (): Plugin => ({
 });
 
 /**
- * The box's maker beside the web root (ricebox/distribution/build/muk-artifact.ts: muk.json and its blob in public/webroot), built from this tree
+ * The box's maker beside the web root (ricebox/distribution/build/muk-artifact.ts: muk.json and its blob in why/app/public/webroot), built from this tree
  * when its sources changed, once per dev-server start and per build: a page's Prompt runs the root's programs in a
  * box muk makes, as the app's does on Linux. Only where this build carries a web root (the web's; the desktop app
  * reads the Remote's), which is where muk can be built too.
@@ -95,7 +95,7 @@ const coreWasm = (): Plugin => ({
 const muk = (): Plugin => ({
   name: 'why-muk',
   buildStart() {
-    const web = resolve(TOP, 'public', 'webroot');
+    const web = resolve(TOP, 'why/app/public', 'webroot');
     if (HOST === 'web' && existsSync(resolve(web, 'webroot.json'))) putMuk(web);
   },
 });
@@ -117,7 +117,7 @@ const hostOnly = (): Plugin => {
     name: 'why-host',
     enforce: 'pre',
     configResolved(c) { out = resolve(c.root, c.build.outDir); },
-    // public/ is copied whole; the web root (public/webroot, made by npm run webroot) is the web's alone.
+    // public/ is copied whole; the web root (why/app/public/webroot, made by npm run webroot) is the web's alone.
     closeBundle() { if (HOST === 'native' && out) rmSync(resolve(out, 'webroot'), {recursive: true, force: true}); },
     async resolveId(source, importer, options) {
       if (!importer || !other.some((m) => source.endsWith(`/${m.split('/').pop()}.ts`))) return null;
@@ -170,7 +170,7 @@ const boot = (): Plugin => ({
 });
 
 /**
- * Cross-origin isolation, as public/_headers gives it in production: the page
+ * Cross-origin isolation, as why/app/public/_headers gives it in production: the page
  * may share memory, so the Prompt runs each guest thread in a Worker of its
  * own. The development server and the preview (the selftest's) say the same.
  */
@@ -181,14 +181,13 @@ const TOP = fileURLToPath(new URL('../..', import.meta.url));
 
 export default defineConfig({
   clearScreen: false,
-  // The page is this folder (index.html beside this file); what it ships beside its build is the repository's public/.
+  // Vite serves this app's public/ directory alongside its bundled assets.
   root: fileURLToPath(new URL('.', import.meta.url)),
-  publicDir: resolve(TOP, 'public'),
   envDir: TOP,
   cacheDir: resolve(TOP, 'node_modules/.vite'),
-  // The preview (the selftest's) serves the build with the headers Workers Assets gives it (public/_headers),
+  // The preview (the selftest's) serves the build with the headers Workers Assets gives it (why/app/public/_headers),
   // so the app is tested under its real policy, frame-ancestors and all.
-  preview: {headers: headersOf(readFileSync(new URL('../../public/_headers', import.meta.url), 'utf8'))},
+  preview: {headers: headersOf(readFileSync(new URL('./public/_headers', import.meta.url), 'utf8'))},
   server: {port: 1420, strictPort: true, fs: {allow: [TOP]}, headers: ISOLATED,
     proxy: DEV_REMOTE ? Object.fromEntries(WORKER_FIRST.map((p) => [p, DEV_REMOTE])) : undefined},
   worker: {format: 'es'},

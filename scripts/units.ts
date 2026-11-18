@@ -55,7 +55,7 @@ export const RICEBOX_UNITS = ['toolchain', 'muk', 'sods', 'ricebox', 'everyday',
 
 /** What is no unit's: the tests, the scripts that build and check (the root's own among them), what is made, and notes. */
 export const NOT_UNITS = ['scripts', 'why/test', 'ricebox/sods/test', 'ricebox/muk/test', 'ricebox/sods/examples', 'ricebox/otter/test', 'ricebox/cowboy/test', 'ricebox/cowboy/target',
-  'why/api/web/src/tests', 'node_modules', 'target', 'dist', 'public', 'ricebox/sods/target', 'ricebox/distribution/terminal/target', 'research_notes', 'reports',
+  'why/api/web/src/tests', 'node_modules', 'target', 'dist', 'why/app/public', 'ricebox/sods/target', 'ricebox/distribution/terminal/target', 'research_notes', 'reports',
   'temp', '.github', '.claude'];
 const isTest = (rel: string) => /\.test\.(ts|rs)$|(^|\/)tests?\/|\/testing[^/]*\.ts$|\.d\.ts$/.test(rel);
 

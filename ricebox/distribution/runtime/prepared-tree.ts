@@ -24,7 +24,7 @@ export async function prepareTree(options: {
   const {fileStore, root, files = [], muk} = options;
   if (root) requireFileStoreName(root.index);
   if (fileStore !== undefined && (fileStore === null || typeof fileStore !== 'object')) throw new Error('Invalid file-store artifact selection');
-  if (!muk) throw new Error('This root is served with no muk beside it (ricebox/distribution/build/muk-artifact.ts puts it there)');
+  if (!muk) throw new Error('The selected web root has no Muk artifact');
   const scope = fileStore !== undefined ? await loadFileScope(fileStore.module, fileStore.maxFileBytes) : null;
   const vfs = new Vfs();
   try {

@@ -71,7 +71,7 @@ tracked in issue #20.
   written back through the store (text files up to the read limit), and
   what is saved anywhere else is put into the shell's copy, so the shell,
   File, Forge and Git see one repo. Its one dependency is why (OS.md,
-  why: the one base): in a browser, `public/webroot`, made from the release root
+  why: the one base): in a browser, `why/app/public/webroot`, made from the release root
   by `ricebox/distribution/build/distribution.ts`: `webroot.json` (which why, and the root's digest), an index
   of every path, a pack per package that a file is read from when a program
   first opens it, and the translator with BusyBox, why and git translated
@@ -83,8 +83,8 @@ tracked in issue #20.
   reads it rather than translating it again. Make it
   with `npm run webroot` (`scripts/webroot.sh`: the translator from this tree and the
   newest root `why/prompt/roots/pins.rs` pins), and check it against that root
-  with `npm run webroot:parity -- ROOT public/webroot`; `node ricebox/distribution/verification/programs.ts
-  public/webroot ROOT_DIR` says which programs of it run under muk today.
+  with `npm run webroot:parity -- ROOT why/app/public/webroot`; `node ricebox/distribution/verification/programs.ts
+  why/app/public/webroot ROOT_DIR` says which programs of it run under muk today.
 
 ## why: the same OS on the command line
 
@@ -629,7 +629,7 @@ Each build carries only its own host's part, decided when it is built
 (`vite.config.ts`: the desktop app's when Tauri's CLI runs the build). The
 web's alone (the browser's core and its worker, the web root and muk,
 passkeys) each has a `.desktop.ts` beside it with the same exports, which the
-app's build takes instead, and leaves out `public/webroot`; Tauri's API
+app's build takes instead, and leaves out `why/app/public/webroot`; Tauri's API
 (`why/api/tauri.ts`) has a `.web.ts` the web's build takes. `isNative`
 (`why/api/host.ts`) is that same fact, so a branch for the other host is dropped
 too. The app's page is about 0.4 MB, the web's 1.3 MB with its core.
@@ -657,7 +657,7 @@ cancels the older run. Jobs run side by side, so a run takes as long as its long
 | Job | What it does |
 | --- | --- |
 | Core (wasm) | the core for the browser (`why/api/web`, `wasm32-wasip1`), cached by its sources |
-| Web root | `public/webroot` from the pinned root, checked against that root; cached by the root and the translator |
+| Web root | `why/app/public/webroot` from the pinned root, checked against that root; cached by the root and the translator |
 | Commands | every command of issue #80 under muk and natively; the table `help` reads checked against the results |
 | Typecheck | `tsc --noEmit` |
 | Unit (n/4) | `npm test`, each shard every fourth file (`NODE_OPTIONS=--test-shard=1/4 npm test` locally) |
@@ -700,7 +700,7 @@ repository is read. About 95 journeys take about four minutes on four cores.
 - Locally Chromium is `npx playwright install chromium` (or
   `PLAYWRIGHT_BROWSERS_PATH` where one is installed).
 - The Prompt's tests are tagged `@slow` (the root's BusyBox and why through
-  the translator) and run with `SELFTEST_SLOW=1` once `public/webroot` holds why
+  the translator) and run with `SELFTEST_SLOW=1` once `why/app/public/webroot` holds why
   (`npm run webroot`, or `node scripts/prompt-files.ts`); the build then
   carries it. `first-prompt.spec.ts` measures what a first Prompt fetches.
 - CI (Selftest in `.github/workflows/ci.yml`) runs everything in four

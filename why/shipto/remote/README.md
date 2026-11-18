@@ -240,7 +240,7 @@ L2, RFC 9700, RFC 8628 and WebAuthn, is tested in `tests/security.test.ts`
   Remote answers data, never a page; the stand-in provider's page says its
   own), `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS a
   year with subdomains, `Cross-Origin-Resource-Policy: same-origin`. The
-  app's own files get theirs from `public/_headers`.
+  app's own files get theirs from `why/app/public/_headers`.
 - **CORS** (`fromOrigins`): only the app's origins (`APP_ORIGIN`,
   `APP_ORIGINS`) are answered, with credentials; a preflight is kept ten
   minutes. `If-None-Match` is taken and `ETag` shown, for a look's tag.

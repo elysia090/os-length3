@@ -12,10 +12,10 @@ import {outside, type Dial} from '../host/outside.ts';
 
 // cowboy with a real program on sods' Linux in node: the root's own curl asks a name, is given an address of
 // cowboy's own, connects to it, and the link is dialled by the name it was meant for (here: a socket of node's, to
-// a server of this test's; in a page, a relay). Needs the web root this tree builds with (public/webroot) and cowboy
+// a server of this test's; in a page, a relay). Needs the web root this tree builds with (why/app/public/webroot) and cowboy
 // built as wasm (cargo build --release --target wasm32-unknown-unknown, in ricebox/cowboy).
 
-const web = new URL('../../../public/webroot/', import.meta.url).pathname;
+const web = new URL('../../../why/app/public/webroot/', import.meta.url).pathname;
 const wasm = new URL('../target/wasm32-unknown-unknown/release/cowboy.wasm', import.meta.url);
 const have = existsSync(`${web}webroot.json`) && existsSync(wasm);
 

@@ -21,7 +21,7 @@ test/            the root's own curl on sods' Linux in node, reaching a server b
 ```
 cargo test                                                     its Rust, by itself
 cargo build --release --target wasm32-unknown-unknown          as a box's host loads it
-node --test test/*.test.ts                                     with a real program (needs public/webroot)
+node --test test/*.test.ts                                     with a real program (needs why/app/public/webroot)
 ```
 
 ## How a link is made

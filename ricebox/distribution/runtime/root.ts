@@ -49,7 +49,7 @@ export function createRoot(config: RootConfig) {
 
 /**
  * Whether each guest thread runs in a Worker of its own, all at once: the page shares memory (cross-origin isolated:
- * COOP and COEP, public/_headers) and a Worker can wait on it. Otherwise they take turns in the Prompt's Worker.
+ * COOP and COEP headers) and a Worker can wait on it. Otherwise they take turns in the Prompt's Worker.
  * sods' to say (host.ts): a translation is made, and kept, for one or the other.
  */
 const threadsApart = canRunApart;
@@ -98,7 +98,7 @@ const threadsApart = canRunApart;
 
 
 /** Where why is read from: the page's own origin in a browser; in the app (on a machine whose Prompts run translated),
- * the site of the Remote it is built for, which serves the same files to anyone (public/_headers). */
+ * the site of the Remote it is built for, which serves the same files to anyone. */
 const BASE = config.base;
 /** The name what is kept is under: this distribution's, by where it is read from. Asked when first kept or read, not
  * as the module loads: where there is no page (a test in node), nothing is kept and nothing asks. */
