@@ -175,3 +175,23 @@ sealed Core startup for a raw ABI counterexample. That probe uses fixed,
 independent diagnostic lanes and synthetic image/unwind receipts. It neither
 publishes a captured guest write/sendfile nor runs a Worker. No startup export
 for this mode exists in the normal or older sendfile-only artifact.
+
+## Transfer pre-admitted initialized output storage
+
+The private staging path reserves Q/K before allocating an exact initialized
+buffer. The stage owns both that allocation and the exact reservation. Only
+a complete stable native input copy changes the type from unfilled to filled;
+initialization or a short input is not successful capture. Publication moves
+the filled allocation into the same FIFO, without a second copy; cancellation
+returns the exact reservation and releases storage. Failed allocation rolls
+back its reservation. Foreign or closed publication returns ownership intact.
+No new buffer view crosses an ABI, callback, or async boundary.
+
+Initialization costs a zeroing pass, followed by one input copy. Moving into
+the FIFO performs fixed metadata work regardless of payload size; direct
+native copy remains available without an initialization pass. A future
+Worker bridge still needs exact invocation/sequence/cancel admission and
+trusted lexical transfer evidence; it cannot publish merely initialized bytes.
+External consumers need their own offer identity, ended access and stopped
+effects. Neither all confirmed bytes, queue acceptance, nor an observed
+Worker exit establishes any external delivery or stop.

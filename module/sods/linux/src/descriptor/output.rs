@@ -1,6 +1,7 @@
 //! Private finite publication of retained file prefixes and owned copies.
 //! Not a guest pipe, cancellation gate, or external output/drain adapter.
 use super::{Error as FilesError, Files, OutputHold, ReadHold, ReadPrefix, Table};
+use std::marker::PhantomData;
 use std::num::{NonZeroU64, NonZeroUsize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,6 +56,35 @@ pub(super) struct Pin(Ticket);
 #[derive(Debug)]
 #[must_use = "cancel the reservation with its owner or consume it in one publication"]
 pub(super) struct Reservation(Ticket);
+
+#[derive(Debug)]
+pub(super) enum Unfilled {}
+#[derive(Debug)]
+pub(super) enum Filled {}
+/// Initialized storage and the exact reservation it was admitted against.
+/// Dropping the stage is not permission to restore the lane's credits.
+#[derive(Debug)]
+#[must_use = "publish filled bytes or cancel the exact reservation with its owner"]
+pub(super) struct WriteStage<State> {
+    reservation: Reservation,
+    bytes: Vec<u8>,
+    state: PhantomData<State>,
+}
+impl WriteStage<Unfilled> {
+    /// Native trusted loan only. The caller separately owns invocation and
+    /// cancel checks. There is no mutable host view or external stop proof.
+    pub(super) fn copy_from(mut self, input: &[u8]) -> Result<WriteStage<Filled>, (Error, Self)> {
+        if self.bytes.len() != input.len() {
+            return Err((Error::Length, self));
+        }
+        self.bytes.copy_from_slice(input);
+        Ok(WriteStage {
+            reservation: self.reservation,
+            bytes: self.bytes,
+            state: PhantomData,
+        })
+    }
+}
 
 pub(super) struct Rejected {
     pub error: Error,
@@ -375,13 +405,71 @@ impl Queue {
             Ok(length) => length,
             Err(error) => return Err((error, reservation)),
         };
-        let mut bytes = Vec::new();
-        if bytes.try_reserve_exact(length.get()).is_err() || bytes.capacity() != input.len() {
-            return Err((Error::Capacity, reservation));
-        }
+        let mut bytes = match Self::copy_storage(length) {
+            Ok(bytes) => bytes,
+            Err(error) => return Err((error, reservation)),
+        };
         bytes.extend_from_slice(input);
         self.link(reservation, Chunk::Copied(bytes));
         Ok(length)
+    }
+    fn copy_storage(length: NonZeroUsize) -> Result<Vec<u8>, Error> {
+        let length = length.get();
+        let mut bytes = Vec::new();
+        if bytes.try_reserve_exact(length).is_err() || bytes.capacity() != length {
+            return Err(Error::Capacity);
+        }
+        Ok(bytes)
+    }
+    /// Allocate only after bounded admission. The zeros are not captured data.
+    fn stage_write(&mut self, length: NonZeroUsize) -> Result<WriteStage<Unfilled>, Error> {
+        let reservation = self.reserve(length)?;
+        let mut bytes = match Self::copy_storage(length) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.cancel(reservation).expect("new staging reservation");
+                return Err(error);
+            }
+        };
+        bytes.resize(length.get(), 0);
+        Ok(WriteStage {
+            reservation,
+            bytes,
+            state: PhantomData,
+        })
+    }
+    /// Ownership transfer only. Reject without destroying the filled storage
+    /// or its reservation. The caller excludes cancellation before this turn.
+    fn publish_staged(
+        &mut self,
+        stage: WriteStage<Filled>,
+    ) -> Result<NonZeroUsize, (Error, WriteStage<Filled>)> {
+        let length = match self.copy_length(&stage.reservation, stage.bytes.len()) {
+            Ok(length) => length,
+            Err(error) => return Err((error, stage)),
+        };
+        self.link(stage.reservation, Chunk::Copied(stage.bytes));
+        Ok(length)
+    }
+    fn cancel_staged<State>(
+        &mut self,
+        stage: WriteStage<State>,
+    ) -> Result<(), (Error, WriteStage<State>)> {
+        let WriteStage {
+            reservation,
+            bytes,
+            state,
+        } = stage;
+        self.cancel(reservation).map_err(|(error, reservation)| {
+            (
+                error,
+                WriteStage {
+                    reservation,
+                    bytes,
+                    state,
+                },
+            )
+        })
     }
     fn copy_length(
         &self,
@@ -673,6 +761,24 @@ impl Writer<'_> {
         input: &[u8],
     ) -> Result<NonZeroUsize, (Error, Reservation)> {
         self.queue.publish_copy(reservation, input)
+    }
+    pub(super) fn stage_write(
+        &mut self,
+        length: NonZeroUsize,
+    ) -> Result<WriteStage<Unfilled>, Error> {
+        self.queue.stage_write(length)
+    }
+    pub(super) fn publish_staged(
+        &mut self,
+        stage: WriteStage<Filled>,
+    ) -> Result<NonZeroUsize, (Error, WriteStage<Filled>)> {
+        self.queue.publish_staged(stage)
+    }
+    pub(super) fn cancel_staged<State>(
+        &mut self,
+        stage: WriteStage<State>,
+    ) -> Result<(), (Error, WriteStage<State>)> {
+        self.queue.cancel_staged(stage)
     }
     pub(super) fn close_admission(&mut self) {
         self.queue.close_admission();
@@ -1990,6 +2096,170 @@ mod tests {
             .unwrap());
         root.files.let_go(captured).unwrap();
         root.files.let_go(physical).unwrap();
+    }
+
+    #[test]
+    fn staged_capture_moves_its_exact_allocation_in_mixed_acceptance_order() {
+        let (mut files, _, inode, old, _) = files(502);
+        files.let_go(old).unwrap();
+        let mut root = Root::new(files, 1).ok().unwrap();
+        let (producer, consumer) = root
+            .destination(Limits {
+                bytes: 3,
+                entries: 3,
+                pins: 1,
+            })
+            .unwrap();
+        let table = root.queued_stdio(1, [&producer, &producer], 8).unwrap();
+        let source_fd = root.files.open(&table, inode, false).unwrap();
+        let first = root.files.hold_output(&table, 1).unwrap();
+        let alias = root.files.hold_output(&table, 2).unwrap();
+        let source = root.files.reserve_read(&table, source_fd, 1).unwrap();
+        let mut writer = root.held_writer(&alias).unwrap();
+        let last = writer.stage_write(n(1)).unwrap();
+        let middle = writer.reserve(n(1)).unwrap();
+        let mut writer = root.held_writer(&first).unwrap();
+        let early = writer.stage_write(n(1)).unwrap();
+        let pointer = early.bytes.as_ptr();
+        assert_eq!(early.bytes, b"\0");
+        assert_eq!(root.reader(&consumer).unwrap().front_bytes(), Ok(None));
+        let mut input = [b'A'];
+        let ready = early.copy_from(&input).unwrap();
+        input[0] = b'C';
+        root.held_writer(&first)
+            .unwrap()
+            .publish_staged(ready)
+            .unwrap();
+        let mut writer = root.held_writer(&alias).unwrap();
+        let pin = writer.pin_prefix(&source, n(1)).unwrap();
+        writer.publish(middle, pin, source).unwrap();
+        writer
+            .publish_staged(last.copy_from(&input).unwrap())
+            .unwrap();
+        input[0] = b'!';
+        assert_eq!(root.files.offset(&table, source_fd), Ok((1, 1)));
+        root.files.let_go(table).unwrap();
+        root.files.release_output(first).unwrap();
+        root.files.release_output(alias).unwrap();
+        drop(producer);
+        let mut reader = root.reader(&consumer).unwrap();
+        assert_eq!(reader.front_bytes().unwrap().unwrap().as_ptr(), pointer);
+        for expected in [b"A", b"b", b"C"] {
+            assert_eq!(reader.front_bytes(), Ok(Some(&expected[..])));
+            assert!(reader.discard_front());
+        }
+        assert_eq!(reader.front_bytes(), Ok(None));
+        assert_eq!(input, b"!"[..]);
+    }
+
+    #[test]
+    fn staged_capture_rejects_short_input_foreign_owner_and_closed_publication() {
+        let (mut a, _, _) = owner(502, 2, 1, 0);
+        let (mut b, _, _) = owner(504, 2, 1, 0);
+        let stage = a.stage_write(n(2)).unwrap();
+        let key = stage.reservation.0.key;
+        assert_eq!(a.reserve(n(1)).unwrap_err(), Error::Full);
+        let (error, stage) = stage.copy_from(b"A").unwrap_err();
+        assert_eq!(error, Error::Length);
+        assert_eq!(stage.bytes, b"\0\0");
+        let local = b.stage_write(n(2)).unwrap();
+        assert_eq!(local.reservation.0.key, key);
+        let (error, ready) = b
+            .publish_staged(stage.copy_from(b"AB").unwrap())
+            .unwrap_err();
+        assert_eq!(error, Error::BadReservation);
+        let (error, ready) = b.cancel_staged(ready).unwrap_err();
+        assert_eq!(error, Error::BadReservation);
+        assert_eq!(b.used, 2);
+        b.cancel_staged(local).unwrap();
+
+        a.close_admission();
+        let (error, ready) = a.publish_staged(ready).unwrap_err();
+        assert_eq!(error, Error::Closed);
+        assert_eq!(ready.bytes, b"AB");
+        assert_eq!(a.front_bytes(), Ok(None));
+        a.cancel_staged(ready).unwrap();
+        assert_eq!(a.used, 0);
+        assert!(a.entries.get(key).is_none());
+    }
+
+    #[test]
+    fn staged_capture_keeps_credits_reusable_after_allocation_failure_and_guest_lost() {
+        use crate::execution::{Execution, ImageResult, Unwind};
+        use crate::lease::Domain;
+        let (mut out, _, _) = owner(502, usize::MAX, 1, 0);
+        assert_eq!(
+            out.stage_write(n(isize::MAX as usize + 1)).unwrap_err(),
+            Error::Capacity
+        );
+        assert_eq!(out.used, 0);
+        assert_eq!(out.front_bytes(), Ok(None));
+        let mut domain = Domain::new(505, 1, 4).unwrap();
+        let mut execution = Execution::new(1, domain.bind(16).unwrap());
+        execution.image_begin(&mut domain, 16).unwrap();
+        execution
+            .image_finish(&mut domain, ImageResult::Installed)
+            .unwrap();
+        let invocation = execution.start(&mut domain).unwrap();
+        execution.hold_call(invocation).unwrap();
+        let stage = out.stage_write(n(1)).unwrap();
+        let old = stage.reservation.0.key;
+        assert_eq!((old.index, old.generation), (0, 2));
+        execution.check_held_call_live(invocation).unwrap();
+        let ready = stage.copy_from(b"A").unwrap();
+        execution.request_exit(invocation, 0).unwrap();
+        assert!(execution.check_held_call_live(invocation).is_err());
+        // The future caller's before-publish gate rejects after an actual
+        // capture too. No bytes were accepted and credits can be reclaimed.
+        out.cancel_staged(ready).unwrap();
+        execution.finish_call(invocation).unwrap();
+        execution
+            .receipt(&mut domain, invocation, Unwind::Exit)
+            .unwrap();
+        assert_eq!(out.front_bytes(), Ok(None));
+        let fresh = out.stage_write(n(1)).unwrap();
+        assert_eq!(fresh.reservation.0.key.index, old.index);
+        assert_ne!(fresh.reservation.0.key.generation, old.generation);
+        assert_eq!(
+            out.publish_staged(fresh.copy_from(b"Z").unwrap()).unwrap(),
+            n(1)
+        );
+        assert_eq!(out.front_bytes(), Ok(Some(&b"Z"[..])));
+    }
+
+    #[test]
+    fn guest_exit_before_first_input_cannot_publish_and_exit_after_acceptance_cannot_erase() {
+        use crate::execution::{Execution, ImageResult, Unwind};
+        use crate::lease::Domain;
+        for accepted in [false, true] {
+            let (mut out, _, _) = owner(502, 1, 1, 0);
+            let mut domain = Domain::new(505, 1, 4).unwrap();
+            let mut execution = Execution::new(1, domain.bind(16).unwrap());
+            execution.image_begin(&mut domain, 16).unwrap();
+            execution
+                .image_finish(&mut domain, ImageResult::Installed)
+                .unwrap();
+            let invocation = execution.start(&mut domain).unwrap();
+            execution.hold_call(invocation).unwrap();
+            let stage = out.stage_write(n(1)).unwrap();
+            if accepted {
+                execution.check_held_call_live(invocation).unwrap();
+                let ready = stage.copy_from(b"A").unwrap();
+                execution.check_held_call_live(invocation).unwrap();
+                out.publish_staged(ready).unwrap();
+                execution.request_exit(invocation, 0).unwrap();
+            } else {
+                execution.request_exit(invocation, 0).unwrap();
+                assert!(execution.check_held_call_live(invocation).is_err());
+                out.cancel_staged(stage).unwrap();
+            }
+            assert!(!execution.invocation_accepts_result(invocation));
+            execution.finish_call(invocation).unwrap();
+            execution
+                .receipt(&mut domain, invocation, Unwind::Exit)
+                .unwrap();
+            assert_eq!(out.front_bytes(), Ok(accepted.then_some(&b"A"[..])),);
+        }
     }
 
     #[test]
