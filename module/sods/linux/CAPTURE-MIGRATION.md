@@ -478,3 +478,42 @@ published package and host/test references; run the existing control and
 negative tests as well as the new profile on its supported hosts. Do not
 turn unknown Workerd/browser or public ABI callers into dead code by
 assuming the Node diagnostic represents them.
+
+## Current-caller equivalence gates
+
+The fixed four-byte witness is not interchangeable with either caller.
+The actual rootless managed CLI accepts single writes of 5 and 32 bytes and
+keeps its borrowed stdout, stderr and stdin independent. The same five-byte
+native ELF completes through that CLI and refuses before publishing any
+result through the private capture host. On the actual shared RemoteKernel
+Worker, whole-AOT commands retain a 13-byte output record, and copying the
+fixture's canonical executable delivers records of 4096, 4096 and 1064
+bytes. These controlled sizes are positive compatibility requirements, not
+a workload distribution or a justification for choosing 4096 as a limit.
+
+Choose the first real caller before specifying separate byte (Q), record (K)
+and pinned-range (R) limits. At minimum an exact-acceptance profile must fit
+each call it promises to accept in an empty lane; a resident pin does not
+make that requirement disappear. Returning a short prefix or splitting an
+oversized request changes the guest contract and requires its own proof
+under cancellation and real endpoint behavior. Buffered acceptance alone
+is not a substitute for the managed CLI's external I/O or errno behavior.
+
+The output origin lost by a joined byte stream is an independent blocker
+for both current callers. Preserve the immutable stdout/stderr destination
+on the original OFD, not the current syscall FD; redirection and aliases
+must not relabel an accepted record. One ordered queue with per-record
+origin preserves ordering without separate Q/K/R pools and an arbitration
+layer. A successful owned read is still not a physical receipt.
+
+Treat ready-only file capture as a separate policy. A cold file must not
+start or disturb another load until a real caller selects a cold-source
+contract with its own completion/stop evidence. The normal prepared
+read and existing RemoteKernel can materialize cold bytes for their own
+semantic paths; the ready-only negative is not equivalence to those paths.
+
+A RemoteKernel cutover must additionally compare the capabilities its real
+consumers use: multiple/suspended Workers, read/input readiness, signals and
+output flush epochs, pipes/TTY and Node versus actual browser/Workerd hosts.
+The verified file-store binding and a successful Linux x64 Node witness do
+not migrate any of those callers or retire their TS files.

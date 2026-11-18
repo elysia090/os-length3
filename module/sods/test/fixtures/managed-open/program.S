@@ -57,9 +57,15 @@ _start:
  mov $1,%eax
  mov $1,%edi
  lea buffer(%rip),%rsi
+#ifdef SODS_CAPTURE_WIDE_OUTPUT
+ mov $5,%edx
+ syscall
+ want 5
+#else
  mov $4,%edx
  syscall
  want 4
+#endif
 #if defined SODS_CAPTURE_READY_SOURCE
  /* The normal read already loaded this canonical file. Q is still full. */
  send_resident_byte

@@ -22,15 +22,19 @@ test(`${provenance} managed CLI runs a rootless static guest with real stdio`, {
       execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
         '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
       ], {stdio: 'pipe', timeout: 30_000});
-      const input = Buffer.from([0, 255, 65, 10]);
-      const result = spawnSync(process.execPath, [cli, '--managed', program, 'a', 'b'], {
-        input, timeout: 20_000, maxBuffer: 1024 * 1024, env,
-      });
-      assert.equal(result.error, undefined);
-      assert.equal(result.signal, null);
-      assert.equal(result.status, status, result.stderr.toString());
-      assert.deepEqual(result.stdout, status === 23 ? input : Buffer.alloc(0));
-      assert.equal(result.stderr.toString(), status === 23 ? 'err\n' : '');
+      // 5 and 32 are already accepted by this actual --managed entry. A
+      // private Q4 capture can neither replace it nor infer a production cap.
+      for (const length of status === 23 ? [4, 5, 32] : [4]) {
+        const input = Buffer.from(Uint8Array.from({length}, (_, i) => [0, 255, 65, 10][i % 4]!));
+        const result = spawnSync(process.execPath, [cli, '--managed', program, 'a', 'b'], {
+          input, timeout: 20_000, maxBuffer: 1024 * 1024, env,
+        });
+        assert.equal(result.error, undefined);
+        assert.equal(result.signal, null);
+        assert.equal(result.status, status, result.stderr.toString());
+        assert.deepEqual(result.stdout, status === 23 ? input : Buffer.alloc(0));
+        assert.equal(result.stderr.toString(), status === 23 ? 'err\n' : '');
+      }
     }
     // Artifact failure cannot select the legacy runner or execute the guest.
     const emptyWasm = join(dir, 'empty.wasm');

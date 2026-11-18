@@ -123,7 +123,9 @@ test('source-bound whole AOT runs without source, in both memory modes and the s
       assert.equal(kernel instanceof RemoteKernel, !profile.inline); assert.equal(kernel.shared, profile.shared);
       assert.equal(attached.size, 1); assert.equal(r.reads(), 0);
       assert.equal(await kernel.spawn('/bin/alias', ['/bin/alias'], [], '/'), 0);
-      assert.equal(Buffer.concat(chunks).toString(), 'source-bound\n'); assert.equal(r.reads(), 0);
+      assert.equal(Buffer.concat(chunks).toString(), 'source-bound\n');
+      assert.deepEqual(chunks.map(chunk => chunk.length), [13], 'one real output record already exceeds Q4');
+      assert.equal(r.reads(), 0);
     } finally { await stopped(kernel); }
   });
 });
@@ -139,6 +141,8 @@ test('whole AOT later /proc/self/exe and ordinary reads demand the exact complet
       assert.equal(r.reads(), 0);
       assert.equal(await kernel.spawn('/bin/program', ['/bin/program', 'copy'], [], '/'), 0);
       assert.deepEqual(new Uint8Array(Buffer.concat(chunks)), elf); assert.equal(r.reads(), 1);
+      assert.ok(chunks.some(chunk => chunk.length === 4096), 'a real output record can carry a page');
+      if (!profile.inline) t.diagnostic(JSON.stringify({profile: profile.name, acceptedOutputExtents: chunks.map(chunk => chunk.length)}));
       assert.deepEqual(r.vfs.readFile('/bin/program'), elf); assert.equal(r.reads(), 1);
     } finally { await stopped(kernel); }
   });

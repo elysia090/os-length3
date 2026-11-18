@@ -39,6 +39,7 @@ const descriptions = {
   'capture-ready-stop': 'pinned captured result stops before transferring the held prepared-root source',
   'capture-ready-only': 'pinned captured result notifies on one resident byte without pressure',
   'capture-cold': 'pinned captured result declines a cold prepared-root source without starting a loader',
+  'capture-wide': 'pinned captured result refuses a valid five-byte native write rather than silently losing it',
   cancel: 'cancelled artifact late shared/valid success and rejection publish no Worker and permit root reuse',
   invalid: 'invalid artifact byte classes fail before source/Worker publication and permit root reuse',
   size: 'wrong decoded source length fails the exact Rust source, retires, and retries without metadata drift',
@@ -48,7 +49,7 @@ type Scenario = keyof typeof descriptions;
 type Host = Awaited<ReturnType<typeof managedRoot>>;
 const pacedScenario = (s: Scenario) => s.startsWith('capture-paced') || s === 'capture-ready' || s === 'capture-ready-stop';
 const stoppedWait = (s: Scenario) => s === 'capture-paced-stop' || s === 'capture-paced-race' || s === 'capture-ready-stop';
-const refusedScenario = (s: Scenario) => s === 'capture-pressure' || s === 'capture-cold' || stoppedWait(s);
+const refusedScenario = (s: Scenario) => s === 'capture-pressure' || s === 'capture-cold' || s === 'capture-wide' || stoppedWait(s);
 const coldScenario = (s: Scenario) => s === 'capture-cold';
 
 async function stopped(host: Host, execution: ExecutionBinding): Promise<void> {
@@ -353,6 +354,13 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
         }
       } finally { await stopped(host, execution); }
       await assert.rejects(captured.waitForCapturePressure(execution), /not available/);
+    } else if (scenario === 'capture-wide') {
+      const execution = await start();
+      assert.equal(loads, 0);
+      try {
+        await assert.rejects(host.runPath(execution, load), /Linux memory admission failed: -5/);
+      } finally { await stopped(host, execution); }
+      assert.equal(loads, 1, 'only the ordinary read before the rejected write loaded the source');
     } else if (scenario === 'capture-cold') {
       const execution = await start();
       assert.equal(loads, 0);
@@ -373,7 +381,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       const output = captured.takeOutput();
       const expected = scenario === 'capture-paced' ? Uint8Array.of(127)
         : scenario === 'capture-ready' || scenario === 'capture-ready-only' ? Uint8Array.of(2)
-        : scenario === 'capture-paced-race' || scenario === 'capture-cold' ? undefined : Uint8Array.of(127, 69, 76, 70);
+        : scenario === 'capture-paced-race' || scenario === 'capture-wide' || scenario === 'capture-cold' ? undefined : Uint8Array.of(127, 69, 76, 70);
       assert.deepEqual(output, expected);
       const first = takenBeforeEnd ?? output;
       if (first) assert.ok(first.buffer instanceof ArrayBuffer && first.byteOffset === 0 && first.buffer.byteLength === first.length);
@@ -421,6 +429,7 @@ if (process.argv[2] === '--managed-root-child') {
         ...(scenario === 'capture-ready' || scenario === 'capture-ready-stop' ? ['-DSODS_CAPTURE_READY_SOURCE']
           : scenario === 'capture-ready-only' ? ['-DSODS_CAPTURE_READY_ONLY']
           : scenario === 'capture-cold' ? ['-DSODS_CAPTURE_COLD_SOURCE']
+          : scenario === 'capture-wide' ? ['-DSODS_CAPTURE_WIDE_OUTPUT']
           : scenario === 'capture-pressure' || scenario.startsWith('capture-paced') ? ['-DSODS_OPEN_SECOND_OUTPUT'] : []),
         '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
       ], {stdio: 'pipe', timeout: 30_000, env: {...process.env, TMPDIR: directory}});
@@ -442,6 +451,22 @@ if (process.argv[2] === '--managed-root-child') {
         artifacts: scenario === 'invalid' ? 5 : scenario === 'cancel' ? 6 : scenario === 'size' ? 2 : 1,
         workers: executions, runs: successfulRuns,
         lateControls: scenario === 'cancel' ? 2 : 0, retired: true});
+      if (scenario === 'capture-wide') {
+        const native = spawnSync(program, [], {input: '', timeout: 10_000});
+        assert.equal(native.error, undefined);
+        assert.equal(native.signal, null);
+        assert.equal(native.status, 0, native.stderr.toString());
+        assert.deepEqual(native.stdout, Buffer.from([127, 69, 76, 70, 0]));
+        const cli = fileURLToPath(new URL('../../../sods/runtime/run.ts', import.meta.url));
+        const ordinary = spawnSync(process.execPath, [cli, '--managed', program], {
+          input: '', timeout: 10_000, env: {...process.env, NODE_NO_WARNINGS: '1'},
+        });
+        assert.equal(ordinary.error, undefined);
+        assert.equal(ordinary.signal, null);
+        assert.equal(ordinary.status, native.status, ordinary.stderr.toString());
+        assert.deepEqual(ordinary.stdout, native.stdout);
+        assert.deepEqual(ordinary.stderr, native.stderr);
+      }
       if (scenario === 'capture-ready' || scenario === 'capture-ready-only') {
         const native = spawnSync(program, [], {input: '', timeout: 10_000});
         assert.equal(native.error, undefined);
