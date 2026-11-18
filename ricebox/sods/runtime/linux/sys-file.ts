@@ -10,7 +10,7 @@ import {ReadLifetimeError} from './read-lifetime.ts';
 import {Description, PIPE_BUF, Pipe, flock, unflock, type Interest} from './fd.ts';
 import * as net from './sys-net.ts';
 import {Listing, Made, madeOf} from './made.ts';
-import {Dir, Device, E, ending, Fifo, File, FILE_MOST, FsError, Link, MNT, S_IFBLK, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG, S_IFSOCK, SocketName, WALK, device, pathOf, walk, type Entry, type Found, type Mount, type Place} from './fs.ts';
+import {Dir, Device, E, ending, Fifo, File, FILE_MOST, FsError, Link, Memfd, MNT, S_IFBLK, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG, S_IFSOCK, SocketName, WALK, device, pathOf, walk, type Entry, type Found, type Mount, type Place} from './fs.ts';
 import {CAP, MAY, capable, capableOver, idOf, may, owns, shownIn} from './cred.ts';
 import {take} from './mount.ts';
 import * as pty from './pty.ts';
@@ -292,8 +292,10 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
   if (typeof r === 'number') return -r;
   // What a descriptor has open, opened by its /proc name: the same pipe or terminal; a file or a directory afresh.
   const held = r.held as Description | undefined;
-  if (held && !bare && (!r.node || held.kind === 'console' || held.kind.startsWith('pipe'))) return install(held);
-  let node = r.node, made = false;
+  const memory = !r.node && held?.node instanceof Memfd ? held.node : null;
+  if (memory && resolve & (WALK.NO_XDEV | WALK.BENEATH | WALK.IN_ROOT)) fail(E.XDEV);
+  if (held && !bare && (!r.node && !memory || held.kind === 'console' || held.kind.startsWith('pipe'))) return install(held);
+  let node = r.node ?? memory, made = false;
   if (!node) {
     if (!(f & O.CREAT)) return -E.NOENT;
     if (ending(name).slash) fail(E.ISDIR);
@@ -306,7 +308,7 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
   }
   if (node instanceof Link && !bare) fail(E.LOOP);
   if ((f & O.DIRECTORY) && !node.isDir) fail(E.NOTDIR);
-  const place = held && r.node ? {mnt: r.mnt, dir: held.dir, name: held.name} : {mnt: r.mnt, dir: r.parent, name: r.name};
+  const place = memory && held ? {path: held.path} : held && r.node ? {mnt: r.mnt, dir: held.dir, name: held.name} : {mnt: r.mnt, dir: r.parent, name: r.name};
   // Only a place in the tree is held (O_PATH): nothing of it is read or written through this, so nothing is asked.
   if (bare) return install(new Description(node.isDir ? 'dir' : node instanceof Device ? 'device' : 'file', {node, flags: f, ...place}));
   const access = f & 3, reads = access !== 1, writes = access !== 0 || (f & O.TRUNC) !== 0;
@@ -315,7 +317,7 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
     // its file system written to; the caller allowed by its mode; its mount written to.
     if (node.isDir && writes) fail(E.ISDIR);
     if (node instanceof Device && (r.mnt.flags & MNT.NODEV || r.mnt.sb.nodev)) fail(E.ACCES);
-    const kept = node.isFile || node.isDir;
+    const kept = !memory && (node.isFile || node.isDir);
     if (writes && kept && r.mnt.sb.readonly) fail(E.ROFS);
     if (!may(c, node, (reads ? MAY.READ : 0) | (writes ? MAY.WRITE : 0))) fail(E.ACCES);
     if (writes && kept) writable(r.mnt);
@@ -342,7 +344,7 @@ function openAt(p: Proc, dirfd: bigint, address: bigint, flags: bigint, mode: bi
     }
   }
   const writing = (f & 3) !== 0;
-  if (node instanceof File && writing && (f & O.TRUNC)) {
+  if (node instanceof File && (writing || memory) && (f & O.TRUNC)) {
     materializeFor(p, node);
     // A synchronous source may have installed another descriptor. Never let
     // install's replace semantics close it using the pre-callback candidate.
@@ -547,9 +549,9 @@ function writeData(p: Proc, d: Description, data: Uint8Array, offset: number | n
       try { file.materialize(); }
       finally { identity(); if (d.offsetRevision !== revision) throw new ReadLifetimeError(); }
       const at = offset ?? (d.flags & O.APPEND ? file.size : d.offset);
-      file.write(at, data);
-      if (offset === null) d.offset = at + length;
-      return length;
+      const written = file.write(at, data);
+      if (offset === null && written) d.offset = at + written;
+      return written;
     }
   }
   return fail(E.BADF);
@@ -1422,6 +1424,14 @@ export const FILE_CALLS: Calls = {
       if (n === -2) fail(E.BUSY);
       return n;
     }
+    if (c === 1033 || c === 1034) { // F_ADD_SEALS, F_GET_SEALS
+      if (d.flags & O_PATH) fail(E.BADF);
+      if (c === 1033 && (d.flags & 3) === 0) fail(E.PERM);
+      const node = d.node instanceof Memfd ? d.node : fail(E.INVAL);
+      if (c === 1034) return node.seals;
+      node.addSeals(Number(BigInt.asUintN(32, arg)));
+      return 0;
+    }
     if (c === 5 || c === 6 || c === 7 || c === 36 || c === 37 || c === 38) return recordLock(this, d, c, N(arg));
     return 0; // the rest succeed trivially
   },
@@ -1460,9 +1470,12 @@ export const FILE_CALLS: Calls = {
   198(name, at) { return removeXattr(this, xnode(this, name, false), at); }, // lremovexattr
   199(fd, at) { return removeXattr(this, xnodeOf(this, fd), at); }, // fremovexattr
   319(name, flags) { // memfd_create: a file in no directory, as shared anonymous memory is
-    const f = N(flags);
+    const f = Number(BigInt.asUintN(32, flags));
     if (f & ~0x7) fail(E.INVAL); // MFD_CLOEXEC, MFD_ALLOW_SEALING, MFD_HUGETLB
-    const node = new File(new Uint8Array(0), 0o777);
+    const node = new Memfd(!!(f & 2));
+    node.uid = this.cred.fsuid;
+    node.gid = this.cred.fsgid;
+    node.nlink = 0;
     const d = new Description('file', {node, flags: O.RDWR, path: `/memfd:${this.cstring(N(name))} (deleted)`});
     const fd = this.fds.install(d, {cloexec: !!(f & 1)});
     if (fd < 0) fail(E.MFILE);
@@ -1477,6 +1490,7 @@ export const FILE_CALLS: Calls = {
     const KEEP_SIZE = 1, PUNCH_HOLE = 2, ZERO_RANGE = 0x10, node = fileOf(d);
     if (m & ~(KEEP_SIZE | PUNCH_HOLE | ZERO_RANGE)) fail(E.OPNOTSUPP);
     if ((m & PUNCH_HOLE) && !(m & KEEP_SIZE)) fail(E.INVAL);
+    if (node instanceof Memfd && !(m & PUNCH_HOLE)) node.checkGrowth(at + n);
     // Preserve the existing truncate refusal before a lazy callback can run.
     if (m === 0 && at + n > node.size) {
       if (!Number.isInteger(at + n)) fail(E.INVAL);
@@ -1521,15 +1535,16 @@ export const FILE_CALLS: Calls = {
     try { data = fileOf(din).snapshotRange(from, from + Math.min(N(len), 1 << 30)); }
     finally { ready(); }
     if (din.node === dout.node && from < to + data.length && to < from + data.length) fail(E.INVAL);
+    let written = 0;
     if (data.length) {
       const target = fileOf(dout);
       try { target.materialize(); }
       finally { ready(); }
-      target.write(to, data);
+      written = target.write(to, data);
     }
-    if (N(inAt)) this.view.setBigInt64(N(inAt), BigInt(from + data.length), true); else din.offset = from + data.length;
-    if (N(outAt)) this.view.setBigInt64(N(outAt), BigInt(to + data.length), true); else dout.offset = to + data.length;
-    return data.length;
+    if (N(inAt)) this.view.setBigInt64(N(inAt), BigInt(from + written), true); else din.offset = from + written;
+    if (N(outAt)) this.view.setBigInt64(N(outAt), BigInt(to + written), true); else dout.offset = to + written;
+    return written;
   },
   // preadv2 and pwritev2: preadv and pwritev, an offset of -1 the descriptor's own (RWF_ flags change nothing here).
   327(fd, vec, count, pos) { const at = N(pos); return readv(this, descriptor(this, fd), vec, count, at === -1 ? null : at); },

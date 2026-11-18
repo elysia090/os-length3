@@ -76,6 +76,14 @@ arbitrary replacement buffer can require inspecting all B bytes; with such evide
 that full scan is not a universal lower bound. No-change still leaves input/event
 lifetime work. A native claim does not apply to a non-native bridge's copies/queues.
 
+The Sods guest implements the memfd size seals used by foot's shared-pool path
+([foot 1.13.1 source](https://gitlab.com/dnkl/foot/-/raw/1.13.1/shm.c)):
+`F_SEAL_SHRINK`, `F_SEAL_GROW`, and `F_SEAL_SEAL`. The same backing file carries
+those seals across guest descriptor passing and retains writable shared mappings.
+Unsupported write/execute seals are rejected, not reported as enforced. Native
+Linux and translated Sods parity tests cover these file operations, not a running
+Wayland client, compositor, or a guest-to-host descriptor bridge.
+
 Do not move native protocol handling into TS merely because the current theme parser
 is TS, or replace existing clients in Rust as an end in itself. Language placement
 follows the concrete missing work. Existing parser tests validate that parser only.

@@ -237,7 +237,7 @@ export class File extends Node {
     this.unholdLoaded();
     return n;
   }
-  write(at: number, bytes: Uint8Array): void {
+  write(at: number, bytes: Uint8Array): number {
     this.materialize();
     this.own();
     const need = at + bytes.length;
@@ -253,6 +253,7 @@ export class File extends Node {
     this.version++;
     counted.changes++;
     if (this.maps) this.show(at, need);
+    return bytes.length;
   }
   /**
    * Its length made `length`: cut there, or grown to it with zeros. A whole number from 0 to FILE_MOST: one that is not
@@ -263,6 +264,7 @@ export class File extends Node {
     if (!Number.isInteger(length) || length < 0) fail(E.INVAL);
     if (length > FILE_MOST) fail(E.FBIG);
     this.materialize();
+    this.checkResize(length);
     if (this.maps) this.settle();
     const was = this.size;
     this.own();
@@ -281,6 +283,7 @@ export class File extends Node {
     counted.changes++;
     if (this.maps) this.show(Math.min(was, length), Math.max(was, length));
   }
+  protected checkResize(_length: number): void {}
   /** The exact contents as an independent array. */
   bytes(): Uint8Array {
     if (this.maps) this.settle();
@@ -367,6 +370,48 @@ export class File extends Node {
         into.fill(0, at + part.length, at + b - a);
       }
     }
+  }
+}
+
+const SEAL = {SEAL: 1, SHRINK: 2, GROW: 4};
+/** Anonymous memfd storage: size seals belong to the file, not any one descriptor or mapping. */
+export class Memfd extends File {
+  #seals: number;
+
+  constructor(allowSealing: boolean) {
+    super(new Uint8Array(0), 0o777);
+    this.#seals = allowSealing ? 0 : SEAL.SEAL;
+  }
+
+  get seals(): number { return this.#seals; }
+
+  addSeals(seals: number): void {
+    // The write/execute seals need mapping protections this runtime does not enforce.
+    if (seals & ~(SEAL.SEAL | SEAL.SHRINK | SEAL.GROW)) fail(E.INVAL);
+    if (this.#seals & SEAL.SEAL) fail(E.PERM);
+    this.#seals |= seals;
+  }
+
+  /** GROW also forbids fallocate past EOF with KEEP_SIZE, but not punching an existing hole. */
+  checkGrowth(end: number): void {
+    if (end > this.size && this.#seals & SEAL.GROW) fail(E.PERM);
+  }
+
+  protected override checkResize(length: number): void {
+    if (length < this.size && this.#seals & SEAL.SHRINK) fail(E.PERM);
+    this.checkGrowth(length);
+  }
+
+  override write(at: number, bytes: Uint8Array): number {
+    if (!bytes.length) return 0;
+    if (at + bytes.length > this.size && this.#seals & SEAL.GROW) {
+      // Linux shmem writes page by page: earlier whole pages can be accepted
+      // before the write that would extend the file is refused.
+      const room = Math.floor(this.size / PAGE) * PAGE - at;
+      if (room <= 0) fail(E.PERM);
+      bytes = bytes.subarray(0, room);
+    }
+    return super.write(at, bytes);
   }
 }
 

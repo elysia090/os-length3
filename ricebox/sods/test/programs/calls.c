@@ -58,6 +58,23 @@ int main(void) {
   char *p = mmap(0, 4096, PROT_READ, MAP_SHARED, fm, 0);
   printf("memfd: %ld \"%.11s\" cloexec %d\n", size_of(fm), p, !!(fcntl(fm, F_GETFD) & FD_CLOEXEC));
   munmap(p, 4096);
+  close(fm);
+
+  // A shared pool can keep its size sealed without sealing its writable mapping.
+  fm = memfd_create("shared-pool", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+  if (fm < 0 || ftruncate(fm, 4096) < 0) return 1;
+  p = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fm, 0);
+  const int seals = F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL;
+  if (p == MAP_FAILED || fcntl(fm, F_ADD_SEALS, seals) < 0) return 1;
+  if (ftruncate(fm, 2048) != -1 || errno != EPERM) return 1;
+  if (pwrite(fm, "xy", 2, 4095) != 1) return 1;
+  if (pwrite(fm, "y", 1, 4096) != -1 || errno != EPERM) return 1;
+  if (fallocate(fm, FALLOC_FL_KEEP_SIZE, 4096, 1) != -1 || errno != EPERM) return 1;
+  p[0] = 'w';
+  if (pread(fm, buf, 1, 0) != 1 || buf[0] != 'w') return 1;
+  printf("sealed memfd: %d size %ld first %c\n", fcntl(fm, F_GET_SEALS), size_of(fm), buf[0]);
+  munmap(p, 4096);
+  close(fm);
 
   // Advice, and syncing: taken.
   printf("fadvise: %d, pipe %d\n", posix_fadvise(fa, 0, 0, POSIX_FADV_SEQUENTIAL), posix_fadvise(pp[0], 0, 0, POSIX_FADV_NORMAL));
