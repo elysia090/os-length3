@@ -13,7 +13,7 @@ import type {PGlite} from '@electric-sql/pglite';
 import {neonConfig} from '@neondatabase/serverless';
 import {accepted, frame, frames} from './ws.ts';
 
-type Target = {tcp: true} | {pglite: PGlite};
+type Target = {tcp: true} | {pglite: Pick<PGlite, 'execProtocolRaw'>};
 // Signal a normal WebSocket close (1000) before ending the TCP stream.
 const finish = (socket: Socket) => {
   if (!socket.writableEnded) socket.end(frame(Uint8Array.of(0x03, 0xe8), 8));

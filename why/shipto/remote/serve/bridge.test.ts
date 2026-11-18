@@ -2,11 +2,16 @@ import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {test} from 'node:test';
 import {bridge} from './bridge.ts';
-import {database} from '../tests/testing.ts';
 
 test('the bridge completes WebSocket closure in either direction', {timeout: 5_000}, async t => {
-  const pg = await database(), b = await bridge({pglite: pg});
-  t.after(async () => { await b.close(); await pg.close(); });
+  // This is a transport test: no Postgres messages are sent. Real database
+  // startup and protocol traffic belong to worker.test.ts, not this deadline.
+  let protocolCalls = 0;
+  const b = await bridge({pglite: {execProtocolRaw: async () => {
+    protocolCalls++;
+    throw new Error('WebSocket closure must not execute SQL');
+  }}});
+  t.after(() => b.close());
   const connect = async () => {
     const socket = new WebSocket(`ws://127.0.0.1:${b.port}`);
     await once(socket, 'open');
@@ -26,4 +31,5 @@ test('the bridge completes WebSocket closure in either direction', {timeout: 5_0
   const server = await connect(), fromServer = closed(server);
   const [serverClose] = await Promise.all([fromServer, b.close()]);
   assert.deepEqual({code: serverClose.code, clean: serverClose.wasClean}, {code: 1000, clean: true});
+  assert.equal(protocolCalls, 0, 'neither close handshake sends Postgres messages');
 });
