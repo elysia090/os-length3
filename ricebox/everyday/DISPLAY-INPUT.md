@@ -101,13 +101,17 @@ execution domain and output**. Record the versions, protocol inventory and clien
 requirements above. Select an available font and shell. Do not infer authorization
 from inherited environment variables or silently substitute a host shell for a guest.
 The following commands are for that authorized native domain only. Supply exact
-values for `session_dir`, `display`, `output` and `shell_path` from its inventory;
+values for `session_dir`, `display`, `output`, `shell_path`, `foot_path`,
+`waybar_path` and `wayland_info_path` from its inventory;
 these are not defaults or discovery commands.
 
 ```sh
 # From the repository root, in the explicitly authorized session/domain:
 : "${session_dir:?}" "${display:?}" "${output:?}" "${shell_path:?}"
+: "${foot_path:?}" "${waybar_path:?}" "${wayland_info_path:?}"
 proof=$(mktemp -d) || exit 1
+node ricebox/everyday/test/native-preflight.ts "$session_dir" "$display" \
+  "$foot_path" "$waybar_path" "$wayland_info_path" > "$proof/preflight.json" || exit 1
 node ricebox/everyday/test/native-panel.ts "$output" > "$proof/panel.json" || exit 1
 # Inspect its JSON before launching.
 printf '# Isolated proof configuration; installed defaults only.\n' > "$proof/foot.ini"
@@ -124,16 +128,16 @@ otherwise takes precedence over the chosen display.
 ```sh
 # Terminal test:
 (
-  unset WAYLAND_SOCKET
+  unset WAYLAND_SOCKET DISPLAY
   XDG_RUNTIME_DIR="$session_dir" WAYLAND_DISPLAY="$display" \
-    exec foot -c "$proof/foot.ini" --app-id=everyday-native-proof "$shell_path"
+    exec "$foot_path" -c "$proof/foot.ini" --app-id=everyday-native-proof "$shell_path"
 ) 2> "$proof/foot.log"
 
 # Panel test, run separately:
 (
-  unset WAYLAND_SOCKET
+  unset WAYLAND_SOCKET DISPLAY
   XDG_RUNTIME_DIR="$session_dir" WAYLAND_DISPLAY="$display" GDK_BACKEND=wayland \
-    exec waybar -c "$proof/panel.json" -s "$proof/panel.css"
+    exec "$waybar_path" -c "$proof/panel.json" -s "$proof/panel.css"
 ) 2> "$proof/waybar.log"
 ```
 
@@ -168,3 +172,32 @@ and [foot 1.13.1 command manual](https://gitlab.com/dnkl/foot/-/raw/1.13.1/doc/f
 plus Waybar’s [CLI option definitions](https://github.com/Alexays/Waybar/blob/5b36b1a82f9630576dca2840b8dca15b2aca2cff/src/client.cpp)
 are interface references, not a selected or jointly verified stack. Check the installed
 clients' `--help` and manuals before using these options. No release lock is added.
+
+### Preflight evidence, not acceptance
+
+`test/native-preflight.ts ABS_RUNTIME_DIR SOCKET_NAME ABS_FOOT ABS_WAYBAR
+ABS_WAYLAND_INFO` records an already authorized native session. All paths must be
+explicit and absolute; the display is one literal socket name. The recorder refuses
+a missing, regular-file or symlink socket. It runs the two selected binaries only
+with `--version`, with display selectors removed. Only the selected `wayland-info`
+child receives the chosen runtime directory and display; none inherits
+`DISPLAY` or `WAYLAND_SOCKET`. There is no shell or executable discovery. Each child
+has a five-second deadline and a one-MiB bound per captured stream. Failure produces
+no JSON report.
+The CLI always checks the socket with `lstat`; the unit tests inject only that stat
+result to exercise fake subprocesses without binding a socket or opening a display.
+
+The report preserves client stdout/stderr and raw registry stdout/stderr. It labels
+visual acceptance untested and protocol compatibility unvalidated. Review interface
+versions against the **selected builds**, and record missing build options, font,
+locale, shell, seat and output details manually. A version banner cannot supply all
+of these. Use exactly the selected absolute client paths, session directory and
+display for the later manual launch. Recheck if the binaries or session change.
+
+This file check is not authorization, identity authentication, a race-free socket
+handle or proof of a complete compatible stack. The registry probe connects to a
+real session and itself requires permission; do not run it on a discovered desktop.
+Do not install tools or start a compositor when it fails. Raw registry output may
+identify monitors, devices, serials and local paths; keep it private and redact it
+before sharing. Optional toolkit/service behavior still needs the separate inventory
+above. Offline recorder tests and fake banners prove no live Wayland behavior.
