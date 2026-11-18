@@ -14,8 +14,8 @@ import {prepare} from '../../runtime/translation/share.ts';
 import {loadTranslator, NotAProgram} from '../../runtime/translation/translator.ts';
 
 // These are real Core ABI probes with synthetic image/capability/output setup.
-// Only the named Node capture cases use a real Worker and its observed stop;
-// none proves a socket, native sendfile, SIGPIPE or physical sink delivery.
+// Named Node cases exercise a real Worker and owned regular-file deliveries.
+// None qualifies an arbitrary borrowed descriptor, socket, native sendfile or SIGPIPE.
 // A probe-feature Core must never enter the production host.
 const normalArtifact = process.env.SODS_LINUX_WASM;
 const probeArtifact = process.env.SODS_SENDFILE_PROBE_WASM;
@@ -1116,9 +1116,10 @@ test('strong capture probe real Node sink writes a new absolute suffix without r
   finally { rmSync(directory, {recursive: true, force: true}); }
 });
 
-const compiledCapture = new Map<boolean, {elf: Uint8Array<ArrayBuffer>; translator: WebAssembly.Module; sha: string}>();
-function currentCaptureProgram(pressure = false) {
-  const cached = compiledCapture.get(pressure);
+const compiledCapture = new Map<string, {elf: Uint8Array<ArrayBuffer>; translator: WebAssembly.Module; sha: string}>();
+function currentCaptureProgram(pressure = false, singlePhysicalEndpoint = false) {
+  const form = `${pressure}:${singlePhysicalEndpoint}`;
+  const cached = compiledCapture.get(form);
   if (cached) return cached;
   const directory = mkdtempSync(join(tmpdir(), 'sods-current-capture-'));
   try {
@@ -1127,14 +1128,15 @@ function currentCaptureProgram(pressure = false) {
     const object = join(directory, 'captured-order.o');
     const output = join(directory, 'capture.elf');
     // A stable object basename avoids cc's random temp symbol-file name.
-    execFileSync(compiler, [...(pressure ? ['-DSODS_CAPTURE_RESIDENT_PRESSURE'] : []), '-c', source, '-o', object], {stdio: 'pipe', timeout: 30_000});
+    execFileSync(compiler, [...(pressure ? ['-DSODS_CAPTURE_RESIDENT_PRESSURE'] : []),
+      ...(singlePhysicalEndpoint ? ['-DSODS_PHYSICAL_ONE_ENDPOINT'] : []), '-c', source, '-o', object], {stdio: 'pipe', timeout: 30_000});
     execFileSync(compiler, [
       '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', object, '-o', output,
     ], {stdio: 'pipe', timeout: 30_000});
     const artifact = readFileSync(currentTranslatorArtifact!);
     const built = {elf: new Uint8Array(readFileSync(output)), translator: new WebAssembly.Module(artifact),
       sha: createHash('sha256').update(artifact).digest('hex')};
-    compiledCapture.set(pressure, built);
+    compiledCapture.set(form, built);
     return built;
   } finally { rmSync(directory, {recursive: true, force: true}); }
 }
@@ -1147,12 +1149,14 @@ function cancelPreparedImage(r: ReturnType<typeof raw>, id: bigint) {
 
 async function prepareCurrentCapture(
   r: ReturnType<typeof raw>, translator: WebAssembly.Module, expectedElf: Uint8Array,
-  {omitPhnum = false, resultProfile = false} = {},
+  {omitPhnum = false, resultProfile = false, physicalProbe = false} = {},
 ) {
   const translate = await loadTranslator(translator);
   const core = r.e.memory as WebAssembly.Memory;
   r.stageStartup('/app', ['mixed']);
-  const begun = resultProfile ? r.call('linux_capture_result_startup', 0) : r.call('linux_queued_worker_probe_startup_shared');
+  assert.ok(!resultProfile || !physicalProbe);
+  const begun = resultProfile ? r.call('linux_capture_result_startup', 0)
+    : r.call(physicalProbe ? 'linux_startup_begin_stdio' : 'linux_queued_worker_probe_startup_shared');
   const id = r.result();
   assert.equal(r.call('linux_startup_input', 0), 0);
   if (begun !== 0) {
@@ -1217,6 +1221,117 @@ async function prepareCurrentCapture(
     throw error;
   }
 }
+
+// Test-only transport, not a new guest mode. The fixture installs one exact
+// nonappend handle; the proof integer is still accepted only by the probe
+// artifact, and default memoryHost must reject that artifact.
+for (const stopAfterWrite of [false, true]) test(
+  `real Node Worker capture fixture: physical offer to its owned regular file ${stopAfterWrite ? 'settles only after observed Worker stop' : 'returns the direct confirmed prefix'}`,
+  {skip: currentMixedSkip, timeout: 30_000}, async () => {
+    const {elf, translator} = currentCaptureProgram(false, true);
+    const r = raw(workerQueueArtifact!, true, false, true, true, elf);
+    assert.throws(() => memoryHost(r.module, 2, 8), /Synthetic sendfile probe/);
+    const input = await prepareCurrentCapture(r, translator, elf, {physicalProbe: true});
+    const {id, memory, entry} = input, core = r.e.memory as WebAssembly.Memory;
+    const bridge = createGuest(input);
+    const directory = mkdtempSync(join(tmpdir(), 'sods-physical-witness-')), path = join(directory, 'out');
+    const fd = openSync(path, 'wx', 0o600);
+    let unresolved = false;
+    let writes = 0, sends = 0, observedStop = false;
+    const viewAt = (backing: WebAssembly.Memory, pointer: number, length: number) =>
+      new FixtureBytes(fixtureApply(fixtureMemoryBuffer, backing, []), pointer, length);
+    try {
+      await bridge.ready;
+      assert.equal(r.call('linux_startup_image_finish', id, 0), 0);
+      assert.equal(r.call('linux_run_start', id), 0);
+      const owner = {id, invocation: r.result(), sequence: 0};
+      const outcome = await bridge.run(owner.invocation, entry, async request => {
+        assert.equal(request.invocation, owner.invocation);
+        assert.equal(request.sequence, ++owner.sequence);
+        assert.equal(r.call('linux_syscall_sequenced', id, owner.invocation, request.sequence,
+          request.nr, ...request.args, request.next), 0);
+        const c = r.command();
+        if (c.tag === 8) {
+          const length = bytes('/source\0').length;
+          assert.equal(request.nr, 2n);
+          assert.equal(r.call('linux_syscall_path_start', id, c.value), 0);
+          copyWorkerInput(memory, core, Number(c.target), Number(r.result()), length);
+          assert.equal(r.call('linux_syscall_path_finish', id, c.value, BigInt(length), 0), 0);
+          assert.deepEqual([r.state(), r.result()], [0, 3n]);
+          return {kind: 'return', value: r.result()};
+        }
+        if (c.tag === 263) {
+          assert.equal(c.endpoint, 2n, 'exact registered output, not a host fd supplied by the guest');
+          assert.equal(c.next, 1n);
+          const count = (() => {
+            const view = viewAt(memory, Number(c.target), 1);
+            unresolved = true;
+            assert.equal(r.call('linux_stream_start', id, c.value), 0);
+            return writeSync(fd, view, 0, 1, null);
+          })();
+          assert.equal(r.call('linux_stream_receipt', id, c.value, BigInt(count), 0), 0);
+          const value = r.result();
+          assert.deepEqual([r.state(), value], [0, 1n]);
+          unresolved = false;
+          if (++writes === 2) assert.deepEqual(r.remaining(owner, 3n), bytes('D'), 'only the actual source prefix commits');
+          return {kind: 'return', value};
+        }
+        if (c.tag === 2) return {kind: 'leave'};
+        assert.equal(c.tag, 10);
+        assert.equal(c.target, BigInt(request.sequence));
+        assert.equal(c.endpoint, 2n);
+        const send = {owner, action: c.value, sequence: request.sequence, endpoint: 2n, offered: 0n};
+        assert.equal(r.qualify(send).tag, 12, 'synthetic admission exists only in the marker-rejected artifact');
+        assert.equal(send.offered, 1n);
+        unresolved = true;
+        const count = (() => {
+          const view = viewAt(core, Number(r.start(send)), Number(send.offered));
+          return writeSync(fd, view, 0, Number(send.offered), null);
+        })();
+        sends++;
+        assert.equal(count, 1);
+        if (stopAfterWrite) {
+          // Only the count remains outside the lexical view; the Core owner is
+          // not released merely by the actually stopped Worker.
+          bridge.requestStop();
+          assert.equal((await bridge.stopEvidence()).stopped, true);
+          assert.equal(bridge.diagnostics().pendingRequest, true);
+          assert.equal(r.call('linux_run_receipt', id, owner.invocation, 2, 0n), -4, 'guest stop does not end the lexical fence');
+          // Conservatively disclose only ended access and already confirmed
+          // prefix, withholding the physical stop receipt until after exit.
+          assert.equal(r.finish(send, BigInt(count), 6, 1).tag, 4);
+          assert.equal(r.call('linux_run_receipt', id, owner.invocation, 2, 0n), 0);
+          assert.equal(r.call('linux_execution_retire', id), 0);
+          assert.equal(r.result(), 0n, 'ended access and Worker exit do not settle the physical offer');
+          observedStop = true;
+        }
+        const complete = r.finish(send, BigInt(count));
+        unresolved = false;
+        assert.equal(complete.tag, stopAfterWrite ? 4 : 0);
+        return stopAfterWrite ? {kind: 'leave'} : {kind: 'return', value: complete.value};
+      });
+      await bridge.requestsSettled();
+      assert.equal(bridge.diagnostics().failureCount, 0);
+      if (stopAfterWrite) assert.equal(outcome.kind, 'failed');
+      else {
+        assert.deepEqual(outcome, {kind: 'left', unwound: true});
+        assert.equal(r.call('linux_run_receipt', id, owner.invocation, 1, 0n), 0);
+        assert.equal(r.result(), 42n);
+        bridge.requestStop();
+        assert.equal((await bridge.stopEvidence()).stopped, true);
+      }
+      assert.equal(r.call('linux_execution_retire', id), 0);
+      assert.equal(r.result(), 1n);
+      assert.deepEqual([writes, sends, observedStop], [stopAfterWrite ? 1 : 2, 1, stopAfterWrite]);
+      assert.deepEqual(readFileSync(path), Buffer.from(stopAfterWrite ? 'AB' : 'ABC'));
+    } finally {
+      bridge.requestStop();
+      await bridge.stopped;
+      // A trapped/unknown callback cannot give permission to close/reuse the
+      // file. The failing test leaves its isolated process as the last owner.
+      if (!unresolved) { closeSync(fd); rmSync(directory, {recursive: true, force: true}); }
+    }
+  });
 
 test('current-source mixed capture rejects malformed canonical ELF before Worker construction', {skip: currentMixedSkip, timeout: 30_000}, async () => {
   const invalid = bytes('not an ELF'), {translator} = currentCaptureProgram();

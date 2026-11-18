@@ -53,7 +53,11 @@ _start:
   movb $88, first(%rip)
   movb $67, last(%rip)
   mov $1, %eax
+#ifdef SODS_PHYSICAL_ONE_ENDPOINT
+  mov $1, %edi
+#else
   mov $2, %edi
+#endif
   lea last(%rip), %rsi
   mov $1, %edx
   syscall

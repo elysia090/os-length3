@@ -692,3 +692,16 @@ that distinction, a positive count is not a Linux-wide errno/pipe/TTY
 contract. This witness demonstrates one physical write API call and no
 additional resident payload copy, not elapsed-time parity or a guarantee
 of one kernel syscall.
+
+The marker-rejected artifact also exercises that same direct sequence with
+a current-source translated Node Worker. All three requests use one
+endpoint in its Rust stdio table. The witness translates that endpoint to
+the privately created exclusive file, never the inherited stdout. There
+are two direct guest-memory writes and one direct canonical-Core write,
+not a copied FIFO followed by replay. A successful result is `ABC` and
+the unconsumed source suffix stays `D`. The stop variant shows `AB`:
+the Worker is observed stopped before its host request settles; a
+conservative prefix/access-only receipt still cannot retire it until
+the matching stopped receipt arrives. No byte is replayed. Qualification
+at this raw boundary remains explicitly synthetic; a real Node file and
+real Worker do not turn that probe into product admission.
