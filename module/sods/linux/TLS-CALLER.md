@@ -4,8 +4,8 @@
 
 This is an additive part of the explicit Linux Node22/24 managed caller, not a
 migration of the default Kernel, general arch_prctl/thread/signal compatibility,
-or an ordinary BusyBox/shell/terminal success claim. open(2), shared guest mm/clear-tid and canonical-source sendfile remain separate
-gates. The later selected single-task registration/group-exit contract is in
+or an ordinary BusyBox/shell/terminal success claim. Shared guest mm/clear-tid and canonical-source sendfile remain separate gates.
+The later open(2) normalization is covered by [OPEN-CALLER.md](OPEN-CALLER.md). The later selected single-task registration/group-exit contract is in
 [TASK-CALLER.md](TASK-CALLER.md).
 
 Rust accepts syscall158 only for exact ARCH_SET_FS0x1002 and a base in0..u32MAX.

@@ -1,5 +1,8 @@
 # Read-only openat caller slice
 
+The original stage below is preserved; the later open(2) normalization section
+extends the same owner without changing its readonly proof domain.
+
 ## Purpose and proof domain
 
 Extend the existing opt-in Node `--managed` caller by one complete route:
@@ -227,3 +230,34 @@ ABI/lifetime group with the same current translator. Debug full runtime passes
 format and dependency-boundary checks also pass locally. Full strict TypeScript,
 canonical musl corpus and new-head browser/CI gates still require CI, not inference
 from these local checks. No generated ELF, Wasm or disassembly is a source commit.
+
+## Later open(2) normalization, same owner
+
+The original openat stage above is now also entered by x86-64 open(2). Rust maps
+its `(path,flags,mode)` argument positions to the same captured AT_FDCWD route;
+openat retains its dirfd/path/flags positions. Relative AT_FDCWD naming uses the
+current directory, while absolute naming is independent of dirfd, consistent with
+the [Linux man-pages interface](https://man7.org/linux/man-pages/man2/open.2.html).
+
+There is no second resolver, TS pathname/FD authority, standalone payload store
+or individual syscall fallback. The same readonly flag mask, credential/mount
+checks, pre-capture FsContext/route holds, bounded pathname view, one-shot receipt,
+canonical inode/OFD, lowest slot publication and Unknown/retirement rules apply.
+Flags retain low32-bit int semantics; mode is unused in this readonly subset.
+Create/write/O_PATH and other unadmitted flags remain explicitly Unsupported,
+not broadened or assigned fabricated Linux errno. The pending owner retains the
+original syscall number so an unsupported open(2) is not mislabeled as257 after
+a stopped path receipt.
+
+The actual mixed open/openat fixture uses the same ELF natively and in the real
+managed Worker. It checks absolute self-open, independent OFDs, close/reuse and a
+relative spelling in isomorphic native/guest directory trees with cwd /root.
+Directory-FD cases still use openat. The lost-FD-reply fixture separately covers
+both numbers: neither publication loss replays the open, and the sole held table
+returns only after observed exit and ordinary cleanup. Existing symlink, policy,
+path-capture and SourceId invariants are reused, not relaxed by normalization.
+
+This does not add writable files, general virtual-memory fault equivalence,
+owned sendfile, threading, signals or terminal support, and does not alone prove
+ordinary cat. The default TS Kernel and new-head strict CI/browser budget remain
+separate gates.

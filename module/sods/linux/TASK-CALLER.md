@@ -100,6 +100,7 @@ not falsely compared as equal host/guest PID values. Isolated child injections
 lose218 RETURN or231 LEAVE twice, prove no replay/no successful exit claim, and
 then really run a fresh control using the sole returned table/context.
 
-This does not complete ordinary cat. open(2), owned canonical-source sendfile,
+This does not complete ordinary cat. The later open(2) route is covered by
+[OPEN-CALLER.md](OPEN-CALLER.md); owned canonical-source sendfile,
 shared guest tasks/futexes, general process/signal/VM/TTY behavior, full root
 shutdown and new-head strict TypeScript/CI/browser6MB remain separate gates.

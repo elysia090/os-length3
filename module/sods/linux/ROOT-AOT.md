@@ -155,9 +155,9 @@ source-free image ownership, cancellation, invalid facts and Unknown image
 retirement. Full strict TypeScript, independent packaging, existing runtime/CI
 and actual browser budget still apply; local component probes do not replace them.
 
-The standard BusyBox `cat` target additionally requires open(2),
-sendfile beyond its admitted low-address ARCH_SET_FS and single-task
-registration/exit bridges. Its transfer owner must
+The standard BusyBox `cat` target additionally requires owned sendfile beyond
+its admitted open/openat, low-address ARCH_SET_FS and single-task registration/exit
+bridges. Its transfer owner must
 retain both exact OFDs and commit only a known stopped prefix. In particular,
 zero count or source EOF is **not** endpoint-agnostic sendfile success: controlled
 native FIFO cases can still produce EAGAIN or EPIPE/SIGPIPE. A physical stream

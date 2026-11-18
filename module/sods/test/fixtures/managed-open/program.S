@@ -11,6 +11,15 @@
  test %rax,%rax
  js bad
 .endm
+.macro cwd_syscall
+#ifdef SODS_OPEN2
+ mov $2,%eax
+ mov %rsi,%rdi
+ mov %rdx,%rsi
+ mov %r10,%rdx
+#endif
+ syscall
+.endm
 _start:
  mov 8(%rsp),%r12
  mov $257,%eax
@@ -18,7 +27,7 @@ _start:
  mov %r12,%rsi
  mov $0x80000,%edx
  xor %r10d,%r10d
- syscall
+ cwd_syscall
  nonnegative
  mov %rax,%r15
  mov %rax,%rdi
@@ -42,7 +51,7 @@ _start:
  mov $-100,%edi
  mov %r12,%rsi
  xor %edx,%edx
- syscall
+ cwd_syscall
  nonnegative
  mov %rax,%rbx
  mov %rax,%rdi
@@ -76,7 +85,7 @@ _start:
  mov $-100,%edi
  mov %r12,%rsi
  movabs $0x100088100,%rdx
- syscall
+ cwd_syscall
  cmp %r15,%rax
  jne bad
  mov %rax,%rdi
@@ -99,6 +108,29 @@ _start:
  mov %rbx,%rdi
  syscall
  want 0
+#ifdef SODS_OPEN2
+ /* Caller gives the same ../bin/program.elf spelling in isomorphic native and
+  * guest roots, each with cwd /root. This checks open(2)'s captured cwd route. */
+ mov $2,%eax
+ mov 16(%rsp),%rdi
+ xor %esi,%esi
+ xor %edx,%edx
+ syscall
+ nonnegative
+ mov %rax,%rdi
+ mov %rax,%r13
+ xor %eax,%eax
+ lea buffer(%rip),%rsi
+ mov $4,%edx
+ syscall
+ want 4
+ cmpl $0x464c457f,buffer(%rip)
+ jne bad
+ mov $3,%eax
+ mov %r13,%rdi
+ syscall
+ want 0
+#endif
  /* Capture errors precede a bad dirfd; absolute paths ignore it. */
  mov $257,%eax
  mov $999,%edi
@@ -147,7 +179,7 @@ parent:
  mov $-100,%edi
  mov %r12,%rsi
  mov $0x10000,%edx
- syscall
+ cwd_syscall
  nonnegative
  mov %rax,%rbx
  xor %eax,%eax

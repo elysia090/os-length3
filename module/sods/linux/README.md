@@ -892,3 +892,11 @@ user means no exit-time guest clear/wake; physical SAB sharing is not CLONE_VM.
 The same owned exit request/actual Worker stop/resource-retirement gates apply.
 See [TASK-CALLER.md](TASK-CALLER.md) for native counterexamples, private ABI6
 metadata observation, lost RETURN/LEAVE and the shared-mm compatibility gate.
+
+### open(2) uses the same captured path/OFD owner
+
+Readonly open(2) argument positions normalize inside Rust to the existing
+AT_FDCWD openat route. Path capture, held cwd/root, credentials, canonical inode,
+OFD, slot publication and Unknown cleanup are shared, not copied into a new TS
+implementation. Unsupported results preserve the original syscall number.
+See [OPEN-CALLER.md](OPEN-CALLER.md) for the normalization counterexamples.

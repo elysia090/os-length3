@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {memoryHost} from '../../../runtime/linux/memory-host.ts';
 
-const [corePath, translatorPath, programPath] = process.argv.slice(2);
+const [corePath, translatorPath, programPath, number] = process.argv.slice(2);
+const syscall = BigInt(number ?? '257');
+assert.ok(syscall === 2n || syscall === 257n);
 const host = memoryHost(new WebAssembly.Module(readFileSync(corePath!)), 4, 16);
 const translator = new WebAssembly.Module(readFileSync(translatorPath!));
 const elf = readFileSync(programPath!);
@@ -25,7 +27,7 @@ for (let run = 0; run < 2; run++) {
   Object.defineProperty(Atomics, 'store', {...original, value(array: unknown, index: unknown, value: unknown) {
     if (array instanceof Int32Array && array.byteLength === 8 && index === 0 && value === 2) {
       const words = new BigUint64Array(array.buffer, 8, 10);
-      assert.equal(words[1], 257n, 'only the first guest open reply may reach this point');
+      assert.equal(words[1], syscall, 'only the first guest open reply may reach this point');
       assert.equal(words[9], 3n, 'Rust already published the lowest free file descriptor');
       lost++;
       throw new Error('lost-open-reply'); // before RETURN publication; guest remains paused

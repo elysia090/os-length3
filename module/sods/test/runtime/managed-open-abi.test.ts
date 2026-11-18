@@ -194,6 +194,24 @@ test('a valid task metadata observer cannot bypass a live canonical read view', 
   assert.equal(r.call('linux_task_registration', a.id), 0); assert.equal(r.result(), 77n);
 });
 
+test('open argument positions and unsupported original numbers remain exact through the raw Wasm boundary', {skip: !artifact}, () => {
+  const r = raw(), a = r.live();
+  for (const nr of [2n, 257n]) {
+    const args = nr === 2n ? [32n, 64n, 0n, 0n, 0n, 0n] : [-100n, 32n, 64n, 0n, 0n, 0n];
+    assert.equal(r.call('linux_syscall', a.id, a.invocation, nr, ...args, 4096n), 0);
+    assert.equal(r.state(), 3); assert.equal(r.result(), nr, 'unsupported creation stays outside the readonly profile, without fabricated errno');
+  }
+  // The high bits are ignored as int flags; mode is unused in this readonly
+  // route. A misplaced path-as-dirfd/flags/mode normalization cannot pass.
+  assert.equal(r.call('linux_syscall', a.id, a.invocation, 2n, 32n, 0x100088100n, 0xffffffffffffffffn, 0n, 0n, 0n, 4096n), 0);
+  assert.equal(r.state(), 8); const action = r.result();
+  r.capture(a, action, bytes('/app\0'));
+  assert.equal(r.call('linux_syscall_path_finish', a.id, action, 5n, 0), 0);
+  assert.equal(r.state(), 0); assert.equal(r.result(), 0n, 'lowest free FD is published by the same owner');
+  assert.equal(r.call('linux_syscall', a.id, a.invocation, 3n, 0n, 0n, 0n, 0n, 0n, 0n, 4096n), 0);
+  assert.equal(r.result(), 0n);
+});
+
 test('another Unknown capture finish cannot allocate while a different owner exposes its input view', {skip: !artifact}, () => {
   const r = raw(), a = r.live(), b = r.live(), old = r.open(b); r.capture(b, old, bytes('/app\0'));
   assert.equal(r.call('linux_syscall_path_finish', b.id, old, 5n, 2), 0); assert.equal(r.state(), 4);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFileSync, spawnSync} from 'node:child_process';
-import {mkdtempSync, rmSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -10,22 +10,25 @@ const core = process.env.SODS_LINUX_WASM;
 const translator = process.env.SODS_CURRENT_TRANSLATOR_WASM ?? process.env.SODS_PATH_TRANSLATOR_WASM;
 const provenance = process.env.SODS_CURRENT_TRANSLATOR_WASM ? 'current-source' : 'explicit external';
 
-test(`${provenance} managed CLI guest opens, reads and closes its canonical executable through Rust`, {
+for (const number of [257, 2]) test(`${provenance} managed CLI guest open${number === 2 ? '(2)' : 'at'} reads and closes its canonical executable through Rust`, {
   skip: !core || !translator || process.platform !== 'linux', timeout: 30_000,
 }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'sods-managed-open-'));
   try {
     const source = fileURLToPath(new URL('../fixtures/managed-open/program.S', import.meta.url));
     const cli = fileURLToPath(new URL('../../runtime/run.ts', import.meta.url));
-    const program = join(dir, 'program.elf');
+    if (number === 2) { mkdirSync(join(dir, 'bin')); mkdirSync(join(dir, 'root')); }
+    const program = number === 2 ? join(dir, 'bin', 'program.elf') : join(dir, 'program.elf');
     execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
+      ...(number === 2 ? ['-DSODS_OPEN2'] : []),
       '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
     ], {stdio: 'pipe', timeout: 30_000});
-    const native = spawnSync(program, [], {input: '', timeout: 10_000});
+    const args = number === 2 ? ['../bin/program.elf'] : [];
+    const native = spawnSync(program, args, {input: '', timeout: 10_000, ...(number === 2 ? {cwd: join(dir, 'root')} : {})});
     assert.equal(native.error, undefined); assert.equal(native.signal, null);
     assert.equal(native.status, 0, native.stderr.toString());
     assert.deepEqual(native.stdout, Buffer.from([127, 69, 76, 70])); assert.equal(native.stderr.length, 0);
-    const managed = spawnSync(process.execPath, [cli, '--managed', program], {
+    const managed = spawnSync(process.execPath, [cli, '--managed', program, ...args], {
       input: '', timeout: 20_000,
       env: {...process.env, SODS_LINUX_WASM: core!, SODS_CURRENT_TRANSLATOR_WASM: translator!, NODE_NO_WARNINGS: '1'},
     });
@@ -35,7 +38,7 @@ test(`${provenance} managed CLI guest opens, reads and closes its canonical exec
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 
-test(`${provenance} lost Worker reply after FD publication does not replay open and retires on observed exit`, {
+for (const number of [257, 2]) test(`${provenance} lost Worker open${number === 2 ? '(2)' : 'at'} reply after FD publication does not replay and retires on observed exit`, {
   skip: !core || !translator || process.platform !== 'linux', timeout: 30_000,
 }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'sods-managed-open-reply-'));
@@ -44,9 +47,10 @@ test(`${provenance} lost Worker reply after FD publication does not replay open 
     const runner = fileURLToPath(new URL('../fixtures/managed-open/lost-reply.ts', import.meta.url));
     const program = join(dir, 'program.elf');
     execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
+      ...(number === 2 ? ['-DSODS_OPEN2'] : []),
       '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
     ], {stdio: 'pipe', timeout: 30_000});
-    const result = spawnSync(process.execPath, [runner, core!, translator!, program], {
+    const result = spawnSync(process.execPath, [runner, core!, translator!, program, String(number)], {
       input: 'untouched', timeout: 20_000, env: {...process.env, NODE_NO_WARNINGS: '1'},
     });
     assert.equal(result.error, undefined); assert.equal(result.signal, null);
