@@ -26,7 +26,7 @@ Current module/public-import checks in `scripts/units.ts` and `scripts/runtime-b
 - **Native ricebox:** verified root directory, `ricebox/src/bundle.rs`, native `muk run`, host Linux. Terminal attachment receives a PTY descriptor and uses prompt. The caller owns launch/disconnect policy; prompt owns attachment and terminal restoration.
 - **Production browser/ricebox:** checked distribution, compiled translator/AOT modules, prepared lazy Vfs, translated muk, then guest programs through `Kernel`/`RemoteKernel`. Broad Linux authority is still TypeScript. Shared-memory pages use CPU Workers with one Linux owner; the alternative runs guest threads in turn.
 - **Ordinary Node:** the same legacy Linux graph with Node host adapters. Do not describe it as the Rust-managed profile.
-- **Opt-in `run.ts --managed`:** a real Rust-owned path/credential/Program/stack/image/OFD/stdio caller, one Node Worker and observed stop/holder retirement. Its syscall profile currently admits read, host-stream write and exit. It is static, fixed-memory, rootless, non-TTY and does not run a whole ordinary shell or muk environment.
+- **Opt-in `run.ts --managed`:** a real Rust-owned path/credential/Program/stack/image/OFD/stdio caller, one Node Worker and observed stop/holder retirement. Its syscall profile admits read-only openat/close, regular read, host-stream I/O and exit. It is static, fixed-memory, rootless, non-TTY and does not run a whole ordinary shell or muk environment.
 - **Everyday:** the current implementation is a theme-value parser. The borrowed native Wayland-session profile in `module/everyday/DISPLAY-INPUT.md` remains a compatibility gate, not a completed compositor/session.
 
 See `module/{ricebox,sods,muk,prompt,everyday}/README.md`, `module/sods/linux/README.md`, `module/sods/runtime/host/node/run.ts` and `module/ricebox/runtime/worker.ts`.
@@ -108,7 +108,7 @@ Acceptance gates:
 - repeated starts, late hot arrival, cancellation/retirement and selected Rust payload ownership;
 - unchanged strict cold-budget browser test with all real network bytes counted.
 
-### Implementation checkpoint, pending browser acceptance
+### Prepared execution checkpoint and browser acceptance
 
 The additive candidate now exists as `createRoot(config).execution`, with a
 `PreparedRoot`/prepared-executable channel distinct from legacy byte-bearing
@@ -133,11 +133,45 @@ replacement/hardlink behavior and partial-publication failure. An unchanged
 concurrent full-runtime trial hit the existing CPU-accounting timing ratio;
 the complete serial-file rerun passed without changing its threshold.
 
-These counts do not prove full TypeScript checking, the real root's browser
-startup demand or the 6 MB wire gate. They do not establish a native display
-session or a broader Rust Linux compatibility profile. The existing public-head
-CI remains above its wire budget at 6,274,652 bytes; this candidate's net effect
-must be measured by the unchanged browser test before claiming that it fixes it.
+Those Node counts alone did not prove TypeScript checking or browser transfer.
+Subsequently, head `3f39aa91607f8756b9b157980df09b9bf3f2c68f` passed all 26 jobs
+in [CI #286](https://github.com/elysia090/os-length3/actions/runs/44119391578),
+including strict TypeScript and the unchanged first-Prompt browser test. Cold was
+**5,774,090 bytes**, warm 14,185: 500,562 bytes less than the preceding flags-only
+head's 6,274,652, with 225,910 bytes below the 6 MB ceiling. The first candidate's
+unused import/assertion-narrowing type errors were fixed without changing its
+runtime behavior or strict compiler options.
+
+This is measured net transfer, not the hypothetical 1,291,445-byte gross omission.
+The real pinned Bash still demands its canonical ELF through an incremental miss;
+its 788,714-byte compressed pack payload plus table is legitimate startup work.
+Offline legacy/prepared real-root cases match output/status across direct and
+actual muk/Worker execution, rehearsal and deliberate complete self-file reads.
+Rehearsal can move range demand earlier; no additional foreground range is not
+zero canonical byte access or zero compilation. These checks do not establish a
+native display session or a broader Rust Linux compatibility profile.
+
+### Next complete Rust caller slice
+
+The opt-in managed CLI now has a staged read-only guest openat -> same Rust OFD
+read -> close route. It reopens its existing canonical executable, so no new root
+import or test-only launcher is needed. Rust snapshots held root/cwd, credentials
+and dirfd position/error before bounded physical input capture. TS only scans and
+copies a NUL prefix with captured intrinsics; it does not choose a path, inode,
+Linux errno, permission, slot or offset. The default production TS kernel remains
+unchanged, not counted as removed by this selected caller.
+
+The private Linux ABI advances to 3 for required capture start/finish exports.
+File-store ABI4 and deployed distribution selection are unchanged. Old opt-in
+Linux ABI2 artifacts fail explicitly, never silently fall back. Exact owner/token
+view guards, captured bases, uncertain access, FD-publication/response-loss and
+observed-stop retirement remain separate obligations. The profile is sealed,
+static, fixed-memory and non-TTY, not an ordinary shell or whole Linux VM.
+Physical linear bounds do not model virtual mapping holes. See
+[`module/sods/linux/OPEN-CALLER.md`](../module/sods/linux/OPEN-CALLER.md) for the
+admitted flags, native error ordering, finite limits, ownership and acceptance
+cases. This slice needs its own final full-regression/CI gate; the preceding AOT
+CI is not substituted for new-code verification.
 
 ## Conditional work and cost ledger
 
