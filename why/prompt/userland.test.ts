@@ -19,7 +19,7 @@ const asked: string[] = [];
 before(() => {
   work = mkdtempSync(join(tmpdir(), 'webroot-page-'));
   out = join(work, 'webroot');
-  const r = makeWebroot(standIn(work, '9.9.9'), out, work);
+  const r = makeWebroot(standIn(work, '9.9.9'), out, work, ['--name', 'why']);
   assert.equal(r.status, 0, r.stderr);
   // The page's origin: /webroot/… is the directory webroot.ts wrote.
   Object.assign(globalThis, {location: new URL('http://page.test/')});

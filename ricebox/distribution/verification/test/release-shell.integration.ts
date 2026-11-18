@@ -1,20 +1,25 @@
-/** Optional integration check against a locally supplied historical release. */
+// Run the shell from a prepared release using the Muk shipped alongside it.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
-import {resolve} from 'node:path';
+import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {openDistribution} from '../../deployment/local.ts';
+import type {Blob} from '../../format/manifest.ts';
 
-const source = process.env.RICEBOX_RELEASE_DIR;
-const muk = process.env.RICEBOX_MUK_FILE;
-const expectedMuk = process.env.RICEBOX_MUK_SHA256;
-
-test('a release root runs its shell through Muk', {skip: !source || !muk || !expectedMuk}, () => {
-  assert.equal(createHash('sha256').update(readFileSync(muk!)).digest('hex'), expectedMuk);
-  const web = resolve(source!);
+test('a release root runs its shell through Muk', {timeout: 60_000}, () => {
+  const source = process.env.RICEBOX_RELEASE_DIR;
+  assert.ok(source, 'Set RICEBOX_RELEASE_DIR to a prepared web root');
+  const web = resolve(source);
+  const descriptor: Blob = JSON.parse(readFileSync(join(web, 'muk.json'), 'utf8'));
+  assert.match(descriptor.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(descriptor.path, `blobs/${descriptor.sha256}.bin`);
+  const muk = join(web, descriptor.path);
+  const bytes = readFileSync(muk);
+  assert.equal(bytes.length, descriptor.size);
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), descriptor.sha256);
   const release = openDistribution(web);
   try { release.checkAll(); }
   finally { release.close(); }

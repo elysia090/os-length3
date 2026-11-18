@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {canonicalExecutableSource} from '../format/executable-source.ts';
-import type {Index, Translation} from '../format/manifest.ts';
+import {canonicalExecutableSource} from '../executable-source.ts';
+import type {Index, Translation} from '../manifest.ts';
 
 const name = 'a'.repeat(64), sourceSha256 = 'b'.repeat(64), origin = `${name}_64_16`;
 function fixture(explicit = true) {

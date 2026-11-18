@@ -1,7 +1,4 @@
-// A stand-in release root, a few files of each kind a root has, and why for
-// the browser made from it with a stand-in translator: for tests
-// (why/build/webroot.test.ts, why/prompt/userland.test.ts), so they need neither the real
-// root nor Rust.
+// A stand-in root and translator for tests that do not require actual Linux execution.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {chmodSync, linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
@@ -27,7 +24,7 @@ export function standIn(dir: string, version: string) {
   chmodSync(join(root, 'root'), 0o700);
   writeFileSync(join(root, 'etc/empty'), '');
   writeFileSync(join(root, 'etc/length3/shrc'), 'PS1="$ "\n'.repeat(50));
-  writeFileSync(join(root, 'etc/os-release'), `NAME="OS Length3 Linux"\nID=length3\nVERSION_ID=${version}\n`);
+  writeFileSync(join(root, 'etc/os-release'), `NAME="ricebox"\nID=ricebox\nVERSION_ID=${version}\n`);
   writeFileSync(join(root, 'usr/lib/apk/db/installed'), 'P:busybox\nV:1\nF:usr/bin\nR:busybox\nR:sh\n\n');
   writeFileSync(join(tree, 'manifest'), `version=${version}\nbase.profile=development-standard-v1\n`);
   const tar = execFileSync('tar', ['-C', tree, '--sort=name', '--mtime=@0', '--owner=0', '--group=0', '--numeric-owner', '--format=pax',
@@ -46,5 +43,5 @@ export function makeWebroot(root: string, dir: string, work: string, extra: read
   const sods = join(work, 'sods');
   writeFileSync(sods, `#!${process.execPath}\nrequire('fs').copyFileSync(${JSON.stringify(wasm)}, process.argv.at(-1));\n`);
   chmodSync(sods, 0o755);
-  return spawnSync(process.execPath, [join(os, 'ricebox/distribution/build/distribution.ts'), root, dir, '--translator', wasm, '--sods', sods, '--hot', '/usr/bin/busybox', '--name', 'why', '--cache', join(work, 'aot-cache'), ...extra], {encoding: 'utf8'});
+  return spawnSync(process.execPath, [join(os, 'ricebox/distribution/build/distribution.ts'), root, dir, '--translator', wasm, '--sods', sods, '--hot', '/usr/bin/busybox', '--cache', join(work, 'aot-cache'), ...extra], {encoding: 'utf8'});
 }

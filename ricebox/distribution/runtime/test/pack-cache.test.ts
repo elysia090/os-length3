@@ -1,8 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {checkedRange,packOf} from '../format/pack.ts';
-import {syncRange} from '../runtime/pack-range.ts';
+import {checkedRange,packOf} from '../../format/pack.ts';
+import {syncRange} from '../pack-range.ts';
 const hash=(b:Uint8Array)=>new Uint8Array(createHash('sha256').update(b).digest());
 const files=[new Uint8Array(4096).fill(1),new Uint8Array(8192).fill(2)];
 const pack=packOf(files,hash), sizes=new Map([[pack.name,pack.bytes.length]]);

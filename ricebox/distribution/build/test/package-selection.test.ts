@@ -17,7 +17,7 @@ function build(names: string[]) {
       writeFileSync(join(recipes, name, 'recipe.sh'), name === 'app' ? 'needs="base"\n' : 'needs=""\n');
       for (const [file, value] of [['key', 'same'], ['version', '1.0'], ['source', name + '-digest']]) writeFileSync(join(out, name, file), value);
     }
-    const source = readFileSync(new URL('../ricebox/distribution/build/packages.sh', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('../packages.sh', import.meta.url), 'utf8');
     const mark = '# Each NAME after what it needs, made only when its key is not the one kept.';
     assert.ok(source.includes(mark));
     const harness = `set -eu\nout=$1; recipes=$2; shift 2\nall='app base extra'\n` +

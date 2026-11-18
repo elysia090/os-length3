@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {checkedRange, packOf} from '../format/pack.ts';
+import {checkedRange, packOf} from '../pack.ts';
 const hash = (b: Uint8Array) => new Uint8Array(createHash('sha256').update(b).digest());
 
 test('verified table does not retain a view into a full HTTP 200 response', () => {

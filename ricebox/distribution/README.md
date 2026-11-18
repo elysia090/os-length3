@@ -111,6 +111,28 @@ awaits termination. Failed termination remains unconfirmed; it is not a browser
 Worker guarantee. Archive reads, input cloning and retained queued bytes still
 have costs. No constant-memory or syscall-count guarantee is implied.
 
+## Tests
+
+`npm test` runs the distribution’s fixture-only tests, including package
+assembly, packaging, deployment and the Vite integration. They do not need a
+downloaded root or built Rust translator.
+
+CI runs the execution tests with a real Sods translator and Muk. For an
+isolated reproduction, provide the artifacts explicitly (paths may be absolute):
+
+```sh
+SODS_TRANSLATOR_WASM=/path/to/sods.wasm SODS_NATIVE=/path/to/sods \
+RICEBOX_AOT_ELF=/path/to/program RICEBOX_MUK_FILE=/path/to/muk \
+  node --test ricebox/distribution/runtime/test/*.test.ts \
+    ricebox/distribution/build/test/native-association.integration.ts
+
+RICEBOX_RELEASE_DIR=/path/to/webroot \
+  node --test ricebox/distribution/verification/test/release-shell.integration.ts
+```
+
+The release shell test uses the Muk named by the prepared web root, checks its
+digest and runs the release’s shell through Sods. It does not publish anything.
+
 ## Dependency maintenance
 
 `maintenance/updates.py` checks upstream releases and writes verified candidate

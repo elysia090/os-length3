@@ -21,7 +21,7 @@ let work = '', rootFile = '', out = '';
 const files = (dir: string) => readdirSync(dir, {recursive: true, encoding: 'utf8'}).filter((f) => statSync(join(dir, f)).isFile()).sort()
   .map((f) => `${f} ${sha(readFileSync(join(dir, f)))}`);
 
-const make = (root: string, dir: string) => { const r = makeWebroot(root, dir, work); assert.equal(r.status, 0, r.stderr); };
+const make = (root: string, dir: string) => { const r = makeWebroot(root, dir, work, ['--name', 'why']); assert.equal(r.status, 0, r.stderr); };
 
 before(() => {
   work = mkdtempSync(join(tmpdir(), 'why-test-'));

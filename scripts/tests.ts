@@ -1,5 +1,5 @@
-// npm test: every test file (why's parts and its window, ricebox/everyday, scripts/*.test.ts) under node:test, each
-// process with the core a page runs (why/app/testing/core.ts), reported as node --test reports.
+// npm test: local unit tests for Why, Ricebox, and the workspace checks. Tests that need a built Linux
+// translator or a prepared release run in their own CI jobs. Why's tests have the core a page runs.
 //
 // node --test runs each file in a process of its own: a process paid for starting, loading what its file uses
 // and, for a file on a Remote, making a database (some 3 s of CPU before its first test), often more than its
@@ -51,16 +51,28 @@ const {values, positionals} = parseArgs({allowPositionals: true, options: {
   'test-only': {type: 'boolean'}, 'test-concurrency': {type: 'string'}, 'test-reporter': {type: 'string'}, 'test-shard': {type: 'string'},
 }});
 
-/** Each file under `dir` (and its folders, when `deep`) whose name `keep` takes, as a path from os/. */
-const under = (dir: string, keep: (name: string) => boolean, deep = false): string[] => readdirSync(dir, {withFileTypes: true}).flatMap((e) =>
-  e.isDirectory() ? (deep ? under(join(dir, e.name), keep, deep) : []) : keep(e.name) ? [join(dir, e.name)] : []);
+/** Unit tests under a directory, excluding generated outputs and suites with their own runner. */
+function under(dir: string, excludes: ReadonlySet<string> = new Set()): string[] {
+  return readdirSync(dir, {withFileTypes: true}).flatMap(entry => {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (entry.name.startsWith('.') || ['node_modules', 'target', 'dist'].includes(entry.name) || excludes.has(path)) return [];
+      return under(path, excludes);
+    }
+    return entry.isFile() && entry.name.endsWith('.test.ts') ? [path] : [];
+  });
+}
+
+// Every path from here on is from the workspace root, as the tests expect.
 const named = positionals.map((p) => relative(OS, resolve(HERE, p)));
-// Every path from here on is from os/, as the tests expect to be run.
 process.chdir(OS);
-// why's parts and its window: not what drives it whole (why/test, its own runs), nor the faces written in Rust.
-const WHY = readdirSync('why', {withFileTypes: true}).filter((e) => e.isDirectory() && !['test', 'cli', 'desktop'].includes(e.name)).map((e) => join('why', e.name));
-let files = named.length ? named : [...WHY.flatMap((dir) => under(dir, (n) => n.endsWith('.test.ts'), true)),
-  ...under('ricebox/everyday', (n) => n.endsWith('.test.ts'), true), ...under('scripts', (n) => n.endsWith('.test.ts'))].sort();
+let files = named.length ? named : [
+  ...under('why', new Set(['why/test', 'why/cli', 'why/desktop', 'why/app/public'])),
+  ...under('ricebox/distribution', new Set(['ricebox/distribution/runtime'])),
+  ...under('ricebox/cowboy/host'),
+  ...under('ricebox/everyday'),
+  ...under('scripts'),
+].sort();
 
 // A shard: every n-th file from the i-th, as node --test gives one.
 const shard = values['test-shard'] ?? /--test-shard[= ](\S+)/.exec(process.env.NODE_OPTIONS ?? '')?.[1];
@@ -88,7 +100,9 @@ const weight = (f: string) => took[f] ?? guess(f);
 // As node --test, but every core: the runner itself only reports.
 const concurrency = Number(values['test-concurrency'] ?? availableParallelism());
 const alone = files.filter((f) => ALONE.has(f));
-const shared = files.filter((f) => !ALONE.has(f));
+// Ricebox's tests use the component directly, not Why's shared database or module realms.
+const independent = files.filter(f => f.startsWith('ricebox/'));
+const shared = files.filter(f => !ALONE.has(f) && !f.startsWith('ricebox/'));
 // As many processes for them as run at once.
 const processes = Math.min(shared.length, concurrency);
 // What they run: each file, or a long one of PARTS in parts, none longer than a third of what each process has to
@@ -106,10 +120,13 @@ units.sort((a, b) => unitWeight(b) - unitWeight(a));
 const kept = scratch('why-tests-');
 process.on('exit', () => rmSync(kept, {recursive: true, force: true}));
 const together = pathToFileURL(join(OS, 'why/shipto/remote/tests/testing-together.ts')).href;
+// Import the app core only in these Why test processes. A command-line preload
+// would also execute in unrelated Workers such as Ricebox's build compressors.
+const core = pathToFileURL(join(OS, 'why/app/testing/core.ts')).href;
 const entries = Array.from({length: processes}, (_, k) => {
   const entry = join(kept, `together-${k + 1}.mjs`);
   writeFileSync(entry, `// One of the processes the test files share in npm test (scripts/tests.ts).\n` +
-    `import {together} from ${JSON.stringify(together)};\nawait together(${JSON.stringify(units)}, ${JSON.stringify(join(kept, 'taken'))});\n`);
+    `import ${JSON.stringify(core)};\nimport {together} from ${JSON.stringify(together)};\nawait together(${JSON.stringify(units)}, ${JSON.stringify(join(kept, 'taken'))});\n`);
   return entry;
 });
 mkdirSync(join(kept, 'taken'));
@@ -132,12 +149,13 @@ const timed = (t: TestEvent) => {
 };
 run({
   // The files alone first: they wait more than they work, beside the shared processes from the start.
-  files: [...alone.map((f) => join(OS, f)), ...entries], concurrency: processes + alone.length, signal: stop.signal,
+  files: [...alone.map(f => join(OS, f)), ...entries, ...independent.map(f => join(OS, f))],
+  concurrency: concurrency + alone.length, signal: stop.signal,
   // WebAssembly (PGlite's Postgres, the core) as V8 first compiles it, and no further: compiling a hot function
   // again, optimized, took more CPU on other threads than the faster code saved.
   // node:test's mock timers are still marked experimental in Node 22: that notice is about the tests' own clock,
   // not about what is tested, and is the one notice of its kind they print.
-  execArgv: ['--liftoff-only', '--disable-warning=ExperimentalWarning', '--import', pathToFileURL(join(OS, 'scripts/tests-load.ts')).href, '--import', pathToFileURL(join(OS, 'why/app/testing/core.ts')).href],
+  execArgv: ['--liftoff-only', '--disable-warning=ExperimentalWarning', '--import', pathToFileURL(join(OS, 'scripts/tests-load.ts')).href],
   testNamePatterns: values['test-name-pattern'], testSkipPatterns: values['test-skip-pattern'], only: values['test-only'],
 })
   .on('test:pass', timed)

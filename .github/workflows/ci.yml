@@ -130,6 +130,10 @@ jobs:
           path: why/app/public/webroot
           key: ${{ needs.webroot.outputs.key }}
           fail-on-cache-miss: true
+      - name: Run the release shell with the shipped Muk
+        env:
+          RICEBOX_RELEASE_DIR: why/app/public/webroot
+        run: node --test ricebox/distribution/verification/test/release-shell.integration.ts
       # Each line's box is made by muk on both sides (ricebox/distribution/verification/programs.ts), natively in a user namespace
       # of the runner's own, which Ubuntu's AppArmor restricts by default.
       - name: Allow user namespaces
@@ -337,12 +341,24 @@ jobs:
         env:
           SODS_CURRENT_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
         run: node --test ricebox/sods/test/runtime/branch-counter-current.test.ts ricebox/sods/test/runtime/call-flags-current.test.ts
-      # What stands beside sods and is checked with what it builds: ricebox's layers mounted in sods' tree (the
-      # translator's wasm decodes and digests them), and muk's C parser beside its model over every config.json.
-      - name: Layers, and muk's parser beside its model
+      # Verify the distribution against the translator binaries this job just built.
+      - name: Test Ricebox with real Sods and Muk
         if: matrix.part == 'native'
+        env:
+          SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
+          SODS_NATIVE: ricebox/sods/target/release/sods
+          RICEBOX_AOT_ELF: ricebox/sods/test/programs/out/hello
+          RICEBOX_MUK_FILE: target/muk/muk
         run: |
-          node --test ricebox/distribution/runtime/test/*.test.ts ricebox/muk/test/*.test.ts ricebox/otter/make/*.test.ts
+          mkdir -p target/muk
+          sh ricebox/toolchain/build.sh ricebox/muk/src/muk.c "$RICEBOX_MUK_FILE"
+          node --test ricebox/distribution/runtime/test/*.test.ts ricebox/distribution/build/test/native-association.integration.ts
+      - name: Test the Sods package, Muk parser and Otter composition
+        if: matrix.part == 'native'
+        env:
+          SODS_TRANSLATOR_WASM: ricebox/sods/target/wasm32-unknown-unknown/release/sods.wasm
+        run: |
+          node --test ricebox/sods/make/npm.test.ts ricebox/muk/test/*.test.ts ricebox/otter/make/*.test.ts
           sh ricebox/muk/test/same.sh
 
       # The one muk on every host: muk's own corpus (ricebox/muk/test/muk.sh, hostile.sh) run whole inside sods, the

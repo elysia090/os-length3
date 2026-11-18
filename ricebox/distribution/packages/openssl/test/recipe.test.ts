@@ -10,7 +10,7 @@ test('OpenSSL recipe installs its source config and checks certificate generatio
   if (version.status !== 0) return t.skip('host OpenSSL required for the recipe-check fixture');
   const tool = spawnSync('sh', ['-c', 'command -v openssl'], {encoding: 'utf8'}).stdout.trim();
   const work = mkdtempSync(join(tmpdir(), 'ricebox-openssl-'));
-  const recipe = resolve(import.meta.dirname, '../ricebox/distribution/packages/openssl/recipe.sh');
+  const recipe = resolve(import.meta.dirname, '../recipe.sh');
   const dest = join(work, 'dest');
   try {
     mkdirSync(join(work, 'apps'));

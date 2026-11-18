@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {outside, type Heard} from '../ricebox/cowboy/host/outside.ts';
-import {relay} from '../ricebox/cowboy/host/relay.ts';
+import {outside, type Heard} from './outside.ts';
+import {relay} from './relay.ts';
 
 // Real host bridge, tiny routing-only Wasm fixture. This does not substitute for guest/relay E2E.
 const vec = (v: number[]) => [v.length, ...v];
