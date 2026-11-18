@@ -3,7 +3,8 @@ import {createHash, randomBytes} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {basename} from 'node:path';
 import {ownedInput} from '../../linux/admission-wire.ts';
-import {createOwnedStdoutHost, memoryHost, type ExecutionBinding} from '../../linux/memory-host.ts';
+import {createOwnedStdoutHost, memoryHost, type ExecutionBinding, type PathExecutionOptions,
+  type PreparedFileLimits, type RootSourceTransport} from '../../linux/memory-host.ts';
 import {acquireOwnedStdout} from './stdio.ts';
 
 type Host = ReturnType<typeof createOwnedStdoutHost>;
@@ -28,13 +29,21 @@ function preparedProgram(host: Host, program: string, args: readonly string[], p
     {translator, random: randomBytes(16), cwd: encode('/root'), stdio});
 }
 
-async function runAndObserve(host: Host, execution: ExecutionBinding, requireExit = false) {
+type RunOptions = {requireExit?: boolean; load?: PathExecutionOptions['load']; stop?: AbortSignal};
+async function runAndObserve(host: Host, execution: ExecutionBinding, {requireExit = false, load, stop}: RunOptions = {}) {
   let status: number | undefined;
   const failures: unknown[] = [];
-  try { status = (await host.runPath(execution)).status; }
-  catch (error) { failures.push(error); }
-  try { host.stopWorker(execution); }
-  catch (error) { failures.push(error); }
+  const requestStop = () => {
+    try { host.stopWorker(execution); }
+    catch (error) { failures.push(error); }
+  };
+  stop?.addEventListener('abort', requestStop, {once: true});
+  try {
+    if (stop?.aborted) throw stop.reason;
+    status = (await host.runPath(execution, load)).status;
+  } catch (error) { failures.push(error); }
+  finally { stop?.removeEventListener('abort', requestStop); }
+  requestStop();
   // A settled host request is not Worker termination. The new owned profile
   // waits for both; a timeout itself never authorizes recycling.
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -100,9 +109,43 @@ let ownedRun: OwnedRun | undefined;
  * stdin/stderr. A trusted embedding selects the pin independently of bytes. */
 export async function runOwnedStdoutProgram(program: string, args: readonly string[], translator: WebAssembly.Module,
   path: string, candidate: Uint8Array, pin: OwnedStdoutPin): Promise<number> {
-  if (ownedRun) throw new Error('Owned stdout is already running or remains unconfirmed');
-  const module = pinnedOwnedModule(candidate, pin);
+  // Capture program bytes before any externally observable create.
   const payload = readFileSync(program);
+  return runWithOwnedStdout(path, candidate, pin, host => preparedProgram(host, program, args, payload, translator));
+}
+
+type OwnedRootRequest = {
+  readonly wire: Uint8Array<ArrayBuffer>;
+  readonly limits: PreparedFileLimits;
+  readonly fdLimit: number;
+  readonly path: Uint8Array;
+  readonly argv: readonly Uint8Array[];
+  readonly env: readonly Uint8Array[];
+  readonly options: Omit<PathExecutionOptions, 'stdio' | 'load' | 'signal'>;
+  /** The selected trusted root transport authenticates and decodes these
+   * exact coordinates. No path search, raw guest fd or capacity is supplied. */
+  readonly readSource: RootSourceTransport;
+  readonly stop?: AbortSignal;
+};
+
+/** Same File and Worker owner for a separately prepared, trusted root. */
+export async function runOwnedStdoutRoot(request: OwnedRootRequest, path: string, candidate: Uint8Array, pin: OwnedStdoutPin): Promise<number> {
+  const {wire, limits, fdLimit, path: guest, argv, env, options, readSource, stop} = request;
+  if (typeof readSource !== 'function') throw new TypeError('Expected trusted owned root source transport');
+  const load = (host: Host) => (source: number) => readSource(Object.freeze(host.rootSource(source)));
+  return runWithOwnedStdout(path, candidate, pin, host => {
+    host.prepareRoot(wire, limits, fdLimit);
+    return host.pathExecution(guest, argv, env, {...options, load: load(host), signal: stop});
+  }, {readSource, load, stop});
+}
+
+async function runWithOwnedStdout(path: string, candidate: Uint8Array, pin: OwnedStdoutPin,
+  prepare: (host: Host) => Promise<ExecutionBinding>,
+  root?: {readSource: RootSourceTransport; load: (host: Host) => NonNullable<RunOptions['load']>; stop?: AbortSignal},
+): Promise<number> {
+  if (ownedRun) throw new Error('Owned stdout is already running or remains unconfirmed');
+  if (root?.stop?.aborted) throw root.stop.reason;
+  const module = pinnedOwnedModule(candidate, pin);
   const owner: OwnedRun = {};
   let canClose = true, status: number | undefined;
   const failures: unknown[] = [];
@@ -111,15 +154,16 @@ export async function runOwnedStdoutProgram(program: string, args: readonly stri
       // Recheck at the allocation edge, even if reading the trusted pin
       // (or another preflight input) was reentrant.
       if (ownedRun) throw new Error('Owned stdout is already running or remains unconfirmed');
+      if (root?.stop?.aborted) throw root.stop.reason;
       owner.output = acquireOwnedStdout(path);
       ownedRun = owner;
       return owner.output.io;
-    });
+    }, root?.readSource);
     owner.host = host;
-    const execution = owner.execution = await preparedProgram(host, program, args, payload, translator);
+    const execution = owner.execution = await prepare(host);
     // Before runPath no syscall could take its own physical File view.
     canClose = false;
-    const observation = await runAndObserve(host, execution, true);
+    const observation = await runAndObserve(host, execution, {requireExit: true, load: root?.load(host), stop: root?.stop});
     canClose = observation.retired;
     status = exitStatus(observation);
   } catch (error) { failures.push(error); }

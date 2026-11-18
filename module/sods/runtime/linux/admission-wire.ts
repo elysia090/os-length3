@@ -4,11 +4,17 @@
 const Module = WebAssembly.Module, Bytes = Uint8Array, apply = Reflect.apply;
 
 const arrayByteLength = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength')!.get!;
-const typedBuffer = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer')!.get!;
+const arrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+const typedBuffer = Object.getOwnPropertyDescriptor(arrayPrototype, 'buffer')!.get!;
+const typedTag = Object.getOwnPropertyDescriptor(arrayPrototype, Symbol.toStringTag)!.get!;
 // Stronger selected ingress: reject shared backing rather than claiming an
 // atomic snapshot of concurrent writes. Built-in conversion also avoids Buffer.slice.
-export const ownedInput = (input: Uint8Array): Uint8Array<ArrayBuffer> => {
+export const requireUnsharedInput = (input: Uint8Array): void => {
+  if (apply(typedTag, input, []) !== 'Uint8Array') throw new TypeError('Expected byte input');
   apply(arrayByteLength, apply(typedBuffer, input, []), []);
+};
+export const ownedInput = (input: Uint8Array): Uint8Array<ArrayBuffer> => {
+  requireUnsharedInput(input);
   return new Bytes(input);
 };
 

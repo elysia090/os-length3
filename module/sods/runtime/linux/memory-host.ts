@@ -1,4 +1,4 @@
-import {ownedInput, validateLinuxMemorySurface, type CaptureResultPolicy} from './admission-wire.ts';
+import {ownedInput, requireUnsharedInput, validateLinuxMemorySurface, type CaptureResultPolicy} from './admission-wire.ts';
 import {utf8} from './flow.ts';
 import {fixedTranslatedModule, fixedTranslatedModuleAsync} from './translated-image.ts';
 import {prepare} from '../translation/share.ts';
@@ -158,6 +158,8 @@ export interface PreparedArtifactRequest {
   readonly sourceBytes: number;
   readonly shared: boolean;
 }
+export type RootSource = Readonly<{pack: number; at: number; stored: number; size: number; raw: boolean}>;
+export type RootSourceTransport = (source: RootSource) => Uint8Array | Promise<Uint8Array>;
 export interface PathExecutionOptions {
   translator?: WebAssembly.Module;
   /** Trusted transport: authenticate the requested stored blob/generation, then
@@ -271,17 +273,20 @@ export function createCapturedResultHost(module: WebAssembly.Module, memories: n
 
 /** Internal Node-only role; the trusted caller must own one exact File.
  * Do not expose a caller-supplied physical callback at the public Linux entry. */
-export function createOwnedStdoutHost(module: WebAssembly.Module, acquire: () => ReturnType<typeof captureStdio>) {
-  const host = memoryHostFor(module, 1, 1, {acquire});
-  return freeze({preparePreparedFiles: host.preparePreparedFiles, directory: host.directory, file: host.file,
+export function createOwnedStdoutHost(module: WebAssembly.Module, acquire: () => ReturnType<typeof captureStdio>,
+  readSource?: RootSourceTransport) {
+  const host = memoryHostFor(module, 1, 1, {acquire, readSource});
+  return freeze({prepareRoot: host.prepareRoot, rootSource: host.rootSource, preparePreparedFiles: host.preparePreparedFiles,
+    directory: host.directory, file: host.file,
     sealFiles: host.sealFiles, pathExecution: host.pathExecution, runPath: host.runPath, stopWorker: host.stopWorker,
     workerSettled: host.workerSettled, workerStopped: host.workerStopped, workerEvidence: host.workerEvidence});
 }
-type Profile = {capture: CaptureResultPolicy} | {acquire: () => ReturnType<typeof captureStdio>};
+type Profile = {capture: CaptureResultPolicy} | {acquire: () => ReturnType<typeof captureStdio>; readSource?: RootSourceTransport};
 
 function memoryHostFor(module: WebAssembly.Module, memories: number, actions: number, profile?: Profile) {
   const resultPolicy = profile && 'capture' in profile ? profile.capture : undefined;
-  const acquire = profile && 'acquire' in profile ? profile.acquire : undefined;
+  const ownedProfile = profile && 'acquire' in profile ? profile : undefined;
+  const acquire = ownedProfile?.acquire;
   integer(memories); integer(actions);
   if (memories > 0xffffffff || actions > 0xffffffff) throw new RangeError('Capacity exceeds u32');
   validateLinuxMemorySurface(module, resultPolicy ? 'captured' : acquire ? 'owned-stdout' : 'ordinary');
@@ -302,6 +307,14 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     const number = integer(numeric(value));
     if (wide(number) !== value) throw new RangeError('Transport coordinate exceeds safe integer');
     return number;
+  };
+  // Immutable transport coordinates from the one sealed root catalog.
+  const rootSource = (source: number): RootSource => {
+    const pack = u32(numeric(result(core.linux_root_source(u32(source)))));
+    const size = safeNumber(core.linux_result_length()), at = safeNumber(core.linux_result_auxiliary()), stored = safeNumber(core.linux_result_endpoint());
+    const raw = core.linux_result_state();
+    if (raw > 1) throw new Error('Invalid root source storage mode');
+    return {pack, at, stored, size, raw: raw === 1};
   };
   const artifactRequest = (artifact: number): PreparedArtifactRequest => {
     const pointer = result(core.linux_root_artifact(artifact));
@@ -566,10 +579,57 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
     if (observed.kind === 'unknown') throw observed.error;
     return completed;
   };
+  const ownedMayStart = (w: WorkerState): boolean => {
+    const {stopping, exited} = w.bridge.diagnostics();
+    return !stopping && !exited;
+  };
+  const finishOwnedSource = async (w: WorkerState, sequence: number, c: ReturnType<typeof command>) => {
+    if (c.target !== wide(sequence) || c.next !== 0n) throw new Error('Owned source load identity mismatch');
+    const action = c.value;
+    const source = u32(safeNumber(result(core.linux_sendfile_load_start(w.id, sequence, action))));
+    const attempt = u32(safeNumber(core.linux_result_length()));
+    if (!source || !attempt || core.linux_result_auxiliary() !== c.target) throw new Error('Invalid owned source request');
+    let ok = false, staging = false;
+    const failures: unknown[] = [];
+    try {
+      const readSource = ownedProfile?.readSource;
+      if (!readSource) throw new Error('No owned source transport');
+      const locator = rootSource(source), size = u32(locator.size);
+      const bytes = await readSource(freeze(locator)); // No core view across the service wait.
+      if (ownedMayStart(w)) {
+        // Copy once directly into staging. An adjacent JS snapshot is unnecessary
+        // in this synchronous no-callback interval with unshared backing.
+        requireUnsharedInput(bytes);
+        if (lengthOf(bytes) !== size) throw new Error('Owned source has the wrong decoded size');
+        staging = true;
+        put(result(core.linux_load_input(size)), bytes);
+        ok = true;
+      }
+    } catch (error) { failures.push(error); }
+    let completed: ReturnType<typeof command> | undefined;
+    // Report the exact stopped attempt once, even when transport failed or
+    // Worker stopping won. A failed receipt is not authority to try it again.
+    try { completed = command(core.linux_sendfile_load_finish(w.id, sequence, action, source, attempt, ok ? 1 : 0)); }
+    catch (error) { failures.push(error); }
+    if (staging) {
+      try { checked(core.linux_load_input(0)); }
+      catch (error) { failures.push(error); }
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length) throw new AggregateError(failures, 'Owned source and exact receipt could not settle');
+    // The remaining work is still sequenced; no native call until Rust offers
+    // the adopted resident prefix, and no offer after a stopped Worker.
+    if (!ok || completed?.tag !== 12 || completed.value !== action) throw new Error('Owned source load did not produce an offer');
+    return completed;
+  };
   const transferOwnedSendfile = (w: WorkerState, sequence: number, c: ReturnType<typeof command>) => {
     if (!ownedStdout || c.endpoint !== 2 || c.target !== wide(sequence)) {
       throw new Error('Owned source-output identity mismatch');
     }
+    // The loader completion can enqueue another JS turn before its offer
+    // reaches here. A stop request closes new physical dispatch, but is not a
+    // receipt for a transfer that already started.
+    if (!ownedMayStart(w)) throw new Error('Owned source-output stopped before dispatch');
     const action = c.value, length = safeNumber(c.next);
     const pointer = result(core.linux_sendfile_start(w.id, sequence, action));
     let observed: PhysicalResult;
@@ -692,6 +752,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       try {
         const outcome = await w.bridge.run(w.invocation, entry, async request => {
           try {
+            if (owned && !ownedMayStart(w)) throw new Error('Owned Worker stopped before syscall dispatch');
             let c = command(core.linux_syscall_sequenced(w.id, request.invocation, request.sequence, request.nr, ...request.args, request.next));
             if (c.tag === 0) return {kind: 'return', value: c.value};
             if (c.tag === 2) { exit = true; return {kind: 'leave'}; }
@@ -722,6 +783,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
               if (completed.tag !== 0) throw new Error(`Worker register application failed or remains uncertain: ${physical}`);
               return {kind: 'return', value: completed.value};
             }
+            if (c.tag === 11 && owned) c = await finishOwnedSource(w, request.sequence, c);
             if (c.tag === 12 && owned) return {kind: 'return', value: transferOwnedSendfile(w, request.sequence, c)};
             if (c.tag === 10) {
               if (capture) throw new Error('Captured result rejects physical output');
@@ -1288,14 +1350,7 @@ function memoryHostFor(module: WebAssembly.Module, memories: number, actions: nu
       checked(core.linux_prepared_root(values[0]!, values[1]!, values[2]!, values[3]!, values[4]!, values[5]!, values[6]!, values[7]!, values[8]!, values[9]!, flags, values[10]!));
       if (capture) checked(capture.linux_capture_result_init(resultPolicy!.maximumRequest, resultPolicy!.queueBytes));
     },
-    /** Root-local immutable transport coordinates, not namespace lookup. */
-    rootSource(source: number): {pack: number; at: number; stored: number; size: number; raw: boolean} {
-      const pack = u32(numeric(result(core.linux_root_source(u32(source)))));
-      const size = safeNumber(core.linux_result_length()), at = safeNumber(core.linux_result_auxiliary()), stored = safeNumber(core.linux_result_endpoint());
-      const raw = core.linux_result_state();
-      if (raw > 1) throw new Error('Invalid root source storage mode');
-      return {pack, at, stored, size, raw: raw === 1};
-    },
+    rootSource,
     /** Prepared namespace, not diagnostic preopened-table fallback. */
     preparePreparedFiles(limits: PreparedFileLimits): InodeBinding {
       const {inodes, entries, fileBytes, tables, descriptions, slots, reads, contexts, views, holds, policy} = limits;

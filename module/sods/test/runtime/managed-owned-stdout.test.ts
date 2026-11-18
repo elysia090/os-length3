@@ -6,8 +6,9 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {runOwnedStdoutProgram, type OwnedStdoutPin} from '../../runtime/host/node/run.ts';
-import {memoryHost} from '../../runtime/linux/memory-host.ts';
+import {runOwnedStdoutProgram, runOwnedStdoutRoot, type OwnedStdoutPin} from '../../runtime/host/node/run.ts';
+import {memoryHost, type RootSourceTransport} from '../../runtime/linux/memory-host.ts';
+import {loadTranslator} from '../../runtime/translation/translator.ts';
 
 const ownedPath = process.env.SODS_OWNED_STDOUT_WASM;
 const translatorPath = process.env.SODS_CURRENT_TRANSLATOR_WASM;
@@ -80,6 +81,100 @@ test('pinned non-probe owned stdout runs the actual Worker synchronously without
     }
   } finally { rmSync(directory, {recursive: true, force: true}); }
 });
+
+// Independent, single-pack prepared-root fixture. The installed image uses AOT
+// while self-open still sees a cold strictly sized source in the Rust catalog.
+const guestPath = new TextEncoder().encode('/bin/owned.elf');
+const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest();
+function coldWire(elf: Uint8Array, prepared: Uint8Array, translator: Uint8Array) {
+  const dir = new TextEncoder().encode('/bin');
+  const out = new Uint8Array(72 + 40 + 8 + dir.length + 40 + guestPath.length + 104 + guestPath.length);
+  const view = new DataView(out.buffer);
+  let at = 0;
+  const bytes = (b: Uint8Array) => { out.set(b, at); at += b.length; };
+  const u32 = (n: number) => { view.setUint32(at, n, true); at += 4; };
+  const u64 = (n: number) => { view.setBigUint64(at, BigInt(n), true); at += 8; };
+  const content = sha(elf), image = sha(prepared), generation = sha(new Uint8Array([42])), translatorSha = sha(translator);
+  bytes(new TextEncoder().encode('SODSROOT')); u32(1); u32(0); bytes(generation);
+  u32(1); u32(1); u32(0); u32(1); u32(1); u32(0);
+  bytes(content); u64(elf.length);
+  u32(dir.length); u32(0o755); bytes(dir);
+  u32(guestPath.length); u32(0o755); u64(elf.length);
+  u32(0); u32(1); u64(0); u64(elf.length); bytes(guestPath);
+  u32(guestPath.length); u32(1); bytes(content); bytes(image); bytes(translatorSha); bytes(guestPath);
+  assert.equal(at, out.length);
+  return {out, generation, image, content, translatorSha};
+}
+
+test('the selected owned host loads a cold sealed source once; bad or stopped delivery cannot write',
+  {skip, timeout: 30_000}, async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sods-owned-cold-'));
+    try {
+      const candidate = readFileSync(ownedPath!), translatorBytes = readFileSync(translatorPath!);
+      const pin: OwnedStdoutPin = {kind: 'sods-linux-owned-stdout-v1', byteLength: Number(process.env.SODS_OWNED_STDOUT_BYTES),
+        sha256: process.env.SODS_OWNED_STDOUT_SHA256!};
+      const elf = new Uint8Array(readFileSync(buildProgram(directory)));
+      const translator = await loadTranslator(translatorBytes), translated = translator.whole(elf);
+      const {out: wire, generation, image, content, translatorSha} = coldWire(elf, translated, translatorBytes);
+      const limits = {inodes: 3, entries: 2, fileBytes: elf.length, tables: 1, descriptions: 8, slots: 8,
+        reads: 1, contexts: 2, views: 1, holds: 24, policy: {noExec: false, noSuid: false, noSymfollow: false}};
+      for (const mode of ['success', 'transport', 'length', 'shared', 'stopped-load', 'stopped-offer', 'mutated-after-stage', 'recovery'] as const) {
+        const output = join(directory, mode), stop = new AbortController();
+        const ready = Promise.withResolvers<void>(), blocked = Promise.withResolvers<Uint8Array>();
+        let reads = 0, artifacts = 0;
+        const transport: RootSourceTransport = locator => {
+          reads++;
+          assert.ok(Object.isFrozen(locator));
+          assert.deepEqual(locator, {pack: 0, at: 0, stored: elf.length, size: elf.length, raw: true});
+          assert.deepEqual(readFileSync(output), Buffer.from('A'), 'no preload during AOT startup and no send before delivery');
+          if (mode === 'transport') throw new Error('Trusted source transport failed');
+          if (mode === 'length') return elf.subarray(1);
+          if (mode === 'shared') {
+            const shared = new Uint8Array(new SharedArrayBuffer(elf.length)); shared.set(elf);
+            return shared;
+          }
+          if (mode.startsWith('stopped-') || mode === 'mutated-after-stage') { ready.resolve(); return blocked.promise; }
+          return elf;
+        };
+        const running = runOwnedStdoutRoot({wire, limits, fdLimit: 8, path: guestPath, argv: [guestPath], env: [],
+          options: {random: new Uint8Array(16), preparedArtifact: request => {
+            artifacts++;
+            assert.deepEqual([request.rootGeneration, request.sourceSha256, request.artifactSha256, request.translatorSha256],
+              [generation, content, image, translatorSha].map(entry => entry.toString('hex')));
+            assert.equal(reads, 0);
+            return translated;
+          }}, readSource: transport, stop: stop.signal}, output, candidate, pin);
+        void running.catch(() => {});
+        if (mode === 'stopped-load' || mode === 'stopped-offer') {
+          await Promise.race([ready.promise, running.then(() => assert.fail('guest did not wait for its cold source'))]);
+          if (mode === 'stopped-load') { stop.abort(); blocked.resolve(elf); }
+          else {
+            // Delivery resumes first; the queued stop beats physical dispatch
+            // from that already prepared offer on the following continuation.
+            blocked.resolve(elf);
+            queueMicrotask(() => stop.abort());
+          }
+          await assert.rejects(running);
+        } else if (mode === 'mutated-after-stage') {
+          await Promise.race([ready.promise, running.then(() => assert.fail('guest did not wait for its cold source'))]);
+          const delivery = new Uint8Array(elf);
+          blocked.resolve(delivery);
+          queueMicrotask(() => delivery.fill(0));
+          assert.equal(await running, 42, 'staging is already Rust-owned before the delivery buffer can change');
+        } else if (mode === 'transport') await assert.rejects(running, /Trusted source transport failed/);
+        else if (mode === 'length') await assert.rejects(running, /wrong decoded size/);
+        else if (mode === 'shared') await assert.rejects(running, TypeError);
+        else assert.equal(await running, 42, 'later read reuses the source and validates the committed cursor');
+        assert.deepEqual([artifacts, reads], [1, 1], 'one artifact and at most one exact source attempt');
+        assert.deepEqual(readFileSync(output), ['success', 'recovery', 'mutated-after-stage'].includes(mode) ? Buffer.from([65, 127, 67]) : Buffer.from('A'));
+        for (const fd of readdirSync('/proc/self/fd')) {
+          let path: string;
+          try { path = readlinkSync('/proc/self/fd/' + fd); } catch { continue; }
+          assert.notEqual(path, output, 'settled absent effect does not quarantine this File');
+        }
+      }
+    } finally { rmSync(directory, {recursive: true, force: true}); }
+  });
 
 // Separate process: an unresolved native owner is intentionally not reused.
 // A real file-size limit allows A but makes the next physical call throw EFBIG,

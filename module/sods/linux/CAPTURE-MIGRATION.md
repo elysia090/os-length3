@@ -875,3 +875,42 @@ version) measured median 108.3 ms on Node 22 and 108.7 ms on Node 24 in
 this environment. That includes pin verification, Core startup,
 translation, Worker, I/O and retirement; it is neither a per-byte
 benchmark nor evidence of a speedup.
+
+### Admit a cold source without a second output owner
+
+The rootless explicit caller stays resident-only. The same owned Node
+host now also accepts one trusted prepared-root invocation. The
+prepared-artifact startup and canonical source stay independent:
+AOT starts the real Worker without reading the cold ELF; the first write
+reaches the File before any source callback. A later self-send resolves
+the existing Rust load command via its exact sequence, action, source
+and attempt. The sealed root supplies the range and decoded length. A
+trusted range provider must authenticate and decode the selected root's
+pack; accepting the declared length is not content authentication.
+
+The File stays owned across the asynchronous wait, but the host does
+not expose a canonical Core view or start an output effect in that
+interval. In one synchronous turn it validates unshared bytes and
+their expected length, stages directly in Core and submits the exact
+loader receipt once. That receipt cannot stand in for a physical result.
+A stop request blocks future dispatch; only actual Worker exit and
+retirement permit closing the File. The second stop check matters:
+an already prepared offer must not become a physical effect after a stop
+request but before the continuation enters the next turn.
+
+On the current-translator Worker, `A 0x7f C` and the later `ELF` read
+required one load and one prepared artifact, with no startup read or
+subsequent reload. A thrown transport, wrong size, shared backing, stop
+while loading, and stop after a prepared offer left `A` and permitted
+retirement. Mutating the provider buffer after Core staging did not alter
+the output byte or the kept source suffix. There is no second Sendfile
+ledger or TypeScript cache.
+
+This whole-file source contract needs the authenticated decoded object of
+length N in the independent Core store. With a mutable provider buffer
+and disjoint memories, it takes one N-byte staging copy, not two. A
+generic authenticated-range design has a different bound. Warm sends
+need no staging and still require the physical effect and exact
+receipt. The Rust Wasm and its disassembly are unchanged for this host
+transport. These observed operation counts are not an instruction count
+or a latency comparison.
