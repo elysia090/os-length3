@@ -3,7 +3,8 @@ import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {Vfs} from '../../runtime/linux/fs.ts';
 import {RemoteKernel} from '../../runtime/linux/remote.ts';
-import {Outbox} from '../../runtime/linux/channel.ts';
+import {CH, OP, Outbox, REPLY} from '../../runtime/linux/channel.ts';
+import {Process} from '../../runtime/linux/process.ts';
 import {prepare} from '../../runtime/translation/share.ts';
 import {loadTranslator} from '../../runtime/translation/translator.ts';
 import {have} from './busybox.ts';
@@ -14,7 +15,8 @@ import {have} from './busybox.ts';
 
 const stage = new URL('../../../../target/userland/', import.meta.url);
 
-async function shell(script: string, {input = null, said = null, files = {}}: {input?: string | null; said?: [number, string][] | null; files?: Record<string, Uint8Array>} = {}): Promise<{status: number; out: string; ms: number}> {
+async function shell(script: string, {input = null, said = null, files = {}, observe}: {input?: string | null; said?: [number, string][] | null;
+  files?: Record<string, Uint8Array>; observe?: (kernel: RemoteKernel) => void} = {}): Promise<{status: number; out: string; ms: number}> {
   const vfs = new Vfs();
   for (const [path, bytes] of Object.entries(files)) vfs.writeFile(path, bytes, 0o755);
   const busybox = vfs.writeFile('/bin/busybox', readFileSync(new URL('busybox', stage)), 0o755);
@@ -30,6 +32,7 @@ async function shell(script: string, {input = null, said = null, files = {}}: {i
       ready: () => true,
     },
   });
+  observe?.(kernel);
   const {wasm, segments} = prepare(readFileSync(new URL('busybox.wasm', stage)), {shared: true});
   kernel.prebuilt(busybox, new WebAssembly.Module(wasm), segments);
   const t0 = performance.now();
@@ -59,11 +62,78 @@ test('apart: time on the processor is counted in each Worker as it runs, and a s
   assert.ok(slept[0] + slept[1] - after[0] - after[1] < 0.2, `sleep had the processor: ${times[1]} then ${times[3]}`);
 });
 
-test('apart: the kernel\'s time on the calls is counted (one in CALL_SAMPLE timed), a good part of a child\'s that makes calls and little else', {skip: !have}, async () => {
-  const r = await shell('dd if=/dev/zero of=/dev/null bs=1 count=50000 2>/dev/null; times');
-  const [user, sys] = [...r.out.trim().split('\n')[1].matchAll(/(\d+)m([\d.]+)s/g)].map(([, m, s]) => Number(m) * 60 + Number(s));
-  // Its own share holds the round trips to the kernel too (its Worker waits on them).
-  assert.ok(sys > 0 && sys >= user / 4, `dd's 100000 calls: user ${user} s, system ${sys} s`);
+test('apart: sampled calls charge the exact kernel share once and to the correct task', t => {
+  let now = 100, cost = 3;
+  t.mock.method(performance, 'now', () => now);
+  const kernel = new RemoteKernel({spares: 0, translate: () => assert.fail('no guest image'),
+    console: {write() {}, read: () => null}});
+  const first = kernel.newTask(new Process(kernel, null)), second = kernel.newTask(new Process(kernel, null));
+  for (const task of [first, second]) {
+    task.state = 'running'; task.since = 100;
+    kernel.tasks.set(task.tid, task);
+  }
+  kernel.handle = task => {
+    assert.equal(Atomics.load(task.i32, CH.STATE), 3);
+    now += cost;
+    task.reply(REPLY.VALUE);
+  };
+  const ask = (task: typeof first, op: number) => {
+    task.i32[CH.OP] = op;
+    Atomics.store(task.i32, CH.STATE, 1);
+    assert.equal(kernel.drain(), true);
+    assert.equal(Atomics.load(task.i32, CH.STATE), 2);
+  };
+  try {
+    for (let i = 0; i < 7; i++) ask(first, OP.SYSCALL);
+    assert.deepEqual([first.since, first.cpu, kernel.cpu], [100, {user: 0, sys: 0}, {user: 0, sys: 0}]);
+
+    // Three milliseconds in the eighth handler, 43 elapsed since admission:
+    // 24ms sample debit, with the other 19ms on the original task.
+    now = 140;
+    ask(first, OP.SYSCALL);
+    assert.deepEqual([first.since, first.owed, first.cpu], [143, 0, {user: 19, sys: 24}]);
+
+    // A non-syscall request is charged once and doesn't shift the syscall
+    // sample cadence, or move this task's charge to another owner.
+    second.since = 143;
+    now = 150; cost = 4;
+    ask(second, OP.MISS);
+    assert.deepEqual([second.since, second.owed, second.cpu], [154, 0, {user: 7, sys: 4}]);
+    assert.equal(kernel.calls, 8);
+    assert.deepEqual(first.cpu, {user: 19, sys: 24});
+    assert.deepEqual(kernel.cpu, {user: 26, sys: 28});
+
+    // A sampled handler longer than its completed run slice leaves debt.
+    // A later lap discharges the balance, never crediting more than the
+    // available interval nor charging the first task's account.
+    now = 154; cost = 0;
+    for (let i = 0; i < 7; i++) ask(second, OP.SYSCALL);
+    cost = 3;
+    ask(second, OP.SYSCALL);
+    assert.deepEqual([second.since, second.owed, second.cpu], [157, 21, {user: 7, sys: 7}]);
+    kernel.lap(second, 167);
+    assert.deepEqual([second.owed, second.cpu], [11, {user: 7, sys: 17}]);
+    kernel.lap(second, 187);
+    assert.deepEqual([second.owed, second.cpu, first.cpu, kernel.cpu],
+      [0, {user: 16, sys: 28}, {user: 19, sys: 24}, {user: 35, sys: 52}]);
+  } finally { kernel.close(); }
+});
+
+test('apart: BusyBox times exposes the exact waited-child counters', {skip: !have}, async () => {
+  let waited: {user: number; sys: number} | undefined;
+  const r = await shell('dd if=/dev/zero of=/dev/null bs=1 count=50000 2>/dev/null && times', {observe(kernel) {
+    const attempt = kernel.attempt;
+    kernel.attempt = function (task, call) {
+      if (call.nr === 100) waited = {...task.proc.waited};
+      return attempt.call(this, task, call);
+    };
+  }});
+  assert.equal(r.status, 0, r.out);
+  const times = [...r.out.trim().matchAll(/(\d+)m(\d+)\.(\d{3})s/g)].map(([, minutes, seconds, millis]) =>
+    Number(minutes) * 60_000 + Number(seconds) * 1000 + Number(millis));
+  assert.equal(times.length, 4, r.out);
+  assert.ok(waited && waited.sys > 0, 'the real child must accrue sampled kernel work');
+  assert.deepEqual(times.slice(2), [Math.floor(waited.user / 10) * 10, Math.floor(waited.sys / 10) * 10]);
 });
 
 test('apart: a pipe streams between two Workers, every byte', {skip: !have}, async () => {

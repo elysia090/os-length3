@@ -131,9 +131,10 @@ const SLICE = 10;
 /**
  * One call in CALL_SAMPLE is timed: a clock read costs as much as a third of a call that does little, and each call
  * had two. The kernel's time on the calls is then a sample, as Linux's ticks sample it: what a timed call took, as
- * CALL_SAMPLE calls, is owed to the kernel's side and paid from the thread's time as it is counted (Kernel.lap). What
- * the thread had on the processor in all stays exact, the share each side had of it near (Linux's cputime_adjust
- * scales the ticks to that exact sum the same way); a browser's clock, coarse, read each call no closer.
+ * CALL_SAMPLE calls, is owed to the kernel's side and paid from the thread's time as it is counted (Kernel.lap).
+ * The split conserves the elapsed interval during which the guest was marked running; the sample estimates the
+ * kernel share. These monotonic wall ticks include host scheduling and Remote Worker round trips. They are not an
+ * OS-thread CPU clock and don't imply a fixed proportion of system time for any program.
  */
 export const CALL_SAMPLE = 8;
 /** Calls a thread may be made to wait at for another's turn: ones that may wait anyway, so nothing a program relies on across them (its flags) is held. */
