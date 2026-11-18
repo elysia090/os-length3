@@ -1,7 +1,30 @@
-// Decode and check a complete prepared distribution for comparison with a native root.
-import {byPath,type Entry,type Tree} from '../distribution/inventory.ts';
+// Native and prepared-distribution inventories for release parity verification.
+import {lstatSync, readFileSync, readdirSync, readlinkSync, statSync} from 'node:fs';
+import {join} from 'node:path';
+import {byPath, type Entry, type Tree} from '../distribution/inventory.ts';
 import {sha256} from '../host/node/hash.ts';
-import {openDistribution} from './local.ts';
+import {readTarball} from '../host/node/tar.ts';
+import {openDistribution} from '../deployment/local.ts';
+
+/** An installed root, walked as the host has it. */
+function readDir(root: string): Tree {
+  const entries: Entry[] = [];
+  (function walk(dir: string, rel: string) {
+    for (const name of readdirSync(dir).sort()) {
+      const full = join(dir, name), path = `${rel}/${name}`, st = lstatSync(full);
+      if (st.isSymbolicLink()) entries.push({path, type: 'link', mode: 0o777, target: readlinkSync(full)});
+      else if (st.isDirectory()) { entries.push({path, type: 'dir', mode: st.mode & 0o7777}); walk(full, path); }
+      else if (st.isFile()) entries.push({path, type: 'file', mode: st.mode & 0o7777, size: st.size, sha256: sha256(readFileSync(full))});
+      else entries.push({path, type: 'other', mode: st.mode & 0o7777});
+    }
+  })(root, '');
+  entries.sort(byPath);
+  return {entries};
+}
+
+export async function nativeTree(at: string): Promise<Tree> {
+  return statSync(at).isDirectory() ? readDir(at) : readTarball(at);
+}
 
 /** Every path of the web root, each file's bytes decoded from its pack and hashed; and each pack checked whole. */
 export function webTree(dir: string): Tree {

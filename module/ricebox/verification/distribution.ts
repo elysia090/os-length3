@@ -13,8 +13,7 @@
 import {mkdirSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
 import {counts,differences,manifestOf} from '../distribution/inventory.ts';
-import {nativeTree} from '../host/node/inventory.ts';
-import {webTree} from '../deployment/inventory.ts';
+import {nativeTree, webTree} from './inventory.ts';
 import {sha256} from '../host/node/hash.ts';
 import {readFileSync} from 'node:fs';
 

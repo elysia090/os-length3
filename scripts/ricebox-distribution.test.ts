@@ -100,9 +100,22 @@ test('the same neutral root becomes static layers without requiring why or optio
     const index = JSON.parse(readFileSync(join(out, about.index.path), 'utf8'));
     assert.equal(index.translations.length, 0);
     assert.ok(index.files.some((f: {path: string}) => f.path === '/usr/bin/tool'));
-    const {nativeTree} = await import('../module/ricebox/host/node/inventory.ts');
-    const {webTree} = await import('../module/ricebox/deployment/inventory.ts');
-    assert.deepEqual((await webTree(out)).entries, (await nativeTree(archive)).entries);
+    const {nativeTree, webTree} = await import('../module/ricebox/verification/inventory.ts');
+    const web = webTree(out);
+    assert.deepEqual(web.entries, (await nativeTree(archive)).entries);
+    const extracted = join(at, 'extracted'); mkdirSync(extracted);
+    const extraction = spawnSync('tar', ['--zstd', '--same-permissions', '-xf', archive, '-C', extracted], {encoding: 'utf8'});
+    assert.equal(extraction.status, 0, extraction.stderr);
+    const nativeRoot = join(extracted, 'root');
+    assert.deepEqual((await nativeTree(nativeRoot)).entries, web.entries);
+    // Same path, size and mode: parity must compare the actual body digest.
+    writeFileSync(join(nativeRoot, 'usr/bin/tool'), 'a mutated tool\n');
+    const {differences} = await import('../module/ricebox/distribution/inventory.ts');
+    const changed = differences(await nativeTree(nativeRoot), web);
+    assert.equal(changed.same, false);
+    assert.deepEqual(changed.missing, []);
+    assert.deepEqual(changed.extra, []);
+    assert.deepEqual(changed.changed.map(entry => entry.path), ['/usr/bin/tool']);
     assert.deepEqual(readFileSync(join(stage, 'sods.wasm')), readFileSync(wasm));
   } finally { rmSync(at, {recursive: true, force: true}); }
 });

@@ -132,3 +132,14 @@ test('build artifact validation uses only the public sods entry and compression 
   assert.equal(allowed('module/ricebox/build/compress.worker.ts','node:fs'),false);
   assert.deepEqual(violations({'module/ricebox/build/compression-pool.ts':"new Worker(new URL('./compress.worker.ts', import.meta.url))"}),[]);
 });
+
+test('release inventory verification owns filesystem access without granting it to distribution or runtime', () => {
+  const inventory = 'module/ricebox/verification/inventory.ts';
+  for (const target of ['node:fs', 'node:path', '../deployment/local.ts', '../host/node/tar.ts', '../distribution/inventory.ts']) {
+    assert.equal(allowed(inventory, target), true, target);
+  }
+  for (const from of ['module/ricebox/runtime/root.ts', 'module/ricebox/distribution/inventory.ts']) {
+    assert.equal(allowed(from, '../verification/inventory.ts'), false);
+  }
+  assert.equal(allowed(inventory, 'node:child_process'), false);
+});
