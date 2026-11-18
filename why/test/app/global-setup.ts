@@ -39,7 +39,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import type {FullConfig} from '@playwright/test';
 import {OS, OUT, LOGS, WEBROOT_MANIFEST} from './paths.ts';
-import {CORE_PARTS} from '../../build/core-wasm.ts';
+import {BROWSER_INPUTS} from './build-inputs.ts';
 import {scratch} from '../../../scripts/scratch.ts';
 
 /**
@@ -69,8 +69,7 @@ function newest(path: string): number {
 
 // What the build is made of: why's parts (their TypeScript, and the Rust the browser's core is built from by
 // vite.config.ts) and its window, what is shipped beside them, and the units under them that a page runs.
-const SOURCES = ['why/app', 'why/lib.rs', ...CORE_PARTS.map((part) => `why/${part}`), 'package-lock.json', 'why/build/core-wasm.ts', 'ricebox/sods/runtime',
-  'ricebox/everyday/src', 'ricebox/distribution/runtime', 'ricebox/distribution/src'];
+const SOURCES = BROWSER_INPUTS;
 const STAMP = join(OUT, '.built');
 
 /** What the build carries besides the sources: the browser's Prompt, when the app has a web root to serve. */
