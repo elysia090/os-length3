@@ -19,7 +19,7 @@ const object = (value: unknown): value is Record<string, unknown> => value !== n
 const nameOK = (s: unknown): s is string => typeof s === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/.test(s);
 const wordOK = (s: unknown): s is string => typeof s === 'string' && s.length > 0 && !/\s/.test(s);
 function pathOK(s: unknown): s is string { return typeof s === 'string' && s.length > 0 && !s.includes('\\') && !s.includes('\0') && s.split('/').every(p => p && p !== '.' && p !== '..'); }
-function descriptor(d: unknown): asserts d is Identity {
+function descriptor<T>(d: T): asserts d is T & Identity {
   if (!object(d) || typeof d.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(d.sha256) || typeof d.size !== 'number' || !Number.isSafeInteger(d.size) || d.size < 0) throw new Error('otter: invalid artifact identity');
 }
 function resolveSelection(catalog: unknown, selected: unknown): {packages: Record<string, Package>; ordered: string[]; toolchains: unknown} {
@@ -194,12 +194,14 @@ export function publishCatalog({packageCache, packages, toolchains, output}: {pa
     walk(join(source,'tree')); catalog.packages[name]=p;
   }
   if (toolchains) {
-    catalog.toolchains=Object.create(null);
+    const indexed: NonNullable<Catalog['toolchains']> = Object.create(null);
+    catalog.toolchains=indexed;
     for (const [host,tools] of Object.entries(toolchains)) {
       if (!/^[a-z]+-[a-z0-9]+$/.test(host)) throw new Error('otter: invalid toolchain host');
-      catalog.toolchains[host]=Object.create(null);
+      const identities: Tools<Identity> = Object.create(null);
+      indexed[host]=identities;
       for (const n of toolNames) {
-        const bytes=readFileSync(tools[n]),sha256=hash(bytes); blobs.set(sha256,bytes); catalog.toolchains[host][n]={sha256,size:bytes.length};
+        const bytes=readFileSync(tools[n]),sha256=hash(bytes); blobs.set(sha256,bytes); identities[n]={sha256,size:bytes.length};
       }
     }
   }

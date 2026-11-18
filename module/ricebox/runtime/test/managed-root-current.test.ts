@@ -195,7 +195,7 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       for (const mode of ['valid', 'reject'] as const) {
         const fresh = await managedRoot(core, {memories: 2, actions: 16});
         fresh.prepareRoot(prepared.wire, limits, 64);
-        const before = {loads, artifacts, workers, runs};
+        const before: {loads: number; artifacts: number; workers: number; runs: number} = {loads, artifacts, workers, runs};
         const controller = new AbortController(), reason = new Error(`cancel-late-${mode}`);
         const lateFailure = new Error('late artifact transport rejection');
         let enter!: () => void, release!: (bytes: Uint8Array) => void, reject!: (error: Error) => void;
