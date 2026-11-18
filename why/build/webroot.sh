@@ -10,7 +10,8 @@ root=${1:-}
 out=${2:-$here/why/app/public/webroot}
 if [ -z "$root" ]; then root=$(node "$here/why/build/fetch-root.ts" "$here/target/root"); fi
 # Product-specific warm programs and the former CLI name belong here, not in ricebox.
+members=$(tar --zstd -tf "$root")
 cli=/usr/bin/why
-if ! tar --zstd -tf "$root" | grep -qx 'root/usr/bin/why'; then cli=/usr/bin/l3; fi
+if ! printf '%s\n' "$members" | grep -x 'root/usr/bin/why' >/dev/null; then cli=/usr/bin/l3; fi
 sh "$here/ricebox/distribution/build/distribution.sh" "$root" "$out" --name why --hot "/usr/bin/bash,/usr/bin/busybox,$cli,/usr/bin/git"
 

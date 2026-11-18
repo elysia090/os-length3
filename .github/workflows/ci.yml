@@ -36,7 +36,14 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=core-wasm-${{ hashFiles('why/**/*.rs', 'why/Cargo.toml', 'why/api/web/Cargo.toml', 'ricebox/distribution/src/**', 'ricebox/distribution/Cargo.toml', 'ricebox/distribution/build.rs', 'Cargo.toml', 'Cargo.lock', 'why/repo/templates.json', 'why/build/core-wasm.ts') }}" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_HASH: >-
+            ${{ hashFiles('Cargo.toml', 'Cargo.lock', '.cargo/config.toml',
+            'why/**/*.rs', 'why/Cargo.toml', 'why/api/web/Cargo.toml',
+            'why/repo/templates.json', 'why/build/core-wasm.ts',
+            'ricebox/distribution/src/**', 'ricebox/distribution/Cargo.toml',
+            'ricebox/distribution/build.rs') }}
+        run: echo "key=core-wasm-$INPUT_HASH" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -72,7 +79,20 @@ jobs:
         with:
           persist-credentials: false
       - id: key
-        run: echo "key=webroot-${{ hashFiles('ricebox/distribution/RELEASE', 'why/prompt/roots/pins.rs', 'why/shipto/remote/ship/releases.ts', 'why/build/webroot.sh', 'ricebox/distribution/build/**', 'ricebox/distribution/host/node/**', 'ricebox/distribution/format/**', 'ricebox/distribution/deployment/**', 'why/build/fetch-root.ts', 'ricebox/distribution/verification/distribution.ts', 'ricebox/distribution/verification/inventory.ts', 'ricebox/sods/Cargo.toml', 'ricebox/sods/Cargo.lock', 'ricebox/sods/src/**') }}" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_HASH: >-
+            ${{ hashFiles('.cargo/config.toml',
+            'why/prompt/roots/pins.rs', 'why/shipto/remote/ship/releases.ts',
+            'why/shipto/desktop-releases.json', 'why/build/fetch-root.ts',
+            'why/build/webroot.sh', 'ricebox/distribution/RELEASE',
+            'ricebox/distribution/build/**', 'ricebox/distribution/format/**',
+            'ricebox/distribution/host/node/**', 'ricebox/distribution/deployment/**',
+            'ricebox/distribution/verification/distribution.ts',
+            'ricebox/distribution/verification/inventory.ts',
+            'ricebox/sods/Cargo.toml', 'ricebox/sods/Cargo.lock', 'ricebox/sods/src/**',
+            'ricebox/sods/runtime/translation/share.ts', 'ricebox/muk/src/**',
+            'ricebox/toolchain/build.sh', 'ricebox/toolchain/*.h') }}
+        run: echo "key=webroot-$INPUT_HASH" >> "$GITHUB_OUTPUT"
       - id: kept
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

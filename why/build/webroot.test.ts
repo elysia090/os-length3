@@ -44,6 +44,22 @@ test('the Why launcher delegates to Ricebox from outside the checkout', () => {
   assert.deepEqual(delegated.stdout.trimEnd().split('\n'), [rootFile, output, '--name', 'why', '--hot', '/usr/bin/bash,/usr/bin/busybox,/usr/bin/l3,/usr/bin/git']);
 });
 
+test('the Why launcher does not delegate an invalid root archive', () => {
+  const archive = join(work, 'invalid archive.tar.zst');
+  writeFileSync(archive, 'not a root archive');
+  const output = join(work, 'invalid archive output');
+  const tree = join(work, 'archive validation');
+  const launcher = join(tree, 'why/build/webroot.sh');
+  const distribution = join(tree, 'ricebox/distribution/build/distribution.sh');
+  for (const file of [launcher, distribution]) mkdirSync(dirname(file), {recursive: true});
+  copyFileSync(join(os, 'why/build/webroot.sh'), launcher);
+  writeFileSync(distribution, '#!/bin/sh\nmkdir -p "$2"\n');
+  const r = spawnSync('sh', [launcher, archive, output], {cwd: work, encoding: 'utf8'});
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /tar:/);
+  assert.throws(() => statSync(output), /ENOENT/);
+});
+
 test('unknown distributor options do not create a web root', () => {
   const invalid = join(work, 'invalid-options');
   const result = makeWebroot(rootFile, invalid, work, ['--unknown', 'value']);
