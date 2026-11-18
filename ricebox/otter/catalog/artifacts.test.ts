@@ -1,6 +1,6 @@
 import {test, type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,symlinkSync,readlinkSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,symlinkSync,readlinkSync,lstatSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -61,4 +61,40 @@ test('unknown catalog boundary checks only selected packages and rejects malform
   for (const selected of [null,[],['good','good'],[3]]) {
     assert.throws(()=>resolvePackages({format:'otter-packages-v1',packages:{good:valid}},selected),/select unique/);
   }
+});
+
+test('acquisition preserves package and tool modes under a restrictive umask',async t=>{
+  const {at,pin,published}=fixture(t);
+  const catalog=JSON.parse(readFileSync(join(published,'catalog.json'),'utf8'));
+  catalog.packages.base.files.find((f: {path: string})=>f.path==='usr/bin/base').mode=0o644;
+  const tool={sha256:hash(Buffer.from('base')),size:4};
+  catalog.toolchains={[`${process.platform}-${process.arch}`]:{sods:tool,translator:tool,muk:tool}};
+  const bytes=Buffer.from(JSON.stringify(catalog)+'\n');
+  writeFileSync(join(published,'catalog.json'),bytes);
+  const selected={...pin,sha256:hash(bytes),size:bytes.length};
+  const mask=process.umask(0o077);
+  try {
+    const result=await acquirePackages({catalog:selected,packages:['app'],cache:join(at,'private-cache')});
+    const mode=(path: string)=>lstatSync(path).mode & 0o777;
+    assert.equal(mode(result.packageCache),0o700,'the private cache container is not a guest directory');
+    assert.equal(mode(join(result.packageCache,'app/tree/usr')),0o755);
+    assert.equal(mode(join(result.packageCache,'app/tree/usr/bin/app')),0o755);
+    assert.equal(mode(join(result.packageCache,'base/tree/usr/bin/base')),0o644);
+    assert.equal(mode(result.tools!.sods.path),0o755);
+    assert.equal(mode(result.tools!.translator.path),0o644);
+    assert.equal(mode(result.tools!.muk.path),0o644);
+    assert.equal(readFileSync(result.tools!.translator.path,'utf8'),'base');
+    assert.equal((await acquirePackages({catalog:selected,packages:['app'],cache:join(at,'private-cache')})).packageCache,result.packageCache);
+  } finally { process.umask(mask); }
+});
+test('declared directory modes do not depend on catalog file ordering',async t=>{
+  const {at,pin,published}=fixture(t);
+  const catalog=JSON.parse(readFileSync(join(published,'catalog.json'),'utf8'));
+  catalog.packages.base.files.reverse();
+  catalog.packages.base.files.find((f: {path: string})=>f.path==='usr').mode=0o700;
+  const bytes=Buffer.from(JSON.stringify(catalog)+'\n');
+  writeFileSync(join(published,'catalog.json'),bytes);
+  const result=await acquirePackages({catalog:{...pin,sha256:hash(bytes),size:bytes.length},packages:['base'],cache:join(at,'cache')});
+  assert.equal(lstatSync(join(result.packageCache,'base/tree/usr')).mode & 0o777,0o700);
+  assert.equal(readFileSync(join(result.packageCache,'base/tree/usr/bin/base'),'utf8'),'base');
 });

@@ -1,7 +1,7 @@
 // Deploy-time package discovery belongs to otter. A publisher pins one catalog;
 // consumers resolve its exact versions, never a moving 'latest' or shell recipes.
 import {createHash} from 'node:crypto';
-import {mkdirSync, mkdtempSync, readFileSync, writeFileSync, lstatSync, readlinkSync, symlinkSync, renameSync, rmSync, existsSync, readdirSync} from 'node:fs';
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, lstatSync, readlinkSync, symlinkSync, renameSync, rmSync, existsSync, readdirSync} from 'node:fs';
 import {resolve, join, dirname, posix} from 'node:path';
 type Identity = {sha256: string; size: number};
 type Artifact = Identity & {path: string; mode: number; directory?: false; target?: undefined};
@@ -152,14 +152,21 @@ export async function acquirePackages({catalog: pin, packages: selected, cache}:
       for (const key of (['version','source','key'] as const)) writeFileSync(join(directory,key),p[key]);
       for (const f of p.files) {
         const file=join(directory,'tree',f.path); mkdirSync(dirname(file),{recursive:true});
-        if (f.directory === true) mkdirSync(file,{recursive:true,mode:f.mode});
+        // Creation modes are filtered by the host umask; a parent may also
+        // have been made implicitly for an earlier child. Apply guest modes
+        // explicitly inside this private staging tree, never to its container.
+        if (f.directory === true) { mkdirSync(file,{recursive:true}); chmodSync(file,f.mode); }
         else if (f.target !== undefined) symlinkSync(linkTarget(f),file);
-        else writeFileSync(file,await download(new URL(`blobs/${f.sha256}`,pin.url),f),{mode:f.mode});
+        else { writeFileSync(file,await download(new URL(`blobs/${f.sha256}`,pin.url),f)); chmodSync(file,f.mode); }
       }
     }
     if (toolset) {
       mkdirSync(join(work,'.tools'));
-      for (const n of toolNames) writeFileSync(join(work,'.tools',n),await download(new URL(`blobs/${toolset[n].sha256}`,pin.url),toolset[n]),{mode:n==='sods'?0o755:0o644});
+      for (const n of toolNames) {
+        const file=join(work,'.tools',n);
+        writeFileSync(file,await download(new URL(`blobs/${toolset[n].sha256}`,pin.url),toolset[n]));
+        chmodSync(file,n==='sods'?0o755:0o644);
+      }
     }
     writeFileSync(join(work,'record'),packages.map(n=>`${n} ${catalog.packages[n].version}`).join('\n')+'\n');
     validateCache(work,catalog,packages);
