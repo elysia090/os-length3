@@ -30,6 +30,7 @@ const guestPath = '/bin/program.elf';
 const descriptions = {
   lazy: 'root AOT startup leaves canonical ELF lazy, then the actual guest opens/reads/closes it',
   capture: 'pinned captured result uses the prepared root and an actual Worker without physical output',
+  'capture-pressure': 'pinned captured result preserves the first write through full-queue refusal and stop',
   cancel: 'cancelled artifact late shared/valid success and rejection publish no Worker and permit root reuse',
   invalid: 'invalid artifact byte classes fail before source/Worker publication and permit root reuse',
   size: 'wrong decoded source length fails the exact Rust source, retires, and retries without metadata drift',
@@ -92,20 +93,22 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
   // physical bindings are reclaimed by run retirement; table/context limits
   // below remain one/two, so their reuse is tested independently of history.
   const core = new WebAssembly.Module(readFileSync(corePath));
-  const captured = scenario === 'capture' ? await (async () => {
+  const captured = scenario === 'capture' || scenario === 'capture-pressure' ? await (async () => {
     assert.ok(resultPath);
     const bytes = new Uint8Array(readFileSync(resultPath));
     const pin: CaptureResultPin = {kind: 'sods-linux-capture-result-v1',
       byteLength: Number(process.env.SODS_CAPTURE_RESULT_BYTES), sha256: process.env.SODS_CAPTURE_RESULT_SHA256!};
-    const mutated = bytes.slice();
-    mutated[mutated.length - 1] ^= 1;
-    await assert.rejects(capturedResultHost(mutated, pin, 4, 16), /digest mismatch/);
-    const ordinary = new Uint8Array(readFileSync(corePath));
-    await assert.rejects(capturedResultHost(ordinary, {...pin, byteLength: ordinary.byteLength, sha256: hash(ordinary)}, 4, 16),
-      /artifact identity/, 'a matching hash for the wrong role is not admission');
-    const shared = new Uint8Array(new SharedArrayBuffer(bytes.length));
-    shared.set(bytes);
-    await assert.rejects(capturedResultHost(shared, pin, 4, 16), TypeError);
+    if (scenario === 'capture') {
+      const mutated = bytes.slice();
+      mutated[mutated.length - 1] ^= 1;
+      await assert.rejects(capturedResultHost(mutated, pin, 4, 16), /digest mismatch/);
+      const ordinary = new Uint8Array(readFileSync(corePath));
+      await assert.rejects(capturedResultHost(ordinary, {...pin, byteLength: ordinary.byteLength, sha256: hash(ordinary)}, 4, 16),
+        /artifact identity/, 'a matching hash for the wrong role is not admission');
+      const shared = new Uint8Array(new SharedArrayBuffer(bytes.length));
+      shared.set(bytes);
+      await assert.rejects(capturedResultHost(shared, pin, 4, 16), TypeError);
+    }
     const creating = capturedResultHost(bytes, pin, 4, 16);
     bytes.fill(0); // The snapshot used for digest and compilation must already be owned.
     return creating;
@@ -267,7 +270,15 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       assert.equal(loads, 1);
       assert.equal(host.rootSource(1).size, elf.length, 'failed delivery cannot replace sealed decoded-size metadata');
     }
-    await succeed();
+    if (scenario === 'capture-pressure') {
+      const execution = await start();
+      assert.equal(loads, 0);
+      try {
+        await assert.rejects(host.runPath(execution, load), /Linux memory admission failed: -12/);
+      } finally { await stopped(host, execution); }
+    } else {
+      await succeed();
+    }
     if (captured) {
       const output = captured.takeOutput();
       assert.deepEqual(output, Uint8Array.of(127, 69, 76, 70));
@@ -280,9 +291,10 @@ async function child(scenario: Scenario, programPath: string): Promise<void> {
       await assert.rejects(start(), /Linux startup admission failed: -1/);
       assert.deepEqual({loads, artifacts, workers, runs}, before, 'sixth admission exceeds the five-ID history before callbacks or Worker creation');
     }
-    const successfulRuns = scenario === 'cancel' ? 3 : 1;
-    assert.equal(loads, scenario === 'size' ? 2 : successfulRuns, 'one canonical load per root, not per open or independent OFD');
-    assert.equal(workers, scenario === 'size' ? 2 : successfulRuns, 'positive control confirms actual Worker observation');
+    const successfulRuns = scenario === 'capture-pressure' ? 0 : scenario === 'cancel' ? 3 : 1;
+    const executions = scenario === 'size' ? 2 : scenario === 'capture-pressure' ? 1 : successfulRuns;
+    assert.equal(loads, executions, 'one canonical load per root, not per open or independent OFD');
+    assert.equal(workers, executions, 'positive control confirms actual Worker observation');
     assert.equal(runs, successfulRuns);
     assert.equal(lateControls, scenario === 'cancel' ? 2 : 0);
     writeFileSync(3, JSON.stringify({scenario, loads, artifacts, workers, runs, lateControls, retired: true}));
@@ -297,7 +309,7 @@ if (process.argv[2] === '--managed-root-child') {
   await child(scenario as Scenario, program);
 } else {
   for (const scenario of Object.keys(descriptions) as Scenario[]) test(`${provenance} ${descriptions[scenario]}`, {
-    skip: translatorPath === undefined || process.platform !== 'linux' || (scenario === 'capture' && !resultPath), timeout: 45_000,
+    skip: translatorPath === undefined || process.platform !== 'linux' || (scenario.startsWith('capture') && !resultPath), timeout: 45_000,
   }, () => {
     assert.ok(corePath, 'SODS_LINUX_WASM is required for the actual root integration');
     assert.ok(translatorPath, 'an explicitly missing artifact is a failure');
@@ -308,6 +320,7 @@ if (process.argv[2] === '--managed-root-child') {
       const source = fileURLToPath(new URL('../../../sods/test/fixtures/managed-open/program.S', import.meta.url));
       const program = join(directory, 'program.elf');
       execFileSync(process.env.SODS_FIXTURE_CC ?? 'musl-gcc', [
+        ...(scenario === 'capture-pressure' ? ['-DSODS_OPEN_SECOND_OUTPUT'] : []),
         '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none', '-Wl,-e,_start', source, '-o', program,
       ], {stdio: 'pipe', timeout: 30_000, env: {...process.env, TMPDIR: directory}});
       const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--managed-root-child', scenario, program], {
@@ -317,15 +330,16 @@ if (process.argv[2] === '--managed-root-child') {
       assert.equal(result.error, undefined);
       assert.equal(result.signal, null);
       assert.equal(result.status, 0, result.stderr?.toString());
-      const successfulRuns = scenario === 'cancel' ? 3 : 1;
-      assert.deepEqual(result.stdout, scenario === 'capture' ? Buffer.alloc(0)
+      const successfulRuns = scenario === 'capture-pressure' ? 0 : scenario === 'cancel' ? 3 : 1;
+      const executions = scenario === 'size' ? 2 : scenario === 'capture-pressure' ? 1 : successfulRuns;
+      assert.deepEqual(result.stdout, scenario.startsWith('capture') ? Buffer.alloc(0)
         : Buffer.concat(Array.from({length: successfulRuns}, () => Buffer.from([127, 69, 76, 70]))));
       assert.equal(result.stderr.length, 0);
       const report = result.output[3];
       assert.ok(report);
-      assert.deepEqual(JSON.parse(report.toString()), {scenario, loads: scenario === 'size' ? 2 : successfulRuns,
+      assert.deepEqual(JSON.parse(report.toString()), {scenario, loads: executions,
         artifacts: scenario === 'invalid' ? 5 : scenario === 'cancel' ? 6 : scenario === 'size' ? 2 : 1,
-        workers: scenario === 'size' ? 2 : successfulRuns, runs: successfulRuns,
+        workers: executions, runs: successfulRuns,
         lateControls: scenario === 'cancel' ? 2 : 0, retired: true});
       if (scenario === 'lazy') {
         const native = spawnSync(program, [], {input: '', timeout: 10_000});

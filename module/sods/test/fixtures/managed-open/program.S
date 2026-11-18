@@ -45,6 +45,16 @@ _start:
  mov $4,%edx
  syscall
  want 4
+#ifdef SODS_OPEN_SECOND_OUTPUT
+ /* This overflows the private Q=4 result profile if no receiver drains.
+  * A refusal must not retract the already accepted ELF header. */
+ mov $1,%eax
+ mov $2,%edi
+ lea buffer(%rip),%rsi
+ mov $1,%edx
+ syscall
+ want 1
+#endif
 #endif
  /* A separate open begins at offset zero, not the first OFD's offset four. */
  mov $257,%eax

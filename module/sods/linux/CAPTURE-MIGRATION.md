@@ -227,6 +227,21 @@ only copies the exact stopped bytes and exposes them after receipt. Polling
 an empty result does not certify Worker exit. No public loader, default
 caller switch or deployment pin catalog is selected by this private witness.
 
+An actual prepared-root guest writes the four-byte ELF header and then
+attempts one more byte on stderr. With no consumer between requests this
+fills Q exactly. The second request is refused, cannot reach borrowed
+stdio, and does not retract the first result when the Worker stops. This
+is an explicit failure witness, not a usable pressure protocol for a
+terminal. A larger finite queue does not turn a wait-for-exit consumer
+into a streaming consumer. To admit one, specify the bounded consumer
+handoff or resumption mechanism, signal pressure without claiming success,
+and prove that cancellation cannot renew a used request or discard output.
+
+An eventual release should pin the specific role, version and expanded
+artifact identity from an already authenticated deployment descriptor,
+separate from the blob provider. The result artifact itself does not get
+to choose that descriptor or a larger memory budget.
+
 The candidate's Rust selector is a one-way admission latch, not output
 initialization. A wrong selection does not unlock any file or execution
 state. There are no borrowed-stdio, captured startup or diagnostic execution
